@@ -1,5 +1,6 @@
-#include "Bridge.h"
 #include "services/Mailbox.h"
+
+#include "Bridge.h"
 #include "protocol/PacketBuilder.h"
 
 #if BRIDGE_ENABLE_MAILBOX
@@ -17,9 +18,8 @@ void MailboxClass::send(const uint8_t* data, size_t length) {
   etl::array<uint8_t, 2> header;
   rpc::write_u16_be(header.data(), static_cast<uint16_t>(length));
 
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH, 
-                         header.data(), header.size(), 
-                         data, length);
+  Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH, header.data(),
+                         header.size(), data, length);
 }
 
 void MailboxClass::requestRead() {

@@ -19,26 +19,26 @@
 
 // Detected compiler-specific optimizations
 #if defined(__AVR__)
-  #define ETL_COMPILER_GCC
-  #define ETL_CPP11_SUPPORTED 1
+#define ETL_COMPILER_GCC
+#define ETL_CPP11_SUPPORTED 1
 #elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-  #define ETL_COMPILER_GCC
-  #define ETL_CPP11_SUPPORTED 1
+#define ETL_COMPILER_GCC
+#define ETL_CPP11_SUPPORTED 1
 #else
-  #define ETL_COMPILER_GENERIC
-  #define ETL_CPP11_SUPPORTED 1
+#define ETL_COMPILER_GENERIC
+#define ETL_CPP11_SUPPORTED 1
 #endif
 
 // [SIL-2] ETL Callback Timer locking for Arduino
 #if defined(ARDUINO)
-  #define ETL_CALLBACK_TIMER_USE_INTERRUPT_LOCK
-  #define ETL_CALLBACK_TIMER_DISABLE_INTERRUPTS noInterrupts()
-  #define ETL_CALLBACK_TIMER_ENABLE_INTERRUPTS interrupts()
+#define ETL_CALLBACK_TIMER_USE_INTERRUPT_LOCK
+#define ETL_CALLBACK_TIMER_DISABLE_INTERRUPTS noInterrupts()
+#define ETL_CALLBACK_TIMER_ENABLE_INTERRUPTS interrupts()
 #else
-  // Host / Generic (Single-threaded test environment)
-  #define ETL_CALLBACK_TIMER_USE_INTERRUPT_LOCK
-  #define ETL_CALLBACK_TIMER_DISABLE_INTERRUPTS
-  #define ETL_CALLBACK_TIMER_ENABLE_INTERRUPTS
+// Host / Generic (Single-threaded test environment)
+#define ETL_CALLBACK_TIMER_USE_INTERRUPT_LOCK
+#define ETL_CALLBACK_TIMER_DISABLE_INTERRUPTS
+#define ETL_CALLBACK_TIMER_ENABLE_INTERRUPTS
 #endif
 
 #endif

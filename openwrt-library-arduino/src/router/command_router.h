@@ -1,7 +1,7 @@
 /**
  * @file command_router.h
  * @brief Optimized Command Router for Arduino MCU Bridge v2
- * 
+ *
  * [SIL-2 COMPLIANCE - IEC 61508]
  * This module implements an O(1) command routing mechanism using ETL's
  * message router framework.
@@ -9,10 +9,10 @@
 #ifndef COMMAND_ROUTER_H
 #define COMMAND_ROUTER_H
 
+#include "etl/message.h"
+#include "etl/message_router.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
-#include "etl/message_router.h"
-#include "etl/message.h"
 
 namespace bridge {
 namespace router {
@@ -28,17 +28,17 @@ struct CommandContext : public etl::imessage {
     return static_cast<etl::message_id_t>(raw_command);
   }
 
-  const rpc::Frame* frame;         // Effective frame (decompressed if needed)
-  uint16_t raw_command;            // Original command ID without flags
-  bool is_duplicate;               // Deduplication check result
-  bool requires_ack;               // Whether ACK should be sent after handling
+  const rpc::Frame* frame;  // Effective frame (decompressed if needed)
+  uint16_t raw_command;     // Original command ID without flags
+  bool is_duplicate;        // Deduplication check result
+  bool requires_ack;        // Whether ACK should be sent after handling
 };
 
 /**
  * @brief Handler Interface - Bridge implements this to receive routed commands.
  */
 class ICommandHandler : public etl::imessage_router {
-public:
+ public:
   ICommandHandler() : etl::imessage_router(0) {}
   virtual ~ICommandHandler() {}
 
@@ -67,4 +67,4 @@ public:
 }  // namespace router
 }  // namespace bridge
 
-#endif // COMMAND_ROUTER_H
+#endif  // COMMAND_ROUTER_H

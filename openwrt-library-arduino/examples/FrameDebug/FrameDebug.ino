@@ -1,11 +1,13 @@
 // [SIL-2] Use centralized bridge_config.h for consistency.
 // Do not override layout macros here to avoid ODR violations.
-#define BRIDGE_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+#define BRIDGE_SECRET \
+  "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 
-// When set to 1 the sketch automatically sends CommandId::CMD_GET_FREE_MEMORY_RESP frames
-// every kSendIntervalMs milliseconds (behaviour prior to this change).
-// Leaving it at 0 keeps the link quiet unless you trigger a command manually
-// from the USB serial console (see the loop() implementation below).
+// When set to 1 the sketch automatically sends
+// CommandId::CMD_GET_FREE_MEMORY_RESP frames every kSendIntervalMs milliseconds
+// (behaviour prior to this change). Leaving it at 0 keeps the link quiet unless
+// you trigger a command manually from the USB serial console (see the loop()
+// implementation below).
 #ifndef FRAME_DEBUG_AUTO_POLL
 #define FRAME_DEBUG_AUTO_POLL 0
 #endif
@@ -19,10 +21,11 @@ namespace {
 #if BRIDGE_DEBUG_FRAMES
 unsigned long last_send_ms = 0;
 
-void printSnapshot(const BridgeClass::FrameDebugSnapshot &snapshot) {
-  // Use Console.print instead of Serial.print to reuse the bridge channel safely
-  // if available, or fallback to Serial only if explicitly debugging local USB.
-  // For FrameDebug, we assume local USB debugging via Serial is intended.
+void printSnapshot(const BridgeClass::FrameDebugSnapshot& snapshot) {
+  // Use Console.print instead of Serial.print to reuse the bridge channel
+  // safely if available, or fallback to Serial only if explicitly debugging
+  // local USB. For FrameDebug, we assume local USB debugging via Serial is
+  // intended.
   Serial.println(F("[FrameDebug] --- TX Snapshot ---"));
   Serial.print(F("cmd_id=0x"));
   Serial.println(snapshot.last_command_id, HEX);
@@ -53,7 +56,7 @@ void clearSnapshotStats() {
   Serial.println(F("[FrameDebug] Snapshot cleared"));
 }
 #endif
-}
+}  // namespace
 
 void setup() {
   Serial.begin(rpc::RPC_DEFAULT_BAUDRATE);
@@ -68,13 +71,14 @@ void setup() {
   Serial.println(F("[FrameDebug] Starting"));
 
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
-  Serial.println(F("[FrameDebug] Bridge initialized with sketch-defined secret"));
+  Serial.println(
+      F("[FrameDebug] Bridge initialized with sketch-defined secret"));
 
   // Wait for handshake with non-blocking LED blink
   pinMode(13, OUTPUT);
   long lastBlink = 0;
   bool ledState = false;
-  
+
   // Non-blocking sync wait
   while (!Bridge.isSynchronized()) {
     Bridge.process();
@@ -97,11 +101,13 @@ void loop() {
     last_send_ms = now;
 
     // Directly emit CMD_GET_FREE_MEMORY_RESP to exercise the TX path.
-    Serial.println(F("[FrameDebug] Sending CommandId::CMD_GET_FREE_MEMORY_RESP"));
+    Serial.println(
+        F("[FrameDebug] Sending CommandId::CMD_GET_FREE_MEMORY_RESP"));
     uint16_t free_mem = getFreeMemory();
     uint8_t resp[2];
     rpc::write_u16_be(resp, free_mem);
-    Bridge.sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp, sizeof(resp));
+    Bridge.sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp,
+                     sizeof(resp));
 
     Bridge.flushStream();  // [SIL-2] Non-blocking flush replaces delay(20).
 
@@ -116,18 +122,18 @@ void loop() {
     char cmd = static_cast<char>(Serial.read());
     switch (cmd) {
       case 'f':
-      case 'F':
-        {
-          Serial.println(F("[FrameDebug] Manual CommandId::CMD_GET_FREE_MEMORY_RESP trigger"));
-          uint16_t fm = getFreeMemory();
-          uint8_t rp[2];
-          rpc::write_u16_be(rp, fm);
-          Bridge.sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, rp, sizeof(rp));
-          Bridge.flushStream();  // [SIL-2] Non-blocking flush.
-          printSnapshot(Bridge.getTxDebugSnapshot());
-          clearSnapshotStats();
-        }
-        break;
+      case 'F': {
+        Serial.println(F(
+            "[FrameDebug] Manual CommandId::CMD_GET_FREE_MEMORY_RESP trigger"));
+        uint16_t fm = getFreeMemory();
+        uint8_t rp[2];
+        rpc::write_u16_be(rp, fm);
+        Bridge.sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, rp,
+                         sizeof(rp));
+        Bridge.flushStream();  // [SIL-2] Non-blocking flush.
+        printSnapshot(Bridge.getTxDebugSnapshot());
+        clearSnapshotStats();
+      } break;
       case 's':
       case 'S':
         printSnapshot(Bridge.getTxDebugSnapshot());
@@ -152,7 +158,9 @@ void loop() {
   // is not available.
   static bool notified = false;
   if (!notified) {
-    Serial.println(F("[FrameDebug] BRIDGE_DEBUG_FRAMES disabled; enable it to collect stats."));
+    Serial.println(
+        F("[FrameDebug] BRIDGE_DEBUG_FRAMES disabled; enable it to collect "
+          "stats."));
     notified = true;
   }
 #endif

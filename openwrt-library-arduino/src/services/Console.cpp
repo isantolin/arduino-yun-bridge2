@@ -1,7 +1,7 @@
-#include "Bridge.h"
-
-#include "protocol/rpc_protocol.h"
 #include <etl/algorithm.h>
+
+#include "Bridge.h"
+#include "protocol/rpc_protocol.h"
 
 /// XON resume threshold: fraction of buffer capacity (numerator / denominator).
 static constexpr size_t kLowWaterNumerator = 1;
@@ -11,10 +11,7 @@ static constexpr size_t kHighWaterNumerator = 3;
 static constexpr size_t kWatermarkDenominator = 4;
 
 ConsoleClass::ConsoleClass()
-    : _begun(false),
-      _xoff_sent(false),
-      _rx_buffer(),
-      _tx_buffer() {
+    : _begun(false), _xoff_sent(false), _rx_buffer(), _tx_buffer() {
   // ETL containers initialize themselves
 }
 
@@ -36,7 +33,7 @@ size_t ConsoleClass::write(uint8_t c) {
   if (!_tx_buffer.full()) {
     _tx_buffer.push_back(c);
   } else {
-    return 0; // Should not happen if flush works, but safe return
+    return 0;  // Should not happen if flush works, but safe return
   }
 
   if (_tx_buffer.full() || c == '\n') {
@@ -53,7 +50,8 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
     flush();
   }
 
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0, buffer, size);
+  Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0, buffer,
+                         size);
   return size;
 }
 
@@ -90,8 +88,9 @@ int ConsoleClass::read() {
 
       // High/Low watermark logic for XON/XOFF
       const size_t capacity = _rx_buffer.capacity();
-      const size_t low_water = (capacity * kLowWaterNumerator) / kWatermarkDenominator;
-      
+      const size_t low_water =
+          (capacity * kLowWaterNumerator) / kWatermarkDenominator;
+
       if (_xoff_sent && _rx_buffer.size() < low_water) {
         xon_needed = true;
       }
@@ -100,9 +99,7 @@ int ConsoleClass::read() {
 
   if (xon_needed) {
     if (Bridge.sendFrame(rpc::CommandId::CMD_XON)) {
-      BRIDGE_ATOMIC_BLOCK {
-        _xoff_sent = false;
-      }
+      BRIDGE_ATOMIC_BLOCK { _xoff_sent = false; }
     }
   }
 
@@ -113,9 +110,10 @@ void ConsoleClass::flush() {
   if (!_begun) {
     return;
   }
-  
+
   if (!_tx_buffer.empty()) {
-    if (Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0, _tx_buffer.data(), _tx_buffer.size())) {
+    if (Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0,
+                               _tx_buffer.data(), _tx_buffer.size())) {
       _tx_buffer.clear();
     }
   }
@@ -135,12 +133,13 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
     // Drop new data if buffer is full.
     const size_t available = _rx_buffer.capacity() - _rx_buffer.size();
     const size_t to_copy = etl::min(data.size(), available);
-    
+
     _rx_buffer.push(data.begin(), data.begin() + to_copy);
 
     const size_t capacity = _rx_buffer.capacity();
-    const size_t high_water = (capacity * kHighWaterNumerator) / kWatermarkDenominator;
-    
+    const size_t high_water =
+        (capacity * kHighWaterNumerator) / kWatermarkDenominator;
+
     if (!_xoff_sent && _rx_buffer.size() > high_water) {
       xoff_needed = true;
     }
@@ -148,9 +147,7 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
 
   if (xoff_needed) {
     if (Bridge.sendFrame(rpc::CommandId::CMD_XOFF)) {
-        BRIDGE_ATOMIC_BLOCK {
-          _xoff_sent = true;
-        }
+      BRIDGE_ATOMIC_BLOCK { _xoff_sent = true; }
     }
   }
 }

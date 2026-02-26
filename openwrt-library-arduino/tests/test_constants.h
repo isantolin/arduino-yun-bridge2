@@ -2,6 +2,7 @@
 #define TEST_CONSTANTS_H
 
 #include <stdint.h>
+
 #include "protocol/rpc_protocol.h"
 
 constexpr uint16_t TEST_CMD_ID = 4660;
@@ -57,4 +58,4 @@ constexpr uint8_t TEST_BYTE_BE = 190;
 constexpr uint8_t TEST_BYTE_EE = 238;
 constexpr uint8_t TEST_BYTE_EF = 239;
 
-#endif // TEST_CONSTANTS_H
+#endif  // TEST_CONSTANTS_H

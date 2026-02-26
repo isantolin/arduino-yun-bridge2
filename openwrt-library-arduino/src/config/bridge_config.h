@@ -26,17 +26,18 @@
 #endif
 
 // [SIL-2] Resource Allocation Tuning
-// On memory constrained AVR (Mega/Yun), we limit the pending queue to 2 frames (1 Active + 1 Pending).
-// Previously this was 1, but we merged the active frame buffer into the queue.
+// On memory constrained AVR (Mega/Yun), we limit the pending queue to 2 frames
+// (1 Active + 1 Pending). Previously this was 1, but we merged the active frame
+// buffer into the queue.
 #if defined(ARDUINO_ARCH_AVR)
-  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
-    #define BRIDGE_MAX_PENDING_TX_FRAMES 2
-  #endif
+#ifndef BRIDGE_MAX_PENDING_TX_FRAMES
+#define BRIDGE_MAX_PENDING_TX_FRAMES 2
+#endif
 #else
-  #include "../protocol/rpc_protocol.h"
-  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
-    #define BRIDGE_MAX_PENDING_TX_FRAMES (rpc::RPC_MAX_PENDING_TX_FRAMES + 1)
-  #endif
+#include "../protocol/rpc_protocol.h"
+#ifndef BRIDGE_MAX_PENDING_TX_FRAMES
+#define BRIDGE_MAX_PENDING_TX_FRAMES (rpc::RPC_MAX_PENDING_TX_FRAMES + 1)
+#endif
 #endif
 
 // Assumed RX buffer size for the underlying serial implementation.
@@ -58,23 +59,24 @@
 // Console ring buffers (MCU-side only; not part of the protocol).
 // Defaults to 48 bytes to keep SRAM usage predictable on AVR.
 #if defined(ARDUINO_ARCH_AVR)
-  // [SIL-2] Reduce console buffers for AVR to save ~32 bytes
-  // Increased from 16 to 32 to allow small batches of messages without frequent XOFF.
-  #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 32U
-  #endif
+// [SIL-2] Reduce console buffers for AVR to save ~32 bytes
+// Increased from 16 to 32 to allow small batches of messages without frequent
+// XOFF.
+#ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
+#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 32U
+#endif
 
-  #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 32U
-  #endif
+#ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
+#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 32U
+#endif
 #else
-  #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 64U
-  #endif
+#ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
+#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 64U
+#endif
 
-  #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 64U
-  #endif
+#ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
+#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 64U
+#endif
 #endif
 
 // Pending request queue sizes (MCU-side only; not part of the protocol).
@@ -127,9 +129,9 @@
 #endif
 
 // [SIL-2] Serial Port Configuration
-// Force Bridge to use the USB CDC port (Serial) instead of Hardware UART (Serial1)
-// on compatible boards (Yun, Leonardo, etc.).
-// Essential for direct PC-to-MCU connection debugging.
+// Force Bridge to use the USB CDC port (Serial) instead of Hardware UART
+// (Serial1) on compatible boards (Yun, Leonardo, etc.). Essential for direct
+// PC-to-MCU connection debugging.
 #ifndef BRIDGE_USE_USB_SERIAL
 #define BRIDGE_USE_USB_SERIAL 1
 #endif

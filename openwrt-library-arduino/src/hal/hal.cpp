@@ -14,7 +14,7 @@ namespace hal {
 
 uint16_t getFreeMemory() {
 #if defined(BRIDGE_HOST_TEST)
-  return 4096; // Deterministic value for host tests
+  return 4096;  // Deterministic value for host tests
 #elif defined(ARDUINO_ARCH_AVR)
   char stack_top;
   char* heap_end = __brkval ? __brkval : &__heap_start;
@@ -40,5 +40,5 @@ void init() {
   // Architecture specific initialization
 }
 
-} // namespace hal
-} // namespace bridge
+}  // namespace hal
+}  // namespace bridge

@@ -6,27 +6,22 @@
 
 #if BRIDGE_ENABLE_PROCESS
 
-ProcessClass::ProcessClass() 
-{
-  reset();
-}
+ProcessClass::ProcessClass() { reset(); }
 
-void ProcessClass::reset() {
-  _pending_process_pids.clear();
-}
+void ProcessClass::reset() { _pending_process_pids.clear(); }
 
 void ProcessClass::run(etl::string_view command) {
   if (command.empty()) return;
-  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN, 
-                               command, rpc::MAX_PAYLOAD_SIZE - 1)) {
+  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN, command,
+                                rpc::MAX_PAYLOAD_SIZE - 1)) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
 
 void ProcessClass::runAsync(etl::string_view command) {
   if (command.empty()) return;
-  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 
-                               command, rpc::MAX_PAYLOAD_SIZE - 1)) {
+  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, command,
+                                rpc::MAX_PAYLOAD_SIZE - 1)) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
@@ -50,13 +45,14 @@ void ProcessClass::poll(int16_t pid) {
   }
 
   if (!sendPidCommand(rpc::CommandId::CMD_PROCESS_POLL, pid_u16)) {
-    _popPendingProcessPid(); // Cleanup if failed to send
+    _popPendingProcessPid();  // Cleanup if failed to send
   }
 }
 
 void ProcessClass::kill(int16_t pid) {
   if (pid < 0) return;
-  (void)sendPidCommand(rpc::CommandId::CMD_PROCESS_KILL, static_cast<uint16_t>(pid));
+  (void)sendPidCommand(rpc::CommandId::CMD_PROCESS_KILL,
+                       static_cast<uint16_t>(pid));
 }
 
 bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {
@@ -71,7 +67,7 @@ uint16_t ProcessClass::_popPendingProcessPid() {
   if (_pending_process_pids.empty()) {
     return rpc::RPC_INVALID_ID_SENTINEL;
   }
-  
+
   uint16_t pid = _pending_process_pids.front();
   _pending_process_pids.pop();
   return pid;

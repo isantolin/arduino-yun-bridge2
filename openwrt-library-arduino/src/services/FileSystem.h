@@ -4,14 +4,15 @@
 #include "config/bridge_config.h"
 
 #if BRIDGE_ENABLE_FILESYSTEM
-#include "etl/string_view.h"
 #include "etl/delegate.h"
+#include "etl/string_view.h"
 #include "protocol/rpc_protocol.h"
 
 class BridgeClass;
 
 class FileSystemClass {
   friend class BridgeClass;
+
  public:
   using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
 

@@ -1,15 +1,14 @@
+#include <string.h>
+
 #include "Bridge.h"
 #include "etl/flat_map.h"
-#include <string.h>
 #include "protocol/rpc_protocol.h"
 
 // [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
 
 #if BRIDGE_ENABLE_DATASTORE
 
-DataStoreClass::DataStoreClass() {
-  reset();
-}
+DataStoreClass::DataStoreClass() { reset(); }
 
 void DataStoreClass::reset() {
   _last_datastore_key.clear();
@@ -18,9 +17,9 @@ void DataStoreClass::reset() {
 
 void DataStoreClass::put(etl::string_view key, etl::string_view value) {
   if (key.empty() || value.empty()) return;
-  if (!Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, 
-                                key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH,
-                                value, rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
+  if (!Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, key,
+                                rpc::RPC_MAX_DATASTORE_KEY_LENGTH, value,
+                                rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
@@ -32,9 +31,9 @@ void DataStoreClass::requestGet(etl::string_view key) {
     return;
   }
 
-  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_DATASTORE_GET, 
-                                key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
-    _popPendingDatastoreKey(); // Clean up if send failed
+  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_DATASTORE_GET, key,
+                                rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
+    _popPendingDatastoreKey();  // Clean up if send failed
     Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
@@ -59,7 +58,8 @@ bool DataStoreClass::_trackPendingDatastoreKey(etl::string_view key) {
     return false;
   }
 
-  _pending_datastore_keys.push(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key.data(), key.length()));
+  _pending_datastore_keys.push(
+      etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key.data(), key.length()));
   return true;
 }
 

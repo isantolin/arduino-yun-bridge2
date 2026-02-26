@@ -2,15 +2,16 @@
 #define RPC_FRAME_H
 
 #include <Arduino.h>
+
 #include "rpc_protocol.h"
 
 // ETL requires min/max from <algorithm>, but Arduino.h defines them as macros.
 #undef min
 #undef max
 #include "etl/array.h"
+#include "etl/crc32.h"
 #include "etl/expected.h"
 #include "etl/span.h"
-#include "etl/crc32.h"
 
 namespace rpc {
 
@@ -59,7 +60,7 @@ static_assert(sizeof(FrameHeader) == 5, "FrameHeader must be exactly 5 bytes");
 
 // Maximum size of a raw frame (Header + Payload + CRC)
 constexpr size_t MAX_RAW_FRAME_SIZE =
-  sizeof(FrameHeader) + MAX_PAYLOAD_SIZE + CRC_TRAILER_SIZE;
+    sizeof(FrameHeader) + MAX_PAYLOAD_SIZE + CRC_TRAILER_SIZE;
 
 struct Frame {
   FrameHeader header;
@@ -72,31 +73,36 @@ struct Frame {
  * [SIL-2] Explicit error types enable type-safe error handling.
  */
 enum class FrameError {
-  CRC_MISMATCH,   ///< CRC32 validation failed
-  MALFORMED,      ///< Frame structure invalid (size, version, lengths)
-  OVERFLOW        ///< Payload exceeds maximum allowed size
+  CRC_MISMATCH,  ///< CRC32 validation failed
+  MALFORMED,     ///< Frame structure invalid (size, version, lengths)
+  OVERFLOW       ///< Payload exceeds maximum allowed size
 };
-
 
 class FrameParser {
  public:
   FrameParser() = default;
   etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer) {
-    if (buffer.size() < 9 || buffer.size() > MAX_RAW_FRAME_SIZE) return etl::unexpected<FrameError>(FrameError::MALFORMED);
+    if (buffer.size() < 9 || buffer.size() > MAX_RAW_FRAME_SIZE)
+      return etl::unexpected<FrameError>(FrameError::MALFORMED);
     const size_t crc_start = buffer.size() - 4;
     const uint32_t received_crc = read_u32_be(&buffer[crc_start]);
     etl::crc32 crc_calc;
     crc_calc.add(buffer.data(), buffer.data() + crc_start);
-    if (received_crc != crc_calc.value()) return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
-    if (buffer[0] != PROTOCOL_VERSION) return etl::unexpected<FrameError>(FrameError::MALFORMED);
+    if (received_crc != crc_calc.value())
+      return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
+    if (buffer[0] != PROTOCOL_VERSION)
+      return etl::unexpected<FrameError>(FrameError::MALFORMED);
     const uint16_t payload_len = read_u16_be(&buffer[1]);
-    if (buffer.size() != (static_cast<size_t>(payload_len) + 9)) return etl::unexpected<FrameError>(FrameError::MALFORMED);
-    if (payload_len > MAX_PAYLOAD_SIZE) return etl::unexpected<FrameError>(FrameError::OVERFLOW);
+    if (buffer.size() != (static_cast<size_t>(payload_len) + 9))
+      return etl::unexpected<FrameError>(FrameError::MALFORMED);
+    if (payload_len > MAX_PAYLOAD_SIZE)
+      return etl::unexpected<FrameError>(FrameError::OVERFLOW);
     Frame result{};
     result.header.version = buffer[0];
     result.header.payload_length = payload_len;
     result.header.command_id = read_u16_be(&buffer[3]);
-    if (payload_len > 0) etl::copy_n(buffer.begin() + 5, payload_len, result.payload.begin());
+    if (payload_len > 0)
+      etl::copy_n(buffer.begin() + 5, payload_len, result.payload.begin());
     result.crc = crc_calc.value();
     return result;
   }
@@ -105,7 +111,8 @@ class FrameParser {
 class FrameBuilder {
  public:
   FrameBuilder() = default;
-  size_t build(etl::span<uint8_t> buffer, uint16_t command_id, etl::span<const uint8_t> payload) {
+  size_t build(etl::span<uint8_t> buffer, uint16_t command_id,
+               etl::span<const uint8_t> payload) {
     if (payload.size() > MAX_PAYLOAD_SIZE) return 0;
     const uint16_t payload_len = static_cast<uint16_t>(payload.size());
     const size_t data_len = 5 + payload_len;
@@ -115,7 +122,8 @@ class FrameBuilder {
     buffer[0] = PROTOCOL_VERSION;
     write_u16_be(&buffer[1], payload_len);
     write_u16_be(&buffer[3], command_id);
-    if (payload_len > 0) etl::copy_n(payload.begin(), payload_len, buffer.begin() + 5);
+    if (payload_len > 0)
+      etl::copy_n(payload.begin(), payload_len, buffer.begin() + 5);
     etl::crc32 crc_calc;
     crc_calc.add(buffer.data(), buffer.data() + data_len);
     write_u32_be(&buffer[data_len], crc_calc.value());

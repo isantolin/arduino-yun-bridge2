@@ -18,11 +18,12 @@
 #ifndef RPC_SECURITY_H
 #define RPC_SECURITY_H
 
+#include <HKDF.h>
+#include <SHA256.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <SHA256.h>
-#include <HKDF.h>
+
 #include "../protocol/rpc_protocol.h"
 
 namespace rpc {
@@ -60,7 +61,6 @@ inline void secure_zero_portable(void* buf, size_t len) {
 #endif
 }
 
-
 /**
  * @brief Known Answer Tests (KAT) for cryptographic primitives.
  *
@@ -87,10 +87,8 @@ inline bool timing_safe_equal(const uint8_t* a, const uint8_t* b, size_t len) {
  * @brief Generate nonce with monotonic counter (anti-replay).
  */
 template <typename RandomFunc>
-inline void generate_nonce_with_counter(
-    uint8_t* out_nonce,
-    uint64_t& counter,
-    RandomFunc random_func) {
+inline void generate_nonce_with_counter(uint8_t* out_nonce, uint64_t& counter,
+                                        RandomFunc random_func) {
   for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_RANDOM_BYTES; i++) {
     out_nonce[i] = static_cast<uint8_t>(random_func() & 0xFF);
   }
@@ -107,7 +105,8 @@ inline void generate_nonce_with_counter(
 inline uint64_t extract_nonce_counter(const uint8_t* nonce) {
   uint64_t counter = 0;
   for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_COUNTER_BYTES; i++) {
-    counter = (counter << kBitsPerByte) | nonce[RPC_HANDSHAKE_NONCE_RANDOM_BYTES + i];
+    counter =
+        (counter << kBitsPerByte) | nonce[RPC_HANDSHAKE_NONCE_RANDOM_BYTES + i];
   }
   return counter;
 }
@@ -115,7 +114,8 @@ inline uint64_t extract_nonce_counter(const uint8_t* nonce) {
 /**
  * @brief Validate nonce counter is strictly greater than last seen.
  */
-inline bool validate_nonce_counter(const uint8_t* nonce, uint64_t& last_counter) {
+inline bool validate_nonce_counter(const uint8_t* nonce,
+                                   uint64_t& last_counter) {
   uint64_t current = extract_nonce_counter(nonce);
   if (current <= last_counter) {
     return false;

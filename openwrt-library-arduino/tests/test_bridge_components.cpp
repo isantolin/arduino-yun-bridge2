@@ -54,12 +54,12 @@ static void test_console_write_outbound_frame() {
   Console.write(reinterpret_cast<const uint8_t*>(msg), sizeof(msg) - 1);
   Console.flush();
   Bridge.process();
-  
+
   TEST_ASSERT(stream.tx_buffer.len > 0);
   size_t cursor = 0;
   rpc::Frame f;
-//   TEST_ASSERT(extract_next_valid_frame(stream.tx_buffer, cursor, f));
-  
+  //   TEST_ASSERT(extract_next_valid_frame(stream.tx_buffer, cursor, f));
+
   restore_bridge_to_serial();
 }
 
@@ -68,13 +68,14 @@ static void test_datastore_put_outbound_frame() {
   reset_bridge_with_stream(stream);
   DataStore.put("k", "v");
   Bridge.process();
-  
+
   TEST_ASSERT(stream.tx_buffer.len > 0);
   size_t cursor = 0;
   rpc::Frame f;
-//   TEST_ASSERT(extract_next_valid_frame(stream.tx_buffer, cursor, f));
-//   TEST_ASSERT_EQ_UINT(f.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_PUT));
-  
+  //   TEST_ASSERT(extract_next_valid_frame(stream.tx_buffer, cursor, f));
+  //   TEST_ASSERT_EQ_UINT(f.header.command_id,
+  //   rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_PUT));
+
   restore_bridge_to_serial();
 }
 
@@ -83,17 +84,18 @@ static void test_mailbox_send_outbound_frame() {
   reset_bridge_with_stream(stream);
   Mailbox.send("msg");
   Bridge.process();
-  
+
   TEST_ASSERT(stream.tx_buffer.len > 0);
   size_t cursor = 0;
   rpc::Frame f;
-//   TEST_ASSERT(extract_next_valid_frame(stream.tx_buffer, cursor, f));
-//   TEST_ASSERT_EQ_UINT(f.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
-  
+  //   TEST_ASSERT(extract_next_valid_frame(stream.tx_buffer, cursor, f));
+  //   TEST_ASSERT_EQ_UINT(f.header.command_id,
+  //   rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
+
   restore_bridge_to_serial();
 }
 
-} // namespace
+}  // namespace
 
 int main() {
   test_console_write_outbound_frame();

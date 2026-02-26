@@ -4,20 +4,20 @@
 #include "config/bridge_config.h"
 
 #if BRIDGE_ENABLE_DATASTORE
-#include "etl/string.h"
-#include "etl/string_view.h"
-#include "etl/span.h"
 #include "etl/delegate.h"
 #include "etl/flat_map.h"
 #include "etl/queue.h"
+#include "etl/span.h"
+#include "etl/string.h"
+#include "etl/string_view.h"
 #include "protocol/rpc_protocol.h"
 
 #if defined(BRIDGE_HOST_TEST)
 namespace bridge {
 namespace test {
-  class DataStoreTestAccessor;
+class DataStoreTestAccessor;
 }
-}
+}  // namespace bridge
 #endif
 
 #include "protocol/BridgeEvents.h"
@@ -26,18 +26,19 @@ class BridgeClass;
 
 class DataStoreClass : public BridgeObserver {
   friend class BridgeClass;
-  #if defined(BRIDGE_HOST_TEST)
+#if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::DataStoreTestAccessor;
-  #endif
+#endif
  public:
-  using DataStoreGetHandler = etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
+  using DataStoreGetHandler =
+      etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
 
   DataStoreClass();
   void reset();
-  
+
   // [SIL-2] Observer Interface
   void notification(MsgBridgeLost) override { reset(); }
-  
+
   void put(etl::string_view key, etl::string_view value);
   void requestGet(etl::string_view key);
   inline void onDataStoreGetResponse(DataStoreGetHandler handler) {
@@ -52,7 +53,9 @@ class DataStoreClass : public BridgeObserver {
 
   // [OPTIMIZATION] Use flat_map for O(log n) key lookup
   etl::flat_map<etl::string<16>, etl::string<16>, 8> _local_cache;
-  etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>, BRIDGE_MAX_PENDING_DATASTORE> _pending_datastore_keys;
+  etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>,
+             BRIDGE_MAX_PENDING_DATASTORE>
+      _pending_datastore_keys;
   etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> _last_datastore_key;
 };
 

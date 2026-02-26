@@ -3,6 +3,7 @@
  * @brief Implementation of security primitives with memory optimizations.
  */
 #include "security.h"
+
 #include <Arduino.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
@@ -14,7 +15,7 @@
 #define PROGMEM
 #endif
 #ifndef pgm_read_byte
-#define pgm_read_byte(addr) (*(const unsigned char *)(addr))
+#define pgm_read_byte(addr) (*(const unsigned char*)(addr))
 #endif
 #ifndef memcpy_P
 #define memcpy_P memcpy
@@ -55,7 +56,8 @@ static const uint8_t kat_hmac_expected[] PROGMEM = {
 bool run_cryptographic_self_tests() {
   SHA256 sha256;
   etl::array<uint8_t, kSha256DigestSize> actual;
-  etl::array<uint8_t, kKatBufferSize> buffer; // Temporary buffer for data loading
+  etl::array<uint8_t, kKatBufferSize>
+      buffer;  // Temporary buffer for data loading
 
   // 1. SHA256 KAT ("abc")
   size_t msg_len = sizeof(kat_sha256_msg);
@@ -65,26 +67,29 @@ bool run_cryptographic_self_tests() {
 
   // Compare actual vs expected (expected is in PROGMEM)
   // etl::equal might work if we provide a custom iterator or just use memcmp_P
-  if (memcmp_P(actual.data(), kat_sha256_expected, kSha256DigestSize) != 0) return false;
+  if (memcmp_P(actual.data(), kat_sha256_expected, kSha256DigestSize) != 0)
+    return false;
 
   // 2. HMAC-SHA256 KAT
-  // Key is small, can load to stack or use update with PROGMEM if lib supports it. 
-  // SHA256 lib usually supports RAM only.
-  etl::array<uint8_t, 32> key_buf; // Max key size for test
+  // Key is small, can load to stack or use update with PROGMEM if lib supports
+  // it. SHA256 lib usually supports RAM only.
+  etl::array<uint8_t, 32> key_buf;  // Max key size for test
   size_t key_len = sizeof(kat_hmac_key);
   memcpy_P(key_buf.data(), kat_hmac_key, key_len);
-  
-  sha256.resetHMAC(key_buf.data(), key_len); 
-  
+
+  sha256.resetHMAC(key_buf.data(), key_len);
+
   size_t data_len = sizeof(kat_hmac_data);
   memcpy_P(buffer.data(), kat_hmac_data, data_len);
   sha256.update(buffer.data(), data_len);
-  sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(), kSha256DigestSize);
+  sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(),
+                      kSha256DigestSize);
 
-  if (memcmp_P(actual.data(), kat_hmac_expected, kSha256DigestSize) != 0) return false;
+  if (memcmp_P(actual.data(), kat_hmac_expected, kSha256DigestSize) != 0)
+    return false;
 
   return true;
 }
 
-} // namespace security
-} // namespace rpc
+}  // namespace security
+}  // namespace rpc

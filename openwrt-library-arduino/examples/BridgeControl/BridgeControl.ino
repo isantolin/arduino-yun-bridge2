@@ -4,7 +4,8 @@
  */
 
 // CONFIGURACIÓN DEL SECRETO
-// Este password debe coincidir con el configurado en el lado de Linux (/etc/mcu-bridge.conf o similar)
+// Este password debe coincidir con el configurado en el lado de Linux
+// (/etc/mcu-bridge.conf o similar)
 #define BRIDGE_SECRET "DEBUG_INSECURE"
 
 #include <Bridge.h>
@@ -42,7 +43,8 @@ void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
   }
 }
 
-void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
+void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload,
+                       uint16_t length) {
   (void)payload;
   (void)length;
   // Solo imprimir errores graves para evitar saturación
@@ -56,14 +58,16 @@ void setup() {
   // [SIL-2] PROHIBIDO usar Serial.print() si comparte puerto con el Bridge.
   // En emulación, Serial (UART0) es el canal del protocolo. Cualquier texto
   // enviado aquí corromperá el stream COBS y bloqueará la sincronización.
-  
+
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
 
-  Bridge.onDigitalReadResponse(BridgeClass::DigitalReadHandler::create<handleDigitalReadResponse>());
+  Bridge.onDigitalReadResponse(
+      BridgeClass::DigitalReadHandler::create<handleDigitalReadResponse>());
   Bridge.onCommand(BridgeClass::CommandHandler::create<handleCommand>());
-  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create<handleMailboxMessage>());
+  Mailbox.onMailboxMessage(
+      MailboxClass::MailboxHandler::create<handleMailboxMessage>());
   Bridge.onStatus(BridgeClass::StatusHandler::create<handleStatusFrame>());
-  
+
   pinMode(13, OUTPUT);
 
   // Bloqueo controlado hasta sincronizar SIN LOGS a Serial.
@@ -71,7 +75,7 @@ void setup() {
     Bridge.process();
     // Podemos usar el LED para feedback visual si fuera hardware real
   }
-  
+
   // Una vez sincronizado, Console es seguro porque viaja dentro de marcos RPC.
   Console.begin();
   Console.println(F("Bridge sincronizado y operando."));
@@ -79,7 +83,7 @@ void setup() {
 
 void loop() {
   Bridge.process();
-  
+
   static unsigned long lastMailboxCheck = 0;
   if (millis() - lastMailboxCheck > 500) {
     lastMailboxCheck = millis();

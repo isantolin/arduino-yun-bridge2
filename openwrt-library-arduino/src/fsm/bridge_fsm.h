@@ -1,7 +1,7 @@
 /**
  * @file bridge_fsm.h
  * @brief ETL-based Finite State Machine for Arduino MCU Bridge v2
- * 
+ *
  * [SIL-2 COMPLIANCE - IEC 61508]
  * This module implements a deterministic state machine using ETL's FSM
  * framework. All state transitions are explicit and bounded.
@@ -17,9 +17,9 @@
 #ifndef BRIDGE_FSM_H
 #define BRIDGE_FSM_H
 
+#include "etl/callback_timer.h"
 #include "etl/fsm.h"
 #include "etl/message.h"
-#include "etl/callback_timer.h"
 
 namespace bridge {
 namespace fsm {
@@ -56,76 +56,95 @@ struct EvTimeout : public etl::message<EVENT_TIMEOUT> {};
 struct EvReset : public etl::message<EVENT_RESET> {};
 struct EvCryptoFault : public etl::message<EVENT_CRYPTO_FAULT> {};
 
-class StateUnsynchronized : public etl::fsm_state<BridgeFsm, StateUnsynchronized, STATE_UNSYNCHRONIZED,
-                                                   EvHandshakeStart, EvHandshakeFailed, EvReset, EvCryptoFault>
-{
-public:
+class StateUnsynchronized
+    : public etl::fsm_state<BridgeFsm, StateUnsynchronized,
+                            STATE_UNSYNCHRONIZED, EvHandshakeStart,
+                            EvHandshakeFailed, EvReset, EvCryptoFault> {
+ public:
   etl::fsm_state_id_t on_enter_state() { return STATE_UNSYNCHRONIZED; }
-  etl::fsm_state_id_t on_event(const EvHandshakeStart&) { return STATE_SYNCING; }
+  etl::fsm_state_id_t on_event(const EvHandshakeStart&) {
+    return STATE_SYNCING;
+  }
   etl::fsm_state_id_t on_event(const EvHandshakeFailed&) { return STATE_FAULT; }
   etl::fsm_state_id_t on_event(const EvReset&) { return No_State_Change; }
   etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    return No_State_Change;
+  }
 };
 
-class StateSyncing : public etl::fsm_state<BridgeFsm, StateSyncing, STATE_SYNCING,
-                                            EvHandshakeComplete, EvHandshakeFailed, EvReset, EvCryptoFault>
-{
-public:
+class StateSyncing
+    : public etl::fsm_state<BridgeFsm, StateSyncing, STATE_SYNCING,
+                            EvHandshakeComplete, EvHandshakeFailed, EvReset,
+                            EvCryptoFault> {
+ public:
   etl::fsm_state_id_t on_enter_state() { return STATE_SYNCING; }
-  etl::fsm_state_id_t on_event(const EvHandshakeComplete&) { return STATE_IDLE; }
+  etl::fsm_state_id_t on_event(const EvHandshakeComplete&) {
+    return STATE_IDLE;
+  }
   etl::fsm_state_id_t on_event(const EvHandshakeFailed&) { return STATE_FAULT; }
   etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
   etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    return No_State_Change;
+  }
 };
 
 class StateReady : public etl::fsm_state<BridgeFsm, StateReady, STATE_READY,
-                                          EvReset, EvCryptoFault>
-{
-public:
+                                         EvReset, EvCryptoFault> {
+ public:
   etl::fsm_state_id_t on_enter_state() { return STATE_READY; }
   etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
   etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    return No_State_Change;
+  }
 };
 
-class StateIdle : public etl::fsm_state<BridgeFsm, StateIdle, STATE_IDLE,
-                                         EvSendCritical, EvReset, EvCryptoFault>
-{
-public:
+class StateIdle
+    : public etl::fsm_state<BridgeFsm, StateIdle, STATE_IDLE, EvSendCritical,
+                            EvReset, EvCryptoFault> {
+ public:
   etl::fsm_state_id_t on_enter_state() { return STATE_IDLE; }
-  etl::fsm_state_id_t on_event(const EvSendCritical&) { return STATE_AWAITING_ACK; }
+  etl::fsm_state_id_t on_event(const EvSendCritical&) {
+    return STATE_AWAITING_ACK;
+  }
   etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
   etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    return No_State_Change;
+  }
 };
 
-class StateAwaitingAck : public etl::fsm_state<BridgeFsm, StateAwaitingAck, STATE_AWAITING_ACK,
-                                                EvAckReceived, EvTimeout, EvReset, EvCryptoFault>
-{
-public:
+class StateAwaitingAck
+    : public etl::fsm_state<BridgeFsm, StateAwaitingAck, STATE_AWAITING_ACK,
+                            EvAckReceived, EvTimeout, EvReset, EvCryptoFault> {
+ public:
   etl::fsm_state_id_t on_enter_state() { return STATE_AWAITING_ACK; }
   etl::fsm_state_id_t on_event(const EvAckReceived&) { return STATE_IDLE; }
-  etl::fsm_state_id_t on_event(const EvTimeout&) { return STATE_UNSYNCHRONIZED; }
+  etl::fsm_state_id_t on_event(const EvTimeout&) {
+    return STATE_UNSYNCHRONIZED;
+  }
   etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
   etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    return No_State_Change;
+  }
 };
 
 class StateFault : public etl::fsm_state<BridgeFsm, StateFault, STATE_FAULT,
-                                          EvReset, EvCryptoFault>
-{
-public:
+                                         EvReset, EvCryptoFault> {
+ public:
   etl::fsm_state_id_t on_enter_state() { return STATE_FAULT; }
   etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
   etl::fsm_state_id_t on_event(const EvCryptoFault&) { return No_State_Change; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    return No_State_Change;
+  }
 };
 
-class BridgeFsm : public etl::fsm
-{
-public:
+class BridgeFsm : public etl::fsm {
+ public:
   BridgeFsm() : etl::fsm(NUMBER_OF_STATES), state_list_{} {}
 
   void begin() {
@@ -142,12 +161,14 @@ public:
     state_list_[STATE_IDLE] = &state_idle;
     state_list_[STATE_AWAITING_ACK] = &state_awaiting_ack;
     state_list_[STATE_FAULT] = &state_fault;
-    
+
     set_states(state_list_, NUMBER_OF_STATES);
     start();
   }
 
-  bool isUnsynchronized() const { return get_state_id() == STATE_UNSYNCHRONIZED; }
+  bool isUnsynchronized() const {
+    return get_state_id() == STATE_UNSYNCHRONIZED;
+  }
   bool isSyncing() const { return get_state_id() == STATE_SYNCING; }
   bool isIdle() const { return get_state_id() == STATE_IDLE; }
   bool isAwaitingAck() const { return get_state_id() == STATE_AWAITING_ACK; }
@@ -163,7 +184,7 @@ public:
   void cryptoFault() { receive(EvCryptoFault()); }
   void resetFsm() { receive(EvReset()); }
 
-private:
+ private:
   etl::ifsm_state* state_list_[NUMBER_OF_STATES];
 };
 

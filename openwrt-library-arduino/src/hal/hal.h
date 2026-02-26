@@ -29,26 +29,27 @@ bool isValidPin(uint8_t pin);
  */
 void init();
 
-} // namespace hal
-} // namespace bridge
+}  // namespace hal
+}  // namespace bridge
 
 // [SIL-2] Atomic Block Abstraction
 #if defined(ARDUINO_ARCH_AVR)
-  #include <util/atomic.h>
-  #define BRIDGE_ATOMIC_BLOCK ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+#include <util/atomic.h>
+#define BRIDGE_ATOMIC_BLOCK ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 #else
-  struct BridgeAtomicGuard {
-    BridgeAtomicGuard() { 
-      noInterrupts(); 
-      asm volatile("" ::: "memory");
-    }
-    ~BridgeAtomicGuard() { 
-      asm volatile("" ::: "memory");
-      interrupts(); 
-    }
-  };
-  #define BRIDGE_ATOMIC_BLOCK for (int _guard_active = 1; _guard_active; _guard_active = 0) \
-                               for (BridgeAtomicGuard _guard; _guard_active; _guard_active = 0)
+struct BridgeAtomicGuard {
+  BridgeAtomicGuard() {
+    noInterrupts();
+    asm volatile("" ::: "memory");
+  }
+  ~BridgeAtomicGuard() {
+    asm volatile("" ::: "memory");
+    interrupts();
+  }
+};
+#define BRIDGE_ATOMIC_BLOCK                                     \
+  for (int _guard_active = 1; _guard_active; _guard_active = 0) \
+    for (BridgeAtomicGuard _guard; _guard_active; _guard_active = 0)
 #endif
 
-#endif // BRIDGE_HAL_H
+#endif  // BRIDGE_HAL_H

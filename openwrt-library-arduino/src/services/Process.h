@@ -4,28 +4,31 @@
 #include "config/bridge_config.h"
 
 #if BRIDGE_ENABLE_PROCESS
-#include "etl/string_view.h"
-#include "etl/delegate.h"
 #include "etl/circular_buffer.h"
+#include "etl/delegate.h"
+#include "etl/string_view.h"
 #include "protocol/rpc_protocol.h"
 
 #if defined(BRIDGE_HOST_TEST)
 namespace bridge {
 namespace test {
-  class ProcessTestAccessor;
+class ProcessTestAccessor;
 }
-}
+}  // namespace bridge
 #endif
 
 class BridgeClass;
 
 class ProcessClass {
-  #if defined(BRIDGE_HOST_TEST)
+#if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::ProcessTestAccessor;
-  #endif
+#endif
  public:
-  using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
-  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
+  using ProcessRunHandler = etl::delegate<void(
+      rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
+  using ProcessPollHandler =
+      etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t,
+                         const uint8_t*, uint16_t)>;
   using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
 
   ProcessClass();
@@ -55,7 +58,8 @@ class ProcessClass {
   ProcessRunAsyncHandler _process_run_async_handler;
 
   // [SIL-2] Use circular buffer for safe PID tracking
-  etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS> _pending_process_pids;
+  etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS>
+      _pending_process_pids;
 };
 
 extern ProcessClass Process;

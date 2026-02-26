@@ -16,7 +16,6 @@ DUMMY_ARDUINO_LIBS=$(mktemp -d)
 "${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
 
 SOURCES=(
-    "${SRC_DIR}/protocol/rpc_frame.cpp"
     "${SRC_DIR}/security/security.cpp"
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/Bridge.cpp"

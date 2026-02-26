@@ -36,7 +36,6 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${CRYPTO_PATH}" \
-    "${SRC_DIR}/protocol/rpc_frame.cpp" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
@@ -60,7 +59,6 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${CRYPTO_PATH}" \
-    "${SRC_DIR}/protocol/rpc_frame.cpp" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/Bridge.cpp" \

@@ -35,7 +35,6 @@ compile_variant() {
         -I"${STUB_DIR}" \
         -I"${DUMMY_ARDUINO_LIBS}/Crypto" \
         -I"${DUMMY_ARDUINO_LIBS}/PacketSerial" \
-        "${SRC_DIR}/protocol/rpc_frame.cpp" \
         "${SRC_DIR}/security/security.cpp" \
         "${SRC_DIR}/hal/hal.cpp" \
         "${SRC_DIR}/Bridge.cpp" \

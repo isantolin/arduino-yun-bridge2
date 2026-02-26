@@ -182,16 +182,21 @@ async def test_metrics_emit_bridge_snapshot_attr_error():
 # --- Serial Booster ---
 
 
-@pytest.mark.asyncio
-async def test_serial_protocol_log_frame_no_payload():
-    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
-    from mcubridge.protocol.frame import Frame
-
-    frame = Frame(command_id=Command.CMD_GET_VERSION.value, payload=b"")
-    with patch("mcubridge.transport.serial.logger.debug") as mock_debug:
-        proto._log_frame(frame, "DIR")
-        assert mock_debug.call_args[0][0] == "%s %s (no payload)"
-        assert mock_debug.call_args[0][1] == "DIR"
+    @pytest.mark.asyncio
+    async def test_serial_protocol_log_frame_no_payload():
+        proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
+        from mcubridge.protocol.frame import Frame
+    
+        frame = Frame(command_id=Command.CMD_GET_VERSION.value, payload=b"")
+        import logging
+        with patch("mcubridge.transport.serial.logger.log") as mock_log:
+            with patch("mcubridge.transport.serial.logger.isEnabledFor", return_value=True):
+                proto._log_frame(frame, "DIR")
+                assert mock_log.call_args[0][0] == logging.DEBUG
+                assert mock_log.call_args[0][1] == "%s %s: %s"
+                assert mock_log.call_args[0][2] == "DIR"
+                assert mock_log.call_args[0][3] == "CMD_GET_VERSION"
+                assert mock_log.call_args[0][4] == "[]"        assert mock_debug.call_args[0][1] == "DIR"
         assert mock_debug.call_args[0][2] == "CMD_GET_VERSION"
 
 

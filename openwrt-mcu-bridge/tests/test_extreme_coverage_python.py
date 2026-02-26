@@ -141,15 +141,6 @@ async def test_serial_fast_extreme_gaps(runtime_config, runtime_state):
     frame = MagicMock()
     frame.command_id = 0x99  # Non-existent command
     with patch(
-        "mcubridge.transport.serial.logger.debug", side_effect=Exception("Log Error")
+        "mcubridge.transport.serial.logger.log", side_effect=Exception("Log Error")
     ):
         proto._log_frame(frame, "TX")
-
-
-@pytest.mark.asyncio
-async def test_config_logging_gaps(runtime_config):
-    """Cover missing lines in config/logging.py."""
-
-    # Gap: configure_logging with missing syslog
-    with patch("logging.handlers.SysLogHandler", side_effect=ImportError):
-        configure_logging(runtime_config)

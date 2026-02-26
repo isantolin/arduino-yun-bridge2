@@ -38,13 +38,17 @@ def create_real_config():
 # --- mcubridge.config.logging ---
 
 
-def test_build_handler_stream_env():
+def test_configure_logging_stream_env():
+    config = create_real_config()
     with patch.dict(os.environ, {"MCUBRIDGE_LOG_STREAM": "1"}):
-        handler = logging_config._build_handler()
-        assert isinstance(handler, logging.StreamHandler)
+        with patch("mcubridge.config.logging.dictConfig") as mock_dict_config:
+            logging_config.configure_logging(config)
+            mock_dict_config.assert_called_once()
+            assert mock_dict_config.call_args[0][0]["root"]["handlers"] == ["console"]
 
 
-def test_build_handler_syslog_fallback(tmp_path):
+def test_configure_logging_syslog_fallback(tmp_path):
+    config = create_real_config()
     fake_fallback = tmp_path / "log_fallback"
     fake_fallback.touch()
 
@@ -62,10 +66,11 @@ def test_build_handler_syslog_fallback(tmp_path):
         patch("mcubridge.config.logging.SYSLOG_SOCKET", Path("/non/existent/dev/log")),
         patch("mcubridge.config.logging.SYSLOG_SOCKET_FALLBACK", fake_fallback),
     ):
-        handler = logging_config._build_handler()
-        assert isinstance(
-            handler, (logging.handlers.SysLogHandler, logging.StreamHandler)
-        )
+        with patch("mcubridge.config.logging.dictConfig") as mock_dict_config:
+            logging_config.configure_logging(config)
+            mock_dict_config.assert_called_once()
+            handlers = mock_dict_config.call_args[0][0]["root"]["handlers"]
+            assert "syslog" in handlers
 
 
 def test_configure_logging_debug():

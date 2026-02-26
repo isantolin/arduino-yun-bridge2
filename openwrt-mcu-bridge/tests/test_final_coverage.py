@@ -34,10 +34,14 @@ def real_config():
     return config
 
 
-def test_logging_config_candidates_branch():
+def test_logging_config_candidates_branch(real_config):
+    config = real_config
     with patch("mcubridge.config.logging.SYSLOG_SOCKET", Path("/not/dev/log")):
-        handler = logging_config._build_handler()
-        assert isinstance(handler, (logging.Handler))
+        with patch("mcubridge.config.logging.SYSLOG_SOCKET_FALLBACK", Path("/not/dev/log2")):
+            with patch("mcubridge.config.logging.dictConfig") as mock_dict_config:
+                logging_config.configure_logging(config)
+                mock_dict_config.assert_called_once()
+                assert mock_dict_config.call_args[0][0]["root"]["handlers"] == ["console"]
 
 
 def test_settings_validation_errors_coverage():

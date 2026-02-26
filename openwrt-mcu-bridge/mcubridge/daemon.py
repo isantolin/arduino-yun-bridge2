@@ -120,6 +120,9 @@ def _cleanup_child_processes() -> None:
         logger.error("Error during process cleanup: %s", e)
 
 
+async def _dummy_task() -> None:
+    pass
+
 class BridgeDaemon:
     """Main orchestrator for the MCU Bridge daemon services.
 
@@ -266,17 +269,14 @@ class BridgeDaemon:
             SupervisedTaskSpec("metrics-publisher", self._run_metrics_publisher),
         ]
 
-        async def _dummy() -> None:
-            pass
-
         if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
             specs.append(SupervisedTaskSpec("bridge-snapshots", self._run_bridge_snapshots))
 
         if self.config.watchdog_enabled:
-            specs.append(SupervisedTaskSpec("watchdog", _dummy))
+            specs.append(SupervisedTaskSpec("watchdog", _dummy_task))
 
         if self.config.metrics_enabled:
-            specs.append(SupervisedTaskSpec("prometheus-exporter", _dummy))
+            specs.append(SupervisedTaskSpec("prometheus-exporter", _dummy_task))
 
         return specs
 

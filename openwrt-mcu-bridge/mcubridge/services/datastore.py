@@ -196,12 +196,16 @@ class DatastoreComponent:
             else val_to_check
         )
 
-        if is_request:
-            await self._publish_value(
-                key,
-                val_bytes,
-                reply_context=inbound,
-            )
+        # Ignore echoes: if it's not an explicit /request and it has a payload, 
+        # it is an echo of a published value, so we do not republish.
+        if not is_request and inbound and inbound.payload:
+            return
+
+        await self._publish_value(
+            key,
+            val_bytes,
+            reply_context=inbound,
+        )
 
     async def _publish_value(
         self,

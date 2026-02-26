@@ -89,6 +89,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _pending_baudrate(0),
       _rx_history(),
       _consecutive_crc_errors(0),
+      _rng(millis()),
       _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
       _ack_retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
       _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
@@ -208,14 +209,9 @@ void BridgeClass::process() {
 
         if (byte == 0x00) {
           if (_cobs.in_sync && _cobs.bytes_received >= 5 + rpc::CRC_TRAILER_SIZE) {
-            uint32_t calculated_crc = 0xFFFFFFFF;
-            for (uint16_t i = 0; i < _cobs.bytes_received - rpc::CRC_TRAILER_SIZE; ++i) {
-               calculated_crc ^= _cobs.buffer[i];
-               for (int j = 0; j < 8; ++j) {
-                   calculated_crc = (calculated_crc >> 1) ^ (0xEDB88320 & -(calculated_crc & 1));
-               }
-            }
-            calculated_crc ^= 0xFFFFFFFF;
+            etl::crc32 crc_calc;
+            crc_calc.add(&_cobs.buffer[0], &_cobs.buffer[_cobs.bytes_received - rpc::CRC_TRAILER_SIZE]);
+            uint32_t calculated_crc = crc_calc.value();
             
             uint32_t received_crc = rpc::read_u32_be(&_cobs.buffer[_cobs.bytes_received - rpc::CRC_TRAILER_SIZE]);
             
@@ -1312,21 +1308,13 @@ void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
 bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
   if (frame.crc == 0) return false;
 
-  for (size_t i = 0; i < _rx_history.size(); ++i) {
-    const auto& record = _rx_history[i];
-    if (record.crc == frame.crc) {
-      const unsigned long elapsed = millis() - record.timestamp;
-      // [SIL-2] Deduplication Window:
-      // 1. If too early (before ack_timeout), might be a new frame with same CRC (collision).
-      // 2. If too late (after retry cycle), the sender has given up.
-      if (_ack_timeout_ms > 0 && elapsed < static_cast<unsigned long>(_ack_timeout_ms)) {
-          return false;
-      }
-      if (elapsed > (static_cast<unsigned long>(_ack_timeout_ms) * (_ack_retry_limit + 1))) {
-        return false;
-      }
-      return true;
-    }
+  auto it = etl::find_if(_rx_history.begin(), _rx_history.end(), 
+                        [&frame](const RxHistory& r) { return r.crc == frame.crc; });
+
+  if (it != _rx_history.end()) {
+    const unsigned long elapsed = millis() - it->timestamp;
+    if (_ack_timeout_ms > 0 && elapsed < static_cast<unsigned long>(_ack_timeout_ms)) return false;
+    return elapsed <= (static_cast<unsigned long>(_ack_timeout_ms) * (_ack_retry_limit + 1));
   }
   return false;
 }

@@ -25,7 +25,6 @@ find "${BUILD_DIR}" -name '*.gcno' -delete 2>/dev/null || true
 find "${BUILD_DIR}" -name '*.o' -delete 2>/dev/null || true
 
 SOURCES=(
-    "${SRC_ROOT}/protocol/rpc_frame.cpp"
     "${SRC_ROOT}/security/security.cpp"
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/Bridge.cpp"

@@ -43,6 +43,8 @@
 #include "protocol/rpc_structs.h"
 #include "protocol/PacketBuilder.h"
 
+#include "etl/crc32.h"
+#include "etl/random.h"
 #undef min
 #undef max
 #include "etl/array.h"
@@ -290,6 +292,8 @@ class BridgeClass : public bridge::router::ICommandHandler,
   volatile bool _frame_received;
   rpc::Frame _rx_frame;
   etl::optional<rpc::FrameError> _last_parse_error;  // [SIL-2] Type-safe error tracking
+
+  etl::random_xorshift _rng; // [SIL-2] Deterministic Random Generator for Nonces
   // State
   uint16_t _last_command_id;
   uint8_t _retry_count;

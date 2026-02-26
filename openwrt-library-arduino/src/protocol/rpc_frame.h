@@ -10,6 +10,7 @@
 #include "etl/array.h"
 #include "etl/expected.h"
 #include "etl/span.h"
+#include "etl/crc32.h"
 
 namespace rpc {
 
@@ -76,37 +77,50 @@ enum class FrameError {
   OVERFLOW        ///< Payload exceeds maximum allowed size
 };
 
+
 class FrameParser {
  public:
   FrameParser() = default;
-  
-  /**
-   * @brief Parse a decoded frame buffer.
-   * 
-   * [SIL-2 COMPLIANT] Uses etl::expected for type-safe error handling.
-   * Returns either a valid Frame or an error code, eliminating the
-   * bool + out_param pattern that can lead to use-after-failure bugs.
-   * 
-   * @param buffer Decoded frame data (post-COBS)
-   * @return etl::expected<Frame, FrameError> - Frame on success, error on failure
-   */
-  etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer);
-  
-  // Legacy compatibility aliases (deprecated, will be removed)
-  using Error = FrameError;
-  static constexpr FrameError Error_NONE = static_cast<FrameError>(-1); // Sentinel for legacy code
-  static constexpr FrameError Error_CRC_MISMATCH = FrameError::CRC_MISMATCH;
-  static constexpr FrameError Error_MALFORMED = FrameError::MALFORMED;
-  static constexpr FrameError Error_OVERFLOW = FrameError::OVERFLOW;
+  etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer) {
+    if (buffer.size() < 9 || buffer.size() > MAX_RAW_FRAME_SIZE) return etl::unexpected<FrameError>(FrameError::MALFORMED);
+    const size_t crc_start = buffer.size() - 4;
+    const uint32_t received_crc = read_u32_be(&buffer[crc_start]);
+    etl::crc32 crc_calc;
+    crc_calc.add(buffer.data(), buffer.data() + crc_start);
+    if (received_crc != crc_calc.value()) return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
+    if (buffer[0] != PROTOCOL_VERSION) return etl::unexpected<FrameError>(FrameError::MALFORMED);
+    const uint16_t payload_len = read_u16_be(&buffer[1]);
+    if (buffer.size() != (static_cast<size_t>(payload_len) + 9)) return etl::unexpected<FrameError>(FrameError::MALFORMED);
+    if (payload_len > MAX_PAYLOAD_SIZE) return etl::unexpected<FrameError>(FrameError::OVERFLOW);
+    Frame result;
+    result.header.version = buffer[0];
+    result.header.payload_length = payload_len;
+    result.header.command_id = read_u16_be(&buffer[3]);
+    if (payload_len > 0) etl::copy_n(buffer.begin() + 5, payload_len, result.payload.begin());
+    result.crc = crc_calc.value();
+    return result;
+  }
 };
 
 class FrameBuilder {
  public:
   FrameBuilder() = default;
-  // Builds a raw frame into a buffer. Returns the length of the raw frame.
-  size_t build(etl::span<uint8_t> buffer,
-               uint16_t command_id,
-               etl::span<const uint8_t> payload);
+  size_t build(etl::span<uint8_t> buffer, uint16_t command_id, etl::span<const uint8_t> payload) {
+    if (payload.size() > MAX_PAYLOAD_SIZE) return 0;
+    const uint16_t payload_len = static_cast<uint16_t>(payload.size());
+    const size_t data_len = 5 + payload_len;
+    const size_t total_len = data_len + 4;
+    if (total_len > buffer.size()) return 0;
+    etl::fill_n(buffer.begin(), data_len, 0);
+    buffer[0] = PROTOCOL_VERSION;
+    write_u16_be(&buffer[1], payload_len);
+    write_u16_be(&buffer[3], command_id);
+    if (payload_len > 0) etl::copy_n(payload.begin(), payload_len, buffer.begin() + 5);
+    etl::crc32 crc_calc;
+    crc_calc.add(buffer.data(), buffer.data() + data_len);
+    write_u32_be(&buffer[data_len], crc_calc.value());
+    return total_len;
+  }
 };
 
 }  // namespace rpc

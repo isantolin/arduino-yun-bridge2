@@ -120,9 +120,6 @@ def _cleanup_child_processes() -> None:
         logger.error("Error during process cleanup: %s", e)
 
 
-async def _dummy_task() -> None:
-    pass
-
 class BridgeDaemon:
     """Main orchestrator for the MCU Bridge daemon services.
 

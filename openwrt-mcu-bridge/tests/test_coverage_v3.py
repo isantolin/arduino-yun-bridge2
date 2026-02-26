@@ -1,6 +1,5 @@
 import asyncio
 import errno
-import logging
 import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch

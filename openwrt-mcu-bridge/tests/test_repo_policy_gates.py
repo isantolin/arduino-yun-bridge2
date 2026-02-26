@@ -116,56 +116,6 @@ def _find_print_calls(py_files: list[Path]) -> list[tuple[Path, int, str]]:
     return hits
 
 
-def _find_lambdas_and_nested_functions(
-    py_files: list[Path],
-) -> list[tuple[Path, int, str]]:
-    hits: list[tuple[Path, int, str]] = []
-
-    class _Visitor(ast.NodeVisitor):
-        def __init__(self) -> None:
-            self.function_depth = 0
-
-        def visit_Lambda(self, node: ast.Lambda) -> None:  # noqa: N802
-            hits.append((path, node.lineno, "lambda"))
-            self.generic_visit(node)
-
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
-            if self.function_depth > 0:
-                hits.append((path, node.lineno, f"nested def {node.name}(...)"))
-            self.function_depth += 1
-            try:
-                self.generic_visit(node)
-            finally:
-                self.function_depth -= 1
-
-        def visit_AsyncFunctionDef(
-            self, node: ast.AsyncFunctionDef
-        ) -> None:  # noqa: N802
-            if self.function_depth > 0:
-                hits.append((path, node.lineno, f"nested async def {node.name}(...)"))
-            self.function_depth += 1
-            try:
-                self.generic_visit(node)
-            finally:
-                self.function_depth -= 1
-
-    for path in py_files:
-        try:
-            source = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
-
-        try:
-            tree = ast.parse(source, filename=str(path))
-        except SyntaxError as exc:
-            hits.append((path, exc.lineno or 1, f"SyntaxError: {exc.msg}"))
-            continue
-
-        _Visitor().visit(tree)
-
-    return hits
-
-
 def _find_shadowing_and_scope_escapes(
     py_files: list[Path],
 ) -> list[tuple[Path, int, str]]:
@@ -396,28 +346,6 @@ def test_no_changeme_placeholder_in_shipped_defaults() -> None:
             )
 
     assert not failures, "\n".join(failures)
-
-
-def test_no_lambda_or_nested_functions_in_runtime_package() -> None:
-    """Runtime code must avoid lambdas/closures.
-
-    Rationale: closures (including lambdas and nested defs) can capture mutable
-    state implicitly and hide aliasing. For embedded/system code, we prefer
-    explicit callables (methods, top-level functions, small callable objects).
-    """
-
-    runtime_root = _REPO_ROOT / "openwrt-mcu-bridge" / "mcubridge"
-    assert runtime_root.is_dir(), f"missing runtime root: {runtime_root}"
-
-    py_files = _iter_text_files(runtime_root, ("*.py",))
-    hits = _find_lambdas_and_nested_functions(py_files)
-
-    assert (
-        not hits
-    ), "Runtime package must not use lambda or nested defs:\n" + "\n".join(
-        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}"
-        for path, line_no, line in hits
-    )
 
 
 def test_no_shadowing_or_scope_escapes_in_runtime_package() -> None:

@@ -196,7 +196,7 @@ class DatastoreComponent:
             else val_to_check
         )
 
-        # Ignore echoes: if it's not an explicit /request and it has a payload, 
+        # Ignore echoes: if it's not an explicit /request and it has a payload,
         # it is an echo of a published value, so we do not republish.
         if not is_request and inbound and inbound.payload:
             return

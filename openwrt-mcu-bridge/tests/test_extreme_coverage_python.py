@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
-from mcubridge.config.logging import configure_logging
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.handshake import SerialHandshakeManager, SerialTimingWindow
 from mcubridge.services.pin import PinComponent

@@ -124,7 +124,7 @@ class SerialFlowController:
         )
 
         async with self._condition:
-            await self._condition.wait_for(self._is_idle)
+            await self._condition.wait_for(lambda: self._current is None)
             self._current = pending
 
         try:
@@ -136,9 +136,6 @@ class SerialFlowController:
                 if self._current is pending:
                     self._current = None
                     self._condition.notify_all()
-
-    def _is_idle(self) -> bool:
-        return self._current is None
 
     def _emit_metric(self, event: str) -> None:
         if self._metrics_callback is None:
@@ -190,32 +187,14 @@ class SerialFlowController:
             return
 
         if command_id in SERIAL_FAILURE_STATUS_CODES:
-            # MCU status frames are not reliably correlated to the in-flight
-            # command across firmware versions. In particular, some versions
-            # emit human-readable reasons like "serial_rx_overflow".
-            #
-            # To avoid aborting unrelated commands (especially during early
-            # handshake), only treat a failure status as "for this command"
-            # when either:
-            #   - the payload is empty (legacy behavior: unconditional reject)
-            #   - the payload starts with the pending command id (big-endian u16)
-            #
-            # Otherwise, ignore the status for flow-control purposes and let
-            # ack/response timeouts drive retries.
-            if not payload:
+            # MCU status frames correlation logic
+            should_reject = not payload or (
+                len(payload) >= 2
+                and UINT16_STRUCT.parse(payload[:2]) == pending.command_id
+            )
+
+            if should_reject or not all(32 <= byte < 127 for byte in payload):
                 pending.mark_failure(command_id)
-                return
-
-            if len(payload) >= 2:
-                target = UINT16_STRUCT.parse(payload[:2])
-                if target == pending.command_id:
-                    pending.mark_failure(command_id)
-                    return
-
-            if all(32 <= byte < 127 for byte in payload):
-                return
-
-            pending.mark_failure(command_id)
             return
 
         if command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
@@ -276,7 +255,6 @@ class SerialFlowController:
     def _on_retry_sleep(self, retry_state: tenacity.RetryCallState) -> None:
         self._emit_metric("retry")
         tenacity.before_sleep_log(self._logger, logging.WARNING)(retry_state)
-
 
     def _reset_pending_state(self, pending: PendingCommand) -> None:
         pending.completion.clear()

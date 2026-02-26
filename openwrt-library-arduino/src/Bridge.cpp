@@ -1375,15 +1375,11 @@ void BridgeClass::_flushPendingTxQueue() {
 }
 
 void BridgeClass::_clearPendingTxQueue() {
-  bool queue_empty = false;
-  do {
-    BRIDGE_ATOMIC_BLOCK {
-      queue_empty = _pending_tx_queue.empty();
-      if (!queue_empty) {
-        _pending_tx_queue.pop();
-      }
+  BRIDGE_ATOMIC_BLOCK {
+    while (!_pending_tx_queue.empty()) {
+      _pending_tx_queue.pop();
     }
-  } while (!queue_empty);
+  }
 }
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len,

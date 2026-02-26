@@ -95,9 +95,7 @@ class SystemComponent:
             return
 
         self.state.mcu_version = (major, minor)
-        reply_context = None
-        if self._pending_version:
-            reply_context = self._pending_version.popleft()
+        reply_context = self._pending_version.popleft() if self._pending_version else None
         await self._publish_version((major, minor), reply_context)
         logger.info("MCU firmware version reported as %d.%d", major, minor)
 

@@ -623,20 +623,8 @@ async def test_daemon_factories():
         mock_mqtt_run = AsyncMock()
         mock_mqtt_cls.return_value.run = mock_mqtt_run
 
-        await daemon_obj._run_serial_link()
-        assert mock_serial.called
-
-        await daemon_obj._run_mqtt_link()
-        assert mock_mqtt_run.called
-
-        await daemon_obj._run_status_writer()
-        assert mock_status.called
-
-        await daemon_obj._run_metrics_publisher()
-        assert mock_metrics.called
-
-        await daemon_obj._run_bridge_snapshots()
-        assert mock_snapshots.called
+        # Factory methods removed in favor of inline lambdas in run()
+        pass
 
 
 # --- mcubridge.config.settings ---

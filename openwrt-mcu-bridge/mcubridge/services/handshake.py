@@ -114,12 +114,6 @@ _IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
 _STATUS_PAYLOAD_WINDOW = max(0, int(MAX_PAYLOAD_SIZE) - 2)
 
 
-
-
-def _retry_if_false(res: Any) -> bool:
-    return res is False
-
-
 class SerialHandshakeManager:
     """Encapsulates MCU serial handshake orchestration and telemetry."""
 
@@ -227,7 +221,7 @@ class SerialHandshakeManager:
                 max=SERIAL_HANDSHAKE_BACKOFF_MAX,
                 jitter=1.0,
             ),
-            retry=tenacity.retry_if_result(_retry_if_false),
+            retry=tenacity.retry_if_result(lambda res: res is False),
             before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=False,
         )
@@ -614,7 +608,7 @@ class SerialHandshakeManager:
 
     def _maybe_schedule_handshake_backoff(self, reason: str) -> float | None:
         streak = max(1, self._state.handshake_failure_streak)
-        fatal = self._is_immediate_fatal(reason)
+        fatal = reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
         threshold = 1 if fatal else 3
         if streak < threshold:
             return None
@@ -660,11 +654,8 @@ class SerialHandshakeManager:
         ).encode()
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
-        if self._is_immediate_fatal(reason):
+        if reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
             return True
         threshold = max(1, self._fatal_threshold)
         return self._state.handshake_failure_streak >= threshold
 
-    @staticmethod
-    def _is_immediate_fatal(reason: str) -> bool:
-        return reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS

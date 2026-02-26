@@ -51,9 +51,6 @@ constexpr size_t kSha256DigestSize = 32;
 constexpr uint8_t kCrcFailResetWatchdogTimeout = WDTO_15MS;
 #endif
 
-// Global instance pointer for PacketSerial static callback
-BridgeClass* g_bridge_instance = nullptr;
-
 } // namespace
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
@@ -83,11 +80,9 @@ BridgeClass::BridgeClass(HardwareSerial& arg_serial)
 BridgeClass::BridgeClass(Stream& arg_stream)
     : _stream(arg_stream),
       _hardware_serial(nullptr),
-      _packetSerial(),
       _shared_secret(),
-      _target_frame(nullptr),
+      _cobs{0, 0, 0, 0, true, {0}},
       _frame_received(false),
-      _parser(),
       _rx_frame{},
       _last_command_id(0),
       _retry_count(0),
@@ -108,7 +103,6 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _last_tick_millis(0),
       _startup_stabilizing(false)
 {
-    g_bridge_instance = this;
 }
 
 void BridgeClass::begin(
@@ -158,10 +152,6 @@ void BridgeClass::begin(
       _hardware_serial->begin(arg_baudrate);
   }
 
-  // Configure PacketSerial
-  _packetSerial.setStream(&_stream);
-  _packetSerial.setPacketHandler(onPacketReceived);
-
   // [SIL-2] Non-blocking Startup Stabilization
   // Start timer and set flag - process() will drain the buffer during this period
   _startup_stabilizing = true;
@@ -190,22 +180,6 @@ void BridgeClass::begin(
 #endif
 }
 
-void BridgeClass::onPacketReceived(const uint8_t* buffer, size_t size) {
-    if (g_bridge_instance && g_bridge_instance->_target_frame) {
-#if BRIDGE_DEBUG_IO
-        bridge::logging::log_traffic(Serial, "[MCU -> SERIAL]", "RAW", buffer, size);
-#endif
-        auto result = g_bridge_instance->_parser.parse(etl::span<const uint8_t>(buffer, size));
-        if (result.has_value()) {
-            *g_bridge_instance->_target_frame = result.value();
-            g_bridge_instance->_frame_received = true;
-            g_bridge_instance->_last_parse_error.reset();
-        } else {
-            g_bridge_instance->_last_parse_error = result.error();
-        }
-    }
-}
-
 void BridgeClass::process() {
 #if defined(ARDUINO_ARCH_AVR)
   if (kBridgeEnableWatchdog) {
@@ -221,68 +195,124 @@ void BridgeClass::process() {
   }
 #endif
 
-  // [SIL-2] Non-blocking Startup Stabilization Phase
-  // During startup, drain the serial buffer to discard garbage
-  // Timer will call _onStartupStabilized() when complete
   if (_startup_stabilizing) {
-    // [SIL-2] Bounded drain to ensure deterministic WCET
     uint8_t drain_limit = 64; 
     while (_stream.available() > 0 && drain_limit-- > 0) { 
       _stream.read(); 
     }
-    // Continue to timer tick at the bottom of process()
-  }
-
-  // Polling Input Logic (skip during stabilization)
-  bool frame_received = false;
-  if (!_startup_stabilizing) {
-    BRIDGE_ATOMIC_BLOCK {
-      _target_frame = &_rx_frame;
-      _frame_received = false;
-      _packetSerial.update();
-      frame_received = _frame_received;
-      _target_frame = nullptr;
-    }
-  }
-
-  if (frame_received) {
-    BRIDGE_ATOMIC_BLOCK { _consecutive_crc_errors = 0; }
-    dispatch(_rx_frame);
   } else {
-    // [SIL-2] Type-safe error handling with etl::expected
-    if (_last_parse_error.has_value()) {
-      rpc::FrameError error = _last_parse_error.value();
-      if (error == rpc::FrameError::CRC_MISMATCH) {
-        BRIDGE_ATOMIC_BLOCK { _consecutive_crc_errors++; }
-        if (_consecutive_crc_errors >= BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS) {
-          // [SIL-2] Force Hardware Reset after persistent corruption
-          #if defined(ARDUINO_ARCH_AVR)
-            wdt_enable(kCrcFailResetWatchdogTimeout);
-            for (;;) {
-              // Wait for watchdog-triggered reset.
+    // [SIL-2] Streaming COBS Decoder (Zero-Copy parser)
+    BRIDGE_ATOMIC_BLOCK {
+      while (_stream.available() > 0) {
+        uint8_t byte = _stream.read();
+
+        if (byte == 0x00) {
+          if (_cobs.in_sync && _cobs.bytes_received >= 5 + rpc::CRC_TRAILER_SIZE) {
+            uint32_t calculated_crc = 0xFFFFFFFF;
+            for (uint16_t i = 0; i < _cobs.bytes_received - rpc::CRC_TRAILER_SIZE; ++i) {
+               calculated_crc ^= _cobs.buffer[i];
+               for (int j = 0; j < 8; ++j) {
+                   calculated_crc = (calculated_crc >> 1) ^ (0xEDB88320 & -(calculated_crc & 1));
+               }
             }
-          #elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-            ESP.restart();
-          #else
-            enterSafeState();
-          #endif
+            calculated_crc ^= 0xFFFFFFFF;
+            
+            uint32_t received_crc = rpc::read_u32_be(&_cobs.buffer[_cobs.bytes_received - rpc::CRC_TRAILER_SIZE]);
+            
+            if (calculated_crc == received_crc) {
+              _rx_frame.header.version = _cobs.buffer[0];
+              _rx_frame.header.payload_length = rpc::read_u16_be(&_cobs.buffer[1]);
+              _rx_frame.header.command_id = rpc::read_u16_be(&_cobs.buffer[3]);
+              _rx_frame.crc = received_crc;
+              
+              if (_rx_frame.header.version == rpc::PROTOCOL_VERSION &&
+                  _rx_frame.header.payload_length <= rpc::MAX_PAYLOAD_SIZE &&
+                  _cobs.bytes_received - 5 - rpc::CRC_TRAILER_SIZE == _rx_frame.header.payload_length) {
+                  
+                  if (_rx_frame.header.payload_length > 0) {
+                      etl::copy_n(&_cobs.buffer[5], _rx_frame.header.payload_length, _rx_frame.payload.begin());
+                  }
+                  _frame_received = true;
+                  _last_parse_error.reset();
+              } else {
+                 _last_parse_error = rpc::FrameError::MALFORMED;
+              }
+            } else {
+               _last_parse_error = rpc::FrameError::CRC_MISMATCH;
+            }
+          } else if (_cobs.in_sync && _cobs.bytes_received > 0) {
+             _last_parse_error = rpc::FrameError::MALFORMED;
+          }
+          
+          _cobs.bytes_received = 0;
+          _cobs.block_len = 0;
+          _cobs.in_sync = true;
+          _cobs.code_prev = 0;
+          
+          if (_frame_received || _last_parse_error.has_value()) {
+            break; // Yield to process frame/error
+          }
+          continue;
+        }
+
+        if (!_cobs.in_sync) continue;
+
+        if (_cobs.block_len == 0) {
+          _cobs.code = byte;
+          _cobs.block_len = byte - 1;
+          if (_cobs.bytes_received > 0 && _cobs.code_prev != 0xFF) {
+            if (_cobs.bytes_received < rpc::MAX_RAW_FRAME_SIZE) {
+              _cobs.buffer[_cobs.bytes_received++] = 0x00;
+            } else {
+              _cobs.in_sync = false;
+              _last_parse_error = rpc::FrameError::OVERFLOW;
+            }
+          }
+          _cobs.code_prev = _cobs.code;
+        } else {
+          if (_cobs.bytes_received < rpc::MAX_RAW_FRAME_SIZE) {
+            _cobs.buffer[_cobs.bytes_received++] = byte;
+            _cobs.block_len--;
+          } else {
+            _cobs.in_sync = false;
+            _last_parse_error = rpc::FrameError::OVERFLOW;
+          }
         }
       }
-      if (!_fsm.isUnsynchronized()) {
-        switch (error) {
-          case rpc::FrameError::CRC_MISMATCH:
-            _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, (const char*)nullptr);
-            break;
-          case rpc::FrameError::MALFORMED:
-            _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
-            break;
-          case rpc::FrameError::OVERFLOW:
-            _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
-            break;
-        }
-      }
-      _last_parse_error.reset();
     }
+  }
+
+  if (_frame_received) {
+    BRIDGE_ATOMIC_BLOCK { _consecutive_crc_errors = 0; }
+    _frame_received = false;
+    dispatch(_rx_frame);
+  } else if (_last_parse_error.has_value()) {
+    rpc::FrameError error = _last_parse_error.value();
+    if (error == rpc::FrameError::CRC_MISMATCH) {
+      BRIDGE_ATOMIC_BLOCK { _consecutive_crc_errors++; }
+      if (_consecutive_crc_errors >= BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS) {
+        #if defined(ARDUINO_ARCH_AVR)
+          wdt_enable(kCrcFailResetWatchdogTimeout);
+          for (;;) {}
+        #elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+          ESP.restart();
+        #else
+          enterSafeState();
+        #endif
+      }
+    }
+    if (!_fsm.isUnsynchronized()) {
+      switch (error) {
+        case rpc::FrameError::CRC_MISMATCH:
+          _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, (const char*)nullptr);
+          break;
+        case rpc::FrameError::MALFORMED:
+        case rpc::FrameError::OVERFLOW:
+          _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
+          break;
+      }
+    }
+    _last_parse_error.reset();
   }
 
   // [SIL-2] Centralized Scheduler Tick
@@ -919,7 +949,31 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, const uint8_t* arg_payload,
 #endif
     bridge::logging::log_traffic(*log_stream, "[SERIAL -> MCU]", "RAW", raw_buffer.data(), raw_len);
 #endif
-    _packetSerial.send(raw_buffer.data(), raw_len);
+    uint8_t code = 1;
+    uint8_t code_idx = 0;
+    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 3> cobs_buffer;
+    
+    size_t write_idx = 1; 
+    
+    for (size_t read_idx = 0; read_idx < raw_len; read_idx++) {
+        if (raw_buffer[read_idx] == 0) {
+            cobs_buffer[code_idx] = code;
+            code = 1;
+            code_idx = write_idx++;
+        } else {
+            cobs_buffer[write_idx++] = raw_buffer[read_idx];
+            code++;
+            if (code == 0xFF) {
+                cobs_buffer[code_idx] = code;
+                code = 1;
+                code_idx = write_idx++;
+            }
+        }
+    }
+    cobs_buffer[code_idx] = code;
+    cobs_buffer[write_idx++] = 0x00; 
+
+    _stream.write(cobs_buffer.data(), write_idx);
     flushStream();
   }
 }
@@ -1158,7 +1212,6 @@ void BridgeClass::enterSafeState() {
   _retry_count = 0;
   _clearPendingTxQueue();
   _frame_received = false;
-  _target_frame = nullptr;
   _last_command_id = 0;
   _rx_history.clear();
   _consecutive_crc_errors = 0;

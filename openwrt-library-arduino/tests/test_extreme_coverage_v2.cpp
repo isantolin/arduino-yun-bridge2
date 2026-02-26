@@ -40,12 +40,14 @@ namespace {
 class CaptureStream : public Stream {
 public:
     ByteBuffer<4096> tx;
+    ByteBuffer<4096> rx;
     size_t write(uint8_t c) override { tx.push(c); return 1; }
     size_t write(const uint8_t* b, size_t s) override { tx.append(b, s); return s; }
-    int available() override { return 0; }
-    int read() override { return -1; }
+    int available() override { return rx.remaining(); }
+    int read() override { return rx.read_byte(); }
     int peek() override { return -1; }
     void flush() override {}
+    void feed(const uint8_t* b, size_t s) { rx.append(b, s); }
 };
 
 void setup_env(CaptureStream& stream) {
@@ -108,7 +110,7 @@ void test_bridge_gaps() {
 
     // Gap: onPacketReceived with various errors
     uint8_t crc_err[] = {0x02, 0x00, 0x00, 0x40, 0x00, 0xDE, 0xAD, 0xBE, 0xEF}; 
-    Bridge.onPacketReceived(crc_err, sizeof(crc_err));
+    stream.feed(crc_err, sizeof(crc_err));
     Bridge.process(); 
 
     // Gap: Retransmission logic and failure streak

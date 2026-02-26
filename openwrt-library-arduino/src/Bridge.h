@@ -33,7 +33,6 @@
 
 #include <Arduino.h>
 #include <Stream.h>
-#include <PacketSerial.h>
 #include "etl/algorithm.h"
 #include "etl/observer.h"
 #include "hal/hal.h"
@@ -144,8 +143,6 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
   #define BRIDGE_DEFAULT_SERIAL_PORT Serial
 
 #endif
-
-using BridgePacketSerial = PacketSerial;
 
 #if defined(BRIDGE_HOST_TEST)
 namespace bridge {
@@ -266,9 +263,6 @@ class BridgeClass : public bridge::router::ICommandHandler,
                        const uint8_t* header, size_t header_len, 
                        const uint8_t* data, size_t data_len);
 
-  // Internal Callback Trampoline for PacketSerial
-  static void onPacketReceived(const uint8_t* buffer, size_t size);
-
  protected:
   // [SIL-2] Internal notification helper
   template<typename T>
@@ -279,14 +273,21 @@ class BridgeClass : public bridge::router::ICommandHandler,
  private:
   Stream& _stream;
   HardwareSerial* _hardware_serial;
-  BridgePacketSerial _packetSerial;
   
   etl::vector<uint8_t, 32> _shared_secret;
 
   // Protocol Engine
-  rpc::Frame* _target_frame;
+  // [SIL-2] Streaming COBS Decoder Zero-Copy State
+  struct CobsState {
+    uint16_t bytes_received;
+    uint8_t  block_len;
+    uint8_t  code;
+    uint8_t  code_prev;
+    bool     in_sync;
+    uint8_t  buffer[rpc::MAX_RAW_FRAME_SIZE];
+  } _cobs;
+  
   volatile bool _frame_received;
-  rpc::FrameParser _parser;
   rpc::Frame _rx_frame;
   etl::optional<rpc::FrameError> _last_parse_error;  // [SIL-2] Type-safe error tracking
   // State

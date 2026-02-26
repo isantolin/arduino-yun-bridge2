@@ -223,12 +223,18 @@ class BridgeDaemon:
         self,
         name: str,
         factory: Callable[[], Awaitable[None]],
-        fatal_exceptions: tuple[type[BaseException], ...] = ()
+        fatal_exceptions: tuple[type[BaseException], ...] = (),
+        max_restarts: int | None = None,
+        min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF,
+        max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
     ) -> None:
         """Lightweight supervisor for individual tasks using tenacity."""
+        stop = tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never
+
         retryer = tenacity.AsyncRetrying(
-            wait=tenacity.wait_exponential(multiplier=1, max=60),
-            retry=tenacity.retry_if_not_exception_type((asyncio.CancelledError,) + fatal_exceptions),
+            stop=stop,
+            wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
+            retry=tenacity.retry_if_exception_type(Exception) & tenacity.retry_if_not_exception_type(fatal_exceptions),
             reraise=True
         )
 
@@ -242,7 +248,14 @@ class BridgeDaemon:
 
     # Legacy compatibility methods for tests
     async def _supervise_task(self, spec: SupervisedTaskSpec) -> None:
-        await self._supervise(spec.name, spec.factory, spec.fatal_exceptions)
+        await self._supervise(
+            spec.name,
+            spec.factory,
+            spec.fatal_exceptions,
+            max_restarts=spec.max_restarts,
+            min_backoff=spec.min_backoff,
+            max_backoff=spec.max_backoff
+        )
 
     def _setup_supervision(self) -> list[SupervisedTaskSpec]:
         """Legacy helper for tests."""
@@ -252,6 +265,19 @@ class BridgeDaemon:
             SupervisedTaskSpec("status-writer", self._run_status_writer),
             SupervisedTaskSpec("metrics-publisher", self._run_metrics_publisher),
         ]
+
+        async def _dummy() -> None:
+            pass
+
+        if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
+            specs.append(SupervisedTaskSpec("bridge-snapshots", self._run_bridge_snapshots))
+
+        if self.config.watchdog_enabled:
+            specs.append(SupervisedTaskSpec("watchdog", _dummy))
+
+        if self.config.metrics_enabled:
+            specs.append(SupervisedTaskSpec("prometheus-exporter", _dummy))
+
         return specs
 
 

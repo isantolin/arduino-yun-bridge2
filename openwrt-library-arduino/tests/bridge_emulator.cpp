@@ -17,16 +17,8 @@ using namespace rpc;
 
 class HostSerialStream : public Stream {
 public:
-    size_t write(uint8_t c) override { 
-        size_t n = ::write(STDOUT_FILENO, &c, 1);
-        tcdrain(STDOUT_FILENO);
-        return n;
-    }
-    size_t write(const uint8_t* buffer, size_t size) override { 
-        size_t n = ::write(STDOUT_FILENO, buffer, size);
-        tcdrain(STDOUT_FILENO);
-        return n;
-    }
+    size_t write(uint8_t c) override { return ::write(STDOUT_FILENO, &c, 1); }
+    size_t write(const uint8_t* buffer, size_t size) override { return ::write(STDOUT_FILENO, buffer, size); }
     int available() override {
         struct pollfd fds;
         fds.fd = STDIN_FILENO;
@@ -39,7 +31,7 @@ public:
         return -1;
     }
     int peek() override { return -1; }
-    void flush() override { tcdrain(STDOUT_FILENO); }
+    void flush() override { fsync(STDOUT_FILENO); }
 };
 
 Stream* g_arduino_stream_delegate = nullptr;
@@ -56,20 +48,6 @@ unsigned long millis() {
 void delay(unsigned long ms) { usleep(ms * 1000); }
 
 int main() {
-    // Force NON-BLOCKING and RAW mode for absolute binary transparency
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-
-    struct termios t;
-    if (tcgetattr(STDIN_FILENO, &t) == 0) {
-        cfmakeraw(&t);
-        tcsetattr(STDIN_FILENO, TCSANOW, &t);
-    }
-    if (tcgetattr(STDOUT_FILENO, &t) == 0) {
-        cfmakeraw(&t);
-        tcsetattr(STDOUT_FILENO, TCSANOW, &t);
-    }
-
     setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
     g_arduino_stream_delegate = &HostSerial;
@@ -80,8 +58,7 @@ int main() {
 
     while (true) {
         Bridge.process();
-        struct timespec ts = {0, 100000}; // 100us
-        nanosleep(&ts, NULL);
+        usleep(100); 
     }
     return 0;
 }

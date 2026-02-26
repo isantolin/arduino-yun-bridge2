@@ -55,6 +55,7 @@ class PacketSerial {
 
  private:
   static size_t encode(const uint8_t* src, size_t len, uint8_t* dst) {
+    uint8_t* start = dst;
     uint8_t* code_ptr = dst++;
     uint8_t code = 1;
     for (size_t i = 0; i < len; ++i) {
@@ -72,7 +73,7 @@ class PacketSerial {
       }
     }
     *code_ptr = code;
-    return dst - (code_ptr - (code - 1));
+    return dst - start;
   }
 
   static size_t decode(const uint8_t* src, size_t len, uint8_t* dst) {

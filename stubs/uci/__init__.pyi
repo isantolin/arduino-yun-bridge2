@@ -1,11 +1,14 @@
 from typing import Any, Dict, Optional
 from types import TracebackType
 
+
 class UciException(Exception): ...
+
 
 class Uci:
     def __init__(self) -> None: ...
     def __enter__(self) -> "Uci": ...
+
     def __exit__(
         self,
         exc_type: Optional[type[BaseException]],

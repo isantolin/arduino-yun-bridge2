@@ -2,6 +2,7 @@ from transitions.core import MachineError
 
 import asyncio
 import errno
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
@@ -165,10 +166,15 @@ async def test_serial_protocol_log_frame_unknown():
     from mcubridge.protocol.frame import Frame
 
     frame = Frame(command_id=0xFFFF, payload=b"")
-    with patch("mcubridge.transport.serial.logger.debug") as mock_debug:
-        proto._log_frame(frame, "DIR")
-        # logger.debug("%s %s (no payload)", direction, cmd_name)
-        assert mock_debug.call_args[0][2] == "0xFFFF"
+    with patch("mcubridge.transport.serial.logger.log") as mock_log:
+        with patch("mcubridge.transport.serial.logger.isEnabledFor", return_value=True):
+            proto._log_frame(frame, "DIR")
+            # logger.log(level, "%s %s: %s", direction, label, hex)
+            assert mock_log.call_args[0][0] == logging.DEBUG
+            assert mock_log.call_args[0][1] == "%s %s: %s"
+            assert mock_log.call_args[0][2] == "DIR"
+            assert mock_log.call_args[0][3] == "0xFFFF"
+            assert mock_log.call_args[0][4] == "[]"
 
 
 @pytest.mark.asyncio

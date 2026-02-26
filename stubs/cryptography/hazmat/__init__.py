@@ -1,2 +1,1 @@
 """Hazmat namespace stub."""
-

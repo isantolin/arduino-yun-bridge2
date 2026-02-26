@@ -70,4 +70,3 @@ def generate_latest(registry: CollectorRegistry) -> bytes:
             elif isinstance(metric, InfoMetricFamily):
                 lines.extend(_emit_info(metric))
     return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
-

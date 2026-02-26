@@ -39,53 +39,48 @@ public:
         if (!_stream || len == 0) return 0;
         uint8_t encoded[1024];
         size_t n = encode(buffer, len, encoded);
-        _stream->write(encoded, n);
+        size_t w = _stream->write(encoded, n);
         _stream->write(static_cast<uint8_t>(0));
-        _stream->flush(); 
-        return n + 1;
+        _stream->flush();
+        return w + 1;
     }
 
 private:
-    static size_t encode(const uint8_t* input, size_t length, uint8_t* output) {
-        size_t read_index = 0;
-        size_t write_index = 1;
-        size_t code_index = 0;
+    static size_t encode(const uint8_t* src, size_t len, uint8_t* dst) {
+        uint8_t* start = dst;
+        uint8_t* code_ptr = dst++;
         uint8_t code = 1;
-
-        while (read_index < length) {
-            if (input[read_index] == 0) {
-                output[code_index] = code;
+        for (size_t i = 0; i < len; ++i) {
+            if (src[i] == 0) {
+                *code_ptr = code;
+                code_ptr = dst++;
                 code = 1;
-                code_index = write_index++;
-                read_index++;
             } else {
-                output[write_index++] = input[read_index++];
-                code++;
-                if (code == 0xFF) {
-                    output[code_index] = code;
+                *dst++ = src[i];
+                if (++code == 0xFF) {
+                    *code_ptr = code;
+                    code_ptr = dst++;
                     code = 1;
-                    code_index = write_index++;
                 }
             }
         }
-        output[code_index] = code;
-        return write_index;
+        *code_ptr = code;
+        return dst - start;
     }
 
-    static size_t decode(const uint8_t* input, size_t length, uint8_t* output) {
-        size_t read_index = 0;
-        size_t write_index = 0;
-        while (read_index < length) {
-            uint8_t code = input[read_index++];
-            for (uint8_t i = 1; i < code; i++) {
-                if (read_index >= length) return write_index;
-                output[write_index++] = input[read_index++];
+    static size_t decode(const uint8_t* src, size_t len, uint8_t* dst) {
+        const uint8_t* end = src + len;
+        uint8_t* out = dst;
+        while (src < end) {
+            uint8_t code = *src++;
+            if (code == 0) return 0;
+            for (uint8_t i = 1; i < code; ++i) {
+                if (src >= end) break;
+                *out++ = *src++;
             }
-            if (code < 0xFF && read_index < length) {
-                output[write_index++] = 0;
-            }
+            if (code < 0xFF && src < end) *out++ = 0;
         }
-        return write_index;
+        return out - dst;
     }
 
     Stream* _stream;

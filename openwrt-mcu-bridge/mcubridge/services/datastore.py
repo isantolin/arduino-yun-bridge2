@@ -196,11 +196,12 @@ class DatastoreComponent:
             else val_to_check
         )
 
-        await self._publish_value(
-            key,
-            val_bytes,
-            reply_context=inbound,
-        )
+        if is_request:
+            await self._publish_value(
+                key,
+                val_bytes,
+                reply_context=inbound,
+            )
 
     async def _publish_value(
         self,

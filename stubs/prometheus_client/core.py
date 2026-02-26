@@ -29,4 +29,3 @@ class InfoMetricFamily:
     def add_metric(self, labels: tuple[str, ...], value: dict[str, Any]) -> None:
         label_map = {key: labels[index] for index, key in enumerate(self.labels) if index < len(labels)}
         self.samples.append((label_map, value))
-

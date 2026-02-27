@@ -776,8 +776,8 @@ def test_security_gaps():
 
 def test_topics_gaps():
     """Cover gaps in topics.py."""
-    # _split_segments not path
-    assert topics._split_segments("") == ()
+    # split_topic_segments not path
+    assert topics.split_topic_segments("") == ()
 
     # topic_path cleaned False branch
     res = topics.topic_path("prefix", "topic", "", " ", "segment")

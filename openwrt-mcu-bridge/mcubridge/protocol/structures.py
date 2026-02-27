@@ -656,7 +656,13 @@ class SupervisorStats(msgspec.Struct):
     fatal: bool = False
 
     def as_snapshot(self) -> SupervisorSnapshot:
-        return msgspec.convert(self, SupervisorSnapshot)
+        return SupervisorSnapshot(
+            restarts=self.restarts,
+            last_failure_unix=self.last_failure_unix,
+            last_exception=self.last_exception,
+            backoff_seconds=self.backoff_seconds,
+            fatal=self.fatal,
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return msgspec.structs.asdict(self)
@@ -739,23 +745,23 @@ class McuCapabilities(msgspec.Struct):
     def as_dict(self) -> dict[str, Any]:
         """Convert to dictionary including expanded boolean flags."""
         res = msgspec.structs.asdict(self)
-        res.update(
-            {
-                "arch_name": self.arch_name,
-                "has_watchdog": self.has_watchdog,
-                "has_rle": self.has_rle,
-                "has_debug_frames": self.has_debug_frames,
-                "has_debug_io": self.has_debug_io,
-                "has_eeprom": self.has_eeprom,
-                "has_dac": self.has_dac,
-                "has_hw_serial1": self.has_hw_serial1,
-                "has_fpu": self.has_fpu,
-                "is_3v3_logic": self.is_3v3_logic,
-                "has_big_buffer": self.has_big_buffer,
-                "has_i2c": self.has_i2c,
-                "has_spi": self.has_spi,
-            }
+        # Dynamic expansion of @property flags for status reports
+        flags = (
+            "arch_name",
+            "has_watchdog",
+            "has_rle",
+            "has_debug_frames",
+            "has_debug_io",
+            "has_eeprom",
+            "has_dac",
+            "has_hw_serial1",
+            "has_fpu",
+            "is_3v3_logic",
+            "has_big_buffer",
+            "has_i2c",
+            "has_spi",
         )
+        res.update({f: getattr(self, f) for f in flags})
         return res
 
 
@@ -920,7 +926,13 @@ class SerialFlowStats(msgspec.Struct):
     last_event_unix: float = 0.0
 
     def as_snapshot(self) -> SerialFlowSnapshot:
-        return msgspec.convert(self, SerialFlowSnapshot)
+        return SerialFlowSnapshot(
+            commands_sent=self.commands_sent,
+            commands_acked=self.commands_acked,
+            retries=self.retries,
+            failures=self.failures,
+            last_event_unix=self.last_event_unix,
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return msgspec.structs.asdict(self)

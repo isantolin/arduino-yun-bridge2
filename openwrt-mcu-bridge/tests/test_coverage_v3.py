@@ -103,9 +103,12 @@ async def test_cleanup_child_processes_coverage():
 
 @pytest.mark.asyncio
 async def test_supervise_task_retry_error():
-    spec = daemon.SupervisedTaskSpec(
+    from types import SimpleNamespace
+
+    spec = SimpleNamespace(
         name="test-task",
         factory=AsyncMock(side_effect=RuntimeError("Fail")),
+        fatal_exceptions=(),
         max_restarts=0,
         min_backoff=0.01,
         max_backoff=0.02,
@@ -125,10 +128,15 @@ async def test_supervise_task_retry_error():
 
 @pytest.mark.asyncio
 async def test_supervise_task_telemetry_error_path():
-    spec = daemon.SupervisedTaskSpec(
+    from types import SimpleNamespace
+
+    spec = SimpleNamespace(
         name="test-task",
         factory=AsyncMock(side_effect=RuntimeError("Fail")),
+        fatal_exceptions=(),
         max_restarts=0,
+        min_backoff=0.01,
+        max_backoff=0.02,
     )
     d = daemon.BridgeDaemon(create_real_config())
 

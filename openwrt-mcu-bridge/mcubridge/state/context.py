@@ -610,7 +610,7 @@ class RuntimeState(msgspec.Struct):
         uptime_val = getattr(self.metrics.uptime_seconds, "_value", 0)
         uptime_num = uptime_val.get() if hasattr(uptime_val, "get") else float(uptime_val)  # type: ignore
         return {
-            "uptime_seconds": int(uptime_num),
+            "uptime_seconds": int(cast(float, uptime_num)),
             "is_connected": self.is_connected,
             "is_synchronized": self.is_synchronized,
             "mcu_paused": self.mcu_is_paused,

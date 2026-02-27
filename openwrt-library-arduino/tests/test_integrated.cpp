@@ -184,73 +184,51 @@ void integrated_test_error_branches() {
   TEST_ASSERT(rpc::security::run_cryptographic_self_tests());
 }
 
-// Static callbacks for extreme coverage test
-static void test_ds_cb(etl::string_view k, etl::span<const uint8_t> v) {
-  (void)k;
-  (void)v;
-}
-static void test_fs_cb(const uint8_t* d, uint16_t l) {
-  (void)d;
-  (void)l;
-}
-static void test_pr_run_cb(rpc::StatusCode s, const uint8_t* out, uint16_t ol,
-                           const uint8_t* err, uint16_t el) {
-  (void)s;
-  (void)out;
-  (void)ol;
-  (void)err;
-  (void)el;
-}
-static void test_pr_poll_cb(rpc::StatusCode s, uint8_t ec, const uint8_t* out,
-                            uint16_t ol, const uint8_t* err, uint16_t el) {
-  (void)s;
-  (void)ec;
-  (void)out;
-  (void)ol;
-  (void)err;
-  (void)el;
-}
-static void test_pr_async_cb(int16_t p) { (void)p; }
-static void test_mb_cb(const uint8_t* m, uint16_t l) {
-  (void)m;
-  (void)l;
-}
-static void test_mb_avail_cb(uint16_t c) { (void)c; }
-static void test_dig_cb(uint8_t v) { (void)v; }
-static void test_ana_cb(uint16_t v) { (void)v; }
-static void test_mem_cb(uint16_t v) { (void)v; }
-static void test_status_cb(rpc::StatusCode s, const uint8_t* p, uint16_t l) {
-  (void)s;
-  (void)p;
-  (void)l;
-}
-
-void integrated_test_extreme_coverage() {
-  auto accessor = bridge::test::TestAccessor::create(Bridge);
-
-// ... (rest of function omitted for brevity) ...
-
 // 20. Callbacks
 #if BRIDGE_ENABLE_DATASTORE
   DataStore.onDataStoreGetResponse(
-      DataStoreClass::DataStoreGetHandler::create<test_ds_cb>());
+      DataStoreClass::DataStoreGetHandler::create([](etl::string_view k, etl::span<const uint8_t> v) {
+        (void)k;
+        (void)v;
+      }));
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
   FileSystem.onFileSystemReadResponse(
-      FileSystemClass::FileSystemReadHandler::create<test_fs_cb>());
+      FileSystemClass::FileSystemReadHandler::create([](const uint8_t* d, uint16_t l) {
+        (void)d;
+        (void)l;
+      }));
 #endif
 #if BRIDGE_ENABLE_PROCESS
   Process.onProcessRunResponse(
-      ProcessClass::ProcessRunHandler::create<test_pr_run_cb>());
+      ProcessClass::ProcessRunHandler::create([](rpc::StatusCode s, const uint8_t* out, uint16_t ol,
+                                                 const uint8_t* err, uint16_t el) {
+        (void)s;
+        (void)out;
+        (void)ol;
+        (void)err;
+        (void)el;
+      }));
   Process.onProcessPollResponse(
-      ProcessClass::ProcessPollHandler::create<test_pr_poll_cb>());
+      ProcessClass::ProcessPollHandler::create([](rpc::StatusCode s, uint8_t ec, const uint8_t* out,
+                                                  uint16_t ol, const uint8_t* err, uint16_t el) {
+        (void)s;
+        (void)ec;
+        (void)out;
+        (void)ol;
+        (void)err;
+        (void)el;
+      }));
   Process.onProcessRunAsyncResponse(
-      ProcessClass::ProcessRunAsyncHandler::create<test_pr_async_cb>());
+      ProcessClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create<test_mb_cb>());
+  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create([](const uint8_t* m, uint16_t l) {
+    (void)m;
+    (void)l;
+  }));
   Mailbox.onMailboxAvailableResponse(
-      MailboxClass::MailboxAvailableHandler::create<test_mb_avail_cb>());
+      MailboxClass::MailboxAvailableHandler::create([](uint16_t c) { (void)c; }));
 #endif
 }
 

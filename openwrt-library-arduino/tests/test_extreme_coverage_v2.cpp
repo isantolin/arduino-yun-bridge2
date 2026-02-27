@@ -167,11 +167,6 @@ void test_console_gaps() {
   Console.flush();
 }
 
-static void file_system_read_trampoline(const uint8_t* d, uint16_t s) {
-  (void)d;
-  (void)s;
-}
-
 // --- COBERTURA FILESYSTEM.CPP ---
 void test_filesystem_gaps() {
   CaptureStream stream;
@@ -195,8 +190,10 @@ void test_filesystem_gaps() {
 
   // Gap: handleResponse with valid read handler
   FileSystem.onFileSystemReadResponse(
-      FileSystemClass::FileSystemReadHandler::create<
-          file_system_read_trampoline>());
+      FileSystemClass::FileSystemReadHandler::create([](const uint8_t* d, uint16_t s) {
+        (void)d;
+        (void)s;
+      }));
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);
   f.header.payload_length = 4;

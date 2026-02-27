@@ -97,9 +97,7 @@ async def test_process_finalize_async_process_fsm_fail():
     slot.trigger = MagicMock(side_effect=MachineError("FSM Fail"))
     state.running_processes = {123: slot}
 
-    with patch.object(
-        comp, "_drain_process_pipes", new_callable=AsyncMock, return_value=(b"", b"")
-    ):
+    with patch.object(comp, "_drain_process_pipes", new_callable=AsyncMock, return_value=(b"", b"")):
         await comp._finalize_async_process(123, MagicMock())
 
 
@@ -147,7 +145,9 @@ async def test_serial_protocol_async_process_parse_error_crc():
 @pytest.mark.asyncio
 async def test_serial_protocol_async_process_os_error():
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
-    with (patch("cobs.cobs.decode", side_effect=OSError("Disk full")),):
+    with (
+        patch("cobs.cobs.decode", side_effect=OSError("Disk full")),
+    ):
         await proto._async_process_packet(b"encoded")
         proto.state.record_serial_decode_error.assert_called_once()
 
@@ -155,7 +155,9 @@ async def test_serial_protocol_async_process_os_error():
 @pytest.mark.asyncio
 async def test_serial_protocol_async_process_runtime_error():
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
-    with (patch("cobs.cobs.decode", side_effect=RuntimeError("Bug")),):
+    with (
+        patch("cobs.cobs.decode", side_effect=RuntimeError("Bug")),
+    ):
         await proto._async_process_packet(b"encoded")
         proto.state.record_serial_decode_error.assert_called_once()
 

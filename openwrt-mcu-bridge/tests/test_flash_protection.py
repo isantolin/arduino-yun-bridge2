@@ -26,9 +26,7 @@ class TestFlashProtection(unittest.TestCase):
                 "mqtt_tls": True,
             }
         )
-        with patch(
-            "mcubridge.config.settings.get_uci_config", return_value=unsafe_conf
-        ):
+        with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
             # load_runtime_config catches ValidationError and returns defaults
             config = load_runtime_config()
             self.assertEqual(config.file_system_root, const.DEFAULT_FILE_SYSTEM_ROOT)
@@ -53,9 +51,7 @@ class TestFlashProtection(unittest.TestCase):
                 "mqtt_tls": True,
             }
         )
-        with patch(
-            "mcubridge.config.settings.get_uci_config", return_value=unsafe_conf
-        ):
+        with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
             config = load_runtime_config()
             self.assertEqual(config.mqtt_spool_dir, const.DEFAULT_MQTT_SPOOL_DIR)
 
@@ -78,9 +74,7 @@ class TestFlashProtection(unittest.TestCase):
                 "mqtt_tls": True,
             }
         )
-        with patch(
-            "mcubridge.config.settings.get_uci_config", return_value=unsafe_conf
-        ):
+        with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
             config = load_runtime_config()
             self.assertEqual(config.file_system_root, "/etc/custom")
 

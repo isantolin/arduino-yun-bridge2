@@ -19,12 +19,7 @@ from mcubridge.protocol import protocol
 
 
 def _load_pin_rest_cgi() -> ModuleType:
-    script_path = (
-        Path(__file__).resolve().parents[2]
-        / "openwrt-mcu-core"
-        / "scripts"
-        / "pin_rest_cgi.py"
-    )
+    script_path = Path(__file__).resolve().parents[2] / "openwrt-mcu-core" / "scripts" / "pin_rest_cgi.py"
     spec = importlib.util.spec_from_file_location("pin_rest_cgi", script_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load pin_rest_cgi script")
@@ -101,9 +96,7 @@ def test_publish_safe_configures_tls(
 
     import ssl
 
-    monkeypatch.setattr(
-        ssl, "create_default_context", lambda *args, **kwargs: MagicMock()
-    )
+    monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: MagicMock())
 
     runtime_config.mqtt_user = "user"
     runtime_config.mqtt_pass = "secret"
@@ -163,12 +156,12 @@ def test_main_invokes_publish(
 
     captured: dict[str, Any] = {}
 
-    def _fake_publish(topic: str, payload: str, config: Any) -> None:
-        captured["topic"] = topic
-        captured["payload"] = payload
-
     monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: fake_config)
-    monkeypatch.setattr(pin_rest_module, "publish_safe", _fake_publish)
+    monkeypatch.setattr(
+        pin_rest_module,
+        "publish_safe",
+        lambda topic, payload, config: captured.update({"topic": topic, "payload": payload}),
+    )
     monkeypatch.setattr(pin_rest_module, "configure_logging", lambda config: None)
 
     environ = {

@@ -30,9 +30,7 @@ if "serial_asyncio_fast" not in sys.modules:
 
     mock_saf = MagicMock()
     # Default return value is a tuple of mocks to satisfy 'transport, proto = await ...'
-    mock_saf.create_serial_connection = AsyncMock(
-        return_value=(MagicMock(), MagicMock())
-    )
+    mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
     sys.modules["serial_asyncio_fast"] = mock_saf
 
 import pytest
@@ -83,9 +81,7 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        kwargs = {
-            name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames
-        }
+        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
         loop.run_until_complete(test_function(**kwargs))
     finally:
         try:
@@ -166,12 +162,9 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     Settings are UCI-only, so we inject a deterministic UCI payload for tests.
     """
 
-    def _test_uci_config() -> dict[str, str]:
-        config = common.get_default_config()
-        config["serial_shared_secret"] = "s_e_c_r_e_t_mock"
-        return config
-
-    monkeypatch.setattr(settings, "get_uci_config", _test_uci_config)
+    monkeypatch.setattr(
+        settings, "get_uci_config", lambda: {**common.get_default_config(), "serial_shared_secret": "s_e_c_r_e_t_mock"}
+    )
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]

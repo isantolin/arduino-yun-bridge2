@@ -358,9 +358,7 @@ async def test_process_run_sync_timeout_coverage():
         patch.object(comp, "_consume_stream", new_callable=AsyncMock),
         patch.object(comp, "_terminate_process_tree", new_callable=AsyncMock),
     ):
-        status, stdout, stderr, exit_code = await comp.run_sync(
-            "sleep 10", ["sleep", "10"]
-        )
+        status, stdout, stderr, exit_code = await comp.run_sync("sleep 10", ["sleep", "10"])
         assert status == Status.TIMEOUT.value
 
 
@@ -538,9 +536,7 @@ async def test_serial_transport_run_fatal():
 
     from mcubridge.services.handshake import SerialHandshakeFatal
 
-    with patch.object(
-        transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal")
-    ):
+    with patch.object(transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal")):
         with pytest.raises(SerialHandshakeFatal):
             await transport.run()
 

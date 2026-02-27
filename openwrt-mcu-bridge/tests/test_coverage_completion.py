@@ -76,9 +76,7 @@ async def test_runtime_service_edge_cases(real_config, runtime_state):
     msg = MagicMock()
     msg.topic = "br/d/13/write"
     msg.payload = b"invalid"
-    with patch.object(
-        service._dispatcher, "dispatch_mqtt_message", side_effect=ValueError("Boom")
-    ):
+    with patch.object(service._dispatcher, "dispatch_mqtt_message", side_effect=ValueError("Boom")):
         await service.handle_mqtt_message(msg)
 
 
@@ -116,23 +114,15 @@ async def test_daemon_supervision_logic(real_config):
 @pytest.mark.asyncio
 async def test_metrics_emit_errors(runtime_state):
     enqueue = AsyncMock()
-    with patch(
-        "mcubridge.metrics._emit_bridge_snapshot", side_effect=TypeError("Fail")
-    ):
+    with patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=TypeError("Fail")):
         with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
-                await metrics._bridge_snapshot_loop(
-                    runtime_state, enqueue, flavor="summary", seconds=1
-                )
+                await metrics._bridge_snapshot_loop(runtime_state, enqueue, flavor="summary", seconds=1)
 
-    with patch(
-        "mcubridge.metrics._emit_bridge_snapshot", side_effect=AttributeError("Fatal")
-    ):
+    with patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=AttributeError("Fatal")):
         with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
-                await metrics._bridge_snapshot_loop(
-                    runtime_state, enqueue, flavor="summary", seconds=1
-                )
+                await metrics._bridge_snapshot_loop(runtime_state, enqueue, flavor="summary", seconds=1)
 
 
 @pytest.mark.asyncio

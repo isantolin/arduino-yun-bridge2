@@ -147,24 +147,21 @@ def test_load_runtime_config_falls_back_to_defaults(
 
 
 def test_get_uci_config_flattens_nested_structures(monkeypatch: pytest.MonkeyPatch):
-    # Mock UCI result with list of values (e.g. allowed_commands)
-    def _uci_mock() -> dict[str, Any]:
-        return {
+    monkeypatch.setattr(
+        settings,
+        "get_uci_config",
+        lambda: {
             "allowed_commands": ["ls", "uptime"],
             "mqtt_topic": "br",
-        }
-
-    monkeypatch.setattr(settings, "get_uci_config", _uci_mock)
+        },
+    )
     raw, _ = settings._load_raw_config()
     assert raw["allowed_commands"] == ["ls", "uptime"]
 
 
 def test_get_uci_config_handles_value_wrappers(monkeypatch: pytest.MonkeyPatch):
     # Mocking UCI internal list handling
-    def _uci_mock() -> dict[str, Any]:
-        return {"debug": "1"}
-
-    monkeypatch.setattr(settings, "get_uci_config", _uci_mock)
+    monkeypatch.setattr(settings, "get_uci_config", lambda: {"debug": "1"})
     config = settings.load_runtime_config()
     assert config.debug_logging is True
 

@@ -146,9 +146,7 @@ async def test_handle_kill_with_process_lookup_error() -> None:
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    with patch.object(
-        ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
-    ) as mock_term:
+    with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
         mock_term.side_effect = ProcessLookupError("already gone")
 
         result = await process_component.handle_kill(
@@ -185,9 +183,7 @@ async def test_handle_kill_with_process_lookup_error() -> None:
         async with process_component.state.process_lock:
             process_component.state.running_processes[pid] = slot
 
-        with patch.object(
-            ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
-        ) as mock_term:
+        with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
             mock_term.side_effect = RuntimeError("unexpected")
 
             with pytest.raises(RuntimeError, match="unexpected"):
@@ -261,13 +257,9 @@ async def test_monitor_async_process_exception(
         process_component: ProcessComponent,
     ) -> None:
         """Cover unexpected exception branch in start_async."""
-        with patch.object(
-            ProcessComponent, "_allocate_pid", new_callable=AsyncMock
-        ) as mock_alloc:
+        with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
             mock_alloc.return_value = 123
-            with patch(
-                "asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")
-            ):
+            with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
                 pid = await process_component.start_async("/bin/true", [])
                 assert pid == protocol.INVALID_ID_SENTINEL
 

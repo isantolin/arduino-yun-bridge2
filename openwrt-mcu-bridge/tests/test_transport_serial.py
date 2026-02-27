@@ -3,9 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 # Mock serial_asyncio_fast before importing SerialTransport
 mock_serial_fast = MagicMock()
-mock_serial_fast.create_serial_connection = AsyncMock(
-    return_value=(MagicMock(), MagicMock())
-)
+mock_serial_fast.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
 sys.modules["serial_asyncio_fast"] = mock_serial_fast
 
 import asyncio  # noqa: E402
@@ -45,10 +43,7 @@ def test_is_binary_packet_valid_size() -> None:
     assert serial_fast._is_binary_packet(b"abc") is True
     assert serial_fast._is_binary_packet(bytearray(b"abc")) is True
     assert serial_fast._is_binary_packet(b"") is False
-    assert (
-        serial_fast._is_binary_packet(b"a" * (serial_fast.MAX_SERIAL_PACKET_BYTES + 1))
-        is False
-    )
+    assert serial_fast._is_binary_packet(b"a" * (serial_fast.MAX_SERIAL_PACKET_BYTES + 1)) is False
 
 
 @pytest.mark.asyncio
@@ -102,9 +97,7 @@ async def test_process_packet_success_dispatches(
     proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
     await proto._async_process_packet(b"encoded")
 
-    service.handle_mcu_frame.assert_awaited_once_with(
-        Command.CMD_CONSOLE_WRITE.value, b"hi"
-    )
+    service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"hi")
 
 
 @pytest.mark.asyncio

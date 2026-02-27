@@ -70,9 +70,7 @@ async def test_serial_protocol_async_process_compressed() -> None:
         service = MagicMock()
         transport = SerialTransport(config, state, service)
 
-        with patch.object(
-            transport, "_blocking_reset", side_effect=RuntimeError("dtr fail")
-        ):
+        with patch.object(transport, "_blocking_reset", side_effect=RuntimeError("dtr fail")):
             # Should log and continue
             await transport._toggle_dtr(asyncio.get_running_loop())
 

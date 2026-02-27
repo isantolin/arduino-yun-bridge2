@@ -60,17 +60,10 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
     key = b"key1"
     value = b"value1"
     # Payload: key_len (1 byte) + key + value_len (1 byte) + value
-    payload = (
-        structures.UINT8_STRUCT.build(len(key))
-        + key
-        + structures.UINT8_STRUCT.build(len(value))
-        + value
-    )
+    payload = structures.UINT8_STRUCT.build(len(key)) + key + structures.UINT8_STRUCT.build(len(value)) + value
 
     # Mock _publish_value
-    with patch.object(
-        datastore_component, "_publish_value", new_callable=AsyncMock
-    ) as mock_pub:
+    with patch.object(datastore_component, "_publish_value", new_callable=AsyncMock) as mock_pub:
         result = await datastore_component.handle_put(payload)
 
         assert result is True

@@ -135,9 +135,7 @@ async def test_file_write_with_quota_flash_safety_fail(state):
 async def test_file_scan_directory_size_errors(tmp_path):
     res = FileComponent._scan_directory_size(tmp_path / "non_existent")
     assert res == 0
-    with patch(
-        "mcubridge.services.file.scandir", side_effect=OSError("Permission denied")
-    ):
+    with patch("mcubridge.services.file.scandir", side_effect=OSError("Permission denied")):
         res = FileComponent._scan_directory_size(tmp_path)
         assert res == 0
 
@@ -154,18 +152,14 @@ async def test_file_get_base_dir_create_fail(state):
 @pytest.mark.asyncio
 async def test_file_handle_mqtt_read_fail(state):
     comp = FileComponent(create_real_config(), state, MagicMock())
-    with patch.object(
-        comp, "_perform_file_operation", return_value=(False, None, "read_fail")
-    ):
+    with patch.object(comp, "_perform_file_operation", return_value=(False, None, "read_fail")):
         await comp._handle_mqtt_read("file", None, {})
 
 
 @pytest.mark.asyncio
 async def test_file_handle_mqtt_remove_fail(state):
     comp = FileComponent(create_real_config(), state, MagicMock())
-    with patch.object(
-        comp, "_perform_file_operation", return_value=(False, None, "remove_fail")
-    ):
+    with patch.object(comp, "_perform_file_operation", return_value=(False, None, "remove_fail")):
         await comp._handle_mqtt_remove("file", {})
 
 
@@ -178,9 +172,7 @@ async def test_metrics_emit_bridge_snapshot_attr_error():
     fake_state.build_bridge_snapshot.side_effect = AttributeError("Missing")
     await metrics._emit_bridge_snapshot(fake_state, AsyncMock(), flavor="summary")
 
-
-# --- Serial Booster ---
-
+    # --- Serial Booster ---
 
     @pytest.mark.asyncio
     async def test_serial_protocol_log_frame_no_payload():
@@ -189,6 +181,7 @@ async def test_metrics_emit_bridge_snapshot_attr_error():
 
         frame = Frame(command_id=Command.CMD_GET_VERSION.value, payload=b"")
         import logging
+
         with patch("mcubridge.transport.serial.logger.log") as mock_log:
             with patch("mcubridge.transport.serial.logger.isEnabledFor", return_value=True):
                 proto._log_frame(frame, "DIR")
@@ -197,6 +190,7 @@ async def test_metrics_emit_bridge_snapshot_attr_error():
                 assert mock_log.call_args[0][2] == "DIR"
                 assert mock_log.call_args[0][3] == "CMD_GET_VERSION"
                 assert mock_log.call_args[0][4] == "[]"
+
 
 @pytest.mark.asyncio
 async def test_serial_transport_blocking_reset_errors():
@@ -356,8 +350,6 @@ def test_handshake_timing_seconds():
     tw = SerialTimingWindow(ack_timeout_ms=100, response_timeout_ms=500, retry_limit=3)
     assert tw.ack_timeout_seconds == 0.1
     assert tw.response_timeout_seconds == 0.5
-
-
 
 
 @pytest.mark.asyncio

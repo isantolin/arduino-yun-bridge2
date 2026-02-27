@@ -43,9 +43,7 @@ async def test_handshake_link_reset_retry() -> None:
 @pytest.mark.asyncio
 async def test_handshake_sync_resp_rate_limit() -> None:
     """Test rate limiting in handle_link_sync_resp."""
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234", serial_handshake_min_interval=10.0
-    )
+    config = RuntimeConfig(serial_shared_secret=b"secret_1234", serial_handshake_min_interval=10.0)
     state = create_runtime_state(config)
     timing = derive_serial_timing(config)
     manager = SerialHandshakeManager(
@@ -59,9 +57,7 @@ async def test_handshake_sync_resp_rate_limit() -> None:
     state.link_handshake_nonce = b"A" * 16
     state.handshake_rate_limit_until = time.monotonic() + 5.0
     assert await manager.handle_link_sync_resp(b"A" * 32) is False
-    manager._acknowledge_frame.assert_called_with(
-        Command.CMD_LINK_SYNC_RESP.value, status=Status.MALFORMED, extra=ANY
-    )
+    manager._acknowledge_frame.assert_called_with(Command.CMD_LINK_SYNC_RESP.value, status=Status.MALFORMED, extra=ANY)
 
 
 @pytest.mark.asyncio
@@ -83,13 +79,8 @@ async def test_handshake_sync_resp_replay_detected() -> None:
     state.link_expected_tag = manager.compute_handshake_tag(nonce)
 
     # Mock validate_nonce_counter to fail (replay)
-    with patch(
-        "mcubridge.services.handshake.validate_nonce_counter", return_value=(False, 0)
-    ):
-        assert (
-            await manager.handle_link_sync_resp(nonce + state.link_expected_tag)
-            is False
-        )
+    with patch("mcubridge.services.handshake.validate_nonce_counter", return_value=(False, 0)):
+        assert await manager.handle_link_sync_resp(nonce + state.link_expected_tag) is False
 
 
 @pytest.mark.asyncio
@@ -144,9 +135,7 @@ async def test_handshake_handle_capabilities_resp() -> None:
 @pytest.mark.asyncio
 async def test_handshake_failure_detail_non_immediate() -> None:
     """Test handle_handshake_failure with streak-based fatal reason."""
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234", serial_handshake_fatal_failures=2
-    )
+    config = RuntimeConfig(serial_shared_secret=b"secret_1234", serial_handshake_fatal_failures=2)
     state = create_runtime_state(config)
     timing = derive_serial_timing(config)
     manager = SerialHandshakeManager(

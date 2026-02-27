@@ -17,9 +17,7 @@ def test_frame_parse_coverage_all_errors():
         mp.setattr(protocol, "MIN_FRAME_SIZE", 5)
         # raw_frame_buffer must be >= 5 but < 9
         # Construct will fail to read payload/crc
-        with pytest.raises(
-            ValueError, match="(Incomplete header|Frame parsing failed)"
-        ):
+        with pytest.raises(ValueError, match="(Incomplete header|Frame parsing failed)"):
             Frame.parse(b"1234567")
 
     # Line 125: CRC Mismatch
@@ -31,9 +29,7 @@ def test_frame_parse_coverage_all_errors():
         Frame.parse(bad_crc_frame)
 
     # Line 140: Invalid version
-    bad_ver = structures.CRC_COVERED_HEADER_STRUCT.build(
-        dict(version=255, payload_len=0, command_id=0x40)
-    )
+    bad_ver = structures.CRC_COVERED_HEADER_STRUCT.build(dict(version=255, payload_len=0, command_id=0x40))
     with pytest.raises(ValueError, match="Invalid version"):
         Frame.parse(_build_raw_with_crc(bad_ver))
 

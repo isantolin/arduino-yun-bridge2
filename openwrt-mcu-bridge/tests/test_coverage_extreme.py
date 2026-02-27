@@ -28,8 +28,6 @@ from mcubridge.transport.mqtt import MqttTransport  # noqa: E402
 # --- DAEMON TESTS (Refactored) ---
 
 
-
-
 @pytest.mark.asyncio
 async def test_daemon_run_lifecycle():
     """Prueba el ciclo de vida completo de run() sin bloquear."""
@@ -47,9 +45,7 @@ async def test_daemon_run_lifecycle():
     with (
         patch("mcubridge.daemon.create_runtime_state"),
         patch("mcubridge.daemon.BridgeService") as MockService,
-        patch.object(
-            BridgeDaemon, "_supervise", new_callable=AsyncMock
-        ) as mock_supervise,
+        patch.object(BridgeDaemon, "_supervise", new_callable=AsyncMock) as mock_supervise,
     ):
         # Hacer que supervise retorne inmediatamente para no bloquear
         mock_supervise.return_value = None
@@ -89,9 +85,7 @@ async def test_serial_read_loop_corruption_and_recovery(caplog):
     proto = BridgeSerialProtocol(mock_service, mock_state, asyncio.get_running_loop())
 
     # Data stream: [Valid] [Corrupt] [Huge] [Noise]
-    valid_frame = (
-        cobs.encode(Frame.build(Command.CMD_GET_VERSION, b"")) + FRAME_DELIMITER
-    )
+    valid_frame = cobs.encode(Frame.build(Command.CMD_GET_VERSION, b"")) + FRAME_DELIMITER
     bad_cobs = bytes([5, UINT8_MASK, UINT8_MASK]) + FRAME_DELIMITER
     huge_chunk = b"A" * 300 + FRAME_DELIMITER
     TEST_PAYLOAD_BYTE = 0xAA
@@ -178,9 +172,7 @@ async def test_mqtt_publisher_loop_error_handling():
     mock_state.flush_mqtt_spool = AsyncMock()
 
     mock_client = MagicMock()
-    mock_client.publish = AsyncMock(
-        side_effect=[aiomqtt.MqttError("Pub failed"), asyncio.CancelledError("Stop")]
-    )
+    mock_client.publish = AsyncMock(side_effect=[aiomqtt.MqttError("Pub failed"), asyncio.CancelledError("Stop")])
     mock_client.subscribe = AsyncMock()
 
     mock_ctx = MagicMock()
@@ -198,9 +190,7 @@ async def test_mqtt_publisher_loop_error_handling():
 
     with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_ctx):
         with patch("asyncio.TaskGroup", return_value=tg_mock):
-            task = asyncio.create_task(
-                MqttTransport(mock_config, mock_state, AsyncMock()).run()
-            )
+            task = asyncio.create_task(MqttTransport(mock_config, mock_state, AsyncMock()).run())
             await asyncio.sleep(0.01)
             task.cancel()
             try:

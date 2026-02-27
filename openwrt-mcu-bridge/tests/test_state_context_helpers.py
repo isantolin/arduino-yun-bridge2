@@ -54,9 +54,7 @@ def test_trim_process_buffers_drains_and_reports_truncation() -> None:
     stdout = bytearray(b"012345")
     stderr = bytearray(b"abcdef")
 
-    out, err, trunc_out, trunc_err = context._trim_process_buffers(
-        stdout, stderr, budget=5
-    )
+    out, err, trunc_out, trunc_err = context._trim_process_buffers(stdout, stderr, budget=5)
 
     assert out == b"01234"
     assert err == b""
@@ -64,9 +62,7 @@ def test_trim_process_buffers_drains_and_reports_truncation() -> None:
     assert trunc_err is True
 
     # Drain remaining
-    out2, err2, trunc_out2, trunc_err2 = context._trim_process_buffers(
-        stdout, stderr, budget=100
-    )
+    out2, err2, trunc_out2, trunc_err2 = context._trim_process_buffers(stdout, stderr, budget=100)
     assert out2 == b"5"
     assert err2 == b"abcdef"
     assert trunc_out2 is False

@@ -47,9 +47,7 @@ class DummyContext(BridgeContext):
         self.sent_frames.append((command_id, payload))
         return True
 
-    async def publish(
-        self, topic: str, payload: bytes, qos: int = 0, retain: bool = False, **kwargs
-    ) -> None:
+    async def publish(self, topic: str, payload: bytes, qos: int = 0, retain: bool = False, **kwargs) -> None:
         self.published.append((topic, payload, qos, retain))
 
     async def schedule_background(self, coro, name=None) -> None:
@@ -73,9 +71,7 @@ def test_request_mcu_version_resets_cached_version(runtime_config, runtime_state
     _run(_coro())
 
 
-def test_handle_get_free_memory_resp_publishes_with_pending_reply(
-    runtime_config, runtime_state
-):
+def test_handle_get_free_memory_resp_publishes_with_pending_reply(runtime_config, runtime_state):
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
@@ -111,9 +107,7 @@ def test_handle_get_free_memory_resp_ignores_malformed(runtime_config, runtime_s
     _run(_coro())
 
 
-def test_handle_get_version_resp_publishes_pending_and_updates_state(
-    runtime_config, runtime_state
-):
+def test_handle_get_version_resp_publishes_pending_and_updates_state(runtime_config, runtime_state):
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
@@ -151,8 +145,7 @@ def test_handle_get_version_resp_malformed(
         assert runtime_state.mcu_version is None
         assert not ctx.published
         assert any(
-            "Malformed GET_VERSION_RESP" in message
-            for message in (record.getMessage() for record in caplog.records)
+            "Malformed GET_VERSION_RESP" in message for message in (record.getMessage() for record in caplog.records)
         )
 
     _run(_coro())

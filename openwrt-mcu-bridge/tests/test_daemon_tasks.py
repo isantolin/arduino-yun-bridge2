@@ -33,9 +33,7 @@ async def test_serial_reader_task_processes_frame(
     service = MockSerialService(runtime_config, state)
 
     payload = bytes([protocol.DIGITAL_HIGH])
-    frame = Frame(
-        command_id=Command.CMD_DIGITAL_READ_RESP.value, payload=payload
-    ).to_bytes()
+    frame = Frame(command_id=Command.CMD_DIGITAL_READ_RESP.value, payload=payload).to_bytes()
     encoded = cobs.encode(frame) + FRAME_DELIMITER
 
     # Mock Transport/Protocol
@@ -265,9 +263,7 @@ async def test_mqtt_task_handles_incoming_message(
 
     runtime_config.mqtt_tls = False
 
-    task = asyncio.create_task(
-        MqttTransport(runtime_config, state, cast(Any, service)).run()
-    )
+    task = asyncio.create_task(MqttTransport(runtime_config, state, cast(Any, service)).run())
 
     await asyncio.wait_for(service.handled.wait(), timeout=1)
 

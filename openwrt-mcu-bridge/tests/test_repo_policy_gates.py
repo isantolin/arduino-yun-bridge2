@@ -77,9 +77,7 @@ def _iter_text_files(root: Path, patterns: tuple[str, ...]) -> list[Path]:
     return sorted(set(matched))
 
 
-def _find_matches(
-    files: list[Path], regex: re.Pattern[str]
-) -> list[tuple[Path, int, str]]:
+def _find_matches(files: list[Path], regex: re.Pattern[str]) -> list[tuple[Path, int, str]]:
     hits: list[tuple[Path, int, str]] = []
     for path in files:
         try:
@@ -167,9 +165,7 @@ def _find_shadowing_and_scope_escapes(
             if not name or name in always_allowed:
                 return
             if name in self.imported_names:
-                hits.append(
-                    (path, lineno, f"shadowing imported name '{name}' via {context}")
-                )
+                hits.append((path, lineno, f"shadowing imported name '{name}' via {context}"))
 
         def _check_target(self, target: ast.AST, lineno: int, context: str) -> None:
             if isinstance(target, ast.Name):
@@ -188,11 +184,7 @@ def _find_shadowing_and_scope_escapes(
             self.generic_visit(node)
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
-            for arg in (
-                list(node.args.posonlyargs)
-                + list(node.args.args)
-                + list(node.args.kwonlyargs)
-            ):
+            for arg in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
                 self._check_name(arg.arg, arg.lineno or node.lineno, "argument")
             if node.args.vararg is not None:
                 self._check_name(node.args.vararg.arg, node.lineno, "*args")
@@ -201,14 +193,8 @@ def _find_shadowing_and_scope_escapes(
 
             self.generic_visit(node)
 
-        def visit_AsyncFunctionDef(
-            self, node: ast.AsyncFunctionDef
-        ) -> None:  # noqa: N802
-            for arg in (
-                list(node.args.posonlyargs)
-                + list(node.args.args)
-                + list(node.args.kwonlyargs)
-            ):
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+            for arg in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
                 self._check_name(arg.arg, arg.lineno or node.lineno, "argument")
             if node.args.vararg is not None:
                 self._check_name(node.args.vararg.arg, node.lineno, "*args")
@@ -286,8 +272,7 @@ def test_no_print_repo_wide() -> None:
     hits = _find_print_calls(py_files)
 
     assert not hits, "print() is not allowed repo-wide:\n" + "\n".join(
-        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}"
-        for path, line_no, line in hits
+        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
     )
 
 
@@ -315,10 +300,7 @@ def test_no_stl_in_mcu_src_or_tests() -> None:
     hits = _find_matches(cpp_files, stl_regex)
 
     message = "STL usage is not allowed in openwrt-library-arduino/src or tests:\n"
-    message += "\n".join(
-        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}"
-        for path, line_no, line in hits
-    )
+    message += "\n".join(f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits)
     assert not hits, message
 
 
@@ -328,12 +310,7 @@ def test_no_changeme_placeholder_in_shipped_defaults() -> None:
     forbidden = "s_e_c_r_e_t_mock"
     files = [
         _REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge",
-        _REPO_ROOT
-        / "luci-app-mcubridge"
-        / "luasrc"
-        / "model"
-        / "cbi"
-        / "mcubridge.lua",
+        _REPO_ROOT / "luci-app-mcubridge" / "luasrc" / "model" / "cbi" / "mcubridge.lua",
     ]
 
     failures: list[str] = []
@@ -341,9 +318,7 @@ def test_no_changeme_placeholder_in_shipped_defaults() -> None:
         assert path.exists(), f"Missing expected defaults file: {path}"
         data = path.read_text(encoding="utf-8", errors="replace")
         if forbidden in data:
-            failures.append(
-                f"{path.relative_to(_REPO_ROOT)}: contains forbidden placeholder '{forbidden}'"
-            )
+            failures.append(f"{path.relative_to(_REPO_ROOT)}: contains forbidden placeholder '{forbidden}'")
 
     assert not failures, "\n".join(failures)
 
@@ -360,11 +335,8 @@ def test_no_shadowing_or_scope_escapes_in_runtime_package() -> None:
     py_files = _iter_text_files(runtime_root, ("*.py",))
     hits = _find_shadowing_and_scope_escapes(py_files)
 
-    assert (
-        not hits
-    ), "Runtime package must not shadow names or use global/nonlocal:\n" + "\n".join(
-        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}"
-        for path, line_no, line in hits
+    assert not hits, "Runtime package must not shadow names or use global/nonlocal:\n" + "\n".join(
+        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
     )
 
 
@@ -399,9 +371,7 @@ def test_no_copied_first_party_packages_in_feeds() -> None:
             continue
 
         if not feed_entry.is_symlink():
-            failures.append(
-                f"feeds/{pkg}: must not be a copied tree (expected symlink or absent)"
-            )
+            failures.append(f"feeds/{pkg}: must not be a copied tree (expected symlink or absent)")
             continue
 
         # Resolve to ensure it points at the repo-root package.

@@ -369,9 +369,7 @@ async def test_bridge_snapshot_loop_gaps():
         patch("asyncio.sleep", side_effect=asyncio.CancelledError),
     ):
         with pytest.raises(asyncio.CancelledError):
-            await metrics._bridge_snapshot_loop(
-                state, enqueue, flavor="summary", seconds=10
-            )
+            await metrics._bridge_snapshot_loop(state, enqueue, flavor="summary", seconds=10)
 
     # Line 191 loop emit
     with (
@@ -379,9 +377,7 @@ async def test_bridge_snapshot_loop_gaps():
         patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError]),
     ):
         with pytest.raises(asyncio.CancelledError):
-            await metrics._bridge_snapshot_loop(
-                state, enqueue, flavor="summary", seconds=10
-            )
+            await metrics._bridge_snapshot_loop(state, enqueue, flavor="summary", seconds=10)
 
 
 @pytest.mark.asyncio
@@ -395,9 +391,7 @@ async def test_publish_metrics_gaps():
         await metrics.publish_metrics(state, enqueue, interval=0)
 
     # Line 212-213: CancelledError in initial emit
-    with patch(
-        "mcubridge.metrics._emit_metrics_snapshot", side_effect=asyncio.CancelledError
-    ):
+    with patch("mcubridge.metrics._emit_metrics_snapshot", side_effect=asyncio.CancelledError):
         with pytest.raises(asyncio.CancelledError):
             await metrics.publish_metrics(state, enqueue, interval=10)
 
@@ -451,9 +445,7 @@ async def test_publish_bridge_snapshots_disabled():
 
     with patch("asyncio.Event.wait", new_callable=AsyncMock) as mock_wait:
         # Mock wait to return immediately to avoid hanging the test
-        await metrics.publish_bridge_snapshots(
-            state, enqueue, summary_interval=0, handshake_interval=0
-        )
+        await metrics.publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0)
         assert mock_wait.called
 
 
@@ -471,9 +463,7 @@ async def test_publish_bridge_snapshots_exc_group():
         ),
         pytest.raises(ExceptionGroup),
     ):
-        await metrics.publish_bridge_snapshots(
-            state, enqueue, summary_interval=10, handshake_interval=0
-        )
+        await metrics.publish_bridge_snapshots(state, enqueue, summary_interval=10, handshake_interval=0)
 
 
 def test_metrics_flatten_branches():
@@ -558,9 +548,7 @@ async def test_daemon_run_lifecycle_coverage(mock_cleanup):
     # Cover exception group / generic exception path (Line 217-225)
     mock_cleanup.reset_mock()
     with (
-        patch(
-            "asyncio.TaskGroup.__aenter__", side_effect=RuntimeError("Generic failure")
-        ),
+        patch("asyncio.TaskGroup.__aenter__", side_effect=RuntimeError("Generic failure")),
         pytest.raises((RuntimeError, ExceptionGroup)),
     ):
         # On Python 3.11+, TaskGroup raises ExceptionGroup
@@ -571,9 +559,7 @@ async def test_daemon_run_lifecycle_coverage(mock_cleanup):
 def test_daemon_main_abort():
     """Cover main() error handling paths."""
     with (
-        patch(
-            "mcubridge.daemon.load_runtime_config", side_effect=RuntimeError("Abort")
-        ),
+        patch("mcubridge.daemon.load_runtime_config", side_effect=RuntimeError("Abort")),
         patch("mcubridge.daemon.configure_logging"),
         patch("sys.exit") as mock_exit,
     ):
@@ -641,9 +627,7 @@ def test_settings_load_runtime_config_coverage():
         }
     )
 
-    with patch(
-        "mcubridge.config.settings._load_raw_config", return_value=(raw_cfg, "test")
-    ):
+    with patch("mcubridge.config.settings._load_raw_config", return_value=(raw_cfg, "test")):
         config = load_runtime_config()
         assert config.debug_logging is True
         assert config.watchdog_enabled is True
@@ -701,9 +685,7 @@ def test_settings_validation_errors(monkeypatch: pytest.MonkeyPatch):
     # Test empty topic
     bad_cfg = cfg_dict.copy()
     bad_cfg["mqtt_topic"] = "/"
-    monkeypatch.setattr(
-        "mcubridge.config.settings._load_raw_config", lambda: (bad_cfg, "test")
-    )
+    monkeypatch.setattr("mcubridge.config.settings._load_raw_config", lambda: (bad_cfg, "test"))
     with pytest.raises(ValueError, match="at least one segment"):
         settings.load_runtime_config()
 
@@ -712,10 +694,7 @@ def test_settings_validation_errors(monkeypatch: pytest.MonkeyPatch):
         cfg_insecure = cfg_dict.copy()
         cfg_insecure["mqtt_tls_insecure"] = True
         RuntimeConfig(**cfg_insecure)
-        assert any(
-            "hostname verification is disabled" in str(arg)
-            for arg in mock_warn.call_args[0]
-        )
+        assert any("hostname verification is disabled" in str(arg) for arg in mock_warn.call_args[0])
 
     # Test quota < write_max
     bad_cfg = cfg_dict.copy()
@@ -975,14 +954,10 @@ async def test_dispatcher_gaps():
 
     state_obj = create_runtime_state(get_default_config())
 
-    disp = dispatcher.BridgeDispatcher(
-        mcu_reg, mqtt_reg, state_obj, send, ack, is_allowed, reject, snapshot
-    )
+    disp = dispatcher.BridgeDispatcher(mcu_reg, mqtt_reg, state_obj, send, ack, is_allowed, reject, snapshot)
 
     # _handle_unexpected digital/analog read (pin is None)
-    assert (
-        await disp._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is False
-    )
+    assert await disp._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is False
     assert await disp._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is False
 
     # With pin component
@@ -1242,9 +1217,7 @@ async def test_runtime_state_gaps():
     state.record_serial_flow_event("invalid")
 
     # record_serial_pipeline_event attempt/timestamp None
-    state.record_serial_pipeline_event(
-        {"event": "start", "command_id": 1, "attempt": None, "timestamp": None}
-    )
+    state.record_serial_pipeline_event({"event": "start", "command_id": 1, "attempt": None, "timestamp": None})
     assert state.serial_pipeline_inflight["attempt"] == 1
 
     # record_serial_pipeline_event inflight None for ack/success
@@ -1266,9 +1239,7 @@ async def test_runtime_state_gaps():
     assert await state.ensure_spool() is False
 
     # _apply_spool_observation non-int corrupt/last_trim
-    state._apply_spool_observation(
-        {"corrupt_dropped": "none", "last_trim_unix": "none"}
-    )
+    state._apply_spool_observation({"corrupt_dropped": "none", "last_trim_unix": "none"})
 
     # initialize_spool exception
     state.mqtt_spool_dir = "/non/existent/path/that/fails"
@@ -1286,17 +1257,13 @@ async def test_runtime_state_spool_operations():
 
     # stash_mqtt_message spool is None
     state.mqtt_spool = None
-    with patch(
-        "mcubridge.state.context.RuntimeState.ensure_spool", new_callable=AsyncMock
-    ) as mock_ensure:
+    with patch("mcubridge.state.context.RuntimeState.ensure_spool", new_callable=AsyncMock) as mock_ensure:
         mock_ensure.return_value = False
         assert await state.stash_mqtt_message(QueuedPublish("t", b"p")) is False
 
     # flush_mqtt_spool spool is None
     state.mqtt_spool = None
-    with patch(
-        "mcubridge.state.context.RuntimeState.ensure_spool", new_callable=AsyncMock
-    ) as mock_ensure:
+    with patch("mcubridge.state.context.RuntimeState.ensure_spool", new_callable=AsyncMock) as mock_ensure:
         mock_ensure.return_value = False
         await state.flush_mqtt_spool()
 

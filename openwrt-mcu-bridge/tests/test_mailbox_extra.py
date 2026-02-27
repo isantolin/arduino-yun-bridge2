@@ -86,9 +86,6 @@ async def test_mailbox_overflow_with_inbound() -> None:
     # Check for bridge-error property
     found_error = False
     for call in ctx.publish.call_args_list:
-        if (
-            call.kwargs.get("properties")
-            and ("bridge-error", "mailbox") in call.kwargs["properties"]
-        ):
+        if call.kwargs.get("properties") and ("bridge-error", "mailbox") in call.kwargs["properties"]:
             found_error = True
     assert found_error

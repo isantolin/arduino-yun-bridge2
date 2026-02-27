@@ -184,6 +184,11 @@ void integrated_test_error_branches() {
   TEST_ASSERT(rpc::security::run_cryptographic_self_tests());
 }
 
+void integrated_test_extreme_coverage() {
+  auto accessor = bridge::test::TestAccessor::create(Bridge);
+
+// ... (rest of function omitted for brevity) ...
+
 // 20. Callbacks
 #if BRIDGE_ENABLE_DATASTORE
   DataStore.onDataStoreGetResponse(

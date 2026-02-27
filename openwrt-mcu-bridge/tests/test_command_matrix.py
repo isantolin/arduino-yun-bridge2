@@ -168,9 +168,7 @@ class _Pin:
     async def handle_analog_read_resp(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_unexpected_mcu_request(
-        self, _command: Any, _payload: bytes
-    ) -> bool:
+    async def handle_unexpected_mcu_request(self, _command: Any, _payload: bytes) -> bool:
         return True
 
     async def handle_mqtt(

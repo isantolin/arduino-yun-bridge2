@@ -75,17 +75,13 @@ def test_configure_tls_loads_cert_chain_when_provided(
     cafile.write_text("not-a-real-ca")
     calls: list[tuple[str, str]] = []
 
-    def _load_cert_chain(certfile: str, keyfile: str) -> None:
-        calls.append((certfile, keyfile))
-
     fake_context = SimpleNamespace(
-        minimum_version=None, load_cert_chain=_load_cert_chain, check_hostname=True
+        minimum_version=None,
+        load_cert_chain=lambda certfile, keyfile: calls.append((certfile, keyfile)),
+        check_hostname=True,
     )
 
-    def _fake_create_default_context(*_args, **_kwargs):
-        return fake_context
-
-    monkeypatch.setattr(ssl, "create_default_context", _fake_create_default_context)
+    monkeypatch.setattr(ssl, "create_default_context", lambda *_args, **_kwargs: fake_context)
     config = _make_config(tls=True, cafile=str(cafile))
     config.mqtt_certfile = str(tmp_path / "client.crt")
     config.mqtt_keyfile = str(tmp_path / "client.key")

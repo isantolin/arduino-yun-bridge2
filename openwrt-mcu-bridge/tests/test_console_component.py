@@ -48,9 +48,7 @@ async def test_flow_control(console_component: ConsoleComponent) -> None:
     assert console_component.state.serial_tx_allowed.is_set() is False
 
     # XON
-    with patch.object(
-        console_component, "flush_queue", new_callable=AsyncMock
-    ) as mock_flush:
+    with patch.object(console_component, "flush_queue", new_callable=AsyncMock) as mock_flush:
         await console_component.handle_xon(b"")
         assert console_component.state.mcu_is_paused is False
         assert console_component.state.serial_tx_allowed.is_set() is True
@@ -64,9 +62,7 @@ async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> 
 
     await console_component.handle_mqtt_input(payload)
 
-    console_component.ctx.send_frame.assert_awaited_once_with(
-        Command.CMD_CONSOLE_WRITE.value, payload
-    )
+    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, payload)
 
 
 @pytest.mark.asyncio
@@ -102,15 +98,11 @@ async def test_flush_queue(console_component: ConsoleComponent) -> None:
     # Setup mock state behavior
     queue = deque([b"queued"])
     console_component.state.console_to_mcu_queue = queue
-    console_component.state.pop_console_chunk.side_effect = lambda: (
-        queue.popleft() if queue else None
-    )
+    console_component.state.pop_console_chunk.side_effect = lambda: (queue.popleft() if queue else None)
 
     console_component.ctx.send_frame.return_value = True
 
     await console_component.flush_queue()
 
-    console_component.ctx.send_frame.assert_awaited_once_with(
-        Command.CMD_CONSOLE_WRITE.value, b"queued"
-    )
+    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"queued")
     assert len(queue) == 0

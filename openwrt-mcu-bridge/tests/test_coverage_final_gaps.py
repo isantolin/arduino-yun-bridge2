@@ -135,7 +135,8 @@ async def test_serial_flow_failure_status_printable_ignored() -> None:
 
     # Failure status with printable text - should be ignored
     controller.on_frame_received(
-        Status.ERROR.value, b"serial_rx_overflow"  # Generic error
+        Status.ERROR.value,
+        b"serial_rx_overflow",  # Generic error
     )
 
     # Not marked as failure because payload is printable

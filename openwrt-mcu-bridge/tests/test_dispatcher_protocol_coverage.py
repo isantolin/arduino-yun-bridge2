@@ -83,9 +83,7 @@ class _DummyComponent:
     async def handle_analog_read_resp(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_unexpected_mcu_request(
-        self, *_args: object, **_kwargs: object
-    ) -> bool:
+    async def handle_unexpected_mcu_request(self, *_args: object, **_kwargs: object) -> bool:
         return True
 
     async def handle_get_free_memory_resp(self, _payload: bytes) -> bool:
@@ -210,9 +208,7 @@ def test_all_mcu_to_linux_commands_have_registered_handlers() -> None:
         if registry.get(value) is None:
             missing.append(value)
 
-    assert not missing, "Missing MCU handlers for command ids: " + ", ".join(
-        f"0x{value:02X}" for value in missing
-    )
+    assert not missing, "Missing MCU handlers for command ids: " + ", ".join(f"0x{value:02X}" for value in missing)
 
 
 def test_ack_required_mcu_to_linux_commands_are_registered() -> None:
@@ -266,8 +262,6 @@ def test_ack_required_mcu_to_linux_commands_are_registered() -> None:
         if registry.get(value) is None:
             missing.append(value)
 
-    assert (
-        not missing
-    ), "Missing MCU handlers for ACK-required command ids: " + ", ".join(
+    assert not missing, "Missing MCU handlers for ACK-required command ids: " + ", ".join(
         f"0x{value:02X}" for value in missing
     )

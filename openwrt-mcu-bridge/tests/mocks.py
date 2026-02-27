@@ -22,9 +22,7 @@ class MockSerialService:
     serial_disconnected: asyncio.Event = field(default_factory=asyncio.Event)
     _serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = None
 
-    def register_serial_sender(
-        self, sender: Callable[[int, bytes], Awaitable[bool]]
-    ) -> None:
+    def register_serial_sender(self, sender: Callable[[int, bytes], Awaitable[bool]]) -> None:
         self._serial_sender = sender
 
     async def on_serial_connected(self) -> None:

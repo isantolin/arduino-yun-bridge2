@@ -106,11 +106,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
     await service.on_serial_connected()
 
     assert sent_frames
-    reset_payloads = [
-        payload
-        for frame_id, payload in sent_frames
-        if frame_id in {Command.CMD_LINK_RESET.value, 64}
-    ]
+    reset_payloads = [payload for frame_id, payload in sent_frames if frame_id in {Command.CMD_LINK_RESET.value, 64}]
     assert reset_payloads
     reset_payload = reset_payloads[0]
     # [SIL-2] Payload can be 0 (legacy) or 5 (new struct: 2+1+2 bytes)
@@ -130,9 +126,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
         Command.CMD_LINK_SYNC.value,
     ]
     assert Command.CMD_GET_VERSION.value in frame_ids
-    assert any(
-        frame_id == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames
-    )
+    assert any(frame_id == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames)
     assert runtime_state.console_queue_bytes == 0
     assert runtime_state.mcu_version is None
     assert runtime_state.handshake_attempts == 1
@@ -254,9 +248,7 @@ def test_link_sync_resp_respects_rate_limit(
             ack_payload = structures.UINT16_STRUCT.build(command_id)
             service._serial_flow.on_frame_received(Status.ACK.value, ack_payload)
             if command_id == Command.CMD_GET_CAPABILITIES.value:
-                service._handshake.handle_capabilities_resp(
-                    b"\x02\x00\x14\x06\x00\x00\x00\x00"
-                )
+                service._handshake.handle_capabilities_resp(b"\x02\x00\x14\x06\x00\x00\x00\x00")
             return True
 
         service.register_serial_sender(fake_sender)
@@ -539,10 +531,7 @@ async def test_mailbox_push_overflow_returns_error(
 
     # Second push should fail
     await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x04aam2")
-    assert any(
-        frame_id in {Status.ERROR.value, Status.OVERFLOW.value, Status.ACK.value}
-        for frame_id, _ in sent_frames
-    )
+    assert any(frame_id in {Status.ERROR.value, Status.OVERFLOW.value, Status.ACK.value} for frame_id, _ in sent_frames)
 
 
 @pytest.mark.asyncio
@@ -587,8 +576,7 @@ async def test_datastore_get_from_mcu_returns_cached_value() -> None:
 
     # Should respond with RESP containing "value1" (or ACK with payload)
     assert any(
-        frame_id in {Command.CMD_DATASTORE_GET_RESP.value, Status.ACK.value}
-        and b"value1" in payload
+        frame_id in {Command.CMD_DATASTORE_GET_RESP.value, Status.ACK.value} and b"value1" in payload
         for frame_id, payload in sent_frames
     )
 
@@ -690,9 +678,7 @@ async def test_mqtt_datastore_put_updates_local_cache(
     runtime_state.topic_authorization = TopicAuthorization()
     async with BridgeService(runtime_config, runtime_state) as service:
         topic = f"{runtime_config.mqtt_topic}/datastore/put/mykey"
-        msg = Message(
-            topic=topic, payload=b"val123", qos=0, retain=False, properties=None, mid=1
-        )
+        msg = Message(topic=topic, payload=b"val123", qos=0, retain=False, properties=None, mid=1)
 
         await service.handle_mqtt_message(msg)
         assert runtime_state.datastore["mykey"] == "val123"
@@ -743,9 +729,7 @@ async def test_mqtt_datastore_put_without_key_is_ignored(
     service = BridgeService(runtime_config, runtime_state)
     # Topic with only /datastore/set
     topic = f"{runtime_config.mqtt_topic}/datastore/set"
-    msg = Message(
-        topic=topic, payload=b"val", qos=0, retain=False, properties=None, mid=1
-    )
+    msg = Message(topic=topic, payload=b"val", qos=0, retain=False, properties=None, mid=1)
 
     await service.handle_mqtt_message(msg)
     assert not runtime_state.datastore
@@ -793,9 +777,7 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
         ResponseTopic = "reply/here"
         CorrelationData = b"corr123"
 
-    msg = Message(
-        topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1
-    )
+    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)
 
     await service.handle_mqtt_message(msg)
 
@@ -817,9 +799,7 @@ async def test_mqtt_datastore_get_request_miss_responds_with_error(
     class Props:
         ResponseTopic = "err/topic"
 
-    msg = Message(
-        topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1
-    )
+    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)
 
     await service.handle_mqtt_message(msg)
 
@@ -906,17 +886,13 @@ async def test_run_command_respects_allow_list(
         status = Status.ERROR.value
         stderr = b"not allowed"
     else:
-        status, _, stderr, _ = await service._process.run_sync(
-            "/bin/true", ["/bin/true"]
-        )
+        status, _, stderr, _ = await service._process.run_sync("/bin/true", ["/bin/true"])
 
     assert status == Status.ERROR.value
     assert b"not allowed" in stderr
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
-    status_ok, _, stderr_ok, _ = await service._process.run_sync(
-        "/bin/true", ["/bin/true"]
-    )
+    status_ok, _, stderr_ok, _ = await service._process.run_sync("/bin/true", ["/bin/true"])
 
     assert status_ok == Status.OK.value
     assert stderr_ok == b""
@@ -938,9 +914,7 @@ async def test_run_command_accepts_shell_metacharacters_as_literals(
     with patch("mcubridge.services.process.ProcessComponent.run_sync") as mock_run:
         mock_run.return_value = (Status.OK.value, b"hello; ls\n", b"", 0)
 
-        status, stdout, _, _ = await service._process.run_sync(
-            "echo hello; ls", ["echo", "hello;", "ls"]
-        )
+        status, stdout, _, _ = await service._process.run_sync("echo hello; ls", ["echo", "hello;", "ls"])
         assert status == Status.OK.value
         assert stdout == b"hello; ls\n"
 
@@ -961,9 +935,7 @@ async def test_process_run_async_accepts_complex_arguments(
         mock_start.return_value = 12345
 
         # Payload: Command + tokens
-        await service.handle_mcu_frame(
-            Command.CMD_PROCESS_RUN_ASYNC.value, b"ls -l /tmp"
-        )
+        await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, b"ls -l /tmp")
 
         # Should have called start_async with parsed command
         mock_start.assert_called_with("ls -l /tmp", ["ls", "-l", "/tmp"])

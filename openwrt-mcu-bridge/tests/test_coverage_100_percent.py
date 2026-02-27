@@ -45,9 +45,7 @@ async def test_serial_flow_ack_mismatch_and_status_coverage():
     mock_sender = mock.AsyncMock(return_value=True)
     pipeline.set_sender(mock_sender)
 
-    task = asyncio.create_task(
-        pipeline.send(Command.CMD_SET_PIN_MODE.value, b"\x01\x01")
-    )
+    task = asyncio.create_task(pipeline.send(Command.CMD_SET_PIN_MODE.value, b"\x01\x01"))
     await asyncio.sleep(0.1)
 
     pending = pipeline._current
@@ -136,18 +134,12 @@ async def test_serial_fast_protocol_error_coverage():
         side_effect=ValueError("crc mismatch"),
     ):
         # We need to provide something that COBS can decode, or mock cobs.decode
-        with mock.patch(
-            "mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"
-        ):
+        with mock.patch("mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"):
             await proto._async_process_packet(b"something")
             assert state.serial_crc_errors == 1
 
     # 2. Generic Decode Error
-    with mock.patch(
-        "mcubridge.transport.serial.Frame.from_bytes", side_effect=ValueError("other")
-    ):
-        with mock.patch(
-            "mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"
-        ):
+    with mock.patch("mcubridge.transport.serial.Frame.from_bytes", side_effect=ValueError("other")):
+        with mock.patch("mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"):
             await proto._async_process_packet(b"something")
             assert state.serial_decode_errors == 2

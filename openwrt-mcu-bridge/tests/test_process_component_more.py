@@ -27,9 +27,7 @@ def process_component(runtime_state, runtime_config) -> ProcessComponent:
     comp = ProcessComponent(runtime_config, runtime_state, ctx)
     # Ensure semaphore is created (post_init)
     if comp._process_slots is None:
-        comp._process_slots = asyncio.BoundedSemaphore(
-            runtime_config.process_max_concurrent
-        )
+        comp._process_slots = asyncio.BoundedSemaphore(runtime_config.process_max_concurrent)
     return comp
 
 
@@ -55,19 +53,14 @@ async def test_handle_poll_finished_path_executes_debug_branch(
     )
 
     with patch.object(process_component, "collect_output", return_value=batch):
-        with patch.object(
-            process_component, "publish_poll_result", new_callable=AsyncMock
-        ):
+        with patch.object(process_component, "publish_poll_result", new_callable=AsyncMock):
             with patch("mcubridge.services.process.logger.debug") as mock_debug:
                 from mcubridge.protocol.structures import ProcessPollPacket
 
                 payload = ProcessPollPacket(pid=100).encode()
                 await process_component.handle_poll(payload)
                 # Check that debug log was called for finished process
-                assert any(
-                    "Sent final output" in str(call)
-                    for call in mock_debug.call_args_list
-                )
+                assert any("Sent final output" in str(call) for call in mock_debug.call_args_list)
 
 
 @pytest.mark.asyncio
@@ -123,18 +116,12 @@ async def test_run_sync_truncates_and_reports_timeout_flags(
         buffer.extend(b"1234567890")
 
     with patch("asyncio.create_subprocess_exec", return_value=proc):
-        with patch.object(
-            process_component, "_consume_stream", side_effect=_fill_buffers
-        ):
+        with patch.object(process_component, "_consume_stream", side_effect=_fill_buffers):
             with patch("mcubridge.services.process.logger.warning") as mock_warn:
-                status_code, out, err, _ = await process_component.run_sync(
-                    "cmd", ["cmd"]
-                )
+                status_code, out, err, _ = await process_component.run_sync("cmd", ["cmd"])
                 assert len(out) == 5
                 assert len(err) == 5
-                assert any(
-                    "truncated" in str(call) for call in mock_warn.call_args_list
-                )
+                assert any("truncated" in str(call) for call in mock_warn.call_args_list)
 
 
 @pytest.mark.asyncio
@@ -263,18 +250,10 @@ async def test_handle_kill_timeout_releases_slot(
         async def __aexit__(self, _exc_type, _exc, _tb) -> bool:
             return False
 
-    with patch.object(
-        mcubridge.services.process.asyncio, "timeout", lambda _timeout: _TimeoutCtx()
-    ):
-        with patch.object(
-            ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
-        ) as mock_term:
-            with patch.object(
-                ProcessComponent, "_release_process_slot"
-            ) as mock_release:
-                ok = await process_component.handle_kill(
-                    structures.UINT16_STRUCT.build(pid)
-                )
+    with patch.object(mcubridge.services.process.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
+        with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
+            with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
+                ok = await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -306,9 +285,7 @@ async def test_handle_kill_process_lookup_error_is_handled(
         side_effect=ProcessLookupError,
     ) as mock_term:
         with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-            ok = await process_component.handle_kill(
-                structures.UINT16_STRUCT.build(pid)
-            )
+            ok = await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -335,9 +312,7 @@ async def test_handle_run_system_error_returns_error_frame(
         "_prepare_command",
         return_value=("echo", ["echo"]),
     ):
-        with patch.object(
-            process_component, "_try_acquire_process_slot", return_value=True
-        ):
+        with patch.object(process_component, "_try_acquire_process_slot", return_value=True):
             # Mock _execute_sync_command or run_sync
             # Wait, handle_run schedules background task.
             # We need to run that background task.
@@ -367,9 +342,7 @@ async def test_handle_run_async_validation_error_sends_error_frame(
 async def test_start_async_os_error_returns_sentinel(
     process_component: ProcessComponent,
 ) -> None:
-    with patch.object(
-        process_component, "_try_acquire_process_slot", return_value=True
-    ):
+    with patch.object(process_component, "_try_acquire_process_slot", return_value=True):
         with patch("asyncio.create_subprocess_exec", side_effect=OSError("fail")):
             pid = await process_component.start_async("cmd", ["cmd"])
             assert pid == protocol.INVALID_ID_SENTINEL
@@ -446,9 +419,7 @@ async def test_handle_run_async_returns_success_pid(
     process_component: ProcessComponent,
 ) -> None:
     packet = ProcessRunAsyncPacket(command="cmd").encode()
-    with patch.object(
-        process_component, "_prepare_command", return_value=("cmd", ["cmd"])
-    ):
+    with patch.object(process_component, "_prepare_command", return_value=("cmd", ["cmd"])):
         with patch.object(process_component, "start_async", return_value=123):
             await process_component.handle_run_async(packet)
             process_component.ctx.send_frame.assert_awaited()
@@ -459,9 +430,7 @@ async def test_handle_run_async_invalid_sentinel_sends_error(
     process_component: ProcessComponent,
 ) -> None:
     packet = ProcessRunAsyncPacket(command="cmd").encode()
-    with patch.object(
-        process_component, "_prepare_command", return_value=("cmd", ["cmd"])
-    ):
+    with patch.object(process_component, "_prepare_command", return_value=("cmd", ["cmd"])):
         with patch.object(
             process_component,
             "start_async",

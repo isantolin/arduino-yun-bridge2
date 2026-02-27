@@ -26,9 +26,7 @@ async def test_pin_handle_read_overflow() -> None:
     # Overflow
     await pc._handle_read_command(Topic.DIGITAL, 13, None)
     ctx.publish.assert_called()
-    assert ("bridge-error", "pending-pin-overflow") in ctx.publish.call_args[1][
-        "properties"
-    ]
+    assert ("bridge-error", "pending-pin-overflow") in ctx.publish.call_args[1]["properties"]
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -109,7 +108,7 @@ class WatchdogKeepalive:
             self._logger.warning("Failed to emit watchdog trigger: %s", exc)
         else:
             if self._state is not None:
-                self._state.record_watchdog_beat(time.monotonic())
+                self._state.record_watchdog_beat()
 
     async def run(self) -> None:
         """Continuously emit watchdog pulses until cancelled."""

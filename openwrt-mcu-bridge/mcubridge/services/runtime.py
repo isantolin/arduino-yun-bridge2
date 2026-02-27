@@ -344,7 +344,7 @@ class BridgeService:
                 self.state.mqtt_publish_queue.task_done()
                 drop_topic = dropped.topic_name
                 self.state.record_mqtt_drop(drop_topic)
-                stored = await self.state.stash_mqtt_message(dropped)
+                stored = self.state.stash_mqtt_message(dropped)
                 spool_note: str
                 if stored:
                     pending = (

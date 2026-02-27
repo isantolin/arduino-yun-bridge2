@@ -234,14 +234,11 @@ def test_get_uci_config_openwrt_failures(monkeypatch):
 
     # Force is_openwrt to True by making Path.exists return True for OpenWrt markers
     original_exists = Path.exists
-
-    def fake_exists(path_self):
-        path_str = str(path_self)
-        if path_str in ("/etc/openwrt_release", "/etc/openwrt_version"):
-            return True
-        return original_exists(path_self)
-
-    monkeypatch.setattr(Path, "exists", fake_exists)
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: str(self) in ("/etc/openwrt_release", "/etc/openwrt_version") or original_exists(self),
+    )
 
     # Create mock UCI class
     mock_cursor = MagicMock()
@@ -268,13 +265,11 @@ def test_get_uci_config_openwrt_failures(monkeypatch):
         common.get_uci_config()
 
     # Case 4: Non-OpenWrt OSError (Line 218-219)
-    def fake_exists_non_openwrt(path_self):
-        path_str = str(path_self)
-        if path_str in ("/etc/openwrt_release", "/etc/openwrt_version"):
-            return False
-        return original_exists(path_self)
-
-    monkeypatch.setattr(Path, "exists", fake_exists_non_openwrt)
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: False if str(self) in ("/etc/openwrt_release", "/etc/openwrt_version") else original_exists(self),
+    )
     mock_uci_class.side_effect = OSError("Disk error")
     res = common.get_uci_config()
     assert isinstance(res, dict)
@@ -990,28 +985,23 @@ async def test_dispatcher_gaps():
     await disp.dispatch_mcu_frame(Command.CMD_GET_VERSION_RESP.value, b"test")
 
     # dispatch_mqtt_message route is None
-    def parse_none(_):
-        return None
-
-    await disp.dispatch_mqtt_message(MagicMock(topic="t"), parse_none)
+    await disp.dispatch_mqtt_message(MagicMock(topic="t"), lambda _: None)
 
     # dispatch_mqtt_message empty segments
-    def parse_empty(_):
-        return TopicRoute("raw", "prefix", Topic.SYSTEM, ())
-
-    await disp.dispatch_mqtt_message(MagicMock(topic="t"), parse_empty)
+    await disp.dispatch_mqtt_message(MagicMock(topic="t"), lambda _: TopicRoute("raw", "prefix", Topic.SYSTEM, ()))
 
     # dispatch_mqtt_message exception
     mqtt_reg.dispatch = AsyncMock(side_effect=RuntimeError("Boom"))
 
-    def parse_ok(_):
-        return TopicRoute("raw", "prefix", Topic.SYSTEM, ("seg",))
-
-    await disp.dispatch_mqtt_message(MagicMock(topic="t"), parse_ok)
+    await disp.dispatch_mqtt_message(
+        MagicMock(topic="t"), lambda _: TopicRoute("raw", "prefix", Topic.SYSTEM, ("seg",))
+    )
 
     # Unhandled MQTT topic
     mqtt_reg.dispatch = AsyncMock(return_value=False)
-    await disp.dispatch_mqtt_message(MagicMock(topic="t"), parse_ok)
+    await disp.dispatch_mqtt_message(
+        MagicMock(topic="t"), lambda _: TopicRoute("raw", "prefix", Topic.SYSTEM, ("seg",))
+    )
 
     # _handle_file_topic short segments
     route_short = TopicRoute("raw", "p", Topic.FILE, ("identifier",))

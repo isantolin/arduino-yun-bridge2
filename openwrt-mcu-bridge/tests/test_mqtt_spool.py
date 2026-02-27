@@ -6,6 +6,7 @@ import errno
 import logging
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from mcubridge.mqtt.messages import QueuedPublish
@@ -107,10 +108,7 @@ def test_spool_fallback_on_disk_full(
     if queue is None:
         pytest.skip("Durable spool backend not available")
 
-    def _boom(_record: object) -> None:
-        raise OSError(errno.ENOSPC, "disk full")
-
-    monkeypatch.setattr(queue, "append", _boom)
+    monkeypatch.setattr(queue, "append", MagicMock(side_effect=OSError(errno.ENOSPC, "disk full")))
 
     # First append should fail on disk and trigger fallback
     spool.append(_make_message("topic/disk"))
@@ -150,10 +148,7 @@ def test_spool_fallback_invokes_hook(
     if queue is None:
         pytest.skip("Durable spool backend not available")
 
-    def _boom(_record: object) -> None:
-        raise OSError(errno.ENOSPC, "disk full")
-
-    monkeypatch.setattr(queue, "append", _boom)
+    monkeypatch.setattr(queue, "append", MagicMock(side_effect=OSError(errno.ENOSPC, "disk full")))
 
     spool.append(_make_message("topic/hook"))
 
@@ -166,10 +161,7 @@ def test_spool_fallback_on_init_failure(tmp_path: Path, monkeypatch: pytest.Monk
     """Spool degrades if directory creation fails."""
 
     # Force Path.mkdir to fail
-    def _fail_mkdir(*args, **kwargs):
-        raise PermissionError("No access")
-
-    monkeypatch.setattr(Path, "mkdir", _fail_mkdir)
+    monkeypatch.setattr(Path, "mkdir", MagicMock(side_effect=PermissionError("No access")))
 
     spool = MQTTPublishSpool("/root/protected", limit=5)
 
@@ -213,10 +205,7 @@ def test_spool_requeue_fallback(
     if queue is None:
         pytest.skip("Durable spool backend not available")
 
-    def _boom(_record: object) -> None:
-        raise OSError(errno.EIO, "disk error")
-
-    monkeypatch.setattr(queue, "appendleft", _boom)
+    monkeypatch.setattr(queue, "appendleft", MagicMock(side_effect=OSError(errno.EIO, "disk error")))
 
     spool.requeue(message)
 
@@ -241,10 +230,7 @@ def test_spool_pop_fallback(
     if queue is None:
         pytest.skip("Durable spool backend not available")
 
-    def _boom() -> None:
-        raise OSError(errno.EIO, "disk error")
-
-    monkeypatch.setattr(queue, "popleft", _boom)
+    monkeypatch.setattr(queue, "popleft", MagicMock(side_effect=OSError(errno.EIO, "disk error")))
 
     # pop_next should trigger fallback and return None (since memory is empty initially)
     assert spool.pop_next() is None
@@ -264,10 +250,7 @@ def test_spool_trim_fallback(
     if queue is None:
         pytest.skip("Durable spool backend not available")
 
-    def _boom() -> None:
-        raise OSError(errno.EIO, "disk error")
-
-    monkeypatch.setattr(queue, "popleft", _boom)
+    monkeypatch.setattr(queue, "popleft", MagicMock(side_effect=OSError(errno.EIO, "disk error")))
 
     # Append 3rd item, triggering trim
     spool.append(_make_message("topic/3"))

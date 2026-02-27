@@ -39,12 +39,14 @@ async def test_publish_metrics_publishes_snapshot(
         "file_storage_limit_rejections": 1,
     }
 
-    def _snapshot(self: RuntimeState) -> dict[str, object]:
-        return fake_snapshot
-
     runtime_state.mqtt_topic_prefix = "test/prefix"
 
-    with patch.object(RuntimeState, "build_metrics_snapshot", side_effect=_snapshot, autospec=True):
+    with patch.object(
+        RuntimeState,
+        "build_metrics_snapshot",
+        side_effect=lambda self: fake_snapshot,
+        autospec=True,
+    ):
         task = asyncio.create_task(
             publish_metrics(
                 runtime_state,
@@ -83,16 +85,13 @@ async def test_publish_metrics_marks_unknown_spool_reason(
         captured["message"] = message
         event.set()
 
-    def _degraded_snapshot(self: RuntimeState) -> dict[str, object]:
-        return {
-            "mqtt_spool_degraded": True,
-            "watchdog_enabled": False,
-        }
-
     with patch.object(
         RuntimeState,
         "build_metrics_snapshot",
-        side_effect=_degraded_snapshot,
+        side_effect=lambda self: {
+            "mqtt_spool_degraded": True,
+            "watchdog_enabled": False,
+        },
         autospec=True,
     ):
         task = asyncio.create_task(
@@ -125,18 +124,17 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
         if len(messages) >= 2:
             event.set()
 
-    def _summary(self: RuntimeState) -> dict[str, object]:
-        return {"snapshot": "summary"}
-
-    def _handshake(self: RuntimeState) -> dict[str, object]:
-        return {"snapshot": "handshake"}
-
     with (
-        patch.object(RuntimeState, "build_bridge_snapshot", side_effect=_summary, autospec=True),
+        patch.object(
+            RuntimeState,
+            "build_bridge_snapshot",
+            side_effect=lambda self: {"snapshot": "summary"},
+            autospec=True,
+        ),
         patch.object(
             RuntimeState,
             "build_handshake_snapshot",
-            side_effect=_handshake,
+            side_effect=lambda self: {"snapshot": "handshake"},
             autospec=True,
         ),
     ):

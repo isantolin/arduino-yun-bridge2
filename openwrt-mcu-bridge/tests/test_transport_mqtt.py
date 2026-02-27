@@ -97,10 +97,7 @@ def test_configure_tls_wraps_ssl_errors(
     cafile = tmp_path / "ca.pem"
     cafile.write_text("not-a-real-ca")
 
-    def _boom(*_args, **_kwargs):
-        raise ValueError("bad")
-
-    monkeypatch.setattr(ssl, "create_default_context", _boom)
+    monkeypatch.setattr(ssl, "create_default_context", MagicMock(side_effect=ValueError("bad")))
     config = _make_config(tls=True, cafile=str(cafile))
     with pytest.raises(RuntimeError, match=r"TLS setup failed"):
         mqtt_helper.configure_tls_context(config)

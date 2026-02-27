@@ -7,6 +7,7 @@ import errno
 import logging
 from collections.abc import Iterator
 from typing import cast
+from unittest.mock import MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -374,10 +375,7 @@ def test_spool_fallback_updates_state(
 
         queue = getattr(spool, "_disk_queue")
 
-        def _boom(_record: object) -> None:
-            raise OSError(errno.ENOSPC, "disk full")
-
-        monkeypatch.setattr(queue, "append", _boom)
+        monkeypatch.setattr(queue, "append", MagicMock(side_effect=OSError(errno.ENOSPC, "disk full")))
 
         stored = await state.stash_mqtt_message(
             QueuedPublish(

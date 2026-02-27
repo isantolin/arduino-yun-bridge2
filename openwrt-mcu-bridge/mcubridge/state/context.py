@@ -251,17 +251,17 @@ class RuntimeState(msgspec.Struct):
 
     # [SIL-2] Lifecycle FSM (Single Source of Truth)
     # Note: Machine is not serializable, so it must be handled carefully.
-    _machine: Any = msgspec.field(default=None)
+    _fsm: Any = msgspec.field(default=None)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "_machine", Machine(
+        object.__setattr__(self, "_fsm", Machine(
             states=["disconnected", "connected", "synchronized"],
             initial="disconnected",
             ignore_invalid_triggers=True
         ))
-        self._machine.on_enter_synchronized(self._on_fsm_synchronized)
-        self._machine.on_enter_connected(self._on_fsm_connected)
-        self._machine.on_enter_disconnected(self._on_fsm_disconnect)
+        self._fsm.on_enter_synchronized(self._on_fsm_synchronized)
+        self._fsm.on_enter_connected(self._on_fsm_connected)
+        self._fsm.on_enter_disconnected(self._on_fsm_disconnect)
 
     def _on_fsm_synchronized(self) -> None:
         self.link_is_synchronized = True
@@ -280,25 +280,29 @@ class RuntimeState(msgspec.Struct):
 
     @property
     def is_connected(self) -> bool:
-        return self._machine.state in {"connected", "synchronized"}
+        return self._fsm.state in {"connected", "synchronized"}
 
     @property
     def is_synchronized(self) -> bool:
-        return self._machine.state == "synchronized"
+        return self._fsm.state == "synchronized"
 
     def mark_transport_connected(self) -> None:
-        self._machine.set_state("connected")
+        self._fsm.set_state("connected")
 
     def mark_transport_disconnected(self) -> None:
-        self._machine.set_state("disconnected")
+        self._fsm.set_state("disconnected")
 
     def mark_synchronized(self) -> None:
-        self._machine.set_state("synchronized")
+        self._fsm.set_state("synchronized")
 
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(default_factory=asyncio.Queue)
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
+        default_factory=lambda: asyncio.Queue[QueuedPublish]()
+    )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
-    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=dict)
+    mqtt_drop_counts: dict[str, int] = msgspec.field(
+        default_factory=lambda: cast(dict[str, int], {})
+    )
     mqtt_spooled_messages: int = 0
     mqtt_spooled_replayed: int = 0
     mqtt_spool: MQTTPublishSpool | None = None
@@ -315,10 +319,14 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_trim_events: int = 0
     mqtt_spool_last_trim_unix: float = 0.0
     mqtt_spool_corrupt_dropped: int = 0
-    _last_spool_snapshot: dict[str, Any] = msgspec.field(default_factory=dict)
+    _last_spool_snapshot: dict[str, Any] = msgspec.field(
+        default_factory=lambda: cast(dict[str, Any], {})
+    )
 
     allow_non_tmp_paths: bool = False
-    datastore: dict[str, str] = msgspec.field(default_factory=dict)
+    datastore: dict[str, str] = msgspec.field(
+        default_factory=lambda: cast(dict[str, str], {})
+    )
     mailbox_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=_serial_tx_allowed_factory)
@@ -329,7 +337,9 @@ class RuntimeState(msgspec.Struct):
     console_dropped_bytes: int = 0
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=dict)
+    running_processes: dict[int, ManagedProcess] = msgspec.field(
+        default_factory=lambda: cast(dict[int, ManagedProcess], {})
+    )
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(default_factory=lambda: AllowedCommandPolicy(entries=()))
@@ -349,8 +359,12 @@ class RuntimeState(msgspec.Struct):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     watchdog_beats: int = 0
-    pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(default_factory=collections.deque)
-    pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(default_factory=collections.deque)
+    pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
+        default_factory=lambda: collections.deque[PendingPinRequest]()
+    )
+    pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
+        default_factory=lambda: collections.deque[PendingPinRequest]()
+    )
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
     pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
@@ -369,7 +383,9 @@ class RuntimeState(msgspec.Struct):
     mailbox_incoming_overflow_events: int = 0
     mcu_version: tuple[int, int] | None = None
     mcu_capabilities: McuCapabilities | None = None
-    mcu_status_counters: dict[str, int] = msgspec.field(default_factory=dict)
+    mcu_status_counters: dict[str, int] = msgspec.field(
+        default_factory=lambda: cast(dict[str, int], {})
+    )
     link_handshake_nonce: bytes | None = None
     link_expected_tag: bytes | None = None
     link_nonce_length: int = 0
@@ -392,7 +408,9 @@ class RuntimeState(msgspec.Struct):
     handshake_fatal_detail: str | None = None
     handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
-    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=dict)
+    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
+        default_factory=lambda: cast(dict[str, SupervisorStats], {})
+    )
     serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
     serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
     serial_latency_stats: SerialLatencyStats = msgspec.field(default_factory=SerialLatencyStats)

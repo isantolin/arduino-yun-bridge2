@@ -302,6 +302,27 @@ class ProcessPollResponsePacket(BaseStruct, frozen=True):
         "stderr" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
     )
 
+def _validate_ack_timeout(ctx: Any) -> bool:
+    return (
+        protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
+        <= ctx.ack_timeout_ms
+        <= protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
+    )
+
+def _validate_ack_retry_limit(ctx: Any) -> bool:
+    return (
+        protocol.HANDSHAKE_RETRY_LIMIT_MIN
+        <= ctx.ack_retry_limit
+        <= protocol.HANDSHAKE_RETRY_LIMIT_MAX
+    )
+
+def _validate_response_timeout(ctx: Any) -> bool:
+    return (
+        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
+        <= ctx.response_timeout_ms
+        <= protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
+    )
+
 class HandshakeConfigPacket(BaseStruct, frozen=True):
     ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
     ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
@@ -311,22 +332,10 @@ class HandshakeConfigPacket(BaseStruct, frozen=True):
         "ack_timeout_ms" / construct.Int16ub,
         "ack_retry_limit" / construct.Int8ub,
         "response_timeout_ms" / construct.Int32ub,
-        # [SIL-2] Declarative Protocol Validation via Lambdas
-        construct.Check(
-            lambda ctx: protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
-            <= cast(Any, ctx).ack_timeout_ms
-            <= protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
-        ),
-        construct.Check(
-            lambda ctx: protocol.HANDSHAKE_RETRY_LIMIT_MIN
-            <= cast(Any, ctx).ack_retry_limit
-            <= protocol.HANDSHAKE_RETRY_LIMIT_MAX
-        ),
-        construct.Check(
-            lambda ctx: protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
-            <= cast(Any, ctx).response_timeout_ms
-            <= protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
-        ),
+        # [SIL-2] Declarative Protocol Validation
+        construct.Check(_validate_ack_timeout),
+        construct.Check(_validate_ack_retry_limit),
+        construct.Check(_validate_response_timeout),
     )
 
 class CapabilitiesFeatures(msgspec.Struct, frozen=True):
@@ -396,7 +405,7 @@ class MqttPayload(msgspec.Struct, frozen=True):
     payload: bytes
     qos: int = 1
     retain: bool = False
-    properties: dict[str, Any] = msgspec.field(default_factory=dict)
+    properties: dict[str, Any] = msgspec.field(default_factory=lambda: cast(dict[str, Any], {}))
 
 class PinRequest(msgspec.Struct, frozen=True):
     pin: int
@@ -434,7 +443,7 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(default_factory=list)
+    user_properties: list[UserProperty] = msgspec.field(default_factory=lambda: cast(list[UserProperty], []))
 
 class QueuedPublish(msgspec.Struct):
     topic_name: str
@@ -446,7 +455,7 @@ class QueuedPublish(msgspec.Struct):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(default_factory=list)
+    user_properties: list[UserProperty] = msgspec.field(default_factory=lambda: cast(list[UserProperty], []))
 
     def to_record(self) -> SpoolRecord:
         return SpoolRecord(
@@ -491,7 +500,7 @@ class QueueEvent(msgspec.Struct):
 
 class PendingCommand(msgspec.Struct):
     command_id: int
-    expected_resp_ids: set[int] = msgspec.field(default_factory=set)
+    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: cast(set[int], set()))
     completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     attempts: int = 0
     success: bool | None = None

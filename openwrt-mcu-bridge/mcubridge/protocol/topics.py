@@ -29,9 +29,7 @@ class TopicRoute(msgspec.Struct, frozen=True):
 
 
 def _split_segments(path: str) -> tuple[str, ...]:
-    if not path:
-        return ()
-    return tuple(segment for segment in path.split("/") if segment)
+    return tuple(filter(None, path.split("/")))
 
 
 def split_topic_segments(path: str) -> tuple[str, ...]:
@@ -47,10 +45,7 @@ def topic_path(prefix: str, topic: Topic | str, *segments: str) -> str:
     if not topic_segment:
         raise ValueError("topic segment cannot be empty")
     parts.append(topic_segment)
-    for segment in segments:
-        cleaned = segment.strip("/")
-        if cleaned:
-            parts.append(cleaned)
+    parts.extend(filter(None, (s.strip("/") for s in segments)))
     return "/".join(parts)
 
 

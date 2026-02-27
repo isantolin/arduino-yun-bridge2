@@ -26,13 +26,6 @@ void ProcessClass::runAsync(etl::string_view command) {
   }
 }
 
-// Helper: build a 2-byte PID payload and send a single frame.
-static bool sendPidCommand(rpc::CommandId command, uint16_t pid_u16) {
-  etl::array<uint8_t, 2> pid_payload;
-  rpc::write_u16_be(pid_payload.data(), pid_u16);
-  return Bridge.sendFrame(command, pid_payload.data(), pid_payload.size());
-}
-
 void ProcessClass::poll(int16_t pid) {
   if (pid < 0) {
     return;
@@ -44,15 +37,23 @@ void ProcessClass::poll(int16_t pid) {
     return;
   }
 
-  if (!sendPidCommand(rpc::CommandId::CMD_PROCESS_POLL, pid_u16)) {
+  auto sendPid = [](rpc::CommandId command, uint16_t pid_val) {
+    etl::array<uint8_t, 2> pid_payload;
+    rpc::write_u16_be(pid_payload.data(), pid_val);
+    return Bridge.sendFrame(command, pid_payload.data(), pid_payload.size());
+  };
+
+  if (!sendPid(rpc::CommandId::CMD_PROCESS_POLL, pid_u16)) {
     _popPendingProcessPid();  // Cleanup if failed to send
   }
 }
 
 void ProcessClass::kill(int16_t pid) {
   if (pid < 0) return;
-  (void)sendPidCommand(rpc::CommandId::CMD_PROCESS_KILL,
-                       static_cast<uint16_t>(pid));
+  etl::array<uint8_t, 2> pid_payload;
+  rpc::write_u16_be(pid_payload.data(), static_cast<uint16_t>(pid));
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_PROCESS_KILL, pid_payload.data(),
+                         pid_payload.size());
 }
 
 bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {

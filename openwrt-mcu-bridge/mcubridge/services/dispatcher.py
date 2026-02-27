@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from functools import partial
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from mcubridge.protocol.contracts import response_to_request
@@ -164,11 +163,11 @@ class BridgeDispatcher:
         )
         self.mcu_registry.register(
             Command.CMD_DIGITAL_READ.value,
-            partial(self._handle_unexpected_pin_read, Command.CMD_DIGITAL_READ),
+            lambda p: self._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, p),
         )
         self.mcu_registry.register(
             Command.CMD_ANALOG_READ.value,
-            partial(self._handle_unexpected_pin_read, Command.CMD_ANALOG_READ),
+            lambda p: self._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, p),
         )
         self.mqtt_router.register(Topic.DIGITAL, self._handle_pin_topic)
         self.mqtt_router.register(Topic.ANALOG, self._handle_pin_topic)

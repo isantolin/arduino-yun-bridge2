@@ -9,7 +9,7 @@ import time
 from asyncio.subprocess import Process
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
 import psutil
@@ -62,14 +62,6 @@ from .queues import BoundedByteDeque
 logger = logging.getLogger("mcubridge.state")
 
 SpoolSnapshot = dict[str, int | float]
-
-
-def _serial_pipeline_base_payload(command_id: int, attempt: int) -> dict[str, Any]:
-    return {
-        "command_id": command_id,
-        "command_name": resolve_command_id(command_id),
-        "attempt": attempt,
-    }
 
 
 def _coerce_snapshot_int(snapshot: Mapping[str, Any], name: str, current: int) -> int:
@@ -299,17 +291,11 @@ def _collect_system_metrics() -> dict[str, Any]:
         # [SIL-2] Monitor thermal health to predict hardware failure
         temps = psutil.sensors_temperatures()
         # Prefer 'cpu_thermal', 'coretemp', or just the first available
-        cpu_temp = None
-        if temps:
-            for name in ["cpu_thermal", "coretemp", "soc_thermal"]:
-                if name in temps and temps[name]:
-                    cpu_temp = temps[name][0].current
-                    break
-            if cpu_temp is None:
-                # Fallback to first available
-                first_key = next(iter(temps))
-                if temps[first_key]:
-                    cpu_temp = temps[first_key][0].current
+        names = ("cpu_thermal", "coretemp", "soc_thermal")
+        cpu_temp = next(
+            (temps[n][0].current for n in names if n in temps and temps[n]),
+            next((t[0].current for t in temps.values() if t), None) if temps else None,
+        )
         result["temperature_celsius"] = cpu_temp
     except (OSError, AttributeError):
         result["temperature_celsius"] = None
@@ -767,7 +753,11 @@ class RuntimeState(msgspec.Struct):
         status_code = event.get("status")
 
         if name == "start":
-            payload = _serial_pipeline_base_payload(command_id, attempt)
+            payload: dict[str, Any] = {
+                "command_id": command_id,
+                "command_name": resolve_command_id(command_id),
+                "attempt": attempt,
+            }
             payload.update(
                 started_unix=timestamp,
                 acknowledged=False,
@@ -786,12 +776,16 @@ class RuntimeState(msgspec.Struct):
             return
 
         if name in {"success", "failure", "abandoned"}:
-            payload = _serial_pipeline_base_payload(command_id, attempt)
+            payload: dict[str, Any] = {
+                "command_id": command_id,
+                "command_name": resolve_command_id(command_id),
+                "attempt": attempt,
+            }
             payload.update(
                 event=name,
                 completed_unix=timestamp,
                 status_code=status_code,
-                status_name=_status_label(status_code),
+                status_name=_status_label(cast(int, status_code)),
                 acknowledged=acked or bool(inflight and inflight.get("acknowledged")),
             )
             if inflight is not None:

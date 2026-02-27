@@ -102,11 +102,14 @@ def _with_user_property(
 
 
 def _file_status_property(snapshot: dict[str, Any]) -> str | None:
-    if _is_positive_number(snapshot.get("file_storage_limit_rejections")):
-        return "quota-blocked"
-    if _is_positive_number(snapshot.get("file_write_limit_rejections")):
-        return "write-limit"
-    return None
+    checks = (
+        ("file_storage_limit_rejections", "quota-blocked"),
+        ("file_write_limit_rejections", "write-limit"),
+    )
+    return next(
+        (label for key, label in checks if _is_positive_number(snapshot.get(key))),
+        None,
+    )
 
 
 def _is_positive_number(value: Any) -> bool:

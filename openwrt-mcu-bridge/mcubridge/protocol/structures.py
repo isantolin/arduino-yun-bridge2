@@ -38,9 +38,7 @@ else:
 
     Construct = construct_raw.Construct
 
-def BinStruct(*args: Any, **kwargs: Any) -> Construct:
-    """Helper to create a construct Struct."""
-    return construct.Struct(*args, **kwargs)
+BinStruct: Final = construct.Struct
 
 # --- Basic Binary Types (Restored from protocol.py) ---
 UINT8_STRUCT: Final = construct.Int8ub

@@ -15,7 +15,7 @@ from ..mqtt.messages import QueuedPublish
 from ..protocol import protocol
 from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
 from ..protocol.structures import UINT16_STRUCT, AckPacket
-from ..protocol.topics import Topic, TopicRoute, parse_topic, topic_path
+from ..protocol.topics import Topic, parse_topic, topic_path
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
 from ..state.context import RuntimeState
 from . import (
@@ -271,7 +271,7 @@ class BridgeService:
         try:
             await self._dispatcher.dispatch_mqtt_message(
                 inbound,
-                self._parse_inbound_topic,
+                lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
             )
         except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
@@ -284,9 +284,6 @@ class BridgeService:
             latency_ms = (time.perf_counter() - start) * 1000.0
             # Note: We share latency stats or can create a specific one for MQTT
             self.state.record_rpc_latency_ms(latency_ms)
-
-    def _parse_inbound_topic(self, topic_name: str) -> TopicRoute | None:
-        return parse_topic(self.state.mqtt_topic_prefix, topic_name)
 
     async def enqueue_mqtt(
         self,

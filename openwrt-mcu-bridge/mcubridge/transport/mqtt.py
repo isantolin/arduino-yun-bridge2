@@ -177,6 +177,7 @@ class MqttTransport:
                     retain=message.retain,
                     properties=props,
                 )
+                self.state.metrics.mqtt_messages_published.inc()
             except asyncio.CancelledError:
                 logger.debug("MQTT publisher loop cancelled.")
                 try:

@@ -309,7 +309,7 @@ class BridgeClass
     uint8_t code;
     uint8_t code_prev;
     bool in_sync;
-    uint8_t buffer[rpc::MAX_RAW_FRAME_SIZE];
+    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> buffer;
   } _cobs;
 
   volatile bool _frame_received;

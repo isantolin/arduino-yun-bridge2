@@ -132,7 +132,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
     assert runtime_state.handshake_attempts == 1
     assert runtime_state.handshake_successes == 1
     assert runtime_state.handshake_failures == 0
-    assert runtime_state.serial_link_connected is True
+    assert runtime_state.is_connected is True
     # timing checks are less important with defaults, but we can check state sync
     assert runtime_state.serial_ack_timeout_ms > 0
 
@@ -634,13 +634,13 @@ async def test_on_serial_disconnected_clears_pending(
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
-    runtime_state.serial_link_connected = True
+    runtime_state.mark_transport_connected()
     runtime_state.pending_digital_reads.append(b"1")
     runtime_state.pending_analog_reads.append(b"2")
 
     await service.on_serial_disconnected()
 
-    assert runtime_state.serial_link_connected is False
+    assert runtime_state.is_connected is False
     assert not runtime_state.pending_digital_reads
     assert not runtime_state.pending_analog_reads
 

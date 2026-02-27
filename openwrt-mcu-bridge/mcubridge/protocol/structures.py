@@ -72,10 +72,13 @@ class CommandIdAdapter(construct.Adapter):
         return cmd_val
 
     def _encode(self, obj: int, context: Any, path: Any) -> dict[str, Any]:
-        # Split combined integer into Flag + ID for BitStruct
+        # Split combined integer into Flag + ID using Construct mapping where possible
+        # [SIL-2] Use integer division and modulo to avoid bitwise & where applicable
+        # or stick to clear BitStruct mapping if we change the parent.
+        # Actually, using obj.compressed property if it was a BitStruct would be better.
         return {
-            "compressed": bool(obj & protocol.CMD_FLAG_COMPRESSED),
-            "id": obj & ~protocol.CMD_FLAG_COMPRESSED,
+            "compressed": (obj // protocol.CMD_FLAG_COMPRESSED) > 0,
+            "id": obj % protocol.CMD_FLAG_COMPRESSED,
         }
 
 

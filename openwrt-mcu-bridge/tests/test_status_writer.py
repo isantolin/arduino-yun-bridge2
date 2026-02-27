@@ -53,7 +53,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         state.console_truncated_bytes = 4
         state.mcu_is_paused = True
         state.link_is_synchronized = True
-        state.serial_link_connected = True
+        state.mark_transport_connected()
         state.handshake_attempts = 2
         state.allowed_policy = AllowedCommandPolicy.from_iterable(["ls"])
         state.mcu_version = (2, 5)

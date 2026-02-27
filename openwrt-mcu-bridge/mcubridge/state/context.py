@@ -57,6 +57,7 @@ from ..protocol.structures import (
     SerialThroughputStats,
     SupervisorStats,
 )
+from .metrics import DaemonMetrics
 from .queues import BoundedByteDeque
 
 logger = logging.getLogger("mcubridge.state")
@@ -298,8 +299,40 @@ def _collect_system_metrics() -> dict[str, Any]:
 class RuntimeState(msgspec.Struct):
     """Aggregated mutable state shared across the daemon layers."""
 
+    metrics: DaemonMetrics = msgspec.field(default_factory=DaemonMetrics)
     serial_writer: asyncio.BaseTransport | None = None
-    serial_link_connected: bool = False
+
+    # [SIL-2] Lifecycle FSM (Single Source of Truth)
+    # Replaces manual boolean flags: serial_link_connected, link_is_synchronized
+    _machine: Machine = msgspec.field(default_factory=lambda: Machine(
+        states=["disconnected", "connected", "synchronized"],
+        initial="disconnected",
+        ignore_invalid_triggers=True,
+    ))
+
+    @property
+    def is_connected(self) -> bool:
+        return self._machine.state in {"connected", "synchronized"}
+
+    @property
+    def is_synchronized(self) -> bool:
+        return self._machine.state == "synchronized"
+
+    def mark_transport_connected(self) -> None:
+        self._machine.set_state("connected")
+
+    def mark_transport_disconnected(self) -> None:
+        self._machine.set_state("disconnected")
+        self.link_is_synchronized = False  # Legacy for compat
+        if self.link_sync_event:
+            self.link_sync_event.clear()
+
+    def mark_synchronized(self) -> None:
+        self._machine.set_state("synchronized")
+        self.link_is_synchronized = True
+        if self.link_sync_event:
+            self.link_sync_event.set()
+
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
         default_factory=lambda: asyncio.Queue()
     )
@@ -649,16 +682,22 @@ class RuntimeState(msgspec.Struct):
     def record_mqtt_drop(self, topic: str) -> None:
         self.mqtt_dropped_messages += 1
         self.mqtt_drop_counts[topic] = self.mqtt_drop_counts.get(topic, 0) + 1
+        self.metrics.mqtt_messages_dropped.inc()
 
     def record_watchdog_beat(self, timestamp: float | None = None) -> None:
         self.watchdog_beats += 1
         self.last_watchdog_beat = (
             timestamp if timestamp is not None else time.monotonic()
         )
+        self.metrics.watchdog_beats.inc()
 
     def apply_handshake_stats(self, stats: dict[str, Any]) -> None:
         """Update handshake metrics using Tenacity internal statistics."""
-        self.handshake_attempts = int(stats.get("attempt_number", self.handshake_attempts))
+        attempts = int(stats.get("attempt_number", 0))
+        if attempts > 0:
+            self.handshake_attempts = attempts
+            self.metrics.handshake_attempts.inc(attempts)
+
         # failure_number might not be present if successful
         if "failure_number" in stats:
             self.handshake_failures = int(stats["failure_number"])
@@ -674,6 +713,7 @@ class RuntimeState(msgspec.Struct):
         self.handshake_backoff_until = 0.0
         self.handshake_last_duration = self._handshake_duration_since_start()
         self._handshake_last_started = 0.0
+        self.metrics.handshake_successes.inc()
 
     def record_handshake_failure(self, reason: str) -> None:
         self.handshake_failures += 1
@@ -712,8 +752,10 @@ class RuntimeState(msgspec.Struct):
             stats.commands_acked += 1
         elif event == "retry":
             stats.retries += 1
+            self.metrics.serial_retries.inc()
         elif event == "failure":
             stats.failures += 1
+            self.metrics.serial_failures.inc()
         else:
             return
         stats.last_event_unix = time.time()
@@ -798,6 +840,7 @@ class RuntimeState(msgspec.Struct):
 
     def record_serial_crc_error(self) -> None:
         self.serial_crc_errors += 1
+        self.metrics.serial_crc_errors.inc()
 
     def record_unknown_command_id(self, command_id: int) -> None:
         """Record receipt of an unrecognized command/status ID.
@@ -814,10 +857,14 @@ class RuntimeState(msgspec.Struct):
     def record_serial_tx(self, nbytes: int) -> None:
         """Record bytes transmitted on serial link for throughput metrics."""
         self.serial_throughput_stats.record_tx(nbytes)
+        self.metrics.serial_bytes_sent.inc(nbytes)
+        self.metrics.serial_frames_sent.inc()
 
     def record_serial_rx(self, nbytes: int) -> None:
         """Record bytes received on serial link for throughput metrics."""
         self.serial_throughput_stats.record_rx(nbytes)
+        self.metrics.serial_bytes_received.inc(nbytes)
+        self.metrics.serial_frames_received.inc()
 
     def record_rpc_latency_ms(self, latency_ms: float) -> None:
         """Record RPC command round-trip latency for histogram metrics.
@@ -826,6 +873,7 @@ class RuntimeState(msgspec.Struct):
             latency_ms: Command round-trip time in milliseconds.
         """
         self.serial_latency_stats.record(latency_ms)
+        self.metrics.serial_latency_ms.observe(latency_ms)
 
     def record_mcu_status(self, status: Status) -> None:
         key = status.name
@@ -951,6 +999,7 @@ class RuntimeState(msgspec.Struct):
         detail = reason if exc is None else f"{reason}:{exc}"
         logger.warning("MQTT spool failure (%s); disabling durable spool.", detail)
         self.mqtt_spool_errors += 1
+        self.metrics.mqtt_spool_errors.inc()
         self.mqtt_spool_last_error = detail
         self._disable_mqtt_spool(reason)
 
@@ -969,6 +1018,7 @@ class RuntimeState(msgspec.Struct):
         try:
             await asyncio.to_thread(spool.append, message)
             self.mqtt_spooled_messages += 1
+            self.metrics.mqtt_spooled_messages.inc()
             return True
         except (OSError, msgspec.MsgspecError, MQTTSpoolError) as exc:
             reason = "append_failed"
@@ -1193,7 +1243,7 @@ class RuntimeState(msgspec.Struct):
 
         return BridgeSnapshot(
             serial_link=SerialLinkSnapshot(
-                connected=self.serial_link_connected,
+                connected=self.is_connected,
                 writer_attached=self.serial_writer is not None,
                 synchronised=self.link_is_synchronized,
             ),

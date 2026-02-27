@@ -560,7 +560,7 @@ class ProcessComponent:
 
         return ProcessOutputBatch(
             status_byte=Status.OK.value,
-            exit_code=exit_value & UINT8_MASK,
+            exit_code=exit_value % 256,
             stdout_chunk=stdout_payload,
             stderr_chunk=stderr_payload,
             finished=released_slot,

@@ -30,6 +30,14 @@ class CollectorRegistry:
         return tuple(self._collectors)
 
 
+class Counter:
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        self._value: float = 0.0
+
+    def inc(self, amount: float = 1.0) -> None:
+        self._value += float(amount)
+
+
 class Summary:
     def __init__(self, *_args: Any, **_kwargs: Any) -> None:
         self._observations: list[float] = []

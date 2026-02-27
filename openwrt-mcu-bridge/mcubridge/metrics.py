@@ -6,19 +6,15 @@ import asyncio
 import logging
 import math
 import re
-from collections.abc import Awaitable, Callable, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import (
     Any,
     cast,
 )
 
 import msgspec
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
-from prometheus_client.core import (
-    GaugeMetricFamily,
-    InfoMetricFamily,
-)
-from prometheus_client.registry import Collector
+import tenacity
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .mqtt.messages import QueuedPublish
 from .protocol.topics import Topic, topic_path
@@ -28,9 +24,6 @@ logger = logging.getLogger("mcubridge.metrics")
 
 
 _SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
-_INFO_METRIC = "mcubridge_info"
-_GAUGE_DOC = "McuBridge auto-generated metric"
-_INFO_DOC = "McuBridge informational metric"
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
@@ -204,36 +197,31 @@ async def publish_metrics(
         raise ValueError("interval must be greater than zero")
     expiry = float(tick_seconds * 2)
 
-    # Initial emit
-    try:
-        await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
-    except asyncio.CancelledError:
-        logger.info("Metrics publisher cancelled.")
-        raise
-    except (TypeError, ValueError, OSError) as e:
-        logger.error("Failed to publish initial metrics payload: %s", e)
-    except (TypeError, ValueError, AttributeError, OSError) as e:
-        logger.critical(
-            "Unexpected error in initial metrics emit: %s", e, exc_info=True
-        )
+    # [OPTIMIZATION] Use tenacity for resilient looping
+    @tenacity.retry(
+        wait=tenacity.wait_fixed(tick_seconds),
+        stop=tenacity.stop_never,
+        retry=tenacity.retry_if_exception_type(Exception),
+        before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
+    )
+    async def _metrics_loop() -> None:
+        try:
+            await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error("Periodic metrics emit failed: %s", e)
+        # Always raise to trigger the wait_fixed loop
+        raise Exception("tick")
 
-    # Loop
     try:
-        while True:
-            await asyncio.sleep(tick_seconds)
-            try:
-                await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
-            except asyncio.CancelledError:
-                raise
-            except (TypeError, ValueError, OSError) as e:
-                logger.error("Failed to publish metrics payload: %s", e)
-            except (TypeError, ValueError, AttributeError, OSError) as e:
-                logger.critical(
-                    "Unexpected error in metrics loop: %s", e, exc_info=True
-                )
+        await _metrics_loop()
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
         raise
+    except Exception:
+        # Tenacity loop terminated (should only happen on unhandled error if reraise=True)
+        pass
 
 
 async def publish_bridge_snapshots(
@@ -287,79 +275,6 @@ async def publish_bridge_snapshots(
         raise
 
 
-class _RuntimeStateCollector(Collector):
-    """Prometheus collector that projects RuntimeState snapshots.
-
-    [EXTENDED METRICS] Supports histogram buckets for latency metrics.
-    """
-
-    def __init__(self, state: RuntimeState) -> None:
-        self._state = state
-
-    def collect(self) -> Iterator[Any]:
-        # [SIL-2] Hard dependency: prometheus_client must be present.
-        snapshot = self._state.build_metrics_snapshot()
-
-        # [EXTENDED METRICS] Native prometheus Summary handles latency
-        # The SerialLatencyStats.initialize_prometheus() registers the Summary
-        # with our registry, so it's automatically exported.
-        # We skip manual histogram emission here as Summary provides better
-        # percentile accuracy (p50, p90, p99) without bucket configuration.
-
-        info_values: list[tuple[str, str]] = []
-        for metric_type, name, value in self._flatten(
-            "mcubridge",
-            snapshot,
-        ):
-            if metric_type == "gauge":
-                metric = GaugeMetricFamily(
-                    _sanitize_metric_name(name),
-                    _GAUGE_DOC,
-                )
-                metric.add_metric((), value)
-                yield metric
-            else:
-                info_values.append((name, value))
-        if info_values:
-            info_metric = InfoMetricFamily(
-                _INFO_METRIC,
-                _INFO_DOC,
-                labels=("key",),
-            )
-            for key, value in info_values:
-                info_metric.add_metric(
-                    (key,),
-                    {"value": value},
-                )
-            yield info_metric
-
-    def _flatten(
-        self,
-        prefix: str,
-        value: Any,
-    ) -> Iterator[tuple[str, str, Any]]:
-        if isinstance(value, msgspec.Struct):
-            yield from self._flatten(prefix, msgspec.structs.asdict(value))
-            return
-        if isinstance(value, dict):
-            typed_dict = cast(dict[Any, Any], value)
-            for raw_key, sub_value in typed_dict.items():
-                key = raw_key if isinstance(raw_key, str) else str(raw_key)
-                next_prefix = f"{prefix}_{key}" if prefix else key
-                yield from self._flatten(next_prefix, sub_value)
-            return
-        if isinstance(value, bool):
-            yield ("gauge", prefix, 1.0 if value else 0.0)
-            return
-        if isinstance(value, (int, float)):
-            yield ("gauge", prefix, float(value))
-            return
-        if value is None:
-            yield ("info", prefix, "null")
-            return
-        yield ("info", prefix, str(value))
-
-
 class PrometheusExporter:
     """Expose RuntimeState snapshots via the Prometheus text format."""
 
@@ -370,9 +285,7 @@ class PrometheusExporter:
         self._port = port
         self._server: asyncio.AbstractServer | None = None
         self._resolved_port: int | None = None
-        self._registry = CollectorRegistry()
-        self._collector = _RuntimeStateCollector(state)
-        self._registry.register(self._collector)
+        self._registry = state.metrics.registry
         # [OPTIMIZATION] Initialize native prometheus Summary for percentiles
         state.serial_latency_stats.initialize_prometheus(self._registry)
 
@@ -489,14 +402,6 @@ class PrometheusExporter:
 
     def _render_metrics(self) -> bytes:
         return generate_latest(self._registry)
-
-
-def _sanitize_metric_name(name: str) -> str:
-    cleaned = _SANITIZE_RE.sub("_", name.lower())
-    cleaned = cleaned.strip("_") or "mcubridge_metric"
-    if cleaned[0].isdigit():
-        cleaned = f"_{cleaned}"
-    return cleaned
 
 
 def _build_bridge_snapshot_message(

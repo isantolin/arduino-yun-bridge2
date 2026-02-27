@@ -187,7 +187,7 @@ class BridgeService:
 
     async def on_serial_connected(self) -> None:
         """Initiate protocol handshake and flush backlogs after reconnect."""
-        self.state.serial_link_connected = True
+        self.state.mark_transport_connected()
 
         # [SIL-2] Protocol Synchronization: Force handshake immediately.
         try:
@@ -218,7 +218,7 @@ class BridgeService:
     async def on_serial_disconnected(self) -> None:
         """Reset transient MCU tracking when the serial link drops."""
 
-        self.state.serial_link_connected = False
+        self.state.mark_transport_disconnected()
 
         pending_digital = len(self.state.pending_digital_reads)
         pending_analog = len(self.state.pending_analog_reads)

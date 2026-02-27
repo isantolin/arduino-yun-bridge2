@@ -246,7 +246,7 @@ def test_serial_pipeline_snapshot_tracks_events(
 def test_bridge_snapshot_combines_sections(
     runtime_state: RuntimeState,
 ) -> None:
-    runtime_state.serial_link_connected = True
+    runtime_state.mark_transport_connected()
     runtime_state.handshake_attempts = 2
     runtime_state.mcu_version = (1, 2)
     runtime_state.record_serial_pipeline_event(

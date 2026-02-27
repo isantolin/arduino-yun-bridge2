@@ -612,20 +612,12 @@ class QueueEvent(msgspec.Struct):
 # --- Serial Flow Structures ---
 
 
-def _set_factory() -> set[int]:
-    return set()
-
-
-def _event_factory() -> asyncio.Event:
-    return asyncio.Event()
-
-
 class PendingCommand(msgspec.Struct):
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_resp_ids: set[int] = msgspec.field(default_factory=_set_factory)
-    completion: asyncio.Event = msgspec.field(default_factory=_event_factory)
+    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: set())
+    completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     attempts: int = 0
     success: bool | None = None
     failure_status: int | None = None
@@ -810,15 +802,11 @@ LATENCY_BUCKETS_MS: tuple[float, ...] = (
 )
 
 
-def _latency_bucket_counts_factory() -> list[int]:
-    return [0] * len(LATENCY_BUCKETS_MS)
-
-
 class SerialLatencyStats(msgspec.Struct):
     """RPC command latency histogram."""
 
     bucket_counts: list[int] = msgspec.field(
-        default_factory=_latency_bucket_counts_factory
+        default_factory=lambda: [0] * len(LATENCY_BUCKETS_MS)
     )
     overflow_count: int = 0
     total_observations: int = 0

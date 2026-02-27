@@ -16,15 +16,10 @@ SYSLOG_SOCKET = Path("/dev/log")
 SYSLOG_SOCKET_FALLBACK = Path("/var/run/log")
 
 
-def _get_log_level(config: RuntimeConfig) -> str:
-    """Determine log level from configuration."""
-    return "DEBUG" if getattr(config, "debug_logging", False) else "INFO"
-
-
 def configure_logging(config: RuntimeConfig) -> None:
     """Configure root logging using RichHandler for enhanced observability."""
 
-    level = _get_log_level(config)
+    level = "DEBUG" if getattr(config, "debug_logging", False) else "INFO"
     force_stream = bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
 
     # Determine if we should use RichHandler (Console) or SysLog (Production)

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import errno
-import functools
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Final, Sized, TypeGuard, cast
 
@@ -407,7 +406,7 @@ class SerialTransport:
 
         transport, proto = await serial_asyncio_fast.create_serial_connection(
             loop,
-            functools.partial(self._make_protocol, lost_future),
+            lambda: self._make_protocol(lost_future),
             self.config.serial_port,
             baudrate=start_baud
         )
@@ -434,7 +433,7 @@ class SerialTransport:
                     transport, proto = (
                         await serial_asyncio_fast.create_serial_connection(
                             loop,
-                            functools.partial(self._make_protocol, lost_future),
+                            lambda: self._make_protocol(lost_future),
                             self.config.serial_port,
                             baudrate=target_baud,
                         )

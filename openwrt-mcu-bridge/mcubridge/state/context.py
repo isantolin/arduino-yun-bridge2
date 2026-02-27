@@ -679,16 +679,45 @@ class RuntimeState(msgspec.Struct):
 
 def create_runtime_state(config: Any) -> RuntimeState:
     state = RuntimeState()
-    state.mqtt_queue_limit = config.mqtt_queue_limit
-    state.mqtt_spool_dir = config.mqtt_spool_dir
-    state.mqtt_spool_limit = config.mqtt_queue_limit * 4
-    state.file_system_root = config.file_system_root
-    state.file_write_max_bytes = config.file_write_max_bytes
-    state.file_storage_quota_bytes = config.file_storage_quota_bytes
-    state.process_timeout = config.process_timeout
-    state.process_output_limit = config.process_max_output_bytes
-    state.process_max_concurrent = config.process_max_concurrent
-    state.allowed_policy = config.allowed_policy
-    state.topic_authorization = config.topic_authorization
+    
+    if isinstance(config, dict):
+        state.mqtt_queue_limit = config.get("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)
+        state.mqtt_spool_dir = config.get("mqtt_spool_dir", DEFAULT_MQTT_SPOOL_DIR)
+        state.mqtt_spool_limit = state.mqtt_queue_limit * 4
+        state.file_system_root = config.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT)
+        state.file_write_max_bytes = config.get("file_write_max_bytes", DEFAULT_FILE_WRITE_MAX_BYTES)
+        state.file_storage_quota_bytes = config.get("file_storage_quota_bytes", DEFAULT_FILE_STORAGE_QUOTA_BYTES)
+        state.process_timeout = config.get("process_timeout", DEFAULT_PROCESS_TIMEOUT)
+        state.process_output_limit = config.get("process_max_output_bytes", DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
+        state.process_max_concurrent = config.get("process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT)
+        
+        policy_data = config.get("allowed_policy")
+        if isinstance(policy_data, AllowedCommandPolicy):
+            state.allowed_policy = policy_data
+        elif policy_data and isinstance(policy_data, dict) and "entries" in policy_data:
+            state.allowed_policy = AllowedCommandPolicy(entries=tuple(policy_data["entries"]))
+        else:
+            state.allowed_policy = AllowedCommandPolicy(entries=())
+
+        auth_data = config.get("topic_authorization")
+        if isinstance(auth_data, TopicAuthorization):
+            state.topic_authorization = auth_data
+        elif auth_data and isinstance(auth_data, dict):
+            state.topic_authorization = TopicAuthorization(**auth_data)
+        else:
+            state.topic_authorization = TopicAuthorization()
+    else:
+        state.mqtt_queue_limit = getattr(config, "mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)
+        state.mqtt_spool_dir = getattr(config, "mqtt_spool_dir", DEFAULT_MQTT_SPOOL_DIR)
+        state.mqtt_spool_limit = state.mqtt_queue_limit * 4
+        state.file_system_root = getattr(config, "file_system_root", DEFAULT_FILE_SYSTEM_ROOT)
+        state.file_write_max_bytes = getattr(config, "file_write_max_bytes", DEFAULT_FILE_WRITE_MAX_BYTES)
+        state.file_storage_quota_bytes = getattr(config, "file_storage_quota_bytes", DEFAULT_FILE_STORAGE_QUOTA_BYTES)
+        state.process_timeout = getattr(config, "process_timeout", DEFAULT_PROCESS_TIMEOUT)
+        state.process_output_limit = getattr(config, "process_max_output_bytes", DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
+        state.process_max_concurrent = getattr(config, "process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT)
+        state.allowed_policy = getattr(config, "allowed_policy", AllowedCommandPolicy(entries=()))
+        state.topic_authorization = getattr(config, "topic_authorization", TopicAuthorization())
+        
     state.initialize_spool()
     return state

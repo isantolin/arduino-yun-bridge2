@@ -223,7 +223,7 @@ def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
     try:
         yield state
     finally:
-        state.cleanup()
+        pass
         if loop_to_close:
             loop_to_close.close()
             asyncio.set_event_loop(None)

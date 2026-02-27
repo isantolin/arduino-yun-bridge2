@@ -1,2 +1,0 @@
-"""KDF namespace stub."""
-

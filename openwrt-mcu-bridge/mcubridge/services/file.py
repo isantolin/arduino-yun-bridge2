@@ -437,6 +437,7 @@ class FileComponent:
         async with self._storage_lock:
             limit = max(1, self.state.file_write_max_bytes)
             if payload_size > limit:
+                self.state.file_write_limit_rejections += 1
                 self.state.metrics.file_write_limit_rejections.inc()
                 logger.warning(
                     (
@@ -458,6 +459,7 @@ class FileComponent:
             projected_usage = current_usage - previous_size + payload_size
             quota = max(limit, self.state.file_storage_quota_bytes)
             if projected_usage > quota:
+                self.state.file_storage_limit_rejections += 1
                 self.state.metrics.file_storage_limit_rejections.inc()
                 logger.warning(
                     (

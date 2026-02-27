@@ -137,19 +137,19 @@ class TestAccessor {
   void applyTimingConfig(const uint8_t* p, size_t len) {
     _bridge._applyTimingConfig(p, len);
   }
-  bool requiresAck(uint16_t cmd) const { return _bridge._requiresAck(cmd); }
+  bool requiresAck(uint16_t cmd) const { return rpc::requires_ack(cmd); }
   void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
   void handleMalformed(uint16_t cmd) { _bridge._handleMalformed(cmd); }
   void handleSystemCommand(const rpc::Frame& f) {
     bridge::router::CommandContext ctx(
         &f, f.header.command_id, false,
-        _bridge._requiresAck(f.header.command_id));
+        rpc::requires_ack(f.header.command_id));
     _bridge.onSystemCommand(ctx);
   }
   void handleGpioCommand(const rpc::Frame& f) {
     bridge::router::CommandContext ctx(
         &f, f.header.command_id, false,
-        _bridge._requiresAck(f.header.command_id));
+        rpc::requires_ack(f.header.command_id));
     _bridge.onGpioCommand(ctx);
   }
   void computeHandshakeTag(const uint8_t* n, size_t nl, uint8_t* out) {

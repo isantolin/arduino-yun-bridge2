@@ -430,7 +430,34 @@ class BridgeClass
   bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
   void _sendRawFrame(uint16_t command_id, const uint8_t* payload,
                      size_t length);
-  bool _requiresAck(uint16_t command_id) const;
+
+  // [SIL-2] DRY Command Helpers with Lambdas
+  template <typename F>
+  void _withAck(const bridge::router::CommandContext& ctx, F handler) {
+    if (ctx.is_duplicate) {
+      _sendAckAndFlush(ctx.raw_command);
+    } else {
+      handler();
+      _markRxProcessed(*ctx.frame);
+      _sendAck(ctx.raw_command);
+    }
+  }
+
+  template <typename T, typename F>
+  void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
+    _withAck(ctx, [&]() {
+      auto msg = rpc::Payload::parse<T>(*ctx.frame);
+      if (msg) handler(*msg);
+    });
+  }
+
+  template <typename T, typename F>
+  void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
+    if (ctx.is_duplicate) return;
+    auto msg = rpc::Payload::parse<T>(*ctx.frame);
+    if (msg) handler(*msg);
+  }
+
   void _retransmitLastFrame();
   void _handleAck(uint16_t command_id);
   void _handleMalformed(uint16_t command_id);

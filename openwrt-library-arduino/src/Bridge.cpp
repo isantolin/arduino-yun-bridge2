@@ -355,9 +355,7 @@ void BridgeClass::process() {
 void BridgeClass::flushStream() { _stream.flush(); }
 
 // [SIL-2] Pin Validation Helper
-static inline bool _isValidPin(uint8_t pin) {
-  return bridge::hal::isValidPin(pin);
-}
+// Using bridge::hal::isValidPin directly in implementation
 
 void BridgeClass::dispatch(const rpc::Frame& frame) {
   // [SIL-2] Phase 1: Decompress if needed
@@ -393,7 +391,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   // [SIL-2] Phase 2: Build context
   bridge::router::CommandContext ctx(&effective_frame, raw_command,
                                      _isRecentDuplicateRx(effective_frame),
-                                     _requiresAck(raw_command));
+                                     rpc::requires_ack(raw_command));
 
   // [SIL-2] Security/Safety Gate: Only allow handshake commands if not
   // operational.
@@ -709,80 +707,70 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_handleSetPinMode(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) {
-    _sendAckAndFlush(ctx.raw_command);
-  } else {
-    auto msg = rpc::Payload::parse<rpc::payload::PinMode>(*ctx.frame);
-    if (msg && _isValidPin(msg->pin)) ::pinMode(msg->pin, msg->mode);
-    _markRxProcessed(*ctx.frame);
-    _sendAck(ctx.raw_command);
-  }
+  _withPayloadAck<rpc::payload::PinMode>(
+      ctx, [](const rpc::payload::PinMode& msg) {
+        if (bridge::hal::isValidPin(msg.pin)) ::pinMode(msg.pin, msg.mode);
+      });
 }
 
 void BridgeClass::_handleDigitalWrite(
     const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) {
-    _sendAckAndFlush(ctx.raw_command);
-  } else {
-    auto msg = rpc::Payload::parse<rpc::payload::DigitalWrite>(*ctx.frame);
-    if (msg && _isValidPin(msg->pin))
-      ::digitalWrite(msg->pin, msg->value ? HIGH : LOW);
-    _markRxProcessed(*ctx.frame);
-    _sendAck(ctx.raw_command);
-  }
+  _withPayloadAck<rpc::payload::DigitalWrite>(
+      ctx, [](const rpc::payload::DigitalWrite& msg) {
+        if (bridge::hal::isValidPin(msg.pin))
+          ::digitalWrite(msg.pin, msg.value ? HIGH : LOW);
+      });
 }
 
 void BridgeClass::_handleAnalogWrite(
     const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) {
-    _sendAckAndFlush(ctx.raw_command);
-  } else {
-    auto msg = rpc::Payload::parse<rpc::payload::AnalogWrite>(*ctx.frame);
-    if (msg && _isValidPin(msg->pin)) ::analogWrite(msg->pin, msg->value);
-    _markRxProcessed(*ctx.frame);
-    _sendAck(ctx.raw_command);
-  }
+  _withPayloadAck<rpc::payload::AnalogWrite>(
+      ctx, [](const rpc::payload::AnalogWrite& msg) {
+        if (bridge::hal::isValidPin(msg.pin)) ::analogWrite(msg.pin, msg.value);
+      });
 }
 
 void BridgeClass::_handleDigitalRead(
     const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) return;
-  auto msg = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
-  if (msg && _isValidPin(msg->pin)) {
-    int16_t value = ::digitalRead(msg->pin);
-    rpc::payload::DigitalReadResponse resp{
-        static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK)};
-    etl::array<uint8_t, rpc::payload::DigitalReadResponse::SIZE> buffer;
-    resp.encode(buffer.data());
-    (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, buffer.data(),
-                    buffer.size());
-    _markRxProcessed(*ctx.frame);
-  } else {
-    (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
-  }
+  _withPayload<rpc::payload::PinRead>(
+      ctx, [this, &ctx](const rpc::payload::PinRead& msg) {
+        if (bridge::hal::isValidPin(msg.pin)) {
+          int16_t value = ::digitalRead(msg.pin);
+          rpc::payload::DigitalReadResponse resp{
+              static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK)};
+          etl::array<uint8_t, rpc::payload::DigitalReadResponse::SIZE> buffer;
+          resp.encode(buffer.data());
+          (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, buffer.data(),
+                          buffer.size());
+          _markRxProcessed(*ctx.frame);
+        } else {
+          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+        }
+      });
 }
 
 void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) return;
-  auto msg = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
-  bool valid = msg.has_value();
+  _withPayload<rpc::payload::PinRead>(
+      ctx, [this, &ctx](const rpc::payload::PinRead& msg) {
+        bool valid = true;
 #ifdef NUM_ANALOG_INPUTS
-  if (valid && msg->pin >= NUM_ANALOG_INPUTS) valid = false;
+        if (msg.pin >= NUM_ANALOG_INPUTS) valid = false;
 #else
-  if (valid && !_isValidPin(msg->pin)) valid = false;
+        if (!bridge::hal::isValidPin(msg.pin)) valid = false;
 #endif
-  if (valid) {
-    int16_t value = ::analogRead(msg->pin);
-    rpc::payload::AnalogReadResponse resp{
-        static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX)};
-    etl::array<uint8_t, rpc::payload::AnalogReadResponse::SIZE> buffer;
-    resp.encode(buffer.data());
-    (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, buffer.data(),
-                    buffer.size());
-    _markRxProcessed(*ctx.frame);
-  } else {
-    (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
-  }
+        if (valid) {
+          int16_t value = ::analogRead(msg.pin);
+          rpc::payload::AnalogReadResponse resp{
+              static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX)};
+          etl::array<uint8_t, rpc::payload::AnalogReadResponse::SIZE> buffer;
+          resp.encode(buffer.data());
+          (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, buffer.data(),
+                          buffer.size());
+          _markRxProcessed(*ctx.frame);
+        } else {
+          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+        }
+      });
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
@@ -794,36 +782,28 @@ void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleConsoleWrite(
     const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) {
-    _sendAckAndFlush(ctx.raw_command);
-  } else {
-    auto msg = rpc::Payload::parse<rpc::payload::ConsoleWrite>(*ctx.frame);
-    if (msg) Console._push(etl::span<const uint8_t>(msg->data, msg->length));
-    _markRxProcessed(*ctx.frame);
-    _sendAck(ctx.raw_command);
-  }
+  _withPayloadAck<rpc::payload::ConsoleWrite>(
+      ctx, [](const rpc::payload::ConsoleWrite& msg) {
+        Console._push(etl::span<const uint8_t>(msg.data, msg.length));
+      });
 }
 
 void BridgeClass::onDataStoreCommand(
     const bridge::router::CommandContext& ctx) {
   if (ctx.raw_command ==
       rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)) {
-    _handleDatastoreGetResp(ctx);
-  }
-}
-
-void BridgeClass::_handleDatastoreGetResp(
-    const bridge::router::CommandContext& ctx) {
+    _withPayload<rpc::payload::DatastoreGetResponse>(
+        ctx, [](const rpc::payload::DatastoreGetResponse& msg) {
 #if BRIDGE_ENABLE_DATASTORE
-  auto msg =
-      rpc::Payload::parse<rpc::payload::DatastoreGetResponse>(*ctx.frame);
-  if (msg && DataStore._datastore_get_handler.is_valid()) {
-    const char* key = DataStore._popPendingDatastoreKey();
-    DataStore._datastore_get_handler(
-        etl::string_view(key),
-        etl::span<const uint8_t>(msg->value, msg->value_len));
-  }
+          if (DataStore._datastore_get_handler.is_valid()) {
+            const char* key = DataStore._popPendingDatastoreKey();
+            DataStore._datastore_get_handler(
+                etl::string_view(key),
+                etl::span<const uint8_t>(msg.value, msg.value_len));
+          }
 #endif
+        });
+  }
 }
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
@@ -846,58 +826,54 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleMailboxPush(
     const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) {
-    _sendAckAndFlush(ctx.raw_command);
-  } else {
+  _withPayloadAck<rpc::payload::MailboxPush>(
+      ctx, [](const rpc::payload::MailboxPush& msg) {
 #if BRIDGE_ENABLE_MAILBOX
-    auto msg = rpc::Payload::parse<rpc::payload::MailboxPush>(*ctx.frame);
-    if (msg && Mailbox._mailbox_handler.is_valid()) {
-      Mailbox._mailbox_handler(msg->data, msg->length);
-    }
+        if (Mailbox._mailbox_handler.is_valid()) {
+          Mailbox._mailbox_handler(msg.data, msg.length);
+        }
 #endif
-    _markRxProcessed(*ctx.frame);
-    _sendAck(ctx.raw_command);
-  }
+      });
 }
 
 void BridgeClass::_handleMailboxReadResp(
     const bridge::router::CommandContext& ctx) {
+  _withPayload<rpc::payload::MailboxReadResponse>(
+      ctx, [](const rpc::payload::MailboxReadResponse& msg) {
 #if BRIDGE_ENABLE_MAILBOX
-  auto msg = rpc::Payload::parse<rpc::payload::MailboxReadResponse>(*ctx.frame);
-  if (msg && Mailbox._mailbox_handler.is_valid()) {
-    Mailbox._mailbox_handler(msg->content, msg->length);
-  }
+        if (Mailbox._mailbox_handler.is_valid()) {
+          Mailbox._mailbox_handler(msg.content, msg.length);
+        }
 #endif
+      });
 }
 
 void BridgeClass::_handleMailboxAvailableResp(
     const bridge::router::CommandContext& ctx) {
+  _withPayload<rpc::payload::MailboxAvailableResponse>(
+      ctx, [](const rpc::payload::MailboxAvailableResponse& msg) {
 #if BRIDGE_ENABLE_MAILBOX
-  auto msg =
-      rpc::Payload::parse<rpc::payload::MailboxAvailableResponse>(*ctx.frame);
-  if (msg && Mailbox._mailbox_available_handler.is_valid()) {
-    Mailbox._mailbox_available_handler(msg->count);
-  }
+        if (Mailbox._mailbox_available_handler.is_valid()) {
+          Mailbox._mailbox_available_handler(msg.count);
+        }
 #endif
+      });
 }
 
 void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) {
-    _sendAckAndFlush(ctx.raw_command);
-  } else {
-    _markRxProcessed(*ctx.frame);
-    _sendAck(ctx.raw_command);
-  }
+  _withAck(ctx, []() { /* No payload processing needed for ACK-only write */ });
 }
 
 void BridgeClass::_handleFileReadResp(
     const bridge::router::CommandContext& ctx) {
+  _withPayload<rpc::payload::FileReadResponse>(
+      ctx, [](const rpc::payload::FileReadResponse& msg) {
 #if BRIDGE_ENABLE_FILESYSTEM
-  auto msg = rpc::Payload::parse<rpc::payload::FileReadResponse>(*ctx.frame);
-  if (msg && FileSystem._file_system_read_handler.is_valid()) {
-    FileSystem._file_system_read_handler(msg->content, msg->length);
-  }
+        if (FileSystem._file_system_read_handler.is_valid()) {
+          FileSystem._file_system_read_handler(msg.content, msg.length);
+        }
 #endif
+      });
 }
 
 void BridgeClass::onFileSystemCommand(
@@ -943,38 +919,43 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleProcessRunResp(
     const bridge::router::CommandContext& ctx) {
+  _withPayload<rpc::payload::ProcessRunResponse>(
+      ctx, [](const rpc::payload::ProcessRunResponse& msg) {
 #if BRIDGE_ENABLE_PROCESS
-  auto msg = rpc::Payload::parse<rpc::payload::ProcessRunResponse>(*ctx.frame);
-  if (msg && Process._process_run_handler.is_valid()) {
-    Process._process_run_handler(static_cast<rpc::StatusCode>(msg->status),
-                                 msg->stdout_data, msg->stdout_len,
-                                 msg->stderr_data, msg->stderr_len);
-  }
+        if (Process._process_run_handler.is_valid()) {
+          Process._process_run_handler(
+              static_cast<rpc::StatusCode>(msg.status), msg.stdout_data,
+              msg.stdout_len, msg.stderr_data, msg.stderr_len);
+        }
 #endif
+      });
 }
 
 void BridgeClass::_handleProcessRunAsyncResp(
     const bridge::router::CommandContext& ctx) {
+  _withPayload<rpc::payload::ProcessRunAsyncResponse>(
+      ctx, [](const rpc::payload::ProcessRunAsyncResponse& msg) {
 #if BRIDGE_ENABLE_PROCESS
-  auto msg =
-      rpc::Payload::parse<rpc::payload::ProcessRunAsyncResponse>(*ctx.frame);
-  if (msg && Process._process_run_async_handler.is_valid()) {
-    Process._process_run_async_handler(static_cast<int16_t>(msg->pid));
-  }
+        if (Process._process_run_async_handler.is_valid()) {
+          Process._process_run_async_handler(static_cast<int16_t>(msg.pid));
+        }
 #endif
+      });
 }
 
 void BridgeClass::_handleProcessPollResp(
     const bridge::router::CommandContext& ctx) {
+  _withPayload<rpc::payload::ProcessPollResponse>(
+      ctx, [](const rpc::payload::ProcessPollResponse& msg) {
 #if BRIDGE_ENABLE_PROCESS
-  auto msg = rpc::Payload::parse<rpc::payload::ProcessPollResponse>(*ctx.frame);
-  if (msg && Process._process_poll_handler.is_valid()) {
-    Process._process_poll_handler(
-        static_cast<rpc::StatusCode>(msg->status), msg->exit_code,
-        msg->stdout_data, msg->stdout_len, msg->stderr_data, msg->stderr_len);
-    Process._popPendingProcessPid();
-  }
+        if (Process._process_poll_handler.is_valid()) {
+          Process._process_poll_handler(
+              static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
+              msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
+          Process._popPendingProcessPid();
+        }
 #endif
+      });
 }
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
@@ -1177,7 +1158,8 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload,
     }
   }
 
-  const bool critical = _requiresAck(final_cmd & ~rpc::RPC_CMD_FLAG_COMPRESSED);
+  const bool critical =
+      rpc::requires_ack(final_cmd & ~rpc::RPC_CMD_FLAG_COMPRESSED);
 
   // [SIL-2] State-Driven Sending Logic via ETL FSM
   if (critical) {
@@ -1209,10 +1191,6 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload,
   // Non-critical frame: Send immediately using stack buffer
   _sendRawFrame(final_cmd, final_payload, final_len);
   return true;
-}
-
-bool BridgeClass::_requiresAck(uint16_t command_id) const {
-  return rpc::requires_ack(command_id);
 }
 
 void BridgeClass::_clearAckState() {

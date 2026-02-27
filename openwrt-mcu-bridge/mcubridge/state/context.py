@@ -679,7 +679,7 @@ class RuntimeState(msgspec.Struct):
 
 def create_runtime_state(config: Any) -> RuntimeState:
     state = RuntimeState()
-    
+
     if isinstance(config, dict):
         state.mqtt_queue_limit = config.get("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)
         state.mqtt_spool_dir = config.get("mqtt_spool_dir", DEFAULT_MQTT_SPOOL_DIR)
@@ -690,7 +690,7 @@ def create_runtime_state(config: Any) -> RuntimeState:
         state.process_timeout = config.get("process_timeout", DEFAULT_PROCESS_TIMEOUT)
         state.process_output_limit = config.get("process_max_output_bytes", DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
         state.process_max_concurrent = config.get("process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT)
-        
+
         policy_data = config.get("allowed_policy")
         if isinstance(policy_data, AllowedCommandPolicy):
             state.allowed_policy = policy_data
@@ -718,6 +718,6 @@ def create_runtime_state(config: Any) -> RuntimeState:
         state.process_max_concurrent = getattr(config, "process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT)
         state.allowed_policy = getattr(config, "allowed_policy", AllowedCommandPolicy(entries=()))
         state.topic_authorization = getattr(config, "topic_authorization", TopicAuthorization())
-        
+
     state.initialize_spool()
     return state

@@ -589,11 +589,15 @@ class RuntimeState(msgspec.Struct):
         return evt.accepted
 
     def pop_mailbox_message(self) -> bytes | None:
+        if not self.mailbox_queue:
+            return None
         msg = self.mailbox_queue.popleft()
         self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
         return msg
 
     def pop_mailbox_incoming(self) -> bytes | None:
+        if not self.mailbox_incoming_queue:
+            return None
         msg = self.mailbox_incoming_queue.popleft()
         self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
         return msg
@@ -603,8 +607,10 @@ class RuntimeState(msgspec.Struct):
         self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
 
     def build_metrics_snapshot(self) -> dict[str, Any]:
+        uptime_val = getattr(self.metrics.uptime_seconds, "_value", 0)
+        uptime_num = uptime_val.get() if hasattr(uptime_val, "get") else float(uptime_val)  # type: ignore
         return {
-            "uptime_seconds": int(self.metrics.uptime_seconds._value),  # type: ignore
+            "uptime_seconds": int(uptime_num),
             "is_connected": self.is_connected,
             "is_synchronized": self.is_synchronized,
             "mcu_paused": self.mcu_is_paused,

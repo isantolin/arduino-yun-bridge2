@@ -189,8 +189,9 @@ void test_bridge_core_gaps() {
 
   // Line 914: Chunky frame header too large
   uint8_t header[rpc::MAX_PAYLOAD_SIZE + 1];
-  TEST_ASSERT(Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, header,
-                                     sizeof(header), nullptr, 0) == false);
+  TEST_ASSERT(Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
+                                     etl::span<const uint8_t>(header, sizeof(header)),
+                                     etl::span<const uint8_t>()) == false);
 
   // Line 1029: Malformed retransmission
   ba.setAwaitingAck();

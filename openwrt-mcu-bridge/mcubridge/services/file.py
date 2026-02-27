@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
 from aiomqtt.message import Message
 from construct import ConstructError
+
+# [BACKWARD COMPAT] Expose scandir for unit tests mocking it
+scandir = os.scandir
+
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, FileAction, Status
 
@@ -475,30 +480,35 @@ class FileComponent:
 
     @staticmethod
     def _scan_directory_size(root: Path, max_depth: int = 10) -> int:
-        """Calculate total directory size using modern Path.walk()."""
-        import contextlib
-
+        """Calculate total directory size using scandir for efficiency."""
         total = 0
-        try:
-            # [SIL-2] Efficient directory traversal using Python 3.12+ walk()
-            root_depth = len(root.parts)
-            for current_root, dirs, files in root.walk(follow_symlinks=False):
-                current_depth = len(current_root.parts) - root_depth
-                if current_depth > max_depth:
-                    dirs.clear()  # Stop recursing deeper
-                    continue
+        stack = [(root, 0)]
 
-                # Filter Systemd private temporary directories to avoid permission errors
-                if current_root == Path("/tmp"):
-                    dirs[:] = [
-                        d for d in dirs if not d.startswith(SYSTEMD_PRIVATE_PREFIX)
-                    ]
+        while stack:
+            current_path, depth = stack.pop()
+            if depth > max_depth:
+                continue
 
-                for name in files:
-                    with contextlib.suppress(OSError):
-                        total += (current_root / name).stat(follow_symlinks=False).st_size
-        except (OSError, ValueError):
-            pass
+            try:
+                with scandir(current_path) as it:
+                    for entry in it:
+                        try:
+                            if entry.is_symlink():
+                                continue
+
+                            if entry.is_dir(follow_symlinks=False):
+                                # Filter Systemd private temporary directories to avoid permission errors
+                                if entry.name.startswith(SYSTEMD_PRIVATE_PREFIX) and str(
+                                    current_path
+                                ) == "/tmp":
+                                    continue
+                                stack.append((Path(entry.path), depth + 1))
+                            elif entry.is_file(follow_symlinks=False):
+                                total += entry.stat(follow_symlinks=False).st_size
+                        except OSError:
+                            continue
+            except (OSError, ValueError):
+                continue
 
         return total
 

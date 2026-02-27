@@ -275,6 +275,58 @@ async def publish_bridge_snapshots(
         raise
 
 
+def _sanitize_metric_name(name: str) -> str:
+    """Sanitises a metric name for Prometheus compatibility."""
+    cleaned = _SANITIZE_RE.sub("_", name.lower())
+    cleaned = cleaned.strip("_") or "mcubridge_metric"
+    if cleaned[0].isdigit():
+        cleaned = f"_{cleaned}"
+    return cleaned
+
+
+class _RuntimeStateCollector:
+    """[SIL-2] Dynamic collector for Prometheus.
+
+    Converts the current RuntimeState snapshot into Prometheus Gauge and Info
+    metrics on-demand during scrapes.
+    """
+
+    def __init__(self, state: RuntimeState) -> None:
+        self._state = state
+
+    def collect(self) -> Iterator[Metric]:
+        """Collect and yield metrics from the current state snapshot."""
+        from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily
+
+        snapshot = self._state.build_metrics_snapshot()
+        for flavor, name, value in self._flatten("mcubridge", snapshot):
+            metric_name = _sanitize_metric_name(name)
+            if flavor == "gauge":
+                g = GaugeMetricFamily(metric_name, f"Value of {name}")
+                g.add_metric([], float(value))
+                yield g
+            elif flavor == "info":
+                i = InfoMetricFamily(metric_name, f"Info for {name}")
+                i.add_metric([], {"val": str(value)})
+                yield i
+
+    def _flatten(self, prefix: str, value: Any) -> Iterator[tuple[str, str, Any]]:
+        if isinstance(value, dict):
+            for k, v in value.items():
+                yield from self._flatten(f"{prefix}_{k}", v)
+        elif isinstance(value, (list, tuple, set)):
+            # We don't typically flatten sequences in metrics, but we emit length
+            yield ("gauge", f"{prefix}_len", float(len(value)))
+        elif isinstance(value, bool):
+            yield ("gauge", prefix, 1.0 if value else 0.0)
+        elif isinstance(value, (int, float)):
+            yield ("gauge", prefix, float(value))
+        elif value is None:
+            yield ("info", prefix, "null")
+        else:
+            yield ("info", prefix, str(value))
+
+
 class PrometheusExporter:
     """Expose RuntimeState snapshots via the Prometheus text format."""
 
@@ -288,6 +340,8 @@ class PrometheusExporter:
         self._registry = state.metrics.registry
         # [OPTIMIZATION] Initialize native prometheus Summary for percentiles
         state.serial_latency_stats.initialize_prometheus(self._registry)
+        # Register the dynamic state collector
+        self._registry.register(_RuntimeStateCollector(state))
 
     @property
     def port(self) -> int:

@@ -283,17 +283,27 @@ def _collect_system_metrics() -> dict[str, Any]:
                 next((t[0].current for t in temps.values() if t), None) if temps else None,
             )
             result["temperature_celsius"] = cpu_temp
-    except (OSError, AttributeError, psutil.Error):
+    except (OSError, AttributeError):
         # Fill missing values with None
-        keys = (
-            "cpu_percent", "cpu_count", "memory_total_bytes",
-            "memory_available_bytes", "memory_percent", "load_avg_1m",
-            "load_avg_5m", "load_avg_15m", "temperature_celsius"
-        )
-        for k in keys:
-            result.setdefault(k, None)
+        _fill_missing_metrics(result)
+    except Exception as e:
+        # Catch psutil.Error and others safely
+        if "psutil" in str(type(e)):
+             _fill_missing_metrics(result)
+        else:
+             raise
 
     return result
+
+
+def _fill_missing_metrics(result: dict[str, Any]) -> None:
+    keys = (
+        "cpu_percent", "cpu_count", "memory_total_bytes",
+        "memory_available_bytes", "memory_percent", "load_avg_1m",
+        "load_avg_5m", "load_avg_15m", "temperature_celsius"
+    )
+    for k in keys:
+        result.setdefault(k, None)
 
 
 class RuntimeState(msgspec.Struct):

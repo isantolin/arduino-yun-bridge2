@@ -54,6 +54,18 @@ def derive_handshake_key(shared_secret: bytes) -> bytes:
     )
 
 
+def derive_storage_key(shared_secret: bytes) -> bytes:
+    """Derive a key for local file encryption."""
+    # Context-specific info for storage encryption
+    info = b"mcubridge-storage-v1"
+    return hkdf_sha256(
+        shared_secret,
+        HANDSHAKE_HKDF_SALT,
+        info,
+        32,
+    )
+
+
 def secure_zero(data: bytearray | memoryview) -> None:
     """Securely zero memory, resistant to interpreter optimization.
 

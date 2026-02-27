@@ -35,6 +35,45 @@ class DaemonMetrics:
             "Total errors during spool operations",
             registry=self.registry,
         )
+        self.mqtt_spooled_replayed = Counter(
+            "mcubridge_mqtt_spooled_replayed_total",
+            "Total spooled messages successfully replayed",
+            registry=self.registry,
+        )
+
+        # Console & Mailbox Overflow Metrics
+        self.console_dropped_bytes = Counter(
+            "mcubridge_console_dropped_bytes_total",
+            "Total bytes dropped from console TX queue",
+            registry=self.registry,
+        )
+        self.console_truncated_bytes = Counter(
+            "mcubridge_console_truncated_bytes_total",
+            "Total bytes truncated in console chunks",
+            registry=self.registry,
+        )
+        self.mailbox_dropped_messages = Counter(
+            "mcubridge_mailbox_dropped_messages_total",
+            "Total mailbox messages dropped due to capacity limits",
+            registry=self.registry,
+        )
+        self.mailbox_overflow_events = Counter(
+            "mcubridge_mailbox_overflow_events_total",
+            "Total overflow events in mailbox queues",
+            registry=self.registry,
+        )
+
+        # FileSystem Metrics
+        self.file_write_limit_rejections = Counter(
+            "mcubridge_file_write_limit_rejections_total",
+            "Total file writes rejected due to size limit",
+            registry=self.registry,
+        )
+        self.file_storage_limit_rejections = Counter(
+            "mcubridge_file_storage_limit_rejections_total",
+            "Total file operations rejected due to storage quota",
+            registry=self.registry,
+        )
 
         # Serial Metrics
         self.serial_bytes_sent = Counter(

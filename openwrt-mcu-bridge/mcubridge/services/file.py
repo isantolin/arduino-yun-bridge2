@@ -307,12 +307,20 @@ class FileComponent:
             match operation:
                 case FileAction.WRITE:
                     assert data is not None
-                    return await self._write_with_quota(safe_path, data)
+                    # [MIL-SPEC] Encrypt before writing
+                    encrypted = self._encrypt_payload(data)
+                    return await self._write_with_quota(safe_path, encrypted)
 
                 case FileAction.READ:
                     content = await asyncio.to_thread(safe_path.read_bytes)
-                    logger.info("Read %d bytes from %s", len(content), safe_path)
-                    return True, content, "ok"
+                    # [MIL-SPEC] Decrypt after reading
+                    try:
+                        decrypted = self._decrypt_payload(content)
+                        logger.info("Read and decrypted %d bytes from %s", len(decrypted), safe_path)
+                        return True, decrypted, "ok"
+                    except Exception as e:
+                        logger.error("Failed to decrypt file %s: %s", safe_path, e)
+                        return False, None, "decryption_failed"
 
                 case FileAction.REMOVE:
                     return await self._remove_with_tracking(safe_path)
@@ -327,6 +335,31 @@ class FileComponent:
                 filename,
             )
             return False, None, str(exc)
+
+    def _encrypt_payload(self, payload: bytes) -> bytes:
+        """Encrypt payload using AES-GCM with system derived key."""
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from mcubridge.security.security import derive_storage_key
+        import os
+
+        key = derive_storage_key(self.config.serial_shared_secret)
+        aesgcm = AESGCM(key)
+        nonce = os.urandom(12)
+        return nonce + aesgcm.encrypt(nonce, payload, None)
+
+    def _decrypt_payload(self, data: bytes) -> bytes:
+        """Decrypt AES-GCM payload."""
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from mcubridge.security.security import derive_storage_key
+
+        if len(data) < 12:
+            raise ValueError("Payload too short for AES-GCM")
+
+        key = derive_storage_key(self.config.serial_shared_secret)
+        aesgcm = AESGCM(key)
+        nonce = data[:12]
+        ciphertext = data[12:]
+        return aesgcm.decrypt(nonce, ciphertext, None)
 
     def _get_safe_path(self, filename: str) -> Path | None:
         base_dir = self._get_base_dir()
@@ -404,7 +437,7 @@ class FileComponent:
         async with self._storage_lock:
             limit = max(1, self.state.file_write_max_bytes)
             if payload_size > limit:
-                self.state.file_write_limit_rejections += 1
+                self.state.metrics.file_write_limit_rejections.inc()
                 logger.warning(
                     (
                         "Rejecting %d-byte file write to %s: exceeds "
@@ -425,7 +458,7 @@ class FileComponent:
             projected_usage = current_usage - previous_size + payload_size
             quota = max(limit, self.state.file_storage_quota_bytes)
             if projected_usage > quota:
-                self.state.file_storage_limit_rejections += 1
+                self.state.metrics.file_storage_limit_rejections.inc()
                 logger.warning(
                     (
                         "Rejecting file write to %s: projected usage %d "

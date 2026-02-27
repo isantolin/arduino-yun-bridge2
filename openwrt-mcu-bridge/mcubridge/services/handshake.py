@@ -111,7 +111,7 @@ _IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
     }
 )
 
-_STATUS_PAYLOAD_WINDOW = max(0, int(MAX_PAYLOAD_SIZE) - 2)
+_STATUS_PAYLOAD_WINDOW = max(0, MAX_PAYLOAD_SIZE - 2)
 
 
 class SerialHandshakeManager:

@@ -18,15 +18,6 @@ def format_hex(data: bytes | bytearray | memoryview | Iterable[int]) -> str:
     return f"[{' '.join(f'{b:02X}' for b in data)}]"
 
 
-def format_hex_short(data: bytes, limit: int = 16) -> str:
-    """Formats binary data with a length limit and ellipsis if truncated."""
-    if len(data) <= limit:
-        return format_hex(data)
-
-    head = data[:limit]
-    return f"[{' '.join(f'{b:02X}' for b in head)} ... ({len(data)} bytes)]"
-
-
 def log_binary_traffic(
     logger: logging.Logger, level: int, direction: str, label: str, data: bytes
 ) -> None:

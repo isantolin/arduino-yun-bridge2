@@ -45,5 +45,4 @@ def expected_responses(command_id: int) -> frozenset[int]:
 
 def response_to_request(command_id: int) -> int | None:
     """Resolve the request ID for the given response command ID."""
-
     return response_to_request_map().get(command_id)

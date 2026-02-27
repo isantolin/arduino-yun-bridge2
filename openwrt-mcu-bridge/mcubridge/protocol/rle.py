@@ -195,17 +195,5 @@ def should_compress(data: bytes | bytearray | memoryview) -> bool:
 
 
 def compression_ratio(original: bytes, compressed: bytes) -> float:
-    """
-    Calculate compression ratio.
-
-    Args:
-        original: Original uncompressed data
-        compressed: Compressed data
-
-    Returns:
-        Ratio (original_size / compressed_size).
-        Values > 1 indicate compression, < 1 indicate expansion.
-    """
-    if not compressed:
-        return 0.0
-    return len(original) / len(compressed)
+    """Calculate compression ratio. Ratio > 1 indicates compression."""
+    return len(original) / len(compressed) if compressed else 0.0

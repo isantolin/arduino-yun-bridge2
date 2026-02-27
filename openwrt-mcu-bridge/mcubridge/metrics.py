@@ -107,13 +107,15 @@ def _file_status_property(snapshot: dict[str, Any]) -> str | None:
         ("file_write_limit_rejections", "write-limit"),
     )
     return next(
-        (label for key, label in checks if _is_positive_number(snapshot.get(key))),
+        (
+            label
+            for key, label in checks
+            if (val := snapshot.get(key)) is not None
+            and isinstance(val, (int, float))
+            and val > 0
+        ),
         None,
     )
-
-
-def _is_positive_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and value > 0
 
 
 async def _emit_metrics_snapshot(
@@ -521,14 +523,9 @@ def _build_bridge_snapshot_message(
     )
 
 
-def _normalize_interval(
-    interval: float,
-    min_interval: float,
-) -> int | None:
-    if interval <= 0:
-        return None
-    tick = max(min_interval, interval)
-    return max(1, math.ceil(tick))
+def _normalize_interval(interval: float, min_interval: float) -> int | None:
+    """Normalize interval to a positive integer or None."""
+    return max(1, math.ceil(max(min_interval, interval))) if interval > 0 else None
 
 
 __all__ = [

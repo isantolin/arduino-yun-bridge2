@@ -46,7 +46,6 @@ from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    SUPERVISOR_DEFAULT_RESTART_INTERVAL,
 )
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import (
@@ -80,18 +79,6 @@ SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
     ValueError,
     msgspec.MsgspecError,
 )
-
-
-class SupervisedTaskSpec(msgspec.Struct):
-    """Specification for a supervised async task (Legacy compatibility)."""
-
-    name: str
-    factory: Callable[[], Awaitable[None]]
-    fatal_exceptions: tuple[type[BaseException], ...] = ()
-    max_restarts: int | None = None
-    restart_interval: float = SUPERVISOR_DEFAULT_RESTART_INTERVAL
-    min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF
-    max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF
 
 
 def _cleanup_child_processes() -> None:

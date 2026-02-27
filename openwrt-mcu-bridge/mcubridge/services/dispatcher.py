@@ -37,7 +37,7 @@ _PRE_SYNC_ALLOWED_COMMANDS = {
     Command.CMD_LINK_SYNC_RESP.value,
     Command.CMD_LINK_RESET_RESP.value,
 }
-_STATUS_PAYLOAD_WINDOW = max(0, int(MAX_PAYLOAD_SIZE) - 2)
+_STATUS_PAYLOAD_WINDOW = max(0, MAX_PAYLOAD_SIZE - 2)
 
 
 class BridgeDispatcher:

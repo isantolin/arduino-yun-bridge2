@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
-from .hex import format_hex, format_hex_short, log_binary_traffic
+from .hex import format_hex, log_binary_traffic
 
 __all__ = [
     "parse_bool",
@@ -13,7 +13,6 @@ __all__ = [
     "chunk_bytes",
     "log_hexdump",
     "format_hex",
-    "format_hex_short",
     "log_binary_traffic",
 ]
 

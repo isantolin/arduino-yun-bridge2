@@ -28,13 +28,9 @@ class TopicRoute(msgspec.Struct, frozen=True):
         return self.segments[1:] if len(self.segments) > 1 else ()
 
 
-def _split_segments(path: str) -> tuple[str, ...]:
-    return tuple(filter(None, path.split("/")))
-
-
 def split_topic_segments(path: str) -> tuple[str, ...]:
     """Public helper for service-level topic segment normalization."""
-    return _split_segments(path)
+    return tuple(filter(None, path.split("/")))
 
 
 def topic_path(prefix: str, topic: Topic | str, *segments: str) -> str:

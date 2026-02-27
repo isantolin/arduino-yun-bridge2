@@ -65,15 +65,11 @@ SpoolSnapshot = dict[str, int | float]
 
 
 def _coerce_snapshot_int(snapshot: Mapping[str, Any], name: str, current: int) -> int:
-    value = snapshot.get(name)
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return current
-    return current
+    val = snapshot.get(name)
+    try:
+        return int(val) if val is not None else current
+    except (ValueError, TypeError):
+        return current
 
 
 __all__: Final[tuple[str, ...]] = (
@@ -110,12 +106,12 @@ def resolve_command_id(command_id: int) -> str:
 
 
 def _status_label(code: int | None) -> str:
-    if code is None:
-        return "unknown"
-    try:
-        return Status(code).name
-    except ValueError:
-        return f"0x{code:02X}"
+    """Resolve status code to human-readable label."""
+    return (
+        "unknown"
+        if code is None
+        else next((s.name for s in Status if s.value == code), f"0x{code:02X}")
+    )
 
 
 class PendingPinRequest(msgspec.Struct):

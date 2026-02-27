@@ -33,19 +33,15 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
 
             # Helper to convert SupervisorStats -> SupervisorSnapshot
             supervisors = {
-                name: stats.as_snapshot()
-                for name, stats in state.supervisor_stats.items()
+                n: s.as_snapshot() for n, s in state.supervisor_stats.items()
             }
 
             # Helper to convert SerialFlowStats -> SerialFlowSnapshot
             serial_flow = state.serial_flow_stats.as_snapshot()
 
-            mcu_version = None
-            if state.mcu_version is not None:
-                mcu_version = McuVersion(
-                    major=state.mcu_version[0],
-                    minor=state.mcu_version[1],
-                )
+            mcu_version = (
+                McuVersion(*state.mcu_version) if state.mcu_version else None
+            )
 
             payload = BridgeStatus(
                 serial_connected=serial_connected,

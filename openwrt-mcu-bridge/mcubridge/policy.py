@@ -69,14 +69,9 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
         pieces = command.strip().split()
         if not pieces:
             return False
-        if self.allow_all:
-            return True
-
-        cmd = pieces[0].lower()
-        for pattern in self.entries:
-            if fnmatch.fnmatch(cmd, pattern):
-                return True
-        return False
+        return self.allow_all or any(
+            fnmatch.fnmatch(pieces[0].lower(), p) for p in self.entries
+        )
 
     def __contains__(self, item: str) -> bool:  # pragma: no cover
         return item.lower() in self.entries
@@ -122,12 +117,7 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
 
     def __post_init__(self) -> None:
         """Build the optimized lookup cache."""
-        allowed: list[tuple[str, str]] = []
-        # Fast iteration over static mapping
-        for key, attr in _TOPIC_AUTH_MAPPING.items():
-            if getattr(self, attr):
-                allowed.append(key)
-
+        allowed = [k for k, a in _TOPIC_AUTH_MAPPING.items() if getattr(self, a)]
         object.__setattr__(self, "_allowed_cache", frozenset(allowed))
 
     def allows(self, topic: str, action: str) -> bool:

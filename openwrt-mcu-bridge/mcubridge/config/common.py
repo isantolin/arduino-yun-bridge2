@@ -44,15 +44,17 @@ def get_uci_config() -> dict[str, Any]:
                 return get_default_config()
 
             clean_config: dict[str, Any] = get_default_config()
-            for k, v in section.items():
-                if k.startswith((".", "_")):
-                    continue
-                if isinstance(v, (list, tuple)):
-                    clean_config[k] = " ".join(
-                        str(item) for item in cast(Iterable[Any], v)
+            clean_config.update(
+                {
+                    k: (
+                        " ".join(map(str, cast(Iterable[Any], v)))
+                        if isinstance(v, (list, tuple))
+                        else v
                     )
-                else:
-                    clean_config[k] = v
+                    for k, v in section.items()
+                    if not k.startswith((".", "_"))
+                }
+            )
             return clean_config
     except (OSError, ValueError) as e:
         if is_openwrt:

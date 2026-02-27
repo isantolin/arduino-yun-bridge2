@@ -22,18 +22,16 @@ __all__ = [
 
 def build_mqtt_properties(message: QueuedPublish) -> Properties | None:
     """Construct Paho MQTT v5 properties from a message object."""
-    has_props = any(
-        [
+    if not any(
+        (
             message.content_type,
             message.payload_format_indicator is not None,
             message.message_expiry_interval is not None,
             message.response_topic,
             message.correlation_data is not None,
             message.user_properties,
-        ]
-    )
-
-    if not has_props:
+        )
+    ):
         return None
 
     props = Properties(PacketTypes.PUBLISH)

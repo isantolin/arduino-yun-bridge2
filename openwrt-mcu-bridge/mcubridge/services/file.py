@@ -129,8 +129,10 @@ class FileComponent:
             return
 
         for chunk in chunks:
-            response = FileReadResponsePacket(content=chunk).encode()
-            await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
+            await self.ctx.send_frame(
+                Command.CMD_FILE_READ_RESP.value,
+                FileReadResponsePacket(content=chunk).encode(),
+            )
 
     async def handle_remove(self, payload: bytes) -> bool:
         try:

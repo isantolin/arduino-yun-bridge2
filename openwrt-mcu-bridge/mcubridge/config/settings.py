@@ -295,9 +295,9 @@ def load_runtime_config() -> RuntimeConfig:
 
     # 4. Normalize MQTT topic prefix
     if "mqtt_topic" in raw_config:
-        prefix = str(raw_config["mqtt_topic"])
-        segments = [s.strip() for s in prefix.split("/") if s.strip()]
-        normalized = "/".join(segments)
+        from mcubridge.protocol.topics import split_topic_segments
+
+        normalized = "/".join(split_topic_segments(str(raw_config["mqtt_topic"])))
         if not normalized:
             raise ValueError("mqtt_topic must contain at least one segment")
         raw_config["mqtt_topic"] = normalized

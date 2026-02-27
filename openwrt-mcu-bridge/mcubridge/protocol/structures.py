@@ -656,13 +656,7 @@ class SupervisorStats(msgspec.Struct):
     fatal: bool = False
 
     def as_snapshot(self) -> SupervisorSnapshot:
-        return SupervisorSnapshot(
-            restarts=self.restarts,
-            last_failure_unix=self.last_failure_unix,
-            last_exception=self.last_exception,
-            backoff_seconds=self.backoff_seconds,
-            fatal=self.fatal,
-        )
+        return msgspec.convert(self, SupervisorSnapshot)
 
     def as_dict(self) -> dict[str, Any]:
         return msgspec.structs.asdict(self)
@@ -691,53 +685,56 @@ class McuCapabilities(msgspec.Struct):
     def arch_name(self) -> str:
         return _ARCH_MAPPING.get(self.board_arch, f"Unknown (0x{self.board_arch:02X})")
 
+    def _has(self, feat: str) -> bool:
+        return bool(self.features and getattr(self.features, feat, False))
+
     @property
     def has_watchdog(self) -> bool:
-        return bool(self.features and self.features.watchdog)
+        return self._has("watchdog")
 
     @property
     def has_rle(self) -> bool:
-        return bool(self.features and self.features.rle)
+        return self._has("rle")
 
     @property
     def has_debug_frames(self) -> bool:
-        return bool(self.features and self.features.debug_frames)
+        return self._has("debug_frames")
 
     @property
     def has_debug_io(self) -> bool:
-        return bool(self.features and self.features.debug_io)
+        return self._has("debug_io")
 
     @property
     def has_eeprom(self) -> bool:
-        return bool(self.features and self.features.eeprom)
+        return self._has("eeprom")
 
     @property
     def has_dac(self) -> bool:
-        return bool(self.features and self.features.dac)
+        return self._has("dac")
 
     @property
     def has_hw_serial1(self) -> bool:
-        return bool(self.features and self.features.hw_serial1)
+        return self._has("hw_serial1")
 
     @property
     def has_fpu(self) -> bool:
-        return bool(self.features and self.features.fpu)
+        return self._has("fpu")
 
     @property
     def is_3v3_logic(self) -> bool:
-        return bool(self.features and self.features.logic_3v3)
+        return self._has("logic_3v3")
 
     @property
     def has_big_buffer(self) -> bool:
-        return bool(self.features and self.features.big_buffer)
+        return self._has("big_buffer")
 
     @property
     def has_i2c(self) -> bool:
-        return bool(self.features and self.features.i2c)
+        return self._has("i2c")
 
     @property
     def has_spi(self) -> bool:
-        return bool(self.features and self.features.spi)
+        return self._has("spi")
 
     def as_dict(self) -> dict[str, Any]:
         """Convert to dictionary including expanded boolean flags."""
@@ -923,13 +920,7 @@ class SerialFlowStats(msgspec.Struct):
     last_event_unix: float = 0.0
 
     def as_snapshot(self) -> SerialFlowSnapshot:
-        return SerialFlowSnapshot(
-            commands_sent=self.commands_sent,
-            commands_acked=self.commands_acked,
-            retries=self.retries,
-            failures=self.failures,
-            last_event_unix=self.last_event_unix,
-        )
+        return msgspec.convert(self, SerialFlowSnapshot)
 
     def as_dict(self) -> dict[str, Any]:
         return msgspec.structs.asdict(self)

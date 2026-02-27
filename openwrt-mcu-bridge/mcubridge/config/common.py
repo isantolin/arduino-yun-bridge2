@@ -68,10 +68,7 @@ def get_default_config() -> dict[str, Any]:
 
     # [SIL-2] Use msgspec to generate defaults directly from the struct definition.
     # This ensures defaults are always in sync with the schema without manual iteration.
-    defaults = msgspec.to_builtins(RuntimeConfig())
-    # Ensure debug is set for consistency with legacy behavior
-    defaults["debug"] = False
-    return defaults
+    return {**msgspec.to_builtins(RuntimeConfig()), "debug": False}
 
 
 __all__: Final[tuple[str, ...]] = (

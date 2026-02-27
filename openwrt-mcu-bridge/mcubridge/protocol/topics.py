@@ -70,9 +70,7 @@ def file_topic(prefix: str, action: str, filename: str) -> str:
 
 def shell_topic(prefix: str, action: str, command_id: str | None = None) -> str:
     """e.g. br/sh/run or br/sh/poll/cmd123"""
-    if command_id:
-        return topic_path(prefix, Topic.SHELL, action, command_id)
-    return topic_path(prefix, Topic.SHELL, action)
+    return topic_path(prefix, Topic.SHELL, action, *filter(None, (command_id,)))
 
 
 def handshake_topic(prefix: str) -> str:

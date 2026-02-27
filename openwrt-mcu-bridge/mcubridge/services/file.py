@@ -371,11 +371,9 @@ class FileComponent:
         # Warn if writing to potentially non-volatile storage (not /tmp or /mnt)
         try:
             resolved = path.resolve()
-            is_volatile = False
-            for safe_prefix in VOLATILE_STORAGE_PATHS:
-                if str(resolved).startswith(safe_prefix):
-                    is_volatile = True
-                    break
+            is_volatile = any(
+                str(resolved).startswith(p) for p in VOLATILE_STORAGE_PATHS
+            )
 
             if not is_volatile:
                 logger.warning(

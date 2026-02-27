@@ -420,14 +420,10 @@ class SetBaudratePacket(BaseStruct, frozen=True):
 # --- Framing Schema ---
 
 
-def _compute_crc32(data: bytes) -> int:
-    return crc32(data) & 0xFFFFFFFF
+def _compute_crc32(data: Any) -> int:
+    return crc32(cast(bytes, data)) & 0xFFFFFFFF
 
 
-# [SIL-2] Integrated Framing Schema
-# Uses Checksum for automatic CRC32 validation/generation.
-# Uses Switch for automatic payload schema selection.
-# Uses RawCopy to allow access to raw bytes for Checksum and legacy byte-based handlers.
 FRAME_STRUCT = BinStruct(
     "content"
     / construct.RawCopy(

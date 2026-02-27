@@ -680,7 +680,7 @@ def create_runtime_state(config: Any) -> RuntimeState:
     state.file_write_max_bytes = config.file_write_max_bytes
     state.file_storage_quota_bytes = config.file_storage_quota_bytes
     state.process_timeout = config.process_timeout
-    state.process_output_limit = config.process_output_limit
+    state.process_output_limit = config.process_max_output_bytes
     state.process_max_concurrent = config.process_max_concurrent
     state.allowed_policy = config.allowed_policy
     state.topic_authorization = config.topic_authorization

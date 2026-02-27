@@ -133,18 +133,6 @@ class PendingPinRequest(msgspec.Struct):
     reply_context: Message | None = None
 
 
-def _bytearray_factory() -> bytearray:
-    return bytearray()
-
-
-def _asyncio_lock_factory() -> asyncio.Lock:
-    return asyncio.Lock()
-
-
-def _asyncio_event_factory() -> asyncio.Event:
-    return asyncio.Event()
-
-
 @dataclass
 class ManagedProcess:
     """Managed subprocess with output buffers."""
@@ -152,10 +140,10 @@ class ManagedProcess:
     pid: int
     command: str = ""
     handle: Process | None = None
-    stdout_buffer: bytearray = field(default_factory=_bytearray_factory)
-    stderr_buffer: bytearray = field(default_factory=_bytearray_factory)
+    stdout_buffer: bytearray = field(default_factory=bytearray)
+    stderr_buffer: bytearray = field(default_factory=bytearray)
     exit_code: int | None = None
-    io_lock: asyncio.Lock = field(default_factory=_asyncio_lock_factory)
+    io_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     fsm_state: str = PROCESS_STATE_STARTING
     _machine: Any = None
 
@@ -263,66 +251,10 @@ def _trim_process_buffers(
     return stdout_chunk, stderr_chunk, truncated_out, truncated_err
 
 
-def _mqtt_publish_queue_factory() -> asyncio.Queue[QueuedPublish]:
-    return asyncio.Queue()
-
-
-def _mqtt_drop_counts_factory() -> dict[str, int]:
-    return {}
-
-
-def _last_spool_snapshot_factory() -> SpoolSnapshot:
-    return {}
-
-
-def _datastore_factory() -> dict[str, str]:
-    return {}
-
-
-def _running_processes_factory() -> dict[int, ManagedProcess]:
-    return {}
-
-
-def _pending_pin_reads_factory() -> collections.deque[PendingPinRequest]:
-    return collections.deque()
-
-
-def _mcu_status_counters_factory() -> dict[str, int]:
-    return {}
-
-
-def _supervisor_stats_factory() -> dict[str, SupervisorStats]:
-    return {}
-
-
 def _serial_tx_allowed_factory() -> asyncio.Event:
     evt = asyncio.Event()
     evt.set()
     return evt
-
-
-def _policy_factory() -> AllowedCommandPolicy:
-    return AllowedCommandPolicy.from_iterable(())
-
-
-def _bounded_byte_deque_factory() -> BoundedByteDeque:
-    return BoundedByteDeque()
-
-
-def _topic_authorization_factory() -> TopicAuthorization:
-    return TopicAuthorization()
-
-
-def _serial_flow_stats_factory() -> SerialFlowStats:
-    return SerialFlowStats()
-
-
-def _serial_throughput_stats_factory() -> SerialThroughputStats:
-    return SerialThroughputStats()
-
-
-def _serial_latency_stats_factory() -> SerialLatencyStats:
-    return SerialLatencyStats()
 
 
 def _collect_system_metrics() -> dict[str, Any]:
@@ -391,13 +323,11 @@ class RuntimeState(msgspec.Struct):
     serial_writer: asyncio.BaseTransport | None = None
     serial_link_connected: bool = False
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=_mqtt_publish_queue_factory
+        default_factory=lambda: asyncio.Queue()
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
-    mqtt_drop_counts: dict[str, int] = msgspec.field(
-        default_factory=_mqtt_drop_counts_factory
-    )
+    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_messages: int = 0
     mqtt_spooled_replayed: int = 0
@@ -415,19 +345,15 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_dropped_limit: int = 0
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
-    _last_spool_snapshot: SpoolSnapshot = msgspec.field(
-        default_factory=_last_spool_snapshot_factory
-    )
-    datastore: dict[str, str] = msgspec.field(default_factory=_datastore_factory)
-    mailbox_queue: BoundedByteDeque = msgspec.field(
-        default_factory=_bounded_byte_deque_factory
-    )
+    _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=lambda: {})
+    datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})
+    mailbox_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(
         default_factory=_serial_tx_allowed_factory
     )
     console_to_mcu_queue: BoundedByteDeque = msgspec.field(
-        default_factory=_bounded_byte_deque_factory
+        default_factory=BoundedByteDeque
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
@@ -436,15 +362,15 @@ class RuntimeState(msgspec.Struct):
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
     running_processes: dict[int, ManagedProcess] = msgspec.field(
-        default_factory=_running_processes_factory
+        default_factory=lambda: {}
     )
-    process_lock: asyncio.Lock = msgspec.field(default_factory=_asyncio_lock_factory)
+    process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
-        default_factory=_policy_factory
+        default_factory=lambda: AllowedCommandPolicy.from_iterable(())
     )
     topic_authorization: TopicAuthorization = msgspec.field(
-        default_factory=_topic_authorization_factory
+        default_factory=TopicAuthorization
     )
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
@@ -459,10 +385,10 @@ class RuntimeState(msgspec.Struct):
     watchdog_beats: int = 0
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=_pending_pin_reads_factory,
+        default_factory=lambda: collections.deque(),
     )
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=_pending_pin_reads_factory,
+        default_factory=lambda: collections.deque(),
     )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
@@ -475,7 +401,7 @@ class RuntimeState(msgspec.Struct):
     mailbox_dropped_bytes: int = 0
     mailbox_outgoing_overflow_events: int = 0
     mailbox_incoming_queue: BoundedByteDeque = msgspec.field(
-        default_factory=_bounded_byte_deque_factory
+        default_factory=BoundedByteDeque
     )
     mailbox_incoming_queue_bytes: int = 0
     mailbox_incoming_dropped_messages: int = 0
@@ -487,9 +413,7 @@ class RuntimeState(msgspec.Struct):
     mcu_capabilities: McuCapabilities | None = None
     link_handshake_nonce: bytes | None = None
     link_is_synchronized: bool = False
-    link_sync_event: asyncio.Event = msgspec.field(
-        default_factory=_asyncio_event_factory
-    )
+    link_sync_event: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     link_expected_tag: bytes | None = None
     link_nonce_length: int = 0
     # [MIL-SPEC] Anti-replay nonce counters
@@ -509,14 +433,12 @@ class RuntimeState(msgspec.Struct):
     handshake_fatal_detail: str | None = None
     handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
-    serial_flow_stats: SerialFlowStats = msgspec.field(
-        default_factory=_serial_flow_stats_factory
-    )
+    serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
     serial_throughput_stats: SerialThroughputStats = msgspec.field(
-        default_factory=_serial_throughput_stats_factory
+        default_factory=SerialThroughputStats
     )
     serial_latency_stats: SerialLatencyStats = msgspec.field(
-        default_factory=_serial_latency_stats_factory
+        default_factory=SerialLatencyStats
     )
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
@@ -529,11 +451,9 @@ class RuntimeState(msgspec.Struct):
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counters: dict[str, int] = msgspec.field(
-        default_factory=_mcu_status_counters_factory
-    )
+    mcu_status_counters: dict[str, int] = msgspec.field(default_factory=lambda: {})
     supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
-        default_factory=_supervisor_stats_factory
+        default_factory=lambda: {}
     )
 
     def configure(self, config: RuntimeConfig) -> None:

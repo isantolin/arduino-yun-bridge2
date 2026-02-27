@@ -10,17 +10,12 @@ import msgspec
 from mcubridge.protocol.structures import QueueEvent
 
 
-def _make_deque() -> deque[bytes]:
-    """Factory for msgspec default_factory to avoid lambdas."""
-    return deque()
-
-
 class BoundedByteDeque(msgspec.Struct):
     """Deque that enforces both item-count and byte-length limits."""
 
     max_items: Annotated[int | None, msgspec.Meta(ge=0)] = None
     max_bytes: Annotated[int | None, msgspec.Meta(ge=0)] = None
-    _queue: deque[bytes] = msgspec.field(default_factory=_make_deque)
+    _queue: deque[bytes] = msgspec.field(default_factory=lambda: deque())
     _bytes: int = 0
 
     def __len__(self) -> int:

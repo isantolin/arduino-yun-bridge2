@@ -8,9 +8,9 @@
 
 FileSystemClass::FileSystemClass() {}
 
-void FileSystemClass::write(etl::string_view filePath, const uint8_t* data,
-                            size_t length) {
-  if (filePath.empty() || !data) return;
+void FileSystemClass::write(etl::string_view filePath,
+                            etl::span<const uint8_t> data) {
+  if (filePath.empty() || data.empty()) return;
 
   if (filePath.length() > rpc::RPC_MAX_FILEPATH_LENGTH - 1) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
@@ -20,10 +20,11 @@ void FileSystemClass::write(etl::string_view filePath, const uint8_t* data,
   etl::vector<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 3> header;
   rpc::PacketBuilder builder(header);
   builder.add_pascal_string(filePath);
-  builder.add_u16(static_cast<uint16_t>(length));
+  builder.add_u16(static_cast<uint16_t>(data.size()));
 
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE, header.data(),
-                         header.size(), data, length);
+  Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE,
+                         etl::span<const uint8_t>(header.data(), header.size()),
+                         data);
 }
 
 void FileSystemClass::remove(etl::string_view filePath) {

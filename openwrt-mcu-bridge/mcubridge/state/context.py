@@ -252,49 +252,45 @@ def _collect_system_metrics() -> dict[str, Any]:
     Gracefully handles errors to avoid breaking metrics collection.
     """
     result: dict[str, Any] = {}
+    # [OPTIMIZATION] Use oneshot() to cache internal results for efficiency
     try:
-        # CPU metrics (non-blocking, percentage since last call)
-        result["cpu_percent"] = psutil.cpu_percent(interval=None)
-        result["cpu_count"] = psutil.cpu_count() or 1
-    except (OSError, AttributeError):
-        result["cpu_percent"] = None
-        result["cpu_count"] = None
+        proc = psutil.Process()
+        with proc.oneshot():
+            # CPU metrics (non-blocking, percentage since last call)
+            result["cpu_percent"] = psutil.cpu_percent(interval=None)
+            result["cpu_count"] = psutil.cpu_count() or 1
 
-    try:
-        # Memory metrics
-        mem = psutil.virtual_memory()
-        result["memory_total_bytes"] = mem.total
-        result["memory_available_bytes"] = mem.available
-        result["memory_percent"] = mem.percent
-    except (OSError, AttributeError):
-        result["memory_total_bytes"] = None
-        result["memory_available_bytes"] = None
-        result["memory_percent"] = None
+            # Memory metrics
+            mem = psutil.virtual_memory()
+            result["memory_total_bytes"] = mem.total
+            result["memory_available_bytes"] = mem.available
+            result["memory_percent"] = mem.percent
 
-    try:
-        # Load average (1, 5, 15 minutes) - Unix only
-        load = psutil.getloadavg()
-        result["load_avg_1m"] = load[0]
-        result["load_avg_5m"] = load[1]
-        result["load_avg_15m"] = load[2]
-    except (OSError, AttributeError):
-        result["load_avg_1m"] = None
-        result["load_avg_5m"] = None
-        result["load_avg_15m"] = None
+            # Load average (1, 5, 15 minutes) - Unix only
+            load = psutil.getloadavg()
+            result["load_avg_1m"] = load[0]
+            result["load_avg_5m"] = load[1]
+            result["load_avg_15m"] = load[2]
 
-    try:
-        # Temperature metrics
-        # [SIL-2] Monitor thermal health to predict hardware failure
-        temps = psutil.sensors_temperatures()
-        # Prefer 'cpu_thermal', 'coretemp', or just the first available
-        names = ("cpu_thermal", "coretemp", "soc_thermal")
-        cpu_temp = next(
-            (temps[n][0].current for n in names if n in temps and temps[n]),
-            next((t[0].current for t in temps.values() if t), None) if temps else None,
+            # Temperature metrics
+            # [SIL-2] Monitor thermal health to predict hardware failure
+            temps = psutil.sensors_temperatures()
+            # Prefer 'cpu_thermal', 'coretemp', or just the first available
+            names = ("cpu_thermal", "coretemp", "soc_thermal")
+            cpu_temp = next(
+                (temps[n][0].current for n in names if n in temps and temps[n]),
+                next((t[0].current for t in temps.values() if t), None) if temps else None,
+            )
+            result["temperature_celsius"] = cpu_temp
+    except (OSError, AttributeError, psutil.Error):
+        # Fill missing values with None
+        keys = (
+            "cpu_percent", "cpu_count", "memory_total_bytes",
+            "memory_available_bytes", "memory_percent", "load_avg_1m",
+            "load_avg_5m", "load_avg_15m", "temperature_celsius"
         )
-        result["temperature_celsius"] = cpu_temp
-    except (OSError, AttributeError):
-        result["temperature_celsius"] = None
+        for k in keys:
+            result.setdefault(k, None)
 
     return result
 

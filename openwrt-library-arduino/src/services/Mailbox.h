@@ -5,6 +5,7 @@
 
 #if BRIDGE_ENABLE_MAILBOX
 #include "etl/delegate.h"
+#include "etl/span.h"
 #include "etl/string_view.h"
 #include "protocol/rpc_protocol.h"
 
@@ -14,13 +15,13 @@ class MailboxClass {
   friend class BridgeClass;
 
  public:
-  using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  using MailboxHandler = etl::delegate<void(etl::span<const uint8_t>)>;
   using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
 
   MailboxClass();
 
   void send(etl::string_view message);
-  void send(const uint8_t* data, size_t length);
+  void send(etl::span<const uint8_t> data);
   void requestRead();
   void requestAvailable();
 

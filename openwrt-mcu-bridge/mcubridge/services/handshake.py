@@ -244,7 +244,6 @@ class SerialHandshakeManager:
 
     async def _synchronize_attempt(self) -> bool:
         nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
-        self._state.record_handshake_attempt()
 
         # Transition to RESETTING
         self.start_reset()

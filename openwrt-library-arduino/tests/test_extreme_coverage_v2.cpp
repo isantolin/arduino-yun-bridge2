@@ -175,7 +175,7 @@ void test_filesystem_gaps() {
 
   // Gap: write with data too large
   uint8_t super_large[rpc::MAX_PAYLOAD_SIZE + 10];
-  FileSystem.write("test.txt", super_large, sizeof(super_large));
+  FileSystem.write("test.txt", etl::span<const uint8_t>(super_large, sizeof(super_large)));
 
   // Gap: read() with invalid path
   FileSystem.read(nullptr);
@@ -190,9 +190,8 @@ void test_filesystem_gaps() {
 
   // Gap: handleResponse with valid read handler
   FileSystem.onFileSystemReadResponse(
-      FileSystemClass::FileSystemReadHandler::create([](const uint8_t* d, uint16_t s) {
+      FileSystemClass::FileSystemReadHandler::create([](etl::span<const uint8_t> d) {
         (void)d;
-        (void)s;
       }));
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);

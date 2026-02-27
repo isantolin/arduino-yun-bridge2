@@ -99,7 +99,8 @@ void test_bridge_send_frame() {
   reset_bridge(stream);
   sync_bridge(stream);
   uint8_t payload[] = {0x01, 0x02, 0x03};
-  bool result = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, payload, 3);
+  bool result = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION,
+                                 etl::span<const uint8_t>(payload, 3));
   TEST_ASSERT(result == true);
   TEST_ASSERT(stream.tx_buffer.len > 0);
 }
@@ -160,7 +161,8 @@ void test_bridge_ack_malformed_timeout_paths() {
   reset_bridge(stream);
   sync_bridge(stream);
   const uint8_t payload[] = {'X'};
-  Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, 1);
+  Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
+                   etl::span<const uint8_t>(payload, 1));
   g_test_millis += 5000;
   Bridge.process();
 }
@@ -172,8 +174,9 @@ void test_bridge_chunking() {
   uint8_t header[5] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
   uint8_t data[100];
   for (size_t i = 0; i < 100; i++) data[i] = (uint8_t)i;
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PROCESSED, header, 5, data,
-                         100);
+  Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PROCESSED,
+                         etl::span<const uint8_t>(header, 5),
+                         etl::span<const uint8_t>(data, 100));
   TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 

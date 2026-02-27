@@ -50,8 +50,9 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
     flush();
   }
 
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0, buffer,
-                         size);
+  Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
+                         etl::span<const uint8_t>(),
+                         etl::span<const uint8_t>(buffer, size));
   return size;
 }
 
@@ -112,8 +113,9 @@ void ConsoleClass::flush() {
   }
 
   if (!_tx_buffer.empty()) {
-    if (Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0,
-                               _tx_buffer.data(), _tx_buffer.size())) {
+    if (Bridge.sendChunkyFrame(
+            rpc::CommandId::CMD_CONSOLE_WRITE, etl::span<const uint8_t>(),
+            etl::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size()))) {
       _tx_buffer.clear();
     }
   }

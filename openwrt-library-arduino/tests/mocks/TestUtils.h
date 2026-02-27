@@ -220,7 +220,9 @@ public:
     void assignSharedSecret(const uint8_t* s, const uint8_t* e) { _bridge._shared_secret.assign(s, e); }
     bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
     
-    void computeHandshakeTag(const uint8_t* n, size_t l, uint8_t* o) { _bridge._computeHandshakeTag(n, l, o); }
+    void computeHandshakeTag(const uint8_t* n, size_t l, uint8_t* o) {
+      _bridge._computeHandshakeTag(etl::span<const uint8_t>(n, l), o);
+    }
     void setStartupStabilizing(bool s) { _bridge._startup_stabilizing = s; }
     
     void handleSystemCommand(const rpc::Frame& f) { 

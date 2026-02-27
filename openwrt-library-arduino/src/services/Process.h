@@ -6,6 +6,7 @@
 #if BRIDGE_ENABLE_PROCESS
 #include "etl/circular_buffer.h"
 #include "etl/delegate.h"
+#include "etl/span.h"
 #include "etl/string_view.h"
 #include "protocol/rpc_protocol.h"
 
@@ -25,10 +26,10 @@ class ProcessClass {
 #endif
  public:
   using ProcessRunHandler = etl::delegate<void(
-      rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
+      rpc::StatusCode, etl::span<const uint8_t>, etl::span<const uint8_t>)>;
   using ProcessPollHandler =
-      etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t,
-                         const uint8_t*, uint16_t)>;
+      etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>,
+                         etl::span<const uint8_t>)>;
   using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
 
   ProcessClass();

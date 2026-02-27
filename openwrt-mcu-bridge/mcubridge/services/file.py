@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import AsyncExitStack
-from os import scandir
 from pathlib import Path, PurePosixPath
 
 from aiomqtt.message import Message
@@ -476,43 +475,31 @@ class FileComponent:
 
     @staticmethod
     def _scan_directory_size(root: Path, max_depth: int = 10) -> int:
-        total = 0
-        # Stack stores (path, depth) tuples
-        stack: list[tuple[Path, int]] = [(root, 0)]
-        while stack:
-            current, depth = stack.pop()
-            if depth > max_depth:
-                continue
+        """Calculate total directory size using modern Path.walk()."""
+        import contextlib
 
-            try:
-                with scandir(current) as iterator:
-                    for entry in iterator:
-                        if entry.is_symlink():
-                            continue
-                        if current == Path("/tmp") and entry.name.startswith(
-                            SYSTEMD_PRIVATE_PREFIX
-                        ):
-                            continue
-                        try:
-                            if entry.is_dir(follow_symlinks=False):
-                                stack.append((Path(entry.path), depth + 1))
-                                continue
-                            if entry.is_file(follow_symlinks=False):
-                                total += entry.stat(follow_symlinks=False).st_size
-                        except OSError as exc:
-                            logger.debug(
-                                "Failed to inspect %s during quota scan: %s",
-                                entry.path,
-                                exc,
-                            )
-            except FileNotFoundError:
-                continue
-            except OSError as exc:
-                logger.warning(
-                    "Unable to scan %s for quota tracking: %s",
-                    current,
-                    exc,
-                )
+        total = 0
+        try:
+            # [SIL-2] Efficient directory traversal using Python 3.12+ walk()
+            root_depth = len(root.parts)
+            for current_root, dirs, files in root.walk(follow_symlinks=False):
+                current_depth = len(current_root.parts) - root_depth
+                if current_depth > max_depth:
+                    dirs.clear()  # Stop recursing deeper
+                    continue
+
+                # Filter Systemd private temporary directories to avoid permission errors
+                if current_root == Path("/tmp"):
+                    dirs[:] = [
+                        d for d in dirs if not d.startswith(SYSTEMD_PRIVATE_PREFIX)
+                    ]
+
+                for name in files:
+                    with contextlib.suppress(OSError):
+                        total += (current_root / name).stat(follow_symlinks=False).st_size
+        except (OSError, ValueError):
+            pass
+
         return total
 
     def _get_base_dir(self) -> Path | None:

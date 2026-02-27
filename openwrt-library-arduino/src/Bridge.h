@@ -188,7 +188,7 @@ class BridgeClass
   using AnalogReadHandler = etl::delegate<void(uint16_t)>;
   using GetFreeMemoryHandler = etl::delegate<void(uint16_t)>;
   using StatusHandler =
-      etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t)>;
+      etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
 
 #if BRIDGE_ENABLE_DATASTORE
   using DataStoreGetHandler =
@@ -196,20 +196,21 @@ class BridgeClass
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-  using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  using MailboxHandler = etl::delegate<void(etl::span<const uint8_t>)>;
   using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-  using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  using FileSystemReadHandler = etl::delegate<void(etl::span<const uint8_t>)>;
 #endif
 
 #if BRIDGE_ENABLE_PROCESS
-  using ProcessRunHandler = etl::delegate<void(
-      rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
+  using ProcessRunHandler =
+      etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>,
+                         etl::span<const uint8_t>)>;
   using ProcessPollHandler =
-      etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t,
-                         const uint8_t*, uint16_t)>;
+      etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>,
+                         etl::span<const uint8_t>)>;
   using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
 #endif
 
@@ -265,10 +266,10 @@ class BridgeClass
   inline void onStatus(StatusHandler handler) { _status_handler = handler; }
 
   // Internal / Lower Level
-  bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr,
-                 size_t length = 0);
-  bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr,
-                 size_t length = 0);
+  bool sendFrame(rpc::CommandId command_id,
+                 etl::span<const uint8_t> payload = etl::span<const uint8_t>());
+  bool sendFrame(rpc::StatusCode status_code,
+                 etl::span<const uint8_t> payload = etl::span<const uint8_t>());
 
   // [SIL-2] Consolidated String Command Helpers (DRY)
   bool sendStringCommand(rpc::CommandId command_id, etl::string_view str,
@@ -283,8 +284,9 @@ class BridgeClass
                    const __FlashStringHelper* message);
 
   // [SIL-2] Large Payload Support
-  bool sendChunkyFrame(rpc::CommandId command_id, const uint8_t* header,
-                       size_t header_len, const uint8_t* data, size_t data_len);
+  bool sendChunkyFrame(rpc::CommandId command_id,
+                       etl::span<const uint8_t> header,
+                       etl::span<const uint8_t> data);
 
  protected:
   // [SIL-2] Internal notification helper
@@ -427,9 +429,8 @@ class BridgeClass
   bool _isHandshakeCommand(uint16_t command_id) const;
 
   void dispatch(const rpc::Frame& frame);
-  bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
-  void _sendRawFrame(uint16_t command_id, const uint8_t* payload,
-                     size_t length);
+  bool _sendFrame(uint16_t command_id, etl::span<const uint8_t> payload);
+  void _sendRawFrame(uint16_t command_id, etl::span<const uint8_t> payload);
 
   // [SIL-2] DRY Command Helpers with Lambdas
   template <typename F>
@@ -463,7 +464,7 @@ class BridgeClass
     T resp{etl::forward<Args>(args)...};
     etl::array<uint8_t, T::SIZE> buffer;
     resp.encode(buffer.data());
-    (void)sendFrame(cmd, buffer.data(), buffer.size());
+    (void)sendFrame(cmd, etl::span<const uint8_t>(buffer.data(), T::SIZE));
   }
 
   void _retransmitLastFrame();
@@ -472,11 +473,10 @@ class BridgeClass
   void _sendAck(uint16_t command_id);  // Send ACK without flush
   void _sendAckAndFlush(
       uint16_t command_id);  // Encapsulates ACK + flush sequence
-  void _doEmitStatus(rpc::StatusCode status_code, const uint8_t* payload,
-                     uint16_t length);
-  void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len,
-                            uint8_t* out_tag);
-  void _applyTimingConfig(const uint8_t* payload, size_t length);
+  void _doEmitStatus(rpc::StatusCode status_code,
+                     etl::span<const uint8_t> payload);
+  void _computeHandshakeTag(etl::span<const uint8_t> nonce, uint8_t* out_tag);
+  void _applyTimingConfig(etl::span<const uint8_t> payload);
 
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();

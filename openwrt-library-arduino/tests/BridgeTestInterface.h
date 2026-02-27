@@ -135,7 +135,7 @@ class TestAccessor {
   }
   void markRxProcessed(const rpc::Frame& f) { _bridge._markRxProcessed(f); }
   void applyTimingConfig(const uint8_t* p, size_t len) {
-    _bridge._applyTimingConfig(p, len);
+    _bridge._applyTimingConfig(etl::span<const uint8_t>(p, len));
   }
   bool requiresAck(uint16_t cmd) const { return rpc::requires_ack(cmd); }
   void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
@@ -153,7 +153,7 @@ class TestAccessor {
     _bridge.onGpioCommand(ctx);
   }
   void computeHandshakeTag(const uint8_t* n, size_t nl, uint8_t* out) {
-    _bridge._computeHandshakeTag(n, nl, out);
+    _bridge._computeHandshakeTag(etl::span<const uint8_t>(n, nl), out);
   }
   void flushPendingTxQueue() { _bridge._flushPendingTxQueue(); }
 

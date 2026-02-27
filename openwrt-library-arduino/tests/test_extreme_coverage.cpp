@@ -112,14 +112,14 @@ void test_extreme_filesystem() {
   setup_test_env(stream);
 
   // 1. Write con path nulo o data nula
-  FileSystem.write(nullptr, (const uint8_t*)"d", 1);
-  FileSystem.write("/t", nullptr, 0);
+  FileSystem.write(nullptr, etl::span<const uint8_t>());
+  FileSystem.write("/t", etl::span<const uint8_t>());
 
   // 2. Write con path extremadamente largo
   char long_path[200];
   etl::fill_n(long_path, sizeof(long_path), 'a');
   long_path[sizeof(long_path) - 1] = '\0';
-  FileSystem.write(long_path, (const uint8_t*)"d", 1);
+  FileSystem.write(long_path, etl::span<const uint8_t>((const uint8_t*)"d", 1));
 
   // 3. Response malformada (sin payload)
   rpc::Frame resp;
@@ -136,7 +136,7 @@ void test_extreme_process_mailbox() {
   setup_test_env(stream);
 
   // 1. Mailbox: Send con data nula
-  Mailbox.send(nullptr, 0);
+  Mailbox.send(etl::span<const uint8_t>());
 
   // 2. Process: RunAsync con comando nulo o largo
   Process.runAsync(nullptr);

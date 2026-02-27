@@ -5,6 +5,7 @@
 
 #if BRIDGE_ENABLE_FILESYSTEM
 #include "etl/delegate.h"
+#include "etl/span.h"
 #include "etl/string_view.h"
 #include "protocol/rpc_protocol.h"
 
@@ -14,11 +15,11 @@ class FileSystemClass {
   friend class BridgeClass;
 
  public:
-  using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  using FileSystemReadHandler = etl::delegate<void(etl::span<const uint8_t>)>;
 
   FileSystemClass();
 
-  void write(etl::string_view filePath, const uint8_t* data, size_t length);
+  void write(etl::string_view filePath, etl::span<const uint8_t> data);
   void remove(etl::string_view filePath);
   void read(etl::string_view filePath);
 

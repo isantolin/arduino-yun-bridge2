@@ -746,23 +746,15 @@ class McuCapabilities(msgspec.Struct):
     def as_dict(self) -> dict[str, Any]:
         """Convert to dictionary including expanded boolean flags."""
         res = msgspec.structs.asdict(self)
-        # Dynamic expansion of @property flags for status reports
-        flags = (
-            "arch_name",
-            "has_watchdog",
-            "has_rle",
-            "has_debug_frames",
-            "has_debug_io",
-            "has_eeprom",
-            "has_dac",
-            "has_hw_serial1",
-            "has_fpu",
-            "is_3v3_logic",
-            "has_big_buffer",
-            "has_i2c",
-            "has_spi",
-        )
-        res.update({f: getattr(self, f) for f in flags})
+        # [OPTIMIZATION] Dynamic expansion of @property flags for status reports
+        # This avoids manual maintenance of the flags list.
+        cls = type(self)
+        for name in dir(cls):
+            if name.startswith("_") or name == "as_dict":
+                continue
+            item = getattr(cls, name)
+            if isinstance(item, property):
+                res[name] = getattr(self, name)
         return res
 
 

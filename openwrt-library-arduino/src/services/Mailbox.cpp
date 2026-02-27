@@ -9,17 +9,19 @@ MailboxClass::MailboxClass() {}
 
 void MailboxClass::send(etl::string_view message) {
   if (message.empty()) return;
-  send(reinterpret_cast<const uint8_t*>(message.data()), message.length());
+  send(etl::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(message.data()), message.length()));
 }
 
-void MailboxClass::send(const uint8_t* data, size_t length) {
-  if (!data || length == 0) return;
+void MailboxClass::send(etl::span<const uint8_t> data) {
+  if (data.empty()) return;
 
   etl::array<uint8_t, 2> header;
-  rpc::write_u16_be(header.data(), static_cast<uint16_t>(length));
+  rpc::write_u16_be(header.data(), static_cast<uint16_t>(data.size()));
 
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH, header.data(),
-                         header.size(), data, length);
+  Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH,
+                         etl::span<const uint8_t>(header.data(), header.size()),
+                         data);
 }
 
 void MailboxClass::requestRead() {

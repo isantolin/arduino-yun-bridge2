@@ -211,7 +211,7 @@ void test_bridge_core_timeout_status() {
   auto ba = TestAccessor::create(Bridge);
   ba.setIdle();
   g_timeout_called = false;
-  Bridge.onStatus(BridgeClass::StatusHandler::create([](rpc::StatusCode status, const uint8_t*, uint16_t) {
+  Bridge.onStatus(BridgeClass::StatusHandler::create([](rpc::StatusCode status, etl::span<const uint8_t>) {
     if (status == rpc::StatusCode::STATUS_TIMEOUT) g_timeout_called = true;
   }));
   ba.setAckRetryLimit(0);

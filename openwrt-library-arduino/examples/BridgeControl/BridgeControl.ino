@@ -28,11 +28,11 @@ void setup() {
     Console.println(frame.header.command_id, HEX);
   }));
 
-  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create([](const uint8_t* buffer, uint16_t size) {
+  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create([](etl::span<const uint8_t> buffer) {
     char msg_buf[80];
-    if (size < sizeof(msg_buf)) {
-      memcpy(msg_buf, buffer, size);
-      msg_buf[size] = '\0';
+    if (buffer.size() < sizeof(msg_buf)) {
+      memcpy(msg_buf, buffer.data(), buffer.size());
+      msg_buf[buffer.size()] = '\0';
 
       Console.print(F("Mensaje de Mailbox recibido: "));
       Console.println(msg_buf);
@@ -50,9 +50,8 @@ void setup() {
     }
   }));
 
-  Bridge.onStatus(BridgeClass::StatusHandler::create([](rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
+  Bridge.onStatus(BridgeClass::StatusHandler::create([](rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
     (void)payload;
-    (void)length;
     // Solo imprimir errores graves para evitar saturación
     if (status_code != rpc::StatusCode::STATUS_OK) {
       Console.print(F("Error de Estado: 0x"));

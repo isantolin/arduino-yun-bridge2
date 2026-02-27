@@ -153,8 +153,8 @@ void integrated_test_bridge_core() {
   gpio.payload[1] = 1;
   accessor.dispatch(gpio);
 
-  localBridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, (const uint8_t*)"X",
-                        1);
+  localBridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
+                        etl::span<const uint8_t>((const uint8_t*)"X", 1));
   accessor.retransmitLastFrame();
 }
 
@@ -199,39 +199,35 @@ void integrated_test_extreme_coverage() {
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
   FileSystem.onFileSystemReadResponse(
-      FileSystemClass::FileSystemReadHandler::create([](const uint8_t* d, uint16_t l) {
+      FileSystemClass::FileSystemReadHandler::create([](etl::span<const uint8_t> d) {
         (void)d;
-        (void)l;
       }));
 #endif
 #if BRIDGE_ENABLE_PROCESS
   Process.onProcessRunResponse(
-      ProcessClass::ProcessRunHandler::create([](rpc::StatusCode s, const uint8_t* out, uint16_t ol,
-                                                 const uint8_t* err, uint16_t el) {
+      ProcessClass::ProcessRunHandler::create([](rpc::StatusCode s, etl::span<const uint8_t> out,
+                                                 etl::span<const uint8_t> err) {
         (void)s;
         (void)out;
-        (void)ol;
         (void)err;
-        (void)el;
       }));
   Process.onProcessPollResponse(
-      ProcessClass::ProcessPollHandler::create([](rpc::StatusCode s, uint8_t ec, const uint8_t* out,
-                                                  uint16_t ol, const uint8_t* err, uint16_t el) {
+      ProcessClass::ProcessPollHandler::create([](rpc::StatusCode s, uint8_t ec,
+                                                  etl::span<const uint8_t> out,
+                                                  etl::span<const uint8_t> err) {
         (void)s;
         (void)ec;
         (void)out;
-        (void)ol;
         (void)err;
-        (void)el;
       }));
   Process.onProcessRunAsyncResponse(
       ProcessClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create([](const uint8_t* m, uint16_t l) {
-    (void)m;
-    (void)l;
-  }));
+  Mailbox.onMailboxMessage(
+      MailboxClass::MailboxHandler::create([](etl::span<const uint8_t> m) {
+        (void)m;
+      }));
   Mailbox.onMailboxAvailableResponse(
       MailboxClass::MailboxAvailableHandler::create([](uint16_t c) { (void)c; }));
 #endif

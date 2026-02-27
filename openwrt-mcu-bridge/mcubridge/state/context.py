@@ -1059,9 +1059,9 @@ class RuntimeState(msgspec.Struct):
     def build_metrics_snapshot(self) -> dict[str, Any]:
         spool_snapshot = self._current_spool_snapshot()
         snapshot: dict[str, Any] = {
-            "serial": self.serial_flow_stats.as_dict(),
+            "serial": msgspec.structs.asdict(self.serial_flow_stats),
             # [EXTENDED METRICS] Throughput and latency
-            "serial_throughput": self.serial_throughput_stats.as_dict(),
+            "serial_throughput": msgspec.structs.asdict(self.serial_throughput_stats),
             "serial_latency": self.serial_latency_stats.as_dict(),
             # Queue depths for real-time monitoring
             "queue_depths": {
@@ -1115,7 +1115,8 @@ class RuntimeState(msgspec.Struct):
             "watchdog_beats": self.watchdog_beats,
             "watchdog_last_unix": self.last_watchdog_beat,
             "supervisors": {
-                name: stats.as_dict() for name, stats in self.supervisor_stats.items()
+                name: msgspec.structs.asdict(stats)
+                for name, stats in self.supervisor_stats.items()
             },
             "bridge": self.build_bridge_snapshot(),
         }
@@ -1202,7 +1203,7 @@ class RuntimeState(msgspec.Struct):
             ),
             handshake=self.build_handshake_snapshot(),
             serial_pipeline=self.build_serial_pipeline_snapshot(),
-            serial_flow=self.serial_flow_stats.as_dict(),
+            serial_flow=msgspec.structs.asdict(self.serial_flow_stats),
             mcu_version=mcu_version,
             capabilities=caps,
         )

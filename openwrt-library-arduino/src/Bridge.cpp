@@ -505,32 +505,23 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
   if (ctx.frame->header.payload_length == 0) {
-    rpc::payload::VersionResponse msg{kDefaultFirmwareVersionMajor,
-                                      kDefaultFirmwareVersionMinor};
-    etl::array<uint8_t, rpc::payload::VersionResponse::SIZE> buffer;
-    msg.encode(buffer.data());
-    (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, buffer.data(),
-                    buffer.size());
+    _sendResponse<rpc::payload::VersionResponse>(
+        rpc::CommandId::CMD_GET_VERSION_RESP, kDefaultFirmwareVersionMajor,
+        kDefaultFirmwareVersionMinor);
   }
 }
 
 void BridgeClass::_handleGetFreeMemory(
     const bridge::router::CommandContext& ctx) {
   if (ctx.frame->header.payload_length == 0) {
-    rpc::payload::FreeMemoryResponse resp{getFreeMemory()};
-    etl::array<uint8_t, rpc::payload::FreeMemoryResponse::SIZE> buffer;
-    resp.encode(buffer.data());
-    (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, buffer.data(),
-                    buffer.size());
+    _sendResponse<rpc::payload::FreeMemoryResponse>(
+        rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, getFreeMemory());
   }
 }
 
 void BridgeClass::_handleGetCapabilities(
     const bridge::router::CommandContext& ctx) {
   if (ctx.frame->header.payload_length == 0) {
-    etl::array<uint8_t, rpc::payload::Capabilities::SIZE> caps;
-    caps[0] = rpc::PROTOCOL_VERSION;
-
     uint8_t arch = 0;
 #if defined(ARDUINO_ARCH_AVR)
     arch = rpc::RPC_ARCH_AVR;
@@ -545,18 +536,15 @@ void BridgeClass::_handleGetCapabilities(
 #elif defined(ARDUINO_ARCH_RP2040)
     arch = rpc::RPC_ARCH_RP2040;
 #endif
-    caps[1] = arch;
 
+    uint8_t dig = 0;
 #ifdef NUM_DIGITAL_PINS
-    caps[2] = static_cast<uint8_t>(NUM_DIGITAL_PINS);
-#else
-    caps[2] = 0;
+    dig = static_cast<uint8_t>(NUM_DIGITAL_PINS);
 #endif
 
+    uint8_t ana = 0;
 #ifdef NUM_ANALOG_INPUTS
-    caps[3] = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
-#else
-    caps[3] = 0;
+    ana = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
 #endif
 
     etl::bitset<32> features;
@@ -600,9 +588,9 @@ void BridgeClass::_handleGetCapabilities(
     features.set(11);  // SPI
 #endif
 
-    rpc::write_u32_be(&caps[4], static_cast<uint32_t>(features.to_ulong()));
-    (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps.data(),
-                    caps.size());
+    _sendResponse<rpc::payload::Capabilities>(
+        rpc::CommandId::CMD_GET_CAPABILITIES_RESP, rpc::PROTOCOL_VERSION, arch,
+        dig, ana, static_cast<uint32_t>(features.to_ulong()));
   }
 }
 
@@ -735,13 +723,10 @@ void BridgeClass::_handleDigitalRead(
   _withPayload<rpc::payload::PinRead>(
       ctx, [this, &ctx](const rpc::payload::PinRead& msg) {
         if (bridge::hal::isValidPin(msg.pin)) {
-          int16_t value = ::digitalRead(msg.pin);
-          rpc::payload::DigitalReadResponse resp{
-              static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK)};
-          etl::array<uint8_t, rpc::payload::DigitalReadResponse::SIZE> buffer;
-          resp.encode(buffer.data());
-          (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, buffer.data(),
-                          buffer.size());
+          _sendResponse<rpc::payload::DigitalReadResponse>(
+              rpc::CommandId::CMD_DIGITAL_READ_RESP,
+              static_cast<uint8_t>(::digitalRead(msg.pin) &
+                                   rpc::RPC_UINT8_MASK));
           _markRxProcessed(*ctx.frame);
         } else {
           (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
@@ -759,13 +744,10 @@ void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
         if (!bridge::hal::isValidPin(msg.pin)) valid = false;
 #endif
         if (valid) {
-          int16_t value = ::analogRead(msg.pin);
-          rpc::payload::AnalogReadResponse resp{
-              static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX)};
-          etl::array<uint8_t, rpc::payload::AnalogReadResponse::SIZE> buffer;
-          resp.encode(buffer.data());
-          (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, buffer.data(),
-                          buffer.size());
+          _sendResponse<rpc::payload::AnalogReadResponse>(
+              rpc::CommandId::CMD_ANALOG_READ_RESP,
+              static_cast<uint16_t>(::analogRead(msg.pin) &
+                                    rpc::RPC_UINT16_MAX));
           _markRxProcessed(*ctx.frame);
         } else {
           (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);

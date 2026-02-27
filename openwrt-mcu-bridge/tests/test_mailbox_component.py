@@ -16,8 +16,6 @@ from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Command, MailboxAction, Status
 from mcubridge.protocol.topics import (
     Topic,
-    mailbox_incoming_available_topic,
-    mailbox_outgoing_available_topic,
     topic_path,
 )
 from mcubridge.services.base import BridgeContext
@@ -147,7 +145,7 @@ def test_handle_push_stores_incoming_queue(
     topic_base = runtime_state.mqtt_topic_prefix
     assert [msg.topic_name for msg in bridge.published] == [
         topic_path(topic_base, Topic.MAILBOX, "incoming"),
-        mailbox_incoming_available_topic(topic_base),
+        topic_path(topic_base, Topic.MAILBOX, "incoming_available"),
     ]
     assert bridge.published[1].payload == b"1"
 
@@ -180,7 +178,9 @@ def test_handle_read_success_publishes_available(
     assert command_id == Command.CMD_MAILBOX_READ_RESP.value
     assert payload == structures.UINT16_STRUCT.build(7) + b"payload"
 
-    assert bridge.published[-1].topic_name == (mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix))
+    assert bridge.published[-1].topic_name == (
+        topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available")
+    )
     assert bridge.published[-1].payload == b"0"
 
 
@@ -208,7 +208,9 @@ def test_handle_mqtt_write_enqueues_and_notifies(
     asyncio.run(component.handle_mqtt(MailboxAction.WRITE, b"mqtt"))
 
     assert list(runtime_state.mailbox_queue) == [b"mqtt"]
-    assert bridge.published[-1].topic_name == (mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix))
+    assert bridge.published[-1].topic_name == (
+        topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available")
+    )
     assert bridge.published[-1].payload == b"1"
 
 
@@ -230,7 +232,9 @@ def test_handle_mqtt_write_overflow_signals_error(
         Topic.MAILBOX,
         "errors",
     )
-    assert topics[0] == mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix)
+    assert topics[0] == topic_path(
+        runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"
+    )
     assert topics[1] == overflow_topic
     error_payload = msgspec.json.decode(bridge.published[1].payload)
     assert error_payload["event"] == "write_overflow"
@@ -251,7 +255,7 @@ def test_handle_mqtt_read_prefers_incoming_queue(
     topics = [msg.topic_name for msg in bridge.published]
     assert topics == [
         topic_path(topic_base, Topic.MAILBOX, "incoming"),
-        mailbox_incoming_available_topic(topic_base),
+        topic_path(topic_base, Topic.MAILBOX, "incoming_available"),
     ]
     assert bridge.published[0].payload == b"alpha"
     assert bridge.published[1].payload == b"0"
@@ -271,7 +275,7 @@ def test_handle_mqtt_read_drains_mailbox_queue(
     topics = [msg.topic_name for msg in bridge.published]
     assert topics == [
         topic_path(topic_base, Topic.MAILBOX, "incoming"),
-        mailbox_outgoing_available_topic(topic_base),
+        topic_path(topic_base, Topic.MAILBOX, "outgoing_available"),
     ]
     assert bridge.published[0].payload == b"beta"
     assert bridge.published[1].payload == b"0"
@@ -300,7 +304,9 @@ def test_handle_mqtt_read_incoming_still_notifies_on_failure(
         asyncio.run(component.handle_mqtt(MailboxAction.READ, b""))
 
     assert [msg.topic_name for msg in bridge.published] == [
-        mailbox_incoming_available_topic(runtime_state.mqtt_topic_prefix)
+        topic_path(
+            runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
+        )
     ]
 
 
@@ -327,5 +333,7 @@ def test_handle_mqtt_read_outgoing_still_notifies_on_failure(
         asyncio.run(component.handle_mqtt(MailboxAction.READ, b""))
 
     assert [msg.topic_name for msg in bridge.published] == [
-        mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix)
+        topic_path(
+            runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"
+        )
     ]

@@ -31,7 +31,7 @@ from ..mqtt.messages import QueuedPublish
 from ..protocol import protocol
 from ..protocol.protocol import MAX_PAYLOAD_SIZE, Command, Status
 from ..protocol.structures import CapabilitiesPacket, HandshakeConfigPacket
-from ..protocol.topics import handshake_topic
+from ..protocol.topics import Topic, topic_path
 from ..security.security import (
     derive_handshake_key,
     generate_nonce_with_counter,
@@ -591,7 +591,9 @@ class SerialHandshakeManager:
         if extra:
             payload.update(extra)
         message = QueuedPublish(
-            topic_name=handshake_topic(self._state.mqtt_topic_prefix),
+            topic_name=topic_path(
+                self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"
+            ),
             payload=msgspec.json.encode(payload),
             content_type="application/json",
             user_properties=[("bridge-event", "handshake")],

@@ -60,22 +60,22 @@ def test_rle_encode_decode_edge_cases() -> None:
 
 def test_topics_handshake_topic() -> None:
     from mcubridge.protocol.topics import (
-        analog_pin_topic,
-        datastore_topic,
-        file_topic,
-        handshake_topic,
-        mailbox_incoming_available_topic,
-        mailbox_outgoing_available_topic,
-        pin_topic,
-        shell_topic,
+        Topic,
+        topic_path,
     )
 
-    assert handshake_topic("prefix") == "prefix/system/handshake"
-    assert pin_topic("p", 13) == "p/d/13/read"
-    assert analog_pin_topic("p", 0) == "p/a/0/read"
-    assert datastore_topic("p", "k") == "p/datastore/get/k"
-    assert file_topic("p", "read", "f") == "p/file/read/f"
-    assert shell_topic("p", "run") == "p/sh/run"
-    assert shell_topic("p", "poll", "1") == "p/sh/poll/1"
-    assert mailbox_incoming_available_topic("p") == "p/mailbox/incoming_available"
-    assert mailbox_outgoing_available_topic("p") == "p/mailbox/outgoing_available"
+    assert topic_path("prefix", Topic.SYSTEM, "handshake") == "prefix/system/handshake"
+    assert topic_path("p", Topic.DIGITAL, "13", "read") == "p/d/13/read"
+    assert topic_path("p", Topic.ANALOG, "0", "read") == "p/a/0/read"
+    assert topic_path("p", Topic.DATASTORE, "get", "k") == "p/datastore/get/k"
+    assert topic_path("p", Topic.FILE, "read", "f") == "p/file/read/f"
+    assert topic_path("p", Topic.SHELL, "run") == "p/sh/run"
+    assert topic_path("p", Topic.SHELL, "poll", "1") == "p/sh/poll/1"
+    assert (
+        topic_path("p", Topic.MAILBOX, "incoming_available")
+        == "p/mailbox/incoming_available"
+    )
+    assert (
+        topic_path("p", Topic.MAILBOX, "outgoing_available")
+        == "p/mailbox/outgoing_available"
+    )

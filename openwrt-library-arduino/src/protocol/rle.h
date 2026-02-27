@@ -74,12 +74,13 @@ inline size_t encode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
   while (src_pos < src_len) {
     uint8_t current = src[src_pos];
 
-    // Count consecutive identical bytes
-    size_t run_len = 1;
-    while (src_pos + run_len < src_len && src[src_pos + run_len] == current &&
-           run_len < MAX_RUN_LENGTH) {
-      run_len++;
-    }
+    // [SIL-2] Use ETL algorithm to find the end of the run
+    auto it_start = src.begin() + src_pos;
+    auto it_end = etl::find_if_not(
+        it_start + 1, etl::min(it_start + MAX_RUN_LENGTH, src.end()),
+        [current](uint8_t b) { return b == current; });
+
+    size_t run_len = etl::distance(it_start, it_end);
 
     if (run_len >= MIN_RUN_LENGTH) {
       // Encode as run: ESCAPE, count-2, byte
@@ -196,11 +197,11 @@ inline bool should_compress(etl::span<const uint8_t> src) {
       continue;
     }
 
-    // Count run
-    size_t run_len = 1;
-    while (i + run_len < src_len && src[i + run_len] == current) {
-      run_len++;
-    }
+    // [SIL-2] Use ETL algorithm to count the run
+    auto it_start = src.begin() + i;
+    auto it_end = etl::find_if_not(it_start + 1, src.end(),
+                                   [current](uint8_t b) { return b == current; });
+    size_t run_len = etl::distance(it_start, it_end);
 
     if (run_len >= MIN_RUN_LENGTH) {
       // Run of N bytes becomes 3 bytes, saving N-3 bytes

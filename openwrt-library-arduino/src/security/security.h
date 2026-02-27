@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "etl/algorithm.h"
 #include "../protocol/rpc_protocol.h"
 
 namespace rpc {
@@ -89,9 +90,10 @@ inline bool timing_safe_equal(const uint8_t* a, const uint8_t* b, size_t len) {
 template <typename RandomFunc>
 inline void generate_nonce_with_counter(uint8_t* out_nonce, uint64_t& counter,
                                         RandomFunc random_func) {
-  for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_RANDOM_BYTES; i++) {
-    out_nonce[i] = static_cast<uint8_t>(random_func() & 0xFF);
-  }
+  // [SIL-2] Use ETL algorithm for deterministic generation
+  etl::generate(out_nonce, out_nonce + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+                [&]() { return static_cast<uint8_t>(random_func() & 0xFF); });
+
   counter++;
   for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_COUNTER_BYTES; i++) {
     out_nonce[(RPC_HANDSHAKE_NONCE_LENGTH - 1) - i] =

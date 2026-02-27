@@ -458,6 +458,14 @@ class BridgeClass
     if (msg) handler(*msg);
   }
 
+  template <typename T, typename... Args>
+  void _sendResponse(rpc::CommandId cmd, Args&&... args) {
+    T resp{etl::forward<Args>(args)...};
+    etl::array<uint8_t, T::SIZE> buffer;
+    resp.encode(buffer.data());
+    (void)sendFrame(cmd, buffer.data(), buffer.size());
+  }
+
   void _retransmitLastFrame();
   void _handleAck(uint16_t command_id);
   void _handleMalformed(uint16_t command_id);

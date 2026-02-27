@@ -25,8 +25,6 @@ from ..config.settings import RuntimeConfig
 from ..protocol.encoding import encode_status_reason
 from ..protocol.topics import (
     Topic,
-    mailbox_incoming_available_topic,
-    mailbox_outgoing_available_topic,
     topic_path,
 )
 from ..state.context import RuntimeState
@@ -102,7 +100,9 @@ class MailboxComponent:
         await self.ctx.publish(topic=topic, payload=data)
 
         await self.ctx.publish(
-            topic=mailbox_incoming_available_topic(self.state.mqtt_topic_prefix),
+            topic=topic_path(
+                self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
+            ),
             payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
         )
         return True
@@ -156,7 +156,9 @@ class MailboxComponent:
             return False
 
         await self.ctx.publish(
-            topic=mailbox_outgoing_available_topic(self.state.mqtt_topic_prefix),
+            topic=topic_path(
+                self.state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"
+            ),
             payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
         )
         return True
@@ -290,13 +292,17 @@ class MailboxComponent:
 
     async def _publish_incoming_available(self) -> None:
         await self._publish_queue_depth(
-            topic_name=mailbox_incoming_available_topic(self.state.mqtt_topic_prefix),
+            topic_name=topic_path(
+                self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
+            ),
             length=len(self.state.mailbox_incoming_queue),
         )
 
     async def _publish_outgoing_available(self) -> None:
         await self._publish_queue_depth(
-            topic_name=mailbox_outgoing_available_topic(self.state.mqtt_topic_prefix),
+            topic_name=topic_path(
+                self.state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"
+            ),
             length=len(self.state.mailbox_queue),
         )
 

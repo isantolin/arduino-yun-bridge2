@@ -754,49 +754,35 @@ class ProcessComponent:
 
     @staticmethod
     def _kill_process_tree_sync(pid: int) -> None:
+        """Synchronously terminate a process and all its children."""
+        import contextlib
+
         try:
-            process = psutil.Process(pid)
+            parent = psutil.Process(pid)
+            targets = parent.children(recursive=True) + [parent]
         except psutil.Error:
             return
-        try:
-            children = process.children(recursive=True)
-        except psutil.Error:
-            children = []
-        targets = children + [process]
 
         for proc in targets:
-            try:
-                terminate = getattr(proc, "terminate", None)
-                if callable(terminate):
-                    terminate()
-                else:
-                    proc.kill()
-            except (AttributeError, psutil.Error):
-                continue
+            with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                proc.terminate()
 
-        try:
-            _, alive = psutil.wait_procs(
-                targets,
-                timeout=max(0.1, PROCESS_KILL_WAIT_TIMEOUT),
-            )
-        except (AttributeError, TypeError, ValueError, psutil.Error):
-            alive = targets
-        if not alive:
-            return
+        # [SIL-2] Resource Cleanup: Wait for exit before force killing
+        _, alive = psutil.wait_procs(
+            targets,
+            timeout=max(0.1, PROCESS_KILL_WAIT_TIMEOUT),
+        )
 
         for proc in alive:
-            try:
+            with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                 proc.kill()
-            except (AttributeError, psutil.Error):
-                continue
 
-        try:
+        # Final wait to ensure resources are released
+        with contextlib.suppress(psutil.Error):
             psutil.wait_procs(
                 alive,
                 timeout=max(0.1, PROCESS_SYNC_KILL_WAIT_TIMEOUT),
             )
-        except (AttributeError, TypeError, ValueError, psutil.Error):
-            return
 
     def _build_sync_response(
         self, status: int, stdout_bytes: bytes, stderr_bytes: bytes

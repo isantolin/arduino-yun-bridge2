@@ -295,7 +295,7 @@ class BridgeDispatcher:
             logger.debug("Protocol: Ignoring orphaned MCU response %s", command_name)
 
         # 4. Auto-Acknowledgement (if applicable)
-        if handled_successfully and self._should_acknowledge_mcu_frame(command_id):
+        if handled_successfully and command_id not in STATUS_VALUES:
             await self.acknowledge_frame(command_id)
 
     async def dispatch_mqtt_message(
@@ -334,7 +334,13 @@ class BridgeDispatcher:
             case Topic.SYSTEM:
                 return None  # System topics are not subject to TopicAuthorization
             case Topic.DIGITAL | Topic.ANALOG:
-                action = self._pin_action_from_segments(route.segments)
+                # [SECURITY] Deduce action: single segment implies write, else use 2nd segment
+                if not route.segments:
+                    action = None
+                elif len(route.segments) == 1:
+                    action = "write"
+                else:
+                    action = route.segments[1].strip().lower() or None
             case Topic.CONSOLE:
                 action = "in" if route.identifier == "in" else None
             case _:
@@ -343,9 +349,6 @@ class BridgeDispatcher:
         if action and not self.is_topic_action_allowed(route.topic, action):
             return action
         return None
-
-    def _should_acknowledge_mcu_frame(self, command_id: int) -> bool:
-        return command_id not in STATUS_VALUES
 
     def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
         return (
@@ -361,7 +364,14 @@ class BridgeDispatcher:
         if action := self._should_reject_topic_action(route):
             await self.reject_topic_action(inbound, route.topic, action)
             return None
-        return self._payload_bytes(inbound.payload)
+
+        # Inline payload to bytes conversion
+        p_val: Any = inbound.payload
+        if isinstance(p_val, bytes):
+            return p_val
+        if isinstance(p_val, str):
+            return p_val.encode("utf-8")
+        return bytes(p_val)
 
     # --- MQTT Handlers (Consolidated with match/case) ---
 

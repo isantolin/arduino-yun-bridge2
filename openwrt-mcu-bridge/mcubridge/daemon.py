@@ -96,6 +96,7 @@ def _cleanup_child_processes() -> None:
             except psutil.NoSuchProcess:
                 pass
 
+        # Wait for processes to exit gracefully, then force kill survivors
         _, alive = psutil.wait_procs(children, timeout=3.0)
         for child in alive:
             try:

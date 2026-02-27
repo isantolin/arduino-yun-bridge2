@@ -634,6 +634,14 @@ class PendingCommand(msgspec.Struct):
 # --- Status Structures ---
 
 
+class BaseStats(msgspec.Struct):
+    """Base for statistics containers providing standard dict conversion."""
+
+    def as_dict(self) -> dict[str, Any]:
+        """Export internal state as a dictionary."""
+        return msgspec.structs.asdict(self)
+
+
 class SupervisorSnapshot(msgspec.Struct):
     restarts: Annotated[int, msgspec.Meta(ge=0)]
     last_failure_unix: float
@@ -642,7 +650,7 @@ class SupervisorSnapshot(msgspec.Struct):
     fatal: bool
 
 
-class SupervisorStats(msgspec.Struct):
+class SupervisorStats(BaseStats):
     """Task supervisor statistics."""
 
     restarts: int = 0
@@ -659,9 +667,6 @@ class SupervisorStats(msgspec.Struct):
             backoff_seconds=self.backoff_seconds,
             fatal=self.fatal,
         )
-
-    def as_dict(self) -> dict[str, Any]:
-        return msgspec.structs.asdict(self)
 
 
 _ARCH_MAPPING: Final[dict[int, str]] = {
@@ -761,7 +766,7 @@ class McuCapabilities(msgspec.Struct):
         return res
 
 
-class SerialThroughputStats(msgspec.Struct):
+class SerialThroughputStats(BaseStats):
     """Serial link throughput counters."""
 
     bytes_sent: int = 0
@@ -780,9 +785,6 @@ class SerialThroughputStats(msgspec.Struct):
         self.bytes_received += nbytes
         self.frames_received += 1
         self.last_rx_unix = time.time()
-
-    def as_dict(self) -> dict[str, Any]:
-        return msgspec.structs.asdict(self)
 
 
 # [EXTENDED METRICS] Latency histogram bucket boundaries in milliseconds
@@ -912,7 +914,7 @@ class SerialFlowSnapshot(msgspec.Struct):
     last_event_unix: float
 
 
-class SerialFlowStats(msgspec.Struct):
+class SerialFlowStats(BaseStats):
     """Serial flow control statistics (Mutable)."""
 
     commands_sent: int = 0
@@ -929,9 +931,6 @@ class SerialFlowStats(msgspec.Struct):
             failures=self.failures,
             last_event_unix=self.last_event_unix,
         )
-
-    def as_dict(self) -> dict[str, Any]:
-        return msgspec.structs.asdict(self)
 
 
 class BridgeStatus(msgspec.Struct):

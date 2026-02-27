@@ -77,6 +77,7 @@ class FileComponent:
         path = packet.path
 
         # [SECURITY 10/10] Path Traversal Protection (Hardening)
+        # We strictly reject absolute paths or path traversal segments from the MCU
         posix_path = PurePosixPath(path)
         if ".." in posix_path.parts or posix_path.is_absolute():
             logger.warning("Security Alert: Dangerous path blocked: %s", path)
@@ -86,8 +87,17 @@ class FileComponent:
             )
             return False
 
+        # Now use normalization for the actual operation
+        normalised = self._normalise_filename(path)
+        if normalised is None:
+            await self.ctx.send_frame(
+                Status.ERROR.value,
+                encode_status_reason(protocol.STATUS_REASON_INVALID_PATH),
+            )
+            return False
+
         success, _, reason = await self._perform_file_operation(
-            FileAction.WRITE, path, packet.data
+            FileAction.WRITE, str(normalised), packet.data
         )
         if success:
             await self.ctx.send_frame(Status.OK.value, b"")
@@ -340,27 +350,27 @@ class FileComponent:
 
     @staticmethod
     def _normalise_filename(filename: str) -> PurePosixPath | None:
-        stripped = filename.replace("\\", "/").strip()
-        if not stripped:
+        """Sanitises and normalises a filename for secure access."""
+        if "\x00" in filename:
             return None
 
-        try:
-            posix_path = PurePosixPath(stripped)
-        except ValueError:
-            return None
+        # Use Posix semantics even on Windows for consistent protocol behavior
+        path = PurePosixPath(filename.replace("\\", "/").strip())
 
-        if posix_path.is_absolute():
+        # [SECURITY] Convert absolute to relative to ensure base_dir root
+        if path.is_absolute():
             try:
-                posix_path = posix_path.relative_to("/")
+                path = path.relative_to("/")
             except ValueError:
                 return None
 
-        # [SECURITY] Filter unsafe segments using list comprehension
-        cleaned = [p for p in posix_path.parts if p not in {"", "."}]
-        if any(p == ".." or "\x00" in p for p in cleaned) or not cleaned:
+        # [SECURITY] Reject any path containing ..
+        if ".." in path.parts:
             return None
 
-        return PurePosixPath(*cleaned)
+        # Filter empty/dot segments
+        parts = [p for p in path.parts if p not in {".", ""}]
+        return PurePosixPath(*parts) if parts else None
 
     async def _write_with_quota(
         self,

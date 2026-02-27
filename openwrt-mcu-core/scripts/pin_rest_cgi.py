@@ -21,7 +21,7 @@ import msgspec
 from mcubridge.config.common import get_uci_config
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
-from mcubridge.protocol.topics import pin_topic
+from mcubridge.protocol.topics import Topic, topic_path
 from paho.mqtt.client import MQTT_ERR_SUCCESS, Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
 from tenacity import (
@@ -196,7 +196,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             {"status": "error", "message": "Invalid state"},
         )
 
-    topic = pin_topic(config.mqtt_topic, pin, "")
+    topic = topic_path(config.mqtt_topic, Topic.DIGITAL, pin)
     payload = "1" if state == "ON" else "0"
 
     try:

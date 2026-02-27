@@ -137,7 +137,8 @@ install_dependency "Crypto" "https://codeload.github.com/OperatorFoundation/Cryp
 #   2. Local src/ directory (required for host-based unit tests and SIL-2 isolation)
 # [OPTIMIZATION] Download once, copy to both locations
 install_etl_dual() {
-    local url="https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master"
+    local version="20.44.2"
+    local url="https://codeload.github.com/ETLCPP/etl/zip/refs/tags/${version}"
     local check_file="array.h"
     local sub_path="include/etl"
     local target1="$LIB_DIR"

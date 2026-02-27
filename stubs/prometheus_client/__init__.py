@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from .core import GaugeMetricFamily, InfoMetricFamily
+from .core import GaugeMetricFamily, InfoMetricFamily, Metric as Metric
 from .registry import Collector
 
 CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"

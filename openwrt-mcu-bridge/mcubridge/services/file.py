@@ -11,9 +11,6 @@ from pathlib import Path, PurePosixPath
 from aiomqtt.message import Message
 from construct import ConstructError
 
-# [BACKWARD COMPAT] Expose scandir for unit tests mocking it
-scandir = os.scandir
-
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, FileAction, Status
 
@@ -36,6 +33,9 @@ from ..protocol.topics import Topic, split_topic_segments, topic_path
 from ..state.context import RuntimeState
 from ..util import chunk_bytes
 from .base import BridgeContext
+
+# [BACKWARD COMPAT] Expose scandir for unit tests mocking it
+scandir = os.scandir
 
 logger = logging.getLogger("mcubridge.file")
 

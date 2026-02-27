@@ -5,10 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 
-class GaugeMetricFamily:
+class Metric:
+    """Base class for all metrics in the stub."""
     def __init__(self, name: str, documentation: str) -> None:
         self.name = name
         self.documentation = documentation
+
+
+class GaugeMetricFamily(Metric):
+    def __init__(self, name: str, documentation: str) -> None:
+        super().__init__(name, documentation)
         self.samples: list[tuple[dict[str, str], float]] = []
 
     def add_metric(self, labels: tuple[str, ...], value: float) -> None:
@@ -19,10 +25,9 @@ class GaugeMetricFamily:
         self.samples.append((label_map, float(value)))
 
 
-class InfoMetricFamily:
+class InfoMetricFamily(Metric):
     def __init__(self, name: str, documentation: str, labels: tuple[str, ...] = ()) -> None:
-        self.name = name
-        self.documentation = documentation
+        super().__init__(name, documentation)
         self.labels = labels
         self.samples: list[tuple[dict[str, str], dict[str, Any]]] = []
 

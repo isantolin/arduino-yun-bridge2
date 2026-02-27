@@ -6,7 +6,7 @@ import asyncio
 import logging
 import math
 import re
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 from typing import (
     Any,
     cast,
@@ -15,6 +15,7 @@ from typing import (
 import msgspec
 import tenacity
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client.core import Metric
 
 from .mqtt.messages import QueuedPublish
 from .protocol.topics import Topic, topic_path
@@ -303,20 +304,22 @@ class _RuntimeStateCollector:
             metric_name = _sanitize_metric_name(name)
             if flavor == "gauge":
                 g = GaugeMetricFamily(metric_name, f"Value of {name}")
-                g.add_metric([], float(value))
+                g.add_metric((), float(value))
                 yield g
             elif flavor == "info":
                 i = InfoMetricFamily(metric_name, f"Info for {name}")
-                i.add_metric([], {"val": str(value)})
+                i.add_metric((), {"val": str(value)})
                 yield i
 
     def _flatten(self, prefix: str, value: Any) -> Iterator[tuple[str, str, Any]]:
         if isinstance(value, dict):
-            for k, v in value.items():
+            typed_dict = cast(dict[str, Any], value)
+            for k, v in typed_dict.items():
                 yield from self._flatten(f"{prefix}_{k}", v)
         elif isinstance(value, (list, tuple, set)):
             # We don't typically flatten sequences in metrics, but we emit length
-            yield ("gauge", f"{prefix}_len", float(len(value)))
+            typed_seq = cast(Sequence[Any], value)
+            yield ("gauge", f"{prefix}_len", float(len(typed_seq)))
         elif isinstance(value, bool):
             yield ("gauge", prefix, 1.0 if value else 0.0)
         elif isinstance(value, (int, float)):

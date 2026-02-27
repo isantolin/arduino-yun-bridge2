@@ -246,7 +246,7 @@ def _serial_tx_allowed_factory() -> asyncio.Event:
     return evt
 
 
-def _collect_system_metrics() -> dict[str, Any]:
+def collect_system_metrics() -> dict[str, Any]:
     """Collect system-level metrics using psutil.
 
     Returns a dictionary with CPU, memory and load average metrics.
@@ -1206,7 +1206,7 @@ class RuntimeState(msgspec.Struct):
         )
         snapshot.update({f"spool_{k}": v for k, v in spool_snapshot.items()})
         # [EXTENDED METRICS] System-level metrics via psutil
-        snapshot["system"] = _collect_system_metrics()
+        snapshot["system"] = collect_system_metrics()
         return snapshot
 
     def build_handshake_snapshot(self) -> HandshakeSnapshot:

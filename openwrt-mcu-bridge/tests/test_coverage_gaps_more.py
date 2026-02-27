@@ -472,22 +472,6 @@ def test_normalize_interval_negative() -> None:
     assert result is None
 
 
-def test_sanitize_metric_name_leading_digit() -> None:
-    """Cover _sanitize_metric_name with leading digit."""
-    from mcubridge.metrics import _sanitize_metric_name
-
-    result = _sanitize_metric_name("123metric")
-    assert result.startswith("_")
-
-
-def test_sanitize_metric_name_empty() -> None:
-    """Cover _sanitize_metric_name with all invalid chars."""
-    from mcubridge.metrics import _sanitize_metric_name
-
-    result = _sanitize_metric_name("!!!")
-    assert result == "mcubridge_metric"
-
-
 def test_runtime_state_collector_flatten_dict() -> None:
     """Cover RuntimeStateCollector._flatten with nested dict."""
     from mcubridge.metrics import RuntimeStateCollector

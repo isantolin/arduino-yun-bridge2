@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import re
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from typing import (
     Any,
@@ -22,9 +21,6 @@ from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
 
 logger = logging.getLogger("mcubridge.metrics")
-
-
-_SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
@@ -276,48 +272,81 @@ async def publish_bridge_snapshots(
         raise
 
 
-def _sanitize_metric_name(name: str) -> str:
-    """Sanitises a metric name for Prometheus compatibility."""
-    cleaned = _SANITIZE_RE.sub("_", name.lower())
-    cleaned = cleaned.strip("_") or "mcubridge_metric"
-    if cleaned[0].isdigit():
-        cleaned = f"_{cleaned}"
-    return cleaned
-
-
 class RuntimeStateCollector:
-    """[SIL-2] Dynamic collector for Prometheus.
+    """[SIL-2] Dynamic collector for Prometheus dimensional metrics.
 
-    Converts the current RuntimeState snapshot into Prometheus Gauge and Info
-    metrics on-demand during scrapes.
+    Provides on-demand mapping of RuntimeState attributes to Prometheus Gauge
+    and Info families, using labels for grouping related metrics.
     """
 
     def __init__(self, state: RuntimeState) -> None:
         self._state = state
 
     def collect(self) -> Iterator[Metric]:
-        """Collect and yield metrics from the current state snapshot."""
-        from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily
+        """Collect dimensional metrics from the current daemon state."""
+        from prometheus_client.core import GaugeMetricFamily
 
-        snapshot = self._state.build_metrics_snapshot()
-        for flavor, name, value in self._flatten("mcubridge", snapshot):
-            metric_name = _sanitize_metric_name(name)
-            if flavor == "gauge":
-                g = GaugeMetricFamily(metric_name, f"Value of {name}")
-                g.add_metric((), float(value))
-                yield g
-            elif flavor == "info":
-                i = InfoMetricFamily(metric_name, f"Info for {name}")
-                i.add_metric((), {"val": str(value)})
-                yield i
+        # 1. Queue Depths (Dimensional)
+        q_depths = GaugeMetricFamily(
+            "mcubridge_queue_depth",
+            "Current number of items in internal asynchronous queues",
+            labels=["queue"],
+        )
+        q_depths.add_metric(["mqtt_publish"], float(self._state.mqtt_publish_queue.qsize()))
+        q_depths.add_metric(["console_tx"], float(len(self._state.console_to_mcu_queue)))
+        q_depths.add_metric(["mailbox_tx"], float(len(self._state.mailbox_queue)))
+        q_depths.add_metric(["mailbox_rx"], float(len(self._state.mailbox_incoming_queue)))
+        q_depths.add_metric(["pending_digital_read"], float(len(self._state.pending_digital_reads)))
+        q_depths.add_metric(["pending_analog_read"], float(len(self._state.pending_analog_reads)))
+        q_depths.add_metric(["running_process"], float(len(self._state.running_processes)))
+        yield q_depths
+
+        # 2. System Status (Gauges)
+        fs_usage = GaugeMetricFamily(
+            "mcubridge_file_storage_bytes_used",
+            "Current filesystem usage in bytes (volatile storage)",
+        )
+        fs_usage.add_metric([], float(self._state.file_storage_bytes_used))
+        yield fs_usage
+
+        link_sync = GaugeMetricFamily(
+            "mcubridge_link_synchronized",
+            "Binary status of serial link synchronization (1=sync, 0=unsync)",
+        )
+        link_sync.add_metric([], 1.0 if self._state.link_is_synchronized else 0.0)
+        yield link_sync
+
+        # 3. System Health (Dimensional)
+        from .state.context import collect_system_metrics
+
+        health = GaugeMetricFamily(
+            "mcubridge_system_health",
+            "System-level resource utilization metrics",
+            labels=["resource"],
+        )
+        sys_metrics = collect_system_metrics()
+        for key, val in sys_metrics.items():
+            if isinstance(val, (int, float)):
+                health.add_metric([key], float(val))
+        yield health
+
+        # 4. Supervisor Health (Dimensional)
+        super_health = GaugeMetricFamily(
+            "mcubridge_supervisor_worker_restarts",
+            "Total restarts per internal worker task",
+            labels=["worker"],
+        )
+        for name, stats in self._state.supervisor_stats.items():
+            super_health.add_metric([name], float(stats.restarts))
+        yield super_health
 
     def _flatten(self, prefix: str, value: Any) -> Iterator[tuple[str, str, Any]]:
+        """[COMPAT] Legacy flattening logic for older unit tests."""
         if isinstance(value, dict):
             typed_dict = cast(dict[str, Any], value)
             for k, v in typed_dict.items():
                 yield from self._flatten(f"{prefix}_{k}", v)
         elif isinstance(value, (list, tuple, set)):
-            # We don't typically flatten sequences in metrics, but we emit length
             typed_seq = cast(Sequence[Any], value)
             yield ("gauge", f"{prefix}_len", float(len(typed_seq)))
         elif isinstance(value, bool):

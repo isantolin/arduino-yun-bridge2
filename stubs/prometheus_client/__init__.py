@@ -38,6 +38,14 @@ class Counter:
         self._value += float(amount)
 
 
+class Histogram:
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        self._observations: list[float] = []
+
+    def observe(self, value: float) -> None:
+        self._observations.append(float(value))
+
+
 class Summary:
     def __init__(self, *_args: Any, **_kwargs: Any) -> None:
         self._observations: list[float] = []

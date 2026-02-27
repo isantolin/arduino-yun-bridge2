@@ -7,7 +7,7 @@ from mcubridge.state.context import (
     McuCapabilities,
     RuntimeState,
     SerialLatencyStats,
-    _collect_system_metrics,
+    collect_system_metrics,
 )
 from mcubridge.state.status import cleanup_status_file
 
@@ -67,7 +67,7 @@ def test_serial_latency_histogram() -> None:
     assert d["max_ms"] == 3000.0
 
 
-def test_collect_system_metrics_fail_paths() -> None:
+def testcollect_system_metrics_fail_paths() -> None:
     # Mock psutil to raise errors
     with patch("mcubridge.state.context.psutil") as mock_psutil:
         mock_psutil.cpu_percent.side_effect = OSError("fail")
@@ -75,7 +75,7 @@ def test_collect_system_metrics_fail_paths() -> None:
         mock_psutil.getloadavg.side_effect = OSError("fail")
         mock_psutil.sensors_temperatures.side_effect = OSError("fail")
 
-        m = _collect_system_metrics()
+        m = collect_system_metrics()
         assert m["cpu_percent"] is None
         assert m["memory_total_bytes"] is None
         assert m["load_avg_1m"] is None

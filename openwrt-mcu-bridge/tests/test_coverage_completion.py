@@ -197,9 +197,6 @@ def test_metrics_more_gaps(runtime_state):
 
     assert _normalize_interval(-1, 10.0) is None
     assert _normalize_interval(5, 10.0) == 10
-    from mcubridge.metrics import _sanitize_metric_name
-
-    assert _sanitize_metric_name("test-metric.name") == "test_metric_name"
 
 
 @pytest.mark.asyncio

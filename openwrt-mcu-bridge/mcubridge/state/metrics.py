@@ -5,7 +5,7 @@ from __future__ import annotations
 from prometheus_client import (
     CollectorRegistry,
     Counter,
-    Summary,
+    Histogram,
 )
 
 class DaemonMetrics:
@@ -72,9 +72,11 @@ class DaemonMetrics:
             "Total frames rejected due to CRC mismatch",
             registry=self.registry,
         )
-        self.serial_latency_ms = Summary(
+        # [SIL-2] Use Histogram for latency to get accurate percentiles
+        self.serial_latency_ms = Histogram(
             "mcubridge_serial_latency_ms",
             "RPC command round-trip latency in milliseconds",
+            buckets=(5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000),
             registry=self.registry,
         )
 

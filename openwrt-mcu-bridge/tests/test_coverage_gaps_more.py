@@ -489,40 +489,40 @@ def test_sanitize_metric_name_empty() -> None:
 
 
 def test_runtime_state_collector_flatten_dict() -> None:
-    """Cover _RuntimeStateCollector._flatten with nested dict."""
-    from mcubridge.metrics import _RuntimeStateCollector
+    """Cover RuntimeStateCollector._flatten with nested dict."""
+    from mcubridge.metrics import RuntimeStateCollector
     from mcubridge.state.context import create_runtime_state
 
     config = _make_config()
     state = create_runtime_state(config)
 
-    collector = _RuntimeStateCollector(state)
+    collector = RuntimeStateCollector(state)
     results = list(collector._flatten("prefix", {"a": {"b": 1}}))
     assert any("prefix_a_b" in r[1] for r in results)
 
 
 def test_runtime_state_collector_flatten_none() -> None:
     """Cover _flatten with None value."""
-    from mcubridge.metrics import _RuntimeStateCollector
+    from mcubridge.metrics import RuntimeStateCollector
     from mcubridge.state.context import create_runtime_state
 
     config = _make_config()
     state = create_runtime_state(config)
 
-    collector = _RuntimeStateCollector(state)
+    collector = RuntimeStateCollector(state)
     results = list(collector._flatten("test", None))
     assert results[0] == ("info", "test", "null")
 
 
 def test_runtime_state_collector_flatten_bool() -> None:
     """Cover _flatten with bool value."""
-    from mcubridge.metrics import _RuntimeStateCollector
+    from mcubridge.metrics import RuntimeStateCollector
     from mcubridge.state.context import create_runtime_state
 
     config = _make_config()
     state = create_runtime_state(config)
 
-    collector = _RuntimeStateCollector(state)
+    collector = RuntimeStateCollector(state)
     results_true = list(collector._flatten("flag", True))
     results_false = list(collector._flatten("flag", False))
 

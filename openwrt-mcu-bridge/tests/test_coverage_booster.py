@@ -119,7 +119,7 @@ async def test_metrics_publish_metrics_error_path():
 @pytest.mark.asyncio
 async def test_metrics_collector_flatten_edge_cases():
     state = MagicMock()
-    coll = metrics._RuntimeStateCollector(state)
+    coll = metrics.RuntimeStateCollector(state)
     assert list(coll._flatten("t", True)) == [("gauge", "t", 1.0)]
     assert list(coll._flatten("t", False)) == [("gauge", "t", 0.0)]
     assert list(coll._flatten("t", 1.5)) == [("gauge", "t", 1.5)]

@@ -25,8 +25,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-bridge
-PKG_VERSION:=2.5.1
-PKG_RELEASE:=3
+PKG_VERSION:=2.6.0
+PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>

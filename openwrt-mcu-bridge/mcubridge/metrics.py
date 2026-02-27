@@ -285,7 +285,7 @@ def _sanitize_metric_name(name: str) -> str:
     return cleaned
 
 
-class _RuntimeStateCollector:
+class RuntimeStateCollector:
     """[SIL-2] Dynamic collector for Prometheus.
 
     Converts the current RuntimeState snapshot into Prometheus Gauge and Info
@@ -344,7 +344,7 @@ class PrometheusExporter:
         # [OPTIMIZATION] Initialize native prometheus Summary for percentiles
         state.serial_latency_stats.initialize_prometheus(self._registry)
         # Register the dynamic state collector
-        self._registry.register(_RuntimeStateCollector(state))
+        self._registry.register(RuntimeStateCollector(state))
 
     @property
     def port(self) -> int:

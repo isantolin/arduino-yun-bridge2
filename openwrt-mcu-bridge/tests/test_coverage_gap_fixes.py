@@ -464,7 +464,7 @@ async def test_publish_bridge_snapshots_exc_group():
 def test_metrics_flatten_branches():
     """Cover branches in _flatten."""
     state = MagicMock()
-    collector = metrics._RuntimeStateCollector(state)
+    collector = metrics.RuntimeStateCollector(state)
 
     # Test None
     results = list(collector._flatten("test", None))

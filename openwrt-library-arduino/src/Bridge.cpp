@@ -144,6 +144,20 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   _timer_service.enable(true);
   _last_tick_millis = millis();
 
+  // [SIL-2] Memory Integrity POST
+  // Verify COBS buffer is functional
+  for (size_t i = 0; i < rpc::MAX_RAW_FRAME_SIZE; ++i) {
+    _cobs.buffer[i] = static_cast<uint8_t>(i & 0xFF);
+  }
+  for (size_t i = 0; i < rpc::MAX_RAW_FRAME_SIZE; ++i) {
+    if (_cobs.buffer[i] != static_cast<uint8_t>(i & 0xFF)) {
+      enterSafeState();
+      _fsm.cryptoFault();  // Use general fault state
+      return;
+    }
+  }
+  _cobs.buffer.fill(0);
+
   // [MIL-SPEC] FIPS 140-3 Power-On Self-Tests (POST)
   if (!rpc::security::run_cryptographic_self_tests()) {
     // CRITICAL: Cryptographic engine is untrustworthy.
@@ -400,35 +414,32 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     return;
   }
 
-  // [SIL-2] Phase 3: O(1) Dispatch via Jump Tables
+  // [SIL-2] Phase 3: O(1) Dispatch via Category Jump Table
   const uint16_t cmd = ctx.raw_command;
 
-  if (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_STATUS_CODE_MAX) {
-    onStatusCommand(ctx);
-  } else if (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-             cmd <= rpc::RPC_SYSTEM_COMMAND_MAX) {
-    onSystemCommand(ctx);
-  } else if (cmd >= rpc::RPC_GPIO_COMMAND_MIN &&
-             cmd <= rpc::RPC_GPIO_COMMAND_MAX) {
-    onGpioCommand(ctx);
-  } else if (cmd >= rpc::RPC_CONSOLE_COMMAND_MIN &&
-             cmd <= rpc::RPC_CONSOLE_COMMAND_MAX) {
-    onConsoleCommand(ctx);
-  } else if (cmd >= rpc::RPC_DATASTORE_COMMAND_MIN &&
-             cmd <= rpc::RPC_DATASTORE_COMMAND_MAX) {
-    onDataStoreCommand(ctx);
-  } else if (cmd >= rpc::RPC_MAILBOX_COMMAND_MIN &&
-             cmd <= rpc::RPC_MAILBOX_COMMAND_MAX) {
-    onMailboxCommand(ctx);
-  } else if (cmd >= rpc::RPC_FILESYSTEM_COMMAND_MIN &&
-             cmd <= rpc::RPC_FILESYSTEM_COMMAND_MAX) {
-    onFileSystemCommand(ctx);
-  } else if (cmd >= rpc::RPC_PROCESS_COMMAND_MIN &&
-             cmd <= rpc::RPC_PROCESS_COMMAND_MAX) {
-    onProcessCommand(ctx);
-  } else {
-    onUnknownCommand(ctx);
+  typedef void (BridgeClass::*CategoryHandler)(
+      const bridge::router::CommandContext&);
+  static const CategoryHandler category_handlers[] = {
+      &BridgeClass::onStatusCommand,      // 0: 48-63
+      &BridgeClass::onSystemCommand,      // 1: 64-79
+      &BridgeClass::onGpioCommand,        // 2: 80-95
+      &BridgeClass::onConsoleCommand,     // 3: 96-111
+      &BridgeClass::onDataStoreCommand,   // 4: 112-127
+      &BridgeClass::onMailboxCommand,     // 5: 128-143
+      &BridgeClass::onFileSystemCommand,  // 6: 144-159
+      &BridgeClass::onProcessCommand      // 7: 160-175
+  };
+
+  if (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_PROCESS_COMMAND_MAX) {
+    const uint16_t category = (cmd - rpc::RPC_STATUS_CODE_MIN) >> 4;
+    if (category <
+        (sizeof(category_handlers) / sizeof(category_handlers[0]))) {
+      (this->*category_handlers[category])(ctx);
+      return;
+    }
   }
+
+  onUnknownCommand(ctx);
 }
 
 // ============================================================================

@@ -147,7 +147,7 @@ async def test_prometheus_exporter_edge_cases(runtime_state):
 
 
 def test_metrics_collector_flatten(runtime_state):
-    collector = metrics._RuntimeStateCollector(runtime_state)
+    collector = metrics.RuntimeStateCollector(runtime_state)
     data = {"a": 1, "b": {"c": 2, "d": None}, "e": "str"}
     results = list(collector._flatten("test", data))
     assert ("gauge", "test_a", 1.0) in results

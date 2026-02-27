@@ -326,30 +326,6 @@ class ProcessPollResponsePacket(BaseStruct, frozen=True):
     )
 
 
-def _validate_ack_timeout(ctx: Any) -> bool:
-    return (
-        protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
-        <= ctx.ack_timeout_ms
-        <= protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
-    )
-
-
-def _validate_ack_retry_limit(ctx: Any) -> bool:
-    return (
-        protocol.HANDSHAKE_RETRY_LIMIT_MIN
-        <= ctx.ack_retry_limit
-        <= protocol.HANDSHAKE_RETRY_LIMIT_MAX
-    )
-
-
-def _validate_response_timeout(ctx: Any) -> bool:
-    return (
-        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
-        <= ctx.response_timeout_ms
-        <= protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
-    )
-
-
 class HandshakeConfigPacket(BaseStruct, frozen=True):
     ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
     ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
@@ -359,10 +335,22 @@ class HandshakeConfigPacket(BaseStruct, frozen=True):
         "ack_timeout_ms" / construct.Int16ub,
         "ack_retry_limit" / construct.Int8ub,
         "response_timeout_ms" / construct.Int32ub,
-        # Declarative Protocol Validation
-        construct.Check(_validate_ack_timeout),
-        construct.Check(_validate_ack_retry_limit),
-        construct.Check(_validate_response_timeout),
+        # [SIL-2] Declarative Protocol Validation via Lambdas
+        construct.Check(
+            lambda ctx: protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
+            <= cast(Any, ctx).ack_timeout_ms
+            <= protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
+        ),
+        construct.Check(
+            lambda ctx: protocol.HANDSHAKE_RETRY_LIMIT_MIN
+            <= cast(Any, ctx).ack_retry_limit
+            <= protocol.HANDSHAKE_RETRY_LIMIT_MAX
+        ),
+        construct.Check(
+            lambda ctx: protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
+            <= cast(Any, ctx).response_timeout_ms
+            <= protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
+        ),
     )
 
 

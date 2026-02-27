@@ -27,16 +27,15 @@ async def run_test(
 ) -> None:
     dump_client_env(logging.getLogger(__name__))
 
-    # Build arguments dict, only including provided values to allow Bridge defaults (env vars) to work
-    bridge_args: dict[str, object] = {}
-    if host:
-        bridge_args["host"] = host
-    if port:
-        bridge_args["port"] = port
-    if user:
-        bridge_args["username"] = user
-    if password:
-        bridge_args["password"] = password
+    # Concise argument mapping using a comprehension to filter provided CLI options
+    base_args = {
+        "host": host,
+        "port": port,
+        "username": user,
+        "password": password,
+    }
+    bridge_args = {k: v for k, v in base_args.items() if v is not None}
+
     if tls_insecure:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False

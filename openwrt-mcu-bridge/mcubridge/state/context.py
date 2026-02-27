@@ -302,8 +302,7 @@ def _fill_missing_metrics(result: dict[str, Any]) -> None:
         "memory_available_bytes", "memory_percent", "load_avg_1m",
         "load_avg_5m", "load_avg_15m", "temperature_celsius"
     )
-    for k in keys:
-        result.setdefault(k, None)
+    result.update({k: result.get(k) for k in keys})
 
 
 class RuntimeState(msgspec.Struct):

@@ -71,11 +71,5 @@ def test_topics_handshake_topic() -> None:
     assert topic_path("p", Topic.FILE, "read", "f") == "p/file/read/f"
     assert topic_path("p", Topic.SHELL, "run") == "p/sh/run"
     assert topic_path("p", Topic.SHELL, "poll", "1") == "p/sh/poll/1"
-    assert (
-        topic_path("p", Topic.MAILBOX, "incoming_available")
-        == "p/mailbox/incoming_available"
-    )
-    assert (
-        topic_path("p", Topic.MAILBOX, "outgoing_available")
-        == "p/mailbox/outgoing_available"
-    )
+    assert topic_path("p", Topic.MAILBOX, "incoming_available") == "p/mailbox/incoming_available"
+    assert topic_path("p", Topic.MAILBOX, "outgoing_available") == "p/mailbox/outgoing_available"

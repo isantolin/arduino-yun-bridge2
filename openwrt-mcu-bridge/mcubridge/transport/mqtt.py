@@ -23,8 +23,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mcubridge")
 
 
-
-
 class MqttTransport:
     """MQTT transport with FSM-based state management."""
 
@@ -59,12 +57,8 @@ class MqttTransport:
         )
 
         self.machine.add_transition("connect", "*", self.STATE_CONNECTING)
-        self.machine.add_transition(
-            "connected", self.STATE_CONNECTING, self.STATE_SUBSCRIBING
-        )
-        self.machine.add_transition(
-            "subscribed", self.STATE_SUBSCRIBING, self.STATE_READY
-        )
+        self.machine.add_transition("connected", self.STATE_CONNECTING, self.STATE_SUBSCRIBING)
+        self.machine.add_transition("subscribed", self.STATE_SUBSCRIBING, self.STATE_READY)
         self.machine.add_transition("disconnect", "*", self.STATE_DISCONNECTED)
 
     if TYPE_CHECKING:
@@ -79,11 +73,8 @@ class MqttTransport:
         reconnect_delay = max(1, self.config.reconnect_delay)
 
         retryer = tenacity.AsyncRetrying(
-            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
-            + tenacity.wait_random(0, 2),
-            retry=tenacity.retry_if_exception_type(
-                (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
-            ),
+            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
+            retry=tenacity.retry_if_exception_type((aiomqtt.MqttError, OSError, asyncio.TimeoutError)),
             before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
@@ -146,10 +137,7 @@ class MqttTransport:
                 task_group.create_task(self._subscriber_loop(client))
 
     async def _subscribe_topics(self, client: aiomqtt.Client) -> None:
-        topics = [
-            (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
-            for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
-        ]
+        topics = [(topic_path(self.state.mqtt_topic_prefix, t, *s), int(q)) for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS]
 
         for topic, qos in topics:
             await client.subscribe(topic, qos=qos)
@@ -165,9 +153,7 @@ class MqttTransport:
             props = build_mqtt_properties(message)
 
             if logger.isEnabledFor(logging.DEBUG):
-                log_hexdump(
-                    logger, logging.DEBUG, f"MQTT PUB > {topic_name}", message.payload
-                )
+                log_hexdump(logger, logging.DEBUG, f"MQTT PUB > {topic_name}", message.payload)
 
             try:
                 await client.publish(
@@ -220,9 +206,7 @@ class MqttTransport:
                     RuntimeError,
                     KeyError,
                 ) as e:
-                    logger.exception(
-                        "CRITICAL: Error processing MQTT topic %s: %s", message.topic, e
-                    )
+                    logger.exception("CRITICAL: Error processing MQTT topic %s: %s", message.topic, e)
         except asyncio.CancelledError:
             pass  # Clean exit
         except aiomqtt.MqttError as exc:

@@ -21,36 +21,26 @@ _UCI_SECTION: Final[str] = "general"
 
 def get_uci_config() -> dict[str, Any]:
     """Read MCU Bridge configuration directly from OpenWrt uci system."""
-    is_openwrt = (
-        Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
-    )
+    is_openwrt = Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
     try:
         with uci.Uci() as cursor:
             try:
                 section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
             except uci.UciException as e:
                 if is_openwrt:
-                    logger.critical(
-                        "UCI failure reading %s.%s: %s", _UCI_PACKAGE, _UCI_SECTION, e
-                    )
+                    logger.critical("UCI failure reading %s.%s: %s", _UCI_PACKAGE, _UCI_SECTION, e)
                     raise RuntimeError(f"Critical UCI failure: {e}") from e
                 return get_default_config()
 
             if not section:
                 if is_openwrt:
-                    raise RuntimeError(
-                        f"UCI section {_UCI_PACKAGE}.{_UCI_SECTION} missing!"
-                    )
+                    raise RuntimeError(f"UCI section {_UCI_PACKAGE}.{_UCI_SECTION} missing!")
                 return get_default_config()
 
             clean_config: dict[str, Any] = get_default_config()
             clean_config.update(
                 {
-                    k: (
-                        " ".join(map(str, cast(Iterable[Any], v)))
-                        if isinstance(v, (list, tuple))
-                        else v
-                    )
+                    k: (" ".join(map(str, cast(Iterable[Any], v))) if isinstance(v, (list, tuple)) else v)
                     for k, v in section.items()
                     if not k.startswith((".", "_"))
                 }

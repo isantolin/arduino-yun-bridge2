@@ -18,9 +18,7 @@ def format_hex(data: bytes | bytearray | memoryview | Iterable[int]) -> str:
     return f"[{' '.join(f'{b:02X}' for b in data)}]"
 
 
-def log_binary_traffic(
-    logger: logging.Logger, level: int, direction: str, label: str, data: bytes
-) -> None:
+def log_binary_traffic(logger: logging.Logger, level: int, direction: str, label: str, data: bytes) -> None:
     """Logs binary traffic with a standardized hex format for syslog.
 
     Format: %s %s: [DE AD BE EF]

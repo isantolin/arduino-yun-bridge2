@@ -28,9 +28,7 @@ except ImportError:
     mqtt = None  # Graceful fallback if not installed, though CI should have it
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("emulation-runner")
 
 app = typer.Typer(help="Hardware Emulation Runner.")
@@ -83,19 +81,12 @@ class LogMonitor:
             self.found_patterns.add("serial_connected")
         if "Connected to MQTT broker" in line:
             self.found_patterns.add("mqtt_connected")
-        if (
-            "MCU link synchronised" in line
-            or '"message":"MCU link synchronised' in line
-        ):
+        if "MCU link synchronised" in line or '"message":"MCU link synchronised' in line:
             self.found_patterns.add("handshake_complete")
 
         # Failure signals
         lower_line = line.lower()
-        if (
-            "traceback" in lower_line
-            or "critical" in lower_line
-            or "fatal" in lower_line
-        ):
+        if "traceback" in lower_line or "critical" in lower_line or "fatal" in lower_line:
             # Exclude known non-fatal warnings if any
             self.errors_detected.append(line)
 
@@ -153,9 +144,7 @@ class MqttVerifier:
                 payload = json.loads(msg.payload)
                 if payload.get("synchronised") is True:
                     if not self.sync_event.is_set():
-                        logger.info(
-                            "VERIFIED: Bridge reports synchronized state via MQTT"
-                        )
+                        logger.info("VERIFIED: Bridge reports synchronized state via MQTT")
                         self.sync_event.set()
             elif msg.topic == "br/system/metrics":
                 self.metrics_received = True
@@ -323,9 +312,7 @@ def start_daemon(package_root, protocol, shared_secret):
     )
 
     current_path = daemon_env.get("PYTHONPATH", "")
-    daemon_env["PYTHONPATH"] = (
-        f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_path}"
-    )
+    daemon_env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_path}"
     daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
 
     daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon", "--debug"]
@@ -426,9 +413,7 @@ def main(
         Optional[List[str]],
         typer.Argument(help="List of python scripts to run after handshake"),
     ] = None,
-    firmware: Annotated[
-        str, typer.Option(help="Name of the emulator binary to run")
-    ] = "bridge_emulator",
+    firmware: Annotated[str, typer.Option(help="Name of the emulator binary to run")] = "bridge_emulator",
 ) -> None:
     logger.info(f"Starting Emulation Runner ({firmware})...")
 
@@ -444,9 +429,7 @@ def main(
 
     firmware_path = repo_root / f"openwrt-library-arduino/tests/{firmware}"
     if not firmware_path.exists():
-        logger.error(
-            f"Emulator binary not found at {firmware_path}. Please compile it first."
-        )
+        logger.error(f"Emulator binary not found at {firmware_path}. Please compile it first.")
         raise typer.Exit(code=1)
 
     socat_proc, socat_monitor = start_socat()
@@ -472,9 +455,7 @@ def main(
             bufsize=0,
         )
 
-        bridge_thread = threading.Thread(
-            target=run_bridge, args=(mcu_proc, stop_bridge), daemon=True
-        )
+        bridge_thread = threading.Thread(target=run_bridge, args=(mcu_proc, stop_bridge), daemon=True)
         bridge_thread.start()
 
         # Capture mcu stderr separately to avoid mixing with bridge data
@@ -482,9 +463,7 @@ def main(
             for line in iter(mcu_proc.stderr.readline, b""):
                 if not line:
                     break
-                logger.info(
-                    f"[mcu-err] {line.decode('utf-8', errors='ignore').strip()}"
-                )
+                logger.info(f"[mcu-err] {line.decode('utf-8', errors='ignore').strip()}")
 
         threading.Thread(target=_stderr_worker, daemon=True).start()
 
@@ -512,16 +491,12 @@ def main(
             mqtt_sync = mqtt_monitor.sync_event.is_set()
 
             if log_sync or mqtt_sync:
-                logger.info(
-                    f"SUCCESS: Handshake verified via {'Log' if log_sync else 'MQTT'}."
-                )
+                logger.info(f"SUCCESS: Handshake verified via {'Log' if log_sync else 'MQTT'}.")
                 success = True
 
                 if run_scripts:
                     logger.info("Executing client scripts...")
-                    if not run_client_scripts(
-                        run_scripts, MQTT_HOST, MQTT_PORT, uci_stub_dir.name
-                    ):
+                    if not run_client_scripts(run_scripts, MQTT_HOST, MQTT_PORT, uci_stub_dir.name):
                         success = False
                         logger.error("One or more client scripts failed.")
                     else:

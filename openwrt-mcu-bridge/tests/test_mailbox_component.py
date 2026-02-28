@@ -232,9 +232,7 @@ def test_handle_mqtt_write_overflow_signals_error(
         Topic.MAILBOX,
         "errors",
     )
-    assert topics[0] == topic_path(
-        runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"
-    )
+    assert topics[0] == topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available")
     assert topics[1] == overflow_topic
     error_payload = msgspec.json.decode(bridge.published[1].payload)
     assert error_payload["event"] == "write_overflow"
@@ -304,9 +302,7 @@ def test_handle_mqtt_read_incoming_still_notifies_on_failure(
         asyncio.run(component.handle_mqtt(MailboxAction.READ, b""))
 
     assert [msg.topic_name for msg in bridge.published] == [
-        topic_path(
-            runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
-        )
+        topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available")
     ]
 
 
@@ -333,7 +329,5 @@ def test_handle_mqtt_read_outgoing_still_notifies_on_failure(
         asyncio.run(component.handle_mqtt(MailboxAction.READ, b""))
 
     assert [msg.topic_name for msg in bridge.published] == [
-        topic_path(
-            runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"
-        )
+        topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available")
     ]

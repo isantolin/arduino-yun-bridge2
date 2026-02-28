@@ -49,24 +49,22 @@ def configure_logging(config: RuntimeConfig) -> None:
             "formatter": "syslog_fmt",
         }
 
-    dictConfig({
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "minimal": {"format": "%(message)s"},
-            "syslog_fmt": {
-                "format": "mcubridge[%(process)d]: %(levelname)s %(name)s - %(message)s"
+    dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "minimal": {"format": "%(message)s"},
+                "syslog_fmt": {"format": "mcubridge[%(process)d]: %(levelname)s %(name)s - %(message)s"},
             },
-        },
-        "handlers": handlers,
-        "root": {
-            "level": level,
-            "handlers": ["syslog" if use_syslog else "console"],
-        },
-    })
+            "handlers": handlers,
+            "root": {
+                "level": level,
+                "handlers": ["syslog" if use_syslog else "console"],
+            },
+        }
+    )
 
     logging.getLogger("mcubridge").info(
-        "Logging established at level [bold]%s[/bold] (Mode: %s)",
-        level,
-        "SysLog" if use_syslog else "RichConsole"
+        "Logging established at level [bold]%s[/bold] (Mode: %s)", level, "SysLog" if use_syslog else "RichConsole"
     )

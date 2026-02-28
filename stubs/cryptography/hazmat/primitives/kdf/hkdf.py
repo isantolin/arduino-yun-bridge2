@@ -43,4 +43,3 @@ class HKDF:
             ).digest()
             blocks.append(previous)
         return b"".join(blocks)[: self._length]
-

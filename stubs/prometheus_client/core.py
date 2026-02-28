@@ -7,6 +7,7 @@ from typing import Any, Sequence
 
 class Metric:
     """Base class for all metrics in the stub."""
+
     def __init__(self, name: str, documentation: str, labels: Sequence[str] | None = None) -> None:
         self.name = name
         self.documentation = documentation

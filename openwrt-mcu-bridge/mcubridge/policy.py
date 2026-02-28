@@ -69,9 +69,7 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
         pieces = command.strip().split()
         if not pieces:
             return False
-        return self.allow_all or any(
-            fnmatch.fnmatch(pieces[0].lower(), p) for p in self.entries
-        )
+        return self.allow_all or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in self.entries)
 
     def __contains__(self, item: str) -> bool:  # pragma: no cover
         return item.lower() in self.entries

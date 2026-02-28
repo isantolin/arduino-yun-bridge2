@@ -54,11 +54,7 @@ async def _stream_poll_updates(
                 len(poll_payload["stderr_base64"]),
             )
 
-        if (
-            finished
-            and not poll_payload.get("stdout_truncated")
-            and not poll_payload.get("stderr_truncated")
-        ):
+        if finished and not poll_payload.get("stdout_truncated") and not poll_payload.get("stderr_truncated"):
             if not stdout_chunk and not stderr_chunk:
                 logger.info(
                     "Process %d completed with exit code %s",
@@ -67,10 +63,7 @@ async def _stream_poll_updates(
                 )
             else:
                 logger.info(
-                    (
-                        "Process %d completed with exit code %s "
-                        "(final chunk logged above)"
-                    ),
+                    ("Process %d completed with exit code %s " "(final chunk logged above)"),
                     pid,
                     exit_code,
                 )
@@ -118,11 +111,7 @@ async def run_test(
     command_to_run: list[str] = [
         "sh",
         "-c",
-        (
-            "for i in $(seq 1 4); do "
-            'echo "tick:$i"; sleep 0.5; '
-            "done; >&2 echo 'process complete'"
-        ),
+        ("for i in $(seq 1 4); do " 'echo "tick:$i"; sleep 0.5; ' "done; >&2 echo 'process complete'"),
     ]
 
     try:
@@ -144,9 +133,7 @@ def main(
     port: Annotated[Optional[int], typer.Option(help="MQTT Broker Port")] = None,
     user: Annotated[Optional[str], typer.Option(help="MQTT Username")] = None,
     password: Annotated[Optional[str], typer.Option(help="MQTT Password")] = None,
-    tls_insecure: Annotated[
-        bool, typer.Option(help="Disable TLS certificate verification")
-    ] = False,
+    tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = False,
 ) -> None:
     asyncio.run(run_test(host, port, user, password, tls_insecure))
 

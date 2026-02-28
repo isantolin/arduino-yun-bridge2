@@ -98,9 +98,7 @@ class StructField:
 
     @property
     def cpp_type(self) -> str:
-        return {"B": "uint8_t", "H": "uint16_t", "I": "uint32_t", "Q": "uint64_t"}[
-            self.type_code
-        ]
+        return {"B": "uint8_t", "H": "uint16_t", "I": "uint32_t", "Q": "uint64_t"}[self.type_code]
 
     @property
     def size(self) -> int:
@@ -326,18 +324,12 @@ class CppGenerator:
         if "hkdf_salt" in hs:
             bytes_str = ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_salt"])
             w.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = {{{bytes_str}}};")
-            w.write(
-                f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(hs['hkdf_salt'])};"
-            )
+            w.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(hs['hkdf_salt'])};")
 
         if "hkdf_info_auth" in hs:
             bytes_str = ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"])
-            w.write(
-                f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{bytes_str}}};"
-            )
-            w.write(
-                f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(hs['hkdf_info_auth'])};"
-            )
+            w.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{bytes_str}}};")
+            w.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(hs['hkdf_info_auth'])};")
         w.write()
 
         # Capabilities & Architectures
@@ -375,11 +367,7 @@ class CppGenerator:
         w.write("}")
         w.write()
 
-        ack_cmds = [
-            f"(command_id == CommandId::{c.name})"
-            for c in spec.commands
-            if c.requires_ack
-        ]
+        ack_cmds = [f"(command_id == CommandId::{c.name})" for c in spec.commands if c.requires_ack]
         w.write("constexpr bool requires_ack(CommandId command_id) {")
         if ack_cmds:
             w.write(f"    return {' || '.join(ack_cmds)};")
@@ -416,9 +404,7 @@ class CppGenerator:
                         offset = 0
                         for f in payload.fields:
                             if f.read_func:
-                                w.write(
-                                    f"msg.{f.name} = {f.read_func}(data + {offset});"
-                                )
+                                w.write(f"msg.{f.name} = {f.read_func}(data + {offset});")
                             else:
                                 w.write(f"msg.{f.name} = data[{offset}];")
                             offset += f.size
@@ -529,7 +515,6 @@ class CppGenerator:
             w.write(code)
         w.write()
 
-
     def _write_static_validator(self, w: CodeWriter, spec: ProtocolSpec) -> None:
         with w.block("namespace Payload {"):
             w.write("""
@@ -546,15 +531,24 @@ inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
             manual_impls: list[tuple[str, list[str]]] = [
                 (
                     "payload::ConsoleWrite",
-                    ["return etl::expected<payload::ConsoleWrite, rpc::FrameError>(payload::ConsoleWrite::parse(frame.payload.data(), frame.header.payload_length));"],  # noqa: E501
+                    [
+                        "return etl::expected<payload::ConsoleWrite, rpc::FrameError>("
+                        "payload::ConsoleWrite::parse(frame.payload.data(), frame.header.payload_length));"
+                    ],
                 ),
                 (
                     "payload::ProcessRun",
-                    ["return etl::expected<payload::ProcessRun, rpc::FrameError>(payload::ProcessRun::parse(frame.payload.data(), frame.header.payload_length));"],  # noqa: E501
+                    [
+                        "return etl::expected<payload::ProcessRun, rpc::FrameError>("
+                        "payload::ProcessRun::parse(frame.payload.data(), frame.header.payload_length));"
+                    ],
                 ),
                 (
                     "payload::ProcessRunAsync",
-                    ["return etl::expected<payload::ProcessRunAsync, rpc::FrameError>(payload::ProcessRunAsync::parse(frame.payload.data(), frame.header.payload_length));"],  # noqa: E501
+                    [
+                        "return etl::expected<payload::ProcessRunAsync, rpc::FrameError>("
+                        "payload::ProcessRunAsync::parse(frame.payload.data(), frame.header.payload_length));"
+                    ],
                 ),
                 (
                     "payload::DatastoreGet",
@@ -674,7 +668,6 @@ inline etl::expected<{type_name}, rpc::FrameError> parse<{type_name}>(const rpc:
                 with w.block(header, end="}"):
                     for line in body_lines:
                         w.write(line)
-
 
 
 class PythonGenerator:
@@ -849,9 +842,7 @@ class PythonGenerator:
 
         if resp_only:
             w.write("# Commands that expect a direct response without a prior ACK.")
-            w.write(
-                "# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first."
-            )
+            w.write("# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.")
             w.write("RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({")
             with w.indent():
                 for c in resp_only:
@@ -917,17 +908,11 @@ class PythonGenerator:
             if "_" not in raw:
                 continue
             prefix, suffix = raw.split("_", 1)
-            grouped.setdefault(prefix, []).append(
-                (suffix, act["value"], act["description"])
-            )
+            grouped.setdefault(prefix, []).append((suffix, act["value"], act["description"]))
 
         for prefix, items in grouped.items():
             # Special case mapping matching original generator
-            cls_name = (
-                "DatastoreAction"
-                if prefix == "DATASTORE"
-                else f"{prefix.lower().title()}Action"
-            )
+            cls_name = "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action"
             with w.block(f"class {cls_name}(StrEnum):", end=None):
                 for suffix, val, desc in items:
                     w.write(f'{suffix} = "{val}"  # {desc}')
@@ -935,9 +920,7 @@ class PythonGenerator:
         w.write()
 
     def _write_subscriptions(self, w: CodeWriter, spec: ProtocolSpec) -> None:
-        w.write(
-            "MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = ("
-        )
+        w.write("MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (")
         with w.indent():
             for sub in spec.mqtt_subscriptions:
                 topic = sub["topic"]
@@ -965,17 +948,10 @@ class PythonGenerator:
                             "FILE",
                         ]:
                             # Simple heuristic to match original output
-                            cls_name = (
-                                "DatastoreAction"
-                                if topic == "DATASTORE"
-                                else f"{topic.lower().title()}Action"
-                            )
+                            cls_name = "DatastoreAction" if topic == "DATASTORE" else f"{topic.lower().title()}Action"
                             # Check if s matches an action value
                             for act in spec.actions:
-                                if (
-                                    act["name"].startswith(f"{topic}_")
-                                    and act["value"] == s
-                                ):
+                                if act["name"].startswith(f"{topic}_") and act["value"] == s:
                                     suffix = act["name"].split("_", 1)[1]
                                     seg_strs.append(f"{cls_name}.{suffix}.value")
                                     mapped = True
@@ -997,13 +973,9 @@ class PythonGenerator:
 
 @app.command()
 def main(
-    spec_path: Annotated[
-        Path, typer.Option("--spec", help="Protocol specification file")
-    ],
+    spec_path: Annotated[Path, typer.Option("--spec", help="Protocol specification file")],
     cpp: Annotated[Optional[Path], typer.Option("--cpp", help="C++ header output")] = None,
-    cpp_structs: Annotated[
-        Optional[Path], typer.Option("--cpp-structs", help="C++ structs output")
-    ] = None,
+    cpp_structs: Annotated[Optional[Path], typer.Option("--cpp-structs", help="C++ structs output")] = None,
     py: Annotated[Optional[Path], typer.Option("--py", help="Python output")] = None,
 ) -> None:
     spec = ProtocolSpec.load(spec_path)

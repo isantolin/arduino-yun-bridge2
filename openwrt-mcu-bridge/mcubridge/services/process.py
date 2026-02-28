@@ -81,9 +81,7 @@ class ProcessComponent:
         """Tokenize command and check allowed policy."""
         tokens = list(tokenize_shell_command(command_str))
         if not tokens or not self.state.allowed_policy.is_allowed(tokens[0]):
-            raise CommandValidationError(
-                f"Command '{tokens[0] if tokens else ''}' not allowed"
-            )
+            raise CommandValidationError(f"Command '{tokens[0] if tokens else ''}' not allowed")
         return command_str, tokens
 
     async def handle_run(self, payload: bytes) -> None:
@@ -131,26 +129,16 @@ class ProcessComponent:
                     status=status,
                     stdout=stdout_bytes,
                     stderr=stderr_bytes,
-                    exit_code=(
-                        exit_code
-                        if exit_code is not None
-                        else protocol.PROCESS_DEFAULT_EXIT_CODE
-                    ),
+                    exit_code=(exit_code if exit_code is not None else protocol.PROCESS_DEFAULT_EXIT_CODE),
                 ).encode()
 
                 await self.ctx.send_frame(Command.CMD_PROCESS_RUN_RESP.value, response)
-                logger.debug(
-                    "Sent PROCESS_RUN_RESP status=%d exit=%s", status, exit_code
-                )
+                logger.debug("Sent PROCESS_RUN_RESP status=%d exit=%s", status, exit_code)
             except (OSError, ValueError) as e:
-                logger.error(
-                    "System error executing process command '%s': %s", command, e
-                )
+                logger.error("System error executing process command '%s': %s", command, e)
                 await self.ctx.send_frame(
                     Status.ERROR.value,
-                    encode_status_reason(
-                        protocol.STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR
-                    ),
+                    encode_status_reason(protocol.STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR),
                 )
 
     async def handle_run_async(self, payload: bytes) -> None:
@@ -168,29 +156,21 @@ class ProcessComponent:
                 Status.ERROR.value,
                 encode_status_reason(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED),
             )
-            await self._publish_run_async_error(
-                protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED
-            )
+            await self._publish_run_async_error(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED)
             return
 
         match pid:
             case protocol.INVALID_ID_SENTINEL:
                 await self.ctx.send_frame(
                     Status.ERROR.value,
-                    encode_status_reason(
-                        protocol.STATUS_REASON_PROCESS_RUN_ASYNC_FAILED
-                    ),
+                    encode_status_reason(protocol.STATUS_REASON_PROCESS_RUN_ASYNC_FAILED),
                 )
-                await self._publish_run_async_error(
-                    protocol.STATUS_REASON_PROCESS_RUN_ASYNC_FAILED
-                )
+                await self._publish_run_async_error(protocol.STATUS_REASON_PROCESS_RUN_ASYNC_FAILED)
                 return
             case _:
                 # [SIL-2] Use structured packet
                 response = ProcessRunAsyncResponsePacket(pid=pid).encode()
-                await self.ctx.send_frame(
-                    Command.CMD_PROCESS_RUN_ASYNC_RESP.value, response
-                )
+                await self.ctx.send_frame(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, response)
 
                 topic = topic_path(
                     self.state.mqtt_topic_prefix,
@@ -297,11 +277,7 @@ class ProcessComponent:
                         logger.error("FSM transition failed in handle_kill: %s", e)
 
                     slot.handle = None
-                    slot.exit_code = (
-                        proc.returncode
-                        if proc.returncode is not None
-                        else PROCESS_DEFAULT_EXIT_CODE
-                    )
+                    slot.exit_code = proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
 
                     # If buffers are drained and FSM is zombie, remove it
                     if slot.is_drained() and slot.fsm_state == PROCESS_STATE_ZOMBIE:
@@ -314,9 +290,7 @@ class ProcessComponent:
         await self.ctx.send_frame(Status.OK.value, b"")
         return send_ack
 
-    async def run_sync(
-        self, command: str, tokens: list[str]
-    ) -> tuple[int, bytes, bytes, int | None]:
+    async def run_sync(self, command: str, tokens: list[str]) -> tuple[int, bytes, bytes, int | None]:
         # Validation is done by caller via _prepare_command
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -352,9 +326,7 @@ class ProcessComponent:
                         stderr_buffer,
                     )
                 )
-                wait_task = tg.create_task(
-                    self._wait_for_sync_completion(proc, pid_hint)
-                )
+                wait_task = tg.create_task(self._wait_for_sync_completion(proc, pid_hint))
         except BaseExceptionGroup as exc_group:
             matched, remainder = exc_group.split((OSError, RuntimeError, ValueError))
             if matched is None:
@@ -542,11 +514,7 @@ class ProcessComponent:
                 released_slot = True
                 log_finished = True
 
-            exit_value = (
-                slot.exit_code
-                if slot.exit_code is not None
-                else PROCESS_DEFAULT_EXIT_CODE
-            )
+            exit_value = slot.exit_code if slot.exit_code is not None else PROCESS_DEFAULT_EXIT_CODE
 
         if released_slot:
             self._release_process_slot()
@@ -592,9 +560,7 @@ class ProcessComponent:
                 break
             buffer.extend(chunk)
 
-    async def _drain_process_pipes(
-        self, pid: int, proc: Process
-    ) -> tuple[bytes, bytes]:
+    async def _drain_process_pipes(self, pid: int, proc: Process) -> tuple[bytes, bytes]:
         stdout_buf = bytearray()
         stderr_buf = bytearray()
         async with asyncio.TaskGroup() as tg:
@@ -701,11 +667,7 @@ class ProcessComponent:
             )
 
         release_slot = False
-        exit_value = (
-            proc.returncode
-            if proc.returncode is not None
-            else PROCESS_DEFAULT_EXIT_CODE
-        )
+        exit_value = proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
 
         # Always release the execution permit when the OS process finishes.
         # The semaphore controls CONCURRENT EXECUTION, not memory storage.
@@ -734,10 +696,7 @@ class ProcessComponent:
             current_slot.handle = None
 
             # Check if we can cleanup immediately
-            if (
-                current_slot.is_drained()
-                and current_slot.fsm_state == PROCESS_STATE_FINISHED
-            ):
+            if current_slot.is_drained() and current_slot.fsm_state == PROCESS_STATE_FINISHED:
                 try:
                     current_slot.trigger("finalize")
                 except MachineError:
@@ -784,9 +743,7 @@ class ProcessComponent:
                 timeout=max(0.1, PROCESS_SYNC_KILL_WAIT_TIMEOUT),
             )
 
-    def _build_sync_response(
-        self, status: int, stdout_bytes: bytes, stderr_bytes: bytes
-    ) -> bytes:
+    def _build_sync_response(self, status: int, stdout_bytes: bytes, stderr_bytes: bytes) -> bytes:
         max_payload = MAX_PAYLOAD_SIZE - 5
         stdout_trim = stdout_bytes[:max_payload]
         remaining = max_payload - len(stdout_trim)
@@ -817,9 +774,7 @@ class ProcessComponent:
         except (TimeoutError, asyncio.TimeoutError):
             return False
 
-    async def _read_stream_chunk(
-        self, pid: int, reader: StreamReader, *, timeout: float = 0.0
-    ) -> bytes:
+    async def _read_stream_chunk(self, pid: int, reader: StreamReader, *, timeout: float = 0.0) -> bytes:
         """Read a single chunk from a stream reader with optional timeout.
 
         This method is primarily used by tests to simulate granular IO.
@@ -836,9 +791,7 @@ class ProcessComponent:
             logger.debug("Error reading stream chunk for PID %d", pid)
             return b""
 
-    def trim_buffers(
-        self, stdout: bytearray, stderr: bytearray
-    ) -> tuple[bytes, bytes, bool, bool]:
+    def trim_buffers(self, stdout: bytearray, stderr: bytearray) -> tuple[bytes, bytes, bool, bool]:
         """Trim buffers to respect the protocol budget and mutate them in place.
 
         Returns (stdout_chunk, stderr_chunk, stdout_truncated, stderr_truncated).

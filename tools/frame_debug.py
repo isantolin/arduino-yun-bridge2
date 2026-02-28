@@ -20,6 +20,7 @@ from mcubridge.protocol.protocol import (
     Status,
 )
 
+
 @dataclass(slots=True)
 class FrameDebugSnapshot:
     command_id: int
@@ -46,6 +47,7 @@ class FrameDebugSnapshot:
             f"encoded={self.encoded_hex}"
         )
 
+
 def _resolve_command(candidate: str) -> int:
     if not candidate:
         raise ValueError("command may not be empty")
@@ -64,6 +66,7 @@ def _resolve_command(candidate: str) -> int:
     except KeyError as exc:
         raise ValueError(f"Unknown command '{candidate}'.") from exc
 
+
 def _parse_payload(hex_string: str | None) -> bytes:
     if not hex_string:
         return b""
@@ -77,6 +80,7 @@ def _parse_payload(hex_string: str | None) -> bytes:
     except ValueError as exc:
         raise ValueError(f"Invalid payload hex '{hex_string}': {exc}") from exc
 
+
 def _name_for_command(command_id: int) -> str:
     try:
         return Command(command_id).name
@@ -86,8 +90,10 @@ def _name_for_command(command_id: int) -> str:
         except ValueError:
             return f"UNKNOWN(0x{command_id:02X})"
 
+
 def _hex_with_spacing(data: bytes) -> str:
     return " ".join(f"{byte:02X}" for byte in data)
+
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     raw_frame = Frame(command_id=command_id, payload=payload).to_bytes()
@@ -107,16 +113,19 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
         encoded_hex=_hex_with_spacing(encoded_packet),
     )
 
+
 def _open_serial_device(port: str, baud: int, timeout: float) -> serial.Serial:
     try:
         return serial.Serial(port=port, baudrate=baud, timeout=timeout)
     except serial.SerialException as exc:
         raise SystemExit(f"Failed to open serial port {port}: {exc}") from exc
 
+
 def _write_frame(device: serial.Serial, encoded_packet: bytes) -> int:
     written = device.write(encoded_packet)
     device.flush()
     return int(written) if written is not None else 0
+
 
 def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
     buffer = bytearray()
@@ -133,13 +142,18 @@ def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
             continue
         buffer.extend(chunk)
 
+
 def _decode_frame(encoded_packet: bytes) -> Frame:
     return Frame.from_bytes(cobs.decode(encoded_packet))
 
+
 def _print_response(frame: Frame) -> None:
-    sys.stdout.write(f"[FrameDebug] --- MCU Response ---\n"
+    sys.stdout.write(
+        f"[FrameDebug] --- MCU Response ---\n"
         f"cmd_id=0x{frame.command_id:02X}\n"
-        f"payload_len={len(frame.payload)}\n")
+        f"payload_len={len(frame.payload)}\n"
+    )
+
 
 def _iter_counts(count: int) -> Iterable[int]:
     if count == 0:
@@ -150,30 +164,22 @@ def _iter_counts(count: int) -> Iterable[int]:
     else:
         yield from range(count)
 
+
 app = typer.Typer(add_completion=False, help="Inspect and optionally send MCU Bridge RPC frames.")
+
 
 @app.command()
 def main_cmd(
     command: Annotated[
         str, typer.Option("--command", "-c", help="Command or Status name/value")
     ] = "CMD_GET_FREE_MEMORY",
-    payload: Annotated[
-        Optional[str], typer.Option("--payload", "-p", help="Payload in hex format")
-    ] = None,
+    payload: Annotated[Optional[str], typer.Option("--payload", "-p", help="Payload in hex format")] = None,
     port: Annotated[Optional[str], typer.Option(help="Serial port device path")] = None,
     baud: Annotated[int, typer.Option(help="Serial baud rate")] = DEFAULT_BAUDRATE,
-    interval: Annotated[
-        float, typer.Option(help="Interval between frames in seconds")
-    ] = 5.0,
-    count: Annotated[
-        int, typer.Option(help="Number of frames to send (0 for infinite)")
-    ] = 1,
-    read_response: Annotated[
-        bool, typer.Option(help="Wait for and print the next frame received")
-    ] = False,
-    read_timeout: Annotated[
-        float, typer.Option(help="Timeout for reading responses")
-    ] = 2.0,
+    interval: Annotated[float, typer.Option(help="Interval between frames in seconds")] = 5.0,
+    count: Annotated[int, typer.Option(help="Number of frames to send (0 for infinite)")] = 1,
+    read_response: Annotated[bool, typer.Option(help="Wait for and print the next frame received")] = False,
+    read_timeout: Annotated[float, typer.Option(help="Timeout for reading responses")] = 2.0,
 ):
     try:
         cmd_id = _resolve_command(command)
@@ -209,10 +215,12 @@ def main_cmd(
         if ser:
             ser.close()
 
+
 def main(argv=None):
     if argv:
         from typer.main import get_command
         from click.testing import CliRunner
+
         runner = CliRunner()
         # Ensure we pass the list correctly to the typer app
         result = runner.invoke(get_command(app), argv)
@@ -222,6 +230,7 @@ def main(argv=None):
             raise SystemExit(result.exit_code)
         return 0
     app()
+
 
 if __name__ == "__main__":
     main()

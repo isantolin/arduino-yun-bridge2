@@ -99,7 +99,6 @@ class BaseStruct(msgspec.Struct, frozen=True):
     # Subclasses must define this schema
     _SCHEMA: ClassVar[Construct]
 
-
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
         if not data:
@@ -141,9 +140,7 @@ class FileReadPacket(BaseStruct, frozen=True):
 class FileReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
-    _SCHEMA = BinStruct(
-        "content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes)
-    )
+    _SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
 
 
 class FileRemovePacket(BaseStruct, frozen=True):
@@ -186,9 +183,7 @@ class DatastoreGetPacket(BaseStruct, frozen=True):
 class DatastoreGetResponsePacket(BaseStruct, frozen=True):
     value: bytes
 
-    _SCHEMA = BinStruct(
-        "value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes)
-    )
+    _SCHEMA = BinStruct("value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes))
 
 
 class DatastorePutPacket(BaseStruct, frozen=True):
@@ -204,9 +199,7 @@ class DatastorePutPacket(BaseStruct, frozen=True):
 class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
-    _SCHEMA = BinStruct(
-        "data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes)
-    )
+    _SCHEMA = BinStruct("data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
 
 
 class MailboxProcessedPacket(BaseStruct, frozen=True):
@@ -224,9 +217,7 @@ class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
 class MailboxReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
-    _SCHEMA = BinStruct(
-        "content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes)
-    )
+    _SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
 
 
 class PinModePacket(BaseStruct, frozen=True):
@@ -327,19 +318,11 @@ class ProcessPollResponsePacket(BaseStruct, frozen=True):
 
 
 def _validate_ack_timeout(ctx: Any) -> bool:
-    return (
-        protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
-        <= ctx.ack_timeout_ms
-        <= protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
-    )
+    return protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS <= ctx.ack_timeout_ms <= protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
 
 
 def _validate_ack_retry_limit(ctx: Any) -> bool:
-    return (
-        protocol.HANDSHAKE_RETRY_LIMIT_MIN
-        <= ctx.ack_retry_limit
-        <= protocol.HANDSHAKE_RETRY_LIMIT_MAX
-    )
+    return protocol.HANDSHAKE_RETRY_LIMIT_MIN <= ctx.ack_retry_limit <= protocol.HANDSHAKE_RETRY_LIMIT_MAX
 
 
 def _validate_response_timeout(ctx: Any) -> bool:
@@ -497,9 +480,7 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(
-        default_factory=list[tuple[str, str]]
-    )
+    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
 
 
 class QueuedPublish(msgspec.Struct):
@@ -514,9 +495,7 @@ class QueuedPublish(msgspec.Struct):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(
-        default_factory=list[tuple[str, str]]
-    )
+    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
 
     def to_record(self) -> SpoolRecord:
         """Convert to a QueuedPublish to SpoolRecord for serialization."""
@@ -536,9 +515,7 @@ class QueuedPublish(msgspec.Struct):
     @classmethod
     def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
-        data: dict[str, Any] = (
-            record if isinstance(record, dict) else msgspec.structs.asdict(record)
-        )
+        data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
 
         payload = data.get("payload", b"")
         if isinstance(payload, str):
@@ -799,9 +776,7 @@ LATENCY_BUCKETS_MS: tuple[float, ...] = (
 class SerialLatencyStats(msgspec.Struct):
     """RPC command latency histogram."""
 
-    bucket_counts: list[int] = msgspec.field(
-        default_factory=lambda: [0] * len(LATENCY_BUCKETS_MS)
-    )
+    bucket_counts: list[int] = msgspec.field(default_factory=lambda: [0] * len(LATENCY_BUCKETS_MS))
     overflow_count: int = 0
     total_observations: int = 0
     total_latency_ms: float = 0.0
@@ -836,16 +811,9 @@ class SerialLatencyStats(msgspec.Struct):
             self._summary.observe(latency_ms / 1000.0)
 
     def as_dict(self) -> dict[str, Any]:
-        avg = (
-            self.total_latency_ms / self.total_observations
-            if self.total_observations > 0
-            else 0.0
-        )
+        avg = self.total_latency_ms / self.total_observations if self.total_observations > 0 else 0.0
         return {
-            "buckets": {
-                f"le_{int(b)}ms": self.bucket_counts[i]
-                for i, b in enumerate(LATENCY_BUCKETS_MS)
-            },
+            "buckets": {f"le_{int(b)}ms": self.bucket_counts[i] for i, b in enumerate(LATENCY_BUCKETS_MS)},
             "overflow": self.overflow_count,
             "count": self.total_observations,
             "sum_ms": self.total_latency_ms,

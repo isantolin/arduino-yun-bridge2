@@ -108,11 +108,7 @@ def resolve_command_id(command_id: int) -> str:
 
 def _status_label(code: int | None) -> str:
     """Resolve status code to human-readable label."""
-    return (
-        "unknown"
-        if code is None
-        else next((s.name for s in Status if s.value == code), f"0x{code:02X}")
-    )
+    return "unknown" if code is None else next((s.name for s in Status if s.value == code), f"0x{code:02X}")
 
 
 class PendingPinRequest(msgspec.Struct):
@@ -151,18 +147,10 @@ class ManagedProcess:
             auto_transitions=False,
             ignore_invalid_triggers=True,
         )
-        self._machine.add_transition(
-            "start", PROCESS_STATE_STARTING, PROCESS_STATE_RUNNING
-        )
-        self._machine.add_transition(
-            "sigchld", PROCESS_STATE_RUNNING, PROCESS_STATE_DRAINING
-        )
-        self._machine.add_transition(
-            "io_complete", PROCESS_STATE_DRAINING, PROCESS_STATE_FINISHED
-        )
-        self._machine.add_transition(
-            "finalize", PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE
-        )
+        self._machine.add_transition("start", PROCESS_STATE_STARTING, PROCESS_STATE_RUNNING)
+        self._machine.add_transition("sigchld", PROCESS_STATE_RUNNING, PROCESS_STATE_DRAINING)
+        self._machine.add_transition("io_complete", PROCESS_STATE_DRAINING, PROCESS_STATE_FINISHED)
+        self._machine.add_transition("finalize", PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
         # Allow force cleanup from any state
         self._machine.add_transition("force_kill", "*", PROCESS_STATE_ZOMBIE)
 
@@ -289,18 +277,24 @@ def collect_system_metrics() -> dict[str, Any]:
     except Exception as e:
         # Catch psutil.Error and others safely
         if "psutil" in str(type(e)):
-             _fill_missing_metrics(result)
+            _fill_missing_metrics(result)
         else:
-             raise
+            raise
 
     return result
 
 
 def _fill_missing_metrics(result: dict[str, Any]) -> None:
     keys = (
-        "cpu_percent", "cpu_count", "memory_total_bytes",
-        "memory_available_bytes", "memory_percent", "load_avg_1m",
-        "load_avg_5m", "load_avg_15m", "temperature_celsius"
+        "cpu_percent",
+        "cpu_count",
+        "memory_total_bytes",
+        "memory_available_bytes",
+        "memory_percent",
+        "load_avg_1m",
+        "load_avg_5m",
+        "load_avg_15m",
+        "temperature_celsius",
     )
     for k in keys:
         result.setdefault(k, None)
@@ -314,11 +308,13 @@ class RuntimeState(msgspec.Struct):
 
     # [SIL-2] Lifecycle FSM (Single Source of Truth)
     # Replaces manual boolean flags: serial_link_connected, link_is_synchronized
-    _machine: Machine = msgspec.field(default_factory=lambda: Machine(
-        states=["disconnected", "connected", "synchronized"],
-        initial="disconnected",
-        ignore_invalid_triggers=True,
-    ))
+    _machine: Machine = msgspec.field(
+        default_factory=lambda: Machine(
+            states=["disconnected", "connected", "synchronized"],
+            initial="disconnected",
+            ignore_invalid_triggers=True,
+        )
+    )
 
     @property
     def is_connected(self) -> bool:
@@ -343,9 +339,7 @@ class RuntimeState(msgspec.Struct):
         if self.link_sync_event:
             self.link_sync_event.set()
 
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=lambda: asyncio.Queue()
-    )
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(default_factory=lambda: asyncio.Queue())
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
     mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})
@@ -370,29 +364,19 @@ class RuntimeState(msgspec.Struct):
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})
     mailbox_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     mcu_is_paused: bool = False
-    serial_tx_allowed: asyncio.Event = msgspec.field(
-        default_factory=_serial_tx_allowed_factory
-    )
-    console_to_mcu_queue: BoundedByteDeque = msgspec.field(
-        default_factory=BoundedByteDeque
-    )
+    serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=_serial_tx_allowed_factory)
+    console_to_mcu_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = msgspec.field(
-        default_factory=lambda: {}
-    )
+    running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=lambda: {})
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
-    allowed_policy: AllowedCommandPolicy = msgspec.field(
-        default_factory=lambda: AllowedCommandPolicy.from_iterable(())
-    )
-    topic_authorization: TopicAuthorization = msgspec.field(
-        default_factory=TopicAuthorization
-    )
+    allowed_policy: AllowedCommandPolicy = msgspec.field(default_factory=lambda: AllowedCommandPolicy.from_iterable(()))
+    topic_authorization: TopicAuthorization = msgspec.field(default_factory=TopicAuthorization)
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
@@ -421,9 +405,7 @@ class RuntimeState(msgspec.Struct):
     mailbox_truncated_bytes: int = 0
     mailbox_dropped_bytes: int = 0
     mailbox_outgoing_overflow_events: int = 0
-    mailbox_incoming_queue: BoundedByteDeque = msgspec.field(
-        default_factory=BoundedByteDeque
-    )
+    mailbox_incoming_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     mailbox_incoming_queue_bytes: int = 0
     mailbox_incoming_dropped_messages: int = 0
     mailbox_incoming_truncated_messages: int = 0
@@ -455,12 +437,8 @@ class RuntimeState(msgspec.Struct):
     handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
     serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
-    serial_throughput_stats: SerialThroughputStats = msgspec.field(
-        default_factory=SerialThroughputStats
-    )
-    serial_latency_stats: SerialLatencyStats = msgspec.field(
-        default_factory=SerialLatencyStats
-    )
+    serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
+    serial_latency_stats: SerialLatencyStats = msgspec.field(default_factory=SerialLatencyStats)
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -473,9 +451,7 @@ class RuntimeState(msgspec.Struct):
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
     mcu_status_counters: dict[str, int] = msgspec.field(default_factory=lambda: {})
-    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
-        default_factory=lambda: {}
-    )
+    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=lambda: {})
 
     def configure(self, config: RuntimeConfig) -> None:
         if config.allowed_policy is not None:
@@ -531,10 +507,7 @@ class RuntimeState(msgspec.Struct):
             self.console_truncated_bytes += evt.truncated_bytes
         if evt.dropped_chunks:
             logger.warning(
-                (
-                    "Dropping oldest console chunk(s): %d item(s), %d "
-                    "bytes to respect limit."
-                ),
+                ("Dropping oldest console chunk(s): %d item(s), %d " "bytes to respect limit."),
                 evt.dropped_chunks,
                 evt.dropped_bytes,
             )
@@ -696,9 +669,7 @@ class RuntimeState(msgspec.Struct):
 
     def record_watchdog_beat(self, timestamp: float | None = None) -> None:
         self.watchdog_beats += 1
-        self.last_watchdog_beat = (
-            timestamp if timestamp is not None else time.monotonic()
-        )
+        self.last_watchdog_beat = timestamp if timestamp is not None else time.monotonic()
         self.metrics.watchdog_beats.inc()
 
     def apply_handshake_stats(self, stats: dict[str, Any]) -> None:
@@ -1170,10 +1141,7 @@ class RuntimeState(msgspec.Struct):
             "watchdog_interval": self.watchdog_interval,
             "watchdog_beats": self.watchdog_beats,
             "watchdog_last_unix": self.last_watchdog_beat,
-            "supervisors": {
-                name: msgspec.structs.asdict(stats)
-                for name, stats in self.supervisor_stats.items()
-            },
+            "supervisors": {name: msgspec.structs.asdict(stats) for name, stats in self.supervisor_stats.items()},
             "bridge": self.build_bridge_snapshot(),
         }
         snapshot.update(
@@ -1188,9 +1156,7 @@ class RuntimeState(msgspec.Struct):
             mailbox_incoming_bytes=self.mailbox_incoming_queue_bytes,
             mailbox_incoming_dropped_messages=(self.mailbox_incoming_dropped_messages),
             mailbox_incoming_dropped_bytes=(self.mailbox_incoming_dropped_bytes),
-            mailbox_incoming_truncated_messages=(
-                self.mailbox_incoming_truncated_messages
-            ),
+            mailbox_incoming_truncated_messages=(self.mailbox_incoming_truncated_messages),
             mailbox_incoming_truncated_bytes=(self.mailbox_incoming_truncated_bytes),
             mailbox_incoming_overflow_events=(self.mailbox_incoming_overflow_events),
             mqtt_spool_dropped_limit=self.mqtt_spool_dropped_limit,
@@ -1230,11 +1196,7 @@ class RuntimeState(msgspec.Struct):
         )
 
     def build_serial_pipeline_snapshot(self) -> SerialPipelineSnapshot:
-        inflight = (
-            self.serial_pipeline_inflight.copy()
-            if self.serial_pipeline_inflight
-            else None
-        )
+        inflight = self.serial_pipeline_inflight.copy() if self.serial_pipeline_inflight else None
         last = self.serial_pipeline_last.copy() if self.serial_pipeline_last else None
         return SerialPipelineSnapshot(
             inflight=inflight,

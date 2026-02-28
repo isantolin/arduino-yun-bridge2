@@ -70,9 +70,7 @@ class SerialFlowController:
     def set_metrics_callback(self, callback: Callable[[str], None] | None) -> None:
         self._metrics_callback = callback
 
-    def set_pipeline_observer(
-        self, observer: Callable[[dict[str, Any]], None] | None
-    ) -> None:
+    def set_pipeline_observer(self, observer: Callable[[dict[str, Any]], None] | None) -> None:
         self._pipeline_observer = observer
 
     async def reset(self) -> None:
@@ -111,9 +109,7 @@ class SerialFlowController:
                     final_cmd |= protocol.CMD_FLAG_COMPRESSED
                     final_payload = compressed
             except (ValueError, TypeError, OverflowError) as e:
-                self._logger.warning(
-                    "Compression failed for command 0x%02X: %s", command_id, e
-                )
+                self._logger.warning("Compression failed for command 0x%02X: %s", command_id, e)
 
         if not self._should_track(command_id):
             return await sender(final_cmd, final_payload)
@@ -128,9 +124,7 @@ class SerialFlowController:
             self._current = pending
 
         try:
-            return await self._execute_with_retries(
-                pending, final_payload, sender, final_cmd
-            )
+            return await self._execute_with_retries(pending, final_payload, sender, final_cmd)
         finally:
             async with self._condition:
                 if self._current is pending:
@@ -189,8 +183,7 @@ class SerialFlowController:
         if command_id in SERIAL_FAILURE_STATUS_CODES:
             # MCU status frames correlation logic
             should_reject = not payload or (
-                len(payload) >= 2
-                and UINT16_STRUCT.parse(payload[:2]) == pending.command_id
+                len(payload) >= 2 and UINT16_STRUCT.parse(payload[:2]) == pending.command_id
             )
 
             if should_reject or not all(32 <= byte < 127 for byte in payload):
@@ -239,9 +232,7 @@ class SerialFlowController:
 
         try:
             retryer = self._build_retryer()
-            return await retryer(
-                self._single_attempt, pending, payload, sender, cmd_to_send
-            )
+            return await retryer(self._single_attempt, pending, payload, sender, cmd_to_send)
         except self._RetryableSerialError:
             pending.mark_failure(Status.TIMEOUT.value)
             self._notify_pipeline("failure", pending, status=Status.TIMEOUT.value)

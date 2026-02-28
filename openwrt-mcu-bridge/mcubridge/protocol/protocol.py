@@ -1,4 +1,5 @@
 """Auto-generated protocol bindings. Do not edit manually."""
+
 from __future__ import annotations
 
 from enum import IntEnum, StrEnum
@@ -170,25 +171,30 @@ class Command(IntEnum):
     CMD_PROCESS_POLL_RESP = 166
 
 
-ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
-    Command.CMD_SET_PIN_MODE.value,
-    Command.CMD_DIGITAL_WRITE.value,
-    Command.CMD_ANALOG_WRITE.value,
-    Command.CMD_CONSOLE_WRITE.value,
-    Command.CMD_DATASTORE_PUT.value,
-    Command.CMD_MAILBOX_PUSH.value,
-    Command.CMD_FILE_WRITE.value,
-})
+ACK_ONLY_COMMANDS: frozenset[int] = frozenset(
+    {
+        Command.CMD_SET_PIN_MODE.value,
+        Command.CMD_DIGITAL_WRITE.value,
+        Command.CMD_ANALOG_WRITE.value,
+        Command.CMD_CONSOLE_WRITE.value,
+        Command.CMD_DATASTORE_PUT.value,
+        Command.CMD_MAILBOX_PUSH.value,
+        Command.CMD_FILE_WRITE.value,
+    }
+)
 
 # Commands that expect a direct response without a prior ACK.
 # The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.
-RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({
-    Command.CMD_GET_VERSION.value,
-    Command.CMD_GET_FREE_MEMORY.value,
-    Command.CMD_GET_CAPABILITIES.value,
-    Command.CMD_DIGITAL_READ.value,
-    Command.CMD_ANALOG_READ.value,
-})
+RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset(
+    {
+        Command.CMD_GET_VERSION.value,
+        Command.CMD_GET_FREE_MEMORY.value,
+        Command.CMD_GET_CAPABILITIES.value,
+        Command.CMD_DIGITAL_READ.value,
+        Command.CMD_ANALOG_READ.value,
+    }
+)
+
 
 class Topic(StrEnum):
     ANALOG = "a"  # Analog pin operations
@@ -206,27 +212,39 @@ class FileAction(StrEnum):
     READ = "read"  # Read file content
     WRITE = "write"  # Write file content
     REMOVE = "remove"  # Remove file
+
+
 class ShellAction(StrEnum):
     RUN = "run"  # Run shell command
     RUN_ASYNC = "run_async"  # Run shell command asynchronously
     POLL = "poll"  # Poll shell command status
     KILL = "kill"  # Kill shell command
+
+
 class MailboxAction(StrEnum):
     WRITE = "write"  # Write to mailbox
     READ = "read"  # Read from mailbox
     INCOMING = "incoming"  # Mailbox incoming messages
     PROCESSED = "processed"  # Mailbox processed notifications
     ERRORS = "errors"  # Mailbox error topic
+
+
 class DatastoreAction(StrEnum):
     GET = "get"  # Get datastore value
     PUT = "put"  # Put datastore value
+
+
 class PinAction(StrEnum):
     MODE = "mode"  # Set pin mode
     READ = "read"  # Read pin value
+
+
 class ConsoleAction(StrEnum):
     IN = "in"  # Console input
     OUT = "out"  # Console output
     INPUT = "input"  # Console input action
+
+
 class SystemAction(StrEnum):
     FREE_MEMORY = "free_memory"  # System free memory
     VERSION = "version"  # System version
@@ -237,38 +255,150 @@ class SystemAction(StrEnum):
     HANDSHAKE = "handshake"  # Handshake snapshot
     SUMMARY = "summary"  # Bridge summary snapshot
     STATE = "state"  # Bridge state snapshot
+
+
 class DigitalAction(StrEnum):
     WRITE = "write"  # Digital write
     READ = "read"  # Digital read
     MODE = "mode"  # Digital mode
+
+
 class AnalogAction(StrEnum):
     WRITE = "write"  # Analog write
     READ = "read"  # Analog read
 
 
 MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (
-    (Topic.DIGITAL, (MQTT_WILDCARD_SINGLE, DigitalAction.MODE.value,), 0),
-    (Topic.DIGITAL, (MQTT_WILDCARD_SINGLE, DigitalAction.READ.value,), 0),
+    (
+        Topic.DIGITAL,
+        (
+            MQTT_WILDCARD_SINGLE,
+            DigitalAction.MODE.value,
+        ),
+        0,
+    ),
+    (
+        Topic.DIGITAL,
+        (
+            MQTT_WILDCARD_SINGLE,
+            DigitalAction.READ.value,
+        ),
+        0,
+    ),
     (Topic.DIGITAL, (MQTT_WILDCARD_SINGLE,), 0),
-    (Topic.ANALOG, (MQTT_WILDCARD_SINGLE, AnalogAction.READ.value,), 0),
+    (
+        Topic.ANALOG,
+        (
+            MQTT_WILDCARD_SINGLE,
+            AnalogAction.READ.value,
+        ),
+        0,
+    ),
     (Topic.ANALOG, (MQTT_WILDCARD_SINGLE,), 0),
     (Topic.CONSOLE, (ConsoleAction.IN.value,), 0),
-    (Topic.DATASTORE, (DatastoreAction.PUT.value, MQTT_WILDCARD_MULTI,), 0),
-    (Topic.DATASTORE, (DatastoreAction.GET.value, MQTT_WILDCARD_MULTI,), 0),
+    (
+        Topic.DATASTORE,
+        (
+            DatastoreAction.PUT.value,
+            MQTT_WILDCARD_MULTI,
+        ),
+        0,
+    ),
+    (
+        Topic.DATASTORE,
+        (
+            DatastoreAction.GET.value,
+            MQTT_WILDCARD_MULTI,
+        ),
+        0,
+    ),
     (Topic.MAILBOX, (MailboxAction.WRITE.value,), 0),
     (Topic.MAILBOX, (MailboxAction.READ.value,), 0),
     (Topic.SHELL, (ShellAction.RUN.value,), 0),
     (Topic.SHELL, (ShellAction.RUN_ASYNC.value,), 0),
-    (Topic.SHELL, (ShellAction.POLL.value, MQTT_WILDCARD_MULTI,), 0),
-    (Topic.SHELL, (ShellAction.KILL.value, MQTT_WILDCARD_MULTI,), 0),
-    (Topic.SYSTEM, (SystemAction.FREE_MEMORY.value, SystemAction.GET.value,), 0),
-    (Topic.SYSTEM, (SystemAction.VERSION.value, SystemAction.GET.value,), 0),
-    (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.HANDSHAKE.value, SystemAction.GET.value,), 0),
-    (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.SUMMARY.value, SystemAction.GET.value,), 0),
-    (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.STATE.value, SystemAction.GET.value,), 0),
-    (Topic.FILE, (FileAction.WRITE.value, MQTT_WILDCARD_MULTI,), 0),
-    (Topic.FILE, (FileAction.READ.value, MQTT_WILDCARD_MULTI,), 0),
-    (Topic.FILE, (FileAction.REMOVE.value, MQTT_WILDCARD_MULTI,), 0),
+    (
+        Topic.SHELL,
+        (
+            ShellAction.POLL.value,
+            MQTT_WILDCARD_MULTI,
+        ),
+        0,
+    ),
+    (
+        Topic.SHELL,
+        (
+            ShellAction.KILL.value,
+            MQTT_WILDCARD_MULTI,
+        ),
+        0,
+    ),
+    (
+        Topic.SYSTEM,
+        (
+            SystemAction.FREE_MEMORY.value,
+            SystemAction.GET.value,
+        ),
+        0,
+    ),
+    (
+        Topic.SYSTEM,
+        (
+            SystemAction.VERSION.value,
+            SystemAction.GET.value,
+        ),
+        0,
+    ),
+    (
+        Topic.SYSTEM,
+        (
+            SystemAction.BRIDGE.value,
+            SystemAction.HANDSHAKE.value,
+            SystemAction.GET.value,
+        ),
+        0,
+    ),
+    (
+        Topic.SYSTEM,
+        (
+            SystemAction.BRIDGE.value,
+            SystemAction.SUMMARY.value,
+            SystemAction.GET.value,
+        ),
+        0,
+    ),
+    (
+        Topic.SYSTEM,
+        (
+            SystemAction.BRIDGE.value,
+            SystemAction.STATE.value,
+            SystemAction.GET.value,
+        ),
+        0,
+    ),
+    (
+        Topic.FILE,
+        (
+            FileAction.WRITE.value,
+            MQTT_WILDCARD_MULTI,
+        ),
+        0,
+    ),
+    (
+        Topic.FILE,
+        (
+            FileAction.READ.value,
+            MQTT_WILDCARD_MULTI,
+        ),
+        0,
+    ),
+    (
+        Topic.FILE,
+        (
+            FileAction.REMOVE.value,
+            MQTT_WILDCARD_MULTI,
+        ),
+        0,
+    ),
 )
 
 

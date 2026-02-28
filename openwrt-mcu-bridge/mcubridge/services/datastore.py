@@ -183,11 +183,7 @@ class DatastoreComponent:
 
         # [SIL-2] Handle potential type drift during testing/injection
         val_to_check: Any = cached_value
-        val_bytes = (
-            val_to_check.encode("utf-8")
-            if isinstance(val_to_check, str)
-            else val_to_check
-        )
+        val_bytes = val_to_check.encode("utf-8") if isinstance(val_to_check, str) else val_to_check
 
         # Ignore echoes: if it's not an explicit /request and it has a payload,
         # it is an echo of a published value, so we do not republish.

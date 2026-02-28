@@ -89,12 +89,8 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     process_timeout: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_TIMEOUT
 
     mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
-    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = (
-        DEFAULT_FILE_WRITE_MAX_BYTES
-    )
-    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = (
-        DEFAULT_FILE_STORAGE_QUOTA_BYTES
-    )
+    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_WRITE_MAX_BYTES
+    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_STORAGE_QUOTA_BYTES
 
     allowed_policy: AllowedCommandPolicy | None = None
 
@@ -102,60 +98,34 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
     status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
     debug_logging: bool = DEFAULT_DEBUG_LOGGING
-    console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = (
-        DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-    )
-    mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = (
-        DEFAULT_MAILBOX_QUEUE_LIMIT
-    )
-    mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = (
-        DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
-    )
-    pending_pin_request_limit: Annotated[int, msgspec.Meta(ge=1)] = (
-        DEFAULT_PENDING_PIN_REQUESTS
-    )
-    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01)] = (
-        DEFAULT_SERIAL_RETRY_TIMEOUT
-    )
-    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02)] = (
-        DEFAULT_SERIAL_RESPONSE_TIMEOUT
-    )
+    console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+    mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
+    mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+    pending_pin_request_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PENDING_PIN_REQUESTS
+    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01)] = DEFAULT_SERIAL_RETRY_TIMEOUT
+    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02)] = DEFAULT_SERIAL_RESPONSE_TIMEOUT
     serial_retry_attempts: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_RETRY_LIMIT
-    serial_handshake_min_interval: Annotated[float, msgspec.Meta(ge=0.0)] = (
-        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
-    )
-    serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = (
-        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
-    )
+    serial_handshake_min_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
+    serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
     watchdog_enabled: bool = True
-    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1)] = (
-        DEFAULT_WATCHDOG_INTERVAL
-    )
+    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1)] = DEFAULT_WATCHDOG_INTERVAL
     topic_authorization: TopicAuthorization = TopicAuthorization()
 
     # msgspec handle bytes naturally.
     # [SIL-2] SECURITY: This default enables initial setup only.
     # It MUST be rotated using 'mcubridge-rotate-credentials'.
-    serial_shared_secret: Annotated[
-        bytes, msgspec.Meta(min_length=MIN_SERIAL_SHARED_SECRET_LEN)
-    ] = DEFAULT_SERIAL_SHARED_SECRET
+    serial_shared_secret: Annotated[bytes, msgspec.Meta(min_length=MIN_SERIAL_SHARED_SECRET_LEN)] = (
+        DEFAULT_SERIAL_SHARED_SECRET
+    )
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = (
-        DEFAULT_PROCESS_MAX_OUTPUT_BYTES
-    )
-    process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = (
-        DEFAULT_PROCESS_MAX_CONCURRENT
-    )
+    process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
     metrics_enabled: bool = DEFAULT_METRICS_ENABLED
     metrics_host: str = DEFAULT_METRICS_HOST
     metrics_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = DEFAULT_METRICS_PORT
-    bridge_summary_interval: Annotated[float, msgspec.Meta(ge=0.0)] = (
-        DEFAULT_BRIDGE_SUMMARY_INTERVAL
-    )
-    bridge_handshake_interval: Annotated[float, msgspec.Meta(ge=0.0)] = (
-        DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
-    )
+    bridge_summary_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_SUMMARY_INTERVAL
+    bridge_handshake_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
     allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
 
     @property
@@ -167,17 +137,13 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
         # [SIL-2] Strict Semantic Validations
         if self.serial_response_timeout < self.serial_retry_timeout * 2:
-            raise ValueError(
-                "serial_response_timeout must be at least 2x serial_retry_timeout"
-            )
+            raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
 
         if self.watchdog_enabled and self.watchdog_interval < 0.5:
             raise ValueError("watchdog_interval must be >= 0.5s when enabled")
 
         if not self.mqtt_tls:
-            logger.warning(
-                "MQTT TLS is disabled; MQTT credentials and payloads will be sent in plaintext."
-            )
+            logger.warning("MQTT TLS is disabled; MQTT credentials and payloads will be sent in plaintext.")
         else:
             if self.mqtt_tls_insecure:
                 logger.warning(
@@ -185,9 +151,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                     "this is less secure and should be used only for known/self-hosted brokers."
                 )
             if not self.mqtt_cafile:
-                logger.info(
-                    "MQTT TLS is enabled with no mqtt_cafile configured; using system trust store."
-                )
+                logger.info("MQTT TLS is enabled with no mqtt_cafile configured; using system trust store.")
 
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
@@ -196,37 +160,25 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
-            raise ValueError(
-                "serial_shared_secret must contain at least four distinct bytes"
-            )
+            raise ValueError("serial_shared_secret must contain at least four distinct bytes")
 
         self.file_system_root = os.path.abspath(self.file_system_root)
         self.mqtt_spool_dir = os.path.abspath(self.mqtt_spool_dir)
 
         # Logic-based cross-field validations
         if self.file_storage_quota_bytes < self.file_write_max_bytes:
-            raise ValueError(
-                "file_storage_quota_bytes must be greater than or equal to file_write_max_bytes"
-            )
+            raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
 
         if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
-            raise ValueError(
-                "mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit"
-            )
+            raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
         # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
         if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-            raise ValueError(
-                "FLASH PROTECTION: mqtt_spool_dir must be in a volatile location"
-            )
+            raise ValueError("FLASH PROTECTION: mqtt_spool_dir must be in a volatile location")
 
         if not self.allow_non_tmp_paths:
-            if not any(
-                self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS
-            ):
-                raise ValueError(
-                    "FLASH PROTECTION: file_system_root must be in a volatile location"
-                )
+            if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                raise ValueError("FLASH PROTECTION: file_system_root must be in a volatile location")
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
@@ -285,9 +237,7 @@ def load_runtime_config() -> RuntimeConfig:
     if "allowed_commands" in raw_config:
         allowed_raw = raw_config["allowed_commands"]
         if isinstance(allowed_raw, str):
-            raw_config["allowed_commands"] = normalise_allowed_commands(
-                allowed_raw.split()
-            )
+            raw_config["allowed_commands"] = normalise_allowed_commands(allowed_raw.split())
 
     # 3. Map 'debug' (from UCI) to 'debug_logging'
     if "debug" in raw_config:
@@ -305,13 +255,9 @@ def load_runtime_config() -> RuntimeConfig:
 
     # 5. Normalize Paths
     if "file_system_root" in raw_config:
-        raw_config["file_system_root"] = os.path.abspath(
-            os.path.expanduser(str(raw_config["file_system_root"]))
-        )
+        raw_config["file_system_root"] = os.path.abspath(os.path.expanduser(str(raw_config["file_system_root"])))
     if "mqtt_spool_dir" in raw_config:
-        raw_config["mqtt_spool_dir"] = os.path.abspath(
-            os.path.expanduser(str(raw_config["mqtt_spool_dir"]))
-        )
+        raw_config["mqtt_spool_dir"] = os.path.abspath(os.path.expanduser(str(raw_config["mqtt_spool_dir"])))
 
     # 6. Pre-process 'serial_shared_secret'
     if "serial_shared_secret" in raw_config:

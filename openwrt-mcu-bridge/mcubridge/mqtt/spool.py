@@ -179,8 +179,7 @@ class MQTTPublishSpool:
                 )
             except OSError as exc:
                 logger.warning(
-                    "Failed to initialize disk spool at %s; falling back "
-                    "to memory-only mode. Error: %s",
+                    "Failed to initialize disk spool at %s; falling back " "to memory-only mode. Error: %s",
                     directory,
                     exc,
                 )
@@ -307,10 +306,7 @@ class MQTTPublishSpool:
 
     def _handle_disk_error(self, exc: OSError | msgspec.MsgspecError, op: str) -> None:
         reason = "disk_full" if getattr(exc, "errno", 0) == errno.ENOSPC else "io_error"
-        message = (
-            "MQTT Spool disk error during %s: %s. "
-            "Switching to memory-only mode (reason=%s)."
-        )
+        message = "MQTT Spool disk error during %s: %s. " "Switching to memory-only mode (reason=%s)."
         logger.error(message, op, exc, reason)
         self._activate_fallback(reason)
 

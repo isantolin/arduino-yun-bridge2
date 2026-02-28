@@ -152,9 +152,7 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "serial-link",
-                            lambda: SerialTransport(
-                                self.config, self.state, self.service
-                            ).run(),
+                            lambda: SerialTransport(self.config, self.state, self.service).run(),
                             (SerialHandshakeFatal,),
                         )
                     )
@@ -163,9 +161,7 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "mqtt-link",
-                            lambda: MqttTransport(
-                                self.config, self.state, self.service
-                            ).run(),
+                            lambda: MqttTransport(self.config, self.state, self.service).run(),
                         )
                     )
 
@@ -173,9 +169,7 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "status-writer",
-                            lambda: status_writer(
-                                self.state, self.config.status_interval
-                            ),
+                            lambda: status_writer(self.state, self.config.status_interval),
                         )
                     )
                     tg.create_task(
@@ -190,30 +184,21 @@ class BridgeDaemon:
                     )
 
                     # 4. Optional Features
-                    if (
-                        self.config.bridge_summary_interval > 0.0
-                        or self.config.bridge_handshake_interval > 0.0
-                    ):
+                    if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
                         tg.create_task(
                             self._supervise(
                                 "bridge-snapshots",
                                 lambda: publish_bridge_snapshots(
                                     self.state,
                                     self.service.enqueue_mqtt,
-                                    summary_interval=float(
-                                        self.config.bridge_summary_interval
-                                    ),
-                                    handshake_interval=float(
-                                        self.config.bridge_handshake_interval
-                                    ),
+                                    summary_interval=float(self.config.bridge_summary_interval),
+                                    handshake_interval=float(self.config.bridge_handshake_interval),
                                 ),
                             )
                         )
 
                     if self.config.watchdog_enabled:
-                        self.watchdog = WatchdogKeepalive(
-                            interval=self.config.watchdog_interval, state=self.state
-                        )
+                        self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
                         tg.create_task(self._supervise("watchdog", self.watchdog.run))
 
                     if self.config.metrics_enabled:
@@ -222,9 +207,7 @@ class BridgeDaemon:
                             self.config.metrics_host,
                             self.config.metrics_port,
                         )
-                        tg.create_task(
-                            self._supervise("prometheus-exporter", self.exporter.run)
-                        )
+                        tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
@@ -247,17 +230,12 @@ class BridgeDaemon:
         max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
     ) -> None:
         """Lightweight supervisor for individual tasks using tenacity."""
-        stop = (
-            tenacity.stop_after_attempt(max_restarts + 1)
-            if max_restarts is not None
-            else tenacity.stop_never
-        )
+        stop = tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never
 
         retryer = tenacity.AsyncRetrying(
             stop=stop,
             wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
-            retry=tenacity.retry_if_exception_type(Exception)
-            & tenacity.retry_if_not_exception_type(fatal_exceptions),
+            retry=tenacity.retry_if_exception_type(Exception) & tenacity.retry_if_not_exception_type(fatal_exceptions),
             reraise=True,
         )
 
@@ -311,19 +289,13 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
         sys.exit(1)
     except ExceptionGroup as exc_group:
         for group_exc in exc_group.exceptions:
-            logger.critical(
-                "Fatal error in task group: %s", group_exc, exc_info=group_exc
-            )
+            logger.critical("Fatal error in task group: %s", group_exc, exc_info=group_exc)
         sys.exit(1)
     except OSError as exc:
-        logger.critical(
-            "System/OS error during daemon execution: %s", exc, exc_info=True
-        )
+        logger.critical("System/OS error during daemon execution: %s", exc, exc_info=True)
         sys.exit(1)
     except BaseException as exc:
-        logger.critical(
-            "Fatal base exception during daemon execution: %s", exc, exc_info=True
-        )
+        logger.critical("Fatal base exception during daemon execution: %s", exc, exc_info=True)
         sys.exit(1)
 
 

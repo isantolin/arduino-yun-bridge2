@@ -8,6 +8,7 @@ from prometheus_client import (
     Histogram,
 )
 
+
 class DaemonMetrics:
     """Formal metrics container using prometheus_client primitives."""
 

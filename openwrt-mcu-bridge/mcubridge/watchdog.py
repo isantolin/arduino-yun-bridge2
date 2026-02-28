@@ -73,9 +73,7 @@ class WatchdogKeepalive:
             source=[self.STATE_INIT, self.STATE_STOPPED],
             dest=self.STATE_RUNNING,
         )
-        self.state_machine.add_transition(
-            trigger="stop", source=self.STATE_RUNNING, dest=self.STATE_STOPPED
-        )
+        self.state_machine.add_transition(trigger="stop", source=self.STATE_RUNNING, dest=self.STATE_STOPPED)
 
     def _on_fsm_start(self) -> None:
         """Callback when watchdog starts."""

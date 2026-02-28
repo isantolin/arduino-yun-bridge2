@@ -100,9 +100,7 @@ class MailboxComponent:
         await self.ctx.publish(topic=topic, payload=data)
 
         await self.ctx.publish(
-            topic=topic_path(
-                self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
-            ),
+            topic=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"),
             payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
         )
         return True
@@ -156,9 +154,7 @@ class MailboxComponent:
             return False
 
         await self.ctx.publish(
-            topic=topic_path(
-                self.state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"
-            ),
+            topic=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"),
             payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
         )
         return True
@@ -292,17 +288,13 @@ class MailboxComponent:
 
     async def _publish_incoming_available(self) -> None:
         await self._publish_queue_depth(
-            topic_name=topic_path(
-                self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
-            ),
+            topic_name=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"),
             length=len(self.state.mailbox_incoming_queue),
         )
 
     async def _publish_outgoing_available(self) -> None:
         await self._publish_queue_depth(
-            topic_name=topic_path(
-                self.state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"
-            ),
+            topic_name=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"),
             length=len(self.state.mailbox_queue),
         )
 

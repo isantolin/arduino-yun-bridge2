@@ -50,13 +50,9 @@ class BoundedByteDeque(msgspec.Struct):
     ) -> None:
         """Update limits using strict declarative validation."""
         if max_items is not None:
-            self.max_items = msgspec.convert(
-                max_items, Annotated[int, msgspec.Meta(ge=0)]
-            )
+            self.max_items = msgspec.convert(max_items, Annotated[int, msgspec.Meta(ge=0)])
         if max_bytes is not None:
-            self.max_bytes = msgspec.convert(
-                max_bytes, Annotated[int, msgspec.Meta(ge=0)]
-            )
+            self.max_bytes = msgspec.convert(max_bytes, Annotated[int, msgspec.Meta(ge=0)])
         self._make_room_for(0, 0)
 
     def append(self, chunk: bytes) -> QueueEvent:
@@ -109,9 +105,7 @@ class BoundedByteDeque(msgspec.Struct):
         event.accepted = True
         return event
 
-    def _make_room_for(
-        self, incoming_bytes: int, incoming_count: int
-    ) -> tuple[int, int]:
+    def _make_room_for(self, incoming_bytes: int, incoming_count: int) -> tuple[int, int]:
         dropped_chunks = 0
         dropped_bytes = 0
 
@@ -124,10 +118,7 @@ class BoundedByteDeque(msgspec.Struct):
         return dropped_chunks, dropped_bytes
 
     def _can_fit(self, incoming_bytes: int, incoming_count: int) -> bool:
-        if (
-            self.max_items is not None
-            and len(self._queue) + incoming_count > self.max_items
-        ):
+        if self.max_items is not None and len(self._queue) + incoming_count > self.max_items:
             return False
         if self.max_bytes is not None and self._bytes + incoming_bytes > self.max_bytes:
             return False

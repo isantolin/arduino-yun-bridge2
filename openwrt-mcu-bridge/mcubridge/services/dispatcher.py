@@ -109,29 +109,19 @@ class BridgeDispatcher:
         # Console
         self.mcu_registry.register(Command.CMD_XOFF.value, console.handle_xoff)
         self.mcu_registry.register(Command.CMD_XON.value, console.handle_xon)
-        self.mcu_registry.register(
-            Command.CMD_CONSOLE_WRITE.value, console.handle_write
-        )
+        self.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, console.handle_write)
         self.mqtt_router.register(Topic.CONSOLE, self._handle_console_topic)
 
         # Datastore
-        self.mcu_registry.register(
-            Command.CMD_DATASTORE_PUT.value, datastore.handle_put
-        )
-        self.mcu_registry.register(
-            Command.CMD_DATASTORE_GET.value, datastore.handle_get_request
-        )
+        self.mcu_registry.register(Command.CMD_DATASTORE_PUT.value, datastore.handle_put)
+        self.mcu_registry.register(Command.CMD_DATASTORE_GET.value, datastore.handle_get_request)
         self.mqtt_router.register(Topic.DATASTORE, self._handle_datastore_topic)
 
         # Mailbox
         self.mcu_registry.register(Command.CMD_MAILBOX_PUSH.value, mailbox.handle_push)
-        self.mcu_registry.register(
-            Command.CMD_MAILBOX_AVAILABLE.value, mailbox.handle_available
-        )
+        self.mcu_registry.register(Command.CMD_MAILBOX_AVAILABLE.value, mailbox.handle_available)
         self.mcu_registry.register(Command.CMD_MAILBOX_READ.value, mailbox.handle_read)
-        self.mcu_registry.register(
-            Command.CMD_MAILBOX_PROCESSED.value, mailbox.handle_processed
-        )
+        self.mcu_registry.register(Command.CMD_MAILBOX_PROCESSED.value, mailbox.handle_processed)
         self.mqtt_router.register(Topic.MAILBOX, self._handle_mailbox_topic)
 
         # File
@@ -196,15 +186,9 @@ class BridgeDispatcher:
         status_handler_factory: Callable[[Status], Callable[[bytes], Awaitable[None]]],
         handle_process_kill: Callable[[bytes], Awaitable[bool | None]],
     ) -> None:
-        self.mcu_registry.register(
-            Command.CMD_LINK_SYNC_RESP.value, handle_link_sync_resp
-        )
-        self.mcu_registry.register(
-            Command.CMD_LINK_RESET_RESP.value, handle_link_reset_resp
-        )
-        self.mcu_registry.register(
-            Command.CMD_GET_CAPABILITIES_RESP.value, handle_get_capabilities_resp
-        )
+        self.mcu_registry.register(Command.CMD_LINK_SYNC_RESP.value, handle_link_sync_resp)
+        self.mcu_registry.register(Command.CMD_LINK_RESET_RESP.value, handle_link_reset_resp)
+        self.mcu_registry.register(Command.CMD_GET_CAPABILITIES_RESP.value, handle_get_capabilities_resp)
         self.mcu_registry.register(Command.CMD_PROCESS_KILL.value, handle_process_kill)
 
         self.mcu_registry.register(Status.ACK.value, handle_ack)
@@ -213,15 +197,11 @@ class BridgeDispatcher:
                 continue
             self.mcu_registry.register(status.value, status_handler_factory(status))
 
-    async def _handle_unexpected_pin_read(
-        self, command: Command, payload: bytes
-    ) -> bool:
+    async def _handle_unexpected_pin_read(self, command: Command, payload: bytes) -> bool:
         """Route unexpected pin read from MCU to pin component (shared impl)."""
         pin = self.pin
         if pin is None:
-            logger.warning(
-                "Pin component not registered; dropping unexpected %s", command.name
-            )
+            logger.warning("Pin component not registered; dropping unexpected %s", command.name)
             return False
         return await pin.handle_unexpected_mcu_request(command, payload)
 
@@ -352,14 +332,10 @@ class BridgeDispatcher:
 
     def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
         return (
-            self.state.link_is_synchronized
-            or command_id in STATUS_VALUES
-            or command_id in _PRE_SYNC_ALLOWED_COMMANDS
+            self.state.link_is_synchronized or command_id in STATUS_VALUES or command_id in _PRE_SYNC_ALLOWED_COMMANDS
         )
 
-    async def _guard_dispatch(
-        self, route: TopicRoute, inbound: Message
-    ) -> bytes | None:
+    async def _guard_dispatch(self, route: TopicRoute, inbound: Message) -> bytes | None:
         """Enforces policy. Returns payload if allowed, None if rejected (rejection sent)."""
         if action := self._should_reject_topic_action(route):
             await self.reject_topic_action(inbound, route.topic, action)
@@ -382,9 +358,7 @@ class BridgeDispatcher:
         if payload is None:
             return True
         if self.file:
-            await self.file.handle_mqtt(
-                route.identifier, list(route.remainder), payload, inbound
-            )
+            await self.file.handle_mqtt(route.identifier, list(route.remainder), payload, inbound)
         return True
 
     async def _handle_console_topic(self, route: TopicRoute, inbound: Message) -> bool:
@@ -397,9 +371,7 @@ class BridgeDispatcher:
             await self.console.handle_mqtt_input(payload, inbound)
         return True
 
-    async def _handle_datastore_topic(
-        self, route: TopicRoute, inbound: Message
-    ) -> bool:
+    async def _handle_datastore_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if not route.identifier:
             return False
         payload = await self._guard_dispatch(route, inbound)
@@ -407,9 +379,7 @@ class BridgeDispatcher:
             return True
         if self.datastore:
             payload_str = payload.decode("utf-8", errors="ignore")
-            await self.datastore.handle_mqtt(
-                route.identifier, list(route.remainder), payload, payload_str, inbound
-            )
+            await self.datastore.handle_mqtt(route.identifier, list(route.remainder), payload, payload_str, inbound)
         return True
 
     async def _handle_mailbox_topic(self, route: TopicRoute, inbound: Message) -> bool:
@@ -438,9 +408,7 @@ class BridgeDispatcher:
             return True
         if self.pin:
             payload_str = payload.decode("utf-8", errors="ignore")
-            await self.pin.handle_mqtt(
-                route.topic, list(route.segments), payload_str, inbound
-            )
+            await self.pin.handle_mqtt(route.topic, list(route.segments), payload_str, inbound)
         return True
 
     async def _handle_system_topic(self, route: TopicRoute, inbound: Message) -> bool:
@@ -449,9 +417,7 @@ class BridgeDispatcher:
                 return await self._handle_bridge_topic(route, inbound)
             case _:
                 if self.system:
-                    return await self.system.handle_mqtt(
-                        route.identifier, list(route.remainder), inbound
-                    )
+                    return await self.system.handle_mqtt(route.identifier, list(route.remainder), inbound)
         return False
 
     async def _handle_bridge_topic(self, route: TopicRoute, inbound: Message) -> bool:

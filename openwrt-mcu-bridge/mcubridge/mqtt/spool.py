@@ -91,7 +91,7 @@ class FileSpoolDeque:
             path.write_bytes(msgspec.msgpack.encode(item))
 
     def popleft(self) -> SpoolRecord:
-        if len(self) == 0:
+        if not self:
             raise IndexError("pop from an empty deque")
 
         path = self._file_path(self._head)
@@ -104,7 +104,7 @@ class FileSpoolDeque:
             path.unlink(missing_ok=True)
             self._head += 1
             # Reset counters if empty to prevent infinite drift
-            if len(self) == 0:
+            if not self:
                 self._head = self._INITIAL_INDEX
                 self._tail = self._INITIAL_INDEX - 1
 

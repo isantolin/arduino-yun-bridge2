@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -208,7 +209,8 @@ class MqttTransport:
                 ) as e:
                     logger.exception("CRITICAL: Error processing MQTT topic %s: %s", message.topic, e)
         except asyncio.CancelledError:
-            pass  # Clean exit
+            with contextlib.suppress(asyncio.CancelledError):
+                raise
         except aiomqtt.MqttError as exc:
             logger.warning("MQTT subscriber loop interrupted: %s", exc)
             raise

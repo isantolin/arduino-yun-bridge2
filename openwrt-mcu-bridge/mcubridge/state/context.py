@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextlib
 import logging
 import time
 from asyncio.subprocess import Process
@@ -223,8 +224,8 @@ def _trim_process_buffers(
     stderr_chunk = bytes(stderr_buffer[:stderr_len])
     del stderr_buffer[:stderr_len]
 
-    truncated_out = len(stdout_buffer) > 0
-    truncated_err = len(stderr_buffer) > 0
+    truncated_out = bool(stdout_buffer)
+    truncated_err = bool(stderr_buffer)
     return stdout_chunk, stderr_chunk, truncated_out, truncated_err
 
 
@@ -773,12 +774,12 @@ class RuntimeState(msgspec.Struct):
                 "command_name": resolve_command_id(command_id),
                 "attempt": attempt,
             }
-            payload.update(
-                started_unix=timestamp,
-                acknowledged=False,
-                last_event="start",
-                last_event_unix=timestamp,
-            )
+            payload |= {
+                "started_unix": timestamp,
+                "acknowledged": False,
+                "last_event": "start",
+                "last_event_unix": timestamp,
+            }
             self.serial_pipeline_inflight = payload
             return
 
@@ -796,13 +797,13 @@ class RuntimeState(msgspec.Struct):
                 "command_name": resolve_command_id(command_id),
                 "attempt": attempt,
             }
-            payload.update(
-                event=name,
-                completed_unix=timestamp,
-                status_code=status_code,
-                status_name=_status_label(cast(int, status_code)),
-                acknowledged=acked or bool(inflight and inflight.get("acknowledged")),
-            )
+            payload |= {
+                "event": name,
+                "completed_unix": timestamp,
+                "status_code": status_code,
+                "status_name": _status_label(cast(int, status_code)),
+                "acknowledged": acked or bool(inflight and inflight.get("acknowledged")),
+            }
             if inflight is not None:
                 started = inflight.get("started_unix")
                 if isinstance(started, (int, float)) and started >= 0:
@@ -958,13 +959,8 @@ class RuntimeState(msgspec.Struct):
     ) -> None:
         spool = self.mqtt_spool
         if spool is not None:
-            try:
+            with contextlib.suppress(OSError, MQTTSpoolError, RuntimeError):
                 spool.close()
-            except (OSError, MQTTSpoolError, RuntimeError):
-                logger.debug(
-                    "Failed to close MQTT spool during disable.",
-                    exc_info=True,
-                )
         self.mqtt_spool = None
         self.mqtt_spool_degraded = True
         self.mqtt_spool_failure_reason = reason
@@ -1144,33 +1140,33 @@ class RuntimeState(msgspec.Struct):
             "supervisors": {name: msgspec.structs.asdict(stats) for name, stats in self.supervisor_stats.items()},
             "bridge": self.build_bridge_snapshot(),
         }
-        snapshot.update(
-            mailbox_outgoing_len=len(self.mailbox_queue),
-            mailbox_outgoing_bytes=self.mailbox_queue_bytes,
-            mailbox_outgoing_dropped_messages=self.mailbox_dropped_messages,
-            mailbox_outgoing_dropped_bytes=self.mailbox_dropped_bytes,
-            mailbox_outgoing_truncated_messages=(self.mailbox_truncated_messages),
-            mailbox_outgoing_truncated_bytes=(self.mailbox_truncated_bytes),
-            mailbox_outgoing_overflow_events=(self.mailbox_outgoing_overflow_events),
-            mailbox_incoming_len=len(self.mailbox_incoming_queue),
-            mailbox_incoming_bytes=self.mailbox_incoming_queue_bytes,
-            mailbox_incoming_dropped_messages=(self.mailbox_incoming_dropped_messages),
-            mailbox_incoming_dropped_bytes=(self.mailbox_incoming_dropped_bytes),
-            mailbox_incoming_truncated_messages=(self.mailbox_incoming_truncated_messages),
-            mailbox_incoming_truncated_bytes=(self.mailbox_incoming_truncated_bytes),
-            mailbox_incoming_overflow_events=(self.mailbox_incoming_overflow_events),
-            mqtt_spool_dropped_limit=self.mqtt_spool_dropped_limit,
-            mqtt_spool_trim_events=self.mqtt_spool_trim_events,
-            mqtt_spool_last_trim_unix=self.mqtt_spool_last_trim_unix,
-            mqtt_spool_corrupt_dropped=self.mqtt_spool_corrupt_dropped,
-            mqtt_spool_degraded=self.mqtt_spool_degraded,
-            mqtt_spool_failure_reason=self.mqtt_spool_failure_reason,
-            mqtt_spool_retry_attempts=self.mqtt_spool_retry_attempts,
-            mqtt_spool_backoff_until=self.mqtt_spool_backoff_until,
-            mqtt_spool_last_error=self.mqtt_spool_last_error,
-            mqtt_spool_recoveries=self.mqtt_spool_recoveries,
-        )
-        snapshot.update({f"spool_{k}": v for k, v in spool_snapshot.items()})
+        snapshot |= {
+            "mailbox_outgoing_len": len(self.mailbox_queue),
+            "mailbox_outgoing_bytes": self.mailbox_queue_bytes,
+            "mailbox_outgoing_dropped_messages": self.mailbox_dropped_messages,
+            "mailbox_outgoing_dropped_bytes": self.mailbox_dropped_bytes,
+            "mailbox_outgoing_truncated_messages": (self.mailbox_truncated_messages),
+            "mailbox_outgoing_truncated_bytes": (self.mailbox_truncated_bytes),
+            "mailbox_outgoing_overflow_events": (self.mailbox_outgoing_overflow_events),
+            "mailbox_incoming_len": len(self.mailbox_incoming_queue),
+            "mailbox_incoming_bytes": self.mailbox_incoming_queue_bytes,
+            "mailbox_incoming_dropped_messages": (self.mailbox_incoming_dropped_messages),
+            "mailbox_incoming_dropped_bytes": (self.mailbox_incoming_dropped_bytes),
+            "mailbox_incoming_truncated_messages": (self.mailbox_incoming_truncated_messages),
+            "mailbox_incoming_truncated_bytes": (self.mailbox_incoming_truncated_bytes),
+            "mailbox_incoming_overflow_events": (self.mailbox_incoming_overflow_events),
+            "mqtt_spool_dropped_limit": self.mqtt_spool_dropped_limit,
+            "mqtt_spool_trim_events": self.mqtt_spool_trim_events,
+            "mqtt_spool_last_trim_unix": self.mqtt_spool_last_trim_unix,
+            "mqtt_spool_corrupt_dropped": self.mqtt_spool_corrupt_dropped,
+            "mqtt_spool_degraded": self.mqtt_spool_degraded,
+            "mqtt_spool_failure_reason": self.mqtt_spool_failure_reason,
+            "mqtt_spool_retry_attempts": self.mqtt_spool_retry_attempts,
+            "mqtt_spool_backoff_until": self.mqtt_spool_backoff_until,
+            "mqtt_spool_last_error": self.mqtt_spool_last_error,
+            "mqtt_spool_recoveries": self.mqtt_spool_recoveries,
+        }
+        snapshot |= {f"spool_{k}": v for k, v in spool_snapshot.items()}
         # [EXTENDED METRICS] System-level metrics via psutil
         snapshot["system"] = collect_system_metrics()
         return snapshot
@@ -1234,7 +1230,7 @@ class RuntimeState(msgspec.Struct):
     def cleanup(self) -> None:
         """Explicitly break references to asyncio resources to help GC."""
         # [SIL-2] Resource Cleanup: ensure no loop-bound objects are leaked.
-        try:
+        with contextlib.suppress(RuntimeError):
             # We use type: ignore because msgspec.Struct doesn't usually allow None
             # for these types, but during cleanup we want to break the bond.
             self.mqtt_publish_queue = None  # type: ignore
@@ -1247,8 +1243,6 @@ class RuntimeState(msgspec.Struct):
                 self.pending_analog_reads.clear()
             if hasattr(self, "running_processes"):
                 self.running_processes.clear()
-        except RuntimeError:
-            pass
 
 
 def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:

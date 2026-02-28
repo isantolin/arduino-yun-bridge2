@@ -13,6 +13,7 @@ It is optimized for performance on OpenWrt by using C-level delimiter searching
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import errno
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Final, Sized, TypeGuard, cast
@@ -121,14 +122,12 @@ class BridgeSerialProtocol(asyncio.Protocol):
         """Dispatcher for decoded packets."""
         # Check for negotiation response first (bypass service for speed)
         if self.negotiation_future and not self.negotiation_future.done():
-            try:
+            with contextlib.suppress(cobs.DecodeError, ValueError):
                 raw_frame = cobs.decode(encoded_packet)
                 frame = Frame.from_bytes(raw_frame)
                 if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP:
                     self.negotiation_future.set_result(True)
                     return
-            except (cobs.DecodeError, ValueError):
-                pass  # Ignore malformed during negotiation
 
         # Normal processing via async task to avoid blocking the event loop
         self.loop.create_task(self._async_process_packet(encoded_packet))
@@ -457,10 +456,8 @@ class SerialTransport:
             finally:
                 if not stop_task.done():
                     stop_task.cancel()
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError):
                         await stop_task
-                    except asyncio.CancelledError:
-                        pass
 
         finally:
             self.mark_disconnected()
@@ -468,10 +465,8 @@ class SerialTransport:
                 transport.close()
             self.service.register_serial_sender(serial_sender_not_ready)
             self.protocol = None
-            try:
+            with contextlib.suppress(OSError, RuntimeError, ValueError):
                 await self.service.on_serial_disconnected()
-            except (OSError, RuntimeError, ValueError) as exc:
-                logger.warning("Error in on_serial_disconnected hook: %s", exc)
 
     async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
         logger.info("Negotiating baudrate switch to %d...", target_baud)

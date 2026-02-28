@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import subprocess
 from asyncio import StreamReader
@@ -697,10 +698,8 @@ class ProcessComponent:
 
             # Check if we can cleanup immediately
             if current_slot.is_drained() and current_slot.fsm_state == PROCESS_STATE_FINISHED:
-                try:
+                with contextlib.suppress(MachineError):
                     current_slot.trigger("finalize")
-                except MachineError:
-                    pass
                 self.state.running_processes.pop(pid, None)
                 release_slot = True
 
@@ -823,7 +822,7 @@ class ProcessComponent:
         del stdout[:out_len]
         del stderr[:err_len]
 
-        return out_chunk, err_chunk, len(stdout) > 0, len(stderr) > 0
+        return out_chunk, err_chunk, bool(stdout), bool(stderr)
 
     def _release_process_slot(self) -> None:
         guard = self._process_slots

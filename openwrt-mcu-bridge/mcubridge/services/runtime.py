@@ -346,11 +346,12 @@ class BridgeService:
                     spool_note = f"; spooled_pending={pending}"
                 else:
                     reason = self.state.mqtt_spool_failure_reason or "unknown"
-                    backoff_remaining = max(
+                    remaining = max(
                         0.0,
                         self.state.mqtt_spool_backoff_until - time.monotonic(),
                     )
-                    spool_note = "; spool_unavailable reason=%s backoff_remaining=%.1fs" % (reason, backoff_remaining)
+                    spool_note = f"; spool_unavailable reason={reason} backoff_remaining={remaining:.1f}s"
+
                 logger.warning(
                     "MQTT publish queue saturated (%d/%d); dropping oldest " "topic=%s%s",
                     self.state.mqtt_publish_queue.qsize(),

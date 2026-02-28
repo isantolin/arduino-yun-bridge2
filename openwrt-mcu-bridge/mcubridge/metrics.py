@@ -37,28 +37,57 @@ def _build_metrics_message(
         Topic.SYSTEM,
         "metrics",
     )
-
-    # Dimensional properties based on snapshot state
-    properties: list[tuple[str, str]] = []
-
-    if snapshot.get("mqtt_spool_degraded"):
-        properties.append(("bridge-spool", snapshot.get("mqtt_spool_failure_reason") or "unknown"))
-
-    file_status = _file_status_property(snapshot)
-    if file_status:
-        properties.append(("bridge-files", file_status))
-
-    if (w_enabled := snapshot.get("watchdog_enabled")) is not None:
-        properties.append(("bridge-watchdog-enabled", "1" if w_enabled else "0"))
-        if (w_interval := snapshot.get("watchdog_interval")) is not None:
-            properties.append(("bridge-watchdog-interval", str(w_interval)))
-
-    return QueuedPublish(
+    message = QueuedPublish(
         topic_name=topic,
         payload=msgspec.json.encode(snapshot),
         content_type="application/json",
         message_expiry_interval=int(expiry_seconds),
-        user_properties=properties,
+    )
+
+    mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
+    if snapshot.get("mqtt_spool_degraded"):
+        message = _with_user_property(
+            message,
+            "bridge-spool",
+            mqtt_spool_failure or "unknown",
+        )
+
+    file_status = _file_status_property(snapshot)
+    if file_status is not None:
+        message = _with_user_property(
+            message,
+            "bridge-files",
+            file_status,
+        )
+
+    if snapshot.get("watchdog_enabled") is not None:
+        enabled = bool(snapshot.get("watchdog_enabled"))
+        message = _with_user_property(
+            message,
+            "bridge-watchdog-enabled",
+            "1" if enabled else "0",
+        )
+        watchdog_interval = snapshot.get("watchdog_interval")
+        if isinstance(watchdog_interval, (int, float)):
+            message = _with_user_property(
+                message,
+                "bridge-watchdog-interval",
+                str(watchdog_interval),
+            )
+
+    return message
+
+
+def _with_user_property(
+    message: QueuedPublish,
+    key: str,
+    value: str,
+) -> QueuedPublish:
+    user_properties = list(message.user_properties)
+    user_properties.append((key, value))
+    return msgspec.structs.replace(
+        message,
+        user_properties=user_properties,
     )
 
 

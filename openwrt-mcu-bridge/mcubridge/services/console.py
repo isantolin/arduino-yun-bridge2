@@ -83,7 +83,7 @@ class ConsoleComponent:
             )
             for chunk in chunks:
                 if chunk:
-                    self.state.enqueue_console_chunk(chunk)
+                    self.state.enqueue_console_chunk(chunk, logger)
             return
 
         for index, chunk in enumerate(chunks):
@@ -100,7 +100,7 @@ class ConsoleComponent:
             if not send_ok:
                 remaining = b"".join(chunks[index:])
                 if remaining:
-                    self.state.enqueue_console_chunk(remaining)
+                    self.state.enqueue_console_chunk(remaining, logger)
                 logger.warning(
                     "Serial send failed for console input; payload queued for retry",
                 )

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from itertools import batched
 
 from .hex import format_hex, log_binary_traffic
 
@@ -19,14 +18,15 @@ __all__ = [
 
 
 def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
-    """Split payload into fixed-size chunks using optimized C-level batching."""
+    """Split payload into fixed-size chunks."""
     if not payload:
         return []
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-
-    # [Python 3.12+] itertools.batched is O(N) and implemented in C
-    return [bytes(chunk) for chunk in batched(payload, chunk_size)]
+    return [
+        payload[index : index + chunk_size]
+        for index in range(0, len(payload), chunk_size)
+    ]
 
 
 def log_hexdump(

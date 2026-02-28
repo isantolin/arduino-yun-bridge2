@@ -10,7 +10,7 @@ not used.
 from __future__ import annotations
 
 import logging
-import os
+from pathlib import Path
 from typing import Annotated, Any
 
 # [SIL-2] Deterministic Import: msgspec is MANDATORY.
@@ -162,8 +162,8 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         if len(unique_symbols) < 4:
             raise ValueError("serial_shared_secret must contain at least four distinct bytes")
 
-        self.file_system_root = os.path.abspath(self.file_system_root)
-        self.mqtt_spool_dir = os.path.abspath(self.mqtt_spool_dir)
+        self.file_system_root = str(Path(self.file_system_root).resolve())
+        self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).resolve())
 
         # Logic-based cross-field validations
         if self.file_storage_quota_bytes < self.file_write_max_bytes:
@@ -255,9 +255,9 @@ def load_runtime_config() -> RuntimeConfig:
 
     # 5. Normalize Paths
     if "file_system_root" in raw_config:
-        raw_config["file_system_root"] = os.path.abspath(os.path.expanduser(str(raw_config["file_system_root"])))
+        raw_config["file_system_root"] = str(Path(raw_config["file_system_root"]).expanduser().resolve())
     if "mqtt_spool_dir" in raw_config:
-        raw_config["mqtt_spool_dir"] = os.path.abspath(os.path.expanduser(str(raw_config["mqtt_spool_dir"])))
+        raw_config["mqtt_spool_dir"] = str(Path(raw_config["mqtt_spool_dir"]).expanduser().resolve())
 
     # 6. Pre-process 'serial_shared_secret'
     if "serial_shared_secret" in raw_config:

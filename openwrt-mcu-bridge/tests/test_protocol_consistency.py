@@ -27,8 +27,12 @@ def test_protocol_python_is_up_to_date(tmp_path):
     tmp_py = tmp_path / "protocol.py"
     tmp_py.write_text(output.getvalue(), encoding="utf-8")
 
-    # Run ruff format on the temporary file
-    subprocess.run(["ruff", "format", str(tmp_py)], check=True, capture_output=True)
+    # Run ruff format on the temporary file using the current Python interpreter
+    subprocess.run(
+        [sys.executable, "-m", "ruff", "format", str(tmp_py)],
+        check=True,
+        capture_output=True,
+    )
     generated_content = tmp_py.read_text(encoding="utf-8")
 
     with open(py_path, "r") as f:

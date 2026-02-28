@@ -296,11 +296,11 @@ class BridgeService:
             target_topic = resp_topic or message.topic_name
             if target_topic != message_to_queue.topic_name:
                 message_to_queue = msgspec.structs.replace(message_to_queue, topic_name=target_topic)
-            
+
             reply_correlation = getattr(props, "CorrelationData", None) if props else None
             if reply_correlation is not None:
                 message_to_queue = msgspec.structs.replace(message_to_queue, correlation_data=reply_correlation)
-            
+
             origin_topic = str(reply_context.topic)
             user_properties = list(message_to_queue.user_properties)
             user_properties.append(("bridge-request-topic", origin_topic))
@@ -314,13 +314,13 @@ class BridgeService:
                 dropped = self.state.mqtt_publish_queue.get_nowait()
                 self.state.mqtt_publish_queue.task_done()
                 self.state.record_mqtt_drop(dropped.topic_name)
-                
+
                 # Use background task for spooling to avoid blocking enqueue
                 await self.state.stash_mqtt_message(dropped)
-                
+
                 # Now the queue definitely has room
                 self.state.mqtt_publish_queue.put_nowait(message_to_queue)
-                
+
                 logger.warning(
                     "MQTT publish queue saturated; dropped oldest message from topic=%s",
                     dropped.topic_name,

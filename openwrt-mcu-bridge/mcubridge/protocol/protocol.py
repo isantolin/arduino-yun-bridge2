@@ -4,6 +4,7 @@ from __future__ import annotations
 from enum import IntEnum, StrEnum
 from typing import Final
 
+
 MQTT_WILDCARD_SINGLE: Final[str] = "+"
 MQTT_WILDCARD_MULTI: Final[str] = "#"
 
@@ -48,6 +49,7 @@ FILESYSTEM_COMMAND_MIN: Final[int] = 144
 FILESYSTEM_COMMAND_MAX: Final[int] = 159
 PROCESS_COMMAND_MIN: Final[int] = 160
 PROCESS_COMMAND_MAX: Final[int] = 175
+
 
 HANDSHAKE_NONCE_LENGTH: Final[int] = 16
 HANDSHAKE_TAG_LENGTH: Final[int] = 16
@@ -170,7 +172,7 @@ class Command(IntEnum):
     CMD_PROCESS_POLL_RESP = 166
 
 
-ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
+ACK_ONLY_COMMANDS: Final[frozenset[int]] = frozenset({
     Command.CMD_SET_PIN_MODE.value,
     Command.CMD_DIGITAL_WRITE.value,
     Command.CMD_ANALOG_WRITE.value,
@@ -180,15 +182,16 @@ ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
     Command.CMD_FILE_WRITE.value,
 })
 
+
 # Commands that expect a direct response without a prior ACK.
-# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.
-RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({
+RESPONSE_ONLY_COMMANDS: Final[frozenset[int]] = frozenset({
     Command.CMD_GET_VERSION.value,
     Command.CMD_GET_FREE_MEMORY.value,
     Command.CMD_GET_CAPABILITIES.value,
     Command.CMD_DIGITAL_READ.value,
     Command.CMD_ANALOG_READ.value,
 })
+
 
 class Topic(StrEnum):
     ANALOG = "a"  # Analog pin operations
@@ -206,27 +209,39 @@ class FileAction(StrEnum):
     READ = "read"  # Read file content
     WRITE = "write"  # Write file content
     REMOVE = "remove"  # Remove file
+
+
 class ShellAction(StrEnum):
     RUN = "run"  # Run shell command
     RUN_ASYNC = "run_async"  # Run shell command asynchronously
     POLL = "poll"  # Poll shell command status
     KILL = "kill"  # Kill shell command
+
+
 class MailboxAction(StrEnum):
     WRITE = "write"  # Write to mailbox
     READ = "read"  # Read from mailbox
     INCOMING = "incoming"  # Mailbox incoming messages
     PROCESSED = "processed"  # Mailbox processed notifications
     ERRORS = "errors"  # Mailbox error topic
+
+
 class DatastoreAction(StrEnum):
     GET = "get"  # Get datastore value
     PUT = "put"  # Put datastore value
+
+
 class PinAction(StrEnum):
     MODE = "mode"  # Set pin mode
     READ = "read"  # Read pin value
+
+
 class ConsoleAction(StrEnum):
     IN = "in"  # Console input
     OUT = "out"  # Console output
     INPUT = "input"  # Console input action
+
+
 class SystemAction(StrEnum):
     FREE_MEMORY = "free_memory"  # System free memory
     VERSION = "version"  # System version
@@ -237,10 +252,14 @@ class SystemAction(StrEnum):
     HANDSHAKE = "handshake"  # Handshake snapshot
     SUMMARY = "summary"  # Bridge summary snapshot
     STATE = "state"  # Bridge state snapshot
+
+
 class DigitalAction(StrEnum):
     WRITE = "write"  # Digital write
     READ = "read"  # Digital read
     MODE = "mode"  # Digital mode
+
+
 class AnalogAction(StrEnum):
     WRITE = "write"  # Analog write
     READ = "read"  # Analog read

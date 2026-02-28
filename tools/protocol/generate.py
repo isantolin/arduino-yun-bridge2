@@ -12,12 +12,11 @@ Copyright (C) 2025 Ignacio Santolin and contributors
 from __future__ import annotations
 
 import json
-import sys
 import textwrap
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, TextIO, Optional, Annotated
+from typing import Annotated, Any, Iterator, Optional, TextIO
 
 import msgspec
 import typer
@@ -37,17 +36,24 @@ class CodeWriter:
         self._out = out
         self._indent_str = indent_str
         self._level = 0
+        self._consecutive_blanks = 0
 
     def write(self, text: str = "") -> None:
-        """Write a line with current indentation."""
-        if not text:
-            self._out.write("\n")
+        """Write a line with current indentation, preventing blank line accumulation."""
+        line = text.strip()
+        if not line:
+            if self._consecutive_blanks < 2:
+                self._out.write("\n")
+                self._consecutive_blanks += 1
             return
+
+        self._consecutive_blanks = 0
         self._out.write(f"{self._indent_str * self._level}{text}\n")
 
     def raw(self, text: str) -> None:
-        """Write raw text without indentation (e.g. multiline strings)."""
+        """Write raw text without indentation."""
         self._out.write(text)
+        self._consecutive_blanks = 0
 
     @contextmanager
     def indent(self) -> Iterator[None]:
@@ -238,7 +244,7 @@ class CppGenerator:
         w.raw(" */\n")
 
     def _write_constants(self, w: CodeWriter, spec: ProtocolSpec) -> None:
-        # Generic Constants mapping (toml key -> cpp type, cpp name)
+        # Generic Constants mapping
         mapping = [
             ("protocol_version", "uint8_t", "PROTOCOL_VERSION"),
             ("default_baudrate", "unsigned long", "RPC_DEFAULT_BAUDRATE"),
@@ -264,7 +270,6 @@ class CppGenerator:
             ("rle_min_run_length", "uint8_t", "RPC_RLE_MIN_RUN_LENGTH"),
             ("rle_max_run_length", "uint16_t", "RPC_RLE_MAX_RUN_LENGTH"),
             ("rle_single_escape_marker", "uint8_t", "RPC_RLE_SINGLE_ESCAPE_MARKER"),
-            # Category ranges
             ("status_code_min", "uint8_t", "RPC_STATUS_CODE_MIN"),
             ("status_code_max", "uint8_t", "RPC_STATUS_CODE_MAX"),
             ("system_command_min", "uint16_t", "RPC_SYSTEM_COMMAND_MIN"),
@@ -285,36 +290,22 @@ class CppGenerator:
 
         for key, ctype, cname in mapping:
             if key in spec.constants:
-                val = spec.constants[key]
-                w.write(f"constexpr {ctype} {cname} = {val};")
+                w.write(f"constexpr {ctype} {cname} = {spec.constants[key]};")
         w.write()
 
-        # Handshake Constants
         hs = spec.handshake
         hs_mapping = [
             ("nonce_length", "unsigned int", "RPC_HANDSHAKE_NONCE_LENGTH"),
             ("tag_length", "unsigned int", "RPC_HANDSHAKE_TAG_LENGTH"),
             ("ack_timeout_min_ms", "uint32_t", "RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS"),
             ("ack_timeout_max_ms", "uint32_t", "RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS"),
-            (
-                "response_timeout_min_ms",
-                "uint32_t",
-                "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS",
-            ),
-            (
-                "response_timeout_max_ms",
-                "uint32_t",
-                "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS",
-            ),
+            ("response_timeout_min_ms", "uint32_t", "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS"),
+            ("response_timeout_max_ms", "uint32_t", "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS"),
             ("retry_limit_min", "unsigned int", "RPC_HANDSHAKE_RETRY_LIMIT_MIN"),
             ("retry_limit_max", "unsigned int", "RPC_HANDSHAKE_RETRY_LIMIT_MAX"),
             ("hkdf_output_length", "unsigned int", "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH"),
             ("nonce_random_bytes", "unsigned int", "RPC_HANDSHAKE_NONCE_RANDOM_BYTES"),
-            (
-                "nonce_counter_bytes",
-                "unsigned int",
-                "RPC_HANDSHAKE_NONCE_COUNTER_BYTES",
-            ),
+            ("nonce_counter_bytes", "unsigned int", "RPC_HANDSHAKE_NONCE_COUNTER_BYTES"),
         ]
         for key, ctype, cname in hs_mapping:
             if key in hs:
@@ -322,25 +313,17 @@ class CppGenerator:
 
         w.write("constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;")
 
-        # Byte arrays
         if "hkdf_salt" in hs:
             bytes_str = ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_salt"])
             w.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = {{{bytes_str}}};")
-            w.write(
-                f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(hs['hkdf_salt'])};"
-            )
+            w.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(hs['hkdf_salt'])};")
 
         if "hkdf_info_auth" in hs:
             bytes_str = ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"])
-            w.write(
-                f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{bytes_str}}};"
-            )
-            w.write(
-                f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(hs['hkdf_info_auth'])};"
-            )
+            w.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{bytes_str}}};")
+            w.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(hs['hkdf_info_auth'])};")
         w.write()
 
-        # Capabilities & Architectures
         for name, val in spec.capabilities.items():
             w.write(f"constexpr uint32_t RPC_CAPABILITY_{name.upper()} = {val};")
         w.write()
@@ -375,11 +358,7 @@ class CppGenerator:
         w.write("}")
         w.write()
 
-        ack_cmds = [
-            f"(command_id == CommandId::{c.name})"
-            for c in spec.commands
-            if c.requires_ack
-        ]
+        ack_cmds = [f"(command_id == CommandId::{c.name})" for c in spec.commands if c.requires_ack]
         w.write("constexpr bool requires_ack(CommandId command_id) {")
         if ack_cmds:
             w.write(f"    return {' || '.join(ack_cmds)};")
@@ -395,20 +374,15 @@ class CppGenerator:
     def _write_auto_payloads(self, w: CodeWriter, spec: ProtocolSpec) -> None:
         for payload in spec.payloads.values():
             with w.block(f"struct {payload.name} {{", "};"):
-                # Fields
                 for f in payload.fields:
                     w.write(f"{f.cpp_type} {f.name};")
-
                 w.write(f"static constexpr size_t SIZE = {payload.total_size};")
-
-                # Parse
                 with w.block(f"static {payload.name} parse(const uint8_t* data) {{"):
                     if not payload.fields:
                         w.write(f"return {payload.name}{{}};")
                     elif len(payload.fields) == 1 and payload.fields[0].read_func:
                         w.write(f"return {{{payload.fields[0].read_func}(data)}};")
                     elif all(not f.read_func for f in payload.fields):
-                        # All bytes, simpler init
                         inits = [f"data[{i}]" for i in range(len(payload.fields))]
                         w.write(f"return {{{', '.join(inits)}}};")
                     else:
@@ -416,15 +390,11 @@ class CppGenerator:
                         offset = 0
                         for f in payload.fields:
                             if f.read_func:
-                                w.write(
-                                    f"msg.{f.name} = {f.read_func}(data + {offset});"
-                                )
+                                w.write(f"msg.{f.name} = {f.read_func}(data + {offset});")
                             else:
                                 w.write(f"msg.{f.name} = data[{offset}];")
                             offset += f.size
                         w.write("return msg;")
-
-                # Encode
                 with w.block("void encode(uint8_t* data) const {"):
                     offset = 0
                     for f in payload.fields:
@@ -436,13 +406,11 @@ class CppGenerator:
             w.write()
 
     def _write_complex_payloads(self, w: CodeWriter) -> None:
-        # [SIL-2] Refactored variable-length payload templates.
-        # These handle common patterns: Pascal strings (u8 len) and buffers (u16 len).
         complex_payloads = [
             (
                 "ConsoleWrite",
-                "struct ConsoleWrite { const uint8_t* data; size_t length; "
-                "static ConsoleWrite parse(const uint8_t* d, size_t l) { return {d, l}; } };",
+                "struct ConsoleWrite { const uint8_t* data; size_t length; static "
+                "ConsoleWrite parse(const uint8_t* d, size_t l) { return {d, l}; } };",
             ),
             (
                 "DatastoreGet",
@@ -529,152 +497,156 @@ class CppGenerator:
             w.write(code)
         w.write()
 
-
     def _write_static_validator(self, w: CodeWriter, spec: ProtocolSpec) -> None:
         with w.block("namespace Payload {"):
-            w.write("""
-template <typename T>
-inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
-    if (frame.header.payload_length < T::SIZE) {
-        return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
-    }
-    return etl::expected<T, rpc::FrameError>(T::parse(frame.payload.data()));
-}
-""")
+            w.write("template <typename T>")
+            w.write("inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {")
+            with w.indent():
+                w.write("if (frame.header.payload_length < T::SIZE) "
+                        "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);")
+                w.write("return etl::expected<T, rpc::FrameError>(T::parse(frame.payload.data()));")
+            w.write("}")
 
-            # Manual specializations for variable length payloads
-            manual_impls: list[tuple[str, list[str]]] = [
+            manual_impls = [
                 (
                     "payload::ConsoleWrite",
-                    ["return etl::expected<payload::ConsoleWrite, rpc::FrameError>(payload::ConsoleWrite::parse(frame.payload.data(), frame.header.payload_length));"],  # noqa: E501
+                    "return etl::expected<payload::ConsoleWrite, rpc::FrameError>("
+                    "payload::ConsoleWrite::parse(frame.payload.data(), frame.header.payload_length));"
                 ),
                 (
                     "payload::ProcessRun",
-                    ["return etl::expected<payload::ProcessRun, rpc::FrameError>(payload::ProcessRun::parse(frame.payload.data(), frame.header.payload_length));"],  # noqa: E501
+                    "return etl::expected<payload::ProcessRun, rpc::FrameError>("
+                    "payload::ProcessRun::parse(frame.payload.data(), frame.header.payload_length));"
                 ),
                 (
                     "payload::ProcessRunAsync",
-                    ["return etl::expected<payload::ProcessRunAsync, rpc::FrameError>(payload::ProcessRunAsync::parse(frame.payload.data(), frame.header.payload_length));"],  # noqa: E501
+                    "return etl::expected<payload::ProcessRunAsync, rpc::FrameError>("
+                    "payload::ProcessRunAsync::parse(frame.payload.data(), frame.header.payload_length));"
                 ),
                 (
                     "payload::DatastoreGet",
-                    [
-                        "if (frame.header.payload_length < 1 || "
-                        "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                        "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                        "}",
-                        "return etl::expected<payload::DatastoreGet, rpc::FrameError>(payload::DatastoreGet::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 1 || "
+                    "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::DatastoreGet, rpc::FrameError>("
+                    "payload::DatastoreGet::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::DatastoreGetResponse",
-                    [
-                        "if (frame.header.payload_length < 1 || "
-                        "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                        "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                        "}",
-                        "return etl::expected<payload::DatastoreGetResponse, rpc::FrameError>(payload::DatastoreGetResponse::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 1 || "
+                    "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::DatastoreGetResponse, rpc::FrameError>("
+                    "payload::DatastoreGetResponse::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::DatastorePut",
-                    [
-                        "if (frame.header.payload_length < 2) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint8_t k = frame.payload[0];",
-                        "if (frame.header.payload_length < (size_t)(k + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint8_t v = frame.payload[k + 1];",
-                        "if (frame.header.payload_length < (size_t)(k + v + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "return etl::expected<payload::DatastorePut, rpc::FrameError>(payload::DatastorePut::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 2) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint8_t k = frame.payload[0]; "
+                    "if (frame.header.payload_length < (size_t)(k + 2)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint8_t v = frame.payload[k + 1]; "
+                    "if (frame.header.payload_length < (size_t)(k + v + 2)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::DatastorePut, rpc::FrameError>("
+                    "payload::DatastorePut::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::MailboxPush",
-                    [
-                        "if (frame.header.payload_length < 2) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint16_t l = rpc::read_u16_be(frame.payload.data());",
-                        "if (frame.header.payload_length < (size_t)(l + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "return etl::expected<payload::MailboxPush, rpc::FrameError>(payload::MailboxPush::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 2) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint16_t l = rpc::read_u16_be(frame.payload.data()); "
+                    "if (frame.header.payload_length < (size_t)(l + 2)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::MailboxPush, rpc::FrameError>("
+                    "payload::MailboxPush::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::MailboxReadResponse",
-                    [
-                        "if (frame.header.payload_length < 2) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint16_t l = rpc::read_u16_be(frame.payload.data());",
-                        "if (frame.header.payload_length < (size_t)(l + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "return etl::expected<payload::MailboxReadResponse, rpc::FrameError>(payload::MailboxReadResponse::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 2) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint16_t l = rpc::read_u16_be(frame.payload.data()); "
+                    "if (frame.header.payload_length < (size_t)(l + 2)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::MailboxReadResponse, rpc::FrameError>("
+                    "payload::MailboxReadResponse::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::FileWrite",
-                    [
-                        "if (frame.header.payload_length < 3) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint8_t p = frame.payload[0];",
-                        "if (frame.header.payload_length < (size_t)(p + 3)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint16_t d = rpc::read_u16_be(frame.payload.data() + 1 + p);",
-                        "if (frame.header.payload_length < (size_t)(p + d + 3)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "return etl::expected<payload::FileWrite, rpc::FrameError>(payload::FileWrite::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 3) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint8_t p = frame.payload[0]; "
+                    "if (frame.header.payload_length < (size_t)(p + 3)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint16_t d = rpc::read_u16_be(frame.payload.data() + 1 + p); "
+                    "if (frame.header.payload_length < (size_t)(p + d + 3)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::FileWrite, rpc::FrameError>("
+                    "payload::FileWrite::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::FileRead",
-                    [
-                        "if (frame.header.payload_length < 1 || "
-                        "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                        "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                        "}",
-                        "return etl::expected<payload::FileRead, rpc::FrameError>(payload::FileRead::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 1 || "
+                    "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::FileRead, rpc::FrameError>("
+                    "payload::FileRead::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::FileReadResponse",
-                    [
-                        "if (frame.header.payload_length < 2) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint16_t l = rpc::read_u16_be(frame.payload.data());",
-                        "if (frame.header.payload_length < (size_t)(l + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "return etl::expected<payload::FileReadResponse, rpc::FrameError>(payload::FileReadResponse::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 2) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint16_t l = rpc::read_u16_be(frame.payload.data()); "
+                    "if (frame.header.payload_length < (size_t)(l + 2)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::FileReadResponse, rpc::FrameError>("
+                    "payload::FileReadResponse::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::FileRemove",
-                    [
-                        "if (frame.header.payload_length < 1 || "
-                        "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                        "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                        "}",
-                        "return etl::expected<payload::FileRemove, rpc::FrameError>(payload::FileRemove::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 1 || "
+                    "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::FileRemove, rpc::FrameError>("
+                    "payload::FileRemove::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::ProcessRunResponse",
-                    [
-                        "if (frame.header.payload_length < 6) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint16_t o = rpc::read_u16_be(frame.payload.data() + 1);",
-                        "if (frame.header.payload_length < (size_t)(o + 5)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint16_t e = rpc::read_u16_be(frame.payload.data() + 3 + o);",
-                        "if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "return etl::expected<payload::ProcessRunResponse, rpc::FrameError>(payload::ProcessRunResponse::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 6) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint16_t o = rpc::read_u16_be(frame.payload.data() + 1); "
+                    "if (frame.header.payload_length < (size_t)(o + 5)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint16_t e = rpc::read_u16_be(frame.payload.data() + 3 + o); "
+                    "if (frame.header.payload_length < (size_t)(o + e + 6)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::ProcessRunResponse, rpc::FrameError>("
+                    "payload::ProcessRunResponse::parse(frame.payload.data()));"
                 ),
                 (
                     "payload::ProcessPollResponse",
-                    [
-                        "if (frame.header.payload_length < 6) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint16_t o = rpc::read_u16_be(frame.payload.data() + 2);",
-                        "if (frame.header.payload_length < (size_t)(o + 6)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "uint16_t e = rpc::read_u16_be(frame.payload.data() + 4 + o);",
-                        "if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",  # noqa: E501
-                        "return etl::expected<payload::ProcessPollResponse, rpc::FrameError>(payload::ProcessPollResponse::parse(frame.payload.data()));",  # noqa: E501
-                    ],
+                    "if (frame.header.payload_length < 6) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint16_t o = rpc::read_u16_be(frame.payload.data() + 2); "
+                    "if (frame.header.payload_length < (size_t)(o + 6)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "uint16_t e = rpc::read_u16_be(frame.payload.data() + 4 + o); "
+                    "if (frame.header.payload_length < (size_t)(o + e + 6)) "
+                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED); "
+                    "return etl::expected<payload::ProcessPollResponse, rpc::FrameError>("
+                    "payload::ProcessPollResponse::parse(frame.payload.data()));"
                 ),
             ]
-            for type_name, body_lines in manual_impls:
-                header = f"""template <>
-inline etl::expected<{type_name}, rpc::FrameError> parse<{type_name}>(const rpc::Frame& frame) {{"""
-                with w.block(header, end="}"):
-                    for line in body_lines:
-                        w.write(line)
-
+            for type_name, body in manual_impls:
+                w.write("template <>")
+                w.write(
+                    f"inline etl::expected<{type_name}, rpc::FrameError> "
+                    f"parse<{type_name}>(const rpc::Frame& frame) {{"
+                )
+                with w.indent():
+                    w.write(body)
+                w.write("}")
 
 
 class PythonGenerator:
@@ -686,15 +658,12 @@ class PythonGenerator:
         w.write("from enum import IntEnum, StrEnum")
         w.write("from typing import Final")
         w.write()
-
-        # MQTT Wildcards
+        w.write()
         w.write('MQTT_WILDCARD_SINGLE: Final[str] = "+"')
         w.write('MQTT_WILDCARD_MULTI: Final[str] = "#"')
         w.write()
         w.write()
 
-        # General Constants
-        # Map spec key -> py name, type, optional format
         generic_mapping = [
             ("protocol_version", "PROTOCOL_VERSION", "int", None),
             ("default_baudrate", "DEFAULT_BAUDRATE", "int", None),
@@ -737,16 +706,13 @@ class PythonGenerator:
             ("process_command_min", "PROCESS_COMMAND_MIN", "int", None),
             ("process_command_max", "PROCESS_COMMAND_MAX", "int", None),
         ]
-
         for key, py_name, py_type, fmt in generic_mapping:
             if key in spec.constants:
-                val = spec.constants[key]
-                if fmt:
-                    val = fmt.format(value=val)
+                val = fmt.format(value=spec.constants[key]) if fmt else spec.constants[key]
                 w.write(f"{py_name}: Final[{py_type}] = {val}")
         w.write()
+        w.write()
 
-        # Handshake
         hs_mapping = [
             ("nonce_length", "HANDSHAKE_NONCE_LENGTH", "int"),
             ("tag_length", "HANDSHAKE_TAG_LENGTH", "int"),
@@ -764,70 +730,53 @@ class PythonGenerator:
             if key in spec.handshake:
                 w.write(f"{name}: Final[{ptype}] = {spec.handshake[key]}")
 
-        # String constants
         hs_strs = [
             ("tag_algorithm", "HANDSHAKE_TAG_ALGORITHM"),
             ("tag_description", "HANDSHAKE_TAG_DESCRIPTION"),
             ("hkdf_algorithm", "HANDSHAKE_HKDF_ALGORITHM"),
-            ("nonce_format_description", "HANDSHAKE_NONCE_FORMAT_DESCRIPTION"),
+            ("nonce_format_description", "HANDSHAKE_NONCE_FORMAT_DESCRIPTION")
         ]
         for key, name in hs_strs:
             if key in spec.handshake:
                 self._write_str_const(w, name, str(spec.handshake[key]))
 
-        # Byte constants
-        hs_bytes = [
-            ("hkdf_salt", "HANDSHAKE_HKDF_SALT"),
-            ("hkdf_info_auth", "HANDSHAKE_HKDF_INFO_AUTH"),
-        ]
-        for key, name in hs_bytes:
-            if key in spec.handshake:
-                w.write(f'{name}: Final[bytes] = b"{spec.handshake[key]}"')
-
+        if "hkdf_salt" in spec.handshake:
+            w.write(f'HANDSHAKE_HKDF_SALT: Final[bytes] = b"{spec.handshake["hkdf_salt"]}"')
+        if "hkdf_info_auth" in spec.handshake:
+            w.write(f'HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b"{spec.handshake["hkdf_info_auth"]}"')
         w.write("HANDSHAKE_CONFIG_SIZE: Final[int] = 7")
         w.write()
         w.write()
 
-        # Enums and Classes
         with w.block("class CompressionType(IntEnum):", end=None):
             w.write("NONE = 0")
             w.write("RLE = 1")
         w.write()
         w.write()
 
-        # Capabilities
         for name, val in spec.capabilities.items():
             w.write(f"CAPABILITY_{name.upper()}: Final[int] = {val}")
         w.write()
         w.write()
 
-        # Arch
         for name, val in spec.architectures.items():
             w.write(f"ARCH_{name.upper()}: Final[int] = {val}")
         w.write()
         w.write()
 
-        # Status Reasons
         if spec.status_reasons:
             for key in sorted(spec.status_reasons.keys()):
-                self._write_str_const(
-                    w,
-                    f"STATUS_REASON_{str(key).upper()}",
-                    str(spec.status_reasons[key]),
-                )
+                self._write_str_const(w, f"STATUS_REASON_{str(key).upper()}", str(spec.status_reasons[key]))
             w.write()
             w.write()
 
-        # Status Enum
         with w.block("class Status(IntEnum):", end=None):
             for s in spec.statuses:
                 w.write(f"{s.name} = {s.value}  # {s.description}")
         w.write()
         w.write()
 
-        # Command Enum
-        ack_only = []
-        resp_only = []
+        ack_only, resp_only = [], []
         with w.block("class Command(IntEnum):", end=None):
             for c in spec.commands:
                 w.write(f"{c.name} = {c.value}")
@@ -838,48 +787,76 @@ class PythonGenerator:
         w.write()
         w.write()
 
-        # Sets
         if ack_only:
-            w.write("ACK_ONLY_COMMANDS: frozenset[int] = frozenset({")
+            w.write("ACK_ONLY_COMMANDS: Final[frozenset[int]] = frozenset({")
             with w.indent():
                 for c in ack_only:
                     w.write(f"{c},")
             w.write("})")
             w.write()
+            w.write()
 
         if resp_only:
             w.write("# Commands that expect a direct response without a prior ACK.")
-            w.write(
-                "# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first."
-            )
-            w.write("RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({")
+            w.write("RESPONSE_ONLY_COMMANDS: Final[frozenset[int]] = frozenset({")
             with w.indent():
                 for c in resp_only:
                     w.write(f"{c},")
             w.write("})")
             w.write()
+            w.write()
 
-        # Topics
         with w.block("class Topic(StrEnum):", end=None):
             for t in spec.topics:
                 w.write(f"{t['name']} = \"{t['value']}\"  # {t['description']}")
         w.write()
         w.write()
 
-        # Actions (Grouped)
-        self._write_actions(w, spec)
+        grouped: dict[str, list[tuple[str, str, str]]] = {}
+        for act in spec.actions:
+            prefix, suffix = act["name"].split("_", 1)
+            grouped.setdefault(prefix, []).append((suffix, act["value"], act["description"]))
 
-        # Subscriptions
-        self._write_subscriptions(w, spec)
+        for prefix, items in grouped.items():
+            cls_name = "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action"
+            with w.block(f"class {cls_name}(StrEnum):", end=None):
+                for suffix, val, desc in items:
+                    w.write(f'{suffix} = "{val}"  # {desc}')
+            w.write()
+            w.write()
 
-        # Formats
+        w.write("MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (")
+        with w.indent():
+            for sub in spec.mqtt_subscriptions:
+                topic, qos, segments = sub["topic"], sub["qos"], sub.get("segments", [])
+                seg_strs = []
+                for s in segments:
+                    if s == "+":
+                        seg_strs.append("MQTT_WILDCARD_SINGLE")
+                    elif s == "#":
+                        seg_strs.append("MQTT_WILDCARD_MULTI")
+                    else:
+                        mapped = False
+                        cls_name = "DatastoreAction" if topic == "DATASTORE" else f"{topic.lower().title()}Action"
+                        for act in spec.actions:
+                            if act["name"].startswith(f"{topic}_") and act["value"] == s:
+                                seg_strs.append(f"{cls_name}.{act['name'].split('_', 1)[1]}.value")
+                                mapped = True
+                                break
+                        if not mapped:
+                            seg_strs.append(json.dumps(s))
+                w.write(f"(Topic.{topic}, ({', '.join(seg_strs)},), {qos}),")
+        w.write(")")
+        w.write()
+        w.write()
+
         formats = {
             "CRC_COVERED_HEADER_FORMAT": ">BHH",
             "CRC_FORMAT": ">I",
             "UINT8_FORMAT": ">B",
             "UINT16_FORMAT": ">H",
             "UINT32_FORMAT": ">I",
-            "NONCE_COUNTER_FORMAT": ">Q",
+            "NONCE_COUNTER_FORMAT": ">Q"
         }
         for name, val in formats.items():
             w.write(f'{name}: Final[str] = "{val}"')
@@ -888,8 +865,6 @@ class PythonGenerator:
         w.write("MIN_FRAME_SIZE: Final[int] = 9")
         w.write()
         w.write()
-
-        # Suffixes
         w.write('MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = "incoming_available"')
         w.write('MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = "outgoing_available"')
         w.write('MQTT_SUFFIX_RESPONSE: Final[str] = "response"')
@@ -899,132 +874,36 @@ class PythonGenerator:
         w.write('MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = "br"')
 
     def _write_str_const(self, w: CodeWriter, name: str, value: str) -> None:
-        # Check total line length estimation
-        prefix_len = len(f"{name}: Final[str] = ")
-        if len(value) + prefix_len > 100:
+        if len(value) + len(name) > 80:
             w.write(f"{name}: Final[str] = (")
             with w.indent():
-                for line in textwrap.wrap(value, 70):  # Wrap earlier
+                for line in textwrap.wrap(value, 70):
                     w.write(f"{json.dumps(line)}")
             w.write(")")
         else:
             w.write(f"{name}: Final[str] = {json.dumps(value)}")
 
-    def _write_actions(self, w: CodeWriter, spec: ProtocolSpec) -> None:
-        grouped: dict[str, list[tuple[str, str, str]]] = {}
-        for act in spec.actions:
-            raw = act["name"]
-            if "_" not in raw:
-                continue
-            prefix, suffix = raw.split("_", 1)
-            grouped.setdefault(prefix, []).append(
-                (suffix, act["value"], act["description"])
-            )
-
-        for prefix, items in grouped.items():
-            # Special case mapping matching original generator
-            cls_name = (
-                "DatastoreAction"
-                if prefix == "DATASTORE"
-                else f"{prefix.lower().title()}Action"
-            )
-            with w.block(f"class {cls_name}(StrEnum):", end=None):
-                for suffix, val, desc in items:
-                    w.write(f'{suffix} = "{val}"  # {desc}')
-        w.write()
-        w.write()
-
-    def _write_subscriptions(self, w: CodeWriter, spec: ProtocolSpec) -> None:
-        w.write(
-            "MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = ("
-        )
-        with w.indent():
-            for sub in spec.mqtt_subscriptions:
-                topic = sub["topic"]
-                qos = sub["qos"]
-                segments = sub.get("segments", [])
-
-                seg_strs = []
-                for s in segments:
-                    if s == "+":
-                        seg_strs.append("MQTT_WILDCARD_SINGLE")
-                    elif s == "#":
-                        seg_strs.append("MQTT_WILDCARD_MULTI")
-                    else:
-                        # Try to map to Enum
-                        # Logic duplicated from original for compatibility
-                        mapped = False
-                        if topic in [
-                            "DIGITAL",
-                            "ANALOG",
-                            "CONSOLE",
-                            "DATASTORE",
-                            "MAILBOX",
-                            "SHELL",
-                            "SYSTEM",
-                            "FILE",
-                        ]:
-                            # Simple heuristic to match original output
-                            cls_name = (
-                                "DatastoreAction"
-                                if topic == "DATASTORE"
-                                else f"{topic.lower().title()}Action"
-                            )
-                            # Check if s matches an action value
-                            for act in spec.actions:
-                                if (
-                                    act["name"].startswith(f"{topic}_")
-                                    and act["value"] == s
-                                ):
-                                    suffix = act["name"].split("_", 1)[1]
-                                    seg_strs.append(f"{cls_name}.{suffix}.value")
-                                    mapped = True
-                                    break
-                        if not mapped:
-                            seg_strs.append(json.dumps(s))
-
-                seg_tuple = f"({', '.join(seg_strs)},)" if seg_strs else "()"
-                w.write(f"(Topic.{topic}, {seg_tuple}, {qos}),")
-        w.write(")")
-        w.write()
-        w.write()
-
-
-# =============================================================================
-# 4. Main Entry Point
-# =============================================================================
-
 
 @app.command()
 def main(
-    spec_path: Annotated[
-        Path, typer.Option("--spec", help="Protocol specification file")
-    ],
-    cpp: Annotated[Optional[Path], typer.Option("--cpp", help="C++ header output")] = None,
-    cpp_structs: Annotated[
-        Optional[Path], typer.Option("--cpp-structs", help="C++ structs output")
-    ] = None,
-    py: Annotated[Optional[Path], typer.Option("--py", help="Python output")] = None,
-) -> None:
+    spec_path: Annotated[Path, typer.Option("--spec")],
+    cpp: Annotated[Optional[Path], typer.Option("--cpp")] = None,
+    cpp_structs: Annotated[Optional[Path], typer.Option("--cpp-structs")] = None,
+    py: Annotated[Optional[Path], typer.Option("--py")] = None
+):
     spec = ProtocolSpec.load(spec_path)
-
     if cpp:
         cpp.parent.mkdir(parents=True, exist_ok=True)
         with cpp.open("w", encoding="utf-8") as f:
             CppGenerator().generate_header(spec, f)
-        sys.stdout.write(f"Generated {cpp}\n")
-
     if cpp_structs:
         cpp_structs.parent.mkdir(parents=True, exist_ok=True)
         with cpp_structs.open("w", encoding="utf-8") as f:
             CppGenerator().generate_structs(spec, f)
-        sys.stdout.write(f"Generated {cpp_structs}\n")
-
     if py:
         py.parent.mkdir(parents=True, exist_ok=True)
         with py.open("w", encoding="utf-8") as f:
             PythonGenerator().generate(spec, f)
-        sys.stdout.write(f"Generated {py}\n")
 
 
 if __name__ == "__main__":

@@ -563,7 +563,7 @@ class SerialHandshakeManager:
             "fsm_state": self.fsm_state,  # Include FSM state in telemetry
         }
         if extra:
-            payload.update(extra)
+            payload |= extra
         message = QueuedPublish(
             topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
             payload=msgspec.json.encode(payload),

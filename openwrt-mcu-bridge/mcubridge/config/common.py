@@ -37,14 +37,11 @@ def get_uci_config() -> dict[str, Any]:
                     raise RuntimeError(f"UCI section {_UCI_PACKAGE}.{_UCI_SECTION} missing!")
                 return get_default_config()
 
-            clean_config: dict[str, Any] = get_default_config()
-            clean_config.update(
-                {
-                    k: (" ".join(map(str, cast(Iterable[Any], v))) if isinstance(v, (list, tuple)) else v)
-                    for k, v in section.items()
-                    if not k.startswith((".", "_"))
-                }
-            )
+            clean_config: dict[str, Any] = get_default_config() | {
+                k: (" ".join(map(str, cast(Iterable[Any], v))) if isinstance(v, (list, tuple)) else v)
+                for k, v in section.items()
+                if not k.startswith((".", "_"))
+            }
             return clean_config
     except (OSError, ValueError) as e:
         if is_openwrt:

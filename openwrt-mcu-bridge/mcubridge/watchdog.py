@@ -117,7 +117,7 @@ class WatchdogKeepalive:
         @tenacity.retry(
             wait=tenacity.wait_fixed(self._interval),
             stop=tenacity.stop_never,
-            retry=tenacity.retry_always,
+            retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
         )
         async def _kick_loop() -> None:
             self.kick()
@@ -128,6 +128,7 @@ class WatchdogKeepalive:
         except asyncio.CancelledError:
             self.stop()
             self._logger.debug("Watchdog keepalive cancelled")
+            raise
 
 
 __all__ = ["WatchdogKeepalive"]

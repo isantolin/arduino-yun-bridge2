@@ -204,7 +204,9 @@ def _make_dispatcher(
     from mcubridge.state.context import create_runtime_state
 
     state = create_runtime_state(get_default_config())
-    state.link_is_synchronized = is_link_synchronized
+    state.mark_transport_connected()
+    if is_link_synchronized:
+        state.mark_synchronized()
 
     registry = MCUHandlerRegistry()
     router = MQTTRouter()

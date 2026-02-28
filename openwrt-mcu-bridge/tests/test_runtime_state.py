@@ -190,7 +190,8 @@ def test_metrics_snapshot_includes_spool_snapshot(
 def test_handshake_snapshot_reflects_state(
     runtime_state: RuntimeState,
 ) -> None:
-    runtime_state.link_is_synchronized = True
+    runtime_state.mark_transport_connected()
+    runtime_state.mark_synchronized()
     runtime_state.handshake_attempts = 4
     runtime_state.handshake_failures = 1
     runtime_state.link_nonce_length = 16

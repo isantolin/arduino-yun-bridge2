@@ -250,7 +250,7 @@ MQTT spool retry: base=5s, max=60s
 ### Monitoreo de Estado Seguro
 
 El estado de salud del enlace se expone en:
-- `/tmp/mcubridge_status.json` → campo `link_is_synchronized`
+- `/tmp/mcubridge_status.json` → campo `is_synchronized`
 - MQTT topic `br/system/bridge/summary/value` → snapshot completo
 - Prometheus metric `mcubridge_serial_link_synchronized` (si habilitado)
 
@@ -459,7 +459,7 @@ sequenceDiagram
     Note over D,M: Phase 3: Final Verification
     D->>D: Verify tag_mcu == expected_tag
     alt Tag Valid
-        D->>D: link_is_synchronized = true
+        D->>D: is_synchronized = true
         D->>D: FSM → Idle state
         Note over D,M: ✓ Handshake Complete
     else Tag Invalid

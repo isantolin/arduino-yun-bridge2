@@ -58,7 +58,8 @@ async def test_process_packet_crc_mismatch_reports_crc(
 
     config = _make_config()
     state = create_runtime_state(config)
-    state.link_is_synchronized = True
+    state.mark_transport_connected()
+    state.mark_synchronized()
     service = BridgeService(config, state)
 
     # We won't check for send_frame call here as it was removed from serial_fast's exception handler

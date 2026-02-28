@@ -151,7 +151,7 @@ class MqttTransport:
         @tenacity.retry(
             wait=tenacity.wait_fixed(0.1),
             stop=tenacity.stop_never,
-            retry=tenacity.retry_always,
+            retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
             before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
         )
         async def _publish_tick() -> None:
@@ -166,6 +166,7 @@ class MqttTransport:
             if logger.isEnabledFor(logging.DEBUG):
                 log_hexdump(logger, logging.DEBUG, f"MQTT PUB > {topic_name}", message.payload)
 
+            published = False
             try:
                 await client.publish(
                     topic_name,
@@ -175,16 +176,20 @@ class MqttTransport:
                     properties=props,
                 )
                 self.state.record_mqtt_publish()
+                published = True
+            except asyncio.CancelledError:
+                raise
             except aiomqtt.MqttError as exc:
                 logger.warning("MQTT publish failed (%s); requeuing.", exc)
-                # Requeue for retry
-                try:
-                    self.state.mqtt_publish_queue.put_nowait(message)
-                except asyncio.QueueFull:
-                    # Spool if queue is full
-                    await self.state.stash_mqtt_message(message)
                 raise
             finally:
+                if not published:
+                    # Requeue for retry if it wasn't sent
+                    try:
+                        self.state.mqtt_publish_queue.put_nowait(message)
+                    except asyncio.QueueFull:
+                        # Spool if queue is full
+                        await self.state.stash_mqtt_message(message)
                 self.state.mqtt_publish_queue.task_done()
 
             # Raise to trigger next tick via tenacity

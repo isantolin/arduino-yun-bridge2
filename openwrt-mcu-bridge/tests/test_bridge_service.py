@@ -101,7 +101,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
     runtime_state.enqueue_console_chunk(b"hello", logging.getLogger())
     runtime_state.mcu_is_paused = False
     runtime_state.mcu_version = (1, 2)
-    runtime_state.link_is_synchronized = False
+    runtime_state.mark_transport_connected()
 
     await service.on_serial_connected()
 
@@ -210,7 +210,7 @@ async def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected
     assert any(fid == Command.CMD_LINK_RESET.value for fid in frame_ids)
     # Legacy fallback might imply we are synced or we skipped sync.
     # If we are synced, good.
-    assert runtime_state.link_is_synchronized is True
+    assert runtime_state.is_synchronized is True
 
 
 @pytest.mark.asyncio
@@ -264,7 +264,7 @@ def test_link_sync_resp_respects_rate_limit(
         def _prime_handshake(seed: int) -> bytes:
             nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
             tag = service._handshake.compute_handshake_tag(nonce)
-            runtime_state.link_is_synchronized = False
+            runtime_state.mark_transport_connected()
             runtime_state.link_handshake_nonce = nonce
             runtime_state.link_nonce_length = len(nonce)
             runtime_state.link_expected_tag = tag
@@ -314,7 +314,7 @@ async def test_sync_auth_failure_schedules_backoff(
     def _prime_handshake(seed: int) -> tuple[bytes, bytes]:
         nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
         tag = service._handshake.compute_handshake_tag(nonce)
-        runtime_state.link_is_synchronized = False
+        runtime_state.mark_transport_connected()
         runtime_state.link_handshake_nonce = nonce
         runtime_state.link_nonce_length = len(nonce)
         runtime_state.link_expected_tag = tag
@@ -389,7 +389,7 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
     runtime_config.serial_shared_secret = b"test_secret_1234"
     runtime_config.serial_handshake_fatal_failures = 1
     # Force unsynchronized state as the fixture sets it to True by default.
-    runtime_state.link_is_synchronized = False
+    runtime_state.mark_transport_connected()
     runtime_state.link_sync_event.clear()
 
     service = BridgeService(runtime_config, runtime_state)
@@ -443,7 +443,7 @@ async def test_mcu_frame_before_sync_is_rejected(
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
-    runtime_state.link_is_synchronized = False
+    runtime_state.mark_transport_connected()
 
     # Use a non-status, non-pre-sync command
     await service.handle_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"ignored")
@@ -456,7 +456,8 @@ async def test_mailbox_available_flow() -> None:
     runtime_config = RuntimeConfig(serial_shared_secret=b"12345678")
     runtime_state = create_runtime_state(runtime_config)
     service = BridgeService(runtime_config, runtime_state)
-    runtime_state.link_is_synchronized = True
+    runtime_state.mark_transport_connected()
+    runtime_state.mark_synchronized()
 
     sent_frames: list[tuple[int, bytes]] = []
 
@@ -491,7 +492,8 @@ async def test_mailbox_available_rejects_payload(
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
-    runtime_state.link_is_synchronized = True
+    runtime_state.mark_transport_connected()
+    runtime_state.mark_synchronized()
 
     sent_frames: list[tuple[int, bytes]] = []
 
@@ -515,7 +517,8 @@ async def test_mailbox_push_overflow_returns_error(
 ) -> None:
     runtime_config.mailbox_queue_limit = 1
     service = BridgeService(runtime_config, runtime_state)
-    runtime_state.link_is_synchronized = True
+    runtime_state.mark_transport_connected()
+    runtime_state.mark_synchronized()
 
     sent_frames: list[tuple[int, bytes]] = []
 
@@ -540,7 +543,8 @@ async def test_mailbox_read_requeues_on_send_failure(
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
-    runtime_state.link_is_synchronized = True
+    runtime_state.mark_transport_connected()
+    runtime_state.mark_synchronized()
     runtime_state.enqueue_mailbox_message(b"lost-message", 100)
 
     async def fail_sender(command_id: int, payload: bytes) -> bool:
@@ -561,7 +565,8 @@ async def test_datastore_get_from_mcu_returns_cached_value() -> None:
     runtime_config = RuntimeConfig(serial_shared_secret=b"12345678")
     runtime_state = create_runtime_state(runtime_config)
     service = BridgeService(runtime_config, runtime_state)
-    runtime_state.link_is_synchronized = True
+    runtime_state.mark_transport_connected()
+    runtime_state.mark_synchronized()
     runtime_state.datastore["key1"] = "value1"
 
     sent_frames: list[tuple[int, bytes]] = []
@@ -587,7 +592,8 @@ async def test_datastore_get_from_mcu_unknown_key_returns_empty(
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
-    runtime_state.link_is_synchronized = True
+    runtime_state.mark_transport_connected()
+    runtime_state.mark_synchronized()
 
     sent_frames: list[tuple[int, bytes]] = []
 
@@ -613,7 +619,8 @@ async def test_datastore_put_from_mcu_updates_cache_and_mqtt(
     runtime_state: RuntimeState,
 ) -> None:
     async with BridgeService(runtime_config, runtime_state) as service:
-        runtime_state.link_is_synchronized = True
+        runtime_state.mark_transport_connected()
+        runtime_state.mark_synchronized()
 
         # key=k1 (len 2) + value=v1 (len 2)
         # Structure: PascalString(Int8ub) for key, Prefixed(Int8ub) for value
@@ -947,7 +954,8 @@ async def test_legacy_mcu_pin_read_request_emits_not_implemented(
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
-    runtime_state.link_is_synchronized = True
+    runtime_state.mark_transport_connected()
+    runtime_state.mark_synchronized()
 
     sent_frames: list[tuple[int, bytes]] = []
 

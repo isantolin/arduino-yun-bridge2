@@ -138,7 +138,7 @@ class MQTTPublishSpool:
         directory: str,
         limit: int,
         *,
-        on_fallback: Callable[[str], None] | None = None,
+        on_fallback: Callable[[str, BaseException | None], None] | None = None,
     ) -> None:
         self.directory = Path(directory)
         self.limit = max(0, limit)
@@ -175,7 +175,7 @@ class MQTTPublishSpool:
                     directory,
                     exc,
                 )
-                self._activate_fallback("initialization_failed")
+                self._activate_fallback("initialization_failed", exc)
 
         if self.limit > 0:
             with self._lock:
@@ -279,7 +279,7 @@ class MQTTPublishSpool:
             "fallback_active": 1 if self._fallback_active else 0,
         }
 
-    def _activate_fallback(self, reason: str = "fallback_activated") -> None:
+    def _activate_fallback(self, reason: str = "fallback_activated", exc: BaseException | None = None) -> None:
         self._use_disk = False
         self._fallback_active = True
         if self._disk_queue is not None:
@@ -289,13 +289,13 @@ class MQTTPublishSpool:
                 logger.debug("Error closing disk queue during fallback", exc_info=True)
             self._disk_queue = None
         if self._fallback_hook is not None:
-            self._fallback_hook(reason)
+            self._fallback_hook(reason, exc)
 
     def _handle_disk_error(self, exc: OSError | msgspec.MsgspecError, op: str) -> None:
         reason = "disk_full" if getattr(exc, "errno", 0) == errno.ENOSPC else "io_error"
         message = "MQTT Spool disk error during %s: %s. " "Switching to memory-only mode (reason=%s)."
         logger.error(message, op, exc, reason)
-        self._activate_fallback(reason)
+        self._activate_fallback(reason, exc)
 
     def _trim_locked(self) -> None:
         if self.limit <= 0:
@@ -310,7 +310,7 @@ class MQTTPublishSpool:
                     continue
             except OSError as exc:
                 logger.error("Disk failure during trim: %s", exc)
-                self._activate_fallback("trim_failed")
+                self._activate_fallback("trim_failed", exc)
 
             if self._memory_queue:
                 self._memory_queue.popleft()

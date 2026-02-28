@@ -217,6 +217,7 @@ class SerialHandshakeManager:
         try:
             async for attempt in retryer:
                 with attempt:
+                    self._state.record_handshake_attempt()
                     self.reset_fsm()  # Ensure clean slate
                     ok = await self._synchronize_attempt()
                     if not ok:
@@ -463,6 +464,7 @@ class SerialHandshakeManager:
         self.fail_handshake()
 
         self._state.record_handshake_failure(reason)
+        self._state.mark_transport_connected()
         is_fatal = self._should_mark_failure_fatal(reason)
         fatal_detail = detail
         if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:

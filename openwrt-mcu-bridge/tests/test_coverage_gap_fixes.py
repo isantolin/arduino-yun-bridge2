@@ -89,7 +89,7 @@ def create_fake_state():
     # Use a real RuntimeState if possible, or a properly configured Mock
     state = MagicMock(spec=context.RuntimeState)
     state.link_handshake_nonce = None
-    state.link_is_synchronized = False
+    state.mark_transport_connected()
     state.link_sync_event = asyncio.Event()
     state.handshake_rate_limit_until = 0.0
     state.handshake_failure_streak = 0
@@ -962,13 +962,14 @@ async def test_dispatcher_gaps():
     assert await disp._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is True
 
     # dispatch_mcu_frame pre-sync rejection
-    state_obj.link_is_synchronized = False
+    state_obj.mark_transport_connected()
     with patch("mcubridge.services.dispatcher.logger.warning") as mock_warn:
         await disp.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"test")
         assert mock_warn.called
 
     # dispatch_mcu_frame handler exception
-    state_obj.link_is_synchronized = True
+    state_obj.mark_transport_connected()
+    state_obj.mark_synchronized()
     mcu_reg.get.return_value = AsyncMock(side_effect=ValueError("Boom"))
     await disp.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"test")
     # Should send Error status back
@@ -1521,7 +1522,7 @@ async def test_handshake_sync_timeout():
     config = create_fake_config()
     state = create_fake_state()
     state.link_handshake_nonce = b"nonce"
-    state.link_is_synchronized = False
+    state.mark_transport_connected()
     sender = AsyncMock(return_value=True)
     enqueue = AsyncMock()
     timing = handshake.derive_serial_timing(config)

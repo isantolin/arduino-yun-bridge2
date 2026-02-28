@@ -189,6 +189,8 @@ RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset(
     {
         Command.CMD_GET_VERSION.value,
         Command.CMD_GET_FREE_MEMORY.value,
+        Command.CMD_LINK_SYNC.value,
+        Command.CMD_LINK_RESET.value,
         Command.CMD_GET_CAPABILITIES.value,
         Command.CMD_DIGITAL_READ.value,
         Command.CMD_ANALOG_READ.value,

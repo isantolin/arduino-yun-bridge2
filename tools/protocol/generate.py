@@ -73,26 +73,23 @@ class CodeWriter:
 # =============================================================================
 
 
-@dataclass(frozen=True)
-class CommandDef:
+class CommandDef(msgspec.Struct, frozen=True):
     name: str
     value: int
     directions: list[str]
-    category: str | None = None
-    description: str | None = None
+    category: Optional[str] = None
+    description: Optional[str] = None
     requires_ack: bool = False
     expects_direct_response: bool = False
 
 
-@dataclass(frozen=True)
-class StatusDef:
+class StatusDef(msgspec.Struct, frozen=True):
     name: str
     value: int
     description: str
 
 
-@dataclass(frozen=True)
-class StructField:
+class StructField(msgspec.Struct, frozen=True):
     name: str
     type_code: str  # B, H, I, Q
 
@@ -105,7 +102,7 @@ class StructField:
         return {"B": 1, "H": 2, "I": 4, "Q": 8}[self.type_code]
 
     @property
-    def read_func(self) -> str | None:
+    def read_func(self) -> Optional[str]:
         return {
             "B": None,
             "H": "rpc::read_u16_be",
@@ -114,19 +111,32 @@ class StructField:
         }[self.type_code]
 
     @property
-    def write_func(self) -> str | None:
+    def write_func(self) -> Optional[str]:
         func = self.read_func
         return func.replace("read_", "write_") if func else None
 
 
-@dataclass(frozen=True)
-class PayloadDef:
+class PayloadDef(msgspec.Struct, frozen=True):
     name: str
     fields: list[StructField]
 
     @property
     def total_size(self) -> int:
         return sum(f.size for f in self.fields)
+
+
+class RawProtocolData(msgspec.Struct):
+    constants: dict[str, Any]
+    commands: list[dict[str, Any]]
+    statuses: list[dict[str, Any]]
+    payloads: dict[str, dict[str, str]]
+    handshake: dict[str, Any]
+    mqtt_subscriptions: list[dict[str, Any]]
+    actions: list[dict[str, Any]]
+    topics: list[dict[str, Any]]
+    capabilities: dict[str, int]
+    architectures: dict[str, int]
+    status_reasons: dict[str, str]
 
 
 @dataclass
@@ -148,32 +158,29 @@ class ProtocolSpec:
     @classmethod
     def load(cls, path: Path) -> ProtocolSpec:
         with path.open("rb") as f:
-            data = msgspec.toml.decode(f.read())
+            raw = msgspec.toml.decode(f.read(), type=RawProtocolData)
 
-        # Parse Commands
-        cmds = [CommandDef(**c) for c in data.get("commands", [])]
+        # Convert raw dicts to Structs
+        cmds = [msgspec.convert(c, CommandDef) for c in raw.commands]
+        statuses = [msgspec.convert(s, StatusDef) for s in raw.statuses]
 
-        # Parse Statuses
-        statuses = [StatusDef(**s) for s in data.get("statuses", [])]
-
-        # Parse Payloads
         payloads = {}
-        for name, fields_dict in data.get("payloads", {}).items():
+        for name, fields_dict in raw.payloads.items():
             fields = [StructField(k, v) for k, v in fields_dict.items()]
             payloads[name] = PayloadDef(name, fields)
 
         return cls(
-            constants=data.get("constants", {}),
+            constants=raw.constants,
             commands=cmds,
             statuses=statuses,
             payloads=payloads,
-            handshake=data.get("handshake", {}),
-            mqtt_subscriptions=data.get("mqtt_subscriptions", []),
-            actions=data.get("actions", []),
-            topics=data.get("topics", []),
-            capabilities=data.get("capabilities", {}),
-            architectures=data.get("architectures", {}),
-            status_reasons=data.get("status_reasons", {}),
+            handshake=raw.handshake,
+            mqtt_subscriptions=raw.mqtt_subscriptions,
+            actions=raw.actions,
+            topics=raw.topics,
+            capabilities=raw.capabilities,
+            architectures=raw.architectures,
+            status_reasons=raw.status_reasons,
         )
 
 
@@ -381,6 +388,9 @@ class CppGenerator:
         w.write("}")
 
     def _write_auto_payloads(self, w: CodeWriter, spec: ProtocolSpec) -> None:
+        w.write("// Pack structs to match binary protocol exactly")
+        w.write("#pragma pack(push, 1)")
+        w.write()
         for payload in spec.payloads.values():
             with w.block(f"struct {payload.name} {{", "};"):
                 # Fields
@@ -420,6 +430,13 @@ class CppGenerator:
                             w.write(f"data[{offset}] = {f.name};")
                         offset += f.size
             w.write()
+
+        w.write("#pragma pack(pop)")
+        w.write()
+        w.write("// --- Size Validations ---")
+        for payload in spec.payloads.values():
+            w.write(f"static_assert(sizeof({payload.name}) == {payload.name}::SIZE, \"{payload.name} size mismatch\");")
+        w.write()
 
     def _write_complex_payloads(self, w: CodeWriter) -> None:
         # [SIL-2] Refactored variable-length payload templates.

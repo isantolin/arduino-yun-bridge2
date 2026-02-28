@@ -219,7 +219,8 @@ def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
         asyncio.set_event_loop(loop_to_close)
 
     state = create_runtime_state(runtime_config)
-    state.link_is_synchronized = True
+    state.mark_transport_connected()
+    state.mark_synchronized()
     try:
         yield state
     finally:

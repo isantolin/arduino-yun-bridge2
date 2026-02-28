@@ -17,6 +17,9 @@
 
 namespace rpc {
 namespace payload {
+    // Pack structs to match binary protocol exactly
+    #pragma pack(push, 1)
+
     struct VersionResponse {
         uint8_t major;
         uint8_t minor;
@@ -233,6 +236,27 @@ namespace payload {
             rpc::write_u32_be(data + 0, baudrate);
         }
     };
+
+    #pragma pack(pop)
+
+    // --- Size Validations ---
+    static_assert(sizeof(VersionResponse) == VersionResponse::SIZE, "VersionResponse size mismatch");
+    static_assert(sizeof(FreeMemoryResponse) == FreeMemoryResponse::SIZE, "FreeMemoryResponse size mismatch");
+    static_assert(sizeof(Capabilities) == Capabilities::SIZE, "Capabilities size mismatch");
+    static_assert(sizeof(PinMode) == PinMode::SIZE, "PinMode size mismatch");
+    static_assert(sizeof(DigitalWrite) == DigitalWrite::SIZE, "DigitalWrite size mismatch");
+    static_assert(sizeof(AnalogWrite) == AnalogWrite::SIZE, "AnalogWrite size mismatch");
+    static_assert(sizeof(PinRead) == PinRead::SIZE, "PinRead size mismatch");
+    static_assert(sizeof(DigitalReadResponse) == DigitalReadResponse::SIZE, "DigitalReadResponse size mismatch");
+    static_assert(sizeof(AnalogReadResponse) == AnalogReadResponse::SIZE, "AnalogReadResponse size mismatch");
+    static_assert(sizeof(MailboxProcessed) == MailboxProcessed::SIZE, "MailboxProcessed size mismatch");
+    static_assert(sizeof(MailboxAvailableResponse) == MailboxAvailableResponse::SIZE, "MailboxAvailableResponse size mismatch");
+    static_assert(sizeof(ProcessKill) == ProcessKill::SIZE, "ProcessKill size mismatch");
+    static_assert(sizeof(ProcessPoll) == ProcessPoll::SIZE, "ProcessPoll size mismatch");
+    static_assert(sizeof(ProcessRunAsyncResponse) == ProcessRunAsyncResponse::SIZE, "ProcessRunAsyncResponse size mismatch");
+    static_assert(sizeof(AckPacket) == AckPacket::SIZE, "AckPacket size mismatch");
+    static_assert(sizeof(HandshakeConfig) == HandshakeConfig::SIZE, "HandshakeConfig size mismatch");
+    static_assert(sizeof(SetBaudratePacket) == SetBaudratePacket::SIZE, "SetBaudratePacket size mismatch");
 
     // --- Complex/Variable Payloads ---
     struct ConsoleWrite { const uint8_t* data; size_t length; static ConsoleWrite parse(const uint8_t* d, size_t l) { return {d, l}; } };

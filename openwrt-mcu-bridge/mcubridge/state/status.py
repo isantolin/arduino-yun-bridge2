@@ -28,7 +28,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
     @tenacity.retry(
         wait=tenacity.wait_fixed(interval),
         stop=tenacity.stop_never,
-        retry=tenacity.retry_always,
+        retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
         before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
     )
     async def _write_loop() -> None:
@@ -120,6 +120,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
         await _write_loop()
     except asyncio.CancelledError:
         logger.info("Status writer task cancelled.")
+        raise
 
 
 def cleanup_status_file() -> None:

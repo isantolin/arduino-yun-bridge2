@@ -483,6 +483,7 @@ name = "CMD_LINK_SYNC"
 value = 0x44
 category = "system"
 directions = ["linux_to_mcu"]
+expects_direct_response = true
 description = "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]."
 [[commands]]
 name = "CMD_LINK_SYNC_RESP"
@@ -494,6 +495,7 @@ name = "CMD_LINK_RESET"
 value = 0x46
 category = "system"
 directions = ["linux_to_mcu"]
+expects_direct_response = true
 description = "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."
 [[commands]]
 name = "CMD_LINK_RESET_RESP"

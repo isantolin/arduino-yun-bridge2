@@ -171,7 +171,7 @@ async def publish_metrics(
     @tenacity.retry(
         wait=tenacity.wait_fixed(tick_seconds),
         stop=tenacity.stop_never,
-        retry=tenacity.retry_always,
+        retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
         before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
     )
     async def _metrics_loop() -> None:
@@ -188,6 +188,7 @@ async def publish_metrics(
         await _metrics_loop()
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
+        raise
 
 
 async def publish_bridge_snapshots(
@@ -215,10 +216,15 @@ async def publish_bridge_snapshots(
             @tenacity.retry(
                 wait=tenacity.wait_fixed(summary_seconds),
                 stop=tenacity.stop_never,
-                retry=tenacity.retry_always,
+                retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
             )
             async def _summary_loop() -> None:
-                await _emit_bridge_snapshot(state, enqueue, flavor="summary")
+                try:
+                    await _emit_bridge_snapshot(state, enqueue, flavor="summary")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error("Bridge summary emit failed: %s", e)
                 raise Exception("tick")
 
             tg.create_task(_summary_loop())
@@ -228,10 +234,15 @@ async def publish_bridge_snapshots(
             @tenacity.retry(
                 wait=tenacity.wait_fixed(handshake_seconds),
                 stop=tenacity.stop_never,
-                retry=tenacity.retry_always,
+                retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
             )
             async def _handshake_loop() -> None:
-                await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
+                try:
+                    await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error("Bridge handshake emit failed: %s", e)
                 raise Exception("tick")
 
             tg.create_task(_handshake_loop())

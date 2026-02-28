@@ -104,6 +104,28 @@ def _status_label(code: int | None) -> str:
     return "unknown" if code is None else next((s.name for s in Status if s.value == code), f"0x{code:02X}")
 
 
+def _coerce_snapshot_int(snapshot: dict[str, Any], key: str, default: int) -> int:
+    """Coerce a snapshot value to integer with a default fallback."""
+    val = snapshot.get(key)
+    if val is None:
+        return default
+    try:
+        return int(float(val))
+    except (ValueError, TypeError):
+        return default
+
+
+def _coerce_snapshot_float(snapshot: dict[str, Any], key: str, default: float) -> float:
+    """Coerce a snapshot value to float with a default fallback."""
+    val = snapshot.get(key)
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
 def _get_metric_value(metric: Any) -> float:
     """Read Prometheus metric value bypassing private access checks."""
     try:
@@ -273,11 +295,12 @@ class RuntimeState(msgspec.Struct):
     # [SIL-2] Lifecycle FSM (Single Source of Truth)
     _machine: Machine = msgspec.field(
         default_factory=lambda: Machine(
+            model="self",
             states=["disconnected", "connected", "synchronized"],
             initial="disconnected",
             ignore_invalid_triggers=True,
             transitions=[
-                {"trigger": "connect", "source": "disconnected", "dest": "connected"},
+                {"trigger": "connect", "source": ["disconnected", "connected", "synchronized"], "dest": "connected"},
                 {"trigger": "synchronize", "source": "connected", "dest": "synchronized"},
                 {"trigger": "disconnect", "source": "*", "dest": "disconnected"},
             ],
@@ -297,17 +320,17 @@ class RuntimeState(msgspec.Struct):
 
     def mark_transport_connected(self) -> None:
         """Signal that serial connection is open but unsynchronized."""
-        self.trigger("connect")
+        self._machine.trigger("connect")
 
     def mark_transport_disconnected(self) -> None:
         """Signal that serial connection is lost."""
-        self.trigger("disconnect")
+        self._machine.trigger("disconnect")
         if self.link_sync_event:
             self.link_sync_event.clear()
 
     def mark_synchronized(self) -> None:
         """Signal that protocol handshake is successfully completed."""
-        self.trigger("synchronize")
+        self._machine.trigger("synchronize")
         if self.link_sync_event:
             self.link_sync_event.set()
 
@@ -647,8 +670,15 @@ class RuntimeState(msgspec.Struct):
 
     def requeue_mailbox_message_front(self, payload: bytes) -> None:
         self._sync_mailbox_limits(self.mailbox_queue)
-        self.mailbox_queue.appendleft(payload)
+        evt = self.mailbox_queue.appendleft(payload)
         self._update_mailbox_bytes()
+        if evt.dropped_chunks:
+            self.mailbox_dropped_messages += evt.dropped_chunks
+            self.mailbox_dropped_bytes += evt.dropped_bytes
+        if not evt.accepted:
+            self.mailbox_dropped_messages += 1
+            self.mailbox_dropped_bytes += len(payload)
+            self.mailbox_outgoing_overflow_events += 1
 
     def enqueue_mailbox_incoming(self, payload: bytes, logger: logging.Logger) -> bool:
         return self._enqueue_mailbox(payload, logger, self.mailbox_incoming_queue, "incoming")
@@ -779,10 +809,11 @@ class RuntimeState(msgspec.Struct):
             }
             if inf:
                 payload["started_unix"] = inf.get("started_unix")
-                payload["duration"] = max(
-                    0.0,
-                    timestamp - float(inf.get("started_unix", timestamp)),
-                )
+                try:
+                    start_val = float(inf.get("started_unix", timestamp))
+                    payload["duration"] = max(0.0, timestamp - start_val)
+                except (ValueError, TypeError):
+                    payload["duration"] = 0.0
             self.serial_pipeline_last = payload
             self.serial_pipeline_inflight = None
 
@@ -793,8 +824,30 @@ class RuntimeState(msgspec.Struct):
         self.serial_latency_stats.record(latency_ms)
         self.metrics.serial_latency_ms.observe(latency_ms)
 
+    def _current_spool_snapshot(self) -> SpoolSnapshot:
+        """Fetch current spool statistics or fallback to cached snapshot."""
+        if self.mqtt_spool:
+            self._last_spool_snapshot = self.mqtt_spool.snapshot()
+        return self._last_spool_snapshot
+
     def record_mcu_status(self, status: Status) -> None:
         self.mcu_status_counters[status.name] = self.mcu_status_counters.get(status.name, 0) + 1
+
+    def _apply_spool_observation(self, observation: Mapping[str, Any]) -> None:
+        """Update internal state from spool statistics."""
+        obs = cast(dict[str, Any], observation)
+        self.mqtt_spool_corrupt_dropped = _coerce_snapshot_int(
+            obs, "corrupt_dropped", self.mqtt_spool_corrupt_dropped
+        )
+        self.mqtt_spool_last_trim_unix = _coerce_snapshot_float(
+            obs, "last_trim_unix", self.mqtt_spool_last_trim_unix
+        )
+        self.mqtt_spool_dropped_limit = _coerce_snapshot_int(
+            obs, "dropped_due_to_limit", self.mqtt_spool_dropped_limit
+        )
+        self.mqtt_spool_trim_events = _coerce_snapshot_int(
+            obs, "trim_events", self.mqtt_spool_trim_events
+        )
 
     def configure_spool(self, directory: str, limit: int) -> None:
         self.mqtt_spool_dir = directory
@@ -828,6 +881,7 @@ class RuntimeState(msgspec.Struct):
                 on_fallback=self._on_spool_fallback,
             )
             self.mqtt_spool_degraded = False
+            self.mqtt_spool_failure_reason = None
             self.mqtt_spool_recoveries += 1
             return True
         except (OSError, MQTTSpoolError) as exc:
@@ -845,19 +899,28 @@ class RuntimeState(msgspec.Struct):
         self.mqtt_spool_degraded = True
         self.mqtt_spool_failure_reason = reason
         if schedule_retry:
-            self.mqtt_spool_retry_attempts = min(self.mqtt_spool_retry_attempts + 1, 6)
-            delay = min(
-                SPOOL_BACKOFF_MIN_SECONDS * (2 ** (self.mqtt_spool_retry_attempts - 1)),
-                SPOOL_BACKOFF_MAX_SECONDS,
-            )
-            self.mqtt_spool_backoff_until = time.monotonic() + delay
+            self._schedule_spool_retry()
+
+    def _schedule_spool_retry(self) -> None:
+        """Calculate and set exponential backoff for spool retry."""
+        self.mqtt_spool_retry_attempts = min(self.mqtt_spool_retry_attempts + 1, 6)
+        delay = min(
+            SPOOL_BACKOFF_MIN_SECONDS * (2 ** (self.mqtt_spool_retry_attempts - 1)),
+            SPOOL_BACKOFF_MAX_SECONDS,
+        )
+        self.mqtt_spool_backoff_until = time.monotonic() + delay
 
     def _handle_mqtt_spool_failure(self, reason: str, exc: BaseException | None = None) -> None:
         self.metrics.mqtt_spool_errors.inc()
+        if exc:
+            self.mqtt_spool_last_error = str(exc)
         self._disable_mqtt_spool(reason)
 
-    def _on_spool_fallback(self, reason: str) -> None:
+    def _on_spool_fallback(self, reason: str, exc: BaseException | None = None) -> None:
         self.mqtt_spool_degraded = True
+        self.mqtt_spool_failure_reason = reason
+        if exc:
+            self.mqtt_spool_last_error = str(exc)
         self.metrics.mqtt_spool_errors.inc()
 
     async def stash_mqtt_message(self, message: QueuedPublish) -> bool:
@@ -886,8 +949,14 @@ class RuntimeState(msgspec.Struct):
                 if not msg:
                     break
                 props = list(msg.user_properties) + [("bridge-spooled", "1")]
-                self.mqtt_publish_queue.put_nowait(msgspec.structs.replace(msg, user_properties=props))
-                self.mqtt_spooled_replayed += 1
+                final_msg = msgspec.structs.replace(msg, user_properties=props)
+                try:
+                    self.mqtt_publish_queue.put_nowait(final_msg)
+                    self.mqtt_spooled_replayed += 1
+                except asyncio.QueueFull:
+                    # Re-spool if queue became full between qsize check and put
+                    await asyncio.to_thread(spool.requeue, msg)
+                    break
             except Exception as exc:
                 self._handle_mqtt_spool_failure("pop_failed", exc=exc)
                 break
@@ -897,6 +966,7 @@ class RuntimeState(msgspec.Struct):
             "serial": msgspec.structs.asdict(self.serial_flow_stats),
             "serial_throughput": msgspec.structs.asdict(self.serial_throughput_stats),
             "serial_latency": self.serial_latency_stats.as_dict(),
+            "mqtt_drop_counts": dict(self.mqtt_drop_counts),
             "queue_depths": {
                 "mqtt": self.mqtt_publish_queue.qsize(),
                 "console": len(self.console_to_mcu_queue),
@@ -907,6 +977,8 @@ class RuntimeState(msgspec.Struct):
             "handshake": self.build_handshake_snapshot(),
             "link_synchronised": self.is_synchronized,
             "system": collect_system_metrics(),
+            "spool_pending": self.mqtt_spool.pending if self.mqtt_spool else 0,
+            "spool_limit": self.mqtt_spool.limit if self.mqtt_spool else 0,
             "bridge": self.build_bridge_snapshot(),
         }
 
@@ -930,6 +1002,12 @@ class RuntimeState(msgspec.Struct):
             nonce_length=self.link_nonce_length,
         )
 
+    def build_serial_pipeline_snapshot(self) -> SerialPipelineSnapshot:
+        return SerialPipelineSnapshot(
+            inflight=self.serial_pipeline_inflight,
+            last_completion=self.serial_pipeline_last,
+        )
+
     def build_bridge_snapshot(self) -> BridgeSnapshot:
         return BridgeSnapshot(
             serial_link=SerialLinkSnapshot(
@@ -938,10 +1016,7 @@ class RuntimeState(msgspec.Struct):
                 synchronised=self.is_synchronized,
             ),
             handshake=self.build_handshake_snapshot(),
-            serial_pipeline=SerialPipelineSnapshot(
-                inflight=self.serial_pipeline_inflight,
-                last_completion=self.serial_pipeline_last,
-            ),
+            serial_pipeline=self.build_serial_pipeline_snapshot(),
             serial_flow=msgspec.structs.asdict(self.serial_flow_stats),
             mcu_version=McuVersion(*self.mcu_version) if self.mcu_version else None,
             capabilities=self.mcu_capabilities.as_dict() if self.mcu_capabilities else None,

@@ -146,9 +146,19 @@ class MqttTransport:
         logger.info("Subscribed to %d command topics.", len(topics))
 
     async def _publisher_loop(self, client: aiomqtt.Client) -> None:
-        while True:
+        """Publishes messages from the internal queue to the MQTT broker."""
+
+        @tenacity.retry(
+            wait=tenacity.wait_fixed(0.1),
+            stop=tenacity.stop_never,
+            retry=tenacity.retry_always,
+            before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
+        )
+        async def _publish_tick() -> None:
             # [OPTIMIZATION] Flush spool before processing new messages
             await self.state.flush_mqtt_spool()
+
+            # Wait for next message
             message = await self.state.mqtt_publish_queue.get()
             topic_name = message.topic_name
             props = build_mqtt_properties(message)
@@ -164,23 +174,27 @@ class MqttTransport:
                     retain=message.retain,
                     properties=props,
                 )
-                self.state.metrics.mqtt_messages_published.inc()
-            except asyncio.CancelledError:
-                logger.debug("MQTT publisher loop cancelled.")
-                try:
-                    self.state.mqtt_publish_queue.put_nowait(message)
-                except asyncio.QueueFull:
-                    logger.warning("MQTT queue full during shutdown; message dropped.")
-                raise
+                self.state.record_mqtt_publish()
             except aiomqtt.MqttError as exc:
                 logger.warning("MQTT publish failed (%s); requeuing.", exc)
+                # Requeue for retry
                 try:
                     self.state.mqtt_publish_queue.put_nowait(message)
                 except asyncio.QueueFull:
-                    logger.error("MQTT spool full; message dropped.")
+                    # Spool if queue is full
+                    await self.state.stash_mqtt_message(message)
                 raise
             finally:
                 self.state.mqtt_publish_queue.task_done()
+
+            # Raise to trigger next tick via tenacity
+            raise Exception("tick")
+
+        try:
+            await _publish_tick()
+        except asyncio.CancelledError:
+            logger.debug("MQTT publisher loop cancelled.")
+            raise
 
     async def _subscriber_loop(self, client: aiomqtt.Client) -> None:
         try:

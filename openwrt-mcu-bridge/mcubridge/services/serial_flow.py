@@ -272,21 +272,23 @@ class SerialFlowController:
         self._emit_metric("sent")
 
         # Commands in RESPONSE_ONLY_COMMANDS don't expect ACK, skip ack phase
-        ack_phase = pending.command_id not in RESPONSE_ONLY_COMMANDS
-        while True:
-            if ack_phase and pending.ack_received:
-                ack_phase = False
-            timeout = self._ack_timeout if ack_phase else self._response_timeout
-            try:
-                async with asyncio.timeout(timeout):
+        expect_ack = pending.command_id not in RESPONSE_ONLY_COMMANDS
+
+        try:
+            # 1. Wait for ACK (if expected)
+            if expect_ack and not pending.ack_received:
+                async with asyncio.timeout(self._ack_timeout):
+                    while not pending.ack_received:
+                        await pending.completion.wait()
+                        if pending.success is not None:
+                            break
+
+            # 2. Wait for Response/Completion
+            if not pending.completion.is_set():
+                async with asyncio.timeout(self._response_timeout):
                     await pending.completion.wait()
-                break
-            except TimeoutError:
-                if pending.completion.is_set():
-                    break
-                if ack_phase and pending.ack_received:
-                    ack_phase = False
-                    continue
+        except TimeoutError:
+            if not pending.completion.is_set():
                 raise self._RetryableSerialError()
 
         if pending.success:

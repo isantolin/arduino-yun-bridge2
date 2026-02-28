@@ -66,14 +66,6 @@ logger = logging.getLogger("mcubridge.state")
 SpoolSnapshot = dict[str, int | float]
 
 
-def _coerce_snapshot_int(snapshot: Mapping[str, Any], name: str, current: int) -> int:
-    val = snapshot.get(name)
-    try:
-        return int(val) if val is not None else current
-    except (ValueError, TypeError):
-        return current
-
-
 __all__: Final[tuple[str, ...]] = (
     "McuCapabilities",
     "RuntimeState",
@@ -209,22 +201,35 @@ def _trim_process_buffers(
     return stdout_chunk, stderr_chunk, truncated_out, truncated_err
 
 
+def _serial_tx_allowed_factory() -> asyncio.Event:
+    evt = asyncio.Event()
+    evt.set()
+    return evt
+
+
 def collect_system_metrics() -> dict[str, Any]:
     """Collect system-level metrics using psutil."""
     result: dict[str, Any] = {}
     try:
         proc = psutil.Process()
         with proc.oneshot():
+            # CPU metrics (non-blocking, percentage since last call)
             result["cpu_percent"] = psutil.cpu_percent(interval=None)
             result["cpu_count"] = psutil.cpu_count() or 1
+
+            # Memory metrics
             mem = psutil.virtual_memory()
             result["memory_total_bytes"] = mem.total
             result["memory_available_bytes"] = mem.available
             result["memory_percent"] = mem.percent
+
+            # Load average (1, 5, 15 minutes) - Unix only
             load = psutil.getloadavg()
             result["load_avg_1m"] = load[0]
             result["load_avg_5m"] = load[1]
             result["load_avg_15m"] = load[2]
+
+            # Temperature metrics
             temps = psutil.sensors_temperatures()
             names = ("cpu_thermal", "coretemp", "soc_thermal")
             cpu_temp = next(
@@ -236,6 +241,7 @@ def collect_system_metrics() -> dict[str, Any]:
         _fill_missing_metrics(result)
     except Exception:
         _fill_missing_metrics(result)
+
     return result
 
 
@@ -396,99 +402,124 @@ class RuntimeState(msgspec.Struct):
 
     @property
     def mqtt_messages_published(self) -> int:
-        return int(self.metrics.mqtt_messages_published._value.get())
+        """Total MQTT messages published (Prometheus value)."""
+        return int(getattr(self.metrics.mqtt_messages_published, "_value").get())
 
     @property
     def mqtt_dropped_messages(self) -> int:
-        return int(self.metrics.mqtt_messages_dropped._value.get())
+        """Total MQTT messages dropped (Prometheus value)."""
+        return int(getattr(self.metrics.mqtt_messages_dropped, "_value").get())
 
     @property
     def mqtt_spooled_messages(self) -> int:
-        return int(self.metrics.mqtt_spooled_messages._value.get())
+        """Total messages written to spool (Prometheus value)."""
+        return int(getattr(self.metrics.mqtt_spooled_messages, "_value").get())
 
     @property
     def mqtt_spool_errors(self) -> int:
-        return int(self.metrics.mqtt_spool_errors._value.get())
+        """Total spool errors (Prometheus value)."""
+        return int(getattr(self.metrics.mqtt_spool_errors, "_value").get())
 
     @property
     def serial_bytes_sent(self) -> int:
-        return int(self.metrics.serial_bytes_sent._value.get())
+        """Total serial bytes sent (Prometheus value)."""
+        return int(getattr(self.metrics.serial_bytes_sent, "_value").get())
 
     @property
     def serial_bytes_received(self) -> int:
-        return int(self.metrics.serial_bytes_received._value.get())
+        """Total serial bytes received (Prometheus value)."""
+        return int(getattr(self.metrics.serial_bytes_received, "_value").get())
 
     @property
     def serial_frames_sent(self) -> int:
-        return int(self.metrics.serial_frames_sent._value.get())
+        """Total serial frames sent (Prometheus value)."""
+        return int(getattr(self.metrics.serial_frames_sent, "_value").get())
 
     @property
     def serial_frames_received(self) -> int:
-        return int(self.metrics.serial_frames_received._value.get())
+        """Total serial frames received (Prometheus value)."""
+        return int(getattr(self.metrics.serial_frames_received, "_value").get())
 
     @property
     def serial_crc_errors(self) -> int:
-        return int(self.metrics.serial_crc_errors._value.get())
+        """Total serial CRC errors (Prometheus value)."""
+        return int(getattr(self.metrics.serial_crc_errors, "_value").get())
 
     @property
     def serial_decode_errors(self) -> int:
-        return int(self.metrics.serial_decode_errors._value.get())
+        """Total serial decode errors (Prometheus value)."""
+        return int(getattr(self.metrics.serial_decode_errors, "_value").get())
 
     @property
     def handshake_attempts(self) -> int:
-        return int(self.metrics.handshake_attempts._value.get())
+        """Total handshake attempts (Prometheus value)."""
+        return int(getattr(self.metrics.handshake_attempts, "_value").get())
 
     @property
     def handshake_successes(self) -> int:
-        return int(self.metrics.handshake_successes._value.get())
+        """Total successful handshakes (Prometheus value)."""
+        return int(getattr(self.metrics.handshake_successes, "_value").get())
 
     @property
     def handshake_failures(self) -> int:
+        """Total handshake failures (Calculated)."""
         return self.handshake_attempts - self.handshake_successes
 
     @property
     def watchdog_beats(self) -> int:
-        return int(self.metrics.watchdog_beats._value.get())
+        """Total watchdog pulses (Prometheus value)."""
+        return int(getattr(self.metrics.watchdog_beats, "_value").get())
 
     @property
     def allowed_commands(self) -> tuple[str, ...]:
+        """Return the current allowed command list from policy."""
         return self.allowed_policy.as_tuple()
 
     def record_mqtt_publish(self) -> None:
+        """Increment MQTT publish counter."""
         self.metrics.mqtt_messages_published.inc()
 
     def record_mqtt_drop(self, topic: str) -> None:
+        """Record a dropped MQTT message due to overflow."""
         self.mqtt_drop_counts[topic] = self.mqtt_drop_counts.get(topic, 0) + 1
         self.metrics.mqtt_messages_dropped.inc()
 
     def record_mqtt_spool(self) -> None:
+        """Record message written to durable spool."""
         self.metrics.mqtt_spooled_messages.inc()
 
     def record_mqtt_spool_error(self) -> None:
+        """Record error during spool operation."""
         self.metrics.mqtt_spool_errors.inc()
 
     def record_serial_tx(self, nbytes: int) -> None:
+        """Record serial transmission metrics."""
         self.metrics.serial_bytes_sent.inc(nbytes)
         self.metrics.serial_frames_sent.inc()
         self.serial_throughput_stats.record_tx(nbytes)
 
     def record_serial_rx(self, nbytes: int) -> None:
+        """Record serial reception metrics."""
         self.metrics.serial_bytes_received.inc(nbytes)
         self.metrics.serial_frames_received.inc()
         self.serial_throughput_stats.record_rx(nbytes)
 
     def record_serial_crc_error(self) -> None:
+        """Record serial frame CRC mismatch."""
         self.metrics.serial_crc_errors.inc()
 
     def record_serial_decode_error(self) -> None:
+        """Record serial frame decoding failure."""
         self.metrics.serial_decode_errors.inc()
 
     def record_handshake_attempt(self) -> None:
+        """Start tracking a handshake attempt."""
         self.last_handshake_unix = time.time()
         self._handshake_last_started = time.monotonic()
         self.metrics.handshake_attempts.inc()
 
     def record_handshake_success(self) -> None:
+        """Record successful link synchronization."""
         self.handshake_failure_streak = 0
         self.handshake_backoff_until = 0.0
         self.last_handshake_error = None
@@ -498,6 +529,7 @@ class RuntimeState(msgspec.Struct):
         self.metrics.handshake_successes.inc()
 
     def record_handshake_failure(self, reason: str) -> None:
+        """Record failed link synchronization."""
         self.handshake_failure_streak += 1
         self.last_handshake_error = reason
         self.last_handshake_unix = time.time()
@@ -513,6 +545,7 @@ class RuntimeState(msgspec.Struct):
         self.last_watchdog_beat = timestamp or time.time()
 
     def record_supervisor_failure(self, name: str, backoff: float, exc: Exception) -> None:
+        """Record an internal service task failure."""
         stats = self.supervisor_stats.setdefault(name, SupervisorStats())
         stats.restarts += 1
         stats.last_failure_unix = time.time()
@@ -553,6 +586,7 @@ class RuntimeState(msgspec.Struct):
         )
 
     def mark_supervisor_healthy(self, name: str) -> None:
+        """Reset backoff status for a healthy supervisor."""
         stats = self.supervisor_stats.get(name)
         if stats:
             stats.backoff_seconds = 0.0
@@ -815,8 +849,11 @@ class RuntimeState(msgspec.Struct):
     async def stash_mqtt_message(self, message: QueuedPublish) -> bool:
         if not await self.ensure_spool():
             return False
+        spool = self.mqtt_spool
+        if spool is None:
+            return False
         try:
-            await asyncio.to_thread(self.mqtt_spool.append, message)
+            await asyncio.to_thread(spool.append, message)
             self.metrics.mqtt_spooled_messages.inc()
             return True
         except Exception as exc:
@@ -826,9 +863,12 @@ class RuntimeState(msgspec.Struct):
     async def flush_mqtt_spool(self) -> None:
         if not await self.ensure_spool():
             return
+        spool = self.mqtt_spool
+        if spool is None:
+            return
         while self.mqtt_publish_queue.qsize() < self.mqtt_queue_limit:
             try:
-                msg = await asyncio.to_thread(self.mqtt_spool.pop_next)
+                msg = await asyncio.to_thread(spool.pop_next)
                 if not msg:
                     break
                 props = list(msg.user_properties) + [("bridge-spooled", "1")]

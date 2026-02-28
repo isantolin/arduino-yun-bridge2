@@ -49,9 +49,6 @@ class FileSpoolDeque:
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
 
-        # [SIL-2] OPTIMIZATION: Scan directory with O(1) memory usage.
-        # Avoid sorted([...]) which loads all filenames into RAM (dangerous on low-mem targets).
-        # We find min (head) and max (tail) in a single pass.
         min_name: str | None = None
         max_name: str | None = None
 
@@ -75,8 +72,6 @@ class FileSpoolDeque:
     def append(self, item: SpoolRecord | bytes) -> None:
         self._tail += 1
         path = self._file_path(self._tail)
-        # If item is already bytes (from a test), write it directly.
-        # Otherwise, encode the SpoolRecord dict.
         if isinstance(item, (bytes, bytearray)):
             path.write_bytes(item)
         else:
@@ -97,19 +92,16 @@ class FileSpoolDeque:
         path = self._file_path(self._head)
         try:
             data = path.read_bytes()
-            # Decode to dict. If it fails, let the caller handle the exception.
             record = msgspec.msgpack.decode(data, type=SpoolRecord)
             return record
         finally:
             path.unlink(missing_ok=True)
             self._head += 1
-            # Reset counters if empty to prevent infinite drift
             if not self:
                 self._head = self._INITIAL_INDEX
                 self._tail = self._INITIAL_INDEX - 1
 
     def close(self) -> None:
-        """File-backed spool does not hold open file descriptors."""
         return None
 
     def clear(self) -> None:
@@ -220,39 +212,34 @@ class MQTTPublishSpool:
                 self._trim_locked()
 
     def pop_next(self) -> QueuedPublish | None:
-        while True:
-            record: SpoolRecord | None = None
-            with self._lock:
-                if self._use_disk and self._disk_queue is not None:
-                    try:
-                        if len(self._disk_queue) > 0:
-                            record = self._disk_queue.popleft()
-                    except msgspec.MsgspecError as exc:
-                        logger.warning(
-                            "Dropping corrupt MQTT spool entry on disk; cannot decode: %s",
-                            exc,
-                        )
-                        self._corrupt_dropped += 1
-                        continue
-                    except OSError as exc:
-                        self._handle_disk_error(exc, "pop")
-                        continue
+        """Fetch the next available message from disk or memory."""
+        try:
+            return self._pop_attempt()
+        except (ValueError, TypeError, AttributeError, msgspec.MsgspecError):
+            # If we hit corruption, we try one more time via recursion (limited by depth)
+            self._corrupt_dropped += 1
+            return self.pop_next()
 
-                if record is None and self._memory_queue:
-                    record = self._memory_queue.popleft()
+    def _pop_attempt(self) -> QueuedPublish | None:
+        record: SpoolRecord | None = None
+        with self._lock:
+            if self._use_disk and self._disk_queue is not None:
+                try:
+                    if len(self._disk_queue) > 0:
+                        record = self._disk_queue.popleft()
+                except (OSError, msgspec.MsgspecError) as exc:
+                    if isinstance(exc, msgspec.MsgspecError):
+                        logger.warning("Dropping corrupt MQTT spool entry on disk: %s", exc)
+                        raise
+                    self._handle_disk_error(exc, "pop")
 
-            if record is None:
-                return None
+            if record is None and self._memory_queue:
+                record = self._memory_queue.popleft()
 
-            try:
-                return QueuedPublish.from_record(record)
-            except (ValueError, TypeError, AttributeError):
-                logger.warning(
-                    "Dropping corrupt MQTT spool entry; record format invalid",
-                    exc_info=True,
-                )
-                self._corrupt_dropped += 1
-                continue
+        if record is None:
+            return None
+
+        return QueuedPublish.from_record(record)
 
     def requeue(self, message: QueuedPublish) -> None:
         record: SpoolRecord = message.to_record()
@@ -314,14 +301,12 @@ class MQTTPublishSpool:
         if self.limit <= 0:
             return
 
-        current_size = self.pending
         dropped = 0
-        while current_size > self.limit:
+        while self.pending > self.limit:
             try:
                 if self._disk_queue is not None and len(self._disk_queue) > 0:
                     self._disk_queue.popleft()
                     dropped += 1
-                    current_size -= 1
                     continue
             except OSError as exc:
                 logger.error("Disk failure during trim: %s", exc)
@@ -330,7 +315,6 @@ class MQTTPublishSpool:
             if self._memory_queue:
                 self._memory_queue.popleft()
                 dropped += 1
-                current_size -= 1
             else:
                 break
 

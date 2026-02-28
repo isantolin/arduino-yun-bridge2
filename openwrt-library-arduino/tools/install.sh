@@ -181,12 +181,24 @@ install_etl_dual() {
         mkdir -p "$target1"
         rm -rf "$target1/etl"
         cp -a "$source_path" "$target1/etl"
+        
+        # [SIL-2] Patch ETL type_list.h to fix std::is_same macro bug when STL is disabled
+        if [ -f "$target1/etl/type_list.h" ]; then
+            sed -i 's/std::is_same/etl::is_same/g' "$target1/etl/type_list.h"
+        fi
+        
         echo "[OK] etl installed to $target1."
     fi
     if [ "$needs_t2" = true ]; then
         mkdir -p "$target2"
         rm -rf "$target2/etl"
         cp -a "$source_path" "$target2/etl"
+        
+        # [SIL-2] Patch ETL type_list.h to fix std::is_same macro bug when STL is disabled
+        if [ -f "$target2/etl/type_list.h" ]; then
+            sed -i 's/std::is_same/etl::is_same/g' "$target2/etl/type_list.h"
+        fi
+        
         echo "[OK] etl installed to $target2."
     fi
 

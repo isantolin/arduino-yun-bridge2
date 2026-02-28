@@ -76,16 +76,36 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
         # Force clean build to ensure hardware characteristics (macros, MCU type) are strictly respected
         # and not polluted by cached artifacts from previous targets in the loop.
         # We use clean to avoid property pollution.
-        if ! arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch"; then
-            echo "✗ $sketch_name failed to compile for $FQBN!"
-            if [ "$FQBN" == "arduino:avr:mega" ]; then
-                echo "Critical failure for target $FQBN. Aborting."
-                exit 1
+        if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
+            mkdir -p "$ARDUINO_METRICS_DIR"
+            BOARD_NAME="${FQBN//:/-}"
+            LOG_FILE="$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
+            
+            # Run compilation and capture ALL output
+            if ! arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
+                echo "✗ $sketch_name failed to compile for $FQBN!"
+                cat "$LOG_FILE" # Ensure failure details are in CI logs
+                if [ "$FQBN" == "arduino:avr:mega" ]; then
+                    echo "Critical failure for target $FQBN. Aborting."
+                    exit 1
+                else
+                    echo "Failure for $FQBN is not critical. Continuing..."
+                fi
             else
-                echo "Failure for $FQBN is not critical. Continuing..."
+                echo "✓ $sketch_name compiled successfully"
             fi
         else
-            echo "✓ $sketch_name compiled successfully"
+            if ! arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch"; then
+                echo "✗ $sketch_name failed to compile for $FQBN!"
+                if [ "$FQBN" == "arduino:avr:mega" ]; then
+                    echo "Critical failure for target $FQBN. Aborting."
+                    exit 1
+                else
+                    echo "Failure for $FQBN is not critical. Continuing..."
+                fi
+            else
+                echo "✓ $sketch_name compiled successfully"
+            fi
         fi
     done
 done

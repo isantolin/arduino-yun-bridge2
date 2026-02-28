@@ -800,7 +800,7 @@ async def test_mqtt_publisher_loop_gaps():
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    # Note: message remains in queue if wait for get() was cancelled, 
+    # Note: message remains in queue if wait for get() was cancelled,
     # or was requeued if publish was cancelled.
     assert state.mqtt_publish_queue.qsize() == 1
 
@@ -808,7 +808,7 @@ async def test_mqtt_publisher_loop_gaps():
     while not state.mqtt_publish_queue.empty():
         state.mqtt_publish_queue.get_nowait()
     await state.mqtt_publish_queue.put(msg)
-    
+
     mock_client.publish.side_effect = aiomqtt.MqttError("Boom")
     # Limit tenacity attempts to avoid infinite hang
     with patch("mcubridge.transport.mqtt.tenacity.stop_never", tenacity.stop_after_attempt(1)):

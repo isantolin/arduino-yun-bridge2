@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import tenacity
 from mcubridge import metrics
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.daemon import BridgeDaemon

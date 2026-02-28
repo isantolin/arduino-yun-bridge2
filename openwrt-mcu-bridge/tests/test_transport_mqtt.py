@@ -146,12 +146,12 @@ async def test_mqtt_task_requeues_on_publish_failure(
     transport = mqtt.MqttTransport(config, state, service)
     # We use a real task so we can control lifecycle
     task = asyncio.create_task(transport.run())
-    
+
     # Wait for ready state or a bit of time
     start_time = asyncio.get_running_loop().time()
     while transport.state != "ready" and (asyncio.get_running_loop().time() - start_time < 1.0):
         await asyncio.sleep(0.05)
-    
+
     # Trigger cancellation
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

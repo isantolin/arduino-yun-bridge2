@@ -6,18 +6,16 @@ import asyncio
 import errno
 import logging
 from collections.abc import Iterator
-from types import SimpleNamespace
-from typing import cast, Any
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool
-from mcubridge.policy import AllowedCommandPolicy
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.state.context import RuntimeState, create_runtime_state, SupervisorStats
+from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
 class _ListHandler(logging.Handler):

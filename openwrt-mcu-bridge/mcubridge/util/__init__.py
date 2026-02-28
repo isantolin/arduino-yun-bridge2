@@ -23,7 +23,7 @@ def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
         return []
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    return [payload[index : index + chunk_size] for index in range(0, len(payload), chunk_size)]
+    return [payload[i : i + chunk_size] for i in range(0, len(payload), chunk_size)]
 
 
 def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: bytes) -> None:

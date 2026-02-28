@@ -465,8 +465,10 @@ class SerialTransport:
                 transport.close()
             self.service.register_serial_sender(serial_sender_not_ready)
             self.protocol = None
-            with contextlib.suppress(OSError, RuntimeError, ValueError):
+            try:
                 await self.service.on_serial_disconnected()
+            except (OSError, RuntimeError, ValueError) as exc:
+                logger.warning("Error in on_serial_disconnected hook: %s", exc)
 
     async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
         logger.info("Negotiating baudrate switch to %d...", target_baud)

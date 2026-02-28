@@ -392,7 +392,10 @@ class SerialTransport:
         lost_future: asyncio.Future[Any] = loop.create_future()
 
         transport, proto = await serial_asyncio_fast.create_serial_connection(
-            loop, lambda: self._make_protocol(lost_future), self.config.serial_port, baudrate=start_baud
+            loop,
+            lambda: SignalLostProtocol(self.service, self.state, self.loop, lost_future),
+            self.config.serial_port,
+            baudrate=start_baud,
         )
         self.protocol = cast(BridgeSerialProtocol, proto)
         await self.protocol.connected_future
@@ -412,7 +415,7 @@ class SerialTransport:
                     lost_future = loop.create_future()
                     transport, proto = await serial_asyncio_fast.create_serial_connection(
                         loop,
-                        lambda: self._make_protocol(lost_future),
+                        lambda: SignalLostProtocol(self.service, self.state, self.loop, lost_future),
                         self.config.serial_port,
                         baudrate=target_baud,
                     )
@@ -469,10 +472,6 @@ class SerialTransport:
                 await self.service.on_serial_disconnected()
             except (OSError, RuntimeError, ValueError) as exc:
                 logger.warning("Error in on_serial_disconnected hook: %s", exc)
-
-    def _make_protocol(self, lost_future: asyncio.Future[Any]) -> SignalLostProtocol:
-        """Factory method for creating protocol instances."""
-        return SignalLostProtocol(self.service, self.state, self.loop, lost_future)
 
     async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
         logger.info("Negotiating baudrate switch to %d...", target_baud)

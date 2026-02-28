@@ -140,7 +140,7 @@ class BridgeService:
             handle_link_reset_resp=self._handshake.handle_link_reset_resp,
             handle_get_capabilities_resp=self._handshake.handle_capabilities_resp,
             handle_ack=self._handle_ack,
-            status_handler_factory=self._status_handler_factory,
+            status_handler_factory=lambda status: lambda p: self.handle_status(status, p),
             handle_process_kill=self._process.handle_kill,
         )
 
@@ -449,9 +449,6 @@ class BridgeService:
                 logger.debug("MCU > ACK received for 0x%02X (fallback parse)", command_id)
         else:
             logger.debug("MCU > ACK received")
-
-    def _status_handler_factory(self, status: Status) -> Callable[[bytes], Awaitable[None]]:
-        return lambda p: self.handle_status(status, p)
 
     async def handle_status(self, status: Status, payload: bytes) -> None:
         self.state.record_mcu_status(status)

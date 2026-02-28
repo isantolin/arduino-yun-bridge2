@@ -833,21 +833,27 @@ class PythonGenerator:
 
         # Sets
         if ack_only:
-            w.write("ACK_ONLY_COMMANDS: frozenset[int] = frozenset({")
+            w.write("ACK_ONLY_COMMANDS: frozenset[int] = frozenset(")
             with w.indent():
-                for c in ack_only:
-                    w.write(f"{c},")
-            w.write("})")
+                w.write("{")
+                with w.indent():
+                    for c in ack_only:
+                        w.write(f"{c},")
+                w.write("}")
+            w.write(")")
             w.write()
 
         if resp_only:
             w.write("# Commands that expect a direct response without a prior ACK.")
             w.write("# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.")
-            w.write("RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({")
+            w.write("RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset(")
             with w.indent():
-                for c in resp_only:
-                    w.write(f"{c},")
-            w.write("})")
+                w.write("{")
+                with w.indent():
+                    for c in resp_only:
+                        w.write(f"{c},")
+                w.write("}")
+            w.write(")")
             w.write()
 
         # Topics
@@ -916,8 +922,8 @@ class PythonGenerator:
             with w.block(f"class {cls_name}(StrEnum):", end=None):
                 for suffix, val, desc in items:
                     w.write(f'{suffix} = "{val}"  # {desc}')
-        w.write()
-        w.write()
+            w.write()
+            w.write()
 
     def _write_subscriptions(self, w: CodeWriter, spec: ProtocolSpec) -> None:
         w.write("MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (")

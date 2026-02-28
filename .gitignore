@@ -66,3 +66,5 @@ feeds/openwrt-mcu-core
 test_protocol_bin
 .VSCodeCounter/
 openwrt-library-arduino/src/etl/
+openwrt-library-arduino/tests/bridge_control_emulator
+openwrt-library-arduino/tests/bridge_emulator

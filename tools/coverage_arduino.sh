@@ -11,13 +11,10 @@ BUILD_DIR="${LIB_ROOT}/build-coverage"
 OUTPUT_ROOT="${ROOT_ROOT:-${ROOT_DIR}}/coverage/arduino"
 mkdir -p "${BUILD_DIR}" "${OUTPUT_ROOT}"
 
-# [SIL-2] Ensure dependencies are present (ETL is required in src/etl)
+# [SIL-2] Ensure dependencies are present
 echo "[coverage_arduino] Installing library dependencies..."
 DUMMY_ARDUINO_LIBS=$(mktemp -d)
 "${LIB_ROOT}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
-
-# [SIL-2] Use local stubs for host coverage (offline-safe).
-echo "[coverage_arduino] Using local Arduino stubs for dependencies..."
 
 # Limpieza total
 find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
@@ -47,7 +44,9 @@ COMPILE_FLAGS=(
     -DBRIDGE_ENABLE_FILESYSTEM=1
     -DBRIDGE_ENABLE_MAILBOX=1
     -DBRIDGE_ENABLE_PROCESS=1
+    -DNUM_DIGITAL_PINS=20
     -I"${SRC_ROOT}"
+    -I"${TEST_ROOT}"
     -I"${TEST_ROOT}/mocks"
     -I"${STUB_INCLUDE}"
     -I"${DUMMY_ARDUINO_LIBS}/Crypto"
@@ -64,6 +63,7 @@ TEST_FILES=(
     "${TEST_ROOT}/test_arduino_100_coverage.cpp"
     "${TEST_ROOT}/test_coverage_100_final.cpp"
     "${TEST_ROOT}/test_arduino_coverage_boost.cpp"
+    "${TEST_ROOT}/test_coverage_final_push.cpp"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites secuencialmente..."

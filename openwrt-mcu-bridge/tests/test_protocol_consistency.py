@@ -32,7 +32,7 @@ def test_protocol_python_is_up_to_date():
 
     output = io.StringIO()
     PythonGenerator().generate(spec, output)
-    
+
     generated_content = _normalize_python_content(output.getvalue())
 
     with open(py_path, "r") as f:

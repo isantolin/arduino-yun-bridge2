@@ -602,13 +602,11 @@ class ProcessComponent:
     async def _allocate_pid(self) -> int:
         async with self.state.process_lock:
             for _ in range(UINT16_MAX):
-                candidate = self.state.next_pid & UINT16_MAX
-                self.state.next_pid = (candidate + 1) & UINT16_MAX
-                if self.state.next_pid == 0:
-                    self.state.next_pid = 1
-                if candidate == 0:
-                    continue
-                if candidate not in self.state.running_processes:
+                candidate = self.state.next_pid
+                # Increment and wraparound (1-65535)
+                self.state.next_pid = (candidate % UINT16_MAX) + 1
+
+                if candidate != 0 and candidate not in self.state.running_processes:
                     return candidate
         logger.error("No async process slots available; all PIDs in use")
         return INVALID_ID_SENTINEL

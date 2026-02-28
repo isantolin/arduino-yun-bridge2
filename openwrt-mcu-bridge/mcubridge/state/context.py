@@ -126,15 +126,6 @@ def _coerce_snapshot_float(snapshot: dict[str, Any], key: str, default: float) -
         return default
 
 
-def _get_metric_value(metric: Any) -> float:
-    """Read Prometheus metric value bypassing private access checks."""
-    try:
-        # Prometheus client uses _value object with get() method
-        return float(metric._value.get())
-    except (AttributeError, TypeError, ValueError):
-        return 0.0
-
-
 class PendingPinRequest(msgspec.Struct):
     """Pending pin read request."""
 
@@ -199,6 +190,9 @@ class ManagedProcess:
         return _trim_process_buffers(self.stdout_buffer, self.stderr_buffer, budget)
 
     def is_drained(self) -> bool:
+        # [FSM] Must be in FINISHED/ZOMBIE state to be drained
+        if self.fsm_state not in (PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE):
+            return False
         return not self.stdout_buffer and not self.stderr_buffer
 
 
@@ -437,75 +431,25 @@ class RuntimeState(msgspec.Struct):
     mcu_status_counters: dict[str, int] = msgspec.field(default_factory=lambda: {})
     supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=lambda: {})
 
-    @property
-    def mqtt_messages_published(self) -> int:
-        """Total MQTT messages published (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.mqtt_messages_published))
-
-    @property
-    def mqtt_dropped_messages(self) -> int:
-        """Total MQTT messages dropped (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.mqtt_messages_dropped))
-
-    @property
-    def mqtt_spooled_messages(self) -> int:
-        """Total messages written to spool (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.mqtt_spooled_messages))
-
-    @property
-    def mqtt_spool_errors(self) -> int:
-        """Total spool errors (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.mqtt_spool_errors))
-
-    @property
-    def serial_bytes_sent(self) -> int:
-        """Total serial bytes sent (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.serial_bytes_sent))
-
-    @property
-    def serial_bytes_received(self) -> int:
-        """Total serial bytes received (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.serial_bytes_received))
-
-    @property
-    def serial_frames_sent(self) -> int:
-        """Total serial frames sent (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.serial_frames_sent))
-
-    @property
-    def serial_frames_received(self) -> int:
-        """Total serial frames received (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.serial_frames_received))
-
-    @property
-    def serial_crc_errors(self) -> int:
-        """Total serial CRC errors (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.serial_crc_errors))
-
-    @property
-    def serial_decode_errors(self) -> int:
-        """Total serial decode errors (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.serial_decode_errors))
-
-    @property
-    def handshake_attempts(self) -> int:
-        """Total handshake attempts (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.handshake_attempts))
-
-    @property
-    def handshake_successes(self) -> int:
-        """Total successful handshakes (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.handshake_successes))
+    # Metrics (Synchronized with Prometheus)
+    mqtt_messages_published: int = 0
+    mqtt_dropped_messages: int = 0
+    mqtt_spooled_messages: int = 0
+    mqtt_spool_errors: int = 0
+    serial_bytes_sent: int = 0
+    serial_bytes_received: int = 0
+    serial_frames_sent: int = 0
+    serial_frames_received: int = 0
+    serial_crc_errors: int = 0
+    serial_decode_errors: int = 0
+    handshake_attempts: int = 0
+    handshake_successes: int = 0
+    watchdog_beats: int = 0
 
     @property
     def handshake_failures(self) -> int:
         """Total handshake failures (Calculated)."""
         return self.handshake_attempts - self.handshake_successes
-
-    @property
-    def watchdog_beats(self) -> int:
-        """Total watchdog pulses (Prometheus value)."""
-        return int(_get_metric_value(self.metrics.watchdog_beats))
 
     @property
     def allowed_commands(self) -> tuple[str, ...]:
@@ -514,45 +458,56 @@ class RuntimeState(msgspec.Struct):
 
     def record_mqtt_publish(self) -> None:
         """Increment MQTT publish counter."""
+        self.mqtt_messages_published += 1
         self.metrics.mqtt_messages_published.inc()
 
     def record_mqtt_drop(self, topic: str) -> None:
         """Record a dropped MQTT message due to overflow."""
         self.mqtt_drop_counts[topic] = self.mqtt_drop_counts.get(topic, 0) + 1
+        self.mqtt_dropped_messages += 1
         self.metrics.mqtt_messages_dropped.inc()
 
     def record_mqtt_spool(self) -> None:
         """Record message written to durable spool."""
+        self.mqtt_spooled_messages += 1
         self.metrics.mqtt_spooled_messages.inc()
 
     def record_mqtt_spool_error(self) -> None:
         """Record error during spool operation."""
+        self.mqtt_spool_errors += 1
         self.metrics.mqtt_spool_errors.inc()
 
     def record_serial_tx(self, nbytes: int) -> None:
         """Record serial transmission metrics."""
+        self.serial_bytes_sent += nbytes
+        self.serial_frames_sent += 1
         self.metrics.serial_bytes_sent.inc(nbytes)
         self.metrics.serial_frames_sent.inc()
         self.serial_throughput_stats.record_tx(nbytes)
 
     def record_serial_rx(self, nbytes: int) -> None:
         """Record serial reception metrics."""
+        self.serial_bytes_received += nbytes
+        self.serial_frames_received += 1
         self.metrics.serial_bytes_received.inc(nbytes)
         self.metrics.serial_frames_received.inc()
         self.serial_throughput_stats.record_rx(nbytes)
 
     def record_serial_crc_error(self) -> None:
         """Record serial frame CRC mismatch."""
+        self.serial_crc_errors += 1
         self.metrics.serial_crc_errors.inc()
 
     def record_serial_decode_error(self) -> None:
         """Record serial frame decoding failure."""
+        self.serial_decode_errors += 1
         self.metrics.serial_decode_errors.inc()
 
     def record_handshake_attempt(self) -> None:
         """Start tracking a handshake attempt."""
         self.last_handshake_unix = time.time()
         self._handshake_last_started = time.monotonic()
+        self.handshake_attempts += 1
         self.metrics.handshake_attempts.inc()
 
     def record_handshake_success(self) -> None:
@@ -563,6 +518,7 @@ class RuntimeState(msgspec.Struct):
         self.last_handshake_unix = time.time()
         self.handshake_last_duration = self._handshake_duration_since_start()
         self.mark_synchronized()
+        self.handshake_successes += 1
         self.metrics.handshake_successes.inc()
 
     def record_handshake_failure(self, reason: str) -> None:
@@ -573,11 +529,8 @@ class RuntimeState(msgspec.Struct):
         self.handshake_last_duration = self._handshake_duration_since_start()
         self.mark_transport_connected()
 
-    def apply_handshake_stats(self, stats: Mapping[str, Any]) -> None:
-        """Update handshake metrics from external statistics."""
-        pass
-
     def record_watchdog_beat(self, timestamp: float | None = None) -> None:
+        self.watchdog_beats += 1
         self.metrics.watchdog_beats.inc()
         self.last_watchdog_beat = timestamp or time.time()
 
@@ -632,7 +585,7 @@ class RuntimeState(msgspec.Struct):
     def enqueue_console_chunk(self, chunk: bytes, logger: logging.Logger) -> None:
         if not chunk:
             return
-        self._sync_console_queue_limits()
+        self.sync_console_queue_limits()
         evt = self.console_to_mcu_queue.append(chunk)
         if evt.truncated_bytes:
             self.console_truncated_chunks += 1
@@ -647,7 +600,7 @@ class RuntimeState(msgspec.Struct):
             self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
     def pop_console_chunk(self) -> bytes:
-        self._sync_console_queue_limits()
+        self.sync_console_queue_limits()
         chunk = self.console_to_mcu_queue.popleft()
         self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
         return chunk
@@ -657,21 +610,40 @@ class RuntimeState(msgspec.Struct):
             return
         limit = self.console_queue_limit_bytes
         data = bytes(chunk[-limit:]) if len(chunk) > limit else bytes(chunk)
-        self._sync_console_queue_limits()
+        self.sync_console_queue_limits()
         evt = self.console_to_mcu_queue.appendleft(data)
         if evt.accepted:
             self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
     def enqueue_mailbox_message(self, payload: bytes, logger: logging.Logger) -> bool:
-        return self._enqueue_mailbox(payload, logger, self.mailbox_queue, "outgoing")
+        self.sync_mailbox_limits(self.mailbox_queue)
+        evt = self.mailbox_queue.append(payload)
+        self.update_mailbox_bytes()
+        if evt.truncated_bytes:
+            self.mailbox_truncated_messages += 1
+            self.mailbox_truncated_bytes += evt.truncated_bytes
+        if evt.dropped_chunks:
+            self.mailbox_dropped_messages += evt.dropped_chunks
+            self.mailbox_dropped_bytes += evt.dropped_bytes
+        if not evt.accepted:
+            self.mailbox_dropped_messages += 1
+            self.mailbox_dropped_bytes += len(payload)
+            self.mailbox_outgoing_overflow_events += 1
+            return False
+        return True
 
     def pop_mailbox_message(self) -> bytes | None:
-        return self._pop_mailbox(self.mailbox_queue)
+        self.sync_mailbox_limits(self.mailbox_queue)
+        if not self.mailbox_queue:
+            return None
+        msg = self.mailbox_queue.popleft()
+        self.update_mailbox_bytes()
+        return msg
 
     def requeue_mailbox_message_front(self, payload: bytes) -> None:
-        self._sync_mailbox_limits(self.mailbox_queue)
+        self.sync_mailbox_limits(self.mailbox_queue)
         evt = self.mailbox_queue.appendleft(payload)
-        self._update_mailbox_bytes()
+        self.update_mailbox_bytes()
         if evt.dropped_chunks:
             self.mailbox_dropped_messages += evt.dropped_chunks
             self.mailbox_dropped_bytes += evt.dropped_bytes
@@ -681,66 +653,40 @@ class RuntimeState(msgspec.Struct):
             self.mailbox_outgoing_overflow_events += 1
 
     def enqueue_mailbox_incoming(self, payload: bytes, logger: logging.Logger) -> bool:
-        return self._enqueue_mailbox(payload, logger, self.mailbox_incoming_queue, "incoming")
-
-    def pop_mailbox_incoming(self) -> bytes | None:
-        return self._pop_mailbox(self.mailbox_incoming_queue)
-
-    def _sync_console_queue_limits(self) -> None:
-        self.console_to_mcu_queue.update_limits(max_items=None, max_bytes=self.console_queue_limit_bytes)
-        self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
-
-    def _sync_mailbox_limits(self, queue: BoundedByteDeque) -> None:
-        queue.update_limits(max_items=self.mailbox_queue_limit, max_bytes=self.mailbox_queue_bytes_limit)
-
-    def _update_mailbox_bytes(self) -> None:
-        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
-        self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
-
-    def _enqueue_mailbox(
-        self,
-        payload: bytes,
-        logger: logging.Logger,
-        queue: BoundedByteDeque,
-        direction: str,
-    ) -> bool:
-        self._sync_mailbox_limits(queue)
-        evt = queue.append(payload)
-        self._update_mailbox_bytes()
-        is_inc = direction == "incoming"
+        self.sync_mailbox_limits(self.mailbox_incoming_queue)
+        evt = self.mailbox_incoming_queue.append(payload)
+        self.update_mailbox_bytes()
         if evt.truncated_bytes:
-            if is_inc:
-                self.mailbox_incoming_truncated_messages += 1
-                self.mailbox_incoming_truncated_bytes += evt.truncated_bytes
-            else:
-                self.mailbox_truncated_messages += 1
-                self.mailbox_truncated_bytes += evt.truncated_bytes
+            self.mailbox_incoming_truncated_messages += 1
+            self.mailbox_incoming_truncated_bytes += evt.truncated_bytes
         if evt.dropped_chunks:
-            if is_inc:
-                self.mailbox_incoming_dropped_messages += evt.dropped_chunks
-                self.mailbox_incoming_dropped_bytes += evt.dropped_bytes
-            else:
-                self.mailbox_dropped_messages += evt.dropped_chunks
-                self.mailbox_dropped_bytes += evt.dropped_bytes
+            self.mailbox_incoming_dropped_messages += evt.dropped_chunks
+            self.mailbox_incoming_dropped_bytes += evt.dropped_bytes
         if not evt.accepted:
-            if is_inc:
-                self.mailbox_incoming_dropped_messages += 1
-                self.mailbox_incoming_dropped_bytes += len(payload)
-                self.mailbox_incoming_overflow_events += 1
-            else:
-                self.mailbox_dropped_messages += 1
-                self.mailbox_dropped_bytes += len(payload)
-                self.mailbox_outgoing_overflow_events += 1
+            self.mailbox_incoming_dropped_messages += 1
+            self.mailbox_incoming_dropped_bytes += len(payload)
+            self.mailbox_incoming_overflow_events += 1
             return False
         return True
 
-    def _pop_mailbox(self, queue: BoundedByteDeque) -> bytes | None:
-        self._sync_mailbox_limits(queue)
-        if not queue:
+    def pop_mailbox_incoming(self) -> bytes | None:
+        self.sync_mailbox_limits(self.mailbox_incoming_queue)
+        if not self.mailbox_incoming_queue:
             return None
-        msg = queue.popleft()
-        self._update_mailbox_bytes()
+        msg = self.mailbox_incoming_queue.popleft()
+        self.update_mailbox_bytes()
         return msg
+
+    def sync_console_queue_limits(self) -> None:
+        self.console_to_mcu_queue.update_limits(max_items=None, max_bytes=self.console_queue_limit_bytes)
+        self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
+
+    def sync_mailbox_limits(self, queue: BoundedByteDeque) -> None:
+        queue.update_limits(max_items=self.mailbox_queue_limit, max_bytes=self.mailbox_queue_bytes_limit)
+
+    def update_mailbox_bytes(self) -> None:
+        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
+        self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
 
     def record_handshake_fatal(self, reason: str, detail: str | None = None) -> None:
         self.handshake_fatal_count += 1
@@ -824,6 +770,12 @@ class RuntimeState(msgspec.Struct):
         self.serial_latency_stats.record(latency_ms)
         self.metrics.serial_latency_ms.observe(latency_ms)
 
+    def build_serial_pipeline_snapshot(self) -> SerialPipelineSnapshot:
+        return SerialPipelineSnapshot(
+            inflight=self.serial_pipeline_inflight,
+            last_completion=self.serial_pipeline_last,
+        )
+
     def _current_spool_snapshot(self) -> SpoolSnapshot:
         """Fetch current spool statistics or fallback to cached snapshot."""
         if self.mqtt_spool:
@@ -832,6 +784,17 @@ class RuntimeState(msgspec.Struct):
 
     def record_mcu_status(self, status: Status) -> None:
         self.mcu_status_counters[status.name] = self.mcu_status_counters.get(status.name, 0) + 1
+
+    def apply_handshake_stats(self, observation: Mapping[str, Any]) -> None:
+        """Update internal state from external handshake statistics."""
+        obs = cast(dict[str, Any], observation)
+        self.handshake_attempts = _coerce_snapshot_int(obs, "attempts", self.handshake_attempts)
+        self.handshake_successes = _coerce_snapshot_int(obs, "successes", self.handshake_successes)
+        self.handshake_failure_streak = _coerce_snapshot_int(obs, "failure_streak", self.handshake_failure_streak)
+        self.handshake_last_duration = _coerce_snapshot_float(obs, "last_duration", self.handshake_last_duration)
+        self.last_handshake_unix = _coerce_snapshot_float(obs, "last_unix", self.last_handshake_unix)
+        self.handshake_backoff_until = _coerce_snapshot_float(obs, "backoff_until", self.handshake_backoff_until)
+        self.handshake_rate_until = _coerce_snapshot_float(obs, "rate_limit_until", self.handshake_rate_until)
 
     def _apply_spool_observation(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from spool statistics."""
@@ -931,7 +894,7 @@ class RuntimeState(msgspec.Struct):
             return False
         try:
             await asyncio.to_thread(spool.append, message)
-            self.metrics.mqtt_spooled_messages.inc()
+            self.record_mqtt_spool()
             return True
         except Exception as exc:
             self._handle_mqtt_spool_failure("append_failed", exc=exc)
@@ -1000,12 +963,6 @@ class RuntimeState(msgspec.Struct):
             fatal_unix=self.handshake_fatal_unix,
             pending_nonce=bool(self.link_handshake_nonce),
             nonce_length=self.link_nonce_length,
-        )
-
-    def build_serial_pipeline_snapshot(self) -> SerialPipelineSnapshot:
-        return SerialPipelineSnapshot(
-            inflight=self.serial_pipeline_inflight,
-            last_completion=self.serial_pipeline_last,
         )
 
     def build_bridge_snapshot(self) -> BridgeSnapshot:

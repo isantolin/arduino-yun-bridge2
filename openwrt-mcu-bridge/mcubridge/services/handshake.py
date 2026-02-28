@@ -228,8 +228,8 @@ class SerialHandshakeManager:
             self.fail_handshake()
             return False
         finally:
-            # [SIL-2] Delegate metrics to Tenacity statistics
-            self._state.apply_handshake_stats(retryer.statistics)
+            # [SIL-2] Log handshake statistics
+            self._logger.debug("Handshake stats: %s", retryer.statistics)
 
     async def _synchronize_attempt(self) -> bool:
         nonce_length = protocol.HANDSHAKE_NONCE_LENGTH

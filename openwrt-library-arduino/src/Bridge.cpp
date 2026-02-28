@@ -235,31 +235,24 @@ void BridgeClass::process() {
         uint8_t byte = _stream.read();
 
         if (byte == 0x00) {
-          if (_cobs.in_sync &&
-              _cobs.bytes_received >= 5 + rpc::CRC_TRAILER_SIZE) {
+          if (_cobs.in_sync && _cobs.bytes_received >= 5 + rpc::CRC_TRAILER_SIZE) {
             etl::crc32 crc_calc;
-            crc_calc.add(
-                &_cobs.buffer[0],
-                &_cobs.buffer[_cobs.bytes_received - rpc::CRC_TRAILER_SIZE]);
-            uint32_t calculated_crc = crc_calc.value();
+            const size_t data_len = _cobs.bytes_received - rpc::CRC_TRAILER_SIZE;
+            crc_calc.add(&_cobs.buffer[0], &_cobs.buffer[data_len]);
+            
+            uint32_t received_crc = rpc::read_u32_be(&_cobs.buffer[data_len]);
 
-            uint32_t received_crc = rpc::read_u32_be(
-                &_cobs.buffer[_cobs.bytes_received - rpc::CRC_TRAILER_SIZE]);
-
-            if (calculated_crc == received_crc) {
+            if (crc_calc.value() == received_crc) {
               _rx_frame.header.version = _cobs.buffer[0];
-              _rx_frame.header.payload_length =
-                  rpc::read_u16_be(&_cobs.buffer[1]);
+              _rx_frame.header.payload_length = rpc::read_u16_be(&_cobs.buffer[1]);
               _rx_frame.header.command_id = rpc::read_u16_be(&_cobs.buffer[3]);
               _rx_frame.crc = received_crc;
 
               if (_rx_frame.header.version == rpc::PROTOCOL_VERSION &&
                   _rx_frame.header.payload_length <= rpc::MAX_PAYLOAD_SIZE &&
-                  _cobs.bytes_received - 5 - rpc::CRC_TRAILER_SIZE ==
-                      _rx_frame.header.payload_length) {
+                  data_len == static_cast<size_t>(_rx_frame.header.payload_length + 5)) {
                 if (_rx_frame.header.payload_length > 0) {
-                  etl::copy_n(&_cobs.buffer[5], _rx_frame.header.payload_length,
-                              _rx_frame.payload.begin());
+                  etl::copy_n(&_cobs.buffer[5], _rx_frame.header.payload_length, _rx_frame.payload.begin());
                 }
                 _frame_received = true;
                 _last_parse_error.reset();
@@ -278,9 +271,7 @@ void BridgeClass::process() {
           _cobs.in_sync = true;
           _cobs.code_prev = 0;
 
-          if (_frame_received || _last_parse_error.has_value()) {
-            break;  // Yield to process frame/error
-          }
+          if (_frame_received || _last_parse_error.has_value()) break;
           continue;
         }
 
@@ -415,10 +406,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   }
 
   // [SIL-2] Phase 3: O(1) Dispatch via Category Jump Table
-  const uint16_t cmd = ctx.raw_command;
-
-  typedef void (BridgeClass::*CategoryHandler)(
-      const bridge::router::CommandContext&);
+  typedef void (BridgeClass::*CategoryHandler)(const bridge::router::CommandContext&);
   static const CategoryHandler category_handlers[] = {
       &BridgeClass::onStatusCommand,      // 0: 48-63
       &BridgeClass::onSystemCommand,      // 1: 64-79
@@ -430,16 +418,14 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       &BridgeClass::onProcessCommand      // 7: 160-175
   };
 
-  if (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_PROCESS_COMMAND_MAX) {
-    const uint16_t category = (cmd - rpc::RPC_STATUS_CODE_MIN) >> 4;
-    if (category <
-        (sizeof(category_handlers) / sizeof(category_handlers[0]))) {
-      (this->*category_handlers[category])(ctx);
-      return;
-    }
-  }
+  const uint16_t cmd = ctx.raw_command;
+  const uint16_t category = (cmd - rpc::RPC_STATUS_CODE_MIN) >> 4;
 
-  onUnknownCommand(ctx);
+  if (category < (sizeof(category_handlers) / sizeof(category_handlers[0]))) {
+      (this->*category_handlers[category])(ctx);
+  } else {
+      onUnknownCommand(ctx);
+  }
 }
 
 // ============================================================================
@@ -690,8 +676,7 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch Table for GPIO Commands
-  typedef void (BridgeClass::*GpioHandler)(
-      const bridge::router::CommandContext&);
+  typedef void (BridgeClass::*GpioHandler)(const bridge::router::CommandContext&);
   static const GpioHandler handlers[] = {
       &BridgeClass::_handleSetPinMode,    // 80
       &BridgeClass::_handleDigitalWrite,  // 81
@@ -700,11 +685,9 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleAnalogRead     // 84
   };
 
-  const uint16_t cmd = ctx.raw_command;
-  if (cmd >= rpc::RPC_GPIO_COMMAND_MIN &&
-      cmd < rpc::RPC_GPIO_COMMAND_MIN +
-                (sizeof(handlers) / sizeof(handlers[0]))) {
-    (this->*handlers[cmd - rpc::RPC_GPIO_COMMAND_MIN])(ctx);
+  const uint16_t index = ctx.raw_command - rpc::RPC_GPIO_COMMAND_MIN;
+  if (index < (sizeof(handlers) / sizeof(handlers[0]))) {
+    (this->*handlers[index])(ctx);
   }
 }
 
@@ -804,19 +787,16 @@ void BridgeClass::onDataStoreCommand(
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch Table for Mailbox Commands
-  typedef void (BridgeClass::*MailboxHandler)(
-      const bridge::router::CommandContext&);
+  typedef void (BridgeClass::*MailboxHandler)(const bridge::router::CommandContext&);
   static const MailboxHandler handlers[] = {
       &BridgeClass::_handleMailboxPush,           // 131
       &BridgeClass::_handleMailboxReadResp,       // 132
       &BridgeClass::_handleMailboxAvailableResp,  // 133
   };
 
-  const uint16_t cmd = ctx.raw_command;
-  if (cmd >= rpc::RPC_MAILBOX_COMMAND_MIN + 3 &&
-      cmd < rpc::RPC_MAILBOX_COMMAND_MIN + 3 +
-                (sizeof(handlers) / sizeof(handlers[0]))) {
-    (this->*handlers[cmd - (rpc::RPC_MAILBOX_COMMAND_MIN + 3)])(ctx);
+  const uint16_t index = ctx.raw_command - (rpc::RPC_MAILBOX_COMMAND_MIN + 3);
+  if (index < (sizeof(handlers) / sizeof(handlers[0]))) {
+    (this->*handlers[index])(ctx);
   }
 }
 
@@ -878,8 +858,7 @@ void BridgeClass::_handleFileReadResp(
 void BridgeClass::onFileSystemCommand(
     const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch Table for File System Commands
-  typedef void (BridgeClass::*FileSystemHandler)(
-      const bridge::router::CommandContext&);
+  typedef void (BridgeClass::*FileSystemHandler)(const bridge::router::CommandContext&);
   static const FileSystemHandler handlers[] = {
       &BridgeClass::_handleFileWrite,    // 144
       nullptr,                           // 145 (MCU -> LINUX)
@@ -887,32 +866,24 @@ void BridgeClass::onFileSystemCommand(
       &BridgeClass::_handleFileReadResp  // 147
   };
 
-  const uint16_t cmd = ctx.raw_command;
-  if (cmd >= rpc::RPC_FILESYSTEM_COMMAND_MIN &&
-      cmd < rpc::RPC_FILESYSTEM_COMMAND_MIN +
-                (sizeof(handlers) / sizeof(handlers[0]))) {
-    const uint16_t index = cmd - rpc::RPC_FILESYSTEM_COMMAND_MIN;
-    if (handlers[index]) {
-      (this->*handlers[index])(ctx);
-    }
+  const uint16_t index = ctx.raw_command - rpc::RPC_FILESYSTEM_COMMAND_MIN;
+  if (index < (sizeof(handlers) / sizeof(handlers[0])) && handlers[index]) {
+    (this->*handlers[index])(ctx);
   }
 }
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch Table for Process Commands
-  typedef void (BridgeClass::*ProcessHandler)(
-      const bridge::router::CommandContext&);
+  typedef void (BridgeClass::*ProcessHandler)(const bridge::router::CommandContext&);
   static const ProcessHandler handlers[] = {
       &BridgeClass::_handleProcessRunResp,       // 164
       &BridgeClass::_handleProcessRunAsyncResp,  // 165
       &BridgeClass::_handleProcessPollResp,      // 166
   };
 
-  const uint16_t cmd = ctx.raw_command;
-  if (cmd >= rpc::RPC_PROCESS_COMMAND_MIN + 4 &&
-      cmd < rpc::RPC_PROCESS_COMMAND_MIN + 4 +
-                (sizeof(handlers) / sizeof(handlers[0]))) {
-    (this->*handlers[cmd - (rpc::RPC_PROCESS_COMMAND_MIN + 4)])(ctx);
+  const uint16_t index = ctx.raw_command - (rpc::RPC_PROCESS_COMMAND_MIN + 4);
+  if (index < (sizeof(handlers) / sizeof(handlers[0]))) {
+    (this->*handlers[index])(ctx);
   }
 }
 
@@ -1010,6 +981,8 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code,
   _doEmitStatus(status_code, etl::span<const uint8_t>(buffer.data(), length));
 }
 
+#include "protocol/rpc_cobs.h"
+
 void BridgeClass::_sendRawFrame(uint16_t command_id,
                                 etl::span<const uint8_t> payload) {
   etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
@@ -1027,31 +1000,17 @@ void BridgeClass::_sendRawFrame(uint16_t command_id,
     bridge::logging::log_traffic(*log_stream, "[SERIAL -> MCU]", "RAW",
                                  raw_buffer.data(), raw_len);
 #endif
-    uint8_t code = 1;
-    uint8_t code_idx = 0;
-    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 3> cobs_buffer;
-    size_t write_idx = 1;
 
-    etl::for_each(raw_buffer.begin(), raw_buffer.begin() + raw_len,
-                  [&](uint8_t byte) {
-                    if (byte == 0) {
-                      cobs_buffer[code_idx] = code;
-                      code = 1;
-                      code_idx = write_idx++;
-                    } else {
-                      cobs_buffer[write_idx++] = byte;
-                      if (++code == 0xFF) {
-                        cobs_buffer[code_idx] = code;
-                        code = 1;
-                        code_idx = write_idx++;
-                      }
-                    }
-                  });
-    cobs_buffer[code_idx] = code;
-    cobs_buffer[write_idx++] = 0x00;
+    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> cobs_buffer;
+    size_t encoded_len = rpc::cobs::encode(
+        etl::span<const uint8_t>(raw_buffer.data(), raw_len),
+        etl::span<uint8_t>(cobs_buffer.data(), cobs_buffer.size()));
 
-    _stream.write(cobs_buffer.data(), write_idx);
-    flushStream();
+    if (encoded_len > 0) {
+      _stream.write(cobs_buffer.data(), encoded_len);
+      _stream.write(static_cast<uint8_t>(0x00)); // Frame delimiter
+      flushStream();
+    }
   }
 }
 

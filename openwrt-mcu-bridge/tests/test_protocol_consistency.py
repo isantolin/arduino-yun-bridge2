@@ -1,4 +1,5 @@
 import io
+import subprocess
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from tools.protocol.generate import (  # noqa: E402
 )
 
 
-def test_protocol_python_is_up_to_date():
+def test_protocol_python_is_up_to_date(tmp_path):
     """Ensure generated Python protocol matches the spec."""
     spec_path = PROJECT_ROOT / "tools/protocol/spec.toml"
     py_path = PROJECT_ROOT / "openwrt-mcu-bridge/mcubridge/protocol/protocol.py"
@@ -21,7 +22,14 @@ def test_protocol_python_is_up_to_date():
 
     output = io.StringIO()
     PythonGenerator().generate(spec, output)
-    generated_content = output.getvalue()
+    
+    # Save to a temporary file to run ruff format on it
+    tmp_py = tmp_path / "protocol.py"
+    tmp_py.write_text(output.getvalue(), encoding="utf-8")
+    
+    # Run ruff format on the temporary file
+    subprocess.run(["ruff", "format", str(tmp_py)], check=True, capture_output=True)
+    generated_content = tmp_py.read_text(encoding="utf-8")
 
     with open(py_path, "r") as f:
         current_content = f.read()

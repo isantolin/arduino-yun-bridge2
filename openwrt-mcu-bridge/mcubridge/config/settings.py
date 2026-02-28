@@ -201,20 +201,20 @@ def _load_raw_config() -> tuple[dict[str, Any], str]:
 
 
 # Module-level variable to track config source for observability
-_config_source: str = "uci"
+class _ConfigState:
+    source: str = "uci"
 
 
 def get_config_source() -> str:
     """Return the source of the last loaded configuration ('uci' or 'defaults')."""
-    return _config_source
+    return _ConfigState.source
 
 
 def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults using msgspec for efficient validation."""
 
     raw_config, source = _load_raw_config()
-    global _config_source
-    _config_source = source
+    _ConfigState.source = source
 
     # [SIL-2] Boundary Normalization: Clean inputs before strict validation
 

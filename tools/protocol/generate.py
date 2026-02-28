@@ -220,17 +220,31 @@ class CppGenerator:
         w.write("#include <etl/string_view.h>")
         w.write("#include <etl/optional.h>")
         w.write("#include <etl/span.h>")
+        w.write("#include <etl/expected.h>")
         w.write('#include "rpc_protocol.h"')
         w.write('#include "rpc_frame.h"')
         w.write()
 
         w.write("namespace rpc {")
+        w.write()
+        w.write("// =============================================================================")
+        w.write("// 1. Fixed-size Payload Structures")
+        w.write("// =============================================================================")
         with w.block("namespace payload {", "} // namespace payload"):
             self._write_auto_payloads(w, spec)
+            w.write()
+            w.write("// =============================================================================")
+            w.write("// 2. Complex/Variable-length Payload Structures")
+            w.write("// =============================================================================")
             self._write_complex_payloads(w)
 
+        w.write()
+        w.write("// =============================================================================")
+        w.write("// 3. Static Type-Safe Validators")
+        w.write("// =============================================================================")
         self._write_static_validator(w, spec)
 
+        w.write()
         w.write("} // namespace rpc")
         w.write("#endif")
 
@@ -527,9 +541,11 @@ class CppGenerator:
                 "m.stderr_data = d + 4 + m.stdout_len + 2; return m; } };",
             ),
         ]
-        w.write("// --- Complex/Variable Payloads ---")
+        # Wrap complex structs in packing too, even if mostly pointers
+        w.write("#pragma pack(push, 1)")
         for _, code in complex_payloads:
             w.write(code)
+        w.write("#pragma pack(pop)")
         w.write()
 
     def _write_static_validator(self, w: CodeWriter, spec: ProtocolSpec) -> None:

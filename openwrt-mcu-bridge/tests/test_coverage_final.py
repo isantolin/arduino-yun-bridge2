@@ -379,7 +379,7 @@ async def test_handshake_manager_synchronize_failure(state):
 async def test_handshake_handle_link_sync_resp_throttled(state):
     cfg = create_real_config()
     cfg.serial_handshake_min_interval = 10.0
-    state.handshake_rate_limit_until = time.monotonic() + 5.0
+    state.handshake_rate_until = time.monotonic() + 5.0
     state.link_handshake_nonce = b"12345678"
 
     h = SerialHandshakeManager(
@@ -577,7 +577,7 @@ async def test_handshake_handle_link_sync_resp_rate_limited(state):
     cfg = create_real_config()
     cfg.serial_handshake_min_interval = 100.0
     state.link_handshake_nonce = b"12345678"
-    state.handshake_rate_limit_until = time.monotonic() + 50.0
+    state.handshake_rate_until = time.monotonic() + 50.0
 
     h = SerialHandshakeManager(
         config=cfg,

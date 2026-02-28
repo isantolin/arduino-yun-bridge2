@@ -264,7 +264,7 @@ def test_spool_fallback_hook_called() -> None:
 
     hook_called = []
 
-    def hook(reason):
+    def hook(reason, exc=None):
         hook_called.append(reason)
 
     spool = MQTTPublishSpool(

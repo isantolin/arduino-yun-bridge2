@@ -12,10 +12,15 @@
 #include <etl/string_view.h>
 #include <etl/optional.h>
 #include <etl/span.h>
+#include <etl/expected.h>
 #include "rpc_protocol.h"
 #include "rpc_frame.h"
 
 namespace rpc {
+
+// =============================================================================
+// 1. Fixed-size Payload Structures
+// =============================================================================
 namespace payload {
     // Pack structs to match binary protocol exactly
     #pragma pack(push, 1)
@@ -258,7 +263,11 @@ namespace payload {
     static_assert(sizeof(HandshakeConfig) == HandshakeConfig::SIZE, "HandshakeConfig size mismatch");
     static_assert(sizeof(SetBaudratePacket) == SetBaudratePacket::SIZE, "SetBaudratePacket size mismatch");
 
-    // --- Complex/Variable Payloads ---
+
+    // =============================================================================
+    // 2. Complex/Variable-length Payload Structures
+    // =============================================================================
+    #pragma pack(push, 1)
     struct ConsoleWrite { const uint8_t* data; size_t length; static ConsoleWrite parse(const uint8_t* d, size_t l) { return {d, l}; } };
     struct DatastoreGet { etl::string_view key; static DatastoreGet parse(const uint8_t* d) { return {etl::string_view(reinterpret_cast<const char*>(d + 1), d[0])}; } };
     struct DatastoreGetResponse { const uint8_t* value; uint8_t value_len; static DatastoreGetResponse parse(const uint8_t* d) { return {d + 1, d[0]}; } };
@@ -273,8 +282,13 @@ namespace payload {
     struct ProcessRunAsync { etl::string_view command; static ProcessRunAsync parse(const uint8_t* d, size_t l) { return {etl::string_view(reinterpret_cast<const char*>(d), l)}; } };
     struct ProcessRunResponse { uint8_t status; const uint8_t* stdout_data; uint16_t stdout_len; const uint8_t* stderr_data; uint16_t stderr_len; uint8_t exit_code; static ProcessRunResponse parse(const uint8_t* d) { ProcessRunResponse m; m.status = d[0]; m.stdout_len = rpc::read_u16_be(d + 1); m.stdout_data = d + 3; m.stderr_len = rpc::read_u16_be(d + 3 + m.stdout_len); m.stderr_data = d + 3 + m.stdout_len + 2; m.exit_code = d[3 + m.stdout_len + 2 + m.stderr_len]; return m; } };
     struct ProcessPollResponse { uint8_t status; uint8_t exit_code; const uint8_t* stdout_data; uint16_t stdout_len; const uint8_t* stderr_data; uint16_t stderr_len; static ProcessPollResponse parse(const uint8_t* d) { ProcessPollResponse m; m.status = d[0]; m.exit_code = d[1]; m.stdout_len = rpc::read_u16_be(d + 2); m.stdout_data = d + 4; m.stderr_len = rpc::read_u16_be(d + 4 + m.stdout_len); m.stderr_data = d + 4 + m.stdout_len + 2; return m; } };
+    #pragma pack(pop)
 
 } // namespace payload
+
+// =============================================================================
+// 3. Static Type-Safe Validators
+// =============================================================================
 namespace Payload {
     
 template <typename T>
@@ -383,5 +397,6 @@ inline etl::expected<payload::ProcessPollResponse, rpc::FrameError> parse<payloa
         return etl::expected<payload::ProcessPollResponse, rpc::FrameError>(payload::ProcessPollResponse::parse(frame.payload.data()));
     }
 }
+
 } // namespace rpc
 #endif

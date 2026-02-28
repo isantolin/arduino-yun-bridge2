@@ -113,7 +113,7 @@ async def test_handshake_service_gaps(runtime_config, runtime_state):
 
     # Gap: handle_handshake_failure branches
     await handshake.handle_handshake_failure("test_reason", detail="test_detail")
-    assert runtime_state.handshake_failures > 0
+    assert runtime_state.handshake_failure_streak > 0
 
 
 @pytest.mark.asyncio

@@ -143,14 +143,19 @@ async def test_mqtt_task_requeues_on_publish_failure(
 
     monkeypatch.setattr(aiomqtt, "Client", FakeClient)
 
-    async def _cancel_sleep(*args, **kwargs):
-        raise asyncio.CancelledError
-
-    monkeypatch.setattr(asyncio, "sleep", _cancel_sleep)
-
-    # [FIX] MqttTransport.run catches CancelledError and logs it, then re-raises
+    transport = mqtt.MqttTransport(config, state, service)
+    # We use a real task so we can control lifecycle
+    task = asyncio.create_task(transport.run())
+    
+    # Wait for ready state or a bit of time
+    start_time = asyncio.get_running_loop().time()
+    while transport.state != "ready" and (asyncio.get_running_loop().time() - start_time < 1.0):
+        await asyncio.sleep(0.05)
+    
+    # Trigger cancellation
+    task.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await mqtt.MqttTransport(config, state, service).run()
+        await task
 
     # Check if message was requeued
     assert state.mqtt_publish_queue.qsize() == 1

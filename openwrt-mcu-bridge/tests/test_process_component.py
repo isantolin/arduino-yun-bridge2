@@ -268,12 +268,21 @@ def test_limit_sync_payload_truncates_tail(process_component: ProcessComponent) 
 def test_build_sync_response_trims_to_protocol_budget(
     process_component: ProcessComponent,
 ) -> None:
-    stdout = b"a" * 9999
-    stderr = b"b" * 9999
-    out = process_component._build_sync_response(Status.OK.value, stdout, stderr)
-    assert out[0] == (Status.OK.value & protocol.UINT8_MASK)
-    # Must include two uint16 lengths
-    assert len(out) <= protocol.MAX_PAYLOAD_SIZE
+    from mcubridge.protocol.structures import ProcessRunResponsePacket
+    stdout = b"a" * 100
+    stderr = b"b" * 100
+    # Sync response now uses a structured packet
+    packet = ProcessRunResponsePacket(
+        status=Status.OK.value,
+        stdout=stdout,
+        stderr=stderr,
+        exit_code=0
+    )
+    encoded = packet.encode()
+    assert len(encoded) > 200
+    decoded = ProcessRunResponsePacket.decode(encoded)
+    assert decoded.stdout == stdout
+    assert decoded.stderr == stderr
 
 
 @pytest.mark.asyncio

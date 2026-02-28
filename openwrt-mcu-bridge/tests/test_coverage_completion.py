@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import tenacity
 from mcubridge import metrics
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.daemon import BridgeDaemon
@@ -114,15 +115,30 @@ async def test_daemon_supervision_logic(real_config):
 @pytest.mark.asyncio
 async def test_metrics_emit_errors(runtime_state):
     enqueue = AsyncMock()
+    # Mocking _emit_bridge_snapshot to fail with a log-only error
     with patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=TypeError("Fail")):
-        with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
-            with pytest.raises(asyncio.CancelledError):
-                await metrics._bridge_snapshot_loop(runtime_state, enqueue, flavor="summary", seconds=1)
+        # We run it as a task so we can cancel it
+        task = asyncio.create_task(
+            metrics.publish_bridge_snapshots(
+                runtime_state, enqueue, summary_interval=0.01, handshake_interval=0
+            )
+        )
+        # Let it run for a bit to trigger the error and log it
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
     with patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=AttributeError("Fatal")):
-        with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
-            with pytest.raises(asyncio.CancelledError):
-                await metrics._bridge_snapshot_loop(runtime_state, enqueue, flavor="summary", seconds=1)
+        task = asyncio.create_task(
+            metrics.publish_bridge_snapshots(
+                runtime_state, enqueue, summary_interval=0.01, handshake_interval=0
+            )
+        )
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
 
 @pytest.mark.asyncio

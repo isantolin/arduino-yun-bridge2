@@ -141,7 +141,7 @@ def test_spool_fallback_invokes_hook(
     spool = MQTTPublishSpool(
         tmp_path.as_posix(),
         limit=2,
-        on_fallback=reasons.append,
+        on_fallback=lambda reason, exc: reasons.append(reason),
     )
 
     queue: Any = getattr(spool, "_disk_queue")

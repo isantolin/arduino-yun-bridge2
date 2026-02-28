@@ -30,6 +30,7 @@ fi
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
+    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 \
     -I"${SRC_DIR}" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
@@ -53,6 +54,7 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
+    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 \
     -I"${SRC_DIR}" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \

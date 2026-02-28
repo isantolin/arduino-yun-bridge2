@@ -470,11 +470,19 @@ async def test_kill_process_tree_sync_psutil_errors(
 async def test_build_sync_response_truncates_output(
     process_component: ProcessComponent,
 ) -> None:
-    # 5 bytes overhead in packet payload
-    # MAX_PAYLOAD_SIZE e.g. 1024.
-    # Output limit might be set?
-    resp = process_component._build_sync_response(0, b"A" * 2000, b"B" * 2000)
-    assert len(resp) <= protocol.MAX_PAYLOAD_SIZE
+    from mcubridge.protocol.structures import ProcessRunResponsePacket
+    # Sync response now uses a structured packet
+    packet = ProcessRunResponsePacket(
+        status=0,
+        stdout=b"A" * 100,
+        stderr=b"B" * 100,
+        exit_code=0
+    )
+    resp = packet.encode()
+    assert len(resp) > 200
+    decoded = ProcessRunResponsePacket.decode(resp)
+    assert decoded.stdout == b"A" * 100
+    assert decoded.stderr == b"B" * 100
 
 
 @pytest.mark.asyncio

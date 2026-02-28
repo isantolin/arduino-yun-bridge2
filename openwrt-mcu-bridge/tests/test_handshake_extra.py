@@ -55,7 +55,7 @@ async def test_handshake_sync_resp_rate_limit() -> None:
         acknowledge_frame=AsyncMock(),
     )
     state.link_handshake_nonce = b"A" * 16
-    state.handshake_rate_limit_until = time.monotonic() + 5.0
+    state.handshake_rate_until = time.monotonic() + 5.0
     assert await manager.handle_link_sync_resp(b"A" * 32) is False
     manager._acknowledge_frame.assert_called_with(Command.CMD_LINK_SYNC_RESP.value, status=Status.MALFORMED, extra=ANY)
 

@@ -18,16 +18,13 @@ from construct import ConstructError
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     INVALID_ID_SENTINEL,
-    MAX_PAYLOAD_SIZE,
     PROCESS_DEFAULT_EXIT_CODE,
-    UINT8_MASK,
     UINT16_MAX,
     Command,
     ShellAction,
     Status,
 )
 from mcubridge.protocol.structures import (
-    UINT16_STRUCT,
     ProcessKillPacket,
     ProcessOutputBatch,
     ProcessPollPacket,
@@ -741,21 +738,6 @@ class ProcessComponent:
                 alive,
                 timeout=max(0.1, PROCESS_SYNC_KILL_WAIT_TIMEOUT),
             )
-
-    def _build_sync_response(self, status: int, stdout_bytes: bytes, stderr_bytes: bytes) -> bytes:
-        max_payload = MAX_PAYLOAD_SIZE - 5
-        stdout_trim = stdout_bytes[:max_payload]
-        remaining = max_payload - len(stdout_trim)
-        stderr_trim = stderr_bytes[:remaining]
-        return b"".join(
-            [
-                bytes([status & UINT8_MASK]),
-                UINT16_STRUCT.build(len(stdout_trim)),
-                stdout_trim,
-                UINT16_STRUCT.build(len(stderr_trim)),
-                stderr_trim,
-            ]
-        )
 
     def _limit_sync_payload(self, payload: bytes) -> tuple[bytes, bool]:
         limit = self.state.process_output_limit

@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+import tenacity
 from transitions import Machine
 
 from .config.const import (
@@ -112,14 +113,21 @@ class WatchdogKeepalive:
     async def run(self) -> None:
         """Continuously emit watchdog pulses until cancelled."""
         self.start()
+
+        @tenacity.retry(
+            wait=tenacity.wait_fixed(self._interval),
+            stop=tenacity.stop_never,
+            retry=tenacity.retry_always,
+        )
+        async def _kick_loop() -> None:
+            self.kick()
+            raise Exception("tick")
+
         try:
-            while True:
-                self.kick()
-                await asyncio.sleep(self._interval)
+            await _kick_loop()
         except asyncio.CancelledError:
             self.stop()
             self._logger.debug("Watchdog keepalive cancelled")
-            raise
 
 
 __all__ = ["WatchdogKeepalive"]

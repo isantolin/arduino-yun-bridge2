@@ -73,6 +73,11 @@ class DaemonMetrics:
             "Total frames rejected due to CRC mismatch",
             registry=self.registry,
         )
+        self.serial_decode_errors = Counter(
+            "mcubridge_serial_decode_errors_total",
+            "Total frame decoding failures (COBS/Length)",
+            registry=self.registry,
+        )
         # [SIL-2] Use Histogram for latency to get accurate percentiles
         self.serial_latency_ms = Histogram(
             "mcubridge_serial_latency_ms",

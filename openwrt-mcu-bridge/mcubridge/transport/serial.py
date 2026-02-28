@@ -144,15 +144,23 @@ class BridgeSerialProtocol(asyncio.Protocol):
             raw_frame = cobs.decode(packet_bytes)
             frame = Frame.from_bytes(raw_frame)
 
-            if frame.command_id & protocol.CMD_FLAG_COMPRESSED:
-                new_cmd = frame.command_id & ~protocol.CMD_FLAG_COMPRESSED
-                new_payload = rle.decode(frame.payload)
-                frame = Frame(command_id=new_cmd, payload=new_payload)
+            command_id = frame.raw_command_id
+            payload = frame.payload
+
+            if frame.is_compressed:
+                payload = rle.decode(payload)
 
             if logger.isEnabledFor(logging.DEBUG):
-                self._log_frame(frame, "[MCU -> SERIAL]")
+                # Use reconstructed ID for logging if needed, or original
+                log_binary_traffic(
+                    logger,
+                    logging.DEBUG,
+                    "[MCU -> SERIAL]",
+                    self._get_cmd_label(command_id),
+                    payload if payload else b"",
+                )
 
-            await self.service.handle_mcu_frame(frame.command_id, frame.payload)
+            await self.service.handle_mcu_frame(command_id, payload)
 
         except (cobs.DecodeError, ValueError, msgspec.ValidationError) as exc:
             self.state.record_serial_decode_error()

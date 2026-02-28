@@ -332,7 +332,7 @@ class BridgeDispatcher:
 
     def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
         return (
-            self.state.link_is_synchronized or command_id in STATUS_VALUES or command_id in _PRE_SYNC_ALLOWED_COMMANDS
+            self.state.is_synchronized or command_id in STATUS_VALUES or command_id in _PRE_SYNC_ALLOWED_COMMANDS
         )
 
     async def _guard_dispatch(self, route: TopicRoute, inbound: Message) -> bytes | None:

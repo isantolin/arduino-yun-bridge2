@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import msgspec
+import tenacity
 
 from ..config.const import STATUS_FILE_PATH
 from ..protocol.structures import (
@@ -24,7 +25,13 @@ STATUS_FILE = Path(STATUS_FILE_PATH)
 async def status_writer(state: RuntimeState, interval: int) -> None:
     """Persist lightweight status information periodically."""
 
-    while True:
+    @tenacity.retry(
+        wait=tenacity.wait_fixed(interval),
+        stop=tenacity.stop_never,
+        retry=tenacity.retry_always,
+        before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
+    )
+    async def _write_loop() -> None:
         try:
             serial_writer = state.serial_writer
             serial_connected = serial_writer is not None and not serial_writer.is_closing()
@@ -84,7 +91,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 running_processes=[str(pid) for pid in state.running_processes],
                 allowed_commands=list(state.allowed_commands),
                 config_source=state.config_source,
-                link_synchronised=state.link_is_synchronized,
+                link_synchronised=state.is_synchronized,
                 handshake_attempts=state.handshake_attempts,
                 handshake_successes=state.handshake_successes,
                 handshake_failures=state.handshake_failures,
@@ -103,9 +110,16 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 await write_task
                 raise
         except asyncio.CancelledError:
-            logger.info("Status writer task cancelled.")
             raise
-        await asyncio.sleep(interval)
+        except Exception as e:
+            logger.error("Periodic status write failed: %s", e)
+        # Always raise to trigger the wait_fixed loop
+        raise Exception("tick")
+
+    try:
+        await _write_loop()
+    except asyncio.CancelledError:
+        logger.info("Status writer task cancelled.")
 
 
 def cleanup_status_file() -> None:

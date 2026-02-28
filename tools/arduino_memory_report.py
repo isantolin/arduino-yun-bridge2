@@ -116,7 +116,7 @@ def main(
         return
 
     md_report = render_markdown(all_metrics)
-    print(md_report)
+    typer.echo(md_report)
 
     if github_step_summary:
         with github_step_summary.open("a", encoding="utf-8") as f:

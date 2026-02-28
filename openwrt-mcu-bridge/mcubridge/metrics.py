@@ -153,27 +153,6 @@ async def _emit_bridge_snapshot(
         )
 
 
-async def _bridge_snapshot_loop(
-    state: RuntimeState,
-    enqueue: PublishEnqueue,
-    *,
-    flavor: str,
-    seconds: int | float,
-) -> None:
-    # Initial emit
-    try:
-        await _emit_bridge_snapshot(state, enqueue, flavor)
-    except (TypeError, ValueError, OSError):
-        # Already logged in _emit_bridge_snapshot
-        logger.debug("Bridge snapshot emit failed (initial)", exc_info=True)
-    except AttributeError:
-        logger.critical("Bridge snapshot initial emit fatal error", exc_info=True)
-
-    while True:
-        await asyncio.sleep(seconds)
-        await _emit_bridge_snapshot(state, enqueue, flavor)
-
-
 async def publish_metrics(
     state: RuntimeState,
     enqueue: PublishEnqueue,
@@ -192,7 +171,7 @@ async def publish_metrics(
     @tenacity.retry(
         wait=tenacity.wait_fixed(tick_seconds),
         stop=tenacity.stop_never,
-        retry=tenacity.retry_if_exception_type(Exception),
+        retry=tenacity.retry_always,
         before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
     )
     async def _metrics_loop() -> None:
@@ -209,10 +188,6 @@ async def publish_metrics(
         await _metrics_loop()
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
-        raise
-    except Exception:
-        # Tenacity loop terminated (should only happen on unhandled error if reraise=True)
-        pass
 
 
 async def publish_bridge_snapshots(
@@ -234,34 +209,32 @@ async def publish_bridge_snapshots(
         await asyncio.Event().wait()
         return
 
-    try:
-        async with asyncio.TaskGroup() as tg:
-            if summary_seconds is not None:
-                tg.create_task(
-                    _bridge_snapshot_loop(
-                        state,
-                        enqueue,
-                        flavor="summary",
-                        seconds=summary_seconds,
-                    )
-                )
-            if handshake_seconds is not None:
-                tg.create_task(
-                    _bridge_snapshot_loop(
-                        state,
-                        enqueue,
-                        flavor="handshake",
-                        seconds=handshake_seconds,
-                    )
-                )
-    except* asyncio.CancelledError:
-        logger.info("Bridge snapshot publisher cancelled.")
-        raise
-    except* Exception as exc_group:
-        # Individual loop errors are caught inside _emit/_loop, but if something
-        # escapes or TaskGroup raises, we log it.
-        logger.critical("Fatal error in bridge snapshot publisher: %s", exc_group, exc_info=True)
-        raise
+    async with asyncio.TaskGroup() as tg:
+        if summary_seconds is not None:
+
+            @tenacity.retry(
+                wait=tenacity.wait_fixed(summary_seconds),
+                stop=tenacity.stop_never,
+                retry=tenacity.retry_always,
+            )
+            async def _summary_loop() -> None:
+                await _emit_bridge_snapshot(state, enqueue, flavor="summary")
+                raise Exception("tick")
+
+            tg.create_task(_summary_loop())
+
+        if handshake_seconds is not None:
+
+            @tenacity.retry(
+                wait=tenacity.wait_fixed(handshake_seconds),
+                stop=tenacity.stop_never,
+                retry=tenacity.retry_always,
+            )
+            async def _handshake_loop() -> None:
+                await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
+                raise Exception("tick")
+
+            tg.create_task(_handshake_loop())
 
 
 class RuntimeStateCollector:
@@ -305,7 +278,7 @@ class RuntimeStateCollector:
             "mcubridge_link_synchronized",
             "Binary status of serial link synchronization (1=sync, 0=unsync)",
         )
-        link_sync.add_metric([], 1.0 if self._state.link_is_synchronized else 0.0)
+        link_sync.add_metric([], 1.0 if self._state.is_synchronized else 0.0)
         yield link_sync
 
         # 3. System Health (Dimensional)

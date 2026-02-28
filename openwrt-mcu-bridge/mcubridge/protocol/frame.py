@@ -44,6 +44,16 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
     command_id: int
     payload: bytes = b""
 
+    @property
+    def is_compressed(self) -> bool:
+        """Return True if the frame command ID indicates RLE compression."""
+        return bool(self.command_id & protocol.CMD_FLAG_COMPRESSED)
+
+    @property
+    def raw_command_id(self) -> int:
+        """Return the command ID without the compression flag."""
+        return self.command_id & ~protocol.CMD_FLAG_COMPRESSED
+
     @staticmethod
     def build(command_id: int, payload: bytes = b"") -> bytes:
         """Build a raw frame (header + payload + CRC) for COBS encoding.
@@ -56,8 +66,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
-        # [SIL-2] Decompose command ID for BitStruct
-        # Now handled transparently by CommandIdAdapter in structures.py
+        # [SIL-2] Decompose command ID for BitStruct is handled by CommandIdAdapter in structures.py
         return FRAME_STRUCT.build(
             {
                 "content": {
@@ -67,11 +76,9 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
                             "payload_len": payload_len,
                             "command_id": command_id,
                         },
-                        # [SIL-2] Pure Byte Payload
                         "payload": payload,
                     }
-                },
-                # CRC is computed automatically by Checksum field
+                }
             }
         )
 
@@ -82,41 +89,23 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         Implementation using 'construct' library for declarative parsing.
         """
         data_bytes = bytes(raw_frame_buffer)
-        total_len = len(data_bytes)
-
-        if total_len < protocol.MIN_FRAME_SIZE:
-            raise ValueError(
-                "Incomplete frame: size " f"{total_len} is less than minimum " f"{protocol.MIN_FRAME_SIZE}"
-            )
+        if len(data_bytes) < protocol.MIN_FRAME_SIZE:
+            raise ValueError(f"Incomplete frame: size {len(data_bytes)} < {protocol.MIN_FRAME_SIZE}")
 
         try:
             container = FRAME_STRUCT.parse(data_bytes)
         except Exception as e:
-            # Construct error messages are detailed; wrap them for clarity
             raise ValueError(f"Frame parsing failed: {e}") from e
 
-        # Extract parsed fields
-        # Structure: container -> content (RawCopy) -> value (Struct)
-        #            -> header (Struct) -> command_id (Struct)
-        #            -> payload (RawCopy) -> data (bytes)
         header = container.content.value.header
-
-        # Verify version (redundant if Const used in schema, but good for explicit error message)
         if header.version != protocol.PROTOCOL_VERSION:
-            raise ValueError(f"Invalid version. Expected {protocol.PROTOCOL_VERSION}, got {header.version}")
+            raise ValueError(f"Invalid version {header.version} != {protocol.PROTOCOL_VERSION}")
 
-        # Extract payload bytes directly
         payload_bytes = container.content.value.payload
-
-        # Explicit check for length consistency (Construct usually enforces this via Bytes(payload_len))
         if len(payload_bytes) != header.payload_len:
-            raise ValueError(f"Payload length mismatch: header says {header.payload_len}, got {len(payload_bytes)}")
+            raise ValueError(f"Payload length mismatch: {len(payload_bytes)} != {header.payload_len}")
 
-        # Reconstruct integer command ID from BitStruct
-        # Now handled transparently by CommandIdAdapter in structures.py
-        cmd_val = int(header.command_id)
-
-        return cmd_val, payload_bytes
+        return int(header.command_id), payload_bytes
 
     def to_bytes(self) -> bytes:
         """Serialize the instance using :meth:`build`."""

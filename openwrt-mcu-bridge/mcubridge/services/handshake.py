@@ -193,13 +193,11 @@ class SerialHandshakeManager:
 
     def _on_fsm_synchronized(self) -> None:
         """Callback when entering synchronized state."""
-        self._state.link_is_synchronized = True
-        self._state.link_sync_event.set()
+        self._state.mark_synchronized()
 
     def _on_fsm_unsynchronized(self) -> None:
         """Callback when leaving synchronized state."""
-        self._state.link_is_synchronized = False
-        self._state.link_sync_event.clear()
+        self._state.mark_transport_connected()
 
     async def synchronize(self) -> bool:
         # [SIL-2] Unified Retry Strategy for Link Synchronisation
@@ -317,10 +315,10 @@ class SerialHandshakeManager:
         rate_limit = self._config.serial_handshake_min_interval
         if rate_limit > 0:
             now = time.monotonic()
-            if now < self._state.handshake_rate_limit_until:
+            if now < self._state.handshake_rate_until:
                 self._logger.warning(
                     ("LINK_SYNC_RESP throttled due to rate limit " "(remaining=%.2fs)"),
-                    self._state.handshake_rate_limit_until - now,
+                    self._state.handshake_rate_until - now,
                 )
                 await self._acknowledge_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
@@ -329,7 +327,7 @@ class SerialHandshakeManager:
                 )
                 await self.handle_handshake_failure("sync_rate_limited")
                 return False
-            self._state.handshake_rate_limit_until = now + rate_limit
+            self._state.handshake_rate_until = now + rate_limit
 
         if len(payload) != required_length:
             self._logger.warning(
@@ -512,11 +510,9 @@ class SerialHandshakeManager:
         timeout = max(0.5, self._timing.response_timeout_seconds)
         try:
             async with asyncio.timeout(timeout):
-                while not self._state.link_is_synchronized:
+                while not self._state.is_synchronized:
                     await self._state.link_sync_event.wait()
-                    # Re-check nonce if event fired but state changed?
-                    # link_is_synchronized is set in _on_fsm_synchronized.
-                    # If we got here, it's synchronized.
+                    # is_synchronized is set in _on_fsm_synchronized.
                 return True
         except TimeoutError:
             return False

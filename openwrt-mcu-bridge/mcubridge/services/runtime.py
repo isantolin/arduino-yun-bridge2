@@ -196,7 +196,7 @@ class BridgeService:
             logger.exception("Failed to synchronize link after reconnect: %s", e)
 
         # [SIL-2] Boundary Guard: Do not proceed if synchronization failed.
-        if not self.state.link_is_synchronized:
+        if not self.state.is_synchronized:
             logger.warning("Link synchronization failed; aborting post-connection initialization")
             self._handshake.raise_if_handshake_fatal()
             return

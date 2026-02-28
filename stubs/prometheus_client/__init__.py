@@ -30,12 +30,23 @@ class CollectorRegistry:
         return tuple(self._collectors)
 
 
+class _StubValue:
+    def __init__(self) -> None:
+        self.val: float = 0.0
+
+    def get(self) -> float:
+        return self.val
+
+    def inc(self, amount: float) -> None:
+        self.val += amount
+
+
 class Counter:
     def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-        self._value: float = 0.0
+        self._value = _StubValue()
 
     def inc(self, amount: float = 1.0) -> None:
-        self._value += float(amount)
+        self._value.inc(float(amount))
 
 
 class Histogram:

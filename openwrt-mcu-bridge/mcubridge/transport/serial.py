@@ -312,9 +312,10 @@ class SerialTransport:
         reconnect_delay = max(1, self.config.reconnect_delay)
         loop = asyncio.get_running_loop()
 
+        # [SIL-2] Exponential backoff with jitter for link robustness
         retryer = tenacity.AsyncRetrying(
             retry=tenacity.retry_if_not_exception_type((SerialHandshakeFatal, asyncio.CancelledError)),
-            wait=tenacity.wait_fixed(reconnect_delay) + tenacity.wait_random(0, 1),
+            wait=tenacity.wait_exponential(multiplier=1, min=reconnect_delay, max=60) + tenacity.wait_random(0, 1),
             before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )

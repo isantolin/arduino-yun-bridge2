@@ -398,10 +398,12 @@ class PrometheusExporter:
                 await self._write_response(writer, 400, b"")
                 return
             method, path = parts[0], parts[1]
-            while True:
-                line = await reader.readline()
-                if not line or line in {b"\r\n", b"\n"}:
+
+            # Read and discard headers until empty line
+            while line := await reader.readline():
+                if line in {b"\r\n", b"\n"}:
                     break
+
             if method != "GET" or path not in {"/metrics", "/"}:
                 await self._write_response(writer, 404, b"")
                 return

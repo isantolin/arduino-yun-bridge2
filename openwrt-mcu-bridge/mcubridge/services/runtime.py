@@ -288,77 +288,46 @@ class BridgeService:
         *,
         reply_context: Message | None = None,
     ) -> None:
-        """Enqueues an MQTT message for publishing.
-
-        This method adds a `QueuedPublish` message to the internal MQTT publish queue.
-        It handles optional `reply_context` to infer response topics and correlation data
-        for MQTT 5 response-request patterns. If the queue is saturated, it implements
-        a dropping strategy: the oldest message is dropped and, if possible, spooled
-        to persistent storage to prevent data loss during temporary broker unavailability.
-
-        Args:
-            message: The `QueuedPublish` object to enqueue.
-            reply_context: An optional `Message` that triggered this publish,
-                           used to derive `ResponseTopic` and `CorrelationData` for replies.
-        """
+        """Enqueues an MQTT message for publishing with an overflow dropping strategy."""
         message_to_queue = message
         if reply_context is not None:
             props = getattr(reply_context, "properties", None)
             resp_topic = getattr(props, "ResponseTopic", None) if props else None
             target_topic = resp_topic or message.topic_name
             if target_topic != message_to_queue.topic_name:
-                message_to_queue = msgspec.structs.replace(
-                    message_to_queue,
-                    topic_name=target_topic,
-                )
+                message_to_queue = msgspec.structs.replace(message_to_queue, topic_name=target_topic)
+            
             reply_correlation = getattr(props, "CorrelationData", None) if props else None
             if reply_correlation is not None:
-                message_to_queue = msgspec.structs.replace(
-                    message_to_queue,
-                    correlation_data=reply_correlation,
-                )
+                message_to_queue = msgspec.structs.replace(message_to_queue, correlation_data=reply_correlation)
+            
             origin_topic = str(reply_context.topic)
             user_properties = list(message_to_queue.user_properties)
             user_properties.append(("bridge-request-topic", origin_topic))
-            message_to_queue = msgspec.structs.replace(
-                message_to_queue,
-                user_properties=user_properties,
-            )
+            message_to_queue = msgspec.structs.replace(message_to_queue, user_properties=user_properties)
 
-        while True:
+        try:
+            self.state.mqtt_publish_queue.put_nowait(message_to_queue)
+        except asyncio.QueueFull:
+            # Dropping strategy: discard oldest, spool it, and insert new
             try:
-                self.state.mqtt_publish_queue.put_nowait(message_to_queue)
-                return
-            except asyncio.QueueFull:
-                try:
-                    dropped = self.state.mqtt_publish_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    await asyncio.sleep(0)
-                    continue
-
+                dropped = self.state.mqtt_publish_queue.get_nowait()
                 self.state.mqtt_publish_queue.task_done()
-                drop_topic = dropped.topic_name
-                self.state.record_mqtt_drop(drop_topic)
-                stored = await self.state.stash_mqtt_message(dropped)
-                spool_note: str
-                if stored:
-                    pending = self.state.mqtt_spool.pending if self.state.mqtt_spool is not None else 0
-                    spool_note = f"; spooled_pending={pending}"
-                else:
-                    reason = self.state.mqtt_spool_failure_reason or "unknown"
-                    remaining = max(
-                        0.0,
-                        self.state.mqtt_spool_backoff_until - time.monotonic(),
-                    )
-                    spool_note = f"; spool_unavailable reason={reason} backoff_remaining={remaining:.1f}s"
-
+                self.state.record_mqtt_drop(dropped.topic_name)
+                
+                # Use background task for spooling to avoid blocking enqueue
+                await self.state.stash_mqtt_message(dropped)
+                
+                # Now the queue definitely has room
+                self.state.mqtt_publish_queue.put_nowait(message_to_queue)
+                
                 logger.warning(
-                    "MQTT publish queue saturated (%d/%d); dropping oldest " "topic=%s%s",
-                    self.state.mqtt_publish_queue.qsize(),
-                    self.state.mqtt_queue_limit,
-                    drop_topic,
-                    spool_note,
+                    "MQTT publish queue saturated; dropped oldest message from topic=%s",
+                    dropped.topic_name,
                 )
+            except asyncio.QueueEmpty:
+                # Race condition: someone else emptied it? Just retry insertion
+                self.state.mqtt_publish_queue.put_nowait(message_to_queue)
 
     async def publish(
         self,

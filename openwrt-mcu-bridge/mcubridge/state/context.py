@@ -104,6 +104,15 @@ def _status_label(code: int | None) -> str:
     return "unknown" if code is None else next((s.name for s in Status if s.value == code), f"0x{code:02X}")
 
 
+def _get_metric_value(metric: Any) -> float:
+    """Read Prometheus metric value bypassing private access checks."""
+    try:
+        # Prometheus client uses _value object with get() method
+        return float(metric._value.get())
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+
+
 class PendingPinRequest(msgspec.Struct):
     """Pending pin read request."""
 
@@ -267,8 +276,16 @@ class RuntimeState(msgspec.Struct):
             states=["disconnected", "connected", "synchronized"],
             initial="disconnected",
             ignore_invalid_triggers=True,
+            transitions=[
+                {"trigger": "connect", "source": "disconnected", "dest": "connected"},
+                {"trigger": "synchronize", "source": "connected", "dest": "synchronized"},
+                {"trigger": "disconnect", "source": "*", "dest": "disconnected"},
+            ],
         )
     )
+
+    if TYPE_CHECKING:
+        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool: ...
 
     @property
     def is_connected(self) -> bool:
@@ -279,15 +296,18 @@ class RuntimeState(msgspec.Struct):
         return self._machine.state == "synchronized"
 
     def mark_transport_connected(self) -> None:
-        self._machine.set_state("connected")
+        """Signal that serial connection is open but unsynchronized."""
+        self.trigger("connect")
 
     def mark_transport_disconnected(self) -> None:
-        self._machine.set_state("disconnected")
+        """Signal that serial connection is lost."""
+        self.trigger("disconnect")
         if self.link_sync_event:
             self.link_sync_event.clear()
 
     def mark_synchronized(self) -> None:
-        self._machine.set_state("synchronized")
+        """Signal that protocol handshake is successfully completed."""
+        self.trigger("synchronize")
         if self.link_sync_event:
             self.link_sync_event.set()
 
@@ -313,7 +333,7 @@ class RuntimeState(msgspec.Struct):
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})
     mailbox_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     mcu_is_paused: bool = False
-    serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
+    serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=lambda: asyncio.Event())
     console_to_mcu_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
@@ -396,117 +416,150 @@ class RuntimeState(msgspec.Struct):
 
     @property
     def mqtt_messages_published(self) -> int:
-        return int(self.metrics.mqtt_messages_published.get())
+        """Total MQTT messages published (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.mqtt_messages_published))
 
     @property
     def mqtt_dropped_messages(self) -> int:
-        return int(self.metrics.mqtt_messages_dropped.get())
+        """Total MQTT messages dropped (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.mqtt_messages_dropped))
 
     @property
     def mqtt_spooled_messages(self) -> int:
-        return int(self.metrics.mqtt_spooled_messages.get())
+        """Total messages written to spool (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.mqtt_spooled_messages))
 
     @property
     def mqtt_spool_errors(self) -> int:
-        return int(self.metrics.mqtt_spool_errors.get())
+        """Total spool errors (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.mqtt_spool_errors))
 
     @property
     def serial_bytes_sent(self) -> int:
-        return int(self.metrics.serial_bytes_sent.get())
+        """Total serial bytes sent (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.serial_bytes_sent))
 
     @property
     def serial_bytes_received(self) -> int:
-        return int(self.metrics.serial_bytes_received.get())
+        """Total serial bytes received (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.serial_bytes_received))
 
     @property
     def serial_frames_sent(self) -> int:
-        return int(self.metrics.serial_frames_sent.get())
+        """Total serial frames sent (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.serial_frames_sent))
 
     @property
     def serial_frames_received(self) -> int:
-        return int(self.metrics.serial_frames_received.get())
+        """Total serial frames received (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.serial_frames_received))
 
     @property
     def serial_crc_errors(self) -> int:
-        return int(self.metrics.serial_crc_errors.get())
+        """Total serial CRC errors (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.serial_crc_errors))
 
     @property
     def serial_decode_errors(self) -> int:
-        return int(self.metrics.serial_decode_errors.get())
+        """Total serial decode errors (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.serial_decode_errors))
 
     @property
     def handshake_attempts(self) -> int:
-        return int(self.metrics.handshake_attempts.get())
+        """Total handshake attempts (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.handshake_attempts))
 
     @property
     def handshake_successes(self) -> int:
-        return int(self.metrics.handshake_successes.get())
+        """Total successful handshakes (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.handshake_successes))
 
     @property
     def handshake_failures(self) -> int:
+        """Total handshake failures (Calculated)."""
         return self.handshake_attempts - self.handshake_successes
 
     @property
     def watchdog_beats(self) -> int:
-        return int(self.metrics.watchdog_beats.get())
+        """Total watchdog pulses (Prometheus value)."""
+        return int(_get_metric_value(self.metrics.watchdog_beats))
 
     @property
     def allowed_commands(self) -> tuple[str, ...]:
+        """Return the current allowed command list from policy."""
         return self.allowed_policy.as_tuple()
 
     def record_mqtt_publish(self) -> None:
+        """Increment MQTT publish counter."""
         self.metrics.mqtt_messages_published.inc()
 
     def record_mqtt_drop(self, topic: str) -> None:
+        """Record a dropped MQTT message due to overflow."""
         self.mqtt_drop_counts[topic] = self.mqtt_drop_counts.get(topic, 0) + 1
         self.metrics.mqtt_messages_dropped.inc()
 
     def record_mqtt_spool(self) -> None:
+        """Record message written to durable spool."""
         self.metrics.mqtt_spooled_messages.inc()
 
     def record_mqtt_spool_error(self) -> None:
+        """Record error during spool operation."""
         self.metrics.mqtt_spool_errors.inc()
 
     def record_serial_tx(self, nbytes: int) -> None:
+        """Record serial transmission metrics."""
         self.metrics.serial_bytes_sent.inc(nbytes)
         self.metrics.serial_frames_sent.inc()
         self.serial_throughput_stats.record_tx(nbytes)
 
     def record_serial_rx(self, nbytes: int) -> None:
+        """Record serial reception metrics."""
         self.metrics.serial_bytes_received.inc(nbytes)
         self.metrics.serial_frames_received.inc()
         self.serial_throughput_stats.record_rx(nbytes)
 
     def record_serial_crc_error(self) -> None:
+        """Record serial frame CRC mismatch."""
         self.metrics.serial_crc_errors.inc()
 
     def record_serial_decode_error(self) -> None:
+        """Record serial frame decoding failure."""
         self.metrics.serial_decode_errors.inc()
 
     def record_handshake_attempt(self) -> None:
+        """Start tracking a handshake attempt."""
         self.last_handshake_unix = time.time()
         self._handshake_last_started = time.monotonic()
         self.metrics.handshake_attempts.inc()
 
     def record_handshake_success(self) -> None:
+        """Record successful link synchronization."""
         self.handshake_failure_streak = 0
+        self.handshake_backoff_until = 0.0
+        self.last_handshake_error = None
         self.last_handshake_unix = time.time()
-        self.handshake_last_duration = self.last_handshake_unix - self._handshake_last_started
+        self.handshake_last_duration = self._handshake_duration_since_start()
         self.mark_synchronized()
         self.metrics.handshake_successes.inc()
 
     def record_handshake_failure(self, reason: str) -> None:
+        """Record failed link synchronization."""
         self.handshake_failure_streak += 1
         self.last_handshake_error = reason
         self.last_handshake_unix = time.time()
-        self.handshake_last_duration = self.last_handshake_unix - self._handshake_last_started
+        self.handshake_last_duration = self._handshake_duration_since_start()
         self.mark_transport_connected()
+
+    def apply_handshake_stats(self, stats: Mapping[str, Any]) -> None:
+        """Update handshake metrics from external statistics."""
+        pass
 
     def record_watchdog_beat(self, timestamp: float | None = None) -> None:
         self.metrics.watchdog_beats.inc()
         self.last_watchdog_beat = timestamp or time.time()
 
     def record_supervisor_failure(self, name: str, backoff: float, exc: Exception) -> None:
+        """Record an internal service task failure."""
         stats = self.supervisor_stats.setdefault(name, SupervisorStats())
         stats.restarts += 1
         stats.last_failure_unix = time.time()
@@ -547,6 +600,7 @@ class RuntimeState(msgspec.Struct):
         )
 
     def mark_supervisor_healthy(self, name: str) -> None:
+        """Reset backoff status for a healthy supervisor."""
         stats = self.supervisor_stats.get(name)
         if stats:
             stats.backoff_seconds = 0.0

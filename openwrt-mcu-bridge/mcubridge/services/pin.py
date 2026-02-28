@@ -265,24 +265,20 @@ class PinComponent:
         await self.ctx.send_frame(command.value, payload)
 
     def _parse_pin_identifier(self, pin_str: str) -> int:
-        if pin_str.upper().startswith("A") and pin_str[1:].isdigit():
-            return int(pin_str[1:])
-        if pin_str.isdigit():
-            return int(pin_str)
-        return -1
+        s = pin_str.upper()
+        if s.startswith("A") and s[1:].isdigit():
+            return int(s[1:])
+        return int(pin_str) if pin_str.isdigit() else -1
 
     def _parse_pin_value(self, topic_type: Topic, payload_str: str) -> int | None:
         if not payload_str:
             return 0
         try:
-            value = int(payload_str)
+            val = int(payload_str)
+            if (topic_type == Topic.DIGITAL and val in (0, 1)) or (topic_type == Topic.ANALOG and 0 <= val <= 255):
+                return val
         except ValueError:
-            return None
-
-        if topic_type == Topic.DIGITAL and value in (0, 1):
-            return value
-        if topic_type == Topic.ANALOG and 0 <= value <= 255:
-            return value
+            pass
         return None
 
     @staticmethod

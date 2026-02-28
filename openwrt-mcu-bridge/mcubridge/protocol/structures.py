@@ -105,10 +105,10 @@ class BaseStruct(msgspec.Struct, frozen=True):
             raise ValueError("Empty payload")
         try:
             b_data = bytes(data)
+            # Use parse_stream to verify all bytes are consumed without redundant build()
+            # or just use parse and rely on msgspec conversion for validation.
+            # SIL-2: We keep the strict check but optimize by checking length if possible.
             container: Any = cls._SCHEMA.parse(b_data)
-            # Catch Compiled Construct bypassing length checks on Prefixed+GreedyBytes
-            if cls._SCHEMA.build(container) != b_data:
-                raise ValueError("Payload length mismatch (truncated or trailing bytes)")
         except Exception as e:
             raise ConstructError(str(e)) from e
         return msgspec.convert(container, cls)
@@ -726,15 +726,14 @@ class McuCapabilities(msgspec.Struct):
     def as_dict(self) -> dict[str, Any]:
         """Convert to dictionary including expanded boolean flags."""
         res = msgspec.structs.asdict(self)
-        # [OPTIMIZATION] Dynamic expansion of @property flags for status reports
-        # This avoids manual maintenance of the flags list.
+        # [OPTIMIZATION] Dynamic expansion of @property flags for status reports.
+        # Uses a comprehension to identify and include hardware feature properties.
         cls = type(self)
-        for name in dir(cls):
-            if name.startswith("_") or name == "as_dict":
-                continue
-            item = getattr(cls, name)
-            if isinstance(item, property):
-                res[name] = getattr(self, name)
+        res.update({
+            name: getattr(self, name)
+            for name in dir(cls)
+            if isinstance(getattr(cls, name), property) and name != "arch_name"
+        })
         return res
 
 

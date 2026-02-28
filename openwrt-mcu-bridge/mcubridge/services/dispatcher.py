@@ -341,13 +341,7 @@ class BridgeDispatcher:
             await self.reject_topic_action(inbound, route.topic, action)
             return None
 
-        # Inline payload to bytes conversion
-        p_val: Any = inbound.payload
-        if isinstance(p_val, bytes):
-            return p_val
-        if isinstance(p_val, str):
-            return p_val.encode("utf-8")
-        return bytes(p_val)
+        return self._payload_bytes(inbound.payload)
 
     # --- MQTT Handlers (Consolidated with match/case) ---
 
@@ -436,9 +430,7 @@ class BridgeDispatcher:
 
     @staticmethod
     def _pin_action_from_segments(segments: tuple[str, ...]) -> str | None:
-        if not segments:
-            return None
-        return "write" if len(segments) == 1 else segments[1].strip().lower() or None
+        return ("write" if len(segments) == 1 else segments[1].strip().lower() or None) if segments else None
 
     @staticmethod
     def _payload_bytes(payload: Any) -> bytes:

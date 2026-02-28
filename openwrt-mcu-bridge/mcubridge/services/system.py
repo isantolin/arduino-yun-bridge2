@@ -105,25 +105,29 @@ class SystemComponent:
         remainder: list[str],
         inbound: Message | None = None,
     ) -> bool:
-        if identifier == SystemAction.FREE_MEMORY and remainder and remainder[0] == SystemAction.GET:
-            if inbound is not None:
-                self._pending_free_memory.append(inbound)
-            await self.ctx.send_frame(Command.CMD_GET_FREE_MEMORY.value, b"")
-            return True
+        if not (remainder and remainder[0] == SystemAction.GET):
+            return False
 
-        if identifier == SystemAction.VERSION and remainder and remainder[0] == SystemAction.GET:
-            cached_version = self.state.mcu_version
-            if cached_version is not None and inbound is not None:
-                await self._publish_version(cached_version, inbound)
-            else:
+        match identifier:
+            case SystemAction.FREE_MEMORY:
                 if inbound is not None:
-                    self._pending_version.append(inbound)
-            await self.request_mcu_version()
-            if cached_version is not None:
-                await self._publish_version(cached_version)
-            return True
+                    self._pending_free_memory.append(inbound)
+                await self.ctx.send_frame(Command.CMD_GET_FREE_MEMORY.value, b"")
+                return True
 
-        return False
+            case SystemAction.VERSION:
+                cached_version = self.state.mcu_version
+                if cached_version is not None and inbound is not None:
+                    await self._publish_version(cached_version, inbound)
+                elif inbound is not None:
+                    self._pending_version.append(inbound)
+                await self.request_mcu_version()
+                if cached_version is not None:
+                    await self._publish_version(cached_version)
+                return True
+
+            case _:
+                return False
 
     async def _publish_version(
         self,

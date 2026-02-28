@@ -107,28 +107,23 @@ class DatastoreComponent:
         payload_str: str,
         inbound: Message | None = None,
     ) -> None:
-        is_request = False
         parts = remainder.copy()
-        if identifier == DatastoreAction.GET and parts and parts[-1] == "request":
-            parts = parts[:-1]
-            is_request = True
+        is_request = identifier == DatastoreAction.GET and bool(parts) and parts[-1] == "request"
+        if is_request:
+            parts.pop()
 
         key = "/".join(parts)
-        if identifier == DatastoreAction.PUT:
-            if not parts:
-                logger.debug("Ignoring datastore put without key")
-                return
-            await self._handle_mqtt_put(key, payload_str, inbound)
+        if not key:
+            logger.debug("Ignoring datastore action '%s' without key", identifier)
             return
 
-        if identifier == DatastoreAction.GET:
-            if not key:
-                logger.debug("Ignoring datastore get without key")
-                return
-            await self._handle_mqtt_get(key, is_request, inbound)
-            return
-
-        logger.debug("Unknown datastore action '%s'", identifier)
+        match identifier:
+            case DatastoreAction.PUT:
+                await self._handle_mqtt_put(key, payload_str, inbound)
+            case DatastoreAction.GET:
+                await self._handle_mqtt_get(key, is_request, inbound)
+            case _:
+                logger.debug("Unknown datastore action '%s'", identifier)
 
     async def _handle_mqtt_put(
         self,

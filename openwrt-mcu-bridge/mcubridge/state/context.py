@@ -301,7 +301,7 @@ class RuntimeState(msgspec.Struct):
             ignore_invalid_triggers=True,
             transitions=[
                 {"trigger": "connect", "source": ["disconnected", "connected", "synchronized"], "dest": "connected"},
-                {"trigger": "synchronize", "source": "connected", "dest": "synchronized"},
+                {"trigger": "synchronize", "source": ["connected", "synchronized"], "dest": "synchronized"},
                 {"trigger": "disconnect", "source": "*", "dest": "disconnected"},
             ],
         )

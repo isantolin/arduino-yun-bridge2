@@ -19,9 +19,9 @@ BOARD_MAPPING = {
 }
 
 # Regex patterns for memory usage
-# Sketch uses 34982 bytes (13%) of program storage space. Maximum is 253952 bytes.
+# Flash: Sketch uses 34982 bytes (13%) of program storage space. Maximum is 253952 bytes.
 FLASH_RE = re.compile(r"Sketch uses (\d+) bytes .*? Maximum is (\d+) bytes")
-# Global variables use 3628 bytes (44%) of dynamic memory, leaving 4564 bytes for local variables. Maximum is 8192 bytes.
+# RAM: Global variables use 3628 bytes (44%) of dynamic memory... Maximum is 8192 bytes.
 RAM_RE = re.compile(r"Global variables use (\d+) bytes .*? Maximum is (\d+) bytes")
 
 
@@ -53,7 +53,7 @@ def parse_log_file(path: Path) -> MemoryMetrics | None:
     board_name = BOARD_MAPPING.get(board_slug, board_slug)
 
     content = path.read_text(encoding="utf-8")
-    
+
     flash_match = FLASH_RE.search(content)
     ram_match = RAM_RE.search(content)
 
@@ -78,9 +78,9 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
         "| Board | Sketch | Flash (Used/Max) | Flash % | RAM (Used/Max) | RAM % |",
         "| :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
-    
+
     sorted_metrics = sorted(metrics, key=lambda m: (m.board, m.sketch))
-    
+
     rows = []
     for m in sorted_metrics:
         row = (
@@ -89,7 +89,7 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
             f"{m.ram_used:,} / {m.ram_max:,} B | {m.ram_percent:.1f}% |"
         )
         rows.append(row)
-    
+
     return "\n".join(header + rows)
 
 
@@ -97,7 +97,7 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
 def main(
     log_dir: Annotated[Path, typer.Argument(help="Directory containing build log files.")],
     github_step_summary: Annotated[
-        Optional[Path], 
+        Optional[Path],
         typer.Option(help="Append the table to GitHub step summary output.")
     ] = None,
 ) -> None:

@@ -19,7 +19,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable, Final, Sized, TypeGuard, cast
 
 import msgspec
-import serial_asyncio_fast  # type: ignore
+import serial_asyncio_fast
 import tenacity
 from cobs import cobs
 from mcubridge.config.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT

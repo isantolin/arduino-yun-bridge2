@@ -70,20 +70,8 @@ class SystemComponent:
             reply_context = self._pending_free_memory.popleft()
 
         payload_bytes = str(free_memory).encode("utf-8")
-        if reply_context is not None:
-            await self.ctx.publish(
-                topic=topic,
-                payload=payload_bytes,
-                expiry=MQTT_EXPIRY_DEFAULT,
-                content_type="text/plain; charset=utf-8",
-                reply_to=reply_context,
-            )
-        await self.ctx.publish(
-            topic=topic,
-            payload=payload_bytes,
-            expiry=MQTT_EXPIRY_DEFAULT,
-            content_type="text/plain; charset=utf-8",
-            reply_to=None,
+        await self._publish_broadcast_and_reply(
+            topic, payload_bytes, MQTT_EXPIRY_DEFAULT, reply_context,
         )
 
     async def handle_get_version_resp(self, payload: bytes) -> None:
@@ -142,18 +130,30 @@ class SystemComponent:
             SystemAction.VALUE,
         )
         payload_bytes = f"{major}.{minor}".encode()
+        await self._publish_broadcast_and_reply(
+            topic, payload_bytes, MQTT_EXPIRY_DATASTORE, reply_context,
+        )
+
+    async def _publish_broadcast_and_reply(
+        self,
+        topic: str,
+        payload: bytes,
+        expiry: int,
+        reply_context: Message | None,
+    ) -> None:
+        """Publish broadcast to topic and, if present, a targeted reply."""
         if reply_context is not None:
             await self.ctx.publish(
                 topic=topic,
-                payload=payload_bytes,
-                expiry=MQTT_EXPIRY_DATASTORE,
+                payload=payload,
+                expiry=expiry,
                 content_type="text/plain; charset=utf-8",
                 reply_to=reply_context,
             )
         await self.ctx.publish(
             topic=topic,
-            payload=payload_bytes,
-            expiry=MQTT_EXPIRY_DATASTORE,
+            payload=payload,
+            expiry=expiry,
             content_type="text/plain; charset=utf-8",
             reply_to=None,
         )

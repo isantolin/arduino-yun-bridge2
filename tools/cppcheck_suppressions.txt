@@ -1,2 +1,4 @@
 *:*etl*
 *:*arduino_stub*
+# False positive: cppcheck stub millis() returns 0 but real hardware increments
+knownConditionTrueFalse:*Bridge.cpp

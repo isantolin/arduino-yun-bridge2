@@ -133,7 +133,7 @@ async def test_metrics_collector_flatten_edge_cases():
 
 @pytest.mark.asyncio
 async def test_serial_protocol_async_process_parse_error_crc():
-    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
+    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
     with (
         patch("cobs.cobs.decode", return_value=b"raw"),
         patch(
@@ -147,7 +147,7 @@ async def test_serial_protocol_async_process_parse_error_crc():
 
 @pytest.mark.asyncio
 async def test_serial_protocol_async_process_os_error():
-    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
+    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
     with (
         patch("cobs.cobs.decode", side_effect=OSError("Disk full")),
     ):
@@ -157,7 +157,7 @@ async def test_serial_protocol_async_process_os_error():
 
 @pytest.mark.asyncio
 async def test_serial_protocol_async_process_runtime_error():
-    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
+    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
     with (
         patch("cobs.cobs.decode", side_effect=RuntimeError("Bug")),
     ):
@@ -167,7 +167,7 @@ async def test_serial_protocol_async_process_runtime_error():
 
 @pytest.mark.asyncio
 async def test_serial_protocol_log_frame_unknown():
-    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
+    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
     from mcubridge.protocol.frame import Frame
 
     frame = Frame(command_id=0xFFFF, payload=b"")
@@ -186,4 +186,4 @@ async def test_serial_protocol_log_frame_unknown():
 async def test_serial_transport_toggle_dtr_oserror_other():
     transport = SerialTransport(create_real_config(), MagicMock(), MagicMock())
     with patch("serial.Serial", side_effect=OSError(errno.EIO, "IO Error")):
-        await transport._toggle_dtr(asyncio.get_event_loop())
+        await transport._toggle_dtr(asyncio.get_running_loop())

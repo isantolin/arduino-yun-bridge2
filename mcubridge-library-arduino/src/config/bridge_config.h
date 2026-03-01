@@ -93,6 +93,16 @@
 #define BRIDGE_FILE_LARGE_WARNING_BYTES 1048576UL
 #endif
 
+// [SIL-2] Startup drain limits: bounded byte consumption to prevent
+// runaway loops on garbage data before COBS sync.
+#ifndef BRIDGE_STARTUP_DRAIN_PER_TICK
+#define BRIDGE_STARTUP_DRAIN_PER_TICK 64U
+#endif
+
+#ifndef BRIDGE_STARTUP_DRAIN_FINAL
+#define BRIDGE_STARTUP_DRAIN_FINAL 256U
+#endif
+
 // [SIL-2] Magic Numbers extracted to constants for clarity and safety tuning
 #ifndef BRIDGE_STARTUP_STABILIZATION_MS
 #define BRIDGE_STARTUP_STABILIZATION_MS 100UL

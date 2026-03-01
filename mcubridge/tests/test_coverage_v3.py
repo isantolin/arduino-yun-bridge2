@@ -531,7 +531,7 @@ async def test_serial_transport_toggle_dtr_error():
     transport = SerialTransport(config, state, service)
 
     with patch("serial.Serial", side_effect=OSError(errno.ENOTTY, "Not a typewriter")):
-        await transport._toggle_dtr(asyncio.get_event_loop())
+        await transport._toggle_dtr(asyncio.get_running_loop())
 
 
 @pytest.mark.asyncio

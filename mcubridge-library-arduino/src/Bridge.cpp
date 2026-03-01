@@ -198,7 +198,7 @@ void BridgeClass::process() {
 #endif
 
   if (_startup_stabilizing) {
-    uint8_t drain_limit = 64;
+    uint8_t drain_limit = BRIDGE_STARTUP_DRAIN_PER_TICK;
     while (_stream.available() > 0 && drain_limit-- > 0) {
       _stream.read();
     }
@@ -208,7 +208,7 @@ void BridgeClass::process() {
       while (_stream.available() > 0) {
         uint8_t byte = _stream.read();
 
-        if (byte == 0x00) {
+        if (byte == rpc::RPC_FRAME_DELIMITER) {
           if (_cobs.in_sync && _cobs.bytes_received >= 5 + rpc::CRC_TRAILER_SIZE) {
             etl::crc32 crc_calc;
             const size_t data_len = _cobs.bytes_received - rpc::CRC_TRAILER_SIZE;
@@ -922,7 +922,7 @@ void BridgeClass::_sendRawFrame(uint16_t command_id,
 
     if (encoded_len > 0) {
       _stream.write(cobs_buffer.data(), encoded_len);
-      _stream.write(static_cast<uint8_t>(0x00)); // Frame delimiter
+      _stream.write(rpc::RPC_FRAME_DELIMITER);
       flushStream();
     }
   }
@@ -1154,8 +1154,8 @@ void BridgeClass::_onBaudrateChange() {
 void BridgeClass::_onStartupStabilized() {
   // [SIL-2] Non-blocking startup stabilization complete
   // Final drain of any remaining garbage in the buffer
-  // [SIL-2] Bounded drain to ensure determinism (max 256 bytes)
-  uint16_t drain_limit = 256;
+  // [SIL-2] Bounded drain to ensure determinism
+  uint16_t drain_limit = BRIDGE_STARTUP_DRAIN_FINAL;
   while (_stream.available() > 0 && drain_limit-- > 0) {
     _stream.read();
   }

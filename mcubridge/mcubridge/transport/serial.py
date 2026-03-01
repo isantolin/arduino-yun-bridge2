@@ -268,7 +268,7 @@ class SerialTransport:
         self.service = service
         self.protocol: BridgeSerialProtocol | None = None
         self._stop_event = asyncio.Event()
-        self.loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
+        self.loop: asyncio.AbstractEventLoop | None = None
 
         # FSM Initialization
         self.state_machine = Machine(
@@ -401,7 +401,7 @@ class SerialTransport:
 
         transport, proto = await serial_asyncio_fast.create_serial_connection(
             loop,
-            lambda: SignalLostProtocol(self.service, self.state, self.loop, lost_future),
+            lambda: SignalLostProtocol(self.service, self.state, loop, lost_future),
             self.config.serial_port,
             baudrate=start_baud,
         )
@@ -423,7 +423,7 @@ class SerialTransport:
                     lost_future = loop.create_future()
                     transport, proto = await serial_asyncio_fast.create_serial_connection(
                         loop,
-                        lambda: SignalLostProtocol(self.service, self.state, self.loop, lost_future),
+                        lambda: SignalLostProtocol(self.service, self.state, loop, lost_future),
                         self.config.serial_port,
                         baudrate=target_baud,
                     )

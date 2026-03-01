@@ -339,7 +339,6 @@ void BridgeClass::process() {
 
   // [SIL-2] Centralized Scheduler Tick
   // Replaces manual timeout checks with ETL Timer Service
-  // cppcheck-suppress knownConditionTrueFalse ; stub millis() returns 0 but real hardware increments
   const uint32_t now = static_cast<uint32_t>(millis());
   uint32_t delta = now - _last_tick_millis;
   // Handle millis() rollover (overflow) by implicit unsigned arithmetic
@@ -347,9 +346,11 @@ void BridgeClass::process() {
   // where millis() may jump large amounts. In production, process() is
   // called frequently enough that delta is always small.
   constexpr uint32_t kMaxTickDeltaMs = 1000UL;
+  // cppcheck-suppress knownConditionTrueFalse
   if (delta > kMaxTickDeltaMs) {
     delta = kMaxTickDeltaMs;
   }
+  // cppcheck-suppress knownConditionTrueFalse
   if (delta > 0U) {
     _timer_service.tick(delta);
     _last_tick_millis = now;

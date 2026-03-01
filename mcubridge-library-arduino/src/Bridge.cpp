@@ -26,12 +26,7 @@
 #endif
 
 #include <string.h>
-#if __has_include(<Crypto.h>)
-#include <Crypto.h>
-#else
-#error "Dependencia faltante: Crypto. Ejecute tools/install.sh primero."
-#endif
-#include <SHA256.h>
+
 
 #include "etl/algorithm.h"
 #include "etl/error_handler.h"

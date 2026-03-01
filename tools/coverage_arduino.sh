@@ -16,6 +16,7 @@ mkdir -p "${OUTPUT_ROOT}" "${BUILD_DIR}"
 
 # Sources to track for coverage
 SOURCES=(
+    "${SRC_ROOT}/security/sha256.cpp"
     "${SRC_ROOT}/security/security.cpp"
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"

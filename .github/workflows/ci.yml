@@ -102,7 +102,7 @@ jobs:
         run: |
           arduino-cli core update-index
           arduino-cli core install arduino:avr
-          arduino-cli lib install PacketSerial Crypto "Embedded Template Library ETL"
+          arduino-cli lib install PacketSerial "Embedded Template Library ETL"
       - name: Compile Examples
         run: tox -e arduino-examples
       - name: Upload Arduino Logs
@@ -130,7 +130,7 @@ jobs:
         run: |
           arduino-cli core update-index
           arduino-cli core install arduino:avr
-          arduino-cli lib install PacketSerial Crypto "Embedded Template Library ETL"
+          arduino-cli lib install PacketSerial "Embedded Template Library ETL"
       - name: Run Tests with Coverage
         run: tox -e coverage
       - name: Upload Python Coverage
@@ -159,7 +159,7 @@ jobs:
         run: |
           arduino-cli core update-index
           arduino-cli core install arduino:avr
-          arduino-cli lib install PacketSerial Crypto "Embedded Template Library ETL"
+          arduino-cli lib install PacketSerial "Embedded Template Library ETL"
       - name: Run Host Tests
         run: ./tools/ci_arduino_host_tests.sh
       - name: Run Coverage

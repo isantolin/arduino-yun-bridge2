@@ -18,8 +18,7 @@
 #ifndef RPC_SECURITY_H
 #define RPC_SECURITY_H
 
-#include <HKDF.h>
-#include <SHA256.h>
+#include "sha256.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

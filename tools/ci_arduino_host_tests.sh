@@ -16,6 +16,7 @@ DUMMY_ARDUINO_LIBS=$(mktemp -d)
 "${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
 
 SOURCES=(
+    "${SRC_DIR}/security/sha256.cpp"
     "${SRC_DIR}/security/security.cpp"
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
@@ -51,7 +52,6 @@ COMPILE_FLAGS=(
     -I"${SRC_DIR}"
     -I"${TEST_DIR}/mocks"
     -I"${STUB_DIR}"
-    -I"${DUMMY_ARDUINO_LIBS}/Crypto"
     -I"${DUMMY_ARDUINO_LIBS}/PacketSerial"
 )
 

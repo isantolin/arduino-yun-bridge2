@@ -128,8 +128,7 @@ install_dependency() {
 # --- Main Installation ---
 
 # 1. External Dependencies (Installed to Arduino libraries folder)
-# Crypto: Using OperatorFoundation standalone fork (simpler install, PlatformIO support)
-install_dependency "Crypto" "https://codeload.github.com/OperatorFoundation/Crypto/zip/refs/heads/master" "Crypto.h"
+# (Crypto library removed — SHA-256/HMAC/HKDF now built-in)
 
 # 2. Bundled Dependencies
 # ETL is installed in two locations:

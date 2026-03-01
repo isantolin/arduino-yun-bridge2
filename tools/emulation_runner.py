@@ -87,7 +87,9 @@ class LogMonitor:
         # Failure signals
         lower_line = line.lower()
         if "traceback" in lower_line or "critical" in lower_line or "fatal" in lower_line:
-            # Exclude known non-fatal warnings if any
+            # Exclude known non-fatal library issues
+            if "_on_subscribe" in line or "Unexpected message ID" in line:
+                return
             self.errors_detected.append(line)
 
     def stop(self):
@@ -506,6 +508,14 @@ def main(
                         logger.error("One or more client scripts failed.")
                     else:
                         logger.info("All client scripts PASSED.")
+
+                # Check for daemon errors that occurred during script execution
+                if success and log_monitor.has_error():
+                    logger.error(
+                        "Daemon errors detected during execution: %s",
+                        log_monitor.errors_detected[0],
+                    )
+                    success = False
 
                 break
             time.sleep(0.5)

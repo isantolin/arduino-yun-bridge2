@@ -7,7 +7,7 @@ import sys
 import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Annotated
+from typing import Annotated
 
 import msgspec
 from rich.console import Console as RichConsole
@@ -241,15 +241,15 @@ def main(
         typer.Option(help="Path to Arduino gcovr summary JSON."),
     ] = Path("coverage/arduino/summary.json"),
     output_markdown: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(help="Write the table to the given markdown file."),
     ] = None,
     output_json: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(help="Write machine-readable metrics to this path."),
     ] = None,
     github_step_summary: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(help="Append the table to GitHub step summary output."),
     ] = None,
 ) -> None:

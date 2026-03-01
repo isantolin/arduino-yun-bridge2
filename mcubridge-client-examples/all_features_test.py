@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
+
+from __future__ import annotations
+
 import asyncio
 import logging
-from typing import Optional, Annotated
+from typing import Annotated
 
 import typer
 import uvloop
@@ -20,10 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 async def run_test(
-    host: Optional[str],
-    port: Optional[int],
-    user: Optional[str],
-    password: Optional[str],
+    host: str | None,
+    port: int | None,
+    user: str | None,
+    password: str | None,
     tls_insecure: bool,
 ) -> None:
     dump_client_env(logger)
@@ -46,20 +49,20 @@ async def run_test(
 
         logger.info("Testing analog port 0")
         value: int = await bridge.analog_read(0)
-        logger.info(f"Analog value {value}")
+        logger.info("Analog value %d", value)
 
         logger.info("Testing digital port 2")
         value_digital: int = await bridge.digital_read(2)
-        logger.info(f"Digital value {value_digital}")
+        logger.info("Digital value %d", value_digital)
 
         logger.info("Testing datastore")
         await bridge.put("mykey", "myvalue")
         retrieved_value: str = await bridge.get("mykey", timeout=10)
-        logger.info(f"Get value {retrieved_value}")
+        logger.info("Get value %s", retrieved_value)
 
         logger.info("Testing RAM memory free (simulated)")  # This is simulated
         free_memory: int = await bridge.get_free_memory()  # in the client
-        logger.info(f"Free memory {free_memory}")
+        logger.info("Free memory %d", free_memory)
 
         logger.info("Testing run_sketch_command (mapped to sync shell command)")
         command_output: bytes = await bridge.run_sketch_command(["/bin/ls", "-l", "/"])
@@ -69,7 +72,7 @@ async def run_test(
         logger.info("Testing run_shell_command_async")
         async_command = ["sleep", "5", "&&", "echo", "Async command done"]
         async_pid: int = await bridge.run_shell_command_async(async_command)
-        logger.info(f"Async process started with PID {async_pid}")
+        logger.info("Async process started with PID %d", async_pid)
         # In a real scenario, you'd poll for status or wait for a notification
         await asyncio.sleep(1)  # Give it a moment to start
 
@@ -89,10 +92,10 @@ async def run_test(
 
 @app.command()
 def main(
-    host: Annotated[Optional[str], typer.Option(help="MQTT Broker Host")] = None,
-    port: Annotated[Optional[int], typer.Option(help="MQTT Broker Port")] = None,
-    user: Annotated[Optional[str], typer.Option(help="MQTT Username")] = None,
-    password: Annotated[Optional[str], typer.Option(help="MQTT Password")] = None,
+    host: Annotated[str | None, typer.Option(help="MQTT Broker Host")] = None,
+    port: Annotated[int | None, typer.Option(help="MQTT Broker Port")] = None,
+    user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
+    password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
     tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = False,
 ) -> None:
     try:

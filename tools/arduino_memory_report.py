@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Annotated
+from typing import Annotated
 
 import typer
 
@@ -97,7 +97,7 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
 def main(
     log_dir: Annotated[Path, typer.Argument(help="Directory containing build log files.")],
     github_step_summary: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(help="Append the table to GitHub step summary output.")
     ] = None,
 ) -> None:

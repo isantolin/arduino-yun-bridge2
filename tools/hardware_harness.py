@@ -13,7 +13,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Annotated, Optional
+from typing import Any, Annotated
 
 import msgspec
 import typer
@@ -422,7 +422,7 @@ def run_command(
         ),
     ] = DEFAULT_MANIFEST,
     target: Annotated[
-        Optional[list[str]],
+        list[str] | None,
         typer.Option(
             "--target",
             "-t",
@@ -430,7 +430,7 @@ def run_command(
         ),
     ] = None,
     tag: Annotated[
-        Optional[list[str]],
+        list[str] | None,
         typer.Option(
             "--tag",
             help="Only run targets containing the given tag (repeatable).",
@@ -446,7 +446,7 @@ def run_command(
         ),
     ] = 2,
     timeout: Annotated[
-        Optional[float],
+        float | None,
         typer.Option(
             "--timeout",
             "-T",
@@ -455,7 +455,7 @@ def run_command(
         ),
     ] = None,
     json_path: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             "--json",
             file_okay=True,

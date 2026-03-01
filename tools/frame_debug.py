@@ -6,7 +6,7 @@ import sys
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Optional, Annotated
+from typing import Annotated
 
 import serial  # type: ignore
 import typer
@@ -173,8 +173,8 @@ def main_cmd(
     command: Annotated[
         str, typer.Option("--command", "-c", help="Command or Status name/value")
     ] = "CMD_GET_FREE_MEMORY",
-    payload: Annotated[Optional[str], typer.Option("--payload", "-p", help="Payload in hex format")] = None,
-    port: Annotated[Optional[str], typer.Option(help="Serial port device path")] = None,
+    payload: Annotated[str | None, typer.Option("--payload", "-p", help="Payload in hex format")] = None,
+    port: Annotated[str | None, typer.Option(help="Serial port device path")] = None,
     baud: Annotated[int, typer.Option(help="Serial baud rate")] = DEFAULT_BAUDRATE,
     interval: Annotated[float, typer.Option(help="Interval between frames in seconds")] = 5.0,
     count: Annotated[int, typer.Option(help="Number of frames to send (0 for infinite)")] = 1,

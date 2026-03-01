@@ -7,6 +7,8 @@ and connect it via a virtual serial port (socat) to the Python McuBridge daemon.
 It serves as the End-to-End test entrypoint.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -18,7 +20,7 @@ import textwrap
 import threading
 import time
 from pathlib import Path
-from typing import Optional, List, Annotated
+from typing import Annotated
 
 import typer
 
@@ -67,7 +69,7 @@ class LogMonitor:
                 continue
 
             # Echo to our logger for visibility
-            logger.info(f"[{self.name}] {line_str}")
+            logger.info("[%s] %s", self.name, line_str)
 
             # Analyze
             self._analyze_line(line_str)
@@ -124,7 +126,7 @@ class MqttVerifier:
             self.client.connect(MQTT_HOST, MQTT_PORT, 60)
             self.client.loop_start()
         except Exception as e:
-            logger.error(f"Failed to connect monitoring client to MQTT: {e}")
+            logger.error("Failed to connect monitoring client to MQTT: %s", e)
 
     def stop(self):
         if self.client:
@@ -138,7 +140,7 @@ class MqttVerifier:
             client.subscribe("br/system/bridge/handshake/value")
             client.subscribe("br/system/metrics")
         else:
-            logger.error(f"Monitor MQTT connection failed: {reason_code}")
+            logger.error("Monitor MQTT connection failed: %s", reason_code)
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -151,19 +153,19 @@ class MqttVerifier:
             elif msg.topic == "br/system/metrics":
                 self.metrics_received = True
         except Exception as e:
-            logger.warning(f"Error parsing MQTT message: {e}")
+            logger.warning("Error parsing MQTT message: %s", e)
 
 
 def cleanup_process(proc, name):
     """Gracefully terminate a process and close its pipes."""
     if proc:
         if proc.poll() is None:
-            logger.info(f"Terminating {name} (PID {proc.pid})...")
+            logger.info("Terminating %s (PID %d)...", name, proc.pid)
             proc.terminate()
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                logger.warning(f"{name} did not terminate, killing...")
+                logger.warning("%s did not terminate, killing...", name)
                 proc.kill()
                 proc.wait()
 
@@ -194,7 +196,7 @@ def find_firmware(repo_root):
     firmware_path = base_build_path / "BridgeControl/BridgeControl.ino.elf"
 
     if not firmware_path.exists():
-        logger.warning(f"Firmware ELF not found at {firmware_path}")
+        logger.warning("Firmware ELF not found at %s", firmware_path)
         if base_build_path.exists():
             found_elfs = list(base_build_path.glob("**/*.elf"))
             # Prefer Mega variant for SimAVR atmega2560
@@ -210,7 +212,7 @@ def find_firmware(repo_root):
         logger.error("CRITICAL: No valid firmware ELF found.")
         sys.exit(1)
 
-    logger.info(f"Using firmware: {firmware_path}")
+    logger.info("Using firmware: %s", firmware_path)
     return firmware_path
 
 
@@ -236,7 +238,7 @@ def start_socat():
             sys.exit(1)
         time.sleep(0.1)
 
-    logger.info(f"Virtual serial ports created: {SOCAT_PORT0} <-> {SOCAT_PORT1}")
+    logger.info("Virtual serial ports created: %s <-> %s", SOCAT_PORT0, SOCAT_PORT1)
     return socat_proc, socat_monitor
 
 
@@ -269,17 +271,17 @@ def run_bridge(simavr_proc, stop_event):
                         try:
                             text = data.decode("utf-8", errors="ignore").strip()
                             if text and any(c.isalpha() for c in text):
-                                logger.info(f"[simavr-out] {text}")
+                                logger.info("[simavr-out] %s", text)
                         except Exception:
                             pass
     except Exception as e:
-        logger.error(f"Bridge thread error: {e}")
+        logger.error("Bridge thread error: %s", e)
     logger.info("Bridge thread stopping.")
 
 
 def start_daemon(package_root, protocol, shared_secret):
     """Start the Python McuBridge daemon."""
-    logger.info(f"Starting Bridge Daemon (Secret: {shared_secret})...")
+    logger.info("Starting Bridge Daemon (Secret: %s)...", shared_secret)
     daemon_env = os.environ.copy()
     os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
     os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
@@ -360,11 +362,11 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
     for script in scripts:
         script_path = Path(script).resolve()
         if not script_path.exists():
-            logger.error(f"Script not found: {script}")
+            logger.error("Script not found: %s", script)
             failures.append(script)
             continue
 
-        logger.info(f"Running client script: {script}...")
+        logger.info("Running client script: %s...", script)
         try:
             # Pass dummy credentials to satisfy script validation logic
             # and generic host/port. The UCI stub should handle TLS=0.
@@ -400,15 +402,15 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
                 stdout=None,  # Let it inherit or pipe? Let's inherit for visibility
                 stderr=None,
             )
-            logger.info(f"Script {script} PASSED")
+            logger.info("Script %s PASSED", script)
         except subprocess.CalledProcessError as e:
-            logger.error(f"Script {script} FAILED with code {e.returncode}")
+            logger.error("Script %s FAILED with code %d", script, e.returncode)
             failures.append(script)
         except subprocess.TimeoutExpired:
-            logger.error(f"Script {script} TIMED OUT")
+            logger.error("Script %s TIMED OUT", script)
             failures.append(script)
         except Exception as e:
-            logger.error(f"Script {script} failed with error: {e}")
+            logger.error("Script %s failed with error: %s", script, e)
             failures.append(script)
 
     return len(failures) == 0
@@ -417,16 +419,16 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
 @app.command()
 def main(
     run_scripts: Annotated[
-        Optional[List[str]],
+        list[str] | None,
         typer.Argument(help="List of python scripts to run after handshake"),
     ] = None,
     firmware: Annotated[str, typer.Option(help="Name of the emulator binary to run")] = "bridge_emulator",
 ) -> None:
-    logger.info(f"Starting Emulation Runner ({firmware})...")
+    logger.info("Starting Emulation Runner (%s)...", firmware)
 
     for tool in ["socat"]:
         if subprocess.call(["which", tool], stdout=subprocess.DEVNULL) != 0:
-            logger.error(f"Required tool '{tool}' not found.")
+            logger.error("Required tool '%s' not found.", tool)
             raise typer.Exit(code=1)
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -436,7 +438,7 @@ def main(
 
     firmware_path = repo_root / f"mcubridge-library-arduino/tests/{firmware}"
     if not firmware_path.exists():
-        logger.error(f"Emulator binary not found at {firmware_path}. Please compile it first.")
+        logger.error("Emulator binary not found at %s. Please compile it first.", firmware_path)
         raise typer.Exit(code=1)
 
     socat_proc, socat_monitor = start_socat()
@@ -446,12 +448,12 @@ def main(
     stop_bridge = threading.Event()
 
     try:
-        logger.info(f"Starting native bridge emulator: {firmware_path}...")
+        logger.info("Starting native bridge emulator: %s...", firmware_path)
 
         # Use bypass secret for all host emulations
         shared_secret = "DEBUG_INSECURE"
 
-        logger.info(f"Using shared secret: {shared_secret}")
+        logger.info("Using shared secret: %s", shared_secret)
 
         # Start the native emulator. It uses stdin/stdout for serial comms.
         mcu_proc = subprocess.Popen(
@@ -470,7 +472,7 @@ def main(
             for line in iter(mcu_proc.stderr.readline, b""):
                 if not line:
                     break
-                logger.info(f"[mcu-err] {line.decode('utf-8', errors='ignore').strip()}")
+                logger.info("[mcu-err] %s", line.decode('utf-8', errors='ignore').strip())
 
         threading.Thread(target=_stderr_worker, daemon=True).start()
 
@@ -485,20 +487,20 @@ def main(
 
         while time.time() - start_wait < max_wait:
             if daemon_proc.poll() is not None:
-                logger.error(f"Daemon died with code {daemon_proc.returncode}")
+                logger.error("Daemon died with code %s", daemon_proc.returncode)
                 break
             if mcu_proc.poll() is not None:
                 logger.error("MCU Emulator died unexpectedly")
                 break
             if log_monitor.has_error():
-                logger.error(f"Error in logs: {log_monitor.errors_detected[0]}")
+                logger.error("Error in logs: %s", log_monitor.errors_detected[0])
                 break
 
             log_sync = log_monitor.check_success("handshake_complete")
             mqtt_sync = mqtt_monitor.sync_event.is_set()
 
             if log_sync or mqtt_sync:
-                logger.info(f"SUCCESS: Handshake verified via {'Log' if log_sync else 'MQTT'}.")
+                logger.info("SUCCESS: Handshake verified via %s.", 'Log' if log_sync else 'MQTT')
                 success = True
 
                 if run_scripts:
@@ -525,7 +527,7 @@ def main(
             raise typer.Exit(code=1)
 
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error("Error: %s", e)
         import traceback
 
         traceback.print_exc()

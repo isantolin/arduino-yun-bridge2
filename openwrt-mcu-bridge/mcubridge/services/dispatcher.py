@@ -104,6 +104,8 @@ class BridgeDispatcher:
         )
 
         # Datastore
+        self.mcu_registry.register(Command.CMD_DATASTORE_PUT.value, datastore.handle_put)
+        self.mcu_registry.register(Command.CMD_DATASTORE_GET.value, datastore.handle_get_request)
         self.mqtt_router.register(
             Topic.DATASTORE,
             lambda r, m: self._guard_and_dispatch(

@@ -357,8 +357,6 @@ void BridgeClass::process() {
   _flushPendingTxQueue();
 }
 
-void BridgeClass::flushStream() { _stream.flush(); }
-
 // [SIL-2] Pin Validation Helper
 // Using bridge::hal::isValidPin directly in implementation
 

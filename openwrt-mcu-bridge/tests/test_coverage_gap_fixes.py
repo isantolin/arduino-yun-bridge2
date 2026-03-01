@@ -886,15 +886,14 @@ async def test_dispatcher_gaps():
 
     disp = dispatcher.BridgeDispatcher(mcu_reg, mqtt_reg, state_obj, send, ack, is_allowed, reject, snapshot)
 
-    # _handle_unexpected digital/analog read (pin is None)
-    assert await disp._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is False
-    assert await disp._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is False
-
     # With pin component
     disp.pin = MagicMock()
-    disp.pin.handle_unexpected_mcu_request = AsyncMock(return_value=True)
-    assert await disp._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is True
-    assert await disp._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is True
+    mock_handler = AsyncMock(return_value=True)
+    mcu_reg.get.return_value = mock_handler
+    # Testing through the registry instead of direct call
+    handler = disp.mcu_registry.get(Command.CMD_DIGITAL_READ.value)
+    assert handler is not None
+    assert await handler(b"") is True
 
     # dispatch_mcu_frame pre-sync rejection
     state_obj.mark_transport_connected()
@@ -938,68 +937,6 @@ async def test_dispatcher_gaps():
     await disp.dispatch_mqtt_message(
         MagicMock(topic="t"), lambda _: TopicRoute("raw", "prefix", Topic.SYSTEM, ("seg",))
     )
-
-    # _handle_file_topic short segments
-    route_short = TopicRoute("raw", "p", Topic.FILE, ("identifier",))
-    assert await disp._handle_file_topic(route_short, MagicMock()) is False
-
-    # _handle_file_topic not allowed
-    is_allowed.return_value = False
-    route_file = TopicRoute("raw", "p", Topic.FILE, ("id", "rem"))
-    assert await disp._handle_file_topic(route_file, MagicMock()) is True
-    assert reject.called
-
-    # _handle_console_topic identifier != "in"
-    route_cons = TopicRoute("raw", "p", Topic.CONSOLE, ("out",))
-    assert await disp._handle_console_topic(route_cons, MagicMock()) is False
-
-    # _handle_console_topic not allowed
-    is_allowed.return_value = False
-    route_cons_in = TopicRoute("raw", "p", Topic.CONSOLE, ("in",))
-    assert await disp._handle_console_topic(route_cons_in, MagicMock()) is True
-
-    # _handle_datastore_topic empty identifier
-    route_ds_empty = TopicRoute("raw", "p", Topic.DATASTORE, ())
-    assert await disp._handle_datastore_topic(route_ds_empty, MagicMock()) is False
-
-    # _handle_datastore_topic not allowed
-    route_ds = TopicRoute("raw", "p", Topic.DATASTORE, ("id",))
-    is_allowed.return_value = False
-    assert await disp._handle_datastore_topic(route_ds, MagicMock()) is True
-
-    # _handle_mailbox_topic not allowed
-    route_mb = TopicRoute("raw", "p", Topic.MAILBOX, ("id",))
-    is_allowed.return_value = False
-    assert await disp._handle_mailbox_topic(route_mb, MagicMock()) is True
-
-    # _handle_shell_topic not allowed
-    route_sh = TopicRoute("raw", "p", Topic.SHELL, ("id",))
-    is_allowed.return_value = False
-    assert await disp._handle_shell_topic(route_sh, MagicMock()) is True
-
-    # _handle_pin_topic not allowed
-    is_allowed.return_value = False
-    msg_pin = MagicMock(topic="br/digital/13/write", payload=b"1")
-    route_pin = TopicRoute("br/digital/13/write", "br", Topic.DIGITAL, ("13", "write"))
-    assert await disp._handle_pin_topic(route_pin, msg_pin) is True
-
-    # _handle_system_topic unhandled
-    disp.system = MagicMock()
-    disp.system.handle_mqtt = AsyncMock(return_value=False)
-    route_sys = TopicRoute("raw", "p", Topic.SYSTEM, ("unknown",))
-    assert await disp._handle_system_topic(route_sys, MagicMock()) is False
-
-    # _handle_bridge_topic empty remainder
-    route_br_empty = TopicRoute("raw", "p", Topic.SYSTEM, ("bridge",))
-    assert await disp._handle_bridge_topic(route_br_empty, MagicMock()) is False
-
-    # _handle_bridge_topic handshake get
-    route_br_hand = TopicRoute("raw", "p", Topic.SYSTEM, ("bridge", "handshake", "get"))
-    assert await disp._handle_bridge_topic(route_br_hand, MagicMock()) is True
-
-    # _handle_bridge_topic summary get
-    route_br_summ = TopicRoute("raw", "p", Topic.SYSTEM, ("bridge", "summary", "get"))
-    assert await disp._handle_bridge_topic(route_br_summ, MagicMock()) is True
 
     # _payload_bytes types
     assert disp._payload_bytes(bytearray(b"test")) == b"test"

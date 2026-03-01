@@ -5,7 +5,6 @@
 
 #if BRIDGE_ENABLE_DATASTORE
 #include "etl/delegate.h"
-#include "etl/flat_map.h"
 #include "etl/queue.h"
 #include "etl/span.h"
 #include "etl/string.h"
@@ -51,8 +50,6 @@ class DataStoreClass : public BridgeObserver {
 
   DataStoreGetHandler _datastore_get_handler;
 
-  // [OPTIMIZATION] Use flat_map for O(log n) key lookup
-  etl::flat_map<etl::string<16>, etl::string<16>, 8> _local_cache;
   etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>,
              BRIDGE_MAX_PENDING_DATASTORE>
       _pending_datastore_keys;

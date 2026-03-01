@@ -1,7 +1,6 @@
 #include <string.h>
 
 #include "Bridge.h"
-#include "etl/flat_map.h"
 #include "protocol/rpc_protocol.h"
 
 // [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.

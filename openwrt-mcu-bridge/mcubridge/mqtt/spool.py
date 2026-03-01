@@ -213,12 +213,13 @@ class MQTTPublishSpool:
 
     def pop_next(self) -> QueuedPublish | None:
         """Fetch the next available message from disk or memory."""
-        try:
-            return self._pop_attempt()
-        except (ValueError, TypeError, AttributeError, msgspec.MsgspecError):
-            # If we hit corruption, we try one more time via recursion (limited by depth)
-            self._corrupt_dropped += 1
-            return self.pop_next()
+        max_retries = 5
+        for _ in range(max_retries):
+            try:
+                return self._pop_attempt()
+            except (ValueError, TypeError, AttributeError, msgspec.MsgspecError):
+                self._corrupt_dropped += 1
+        return None
 
     def _pop_attempt(self) -> QueuedPublish | None:
         record: SpoolRecord | None = None

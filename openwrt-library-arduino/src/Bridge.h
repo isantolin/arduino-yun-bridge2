@@ -41,6 +41,7 @@
 #include "etl/random.h"
 #include "hal/hal.h"
 #include "protocol/PacketBuilder.h"
+#include "protocol/rpc_cobs.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
@@ -277,7 +278,7 @@ class BridgeClass
   bool sendKeyValCommand(rpc::CommandId command_id, etl::string_view key,
                          size_t max_key, etl::string_view val, size_t max_val);
 
-  void flushStream();
+  inline void flushStream() { _stream.flush(); }
   void enterSafeState();  // [SIL-2] Force system into fail-safe state
   void _emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
   void _emitStatus(rpc::StatusCode status_code,

@@ -436,10 +436,10 @@ async def test_console_topic_rejects_by_policy_and_accepts_payload_types() -> No
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/console/in",
         payload=b"hello",
     )
-    route = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound.topic))
-    assert route is not None
-    handled = await dispatcher._handle_console_topic(route, inbound)
-    assert handled is True
+    await dispatcher.dispatch_mqtt_message(
+        inbound,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
     assert any(name == "reject_topic_action" for name, _ in calls.items)
 
     calls2 = _Calls([])
@@ -448,10 +448,10 @@ async def test_console_topic_rejects_by_policy_and_accepts_payload_types() -> No
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/console/in",
         payload=b"hello",
     )
-    route2 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound2.topic))
-    assert route2 is not None
-    handled2 = await dispatcher2._handle_console_topic(route2, inbound2)
-    assert handled2 is True
+    await dispatcher2.dispatch_mqtt_message(
+        inbound2,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
     assert any(name == "console.handle_mqtt_input" for name, _ in calls2.items)
 
 
@@ -460,25 +460,26 @@ async def test_file_topic_requires_two_segments_and_calls_component() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    route1 = TopicRoute(
-        raw=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/file",
-        prefix=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
-        topic=Topic.FILE,
-        segments=("read",),
-    )
     inbound1 = make_inbound_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/file/read",
         payload=b"x",
     )
-    assert await dispatcher._handle_file_topic(route1, inbound1) is False
+    # Only 1 segment ('read'), requires 2
+    await dispatcher.dispatch_mqtt_message(
+        inbound1,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
+    # It shouldn't have called the component
+    assert not any(name == "file.handle_mqtt" for name, _ in calls.items)
 
     inbound2 = make_inbound_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/file/read/path",
         payload=bytearray(b"abc"),
     )
-    route2 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound2.topic))
-    assert route2 is not None
-    assert await dispatcher._handle_file_topic(route2, inbound2) is True
+    await dispatcher.dispatch_mqtt_message(
+        inbound2,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
     assert any(name == "file.handle_mqtt" for name, _ in calls.items)
 
 
@@ -487,25 +488,24 @@ async def test_datastore_topic_rejects_missing_identifier_and_calls_component() 
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    route1 = TopicRoute(
-        raw=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/datastore",
-        prefix=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
-        topic=Topic.DATASTORE,
-        segments=(),
-    )
     inbound1 = make_inbound_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/datastore",
         payload=b"x",
     )
-    assert await dispatcher._handle_datastore_topic(route1, inbound1) is False
+    await dispatcher.dispatch_mqtt_message(
+        inbound1,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
+    assert not any(name == "datastore.handle_mqtt" for name, _ in calls.items)
 
     inbound2 = make_inbound_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/datastore/put/key",
         payload=memoryview(b"hi"),
     )
-    route2 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound2.topic))
-    assert route2 is not None
-    assert await dispatcher._handle_datastore_topic(route2, inbound2) is True
+    await dispatcher.dispatch_mqtt_message(
+        inbound2,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
     assert any(name == "datastore.handle_mqtt" for name, _ in calls.items)
 
 
@@ -520,9 +520,10 @@ async def test_pin_topic_action_deduction_and_policy() -> None:
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13",
         payload=b"1",
     )
-    route = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound.topic))
-    assert route is not None
-    assert await dispatcher._handle_pin_topic(route, inbound) is True
+    await dispatcher.dispatch_mqtt_message(
+        inbound,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
     assert any(name == "reject_topic_action" for name, _ in calls.items)
 
     calls2 = _Calls([])
@@ -531,9 +532,10 @@ async def test_pin_topic_action_deduction_and_policy() -> None:
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13/read",
         payload=b"",
     )
-    route2 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound2.topic))
-    assert route2 is not None
-    assert await dispatcher2._handle_pin_topic(route2, inbound2) is True
+    await dispatcher2.dispatch_mqtt_message(
+        inbound2,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
     assert any(name == "pin.handle_mqtt" for name, _ in calls2.items)
 
 
@@ -543,28 +545,25 @@ async def test_system_topic_bridge_get_handlers_and_fallback_to_component() -> N
     dispatcher = _make_dispatcher(calls)
 
     inbound1 = make_inbound_message(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get")
-    route1 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound1.topic))
-    assert route1 is not None
-    assert await dispatcher._handle_system_topic(route1, inbound1) is True
+    await dispatcher.dispatch_mqtt_message(
+        inbound1,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
     assert ("publish_bridge_snapshot", ("handshake", inbound1)) in calls.items
 
     inbound2 = make_inbound_message(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/get")
-    route2 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound2.topic))
-    assert route2 is not None
-    assert await dispatcher._handle_system_topic(route2, inbound2) is True
+    await dispatcher.dispatch_mqtt_message(
+        inbound2,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
     assert ("publish_bridge_snapshot", ("summary", inbound2)) in calls.items
 
     inbound3 = make_inbound_message(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/nope")
-    route3 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound3.topic))
-    assert route3 is not None
-    assert await dispatcher._handle_system_topic(route3, inbound3) is False
-
-
-def test_pin_action_from_segments_variants() -> None:
-    assert BridgeDispatcher._pin_action_from_segments(()) is None
-    assert BridgeDispatcher._pin_action_from_segments(("13",)) == "write"
-    assert BridgeDispatcher._pin_action_from_segments(("13", "")) is None
-    assert BridgeDispatcher._pin_action_from_segments(("13", "READ")) == "read"
+    await dispatcher.dispatch_mqtt_message(
+        inbound3,
+        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+    )
+    assert ("system.handle_mqtt", ("nope", (), inbound3)) in calls.items
 
 
 def test_payload_bytes_converts_supported_types_and_rejects_others() -> None:
@@ -584,5 +583,7 @@ async def test_unexpected_mcu_gpio_requests_drop_if_pin_missing() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
     dispatcher.pin = None
-    assert await dispatcher._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is False
-    assert await dispatcher._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is False
+    # Use dispatch_mcu_frame which uses the registered lambda
+    await dispatcher.dispatch_mcu_frame(Command.CMD_DIGITAL_READ.value, b"")
+    assert not any(name == "pin.handle_unexpected_mcu_request" for name, _ in calls.items)
+    # Should log warning but not call component

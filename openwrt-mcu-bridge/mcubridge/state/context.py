@@ -874,7 +874,7 @@ class RuntimeState(msgspec.Struct):
         self.mqtt_spool_backoff_until = time.monotonic() + delay
 
     def _handle_mqtt_spool_failure(self, reason: str, exc: BaseException | None = None) -> None:
-        self.metrics.mqtt_spool_errors.inc()
+        self.record_mqtt_spool_error()
         if exc:
             self.mqtt_spool_last_error = str(exc)
         self._disable_mqtt_spool(reason)
@@ -884,7 +884,7 @@ class RuntimeState(msgspec.Struct):
         self.mqtt_spool_failure_reason = reason
         if exc:
             self.mqtt_spool_last_error = str(exc)
-        self.metrics.mqtt_spool_errors.inc()
+        self.record_mqtt_spool_error()
 
     async def stash_mqtt_message(self, message: QueuedPublish) -> bool:
         if not await self.ensure_spool():

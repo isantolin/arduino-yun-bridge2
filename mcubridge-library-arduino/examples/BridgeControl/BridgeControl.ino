@@ -10,9 +10,15 @@
 
 // [MEMORY] Disable unused services to save Flash and RAM on ATmega32U4.
 // These can be re-enabled by setting the corresponding macro to 1.
+#ifndef BRIDGE_ENABLE_DATASTORE
 #define BRIDGE_ENABLE_DATASTORE 0
+#endif
+#ifndef BRIDGE_ENABLE_FILESYSTEM
 #define BRIDGE_ENABLE_FILESYSTEM 0
+#endif
+#ifndef BRIDGE_ENABLE_PROCESS
 #define BRIDGE_ENABLE_PROCESS 0
+#endif
 
 #include <Bridge.h>
 #include <string.h>

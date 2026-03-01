@@ -7,6 +7,12 @@
 
 #define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
+
+// Match BridgeControl.ino service configuration (must precede Bridge.h).
+#define BRIDGE_ENABLE_DATASTORE 0
+#define BRIDGE_ENABLE_FILESYSTEM 0
+#define BRIDGE_ENABLE_PROCESS 0
+
 #include "Bridge.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"

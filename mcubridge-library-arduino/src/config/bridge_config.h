@@ -59,14 +59,14 @@
 // Console ring buffers (MCU-side only; not part of the protocol).
 // Defaults to 48 bytes to keep SRAM usage predictable on AVR.
 #if defined(ARDUINO_ARCH_AVR)
-// [SIL-2] Reduce console buffers for AVR to save SRAM.
-// 16 bytes per buffer keeps total console overhead at 32 bytes.
+// [RAM-OPT] Reduce console buffers for AVR to save SRAM.
+// 8 bytes per buffer keeps total console overhead at 16 bytes.
 #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 16U
+#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 8U
 #endif
 
 #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 16U
+#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 8U
 #endif
 #else
 #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
@@ -112,11 +112,11 @@
 #define BRIDGE_RX_DEDUPE_INTERVAL_MS 1000UL
 #endif
 
-// [SIL-2] RX History size for duplicate detection
-// 2 entries covers 2× BRIDGE_RX_DEDUPE_INTERVAL_MS (2000ms) which is
+// [RAM-OPT] RX History size for duplicate detection
+// 1 entry covers BRIDGE_RX_DEDUPE_INTERVAL_MS (1000ms) which is
 // sufficient for typical serial retry windows on AVR.
 #ifndef BRIDGE_RX_HISTORY_SIZE
-#define BRIDGE_RX_HISTORY_SIZE 2U
+#define BRIDGE_RX_HISTORY_SIZE 1U
 #endif
 
 // [SIL-2] HMAC key derivation buffer sizes (SHA256 specific)

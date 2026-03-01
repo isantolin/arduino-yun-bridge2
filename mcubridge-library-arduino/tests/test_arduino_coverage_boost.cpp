@@ -290,15 +290,9 @@ void test_router_gaps() {
   f.header.command_id = 0xFFFF;  // Unknown range
   CommandContext ctx(&f, f.header.command_id, false, false);
 
-  // Call receive directly to cover ICommandHandler::receive
-  handler.receive(ctx);
+  // Call onUnknownCommand directly to cover ICommandHandler dispatch
+  handler.onUnknownCommand(ctx);
   TEST_ASSERT(handler.unknown_called == true);
-
-  // Cover accepts and is_null_router
-  TEST_ASSERT(handler.accepts(0) == true);
-  TEST_ASSERT(handler.is_null_router() == false);
-  TEST_ASSERT(handler.is_producer() == true);
-  TEST_ASSERT(handler.is_consumer() == true);
 }
 
 void test_services_gaps() {

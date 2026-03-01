@@ -98,45 +98,23 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _status_handler(),
       _pending_tx_queue(),
       _fsm(),
-      _timer_service(),
+      _timers(),
       _last_tick_millis(0),
-      _startup_stabilizing(false) {}
+      _startup_stabilizing(false) {
+  _timers.clear();
+}
 
 void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
                         size_t arg_secret_len) {
   // [SIL-2] Start the ETL FSM before any other initialization
   _fsm.begin();
 
-  // [SIL-2] Initialize ETL Callback Timer Service
-  _timer_service.clear();
-
-  // Register timers in strict order to match TimerId enum
-  // [SIL-2] Delegates are class members to ensure lifetime persistence
-  // ETL callback_timer stores pointers to delegates, not copies
-  _cb_ack_timeout =
-      etl::delegate<void()>::create<BridgeClass, &BridgeClass::_onAckTimeout>(
-          *this);
-  _timer_service.register_timer(_cb_ack_timeout, _ack_timeout_ms, false);
-
-  _cb_rx_dedupe =
-      etl::delegate<void()>::create<BridgeClass, &BridgeClass::_onRxDedupe>(
-          *this);
-  _timer_service.register_timer(_cb_rx_dedupe, BRIDGE_RX_DEDUPE_INTERVAL_MS,
-                                false);
-
-  _cb_baudrate_change =
-      etl::delegate<void()>::create<BridgeClass,
-                                    &BridgeClass::_onBaudrateChange>(*this);
-  _timer_service.register_timer(_cb_baudrate_change, BRIDGE_BAUDRATE_SETTLE_MS,
-                                false);
-
-  _cb_startup_stabilized =
-      etl::delegate<void()>::create<BridgeClass,
-                                    &BridgeClass::_onStartupStabilized>(*this);
-  _timer_service.register_timer(_cb_startup_stabilized,
-                                BRIDGE_STARTUP_STABILIZATION_MS, false);
-
-  _timer_service.enable(true);
+  // [RAM-OPT] Initialize SimpleTimer (replaces etl::callback_timer<4>)
+  _timers.clear();
+  _timers.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
+  _timers.set_period(bridge::scheduler::TIMER_RX_DEDUPE, BRIDGE_RX_DEDUPE_INTERVAL_MS);
+  _timers.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE, BRIDGE_BAUDRATE_SETTLE_MS);
+  _timers.set_period(bridge::scheduler::TIMER_STARTUP_STABILIZATION, BRIDGE_STARTUP_STABILIZATION_MS);
   _last_tick_millis = static_cast<uint32_t>(millis());
 
   // [SIL-2] Memory Integrity POST
@@ -177,7 +155,8 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   // Start timer and set flag - process() will drain the buffer during this
   // period
   _startup_stabilizing = true;
-  _timer_service.start(bridge::scheduler::TIMER_STARTUP_STABILIZATION, false);
+  _timers.start(bridge::scheduler::TIMER_STARTUP_STABILIZATION,
+                static_cast<uint32_t>(millis()));
 
   _shared_secret.clear();
   if (!arg_secret.empty()) {
@@ -332,22 +311,18 @@ void BridgeClass::process() {
     _last_parse_error.reset();
   }
 
-  // [SIL-2] Centralized Scheduler Tick
-  // Replaces manual timeout checks with ETL Timer Service
+  // [RAM-OPT] SimpleTimer tick — check expired timers and dispatch
   const uint32_t now = static_cast<uint32_t>(millis());
-  uint32_t delta = now - _last_tick_millis;
-  // Handle millis() rollover (overflow) by implicit unsigned arithmetic
-  // [SIL-2] Cap delta to prevent timer starvation in test environments
-  // where millis() may jump large amounts. In production, process() is
-  // called frequently enough that delta is always small.
-  constexpr uint32_t kMaxTickDeltaMs = 1000UL;
-  if (delta > kMaxTickDeltaMs) {
-    delta = kMaxTickDeltaMs;
-  }
-  if (delta > 0U) {
-    _timer_service.tick(delta);
-    _last_tick_millis = now;
-  }
+  _last_tick_millis = now;
+  const uint8_t expired = _timers.check_expired(now);
+  if (expired & (1U << bridge::scheduler::TIMER_ACK_TIMEOUT))
+    _onAckTimeout();
+  if (expired & (1U << bridge::scheduler::TIMER_RX_DEDUPE))
+    _onRxDedupe();
+  if (expired & (1U << bridge::scheduler::TIMER_BAUDRATE_CHANGE))
+    _onBaudrateChange();
+  if (expired & (1U << bridge::scheduler::TIMER_STARTUP_STABILIZATION))
+    _onStartupStabilized();
 
   _flushPendingTxQueue();
 }
@@ -559,9 +534,9 @@ void BridgeClass::_handleSetBaudrate(
     (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP);
     flushStream();
     _pending_baudrate = msg->baudrate;
-    _timer_service.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE,
-                              BRIDGE_BAUDRATE_SETTLE_MS);
-    _timer_service.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE, false);
+    _timers.start_with_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE,
+                              BRIDGE_BAUDRATE_SETTLE_MS,
+                              static_cast<uint32_t>(millis()));
   }
 }
 
@@ -1108,7 +1083,7 @@ void BridgeClass::_handleAck(uint16_t command_id) {
     _clearAckState();
 
     // [SIL-2] Stop ACK Timer
-    _timer_service.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
+    _timers.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
 
     // [SIL-2] ACK received -> Safe to remove frame from queue
     BRIDGE_ATOMIC_BLOCK {
@@ -1152,7 +1127,8 @@ void BridgeClass::_onAckTimeout() {
   _retransmitLastFrame();
 
   // Restart timer for next retry
-  _timer_service.start(bridge::scheduler::TIMER_ACK_TIMEOUT, false);
+  _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT,
+                static_cast<uint32_t>(millis()));
 }
 
 void BridgeClass::_onRxDedupe() {
@@ -1188,9 +1164,9 @@ void BridgeClass::_onStartupStabilized() {
 
 void BridgeClass::enterSafeState() {
   _fsm.resetFsm();  // Transition to Unsynchronized via ETL FSM
-  _timer_service.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
-  _timer_service.stop(bridge::scheduler::TIMER_STARTUP_STABILIZATION);
-  _timer_service.stop(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
+  _timers.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
+  _timers.stop(bridge::scheduler::TIMER_STARTUP_STABILIZATION);
+  _timers.stop(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
   _startup_stabilizing = false;
   _pending_baudrate = 0;
 
@@ -1232,9 +1208,9 @@ void BridgeClass::_flushPendingTxQueue() {
   _retry_count = 0;
 
   // [SIL-2] Start ACK Timer
-  _timer_service.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT,
-                            _ack_timeout_ms);
-  _timer_service.start(bridge::scheduler::TIMER_ACK_TIMEOUT, false);
+  _timers.start_with_period(bridge::scheduler::TIMER_ACK_TIMEOUT,
+                            _ack_timeout_ms,
+                            static_cast<uint32_t>(millis()));
 
   _last_command_id = frame.command_id;
   // NOTE: We do NOT pop here. We pop only when ACK is received.

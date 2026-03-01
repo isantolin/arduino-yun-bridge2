@@ -3,14 +3,17 @@
  * @brief Optimized Command Router for Arduino MCU Bridge v2
  *
  * [SIL-2 COMPLIANCE - IEC 61508]
- * This module implements an O(1) command routing mechanism using ETL's
- * message router framework.
+ * This module implements an O(1) command routing mechanism.
+ *
+ * [RAM-OPT] etl::imessage_router is intentionally NOT used here.
+ * The ETL message_router framework adds vtable + router_id + state overhead
+ * (~8-12 bytes RAM) with no functional benefit: dispatch() already uses a
+ * direct switch statement for O(1) routing.  Keeping this as a pure virtual
+ * interface saves RAM and Flash on constrained AVR targets.
  */
 #ifndef COMMAND_ROUTER_H
 #define COMMAND_ROUTER_H
 
-#include "etl/message.h"
-#include "etl/message_router.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 
@@ -20,13 +23,9 @@ namespace router {
 /**
  * @brief Command Message - Carries an RPC frame with metadata.
  */
-struct CommandContext : public etl::imessage {
+struct CommandContext {
   CommandContext(const rpc::Frame* f, uint16_t raw, bool dup, bool ack)
       : frame(f), raw_command(raw), is_duplicate(dup), requires_ack(ack) {}
-
-  etl::message_id_t get_message_id() const override {
-    return static_cast<etl::message_id_t>(raw_command);
-  }
 
   const rpc::Frame* frame;  // Effective frame (decompressed if needed)
   uint16_t raw_command;     // Original command ID without flags
@@ -37,9 +36,8 @@ struct CommandContext : public etl::imessage {
 /**
  * @brief Handler Interface - Bridge implements this to receive routed commands.
  */
-class ICommandHandler : public etl::imessage_router {
+class ICommandHandler {
  public:
-  ICommandHandler() : etl::imessage_router(0) {}
   virtual ~ICommandHandler() {}
 
   // Granular handlers for O(1) dispatch categories
@@ -52,16 +50,6 @@ class ICommandHandler : public etl::imessage_router {
   virtual void onFileSystemCommand(const CommandContext& ctx) = 0;
   virtual void onProcessCommand(const CommandContext& ctx) = 0;
   virtual void onUnknownCommand(const CommandContext& ctx) = 0;
-
-  // ETL imessage_router interface
-  void receive(const etl::imessage& msg) override {
-    onUnknownCommand(static_cast<const CommandContext&>(msg));
-  }
-
-  bool accepts(etl::message_id_t) const override { return true; }
-  bool is_null_router() const override { return false; }
-  bool is_producer() const override { return true; }
-  bool is_consumer() const override { return true; }
 };
 
 }  // namespace router

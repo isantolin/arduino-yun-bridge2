@@ -119,9 +119,13 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 6;
 
 #endif
 
+// [RAM-OPT] Reduced from 4 to 2 observers on AVR for SRAM savings.
 #ifndef BRIDGE_MAX_OBSERVERS
+#if defined(ARDUINO_ARCH_AVR)
+#define BRIDGE_MAX_OBSERVERS 2
+#else
 #define BRIDGE_MAX_OBSERVERS 4
-
+#endif
 #endif
 
 // --- Subsystem Enablement (RAM Optimization) ---
@@ -347,21 +351,15 @@ class BridgeClass
   // [SIL-2] ETL FSM replaces manual state tracking
   bridge::fsm::BridgeFsm _fsm;
 
-  // [SIL-2] ETL Timer Service (Native)
-  bridge::scheduler::BridgeTimerService _timer_service;
+  // [RAM-OPT] SimpleTimer replaces etl::callback_timer<4> + 4 delegates
+  // Saves ~116-135 bytes RAM on AVR (etl::callback_timer overhead eliminated)
+  bridge::scheduler::SimpleTimer _timers;
   uint32_t _last_tick_millis;
-
-  // [SIL-2] Timer callback delegates - must persist for object lifetime
-  etl::delegate<void()> _cb_ack_timeout;
-  etl::delegate<void()> _cb_rx_dedupe;
-  etl::delegate<void()> _cb_baudrate_change;
-  etl::delegate<void()> _cb_startup_stabilized;
 
   volatile bool _startup_stabilizing;
 
-  // [SIL-2] ETL Message Router for flattened command dispatch
-  // Inherited from bridge::router::ICommandHandler which is an
-  // etl::imessage_router
+  // [RAM-OPT] ICommandHandler is a pure virtual interface (no ETL overhead)
+  // See router/command_router.h for rationale
 
   // [SIL-2] ICommandHandler interface implementation
   void onStatusCommand(const bridge::router::CommandContext& ctx) override;

@@ -806,7 +806,7 @@ void test_frame_overflow() {
 
 // ============================================================================
 // 23. CommandContext + ICommandHandler
-//     Covers: command_router.h L27-28 (get_message_id), L43 (destructor)
+//     Covers: command_router.h (constructor, fields, destructor)
 // ============================================================================
 void test_command_router() {
   printf("  -> test_command_router\n");
@@ -816,7 +816,10 @@ void test_command_router() {
   f.header.command_id = 0x50;
 
   bridge::router::CommandContext ctx(&f, 0x50, false, true);
-  TEST_ASSERT_EQ_UINT(ctx.get_message_id(), 0x50);
+  TEST_ASSERT_EQ_UINT(ctx.raw_command, 0x50);
+  TEST_ASSERT(ctx.requires_ack == true);
+  TEST_ASSERT(ctx.is_duplicate == false);
+  TEST_ASSERT(ctx.frame == &f);
 
   // Cover ICommandHandler virtual destructor via polymorphic delete
   struct TestHandler : public bridge::router::ICommandHandler {

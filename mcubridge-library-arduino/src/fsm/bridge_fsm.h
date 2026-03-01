@@ -17,7 +17,6 @@
 #ifndef BRIDGE_FSM_H
 #define BRIDGE_FSM_H
 
-#include "etl/callback_timer.h"
 #include "etl/fsm.h"
 #include "etl/message.h"
 
@@ -198,7 +197,59 @@ enum TimerId : uint8_t {
   TIMER_STARTUP_STABILIZATION = 3,
   NUMBER_OF_TIMERS = 4
 };
-using BridgeTimerService = etl::callback_timer<NUMBER_OF_TIMERS>;
+
+// [RAM-OPT] Lightweight timer replacing etl::callback_timer<4>.
+// etl::callback_timer + 4 etl::delegate<void()> cost ~136-152 bytes RAM.
+// SimpleTimer: 4 deadlines + 1 period + 1 bitmask = ~21 bytes.
+struct SimpleTimer {
+  uint32_t deadline[NUMBER_OF_TIMERS];
+  uint32_t period[NUMBER_OF_TIMERS];
+  uint8_t active;  // bitmask: bit i = timer i is running
+
+  void clear() {
+    for (uint8_t i = 0; i < NUMBER_OF_TIMERS; ++i) {
+      deadline[i] = 0;
+      period[i] = 0;
+    }
+    active = 0;
+  }
+
+  void set_period(uint8_t id, uint32_t ms) {
+    period[id] = ms;
+  }
+
+  void start(uint8_t id, uint32_t now) {
+    deadline[id] = now + period[id];
+    active |= (1U << id);
+  }
+
+  void start_with_period(uint8_t id, uint32_t ms, uint32_t now) {
+    period[id] = ms;
+    deadline[id] = now + ms;
+    active |= (1U << id);
+  }
+
+  void stop(uint8_t id) {
+    active &= ~(1U << id);
+  }
+
+  bool is_active(uint8_t id) const {
+    return (active & (1U << id)) != 0;
+  }
+
+  // Returns bitmask of expired timers and clears them
+  uint8_t check_expired(uint32_t now) {
+    uint8_t expired = 0;
+    for (uint8_t i = 0; i < NUMBER_OF_TIMERS; ++i) {
+      if ((active & (1U << i)) && (now - deadline[i]) < 0x80000000UL) {
+        expired |= (1U << i);
+        active &= ~(1U << i);
+      }
+    }
+    return expired;
+  }
+};
+
 }  // namespace scheduler
 }  // namespace bridge
 

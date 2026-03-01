@@ -163,7 +163,7 @@ jobs:
       - name: Run Host Tests
         run: ./tools/ci_arduino_host_tests.sh
       - name: Run Coverage
-        run: ./tools/coverage_arduino.sh || true
+        run: ./tools/coverage_arduino.sh
       - name: Upload Arduino Coverage
         if: always()
         uses: actions/upload-artifact@v4

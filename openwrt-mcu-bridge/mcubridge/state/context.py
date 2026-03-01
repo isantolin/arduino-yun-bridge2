@@ -986,10 +986,14 @@ class RuntimeState(msgspec.Struct):
 
     def cleanup(self) -> None:
         with contextlib.suppress(Exception):
-            self.mqtt_publish_queue = None  # type: ignore
-            self.serial_tx_allowed = None  # type: ignore
-            self.process_lock = None  # type: ignore
-            self.link_sync_event = None  # type: ignore
+            # Drain the MQTT queue instead of nullifying
+            while not self.mqtt_publish_queue.empty():
+                try:
+                    self.mqtt_publish_queue.get_nowait()
+                except Exception:
+                    break
+            self.serial_tx_allowed.clear()
+            self.link_sync_event.clear()
             self.running_processes.clear()
 
 

@@ -78,7 +78,6 @@ fi
 python -m pytest \
   -v \
   -o log_cli=false \
-  --disable-warnings \
   --timeout=60 \
   --timeout-method=thread \
   --cov=mcubridge \

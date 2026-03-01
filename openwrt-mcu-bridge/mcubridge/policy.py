@@ -45,7 +45,7 @@ def tokenize_shell_command(command: str) -> tuple[str, ...]:
         raise CommandValidationError("Empty command")
     try:
         tokens = tuple(shlex.split(stripped, posix=True))
-    except ValueError as exc:  # pragma: no cover - shlex edge case
+    except ValueError as exc:
         raise CommandValidationError("Malformed command syntax") from exc
     if not tokens:
         raise CommandValidationError("Empty command")
@@ -71,7 +71,7 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
             return False
         return self.allow_all or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in self.entries)
 
-    def __contains__(self, item: str) -> bool:  # pragma: no cover
+    def __contains__(self, item: str) -> bool:
         return item.lower() in self.entries
 
     def as_tuple(self) -> tuple[str, ...]:

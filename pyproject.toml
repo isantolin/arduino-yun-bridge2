@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openwrt-mcu-bridge"
+name = "mcubridge"
 version = "2.5.1"
 description = "Arduino MCU Bridge Protocol for OpenWrt (Python 3.13)"
 requires-python = ">=3.13"
@@ -25,7 +25,7 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["mcubridge"]
-package-dir = {"" = "openwrt-mcu-bridge"}
+package-dir = {"" = "mcubridge"}
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -34,8 +34,8 @@ asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 log_cli = true
 log_cli_level = "INFO"
-testpaths = ["openwrt-mcu-bridge/tests"]
-pythonpath = ["stubs", ".", "openwrt-mcu-bridge"]
+testpaths = ["mcubridge/tests"]
+pythonpath = ["stubs", ".", "mcubridge"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*"]
 markers = ["fuzz: mark a test as a fuzz test"]
 
@@ -70,17 +70,17 @@ ensure_newline_before_comments = true
 typeCheckingMode = "strict"
 pythonVersion = "3.13"
 stubPath = "stubs"
-extraPaths = ["openwrt-mcu-bridge"]
+extraPaths = ["mcubridge"]
 include = [
-    "openwrt-mcu-bridge/mcubridge",
-    "openwrt-mcu-examples-python/mcubridge_client",
-    "openwrt-mcu-core/scripts",
+    "mcubridge/mcubridge",
+    "mcubridge-client-examples/mcubridge_client",
+    "mcubridge/scripts",
     "stubs"
 ]
 strict = [
-    "openwrt-mcu-bridge/mcubridge",
-    "openwrt-mcu-examples-python/mcubridge_client",
-    "openwrt-mcu-core/scripts",
+    "mcubridge/mcubridge",
+    "mcubridge-client-examples/mcubridge_client",
+    "mcubridge/scripts",
     "stubs"
 ]
 exclude = [
@@ -106,7 +106,7 @@ select = ["E", "F", "W", "C90", "A", "PLW"]
 # Code generators are inherently complex: exclude from mccabe checks
 "tools/protocol/generate.py" = ["C901"]
 # Test helper functions can have complex logic for static analysis
-"openwrt-mcu-bridge/tests/test_repo_policy_gates.py" = ["C901"]
+"mcubridge/tests/test_repo_policy_gates.py" = ["C901"]
 
 [tool.ruff.lint.mccabe]
 # [QUALITY] Reduced from 50 to 25 for SIL-2 compliance and maintainability

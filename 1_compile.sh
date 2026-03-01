@@ -177,8 +177,8 @@ python3 "$REPO_ROOT/tools/sync_runtime_deps.py" || exit 1
 echo "[INFO] Regenerating protocol files from spec..."
 python3 "$REPO_ROOT/tools/protocol/generate.py" \
     --spec "$REPO_ROOT/tools/protocol/spec.toml" \
-    --py "$REPO_ROOT/openwrt-mcu-bridge/mcubridge/protocol/protocol.py" \
-    --cpp "$REPO_ROOT/openwrt-library-arduino/src/protocol/rpc_protocol.h" || exit 1
+    --py "$REPO_ROOT/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_protocol.h" || exit 1
 
 # --- BOOTSTRAP PYTHON CHECKS ---
 auto_install_python_module() {
@@ -302,7 +302,7 @@ fi
 
 # Fallback: if local feed is NOT enabled, optionally copy package sources into the SDK.
 if [ "$LOCAL_FEED_ENABLED" -ne 1 ] && [ "$SYNC_PACKAGES_TO_SDK" -eq 1 ]; then
-    for pkg in luci-app-mcubridge openwrt-mcu-core openwrt-mcu-bridge; do
+    for pkg in luci-app-mcubridge mcubridge; do
         if [ -d "$pkg" ]; then
             echo "[INFO] Syncing $pkg to SDK..."
             rm -rf "$SDK_DIR/package/$pkg"
@@ -411,7 +411,7 @@ if [ -f "$USB_MODULES_MK" ]; then
 fi
 
 # Enable Packages
-REQUIRED_PKGS="openwrt-mcu-bridge openwrt-mcu-core luci-app-mcubridge"
+REQUIRED_PKGS="mcubridge luci-app-mcubridge"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
 # Se ELIMINÓ python3-twisted porque prometheus_client ha sido optimizado para no usarlo.
 REQUIRED_DEPS="python3-paho-mqtt python3-aiomqtt python3-tenacity mosquitto-client luaposix python3-construct"
@@ -441,7 +441,7 @@ for lib in python3-paho-mqtt python3-aiomqtt python3-tenacity python3-cobs pytho
 done
 
 # Luego paquetes principales
-for pkg in luci-app-mcubridge openwrt-mcu-core openwrt-mcu-bridge; do
+for pkg in luci-app-mcubridge mcubridge; do
     echo "[BUILD] Building package $pkg (.apk)..."
     make package/$pkg/clean V=s || true
     make package/$pkg/compile V=s
@@ -464,7 +464,7 @@ fi
 echo "\n[OK] Build finished. Check the bin/ directory."
 
 # Cleanup
-for pkg in openwrt-mcu-bridge luci-app-mcubridge openwrt-mcu-core; do
+for pkg in mcubridge luci-app-mcubridge; do
     find "$pkg" -type d -name build -exec rm -rf {} +
     find "$pkg" -type d -name bin -exec rm -rf {} +
     find "$pkg" -type d -name dist -exec rm -rf {} +

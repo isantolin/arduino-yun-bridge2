@@ -188,7 +188,7 @@ def cleanup_process(proc, name):
 
 def find_firmware(repo_root):
     """Locate the best firmware ELF for emulation."""
-    base_build_path = repo_root / "openwrt-library-arduino/build"
+    base_build_path = repo_root / "mcubridge-library-arduino/build"
     firmware_path = base_build_path / "BridgeControl/BridgeControl.ino.elf"
 
     if not firmware_path.exists():
@@ -333,8 +333,8 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
     env = os.environ.copy()
     # Ensure the client library is in PYTHONPATH
     repo_root = Path(__file__).resolve().parent.parent
-    client_lib = repo_root / "openwrt-mcu-examples-python"
-    package_root = repo_root / "openwrt-mcu-bridge"
+    client_lib = repo_root / "mcubridge-client-examples"
+    package_root = repo_root / "mcubridge"
 
     python_path = f"{client_lib}{os.pathsep}{package_root}"
     if uci_stub_dir:
@@ -347,7 +347,7 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
     # Force UCI read for client library in E2E environment
     env["MCUBRIDGE_FORCE_UCI"] = "1"
 
-    # Set env vars for openwrt-mcu-examples-python/uci.py override
+    # Set env vars for mcubridge-client-examples/uci.py override
     env["MQTT_HOST"] = mqtt_host
     env["MQTT_PORT"] = str(mqtt_port)
     env["MQTT_TLS"] = "0"
@@ -423,11 +423,11 @@ def main(
             raise typer.Exit(code=1)
 
     repo_root = Path(__file__).resolve().parent.parent
-    package_root = repo_root / "openwrt-mcu-bridge"
+    package_root = repo_root / "mcubridge"
     sys.path.insert(0, str(package_root))
     from mcubridge.protocol import protocol
 
-    firmware_path = repo_root / f"openwrt-library-arduino/tests/{firmware}"
+    firmware_path = repo_root / f"mcubridge-library-arduino/tests/{firmware}"
     if not firmware_path.exists():
         logger.error(f"Emulator binary not found at {firmware_path}. Please compile it first.")
         raise typer.Exit(code=1)

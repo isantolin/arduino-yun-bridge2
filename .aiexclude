@@ -33,8 +33,8 @@ venv/
 *.bak
 *~
 # Exclude OpenWRT build output
-openwrt-library-arduino/build-coverage/
-openwrt-library-arduino/build-host-local/
+mcubridge-library-arduino/build-coverage/
+mcubridge-library-arduino/build-host-local/
 # Python dist folders
 openwrt-mcu-client-python/dist/
 McuBridge-v2/dist/
@@ -59,8 +59,8 @@ PHASE_3_REPORT.md
 gha-creds-*.json
 .tmp/
 feeds/luci-app-mcubridge
-feeds/openwrt-mcu-bridge
-feeds/openwrt-mcu-core
+feeds/mcubridge
+feeds/mcubridge
 test_protocol_bin
 .VSCodeCounter/
-openwrt-library-arduino/src/etl/
+mcubridge-library-arduino/src/etl/

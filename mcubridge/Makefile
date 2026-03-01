@@ -19,13 +19,12 @@
 # along with this program.
 # If not, see <https://www.gnu.org/licenses/>.
 #
-# OpenWRT package Makefile for openwrt-mcu-bridge
-# This Makefile declara openwrt-mcu-core como dependencia
+# OpenWRT package Makefile for mcubridge (consolidated daemon + core scripts)
 
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=openwrt-mcu-bridge
-PKG_VERSION:=2.6.0
+PKG_NAME:=mcubridge
+PKG_VERSION:=2.7.0
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
@@ -40,11 +39,8 @@ include $(INCLUDE_DIR)/package.mk
 define Package/$(PKG_NAME)
 	SECTION:=utils
 	CATEGORY:=Utilities
-	TITLE:=MCU Bridge Python Daemon
+	TITLE:=MCU Bridge Daemon and Core Scripts
 	PKG_ARCH:=all
-	# [OPENWRT 25.12] Modern apk-based dependencies.
-	# We strictly depend on python3 (full) or specific subpackages if optimizing size.
-	# High-performance async/struct deps: uvloop, msgspec.
 	PROVIDES:=mcubridge
 	DEPENDS:=+python3
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
@@ -64,43 +60,63 @@ define Package/$(PKG_NAME)
 		+python3-construct \
 		+python3-transitions \
 		+python3-typer \
-		+python3-rich
+		+python3-rich \
+		+mosquitto-client \
+		+xxd
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description
-  Modern Python daemon for the Arduino MCU Bridge v2 ecosystem.
+  Consolidated Python daemon and core scripts for the Arduino MCU Bridge v2.
   Targeting OpenWrt 25.12+ with full apk support and asynchronous I/O.
 endef
 
 define Build/Compile
-	# [SIL-2] Deterministic Bytecode Compilation:
-	# Compile Python source to bytecode to optimize startup time and save RAM
-	# on the target. We use -b to generate legacy .pyc files for simpler packaging.
-	# Optimization level 1 (-O) removes asserts.
 	$(PYTHON3) -O -m compileall -b -f -q $(PKG_BUILD_DIR)/mcubridge
+	[ ! -d $(PKG_BUILD_DIR)/scripts ] || $(PYTHON3) -m compileall -q -b $(PKG_BUILD_DIR)/scripts
+	[ ! -d $(PKG_BUILD_DIR)/scripts ] || find $(PKG_BUILD_DIR)/scripts -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf
 endef
 
 define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) -r ./mcubridge $(PKG_BUILD_DIR)/
-	# [CLEANUP] Never ship tests/ or tools/ in production packages (apk/ipk).
-	# This ensures the smallest possible footprint on target Flash.
 	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "__pycache__" \) -prune -exec rm -rf {} + || true
 	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
+	$(CP) ./mcubridge.files $(PKG_BUILD_DIR)/
+	$(CP) ./uci-defaults/95-mcubridge-silence-kernel-console $(PKG_BUILD_DIR)/
+	$(CP) ./uci-defaults/96-mcubridge-flash-protection-paths $(PKG_BUILD_DIR)/
+	$(CP) ./uci-defaults/97-mcubridge-default-secret $(PKG_BUILD_DIR)/
+	$(CP) ./uci-defaults/98-mcubridge-default-serial $(PKG_BUILD_DIR)/
+	$(CP) ./uci-defaults/99-mcubridge-disable-askconsole $(PKG_BUILD_DIR)/
+	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/ || true
 endef
 
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/libexec/mcubridge
 	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_DIR) $(1)/etc/mcubridge
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_DIR) $(1)/usr/bin
+	$(INSTALL_DIR) $(1)/www/cgi-bin
 	
-	# [SIL-2] Install both .py and .pyc to allow fallback and fast-start.
+	# Daemon
 	$(CP) $(PKG_BUILD_DIR)/mcubridge/* $(1)/usr/libexec/mcubridge/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge.init $(1)/etc/init.d/mcubridge
-	
-	# Cleanup any __pycache__ directories if they were created by accident
 	find $(1)/usr/libexec/mcubridge -name "__pycache__" -type d -exec rm -rf {} +
+	
+	# Core config files
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/mcubridge.files $(1)/etc/mcubridge/
+	
+	# UCI defaults
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/95-mcubridge-silence-kernel-console $(1)/etc/uci-defaults/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/96-mcubridge-flash-protection-paths $(1)/etc/uci-defaults/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/97-mcubridge-default-secret $(1)/etc/uci-defaults/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/98-mcubridge-default-serial $(1)/etc/uci-defaults/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-mcubridge-disable-askconsole $(1)/etc/uci-defaults/
+	
+	# Core scripts
+	[ -d $(PKG_BUILD_DIR)/scripts ] && find $(PKG_BUILD_DIR)/scripts -type f -print0 | xargs -0 -I {} $(INSTALL_BIN) "{}" $(1)/usr/bin/ || true
 endef
 
 define Package/$(PKG_NAME)/clean

@@ -1,6 +1,6 @@
 # Arduino MCU Bridge Examples
 
-The sketches under `openwrt-library-arduino/examples/` act as smoke tests for the MCU library after the November 2025 refresh.
+The sketches under `mcubridge-library-arduino/examples/` act as smoke tests for the MCU library after the November 2025 refresh.
 
 ## BridgeControl
 
@@ -20,9 +20,9 @@ Compile and upload any example via `arduino-cli`:
 
 ```sh
 # Replace <SketchDir> with BridgeControl or FrameDebug
-arduino-cli compile --fqbn arduino:avr:mcu openwrt-library-arduino/examples/<SketchDir>
+arduino-cli compile --fqbn arduino:avr:mcu mcubridge-library-arduino/examples/<SketchDir>
 arduino-cli upload --fqbn arduino:avr:mcu --port /dev/ttyACM0 \
-  openwrt-library-arduino/examples/<SketchDir>
+  mcubridge-library-arduino/examples/<SketchDir>
 ```
 
 Tips:
@@ -34,7 +34,7 @@ Tips:
 ## Suggested validation flow
 
 1. Flash `BridgeControl.ino` and restart the daemon (`/etc/init.d/mcubridge restart`).
-2. From Linux run `openwrt-mcu-examples-python/mailbox_test.py` to send `ON`/`OFF` messages and verify the LED reacts.
+2. From Linux run `mcubridge-client-examples/mailbox_test.py` to send `ON`/`OFF` messages and verify the LED reacts.
 3. Switch to `FrameDebug.ino` when you need to inspect timings or CRC32 values on the serial link; keep the serial console open for a few minutes to gather meaningful stats.
 
 These steps keep the examples aligned with the modern stack (TLS enabled by default, strong handshake, and MQTT v5 topics) described in [PROTOCOL.md](../../../docs/PROTOCOL.md).

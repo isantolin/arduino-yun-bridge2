@@ -46,11 +46,11 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 ### Novedades (noviembre 2025)
 
 - **Compresión RLE opcional:** Payloads con datos repetitivos (buffers de LEDs, streams de sensores uniformes) pueden comprimirse con Run-Length Encoding antes de enviarlos. Implementación disponible en C++ (`rle.h`) y Python (`rle.py`), con heurísticas para decidir cuándo conviene comprimir. Ver [PROTOCOL.md §7](PROTOCOL.md#7-compresión-rle-opcional) para detalles del formato.
-- Especificación única del protocolo en `../tools/protocol/spec.toml` con generador (`../tools/protocol/generate.py`) que emite `../openwrt-mcu-bridge/mcubridge/rpc/protocol.py` y `../openwrt-library-arduino/src/protocol/rpc_protocol.h`, garantizando consistencia MCU↔MPU.
+- Especificación única del protocolo en `../tools/protocol/spec.toml` con generador (`../tools/protocol/generate.py`) que emite `../mcubridge/mcubridge/rpc/protocol.py` y `../mcubridge-library-arduino/src/protocol/rpc_protocol.h`, garantizando consistencia MCU↔MPU.
 - Migración del stack MQTT a **aiomqtt 2.5** + `paho-mqtt` 2.1: el daemon y los ejemplos usan un shim asíncrono compatible con la API previa de `asyncio-mqtt`, con soporte completo de MQTT v5 (propiedades de respuesta, clean start first-only, códigos de motivo enriquecidos) y reconexiones más predecibles en brokers modernos.
 - **Correlación automática de peticiones MQTT v5:** todas las respuestas generadas por el daemon reutilizan `response_topic` y `correlation_data` cuando el cliente lo solicita. Además, se adjuntan propiedades de usuario (`bridge-request-topic`, `bridge-pin`, `bridge-datastore-key`, `bridge-file-path`, `bridge-process-pid`, etc.) y `message_expiry_interval` específicos por servicio para que los consumidores puedan validar el contexto original incluso cuando los mensajes pasan por brokers compartidos.
-- Revisión manual de los bindings regenerados ejecutando `console_test.py`, `led13_test.py` y `datastore_test.py` del paquete `openwrt-mcu-examples-python`, confirmando compatibilidad funcional.
-- Instrumentación de logging en `../openwrt-mcu-bridge/mcubridge/daemon.py` para diferenciar errores de COBS decode de fallos al parsear frames, facilitando el diagnóstico de problemas en serie.
+- Revisión manual de los bindings regenerados ejecutando `console_test.py`, `led13_test.py` y `datastore_test.py` del paquete `mcubridge-client-examples`, confirmando compatibilidad funcional.
+- Instrumentación de logging en `../mcubridge/mcubridge/daemon.py` para diferenciar errores de COBS decode de fallos al parsear frames, facilitando el diagnóstico de problemas en serie.
 - **Datastore MQTT sin ida y vuelta al MCU:** Las lecturas `br/datastore/get/#` ahora se resuelven íntegramente en Linux usando la caché actualizada por `CMD_DATASTORE_PUT`. Las solicitudes que terminan en `/request` reciben inmediatamente el último valor disponible o un `bridge-error=datastore-miss` (payload vacío) sin congestionar el bus serial.
 - **Telemetría de colas consolidada:** `RuntimeState` ahora registra métricas de drop/truncamiento por servicio (`mqtt_dropped_messages`, `console_dropped_chunks`, `mailbox_truncated_bytes`, etc.) y el writer periódico (`status_writer`) las expone tanto en `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot) como en los tópicos `br/system/status`, permitiendo integrar alertas en grafana/Prometheus sin parsers adicionales.
 - **Persistencia vs Flash-wear:** por defecto los paths intensivos en escritura apuntan a tmpfs (`mqtt_spool_dir=/tmp/mcubridge/spool`, `file_system_root=/tmp/mcu_files`). Para persistencia, configura **solo** `file_system_root` a un mount externo (por ejemplo `/mnt/sda1/mcu_files`) vía UCI/LuCI y habilita `allow_non_tmp_paths=1`. El `mqtt_spool_dir` se mantiene siempre bajo `/tmp` para evitar desgaste de flash.
@@ -197,11 +197,10 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 ## Arquitectura
 
 - **Callbacks de estado:** Registra `Bridge.onStatus(...)` en tus sketches para recibir `STATUS_*` desde Linux, incluyendo mensajes de error descriptivos cuando una operación (p.ej. I/O de archivos) falla.
-1.  **`openwrt-mcu-bridge`**: El daemon principal de Python que se ejecuta en el MPU.
-2.  **`openwrt-library-arduino`**: La librería C++ para el sketch que se ejecuta en el MCU.
+1.  **`mcubridge`**: El daemon principal de Python, scripts del sistema y configuración base (fusionado: daemon + core).
+2.  **`mcubridge-library-arduino`**: La librería C++ para el sketch que se ejecuta en el MCU.
 3.  **`luci-app-mcubridge`**: La interfaz de configuración web.
-4.  **`openwrt-mcu-examples-python`**: Paquete cliente con ejemplos de uso.
-5.  **`openwrt-mcu-core`**: Ficheros de configuración base del sistema.
+4.  **`mcubridge-client-examples`**: Paquete cliente con ejemplos de uso.
 
 > ¿Buscas detalles adicionales sobre flujos internos, controles de seguridad, observabilidad y el contrato del protocolo? Revisa [`PROTOCOL.md`](PROTOCOL.md) para obtener el documento actualizado.
 
@@ -233,7 +232,7 @@ Si ya tienes OpenWrt 25.12 instalado:
 ### Configuración post-instalación
 
 1.  **Configurar:** Accede a la interfaz web de LuCI en tu MCU, navega a `Services > McuBridge` y configura el daemon. Antes de ponerlo en producción usa la pestaña *Credentials & TLS* (o `../tools/rotate_credentials.sh --host <mcu>`) para rotar el secreto serie y las credenciales MQTT directamente en UCI.
-2.  **Explorar:** Revisa los ejemplos en `openwrt-mcu-examples-python/` para aprender a interactuar con el puente a través de MQTT.
+2.  **Explorar:** Revisa los ejemplos en `mcubridge-client-examples/` para aprender a interactuar con el puente a través de MQTT.
 
 ### Verificación y control de calidad
 
@@ -249,8 +248,8 @@ Si ya tienes OpenWrt 25.12 instalado:
 	```
 - **Smoke test remoto:** `./tools/hardware_smoke_test.sh --host <mcu>` invoca `/usr/bin/mcubridge-hw-smoke` vía SSH y falla si el daemon no responde a `br/system/status` en menos de 7 segundos.
 - **Harness multi-dispositivo:** `./tools/hardware_harness.py --manifest hardware/targets.toml --max-parallel 3 --tag regression` recorre todos los dispositivos definidos en el manifiesto, ejecuta el script anterior mediante SSH y al final resume qué nodos pasaron/ fallaron (además de producir un reporte JSON opcional).
-- **Pruebas manuales:** Tras instalar los paquetes en tu MCU, verifica el flujo end-to-end ejecutando uno de los scripts de `openwrt-mcu-examples-python` y revisa los logs del daemon con `logread | grep mcubridge`.
-- **Diagnóstico en el MCU:** Carga el sketch `openwrt-library-arduino/examples/FrameDebug/FrameDebug.ino` para imprimir cada 5 s el snapshot de transmisión y confirmar que `expected_serial_bytes` coincide con `last_write_return`.
+- **Pruebas manuales:** Tras instalar los paquetes en tu MCU, verifica el flujo end-to-end ejecutando uno de los scripts de `mcubridge-client-examples` y revisa los logs del daemon con `logread | grep mcubridge`.
+- **Diagnóstico en el MCU:** Carga el sketch `mcubridge-library-arduino/examples/FrameDebug/FrameDebug.ino` para imprimir cada 5 s el snapshot de transmisión y confirmar que `expected_serial_bytes` coincide con `last_write_return`.
 - **Monitoreo:** El daemon expone estados y errores del MCU en `br/system/status` (JSON) y publica el tamaño actual de la cola MQTT en `/tmp/mcubridge_status.json` junto al límite configurado. Ese snapshot ahora incluye `mqtt_spool_*`, `watchdog_*` (latido, intervalo, habilitado) y los nuevos contadores de almacenamiento (`file_storage_bytes_used`, `file_write_limit_rejections`, `file_storage_limit_rejections`) para que LuCI los muestre sin parsers adicionales. Además, `br/system/metrics` adjunta las mismas claves y propiedades MQTT (`bridge-spool`, `bridge-watchdog-enabled`, `bridge-watchdog-interval`) para que los consumidores puedan alertar cuando el spool persistente se degrada, el watchdog deja de latir o el sandbox de archivos se acerca al límite.
 - **Telemetría reforzada:** `RuntimeState` cuenta los eventos de drop y truncamiento en todas las colas (MQTT, consola, mailbox y mailbox_incoming) y el writer periódico exporta los acumuladores en `/tmp/mcubridge_status.json` (`*_dropped_*`, `*_truncated_*`) junto con los tamaños actuales. Estos mismos contadores se publican en `br/system/status` para integrarse con dashboards MQTT.
 - **Snapshots `br/system/bridge/*`:** ahora puedes consultar el estado del enlace serie sin inspeccionar archivos locales. Publica un mensaje vacío en `br/system/bridge/handshake/get` o `br/system/bridge/summary/get` (MQTT v5 opcionalmente con `response_topic`) y el daemon responderá con `.../handshake/value` o `.../summary/value` en JSON (`content-type: application/json`). Incluye sincronización actual, contadores de handshake, versión del MCU, pipeline serial en curso y el último comando completado, además de adjuntar la propiedad de usuario `bridge-snapshot` para que los clientes puedan enrutar la respuesta.

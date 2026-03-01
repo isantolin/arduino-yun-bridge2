@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIB_DIR="${ROOT_DIR}/openwrt-library-arduino"
+LIB_DIR="${ROOT_DIR}/mcubridge-library-arduino"
 SRC_DIR="${LIB_DIR}/src"
 TEST_DIR="${LIB_DIR}/tests"
 STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"

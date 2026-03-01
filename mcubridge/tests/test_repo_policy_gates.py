@@ -37,9 +37,9 @@ def _is_excluded_path(path: Path) -> bool:
         Path("feeds"),
         Path("openwrt-sdk"),
         Path("test_protocol_bin"),
-        Path("openwrt-library-arduino/build-coverage"),
-        Path("openwrt-library-arduino/build-host"),
-        Path("openwrt-library-arduino/build-host-local"),
+        Path("mcubridge-library-arduino/build-coverage"),
+        Path("mcubridge-library-arduino/build-host"),
+        Path("mcubridge-library-arduino/build-host-local"),
     }
     rel_str = rel.as_posix()
     for prefix in excluded_prefixes:
@@ -279,8 +279,8 @@ def test_no_print_repo_wide() -> None:
 def test_no_stl_in_mcu_src_or_tests() -> None:
     """MCU code must stay C++11-friendly and avoid STL usage (src + tests)."""
 
-    mcu_src_root = _REPO_ROOT / "openwrt-library-arduino" / "src"
-    mcu_tests_root = _REPO_ROOT / "openwrt-library-arduino" / "tests"
+    mcu_src_root = _REPO_ROOT / "mcubridge-library-arduino" / "src"
+    mcu_tests_root = _REPO_ROOT / "mcubridge-library-arduino" / "tests"
     assert mcu_src_root.is_dir(), f"missing MCU src root: {mcu_src_root}"
     assert mcu_tests_root.is_dir(), f"missing MCU tests root: {mcu_tests_root}"
 
@@ -299,7 +299,7 @@ def test_no_stl_in_mcu_src_or_tests() -> None:
     )
     hits = _find_matches(cpp_files, stl_regex)
 
-    message = "STL usage is not allowed in openwrt-library-arduino/src or tests:\n"
+    message = "STL usage is not allowed in mcubridge-library-arduino/src or tests:\n"
     message += "\n".join(f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits)
     assert not hits, message
 
@@ -329,7 +329,7 @@ def test_no_shadowing_or_scope_escapes_in_runtime_package() -> None:
     This enforces a strict "no hidden aliasing" posture for embedded/system code.
     """
 
-    runtime_root = _REPO_ROOT / "openwrt-mcu-bridge" / "mcubridge"
+    runtime_root = _REPO_ROOT / "mcubridge" / "mcubridge"
     assert runtime_root.is_dir(), f"missing runtime root: {runtime_root}"
 
     py_files = _iter_text_files(runtime_root, ("*.py",))
@@ -352,8 +352,8 @@ def test_no_copied_first_party_packages_in_feeds() -> None:
 
     packages = [
         "luci-app-mcubridge",
-        "openwrt-mcu-bridge",
-        "openwrt-mcu-core",
+        "mcubridge",
+        "mcubridge",
     ]
 
     failures: list[str] = []

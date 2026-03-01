@@ -53,11 +53,11 @@ Este documento **no duplica listados enumerados** (por ejemplo `[mqtt_suffixes]`
 
 Qué **no** se centraliza en el spec (porque es decisión de despliegue/runtime):
 
-- **Defaults de OpenWrt/daemon**: `DEFAULT_MQTT_HOST`, `DEFAULT_MQTT_PORT`, rutas `/tmp`, spool dir, límites de colas del daemon, parámetros del exporter/metrics, timeouts en segundos de tareas del daemon, etc. Esto vive en UCI y en `openwrt-mcu-bridge/mcubridge/const.py`.
+- **Defaults de OpenWrt/daemon**: `DEFAULT_MQTT_HOST`, `DEFAULT_MQTT_PORT`, rutas `/tmp`, spool dir, límites de colas del daemon, parámetros del exporter/metrics, timeouts en segundos de tareas del daemon, etc. Esto vive en UCI y en `mcubridge/mcubridge/const.py`.
 
 Al ejecutar:
 
-- `python3 tools/protocol/generate.py --spec tools/protocol/spec.toml --py openwrt-mcu-bridge/mcubridge/protocol/protocol.py --cpp openwrt-library-arduino/src/protocol/rpc_protocol.h`
+- `python3 tools/protocol/generate.py --spec tools/protocol/spec.toml --py mcubridge/mcubridge/protocol/protocol.py --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h`
 
 …se regeneran los bindings de Python y C++ y deben commitearse en el mismo cambio.
 
@@ -75,7 +75,7 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 - **RuntimeState**: mantiene el estado mutable (colas MQTT, handshake, spool, métricas) y expone snapshots consistentes para status, MQTT y Prometheus.
 - **High-Performance Transport**: El daemon utiliza `pyserial-asyncio-fast` para minimizar la latencia y evitar el doble buffering en el enlace serie.
 - **MQTT Publisher**: publica respuestas/telemetría con MQTT v5 (correlation data, response_topic, expiración, metadatos).
-- **MCU Firmware (openwrt-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 y vela por el secreto compartido del enlace serie.
+- **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 y vela por el secreto compartido del enlace serie.
 - **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` y puede exponer Prometheus por HTTP.
 
 ## Seguridad
@@ -289,7 +289,7 @@ Aunque los baud rates difieren, los mensajes `printk` del kernel pueden corrompe
 Frame parse error: payload_length=... cmd_id=... (COBS decode failed)
 ```
 
-**Solución automática**: El paquete `openwrt-mcu-core` incluye el script UCI-defaults `95-mcubridge-silence-kernel-console` que:
+**Solución automática**: El paquete `mcubridge` incluye el script UCI-defaults `95-mcubridge-silence-kernel-console` que:
 
 1. Crea `/etc/sysctl.d/99-mcubridge-no-console.conf` con `kernel.printk = 0 0 0 0`
 2. Añade un respaldo en `/etc/rc.local`
@@ -754,8 +754,8 @@ if should_compress(data):
 - **RAM (MCU):** ~10 bytes de stack, sin heap
 - **Flash (MCU):** ~500 bytes de código
 - **Archivos fuente:**
-  - C++: `openwrt-library-arduino/src/protocol/rle.h`
-  - Python: `openwrt-mcu-bridge/mcubridge/rpc/rle.py`
+  - C++: `mcubridge-library-arduino/src/protocol/rle.h`
+  - Python: `mcubridge/mcubridge/rpc/rle.py`
   - Spec: `tools/protocol/spec.toml` (sección `[compression]`)
 
 ---

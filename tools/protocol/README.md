@@ -10,8 +10,8 @@ python3 tools/protocol/generate.py
 
 The command refreshes:
 
-- `openwrt-mcu-bridge/mcubridge/rpc/protocol.py`
-- `openwrt-library-arduino/src/protocol/rpc_protocol.h`
+- `mcubridge/mcubridge/rpc/protocol.py`
+- `mcubridge-library-arduino/src/protocol/rpc_protocol.h`
 
 The Python module is consumed by the MCU bridge daemon, while the Arduino
 header is used by the firmware. Both outputs embed the license header from the

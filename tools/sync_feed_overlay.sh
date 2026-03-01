@@ -49,8 +49,8 @@ done
 
 PACKAGES=(
     luci-app-mcubridge
-    openwrt-mcu-bridge
-    openwrt-mcu-core
+    mcubridge
+    mcubridge
 )
 
 compute_link_target() {

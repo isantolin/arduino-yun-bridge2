@@ -62,7 +62,7 @@ sudo ./tools/rotate_credentials.sh --local build/rootfs/etc/config \
   --emit-sketch-snippet my_project/BridgeSecret.inc
 ```
 
-The CLI sets `UCI_CONFIG_DIR` to the provided path, invokes `openwrt-mcu-core/scripts/mcubridge-rotate-credentials`, and (optionally) drops a snippet file that you can include from multiple sketches.
+The CLI sets `UCI_CONFIG_DIR` to the provided path, invokes `mcubridge/scripts/mcubridge-rotate-credentials`, and (optionally) drops a snippet file that you can include from multiple sketches.
 
 ## LuCI workflow
 

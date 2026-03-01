@@ -3,22 +3,22 @@
 ## Quick Context
 - Modern replacement for the legacy Yun Bridge: Python daemon on the MPU, C++ library on the MCU, MQTT v5 everywhere for async RPC.
 - Mission-critical handshake: MCU and Linux exchange HMAC-authenticated frames before MQTT services come online; never ship with the placeholder `changeme123` secret.
-- Releases must keep protocol artifacts in sync between `openwrt-mcu-bridge/mcubridge/protocol/` and `openwrt-library-arduino/src/protocol/`.
+- Releases must keep protocol artifacts in sync between `mcubridge/mcubridge/protocol/` and `mcubridge-library-arduino/src/protocol/`.
 
 ## Architecture & Source Layout
-- `openwrt-mcu-bridge/`: async daemon (`mcubridge/daemon.py`, `BridgeService`, `RuntimeState`, MQTT helpers), init scripts, and Python tests.
-- `openwrt-library-arduino/`: MCU runtime, sketches under `examples/`, protocol glue under `src/protocol/` (COBS, CRC, RPC enums).
+- `mcubridge/`: async daemon (`mcubridge/daemon.py`, `BridgeService`, `RuntimeState`, MQTT helpers), init scripts, core system scripts (`scripts/`), UCI defaults (`uci-defaults/`), and Python tests.
+- `mcubridge-library-arduino/`: MCU runtime, sketches under `examples/`, protocol glue under `src/protocol/` (COBS, CRC, RPC enums).
   - `src/services/`: Arduino service implementations (Bridge, Console, DataStore, FileSystem, Mailbox, Process)
   - `src/security/`: Cryptographic primitives (HKDF, HMAC, secure_zero)
   - `src/config/`: Configuration constants
   - `src/util/`: String utilities
 - `luci-app-mcubridge/`: LuCI UI plus CGI endpoints that mirror `/tmp/mcubridge_status.json` and `br/system/status`.
-- `openwrt-mcu-examples-python/`: MQTT client scripts that reuse the daemon's DTO modules (`mcubridge.mqtt.messages`) while talking to `aiomqtt` directly; useful for manual verification.
+- `mcubridge-client-examples/`: MQTT client scripts that reuse the daemon's DTO modules (`mcubridge.mqtt.messages`) while talking to `aiomqtt` directly; useful for manual verification.
 - `feeds/` + `openwrt-sdk/`: local OpenWrt feed populated by `tools/sync_feed_overlay.sh`; SDK builds APKs via the top-level scripts.
 
 ## Protocol, Config, and Secrets
-- Edit `tools/protocol/spec.toml` then run `python3 tools/protocol/generate.py` to refresh both Python (`mcubridge/protocol/protocol.py`) and C++ (`openwrt-library-arduino/src/protocol/`). Commit both sides together.
-- Runtime defaults live in `openwrt-mcu-bridge/mcubridge/config/const.py`; adjust values there and expose overrides via UCI (`mcubridge.general.*`).
+- Edit `tools/protocol/spec.toml` then run `python3 tools/protocol/generate.py` to refresh both Python (`mcubridge/protocol/protocol.py`) and C++ (`mcubridge-library-arduino/src/protocol/`). Commit both sides together.
+- Runtime defaults live in `mcubridge/mcubridge/config/const.py`; adjust values there and expose overrides via UCI (`mcubridge.general.*`).
 - Rotate serial + MQTT credentials with `tools/rotate_credentials.sh --host <yun>` or `/usr/bin/mcubridge-rotate-credentials` so sketches can embed `#define BRIDGE_SERIAL_SHARED_SECRET "..."`.
 - Update topic ACLs (`mqtt_allow_*`, `allowed_commands`) in both policy code (`mcubridge/policy.py`) and LuCI defaults whenever permissions change.
 
@@ -32,7 +32,7 @@
 - Python unit tests: `tox -e py313 -- --maxfail=1 --durations=10`; Pyright config sits at repo root for static checks.
 - Coverage stack: `./tools/coverage_python.sh` + `./tools/coverage_arduino.sh`, or `tox -e coverage` followed by `python tools/coverage_report.py` to refresh `coverage/coverage-summary.md`.
 - Hardware smoke tests: `./tools/hardware_smoke_test.sh --host <yun>` for a single board; `./tools/hardware_harness.py --manifest hardware/targets.toml --max-parallel 3 --tag regression` to fan out and emit JSON reports.
-- Manual MQTT verification: run scripts in `openwrt-mcu-examples-python/` against the broker at `127.0.0.1:8883`; ensure they see MQTT v5 `response_topic` + `correlation_data`.
+- Manual MQTT verification: run scripts in `mcubridge-client-examples/` against the broker at `127.0.0.1:8883`; ensure they see MQTT v5 `response_topic` + `correlation_data`.
 
 ## Coding & Operational Conventions
 - Logs are structured JSON (`ts`, `level`, `logger`, `message`, `extra`). Preserve keys and only append fields that downstream tooling understands.

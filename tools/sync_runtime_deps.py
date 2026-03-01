@@ -16,7 +16,7 @@ app = typer.Typer(help="Generate derived dependency files from the runtime manif
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
 REQUIREMENTS_PATH = ROOT / "requirements" / "runtime.txt"
-MAKEFILE_PATH = ROOT / "openwrt-mcu-bridge" / "Makefile"
+MAKEFILE_PATH = ROOT / "mcubridge" / "Makefile"
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
 BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
 

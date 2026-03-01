@@ -25,10 +25,10 @@ arduino-cli core install arduino:avr
 echo "Installing libraries..."
 # Use our robust installer to ensure src/etl is populated correctly
 # for relative includes in Bridge.h
-./openwrt-library-arduino/tools/install.sh
+./mcubridge-library-arduino/tools/install.sh
 
 # Define library path (current repo's library folder)
-LIB_PATH="$PWD/openwrt-library-arduino"
+LIB_PATH="$PWD/mcubridge-library-arduino"
 
 # Define target boards (Matrix Build)
 # - Yun: ATmega32u4 (Native USB)

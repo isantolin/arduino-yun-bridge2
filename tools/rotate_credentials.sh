@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOCAL_ROTATE_HELPER="${ROOT_DIR}/openwrt-mcu-core/scripts/mcubridge-rotate-credentials"
+LOCAL_ROTATE_HELPER="${ROOT_DIR}/mcubridge/scripts/mcubridge-rotate-credentials"
 
 show_help() {
   cat <<'EOF'

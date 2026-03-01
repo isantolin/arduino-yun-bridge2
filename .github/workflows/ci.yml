@@ -28,7 +28,7 @@ jobs:
         run: |
           echo "Checking for hardcoded secrets..."
           if grep -r "serial_shared_secret.*=.*['\"][^'\"]\{8,\}['\"]" \
-               --include="mcubridge" openwrt-mcu-core/uci-defaults/ 2>/dev/null | \
+               --include="mcubridge" mcubridge/uci-defaults/ 2>/dev/null | \
                grep -v "6368616e67656d65313233" | grep -v '""' | grep -v "''"; then
             echo "::error::Hardcoded secret found!"
             exit 1
@@ -203,7 +203,7 @@ jobs:
         run: |
           export DUMMY_ARDUINO_LIBS=$(mktemp -d)
           echo "DUMMY_ARDUINO_LIBS=$DUMMY_ARDUINO_LIBS" >> $GITHUB_ENV
-          ./openwrt-library-arduino/tools/install.sh "$DUMMY_ARDUINO_LIBS"
+          ./mcubridge-library-arduino/tools/install.sh "$DUMMY_ARDUINO_LIBS"
       - name: Compile & Run Emulation
         run: |
           ./tools/compile_emulator.sh

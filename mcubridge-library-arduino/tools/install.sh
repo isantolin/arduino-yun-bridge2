@@ -8,9 +8,9 @@ set -e
 set -u
 
 # Always work relative to the script location
-# SCRIPT_DIR is .../openwrt-library-arduino/tools
+# SCRIPT_DIR is .../mcubridge-library-arduino/tools
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# LIB_ROOT is .../openwrt-library-arduino
+# LIB_ROOT is .../mcubridge-library-arduino
 LIB_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 echo "================================================================================"

@@ -36,8 +36,7 @@ DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES="3"
 # [FIX] Added python3-*.apk to the top to ensure dependencies are installed BEFORE the bridge
 PROJECT_APK_PATTERNS="\
 python3-*.apk \
-openwrt-mcu-core-*.apk \
-openwrt-mcu-bridge-*.apk \
+mcubridge-*.apk \
 luci-app-mcubridge-*.apk"
 
 UCI_GENERAL_DIRTY=0

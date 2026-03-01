@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_COVERAGE_ROOT="$ROOT_DIR/coverage/python"
-DEFAULT_TARGET="openwrt-mcu-bridge/tests"
+DEFAULT_TARGET="mcubridge/tests"
 
 usage() {
   cat <<'EOF'
@@ -16,7 +16,7 @@ Options:
   -h, --help          Show this help
 
 Any remaining arguments are passed to pytest. If no pytest args are supplied,
-the default target is openwrt-mcu-bridge/tests.
+the default target is mcubridge/tests.
 EOF
 }
 
@@ -89,6 +89,6 @@ python -m pytest \
 
 if [[ "$ENABLE_JSON" -eq 1 ]]; then
   python -m coverage json \
-    --include "$ROOT_DIR/openwrt-mcu-bridge/mcubridge/*" \
+    --include "$ROOT_DIR/mcubridge/mcubridge/*" \
     -o "$COVERAGE_ROOT/coverage.json" >/dev/null
 fi

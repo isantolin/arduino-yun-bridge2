@@ -49,14 +49,27 @@ CXXFLAGS=(
     "-DBRIDGE_ENABLE_PROCESS=1"
     "-I${SRC_ROOT}"
     "-I${STUB_INCLUDE}"
+    "-I${TEST_ROOT}/mocks"
 )
 
-# Test suites to execute
+# [SIL-2] All test suites contribute to coverage via cumulative .gcda
 TEST_SUITES=(
     "test_integrated"
+    "test_bridge_core"
+    "test_bridge_components"
+    "test_protocol"
+    "test_fsm_mutual_auth"
+    "test_extreme_coverage"
+    "test_extreme_coverage_v2"
+    "test_arduino_100_coverage"
+    "test_coverage_100_final"
+    "test_coverage_gaps"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites..."
+# Clean stale coverage artefacts so cumulative .gcda starts fresh
+find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
+
 pushd "${BUILD_DIR}" > /dev/null
 for suite in "${TEST_SUITES[@]}"; do
     echo "  -> Procesando ${suite}..."

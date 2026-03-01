@@ -542,50 +542,49 @@ void BridgeClass::_handleGetCapabilities(
     ana = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
 #endif
 
-    etl::bitset<32> features;
-    if (kBridgeEnableWatchdog) features.set(0);  // WATCHDOG
-    features.set(1);                             // RLE
+    uint32_t features = rpc::RPC_CAPABILITY_RLE;
+    if (kBridgeEnableWatchdog) features |= rpc::RPC_CAPABILITY_WATCHDOG;
 
 #if BRIDGE_DEBUG_FRAMES
-    features.set(2);  // DEBUG_FRAMES
+    features |= rpc::RPC_CAPABILITY_DEBUG_FRAMES;
 #endif
 #if BRIDGE_DEBUG_IO
-    features.set(3);  // DEBUG_IO
+    features |= rpc::RPC_CAPABILITY_DEBUG_IO;
 #endif
 #if defined(E2END) && (E2END > 0)
-    features.set(4);  // EEPROM
+    features |= rpc::RPC_CAPABILITY_EEPROM;
 #endif
 #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
     defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||     \
     defined(ARDUINO_ARCH_ESP32)
-    features.set(5);  // DAC
+    features |= rpc::RPC_CAPABILITY_DAC;
 #endif
 #if defined(HAVE_HWSERIAL1)
-    features.set(6);  // HW_SERIAL1
+    features |= rpc::RPC_CAPABILITY_HW_SERIAL1;
 #endif
 #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
-    features.set(7);  // FPU
+    features |= rpc::RPC_CAPABILITY_FPU;
 #endif
 #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||      \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
     defined(ARDUINO_ARCH_RP2040)
-    features.set(8);  // LOGIC_3V3
+    features |= rpc::RPC_CAPABILITY_LOGIC_3V3;
 #endif
 #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
-    features.set(9);  // BIG_BUFFER
+    features |= rpc::RPC_CAPABILITY_BIG_BUFFER;
 #endif
 #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-    features.set(10);  // I2C
+    features |= rpc::RPC_CAPABILITY_I2C;
 #endif
 #if defined(SCK) || defined(MOSI) || defined(MISO) || \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-    features.set(11);  // SPI
+    features |= rpc::RPC_CAPABILITY_SPI;
 #endif
 
     _sendResponse<rpc::payload::Capabilities>(
         rpc::CommandId::CMD_GET_CAPABILITIES_RESP, rpc::PROTOCOL_VERSION, arch,
-        dig, ana, static_cast<uint32_t>(features.to_ulong()));
+        dig, ana, features);
   }
 }
 

@@ -219,12 +219,8 @@ class BridgeClass
   explicit BridgeClass(Stream& stream);
 
   // [SIL-2] Observable Management
-  void add_observer(BridgeObserver& obs) {
-    etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS>::add_observer(obs);
-  }
-  void remove_observer(BridgeObserver& obs) {
-    etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS>::remove_observer(obs);
-  }
+  using etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS>::add_observer;
+  using etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS>::remove_observer;
 
   void begin(unsigned long baudrate =
 #ifdef BRIDGE_BAUDRATE
@@ -288,13 +284,6 @@ class BridgeClass
   bool sendChunkyFrame(rpc::CommandId command_id,
                        etl::span<const uint8_t> header,
                        etl::span<const uint8_t> data);
-
- protected:
-  // [SIL-2] Internal notification helper
-  template <typename T>
-  void notify_system(const T& msg) {
-    notify_observers(msg);
-  }
 
  private:
   Stream& _stream;

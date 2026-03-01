@@ -651,7 +651,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP,
                     etl::span<const uint8_t>(buffer.data(), response_length));
     _fsm.handshakeComplete();
-    notify_system(MsgBridgeSynchronized());
+    notify_observers(MsgBridgeSynchronized());
   }
 }
 
@@ -950,7 +950,7 @@ void BridgeClass::_doEmitStatus(rpc::StatusCode status_code,
   if (_status_handler.is_valid()) _status_handler(status_code, payload);
 
   // [SIL-2] Notify Observers
-  notify_system(MsgBridgeError{status_code});
+  notify_observers(MsgBridgeError{status_code});
 }
 
 void BridgeClass::_emitStatus(rpc::StatusCode status_code,
@@ -1266,7 +1266,7 @@ void BridgeClass::enterSafeState() {
 #endif
 
   // [SIL-2] Notify Observers of lost connection
-  notify_system(MsgBridgeLost());
+  notify_observers(MsgBridgeLost());
 }
 
 void BridgeClass::_sendAckAndFlush(uint16_t command_id) {

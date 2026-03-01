@@ -26,7 +26,8 @@
 #define PROGMEM
 #endif
 #ifndef pgm_read_dword
-#define pgm_read_dword(addr) (*(const uint32_t*)(addr))
+#define pgm_read_dword(addr) \
+  (*reinterpret_cast<const uint32_t*>(addr))  // NOLINT
 #endif
 #endif
 
@@ -68,6 +69,7 @@ void SHA256::reset() {
   h_[5] = 0x9b05688c;
   h_[6] = 0x1f83d9ab;
   h_[7] = 0x5be0cd19;
+  memset(w_, 0, sizeof(w_));
   chunkSize_ = 0;
   length_ = 0;
 }

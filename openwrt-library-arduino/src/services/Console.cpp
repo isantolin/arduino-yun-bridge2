@@ -133,8 +133,8 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
 
     // Calculate available space first, then copy deterministically
     // Drop new data if buffer is full.
-    const size_t available = _rx_buffer.capacity() - _rx_buffer.size();
-    const size_t to_copy = etl::min(data.size(), available);
+    const size_t space = _rx_buffer.capacity() - _rx_buffer.size();
+    const size_t to_copy = etl::min(data.size(), space);
 
     _rx_buffer.push(data.begin(), data.begin() + to_copy);
 

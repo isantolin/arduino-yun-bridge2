@@ -17,7 +17,7 @@ uint16_t getFreeMemory() {
   return 4096;  // Deterministic value for host tests
 #elif defined(ARDUINO_ARCH_AVR)
   char stack_top;
-  char* heap_end = __brkval ? __brkval : &__heap_start;
+  const char* heap_end = __brkval ? __brkval : &__heap_start;
   intptr_t free_bytes = &stack_top - heap_end;
   if (free_bytes < 0) return 0;
   if (free_bytes > UINT16_MAX) return UINT16_MAX;

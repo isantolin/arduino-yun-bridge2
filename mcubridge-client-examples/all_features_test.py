@@ -101,6 +101,7 @@ def main(
         logger.info("Exiting due to KeyboardInterrupt.")
     except (OSError, RuntimeError, ValueError) as exc:
         logger.critical("Fatal error in main execution: %s", exc)
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

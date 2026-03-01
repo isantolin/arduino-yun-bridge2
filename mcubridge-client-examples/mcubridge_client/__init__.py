@@ -480,7 +480,10 @@ class Bridge:
             resp_topic=f"{self.topic_prefix}/sh/run_async/response",
             timeout=timeout,
         )
-        return int(response.decode("utf-8"))
+        text = response.decode("utf-8")
+        if text.startswith("error:"):
+            raise RuntimeError(f"Shell command rejected: {text}")
+        return int(text)
 
     async def poll_shell_process(
         self,

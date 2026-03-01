@@ -293,6 +293,7 @@ def start_daemon(package_root, protocol, shared_secret):
         "file_system_root": "/tmp/mcubridge/fs",
         "watchdog_enabled": "0",
         "debug": "1",
+        "allowed_commands": "*",
     }
     uci_stub_dir = tempfile.TemporaryDirectory(prefix="mcubridge-uci-")
     uci_stub_path = Path(uci_stub_dir.name) / "uci.py"
@@ -506,7 +507,7 @@ def main(
             time.sleep(0.5)
 
         if not success:
-            logger.error("Emulation FAILED: Timeout waiting for synchronization.")
+            logger.error("Emulation FAILED.")
             raise typer.Exit(code=1)
 
     except Exception as e:

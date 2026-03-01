@@ -170,6 +170,11 @@ class FileComponent:
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
+        # Ignore our own response messages (subscription to br/file/read/#
+        # also matches br/file/read/response/...)
+        if path_parts and path_parts[0] == protocol.MQTT_SUFFIX_RESPONSE:
+            return
+
         filename = "/".join(path_parts)
         if not filename:
             logger.warning("MQTT file action missing filename for %s", action)

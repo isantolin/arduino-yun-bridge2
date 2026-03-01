@@ -318,7 +318,7 @@ class BridgeClass
   // Incoming deduplication (idempotency for retries)
   struct RxHistory {
     uint32_t crc;
-    unsigned long timestamp;
+    uint32_t timestamp;
   };
   etl::circular_buffer<RxHistory, BRIDGE_RX_HISTORY_SIZE> _rx_history;
   volatile uint8_t _consecutive_crc_errors;
@@ -349,7 +349,7 @@ class BridgeClass
 
   // [SIL-2] ETL Timer Service (Native)
   bridge::scheduler::BridgeTimerService _timer_service;
-  unsigned long _last_tick_millis;
+  uint32_t _last_tick_millis;
 
   // [SIL-2] Timer callback delegates - must persist for object lifetime
   etl::delegate<void()> _cb_ack_timeout;
@@ -471,8 +471,6 @@ class BridgeClass
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
   void _clearAckState();
-
-  etl::bitset<64> _pin_states;
 };
 
 extern BridgeClass Bridge;

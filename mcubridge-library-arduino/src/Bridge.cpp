@@ -142,7 +142,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
                                 BRIDGE_STARTUP_STABILIZATION_MS, false);
 
   _timer_service.enable(true);
-  _last_tick_millis = millis();
+  _last_tick_millis = static_cast<uint32_t>(millis());
 
   // [SIL-2] Memory Integrity POST
   // Verify COBS buffer is functional
@@ -403,26 +403,18 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     return;
   }
 
-  // [SIL-2] Phase 3: O(1) Dispatch via Category Jump Table
-  typedef void (BridgeClass::*CategoryHandler)(const bridge::router::CommandContext&);
-  static const CategoryHandler category_handlers[] = {
-      &BridgeClass::onStatusCommand,      // 0: 48-63
-      &BridgeClass::onSystemCommand,      // 1: 64-79
-      &BridgeClass::onGpioCommand,        // 2: 80-95
-      &BridgeClass::onConsoleCommand,     // 3: 96-111
-      &BridgeClass::onDataStoreCommand,   // 4: 112-127
-      &BridgeClass::onMailboxCommand,     // 5: 128-143
-      &BridgeClass::onFileSystemCommand,  // 6: 144-159
-      &BridgeClass::onProcessCommand      // 7: 160-175
-  };
-
-  const uint16_t cmd = ctx.raw_command;
-  const uint16_t category = (cmd - rpc::RPC_STATUS_CODE_MIN) >> 4;
-
-  if (category < (sizeof(category_handlers) / sizeof(category_handlers[0]))) {
-      (this->*category_handlers[category])(ctx);
-  } else {
-      onUnknownCommand(ctx);
+  // [SIL-2] Phase 3: O(1) Dispatch via Category Switch
+  const uint16_t category = (ctx.raw_command - rpc::RPC_STATUS_CODE_MIN) >> 4;
+  switch (category) {
+    case 0: onStatusCommand(ctx); break;      // 48-63
+    case 1: onSystemCommand(ctx); break;      // 64-79
+    case 2: onGpioCommand(ctx); break;        // 80-95
+    case 3: onConsoleCommand(ctx); break;     // 96-111
+    case 4: onDataStoreCommand(ctx); break;   // 112-127
+    case 5: onMailboxCommand(ctx); break;     // 128-143
+    case 6: onFileSystemCommand(ctx); break;  // 144-159
+    case 7: onProcessCommand(ctx); break;     // 160-175
+    default: onUnknownCommand(ctx); break;
   }
 }
 
@@ -431,29 +423,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 // ============================================================================
 
 void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch Table for Status Codes
-  typedef void (BridgeClass::*StatusHandlerInternal)(
-      const bridge::router::CommandContext&);
-  static const StatusHandlerInternal handlers[] = {
-      nullptr,                               // 48 (OK)
-      nullptr,                               // 49 (ERROR)
-      nullptr,                               // 50 (CMD_UNKNOWN)
-      &BridgeClass::_handleStatusMalformed,  // 51
-      nullptr,                               // 52 (OVERFLOW)
-      nullptr,                               // 53 (CRC_MISMATCH)
-      nullptr,                               // 54 (TIMEOUT)
-      nullptr,                               // 55 (NOT_IMPLEMENTED)
-      &BridgeClass::_handleStatusAck,        // 56
-  };
-
+  // [SIL-2] O(1) Dispatch via Switch for Status Codes
   const uint16_t status_val = ctx.raw_command;
-  if (status_val >= rpc::RPC_STATUS_CODE_MIN &&
-      status_val <
-          rpc::RPC_STATUS_CODE_MIN + (sizeof(handlers) / sizeof(handlers[0]))) {
-    const uint16_t index = status_val - rpc::RPC_STATUS_CODE_MIN;
-    if (handlers[index]) {
-      (this->*handlers[index])(ctx);
-    }
+  switch (status_val - rpc::RPC_STATUS_CODE_MIN) {
+    case 3: _handleStatusMalformed(ctx); break;  // 51
+    case 8: _handleStatusAck(ctx); break;         // 56
+    default: break;
   }
 
   if (_status_handler.is_valid()) {
@@ -475,25 +450,19 @@ void BridgeClass::_handleStatusMalformed(
 }
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch Table for System Commands
-  // Index = (cmd - MIN) / 2 (Since commands are even and responses are odd)
-  typedef void (BridgeClass::*SystemHandler)(
-      const bridge::router::CommandContext&);
-  static const SystemHandler handlers[] = {
-      &BridgeClass::_handleGetVersion,       // 64
-      &BridgeClass::_handleGetFreeMemory,    // 66
-      &BridgeClass::_handleLinkSync,         // 68
-      &BridgeClass::_handleLinkReset,        // 70
-      &BridgeClass::_handleGetCapabilities,  // 72
-      &BridgeClass::_handleSetBaudrate       // 74
-  };
-
+  // [SIL-2] O(1) Dispatch via Switch for System Commands
+  // Index = (cmd - MIN) / 2 (commands are even, responses are odd)
   const uint16_t cmd = ctx.raw_command;
   if (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
       cmd <= rpc::RPC_SYSTEM_COMMAND_MAX) {
-    const uint16_t index = (cmd - rpc::RPC_SYSTEM_COMMAND_MIN) >> 1;
-    if (index < (sizeof(handlers) / sizeof(handlers[0]))) {
-      (this->*handlers[index])(ctx);
+    switch ((cmd - rpc::RPC_SYSTEM_COMMAND_MIN) >> 1) {
+      case 0: _handleGetVersion(ctx); break;       // 64
+      case 1: _handleGetFreeMemory(ctx); break;    // 66
+      case 2: _handleLinkSync(ctx); break;         // 68
+      case 3: _handleLinkReset(ctx); break;        // 70
+      case 4: _handleGetCapabilities(ctx); break;  // 72
+      case 5: _handleSetBaudrate(ctx); break;      // 74
+      default: break;
     }
   }
 }
@@ -672,19 +641,14 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch Table for GPIO Commands
-  typedef void (BridgeClass::*GpioHandler)(const bridge::router::CommandContext&);
-  static const GpioHandler handlers[] = {
-      &BridgeClass::_handleSetPinMode,    // 80
-      &BridgeClass::_handleDigitalWrite,  // 81
-      &BridgeClass::_handleAnalogWrite,   // 82
-      &BridgeClass::_handleDigitalRead,   // 83
-      &BridgeClass::_handleAnalogRead     // 84
-  };
-
-  const uint16_t index = ctx.raw_command - rpc::RPC_GPIO_COMMAND_MIN;
-  if (index < (sizeof(handlers) / sizeof(handlers[0]))) {
-    (this->*handlers[index])(ctx);
+  // [SIL-2] O(1) Dispatch via Switch for GPIO Commands
+  switch (ctx.raw_command - rpc::RPC_GPIO_COMMAND_MIN) {
+    case 0: _handleSetPinMode(ctx); break;    // 80
+    case 1: _handleDigitalWrite(ctx); break;  // 81
+    case 2: _handleAnalogWrite(ctx); break;   // 82
+    case 3: _handleDigitalRead(ctx); break;   // 83
+    case 4: _handleAnalogRead(ctx); break;    // 84
+    default: break;
   }
 }
 
@@ -783,17 +747,12 @@ void BridgeClass::onDataStoreCommand(
 }
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch Table for Mailbox Commands
-  typedef void (BridgeClass::*MailboxHandler)(const bridge::router::CommandContext&);
-  static const MailboxHandler handlers[] = {
-      &BridgeClass::_handleMailboxPush,           // 131
-      &BridgeClass::_handleMailboxReadResp,       // 132
-      &BridgeClass::_handleMailboxAvailableResp,  // 133
-  };
-
-  const uint16_t index = ctx.raw_command - (rpc::RPC_MAILBOX_COMMAND_MIN + 3);
-  if (index < (sizeof(handlers) / sizeof(handlers[0]))) {
-    (this->*handlers[index])(ctx);
+  // [SIL-2] O(1) Dispatch via Switch for Mailbox Commands
+  switch (ctx.raw_command - (rpc::RPC_MAILBOX_COMMAND_MIN + 3)) {
+    case 0: _handleMailboxPush(ctx); break;           // 131
+    case 1: _handleMailboxReadResp(ctx); break;       // 132
+    case 2: _handleMailboxAvailableResp(ctx); break;  // 133
+    default: break;
   }
 }
 
@@ -854,33 +813,21 @@ void BridgeClass::_handleFileReadResp(
 
 void BridgeClass::onFileSystemCommand(
     const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch Table for File System Commands
-  typedef void (BridgeClass::*FileSystemHandler)(const bridge::router::CommandContext&);
-  static const FileSystemHandler handlers[] = {
-      &BridgeClass::_handleFileWrite,    // 144
-      nullptr,                           // 145 (MCU -> LINUX)
-      nullptr,                           // 146 (MCU -> LINUX)
-      &BridgeClass::_handleFileReadResp  // 147
-  };
-
-  const uint16_t index = ctx.raw_command - rpc::RPC_FILESYSTEM_COMMAND_MIN;
-  if (index < (sizeof(handlers) / sizeof(handlers[0])) && handlers[index]) {
-    (this->*handlers[index])(ctx);
+  // [SIL-2] O(1) Dispatch via Switch for File System Commands
+  switch (ctx.raw_command - rpc::RPC_FILESYSTEM_COMMAND_MIN) {
+    case 0: _handleFileWrite(ctx); break;     // 144
+    case 3: _handleFileReadResp(ctx); break;  // 147
+    default: break;
   }
 }
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch Table for Process Commands
-  typedef void (BridgeClass::*ProcessHandler)(const bridge::router::CommandContext&);
-  static const ProcessHandler handlers[] = {
-      &BridgeClass::_handleProcessRunResp,       // 164
-      &BridgeClass::_handleProcessRunAsyncResp,  // 165
-      &BridgeClass::_handleProcessPollResp,      // 166
-  };
-
-  const uint16_t index = ctx.raw_command - (rpc::RPC_PROCESS_COMMAND_MIN + 4);
-  if (index < (sizeof(handlers) / sizeof(handlers[0]))) {
-    (this->*handlers[index])(ctx);
+  // [SIL-2] O(1) Dispatch via Switch for Process Commands
+  switch (ctx.raw_command - (rpc::RPC_PROCESS_COMMAND_MIN + 4)) {
+    case 0: _handleProcessRunResp(ctx); break;       // 164
+    case 1: _handleProcessRunAsyncResp(ctx); break;  // 165
+    case 2: _handleProcessPollResp(ctx); break;      // 166
+    default: break;
   }
 }
 
@@ -1371,18 +1318,18 @@ bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
                    [&frame](const RxHistory& r) { return r.crc == frame.crc; });
 
   if (it != _rx_history.end()) {
-    const unsigned long elapsed = millis() - it->timestamp;
+    const uint32_t elapsed = static_cast<uint32_t>(millis()) - it->timestamp;
     if (_ack_timeout_ms > 0 &&
-        elapsed < static_cast<unsigned long>(_ack_timeout_ms))
+        elapsed < static_cast<uint32_t>(_ack_timeout_ms))
       return false;
-    return elapsed <= (static_cast<unsigned long>(_ack_timeout_ms) *
+    return elapsed <= (static_cast<uint32_t>(_ack_timeout_ms) *
                        (_ack_retry_limit + 1));
   }
   return false;
 }
 
 void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
-  _rx_history.push(RxHistory{frame.crc, millis()});
+  _rx_history.push(RxHistory{frame.crc, static_cast<uint32_t>(millis())});
 }
 
 // [SIL-2] ETL Error Handler Implementation

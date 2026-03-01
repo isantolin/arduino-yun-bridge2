@@ -1,5 +1,3 @@
-#include <string.h>
-
 #include "Bridge.h"
 #include "protocol/rpc_protocol.h"
 

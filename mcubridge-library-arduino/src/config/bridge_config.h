@@ -26,12 +26,12 @@
 #endif
 
 // [SIL-2] Resource Allocation Tuning
-// On memory constrained AVR (Mega/Yun), we limit the pending queue to 2 frames
-// (1 Active + 1 Pending). Previously this was 1, but we merged the active frame
-// buffer into the queue.
+// On memory constrained AVR (Mega/Yun), limit the pending queue to 1 frame.
+// The stop-and-wait ARQ protocol only keeps one outstanding frame at a time,
+// so depth=1 is sufficient for normal serial operation.
 #if defined(ARDUINO_ARCH_AVR)
 #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
-#define BRIDGE_MAX_PENDING_TX_FRAMES 2
+#define BRIDGE_MAX_PENDING_TX_FRAMES 1
 #endif
 #else
 #include "../protocol/rpc_protocol.h"
@@ -59,15 +59,14 @@
 // Console ring buffers (MCU-side only; not part of the protocol).
 // Defaults to 48 bytes to keep SRAM usage predictable on AVR.
 #if defined(ARDUINO_ARCH_AVR)
-// [SIL-2] Reduce console buffers for AVR to save ~32 bytes
-// Increased from 16 to 32 to allow small batches of messages without frequent
-// XOFF.
+// [SIL-2] Reduce console buffers for AVR to save SRAM.
+// 16 bytes per buffer keeps total console overhead at 32 bytes.
 #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 32U
+#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 16U
 #endif
 
 #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 32U
+#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 16U
 #endif
 #else
 #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
@@ -114,8 +113,10 @@
 #endif
 
 // [SIL-2] RX History size for duplicate detection
+// 2 entries covers 2× BRIDGE_RX_DEDUPE_INTERVAL_MS (2000ms) which is
+// sufficient for typical serial retry windows on AVR.
 #ifndef BRIDGE_RX_HISTORY_SIZE
-#define BRIDGE_RX_HISTORY_SIZE 4U
+#define BRIDGE_RX_HISTORY_SIZE 2U
 #endif
 
 // [SIL-2] HMAC key derivation buffer sizes (SHA256 specific)

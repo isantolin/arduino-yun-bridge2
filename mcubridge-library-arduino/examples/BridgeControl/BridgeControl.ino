@@ -8,6 +8,12 @@
 // (/etc/mcu-bridge.conf o similar)
 #define BRIDGE_SECRET "DEBUG_INSECURE"
 
+// [MEMORY] Disable unused services to save Flash and RAM on ATmega32U4.
+// These can be re-enabled by setting the corresponding macro to 1.
+#define BRIDGE_ENABLE_DATASTORE 0
+#define BRIDGE_ENABLE_FILESYSTEM 0
+#define BRIDGE_ENABLE_PROCESS 0
+
 #include <Bridge.h>
 #include <string.h>
 

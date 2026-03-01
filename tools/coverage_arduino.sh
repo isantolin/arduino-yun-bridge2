@@ -40,6 +40,7 @@ CXXFLAGS=(
     "-ftest-coverage"
     "-fPIC"
     "-DARDUINO=100"
+    "-DBRIDGE_HOST_TEST=1"
     "-DBRIDGE_DEBUG_IO=1"
     "-DBRIDGE_ENABLE_CONSOLE=1"
     "-DBRIDGE_ENABLE_DATASTORE=1"

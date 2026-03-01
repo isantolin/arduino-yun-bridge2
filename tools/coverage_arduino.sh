@@ -58,12 +58,14 @@ TEST_SUITES=(
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites..."
+pushd "${BUILD_DIR}" > /dev/null
 for suite in "${TEST_SUITES[@]}"; do
     echo "  -> Procesando ${suite}..."
     suite_src="${TEST_ROOT}/${suite}.cpp"
     suite_bin="${BUILD_DIR}/${suite}"
     
     # Compile suite including all required sources
+    # Run from BUILD_DIR so .gcno/.gcda files land here
     g++ "${CXXFLAGS[@]}" "${suite_src}" "${SOURCES[@]}" -o "${suite_bin}"
     
     # Execute
@@ -72,7 +74,7 @@ for suite in "${TEST_SUITES[@]}"; do
     # Generate gcov JSON for this suite's run
     # For each source file, generate a gcov report
     for src in "${SOURCES[@]}"; do
-        gcov -l -p -i -o "${BUILD_DIR}" "${src}" > /dev/null
+        gcov -l -p -i -o "${BUILD_DIR}" "${src}" > /dev/null 2>&1 || true
     done
     
     # Move generated .gcov.json.gz to JSON_DIR
@@ -81,6 +83,7 @@ for suite in "${TEST_SUITES[@]}"; do
         mv "$f" "${JSON_DIR}/${suite}-$f" 2>/dev/null || true
     done
 done
+popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
 gcovr --root "${SRC_ROOT}" --add-tracefile "${JSON_DIR}/*.json" --filter "${SRC_ROOT}" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --print-summary > "${OUTPUT_ROOT}/summary.txt"

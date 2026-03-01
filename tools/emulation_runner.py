@@ -385,6 +385,10 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
 
             input_bytes = b"exit\n" if "console" in str(script) else None
 
+            # mailbox_read_test polls forever; limit it in CI.
+            if "mailbox_read" in str(script):
+                cmd.extend(["--max-polls", "1"])
+
             subprocess.run(
                 cmd,
                 env=env,

@@ -747,11 +747,10 @@ class ProcessComponent:
         guard = self._process_slots
         if guard is None:
             return True
-        try:
-            await asyncio.wait_for(guard.acquire(), timeout=0)
-            return True
-        except (TimeoutError, asyncio.TimeoutError):
+        if guard.locked():
             return False
+        await guard.acquire()
+        return True
 
     async def _read_stream_chunk(self, pid: int, reader: StreamReader, *, timeout: float = 0.0) -> bytes:
         """Read a single chunk from a stream reader with optional timeout.

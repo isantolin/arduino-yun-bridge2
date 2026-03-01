@@ -23,6 +23,7 @@ async def run_test(
     user: Optional[str],
     password: Optional[str],
     tls_insecure: bool,
+    max_polls: int,
 ) -> None:
     dump_client_env(logger)
 
@@ -32,8 +33,10 @@ async def run_test(
 
     try:
         logger.info("Waiting for mailbox messages. Press Ctrl+C to stop.")
-        while True:
+        polls = 0
+        while max_polls <= 0 or polls < max_polls:
             message: bytes | None = await bridge.mailbox_read(timeout=10)
+            polls += 1
             if message is None:
                 logger.info("No mailbox message within timeout; still listening...")
                 continue
@@ -44,6 +47,8 @@ async def run_test(
                 len(message),
                 preview,
             )
+        if max_polls > 0:
+            logger.info("Reached max polls (%d), exiting.", max_polls)
     finally:
         await bridge.disconnect()
         logger.info("Disconnected from MQTT broker.")
@@ -56,9 +61,10 @@ def main(
     user: Annotated[Optional[str], typer.Option(help="MQTT Username")] = None,
     password: Annotated[Optional[str], typer.Option(help="MQTT Password")] = None,
     tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = False,
+    max_polls: Annotated[int, typer.Option(help="Max poll cycles (0 = unlimited)")] = 0,
 ) -> None:
     try:
-        asyncio.run(run_test(host, port, user, password, tls_insecure))
+        asyncio.run(run_test(host, port, user, password, tls_insecure, max_polls))
     except KeyboardInterrupt:
         logger.info("Exiting due to KeyboardInterrupt.")
 

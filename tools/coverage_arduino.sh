@@ -8,9 +8,8 @@ TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
 BUILD_DIR="${LIB_ROOT}/build-coverage"
-JSON_DIR="${BUILD_DIR}/json"
 
-mkdir -p "${OUTPUT_ROOT}" "${BUILD_DIR}" "${JSON_DIR}"
+mkdir -p "${OUTPUT_ROOT}" "${BUILD_DIR}"
 
 # [SIL-2] Library Installation (Dependencies)
 "${ROOT_DIR}/tools/ci_arduino_host_tests.sh" --install-only
@@ -70,23 +69,11 @@ for suite in "${TEST_SUITES[@]}"; do
     
     # Execute
     "${suite_bin}"
-    
-    # Generate gcov JSON for this suite's run
-    # For each source file, generate a gcov report
-    for src in "${SOURCES[@]}"; do
-        gcov -l -p -i -o "${BUILD_DIR}" "${src}" > /dev/null 2>&1 || true
-    done
-    
-    # Move generated .gcov.json.gz to JSON_DIR
-    # Important: append suite name to avoid collision if multiple suites run
-    for f in *.gcov.json.gz; do
-        mv "$f" "${JSON_DIR}/${suite}-$f" 2>/dev/null || true
-    done
 done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
-gcovr --root "${SRC_ROOT}" --add-tracefile "${JSON_DIR}/*.json" --filter "${SRC_ROOT}" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --print-summary > "${OUTPUT_ROOT}/summary.txt"
+gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 # Optional: also output term summary
 cat "${OUTPUT_ROOT}/summary.txt"

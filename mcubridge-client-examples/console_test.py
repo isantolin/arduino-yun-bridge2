@@ -3,12 +3,11 @@
 
 import asyncio
 import logging
-import ssl
 import sys
 from typing import Optional, Annotated
 
 import typer
-from mcubridge_client import Bridge, dump_client_env
+from mcubridge_client import Bridge, build_bridge_args, dump_client_env
 
 app = typer.Typer(help="Interactive console helper for the Arduino bridge.")
 
@@ -35,21 +34,7 @@ async def run_test(
 
     dump_client_env(logging.getLogger(__name__))
 
-    bridge_args: dict[str, object] = {}
-    if host:
-        bridge_args["host"] = host
-    if port:
-        bridge_args["port"] = port
-    if user:
-        bridge_args["username"] = user
-    if password:
-        bridge_args["password"] = password
-    if tls_insecure:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        bridge_args["tls_context"] = ctx
-
+    bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
     bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
     await bridge.connect()
 

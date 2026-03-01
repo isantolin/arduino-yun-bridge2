@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ssl
 import time
 from enum import IntEnum
 from typing import Final, TypedDict
@@ -104,6 +105,35 @@ def build_mqtt_properties(message: QueuedPublish) -> Properties:
     return props
 
 
+def build_bridge_args(
+    host: str | None = None,
+    port: int | None = None,
+    user: str | None = None,
+    password: str | None = None,
+    tls_insecure: bool = False,
+    *,
+    disable_tls: bool = False,
+) -> dict[str, object]:
+    """Build Bridge constructor keyword arguments from CLI/env parameters."""
+    args: dict[str, object] = {}
+    if host:
+        args["host"] = host
+    if port:
+        args["port"] = port
+    if user:
+        args["username"] = user
+    if password:
+        args["password"] = password
+    if tls_insecure:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        args["tls_context"] = ctx
+    elif disable_tls:
+        args["tls_context"] = None
+    return args
+
+
 __all__ = [
     "DEFAULT_MQTT_HOST",
     "DEFAULT_MQTT_PORT",
@@ -113,5 +143,6 @@ __all__ = [
     "QueuedPublish",
     "SpoolRecord",
     "UserProperty",
+    "build_bridge_args",
     "build_mqtt_properties",
 ]

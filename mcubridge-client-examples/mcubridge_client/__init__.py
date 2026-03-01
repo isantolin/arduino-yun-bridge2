@@ -24,12 +24,14 @@ from .definitions import (
     DEFAULT_MQTT_TOPIC,
     QOSLevel,
     QueuedPublish,
+    build_bridge_args,
     build_mqtt_properties,
 )
 from .env import dump_client_env, read_uci_general
 
 __all__ = [
     "Bridge",
+    "build_bridge_args",
     "dump_client_env",
     "MqttError",
     "QOSLevel",

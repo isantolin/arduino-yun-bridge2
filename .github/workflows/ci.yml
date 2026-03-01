@@ -208,7 +208,17 @@ jobs:
         run: |
           ./tools/compile_emulator.sh
           pip install -r requirements/runtime.txt
-          python3 -u tools/emulation_runner.py --firmware ${{ matrix.firmware }}
+          python3 -u tools/emulation_runner.py \
+            --firmware ${{ matrix.firmware }} \
+            mcubridge-client-examples/led13_test.py \
+            mcubridge-client-examples/console_test.py \
+            mcubridge-client-examples/datastore_test.py \
+            mcubridge-client-examples/fileio_test.py \
+            mcubridge-client-examples/mailbox_test.py \
+            mcubridge-client-examples/mailbox_read_test.py \
+            mcubridge-client-examples/process_test.py \
+            mcubridge-client-examples/sensor_reader_test.py \
+            mcubridge-client-examples/all_features_test.py
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
@@ -216,7 +226,7 @@ jobs:
   coverage-report:
     name: Final Summary
     runs-on: ubuntu-latest
-    needs: [python-tests, arduino-host, arduino-examples]
+    needs: [python-tests, arduino-host, arduino-examples, arduino-emulation]
     if: always()
     timeout-minutes: 3
     steps:

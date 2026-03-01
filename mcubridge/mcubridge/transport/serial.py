@@ -16,7 +16,8 @@ import asyncio
 import contextlib
 import errno
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Final, Sized, TypeGuard, cast
+from collections.abc import Callable, Sized
+from typing import TYPE_CHECKING, Any, Final, TypeGuard, cast
 
 import msgspec
 import serial_asyncio_fast

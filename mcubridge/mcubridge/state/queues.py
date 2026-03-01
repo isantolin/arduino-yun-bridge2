@@ -15,7 +15,7 @@ class BoundedByteDeque(msgspec.Struct):
 
     max_items: Annotated[int | None, msgspec.Meta(ge=0)] = None
     max_bytes: Annotated[int | None, msgspec.Meta(ge=0)] = None
-    _queue: deque[bytes] = msgspec.field(default_factory=lambda: deque())
+    _queue: deque[bytes] = msgspec.field(default_factory=lambda: deque[bytes]())
     _bytes: int = 0
 
     def __len__(self) -> int:

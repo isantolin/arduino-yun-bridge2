@@ -1,6 +1,7 @@
 import asyncio
 from asyncio.subprocess import Process
-from typing import Awaitable, Callable, cast
+from collections.abc import Awaitable, Callable
+from typing import cast
 
 import pytest
 from mcubridge.protocol import protocol

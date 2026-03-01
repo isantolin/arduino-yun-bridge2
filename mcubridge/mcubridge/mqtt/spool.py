@@ -8,7 +8,8 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Protocol, cast
+from collections.abc import Callable
+from typing import Protocol, cast
 
 import msgspec
 

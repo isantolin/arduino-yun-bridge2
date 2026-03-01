@@ -71,7 +71,7 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
             raise OSError("boom")
 
     module = types.SimpleNamespace(
-        Uci=lambda: FakeCursor(),
+        Uci=FakeCursor,
         UciException=OSError,
     )
     monkeypatch.setitem(sys.modules, "uci", module)

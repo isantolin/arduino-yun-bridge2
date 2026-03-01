@@ -22,7 +22,7 @@ from mcubridge.daemon import BridgeDaemon  # noqa: E402
 from mcubridge.protocol.frame import Frame  # noqa: E402
 from mcubridge.protocol.protocol import FRAME_DELIMITER  # noqa: E402
 from mcubridge.protocol.protocol import UINT8_MASK  # noqa: E402
-from mcubridge.protocol.protocol import Command  # noqa: E402; noqa: E402
+from mcubridge.protocol.protocol import Command  # noqa: E402
 from mcubridge.transport.mqtt import MqttTransport  # noqa: E402
 
 # --- DAEMON TESTS (Refactored) ---

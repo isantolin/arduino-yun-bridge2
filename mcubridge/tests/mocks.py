@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
 
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig

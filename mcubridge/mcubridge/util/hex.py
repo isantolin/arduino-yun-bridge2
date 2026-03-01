@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 
 def format_hex(data: bytes | bytearray | memoryview | Iterable[int]) -> str:

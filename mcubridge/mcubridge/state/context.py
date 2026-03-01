@@ -328,7 +328,9 @@ class RuntimeState(msgspec.Struct):
         if self.link_sync_event:
             self.link_sync_event.set()
 
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(default_factory=lambda: asyncio.Queue())
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
+        default_factory=lambda: asyncio.Queue[QueuedPublish](),
+    )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})
     mqtt_spool: MQTTPublishSpool | None = None
@@ -350,7 +352,7 @@ class RuntimeState(msgspec.Struct):
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})
     mailbox_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     mcu_is_paused: bool = False
-    serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=lambda: asyncio.Event())
+    serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     console_to_mcu_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
@@ -375,10 +377,10 @@ class RuntimeState(msgspec.Struct):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: collections.deque(),
+        default_factory=lambda: collections.deque[PendingPinRequest](),
     )
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: collections.deque(),
+        default_factory=lambda: collections.deque[PendingPinRequest](),
     )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT

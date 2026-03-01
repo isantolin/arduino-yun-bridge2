@@ -1,6 +1,6 @@
 [run]
 branch = True
-source = openwrt-mcu-bridge
+source = mcubridge/mcubridge
 
 [report]
 show_missing = True

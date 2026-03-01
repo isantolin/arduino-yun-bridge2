@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import collections
 import logging
-from typing import Awaitable, Callable, cast
+from collections.abc import Awaitable, Callable
+from typing import cast
 
 from aiomqtt.message import Message
 from construct import ConstructError

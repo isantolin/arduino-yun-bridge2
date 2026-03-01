@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import collections
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from aiomqtt.message import Message
 from construct import ConstructError

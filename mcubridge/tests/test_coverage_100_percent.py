@@ -85,7 +85,7 @@ async def test_runtime_state_spool_failure_coverage(tmp_path):
 
 @pytest.mark.asyncio
 async def test_process_component_error_coverage():
-    """Cover error branches in process.py."""
+    """Cover error branches in _execute_sync_command."""
     config = RuntimeConfig(serial_shared_secret=b"test_secret_123")
     config.process_max_concurrent = 4
 
@@ -95,8 +95,8 @@ async def test_process_component_error_coverage():
     mock_ctx = mock.AsyncMock()
     comp = ProcessComponent(config=config, state=mock_state, ctx=mock_ctx)
 
-    with mock.patch("asyncio.create_subprocess_shell", side_effect=OSError("Boom")):
-        await comp.handle_run(b"ls")
+    with mock.patch("asyncio.create_subprocess_exec", side_effect=OSError("Boom")):
+        await comp._execute_sync_command("ls", ["ls"])
         mock_ctx.send_frame.assert_called()
         args = mock_ctx.send_frame.call_args[0]
         assert args[0] == Status.ERROR.value

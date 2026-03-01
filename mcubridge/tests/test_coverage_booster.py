@@ -97,6 +97,9 @@ async def test_process_finalize_async_process_fsm_fail():
     slot.trigger = MagicMock(side_effect=MachineError("FSM Fail"))
     state.running_processes = {123: slot}
 
+    # Acquire a slot so _finalize_async_process can release it without ValueError
+    await comp._try_acquire_process_slot()
+
     with patch.object(comp, "_drain_process_pipes", new_callable=AsyncMock, return_value=(b"", b"")):
         await comp._finalize_async_process(123, MagicMock())
 

@@ -559,20 +559,23 @@ class Bridge:
         return payload
 
     async def file_write(self, filename: str, content: str | bytes) -> None:
-        topic = f"{self.topic_prefix}/file/write/{filename}"
+        fn = filename.lstrip("/")
+        topic = f"{self.topic_prefix}/file/write/{fn}"
         await self._publish_simple(topic, content)
         logger.debug("file_write('%s', %d bytes)", filename, len(content))
 
     async def file_read(self, filename: str, timeout: float = 10) -> bytes:
+        fn = filename.lstrip("/")
         return await self._publish_and_wait(
-            f"{self.topic_prefix}/file/read/{filename}",
+            f"{self.topic_prefix}/file/read/{fn}",
             b"",
-            resp_topic=f"{self.topic_prefix}/file/read/response/{filename}",
+            resp_topic=f"{self.topic_prefix}/file/read/response/{fn}",
             timeout=timeout,
         )
 
     async def file_remove(self, filename: str) -> None:
-        topic = f"{self.topic_prefix}/file/remove/{filename}"
+        fn = filename.lstrip("/")
+        topic = f"{self.topic_prefix}/file/remove/{fn}"
         await self._publish_simple(topic, b"")
         logger.debug("file_remove('%s')", filename)
 

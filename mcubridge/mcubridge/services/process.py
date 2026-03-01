@@ -514,8 +514,9 @@ class ProcessComponent:
 
             exit_value = slot.exit_code if slot.exit_code is not None else PROCESS_DEFAULT_EXIT_CODE
 
-        if released_slot:
-            self._release_process_slot()
+        # Note: Do NOT release the process slot here.
+        # _finalize_async_process already released it when the OS process exited.
+        # Releasing again would cause "BoundedSemaphore released too many times".
 
         if log_finished:
             logger.info(

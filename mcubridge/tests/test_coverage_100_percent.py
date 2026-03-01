@@ -95,7 +95,7 @@ async def test_process_component_error_coverage():
     mock_ctx = mock.AsyncMock()
     comp = ProcessComponent(config=config, state=mock_state, ctx=mock_ctx)
 
-    with mock.patch("asyncio.create_subprocess_exec", side_effect=OSError("Boom")):
+    with mock.patch.object(comp, "run_sync", side_effect=OSError("Boom")):
         await comp._execute_sync_command("ls", ["ls"])
         mock_ctx.send_frame.assert_called()
         args = mock_ctx.send_frame.call_args[0]

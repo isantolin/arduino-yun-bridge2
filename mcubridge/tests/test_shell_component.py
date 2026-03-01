@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.mqtt.messages import QueuedPublish
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.policy import CommandValidationError
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import ShellAction, Status

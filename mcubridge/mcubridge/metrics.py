@@ -16,7 +16,7 @@ import tenacity
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from prometheus_client.core import Metric
 
-from .mqtt.messages import QueuedPublish
+from .protocol.structures import QueuedPublish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
 

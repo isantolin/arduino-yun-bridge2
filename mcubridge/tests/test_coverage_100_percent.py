@@ -75,7 +75,7 @@ async def test_runtime_state_spool_failure_coverage(tmp_path):
         mock_spool.append.side_effect = OSError("Disk full")
         state.mqtt_spool = mock_spool
 
-        from mcubridge.mqtt.messages import QueuedPublish
+        from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish("topic", b"payload")
         res = await state.stash_mqtt_message(msg)

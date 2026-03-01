@@ -21,7 +21,7 @@ from mcubridge.config.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.mqtt.messages import QueuedPublish
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state

@@ -27,7 +27,7 @@ from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from ..config.settings import RuntimeConfig
-from ..mqtt.messages import QueuedPublish
+from ..protocol.structures import QueuedPublish
 from ..protocol import protocol
 from ..protocol.protocol import MAX_PAYLOAD_SIZE, Command, Status
 from ..protocol.structures import CapabilitiesPacket, HandshakeConfigPacket

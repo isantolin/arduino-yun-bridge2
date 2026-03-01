@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.mqtt.messages import QueuedPublish
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.file import FileComponent

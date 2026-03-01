@@ -12,7 +12,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 if TYPE_CHECKING:
-    from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.protocol.structures import QueuedPublish
 
 __all__ = [
     "build_mqtt_connect_properties",

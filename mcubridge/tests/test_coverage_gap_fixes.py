@@ -15,7 +15,7 @@ from construct import ConstructError
 from mcubridge import daemon, metrics
 from mcubridge.config import common, settings
 from mcubridge.mqtt import spool
-from mcubridge.mqtt.messages import QueuedPublish
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import structures, topics
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
@@ -121,7 +121,7 @@ def test_log_hexdump_disabled():
 
 def test_build_mqtt_properties_branches():
     """Cover remaining branches in build_mqtt_properties."""
-    from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.protocol.structures import QueuedPublish
 
     # Test with multiple properties to cover all lines
     msg = QueuedPublish(
@@ -787,7 +787,7 @@ async def test_mqtt_publisher_loop_gaps():
     service = MagicMock()
     transport = mqtt.MqttTransport(config, state, service)
 
-    from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.protocol.structures import QueuedPublish
 
     msg = QueuedPublish("t", b"p")
     # State already has a queue from create_runtime_state

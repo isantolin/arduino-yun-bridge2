@@ -174,7 +174,7 @@ def test_spool_disk_queue_initialization_failure() -> None:
 
 def test_spool_append_disk_error_falls_back_to_memory() -> None:
     """Cover disk error during append."""
-    from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.protocol.structures import QueuedPublish
     from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -201,7 +201,7 @@ def test_spool_append_disk_error_falls_back_to_memory() -> None:
 
 def test_spool_pop_disk_error_retries_with_memory() -> None:
     """Cover disk error during pop."""
-    from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.protocol.structures import QueuedPublish
     from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -229,7 +229,7 @@ def test_spool_pop_disk_error_retries_with_memory() -> None:
 
 def test_spool_requeue_disk_error() -> None:
     """Cover disk error during requeue."""
-    from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.protocol.structures import QueuedPublish
     from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -280,7 +280,7 @@ def test_spool_fallback_hook_called() -> None:
 
 def test_spool_disk_full_errno() -> None:
     """Cover ENOSPC errno handling."""
-    from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.protocol.structures import QueuedPublish
     from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with tempfile.TemporaryDirectory() as tmpdir:

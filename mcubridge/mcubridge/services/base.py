@@ -9,7 +9,7 @@ from typing import Any, Protocol
 from aiomqtt.message import Message
 
 from ..config.settings import RuntimeConfig
-from ..mqtt.messages import QueuedPublish
+from ..protocol.structures import QueuedPublish
 from ..state.context import RuntimeState
 
 

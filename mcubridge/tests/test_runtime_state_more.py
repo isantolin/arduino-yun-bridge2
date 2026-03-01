@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.mqtt.messages import QueuedPublish
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState, create_runtime_state

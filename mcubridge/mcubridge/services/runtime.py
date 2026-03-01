@@ -11,7 +11,7 @@ from aiomqtt.message import Message
 
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
 from ..config.settings import RuntimeConfig
-from ..mqtt.messages import QueuedPublish
+from ..protocol.structures import QueuedPublish
 from ..protocol import protocol
 from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
 from ..protocol.structures import UINT16_STRUCT, AckPacket

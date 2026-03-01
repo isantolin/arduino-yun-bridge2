@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mcubridge.mqtt.messages import QueuedPublish, SpoolRecord
+from mcubridge.protocol.structures import QueuedPublish, SpoolRecord
 from mcubridge.protocol import protocol
 
 

@@ -12,7 +12,7 @@ from typing import Callable, Protocol, cast
 
 import msgspec
 
-from .messages import QueuedPublish, SpoolRecord
+from ..protocol.structures import QueuedPublish, SpoolRecord
 
 logger = logging.getLogger("mcubridge.mqtt.spool")
 

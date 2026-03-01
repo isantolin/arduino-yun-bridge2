@@ -153,7 +153,7 @@ async def test_metrics_snapshot_emit_exceptions():
 
 def test_spool_disk_error_requeue():
     """Test MQTT spool requeue disk error handling."""
-    from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.protocol.structures import QueuedPublish
     from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with patch("mcubridge.mqtt.spool.FileSpoolDeque") as mock_dq:

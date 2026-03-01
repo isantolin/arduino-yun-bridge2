@@ -37,7 +37,7 @@ from ..config.const import (
     SPOOL_BACKOFF_MIN_SECONDS,
 )
 from ..config.settings import RuntimeConfig
-from ..mqtt.messages import QueuedPublish
+from ..protocol.structures import QueuedPublish
 from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from ..policy import AllowedCommandPolicy, TopicAuthorization
 from ..protocol import protocol

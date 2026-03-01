@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.mqtt.messages import QueuedPublish
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status

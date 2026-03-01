@@ -46,7 +46,7 @@ async def test_runtime_enqueue_mqtt_saturated() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.protocol.structures import QueuedPublish
 
     msg1 = QueuedPublish(topic_name="t1", payload=b"p1")
     msg2 = QueuedPublish(topic_name="t2", payload=b"p2")

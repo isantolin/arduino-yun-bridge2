@@ -19,7 +19,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
+
+#include <etl/algorithm.h>
+#include <etl/array.h>
 
 class SHA256 {
  public:
@@ -39,8 +41,8 @@ class SHA256 {
   void processChunk();
   void formatHMACKey(const void* key, size_t len, uint8_t pad);
 
-  uint32_t h_[8];
-  uint32_t w_[16];
+  etl::array<uint32_t, 8> h_;
+  etl::array<uint32_t, 16> w_;
   uint64_t length_;
   uint8_t chunkSize_;
 };
@@ -55,51 +57,51 @@ inline void hkdf(void* out, size_t outLen, const void* key, size_t keyLen,
                  const void* salt, size_t saltLen, const void* info,
                  size_t infoLen) {
   T hash;
-  uint8_t prk[T::HASH_SIZE];
+  etl::array<uint8_t, T::HASH_SIZE> prk;
 
   // --- Extract phase: PRK = HMAC-Hash(salt, IKM) ---
   const uint8_t* s;
   size_t slen;
-  uint8_t zero_salt[T::HASH_SIZE];
+  etl::array<uint8_t, T::HASH_SIZE> zero_salt;
   if (salt && saltLen) {
     s = static_cast<const uint8_t*>(salt);
     slen = saltLen;
   } else {
-    memset(zero_salt, 0, sizeof(zero_salt));
-    s = zero_salt;
+    zero_salt.fill(0);
+    s = zero_salt.data();
     slen = T::HASH_SIZE;
   }
   hash.resetHMAC(s, slen);
   hash.update(key, keyLen);
-  hash.finalizeHMAC(s, slen, prk, T::HASH_SIZE);
+  hash.finalizeHMAC(s, slen, prk.data(), T::HASH_SIZE);
 
   // --- Expand phase: T(i) = HMAC-Hash(PRK, T(i-1) || info || counter) ---
-  uint8_t t_block[T::HASH_SIZE];
+  etl::array<uint8_t, T::HASH_SIZE> t_block;
   uint8_t* outPtr = static_cast<uint8_t*>(out);
   uint8_t counter = 1;
 
   while (outLen > 0) {
-    hash.resetHMAC(prk, T::HASH_SIZE);
+    hash.resetHMAC(prk.data(), T::HASH_SIZE);
     if (counter > 1) {
-      hash.update(t_block, T::HASH_SIZE);
+      hash.update(t_block.data(), T::HASH_SIZE);
     }
     if (info && infoLen) {
       hash.update(info, infoLen);
     }
     hash.update(&counter, 1);
-    hash.finalizeHMAC(prk, T::HASH_SIZE, t_block, T::HASH_SIZE);
+    hash.finalizeHMAC(prk.data(), T::HASH_SIZE, t_block.data(), T::HASH_SIZE);
     ++counter;
 
-    size_t n = (outLen < T::HASH_SIZE) ? outLen : T::HASH_SIZE;
-    memcpy(outPtr, t_block, n);
+    size_t n = etl::min(outLen, size_t(T::HASH_SIZE));
+    etl::copy_n(t_block.data(), n, outPtr);
     outPtr += n;
     outLen -= n;
   }
 
-  // Zero sensitive material.
-  volatile uint8_t* p = prk;
+  // Securely zero sensitive material.
+  volatile uint8_t* p = prk.data();
   for (size_t i = 0; i < T::HASH_SIZE; i++) *p++ = 0;
-  p = t_block;
+  p = t_block.data();
   for (size_t i = 0; i < T::HASH_SIZE; i++) *p++ = 0;
 }
 

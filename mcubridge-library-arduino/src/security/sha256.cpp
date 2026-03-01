@@ -16,7 +16,8 @@
  */
 #include "sha256.h"
 
-#include <string.h>
+#include <etl/algorithm.h>
+#include <etl/binary.h>
 
 // --- Platform-specific PROGMEM support ---
 #ifdef ARDUINO_ARCH_AVR
@@ -30,17 +31,6 @@
   (*reinterpret_cast<const uint32_t*>(addr))  // NOLINT
 #endif
 #endif
-
-// --- Helpers ---
-
-static inline uint32_t bswap32(uint32_t x) {
-  return ((x >> 24) & 0xFFu) | ((x >> 8) & 0xFF00u) | ((x << 8) & 0xFF0000u) |
-         ((x << 24) & 0xFF000000u);
-}
-
-static inline uint32_t rotr32(uint32_t x, uint8_t n) {
-  return (x >> n) | (x << (32 - n));
-}
 
 // SHA-256 round constants (FIPS 180-4 §4.2.2).
 static const uint32_t K[64] PROGMEM = {
@@ -69,7 +59,7 @@ void SHA256::reset() {
   h_[5] = 0x9b05688c;
   h_[6] = 0x1f83d9ab;
   h_[7] = 0x5be0cd19;
-  memset(w_, 0, sizeof(w_));
+  w_.fill(0);
   chunkSize_ = 0;
   length_ = 0;
 }
@@ -81,7 +71,7 @@ void SHA256::update(const void* data, size_t len) {
   while (len > 0) {
     uint8_t room = 64 - chunkSize_;
     if (room > len) room = static_cast<uint8_t>(len);
-    memcpy(reinterpret_cast<uint8_t*>(w_) + chunkSize_, d, room);
+    etl::copy_n(d, room, reinterpret_cast<uint8_t*>(w_.data()) + chunkSize_);
     chunkSize_ += room;
     len -= room;
     d += room;
@@ -93,36 +83,37 @@ void SHA256::update(const void* data, size_t len) {
 }
 
 void SHA256::finalize(void* hash, size_t len) {
-  uint8_t* wb = reinterpret_cast<uint8_t*>(w_);
+  uint8_t* wb = reinterpret_cast<uint8_t*>(w_.data());
 
   // Pad the last chunk (may need two blocks).
   if (chunkSize_ <= 55) {
     wb[chunkSize_] = 0x80;
-    memset(wb + chunkSize_ + 1, 0, 55 - chunkSize_);
-    w_[14] = bswap32(static_cast<uint32_t>(length_ >> 32));
-    w_[15] = bswap32(static_cast<uint32_t>(length_));
+    etl::fill_n(wb + chunkSize_ + 1, 55 - chunkSize_, uint8_t(0));
+    w_[14] = etl::reverse_bytes(static_cast<uint32_t>(length_ >> 32));
+    w_[15] = etl::reverse_bytes(static_cast<uint32_t>(length_));
     processChunk();
   } else {
     wb[chunkSize_] = 0x80;
-    memset(wb + chunkSize_ + 1, 0, 63 - chunkSize_);
+    etl::fill_n(wb + chunkSize_ + 1, 63 - chunkSize_, uint8_t(0));
     processChunk();
-    memset(wb, 0, 56);
-    w_[14] = bswap32(static_cast<uint32_t>(length_ >> 32));
-    w_[15] = bswap32(static_cast<uint32_t>(length_));
+    etl::fill_n(wb, 56, uint8_t(0));
+    w_[14] = etl::reverse_bytes(static_cast<uint32_t>(length_ >> 32));
+    w_[15] = etl::reverse_bytes(static_cast<uint32_t>(length_));
     processChunk();
   }
 
   // Convert hash state to big-endian and copy out.
-  for (uint8_t i = 0; i < 8; ++i) w_[i] = bswap32(h_[i]);
+  for (uint8_t i = 0; i < 8; ++i) w_[i] = etl::reverse_bytes(h_[i]);
 
   if (len > HASH_SIZE) len = HASH_SIZE;
-  memcpy(hash, w_, len);
+  etl::copy_n(reinterpret_cast<const uint8_t*>(w_.data()), len,
+              static_cast<uint8_t*>(hash));
 }
 
 void SHA256::processChunk() {
   // Convert first 16 words from big-endian to host byte order.
   uint8_t i;
-  for (i = 0; i < 16; ++i) w_[i] = bswap32(w_[i]);
+  for (i = 0; i < 16; ++i) w_[i] = etl::reverse_bytes(w_[i]);
 
   uint32_t a = h_[0], b = h_[1], c = h_[2], d = h_[3];
   uint32_t e = h_[4], f = h_[5], g = h_[6], h = h_[7];
@@ -130,9 +121,12 @@ void SHA256::processChunk() {
 
   // Rounds 0-15: use w_[] directly.
   for (i = 0; i < 16; ++i) {
-    t1 = h + (rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25)) +
+    t1 = h +
+         (etl::rotate_right(e, 6) ^ etl::rotate_right(e, 11) ^
+          etl::rotate_right(e, 25)) +
          ((e & f) ^ (~e & g)) + pgm_read_dword(K + i) + w_[i];
-    t2 = (rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22)) +
+    t2 = (etl::rotate_right(a, 2) ^ etl::rotate_right(a, 13) ^
+          etl::rotate_right(a, 22)) +
          ((a & b) ^ (a & c) ^ (b & c));
     h = g;
     g = f;
@@ -150,12 +144,17 @@ void SHA256::processChunk() {
     t2 = w_[(i - 2) & 0x0F];
     t1 = w_[i & 0x0F] =
         w_[(i - 16) & 0x0F] + w_[(i - 7) & 0x0F] +
-        (rotr32(t1, 7) ^ rotr32(t1, 18) ^ (t1 >> 3)) +
-        (rotr32(t2, 17) ^ rotr32(t2, 19) ^ (t2 >> 10));
+        (etl::rotate_right(t1, 7) ^ etl::rotate_right(t1, 18) ^
+         (t1 >> 3)) +
+        (etl::rotate_right(t2, 17) ^ etl::rotate_right(t2, 19) ^
+         (t2 >> 10));
 
-    t1 = h + (rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25)) +
+    t1 = h +
+         (etl::rotate_right(e, 6) ^ etl::rotate_right(e, 11) ^
+          etl::rotate_right(e, 25)) +
          ((e & f) ^ (~e & g)) + pgm_read_dword(K + i) + t1;
-    t2 = (rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22)) +
+    t2 = (etl::rotate_right(a, 2) ^ etl::rotate_right(a, 13) ^
+          etl::rotate_right(a, 22)) +
          ((a & b) ^ (a & c) ^ (b & c));
     h = g;
     g = f;
@@ -180,17 +179,17 @@ void SHA256::processChunk() {
 // --- HMAC helpers ---
 
 void SHA256::formatHMACKey(const void* key, size_t len, uint8_t pad) {
-  uint8_t* block = reinterpret_cast<uint8_t*>(w_);
+  uint8_t* block = reinterpret_cast<uint8_t*>(w_.data());
   reset();
   if (len <= BLOCK_SIZE) {
-    memcpy(block, key, len);
+    etl::copy_n(static_cast<const uint8_t*>(key), len, block);
   } else {
     update(key, len);
     len = HASH_SIZE;
     finalize(block, len);
     reset();
   }
-  memset(block + len, pad, BLOCK_SIZE - len);
+  etl::fill_n(block + len, BLOCK_SIZE - len, pad);
   while (len > 0) {
     *block++ ^= pad;
     --len;
@@ -205,15 +204,15 @@ void SHA256::resetHMAC(const void* key, size_t keyLen) {
 
 void SHA256::finalizeHMAC(const void* key, size_t keyLen, void* hash,
                           size_t hashLen) {
-  uint8_t temp[HASH_SIZE];
-  finalize(temp, sizeof(temp));
+  etl::array<uint8_t, HASH_SIZE> temp;
+  finalize(temp.data(), temp.size());
   formatHMACKey(key, keyLen, 0x5C);
   length_ += 64 * 8;
   processChunk();
-  update(temp, HASH_SIZE);
+  update(temp.data(), temp.size());
   finalize(hash, hashLen);
 
   // Securely zero inner-hash digest.
-  volatile uint8_t* p = temp;
+  volatile uint8_t* p = temp.data();
   for (size_t j = 0; j < HASH_SIZE; ++j) *p++ = 0;
 }

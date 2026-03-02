@@ -354,8 +354,8 @@ class RuntimeState(msgspec.Struct):
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})
 
     # [SIL-2] Improved Mailbox: Uses Buffer for overflow to disk
-    mailbox_queue: Any = msgspec.field(default_factory=dict)
-    mailbox_incoming_queue: Any = msgspec.field(default_factory=dict)
+    mailbox_queue: Any = msgspec.field(default_factory=lambda: cast("dict[str, bytes]", {}))
+    mailbox_incoming_queue: Any = msgspec.field(default_factory=lambda: cast("dict[str, bytes]", {}))
     _mailbox_requeue_idx: int = 1000000
     _mailbox_incoming_requeue_idx: int = 1000000
 

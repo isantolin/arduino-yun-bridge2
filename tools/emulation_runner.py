@@ -165,22 +165,14 @@ def start_daemon(package_root, shared_secret):
     return env, uci_stub_dir
 
 
-@app.command()
-def main(
-    run_scripts: Annotated[list[str] | None, typer.Argument(help="Scripts to run")] = None,
-    firmware: Annotated[str, typer.Option(help="Emulator binary name")] = "bridge_emulator",
-) -> None:
-    repo_root = Path(__file__).resolve().parent.parent
-    package_root = repo_root / "mcubridge"
-    firmware_path = repo_root / f"mcubridge-library-arduino/tests/{firmware}"
-
-    if not firmware_path.exists():
-        logger.error("Firmware not found at %s", firmware_path)
-        raise typer.Exit(1)
-
-    state = EmulationState()
-    mqtt_verifier = MqttVerifier()
-
+def run_emulation(
+    state: EmulationState,
+    mqtt_verifier: MqttVerifier,
+    firmware_path: Path,
+    package_root: Path,
+    run_scripts: list[str] | None = None,
+) -> bool:
+    """Orchestrate the emulation lifecycle."""
     # 1. Start Socat
     logger.info("Starting socat...")
     socat_proc = sh.socat(
@@ -200,12 +192,12 @@ def main(
     else:
         logger.error("Socat timeout")
         socat_proc.kill()
-        raise typer.Exit(1)
+        return False
 
     # 2. Start MCU Emulator
     logger.info("Starting MCU Emulator...")
-    # [SIL-2] Use subprocess.Popen for binary transparency in real-time serial emulation.
     import subprocess
+
     mcu_proc = subprocess.Popen(
         [str(firmware_path)],
         stdin=subprocess.PIPE,
@@ -217,6 +209,7 @@ def main(
     # 3. Serial Bridge (Link socat to mcu stdin/stdout)
     def serial_bridge():
         import select
+
         try:
             with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
                 while True:
@@ -237,14 +230,17 @@ def main(
             logger.debug("Serial bridge thread exiting: %s", e)
 
     import threading
+
     threading.Thread(target=serial_bridge, daemon=True).start()
 
     # Capture mcu stderr separately
     def _stderr_worker():
         if mcu_proc.stderr:
             for line in iter(mcu_proc.stderr.readline, b""):
-                if not line: break
-                state.on_line(line.decode('utf-8', errors='ignore'), "mcu-err")
+                if not line:
+                    break
+                state.on_line(line.decode("utf-8", errors="ignore"), "mcu-err")
+
     threading.Thread(target=_stderr_worker, daemon=True).start()
 
     # 4. Start Daemon
@@ -263,13 +259,15 @@ def main(
     def _daemon_worker():
         if daemon_proc.stdout:
             for line in iter(daemon_proc.stdout.readline, ""):
-                if not line: break
+                if not line:
+                    break
                 state.on_line(line, "daemon")
+
     threading.Thread(target=_daemon_worker, daemon=True).start()
 
     mqtt_verifier.start()
     success = False
-    
+
     try:
         # 5. Wait for Handshake
         start_time = time.time()
@@ -291,11 +289,15 @@ def main(
                     # Keep sh for client scripts as they are CLI-oriented
                     sh.python3(
                         script,
-                        "--host", MQTT_HOST,
-                        "--port", str(MQTT_PORT), 
-                        "--user", "admin",
-                        "--password", "admin",
-                        _env=daemon_env
+                        "--host",
+                        MQTT_HOST,
+                        "--port",
+                        str(MQTT_PORT),
+                        "--user",
+                        "admin",
+                        "--password",
+                        "admin",
+                        _env=daemon_env,
                     )
                 except sh.ErrorReturnCode as e:
                     logger.error("Script failed: %s", e)
@@ -307,6 +309,33 @@ def main(
         mcu_proc.terminate()
         socat_proc.kill()
         uci_dir.cleanup()
+
+    return success
+
+
+@app.command()
+def main(
+    run_scripts: Annotated[list[str] | None, typer.Argument(help="Scripts to run")] = None,
+    firmware: Annotated[str, typer.Option(help="Emulator binary name")] = "bridge_emulator",
+) -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    package_root = repo_root / "mcubridge"
+    firmware_path = repo_root / f"mcubridge-library-arduino/tests/{firmware}"
+
+    if not firmware_path.exists():
+        logger.error("Firmware not found at %s", firmware_path)
+        raise typer.Exit(1)
+
+    state = EmulationState()
+    mqtt_verifier = MqttVerifier()
+
+    success = run_emulation(
+        state=state,
+        mqtt_verifier=mqtt_verifier,
+        firmware_path=firmware_path,
+        package_root=package_root,
+        run_scripts=run_scripts,
+    )
 
     if not success:
         logger.error("Emulation FAILED.")

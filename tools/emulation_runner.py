@@ -15,7 +15,7 @@ import tempfile
 import textwrap
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Any, Annotated
 
 import typer
 
@@ -163,24 +163,27 @@ def start_daemon(package_root, shared_secret):
     # Add uci stub, package root and client examples to PYTHONPATH
     repo_root = package_root.parent
     client_examples = repo_root / "mcubridge-client-examples"
-    env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{str(client_examples)}{os.pathsep}{current_path}"
+    path_parts = [
+        uci_stub_dir.name,
+        str(package_root),
+        str(client_examples),
+        current_path,
+    ]
+    env["PYTHONPATH"] = os.pathsep.join(p for p in path_parts if p)
     env["MCUBRIDGE_LOG_STREAM"] = "1"
     return env, uci_stub_dir
 
 
-def run_emulation(
+def setup_emulation_processes(
     state: EmulationState,
-    mqtt_verifier: MqttVerifier,
     firmware_path: Path,
-    package_root: Path,
-    run_scripts: list[str] | None = None,
-) -> bool:
-    """Orchestrate the emulation lifecycle."""
+    daemon_env: dict[str, str],
+) -> tuple[subprocess.Popen[Any], subprocess.Popen[Any], subprocess.Popen[Any]]:
+    """Start socat, mcu and daemon processes with their workers."""
     import threading
 
     # 1. Start Socat
     logger.info("Starting socat...")
-    # [SIL-2] Use subprocess.Popen for socat to avoid sh buffering issues
     socat_proc = subprocess.Popen(
         [
             "socat",
@@ -201,16 +204,6 @@ def run_emulation(
                 state.on_line(line, "socat")
 
     threading.Thread(target=_socat_worker, daemon=True).start()
-
-    # Wait for PTYs
-    for _ in range(50):
-        if Path(SOCAT_PORT0).exists() and Path(SOCAT_PORT1).exists():
-            break
-        time.sleep(0.1)
-    else:
-        logger.error("Socat timeout")
-        socat_proc.terminate()
-        return False
 
     # 2. Start MCU Emulator
     logger.info("Starting MCU Emulator...")
@@ -260,7 +253,6 @@ def run_emulation(
     threading.Thread(target=_mcu_stderr_worker, daemon=True).start()
 
     # 4. Start Daemon
-    daemon_env, uci_dir = start_daemon(package_root, "DEBUG_INSECURE")
     logger.info("Starting Daemon...")
     daemon_proc = subprocess.Popen(
         [sys.executable, "-u", "-m", "mcubridge.daemon", "--debug"],
@@ -280,6 +272,33 @@ def run_emulation(
                 state.on_line(line, "daemon")
 
     threading.Thread(target=_daemon_worker, daemon=True).start()
+
+    return socat_proc, mcu_proc, daemon_proc
+
+
+def run_emulation(
+    state: EmulationState,
+    mqtt_verifier: MqttVerifier,
+    firmware_path: Path,
+    package_root: Path,
+    run_scripts: list[str] | None = None,
+) -> bool:
+    """Orchestrate the emulation lifecycle."""
+    daemon_env, uci_dir = start_daemon(package_root, "DEBUG_INSECURE")
+
+    socat_proc, mcu_proc, daemon_proc = setup_emulation_processes(
+        state, firmware_path, daemon_env
+    )
+
+    # Wait for PTYs
+    for _ in range(50):
+        if Path(SOCAT_PORT0).exists() and Path(SOCAT_PORT1).exists():
+            break
+        time.sleep(0.1)
+    else:
+        logger.error("Socat timeout")
+        socat_proc.terminate()
+        return False
 
     mqtt_verifier.start()
     success = False
@@ -301,7 +320,6 @@ def run_emulation(
         if success and run_scripts:
             for script in run_scripts:
                 logger.info("Running script: %s", script)
-                # Client scripts are pure text/CLI, so sh is fine here
                 try:
                     cmd = [
                         sys.executable,
@@ -315,7 +333,6 @@ def run_emulation(
                         "--password",
                         "admin",
                     ]
-                    # We use subprocess.run instead of sh here to be consistent and reliable in CI
                     subprocess.run(cmd, env=daemon_env, check=True, timeout=30)
                 except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                     logger.error("Script failed: %s", e)

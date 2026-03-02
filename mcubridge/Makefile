@@ -62,6 +62,8 @@ define Package/$(PKG_NAME)
 		+python3-typer \
 		+python3-rich \
 		+python3-sh \
+		+python3-zict \
+		+python3-heapdict \
 		+mosquitto-client \
 		+xxd
 	# AUTO-GENERATED RUNTIME DEPENDS END

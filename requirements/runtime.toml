@@ -106,6 +106,18 @@ pip = "sh==2.2.2"
 rationale = "Python subprocess interface for clean command execution"
 
 [[dependency]]
+name = "zict"
+openwrt = "python3-zict"
+pip = "zict==3.0.0"
+rationale = "Composable mappings for memory/disk storage management"
+
+[[dependency]]
+name = "heapdict"
+openwrt = "python3-heapdict"
+pip = "heapdict==1.0.1"
+rationale = "A heap with dictionary-like interface, needed by zict"
+
+[[dependency]]
 name = "mosquitto-client"
 openwrt = "mosquitto-client"
 pip = ""

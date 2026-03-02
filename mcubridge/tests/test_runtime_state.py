@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import errno
 import logging
 from collections.abc import Iterator
 from typing import cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -74,7 +73,7 @@ def test_enqueue_mailbox_message_respects_limits(
     assert runtime_state.enqueue_mailbox_message(b"c" * 40, logger) is False
     assert runtime_state.mailbox_queue_bytes == 32
     assert len(runtime_state.mailbox_queue) == 2
-    
+
     # Check FIFO: oldest first
     assert runtime_state.pop_mailbox_message() == b"a" * 16
     assert runtime_state.mailbox_outgoing_overflow_events == 1
@@ -93,7 +92,7 @@ def test_enqueue_mailbox_incoming_respects_limits(
     assert runtime_state.enqueue_mailbox_incoming(b"z" * 40, logger) is False
     assert runtime_state.mailbox_incoming_queue_bytes == 32
     assert len(runtime_state.mailbox_incoming_queue) == 2
-    
+
     # Check FIFO
     assert runtime_state.pop_mailbox_incoming() == b"x" * 16
     assert runtime_state.mailbox_incoming_overflow_events == 1
@@ -316,7 +315,7 @@ async def test_stash_mqtt_message_disables_spool_on_failure(
     assert state.mqtt_dropped_messages == 0
     assert state.mqtt_spool_failure_reason == "append_failed"
     assert state.mqtt_spool_last_error == "disk-full"
-    
+
     state.cleanup()
 
 
@@ -346,7 +345,7 @@ async def test_flush_mqtt_spool_handles_pop_failure(
     assert state.mqtt_spool_errors == 1
     assert state.mqtt_spool_failure_reason == "pop_failed"
     assert state.mqtt_spool_last_error == "read-error"
-    
+
     state.cleanup()
 
 
@@ -358,7 +357,7 @@ async def test_spool_fallback_updates_state(
     # Force a disk full error during zict initialization or subsequent use
     with patch("zict.File", side_effect=OSError(errno.ENOSPC, "disk full")):
         state = create_runtime_state(runtime_config)
-        
+
         # In new impl, spool is created but degraded
         assert state.mqtt_spool is not None
         assert state.mqtt_spool_degraded is True
@@ -376,7 +375,7 @@ async def test_ensure_spool_recovers_after_disable(
         mock_spool_cls.return_value.is_degraded = False
         mock_spool_cls.return_value.limit = 32
         mock_spool_cls.return_value.pending = 0
-        
+
         runtime_state.mqtt_spool = None
         runtime_state.mqtt_spool_degraded = True
         runtime_state.mqtt_spool_failure_reason = "test"

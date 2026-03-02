@@ -1,5 +1,4 @@
 import asyncio
-import errno
 import logging
 import time
 from pathlib import Path

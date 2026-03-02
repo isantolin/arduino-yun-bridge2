@@ -649,7 +649,8 @@ class RuntimeState(msgspec.Struct):
         # [SIL-2] Use FIFO: pop the oldest entry (smallest timestamp key)
         # zict.Buffer doesn't guarantee order on items(), so we find the min key.
         keys = sorted(self.mailbox_queue.keys())
-        if not keys: return None
+        if not keys:
+            return None
         key = keys[0]
         msg = self.mailbox_queue.pop(key)
         self.mailbox_queue_bytes = max(0, self.mailbox_queue_bytes - len(msg))
@@ -677,7 +678,8 @@ class RuntimeState(msgspec.Struct):
             return None
         # [SIL-2] Use FIFO for incoming queue
         keys = sorted(self.mailbox_incoming_queue.keys())
-        if not keys: return None
+        if not keys:
+            return None
         key = keys[0]
         msg = self.mailbox_incoming_queue.pop(key)
         self.mailbox_incoming_queue_bytes = max(0, self.mailbox_incoming_queue_bytes - len(msg))

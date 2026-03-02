@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import errno
 import os
 import tempfile
 from unittest.mock import MagicMock, patch
@@ -198,7 +197,7 @@ def test_spool_pop_disk_error_retries_with_memory() -> None:
             result = spool.pop_next()
             assert result is None
             assert spool.snapshot()["corrupt_dropped"] == 1
-        
+
         spool.close()
 
 
@@ -212,12 +211,12 @@ def test_spool_fallback_hook_called() -> None:
         hook_called.append(reason)
 
     # non-tmp directory triggers fallback during init
-    spool = MQTTPublishSpool(
+    MQTTPublishSpool(
         directory="/var/not_tmp",
         limit=100,
-        on_fallback=None, # The hook was formerly used for specific errors
+        on_fallback=None,  # The hook was formerly used for specific errors
     )
-    # The current implementation of MQTTPublishSpool calls the hook 
+    # The current implementation of MQTTPublishSpool calls the hook
     # only via _activate_fallback or _on_spool_fallback (which is passed to zict)
     # Actually, let's verify if init calls it.
     pass

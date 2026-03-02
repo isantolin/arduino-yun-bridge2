@@ -43,18 +43,22 @@ MQTT_PORT = 1883
 
 class EmulationState:
     """Track patterns and errors in process output."""
+
     def __init__(self):
         self.found_patterns = set()
         self.errors_detected = []
 
     def on_line(self, line: str, name: str):
         line = line.strip()
-        if not line: return
+        if not line:
+            return
         logger.info("[%s] %s", name, line)
-        
+
         # Success signals
-        if "Serial transport established" in line: self.found_patterns.add("serial_connected")
-        if "Connected to MQTT broker" in line: self.found_patterns.add("mqtt_connected")
+        if "Serial transport established" in line:
+            self.found_patterns.add("serial_connected")
+        if "Connected to MQTT broker" in line:
+            self.found_patterns.add("mqtt_connected")
         if "MCU link synchronised" in line or '"message":"MCU link synchronised' in line:
             self.found_patterns.add("handshake_complete")
 
@@ -64,29 +68,35 @@ class EmulationState:
             if "_on_subscribe" not in line and "Unexpected message ID" not in line:
                 self.errors_detected.append(line)
 
-    def has_error(self) -> bool: return len(self.errors_detected) > 0
-    def check_success(self, key: str) -> bool: return key in self.found_patterns
+    def has_error(self) -> bool:
+        return len(self.errors_detected) > 0
+
+    def check_success(self, key: str) -> bool:
+        return key in self.found_patterns
 
 
 class MqttVerifier:
     """Verifies system state via MQTT."""
+
     def __init__(self):
         self.client = None
-        self.sync_event = threading_event = None # type: ignore
         import threading
+
         self.sync_event = threading.Event()
         self.metrics_received = False
         self.connected = False
 
     def start(self):
-        if not mqtt: return
+        if not mqtt:
+            return
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
         try:
             self.client.connect(MQTT_HOST, MQTT_PORT, 60)
             self.client.loop_start()
-        except Exception: pass
+        except Exception:
+            pass
 
     def stop(self):
         if self.client:
@@ -107,7 +117,8 @@ class MqttVerifier:
                     self.sync_event.set()
             elif msg.topic == "br/system/metrics":
                 self.metrics_received = True
-        except Exception: pass
+        except Exception:
+            pass
 
 
 def start_daemon(package_root, shared_secret):
@@ -131,7 +142,8 @@ def start_daemon(package_root, shared_secret):
     uci_stub_dir = tempfile.TemporaryDirectory(prefix="mcubridge-uci-")
     uci_stub_path = Path(uci_stub_dir.name) / "uci.py"
     uci_stub_path.write_text(
-        textwrap.dedent("""\
+        textwrap.dedent(
+            """\
             from __future__ import annotations
             _CONFIG = {config!r}
             class Uci:
@@ -141,7 +153,8 @@ def start_daemon(package_root, shared_secret):
                     if package == "mcubridge" and section == "general":
                         return dict(_CONFIG)
                     return None
-            """).format(config=uci_config),
+            """
+        ).format(config=uci_config),
         encoding="utf-8",
     )
 
@@ -160,26 +173,29 @@ def main(
     repo_root = Path(__file__).resolve().parent.parent
     package_root = repo_root / "mcubridge"
     firmware_path = repo_root / f"mcubridge-library-arduino/tests/{firmware}"
-    
+
     if not firmware_path.exists():
         logger.error("Firmware not found at %s", firmware_path)
         raise typer.Exit(1)
 
     state = EmulationState()
     mqtt_verifier = MqttVerifier()
-    
+
     # 1. Start Socat
     logger.info("Starting socat...")
     socat_proc = sh.socat(
-        "-d", "-d",
+        "-d",
+        "-d",
         f"pty,raw,echo=0,link={SOCAT_PORT0}",
         f"pty,raw,echo=0,link={SOCAT_PORT1}",
-        _bg=True, _err=lambda line: state.on_line(line, "socat")
+        _bg=True,
+        _err=lambda line: state.on_line(line, "socat"),
     )
 
     # Wait for PTYs
     for _ in range(50):
-        if Path(SOCAT_PORT0).exists() and Path(SOCAT_PORT1).exists(): break
+        if Path(SOCAT_PORT0).exists() and Path(SOCAT_PORT1).exists():
+            break
         time.sleep(0.1)
     else:
         logger.error("Socat timeout")
@@ -189,41 +205,54 @@ def main(
     # 2. Start MCU Emulator
     logger.info("Starting MCU Emulator...")
     mcu_proc = sh.Command(str(firmware_path))(
-        _bg=True, _piped=True, 
+        _bg=True,
+        _piped=True,
         _out=lambda line: state.on_line(line, "mcu-out"),
-        _err=lambda line: state.on_line(line, "mcu-err")
+        _err=lambda line: state.on_line(line, "mcu-err"),
     )
 
     # 3. Serial Bridge (Link socat to mcu stdin/stdout)
     def serial_bridge():
         import select
+
         try:
             with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
                 while True:
                     r, _, _ = select.select([pty, mcu_proc.process.stdout], [], [], 0.1)
                     if pty in r:
                         data = pty.read(1024)
-                        if data: mcu_proc.process.stdin.write(data); mcu_proc.process.stdin.flush()
+                        if data:
+                            mcu_proc.process.stdin.write(data)
+                            mcu_proc.process.stdin.flush()
                     if mcu_proc.process.stdout in r:
                         data = mcu_proc.process.stdout.read(1024)
-                        if data: pty.write(data); pty.flush()
-        except Exception: pass
+                        if data:
+                            pty.write(data)
+                            pty.flush()
+        except Exception:
+            pass
 
     import threading
+
     threading.Thread(target=serial_bridge, daemon=True).start()
 
     # 4. Start Daemon
     daemon_env, uci_dir = start_daemon(package_root, "DEBUG_INSECURE")
     logger.info("Starting Daemon...")
     daemon_proc = sh.python3(
-        "-u", "-m", "mcubridge.daemon", "--debug",
-        _env=daemon_env, _bg=True, _bg_exc=False,
-        _out=lambda line: state.on_line(line, "daemon")
+        "-u",
+        "-m",
+        "mcubridge.daemon",
+        "--debug",
+        _env=daemon_env,
+        _bg=True,
+        _bg_exc=False,
+        _out=lambda line: state.on_line(line, "daemon"),
     )
 
     mqtt_verifier.start()
     success = False
-    
+
     try:
         # 5. Wait for Handshake
         start_time = time.time()
@@ -242,9 +271,18 @@ def main(
             for script in run_scripts:
                 logger.info("Running script: %s", script)
                 try:
-                    sh.python3(script, "--host", MQTT_HOST, "--port", MQTT_PORT, 
-                               "--user", "admin", "--password", "admin",
-                               _env=daemon_env)
+                    sh.python3(
+                        script,
+                        "--host",
+                        MQTT_HOST,
+                        "--port",
+                        MQTT_PORT,
+                        "--user",
+                        "admin",
+                        "--password",
+                        "admin",
+                        _env=daemon_env,
+                    )
                 except sh.ErrorReturnCode as e:
                     logger.error("Script failed: %s", e)
                     success = False

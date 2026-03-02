@@ -1,7 +1,6 @@
 """Additional tests to boost Python coverage."""
 
 import asyncio
-import errno
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -173,13 +172,13 @@ def test_spool_requeue_front_logic(tmp_path: Path):
     spool_dir = tmp_path / "tmp" / "spool"
     spool_dir.mkdir(parents=True)
     spool = MQTTPublishSpool(spool_dir.as_posix(), limit=100)
-    
+
     msg1 = QueuedPublish(topic_name="t1", payload=b"p1")
     msg2 = QueuedPublish(topic_name="t2", payload=b"p2")
-    
+
     spool.append(msg1)
     spool.requeue(msg2)
-    
+
     # msg2 should be popped first because it has the "front" key
     popped = spool.pop_next()
     assert popped is not None

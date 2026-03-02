@@ -84,7 +84,7 @@ class ProcessComponent:
 
     async def handle_run(self, payload: bytes) -> None:
         try:
-            packet = ProcessRunPacket.decode(payload)
+            packet = ProcessRunPacket.decode(payload, Command.CMD_PROCESS_RUN)
             command, tokens = self._prepare_command(packet.command)
         except (ConstructError, ValueError) as e:
             logger.warning("Invalid ProcessRun payload: %s", e)
@@ -141,7 +141,7 @@ class ProcessComponent:
 
     async def handle_run_async(self, payload: bytes) -> None:
         try:
-            packet = ProcessRunAsyncPacket.decode(payload)
+            packet = ProcessRunAsyncPacket.decode(payload, Command.CMD_PROCESS_RUN_ASYNC)
             command, tokens = self._prepare_command(packet.command)
             pid = await self.start_async(command, tokens)
         except (ConstructError, ValueError) as e:
@@ -195,7 +195,7 @@ class ProcessComponent:
 
     async def handle_poll(self, payload: bytes) -> bool:
         try:
-            packet = ProcessPollPacket.decode(payload)
+            packet = ProcessPollPacket.decode(payload, Command.CMD_PROCESS_POLL)
             pid = packet.pid
         except (ConstructError, ValueError) as e:
             logger.warning("Invalid ProcessPoll payload: %s", e)
@@ -227,7 +227,7 @@ class ProcessComponent:
 
     async def handle_kill(self, payload: bytes, *, send_ack: bool = True) -> bool:
         try:
-            packet = ProcessKillPacket.decode(payload)
+            packet = ProcessKillPacket.decode(payload, Command.CMD_PROCESS_KILL)
             pid = packet.pid
         except (ConstructError, ValueError) as e:
             logger.warning("Invalid ProcessKill payload: %s", e)

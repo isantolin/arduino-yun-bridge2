@@ -69,7 +69,7 @@ class FileComponent:
 
     async def handle_write(self, payload: bytes) -> bool:
         try:
-            packet = FileWritePacket.decode(payload)
+            packet = FileWritePacket.decode(payload, Command.CMD_FILE_WRITE)
         except (ConstructError, ValueError) as e:
             logger.warning("Invalid FileWrite payload: %s", e)
             await self.ctx.send_frame(
@@ -113,7 +113,7 @@ class FileComponent:
 
     async def handle_read(self, payload: bytes) -> None:
         try:
-            packet = FileReadPacket.decode(payload)
+            packet = FileReadPacket.decode(payload, Command.CMD_FILE_READ)
         except (ConstructError, ValueError) as e:
             logger.warning("Invalid FileRead payload: %s", e)
             await self.ctx.send_frame(Status.MALFORMED.value, b"")
@@ -146,7 +146,7 @@ class FileComponent:
 
     async def handle_remove(self, payload: bytes) -> bool:
         try:
-            packet = FileRemovePacket.decode(payload)
+            packet = FileRemovePacket.decode(payload, Command.CMD_FILE_REMOVE)
         except (ConstructError, ValueError) as e:
             logger.warning("Invalid FileRemove payload: %s", e)
             await self.ctx.send_frame(Status.MALFORMED.value, b"")

@@ -111,7 +111,7 @@ class PinComponent:
             payload=payload,
             resp_name="DIGITAL_READ_RESP",
             topic_type=Topic.DIGITAL,
-            parse_value=lambda p: DigitalReadResponsePacket.decode(p).value,
+            parse_value=lambda p: DigitalReadResponsePacket.decode(p, Command.CMD_DIGITAL_READ_RESP).value,
             pending_queue=self.state.pending_digital_reads,
         )
 
@@ -120,7 +120,7 @@ class PinComponent:
             payload=payload,
             resp_name="ANALOG_READ_RESP",
             topic_type=Topic.ANALOG,
-            parse_value=lambda p: AnalogReadResponsePacket.decode(p).value,
+            parse_value=lambda p: AnalogReadResponsePacket.decode(p, Command.CMD_ANALOG_READ_RESP).value,
             pending_queue=self.state.pending_analog_reads,
         )
 

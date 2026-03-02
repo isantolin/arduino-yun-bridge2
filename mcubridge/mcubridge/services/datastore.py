@@ -43,7 +43,7 @@ class DatastoreComponent:
     async def handle_put(self, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
         try:
-            packet = DatastorePutPacket.decode(payload)
+            packet = DatastorePutPacket.decode(payload, Command.CMD_DATASTORE_PUT)
         except (ConstructError, ValueError):
             logger.warning(
                 "Malformed DATASTORE_PUT payload: %s",
@@ -62,7 +62,7 @@ class DatastoreComponent:
     async def handle_get_request(self, payload: bytes) -> bool:
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
         try:
-            packet = DatastoreGetPacket.decode(payload)
+            packet = DatastoreGetPacket.decode(payload, Command.CMD_DATASTORE_GET)
         except (ConstructError, ValueError):
             logger.warning(
                 "Malformed DATASTORE_GET payload: %s",

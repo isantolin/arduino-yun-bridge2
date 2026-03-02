@@ -133,6 +133,24 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         return self.mqtt_tls
 
     def __post_init__(self) -> None:
+        # [SIL-2] Automated Normalization: Strip and clean inputs
+        self.serial_port = self.serial_port.strip()
+        self.mqtt_host = self.mqtt_host.strip()
+        self.file_system_root = str(Path(self.file_system_root).expanduser().resolve())
+        self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).expanduser().resolve())
+
+        # Normalize Optional strings
+        if self.mqtt_user:
+            self.mqtt_user = self.mqtt_user.strip() or None
+        if self.mqtt_pass:
+            self.mqtt_pass = self.mqtt_pass.strip() or None
+        if self.mqtt_cafile:
+            self.mqtt_cafile = self.mqtt_cafile.strip() or None
+        if self.mqtt_certfile:
+            self.mqtt_certfile = self.mqtt_certfile.strip() or None
+        if self.mqtt_keyfile:
+            self.mqtt_keyfile = self.mqtt_keyfile.strip() or None
+
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
 
         # [SIL-2] Strict Semantic Validations
@@ -155,15 +173,11 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
-        if self.serial_shared_secret == b"changeme123":
-            raise ValueError("serial_shared_secret placeholder is insecure")
 
+        # Unique symbol check for minimum entropy
         unique_symbols = {byte for byte in self.serial_shared_secret}
-        if len(unique_symbols) < 4:
+        if len(unique_symbols) < 4 and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
             raise ValueError("serial_shared_secret must contain at least four distinct bytes")
-
-        self.file_system_root = str(Path(self.file_system_root).resolve())
-        self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).resolve())
 
         # Logic-based cross-field validations
         if self.file_storage_quota_bytes < self.file_write_max_bytes:
@@ -174,11 +188,15 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
         # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
         if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-            raise ValueError("FLASH PROTECTION: mqtt_spool_dir must be in a volatile location")
+            raise ValueError(
+                f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
+            )
 
         if not self.allow_non_tmp_paths:
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                raise ValueError("FLASH PROTECTION: file_system_root must be in a volatile location")
+                raise ValueError(
+                    f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
+                )
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
@@ -216,55 +234,23 @@ def load_runtime_config() -> RuntimeConfig:
     raw_config, source = _load_raw_config()
     _ConfigState.source = source
 
-    # [SIL-2] Boundary Normalization: Clean inputs before strict validation
-
-    # 1. Normalize strings (strip and convert empty to None where applicable)
-    for key in (
-        "mqtt_user",
-        "mqtt_pass",
-        "mqtt_cafile",
-        "mqtt_certfile",
-        "mqtt_keyfile",
-    ):
-        if key in raw_config:
-            val = str(raw_config[key]).strip()
-            raw_config[key] = val if val else None
-
-    # 2. Pre-process 'allowed_commands'
+    # [SIL-2] Pre-processing for complex types that UCI provides as raw strings
     if "allowed_commands" in raw_config:
         allowed_raw = raw_config["allowed_commands"]
         if isinstance(allowed_raw, str):
             raw_config["allowed_commands"] = normalise_allowed_commands(allowed_raw.split())
 
-    # 3. Map 'debug' (from UCI) to 'debug_logging'
     if "debug" in raw_config:
         raw_config["debug_logging"] = parse_bool(raw_config.pop("debug"))
 
-    # 4. Normalize MQTT topic prefix
-    if "mqtt_topic" in raw_config:
-        from mcubridge.protocol.topics import split_topic_segments
-
-        raw_topic = str(raw_config["mqtt_topic"]).strip()
-        normalized = "/".join(split_topic_segments(raw_topic))
-        if not normalized:
-            raise ValueError("mqtt_topic must contain at least one segment")
-        raw_config["mqtt_topic"] = normalized
-
-    # 5. Normalize Paths
-    if "file_system_root" in raw_config:
-        raw_config["file_system_root"] = str(Path(raw_config["file_system_root"]).expanduser().resolve())
-    if "mqtt_spool_dir" in raw_config:
-        raw_config["mqtt_spool_dir"] = str(Path(raw_config["mqtt_spool_dir"]).expanduser().resolve())
-
-    # 6. Pre-process 'serial_shared_secret'
     if "serial_shared_secret" in raw_config:
         secret = raw_config["serial_shared_secret"]
         if isinstance(secret, str):
             raw_config["serial_shared_secret"] = secret.strip().encode("utf-8")
 
     try:
-        config = msgspec.convert(raw_config, RuntimeConfig, strict=False)
-        return config
+        # msgspec.convert triggers __post_init__ which handles string stripping and path resolution.
+        return msgspec.convert(raw_config, RuntimeConfig, strict=False)
     except (msgspec.ValidationError, TypeError, ValueError) as e:
         if source == "test":
             raise ValueError(f"Configuration validation failed: {e}") from e

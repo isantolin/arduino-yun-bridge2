@@ -55,7 +55,7 @@ class SystemComponent:
 
     async def handle_get_free_memory_resp(self, payload: bytes) -> None:
         try:
-            packet = FreeMemoryResponsePacket.decode(payload)
+            packet = FreeMemoryResponsePacket.decode(payload, Command.CMD_GET_FREE_MEMORY_RESP)
         except (ConstructError, ValueError):
             logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())
             return
@@ -77,7 +77,7 @@ class SystemComponent:
 
     async def handle_get_version_resp(self, payload: bytes) -> None:
         try:
-            packet = VersionResponsePacket.decode(payload)
+            packet = VersionResponsePacket.decode(payload, Command.CMD_GET_VERSION_RESP)
             major, minor = packet.major, packet.minor
         except (ConstructError, ValueError):
             logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())

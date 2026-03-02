@@ -55,7 +55,7 @@ class MailboxComponent:
         message_id: int | None = None
         if len(payload) >= 2:
             try:
-                packet = MailboxProcessedPacket.decode(payload)
+                packet = MailboxProcessedPacket.decode(payload, Command.CMD_MAILBOX_PROCESSED)
                 message_id = packet.message_id
             except (ConstructError, ValueError):
                 pass  # Fallback to raw payload if not a valid packet structure
@@ -70,7 +70,7 @@ class MailboxComponent:
 
     async def handle_push(self, payload: bytes) -> bool:
         try:
-            packet = MailboxPushPacket.decode(payload)
+            packet = MailboxPushPacket.decode(payload, Command.CMD_MAILBOX_PUSH)
         except (ConstructError, ValueError):
             logger.warning(
                 "Malformed MAILBOX_PUSH payload: %s",

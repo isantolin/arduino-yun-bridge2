@@ -97,25 +97,32 @@ class BaseStruct(msgspec.Struct, frozen=True):
     """Base class for hybrid Msgspec/Construct structures."""
 
     # Subclasses must define this schema
-    _SCHEMA: ClassVar[Construct]
+    SCHEMA: ClassVar[Construct]
 
     @classmethod
-    def decode(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
-        if not data:
+    def decode(cls: Type[T], data: bytes | bytearray | memoryview, command_id: int | None = None) -> T:
+        """Decode binary data into a typed struct.
+
+        If command_id is provided, uses PayloadSelector (Switch) with a fallback (Select).
+        """
+        if not data and cls is not AckPacket:  # Special case for empty ACKs
             raise ValueError("Empty payload")
         try:
             b_data = bytes(data)
-            # Use parse_stream to verify all bytes are consumed without redundant build()
-            # or just use parse and rely on msgspec conversion for validation.
-            # SIL-2: We keep the strict check but optimize by checking length if possible.
-            container: Any = cls._SCHEMA.parse(b_data)
+            if command_id is not None:
+                # [SIL-2] Use Select to try the centralized Switch first, then fallback to class schema.
+                # This provides O(1) speed for known commands but remains resilient.
+                decoder = construct.Select(PayloadSelector, cls.SCHEMA)
+                container: Any = decoder.parse(b_data, command_id=command_id)
+            else:
+                container = cls.SCHEMA.parse(b_data)
         except Exception as e:
             raise ConstructError(str(e)) from e
         return msgspec.convert(container, cls)
 
     def encode(self) -> bytes:
         """Encode the typed Msgspec struct into binary data."""
-        return self._SCHEMA.build(msgspec.structs.asdict(self))
+        return self.SCHEMA.build(msgspec.structs.asdict(self))
 
 
 # --- Binary Protocol Packets ---
@@ -125,7 +132,7 @@ class FileWritePacket(BaseStruct, frozen=True):
     path: str
     data: bytes
 
-    _SCHEMA = BinStruct(
+    SCHEMA = BinStruct(
         "path" / construct.PascalString(construct.Int8ub, "utf-8"),
         "data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
     )
@@ -134,63 +141,63 @@ class FileWritePacket(BaseStruct, frozen=True):
 class FileReadPacket(BaseStruct, frozen=True):
     path: str
 
-    _SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
+    SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
 
 
 class FileReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
-    _SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+    SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
 
 
 class FileRemovePacket(BaseStruct, frozen=True):
     path: str
 
-    _SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
+    SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
 
 
 class VersionResponsePacket(BaseStruct, frozen=True):
     major: Annotated[int, msgspec.Meta(ge=0)]
     minor: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("major" / construct.Int8ub, "minor" / construct.Int8ub)
+    SCHEMA = BinStruct("major" / construct.Int8ub, "minor" / construct.Int8ub)
 
 
 class FreeMemoryResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("value" / construct.Int16ub)
+    SCHEMA = BinStruct("value" / construct.Int16ub)
 
 
 class DigitalReadResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("value" / construct.Int8ub)
+    SCHEMA = BinStruct("value" / construct.Int8ub)
 
 
 class AnalogReadResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("value" / construct.Int16ub)
+    SCHEMA = BinStruct("value" / construct.Int16ub)
 
 
 class DatastoreGetPacket(BaseStruct, frozen=True):
     key: str
 
-    _SCHEMA = BinStruct("key" / construct.PascalString(construct.Int8ub, "utf-8"))
+    SCHEMA = BinStruct("key" / construct.PascalString(construct.Int8ub, "utf-8"))
 
 
 class DatastoreGetResponsePacket(BaseStruct, frozen=True):
     value: bytes
 
-    _SCHEMA = BinStruct("value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes))
+    SCHEMA = BinStruct("value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes))
 
 
 class DatastorePutPacket(BaseStruct, frozen=True):
     key: str
     value: bytes
 
-    _SCHEMA = BinStruct(
+    SCHEMA = BinStruct(
         "key" / construct.PascalString(construct.Int8ub, "utf-8"),
         "value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes),
     )
@@ -199,88 +206,88 @@ class DatastorePutPacket(BaseStruct, frozen=True):
 class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
-    _SCHEMA = BinStruct("data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+    SCHEMA = BinStruct("data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
 
 
 class MailboxProcessedPacket(BaseStruct, frozen=True):
     message_id: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("message_id" / construct.Int16ub)
+    SCHEMA = BinStruct("message_id" / construct.Int16ub)
 
 
 class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
     count: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("count" / construct.Int16ub)
+    SCHEMA = BinStruct("count" / construct.Int16ub)
 
 
 class MailboxReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
-    _SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+    SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
 
 
 class PinModePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     mode: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("pin" / construct.Int8ub, "mode" / construct.Int8ub)
+    SCHEMA = BinStruct("pin" / construct.Int8ub, "mode" / construct.Int8ub)
 
 
 class DigitalWritePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
+    SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
 
 
 class AnalogWritePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
+    SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
 
 
 class PinReadPacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("pin" / construct.Int8ub)
+    SCHEMA = BinStruct("pin" / construct.Int8ub)
 
 
 class AckPacket(BaseStruct, frozen=True):
     command_id: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("command_id" / construct.Int16ub)
+    SCHEMA = BinStruct("command_id" / construct.Int16ub)
 
 
 class ConsoleWritePacket(BaseStruct, frozen=True):
     data: bytes
 
-    _SCHEMA = BinStruct("data" / construct.GreedyBytes)
+    SCHEMA = BinStruct("data" / construct.GreedyBytes)
 
 
 class ProcessRunPacket(BaseStruct, frozen=True):
     command: str
 
-    _SCHEMA = BinStruct("command" / construct.GreedyString("utf-8"))
+    SCHEMA = BinStruct("command" / construct.GreedyString("utf-8"))
 
 
 class ProcessRunAsyncPacket(BaseStruct, frozen=True):
     command: str
 
-    _SCHEMA = BinStruct("command" / construct.GreedyString("utf-8"))
+    SCHEMA = BinStruct("command" / construct.GreedyString("utf-8"))
 
 
 class ProcessKillPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("pid" / construct.Int16ub)
+    SCHEMA = BinStruct("pid" / construct.Int16ub)
 
 
 class ProcessPollPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("pid" / construct.Int16ub)
+    SCHEMA = BinStruct("pid" / construct.Int16ub)
 
 
 class ProcessRunResponsePacket(BaseStruct, frozen=True):
@@ -289,7 +296,7 @@ class ProcessRunResponsePacket(BaseStruct, frozen=True):
     stderr: bytes
     exit_code: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct(
+    SCHEMA = BinStruct(
         "status" / construct.Int8ub,
         "stdout" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
         "stderr" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
@@ -300,7 +307,7 @@ class ProcessRunResponsePacket(BaseStruct, frozen=True):
 class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("pid" / construct.Int16ub)
+    SCHEMA = BinStruct("pid" / construct.Int16ub)
 
 
 class ProcessPollResponsePacket(BaseStruct, frozen=True):
@@ -309,7 +316,7 @@ class ProcessPollResponsePacket(BaseStruct, frozen=True):
     stdout: bytes
     stderr: bytes
 
-    _SCHEMA = BinStruct(
+    SCHEMA = BinStruct(
         "status" / construct.Int8ub,
         "exit_code" / construct.Int8ub,
         "stdout" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
@@ -338,7 +345,7 @@ class HandshakeConfigPacket(BaseStruct, frozen=True):
     ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
     response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct(
+    SCHEMA = BinStruct(
         "ack_timeout_ms" / construct.Int16ub,
         "ack_retry_limit" / construct.Int8ub,
         "response_timeout_ms" / construct.Int32ub,
@@ -373,7 +380,7 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
     ana: Annotated[int, msgspec.Meta(ge=0)]
     feat: CapabilitiesFeatures
 
-    _SCHEMA = BinStruct(
+    SCHEMA = BinStruct(
         "ver" / construct.Int8ub,
         "arch" / construct.Int8ub,
         "dig" / construct.Int8ub,
@@ -400,8 +407,58 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
 class SetBaudratePacket(BaseStruct, frozen=True):
     baudrate: Annotated[int, msgspec.Meta(ge=0)]
 
-    _SCHEMA = BinStruct("baudrate" / construct.Int32ub)
+    SCHEMA = BinStruct("baudrate" / construct.Int32ub)
 
+
+# [SIL-2] Payload Schema Map: Centralized registry for all command payloads.
+# This eliminates manual if/elif dispatching across components.
+PAYLOAD_SCHEMAS: Final[dict[int, Construct]] = {
+    protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket.SCHEMA,
+    protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket.SCHEMA,
+    protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket.SCHEMA,
+    protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket.SCHEMA,
+    protocol.Command.CMD_DATASTORE_GET_RESP: DatastoreGetResponsePacket.SCHEMA,
+    protocol.Command.CMD_MAILBOX_READ_RESP: MailboxReadResponsePacket.SCHEMA,
+    protocol.Command.CMD_MAILBOX_AVAILABLE_RESP: MailboxAvailableResponsePacket.SCHEMA,
+    protocol.Command.CMD_FILE_READ_RESP: FileReadResponsePacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_RUN_RESP: ProcessRunResponsePacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket.SCHEMA,
+    protocol.Command.CMD_GET_CAPABILITIES_RESP: CapabilitiesPacket.SCHEMA,
+    protocol.Command.CMD_SET_BAUDRATE: SetBaudratePacket.SCHEMA,
+    protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket.SCHEMA,
+    protocol.Command.CMD_SET_PIN_MODE: PinModePacket.SCHEMA,
+    protocol.Command.CMD_DIGITAL_WRITE: DigitalWritePacket.SCHEMA,
+    protocol.Command.CMD_ANALOG_WRITE: AnalogWritePacket.SCHEMA,
+    protocol.Command.CMD_DIGITAL_READ: PinReadPacket.SCHEMA,
+    protocol.Command.CMD_ANALOG_READ: PinReadPacket.SCHEMA,
+    protocol.Command.CMD_CONSOLE_WRITE: ConsoleWritePacket.SCHEMA,
+    protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket.SCHEMA,
+    protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket.SCHEMA,
+    protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket.SCHEMA,
+    protocol.Command.CMD_MAILBOX_PROCESSED: MailboxProcessedPacket.SCHEMA,
+    protocol.Command.CMD_FILE_WRITE: FileWritePacket.SCHEMA,
+    protocol.Command.CMD_FILE_READ: FileReadPacket.SCHEMA,
+    protocol.Command.CMD_FILE_REMOVE: FileRemovePacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_RUN: ProcessRunPacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket.SCHEMA,
+    protocol.Status.ACK: AckPacket.SCHEMA,
+    protocol.Status.MALFORMED: AckPacket.SCHEMA,
+}
+
+def _get_command_id(ctx: Any) -> int:
+    return int(ctx.command_id) & ~protocol.CMD_FLAG_COMPRESSED
+
+
+# [SIL-2] Optimized Payload Selector using construct.Switch
+# This provides O(1) schema lookup during parsing.
+PayloadSelector: Final = construct.Switch(
+    _get_command_id,
+    PAYLOAD_SCHEMAS,
+    default=construct.GreedyBytes,
+)
 
 # --- Framing Schema ---
 
@@ -727,9 +784,18 @@ class McuCapabilities(msgspec.Struct):
         """Convert to dictionary including expanded boolean flags."""
         res = msgspec.structs.asdict(self)
         fields = (
-            "has_watchdog", "has_rle", "has_debug_frames", "has_debug_io",
-            "has_eeprom", "has_dac", "has_hw_serial1", "has_fpu",
-            "is_3v3_logic", "has_big_buffer", "has_i2c", "has_spi"
+            "has_watchdog",
+            "has_rle",
+            "has_debug_frames",
+            "has_debug_io",
+            "has_eeprom",
+            "has_dac",
+            "has_hw_serial1",
+            "has_fpu",
+            "is_3v3_logic",
+            "has_big_buffer",
+            "has_i2c",
+            "has_spi",
         )
         for f in fields:
             res[f] = getattr(self, f)

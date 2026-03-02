@@ -1515,7 +1515,7 @@ def test_handshake_parse_capabilities_errors():
 
     # Unpack error
     with patch(
-        "mcubridge.protocol.structures.CapabilitiesPacket._SCHEMA.parse",
+        "mcubridge.protocol.structures.CapabilitiesPacket.SCHEMA.parse",
         side_effect=ConstructError,
     ):
         comp._parse_capabilities(b"12345678")

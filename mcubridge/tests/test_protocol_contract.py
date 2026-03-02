@@ -91,7 +91,7 @@ def test_protocol_spec_matches_generated_bindings() -> None:
 
 def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
     # Ensure our Python struct matches the C++ expected size
-    schema = structures.HandshakeConfigPacket._SCHEMA
+    schema = structures.HandshakeConfigPacket.SCHEMA
     packed_size = schema.sizeof()
     assert packed_size == protocol.HANDSHAKE_CONFIG_SIZE
 

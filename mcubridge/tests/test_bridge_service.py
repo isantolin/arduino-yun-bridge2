@@ -60,7 +60,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
             )
             # Priming capabilities
             await service._handshake.handle_capabilities_resp(
-                cast(Any, structures.CapabilitiesPacket._SCHEMA).build(
+                cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
                     {
                         "ver": 2,
                         "arch": 1,
@@ -177,7 +177,7 @@ async def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected
             )
             # Priming capabilities
             await service._handshake.handle_capabilities_resp(
-                cast(Any, structures.CapabilitiesPacket._SCHEMA).build(
+                cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
                     {
                         "ver": 2,
                         "arch": 1,

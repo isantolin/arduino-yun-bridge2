@@ -138,7 +138,7 @@ async def test_handle_digital_read_resp_without_pending_request_publishes_unknow
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(structures.PinReadPacket._SCHEMA.build({"pin": 1}))
+    await component.handle_digital_read_resp(structures.PinReadPacket.SCHEMA.build({"pin": 1}))
 
     assert len(ctx.enqueued) == 1
     message, reply_context = ctx.enqueued[0]
@@ -220,7 +220,7 @@ async def test_handle_mqtt_mode_command_valid_payload_sends_frame(
     assert ctx.sent_frames
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_SET_PIN_MODE.value
-    assert payload == structures.DigitalWritePacket._SCHEMA.build(dict(pin=2, value=1))
+    assert payload == structures.DigitalWritePacket.SCHEMA.build(dict(pin=2, value=1))
 
 
 @pytest.mark.asyncio
@@ -330,7 +330,7 @@ async def test_handle_mqtt_read_command_appends_pending_on_success(
     assert ctx.sent_frames
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_ANALOG_READ.value
-    assert payload == structures.PinReadPacket._SCHEMA.build({"pin": 3})
+    assert payload == structures.PinReadPacket.SCHEMA.build({"pin": 3})
     assert runtime_state.pending_analog_reads
     request = runtime_state.pending_analog_reads[-1]
     assert request.pin == 3
@@ -353,7 +353,7 @@ async def test_handle_mqtt_write_digital_accepts_empty_payload_as_zero(
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_DIGITAL_WRITE.value
-    assert payload == structures.DigitalWritePacket._SCHEMA.build(dict(pin=5, value=protocol.DIGITAL_LOW))
+    assert payload == structures.DigitalWritePacket.SCHEMA.build(dict(pin=5, value=protocol.DIGITAL_LOW))
 
 
 @pytest.mark.asyncio
@@ -389,4 +389,4 @@ async def test_handle_mqtt_parses_analog_pin_identifier_prefix_a(
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_ANALOG_WRITE.value
-    assert payload == structures.DigitalWritePacket._SCHEMA.build(dict(pin=1, value=10))
+    assert payload == structures.DigitalWritePacket.SCHEMA.build(dict(pin=1, value=10))

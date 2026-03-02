@@ -139,17 +139,26 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.file_system_root = str(Path(self.file_system_root).expanduser().resolve())
         self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).expanduser().resolve())
 
-        # Normalize Optional strings
-        if self.mqtt_user:
+        # Normalize Optional strings (convert empty or whitespace-only to None)
+        if self.mqtt_user is not None:
             self.mqtt_user = self.mqtt_user.strip() or None
-        if self.mqtt_pass:
+        if self.mqtt_pass is not None:
             self.mqtt_pass = self.mqtt_pass.strip() or None
-        if self.mqtt_cafile:
+        if self.mqtt_cafile is not None:
             self.mqtt_cafile = self.mqtt_cafile.strip() or None
-        if self.mqtt_certfile:
+        if self.mqtt_certfile is not None:
             self.mqtt_certfile = self.mqtt_certfile.strip() or None
-        if self.mqtt_keyfile:
+        if self.mqtt_keyfile is not None:
             self.mqtt_keyfile = self.mqtt_keyfile.strip() or None
+
+        # [SIL-2] MQTT Topic Normalization: Slashes are forced to standard format
+        from mcubridge.protocol.topics import split_topic_segments
+
+        raw_topic = str(self.mqtt_topic).strip()
+        segments = split_topic_segments(raw_topic)
+        if not segments:
+            raise ValueError("mqtt_topic must contain at least one segment")
+        self.mqtt_topic = "/".join(segments)
 
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
 
@@ -173,6 +182,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
+
+        if self.serial_shared_secret == b"changeme123":
+            raise ValueError("serial_shared_secret placeholder is insecure")
 
         # Unique symbol check for minimum entropy
         unique_symbols = {byte for byte in self.serial_shared_secret}

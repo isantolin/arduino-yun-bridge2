@@ -121,7 +121,9 @@ class MqttVerifier:
             pass
 
 
-def start_daemon(package_root, shared_secret):
+def _setup_uci_and_env(
+    package_root: Path, shared_secret: str
+) -> tuple[dict[str, str], tempfile.TemporaryDirectory[str]]:
     """Setup UCI stub and return daemon environment."""
     os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
     os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
@@ -160,7 +162,6 @@ def start_daemon(package_root, shared_secret):
 
     env = os.environ.copy()
     current_path = env.get("PYTHONPATH", "")
-    # Add uci stub, package root and client examples to PYTHONPATH
     repo_root = package_root.parent
     client_examples = repo_root / "mcubridge-client-examples"
     path_parts = [
@@ -174,24 +175,22 @@ def start_daemon(package_root, shared_secret):
     return env, uci_stub_dir
 
 
+def _start_worker_thread(target: Any, name: str) -> None:
+    import threading
+
+    t = threading.Thread(target=target, name=name, daemon=True)
+    t.start()
+
+
 def setup_emulation_processes(
     state: EmulationState,
     firmware_path: Path,
     daemon_env: dict[str, str],
 ) -> tuple[subprocess.Popen[Any], subprocess.Popen[Any], subprocess.Popen[Any]]:
     """Start socat, mcu and daemon processes with their workers."""
-    import threading
-
-    # 1. Start Socat
     logger.info("Starting socat...")
     socat_proc = subprocess.Popen(
-        [
-            "socat",
-            "-d",
-            "-d",
-            f"pty,raw,echo=0,link={SOCAT_PORT0}",
-            f"pty,raw,echo=0,link={SOCAT_PORT1}",
-        ],
+        ["socat", "-d", "-d", f"pty,raw,echo=0,link={SOCAT_PORT0}", f"pty,raw,echo=0,link={SOCAT_PORT1}"],
         stderr=subprocess.PIPE,
         text=True,
     )
@@ -203,9 +202,8 @@ def setup_emulation_processes(
                     break
                 state.on_line(line, "socat")
 
-    threading.Thread(target=_socat_worker, daemon=True).start()
+    _start_worker_thread(_socat_worker, "socat-worker")
 
-    # 2. Start MCU Emulator
     logger.info("Starting MCU Emulator...")
     mcu_proc = subprocess.Popen(
         [str(firmware_path)],
@@ -215,17 +213,14 @@ def setup_emulation_processes(
         bufsize=0,
     )
 
-    # 3. Serial Bridge (Link socat to mcu stdin/stdout)
-    def serial_bridge():
+    def _serial_bridge():
         import select
 
         try:
             with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
                 mcu_out = mcu_proc.stdout
                 mcu_in = mcu_proc.stdin
-                while True:
-                    if mcu_proc.poll() is not None:
-                        break
+                while mcu_proc.poll() is None:
                     r, _, _ = select.select([pty, mcu_out], [], [], 0.05)
                     if pty in r:
                         data = pty.read(1024)
@@ -237,12 +232,11 @@ def setup_emulation_processes(
                         if data:
                             pty.write(data)
                             pty.flush()
-        except Exception as e:
-            logger.debug("Serial bridge thread exiting: %s", e)
+        except Exception:
+            pass
 
-    threading.Thread(target=serial_bridge, daemon=True).start()
+    _start_worker_thread(_serial_bridge, "serial-bridge")
 
-    # Capture mcu stderr separately
     def _mcu_stderr_worker():
         if mcu_proc.stderr:
             for line in iter(mcu_proc.stderr.readline, b""):
@@ -250,9 +244,8 @@ def setup_emulation_processes(
                     break
                 state.on_line(line.decode("utf-8", errors="ignore"), "mcu-err")
 
-    threading.Thread(target=_mcu_stderr_worker, daemon=True).start()
+    _start_worker_thread(_mcu_stderr_worker, "mcu-stderr-worker")
 
-    # 4. Start Daemon
     logger.info("Starting Daemon...")
     daemon_proc = subprocess.Popen(
         [sys.executable, "-u", "-m", "mcubridge.daemon", "--debug"],
@@ -263,7 +256,6 @@ def setup_emulation_processes(
         bufsize=1,
     )
 
-    # Capture daemon logs
     def _daemon_worker():
         if daemon_proc.stdout:
             for line in iter(daemon_proc.stdout.readline, ""):
@@ -271,7 +263,7 @@ def setup_emulation_processes(
                     break
                 state.on_line(line, "daemon")
 
-    threading.Thread(target=_daemon_worker, daemon=True).start()
+    _start_worker_thread(_daemon_worker, "daemon-worker")
 
     return socat_proc, mcu_proc, daemon_proc
 
@@ -284,11 +276,8 @@ def run_emulation(
     run_scripts: list[str] | None = None,
 ) -> bool:
     """Orchestrate the emulation lifecycle."""
-    daemon_env, uci_dir = start_daemon(package_root, "DEBUG_INSECURE")
-
-    socat_proc, mcu_proc, daemon_proc = setup_emulation_processes(
-        state, firmware_path, daemon_env
-    )
+    daemon_env, uci_dir = _setup_uci_and_env(package_root, "DEBUG_INSECURE")
+    socat_proc, mcu_proc, daemon_proc = setup_emulation_processes(state, firmware_path, daemon_env)
 
     # Wait for PTYs
     for _ in range(50):
@@ -302,9 +291,7 @@ def run_emulation(
 
     mqtt_verifier.start()
     success = False
-
     try:
-        # 5. Wait for Handshake
         start_time = time.time()
         while time.time() - start_time < 30:
             if state.check_success("handshake_complete") or mqtt_verifier.sync_event.is_set():
@@ -316,7 +303,6 @@ def run_emulation(
                 break
             time.sleep(0.5)
 
-        # 6. Run Client Scripts
         if success and run_scripts:
             for script in run_scripts:
                 logger.info("Running script: %s", script)
@@ -337,7 +323,6 @@ def run_emulation(
                 except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                     logger.error("Script failed: %s", e)
                     success = False
-
     finally:
         mqtt_verifier.stop()
         daemon_proc.terminate()

@@ -98,3 +98,15 @@ name = "rich"
 openwrt = "python3-rich"
 pip = "rich==14.3.2"
 rationale = "Beautiful terminal formatting for tools and logs"
+
+[[dependency]]
+name = "mosquitto-client"
+openwrt = "mosquitto-client"
+pip = ""
+rationale = "CLI MQTT tools used by credential rotation and health-check scripts"
+
+[[dependency]]
+name = "xxd"
+openwrt = "xxd"
+pip = ""
+rationale = "Hex-dump utility used by diagnostic scripts"

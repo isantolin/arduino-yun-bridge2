@@ -356,6 +356,8 @@ class RuntimeState(msgspec.Struct):
     # [SIL-2] Improved Mailbox: Uses Buffer for overflow to disk
     mailbox_queue: Any = None
     mailbox_incoming_queue: Any = None
+    _mailbox_requeue_idx: int = 1000000
+    _mailbox_incoming_requeue_idx: int = 1000000
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
@@ -657,8 +659,14 @@ class RuntimeState(msgspec.Struct):
         return msg
 
     def requeue_mailbox_message_front(self, payload: bytes) -> None:
-        # [SIL-2] Requeue at front by using a key smaller than any possible time.time_ns()
-        key = "0000000000000000000"
+        if len(self.mailbox_queue) >= self.mailbox_queue_limit:
+            self.mailbox_dropped_messages += 1
+            self.mailbox_dropped_bytes += len(payload)
+            self.mailbox_outgoing_overflow_events += 1
+            return
+        # [SIL-2] Requeue at front by using a decremental index to stay before time.time_ns()
+        self._mailbox_requeue_idx -= 1
+        key = f"0_{self._mailbox_requeue_idx:010d}"
         self.mailbox_queue[key] = payload
         self.mailbox_queue_bytes += len(payload)
 
@@ -937,10 +945,10 @@ class RuntimeState(msgspec.Struct):
                 break
 
     def build_metrics_snapshot(self) -> dict[str, Any]:
-        # [SIL-2] Use msgspec.to_builtins for ultra-fast structured export
+        # [SIL-2] Return rich objects where possible to preserve attribute-based API
         return {
-            "serial": msgspec.to_builtins(self.serial_flow_stats),
-            "serial_throughput": msgspec.to_builtins(self.serial_throughput_stats),
+            "serial": self.serial_flow_stats,
+            "serial_throughput": self.serial_throughput_stats,
             "serial_latency": self.serial_latency_stats.as_dict(),
             "mqtt_drop_counts": dict(self.mqtt_drop_counts),
             "queue_depths": {
@@ -950,12 +958,12 @@ class RuntimeState(msgspec.Struct):
                 "mailbox_incoming": len(self.mailbox_incoming_queue),
                 "running_processes": len(self.running_processes),
             },
-            "handshake": msgspec.to_builtins(self.build_handshake_snapshot()),
+            "handshake": self.build_handshake_snapshot(),
             "link_synchronised": self.is_synchronized,
             "system": collect_system_metrics(),
             "spool_pending": self.mqtt_spool.pending if self.mqtt_spool else 0,
             "spool_limit": self.mqtt_spool.limit if self.mqtt_spool else 0,
-            "bridge": msgspec.to_builtins(self.build_bridge_snapshot()),
+            "bridge": self.build_bridge_snapshot(),
         }
 
     def build_handshake_snapshot(self) -> HandshakeSnapshot:
@@ -987,7 +995,7 @@ class RuntimeState(msgspec.Struct):
             ),
             handshake=self.build_handshake_snapshot(),
             serial_pipeline=self.build_serial_pipeline_snapshot(),
-            serial_flow=msgspec.to_builtins(self.serial_flow_stats),
+            serial_flow=self.serial_flow_stats.as_snapshot(),
             mcu_version=McuVersion(*self.mcu_version) if self.mcu_version else None,
             capabilities=self.mcu_capabilities.as_dict() if self.mcu_capabilities else None,
         )

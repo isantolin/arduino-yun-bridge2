@@ -117,8 +117,26 @@ class MQTTPublishSpool:
                 self._last_trim_unix = time.time()
                 self._head += 1
 
-            self._spool[key] = record
-            self._tail += 1
+            try:
+                self._spool[key] = record
+                self._tail += 1
+            except Exception as exc:
+                # [SIL-2] Fail-Operational: If disk fails during append, switch to memory mode
+                if not self._fallback_active:
+                    logger.error("MQTT spool disk error during append: %s. Switching to memory-only.", exc)
+                    self._fallback_active = True
+                    # Re-route _buffer to fast-only by setting _slow to empty dict
+                    # Note: zict.Buffer handles slow being a dict
+                    self._buffer.slow = {}
+                    if self._fallback_hook:
+                        self._fallback_hook("disk_full_during_append", exc)
+
+                # Try to at least store it in the RAM part of the buffer (which is now slow too)
+                try:
+                    self._spool[key] = record
+                    self._tail += 1
+                except Exception:
+                    pass # Absolute worst case, message is lost but daemon lives
 
     def pop_next(self) -> QueuedPublish | None:
         with self._lock:

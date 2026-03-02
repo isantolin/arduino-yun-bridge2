@@ -111,9 +111,15 @@ def test_coerce_snapshot_int_edge_cases() -> None:
 
 
 def test_runtime_state_mailbox_requeue_front() -> None:
-    state = RuntimeState()
-    state.mailbox_queue_limit = 5
-    state.mailbox_queue_bytes_limit = 100
+    from mcubridge.state.context import create_runtime_state
+    from mcubridge.config.settings import RuntimeConfig
+
+    config = RuntimeConfig(
+        mailbox_queue_limit=5,
+        mailbox_queue_bytes_limit=100,
+        serial_shared_secret=b"valid_secret_1234",
+    )
+    state = create_runtime_state(config)
 
     state.requeue_mailbox_message_front(b"msg1")
     assert state.mailbox_queue_bytes > 0

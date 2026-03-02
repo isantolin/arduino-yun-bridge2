@@ -144,10 +144,10 @@ def test_metrics_snapshot_exposes_error_counters(
 
     snapshot = runtime_state.build_metrics_snapshot()
 
-    assert snapshot["serial"]["commands_sent"] == 1
-    assert snapshot["bridge"]["serial_flow"]["commands_sent"] == 1
+    assert snapshot["serial"].commands_sent == 1
+    assert snapshot["bridge"].serial_flow.commands_sent == 1
     assert snapshot["mqtt_drop_counts"]["bridge/status"] == 1
-    assert snapshot["bridge"]["handshake"]["attempts"] >= 0
+    assert snapshot["bridge"].handshake.attempts >= 0
 
 
 def test_metrics_snapshot_includes_spool_snapshot(

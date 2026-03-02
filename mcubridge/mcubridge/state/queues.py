@@ -48,11 +48,11 @@ class BoundedByteDeque(msgspec.Struct):
         max_items: int | None = None,
         max_bytes: int | None = None,
     ) -> None:
-        """Update limits using strict declarative validation."""
+        """Update limits and prune if necessary."""
         if max_items is not None:
-            self.max_items = msgspec.convert(max_items, Annotated[int, msgspec.Meta(ge=0)])
+            self.max_items = max_items
         if max_bytes is not None:
-            self.max_bytes = msgspec.convert(max_bytes, Annotated[int, msgspec.Meta(ge=0)])
+            self.max_bytes = max_bytes
         self._make_room_for(0, 0)
 
     def append(self, chunk: bytes) -> QueueEvent:

@@ -21,7 +21,7 @@ import typer
 try:
     import sh
 except ImportError:
-    print("ERROR: 'sh' library is required. Install 'python3-sh'.", file=sys.stderr)
+    sys.stderr.write("ERROR: 'sh' library is required. Install 'python3-sh'.\n")
     sys.exit(1)
 
 try:
@@ -206,8 +206,7 @@ def main(
     logger.info("Starting MCU Emulator...")
     mcu_proc = sh.Command(str(firmware_path))(
         _bg=True,
-        _piped=True,
-        _out=lambda line: state.on_line(line, "mcu-out"),
+        _piped="out",
         _err=lambda line: state.on_line(line, "mcu-err"),
     )
 
@@ -217,15 +216,17 @@ def main(
 
         try:
             with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
+                mcu_out = mcu_proc.process.stdout
+                mcu_in = mcu_proc.process.stdin
                 while True:
-                    r, _, _ = select.select([pty, mcu_proc.process.stdout], [], [], 0.1)
+                    r, _, _ = select.select([pty, mcu_out], [], [], 0.05)
                     if pty in r:
                         data = pty.read(1024)
                         if data:
-                            mcu_proc.process.stdin.write(data)
-                            mcu_proc.process.stdin.flush()
-                    if mcu_proc.process.stdout in r:
-                        data = mcu_proc.process.stdout.read(1024)
+                            mcu_in.write(data)
+                            mcu_in.flush()
+                    if mcu_out in r:
+                        data = mcu_out.read(1024)
                         if data:
                             pty.write(data)
                             pty.flush()
@@ -248,6 +249,7 @@ def main(
         _bg=True,
         _bg_exc=False,
         _out=lambda line: state.on_line(line, "daemon"),
+        _err_to_out=True,
     )
 
     mqtt_verifier.start()

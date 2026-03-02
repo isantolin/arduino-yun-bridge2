@@ -16,7 +16,7 @@ from typing import Any
 try:
     import sh
 except ImportError:
-    print("[mcubridge-hw-smoke] ERROR: 'sh' library is required. Install 'python3-sh'.", file=sys.stderr)
+    sys.stderr.write("[mcubridge-hw-smoke] ERROR: 'sh' library is required. Install 'python3-sh'.\n")
     sys.exit(1)
 
 STATUS_FILE = Path("/tmp/mcubridge_status.json")
@@ -31,13 +31,13 @@ def main() -> None:
     # 1. Dependency Check
     for cmd in ["mosquitto_pub", "mosquitto_sub"]:
         if not sh.which(cmd):
-            print(f"[mcubridge-hw-smoke] ERROR: {cmd} is required. Install 'mosquitto-client'.", file=sys.stderr)
+            sys.stderr.write(f"[mcubridge-hw-smoke] ERROR: {cmd} is required. Install 'mosquitto-client'.\n")
             sys.exit(1)
 
     # 2. Configuration Load
     serial_secret = uci_get("serial_shared_secret")
     if not serial_secret or serial_secret == "changeme123":
-        print("[mcubridge-hw-smoke] ERROR: Serial secret missing or insecure.", file=sys.stderr)
+        sys.stderr.write("[mcubridge-hw-smoke] ERROR: Serial secret missing or insecure.\n")
         sys.exit(1)
 
     host = uci_get("mqtt_host", "127.0.0.1")
@@ -55,11 +55,11 @@ def main() -> None:
         try:
             sh.Command(str(init_script))("status")
         except sh.ErrorReturnCode:
-            print("[mcubridge-hw-smoke] ERROR: McuBridge service is not running.", file=sys.stderr)
+            sys.stderr.write("[mcubridge-hw-smoke] ERROR: McuBridge service is not running.\n")
             sys.exit(1)
 
     if not STATUS_FILE.exists() or STATUS_FILE.stat().st_size == 0:
-        print(f"[mcubridge-hw-smoke] ERROR: Status file {STATUS_FILE} missing or empty.", file=sys.stderr)
+        sys.stderr.write(f"[mcubridge-hw-smoke] ERROR: Status file {STATUS_FILE} missing or empty.\n")
         sys.exit(1)
 
     # 4. Prepare Mosquitto Arguments
@@ -76,7 +76,7 @@ def main() -> None:
             common_args.append("--insecure")
 
     # 5. Run Smoke Test (Round Trip)
-    print(f"[mcubridge-hw-smoke] Checking MQTT round trip via {host}:{port}...", file=sys.stderr)
+    sys.stderr.write(f"[mcubridge-hw-smoke] Checking MQTT round trip via {host}:{port}...\n")
     
     status_topic = f"{topic_prefix}/system/status"
     request_topic = f"{topic_prefix}/system/status/request"
@@ -102,18 +102,18 @@ def main() -> None:
         
         # Wait for sub result
         output = sub_proc.wait()
-        print("[mcubridge-hw-smoke] Received response:")
-        print(output.stdout.decode())
-        print("[mcubridge-hw-smoke] Smoke test completed successfully.", file=sys.stderr)
+        sys.stdout.write("[mcubridge-hw-smoke] Received response:\n")
+        sys.stdout.write(output.stdout.decode() + "\n")
+        sys.stderr.write("[mcubridge-hw-smoke] Smoke test completed successfully.\n")
 
     except sh.TimeoutException:
-        print("[mcubridge-hw-smoke] ERROR: Did not receive response from daemon (Timeout).", file=sys.stderr)
+        sys.stderr.write("[mcubridge-hw-smoke] ERROR: Did not receive response from daemon (Timeout).\n")
         sys.exit(1)
     except sh.ErrorReturnCode as e:
-        print(f"[mcubridge-hw-smoke] ERROR: MQTT tool failed: {e.stderr.decode()}", file=sys.stderr)
+        sys.stderr.write(f"[mcubridge-hw-smoke] ERROR: MQTT tool failed: {e.stderr.decode()}\n")
         sys.exit(1)
     except Exception as e:
-        print(f"[mcubridge-hw-smoke] FATAL ERROR: {e}", file=sys.stderr)
+        sys.stderr.write(f"[mcubridge-hw-smoke] FATAL ERROR: {e}\n")
         sys.exit(1)
 
 if __name__ == "__main__":

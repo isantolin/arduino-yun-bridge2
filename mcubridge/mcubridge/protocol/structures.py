@@ -926,7 +926,7 @@ class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     serial_link: SerialLinkSnapshot
     handshake: HandshakeSnapshot
     serial_pipeline: SerialPipelineSnapshot
-    serial_flow: dict[str, Any]
+    serial_flow: SerialFlowSnapshot
     mcu_version: McuVersion | None = None
     capabilities: dict[str, Any] | None = None
 

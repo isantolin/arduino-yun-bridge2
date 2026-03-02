@@ -204,57 +204,72 @@ def main(
 
     # 2. Start MCU Emulator
     logger.info("Starting MCU Emulator...")
-    mcu_proc = sh.Command(str(firmware_path))(
-        _bg=True,
-        _piped="out",
-        _err=lambda line: state.on_line(line, "mcu-err"),
+    # [SIL-2] Use subprocess.Popen for binary transparency in real-time serial emulation.
+    import subprocess
+    mcu_proc = subprocess.Popen(
+        [str(firmware_path)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=0,
     )
 
     # 3. Serial Bridge (Link socat to mcu stdin/stdout)
     def serial_bridge():
         import select
-
         try:
             with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
-                mcu_out = mcu_proc.process.stdout
-                mcu_in = mcu_proc.process.stdin
                 while True:
-                    r, _, _ = select.select([pty, mcu_out], [], [], 0.05)
+                    if mcu_proc.poll() is not None:
+                        break
+                    r, _, _ = select.select([pty, mcu_proc.stdout], [], [], 0.05)
                     if pty in r:
                         data = pty.read(1024)
                         if data:
-                            mcu_in.write(data)
-                            mcu_in.flush()
-                    if mcu_out in r:
-                        data = mcu_out.read(1024)
+                            mcu_proc.stdin.write(data)
+                            mcu_proc.stdin.flush()
+                    if mcu_proc.stdout in r:
+                        data = mcu_proc.stdout.read(1024)
                         if data:
                             pty.write(data)
                             pty.flush()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Serial bridge thread exiting: %s", e)
 
     import threading
-
     threading.Thread(target=serial_bridge, daemon=True).start()
+
+    # Capture mcu stderr separately
+    def _stderr_worker():
+        if mcu_proc.stderr:
+            for line in iter(mcu_proc.stderr.readline, b""):
+                if not line: break
+                state.on_line(line.decode('utf-8', errors='ignore'), "mcu-err")
+    threading.Thread(target=_stderr_worker, daemon=True).start()
 
     # 4. Start Daemon
     daemon_env, uci_dir = start_daemon(package_root, "DEBUG_INSECURE")
     logger.info("Starting Daemon...")
-    daemon_proc = sh.python3(
-        "-u",
-        "-m",
-        "mcubridge.daemon",
-        "--debug",
-        _env=daemon_env,
-        _bg=True,
-        _bg_exc=False,
-        _out=lambda line: state.on_line(line, "daemon"),
-        _err_to_out=True,
+    daemon_proc = subprocess.Popen(
+        [sys.executable, "-u", "-m", "mcubridge.daemon", "--debug"],
+        env=daemon_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
     )
+
+    # Capture daemon logs
+    def _daemon_worker():
+        if daemon_proc.stdout:
+            for line in iter(daemon_proc.stdout.readline, ""):
+                if not line: break
+                state.on_line(line, "daemon")
+    threading.Thread(target=_daemon_worker, daemon=True).start()
 
     mqtt_verifier.start()
     success = False
-
+    
     try:
         # 5. Wait for Handshake
         start_time = time.time()
@@ -263,7 +278,7 @@ def main(
                 logger.info("SUCCESS: Handshake verified.")
                 success = True
                 break
-            if not daemon_proc.is_alive() or not mcu_proc.is_alive():
+            if daemon_proc.poll() is not None or mcu_proc.poll() is not None:
                 logger.error("Process died prematurely")
                 break
             time.sleep(0.5)
@@ -273,17 +288,14 @@ def main(
             for script in run_scripts:
                 logger.info("Running script: %s", script)
                 try:
+                    # Keep sh for client scripts as they are CLI-oriented
                     sh.python3(
                         script,
-                        "--host",
-                        MQTT_HOST,
-                        "--port",
-                        MQTT_PORT,
-                        "--user",
-                        "admin",
-                        "--password",
-                        "admin",
-                        _env=daemon_env,
+                        "--host", MQTT_HOST,
+                        "--port", str(MQTT_PORT), 
+                        "--user", "admin",
+                        "--password", "admin",
+                        _env=daemon_env
                     )
                 except sh.ErrorReturnCode as e:
                     logger.error("Script failed: %s", e)
@@ -291,8 +303,8 @@ def main(
 
     finally:
         mqtt_verifier.stop()
-        daemon_proc.kill()
-        mcu_proc.kill()
+        daemon_proc.terminate()
+        mcu_proc.terminate()
         socat_proc.kill()
         uci_dir.cleanup()
 

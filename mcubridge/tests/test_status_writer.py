@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -39,13 +40,13 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
             state.record_mqtt_drop(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test")
 
         state.datastore["foo"] = "bar"
-        state.mailbox_queue.append(b"abc")
+        state.enqueue_mailbox_message(b"abc", logging.getLogger())
         state.mailbox_queue_bytes = 3
         state.mailbox_dropped_messages = 1
         state.mailbox_truncated_messages = 1
         state.mailbox_truncated_bytes = 2
         state.mailbox_dropped_bytes = 3
-        state.mailbox_incoming_queue.append(b"xyz")
+        state.enqueue_mailbox_incoming(b"xyz", logging.getLogger())
         state.mailbox_incoming_queue_bytes = 3
         state.mailbox_incoming_dropped_messages = 1
         state.mailbox_incoming_truncated_messages = 2

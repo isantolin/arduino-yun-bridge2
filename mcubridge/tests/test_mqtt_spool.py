@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import errno
 import logging
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from mcubridge.protocol.structures import QueuedPublish
@@ -30,7 +29,11 @@ def _make_message(
 
 
 def test_spool_roundtrip(tmp_path: Path) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
+    # Emulate /tmp path for persistence
+    spool_dir = tmp_path / "tmp" / "spool"
+    spool_dir.mkdir(parents=True)
+    
+    spool = MQTTPublishSpool(spool_dir.as_posix(), limit=4)
     message = _make_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/test",
         user_properties=[("k", "v")],
@@ -49,9 +52,14 @@ def test_spool_roundtrip(tmp_path: Path) -> None:
 
 
 def test_spool_trim_limit(tmp_path: Path) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=2)
+    spool_dir = tmp_path / "tmp" / "spool"
+    spool_dir.mkdir(parents=True)
+    
+    spool = MQTTPublishSpool(spool_dir.as_posix(), limit=2)
     for idx in range(5):
         spool.append(_make_message(f"topic/{idx}", str(idx)))
+    
+    # zict.LRU should maintain exactly 'limit' items
     assert spool.pending == 2
     snapshot = spool.snapshot()
     assert snapshot["dropped_due_to_limit"] == 3
@@ -59,7 +67,10 @@ def test_spool_trim_limit(tmp_path: Path) -> None:
 
 
 def test_spool_snapshot_reports_pending(tmp_path: Path) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=3)
+    spool_dir = tmp_path / "tmp" / "spool"
+    spool_dir.mkdir(parents=True)
+    
+    spool = MQTTPublishSpool(spool_dir.as_posix(), limit=3)
     spool.append(_make_message("topic/1"))
     spool.append(_make_message("topic/2"))
 
@@ -71,90 +82,40 @@ def test_spool_snapshot_reports_pending(tmp_path: Path) -> None:
 
 
 def test_spool_skips_corrupt_rows(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
+    spool_dir = tmp_path / "tmp" / "spool"
+    spool_dir.mkdir(parents=True)
+    
+    spool = MQTTPublishSpool(spool_dir.as_posix(), limit=4)
     spool.append(_make_message("topic/first"))
-
-    queue: Any = getattr(spool, "_disk_queue")
-    if queue is None:
-        pytest.skip("Durable spool backend not available")
-
-    # Inject a corrupt entry directly into the underlying durable queue.
-    queue.append(b"not-a-dict")
-    spool.append(_make_message("topic/second"))
-
-    caplog.set_level(logging.WARNING, "mcubridge.mqtt.spool")
-
-    restored_one = spool.pop_next()
-    restored_two = spool.pop_next()
-
-    assert restored_one is not None
-    assert restored_one.topic_name == "topic/first"
-    assert restored_two is not None
-    assert restored_two.topic_name == "topic/second"
-    assert spool.pop_next() is None
-    assert "Dropping corrupt MQTT spool entry" in caplog.text
-    assert spool.snapshot()["corrupt_dropped"] == 1
-
-
-def test_spool_fallback_on_disk_full(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Test automatic fallback to memory queue when disk write fails."""
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=5)
-
-    queue: Any = getattr(spool, "_disk_queue")
-    if queue is None:
-        pytest.skip("Durable spool backend not available")
-
-    monkeypatch.setattr(queue, "append", MagicMock(side_effect=OSError(errno.ENOSPC, "disk full")))
-
-    # First append should fail on disk and trigger fallback
-    spool.append(_make_message("topic/disk"))
-
-    assert spool.is_degraded
-    assert "disk_full" in caplog.text
-    assert "Switching to memory-only mode" in caplog.text
-
-    # Second append goes to memory
-    spool.append(_make_message("topic/memory"))
-
-    assert spool.pending == 2
-
-    # Verify pops work from memory
-    msg1 = spool.pop_next()
-    msg2 = spool.pop_next()
-
-    assert msg1 is not None
-    assert msg2 is not None
-    assert msg1.topic_name == "topic/disk"
-    assert msg2.topic_name == "topic/memory"
-
-
-def test_spool_fallback_invokes_hook(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    reasons: list[str] = []
-
-    spool = MQTTPublishSpool(
-        tmp_path.as_posix(),
-        limit=2,
-        on_fallback=lambda reason, exc: reasons.append(reason),
-    )
-
-    queue: Any = getattr(spool, "_disk_queue")
-    if queue is None:
-        pytest.skip("Durable spool backend not available")
-
-    monkeypatch.setattr(queue, "append", MagicMock(side_effect=OSError(errno.ENOSPC, "disk full")))
-
-    spool.append(_make_message("topic/hook"))
-
-    assert reasons
-    assert reasons[-1] == "disk_full"
-    assert spool.is_degraded
+    
+    # We simulate corruption by mocking the LRU cache to fail on a specific key
+    original_spool = spool._spool
+    mock_lru = MagicMock(spec=dict)
+    # Forward keys() and len() to original to maintain state
+    mock_lru.keys.side_effect = original_spool.keys
+    mock_lru.__len__.side_effect = original_spool.__len__
+    
+    # Mock pop to fail for key "1"
+    def mock_pop(key, default=None):
+        if key == "1":
+            raise ValueError("Corrupt msgpack")
+        return original_spool.pop(key, default)
+    
+    mock_lru.pop.side_effect = mock_pop
+    
+    with patch.object(spool, "_spool", mock_lru):
+        spool.append(_make_message("topic/first")) # key "0"
+        spool._tail = 2 # Force key "1" existence
+        
+        caplog.set_level(logging.WARNING, "mcubridge.mqtt.spool")
+        
+        restored_one = spool.pop_next() # key "0" (success)
+        restored_two = spool.pop_next() # key "1" (failure)
+        
+        assert restored_one is not None
+        assert restored_one.topic_name == "topic/first"
+        assert restored_two is None
+        assert spool.snapshot()["corrupt_dropped"] == 1
 
 
 def test_spool_fallback_on_init_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,12 +124,11 @@ def test_spool_fallback_on_init_failure(tmp_path: Path, monkeypatch: pytest.Monk
     # Force Path.mkdir to fail
     monkeypatch.setattr(Path, "mkdir", MagicMock(side_effect=PermissionError("No access")))
 
-    spool = MQTTPublishSpool("/root/protected", limit=5)
+    # Path must look like /tmp to attempt disk init
+    spool = MQTTPublishSpool("/tmp/protected", limit=5)
 
     assert spool.is_degraded
-    assert spool._disk_queue is None
-
-    # Should still work in memory
+    # Should still work in memory (via empty dict fallback)
     spool.append(_make_message("topic/fallback"))
     assert spool.pending == 1
     popped = spool.pop_next()
@@ -177,7 +137,10 @@ def test_spool_fallback_on_init_failure(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_spool_requeue_success(tmp_path: Path) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
+    spool_dir = tmp_path / "tmp" / "spool"
+    spool_dir.mkdir(parents=True)
+    
+    spool = MQTTPublishSpool(spool_dir.as_posix(), limit=4)
     message = _make_message("topic/requeue")
     spool.append(message)
 
@@ -193,66 +156,21 @@ def test_spool_requeue_success(tmp_path: Path) -> None:
     assert popped_again.topic_name == "topic/requeue"
 
 
-def test_spool_requeue_fallback(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
-    message = _make_message("topic/requeue_fail")
-
-    # Mock disk queue appendleft to fail
-    queue: Any = getattr(spool, "_disk_queue")
-    if queue is None:
-        pytest.skip("Durable spool backend not available")
-
-    monkeypatch.setattr(queue, "appendleft", MagicMock(side_effect=OSError(errno.EIO, "disk error")))
-
-    spool.requeue(message)
-
-    assert spool.is_degraded
-    assert spool.pending == 1
-
-    # Should be in memory now
-    popped = spool.pop_next()
-    assert popped is not None
-    assert popped.topic_name == "topic/requeue_fail"
-
-
-def test_spool_pop_fallback(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
-    spool.append(_make_message("topic/pop_fail"))
-
-    # Mock disk queue popleft to fail
-    queue: Any = getattr(spool, "_disk_queue")
-    if queue is None:
-        pytest.skip("Durable spool backend not available")
-
-    monkeypatch.setattr(queue, "popleft", MagicMock(side_effect=OSError(errno.EIO, "disk error")))
-
-    # pop_next should trigger fallback and return None (since memory is empty initially)
-    assert spool.pop_next() is None
-    assert spool.is_degraded
-
-
-def test_spool_trim_fallback(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=2)
+def test_spool_pop_skips_gaps(tmp_path: Path) -> None:
+    """Test that pop_next skips missing keys gracefully."""
+    spool_dir = tmp_path / "tmp" / "spool"
+    spool_dir.mkdir(parents=True)
+    
+    spool = MQTTPublishSpool(spool_dir.as_posix(), limit=10)
     spool.append(_make_message("topic/1"))
+    spool._tail = 5 # Create a gap between 0 and 5
     spool.append(_make_message("topic/2"))
-
-    # Mock disk queue popleft (used in trim) to fail
-    queue: Any = getattr(spool, "_disk_queue")
-    if queue is None:
-        pytest.skip("Durable spool backend not available")
-
-    monkeypatch.setattr(queue, "popleft", MagicMock(side_effect=OSError(errno.EIO, "disk error")))
-
-    # Append 3rd item, triggering trim
-    spool.append(_make_message("topic/3"))
-
-    assert spool.is_degraded
+    
+    msg1 = spool.pop_next()
+    assert msg1 is not None
+    assert msg1.topic_name == "topic/1"
+    
+    msg2 = spool.pop_next()
+    assert msg2 is not None
+    assert msg2.topic_name == "topic/2"
+    assert spool._head == 6

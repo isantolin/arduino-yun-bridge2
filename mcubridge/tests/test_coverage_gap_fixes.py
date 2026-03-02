@@ -1152,19 +1152,6 @@ async def test_runtime_state_spool_operations():
 
 def test_mqtt_spool_gaps():
     """Cover remaining gaps in spool.py."""
-    # FileSpoolDeque popleft IndexError
-    dq = spool.FileSpoolDeque("/tmp/spool_test")
-    dq.clear()
-    with pytest.raises(IndexError):
-        dq.popleft()
-
-    # FileSpoolDeque popleft coverage
-    msg = {"topic_name": "t", "payload": b"p"}  # Raw bytes for msgpack
-    dq.append(msg)
-    assert len(dq) == 1
-    dq.popleft()
-    assert len(dq) == 0
-
     # MQTTSpoolError original is None
     err = spool.MQTTSpoolError("test")
     assert str(err) == "test"
@@ -1176,64 +1163,30 @@ def test_mqtt_spool_gaps():
         assert mock_warn.called
 
     # MQTTPublishSpool initialization failure
-    with patch("mcubridge.mqtt.spool.FileSpoolDeque", side_effect=OSError("Boom")):
+    with patch("zict.File", side_effect=OSError("Boom")):
         s = spool.MQTTPublishSpool("/tmp/fail", 100)
         assert s.is_degraded
 
-    # close() getattr else branch
-    s = spool.MQTTPublishSpool("/tmp/close", 100)
-    s._disk_queue = MagicMock(spec=["clear"])
-    s.close()
-    assert s._disk_queue is None
-
-    # append/requeue except branch
-    s = spool.MQTTPublishSpool("/tmp/err", 100)
-    s._disk_queue = MagicMock()
-    s._disk_queue.append.side_effect = OSError("Boom")
-    s.append(QueuedPublish("t", b"p"))
-    assert s.is_degraded
-
-    s = spool.MQTTPublishSpool("/tmp/err2", 100)
-    s._disk_queue = MagicMock()
-    s._disk_queue.appendleft.side_effect = OSError("Boom")
-    s.requeue(QueuedPublish("t", b"p"))
-    assert s.is_degraded
-
     # pop_next except branch during disk pop
     s = spool.MQTTPublishSpool("/tmp/poperr", 100)
-    s._disk_queue = MagicMock()
-    s._disk_queue.__len__.return_value = 1
-    s._disk_queue.popleft.side_effect = OSError("Boom")
-    assert s.pop_next() is None
-    assert s.is_degraded
+    s._tail = 1
+    with patch.object(s, "_spool", MagicMock(spec=dict)) as mock_spool:
+        mock_spool.pop.side_effect = OSError("Boom")
+        assert s.pop_next() is None
+        assert s.snapshot()["corrupt_dropped"] == 1
 
     # pop_next corrupt entry
     s = spool.MQTTPublishSpool("/tmp/corrupt", 100)
-    s._memory_queue.append(MagicMock())  # Not a record
-    assert s.pop_next() is None
+    s._tail = 1
+    with patch.object(s, "_spool", MagicMock(spec=dict)) as mock_spool:
+        mock_spool.pop.return_value = "not-a-record"
+        assert s.pop_next() is None
+        assert s.snapshot()["corrupt_dropped"] == 1
 
-    # pending except branch
-    s = spool.MQTTPublishSpool("/tmp/pend", 100)
-    s._disk_queue = MagicMock()
-    # Mock __len__ to raise error
-    type(s._disk_queue).__len__ = MagicMock(side_effect=OSError("Boom"))
-    assert s.pending >= 0
-
-    # _handle_disk_error disk_full branch
-    s = spool.MQTTPublishSpool("/tmp/full", 100)
-    exc = OSError()
-    exc.errno = errno.ENOSPC
-    s._handle_disk_error(exc, "test")
-    assert s._fallback_active
-
-    # _trim_locked failure branch
-    s = spool.MQTTPublishSpool("/tmp/trim", 1)
-    s._disk_queue = MagicMock()
-    s._disk_queue.__len__.return_value = 10
-    s._disk_queue.popleft.side_effect = OSError("Boom")
-    s._memory_queue.append(MagicMock())
-    s._trim_locked()
-    assert s.is_degraded
+    # snapshot values
+    snap = s.snapshot()
+    assert "pending" in snap
+    assert "fallback_active" in snap
 
 
 # --- mcubridge.services.handshake ---

@@ -10,10 +10,12 @@ import time
 from asyncio.subprocess import Process
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
 import psutil
+import zict
 from aiomqtt.message import Message
 from transitions import Machine
 
@@ -350,7 +352,11 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_corrupt_dropped: int = 0
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=lambda: {})
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})
-    mailbox_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
+
+    # [SIL-2] Improved Mailbox: Uses Buffer for overflow to disk
+    mailbox_queue: Any = None
+    mailbox_incoming_queue: Any = None
+
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     console_to_mcu_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
@@ -392,7 +398,6 @@ class RuntimeState(msgspec.Struct):
     mailbox_truncated_bytes: int = 0
     mailbox_dropped_bytes: int = 0
     mailbox_outgoing_overflow_events: int = 0
-    mailbox_incoming_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
     mailbox_incoming_queue_bytes: int = 0
     mailbox_incoming_dropped_messages: int = 0
     mailbox_incoming_truncated_messages: int = 0
@@ -568,14 +573,23 @@ class RuntimeState(msgspec.Struct):
             max_items=None,
             max_bytes=self.console_queue_limit_bytes,
         )
-        self.mailbox_queue = BoundedByteDeque(
-            max_items=self.mailbox_queue_limit,
-            max_bytes=self.mailbox_queue_bytes_limit,
-        )
-        self.mailbox_incoming_queue = BoundedByteDeque(
-            max_items=self.mailbox_queue_limit,
-            max_bytes=self.mailbox_queue_bytes_limit,
-        )
+
+        # [SIL-2] Initialize Mailbox Queues with zict for automatic RAM/Disk management
+        # We use a 20% RAM / 80% Disk split for safety.
+        ram_n = max(1, self.mailbox_queue_limit // 5)
+
+        def _create_spool(subdir: str) -> zict.Buffer[str, bytes]:
+            slow: Mapping[str, bytes]
+            if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
+                path = Path(self.file_system_root) / subdir
+                path.mkdir(parents=True, exist_ok=True)
+                slow = zict.File(str(path))
+            else:
+                slow = {}
+            return zict.Buffer(fast={}, slow=slow, n=ram_n)
+
+        self.mailbox_queue = _create_spool("mailbox_out")
+        self.mailbox_incoming_queue = _create_spool("mailbox_in")
 
     def mark_supervisor_healthy(self, name: str) -> None:
         """Reset backoff status for a healthy supervisor."""
@@ -618,77 +632,68 @@ class RuntimeState(msgspec.Struct):
             self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
     def enqueue_mailbox_message(self, payload: bytes, logger: logging.Logger) -> bool:
-        self.sync_mailbox_limits(self.mailbox_queue)
-        evt = self.mailbox_queue.append(payload)
-        self.update_mailbox_bytes()
-        if evt.truncated_bytes:
-            self.mailbox_truncated_messages += 1
-            self.mailbox_truncated_bytes += evt.truncated_bytes
-        if evt.dropped_chunks:
-            self.mailbox_dropped_messages += evt.dropped_chunks
-            self.mailbox_dropped_bytes += evt.dropped_bytes
-        if not evt.accepted:
+        # Simplified with zict: keys are timestamps
+        key = str(time.time_ns())
+        if len(self.mailbox_queue) >= self.mailbox_queue_limit:
             self.mailbox_dropped_messages += 1
             self.mailbox_dropped_bytes += len(payload)
             self.mailbox_outgoing_overflow_events += 1
             return False
+        self.mailbox_queue[key] = payload
+        self.mailbox_queue_bytes += len(payload)
         return True
 
     def pop_mailbox_message(self) -> bytes | None:
-        self.sync_mailbox_limits(self.mailbox_queue)
         if not self.mailbox_queue:
             return None
-        msg = self.mailbox_queue.popleft()
-        self.update_mailbox_bytes()
+        # [SIL-2] Use FIFO: pop the oldest entry (smallest timestamp key)
+        # zict.Buffer doesn't guarantee order on items(), so we find the min key.
+        keys = sorted(self.mailbox_queue.keys())
+        if not keys: return None
+        key = keys[0]
+        msg = self.mailbox_queue.pop(key)
+        self.mailbox_queue_bytes = max(0, self.mailbox_queue_bytes - len(msg))
         return msg
 
     def requeue_mailbox_message_front(self, payload: bytes) -> None:
-        self.sync_mailbox_limits(self.mailbox_queue)
-        evt = self.mailbox_queue.appendleft(payload)
-        self.update_mailbox_bytes()
-        if evt.dropped_chunks:
-            self.mailbox_dropped_messages += evt.dropped_chunks
-            self.mailbox_dropped_bytes += evt.dropped_bytes
-        if not evt.accepted:
-            self.mailbox_dropped_messages += 1
-            self.mailbox_dropped_bytes += len(payload)
-            self.mailbox_outgoing_overflow_events += 1
+        # [SIL-2] Requeue at front by using a key smaller than any possible time.time_ns()
+        key = "0000000000000000000"
+        self.mailbox_queue[key] = payload
+        self.mailbox_queue_bytes += len(payload)
 
     def enqueue_mailbox_incoming(self, payload: bytes, logger: logging.Logger) -> bool:
-        self.sync_mailbox_limits(self.mailbox_incoming_queue)
-        evt = self.mailbox_incoming_queue.append(payload)
-        self.update_mailbox_bytes()
-        if evt.truncated_bytes:
-            self.mailbox_incoming_truncated_messages += 1
-            self.mailbox_incoming_truncated_bytes += evt.truncated_bytes
-        if evt.dropped_chunks:
-            self.mailbox_incoming_dropped_messages += evt.dropped_chunks
-            self.mailbox_incoming_dropped_bytes += evt.dropped_bytes
-        if not evt.accepted:
+        key = str(time.time_ns())
+        if len(self.mailbox_incoming_queue) >= self.mailbox_queue_limit:
             self.mailbox_incoming_dropped_messages += 1
             self.mailbox_incoming_dropped_bytes += len(payload)
             self.mailbox_incoming_overflow_events += 1
             return False
+        self.mailbox_incoming_queue[key] = payload
+        self.mailbox_incoming_queue_bytes += len(payload)
         return True
 
     def pop_mailbox_incoming(self) -> bytes | None:
-        self.sync_mailbox_limits(self.mailbox_incoming_queue)
         if not self.mailbox_incoming_queue:
             return None
-        msg = self.mailbox_incoming_queue.popleft()
-        self.update_mailbox_bytes()
+        # [SIL-2] Use FIFO for incoming queue
+        keys = sorted(self.mailbox_incoming_queue.keys())
+        if not keys: return None
+        key = keys[0]
+        msg = self.mailbox_incoming_queue.pop(key)
+        self.mailbox_incoming_queue_bytes = max(0, self.mailbox_incoming_queue_bytes - len(msg))
         return msg
 
     def sync_console_queue_limits(self) -> None:
         self.console_to_mcu_queue.update_limits(max_items=None, max_bytes=self.console_queue_limit_bytes)
         self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
-    def sync_mailbox_limits(self, queue: BoundedByteDeque) -> None:
-        queue.update_limits(max_items=self.mailbox_queue_limit, max_bytes=self.mailbox_queue_bytes_limit)
+    def sync_mailbox_limits(self, queue: Any) -> None:
+        # zict doesn't need manual sync, we set it in configure()
+        pass
 
     def update_mailbox_bytes(self) -> None:
-        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
-        self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
+        # Automatically tracked in our wrappers
+        pass
 
     def record_handshake_fatal(self, reason: str, detail: str | None = None) -> None:
         self.handshake_fatal_count += 1
@@ -823,13 +828,16 @@ class RuntimeState(msgspec.Struct):
             self._disable_mqtt_spool("disabled", schedule_retry=False)
             return
         try:
-            self.mqtt_spool = MQTTPublishSpool(
+            spool_obj = MQTTPublishSpool(
                 self.mqtt_spool_dir,
                 self.mqtt_spool_limit,
                 on_fallback=self._on_spool_fallback,
             )
-            self.mqtt_spool_degraded = False
-            self.mqtt_spool_failure_reason = None
+            self.mqtt_spool = spool_obj
+            # Only reset degradation if the spooler itself reports it's healthy
+            if not spool_obj.is_degraded:
+                self.mqtt_spool_degraded = False
+                self.mqtt_spool_failure_reason = None
         except (OSError, MQTTSpoolError) as exc:
             self._handle_mqtt_spool_failure("initialization_failed", exc=exc)
 
@@ -927,24 +935,25 @@ class RuntimeState(msgspec.Struct):
                 break
 
     def build_metrics_snapshot(self) -> dict[str, Any]:
+        # [SIL-2] Use msgspec.to_builtins for ultra-fast structured export
         return {
-            "serial": msgspec.structs.asdict(self.serial_flow_stats),
-            "serial_throughput": msgspec.structs.asdict(self.serial_throughput_stats),
+            "serial": msgspec.to_builtins(self.serial_flow_stats),
+            "serial_throughput": msgspec.to_builtins(self.serial_throughput_stats),
             "serial_latency": self.serial_latency_stats.as_dict(),
             "mqtt_drop_counts": dict(self.mqtt_drop_counts),
             "queue_depths": {
                 "mqtt": self.mqtt_publish_queue.qsize(),
-                "console": len(self.console_to_mcu_queue),
+                "console": self.console_to_mcu_queue.bytes_used,
                 "mailbox_outgoing": len(self.mailbox_queue),
                 "mailbox_incoming": len(self.mailbox_incoming_queue),
                 "running_processes": len(self.running_processes),
             },
-            "handshake": self.build_handshake_snapshot(),
+            "handshake": msgspec.to_builtins(self.build_handshake_snapshot()),
             "link_synchronised": self.is_synchronized,
             "system": collect_system_metrics(),
             "spool_pending": self.mqtt_spool.pending if self.mqtt_spool else 0,
             "spool_limit": self.mqtt_spool.limit if self.mqtt_spool else 0,
-            "bridge": self.build_bridge_snapshot(),
+            "bridge": msgspec.to_builtins(self.build_bridge_snapshot()),
         }
 
     def build_handshake_snapshot(self) -> HandshakeSnapshot:
@@ -976,7 +985,7 @@ class RuntimeState(msgspec.Struct):
             ),
             handshake=self.build_handshake_snapshot(),
             serial_pipeline=self.build_serial_pipeline_snapshot(),
-            serial_flow=msgspec.structs.asdict(self.serial_flow_stats),
+            serial_flow=msgspec.to_builtins(self.serial_flow_stats),
             mcu_version=McuVersion(*self.mcu_version) if self.mcu_version else None,
             capabilities=self.mcu_capabilities.as_dict() if self.mcu_capabilities else None,
         )
@@ -988,6 +997,13 @@ class RuntimeState(msgspec.Struct):
 
     def cleanup(self) -> None:
         with contextlib.suppress(Exception):
+            if self.mqtt_spool:
+                self.mqtt_spool.close()
+            if self.mailbox_queue:
+                self.mailbox_queue.clear()
+            if self.mailbox_incoming_queue:
+                self.mailbox_incoming_queue.clear()
+
             # Drain the MQTT queue instead of nullifying
             while not self.mqtt_publish_queue.empty():
                 try:

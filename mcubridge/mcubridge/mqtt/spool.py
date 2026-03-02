@@ -68,6 +68,8 @@ class MQTTPublishSpool:
                 logger.warning("Failed to initialize disk spool: %s. Falling back to RAM-only.", exc)
                 self._slow = {}
                 self._fallback_active = True
+                if on_fallback:
+                    on_fallback("initialization_failed", exc)
 
         # Fast storage (RAM) limit: 20% of total limit or 50 messages
         ram_limit = min(50, max(1, self.limit // 5))

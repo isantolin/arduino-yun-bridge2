@@ -7,7 +7,7 @@ import errno
 import logging
 from collections.abc import Iterator
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -70,15 +70,14 @@ def test_enqueue_mailbox_message_respects_limits(
     assert runtime_state.enqueue_mailbox_message(b"b" * 16, logger) is True
     assert runtime_state.mailbox_queue_bytes == 32
 
-    # Next message should trigger eviction and be accepted after trimming
-    assert runtime_state.enqueue_mailbox_message(b"c" * 40, logger) is True
+    # Next message should trigger rejection based on limit
+    assert runtime_state.enqueue_mailbox_message(b"c" * 40, logger) is False
     assert runtime_state.mailbox_queue_bytes == 32
-    assert len(runtime_state.mailbox_queue) == 1
-    assert runtime_state.mailbox_queue[-1] == b"c" * 32
-    assert runtime_state.mailbox_truncated_messages == 1
-    assert runtime_state.mailbox_truncated_bytes == 8
-    assert runtime_state.mailbox_dropped_messages == 2
-    assert runtime_state.mailbox_dropped_bytes == 32
+    assert len(runtime_state.mailbox_queue) == 2
+    
+    # Check FIFO: oldest first
+    assert runtime_state.pop_mailbox_message() == b"a" * 16
+    assert runtime_state.mailbox_outgoing_overflow_events == 1
 
 
 def test_enqueue_mailbox_incoming_respects_limits(
@@ -91,14 +90,13 @@ def test_enqueue_mailbox_incoming_respects_limits(
     assert runtime_state.enqueue_mailbox_incoming(b"y" * 16, logger) is True
     assert runtime_state.mailbox_incoming_queue_bytes == 32
 
-    assert runtime_state.enqueue_mailbox_incoming(b"z" * 40, logger) is True
+    assert runtime_state.enqueue_mailbox_incoming(b"z" * 40, logger) is False
     assert runtime_state.mailbox_incoming_queue_bytes == 32
-    assert len(runtime_state.mailbox_incoming_queue) == 1
-    assert runtime_state.mailbox_incoming_queue[-1] == b"z" * 32
-    assert runtime_state.mailbox_incoming_truncated_messages == 1
-    assert runtime_state.mailbox_incoming_truncated_bytes == 8
-    assert runtime_state.mailbox_incoming_dropped_messages == 2
-    assert runtime_state.mailbox_incoming_dropped_bytes == 32
+    assert len(runtime_state.mailbox_incoming_queue) == 2
+    
+    # Check FIFO
+    assert runtime_state.pop_mailbox_incoming() == b"x" * 16
+    assert runtime_state.mailbox_incoming_overflow_events == 1
 
 
 def test_requeue_console_chunk_front_restores_bytes(
@@ -148,9 +146,9 @@ def test_metrics_snapshot_exposes_error_counters(
     snapshot = runtime_state.build_metrics_snapshot()
 
     assert snapshot["serial"]["commands_sent"] == 1
-    assert snapshot["bridge"].serial_flow["commands_sent"] == 1
+    assert snapshot["bridge"]["serial_flow"]["commands_sent"] == 1
     assert snapshot["mqtt_drop_counts"]["bridge/status"] == 1
-    assert snapshot["bridge"].handshake.attempts >= 0
+    assert snapshot["bridge"]["handshake"]["attempts"] >= 0
 
 
 def test_metrics_snapshot_includes_spool_snapshot(
@@ -289,118 +287,104 @@ def test_create_runtime_state_marks_spool_degraded(
     assert "boom" in state.mqtt_spool_last_error
 
 
-def test_stash_mqtt_message_disables_spool_on_failure(
+@pytest.mark.asyncio
+async def test_stash_mqtt_message_disables_spool_on_failure(
     runtime_config: RuntimeConfig,
 ) -> None:
-    async def _run() -> None:
-        state = create_runtime_state(runtime_config)
-        if state.mqtt_spool is not None:
-            state.mqtt_spool.close()
+    state = create_runtime_state(runtime_config)
+    if state.mqtt_spool is not None:
+        state.mqtt_spool.close()
 
-        class _BrokenSpool:
-            def append(self, _message: QueuedPublish) -> None:
-                raise OSError("disk-full")
+    class _BrokenSpool:
+        def append(self, _message: QueuedPublish) -> None:
+            raise OSError("disk-full")
 
-            def close(self) -> None:
-                return None
+        def close(self) -> None:
+            return None
 
-        state.mqtt_spool = cast(MQTTPublishSpool, _BrokenSpool())
-        message = QueuedPublish(
-            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
-            payload=b"{}",
-        )
-        stored = await state.stash_mqtt_message(message)
+    state.mqtt_spool = cast(MQTTPublishSpool, _BrokenSpool())
+    message = QueuedPublish(
+        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+        payload=b"{}",
+    )
+    stored = await state.stash_mqtt_message(message)
 
-        assert stored is False
-        assert state.mqtt_spool is None
-        assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_errors == 1
-        assert state.mqtt_dropped_messages == 0
-        assert state.mqtt_spool_failure_reason == "append_failed"
-        assert state.mqtt_spool_last_error == "disk-full"
+    assert stored is False
+    assert state.mqtt_spool is None
+    assert state.mqtt_spool_degraded is True
+    assert state.mqtt_spool_errors == 1
+    assert state.mqtt_dropped_messages == 0
+    assert state.mqtt_spool_failure_reason == "append_failed"
+    assert state.mqtt_spool_last_error == "disk-full"
+    
+    state.cleanup()
 
-    asyncio.run(_run())
 
-
-def test_flush_mqtt_spool_handles_pop_failure(
+@pytest.mark.asyncio
+async def test_flush_mqtt_spool_handles_pop_failure(
     runtime_config: RuntimeConfig,
 ) -> None:
-    async def _run() -> None:
-        state = create_runtime_state(runtime_config)
-        if state.mqtt_spool is not None:
-            state.mqtt_spool.close()
+    state = create_runtime_state(runtime_config)
+    if state.mqtt_spool is not None:
+        state.mqtt_spool.close()
 
-        class _FailingSpool:
-            def pop_next(self) -> QueuedPublish:
-                raise OSError("read-error")
+    class _FailingSpool:
+        def pop_next(self) -> QueuedPublish | None:
+            raise OSError("read-error")
 
-            def requeue(self, _message: QueuedPublish) -> None:
-                return None
+        def requeue(self, _message: QueuedPublish) -> None:
+            return None
 
-            def close(self) -> None:
-                return None
+        def close(self) -> None:
+            return None
 
-        state.mqtt_spool = cast(MQTTPublishSpool, _FailingSpool())
-        await state.flush_mqtt_spool()
+    state.mqtt_spool = cast(MQTTPublishSpool, _FailingSpool())
+    await state.flush_mqtt_spool()
 
-        assert state.mqtt_spool is None
-        assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_errors == 1
-        assert state.mqtt_spool_failure_reason == "pop_failed"
-        assert state.mqtt_spool_last_error == "read-error"
+    assert state.mqtt_spool is None
+    assert state.mqtt_spool_degraded is True
+    assert state.mqtt_spool_errors == 1
+    assert state.mqtt_spool_failure_reason == "pop_failed"
+    assert state.mqtt_spool_last_error == "read-error"
+    
+    state.cleanup()
 
-    asyncio.run(_run())
 
-
-def test_spool_fallback_updates_state(
+@pytest.mark.asyncio
+async def test_spool_fallback_updates_state(
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def _run() -> None:
+    # Force a disk full error during zict initialization or subsequent use
+    with patch("zict.File", side_effect=OSError(errno.ENOSPC, "disk full")):
         state = create_runtime_state(runtime_config)
-        spool_obj = state.mqtt_spool
-        assert spool_obj is not None
-
-        queue = getattr(spool_obj, "_disk_queue")
-
-        monkeypatch.setattr(queue, "append", MagicMock(side_effect=OSError(errno.ENOSPC, "disk full")))
-
-        stored = await state.stash_mqtt_message(
-            QueuedPublish(
-                topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
-                payload=b"{}",
-            )
-        )
-
-        assert stored is True
+        
+        # In new impl, spool is created but degraded
         assert state.mqtt_spool is not None
         assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_failure_reason == "disk_full"
+        assert state.mqtt_spool_failure_reason == "initialization_failed"
         assert "disk full" in state.mqtt_spool_last_error
-        assert state.mqtt_spool_errors >= 1
-
-    asyncio.run(_run())
 
 
-def test_ensure_spool_recovers_after_disable(
-    runtime_config: RuntimeConfig,
-    tmp_path_factory: pytest.TempPathFactory,
+@pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore:unclosed:ResourceWarning")
+async def test_ensure_spool_recovers_after_disable(
+    runtime_state: RuntimeState,
 ) -> None:
-    async def _run() -> None:
-        runtime_config.mqtt_spool_dir = str(tmp_path_factory.mktemp("spool"))
-        state = create_runtime_state(runtime_config)
-        assert state.mqtt_spool is not None
-        state.mqtt_spool.close()
-        state.mqtt_spool = None
-        state.mqtt_spool_degraded = True
-        state.mqtt_spool_failure_reason = "test"
+    # Use the fixture-provided state and mock the spooler
+    with patch("mcubridge.state.context.MQTTPublishSpool") as mock_spool_cls:
+        mock_spool_cls.return_value.is_degraded = False
+        mock_spool_cls.return_value.limit = 32
+        mock_spool_cls.return_value.pending = 0
+        
+        runtime_state.mqtt_spool = None
+        runtime_state.mqtt_spool_degraded = True
+        runtime_state.mqtt_spool_failure_reason = "test"
 
-        recovered = await state.ensure_spool()
+        recovered = await runtime_state.ensure_spool()
 
         assert recovered is True
-        assert state.mqtt_spool is not None
-        assert state.mqtt_spool_degraded is False
-        assert state.mqtt_spool_failure_reason is None
-        assert state.mqtt_spool_recoveries == 1
-
-    asyncio.run(_run())
+        assert runtime_state.mqtt_spool is not None
+        assert runtime_state.mqtt_spool_degraded is False
+        assert runtime_state.mqtt_spool_failure_reason is None
+        assert runtime_state.mqtt_spool_recoveries == 1

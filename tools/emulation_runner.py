@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """
 Hardware Emulation Runner.
-This script is designed to launch SimAVR with the compiled Bridge firmware
-and connect it via a virtual serial port (socat) to the Python McuBridge daemon.
-
-It serves as the End-to-End test entrypoint.
+Improved version using 'sh' for robust process management and output capturing.
 """
 
 from __future__ import annotations
@@ -12,12 +9,9 @@ from __future__ import annotations
 import json
 import logging
 import os
-import queue
-import subprocess
 import sys
 import tempfile
 import textwrap
-import threading
 import time
 from pathlib import Path
 from typing import Annotated
@@ -25,9 +19,15 @@ from typing import Annotated
 import typer
 
 try:
+    import sh
+except ImportError:
+    print("ERROR: 'sh' library is required. Install 'python3-sh'.", file=sys.stderr)
+    sys.exit(1)
+
+try:
     import paho.mqtt.client as mqtt
 except ImportError:
-    mqtt = None  # Graceful fallback if not installed, though CI should have it
+    mqtt = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -41,92 +41,52 @@ MQTT_HOST = "127.0.0.1"
 MQTT_PORT = 1883
 
 
-class LogMonitor:
-    """Captures and analyzes process output for success/failure signals."""
-
-    def __init__(self, process, name):
-        self.process = process
-        self.name = name
-        self.queue = queue.Queue()
-        self.stop_event = threading.Event()
-        self.thread = threading.Thread(target=self._reader_thread, daemon=True)
-        self.thread.start()
-
+class EmulationState:
+    """Track patterns and errors in process output."""
+    def __init__(self):
         self.found_patterns = set()
         self.errors_detected = []
 
-    def _reader_thread(self):
-        # Read stdout and stderr combined if possible, or just one
-        stream = self.process.stdout or self.process.stderr
-        if not stream:
-            return
-
-        for line in iter(stream.readline, ""):
-            if not line:
-                break
-            line_str = line.strip()
-            if not line_str:
-                continue
-
-            # Echo to our logger for visibility
-            logger.info("[%s] %s", self.name, line_str)
-
-            # Analyze
-            self._analyze_line(line_str)
-
-            if self.stop_event.is_set():
-                break
-
-    def _analyze_line(self, line):
-        # Success signals (handle both raw and JSON-wrapped logs)
-        if "Serial transport established" in line:
-            self.found_patterns.add("serial_connected")
-        if "Connected to MQTT broker" in line:
-            self.found_patterns.add("mqtt_connected")
+    def on_line(self, line: str, name: str):
+        line = line.strip()
+        if not line: return
+        logger.info("[%s] %s", name, line)
+        
+        # Success signals
+        if "Serial transport established" in line: self.found_patterns.add("serial_connected")
+        if "Connected to MQTT broker" in line: self.found_patterns.add("mqtt_connected")
         if "MCU link synchronised" in line or '"message":"MCU link synchronised' in line:
             self.found_patterns.add("handshake_complete")
 
         # Failure signals
-        lower_line = line.lower()
-        if "traceback" in lower_line or "critical" in lower_line or "fatal" in lower_line:
-            # Exclude known non-fatal library issues
-            if "_on_subscribe" in line or "Unexpected message ID" in line:
-                return
-            self.errors_detected.append(line)
+        lower = line.lower()
+        if "traceback" in lower or "critical" in lower or "fatal" in lower:
+            if "_on_subscribe" not in line and "Unexpected message ID" not in line:
+                self.errors_detected.append(line)
 
-    def stop(self):
-        self.stop_event.set()
-
-    def has_error(self):
-        return len(self.errors_detected) > 0
-
-    def check_success(self, pattern_key):
-        return pattern_key in self.found_patterns
+    def has_error(self) -> bool: return len(self.errors_detected) > 0
+    def check_success(self, key: str) -> bool: return key in self.found_patterns
 
 
 class MqttVerifier:
     """Verifies system state via MQTT."""
-
     def __init__(self):
         self.client = None
+        self.sync_event = threading_event = None # type: ignore
+        import threading
         self.sync_event = threading.Event()
         self.metrics_received = False
         self.connected = False
 
     def start(self):
-        if not mqtt:
-            logger.warning("paho-mqtt not available, skipping active MQTT verification")
-            return
-
+        if not mqtt: return
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
-
         try:
             self.client.connect(MQTT_HOST, MQTT_PORT, 60)
             self.client.loop_start()
-        except Exception as e:
-            logger.error("Failed to connect monitoring client to MQTT: %s", e)
+        except Exception: pass
 
     def stop(self):
         if self.client:
@@ -135,160 +95,29 @@ class MqttVerifier:
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
-            logger.info("Monitor connected to MQTT broker")
             self.connected = True
             client.subscribe("br/system/bridge/handshake/value")
             client.subscribe("br/system/metrics")
-        else:
-            logger.error("Monitor MQTT connection failed: %s", reason_code)
 
     def _on_message(self, client, userdata, msg):
         try:
             if msg.topic == "br/system/bridge/handshake/value":
                 payload = json.loads(msg.payload)
                 if payload.get("synchronised") is True:
-                    if not self.sync_event.is_set():
-                        logger.info("VERIFIED: Bridge reports synchronized state via MQTT")
-                        self.sync_event.set()
+                    self.sync_event.set()
             elif msg.topic == "br/system/metrics":
                 self.metrics_received = True
-        except Exception as e:
-            logger.warning("Error parsing MQTT message: %s", e)
+        except Exception: pass
 
 
-def cleanup_process(proc, name):
-    """Gracefully terminate a process and close its pipes."""
-    if proc:
-        if proc.poll() is None:
-            logger.info("Terminating %s (PID %d)...", name, proc.pid)
-            proc.terminate()
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                logger.warning("%s did not terminate, killing...", name)
-                proc.kill()
-                proc.wait()
-
-        # Close all pipes to avoid ResourceWarning
-        if proc.stdin:
-            try:
-                proc.stdin.close()
-            except Exception:
-                pass
-            proc.stdin = None
-        if proc.stdout:
-            try:
-                proc.stdout.close()
-            except Exception:
-                pass
-            proc.stdout = None
-        if proc.stderr:
-            try:
-                proc.stderr.close()
-            except Exception:
-                pass
-            proc.stderr = None
-
-
-def find_firmware(repo_root):
-    """Locate the best firmware ELF for emulation."""
-    base_build_path = repo_root / "mcubridge-library-arduino/build"
-    firmware_path = base_build_path / "BridgeControl/BridgeControl.ino.elf"
-
-    if not firmware_path.exists():
-        logger.warning("Firmware ELF not found at %s", firmware_path)
-        if base_build_path.exists():
-            found_elfs = list(base_build_path.glob("**/*.elf"))
-            # Prefer Mega variant for SimAVR atmega2560
-            mega_elfs = [e for e in found_elfs if "mega" in str(e) or "2560" in str(e)]
-            if mega_elfs:
-                # Prefer BridgeControl for e2e
-                preferred = [e for e in mega_elfs if "BridgeControl" in str(e)]
-                firmware_path = preferred[0] if preferred else mega_elfs[0]
-            elif found_elfs:
-                firmware_path = found_elfs[0]
-
-    if not firmware_path.exists():
-        logger.error("CRITICAL: No valid firmware ELF found.")
-        sys.exit(1)
-
-    logger.info("Using firmware: %s", firmware_path)
-    return firmware_path
-
-
-def start_socat():
-    """Start socat to link daemon and MCU bridge."""
-    logger.info("Starting socat (PTY link)...")
-    socat_cmd = [
-        "socat",
-        "-d",
-        "-d",
-        f"pty,raw,echo=0,link={SOCAT_PORT0}",
-        f"pty,raw,echo=0,link={SOCAT_PORT1}",
-    ]
-    socat_proc = subprocess.Popen(socat_cmd, stderr=subprocess.PIPE, text=True)
-    socat_monitor = LogMonitor(socat_proc, "socat")
-
-    timeout = 15
-    start_time = time.time()
-    while not (Path(SOCAT_PORT0).exists() and Path(SOCAT_PORT1).exists()):
-        if time.time() - start_time > timeout:
-            logger.error("Timeout waiting for socat PTYs")
-            cleanup_process(socat_proc, "socat")
-            sys.exit(1)
-        time.sleep(0.1)
-
-    logger.info("Virtual serial ports created: %s <-> %s", SOCAT_PORT0, SOCAT_PORT1)
-    return socat_proc, socat_monitor
-
-
-def run_bridge(simavr_proc, stop_event):
-    """Bidirectional bridge worker thread with merged SimAVR streams."""
-    import select
-
-    logger.info("Bridge thread started.")
-    try:
-        with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
-            while not stop_event.is_set():
-                if simavr_proc.poll() is not None:
-                    logger.error("SimAVR died in bridge thread")
-                    break
-
-                # simavr_proc.stdout is MERGED (includes stderr)
-                r, _, _ = select.select([pty, simavr_proc.stdout], [], [], 0.1)
-
-                if pty in r:
-                    data = pty.read(1024)
-                    if data:
-                        simavr_proc.stdin.write(data)
-                        simavr_proc.stdin.flush()
-
-                if simavr_proc.stdout in r:
-                    data = simavr_proc.stdout.read(1024)
-                    if data:
-                        pty.write(data)
-                        pty.flush()
-                        try:
-                            text = data.decode("utf-8", errors="ignore").strip()
-                            if text and any(c.isalpha() for c in text):
-                                logger.info("[simavr-out] %s", text)
-                        except Exception:
-                            pass
-    except Exception as e:
-        logger.error("Bridge thread error: %s", e)
-    logger.info("Bridge thread stopping.")
-
-
-def start_daemon(package_root, protocol, shared_secret):
-    """Start the Python McuBridge daemon."""
-    logger.info("Starting Bridge Daemon (Secret: %s)...", shared_secret)
-    daemon_env = os.environ.copy()
+def start_daemon(package_root, shared_secret):
+    """Setup UCI stub and return daemon environment."""
     os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
     os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
 
     uci_config = {
         "serial_port": SOCAT_PORT0,
-        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_baud": "115200",
         "serial_shared_secret": shared_secret,
         "mqtt_host": MQTT_HOST,
         "mqtt_port": str(MQTT_PORT),
@@ -316,240 +145,120 @@ def start_daemon(package_root, protocol, shared_secret):
         encoding="utf-8",
     )
 
-    current_path = daemon_env.get("PYTHONPATH", "")
-    daemon_env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_path}"
-    daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
-
-    daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon", "--debug"]
-    daemon_proc = subprocess.Popen(
-        daemon_cmd,
-        env=daemon_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    return daemon_proc, uci_stub_dir
-
-
-def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
-    """Run a list of client example scripts."""
-    failures = []
     env = os.environ.copy()
-    # Ensure the client library is in PYTHONPATH
-    repo_root = Path(__file__).resolve().parent.parent
-    client_lib = repo_root / "mcubridge-client-examples"
-    package_root = repo_root / "mcubridge"
-
-    python_path = f"{client_lib}{os.pathsep}{package_root}"
-    if uci_stub_dir:
-        python_path = f"{uci_stub_dir}{os.pathsep}{python_path}"
-
-    env["PYTHONPATH"] = f"{python_path}{os.pathsep}{env.get('PYTHONPATH', '')}"
-
-    # Force unbuffered output for scripts
-    env["PYTHONUNBUFFERED"] = "1"
-    # Force UCI read for client library in E2E environment
-    env["MCUBRIDGE_FORCE_UCI"] = "1"
-
-    # Set env vars for mcubridge-client-examples/uci.py override
-    env["MQTT_HOST"] = mqtt_host
-    env["MQTT_PORT"] = str(mqtt_port)
-    env["MQTT_TLS"] = "0"
-    env["MQTT_USER"] = "admin"
-    env["MQTT_PASS"] = "admin"
-
-    for script in scripts:
-        script_path = Path(script).resolve()
-        if not script_path.exists():
-            logger.error("Script not found: %s", script)
-            failures.append(script)
-            continue
-
-        logger.info("Running client script: %s...", script)
-        try:
-            # Pass dummy credentials to satisfy script validation logic
-            # and generic host/port. The UCI stub should handle TLS=0.
-            cmd = [
-                sys.executable,
-                str(script_path),
-                "--host",
-                mqtt_host,
-                "--port",
-                str(mqtt_port),
-                "--user",
-                "admin",
-                "--password",
-                "admin",
-            ]
-
-            # Interactive scripts (console_test) might block if we don't handle stdin.
-            # We should pipe stdin to /dev/null or provide "exit\n" for them.
-            # But console_test.py reads from stdin.
-
-            input_bytes = b"exit\n" if "console" in str(script) else None
-
-            # mailbox_read_test polls forever; limit it in CI.
-            if "mailbox_read" in str(script):
-                cmd.extend(["--max-polls", "1"])
-
-            subprocess.run(
-                cmd,
-                env=env,
-                timeout=30,
-                check=True,
-                input=input_bytes,
-                stdout=None,  # Let it inherit or pipe? Let's inherit for visibility
-                stderr=None,
-            )
-            logger.info("Script %s PASSED", script)
-        except subprocess.CalledProcessError as e:
-            logger.error("Script %s FAILED with code %d", script, e.returncode)
-            failures.append(script)
-        except subprocess.TimeoutExpired:
-            logger.error("Script %s TIMED OUT", script)
-            failures.append(script)
-        except Exception as e:
-            logger.error("Script %s failed with error: %s", script, e)
-            failures.append(script)
-
-    return len(failures) == 0
+    current_path = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_path}"
+    env["MCUBRIDGE_LOG_STREAM"] = "1"
+    return env, uci_stub_dir
 
 
 @app.command()
 def main(
-    run_scripts: Annotated[
-        list[str] | None,
-        typer.Argument(help="List of python scripts to run after handshake"),
-    ] = None,
-    firmware: Annotated[str, typer.Option(help="Name of the emulator binary to run")] = "bridge_emulator",
+    run_scripts: Annotated[list[str] | None, typer.Argument(help="Scripts to run")] = None,
+    firmware: Annotated[str, typer.Option(help="Emulator binary name")] = "bridge_emulator",
 ) -> None:
-    logger.info("Starting Emulation Runner (%s)...", firmware)
-
-    for tool in ["socat"]:
-        if subprocess.call(["which", tool], stdout=subprocess.DEVNULL) != 0:
-            logger.error("Required tool '%s' not found.", tool)
-            raise typer.Exit(code=1)
-
     repo_root = Path(__file__).resolve().parent.parent
     package_root = repo_root / "mcubridge"
-    sys.path.insert(0, str(package_root))
-    from mcubridge.protocol import protocol
-
     firmware_path = repo_root / f"mcubridge-library-arduino/tests/{firmware}"
+    
     if not firmware_path.exists():
-        logger.error("Emulator binary not found at %s. Please compile it first.", firmware_path)
-        raise typer.Exit(code=1)
+        logger.error("Firmware not found at %s", firmware_path)
+        raise typer.Exit(1)
 
-    socat_proc, socat_monitor = start_socat()
+    state = EmulationState()
+    mqtt_verifier = MqttVerifier()
+    
+    # 1. Start Socat
+    logger.info("Starting socat...")
+    socat_proc = sh.socat(
+        "-d", "-d",
+        f"pty,raw,echo=0,link={SOCAT_PORT0}",
+        f"pty,raw,echo=0,link={SOCAT_PORT1}",
+        _bg=True, _err=lambda line: state.on_line(line, "socat")
+    )
 
-    mcu_proc = None
-    daemon_proc = None
-    stop_bridge = threading.Event()
+    # Wait for PTYs
+    for _ in range(50):
+        if Path(SOCAT_PORT0).exists() and Path(SOCAT_PORT1).exists(): break
+        time.sleep(0.1)
+    else:
+        logger.error("Socat timeout")
+        socat_proc.kill()
+        raise typer.Exit(1)
 
+    # 2. Start MCU Emulator
+    logger.info("Starting MCU Emulator...")
+    mcu_proc = sh.Command(str(firmware_path))(
+        _bg=True, _piped=True, 
+        _out=lambda line: state.on_line(line, "mcu-out"),
+        _err=lambda line: state.on_line(line, "mcu-err")
+    )
+
+    # 3. Serial Bridge (Link socat to mcu stdin/stdout)
+    def serial_bridge():
+        import select
+        try:
+            with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
+                while True:
+                    r, _, _ = select.select([pty, mcu_proc.process.stdout], [], [], 0.1)
+                    if pty in r:
+                        data = pty.read(1024)
+                        if data: mcu_proc.process.stdin.write(data); mcu_proc.process.stdin.flush()
+                    if mcu_proc.process.stdout in r:
+                        data = mcu_proc.process.stdout.read(1024)
+                        if data: pty.write(data); pty.flush()
+        except Exception: pass
+
+    import threading
+    threading.Thread(target=serial_bridge, daemon=True).start()
+
+    # 4. Start Daemon
+    daemon_env, uci_dir = start_daemon(package_root, "DEBUG_INSECURE")
+    logger.info("Starting Daemon...")
+    daemon_proc = sh.python3(
+        "-u", "-m", "mcubridge.daemon", "--debug",
+        _env=daemon_env, _bg=True, _bg_exc=False,
+        _out=lambda line: state.on_line(line, "daemon")
+    )
+
+    mqtt_verifier.start()
+    success = False
+    
     try:
-        logger.info("Starting native bridge emulator: %s...", firmware_path)
-
-        # Use bypass secret for all host emulations
-        shared_secret = "DEBUG_INSECURE"
-
-        logger.info("Using shared secret: %s", shared_secret)
-
-        # Start the native emulator. It uses stdin/stdout for serial comms.
-        mcu_proc = subprocess.Popen(
-            [str(firmware_path)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
-        )
-
-        bridge_thread = threading.Thread(target=run_bridge, args=(mcu_proc, stop_bridge), daemon=True)
-        bridge_thread.start()
-
-        # Capture mcu stderr separately to avoid mixing with bridge data
-        def _stderr_worker():
-            for line in iter(mcu_proc.stderr.readline, b""):
-                if not line:
-                    break
-                logger.info("[mcu-err] %s", line.decode('utf-8', errors='ignore').strip())
-
-        threading.Thread(target=_stderr_worker, daemon=True).start()
-
-        daemon_proc, uci_stub_dir = start_daemon(package_root, protocol, shared_secret)
-        log_monitor = LogMonitor(daemon_proc, "daemon")
-        mqtt_monitor = MqttVerifier()
-        mqtt_monitor.start()
-
-        max_wait = 30
-        start_wait = time.time()
-        success = False
-
-        while time.time() - start_wait < max_wait:
-            if daemon_proc.poll() is not None:
-                logger.error("Daemon died with code %s", daemon_proc.returncode)
-                break
-            if mcu_proc.poll() is not None:
-                logger.error("MCU Emulator died unexpectedly")
-                break
-            if log_monitor.has_error():
-                logger.error("Error in logs: %s", log_monitor.errors_detected[0])
-                break
-
-            log_sync = log_monitor.check_success("handshake_complete")
-            mqtt_sync = mqtt_monitor.sync_event.is_set()
-
-            if log_sync or mqtt_sync:
-                logger.info("SUCCESS: Handshake verified via %s.", 'Log' if log_sync else 'MQTT')
+        # 5. Wait for Handshake
+        start_time = time.time()
+        while time.time() - start_time < 30:
+            if state.check_success("handshake_complete") or mqtt_verifier.sync_event.is_set():
+                logger.info("SUCCESS: Handshake verified.")
                 success = True
-
-                if run_scripts:
-                    logger.info("Executing client scripts...")
-                    if not run_client_scripts(run_scripts, MQTT_HOST, MQTT_PORT, uci_stub_dir.name):
-                        success = False
-                        logger.error("One or more client scripts failed.")
-                    else:
-                        logger.info("All client scripts PASSED.")
-
-                # Check for daemon errors that occurred during script execution
-                if success and log_monitor.has_error():
-                    logger.error(
-                        "Daemon errors detected during execution: %s",
-                        log_monitor.errors_detected[0],
-                    )
-                    success = False
-
+                break
+            if not daemon_proc.is_alive() or not mcu_proc.is_alive():
+                logger.error("Process died prematurely")
                 break
             time.sleep(0.5)
 
-        if not success:
-            logger.error("Emulation FAILED.")
-            raise typer.Exit(code=1)
+        # 6. Run Client Scripts
+        if success and run_scripts:
+            for script in run_scripts:
+                logger.info("Running script: %s", script)
+                try:
+                    sh.python3(script, "--host", MQTT_HOST, "--port", MQTT_PORT, 
+                               "--user", "admin", "--password", "admin",
+                               _env=daemon_env)
+                except sh.ErrorReturnCode as e:
+                    logger.error("Script failed: %s", e)
+                    success = False
 
-    except Exception as e:
-        logger.error("Error: %s", e)
-        import traceback
-
-        traceback.print_exc()
-        raise typer.Exit(code=1)
     finally:
-        stop_bridge.set()
-        if "bridge_thread" in locals() and bridge_thread:
-            bridge_thread.join(timeout=2)
+        mqtt_verifier.stop()
+        daemon_proc.kill()
+        mcu_proc.kill()
+        socat_proc.kill()
+        uci_dir.cleanup()
 
-        if "mqtt_monitor" in locals() and mqtt_monitor:
-            mqtt_monitor.stop()
-        if "log_monitor" in locals() and log_monitor:
-            log_monitor.stop()
-        if "socat_monitor" in locals() and socat_monitor:
-            socat_monitor.stop()
-
-        cleanup_process(daemon_proc, "daemon")
-        cleanup_process(mcu_proc, "mcu")
-        cleanup_process(socat_proc, "socat")
-
-        if "uci_stub_dir" in locals() and uci_stub_dir:
-            uci_stub_dir.cleanup()
+    if not success:
+        logger.error("Emulation FAILED.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

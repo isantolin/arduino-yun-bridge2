@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Hardware Emulation Runner.
-Improved version using 'sh' for robust process management and output capturing.
+Improved version using 'subprocess' for core binary streams and 'sh' for CLI scripts.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -21,8 +22,7 @@ import typer
 try:
     import sh
 except ImportError:
-    sys.stderr.write("ERROR: 'sh' library is required. Install 'python3-sh'.\n")
-    sys.exit(1)
+    sh = None  # type: ignore
 
 try:
     import paho.mqtt.client as mqtt
@@ -160,7 +160,10 @@ def start_daemon(package_root, shared_secret):
 
     env = os.environ.copy()
     current_path = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_path}"
+    # Add uci stub, package root and client examples to PYTHONPATH
+    repo_root = package_root.parent
+    client_examples = repo_root / "mcubridge-client-examples"
+    env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{str(client_examples)}{os.pathsep}{current_path}"
     env["MCUBRIDGE_LOG_STREAM"] = "1"
     return env, uci_stub_dir
 
@@ -173,16 +176,31 @@ def run_emulation(
     run_scripts: list[str] | None = None,
 ) -> bool:
     """Orchestrate the emulation lifecycle."""
+    import threading
+
     # 1. Start Socat
     logger.info("Starting socat...")
-    socat_proc = sh.socat(
-        "-d",
-        "-d",
-        f"pty,raw,echo=0,link={SOCAT_PORT0}",
-        f"pty,raw,echo=0,link={SOCAT_PORT1}",
-        _bg=True,
-        _err=lambda line: state.on_line(line, "socat"),
+    # [SIL-2] Use subprocess.Popen for socat to avoid sh buffering issues
+    socat_proc = subprocess.Popen(
+        [
+            "socat",
+            "-d",
+            "-d",
+            f"pty,raw,echo=0,link={SOCAT_PORT0}",
+            f"pty,raw,echo=0,link={SOCAT_PORT1}",
+        ],
+        stderr=subprocess.PIPE,
+        text=True,
     )
+
+    def _socat_worker():
+        if socat_proc.stderr:
+            for line in iter(socat_proc.stderr.readline, ""):
+                if not line:
+                    break
+                state.on_line(line, "socat")
+
+    threading.Thread(target=_socat_worker, daemon=True).start()
 
     # Wait for PTYs
     for _ in range(50):
@@ -191,13 +209,11 @@ def run_emulation(
         time.sleep(0.1)
     else:
         logger.error("Socat timeout")
-        socat_proc.kill()
+        socat_proc.terminate()
         return False
 
     # 2. Start MCU Emulator
     logger.info("Starting MCU Emulator...")
-    import subprocess
-
     mcu_proc = subprocess.Popen(
         [str(firmware_path)],
         stdin=subprocess.PIPE,
@@ -212,36 +228,36 @@ def run_emulation(
 
         try:
             with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
+                mcu_out = mcu_proc.stdout
+                mcu_in = mcu_proc.stdin
                 while True:
                     if mcu_proc.poll() is not None:
                         break
-                    r, _, _ = select.select([pty, mcu_proc.stdout], [], [], 0.05)
+                    r, _, _ = select.select([pty, mcu_out], [], [], 0.05)
                     if pty in r:
                         data = pty.read(1024)
                         if data:
-                            mcu_proc.stdin.write(data)
-                            mcu_proc.stdin.flush()
-                    if mcu_proc.stdout in r:
-                        data = mcu_proc.stdout.read(1024)
+                            mcu_in.write(data)
+                            mcu_in.flush()
+                    if mcu_out in r:
+                        data = mcu_out.read(1024)
                         if data:
                             pty.write(data)
                             pty.flush()
         except Exception as e:
             logger.debug("Serial bridge thread exiting: %s", e)
 
-    import threading
-
     threading.Thread(target=serial_bridge, daemon=True).start()
 
     # Capture mcu stderr separately
-    def _stderr_worker():
+    def _mcu_stderr_worker():
         if mcu_proc.stderr:
             for line in iter(mcu_proc.stderr.readline, b""):
                 if not line:
                     break
                 state.on_line(line.decode("utf-8", errors="ignore"), "mcu-err")
 
-    threading.Thread(target=_stderr_worker, daemon=True).start()
+    threading.Thread(target=_mcu_stderr_worker, daemon=True).start()
 
     # 4. Start Daemon
     daemon_env, uci_dir = start_daemon(package_root, "DEBUG_INSECURE")
@@ -285,9 +301,10 @@ def run_emulation(
         if success and run_scripts:
             for script in run_scripts:
                 logger.info("Running script: %s", script)
+                # Client scripts are pure text/CLI, so sh is fine here
                 try:
-                    # Keep sh for client scripts as they are CLI-oriented
-                    sh.python3(
+                    cmd = [
+                        sys.executable,
                         script,
                         "--host",
                         MQTT_HOST,
@@ -297,9 +314,10 @@ def run_emulation(
                         "admin",
                         "--password",
                         "admin",
-                        _env=daemon_env,
-                    )
-                except sh.ErrorReturnCode as e:
+                    ]
+                    # We use subprocess.run instead of sh here to be consistent and reliable in CI
+                    subprocess.run(cmd, env=daemon_env, check=True, timeout=30)
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                     logger.error("Script failed: %s", e)
                     success = False
 
@@ -307,7 +325,7 @@ def run_emulation(
         mqtt_verifier.stop()
         daemon_proc.terminate()
         mcu_proc.terminate()
-        socat_proc.kill()
+        socat_proc.terminate()
         uci_dir.cleanup()
 
     return success

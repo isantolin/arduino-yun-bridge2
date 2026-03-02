@@ -39,7 +39,7 @@ def _build_metrics_message(
     )
     message = QueuedPublish(
         topic_name=topic,
-        # [SIL-2] Fast serialization using msgspec
+        # [SIL-2] Fast serialization using msgspec.json.encode handles Structs directly
         payload=msgspec.json.encode(snapshot),
         content_type="application/json",
         message_expiry_interval=int(expiry_seconds),

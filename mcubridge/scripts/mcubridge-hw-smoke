@@ -1,118 +1,120 @@
-#!/bin/sh
-# Run a basic McuBridge hardware smoke test locally on the device.
-set -eu
+#!/usr/bin/env python3
+"""Run a basic McuBridge hardware smoke test locally on the device.
 
-if ! command -v mosquitto_pub >/dev/null 2>&1 || ! command -v mosquitto_sub >/dev/null 2>&1; then
-    echo "[mcubridge-hw-smoke] mosquitto-client package is required." >&2
-    exit 1
-fi
+[SIL-2] Improved robustness using Python 'sh' library and structured validation.
+"""
 
-STATUS_FILE="/tmp/mcubridge_status.json"
+from __future__ import annotations
 
-uci_get() {
-    local key="$1"
-    uci -q get "mcubridge.general.${key}" 2>/dev/null || true
-}
+import json
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any
 
-MQTT_USER=$(uci_get mqtt_user)
-MQTT_PASS=$(uci_get mqtt_pass)
-MQTT_CAFILE=$(uci_get mqtt_cafile)
-MQTT_CERTFILE=$(uci_get mqtt_certfile)
-MQTT_KEYFILE=$(uci_get mqtt_keyfile)
-MQTT_TLS_INSECURE=$(uci_get mqtt_tls_insecure)
-SERIAL_SECRET=$(uci_get serial_shared_secret)
+try:
+    import sh
+except ImportError:
+    print("[mcubridge-hw-smoke] ERROR: 'sh' library is required. Install 'python3-sh'.", file=sys.stderr)
+    sys.exit(1)
 
-if [ -z "$SERIAL_SECRET" ] || [ "$SERIAL_SECRET" = "changeme123" ]; then
-    echo "[mcubridge-hw-smoke] Serial secret missing or still using the placeholder value." >&2
-    exit 1
-fi
+STATUS_FILE = Path("/tmp/mcubridge_status.json")
 
-HOST=$(uci_get mqtt_host)
-HOST=${HOST:-127.0.0.1}
-PORT=$(uci_get mqtt_port)
-PORT=${PORT:-8883}
-TOPIC=$(uci_get mqtt_topic)
-TOPIC=${TOPIC:-br}
-TLS=$(uci_get mqtt_tls)
-TLS=${TLS:-1}
+def uci_get(key: str, default: str = "") -> str:
+    try:
+        return str(sh.uci("-q", "get", f"mcubridge.general.{key}")).strip()
+    except sh.ErrorReturnCode:
+        return default
 
-if ! /etc/init.d/mcubridge status >/dev/null 2>&1; then
-    echo "[mcubridge-hw-smoke] McuBridge service is not running." >&2
-    exit 1
-fi
+def main() -> None:
+    # 1. Dependency Check
+    for cmd in ["mosquitto_pub", "mosquitto_sub"]:
+        if not sh.which(cmd):
+            print(f"[mcubridge-hw-smoke] ERROR: {cmd} is required. Install 'mosquitto-client'.", file=sys.stderr)
+            sys.exit(1)
 
-if [ ! -s "$STATUS_FILE" ]; then
-    echo "[mcubridge-hw-smoke] Status file $STATUS_FILE missing or empty." >&2
-    exit 1
-fi
+    # 2. Configuration Load
+    serial_secret = uci_get("serial_shared_secret")
+    if not serial_secret or serial_secret == "changeme123":
+        print("[mcubridge-hw-smoke] ERROR: Serial secret missing or insecure.", file=sys.stderr)
+        sys.exit(1)
 
-echo "[mcubridge-hw-smoke] Checking MQTT round trip via ${HOST}:${PORT}..." >&2
-TMP_SUB="/tmp/mcubridge-smoke.$$"
-trap 'rm -f "$TMP_SUB"' EXIT INT TERM
+    host = uci_get("mqtt_host", "127.0.0.1")
+    port = uci_get("mqtt_port", "8883")
+    topic_prefix = uci_get("mqtt_topic", "br")
+    tls_enabled = uci_get("mqtt_tls", "1") == "1"
+    user = uci_get("mqtt_user")
+    pw = uci_get("mqtt_pass")
+    cafile = uci_get("mqtt_cafile")
+    insecure = uci_get("mqtt_tls_insecure", "0") == "1"
 
-MOSQUITTO_SUB_ARGS="-h $HOST -p $PORT -t ${TOPIC}/system/status -C 1 -W 7"
-MOSQUITTO_PUB_ARGS="-h $HOST -p $PORT -t ${TOPIC}/system/status/request -m {\"request\":\"ping\"}"
+    # 3. Environment Check
+    init_script = Path("/etc/init.d/mcubridge")
+    if init_script.exists():
+        try:
+            sh.Command(str(init_script))("status")
+        except sh.ErrorReturnCode:
+            print("[mcubridge-hw-smoke] ERROR: McuBridge service is not running.", file=sys.stderr)
+            sys.exit(1)
 
-if [ "$TLS" = "1" ]; then
-    if [ -n "$MQTT_CAFILE" ] && [ ! -s "$MQTT_CAFILE" ]; then
-        echo "[mcubridge-hw-smoke] TLS cafile is set but missing/empty: $MQTT_CAFILE" >&2
-        exit 1
-    fi
-    if [ -n "$MQTT_CERTFILE" ] || [ -n "$MQTT_KEYFILE" ]; then
-        if [ -z "$MQTT_CERTFILE" ] || [ -z "$MQTT_KEYFILE" ]; then
-            echo "[mcubridge-hw-smoke] TLS client auth requires both mqtt_certfile and mqtt_keyfile." >&2
-            exit 1
-        fi
-        if [ ! -s "$MQTT_CERTFILE" ] || [ ! -s "$MQTT_KEYFILE" ]; then
-            echo "[mcubridge-hw-smoke] TLS client auth material missing/empty: $MQTT_CERTFILE / $MQTT_KEYFILE" >&2
-            exit 1
-        fi
-    fi
-    if [ -n "$MQTT_CAFILE" ]; then
-        MOSQUITTO_SUB_ARGS="$MOSQUITTO_SUB_ARGS --cafile $MQTT_CAFILE"
-        MOSQUITTO_PUB_ARGS="$MOSQUITTO_PUB_ARGS --cafile $MQTT_CAFILE"
-    fi
-    if [ "${MQTT_TLS_INSECURE:-0}" = "1" ]; then
-        MOSQUITTO_SUB_ARGS="$MOSQUITTO_SUB_ARGS --insecure"
-        MOSQUITTO_PUB_ARGS="$MOSQUITTO_PUB_ARGS --insecure"
-    fi
-    if [ -n "$MQTT_CERTFILE" ] && [ -n "$MQTT_KEYFILE" ]; then
-        MOSQUITTO_SUB_ARGS="$MOSQUITTO_SUB_ARGS --cert $MQTT_CERTFILE --key $MQTT_KEYFILE"
-        MOSQUITTO_PUB_ARGS="$MOSQUITTO_PUB_ARGS --cert $MQTT_CERTFILE --key $MQTT_KEYFILE"
-    fi
-    if [ -z "$MQTT_CAFILE" ]; then
-        if [ -s "/etc/ssl/certs/ca-certificates.crt" ]; then
-            MOSQUITTO_SUB_ARGS="$MOSQUITTO_SUB_ARGS --cafile /etc/ssl/certs/ca-certificates.crt"
-            MOSQUITTO_PUB_ARGS="$MOSQUITTO_PUB_ARGS --cafile /etc/ssl/certs/ca-certificates.crt"
-        elif [ -d "/etc/ssl/certs" ]; then
-            MOSQUITTO_SUB_ARGS="$MOSQUITTO_SUB_ARGS --capath /etc/ssl/certs"
-            MOSQUITTO_PUB_ARGS="$MOSQUITTO_PUB_ARGS --capath /etc/ssl/certs"
-        fi
-    fi
-fi
+    if not STATUS_FILE.exists() or STATUS_FILE.stat().st_size == 0:
+        print(f"[mcubridge-hw-smoke] ERROR: Status file {STATUS_FILE} missing or empty.", file=sys.stderr)
+        sys.exit(1)
 
-if [ -n "$MQTT_USER" ]; then
-    MOSQUITTO_SUB_ARGS="$MOSQUITTO_SUB_ARGS -u $MQTT_USER"
-    MOSQUITTO_PUB_ARGS="$MOSQUITTO_PUB_ARGS -u $MQTT_USER"
-fi
-if [ -n "$MQTT_PASS" ]; then
-    MOSQUITTO_SUB_ARGS="$MOSQUITTO_SUB_ARGS -P $MQTT_PASS"
-    MOSQUITTO_PUB_ARGS="$MOSQUITTO_PUB_ARGS -P $MQTT_PASS"
-fi
+    # 4. Prepare Mosquitto Arguments
+    common_args: list[str] = ["-h", host, "-p", port]
+    if user: common_args.extend(["-u", user])
+    if pw: common_args.extend(["-P", pw])
 
-# shellcheck disable=SC2086
-mosquitto_sub $MOSQUITTO_SUB_ARGS >"$TMP_SUB" &
-SUB_PID=$!
-sleep 1
-# shellcheck disable=SC2086
-mosquitto_pub $MOSQUITTO_PUB_ARGS >/dev/null
+    if tls_enabled:
+        if cafile and Path(cafile).exists():
+            common_args.extend(["--cafile", cafile])
+        elif Path("/etc/ssl/certs/ca-certificates.crt").exists():
+            common_args.extend(["--cafile", "/etc/ssl/certs/ca-certificates.crt"])
+        if insecure:
+            common_args.append("--insecure")
 
-if ! wait "$SUB_PID" >/dev/null 2>&1; then
-    echo "[mcubridge-hw-smoke] Did not receive response from daemon." >&2
-    exit 1
-fi
+    # 5. Run Smoke Test (Round Trip)
+    print(f"[mcubridge-hw-smoke] Checking MQTT round trip via {host}:{port}...", file=sys.stderr)
+    
+    status_topic = f"{topic_prefix}/system/status"
+    request_topic = f"{topic_prefix}/system/status/request"
+    
+    try:
+        # Start subscriber in background
+        sub_proc = sh.mosquitto_sub(
+            *common_args, 
+            "-t", status_topic, 
+            "-C", "1", 
+            "-W", "7", 
+            _bg=True
+        )
+        
+        time.sleep(1) # Wait for sub to establish
+        
+        # Publish request
+        sh.mosquitto_pub(
+            *common_args,
+            "-t", request_topic,
+            "-m", '{"request":"ping"}'
+        )
+        
+        # Wait for sub result
+        output = sub_proc.wait()
+        print("[mcubridge-hw-smoke] Received response:")
+        print(output.stdout.decode())
+        print("[mcubridge-hw-smoke] Smoke test completed successfully.", file=sys.stderr)
 
-echo "[mcubridge-hw-smoke] Received response:"
-cat "$TMP_SUB"
+    except sh.TimeoutException:
+        print("[mcubridge-hw-smoke] ERROR: Did not receive response from daemon (Timeout).", file=sys.stderr)
+        sys.exit(1)
+    except sh.ErrorReturnCode as e:
+        print(f"[mcubridge-hw-smoke] ERROR: MQTT tool failed: {e.stderr.decode()}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"[mcubridge-hw-smoke] FATAL ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
-echo "[mcubridge-hw-smoke] Smoke test completed successfully." >&2
+if __name__ == "__main__":
+    main()

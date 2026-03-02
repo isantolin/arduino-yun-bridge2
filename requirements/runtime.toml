@@ -100,6 +100,12 @@ pip = "rich==14.3.2"
 rationale = "Beautiful terminal formatting for tools and logs"
 
 [[dependency]]
+name = "sh"
+openwrt = "python3-sh"
+pip = "sh==2.2.2"
+rationale = "Python subprocess interface for clean command execution"
+
+[[dependency]]
 name = "mosquitto-client"
 openwrt = "mosquitto-client"
 pip = ""

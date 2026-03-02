@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Simple script to control MCU pins (like LED 13) from OpenWrt via MQTT.
+
+Usage: mcubridge-led-control on|off [pin]
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+try:
+    import sh
+except ImportError:
+    print("[mcubridge-led-control] ERROR: 'sh' library is required. Install 'python3-sh'.", file=sys.stderr)
+    sys.exit(1)
+
+def uci_get(key: str, default: str = "") -> str:
+    try:
+        return str(sh.uci("-q", "get", f"mcubridge.general.{key}")).strip()
+    except sh.ErrorReturnCode:
+        return default
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} on|off [pin]", file=sys.stderr)
+        sys.exit(1)
+
+    state_arg = sys.argv[1].lower()
+    if state_arg not in ("on", "off"):
+        print(f"Error: invalid state '{state_arg}'. Use on|off.", file=sys.stderr)
+        sys.exit(2)
+
+    pin = sys.argv[2] if len(sys.argv) > 2 else "13"
+    if not pin.isdigit():
+        print(f"Error: pin must be numeric (got '{pin}').", file=sys.stderr)
+        sys.exit(5)
+
+    payload = "1" if state_arg == "on" else "0"
+    
+    topic_prefix = uci_get("mqtt_topic", "br")
+    mqtt_topic = f"{topic_prefix}/d/{pin}"
+    
+    # MQTT Config
+    common_args = [
+        "-h", uci_get("mqtt_host", "127.0.0.1"),
+        "-p", uci_get("mqtt_port", "8883"),
+        "-t", mqtt_topic,
+        "-m", payload,
+    ]
+    
+    user = uci_get("mqtt_user")
+    if user: common_args.extend(["-u", user])
+    
+    pw = uci_get("mqtt_pass")
+    if pw: common_args.extend(["-P", pw])
+
+    if uci_get("mqtt_tls", "1") == "1":
+        cafile = uci_get("mqtt_cafile")
+        if cafile and Path(cafile).exists():
+            common_args.extend(["--cafile", cafile])
+        elif Path("/etc/ssl/certs/ca-certificates.crt").exists():
+            common_args.extend(["--cafile", "/etc/ssl/certs/ca-certificates.crt"])
+        
+        if uci_get("mqtt_tls_insecure", "0") == "1":
+            common_args.append("--insecure")
+        
+        common_args.extend(["--tls-version", "tlsv1.2"])
+
+    try:
+        sh.mosquitto_pub(*common_args)
+        sh.logger("-t", "mcubridge-led", f"Published LED{pin}={payload} to {mqtt_topic}")
+    except sh.ErrorReturnCode as e:
+        sh.logger("-t", "mcubridge-led", "-p", "daemon.err", f"Failed to publish: {e.stderr.decode()}")
+        print(f"Error: failed to publish MQTT message: {e}", file=sys.stderr)
+        sys.exit(4)
+
+if __name__ == "__main__":
+    main()

@@ -164,12 +164,7 @@ def _setup_uci_and_env(
     current_path = env.get("PYTHONPATH", "")
     repo_root = package_root.parent
     client_examples = repo_root / "mcubridge-client-examples"
-    path_parts = [
-        uci_stub_dir.name,
-        str(package_root),
-        str(client_examples),
-        current_path,
-    ]
+    path_parts = [uci_stub_dir.name, str(package_root), str(client_examples), current_path]
     env["PYTHONPATH"] = os.pathsep.join(p for p in path_parts if p)
     env["MCUBRIDGE_LOG_STREAM"] = "1"
     return env, uci_stub_dir
@@ -218,20 +213,17 @@ def setup_emulation_processes(
 
         try:
             with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
-                mcu_out = mcu_proc.stdout
-                mcu_in = mcu_proc.stdin
+                mcu_out, mcu_in = mcu_proc.stdout, mcu_proc.stdin
+                if mcu_out is None or mcu_in is None:
+                    return
                 while mcu_proc.poll() is None:
                     r, _, _ = select.select([pty, mcu_out], [], [], 0.05)
-                    if pty in r:
-                        data = pty.read(1024)
-                        if data:
-                            mcu_in.write(data)
-                            mcu_in.flush()
-                    if mcu_out in r:
-                        data = mcu_out.read(1024)
-                        if data:
-                            pty.write(data)
-                            pty.flush()
+                    if pty in r and (data := pty.read(1024)):
+                        mcu_in.write(data)
+                        mcu_in.flush()
+                    if mcu_out in r and (data := mcu_out.read(1024)):
+                        pty.write(data)
+                        pty.flush()
         except Exception:
             pass
 
@@ -266,6 +258,31 @@ def setup_emulation_processes(
     _start_worker_thread(_daemon_worker, "daemon-worker")
 
     return socat_proc, mcu_proc, daemon_proc
+
+
+def _run_client_scripts(scripts: list[str], env: dict[str, str]) -> bool:
+    """Run client example scripts and return True if all passed."""
+    success = True
+    for script in scripts:
+        logger.info("Running script: %s", script)
+        try:
+            cmd = [
+                sys.executable,
+                script,
+                "--host",
+                MQTT_HOST,
+                "--port",
+                str(MQTT_PORT),
+                "--user",
+                "admin",
+                "--password",
+                "admin",
+            ]
+            subprocess.run(cmd, env=env, check=True, timeout=30)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            logger.error("Script failed: %s", e)
+            success = False
+    return success
 
 
 def run_emulation(
@@ -304,25 +321,7 @@ def run_emulation(
             time.sleep(0.5)
 
         if success and run_scripts:
-            for script in run_scripts:
-                logger.info("Running script: %s", script)
-                try:
-                    cmd = [
-                        sys.executable,
-                        script,
-                        "--host",
-                        MQTT_HOST,
-                        "--port",
-                        str(MQTT_PORT),
-                        "--user",
-                        "admin",
-                        "--password",
-                        "admin",
-                    ]
-                    subprocess.run(cmd, env=daemon_env, check=True, timeout=30)
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                    logger.error("Script failed: %s", e)
-                    success = False
+            success = _run_client_scripts(run_scripts, daemon_env)
     finally:
         mqtt_verifier.stop()
         daemon_proc.terminate()

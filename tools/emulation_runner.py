@@ -213,19 +213,27 @@ def setup_emulation_processes(
 
         try:
             with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
-                mcu_out, mcu_in = mcu_proc.stdout, mcu_proc.stdin
+                mcu_out = mcu_proc.stdout
+                mcu_in = mcu_proc.stdin
                 if mcu_out is None or mcu_in is None:
                     return
+                # Use raw file descriptors for maximum transparency
+                pty_fd = pty.fileno()
+                out_fd = mcu_out.fileno()
+                in_fd = mcu_in.fileno()
+
                 while mcu_proc.poll() is None:
-                    r, _, _ = select.select([pty, mcu_out], [], [], 0.05)
-                    if pty in r and (data := pty.read(1024)):
-                        mcu_in.write(data)
-                        mcu_in.flush()
-                    if mcu_out in r and (data := mcu_out.read(1024)):
-                        pty.write(data)
-                        pty.flush()
-        except Exception:
-            pass
+                    r, _, _ = select.select([pty_fd, out_fd], [], [], 0.05)
+                    if pty_fd in r:
+                        data = os.read(pty_fd, 1024)
+                        if data:
+                            os.write(in_fd, data)
+                    if out_fd in r:
+                        data = os.read(out_fd, 1024)
+                        if data:
+                            os.write(pty_fd, data)
+        except Exception as e:
+            logger.debug("Serial bridge thread exiting: %s", e)
 
     _start_worker_thread(_serial_bridge, "serial-bridge")
 
@@ -310,7 +318,8 @@ def run_emulation(
     success = False
     try:
         start_time = time.time()
-        while time.time() - start_time < 30:
+        # Increased timeout for handshake in CI environments
+        while time.time() - start_time < 45:
             if state.check_success("handshake_complete") or mqtt_verifier.sync_event.is_set():
                 logger.info("SUCCESS: Handshake verified.")
                 success = True

@@ -96,7 +96,7 @@ rationale = "Modern CLI generation library for tools and examples"
 [[dependency]]
 name = "rich"
 openwrt = "python3-rich"
-pip = "rich==14.3.2"
+pip = "rich==14.3.3"
 rationale = "Beautiful terminal formatting for tools and logs"
 
 [[dependency]]

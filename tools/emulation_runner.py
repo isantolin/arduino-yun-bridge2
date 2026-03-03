@@ -167,6 +167,7 @@ def _setup_uci_and_env(
     path_parts = [uci_stub_dir.name, str(package_root), str(client_examples), current_path]
     env["PYTHONPATH"] = os.pathsep.join(p for p in path_parts if p)
     env["MCUBRIDGE_LOG_STREAM"] = "1"
+    env["COLUMNS"] = "500"  # Prevent Rich from wrapping log lines in piped output
     return env, uci_stub_dir
 
 
@@ -286,7 +287,7 @@ def _run_client_scripts(scripts: list[str], env: dict[str, str]) -> bool:
                 "--password",
                 "admin",
             ]
-            subprocess.run(cmd, env=env, check=True, timeout=30)
+            subprocess.run(cmd, env=env, check=True, timeout=30, stdin=subprocess.DEVNULL)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             logger.error("Script failed: %s", e)
             success = False

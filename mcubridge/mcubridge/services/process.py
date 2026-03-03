@@ -6,11 +6,9 @@ import asyncio
 import base64
 import contextlib
 import logging
-import subprocess
 from asyncio import StreamReader
-from asyncio.subprocess import Process
 from contextlib import AsyncExitStack
-
+from typing import Any
 from transitions.core import MachineError
 import sh  # type: ignore
 import msgspec
@@ -371,12 +369,14 @@ class ProcessComponent:
                 return INVALID_ID_SENTINEL
 
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    *tokens,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-            except OSError as exc:
+                slot = ManagedProcess(pid=pid, command=command)
+                # [SIL-2] Start async process using sh in background mode
+                # _bg=True: returns RunningCommand immediately
+                # _bg_exc=False: prevents raising ErrorReturnCode on wait()
+                cmd = sh.Command(tokens[0]).bake(*tokens[1:])  # type: ignore
+                proc = cmd(_out=slot.stdout_buffer, _err=slot.stderr_buffer, _bg=True, _bg_exc=False)  # type: ignore
+                slot.handle = proc
+            except (sh.CommandNotFound, OSError) as exc:  # type: ignore
                 logger.warning(
                     "Failed to start async process '%s': %s",
                     command,
@@ -386,7 +386,6 @@ class ProcessComponent:
 
             stack.pop_all()
 
-        slot = ManagedProcess(pid=pid, command=command, handle=proc)
         # [FSM] Initialize state
         try:
             slot.trigger("start")
@@ -489,38 +488,6 @@ class ProcessComponent:
             stderr_truncated=stderr_truncated_limit,
         )
 
-    async def _consume_stream(
-        self,
-        pid: int,
-        reader: StreamReader | None,
-        buffer: bytearray,
-        *,
-        chunk_size: int = 4096,
-    ) -> None:
-        if reader is None:
-            return
-        while True:
-            try:
-                chunk = await reader.read(chunk_size)
-            except (OSError, ValueError, BrokenPipeError, RuntimeError):
-                logger.debug(
-                    "Error reading process pipe for PID %d",
-                    pid,
-                    exc_info=True,
-                )
-                break
-            if not chunk:
-                break
-            buffer.extend(chunk)
-
-    async def _drain_process_pipes(self, pid: int, proc: Process) -> tuple[bytes, bytes]:
-        stdout_buf = bytearray()
-        stderr_buf = bytearray()
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(self._consume_stream(pid, proc.stdout, stdout_buf))
-            tg.create_task(self._consume_stream(pid, proc.stderr, stderr_buf))
-        return bytes(stdout_buf), bytes(stderr_buf)
-
     async def publish_poll_result(
         self,
         pid: int,
@@ -566,7 +533,7 @@ class ProcessComponent:
         logger.error("No async process slots available; all PIDs in use")
         return INVALID_ID_SENTINEL
 
-    async def _terminate_process_tree(self, proc: Process) -> None:
+    async def _terminate_process_tree(self, proc: Any) -> None:
         if proc.returncode is not None:
             return
         pid_value = getattr(proc, "pid", None)
@@ -586,10 +553,11 @@ class ProcessComponent:
     async def _monitor_async_process(
         self,
         pid: int,
-        proc: Process,
+        proc: Any,
     ) -> None:
         try:
-            await proc.wait()
+            # [SIL-2] Use thread-safe waiting for process completion
+            await asyncio.to_thread(proc.wait)
         except asyncio.CancelledError:
             raise
         await self._finalize_async_process(pid, proc)
@@ -597,7 +565,7 @@ class ProcessComponent:
     async def _finalize_async_process(
         self,
         pid: int,
-        proc: Process,
+        proc: Any,
     ) -> None:
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
@@ -611,23 +579,22 @@ class ProcessComponent:
         except MachineError as e:
             logger.error("FSM transition failed in finalize (sigchld): %s", e)
 
-        async with slot.io_lock:
-            stdout_tail, stderr_tail = await self._drain_process_pipes(
-                pid,
-                proc,
-            )
+        # [SIL-2] Retrieve exit code from sh or subprocess handle
+        exit_code = getattr(proc, "exit_code", None)
+        if exit_code is None:
+            exit_code = getattr(proc, "returncode", PROCESS_DEFAULT_EXIT_CODE)
 
-        release_slot = False
-        exit_value = proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
+        final_exit_code = (
+            exit_code if exit_code is not None else PROCESS_DEFAULT_EXIT_CODE
+        )
 
         # Always release the execution permit when the OS process finishes.
-        # The semaphore controls CONCURRENT EXECUTION, not memory storage.
         self._release_process_slot()
 
+        release_slot = False
         async with self.state.process_lock:
             current_slot = self.state.running_processes.get(pid)
             if current_slot is None or current_slot is not slot:
-                # Slot was replaced or removed? Should be rare/impossible if pid unique
                 return
 
             # [FSM] Complete IO
@@ -636,18 +603,14 @@ class ProcessComponent:
             except MachineError as e:
                 logger.error("FSM transition failed in finalize (io_complete): %s", e)
 
-            if stdout_tail or stderr_tail:
-                current_slot.append_output(
-                    stdout_tail,
-                    stderr_tail,
-                    limit=self.state.process_output_limit,
-                )
-
-            current_slot.exit_code = exit_value
+            current_slot.exit_code = final_exit_code
             current_slot.handle = None
 
             # Check if we can cleanup immediately
-            if current_slot.is_drained() and current_slot.fsm_state == PROCESS_STATE_FINISHED:
+            if (
+                current_slot.is_drained()
+                and current_slot.fsm_state == PROCESS_STATE_FINISHED
+            ):
                 with contextlib.suppress(MachineError):
                     current_slot.trigger("finalize")
                 self.state.running_processes.pop(pid, None)
@@ -657,7 +620,7 @@ class ProcessComponent:
             logger.info(
                 "Async process %d finished with exit code %d",
                 pid,
-                exit_value,
+                final_exit_code,
             )
 
     @staticmethod

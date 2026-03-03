@@ -7,7 +7,6 @@ import collections
 import contextlib
 import logging
 import time
-from asyncio.subprocess import Process
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,7 +140,7 @@ class ManagedProcess:
 
     pid: int
     command: str = ""
-    handle: Process | None = None
+    handle: Any | None = None
     stdout_buffer: bytearray = field(default_factory=bytearray)
     stderr_buffer: bytearray = field(default_factory=bytearray)
     exit_code: int | None = None

@@ -300,12 +300,11 @@ void BridgeClass::process() {
     if (!_fsm.isUnsynchronized()) {
       switch (error) {
         case rpc::FrameError::CRC_MISMATCH:
-          _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH,
-                      (const char*)nullptr);
+          _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH);
           break;
         case rpc::FrameError::MALFORMED:
         case rpc::FrameError::OVERFLOW:
-          _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
+          _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
           break;
       }
     }
@@ -349,7 +348,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                                  frame.header.payload_length),
         etl::span<uint8_t>(scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE));
     if (decoded_len == 0) {
-      _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
+      _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
       return;
     }
     etl::copy_n(scratch_payload.data(), decoded_len,
@@ -647,40 +646,27 @@ void BridgeClass::_handleAnalogWrite(
       });
 }
 
-void BridgeClass::_handleDigitalRead(
-    const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::PinRead>(
-      ctx, [this, &ctx](const rpc::payload::PinRead& msg) {
-        if (bridge::hal::isValidPin(msg.pin)) {
-          _sendResponse<rpc::payload::DigitalReadResponse>(
-              rpc::CommandId::CMD_DIGITAL_READ_RESP,
-              static_cast<uint8_t>(::digitalRead(msg.pin) &
-                                   rpc::RPC_UINT8_MASK));
-          _markRxProcessed(*ctx.frame);
-        } else {
-          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
-        }
+void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx) {
+  _handlePinRead<rpc::payload::DigitalReadResponse>(
+      ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP,
+      [](uint8_t pin) { return bridge::hal::isValidPin(pin); },
+      [](uint8_t pin) -> uint8_t {
+        return static_cast<uint8_t>(::digitalRead(pin) & rpc::RPC_UINT8_MASK);
       });
 }
 
 void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::PinRead>(
-      ctx, [this, &ctx](const rpc::payload::PinRead& msg) {
-        bool valid = true;
+  _handlePinRead<rpc::payload::AnalogReadResponse>(
+      ctx, rpc::CommandId::CMD_ANALOG_READ_RESP,
+      [](uint8_t pin) {
 #ifdef NUM_ANALOG_INPUTS
-        if (msg.pin >= NUM_ANALOG_INPUTS) valid = false;
+        return pin < NUM_ANALOG_INPUTS;
 #else
-        if (!bridge::hal::isValidPin(msg.pin)) valid = false;
+        return bridge::hal::isValidPin(pin);
 #endif
-        if (valid) {
-          _sendResponse<rpc::payload::AnalogReadResponse>(
-              rpc::CommandId::CMD_ANALOG_READ_RESP,
-              static_cast<uint16_t>(::analogRead(msg.pin) &
-                                    rpc::RPC_UINT16_MAX));
-          _markRxProcessed(*ctx.frame);
-        } else {
-          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
-        }
+      },
+      [](uint8_t pin) -> uint16_t {
+        return static_cast<uint16_t>(::analogRead(pin) & rpc::RPC_UINT16_MAX);
       });
 }
 
@@ -733,10 +719,7 @@ void BridgeClass::_handleMailboxPush(
   _withPayloadAck<rpc::payload::MailboxPush>(
       ctx, [](const rpc::payload::MailboxPush& msg) {
 #if BRIDGE_ENABLE_MAILBOX
-        if (Mailbox._mailbox_handler.is_valid()) {
-          Mailbox._mailbox_handler(
-              etl::span<const uint8_t>(msg.data, msg.length));
-        }
+        Mailbox._onIncomingData(etl::span<const uint8_t>(msg.data, msg.length));
 #endif
       });
 }
@@ -746,10 +729,8 @@ void BridgeClass::_handleMailboxReadResp(
   _withPayload<rpc::payload::MailboxReadResponse>(
       ctx, [](const rpc::payload::MailboxReadResponse& msg) {
 #if BRIDGE_ENABLE_MAILBOX
-        if (Mailbox._mailbox_handler.is_valid()) {
-          Mailbox._mailbox_handler(
-              etl::span<const uint8_t>(msg.content, msg.length));
-        }
+        Mailbox._onIncomingData(
+            etl::span<const uint8_t>(msg.content, msg.length));
 #endif
       });
 }
@@ -856,11 +837,8 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 
 // Helper for sending ACK without flush
 void BridgeClass::_sendAck(uint16_t command_id) {
-  etl::array<uint8_t, 2> ack_payload;
-  rpc::write_u16_be(ack_payload.data(), command_id);
-  (void)sendFrame(rpc::StatusCode::STATUS_ACK,
-                  etl::span<const uint8_t>(ack_payload.data(),
-                                           ack_payload.size()));
+  _sendResponse<rpc::payload::AckPacket>(rpc::StatusCode::STATUS_ACK,
+                                         command_id);
 }
 
 void BridgeClass::_doEmitStatus(rpc::StatusCode status_code,

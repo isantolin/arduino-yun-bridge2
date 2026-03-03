@@ -16,10 +16,12 @@ import asyncio
 import contextlib
 import errno
 import logging
+import time
 from collections.abc import Callable, Sized
 from typing import TYPE_CHECKING, Any, Final, TypeGuard, cast
 
 import msgspec
+import serial
 import serial_asyncio_fast
 import tenacity
 from cobs import cobs
@@ -364,17 +366,13 @@ class SerialTransport:
 
     def _blocking_reset(self) -> None:
         try:
-            import time
-
-            import serial
-
             with serial.Serial(self.config.serial_port) as s:
                 s.dtr = False
                 time.sleep(0.1)
                 s.dtr = True
                 time.sleep(0.1)
                 s.dtr = False
-        except (ImportError, OSError, RuntimeError, ValueError) as e:
+        except (OSError, RuntimeError, ValueError) as e:
             if isinstance(e, OSError) and e.errno == errno.ENOTTY:
                 # PTYs (socat) do not support DTR signaling. This is expected in emulation.
                 return

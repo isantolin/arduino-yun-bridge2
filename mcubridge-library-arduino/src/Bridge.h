@@ -392,6 +392,18 @@ class BridgeClass
   void _handleDigitalRead(const bridge::router::CommandContext& ctx);
   void _handleAnalogRead(const bridge::router::CommandContext& ctx);
 
+  template <typename TResp, typename TFunc, typename TValid, typename... Args>
+  void _handlePinRead(const bridge::router::CommandContext& ctx, rpc::CommandId resp_cmd, TValid valid_func, TFunc read_func, Args&&... args) {
+    _withPayload<rpc::payload::PinRead>(
+        ctx, [this, resp_cmd, valid_func, read_func, &args...](const rpc::payload::PinRead& msg) {
+          if (valid_func(msg.pin)) {
+            _sendResponse<TResp>(resp_cmd, read_func(msg.pin, etl::forward<Args>(args)...));
+          } else {
+            (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+          }
+        });
+  }
+
   // Console
   void _handleConsoleWrite(const bridge::router::CommandContext& ctx);
 
@@ -444,15 +456,28 @@ class BridgeClass
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
     if (ctx.is_duplicate) return;
     auto msg = rpc::Payload::parse<T>(*ctx.frame);
-    if (msg) handler(*msg);
+    if (msg) {
+      handler(*msg);
+      _markRxProcessed(*ctx.frame);
+    }
   }
 
   template <typename T, typename... Args>
   void _sendResponse(rpc::CommandId cmd, Args&&... args) {
+    _sendResponse<T>(rpc::to_underlying(cmd), etl::forward<Args>(args)...);
+  }
+
+  template <typename T, typename... Args>
+  void _sendResponse(rpc::StatusCode status, Args&&... args) {
+    _sendResponse<T>(rpc::to_underlying(status), etl::forward<Args>(args)...);
+  }
+
+  template <typename T, typename... Args>
+  void _sendResponse(uint16_t cmd_raw, Args&&... args) {
     T resp{etl::forward<Args>(args)...};
     etl::array<uint8_t, T::SIZE> buffer;
     resp.encode(buffer.data());
-    (void)sendFrame(cmd, etl::span<const uint8_t>(buffer.data(), T::SIZE));
+    (void)_sendFrame(cmd_raw, etl::span<const uint8_t>(buffer.data(), T::SIZE));
   }
 
   void _retransmitLastFrame();

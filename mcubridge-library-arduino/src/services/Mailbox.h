@@ -33,6 +33,8 @@ class MailboxClass {
   }
 
  private:
+  void _onIncomingData(etl::span<const uint8_t> data);
+
   MailboxHandler _mailbox_handler;
   MailboxAvailableHandler _mailbox_available_handler;
 };

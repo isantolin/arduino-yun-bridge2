@@ -32,4 +32,10 @@ void MailboxClass::requestAvailable() {
   (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
+void MailboxClass::_onIncomingData(etl::span<const uint8_t> data) {
+  if (_mailbox_handler.is_valid()) {
+    _mailbox_handler(data);
+  }
+}
+
 #endif

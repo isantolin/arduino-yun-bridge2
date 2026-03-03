@@ -104,12 +104,11 @@ inline void generate_nonce_with_counter(uint8_t* out_nonce, uint64_t& counter,
  * @brief Extract counter from nonce (for validation).
  */
 inline uint64_t extract_nonce_counter(const uint8_t* nonce) {
-  uint64_t counter = 0;
-  for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_COUNTER_BYTES; i++) {
-    counter =
-        (counter << kBitsPerByte) | nonce[RPC_HANDSHAKE_NONCE_RANDOM_BYTES + i];
-  }
-  return counter;
+  return etl::accumulate(nonce + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+                         nonce + RPC_HANDSHAKE_NONCE_LENGTH, 0ULL,
+                         [](uint64_t acc, uint8_t byte) {
+                           return (acc << kBitsPerByte) | byte;
+                         });
 }
 
 /**

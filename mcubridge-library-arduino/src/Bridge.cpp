@@ -6,6 +6,7 @@
 // [SIL-2] Explicitly include Arduino.h to satisfy IntelliSense and ensure
 // noInterrupts()/interrupts() are available in all compilation contexts.
 #include <Arduino.h>
+#include <etl/numeric.h>
 #include <etl/span.h>
 
 // --- [SAFETY GUARD START] ---
@@ -119,15 +120,15 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 
   // [SIL-2] Memory Integrity POST
   // Verify COBS buffer is functional
-  for (size_t i = 0; i < rpc::MAX_RAW_FRAME_SIZE; ++i) {
-    _cobs.buffer[i] = static_cast<uint8_t>(i & 0xFF);
-  }
-  for (size_t i = 0; i < rpc::MAX_RAW_FRAME_SIZE; ++i) {
-    if (_cobs.buffer[i] != static_cast<uint8_t>(i & 0xFF)) {
-      enterSafeState();
-      _fsm.cryptoFault();  // Use general fault state
-      return;
-    }
+  etl::iota(_cobs.buffer.begin(), _cobs.buffer.end(), 0);
+  uint16_t post_i = 0;
+  if (!etl::all_of(_cobs.buffer.begin(), _cobs.buffer.end(),
+                   [&post_i](uint8_t b) {
+                     return b == static_cast<uint8_t>(post_i++ & 0xFF);
+                   })) {
+    enterSafeState();
+    _fsm.cryptoFault();  // Use general fault state
+    return;
   }
   _cobs.buffer.fill(0);
 
@@ -706,10 +707,11 @@ void BridgeClass::onDataStoreCommand(
         ctx, [](const rpc::payload::DatastoreGetResponse& msg) {
 #if BRIDGE_ENABLE_DATASTORE
           if (DataStore._datastore_get_handler.is_valid()) {
-            const char* key = DataStore._popPendingDatastoreKey();
-            DataStore._datastore_get_handler(
-                etl::string_view(key),
-                etl::span<const uint8_t>(msg.value, msg.value_len));
+            etl::string_view key = DataStore._popPendingDatastoreKey();
+            if (!key.empty()) {
+              DataStore._datastore_get_handler(
+                  key, etl::span<const uint8_t>(msg.value, msg.value_len));
+            }
           }
 #endif
         });

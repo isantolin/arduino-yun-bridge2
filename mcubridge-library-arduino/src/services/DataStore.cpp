@@ -35,15 +35,16 @@ void DataStoreClass::requestGet(etl::string_view key) {
   }
 }
 
-const char* DataStoreClass::_popPendingDatastoreKey() {
+etl::string_view DataStoreClass::_popPendingDatastoreKey() {
   if (_pending_datastore_keys.empty()) {
     _last_datastore_key.clear();
-    return _last_datastore_key.c_str();
+    return {};
   }
 
   _last_datastore_key = _pending_datastore_keys.front();
   _pending_datastore_keys.pop();
-  return _last_datastore_key.c_str();
+  return etl::string_view(_last_datastore_key.data(),
+                          _last_datastore_key.length());
 }
 
 bool DataStoreClass::_trackPendingDatastoreKey(etl::string_view key) {

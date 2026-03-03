@@ -255,9 +255,9 @@ class DataStoreTestAccessor {
   explicit DataStoreTestAccessor(DataStoreClass& ds) : _ds(ds) {}
 
   bool trackPendingKey(const char* key) {
-    return _ds._trackPendingDatastoreKey(key);
+    return _ds._trackPendingDatastoreKey(etl::string_view(key));
   }
-  const char* popPendingKey() { return _ds._popPendingDatastoreKey(); }
+  etl::string_view popPendingKey() { return _ds._popPendingDatastoreKey(); }
   void clearPendingKeys() { _ds._pending_datastore_keys.clear(); }
 
   static DataStoreTestAccessor create(DataStoreClass& ds) {

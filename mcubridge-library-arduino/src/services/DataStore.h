@@ -46,7 +46,7 @@ class DataStoreClass : public BridgeObserver {
 
  private:
   bool _trackPendingDatastoreKey(etl::string_view key);
-  const char* _popPendingDatastoreKey();
+  etl::string_view _popPendingDatastoreKey();
 
   DataStoreGetHandler _datastore_get_handler;
 

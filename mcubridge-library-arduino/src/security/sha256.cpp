@@ -15,6 +15,7 @@
  * (C) 2025-2026 Ignacio Santolin and contributors.
  */
 #include "sha256.h"
+#include "security.h"
 
 #include <etl/algorithm.h>
 #include <etl/binary.h>
@@ -103,7 +104,8 @@ void SHA256::finalize(void* hash, size_t len) {
   }
 
   // Convert hash state to big-endian and copy out.
-  for (uint8_t i = 0; i < 8; ++i) w_[i] = etl::reverse_bytes(h_[i]);
+  etl::transform(h_.begin(), h_.end(), w_.begin(),
+                 [](uint32_t val) { return etl::reverse_bytes(val); });
 
   if (len > HASH_SIZE) len = HASH_SIZE;
   etl::copy_n(reinterpret_cast<const uint8_t*>(w_.data()), len,
@@ -112,12 +114,13 @@ void SHA256::finalize(void* hash, size_t len) {
 
 void SHA256::processChunk() {
   // Convert first 16 words from big-endian to host byte order.
-  uint8_t i;
-  for (i = 0; i < 16; ++i) w_[i] = etl::reverse_bytes(w_[i]);
+  etl::transform(w_.begin(), w_.begin() + 16, w_.begin(),
+                 [](uint32_t val) { return etl::reverse_bytes(val); });
 
   uint32_t a = h_[0], b = h_[1], c = h_[2], d = h_[3];
   uint32_t e = h_[4], f = h_[5], g = h_[6], h = h_[7];
   uint32_t t1, t2;
+  uint8_t i;
 
   // Rounds 0-15: use w_[] directly.
   for (i = 0; i < 16; ++i) {
@@ -190,10 +193,7 @@ void SHA256::formatHMACKey(const void* key, size_t len, uint8_t pad) {
     reset();
   }
   etl::fill_n(block + len, BLOCK_SIZE - len, pad);
-  while (len > 0) {
-    *block++ ^= pad;
-    --len;
-  }
+  etl::for_each(block, block + len, [pad](uint8_t& b) { b ^= pad; });
 }
 
 void SHA256::resetHMAC(const void* key, size_t keyLen) {
@@ -212,7 +212,6 @@ void SHA256::finalizeHMAC(const void* key, size_t keyLen, void* hash,
   update(temp.data(), temp.size());
   finalize(hash, hashLen);
 
-  // Securely zero inner-hash digest.
-  volatile uint8_t* p = temp.data();
-  for (size_t j = 0; j < HASH_SIZE; ++j) *p++ = 0;
+  // [MIL-SPEC] Securely zero inner-hash digest using volatile-guaranteed primitive.
+  rpc::security::secure_zero(temp.data(), temp.size());
 }

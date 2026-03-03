@@ -103,23 +103,6 @@ async def test_process_component_error_coverage():
 
 
 @pytest.mark.asyncio
-async def test_process_wait_timeout_coverage():
-    """Cover TimeoutError in _wait_for_sync_completion."""
-    config = RuntimeConfig(serial_shared_secret=b"test_secret_123")
-    config.process_max_concurrent = 4
-
-    mock_state = mock.Mock()
-    mock_state.process_timeout = 30
-    mock_ctx = mock.AsyncMock()
-    comp = ProcessComponent(config=config, state=mock_state, ctx=mock_ctx)
-    mock_proc = mock.AsyncMock()
-
-    with mock.patch("asyncio.timeout", side_effect=asyncio.TimeoutError):
-        res = await comp._wait_for_sync_completion(mock_proc, 123)
-        assert res is True
-
-
-@pytest.mark.asyncio
 async def test_serial_fast_protocol_error_coverage():
     """Cover error branches in BridgeSerialProtocol."""
     mock_service = mock.AsyncMock()

@@ -308,22 +308,41 @@ class ProcessComponent:
             # Wait for completion in a thread pool to avoid blocking the asyncio loop
             await asyncio.to_thread(proc.wait)  # type: ignore
 
-            stdout_bytes, _ = self._limit_sync_payload(bytes(stdout_buffer))
-            stderr_bytes, _ = self._limit_sync_payload(bytes(stderr_buffer))
+            stdout_bytes, stdout_truncated = self._limit_sync_payload(bytes(stdout_buffer))
+            stderr_bytes, stderr_truncated = self._limit_sync_payload(bytes(stderr_buffer))
+
+            if stdout_truncated or stderr_truncated:
+                logger.warning(
+                    "Synchronous command '%s' output truncated to %d bytes",
+                    command,
+                    self.state.process_output_limit,
+                )
 
             return Status.OK.value, stdout_bytes, stderr_bytes, proc.exit_code  # type: ignore
 
         except sh.TimeoutException:  # type: ignore
             # sh handles termination of the process tree on timeout
             logger.warning("Synchronous command '%s' timed out after %s seconds", command, timeout)
-            stdout_bytes, _ = self._limit_sync_payload(bytes(stdout_buffer))
-            stderr_bytes, _ = self._limit_sync_payload(bytes(stderr_buffer))
+            stdout_bytes, stdout_truncated = self._limit_sync_payload(bytes(stdout_buffer))
+            stderr_bytes, stderr_truncated = self._limit_sync_payload(bytes(stderr_buffer))
+            if stdout_truncated or stderr_truncated:
+                logger.warning(
+                    "Synchronous command '%s' output truncated to %d bytes",
+                    command,
+                    self.state.process_output_limit,
+                )
             return Status.TIMEOUT.value, stdout_bytes, stderr_bytes, None
 
         except sh.ErrorReturnCode as e:  # type: ignore
             # Process finished with non-zero exit code
-            stdout_bytes, _ = self._limit_sync_payload(bytes(stdout_buffer))
-            stderr_bytes, _ = self._limit_sync_payload(bytes(stderr_buffer))
+            stdout_bytes, stdout_truncated = self._limit_sync_payload(bytes(stdout_buffer))
+            stderr_bytes, stderr_truncated = self._limit_sync_payload(bytes(stderr_buffer))
+            if stdout_truncated or stderr_truncated:
+                logger.warning(
+                    "Synchronous command '%s' output truncated to %d bytes",
+                    command,
+                    self.state.process_output_limit,
+                )
             return Status.OK.value, stdout_bytes, stderr_bytes, e.exit_code  # type: ignore
 
         except (sh.CommandNotFound, OSError, ValueError, RuntimeError) as exc:  # type: ignore

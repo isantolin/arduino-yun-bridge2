@@ -193,7 +193,7 @@ def test_spool_pop_disk_error_retries_with_memory() -> None:
 
         # Mock the LRU cache pop to fail
         with patch.object(spool, "_spool", MagicMock(spec=dict)) as mock_spool:
-            mock_spool.pop.side_effect = Exception("IO Error")
+            mock_spool.pop.side_effect = OSError("IO Error")
             result = spool.pop_next()
             assert result is None
             assert spool.snapshot()["corrupt_dropped"] == 1

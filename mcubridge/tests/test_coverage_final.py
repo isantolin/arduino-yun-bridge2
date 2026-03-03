@@ -41,21 +41,16 @@ def state():
     from mcubridge.state.context import create_runtime_state
 
     config = create_real_config()
-    loop_to_close = None
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        loop_to_close = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop_to_close)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     s = create_runtime_state(config)
     try:
         yield s
     finally:
         s.cleanup()
-        if loop_to_close:
-            loop_to_close.close()
-            asyncio.set_event_loop(None)
+        loop.close()
+        asyncio.set_event_loop(None)
 
 
 # --- FileComponent Booster ---
@@ -267,37 +262,14 @@ async def test_process_handle_kill_not_found(state):
 
 
 @pytest.mark.asyncio
-async def test_process_run_sync_group_oserror(state):
-    comp = ProcessComponent(create_real_config(), state, MagicMock())
-    mock_proc = MagicMock()
-    mock_proc.stdout = MagicMock()
-    mock_proc.stderr = MagicMock()
-    mock_proc.wait = AsyncMock()
-
-    with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-        with patch(
-            "mcubridge.services.process.ProcessComponent._consume_stream",
-            side_effect=OSError("IO Error"),
-        ):
-            res = await comp.run_sync("ls", ["ls"])
-            assert res[0] == Status.ERROR.value
-
-
-@pytest.mark.asyncio
-async def test_process_wait_for_sync_completion_timeout_kill_fail(state):
-    comp = ProcessComponent(create_real_config(), state, MagicMock())
-    comp.state.process_timeout = 0.001
-    mock_proc = MagicMock()
-    mock_proc.wait = AsyncMock(side_effect=asyncio.TimeoutError)
-
-    with patch("mcubridge.services.process.asyncio.timeout", side_effect=TimeoutError):
-        res = await comp._wait_for_sync_completion(mock_proc, 123)
-        assert res is True
-
-
-@pytest.mark.asyncio
 async def test_process_allocate_pid_exhaustion(state):
-    state.running_processes = {i: MagicMock() for i in range(1, 65536)}
+    # Simulate full PID range using a custom dict that claims all keys exist
+    class ExhaustedDict(dict):
+        def __contains__(self, key): return True
+        def __len__(self): return 65535
+        def values(self): return [] # Optimization for cleanup
+
+    state.running_processes = ExhaustedDict()
     comp = ProcessComponent(create_real_config(), state, MagicMock())
     pid = await comp._allocate_pid()
     assert pid == INVALID_ID_SENTINEL

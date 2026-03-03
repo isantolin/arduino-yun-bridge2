@@ -236,10 +236,27 @@ async def test_process_run_sync_os_error():
     ctx = MagicMock()
     comp = ProcessComponent(config, state, ctx)
 
-    with patch("asyncio.create_subprocess_exec", side_effect=OSError("Not found")):
+    with patch("mcubridge.services.process.sh.Command", side_effect=OSError("Not found")):
         status, stdout, stderr, exit_code = await comp.run_sync("cmd", ["cmd"])
         assert status == Status.ERROR.value
         assert b"Not found" in stderr
+
+
+@pytest.mark.asyncio
+async def test_process_run_sync_system_error():
+    config = create_real_config()
+    state = MagicMock()
+    state.process_timeout = 5
+    ctx = MagicMock()
+    comp = ProcessComponent(config, state, ctx)
+
+    mock_cmd = MagicMock()
+    mock_cmd.bake.side_effect = RuntimeError("System fail")
+
+    with patch("mcubridge.services.process.sh.Command", return_value=mock_cmd):
+        status, stdout, stderr, exit_code = await comp.run_sync("cmd", ["cmd"])
+        assert status == Status.ERROR.value
+        assert b"System fail" in stderr
 
 
 @pytest.mark.asyncio
@@ -290,30 +307,6 @@ async def test_process_handle_run_async_validation_error():
 
 
 @pytest.mark.asyncio
-async def test_process_run_sync_exception_group():
-    config = create_real_config()
-    state = MagicMock()
-    state.process_timeout = 5
-    ctx = MagicMock()
-    comp = ProcessComponent(config, state, ctx)
-
-    mock_proc = MagicMock()
-    mock_proc.stdout = AsyncMock()
-    mock_proc.stderr = AsyncMock()
-    mock_proc.wait = AsyncMock()
-
-    with (
-        patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        patch(
-            "asyncio.TaskGroup.__aenter__",
-            side_effect=BaseExceptionGroup("Group", [OSError("Fail")]),
-        ),
-    ):
-        status, stdout, stderr, exit_code = await comp.run_sync("cmd", ["cmd"])
-        assert status == Status.ERROR.value
-
-
-@pytest.mark.asyncio
 async def test_process_handle_poll_unknown_pid():
     config = create_real_config()
     state = MagicMock()
@@ -357,15 +350,11 @@ async def test_process_run_sync_timeout_coverage():
     ctx = MagicMock()
     comp = ProcessComponent(config, state, ctx)
 
-    mock_proc = MagicMock()
-    mock_proc.wait = AsyncMock(side_effect=asyncio.TimeoutError)
-    mock_proc.returncode = -1
+    mock_cmd = MagicMock()
+    import sh
+    mock_cmd.bake.side_effect = sh.TimeoutException("sleep 10", 0.1)
 
-    with (
-        patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        patch.object(comp, "_consume_stream", new_callable=AsyncMock),
-        patch.object(comp, "_terminate_process_tree", new_callable=AsyncMock),
-    ):
+    with patch("mcubridge.services.process.sh.Command", return_value=mock_cmd):
         status, stdout, stderr, exit_code = await comp.run_sync("sleep 10", ["sleep", "10"])
         assert status == Status.TIMEOUT.value
 
@@ -474,26 +463,6 @@ async def test_process_kill_process_tree_sync_psutil_error():
     with patch("psutil.Process", side_effect=psutil.NoSuchProcess(123)):
         ProcessComponent._kill_process_tree_sync(123)
 
-
-@pytest.mark.asyncio
-async def test_process_run_sync_wait_timeout_kill_timeout():
-    config = create_real_config()
-    state = MagicMock()
-    state.process_timeout = 0.1
-    state.process_output_limit = 1024
-    comp = ProcessComponent(config, state, MagicMock())
-
-    mock_proc = MagicMock()
-    mock_proc.wait = AsyncMock(side_effect=asyncio.TimeoutError)
-    mock_proc.returncode = -1
-
-    with (
-        patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        patch.object(comp, "_consume_stream", new_callable=AsyncMock),
-        patch.object(comp, "_terminate_process_tree", new_callable=AsyncMock),
-    ):
-        await comp.run_sync("sleep 10", ["sleep", "10"])
-        assert mock_proc.wait.call_count >= 2
 
     # --- mcubridge.transport.serial ---
 

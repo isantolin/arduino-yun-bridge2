@@ -68,60 +68,69 @@ async def test_run_sync_no_timeout_waits_for_process(
     process_component: ProcessComponent,
 ) -> None:
     process_component.state.process_timeout = 0
-    proc = AsyncMock()
-    proc.wait = AsyncMock()
-    # Pid hint
-    proc.pid = 123
+    
+    mock_cmd = MagicMock()
+    mock_proc = mock_cmd.return_value
+    mock_proc.exit_code = 0
 
-    # Mock TaskGroup
-    # Since run_sync creates TaskGroup, we need to mock it or allow it.
-    # It calls _consume_stream. Let's mock _consume_stream to return immediately.
-    with patch.object(process_component, "_consume_stream", new_callable=AsyncMock):
-        with patch("asyncio.create_subprocess_exec", return_value=proc):
+    with patch("mcubridge.services.process.sh.Command", return_value=mock_cmd):
+        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
             await process_component.run_sync("cmd", ["cmd"])
-            proc.wait.assert_awaited()
+            mock_to_thread.assert_awaited()
 
 
 @pytest.mark.asyncio
-async def test_run_sync_taskgroup_exception_returns_error(
+async def test_run_sync_sh_error_returns_ok_with_exit_code(
     process_component: ProcessComponent,
 ) -> None:
-    # Force TaskGroup to raise ExceptionGroup
-    # We can mock create_subprocess_exec to return a proc,
-    # but mock _consume_stream to raise exception.
-    proc = AsyncMock()
-    proc.pid = 123
+    # Simulate sh.ErrorReturnCode
+    import sh
+    mock_cmd = MagicMock()
+    
+    # We need to mock sh.ErrorReturnCode because it's hard to instantiate
+    class FakeErrorReturnCode(sh.ErrorReturnCode):
+        def __init__(self):
+            self.exit_code = 1
+            self.full_cmd = "cmd"
+            self.stdout = b""
+            self.stderr = b""
+        def __str__(self): return "fail"
 
-    async def _fail(*args, **kwargs):
-        raise RuntimeError("Stream error")
+    mock_cmd.bake.side_effect = FakeErrorReturnCode()
 
-    with patch("asyncio.create_subprocess_exec", return_value=proc):
-        with patch.object(process_component, "_consume_stream", side_effect=_fail):
-            status_code, _, msg, _ = await process_component.run_sync("cmd", ["cmd"])
-            assert status_code == Status.ERROR.value
-            assert b"System IO error" in msg
+    with patch("mcubridge.services.process.sh.Command", return_value=mock_cmd):
+        status_code, out, err, exit_code = await process_component.run_sync("cmd", ["cmd"])
+        assert status_code == Status.OK.value
+        assert exit_code == 1
 
 
 @pytest.mark.asyncio
-async def test_run_sync_truncates_and_reports_timeout_flags(
+async def test_run_sync_truncates_output(
     process_component: ProcessComponent,
 ) -> None:
     # This tests the truncation warning log
-    proc = AsyncMock()
-    proc.pid = 123
-    proc.returncode = 0
     process_component.state.process_output_limit = 5
+    
+    mock_cmd = MagicMock()
+    mock_baked = MagicMock()
+    mock_cmd.bake.return_value = mock_baked
+    
+    # Simulate output by filling the buffers passed to sh
+    def _simulate_run(*args, **kwargs):
+        kwargs["_out"].extend(b"1234567890")
+        kwargs["_err"].extend(b"ABCDEFGHIJ")
+        res = MagicMock()
+        res.exit_code = 0
+        return res
 
-    async def _fill_buffers(pid, reader, buffer, **kwargs):
-        buffer.extend(b"1234567890")
+    mock_baked.side_effect = _simulate_run
 
-    with patch("asyncio.create_subprocess_exec", return_value=proc):
-        with patch.object(process_component, "_consume_stream", side_effect=_fill_buffers):
-            with patch("mcubridge.services.process.logger.warning") as mock_warn:
-                status_code, out, err, _ = await process_component.run_sync("cmd", ["cmd"])
-                assert len(out) == 5
-                assert len(err) == 5
-                assert any("truncated" in str(call) for call in mock_warn.call_args_list)
+    with patch("mcubridge.services.process.sh.Command", return_value=mock_cmd):
+        with patch("mcubridge.services.process.logger.warning") as mock_warn:
+            status_code, out, err, _ = await process_component.run_sync("cmd", ["cmd"])
+            assert len(out) == 5
+            assert len(err) == 5
+            assert any("truncated" in str(call) for call in mock_warn.call_args_list)
 
 
 @pytest.mark.asyncio

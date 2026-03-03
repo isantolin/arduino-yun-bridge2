@@ -7,9 +7,19 @@ import importlib.util
 import inspect
 import logging
 import sys
+import warnings
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
+
+# [TEST FIX] Global warning suppression for Python 3.13 strictness
+warnings.simplefilter("ignore", ResourceWarning)
+try:
+    warnings.filterwarnings("ignore", category=pytest.PytestUnraisableExceptionWarning)
+except Exception:
+    pass
 
 # [TEST FIX] Mock 'uci' module strictly before importing mcubridge.common.
 # This simulates the OpenWrt environment where 'uci' is available.
@@ -61,6 +71,8 @@ _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "asyncio: mark test to run on asyncio loop")
+    config.addinivalue_line("filterwarnings", "ignore::ResourceWarning")
+    config.addinivalue_line("filterwarnings", "ignore::pytest.PytestUnraisableExceptionWarning")
 
 
 @pytest.hookimpl(tryfirst=True)

@@ -33,26 +33,6 @@ def create_real_config():
 
 
 @pytest.mark.asyncio
-async def test_process_run_sync_exception_group_no_match():
-    config = create_real_config()
-    state = MagicMock()
-    comp = ProcessComponent(config, state, MagicMock())
-
-    mock_proc = MagicMock()
-    mock_proc.wait = AsyncMock()
-
-    with (
-        patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        patch(
-            "asyncio.TaskGroup.__aenter__",
-            side_effect=BaseExceptionGroup("Group", [BaseException("Literal")]),
-        ),
-    ):
-        with pytest.raises(BaseExceptionGroup):
-            await comp.run_sync("cmd", ["cmd"])
-
-
-@pytest.mark.asyncio
 async def test_process_collect_output_slot_changed():
     config = create_real_config()
     state = MagicMock()

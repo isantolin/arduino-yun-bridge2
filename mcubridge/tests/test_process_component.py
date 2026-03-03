@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
@@ -388,7 +388,7 @@ async def test_terminate_process_tree_kills_when_no_pid(
 async def test_run_sync_subprocess_oserror_returns_error(
     process_component: ProcessComponent,
 ) -> None:
-    with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
+    with patch("mcubridge.services.process.sh.Command", side_effect=OSError("bad")):
         status, stdout, stderr, exit_code = await process_component.run_sync("/bin/true", ["/bin/true"])
         assert status == Status.ERROR.value
         assert stdout == b""
@@ -402,38 +402,16 @@ async def test_run_sync_timeout_kills_process(
 ) -> None:
     process_component.state.process_timeout = 0.1
 
-    class _FakeStream:
-        async def read(self, _n: int) -> bytes:
-            await asyncio.sleep(0)
-            return b""
+    mock_cmd = MagicMock()
+    mock_bake = mock_cmd.bake.return_value
+    import sh
+    # sh.TimeoutException expects (full_cmd, timeout)
+    mock_bake.side_effect = sh.TimeoutException("sleep 10", 0.1)
 
-    class _FakeProc:
-        def __init__(self) -> None:
-            self.stdout = _FakeStream()
-            self.stderr = _FakeStream()
-            self.returncode: int | None = None
-            self.pid = 123
-            self._killed = False
-
-        async def wait(self) -> None:
-            # Keep running until killed, with a safety timeout for tests
-            for _ in range(50):  # Max 2.5s
-                if self._killed:
-                    break
-                await asyncio.sleep(0.05)
-            self.returncode = 9
-
-        def kill(self) -> None:
-            self._killed = True
-
-    fake_proc = _FakeProc()
-
-    with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
-        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-            status, _stdout, _stderr, exit_code = await process_component.run_sync("sleep", ["sleep"])
-            assert status == Status.TIMEOUT.value
-            assert exit_code == 9
-            mock_to_thread.assert_awaited()
+    with patch("mcubridge.services.process.sh.Command", return_value=mock_cmd):
+        status, _stdout, _stderr, exit_code = await process_component.run_sync("sleep", ["sleep"])
+        assert status == Status.TIMEOUT.value
+        assert exit_code is None
 
 
 @pytest.mark.asyncio

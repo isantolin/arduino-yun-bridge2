@@ -1015,6 +1015,8 @@ class RuntimeState(msgspec.Struct):
                 self.mailbox_queue.clear()
             if self.mailbox_incoming_queue:
                 self.mailbox_incoming_queue.clear()
+            if self.console_to_mcu_queue:
+                self.console_to_mcu_queue.clear()
 
             # Drain the MQTT queue instead of nullifying
             while not self.mqtt_publish_queue.empty():
@@ -1022,6 +1024,16 @@ class RuntimeState(msgspec.Struct):
                     self.mqtt_publish_queue.get_nowait()
                 except Exception:
                     break
+
+            # [SIL-2] Terminate all running processes to release pipes/sockets
+            if self.running_processes:
+                for slot in list(self.running_processes.values()):
+                    # Avoid creating mocks during cleanup if running_processes was mocked
+                    handle = getattr(slot, "handle", None)
+                    if handle:
+                        with contextlib.suppress(Exception):
+                            handle.terminate()
+
             self.serial_tx_allowed.clear()
             self.link_sync_event.clear()
             self.running_processes.clear()

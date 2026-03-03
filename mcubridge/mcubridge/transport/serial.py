@@ -170,7 +170,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
             logger.debug("Frame parse error: %s", exc)
             log_hexdump(logger, logging.DEBUG, "Corrupt Packet", packet_bytes)
             exc_str = str(exc).lower()
-            if "crc mismatch" in exc_str or "wrong checksum" in exc_str:
+            if any(s in exc_str for s in ("crc mismatch", "checksum", "wrong checksum")):
                 self.state.record_serial_crc_error()
         except OSError as exc:
             logger.error("OS error during packet processing: %s", exc)

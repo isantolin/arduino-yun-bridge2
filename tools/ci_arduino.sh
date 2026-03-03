@@ -22,6 +22,13 @@ echo "Installing arduino:avr core..."
 arduino-cli core install arduino:avr
 
 # Install dependencies
+echo "Generating protocol bindings..."
+python3 ./tools/protocol/generate.py \
+    --spec ./tools/protocol/spec.toml \
+    --py ./mcubridge/mcubridge/protocol/protocol.py \
+    --cpp ./mcubridge-library-arduino/src/protocol/rpc_protocol.h \
+    --cpp-structs ./mcubridge-library-arduino/src/protocol/rpc_structs.h
+
 echo "Installing libraries..."
 # Use our robust installer to ensure src/etl is populated correctly
 # for relative includes in Bridge.h

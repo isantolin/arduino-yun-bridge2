@@ -12,6 +12,13 @@ BUILD_DIR="${LIB_ROOT}/build-coverage"
 mkdir -p "${OUTPUT_ROOT}" "${BUILD_DIR}"
 
 # [SIL-2] Library Installation (Dependencies)
+echo "[coverage_arduino] Generating protocol bindings..."
+python3 "${ROOT_DIR}/tools/protocol/generate.py" \
+    --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
+    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "${SRC_ROOT}/protocol/rpc_protocol.h" \
+    --cpp-structs "${SRC_ROOT}/protocol/rpc_structs.h"
+
 "${ROOT_DIR}/tools/ci_arduino_host_tests.sh" --install-only
 
 # Sources to track for coverage
@@ -21,8 +28,6 @@ SOURCES=(
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
     "${SRC_ROOT}/protocol/rpc_cobs.cpp"
-    "${SRC_ROOT}/protocol/rpc_protocol.cpp"
-    "${SRC_ROOT}/protocol/rpc_structs.cpp"
     "${SRC_ROOT}/Bridge.cpp"
     "${SRC_ROOT}/services/Console.cpp"
     "${SRC_ROOT}/services/DataStore.cpp"

@@ -65,6 +65,7 @@ feeds/mcubridge
 feeds/mcubridge
 test_protocol_bin
 .VSCodeCounter/
-mcubridge-library-arduino/src/etl/
-mcubridge-library-arduino/tests/bridge_control_emulator
-mcubridge-library-arduino/tests/bridge_emulator
+# Auto-generated Protocol bindings
+mcubridge/mcubridge/protocol/protocol.py
+mcubridge-library-arduino/src/protocol/rpc_protocol.h
+mcubridge-library-arduino/src/protocol/rpc_structs.h

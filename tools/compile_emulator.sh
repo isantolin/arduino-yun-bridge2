@@ -24,6 +24,13 @@ if [ ! -d "${PACKETSERIAL_PATH}" ]; then
     PACKETSERIAL_PATH="/home/${CURRENT_USER}/Arduino/libraries/PacketSerial/src"
 fi
 
+echo "[emulator] Generating protocol bindings..."
+python3 "${ROOT_DIR}/tools/protocol/generate.py" \
+    --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
+    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
+    --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h"
+
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 \
@@ -37,8 +44,6 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/protocol/rle.cpp" \
     "${SRC_DIR}/protocol/rpc_cobs.cpp" \
-    "${SRC_DIR}/protocol/rpc_protocol.cpp" \
-    "${SRC_DIR}/protocol/rpc_structs.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \
@@ -61,8 +66,6 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/protocol/rle.cpp" \
     "${SRC_DIR}/protocol/rpc_cobs.cpp" \
-    "${SRC_DIR}/protocol/rpc_protocol.cpp" \
-    "${SRC_DIR}/protocol/rpc_structs.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \

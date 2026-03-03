@@ -178,7 +178,8 @@ echo "[INFO] Regenerating protocol files from spec..."
 python3 "$REPO_ROOT/tools/protocol/generate.py" \
     --spec "$REPO_ROOT/tools/protocol/spec.toml" \
     --py "$REPO_ROOT/mcubridge/mcubridge/protocol/protocol.py" \
-    --cpp "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_protocol.h" || exit 1
+    --cpp "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_protocol.h" \
+    --cpp-structs "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_structs.h" || exit 1
 
 # --- BOOTSTRAP PYTHON CHECKS ---
 auto_install_python_module() {

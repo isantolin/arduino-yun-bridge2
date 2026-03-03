@@ -11,9 +11,21 @@ BUILD_DIR="${LIB_DIR}/build-host-local"
 mkdir -p "${BUILD_DIR}"
 
 # [SIL-2] Ensure dependencies are present (ETL is required in src/etl)
+echo "[host-cpp] Generating protocol bindings..."
+python3 "${ROOT_DIR}/tools/protocol/generate.py" \
+    --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
+    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
+    --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h"
+
 echo "[host-cpp] Installing library dependencies..."
-DUMMY_ARDUINO_LIBS=$(mktemp -d)
+DUMMY_ARDUINO_LIBS=${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}
 "${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
+
+if [[ "${1:-}" == "--install-only" ]]; then
+    echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
+    exit 0
+fi
 
 SOURCES=(
     "${SRC_DIR}/security/sha256.cpp"

@@ -69,3 +69,4 @@ test_protocol_bin
 mcubridge/mcubridge/protocol/protocol.py
 mcubridge-library-arduino/src/protocol/rpc_protocol.h
 mcubridge-library-arduino/src/protocol/rpc_structs.h
+mcubridge-library-arduino/src/etl

@@ -25,7 +25,7 @@ before transmission.
 from __future__ import annotations
 
 import msgspec
-from construct import ConstructError, StreamError
+from construct import ConstructError, StreamError  # type: ignore
 from mcubridge.protocol.structures import FRAME_STRUCT
 
 from . import protocol
@@ -103,8 +103,8 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
             IndexError,
             msgspec.DecodeError,
             ConstructError,
-            StreamError,
-        ) as e:
+            StreamError,  # type: ignore
+        ) as e:  # type: ignore
             raise ValueError(f"Frame parsing failed: {e}") from e
 
         header = container.content.value.header

@@ -49,10 +49,14 @@ size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
         uint8_t code = *src_it++;
         if (code == 0) break;
 
-        for (uint8_t i = 1; i < code; ++i) {
-            if (src_it == src.end() || dst_it == dst.end()) return 0;
-            *dst_it++ = *src_it++;
+        uint8_t payload_len = code - 1;
+        if (static_cast<size_t>(etl::distance(src_it, src.end())) < payload_len ||
+            static_cast<size_t>(etl::distance(dst_it, dst.end())) < payload_len) {
+            return 0;
         }
+
+        dst_it = etl::copy_n(src_it, payload_len, dst_it);
+        src_it += payload_len;
 
         if (code < 0xFF && src_it != src.end()) {
             if (dst_it == dst.end()) return 0;

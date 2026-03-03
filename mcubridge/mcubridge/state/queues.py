@@ -13,7 +13,10 @@ logger = logging.getLogger("mcubridge.state.queues")
 
 
 class BoundedByteDeque:
-    """Deque that enforces both item-count and byte-length limits with zict backend."""
+    """Deque that enforces both item-count and byte-length limits with zict backend.
+
+    [SIL-2] Optimized for O(1) average case operations by tracking head/tail indices.
+    """
 
     def __init__(
         self,
@@ -23,8 +26,8 @@ class BoundedByteDeque:
         self.max_items = max_items
         self.max_bytes = max_bytes
         self._bytes = 0
-        self._head = 0
-        self._tail = 0
+        self._head = 0  # Index of the oldest item
+        self._tail = 0  # Index where the next item will be appended
         # Default to RAM-only until setup_persistence is called
         self._queue: MutableMapping[str, bytes] = {}
 
@@ -35,9 +38,16 @@ class BoundedByteDeque:
             path.mkdir(parents=True, exist_ok=True)
             slow = zict.File(str(path))
             self._queue = zict.Buffer(fast={}, slow=slow, n=ram_limit)
-            logger.info("Persistence enabled for console queue at %s (RAM limit: %d)", directory, ram_limit)
+            logger.info(
+                "Persistence enabled for console queue at %s (RAM limit: %d)",
+                directory,
+                ram_limit,
+            )
         except Exception as e:
-            logger.error("Failed to setup persistence for console queue: %s. Falling back to RAM.", e)
+            logger.error(
+                "Failed to setup persistence for console queue: %s. Falling back to RAM.",
+                e,
+            )
             self._queue = {}
 
     def __len__(self) -> int:
@@ -47,15 +57,27 @@ class BoundedByteDeque:
         return len(self._queue) > 0
 
     def __iter__(self) -> Iterator[bytes]:
-        # Return iterator over values in FIFO order (sorted keys)
-        for k in sorted(self._queue.keys(), key=int):
-            yield self._queue[k]
+        # Return iterator over values in FIFO order
+        for i in range(self._head, self._tail):
+            key = str(i)
+            if key in self._queue:
+                yield self._queue[key]
 
     def __getitem__(self, index: int) -> bytes:
-        # Note: This is O(N) because we need to sort keys to find the index.
-        # Mostly used for tests/debugging.
-        keys = sorted(self._queue.keys(), key=int)
-        return self._queue[keys[index]]
+        # Note: This is O(index) because we need to skip gaps from drops
+        if index < 0:
+            index += len(self._queue)
+        if index < 0 or index >= len(self._queue):
+            raise IndexError("deque index out of range")
+
+        count = 0
+        for i in range(self._head, self._tail):
+            key = str(i)
+            if key in self._queue:
+                if count == index:
+                    return self._queue[key]
+                count += 1
+        raise IndexError("deque index out of range")
 
     @property
     def bytes_used(self) -> int:
@@ -92,33 +114,40 @@ class BoundedByteDeque:
 
     def popleft(self) -> bytes:
         if not self._queue:
-            raise IndexError("popfrom an empty deque")
+            raise IndexError("pop from an empty deque")
 
-        # In FIFO mode, the oldest item is at self._head
-        keys = sorted(self._queue.keys(), key=int)
-        key = keys[0]
-        blob = self._queue.pop(key)
-        self._bytes -= len(blob)
+        while self._head < self._tail:
+            key = str(self._head)
+            if key in self._queue:
+                blob = self._queue.pop(key)
+                self._bytes -= len(blob)
+                self._head += 1
+                if not self._queue:
+                    self._head = 0
+                    self._tail = 0
+                return blob
+            self._head += 1
 
-        # If we emptied the queue, reset indices to prevent overflow over time
-        if not self._queue:
-            self._head = 0
-            self._tail = 0
-        return blob
+        self.clear()
+        raise IndexError("pop from an empty deque")
 
     def pop(self) -> bytes:
         if not self._queue:
             raise IndexError("pop from an empty deque")
 
-        keys = sorted(self._queue.keys(), key=int)
-        key = keys[-1]
-        blob = self._queue.pop(key)
-        self._bytes -= len(blob)
+        while self._tail > self._head:
+            self._tail -= 1
+            key = str(self._tail)
+            if key in self._queue:
+                blob = self._queue.pop(key)
+                self._bytes -= len(blob)
+                if not self._queue:
+                    self._head = 0
+                    self._tail = 0
+                return blob
 
-        if not self._queue:
-            self._head = 0
-            self._tail = 0
-        return blob
+        self.clear()
+        raise IndexError("pop from an empty deque")
 
     def extend(self, chunks: Iterable[bytes]) -> QueueEvent:
         event = QueueEvent()
@@ -163,20 +192,30 @@ class BoundedByteDeque:
         dropped_bytes = 0
 
         while self._queue and not self._can_fit(incoming_bytes, incoming_count):
-            # FIFO drop: remove the smallest key
-            keys = sorted(self._queue.keys(), key=int)
-            key = keys[0]
-            removed = self._queue.pop(key)
-            self._bytes -= len(removed)
-            dropped_chunks += 1
-            dropped_bytes += len(removed)
+            # FIFO drop: remove from head
+            while self._head < self._tail:
+                key = str(self._head)
+                if key in self._queue:
+                    removed = self._queue.pop(key)
+                    self._bytes -= len(removed)
+                    self._head += 1
+                    dropped_chunks += 1
+                    dropped_bytes += len(removed)
+                    break
+                self._head += 1
 
         return dropped_chunks, dropped_bytes
 
     def _can_fit(self, incoming_bytes: int, incoming_count: int) -> bool:
-        if self.max_items is not None and len(self._queue) + incoming_count > self.max_items:
+        if (
+            self.max_items is not None
+            and len(self._queue) + incoming_count > self.max_items
+        ):
             return False
-        if self.max_bytes is not None and self._bytes + incoming_bytes > self.max_bytes:
+        if (
+            self.max_bytes is not None
+            and self._bytes + incoming_bytes > self.max_bytes
+        ):
             return False
         return True
 

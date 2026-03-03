@@ -44,18 +44,30 @@ size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
   auto dst_it = dst.begin();
 
   while (src_it != src.end()) {
-    uint8_t current = *src_it++;
-    if (current == ESCAPE_BYTE) {
+    // Bulk copy literals until the next escape byte
+    auto next_escape = etl::find(src_it, src.end(), ESCAPE_BYTE);
+    size_t literal_len = etl::distance(src_it, next_escape);
+
+    if (static_cast<size_t>(etl::distance(dst_it, dst.end())) < literal_len) {
+      return 0;
+    }
+    dst_it = etl::copy(src_it, next_escape, dst_it);
+    src_it = next_escape;
+
+    if (src_it != src.end()) {
+      // Process Escape block
+      src_it++;  // Skip ESCAPE_BYTE
       if (etl::distance(src_it, src.end()) < 2) return 0;
+
       uint8_t count_m2 = *src_it++;
       uint8_t val = *src_it++;
-      size_t len = (count_m2 == 255) ? 1 : static_cast<size_t>(count_m2) + 2;
-      if (static_cast<size_t>(etl::distance(dst_it, dst.end())) < len) return 0;
-      etl::fill_n(dst_it, len, val);
-      dst_it += len;
-    } else {
-      if (dst_it == dst.end()) return 0;
-      *dst_it++ = current;
+      size_t run_len = (count_m2 == 255) ? 1 : static_cast<size_t>(count_m2) + 2;
+
+      if (static_cast<size_t>(etl::distance(dst_it, dst.end())) < run_len) {
+        return 0;
+      }
+      etl::fill_n(dst_it, run_len, val);
+      dst_it += run_len;
     }
   }
   return etl::distance(dst.begin(), dst_it);

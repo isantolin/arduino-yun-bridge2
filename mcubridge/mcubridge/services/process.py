@@ -12,6 +12,7 @@ from asyncio.subprocess import Process
 from contextlib import AsyncExitStack
 
 from transitions.core import MachineError
+import sh  # type: ignore
 import msgspec
 import psutil
 from construct import ConstructError
@@ -289,116 +290,50 @@ class ProcessComponent:
         return send_ack
 
     async def run_sync(self, command: str, tokens: list[str]) -> tuple[int, bytes, bytes, int | None]:
-        # Validation is done by caller via _prepare_command
+        """Execute a process synchronously (waiting for completion) with output capture and timeout.
+
+        [SIL-2] Improved robustness using 'sh' library for deterministic process orchestration.
+        """
+        timeout = self.state.process_timeout
+        stdout_buffer = bytearray()
+        stderr_buffer = bytearray()
+
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *tokens,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-        except OSError as exc:
+            # [SIL-2] Bake command and tokens for safe execution
+            cmd = sh.Command(tokens[0]).bake(*tokens[1:])  # type: ignore
+
+            # Execute in background mode to allow asynchronous waiting
+            proc = cmd(_out=stdout_buffer, _err=stderr_buffer, _timeout=timeout, _bg=True)  # type: ignore
+
+            # Wait for completion in a thread pool to avoid blocking the asyncio loop
+            await asyncio.to_thread(proc.wait)  # type: ignore
+
+            stdout_bytes, _ = self._limit_sync_payload(bytes(stdout_buffer))
+            stderr_bytes, _ = self._limit_sync_payload(bytes(stderr_buffer))
+
+            return Status.OK.value, stdout_bytes, stderr_bytes, proc.exit_code  # type: ignore
+
+        except sh.TimeoutException:  # type: ignore
+            # sh handles termination of the process tree on timeout
+            logger.warning("Synchronous command '%s' timed out after %s seconds", command, timeout)
+            stdout_bytes, _ = self._limit_sync_payload(bytes(stdout_buffer))
+            stderr_bytes, _ = self._limit_sync_payload(bytes(stderr_buffer))
+            return Status.TIMEOUT.value, stdout_bytes, stderr_bytes, None
+
+        except sh.ErrorReturnCode as e:  # type: ignore
+            # Process finished with non-zero exit code
+            stdout_bytes, _ = self._limit_sync_payload(bytes(stdout_buffer))
+            stderr_bytes, _ = self._limit_sync_payload(bytes(stderr_buffer))
+            return Status.OK.value, stdout_bytes, stderr_bytes, e.exit_code  # type: ignore
+
+        except (sh.CommandNotFound, OSError, ValueError, RuntimeError) as exc:  # type: ignore
+            logger.error("System error executing process command '%s': %s", command, exc)
             return (
                 Status.ERROR.value,
                 b"",
                 str(exc).encode("utf-8", errors="ignore"),
                 None,
             )
-        pid_hint = int(getattr(proc, "pid", 0) or 0)
-        stdout_buffer = bytearray()
-        stderr_buffer = bytearray()
-        timed_out = False
-
-        try:
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(
-                    self._consume_stream(
-                        pid_hint,
-                        proc.stdout,
-                        stdout_buffer,
-                    )
-                )
-                tg.create_task(
-                    self._consume_stream(
-                        pid_hint,
-                        proc.stderr,
-                        stderr_buffer,
-                    )
-                )
-                wait_task = tg.create_task(self._wait_for_sync_completion(proc, pid_hint))
-        except BaseExceptionGroup as exc_group:
-            matched, remainder = exc_group.split((OSError, RuntimeError, ValueError))
-            if matched is None:
-                raise
-            logger.error(
-                "IO Error interacting with process '%s': %s",
-                command,
-                matched,
-            )
-            await self._terminate_process_tree(proc)
-            try:
-                await proc.wait()
-            except (OSError, ValueError):
-                pass
-            if remainder is not None:
-                raise remainder
-            return Status.ERROR.value, b"", b"System IO error", None
-        except (OSError, RuntimeError, ValueError) as e:
-            logger.error(
-                "IO Error interacting with process '%s': %s",
-                command,
-                e,
-            )
-            await self._terminate_process_tree(proc)
-            try:
-                await proc.wait()
-            except (OSError, ValueError):
-                pass
-            return Status.ERROR.value, b"", b"System IO error", None
-
-        try:
-            timed_out = bool(wait_task.result())
-        except (OSError, ValueError, RuntimeError):
-            logger.debug("Failed to retrieve sync process wait result", exc_info=True)
-            timed_out = False
-
-        stdout_bytes = bytes(stdout_buffer)
-        stderr_bytes = bytes(stderr_buffer)
-        stdout_bytes, stdout_truncated = self._limit_sync_payload(stdout_bytes)
-        stderr_bytes, stderr_truncated = self._limit_sync_payload(stderr_bytes)
-        if stdout_truncated or stderr_truncated:
-            logger.warning(
-                "Synchronous command '%s' output truncated to %d bytes",
-                command,
-                self.state.process_output_limit,
-            )
-        status_value = Status.TIMEOUT.value if timed_out else Status.OK.value
-        return (
-            status_value,
-            stdout_bytes,
-            stderr_bytes,
-            proc.returncode,
-        )
-
-    async def _wait_for_sync_completion(self, proc: Process, pid_hint: int) -> bool:
-        timeout = self.state.process_timeout
-        if timeout <= 0:
-            await proc.wait()
-            return False
-        try:
-            async with asyncio.timeout(timeout):
-                await proc.wait()
-            return False
-        except TimeoutError:
-            await self._terminate_process_tree(proc)
-            try:
-                async with asyncio.timeout(PROCESS_SYNC_KILL_WAIT_TIMEOUT):
-                    await proc.wait()
-            except TimeoutError:
-                logger.warning(
-                    "Synchronous process PID %d did not exit after kill",
-                    pid_hint,
-                )
-            return True
 
     async def start_async(self, command: str, tokens: list[str]) -> int:
         # Validation is done by caller via _prepare_command

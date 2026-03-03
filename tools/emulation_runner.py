@@ -209,52 +209,81 @@ def setup_emulation_processes(
         bufsize=0,
     )
 
+    import threading
+
+    serial_bridge_ready = threading.Event()
+
     def _serial_bridge():
+        import errno
         import select
 
         pty_open_timeout_s = 10.0
         start = time.monotonic()
-        pty_handle = None
-
-        # Avoid race condition: socat may not have created /tmp/ttyBRIDGE1 yet.
-        while mcu_proc.poll() is None and pty_handle is None:
-            try:
-                pty_handle = open(SOCAT_PORT1, "r+b", buffering=0)
-            except OSError:
-                if time.monotonic() - start >= pty_open_timeout_s:
-                    logger.error("Serial bridge failed: %s was not ready in %.1fs", SOCAT_PORT1, pty_open_timeout_s)
-                    return
-                time.sleep(0.05)
-
-        if pty_handle is None:
-            logger.error("Serial bridge aborted: MCU process exited before PTY was ready.")
+        mcu_out = mcu_proc.stdout
+        mcu_in = mcu_proc.stdin
+        if mcu_out is None or mcu_in is None:
+            state.errors_detected.append("serial bridge aborted: missing MCU stdio")
             return
 
-        try:
-            with pty_handle as pty:
-                mcu_out = mcu_proc.stdout
-                mcu_in = mcu_proc.stdin
-                if mcu_out is None or mcu_in is None:
-                    return
-                # Use raw file descriptors for maximum transparency
-                pty_fd = pty.fileno()
-                out_fd = mcu_out.fileno()
-                in_fd = mcu_in.fileno()
+        out_fd = mcu_out.fileno()
+        in_fd = mcu_in.fileno()
 
-                while mcu_proc.poll() is None:
-                    r, _, _ = select.select([pty_fd, out_fd], [], [], 0.05)
-                    if pty_fd in r:
-                        data = os.read(pty_fd, 1024)
-                        if data:
-                            os.write(in_fd, data)
-                    if out_fd in r:
-                        data = os.read(out_fd, 1024)
-                        if data:
-                            os.write(pty_fd, data)
-        except Exception as e:
-            logger.debug("Serial bridge thread exiting: %s", e)
+        # Keep the bridge alive for the full emulator lifecycle.
+        while mcu_proc.poll() is None:
+            pty_handle = None
+            while mcu_proc.poll() is None and pty_handle is None:
+                try:
+                    pty_handle = open(SOCAT_PORT1, "r+b", buffering=0)
+                    serial_bridge_ready.set()
+                except OSError:
+                    if time.monotonic() - start >= pty_open_timeout_s:
+                        message = f"Serial bridge failed: {SOCAT_PORT1} was not ready in {pty_open_timeout_s:.1f}s"
+                        logger.error(message)
+                        state.errors_detected.append(message)
+                        return
+                    time.sleep(0.05)
+
+            if pty_handle is None:
+                message = "Serial bridge aborted: MCU process exited before PTY was ready."
+                logger.error(message)
+                state.errors_detected.append(message)
+                return
+
+            try:
+                with pty_handle as pty:
+                    pty_fd = pty.fileno()
+                    while mcu_proc.poll() is None:
+                        r, _, _ = select.select([pty_fd, out_fd], [], [], 0.05)
+                        if pty_fd in r:
+                            data = os.read(pty_fd, 1024)
+                            if data:
+                                os.write(in_fd, data)
+                        if out_fd in r:
+                            data = os.read(out_fd, 1024)
+                            if data:
+                                os.write(pty_fd, data)
+            except OSError as e:
+                # Recover from transient PTY resets/hangups in CI.
+                if e.errno in (errno.EIO, errno.EBADF):
+                    logger.warning("Serial bridge transient PTY error (%s). Reopening %s...", e, SOCAT_PORT1)
+                    time.sleep(0.05)
+                    continue
+                message = f"Serial bridge I/O failure: {e}"
+                logger.error(message)
+                state.errors_detected.append(message)
+                return
+            except Exception as e:
+                message = f"Serial bridge thread exiting: {e}"
+                logger.error(message)
+                state.errors_detected.append(message)
+                return
 
     _start_worker_thread(_serial_bridge, "serial-bridge")
+
+    if not serial_bridge_ready.wait(timeout=10.0):
+        message = f"Serial bridge was not ready before daemon startup ({SOCAT_PORT1})"
+        logger.error(message)
+        state.errors_detected.append(message)
 
     def _mcu_stderr_worker():
         if mcu_proc.stderr:

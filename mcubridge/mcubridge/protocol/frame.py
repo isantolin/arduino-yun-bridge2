@@ -95,7 +95,16 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
         try:
             container = FRAME_STRUCT.parse(data_bytes)
-        except (ValueError, TypeError, AttributeError, KeyError, IndexError, msgspec.DecodeError, ConstructError, StreamError) as e:
+        except (
+            ValueError,
+            TypeError,
+            AttributeError,
+            KeyError,
+            IndexError,
+            msgspec.DecodeError,
+            ConstructError,
+            StreamError,
+        ) as e:
             raise ValueError(f"Frame parsing failed: {e}") from e
 
         header = container.content.value.header

@@ -318,24 +318,21 @@ class SerialTransport:
         """Callback when leaving any active state."""
         self.state.serial_writer = None
 
+    @tenacity.retry(
+        retry=tenacity.retry_if_not_exception_type((SerialHandshakeFatal, asyncio.CancelledError)),
+        wait=tenacity.wait_exponential(multiplier=1, min=1, max=60) + tenacity.wait_random(0, 1),
+        before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
+    async def _retryable_run(self, loop: asyncio.AbstractEventLoop) -> None:
+        if self._stop_event.is_set():
+            return
+        await self._connect_and_run(loop)
+
     async def run(self) -> None:
-        reconnect_delay = max(1, self.config.reconnect_delay)
         loop = asyncio.get_running_loop()
-
-        # [SIL-2] Exponential backoff with jitter for link robustness
-        retryer = tenacity.AsyncRetrying(
-            retry=tenacity.retry_if_not_exception_type((SerialHandshakeFatal, asyncio.CancelledError)),
-            wait=tenacity.wait_exponential(multiplier=1, min=reconnect_delay, max=60) + tenacity.wait_random(0, 1),
-            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-            reraise=True,
-        )
-
         try:
-            async for attempt in retryer:
-                with attempt:
-                    if self._stop_event.is_set():
-                        return
-                    await self._connect_and_run(loop)
+            await self._retryable_run(loop)
         except SerialHandshakeFatal:
             logger.critical("Serial Handshake Fatal Error - Giving up.")
             raise

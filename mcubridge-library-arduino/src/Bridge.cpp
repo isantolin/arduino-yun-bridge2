@@ -8,6 +8,7 @@
 #include <Arduino.h>
 #include <etl/numeric.h>
 #include <etl/span.h>
+#include <etl/bitset.h>
 
 // --- [SAFETY GUARD START] ---
 // CRITICAL: Prevent accidental standard STL usage on ALL architectures (memory
@@ -481,49 +482,50 @@ void BridgeClass::_handleGetCapabilities(
     ana = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
 #endif
 
-    uint32_t features = rpc::RPC_CAPABILITY_RLE;
-    if (kBridgeEnableWatchdog) features |= rpc::RPC_CAPABILITY_WATCHDOG;
+    etl::bitset<32> features;
+    features.set(0); // RLE Bit (1 << 0) - Always enabled
+    if (kBridgeEnableWatchdog) features.set(1); // Watchdog Bit (1 << 1)
 
 #if BRIDGE_DEBUG_FRAMES
-    features |= rpc::RPC_CAPABILITY_DEBUG_FRAMES;
+    features.set(2);
 #endif
 #if BRIDGE_DEBUG_IO
-    features |= rpc::RPC_CAPABILITY_DEBUG_IO;
+    features.set(3);
 #endif
 #if defined(E2END) && (E2END > 0)
-    features |= rpc::RPC_CAPABILITY_EEPROM;
+    features.set(4);
 #endif
 #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
     defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||     \
     defined(ARDUINO_ARCH_ESP32)
-    features |= rpc::RPC_CAPABILITY_DAC;
+    features.set(5);
 #endif
 #if defined(HAVE_HWSERIAL1)
-    features |= rpc::RPC_CAPABILITY_HW_SERIAL1;
+    features.set(6);
 #endif
 #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
-    features |= rpc::RPC_CAPABILITY_FPU;
+    features.set(7);
 #endif
 #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||      \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
     defined(ARDUINO_ARCH_RP2040)
-    features |= rpc::RPC_CAPABILITY_LOGIC_3V3;
+    features.set(8);
 #endif
 #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
-    features |= rpc::RPC_CAPABILITY_BIG_BUFFER;
+    features.set(9);
 #endif
 #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-    features |= rpc::RPC_CAPABILITY_I2C;
+    features.set(10);
 #endif
 #if defined(SCK) || defined(MOSI) || defined(MISO) || \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-    features |= rpc::RPC_CAPABILITY_SPI;
+    features.set(11);
 #endif
 
     _sendResponse<rpc::payload::Capabilities>(
         rpc::CommandId::CMD_GET_CAPABILITIES_RESP, rpc::PROTOCOL_VERSION, arch,
-        dig, ana, features);
+        dig, ana, static_cast<uint32_t>(features.to_ulong()));
   }
 }
 

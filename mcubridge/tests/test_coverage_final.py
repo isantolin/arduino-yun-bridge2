@@ -9,7 +9,7 @@ import psutil
 import pytest
 import tenacity
 from mcubridge import metrics
-from mcubridge.protocol.protocol import INVALID_ID_SENTINEL, Command, FileAction, Status
+from mcubridge.protocol.protocol import INVALID_ID_SENTINEL, Command, FileAction
 from mcubridge.services.file import FileComponent, _do_write_file
 from mcubridge.services.handshake import (
     SerialHandshakeManager,

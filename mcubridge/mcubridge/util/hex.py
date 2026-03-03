@@ -14,7 +14,8 @@ def format_hex(data: bytes | bytearray | memoryview | Iterable[int]) -> str:
     if not data:
         return "[]"
 
-    # Efficient conversion using f-strings
+    # [SIL-2] Efficient conversion using f-strings for deterministic performance.
+    # Note: Using native Python loop as it is faster than rich overhead for simple hexdumps in syslog.
     return f"[{' '.join(f'{b:02X}' for b in data)}]"
 
 

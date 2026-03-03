@@ -68,7 +68,7 @@ async def test_run_sync_no_timeout_waits_for_process(
     process_component: ProcessComponent,
 ) -> None:
     process_component.state.process_timeout = 0
-    
+
     mock_cmd = MagicMock()
     mock_proc = mock_cmd.return_value
     mock_proc.exit_code = 0
@@ -86,7 +86,7 @@ async def test_run_sync_sh_error_returns_ok_with_exit_code(
     # Simulate sh.ErrorReturnCode
     import sh
     mock_cmd = MagicMock()
-    
+
     # We need to mock sh.ErrorReturnCode because it's hard to instantiate
     class FakeErrorReturnCode(sh.ErrorReturnCode):
         def __init__(self):
@@ -110,11 +110,11 @@ async def test_run_sync_truncates_output(
 ) -> None:
     # This tests the truncation warning log
     process_component.state.process_output_limit = 5
-    
+
     mock_cmd = MagicMock()
     mock_baked = MagicMock()
     mock_cmd.bake.return_value = mock_baked
-    
+
     # Simulate output by filling the buffers passed to sh
     def _simulate_run(*args, **kwargs):
         kwargs["_out"].extend(b"1234567890")

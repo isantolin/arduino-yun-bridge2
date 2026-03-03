@@ -575,6 +575,8 @@ class RuntimeState(msgspec.Struct):
             max_items=None,
             max_bytes=self.console_queue_limit_bytes,
         )
+        if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
+            self.console_to_mcu_queue.setup_persistence(Path(self.file_system_root) / "console")
 
         # [SIL-2] Initialize Mailbox Queues with zict for automatic RAM/Disk management
         # We use a 20% RAM / 80% Disk split for safety.

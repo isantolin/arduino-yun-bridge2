@@ -2,33 +2,60 @@
 
 from __future__ import annotations
 
-from collections import deque
-from collections.abc import Iterable, Iterator
-from typing import Annotated
+import logging
+from collections.abc import Iterable, Iterator, MutableMapping
+from pathlib import Path
 
-import msgspec
+import zict
 from mcubridge.protocol.structures import QueueEvent
 
+logger = logging.getLogger("mcubridge.state.queues")
 
-class BoundedByteDeque(msgspec.Struct):
-    """Deque that enforces both item-count and byte-length limits."""
 
-    max_items: Annotated[int | None, msgspec.Meta(ge=0)] = None
-    max_bytes: Annotated[int | None, msgspec.Meta(ge=0)] = None
-    _queue: deque[bytes] = msgspec.field(default_factory=lambda: deque[bytes]())
-    _bytes: int = 0
+class BoundedByteDeque:
+    """Deque that enforces both item-count and byte-length limits with zict backend."""
+
+    def __init__(
+        self,
+        max_items: int | None = None,
+        max_bytes: int | None = None,
+    ) -> None:
+        self.max_items = max_items
+        self.max_bytes = max_bytes
+        self._bytes = 0
+        self._head = 0
+        self._tail = 0
+        # Default to RAM-only until setup_persistence is called
+        self._queue: MutableMapping[str, bytes] = {}
+
+    def setup_persistence(self, directory: str | Path, ram_limit: int = 100) -> None:
+        """Enable hybrid RAM/Disk storage for the deque."""
+        try:
+            path = Path(directory)
+            path.mkdir(parents=True, exist_ok=True)
+            slow = zict.File(str(path))
+            self._queue = zict.Buffer(fast={}, slow=slow, n=ram_limit)
+            logger.info("Persistence enabled for console queue at %s (RAM limit: %d)", directory, ram_limit)
+        except Exception as e:
+            logger.error("Failed to setup persistence for console queue: %s. Falling back to RAM.", e)
+            self._queue = {}
 
     def __len__(self) -> int:
         return len(self._queue)
 
     def __bool__(self) -> bool:
-        return bool(self._queue)
+        return len(self._queue) > 0
 
     def __iter__(self) -> Iterator[bytes]:
-        return iter(self._queue)
+        # Return iterator over values in FIFO order (sorted keys)
+        for k in sorted(self._queue.keys(), key=int):
+            yield self._queue[k]
 
     def __getitem__(self, index: int) -> bytes:
-        return self._queue[index]
+        # Note: This is O(N) because we need to sort keys to find the index.
+        # Mostly used for tests/debugging.
+        keys = sorted(self._queue.keys(), key=int)
+        return self._queue[keys[index]]
 
     @property
     def bytes_used(self) -> int:
@@ -41,6 +68,8 @@ class BoundedByteDeque(msgspec.Struct):
     def clear(self) -> None:
         self._queue.clear()
         self._bytes = 0
+        self._head = 0
+        self._tail = 0
 
     def update_limits(
         self,
@@ -62,13 +91,33 @@ class BoundedByteDeque(msgspec.Struct):
         return self._push(chunk, left=True)
 
     def popleft(self) -> bytes:
-        blob = self._queue.popleft()
+        if not self._queue:
+            raise IndexError("popfrom an empty deque")
+
+        # In FIFO mode, the oldest item is at self._head
+        keys = sorted(self._queue.keys(), key=int)
+        key = keys[0]
+        blob = self._queue.pop(key)
         self._bytes -= len(blob)
+
+        # If we emptied the queue, reset indices to prevent overflow over time
+        if not self._queue:
+            self._head = 0
+            self._tail = 0
         return blob
 
     def pop(self) -> bytes:
-        blob = self._queue.pop()
+        if not self._queue:
+            raise IndexError("pop from an empty deque")
+
+        keys = sorted(self._queue.keys(), key=int)
+        key = keys[-1]
+        blob = self._queue.pop(key)
         self._bytes -= len(blob)
+
+        if not self._queue:
+            self._head = 0
+            self._tail = 0
         return blob
 
     def extend(self, chunks: Iterable[bytes]) -> QueueEvent:
@@ -98,9 +147,13 @@ class BoundedByteDeque(msgspec.Struct):
             return event
 
         if left:
-            self._queue.appendleft(data)
+            self._head -= 1
+            key = str(self._head)
         else:
-            self._queue.append(data)
+            key = str(self._tail)
+            self._tail += 1
+
+        self._queue[key] = data
         self._bytes += len(data)
         event.accepted = True
         return event
@@ -110,7 +163,10 @@ class BoundedByteDeque(msgspec.Struct):
         dropped_bytes = 0
 
         while self._queue and not self._can_fit(incoming_bytes, incoming_count):
-            removed = self._queue.popleft()
+            # FIFO drop: remove the smallest key
+            keys = sorted(self._queue.keys(), key=int)
+            key = keys[0]
+            removed = self._queue.pop(key)
             self._bytes -= len(removed)
             dropped_chunks += 1
             dropped_bytes += len(removed)

@@ -49,7 +49,7 @@ MQTT_TLS_INSECURE = _UCI_GENERAL.get("mqtt_tls_insecure") or "0"
 
 
 def _default_tls_context() -> ssl.SSLContext | None:
-    mqtt_tls = _UCI_GENERAL.get("mqtt_tls", "1")
+    mqtt_tls = _UCI_GENERAL.get("mqtt_tls", "0")
     if str(mqtt_tls).strip() not in {"1", "true", "yes", "on"}:
         return None
     try:
@@ -137,17 +137,13 @@ class Bridge:
         if self._client is not None:
             await self.disconnect()
 
-        # [Local E2E Fix] Use MQTT v3.1.1 for better compatibility with local brokers
-        # while keeping MQTT v5 as the target for production.
-        protocol_ver = ProtocolVersion.V311 if self.host in {"127.0.0.1", "localhost"} else ProtocolVersion.V5
-
         self._client = Client(
             hostname=self.host,
             port=self.port,
             username=self.username,
             password=self.password,
             logger=logging.getLogger("mcubridge.examples.bridge"),
-            protocol=protocol_ver,
+            protocol=ProtocolVersion.V5,
             tls_context=self.tls_context,
         )
         await self._exit_stack.enter_async_context(self._client)

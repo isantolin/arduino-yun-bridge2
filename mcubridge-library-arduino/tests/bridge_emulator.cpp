@@ -17,8 +17,12 @@ using namespace rpc;
 
 class HostSerialStream : public Stream {
  public:
-  size_t write(uint8_t c) override { return ::write(STDOUT_FILENO, &c, 1); }
+  size_t write(uint8_t c) override { 
+    fprintf(stderr, "[MCU -> SERIAL] %02X\n", c);
+    return ::write(STDOUT_FILENO, &c, 1); 
+  }
   size_t write(const uint8_t* buffer, size_t size) override {
+    for(size_t i=0; i<size; i++) fprintf(stderr, "[MCU -> SERIAL] %02X\n", buffer[i]);
     return ::write(STDOUT_FILENO, buffer, size);
   }
   int available() override {
@@ -29,7 +33,10 @@ class HostSerialStream : public Stream {
   }
   int read() override {
     uint8_t c;
-    if (::read(STDIN_FILENO, &c, 1) == 1) return c;
+    if (::read(STDIN_FILENO, &c, 1) == 1) {
+      fprintf(stderr, "[SERIAL -> MCU] %02X\n", c);
+      return c;
+    }
     return -1;
   }
   int peek() override { return -1; }

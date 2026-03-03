@@ -972,19 +972,33 @@ bool BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
   return true;
 }
 bool BridgeClass::_isHandshakeCommand(uint16_t command_id) const {
-  // [SIL-2] Protocol Security: Only allow specific commands during pre-sync
-  // phase. Status codes (errors/acks) and System commands (sync/reset) are
-  // allowed.
-  return (command_id >= rpc::RPC_STATUS_CODE_MIN &&
-          command_id <= rpc::RPC_STATUS_CODE_MAX) ||
-         (command_id >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-          command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
-         (command_id ==
-          rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP)) ||
-         (command_id ==
-          rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC_RESP)) ||
-         (command_id ==
-          rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP));
+  // [SIL-2] Protocol Security: Only allow specific commands during pre-sync phase.
+  
+  // Define allowed ranges
+  struct Range { uint16_t min; uint16_t max; };
+  static constexpr Range allowed_ranges[] = {
+      {rpc::RPC_STATUS_CODE_MIN, rpc::RPC_STATUS_CODE_MAX},
+      {rpc::RPC_SYSTEM_COMMAND_MIN, rpc::RPC_SYSTEM_COMMAND_MAX}
+  };
+  
+  // Define specific allowed IDs
+  static constexpr uint16_t allowed_ids[] = {
+      rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP),
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC_RESP),
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP)
+  };
+
+  // Check if command is in any allowed range using ETL algorithms
+  if (etl::any_of(etl::begin(allowed_ranges), etl::end(allowed_ranges),
+                  [command_id](const Range& r) {
+                    return command_id >= r.min && command_id <= r.max;
+                  })) {
+    return true;
+  }
+
+  // Check if command matches any specific allowed ID using ETL algorithms
+  return etl::any_of(etl::begin(allowed_ids), etl::end(allowed_ids),
+                     [command_id](uint16_t id) { return id == command_id; });
 }
 
 bool BridgeClass::_sendFrame(uint16_t command_id,
@@ -1242,25 +1256,23 @@ void BridgeClass::_applyTimingConfig(etl::span<const uint8_t> payload) {
   uint16_t ack_timeout_ms = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
   uint8_t retry_limit = rpc::RPC_DEFAULT_RETRY_LIMIT;
   uint32_t response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
+
   if (!payload.empty() && payload.size() >= rpc::payload::HandshakeConfig::SIZE) {
     auto config = rpc::payload::HandshakeConfig::parse(payload.data());
-    ack_timeout_ms = config.ack_timeout_ms;
-    retry_limit = config.ack_retry_limit;
-    response_timeout_ms = config.response_timeout_ms;
+    ack_timeout_ms = etl::clamp(config.ack_timeout_ms, 
+                                static_cast<uint16_t>(rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS),
+                                static_cast<uint16_t>(rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS));
+    retry_limit = etl::clamp(config.ack_retry_limit,
+                             static_cast<uint8_t>(rpc::RPC_HANDSHAKE_RETRY_LIMIT_MIN),
+                             static_cast<uint8_t>(rpc::RPC_HANDSHAKE_RETRY_LIMIT_MAX));
+    response_timeout_ms = etl::clamp(config.response_timeout_ms,
+                                     rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
+                                     rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS);
   }
-  _ack_timeout_ms = (ack_timeout_ms >= rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS &&
-                     ack_timeout_ms <= rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS)
-                        ? ack_timeout_ms
-                        : rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
-  _ack_retry_limit = (retry_limit >= rpc::RPC_HANDSHAKE_RETRY_LIMIT_MIN &&
-                      retry_limit <= rpc::RPC_HANDSHAKE_RETRY_LIMIT_MAX)
-                         ? retry_limit
-                         : rpc::RPC_DEFAULT_RETRY_LIMIT;
-  _response_timeout_ms =
-      (response_timeout_ms >= rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS &&
-       response_timeout_ms <= rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)
-          ? response_timeout_ms
-          : rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
+
+  _ack_timeout_ms = ack_timeout_ms;
+  _ack_retry_limit = retry_limit;
+  _response_timeout_ms = response_timeout_ms;
 }
 
 bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {

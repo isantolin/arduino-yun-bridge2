@@ -80,7 +80,7 @@ def main(
     user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
     password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
     tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = False,
-    max_polls: Annotated[int, typer.Option(help="Max poll cycles (0 = unlimited)")] = 0,
+    max_polls: Annotated[int, typer.Option(help="Max poll cycles (0 = unlimited)")] = 1,
 ) -> None:
     try:
         asyncio.run(run_test(host, port, user, password, tls_insecure, max_polls))

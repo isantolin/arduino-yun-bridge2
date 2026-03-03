@@ -212,8 +212,26 @@ def setup_emulation_processes(
     def _serial_bridge():
         import select
 
+        pty_open_timeout_s = 10.0
+        start = time.monotonic()
+        pty_handle = None
+
+        # Avoid race condition: socat may not have created /tmp/ttyBRIDGE1 yet.
+        while mcu_proc.poll() is None and pty_handle is None:
+            try:
+                pty_handle = open(SOCAT_PORT1, "r+b", buffering=0)
+            except OSError:
+                if time.monotonic() - start >= pty_open_timeout_s:
+                    logger.error("Serial bridge failed: %s was not ready in %.1fs", SOCAT_PORT1, pty_open_timeout_s)
+                    return
+                time.sleep(0.05)
+
+        if pty_handle is None:
+            logger.error("Serial bridge aborted: MCU process exited before PTY was ready.")
+            return
+
         try:
-            with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
+            with pty_handle as pty:
                 mcu_out = mcu_proc.stdout
                 mcu_in = mcu_proc.stdin
                 if mcu_out is None or mcu_in is None:

@@ -6,7 +6,7 @@
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
-FileSystemClass::FileSystemClass() {}
+FileSystemClass::FileSystemClass() = default;
 
 void FileSystemClass::write(etl::string_view filePath,
                             etl::span<const uint8_t> data) {

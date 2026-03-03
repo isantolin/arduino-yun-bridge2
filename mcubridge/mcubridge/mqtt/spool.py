@@ -64,7 +64,7 @@ class MQTTPublishSpool:
                     zict.File(str(self.directory)),
                 )
                 self._fallback_active = False
-            except Exception as exc:
+            except (OSError, ImportError, ValueError, msgspec.DecodeError) as exc:
                 logger.warning("Failed to initialize disk spool: %s. Falling back to RAM-only.", exc)
                 self._slow = {}
                 self._fallback_active = True
@@ -120,7 +120,7 @@ class MQTTPublishSpool:
             try:
                 self._spool[key] = record
                 self._tail += 1
-            except Exception as exc:
+            except (OSError, ValueError, TypeError) as exc:
                 # [SIL-2] Fail-Operational: If disk fails during append, switch to memory mode
                 if not self._fallback_active:
                     logger.error("MQTT spool disk error during append: %s. Switching to memory-only.", exc)
@@ -148,7 +148,7 @@ class MQTTPublishSpool:
                     return QueuedPublish.from_record(record)
                 except KeyError:
                     self._head += 1  # Skip gaps
-                except Exception as exc:
+                except (OSError, ValueError, msgspec.DecodeError) as exc:
                     logger.warning("Dropping corrupt spool entry %s: %s", key, exc)
                     self._corrupt_dropped += 1
                     self._head += 1

@@ -6,18 +6,13 @@
 
 from __future__ import annotations
 
+import sh
 import json
 import os
 import sys
 import time
 from pathlib import Path
 from typing import Any
-
-try:
-    import sh
-except ImportError:
-    sys.stderr.write("[mcubridge-hw-smoke] ERROR: 'sh' library is required. Install 'python3-sh'.\n")
-    sys.exit(1)
 
 STATUS_FILE = Path("/tmp/mcubridge_status.json")
 
@@ -106,14 +101,11 @@ def main() -> None:
         sys.stdout.write(output.stdout.decode() + "\n")
         sys.stderr.write("[mcubridge-hw-smoke] Smoke test completed successfully.\n")
 
-    except sh.TimeoutException:
+    except (sh.TimeoutException, TimeoutError):
         sys.stderr.write("[mcubridge-hw-smoke] ERROR: Did not receive response from daemon (Timeout).\n")
         sys.exit(1)
-    except sh.ErrorReturnCode as e:
-        sys.stderr.write(f"[mcubridge-hw-smoke] ERROR: MQTT tool failed: {e.stderr.decode()}\n")
-        sys.exit(1)
-    except Exception as e:
-        sys.stderr.write(f"[mcubridge-hw-smoke] FATAL ERROR: {e}\n")
+    except (sh.ErrorReturnCode, OSError, ValueError) as e:
+        sys.stderr.write(f"[mcubridge-hw-smoke] ERROR: System or tool failed: {e}\n")
         sys.exit(1)
 
 if __name__ == "__main__":

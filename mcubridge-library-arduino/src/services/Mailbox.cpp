@@ -5,7 +5,7 @@
 
 #if BRIDGE_ENABLE_MAILBOX
 
-MailboxClass::MailboxClass() {}
+MailboxClass::MailboxClass() = default;
 
 void MailboxClass::send(etl::string_view message) {
   if (message.empty()) return;

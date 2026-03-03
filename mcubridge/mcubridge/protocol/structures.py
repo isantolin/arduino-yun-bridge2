@@ -116,7 +116,7 @@ class BaseStruct(msgspec.Struct, frozen=True):
                 container: Any = decoder.parse(b_data, command_id=command_id)
             else:
                 container = cls.SCHEMA.parse(b_data)
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, KeyError, IndexError, ConstructError, msgspec.DecodeError) as e:
             raise ConstructError(str(e)) from e
         return msgspec.convert(container, cls)
 

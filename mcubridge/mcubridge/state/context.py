@@ -141,8 +141,8 @@ class ManagedProcess:
     pid: int
     command: str = ""
     handle: Any | None = None
-    stdout_buffer: bytearray = field(default_factory=bytearray)
-    stderr_buffer: bytearray = field(default_factory=bytearray)
+    stdout_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
+    stderr_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
     exit_code: int | None = None
     io_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     fsm_state: str = PROCESS_STATE_STARTING
@@ -183,12 +183,29 @@ class ManagedProcess:
         *,
         limit: int,
     ) -> tuple[bool, bool]:
-        truncated_stdout = _append_with_limit(self.stdout_buffer, stdout_chunk, limit)
-        truncated_stderr = _append_with_limit(self.stderr_buffer, stderr_chunk, limit)
-        return truncated_stdout, truncated_stderr
+        if stdout_chunk:
+            self.stdout_buffer.extend(stdout_chunk)
+        if stderr_chunk:
+            self.stderr_buffer.extend(stderr_chunk)
+        return False, False
 
     def pop_payload(self, budget: int) -> tuple[bytes, bytes, bool, bool]:
-        return _trim_process_buffers(self.stdout_buffer, self.stderr_buffer, budget)
+        out_bytes = bytes(self.stdout_buffer)
+        err_bytes = bytes(self.stderr_buffer)
+        
+        out_len = min(len(out_bytes), budget)
+        stdout_chunk = out_bytes[:out_len]
+        
+        remaining = budget - out_len
+        err_len = min(len(err_bytes), remaining)
+        stderr_chunk = err_bytes[:err_len]
+
+        for _ in range(out_len):
+            self.stdout_buffer.popleft()
+        for _ in range(err_len):
+            self.stderr_buffer.popleft()
+
+        return stdout_chunk, stderr_chunk, bool(self.stdout_buffer), bool(self.stderr_buffer)
 
     def is_drained(self) -> bool:
         # [FSM] Must be in FINISHED/ZOMBIE state to be drained
@@ -197,75 +214,11 @@ class ManagedProcess:
         return not self.stdout_buffer and not self.stderr_buffer
 
 
-def _append_with_limit(buffer: bytearray, chunk: bytes, limit: int) -> bool:
-    if not chunk:
-        return False
-    buffer.extend(chunk)
-    if limit <= 0 or len(buffer) <= limit:
-        return False
-    excess = len(buffer) - limit
-    del buffer[:excess]
-    return True
-
-
-def _trim_process_buffers(
-    stdout_buffer: bytearray,
-    stderr_buffer: bytearray,
-    budget: int,
-) -> tuple[bytes, bytes, bool, bool]:
-    stdout_len = min(len(stdout_buffer), budget)
-    stdout_chunk = bytes(stdout_buffer[:stdout_len])
-    del stdout_buffer[:stdout_len]
-
-    remaining = budget - len(stdout_chunk)
-    stderr_len = min(len(stderr_buffer), remaining)
-    stderr_chunk = bytes(stderr_buffer[:stderr_len])
-    del stderr_buffer[:stderr_len]
-
-    truncated_out = bool(stdout_buffer)
-    truncated_err = bool(stderr_buffer)
-    return stdout_chunk, stderr_chunk, truncated_out, truncated_err
-
-
 def collect_system_metrics() -> dict[str, Any]:
-    """Collect system-level metrics using psutil."""
+    """Collect system-level metrics using native library conversions."""
     result: dict[str, Any] = {}
-    try:
-        proc = psutil.Process()
-        with proc.oneshot():
-            # CPU metrics (non-blocking, percentage since last call)
-            result["cpu_percent"] = psutil.cpu_percent(interval=None)
-            result["cpu_count"] = psutil.cpu_count() or 1
-
-            # Memory metrics
-            mem = psutil.virtual_memory()
-            result["memory_total_bytes"] = mem.total
-            result["memory_available_bytes"] = mem.available
-            result["memory_percent"] = mem.percent
-
-            # Load average (1, 5, 15 minutes) - Unix only
-            load = psutil.getloadavg()
-            result["load_avg_1m"] = load[0]
-            result["load_avg_5m"] = load[1]
-            result["load_avg_15m"] = load[2]
-
-            # Temperature metrics
-            temps = psutil.sensors_temperatures()
-            names = ("cpu_thermal", "coretemp", "soc_thermal")
-            cpu_temp = next(
-                (temps[n][0].current for n in names if n in temps and temps[n]),
-                next((t[0].current for t in temps.values() if t), None) if temps else None,
-            )
-            result["temperature_celsius"] = cpu_temp
-    except (OSError, AttributeError):
-        _fill_missing_metrics(result)
-    except (psutil.Error, RuntimeError):
-        _fill_missing_metrics(result)
-
-    return result
-
-
-def _fill_missing_metrics(result: dict[str, Any]) -> None:
+    
+    # Initialize all keys with None as default fallback
     keys = (
         "cpu_percent",
         "cpu_count",
@@ -279,6 +232,45 @@ def _fill_missing_metrics(result: dict[str, Any]) -> None:
     )
     for k in keys:
         result.setdefault(k, None)
+
+    try:
+        proc = psutil.Process()
+        with proc.oneshot():
+            result["cpu_percent"] = psutil.cpu_percent(interval=None)
+            result["cpu_count"] = psutil.cpu_count() or 1
+
+            mem = psutil.virtual_memory()
+            result.update({
+                "memory_total_bytes": getattr(mem, "total", None),
+                "memory_available_bytes": getattr(mem, "available", None),
+                "memory_percent": getattr(mem, "percent", None),
+            })
+
+            try:
+                load = psutil.getloadavg()
+                result.update({
+                    "load_avg_1m": load[0],
+                    "load_avg_5m": load[1],
+                    "load_avg_15m": load[2]
+                })
+            except (OSError, AttributeError):
+                pass
+
+            try:
+                temps = psutil.sensors_temperatures()
+                names = ("cpu_thermal", "coretemp", "soc_thermal")
+                cpu_temp = next(
+                    (temps[n][0].current for n in names if n in temps and temps[n]),
+                    next((t[0].current for t in temps.values() if t), None) if temps else None,
+                )
+                result["temperature_celsius"] = cpu_temp
+            except (OSError, AttributeError):
+                pass
+
+    except (psutil.Error, RuntimeError, OSError):
+        pass
+
+    return result
 
 
 class RuntimeState(msgspec.Struct):

@@ -68,13 +68,14 @@ def test_serial_latency_histogram() -> None:
 
 
 def testcollect_system_metrics_fail_paths() -> None:
-    # Mock psutil to raise errors
-    with patch("mcubridge.state.context.psutil") as mock_psutil:
-        mock_psutil.cpu_percent.side_effect = OSError("fail")
-        mock_psutil.virtual_memory.side_effect = AttributeError("fail")
-        mock_psutil.getloadavg.side_effect = OSError("fail")
-        mock_psutil.sensors_temperatures.side_effect = OSError("fail")
-
+    # Mock psutil functions individually instead of the whole module to preserve psutil.Error
+    import psutil
+    with (
+        patch.object(psutil, "cpu_percent", side_effect=OSError("fail")),
+        patch.object(psutil, "virtual_memory", side_effect=AttributeError("fail")),
+        patch.object(psutil, "getloadavg", side_effect=OSError("fail")),
+        patch.object(psutil, "sensors_temperatures", side_effect=OSError("fail")),
+    ):
         m = collect_system_metrics()
         assert m["cpu_percent"] is None
         assert m["memory_total_bytes"] is None

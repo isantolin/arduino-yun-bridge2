@@ -243,6 +243,11 @@ class ProcessComponent:
 
     async def run_async(self, command: str) -> int:
         """Start a command asynchronously and return its PID using sh."""
+        # [SECURITY] Enforce command policy at the lowest execution level
+        if not self.state.allowed_policy.is_allowed(command):
+            logger.warning("Process execution denied by policy: %s", command)
+            return 0
+
         if self._process_slots.locked():
             logger.warning("Process slots full (%d), rejecting command.", self.state.process_max_concurrent)
             return 0

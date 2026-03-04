@@ -10,24 +10,14 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
-MISSING_DEPS = []
-try:
-    import msgspec
-except ImportError:
-    MISSING_DEPS.append("msgspec")
-try:
-    import typer
-except ImportError:
-    MISSING_DEPS.append("typer")
-try:
-    import jinja2
-except ImportError:
-    MISSING_DEPS.append("jinja2")
+REQUIRED_DEPS = ["msgspec", "typer", "jinja2"]
+MISSING_DEPS = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep) is None]
 
 if MISSING_DEPS:
     print("\n" + "!" * 80, file=sys.stderr)
@@ -40,12 +30,13 @@ if MISSING_DEPS:
     sys.exit(1)
 # ═════════════════════════════════════════════════════════════════════════════
 
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Annotated, Any, Optional
+from dataclasses import dataclass  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Annotated, Any, Optional  # noqa: E402
 
-import typer
-from jinja2 import Environment, FileSystemLoader
+import msgspec  # noqa: E402
+import typer  # noqa: E402
+from jinja2 import Environment, FileSystemLoader  # noqa: E402
 
 app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
 

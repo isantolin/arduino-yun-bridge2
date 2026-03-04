@@ -9,15 +9,23 @@ STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
 BUILD_DIR="${LIB_ROOT}/build-coverage"
 
+# Use the python from the current environment (e.g. tox virtualenv)
+PYTHON_CMD=$(command -v python || command -v python3)
+
+# Completely clean previous build artifacts to prevent path mismatches (.gcno/.gcda)
+rm -rf "${BUILD_DIR}"
 mkdir -p "${OUTPUT_ROOT}" "${BUILD_DIR}"
 
 # [SIL-2] Library Installation (Dependencies)
 echo "[coverage_arduino] Generating protocol bindings..."
-python3 "${ROOT_DIR}/tools/protocol/generate.py" \
+if ! ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_ROOT}/protocol/rpc_protocol.h" \
-    --cpp-structs "${SRC_ROOT}/protocol/rpc_structs.h"
+    --cpp-structs "${SRC_ROOT}/protocol/rpc_structs.h"; then
+    echo "ERROR: Protocol generation failed. See above for missing dependencies."
+    exit 1
+fi
 
 "${ROOT_DIR}/tools/ci_arduino_host_tests.sh" --install-only
 
@@ -73,8 +81,6 @@ TEST_SUITES=(
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites..."
-# Clean stale coverage artefacts so cumulative .gcda starts fresh
-find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
 
 pushd "${BUILD_DIR}" > /dev/null
 for suite in "${TEST_SUITES[@]}"; do

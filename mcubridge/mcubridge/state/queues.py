@@ -43,7 +43,7 @@ class BoundedByteDeque:
                 directory,
                 ram_limit,
             )
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             logger.error(
                 "Failed to setup persistence for console queue: %s. Falling back to RAM.",
                 e,

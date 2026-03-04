@@ -111,10 +111,10 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 raise
         except asyncio.CancelledError:
             raise
-        except Exception as e:
+        except (OSError, RuntimeError, msgspec.MsgspecError) as e:
             logger.error("Periodic status write failed: %s", e)
         # Always raise to trigger the wait_fixed loop
-        raise Exception("tick")
+        raise RuntimeError("tick")
 
     try:
         await _write_loop()

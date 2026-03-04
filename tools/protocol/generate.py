@@ -10,6 +10,7 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Optional
@@ -742,17 +743,17 @@ def main(
     if cpp:
         cpp.parent.mkdir(parents=True, exist_ok=True)
         gen.generate_cpp_header(spec, cpp)
-        print(f"Generated {cpp}")
+        sys.stderr.write(f"Generated {cpp}\n")
 
     if cpp_structs:
         cpp_structs.parent.mkdir(parents=True, exist_ok=True)
         gen.generate_cpp_structs(spec, cpp_structs)
-        print(f"Generated {cpp_structs}")
+        sys.stderr.write(f"Generated {cpp_structs}\n")
 
     if py:
         py.parent.mkdir(parents=True, exist_ok=True)
         gen.generate_python(spec, py)
-        print(f"Generated {py}")
+        sys.stderr.write(f"Generated {py}\n")
 
 
 if __name__ == "__main__":

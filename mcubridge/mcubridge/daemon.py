@@ -243,7 +243,7 @@ class BridgeDaemon:
             with attempt:
                 try:
                     await factory()
-                except Exception as exc:
+                except SUPERVISOR_RECOVERABLE_EXCEPTIONS as exc:
                     self.state.record_supervisor_failure(name, backoff=0.0, exc=exc)
                     raise
 

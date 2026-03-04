@@ -259,7 +259,7 @@ def collect_system_metrics() -> dict[str, Any]:
             result["temperature_celsius"] = cpu_temp
     except (OSError, AttributeError):
         _fill_missing_metrics(result)
-    except Exception:
+    except (psutil.Error, RuntimeError):
         _fill_missing_metrics(result)
 
     return result
@@ -917,7 +917,7 @@ class RuntimeState(msgspec.Struct):
             await asyncio.to_thread(spool.append, message)
             self.record_mqtt_spool()
             return True
-        except Exception as exc:
+        except (MQTTSpoolError, OSError) as exc:
             self._handle_mqtt_spool_failure("append_failed", exc=exc)
             return False
 
@@ -941,7 +941,7 @@ class RuntimeState(msgspec.Struct):
                     # Re-spool if queue became full between qsize check and put
                     await asyncio.to_thread(spool.requeue, msg)
                     break
-            except Exception as exc:
+            except (MQTTSpoolError, OSError) as exc:
                 self._handle_mqtt_spool_failure("pop_failed", exc=exc)
                 break
 
@@ -1021,7 +1021,7 @@ class RuntimeState(msgspec.Struct):
             while not self.mqtt_publish_queue.empty():
                 try:
                     self.mqtt_publish_queue.get_nowait()
-                except Exception:
+                except (asyncio.QueueEmpty, ValueError, RuntimeError):
                     break
 
             # [SIL-2] Terminate all running processes to release pipes/sockets

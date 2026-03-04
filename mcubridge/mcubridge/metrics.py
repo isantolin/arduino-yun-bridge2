@@ -180,10 +180,10 @@ async def publish_metrics(
             await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
         except asyncio.CancelledError:
             raise
-        except Exception as e:
+        except (OSError, RuntimeError, msgspec.MsgspecError) as e:
             logger.error("Periodic metrics emit failed: %s", e)
         # Always raise to trigger the wait_fixed loop
-        raise Exception("tick")
+        raise RuntimeError("tick")
 
     try:
         await _metrics_loop()
@@ -224,9 +224,9 @@ async def publish_bridge_snapshots(
                     await _emit_bridge_snapshot(state, enqueue, flavor="summary")
                 except asyncio.CancelledError:
                     raise
-                except Exception as e:
+                except (OSError, RuntimeError, msgspec.MsgspecError) as e:
                     logger.error("Bridge summary emit failed: %s", e)
-                raise Exception("tick")
+                raise RuntimeError("tick")
 
             tg.create_task(_summary_loop())
 
@@ -242,9 +242,9 @@ async def publish_bridge_snapshots(
                     await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
                 except asyncio.CancelledError:
                     raise
-                except Exception as e:
+                except (OSError, RuntimeError, msgspec.MsgspecError) as e:
                     logger.error("Bridge handshake emit failed: %s", e)
-                raise Exception("tick")
+                raise RuntimeError("tick")
 
             tg.create_task(_handshake_loop())
 

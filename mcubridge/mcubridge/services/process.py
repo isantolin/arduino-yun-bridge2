@@ -54,13 +54,12 @@ class ProcessComponent:
 
         # [SIL-2] Ensure numeric limit for semaphore
         limit = 1
-        if state is not None:
-            raw_limit = getattr(state, "process_max_concurrent", 1)
-            try:
-                if hasattr(raw_limit, "__int__") or isinstance(raw_limit, (int, float, str)):
-                    limit = int(raw_limit)
-            except (ValueError, TypeError):
-                limit = 1
+        raw_limit = getattr(state, "process_max_concurrent", 1)
+        try:
+            if hasattr(raw_limit, "__int__") or isinstance(raw_limit, (int, float, str)):
+                limit = int(raw_limit)
+        except (ValueError, TypeError):
+            limit = 1
 
         self._process_slots = asyncio.Semaphore(limit)
 
@@ -230,7 +229,7 @@ class ProcessComponent:
             pass
 
     async def _execute_sync_command(self, command: str, tokens: list[str]) -> None:
-        status, stdout, stderr, code = await self.run_sync(command, tokens)
+        status, stdout, stderr, _ = await self.run_sync(command, tokens)
         await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
             protocol.Command.CMD_PROCESS_RUN.value,
             status=Status(status),

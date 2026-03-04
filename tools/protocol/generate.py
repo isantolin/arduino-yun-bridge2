@@ -20,13 +20,13 @@ REQUIRED_DEPS = ["msgspec", "typer", "jinja2"]
 MISSING_DEPS = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep) is None]
 
 if MISSING_DEPS:
-    print("\n" + "!" * 80, file=sys.stderr)
-    print("ERROR: Missing Python dependencies required for protocol generation:", file=sys.stderr)
+    sys.stderr.write("\n" + "!" * 80 + "\n")
+    sys.stderr.write("ERROR: Missing Python dependencies required for protocol generation:\n")
     for dep in MISSING_DEPS:
-        print(f"  - {dep}", file=sys.stderr)
-    print("\nTo fix this, run:", file=sys.stderr)
-    print(f"  pip install {' '.join(MISSING_DEPS)}", file=sys.stderr)
-    print("!" * 80 + "\n", file=sys.stderr)
+        sys.stderr.write(f"  - {dep}\n")
+    sys.stderr.write("\nTo fix this, run:\n")
+    sys.stderr.write(f"  pip install {' '.join(MISSING_DEPS)}\n")
+    sys.stderr.write("!" * 80 + "\n\n")
     sys.exit(1)
 # ═════════════════════════════════════════════════════════════════════════════
 

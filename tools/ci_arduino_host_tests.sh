@@ -15,11 +15,14 @@ PYTHON_CMD=$(command -v python || command -v python3)
 
 # [SIL-2] Ensure dependencies are present (ETL is required in src/etl)
 echo "[host-cpp] Generating protocol bindings..."
-${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
+if ! ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
-    --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h"
+    --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h"; then
+    echo "ERROR: Protocol generation failed. See above for missing dependencies."
+    exit 1
+fi
 
 echo "[host-cpp] Installing library dependencies..."
 DUMMY_ARDUINO_LIBS=${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}

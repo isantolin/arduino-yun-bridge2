@@ -28,11 +28,14 @@ fi
 PYTHON_CMD=$(command -v python || command -v python3)
 
 echo "[emulator] Generating protocol bindings..."
-${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
+if ! ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
-    --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h"
+    --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h"; then
+    echo "ERROR: Protocol generation failed. See above for missing dependencies."
+    exit 1
+fi
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \

@@ -158,10 +158,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
+      - name: Install Python Tooling Deps
+        run: pip install msgspec jinja2 typer[all] gcovr
       - name: Install Build Tools
         run: |
           sudo apt-get update && sudo apt-get install -y g++ make
-          pip install gcovr
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
       - name: Install Arduino Dependencies
@@ -204,6 +205,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
+      - name: Install Python Dependencies
+        run: pip install -r requirements/runtime.txt
       - name: Install Emulation Tools
         run: |
           sudo apt-get update
@@ -216,7 +219,6 @@ jobs:
       - name: Compile & Run Emulation
         run: |
           ./tools/compile_emulator.sh
-          pip install -r requirements/runtime.txt
           python3 -u tools/emulation_runner.py \
             --firmware ${{ matrix.firmware }} \
             mcubridge-client-examples/led13_test.py \

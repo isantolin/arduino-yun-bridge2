@@ -11,11 +11,39 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 from __future__ import annotations
 
 import sys
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DEPENDENCY VALIDATION (CRITICAL)
+# ═════════════════════════════════════════════════════════════════════════════
+MISSING_DEPS = []
+try:
+    import msgspec
+except ImportError:
+    MISSING_DEPS.append("msgspec")
+try:
+    import typer
+except ImportError:
+    MISSING_DEPS.append("typer")
+try:
+    import jinja2
+except ImportError:
+    MISSING_DEPS.append("jinja2")
+
+if MISSING_DEPS:
+    print("\n" + "!" * 80, file=sys.stderr)
+    print("ERROR: Missing Python dependencies required for protocol generation:", file=sys.stderr)
+    for dep in MISSING_DEPS:
+        print(f"  - {dep}", file=sys.stderr)
+    print("\nTo fix this, run:", file=sys.stderr)
+    print(f"  pip install {' '.join(MISSING_DEPS)}", file=sys.stderr)
+    print("!" * 80 + "\n", file=sys.stderr)
+    sys.exit(1)
+# ═════════════════════════════════════════════════════════════════════════════
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
-import msgspec
 import typer
 from jinja2 import Environment, FileSystemLoader
 

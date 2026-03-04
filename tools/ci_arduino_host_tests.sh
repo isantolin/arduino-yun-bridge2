@@ -10,9 +10,12 @@ STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 BUILD_DIR="${LIB_DIR}/build-host-local"
 mkdir -p "${BUILD_DIR}"
 
+# Use the python from the current environment (e.g. tox virtualenv)
+PYTHON_CMD=$(command -v python || command -v python3)
+
 # [SIL-2] Ensure dependencies are present (ETL is required in src/etl)
 echo "[host-cpp] Generating protocol bindings..."
-python3 "${ROOT_DIR}/tools/protocol/generate.py" \
+${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \

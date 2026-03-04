@@ -192,10 +192,10 @@ class ManagedProcess:
     def pop_payload(self, budget: int) -> tuple[bytes, bytes, bool, bool]:
         out_bytes = bytes(self.stdout_buffer)
         err_bytes = bytes(self.stderr_buffer)
-        
+
         out_len = min(len(out_bytes), budget)
         stdout_chunk = out_bytes[:out_len]
-        
+
         remaining = budget - out_len
         err_len = min(len(err_bytes), remaining)
         stderr_chunk = err_bytes[:err_len]
@@ -217,7 +217,7 @@ class ManagedProcess:
 def collect_system_metrics() -> dict[str, Any]:
     """Collect system-level metrics using native library conversions."""
     result: dict[str, Any] = {}
-    
+
     # Initialize all keys with None as default fallback
     keys = (
         "cpu_percent",

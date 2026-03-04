@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
 from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
@@ -18,7 +19,6 @@ from ..config.const import (
     FILE_LARGE_WARNING_BYTES,
     MQTT_EXPIRY_SHELL,
     MQTT_USER_PROP_FILE_PATH,
-    SYSTEMD_PRIVATE_PREFIX,
     VOLATILE_STORAGE_PATHS,
 )
 from ..config.settings import RuntimeConfig
@@ -461,16 +461,15 @@ class FileComponent:
         if base_dir is None:
             self.state.file_storage_bytes_used = 0
             return 0
-        
+
         # [SIL-2 / Library-First] Delegate size calculation to the OS tool (du) 
         # instead of a manual blocking python loop. 'du' is built into OpenWrt BusyBox.
         try:
-            import subprocess
             out = subprocess.check_output(["du", "-sb", str(base_dir)], stderr=subprocess.DEVNULL)
             usage = int(out.split()[0])
         except (subprocess.CalledProcessError, ValueError, OSError):
             usage = 0
-            
+
         self.state.file_storage_bytes_used = max(0, usage)
         return self.state.file_storage_bytes_used
 
@@ -513,3 +512,4 @@ class FileComponent:
 
 
 __all__ = ["FileComponent"]
+

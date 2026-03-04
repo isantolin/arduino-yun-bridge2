@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import string
 from collections.abc import Coroutine
 from pathlib import Path
@@ -439,7 +438,7 @@ def test_refresh_storage_usage_handles_subprocess_failures(
         return b"not-a-number /tmp/foo"
 
     monkeypatch.setattr(subprocess, "check_output", mock_check_output_value_error)
-    
+
     usage2 = component._refresh_storage_usage()
     assert usage2 == 0
     assert component.state.file_storage_bytes_used == 0

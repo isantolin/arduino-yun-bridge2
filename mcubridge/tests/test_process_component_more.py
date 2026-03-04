@@ -106,24 +106,18 @@ async def test_collect_output_finishing_process_releases_slot(
 async def test_monitor_async_process_handles_wait_exception(
     process_component: ProcessComponent,
 ) -> None:
+    # Test finalizing with a fake exit code since _monitor_process is removed
     pid = 1
-    mock_proc = MagicMock()
-    mock_proc.stdout = MagicMock()
-    mock_proc.stdout.at_eof.return_value = True
-    mock_proc.stderr = MagicMock()
-    mock_proc.stderr.at_eof.return_value = True
-    mock_proc.wait = AsyncMock(side_effect=RuntimeError("boom"))
 
     slot = ManagedProcess(pid=pid, command="test")
-    slot.handle = mock_proc
     # [FSM] Transition to RUNNING
     slot.trigger("start")
 
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    await process_component._monitor_process(pid)
-    # Should finalize even on error
+    await process_component._finalize_callback_async(pid, 99)
+    # Should finalize
     assert pid not in process_component.state.running_processes
 
 
@@ -145,6 +139,8 @@ async def test_handle_kill_timeout_releases_slot(
 ) -> None:
     pid = 11
     mock_handle = MagicMock()
+    mock_handle.process = MagicMock()
+    mock_handle.process.terminate = MagicMock()
     slot = ManagedProcess(pid=pid, command="hi")
     slot.handle = mock_handle
 
@@ -155,7 +151,7 @@ async def test_handle_kill_timeout_releases_slot(
 
     ok = await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
     assert ok is True
-    mock_handle.terminate.assert_called_once()
+    mock_handle.process.terminate.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -164,7 +160,8 @@ async def test_handle_kill_process_lookup_error_is_handled(
 ) -> None:
     pid = 12
     mock_handle = MagicMock()
-    mock_handle.terminate.side_effect = Exception("Lookup Fail")
+    mock_handle.process = MagicMock()
+    mock_handle.process.terminate.side_effect = Exception("Lookup Fail")
 
     slot = ManagedProcess(pid=pid, command="hi")
     slot.handle = mock_handle

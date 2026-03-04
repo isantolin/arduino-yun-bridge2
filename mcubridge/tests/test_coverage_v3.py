@@ -233,7 +233,7 @@ async def test_process_run_async_os_error():
     ctx = MagicMock()
     comp = ProcessComponent(config, state, ctx)
 
-    with patch("asyncio.create_subprocess_shell", side_effect=OSError("Not found")):
+    with patch("sh.Command", side_effect=OSError("Not found")):
         pid = await comp.run_async("cmd")
         assert pid == 0
 
@@ -248,32 +248,6 @@ async def test_process_stop_process_not_found():
 
     success = await comp.stop_process(999)
     assert success is False
-
-
-@pytest.mark.asyncio
-async def test_process_monitor_process_error_handling():
-    config = create_real_config()
-    state = MagicMock()
-    state.process_lock = asyncio.Lock()
-    comp = ProcessComponent(config, state, MagicMock())
-
-    mock_proc = MagicMock()
-    mock_proc.wait = AsyncMock(side_effect=RuntimeError("Fail"))
-    mock_proc.stdout = MagicMock()
-    mock_proc.stdout.at_eof.return_value = True
-    mock_proc.stderr = MagicMock()
-    mock_proc.stderr.at_eof.return_value = True
-
-    from mcubridge.state.context import ManagedProcess
-    slot = ManagedProcess(pid=123, command="test")
-    slot.handle = mock_proc
-    slot.trigger("start")
-
-    state.running_processes = {123: slot}
-
-    await comp._monitor_process(123)
-    # Should handle error and finalize
-    assert 123 not in state.running_processes
 
 
 @pytest.mark.asyncio

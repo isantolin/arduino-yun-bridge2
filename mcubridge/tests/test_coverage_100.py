@@ -92,33 +92,11 @@ async def test_finalize_process_slot_gone(
 
 
 @pytest.mark.asyncio
-async def test_monitor_process_exception(
-    process_component: ProcessComponent,
-) -> None:
-    """Cover exception branch in _monitor_process."""
-    pid = 55
-    mock_handle = MagicMock()
-    mock_handle.wait = AsyncMock(side_effect=RuntimeError("boom"))
-
-    proc = ManagedProcess(pid=pid, command="test")
-    proc.handle = mock_handle
-    # [FSM] Transition to RUNNING
-    proc.trigger("start")
-
-    async with process_component.state.process_lock:
-        process_component.state.running_processes[pid] = proc
-
-    await process_component._monitor_process(pid)
-
-    assert pid not in process_component.state.running_processes
-
-
-@pytest.mark.asyncio
 async def test_start_async_subprocess_unexpected_exception(
     process_component: ProcessComponent,
 ) -> None:
     """Cover unexpected exception branch in _start_async_subprocess."""
-    with patch("asyncio.create_subprocess_shell", side_effect=RuntimeError("boom")):
+    with patch("sh.Command", side_effect=RuntimeError("boom")):
         pid = await process_component._start_async_subprocess("echo hello")
         assert pid == 0
 

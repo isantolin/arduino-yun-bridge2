@@ -80,10 +80,6 @@ async def test_monitor_process_releases_slot(
     mock_handle = MagicMock()
     mock_handle.wait = AsyncMock()
     mock_handle.returncode = 5
-    mock_handle.stdout = MagicMock()
-    mock_handle.stdout.at_eof.return_value = True
-    mock_handle.stderr = MagicMock()
-    mock_handle.stderr.at_eof.return_value = True
 
     slot = ManagedProcess(
         77,
@@ -102,12 +98,9 @@ async def test_monitor_process_releases_slot(
     # Acquire one slot manually
     await process_component._process_slots.acquire()
 
-    await process_component._monitor_process(77)
+    await process_component._finalize_callback_async(77, 5)
 
     assert slot.exit_code == 5
 
-    # Finalize to release slot
-    await process_component._finalize_process(77)
-
-    # Should be back to initial value
+    # Should be back to initial value (because it finalized and released the slot)
     assert process_component._process_slots._value == initial_value

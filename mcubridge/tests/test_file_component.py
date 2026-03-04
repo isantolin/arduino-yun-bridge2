@@ -416,67 +416,33 @@ def test_normalise_filename_rejects_bad_inputs() -> None:
     assert FileComponent._normalise_filename("a\x00b") is None
 
 
-def test_scan_directory_size_handles_scandir_failures(
+def test_refresh_storage_usage_handles_subprocess_failures(
+    file_component: tuple[FileComponent, DummyBridge],
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    class FakeDirEntry:
-        def __init__(self, name: str, path: str) -> None:
-            self.name = name
-            self.path = path
+    import subprocess
+    component, _ = file_component
 
-        def is_symlink(self) -> bool:
-            return self.name == "sym"
+    # Mock subprocess.check_output to raise an error
+    def mock_check_output(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "du")
 
-        def is_dir(self, *, follow_symlinks: bool = False) -> bool:
-            if self.name == "bad_dir":
-                raise OSError("boom")
-            return self.name == "dir"
+    monkeypatch.setattr(subprocess, "check_output", mock_check_output)
 
-        def is_file(self, *, follow_symlinks: bool = False) -> bool:
-            return self.name == "file"
+    # Calling refresh_storage_usage should catch the error and return 0
+    usage = component._refresh_storage_usage()
+    assert usage == 0
+    assert component.state.file_storage_bytes_used == 0
 
-        def stat(self, *, follow_symlinks: bool = False):
-            class Stat:
-                st_size = 3
+    # Test ValueError when output is malformed
+    def mock_check_output_value_error(*args, **kwargs):
+        return b"not-a-number /tmp/foo"
 
-            return Stat()
-
-    class FakeScandir:
-        def __init__(self, path: Path) -> None:
-            self._path = path
-
-        def __enter__(self):
-            return iter(
-                [
-                    FakeDirEntry("sym", str(self._path / "sym")),
-                    FakeDirEntry("bad_dir", str(self._path / "bad_dir")),
-                    FakeDirEntry("file", str(self._path / "file")),
-                ]
-            )
-
-        def __exit__(self, exc_type, exc, tb) -> None:
-            return None
-
-    def fake_scandir(path: str | os.PathLike[str]):
-        p = Path(path)
-        if p.name == "missing":
-            raise FileNotFoundError
-        if p.name == "broken":
-            raise OSError("nope")
-        return FakeScandir(p)
-
-    monkeypatch.setattr(
-        "mcubridge.services.file.scandir",
-        fake_scandir,
-    )
-
-    # stack contains: root, then missing/broken are simulated via Path names.
-    (tmp_path / "missing").mkdir()
-    (tmp_path / "broken").mkdir()
-
-    total = FileComponent._scan_directory_size(tmp_path)
-    assert total == 3
+    monkeypatch.setattr(subprocess, "check_output", mock_check_output_value_error)
+    
+    usage2 = component._refresh_storage_usage()
+    assert usage2 == 0
+    assert component.state.file_storage_bytes_used == 0
 
 
 @pytest.mark.asyncio

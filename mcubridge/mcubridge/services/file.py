@@ -461,41 +461,18 @@ class FileComponent:
         if base_dir is None:
             self.state.file_storage_bytes_used = 0
             return 0
-        usage = self._scan_directory_size(base_dir)
+        
+        # [SIL-2 / Library-First] Delegate size calculation to the OS tool (du) 
+        # instead of a manual blocking python loop. 'du' is built into OpenWrt BusyBox.
+        try:
+            import subprocess
+            out = subprocess.check_output(["du", "-sb", str(base_dir)], stderr=subprocess.DEVNULL)
+            usage = int(out.split()[0])
+        except (subprocess.CalledProcessError, ValueError, OSError):
+            usage = 0
+            
         self.state.file_storage_bytes_used = max(0, usage)
         return self.state.file_storage_bytes_used
-
-    @staticmethod
-    def _scan_directory_size(root: Path, max_depth: int = 10) -> int:
-        """Calculate total directory size using scandir for efficiency."""
-        total = 0
-        stack = [(root, 0)]
-
-        while stack:
-            current_path, depth = stack.pop()
-            if depth > max_depth:
-                continue
-
-            try:
-                with scandir(current_path) as it:
-                    for entry in it:
-                        try:
-                            if entry.is_symlink():
-                                continue
-
-                            if entry.is_dir(follow_symlinks=False):
-                                # Filter Systemd private temporary directories to avoid permission errors
-                                if entry.name.startswith(SYSTEMD_PRIVATE_PREFIX) and str(current_path) == "/tmp":
-                                    continue
-                                stack.append((Path(entry.path), depth + 1))
-                            elif entry.is_file(follow_symlinks=False):
-                                total += entry.stat(follow_symlinks=False).st_size
-                        except OSError:
-                            continue
-            except (OSError, ValueError):
-                continue
-
-        return total
 
     def _get_base_dir(self) -> Path | None:
         base_dir = Path(self.state.file_system_root).expanduser()

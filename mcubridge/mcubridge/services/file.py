@@ -462,7 +462,7 @@ class FileComponent:
             self.state.file_storage_bytes_used = 0
             return 0
 
-        # [SIL-2 / Library-First] Delegate size calculation to the OS tool (du) 
+        # [SIL-2 / Library-First] Delegate size calculation to the OS tool (du)
         # instead of a manual blocking python loop. 'du' is built into OpenWrt BusyBox.
         try:
             out = subprocess.check_output(["du", "-sb", str(base_dir)], stderr=subprocess.DEVNULL)

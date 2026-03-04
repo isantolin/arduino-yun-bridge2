@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 import msgspec
-import sh
+import sh  # type: ignore[reportMissingTypeStubs]
 
 from ..protocol import protocol, structures
 from ..protocol.protocol import Status
@@ -257,12 +257,14 @@ class ProcessComponent:
             loop = asyncio.get_running_loop()
 
             def _out_cb(chunk: bytes | str) -> None:
-                if not chunk: return
+                if not chunk:
+                    return
                 b_chunk = chunk if isinstance(chunk, bytes) else chunk.encode("utf-8", "replace")
                 loop.call_soon_threadsafe(self._append_chunk_sync, pid, b_chunk, False)
 
             def _err_cb(chunk: bytes | str) -> None:
-                if not chunk: return
+                if not chunk:
+                    return
                 b_chunk = chunk if isinstance(chunk, bytes) else chunk.encode("utf-8", "replace")
                 loop.call_soon_threadsafe(self._append_chunk_sync, pid, b_chunk, True)
 
@@ -279,7 +281,7 @@ class ProcessComponent:
                 _out_bufsize=1024,
                 _err_bufsize=1024
             )
-            
+
             proc.handle = handle
             proc.trigger("start")
             return pid
@@ -390,5 +392,4 @@ class ProcessComponent:
 
 
 __all__ = ["ProcessComponent", "ProcessOutputBatch"]
-
 

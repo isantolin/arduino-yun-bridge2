@@ -26,7 +26,7 @@ from mcubridge.protocol.protocol import (
     Status,
 )
 from mcubridge.services.process import ProcessComponent
-from mcubridge.state.context import ManagedProcess, create_runtime_state
+from mcubridge.state.context import create_runtime_state
 
 
 def _make_config(*, process_max_concurrent: int = 2) -> RuntimeConfig:

@@ -110,7 +110,7 @@ async def test_stop_process_success(process_component: ProcessComponent) -> None
     mock_handle.process = MagicMock()
     mock_handle.process.terminate = MagicMock()
     mock_sh = MagicMock(return_value=mock_handle)
-    
+
     with patch("sh.Command", return_value=mock_sh):
         pid = await process_component.run_async("echo hello")
 
@@ -124,7 +124,7 @@ async def test_monitor_process_finishes(process_component: ProcessComponent) -> 
     # _monitor_process was removed. We only test creation.
     mock_handle = MagicMock()
     mock_sh = MagicMock(return_value=mock_handle)
-    
+
     with patch("sh.Command", return_value=mock_sh):
         pid = await process_component.run_async("echo hello")
 

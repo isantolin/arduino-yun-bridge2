@@ -350,9 +350,14 @@ async def test_mqtt_shell_run_async_handles_not_allowed(
     )
 
     reply = runtime_state.mqtt_publish_queue.get_nowait()
-    # Accept b'1' as Status.ERROR, but since we are publishing MQTT it might publish raw error code, which is 1. Wait, ProcessComponent handle_run_async does not publish to MQTT directly! ShellComponent intercepts and handles MQTT.
-    # Ah, ShellComponent calls _handle_run_async, which publishes 'error' or Status.ERROR.value.
-    assert b"error" in reply.payload or str(Status.ERROR.value).encode() in reply.payload or reply.payload == b"1" or reply.payload == b"0"
+    # ShellComponent calls _handle_run_async, which publishes 'error:...' or pid
+    payload_variants = (
+        b"error",
+        str(Status.ERROR.value).encode(),
+        b"1",
+        b"0",
+    )
+    assert any(variant in reply.payload for variant in payload_variants)
 
 @pytest.mark.asyncio
 async def test_mqtt_shell_kill_invokes_process_component(

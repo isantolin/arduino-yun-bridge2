@@ -56,7 +56,7 @@ async def test_negotiate_baudrate_success() -> None:
 
         # Mock _serial_sender to avoid real I/O and return True
         async def mock_sender(cmd, payload):
-            # The future is created AFTER sender is called in the retry loop? 
+            # The future is created AFTER sender is called in the retry loop?
             # No, let's check code:
             # 1. loop.create_future()
             # 2. await self._serial_sender(...)

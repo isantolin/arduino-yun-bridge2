@@ -173,7 +173,7 @@ void integrated_test_components() {
   FileSystem.read("f");
 #endif
 #if BRIDGE_ENABLE_PROCESS
-  Process.run("ls");
+  Process.runAsync("ls");
 #endif
 }
 
@@ -204,12 +204,9 @@ void integrated_test_extreme_coverage() {
       }));
 #endif
 #if BRIDGE_ENABLE_PROCESS
-  Process.onProcessRunResponse(
-      ProcessClass::ProcessRunHandler::create([](rpc::StatusCode s, etl::span<const uint8_t> out,
-                                                 etl::span<const uint8_t> err) {
-        (void)s;
-        (void)out;
-        (void)err;
+  Process.onProcessRunAsyncResponse(
+      ProcessClass::ProcessRunAsyncHandler::create([](int16_t pid) {
+        (void)pid;
       }));
   Process.onProcessPollResponse(
       ProcessClass::ProcessPollHandler::create([](rpc::StatusCode s, uint8_t ec,

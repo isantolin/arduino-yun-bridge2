@@ -236,6 +236,7 @@ class SerialHandshakeManager:
 
         # Transition to RESETTING
         self.start_reset()
+        self._state.link_sync_event.clear()
 
         # [MIL-SPEC] Generate nonce with anti-replay counter
         nonce, new_counter = generate_nonce_with_counter(self._state.link_nonce_counter)
@@ -259,6 +260,9 @@ class SerialHandshakeManager:
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("link_reset_send_failed")
             return False
+
+        # [SIL-2] Wait for MCU stabilization period (BRIDGE_STARTUP_STABILIZATION_MS)
+        await asyncio.sleep(0.15)
 
         # Transition to SYNCING
         self.start_sync()

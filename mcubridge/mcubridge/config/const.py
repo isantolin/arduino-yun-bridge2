@@ -54,6 +54,8 @@ SERIAL_SUCCESS_STATUS_CODES: frozenset[int] = frozenset({protocol.Status.OK.valu
 DEFAULT_SERIAL_PORT: str = "/dev/ttyATH0"
 # Initial wait for serial port availability (reconnect loop)
 DEFAULT_RECONNECT_DELAY: int = 5
+# Maximum size of a raw serial frame including overhead
+MAX_SERIAL_FRAME_BYTES: int = 1024
 # Timeout for general serial operations (not strict RPC)
 DEFAULT_SERIAL_RETRY_TIMEOUT: float = 10.0
 DEFAULT_SERIAL_RESPONSE_TIMEOUT: float = 20.0

@@ -25,10 +25,16 @@ using namespace rpc;
  */
 class HostSerialStream : public Stream {
  public:
-  size_t write(uint8_t c) override { return ::write(STDOUT_FILENO, &c, 1); }
+  size_t write(uint8_t c) override {
+    size_t n = ::write(STDOUT_FILENO, &c, 1);
+    fsync(STDOUT_FILENO);
+    return n;
+  }
 
   size_t write(const uint8_t* buffer, size_t size) override {
-    return ::write(STDOUT_FILENO, buffer, size);
+    size_t n = ::write(STDOUT_FILENO, buffer, size);
+    fsync(STDOUT_FILENO);
+    return n;
   }
 
   int available() override {

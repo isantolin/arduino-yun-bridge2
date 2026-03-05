@@ -2,14 +2,12 @@
 
 from .mqtt import MqttTransport
 from .serial import (
-    MAX_SERIAL_PACKET_BYTES,
+    MAX_SERIAL_FRAME_BYTES,
     SerialTransport,
-    serial_sender_not_ready,
 )
 
 __all__ = [
-    "MAX_SERIAL_PACKET_BYTES",
+    "MAX_SERIAL_FRAME_BYTES",
     "MqttTransport",
     "SerialTransport",
-    "serial_sender_not_ready",
 ]

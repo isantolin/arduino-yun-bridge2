@@ -11,6 +11,8 @@ from typing import Any
 import tenacity
 from mcubridge.config.const import (
     SERIAL_FAILURE_STATUS_CODES,
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_HANDSHAKE_BACKOFF_MAX,
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
@@ -200,6 +202,10 @@ class SerialFlowController:
         """Build tenacity retryer with configured limits."""
         return tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(self._max_attempts),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
             retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
             before_sleep=self._on_retry_sleep,
             reraise=True,

@@ -142,13 +142,6 @@ void test_process_extra_gaps() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   rpc::Frame f;
 
-  // Gap: handleResponse CMD_PROCESS_RUN_RESP without handler
-  f.header.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-  f.header.payload_length = 6;
-  f.payload[0] = 0x30;
-  ba.dispatch(f);
-
   // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP with handler
   Process.onProcessRunAsyncResponse(
       BridgeClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));

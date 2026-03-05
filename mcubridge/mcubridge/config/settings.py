@@ -246,7 +246,14 @@ def load_runtime_config() -> RuntimeConfig:
     raw_config, source = _load_raw_config()
     _ConfigState.source = source
 
-    # [SIL-2] Pre-processing for complex types that UCI provides as raw strings
+    # Override with environment variables (useful for E2E testing and Docker)
+    import os
+    for key in RuntimeConfig.__struct_fields__:
+        env_val = os.environ.get(f"MCUBRIDGE_{key.upper()}")
+        if env_val is not None:
+            raw_config[key] = env_val
+
+    # [SIL-2] Pre-processing for complex types that UCI or ENV provides as raw strings
     if "allowed_commands" in raw_config:
         allowed_raw = raw_config["allowed_commands"]
         if isinstance(allowed_raw, str):

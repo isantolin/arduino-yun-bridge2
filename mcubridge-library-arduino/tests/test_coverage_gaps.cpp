@@ -265,21 +265,6 @@ void test_process_via_dispatch() {
   rpc::Frame f;
   memset(&f, 0, sizeof(f));
 
-  // CMD_PROCESS_RUN_RESP (164)
-  Process.onProcessRunResponse(ProcessClass::ProcessRunHandler::create(
-      [](rpc::StatusCode, etl::span<const uint8_t>,
-         etl::span<const uint8_t>) {}));
-  f.header.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-  f.header.payload_length = 8;
-  f.payload[0] = 0x30;
-  rpc::write_u16_be(&f.payload[1], 1);
-  f.payload[3] = 'o';
-  rpc::write_u16_be(&f.payload[4], 1);
-  f.payload[6] = 'e';
-  f.payload[7] = 0;
-  ba.dispatch(f);
-
   // CMD_PROCESS_RUN_ASYNC_RESP (165)
   Process.onProcessRunAsyncResponse(
       ProcessClass::ProcessRunAsyncHandler::create([](int16_t) {}));
@@ -880,10 +865,10 @@ void test_process_edge_cases() {
   uint16_t sentinel = pa.popPendingPid();
   TEST_ASSERT_EQ_UINT(sentinel, rpc::RPC_INVALID_ID_SENTINEL);
 
-  // Process.run when bridge is unsync -> emit overflow (L17)
+  // Process.runAsync when bridge is unsync -> emit overflow (L17)
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setUnsynchronized();
-  Process.run("ls");
+  Process.runAsync("ls");
 }
 
 // ============================================================================

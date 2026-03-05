@@ -443,6 +443,26 @@ class BridgeClass
     }
   }
 
+  template <typename F>
+  void _withResponse(const bridge::router::CommandContext& ctx, F handler) {
+    handler();
+    if (!ctx.is_duplicate) {
+      _markRxProcessed(*ctx.frame);
+    }
+  }
+
+  template <typename T, typename F>
+  void _withPayloadResponse(const bridge::router::CommandContext& ctx,
+                            F handler) {
+    auto msg = rpc::Payload::parse<T>(*ctx.frame);
+    if (msg) {
+      handler(*msg);
+      if (!ctx.is_duplicate) {
+        _markRxProcessed(*ctx.frame);
+      }
+    }
+  }
+
   template <typename T, typename F>
   void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
     _withAck(ctx, [&]() {

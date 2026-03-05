@@ -236,7 +236,7 @@ void test_subsystems_gaps() {
   
   // Process gaps (Line 17, 36-37, 63, 71)
 #if BRIDGE_ENABLE_PROCESS
-  Process.run("");
+  Process.runAsync("");
   Process.poll(-1);
   Process.kill(-1);
   Process.reset();

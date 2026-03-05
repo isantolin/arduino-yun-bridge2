@@ -143,15 +143,6 @@ void test_extreme_process_mailbox() {
 
   // 3. Process: Poll con PID inválido
   Process.poll(-1);
-
-  // 4. Responses truncadas
-  rpc::Frame resp;
-  resp.header.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-  resp.header.payload_length =
-      1;  // Debería tener al menos Status + stdout_len + stderr_len
-  auto ba = bridge::test::TestAccessor::create(Bridge);
-  ba.dispatch(resp);
 }
 
 }  // namespace

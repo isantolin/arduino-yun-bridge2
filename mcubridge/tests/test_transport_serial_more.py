@@ -120,7 +120,10 @@ async def test_transport_run_handshake_fatal() -> None:
         service = BridgeService(config, state)
 
         # Force handshake fatal error
-        with patch.object(service, "on_serial_connected", side_effect=SerialHandshakeFatal("test")):
+        with (
+            patch.object(service, "on_serial_connected", side_effect=SerialHandshakeFatal("test")),
+            patch.object(serial_fast.SerialTransport, "_toggle_dtr", new_callable=AsyncMock),
+        ):
             transport = serial_fast.SerialTransport(config, state, service)
             with pytest.raises(SerialHandshakeFatal):
                 await transport.run()
@@ -150,16 +153,22 @@ async def test_serial_disconnected_hook_error(
         async def _raise_error() -> None:
             raise RuntimeError("disconnected hook error")
 
+        transport = serial_fast.SerialTransport(config, state, service)
+
         with (
+            patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
             patch.object(service, "on_serial_connected", new_callable=AsyncMock),
             patch.object(service, "on_serial_disconnected", side_effect=_raise_error),
         ):
-            transport = serial_fast.SerialTransport(config, state, service)
             caplog.set_level("WARNING")
 
             try:
-                await transport._connect_and_run(asyncio.get_running_loop())
-            except ConnectionError:
+                # Use a timeout to ensure the test doesn't block forever
+                await asyncio.wait_for(
+                    transport._connect_and_run(asyncio.get_running_loop()),
+                    timeout=5.0
+                )
+            except (ConnectionError, asyncio.TimeoutError):
                 pass
 
             assert any("disconnected" in r.getMessage().lower() for r in caplog.records)

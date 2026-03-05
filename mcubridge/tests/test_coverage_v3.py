@@ -7,14 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import msgspec
 import psutil
 import pytest
-from cobs import cobs
 from mcubridge import daemon
 from mcubridge.config import logging as logging_config
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command
 from mcubridge.services.process import ProcessComponent
 from mcubridge.transport.serial import (
-    BridgeSerialProtocol,
     SerialTransport,
 )
 
@@ -266,28 +263,6 @@ async def test_process_finalize_process_missing_slot():
 
 
 @pytest.mark.asyncio
-async def test_serial_protocol_connection_lost_branches():
-    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
-    proto.connection_lost(RuntimeError("Lost"))
-    assert proto.connected_future.done()
-    with pytest.raises(RuntimeError):
-        proto.connected_future.result()
-
-    proto.connected_future = asyncio.get_running_loop().create_future()
-    proto.connected_future.set_result(None)
-    proto.connection_lost(None)
-
-
-@pytest.mark.asyncio
-async def test_serial_protocol_data_received_discarding():
-    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
-    proto._discarding = True
-    proto.data_received(b"some data\x00")
-    assert proto._discarding is False
-    assert len(proto._buffer) == 0
-
-
-@pytest.mark.asyncio
 async def test_serial_transport_toggle_dtr_error():
     config = create_real_config()
     state = MagicMock()
@@ -314,20 +289,6 @@ async def test_serial_transport_run_fatal():
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_negotiate_baudrate_write_fail():
-    config = create_real_config()
-    state = MagicMock()
-    service = MagicMock()
-    transport = SerialTransport(config, state, service)
-    mock_proto = MagicMock()
-    mock_proto.write_frame.return_value = False
-    mock_proto.loop = asyncio.get_running_loop()
-
-    res = await transport._negotiate_baudrate(mock_proto, 115200)
-    assert res is False
-
-
-@pytest.mark.asyncio
 async def test_serial_transport_on_disconnected_hook_error():
     config = create_real_config()
     state = MagicMock()
@@ -344,50 +305,6 @@ async def test_serial_transport_on_disconnected_hook_error():
     ):
         with pytest.raises(OSError):
             await transport._connect_and_run(asyncio.get_running_loop())
-
-
-@pytest.mark.asyncio
-async def test_serial_protocol_negotiation_logic():
-    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
-    proto.negotiation_future = asyncio.get_running_loop().create_future()
-
-    from mcubridge.protocol.frame import Frame
-
-    raw_frame = Frame.build(75, b"")
-    encoded = cobs.encode(raw_frame)
-
-    proto._process_packet(encoded)
-    assert proto.negotiation_future.result() is True
-
-
-@pytest.mark.asyncio
-async def test_serial_protocol_async_process_compressed():
-    service = MagicMock()
-    service.handle_mcu_frame = AsyncMock()
-    proto = BridgeSerialProtocol(service, MagicMock(), asyncio.get_running_loop())
-
-    from mcubridge.protocol import rle
-    from mcubridge.protocol.frame import Frame
-
-    payload = b"A" * 10
-    compressed = rle.encode(payload)
-    cmd = Command.CMD_CONSOLE_WRITE.value | 0x8000
-    raw_frame = Frame.build(cmd, compressed)
-    encoded = cobs.encode(raw_frame)
-
-    await proto._async_process_packet(encoded)
-    service.handle_mcu_frame.assert_called_once()
-    assert service.handle_mcu_frame.call_args[0][1] == payload
-
-
-@pytest.mark.asyncio
-async def test_serial_protocol_write_frame_fail():
-    proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
-    proto.transport = MagicMock()
-    proto.transport.is_closing.return_value = False
-
-    with patch("mcubridge.protocol.frame.Frame.build", side_effect=ValueError("Boom")):
-        assert proto.write_frame(1, b"") is False
 
 
 # --- mcubridge.config.settings ---

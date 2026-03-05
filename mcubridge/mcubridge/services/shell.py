@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AsyncExitStack
 
 from aiomqtt.message import Message
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import ShellAction, Status
-from mcubridge.protocol.structures import UINT16_STRUCT
+from mcubridge.protocol.protocol import ShellAction
 
-from ..config.const import MQTT_EXPIRY_SHELL
 from ..config.settings import RuntimeConfig
-from ..policy import CommandValidationError, tokenize_shell_command
 from ..protocol.topics import Topic, topic_path
 from ..state.context import RuntimeState
 from .base import BridgeContext
@@ -47,16 +43,12 @@ class ShellComponent:
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        segments = self._normalise_segments(segments)
-        action = segments[0] if segments else ""
+        if not segments:
+            return
+
+        action = segments[0]
 
         match action:
-            case ShellAction.RUN:
-                payload_model = self._parse_shell_command(payload, action)
-                if payload_model is None:
-                    return
-                await self._handle_shell_run(payload_model, inbound)
-
             case ShellAction.RUN_ASYNC:
                 payload_model = self._parse_shell_command(payload, action)
                 if payload_model is None:
@@ -77,79 +69,9 @@ class ShellComponent:
 
             case _:
                 logger.debug(
-                    "Ignoring shell topic action: %s",
+                    "Ignoring shell topic action or unsupported sync run: %s",
                     "/".join(segments),
                 )
-
-    @staticmethod
-    def _normalise_segments(segments: list[str]) -> list[str]:
-        """Accept both route segments and legacy full-topic segments."""
-        if not segments:
-            return []
-        try:
-            shell_index = segments.index(Topic.SHELL.value)
-        except ValueError:
-            return segments
-        return segments[shell_index + 1 :]
-
-    async def _handle_shell_run(
-        self,
-        payload: ShellCommandPayload,
-        inbound: Message | None,
-    ) -> None:
-        command = payload.command
-        logger.info("Executing shell command from MQTT: '%s'", command)
-
-        # [Fix] Tokenize and validate before execution
-        tokens = list(tokenize_shell_command(command))
-
-        response_topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SHELL,
-            protocol.MQTT_SUFFIX_RESPONSE,
-        )
-
-        async with AsyncExitStack() as stack:
-            stack.push_async_callback(
-                self.ctx.publish,
-                topic=response_topic,
-                payload=b"Error: shell handler failed unexpectedly",
-                content_type="text/plain; charset=utf-8",
-                expiry=MQTT_EXPIRY_SHELL,
-                reply_to=inbound,
-            )
-            (
-                status,
-                stdout_bytes,
-                stderr_bytes,
-                exit_code,
-            ) = await self.process.run_sync(command, tokens)
-
-            stdout_text = stdout_bytes.decode("utf-8", errors="ignore")
-            stderr_text = stderr_bytes.decode("utf-8", errors="ignore")
-
-            if status == Status.OK.value:
-                response = (
-                    "Exit Code: "
-                    f"{exit_code if exit_code is not None else 'unknown'}\n"
-                    f"-- STDOUT --\n{stdout_text}\n-- STDERR --\n{stderr_text}"
-                )
-            elif status == Status.TIMEOUT.value:
-                response = "Error: Command timed out after " f"{self.state.process_timeout} seconds."
-            elif status == Status.MALFORMED.value:
-                response = "Error: Empty command"
-            else:
-                error_detail = stderr_text or "Unexpected server error"
-                response = f"Error: {error_detail}"
-
-            stack.pop_all()
-            await self.ctx.publish(
-                topic=response_topic,
-                payload=response.encode("utf-8"),
-                content_type="text/plain; charset=utf-8",
-                expiry=MQTT_EXPIRY_SHELL,
-                reply_to=inbound,
-            )
 
     async def _handle_run_async(
         self,
@@ -159,9 +81,10 @@ class ShellComponent:
         command = payload.command
         logger.info("MQTT async shell command: '%s'", command)
         try:
-            tokens = list(tokenize_shell_command(command))
-            pid = await self.process.start_async(command, tokens)
-        except CommandValidationError as exc:
+            # Policy is checked inside run_async as well, but we can check tokens here if needed for validation
+            pid = await self.process.run_async(command)
+        except Exception as exc:
+            logger.error("Error starting async command: %s", exc)
             response_topic = topic_path(
                 self.state.mqtt_topic_prefix,
                 Topic.SHELL,
@@ -170,7 +93,7 @@ class ShellComponent:
             )
             await self.ctx.publish(
                 topic=response_topic,
-                payload=f"error:{exc.message}".encode(),
+                payload=b"error:internal",
                 reply_to=inbound,
             )
             return
@@ -182,10 +105,10 @@ class ShellComponent:
             protocol.MQTT_SUFFIX_RESPONSE,
         )
 
-        if pid == protocol.INVALID_ID_SENTINEL:
+        if pid == 0:
             await self.ctx.publish(
                 topic=response_topic,
-                payload=b"error:not_allowed",
+                payload=b"error:not_allowed_or_limit_reached",
                 reply_to=inbound,
             )
             return
@@ -198,16 +121,11 @@ class ShellComponent:
 
     async def _handle_poll(self, pid_model: ShellPidPayload) -> None:
         pid = pid_model.pid
-
-        batch = await self.process.collect_output(pid)
-
+        batch = await self.process.poll_process(pid)
         await self.process.publish_poll_result(pid, batch)
 
     async def _handle_kill(self, pid_model: ShellPidPayload) -> None:
-        await self.process.handle_kill(
-            UINT16_STRUCT.build(pid_model.pid),
-            send_ack=False,
-        )
+        await self.process.stop_process(pid_model.pid)
 
     def _parse_shell_command(
         self,

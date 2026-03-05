@@ -134,14 +134,11 @@ class PinComponent:
         if not segments:
             return
 
-        if isinstance(topic_type, Topic):
-            topic_enum = topic_type
-        else:
-            try:
-                topic_enum = Topic(topic_type)
-            except ValueError:
-                return
-        segments = self._normalise_segments(topic_enum, segments)
+        try:
+            topic_enum = Topic(topic_type)
+        except ValueError:
+            return
+
         if not segments:
             return
 
@@ -280,17 +277,6 @@ class PinComponent:
         except ValueError:
             pass
         return None
-
-    @staticmethod
-    def _normalise_segments(topic_type: Topic, segments: list[str]) -> list[str]:
-        """Accept both route segments and legacy full-topic segments."""
-        if not segments:
-            return []
-        try:
-            topic_index = segments.index(topic_type.value)
-        except ValueError:
-            return segments
-        return segments[topic_index + 1 :]
 
     def _build_pin_topic(self, topic_type: Topic, pin: int | None) -> str:
         segments: list[str] = []

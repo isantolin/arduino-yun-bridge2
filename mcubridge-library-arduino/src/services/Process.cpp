@@ -10,14 +10,6 @@ ProcessClass::ProcessClass() { reset(); }
 
 void ProcessClass::reset() { _pending_process_pids.clear(); }
 
-void ProcessClass::run(etl::string_view command) {
-  if (command.empty()) return;
-  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN, command,
-                                rpc::MAX_PAYLOAD_SIZE - 1)) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-  }
-}
-
 void ProcessClass::runAsync(etl::string_view command) {
   if (command.empty()) return;
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, command,

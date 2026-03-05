@@ -99,7 +99,6 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
     datastore_put: bool = True
     mailbox_read: bool = True
     mailbox_write: bool = True
-    shell_run: bool = True
     shell_run_async: bool = True
     shell_poll: bool = True
     shell_kill: bool = True
@@ -132,7 +131,6 @@ _TOPIC_AUTH_MAPPING: Final[dict[tuple[str, str], str]] = {
     (Topic.DATASTORE.value, DatastoreAction.PUT.value): "datastore_put",
     (Topic.MAILBOX.value, MailboxAction.READ.value): "mailbox_read",
     (Topic.MAILBOX.value, MailboxAction.WRITE.value): "mailbox_write",
-    (Topic.SHELL.value, ShellAction.RUN.value): "shell_run",
     (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): "shell_run_async",
     (Topic.SHELL.value, ShellAction.POLL.value): "shell_poll",
     (Topic.SHELL.value, ShellAction.KILL.value): "shell_kill",

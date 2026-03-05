@@ -64,17 +64,6 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     return False
 
 
-class BridgeSerialProtocol(asyncio.Protocol):
-    """[DEPRECATED] Dummy class for test compatibility."""
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.connected_future = asyncio.get_running_loop().create_future()
-        self.connected_future.set_result(None)
-
-class SignalLostProtocol(BridgeSerialProtocol):
-    """[DEPRECATED] Dummy class for test compatibility."""
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__()
-
 class SerialTransport:
     """Manages the serial connection using high-performance asyncio Streams."""
 

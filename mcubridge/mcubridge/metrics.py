@@ -317,24 +317,6 @@ class RuntimeStateCollector:
             super_health.add_metric([name], float(stats.restarts))
         yield super_health
 
-    def _flatten(self, prefix: str, value: Any) -> Iterator[tuple[str, str, Any]]:
-        """[COMPAT] Legacy flattening logic for older unit tests."""
-        if isinstance(value, dict):
-            typed_dict = cast(dict[str, Any], value)
-            for k, v in typed_dict.items():
-                yield from self._flatten(f"{prefix}_{k}", v)
-        elif isinstance(value, (list, tuple, set)):
-            typed_seq = cast(Sequence[Any], value)
-            yield ("gauge", f"{prefix}_len", float(len(typed_seq)))
-        elif isinstance(value, bool):
-            yield ("gauge", prefix, 1.0 if value else 0.0)
-        elif isinstance(value, (int, float)):
-            yield ("gauge", prefix, float(value))
-        elif value is None:
-            yield ("info", prefix, "null")
-        else:
-            yield ("info", prefix, str(value))
-
 
 class PrometheusExporter:
     """Expose RuntimeState snapshots via the Prometheus text format."""

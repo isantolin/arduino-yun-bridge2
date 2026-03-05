@@ -10,9 +10,8 @@ import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
-from mcubridge.policy import CommandValidationError
-from mcubridge.protocol import protocol, structures
-from mcubridge.protocol.protocol import ShellAction, Status
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import ShellAction
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.shell import ShellComponent
 from mcubridge.state.context import RuntimeState
@@ -79,19 +78,19 @@ def _fake_inbound() -> Message:
 
 
 @pytest.mark.asyncio
-async def test_shell_run_ok_builds_text_response(
+async def test_shell_run_async_success(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     process = AsyncMock()
-    process.run_sync.return_value = (Status.OK.value, b"hello\n", b"", 0)
+    process.run_async.return_value = 1234
 
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
     inbound = _fake_inbound()
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
+        [ShellAction.RUN_ASYNC.value],
         b"echo hello",
         inbound,
     )
@@ -102,132 +101,33 @@ async def test_shell_run_ok_builds_text_response(
     assert message.topic_name == topic_path(
         runtime_state.mqtt_topic_prefix,
         Topic.SHELL,
+        ShellAction.RUN_ASYNC,
         protocol.MQTT_SUFFIX_RESPONSE,
     )
-    text = message.payload.decode("utf-8", errors="ignore")
-    assert "Exit Code" in text
-    assert "-- STDOUT --" in text
+    assert message.payload == b"1234"
 
 
 @pytest.mark.asyncio
-async def test_shell_run_timeout_message_mentions_configured_timeout(
+async def test_shell_run_async_exception_returns_error(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     process = AsyncMock()
-    process.run_sync.return_value = (Status.TIMEOUT.value, b"", b"", None)
+    process.run_async.side_effect = RuntimeError("crash")
 
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
+    inbound = _fake_inbound()
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
-        b"sleep 1000",
-        None,
-    )
-
-    text = ctx.enqueued[0][0].payload.decode("utf-8", errors="ignore")
-    assert "timed out" in text
-    assert str(runtime_state.process_timeout) in text
-
-
-@pytest.mark.asyncio
-async def test_shell_run_malformed_returns_empty_command_error(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    ctx = RecordingBridgeContext(runtime_config, runtime_state)
-    process = AsyncMock()
-    process.run_sync.return_value = (Status.MALFORMED.value, b"", b"", None)
-
-    component = ShellComponent(runtime_config, runtime_state, ctx, process)
-
-    await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
+        [ShellAction.RUN_ASYNC.value],
         b"echo hi",
-        None,
-    )
-
-    assert ctx.enqueued[0][0].payload.startswith(b"Error: Empty command")
-
-
-@pytest.mark.asyncio
-async def test_shell_run_error_uses_stderr_detail(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    ctx = RecordingBridgeContext(runtime_config, runtime_state)
-    process = AsyncMock()
-    process.run_sync.return_value = (Status.ERROR.value, b"", b"boom", 2)
-
-    component = ShellComponent(runtime_config, runtime_state, ctx, process)
-
-    await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
-        b"false",
-        None,
-    )
-
-    assert ctx.enqueued[0][0].payload.startswith(b"Error: boom")
-
-
-@pytest.mark.asyncio
-async def test_shell_run_exception_triggers_fallback_publish(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    ctx = RecordingBridgeContext(runtime_config, runtime_state)
-    process = AsyncMock()
-    process.run_sync.side_effect = RuntimeError("crash")
-
-    component = ShellComponent(runtime_config, runtime_state, ctx, process)
-
-    inbound = _fake_inbound()
-    with pytest.raises(RuntimeError):
-        await component.handle_mqtt(
-            [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
-            b"echo hi",
-            inbound,
-        )
-
-    assert len(ctx.enqueued) == 1
-    message, reply_context = ctx.enqueued[0]
-    assert reply_context is inbound
-    assert b"shell handler failed unexpectedly" in message.payload
-
-
-@pytest.mark.asyncio
-async def test_shell_run_async_validation_error_publishes_error_topic(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    ctx = RecordingBridgeContext(runtime_config, runtime_state)
-    process = AsyncMock()
-    process.start_async.side_effect = CommandValidationError("bad")
-
-    component = ShellComponent(runtime_config, runtime_state, ctx, process)
-
-    inbound = _fake_inbound()
-    await component.handle_mqtt(
-        [
-            runtime_state.mqtt_topic_prefix,
-            Topic.SHELL.value,
-            ShellAction.RUN_ASYNC.value,
-        ],
-        b"bad",
         inbound,
     )
 
     assert len(ctx.enqueued) == 1
-    message, reply_context = ctx.enqueued[0]
-    assert reply_context is inbound
-    assert message.topic_name == topic_path(
-        runtime_state.mqtt_topic_prefix,
-        Topic.SHELL,
-        ShellAction.RUN_ASYNC,
-        "error",
-    )
-    assert message.payload == b"error:bad"
+    message, _ = ctx.enqueued[0]
+    assert message.payload == b"error:internal"
 
 
 @pytest.mark.asyncio
@@ -237,22 +137,18 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
 ) -> None:
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     process = AsyncMock()
-    process.start_async.return_value = protocol.INVALID_ID_SENTINEL
+    process.run_async.return_value = 0
 
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
     await component.handle_mqtt(
-        [
-            runtime_state.mqtt_topic_prefix,
-            Topic.SHELL.value,
-            ShellAction.RUN_ASYNC.value,
-        ],
+        [ShellAction.RUN_ASYNC.value],
         b"echo hi",
         None,
     )
 
     message = ctx.enqueued[0][0]
-    assert message.payload == b"error:not_allowed"
+    assert message.payload == b"error:not_allowed_or_limit_reached"
 
 
 @pytest.mark.asyncio
@@ -262,14 +158,12 @@ async def test_shell_poll_calls_process_helpers(
 ) -> None:
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     process = AsyncMock()
-    process.collect_output.return_value = {"stdout": b"", "stderr": b""}
+    process.poll_process.return_value = AsyncMock()
 
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
     await component.handle_mqtt(
         [
-            runtime_state.mqtt_topic_prefix,
-            Topic.SHELL.value,
             ShellAction.POLL.value,
             "123",
         ],
@@ -277,12 +171,12 @@ async def test_shell_poll_calls_process_helpers(
         None,
     )
 
-    process.collect_output.assert_awaited_once_with(123)
+    process.poll_process.assert_awaited_once_with(123)
     process.publish_poll_result.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_shell_kill_packs_pid_and_suppresses_ack(
+async def test_shell_kill_invokes_stop_process(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
@@ -293,8 +187,6 @@ async def test_shell_kill_packs_pid_and_suppresses_ack(
 
     await component.handle_mqtt(
         [
-            runtime_state.mqtt_topic_prefix,
-            Topic.SHELL.value,
             ShellAction.KILL.value,
             "42",
         ],
@@ -302,10 +194,7 @@ async def test_shell_kill_packs_pid_and_suppresses_ack(
         None,
     )
 
-    process.handle_kill.assert_awaited_once_with(
-        structures.UINT16_STRUCT.build(42),
-        send_ack=False,
-    )
+    process.stop_process.assert_awaited_once_with(42)
 
 
 @pytest.mark.asyncio
@@ -318,26 +207,11 @@ async def test_shell_ignores_invalid_payloads_and_actions(
 
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
-    await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
-        b"",
-        None,
-    )
-    await component.handle_mqtt(
-        [
-            runtime_state.mqtt_topic_prefix,
-            Topic.SHELL.value,
-            ShellAction.POLL.value,
-            "0",
-        ],
-        b"",
-        None,
-    )
-    await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, "unknown"],
-        b"",
-        None,
-    )
+    # Empty segments
+    await component.handle_mqtt([], b"", None)
+
+    # Unknown action
+    await component.handle_mqtt(["unknown"], b"", None)
 
     assert ctx.enqueued == []
     assert ctx.sent_frames == []

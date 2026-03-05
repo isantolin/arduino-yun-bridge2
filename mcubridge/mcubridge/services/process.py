@@ -49,8 +49,6 @@ class ProcessComponent:
         self.config = config
         self.state = state
         self.service = service
-        # [COMPAT] Legacy alias for coverage tests
-        self.ctx = service
 
         # [SIL-2] Ensure numeric limit for semaphore
         limit = 1
@@ -69,23 +67,11 @@ class ProcessComponent:
 
     # --- MCU Handlers (Required by Dispatcher) ---
 
-    async def handle_run(self, payload: bytes) -> None:
-        """Handle synchronous process execution (deprecated)."""
-        await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
-            protocol.Command.CMD_PROCESS_RUN.value,
-            status=Status.NOT_IMPLEMENTED,
-        )
-
     async def handle_run_async(self, payload: bytes) -> None:
         """Handle async process execution request from MCU."""
         try:
-            # 1. Decode attempt
-            try:
-                packet = structures.ProcessRunAsyncPacket.decode(payload)
-                command = packet.command
-            except Exception:
-                # Fallback for simple raw string payloads from legacy tests
-                command = payload.decode("utf-8", errors="ignore").strip()
+            packet = structures.ProcessRunAsyncPacket.decode(payload)
+            command = packet.command
 
             if not command:
                 await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
@@ -126,11 +112,8 @@ class ProcessComponent:
     async def handle_poll(self, payload: bytes) -> None:
         """Handle process poll request from MCU."""
         try:
-            try:
-                packet = structures.ProcessPollPacket.decode(payload)
-                pid = packet.pid
-            except Exception:
-                pid = structures.UINT16_STRUCT.parse(payload)
+            packet = structures.ProcessPollPacket.decode(payload)
+            pid = packet.pid
 
             batch = await self.poll_process(pid)
             await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
@@ -147,11 +130,8 @@ class ProcessComponent:
     async def handle_kill(self, payload: bytes, *, send_ack: bool = True) -> bool:
         """Handle process termination request."""
         try:
-            try:
-                packet = structures.ProcessKillPacket.decode(payload)
-                pid = packet.pid
-            except Exception:
-                pid = structures.UINT16_STRUCT.parse(payload)
+            packet = structures.ProcessKillPacket.decode(payload)
+            pid = packet.pid
 
             success = await self.stop_process(pid)
             if send_ack:
@@ -167,77 +147,6 @@ class ProcessComponent:
                     status=Status.MALFORMED,
                 )
             return False
-
-    # --- Compatibility Methods for Legacy Tests ---
-
-    async def run_sync(self, command: str, tokens: list[str] | None = None) -> tuple[int, bytes, bytes, int | None]:
-        """Mock sync execution using async primitives."""
-        pid = await self.run_async(command)
-        if pid == 0:
-            return Status.ERROR.value, b"", b"limit reached", 1
-
-        while True:
-            batch = await self.poll_process(pid)
-            async with self.state.process_lock:
-                if pid not in self.state.running_processes:
-                    return Status.OK.value, batch.stdout_chunk, batch.stderr_chunk, batch.exit_code
-            await asyncio.sleep(0.01)
-
-    async def collect_output(self, pid: int) -> ProcessOutputBatch:
-        return await self.poll_process(pid)
-
-    async def start_async(self, command: str, tokens: Any = None) -> int:
-        return await self.run_async(command)
-
-    def _try_acquire_process_slot(self) -> bool:
-        return not self._process_slots.locked()
-
-    def _release_process_slot(self) -> None:
-        try:
-            self._process_slots.release()
-        except ValueError:
-            pass
-
-    async def _terminate_process_tree(self, proc: Any) -> None:
-        if hasattr(proc, "terminate"):
-            try:
-                proc.terminate()
-            except Exception:
-                pass
-
-    async def _finalize_async_process(self, pid: int, proc: Any = None) -> None:
-        await self._finalize_process(pid)
-
-    async def _allocate_pid(self) -> int:
-        async with self.state.process_lock:
-            pid = self.state.next_pid
-            self.state.next_pid = (pid + 1) % 65535 or 1
-            return pid
-
-    @staticmethod
-    def _kill_process_tree_sync(pid: int) -> None:
-        import psutil
-        try:
-            p = psutil.Process(pid)
-            for child in p.children(recursive=True):
-                try:
-                    child.kill()
-                except (psutil.Error, Exception):
-                    pass
-            p.kill()
-        except (psutil.NoSuchProcess, Exception):
-            pass
-
-    async def _execute_sync_command(self, command: str, tokens: list[str]) -> None:
-        status, stdout, stderr, _ = await self.run_sync(command, tokens)
-        await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
-            protocol.Command.CMD_PROCESS_RUN.value,
-            status=Status(status),
-            extra=stdout + stderr
-        )
-
-    def _limit_sync_payload(self, stdout: bytes, stderr: bytes) -> tuple[bytes, bytes]:
-        return stdout[:1024], stderr[:1024]
 
     # --- Core Logic ---
 
@@ -294,6 +203,13 @@ class ProcessComponent:
             logger.error("Failed to start process: %s", e)
             self._process_slots.release()
             return 0
+
+    async def _allocate_pid(self) -> int:
+        """Atomically allocate a unique PID for a new process."""
+        async with self.state.process_lock:
+            pid = self.state.next_pid
+            self.state.next_pid = (pid % 65535) + 1
+            return pid
 
     def _append_chunk_sync(self, pid: int, chunk: bytes, is_stderr: bool) -> None:
         asyncio.create_task(self._append_chunk_async(pid, chunk, is_stderr))

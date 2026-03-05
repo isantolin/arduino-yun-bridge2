@@ -25,8 +25,6 @@ class ProcessClass {
   friend class bridge::test::ProcessTestAccessor;
 #endif
  public:
-  using ProcessRunHandler = etl::delegate<void(
-      rpc::StatusCode, etl::span<const uint8_t>, etl::span<const uint8_t>)>;
   using ProcessPollHandler =
       etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>,
                          etl::span<const uint8_t>)>;
@@ -34,14 +32,10 @@ class ProcessClass {
 
   ProcessClass();
   void reset();
-  void run(etl::string_view command);
   void runAsync(etl::string_view command);
   void poll(int16_t pid);
   void kill(int16_t pid);
 
-  inline void onProcessRunResponse(ProcessRunHandler handler) {
-    _process_run_handler = handler;
-  }
   inline void onProcessPollResponse(ProcessPollHandler handler) {
     _process_poll_handler = handler;
   }
@@ -54,7 +48,6 @@ class ProcessClass {
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();
 
-  ProcessRunHandler _process_run_handler;
   ProcessPollHandler _process_poll_handler;
   ProcessRunAsyncHandler _process_run_async_handler;
 

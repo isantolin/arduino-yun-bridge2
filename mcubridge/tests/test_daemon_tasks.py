@@ -15,7 +15,6 @@ from mcubridge.protocol.protocol import FRAME_DELIMITER, Command
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import (
-    MAX_SERIAL_PACKET_BYTES,
     SerialTransport,
 )
 from mcubridge.transport.mqtt import MqttTransport
@@ -38,7 +37,7 @@ async def test_serial_reader_task_processes_frame(
     # Mock Streams API
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
     mock_reader.readuntil.side_effect = [encoded, asyncio.IncompleteReadError(b"", None)]
-    
+
     mock_writer = MagicMock(spec=asyncio.StreamWriter)
     mock_writer.is_closing.return_value = False
     mock_writer.wait_closed = AsyncMock()
@@ -55,9 +54,9 @@ async def test_serial_reader_task_processes_frame(
         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
     ):
         # Patch tenacity retry to fail after first attempt to avoid infinite loops
-        with patch.object(SerialTransport, "_retryable_run", wraps=SerialTransport(runtime_config, state, cast(Any, service))._retryable_run) as mock_retryable:
+        with patch.object(SerialTransport, "_retryable_run"):
             transport = SerialTransport(runtime_config, state, cast(Any, service))
-            
+
             # We want to break the loop after one failure
             async def _limited_run(loop):
                 try:
@@ -72,12 +71,13 @@ async def test_serial_reader_task_processes_frame(
 
                 await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
+
                 # Wait for frames to be processed (actual event loop yielding)
                 for _ in range(50):
                     if service.received_frames:
                         break
                     await asyncio.sleep(0.01)
-                
+
                 assert service.received_frames
                 command_id, received_payload = service.received_frames[0]
                 assert command_id == Command.CMD_DIGITAL_READ_RESP.value
@@ -110,7 +110,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
     # Mock Streams API
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
     mock_reader.readuntil.side_effect = [encoded, asyncio.IncompleteReadError(b"", None)]
-    
+
     mock_writer = MagicMock(spec=asyncio.StreamWriter)
     mock_writer.is_closing.return_value = False
     mock_writer.wait_closed = AsyncMock()
@@ -127,7 +127,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
     ):
         transport = SerialTransport(runtime_config, state, cast(Any, service))
-        
+
         async def _limited_run(loop):
             try:
                 await transport._connect_and_run(loop)
@@ -137,8 +137,10 @@ async def test_serial_reader_task_emits_crc_mismatch(
 
         with patch.object(transport, "_retryable_run", _limited_run):
             task = asyncio.create_task(transport.run())
+
             await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
-            
+
+
             # Wait for state to update
             for _ in range(50):
                 if state.serial_decode_errors > 0:
@@ -147,7 +149,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
 
             assert not service.received_frames
             assert state.serial_decode_errors > 0
-            
+
             transport._stop_event.set()
             try:
                 await asyncio.wait_for(task, timeout=0.5)
@@ -170,7 +172,7 @@ async def test_serial_reader_task_limits_packet_size(
         asyncio.LimitOverrunError("Too long", 0),
         asyncio.IncompleteReadError(b"", None)
     ]
-    
+
     mock_writer = MagicMock(spec=asyncio.StreamWriter)
     mock_writer.is_closing.return_value = False
     mock_writer.wait_closed = AsyncMock()
@@ -187,7 +189,7 @@ async def test_serial_reader_task_limits_packet_size(
         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
     ):
         transport = SerialTransport(runtime_config, state, cast(Any, service))
-        
+
         async def _limited_run(loop):
             try:
                 await transport._connect_and_run(loop)
@@ -197,7 +199,9 @@ async def test_serial_reader_task_limits_packet_size(
 
         with patch.object(transport, "_retryable_run", _limited_run):
             task = asyncio.create_task(transport.run())
+
             await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+
 
             for _ in range(50):
                 if state.serial_decode_errors >= 1:
@@ -206,7 +210,7 @@ async def test_serial_reader_task_limits_packet_size(
 
             assert not service.received_frames
             assert state.serial_decode_errors >= 1
-            
+
             transport._stop_event.set()
             try:
                 await asyncio.wait_for(task, timeout=0.5)
@@ -224,7 +228,7 @@ async def test_serial_reader_task_propagates_handshake_fatal(
     # Mock Streams API
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
     mock_reader.readuntil.side_effect = asyncio.IncompleteReadError(b"", None)
-    
+
     mock_writer = MagicMock(spec=asyncio.StreamWriter)
     mock_writer.is_closing.return_value = False
     mock_writer.wait_closed = AsyncMock()

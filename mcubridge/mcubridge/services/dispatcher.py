@@ -142,7 +142,6 @@ class BridgeDispatcher:
         self.mqtt_router.register(Topic.FILE, file_mqtt_handler)
 
         # Process
-        self.mcu_registry.register(Command.CMD_PROCESS_RUN.value, process.handle_run)
         self.mcu_registry.register(
             Command.CMD_PROCESS_RUN_ASYNC.value,
             process.handle_run_async,

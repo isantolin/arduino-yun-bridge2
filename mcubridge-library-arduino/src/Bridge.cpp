@@ -778,27 +778,11 @@ void BridgeClass::onFileSystemCommand(
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Switch for Process Commands
-  switch (ctx.raw_command - (rpc::RPC_PROCESS_COMMAND_MIN + 4)) {
-    case 0: _handleProcessRunResp(ctx); break;       // 164
-    case 1: _handleProcessRunAsyncResp(ctx); break;  // 165
-    case 2: _handleProcessPollResp(ctx); break;      // 166
+  switch (ctx.raw_command - (rpc::RPC_PROCESS_COMMAND_MIN + 5)) {
+    case 0: _handleProcessRunAsyncResp(ctx); break;  // 165
+    case 1: _handleProcessPollResp(ctx); break;      // 166
     default: break;
   }
-}
-
-void BridgeClass::_handleProcessRunResp(
-    const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::ProcessRunResponse>(
-      ctx, [](const rpc::payload::ProcessRunResponse& msg) {
-#if BRIDGE_ENABLE_PROCESS
-        if (Process._process_run_handler.is_valid()) {
-          Process._process_run_handler(
-              static_cast<rpc::StatusCode>(msg.status),
-              etl::span<const uint8_t>(msg.stdout_data, msg.stdout_len),
-              etl::span<const uint8_t>(msg.stderr_data, msg.stderr_len));
-        }
-#endif
-      });
 }
 
 void BridgeClass::_handleProcessRunAsyncResp(

@@ -420,7 +420,6 @@ class BridgeClass
   void _handleFileReadResp(const bridge::router::CommandContext& ctx);
 
   // Process
-  void _handleProcessRunResp(const bridge::router::CommandContext& ctx);
   void _handleProcessRunAsyncResp(const bridge::router::CommandContext& ctx);
   void _handleProcessPollResp(const bridge::router::CommandContext& ctx);
 

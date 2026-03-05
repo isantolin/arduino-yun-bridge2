@@ -266,12 +266,6 @@ class ConsoleWritePacket(BaseStruct, frozen=True):
     SCHEMA = BinStruct("data" / construct.GreedyBytes)
 
 
-class ProcessRunPacket(BaseStruct, frozen=True):
-    command: str
-
-    SCHEMA = BinStruct("command" / construct.GreedyString("utf-8"))
-
-
 class ProcessRunAsyncPacket(BaseStruct, frozen=True):
     command: str
 
@@ -288,20 +282,6 @@ class ProcessPollPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
     SCHEMA = BinStruct("pid" / construct.Int16ub)
-
-
-class ProcessRunResponsePacket(BaseStruct, frozen=True):
-    status: Annotated[int, msgspec.Meta(ge=0)]
-    stdout: bytes
-    stderr: bytes
-    exit_code: Annotated[int, msgspec.Meta(ge=0)]
-
-    SCHEMA = BinStruct(
-        "status" / construct.Int8ub,
-        "stdout" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
-        "stderr" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
-        "exit_code" / construct.Int8ub,
-    )
 
 
 class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
@@ -421,7 +401,6 @@ PAYLOAD_SCHEMAS: Final[dict[int, Construct]] = {
     protocol.Command.CMD_MAILBOX_READ_RESP: MailboxReadResponsePacket.SCHEMA,
     protocol.Command.CMD_MAILBOX_AVAILABLE_RESP: MailboxAvailableResponsePacket.SCHEMA,
     protocol.Command.CMD_FILE_READ_RESP: FileReadResponsePacket.SCHEMA,
-    protocol.Command.CMD_PROCESS_RUN_RESP: ProcessRunResponsePacket.SCHEMA,
     protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket.SCHEMA,
     protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket.SCHEMA,
     protocol.Command.CMD_GET_CAPABILITIES_RESP: CapabilitiesPacket.SCHEMA,
@@ -440,7 +419,6 @@ PAYLOAD_SCHEMAS: Final[dict[int, Construct]] = {
     protocol.Command.CMD_FILE_WRITE: FileWritePacket.SCHEMA,
     protocol.Command.CMD_FILE_READ: FileReadPacket.SCHEMA,
     protocol.Command.CMD_FILE_REMOVE: FileRemovePacket.SCHEMA,
-    protocol.Command.CMD_PROCESS_RUN: ProcessRunPacket.SCHEMA,
     protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket.SCHEMA,
     protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket.SCHEMA,
     protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket.SCHEMA,

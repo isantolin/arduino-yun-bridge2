@@ -28,6 +28,7 @@ from .definitions import (
     build_mqtt_properties,
 )
 from .env import dump_client_env, read_uci_general
+from .protocol import Command, Topic
 
 __all__ = [
     "Bridge",
@@ -35,17 +36,19 @@ __all__ = [
     "dump_client_env",
     "MqttError",
     "QOSLevel",
+    "Command",
+    "Topic",
 ]
 
 
 _UCI_GENERAL = read_uci_general()
 
-MQTT_HOST = _UCI_GENERAL.get("mqtt_host", DEFAULT_MQTT_HOST)
-MQTT_PORT = int(_UCI_GENERAL.get("mqtt_port", str(DEFAULT_MQTT_PORT)))
-MQTT_TOPIC_PREFIX = _UCI_GENERAL.get("mqtt_topic", DEFAULT_MQTT_TOPIC)
-MQTT_USER = _UCI_GENERAL.get("mqtt_user") or None
-MQTT_PASS = _UCI_GENERAL.get("mqtt_pass") or None
-MQTT_TLS_INSECURE = _UCI_GENERAL.get("mqtt_tls_insecure") or "0"
+MQTT_HOST = os.environ.get("MCUBRIDGE_MQTT_HOST") or _UCI_GENERAL.get("mqtt_host", DEFAULT_MQTT_HOST)
+MQTT_PORT = int(os.environ.get("MCUBRIDGE_MQTT_PORT") or _UCI_GENERAL.get("mqtt_port", str(DEFAULT_MQTT_PORT)))
+MQTT_TOPIC_PREFIX = os.environ.get("MCUBRIDGE_MQTT_TOPIC") or _UCI_GENERAL.get("mqtt_topic", DEFAULT_MQTT_TOPIC)
+MQTT_USER = os.environ.get("MCUBRIDGE_MQTT_USER") or _UCI_GENERAL.get("mqtt_user") or None
+MQTT_PASS = os.environ.get("MCUBRIDGE_MQTT_PASS") or _UCI_GENERAL.get("mqtt_pass") or None
+MQTT_TLS_INSECURE = os.environ.get("MCUBRIDGE_MQTT_TLS_INSECURE") or _UCI_GENERAL.get("mqtt_tls_insecure") or "0"
 
 
 def _default_tls_context() -> ssl.SSLContext | None:
@@ -116,6 +119,8 @@ class Bridge:
         self.host = host
         self.port = port
         self.topic_prefix = topic_prefix
+        # Override prefix in generated Topic helper
+        Topic.PREFIX = topic_prefix
         self.username = username
         self.password = password
         self.tls_context = tls_context if tls_context is not None else _default_tls_context()
@@ -379,17 +384,17 @@ class Bridge:
     async def digital_write(self, pin: int, value: int) -> None:
         if self._digital_modes.get(pin) != 1:
             await self.set_digital_mode(pin, 1)
-        topic = f"{self.topic_prefix}/d/{pin}"
+        topic = Topic.command("d", pin)
         await self._publish_simple(topic, str(value))
         logger.debug("digital_write(%d, %d) -> %s", pin, value, topic)
 
     async def digital_read(self, pin: int, timeout: float = 10) -> int:
         response = await self._publish_and_wait(
-            f"{self.topic_prefix}/d/{pin}/read",
+            Topic.command("d", pin, "read"),
             b"",
             resp_topic=(
-                f"{self.topic_prefix}/d/{pin}/value",
-                f"{self.topic_prefix}/d/value",
+                Topic.status("d", pin, "value"),
+                Topic.status("d", "value"),
             ),
             timeout=timeout,
         )
@@ -397,11 +402,11 @@ class Bridge:
 
     async def analog_read(self, pin: int, timeout: float = 10) -> int:
         response = await self._publish_and_wait(
-            f"{self.topic_prefix}/a/{pin}/read",
+            Topic.command("a", pin, "read"),
             b"",
             resp_topic=(
-                f"{self.topic_prefix}/a/{pin}/value",
-                f"{self.topic_prefix}/a/value",
+                Topic.status("a", pin, "value"),
+                Topic.status("a", "value"),
             ),
             timeout=timeout,
         )
@@ -425,34 +430,34 @@ class Bridge:
         if mode_value not in (0, 1, 2):
             raise ValueError(f"Invalid digital mode value: {mode}")
 
-        topic = f"{self.topic_prefix}/d/{pin}/mode"
+        topic = Topic.command("d", pin, "mode")
         await self._publish_simple(topic, str(mode_value))
         self._digital_modes[pin] = mode_value
         logger.debug("set_digital_mode(%d, %d)", pin, mode_value)
 
     async def put(self, key: str, value: str, timeout: float = 10) -> None:
         await self._publish_and_wait(
-            f"{self.topic_prefix}/datastore/put/{key}",
+            Topic.command("datastore", "put", key),
             value.encode("utf-8"),
-            resp_topic=f"{self.topic_prefix}/datastore/get/{key}",
+            resp_topic=Topic.status("datastore", "get", key),
             timeout=timeout,
         )
         logger.debug("datastore put('%s', '%s')", key, value)
 
     async def get(self, key: str, timeout: float = 10) -> str:
         response = await self._publish_and_wait(
-            f"{self.topic_prefix}/datastore/get/{key}/request",
+            Topic.command("datastore", "get", key, "request"),
             b"",
-            resp_topic=f"{self.topic_prefix}/datastore/get/{key}",
+            resp_topic=Topic.status("datastore", "get", key),
             timeout=timeout,
         )
         return response.decode("utf-8")
 
     async def get_free_memory(self, timeout: float = 10) -> int:
         response = await self._publish_and_wait(
-            f"{self.topic_prefix}/system/free_memory/get",
+            Topic.command("system", "free_memory", "get"),
             b"",
-            resp_topic=f"{self.topic_prefix}/system/free_memory/value",
+            resp_topic=Topic.status("system", "free_memory", "value"),
             timeout=timeout,
         )
         return int(response.decode("utf-8"))
@@ -461,9 +466,9 @@ class Bridge:
         command_str = _format_shell_command(command_parts)
         logger.warning("run_sketch_command falls back to a synchronous shell " "command via MQTT.")
         response = await self._publish_and_wait(
-            f"{self.topic_prefix}/sh/run",
+            Topic.command("sh", "run"),
             command_str.encode("utf-8"),
-            resp_topic=f"{self.topic_prefix}/sh/response",
+            resp_topic=Topic.status("sh", "response"),
             timeout=timeout,
         )
         return response
@@ -471,9 +476,9 @@ class Bridge:
     async def run_shell_command_async(self, command_parts: list[str], timeout: float = 10) -> int:
         command_str = _format_shell_command(command_parts)
         response = await self._publish_and_wait(
-            f"{self.topic_prefix}/sh/run_async",
+            Topic.command("sh", "run_async"),
             command_str.encode("utf-8"),
-            resp_topic=f"{self.topic_prefix}/sh/run_async/response",
+            resp_topic=Topic.status("sh", "run_async", "response"),
             timeout=timeout,
         )
         text = response.decode("utf-8")
@@ -490,9 +495,9 @@ class Bridge:
         if pid <= 0:
             raise ValueError("pid must be a positive integer")
         response = await self._publish_and_wait(
-            f"{self.topic_prefix}/sh/poll/{pid}",
+            Topic.command("sh", "poll", pid),
             b"",
-            resp_topic=f"{self.topic_prefix}/sh/poll/{pid}/response",
+            resp_topic=Topic.status("sh", "poll", pid, "response"),
             timeout=timeout,
         )
         try:
@@ -505,12 +510,12 @@ class Bridge:
         return cast(ShellPollResponse, payload_dict)
 
     async def console_write(self, message: str) -> None:
-        topic = f"{self.topic_prefix}/console/in"
+        topic = Topic.command("console", "in")
         await self._publish_simple(topic, message)
         logger.debug("console_write('%s')", message)
 
     async def console_read_async(self) -> str | None:
-        topic = f"{self.topic_prefix}/console/out"
+        topic = Topic.status("console", "out")
         client = self._ensure_client()
         queue: asyncio.Queue[Message] | None = None
         routes = self._response_routes.get(topic)
@@ -535,10 +540,10 @@ class Bridge:
         return payload.decode("utf-8", errors="ignore")
 
     async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
-        incoming_topic = f"{self.topic_prefix}/mailbox/incoming"
+        incoming_topic = Topic.status("mailbox", "incoming")
         try:
             payload = await self._publish_and_wait(
-                f"{self.topic_prefix}/mailbox/read",
+                Topic.command("mailbox", "read"),
                 b"",
                 resp_topic=incoming_topic,
                 timeout=timeout,
@@ -556,26 +561,26 @@ class Bridge:
 
     async def file_write(self, filename: str, content: str | bytes) -> None:
         fn = filename.lstrip("/")
-        topic = f"{self.topic_prefix}/file/write/{fn}"
+        topic = Topic.command("file", "write", fn)
         await self._publish_simple(topic, content)
         logger.debug("file_write('%s', %d bytes)", filename, len(content))
 
     async def file_read(self, filename: str, timeout: float = 10) -> bytes:
         fn = filename.lstrip("/")
         return await self._publish_and_wait(
-            f"{self.topic_prefix}/file/read/{fn}",
+            Topic.command("file", "read", fn),
             b"",
-            resp_topic=f"{self.topic_prefix}/file/read/response/{fn}",
+            resp_topic=Topic.status("file", "read", "response", fn),
             timeout=timeout,
         )
 
     async def file_remove(self, filename: str) -> None:
         fn = filename.lstrip("/")
-        topic = f"{self.topic_prefix}/file/remove/{fn}"
+        topic = Topic.command("file", "remove", fn)
         await self._publish_simple(topic, b"")
         logger.debug("file_remove('%s')", filename)
 
     async def mailbox_write(self, message: str | bytes) -> None:
-        topic = f"{self.topic_prefix}/mailbox/write"
+        topic = Topic.command("mailbox", "write")
         await self._publish_simple(topic, message)
         logger.debug("mailbox_write(%d bytes)", len(message))

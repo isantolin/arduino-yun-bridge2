@@ -746,6 +746,26 @@ class JinjaGenerator:
         )
         out_path.write_text(render, encoding="utf-8")
 
+    def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
+        template = self.env.get_template("protocol_client.py.j2")
+
+        c = spec.constants
+        constants = [
+            {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
+            {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
+            {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
+            {"name": "MAX_FILEPATH_LENGTH", "type": "int", "value": c["max_filepath_length"]},
+            {"name": "MAX_DATASTORE_KEY_LENGTH", "type": "int", "value": c["max_datastore_key_length"]},
+        ]
+
+        render = template.render(
+            constants=constants,
+            capabilities=spec.capabilities,
+            statuses=spec.statuses,
+            commands=spec.commands,
+        )
+        out_path.write_text(render, encoding="utf-8")
+
 
 @app.command()
 def main(
@@ -755,6 +775,7 @@ def main(
         Optional[Path], typer.Option("--cpp-structs", help="C++ structs output")
     ] = None,
     py: Annotated[Optional[Path], typer.Option("--py", help="Python output")] = None,
+    py_client: Annotated[Optional[Path], typer.Option("--py-client", help="Python client output")] = None,
 ) -> None:
     spec = ProtocolSpec.load(spec_path)
     gen = JinjaGenerator()
@@ -773,6 +794,11 @@ def main(
         py.parent.mkdir(parents=True, exist_ok=True)
         gen.generate_python(spec, py)
         sys.stderr.write(f"Generated {py}\n")
+
+    if py_client:
+        py_client.parent.mkdir(parents=True, exist_ok=True)
+        gen.generate_python_client(spec, py_client)
+        sys.stderr.write(f"Generated {py_client}\n")
 
 
 if __name__ == "__main__":

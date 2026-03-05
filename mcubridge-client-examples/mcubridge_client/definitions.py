@@ -10,14 +10,12 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from mcubridge.config.const import DEFAULT_MQTT_PORT
-from mcubridge.protocol.protocol import (
-    MAX_PAYLOAD_SIZE as PROTOCOL_MAX_PAYLOAD_SIZE,
-    MQTT_DEFAULT_TOPIC_PREFIX as DEFAULT_MQTT_TOPIC,
-)
+from .protocol import MAX_PAYLOAD_SIZE as PROTOCOL_MAX_PAYLOAD_SIZE
 
 # Client-specific default (remote board IP, NOT localhost)
 DEFAULT_MQTT_HOST: str = "192.168.15.36"
 MAX_PAYLOAD_SIZE: Final[int] = PROTOCOL_MAX_PAYLOAD_SIZE
+DEFAULT_MQTT_TOPIC: str = "br"
 
 
 class QOSLevel(IntEnum):

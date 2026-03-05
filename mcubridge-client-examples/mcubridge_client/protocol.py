@@ -47,9 +47,11 @@ class Command(IntEnum):
     CMD_GET_VERSION_RESP = 65  # None
     CMD_GET_FREE_MEMORY = 66  # None
     CMD_GET_FREE_MEMORY_RESP = 67  # None
-    CMD_LINK_SYNC = 68  # Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)].
+    CMD_LINK_SYNC = 68  # Synchronize link state with mutual authentication. Payload: [16-byte Nonce] +
+    # [16-byte HMAC Tag (optional)].
     CMD_LINK_SYNC_RESP = 69  # None
-    CMD_LINK_RESET = 70  # Reset link state. Accepts optional payload with 'config_format' to update timing parameters.
+    CMD_LINK_RESET = 70  # Reset link state. Accepts optional payload with 'config_format' to update timing
+    # parameters.
     CMD_LINK_RESET_RESP = 71  # None
     CMD_GET_CAPABILITIES = 72  # None
     CMD_GET_CAPABILITIES_RESP = 73  # None
@@ -86,20 +88,22 @@ class Command(IntEnum):
 
 # MQTT Topic Helpers
 class Topic:
-    PREFIX: Final[str] = "br"
-    
+    PREFIX: str = "br"
+
     @staticmethod
-    def command(cmd_name: str, *args: str | int) -> str:
+    def command(cmd_name: str, *args: str | int, prefix: str | None = None) -> str:
         """Helper to build a command topic."""
-        base = f"{Topic.PREFIX}/cmd/{cmd_name.lower()}"
+        p = prefix or Topic.PREFIX
+        base = f"{p}/cmd/{cmd_name.lower()}"
         if args:
             return f"{base}/{'/'.join(map(str, args))}"
         return base
 
     @staticmethod
-    def status(cmd_name: str, *args: str | int) -> str:
+    def status(cmd_name: str, *args: str | int, prefix: str | None = None) -> str:
         """Helper to build a status topic."""
-        base = f"{Topic.PREFIX}/status/{cmd_name.lower()}"
+        p = prefix or Topic.PREFIX
+        base = f"{p}/status/{cmd_name.lower()}"
         if args:
             return f"{base}/{'/'.join(map(str, args))}"
         return base

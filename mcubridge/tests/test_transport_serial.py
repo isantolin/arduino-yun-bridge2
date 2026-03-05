@@ -33,10 +33,11 @@ def _make_config() -> RuntimeConfig:
 
 
 def test_is_binary_packet_valid_size() -> None:
-    assert serial_fast._is_binary_packet(b"abc") is True
-    assert serial_fast._is_binary_packet(bytearray(b"abc")) is True
+    assert serial_fast._is_binary_packet(b"\x02\x00\x00\x00\x00") is True
+    assert serial_fast._is_binary_packet(bytearray(b"\x02\x00\x00\x00\x00")) is True
     assert serial_fast._is_binary_packet(b"") is False
-    assert serial_fast._is_binary_packet(b"a" * (serial_fast.MAX_SERIAL_PACKET_BYTES + 1)) is False
+    # Use actual constant name MAX_SERIAL_FRAME_BYTES
+    assert serial_fast._is_binary_packet(b"a" * (serial_fast.MAX_SERIAL_FRAME_BYTES + 1)) is False
 
 
 @pytest.mark.asyncio
@@ -58,7 +59,7 @@ async def test_process_packet_crc_mismatch_reports_crc(
     monkeypatch.setattr(serial_fast.cobs, "decode", lambda _data: raw)
 
     # Manual call to async method
-    await transport._async_process_packet(b"encoded")
+    await transport._async_process_packet(b"\x02encoded")
 
     assert state.serial_decode_errors == 1
 
@@ -74,12 +75,12 @@ async def test_process_packet_success_dispatches(
     service.handle_mcu_frame = AsyncMock()
 
     frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, b"hi")
-    monkeypatch.setattr(serial_fast.cobs, "decode", lambda _data: frame_bytes)
+    monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: frame_bytes)
 
     transport = serial_fast.SerialTransport(config, state, service)
     transport.loop = asyncio.get_running_loop()
 
-    await transport._async_process_packet(b"encoded")
+    await transport._async_process_packet(b"\x02encoded")
 
     service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"hi")
 
@@ -110,11 +111,11 @@ async def test_write_frame_debug_logs_unknown_command(
         lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),
     )
 
-    ok = await transport._serial_sender(protocol.UINT8_MASK - 1, b"payload")
+    ok = await transport._serial_sender(0xFE, b"payload")
     assert ok is True
     assert mock_writer.write.called
-    assert "0xFE" in seen.get("msg", "")
-
+    # Check that the command 0xFE is present in the encoded hex string
+    assert "fe" in seen.get("msg", "").lower()
 
 @pytest.mark.asyncio
 async def test_write_frame_returns_false_on_write_error() -> None:

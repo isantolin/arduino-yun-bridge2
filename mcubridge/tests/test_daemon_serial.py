@@ -56,13 +56,15 @@ async def test_serial_reader_task_reconnects():
     mock_open = AsyncMock(return_value=(mock_reader, mock_writer))
 
     # Mock sleep to fast-forward loops and eventually break the run loop
-    # Call order:
-    # 1. sleep(2.0) in _toggle_dtr (1st attempt)
-    # 2. sleep(...) in tenacity retry (1st failure)
-    # 3. sleep(2.0) in _toggle_dtr (2nd attempt)
-    # 4. sleep(...) in tenacity retry (2nd failure) -> Break Loop
-    mock_sleep = AsyncMock()
-    mock_sleep.side_effect = [None, None, None, RuntimeError("Break Loop")]
+    sleep_count = 0
+    async def mock_sleep_fn(duration):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count > 100:
+            raise asyncio.CancelledError("Break Loop")
+        return None
+
+    mock_sleep = AsyncMock(side_effect=mock_sleep_fn)
 
     with (
         patch(

@@ -42,7 +42,7 @@ class EmulationState:
             return
         with self.lock:
             self.output_lines.append((source, clean_line))
-            print(f"[{source}] {clean_line}")
+            logger.info("[%s] %s", source, clean_line)
 
 
 class MqttVerifier:

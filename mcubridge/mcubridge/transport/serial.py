@@ -18,6 +18,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Final, cast
 
+from cobs import cobs
 from cobs.cobs import encode as cobs_encode, decode as cobs_decode, DecodeError as CobsDecodeError
 import serial
 import serial_asyncio_fast
@@ -45,6 +46,14 @@ def _is_binary_packet(packet: bytes) -> bool:
     if len(packet) < 5:
         return False
     return packet[0] == protocol.PROTOCOL_VERSION
+
+async def serial_sender_not_ready(cmd: int, pl: bytes) -> bool:
+    """Fallback sender that logs a warning when the transport is not connected."""
+    _ = cmd
+    _ = pl
+    logger.warning("Attempted to send frame while serial transport is disconnected")
+    return False
+
 
 class SerialTransport:
     """High-performance asyncio serial transport."""
@@ -119,6 +128,8 @@ class SerialTransport:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
+                if "SerialHandshakeFatal" in type(exc).__name__:
+                    raise
                 logger.error("Transport fatal error: %s", exc, exc_info=True)
                 await asyncio.sleep(DEFAULT_RECONNECT_DELAY)
 
@@ -132,7 +143,10 @@ class SerialTransport:
 
     @tenacity.retry(
         wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
-        retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
+        retry=tenacity.retry_if_exception(
+            lambda e: not isinstance(e, asyncio.CancelledError) 
+            and "SerialHandshakeFatal" not in type(e).__name__
+        ),
     )
     async def _retryable_run(self, loop: asyncio.AbstractEventLoop) -> None:
         """Single connection attempt."""
@@ -209,25 +223,26 @@ class SerialTransport:
             logger.debug("DTR toggle not supported or failed: %s", exc)
 
     async def _read_loop(self, reader: asyncio.StreamReader) -> None:
-        """Main loop reading bytes and identifying frames."""
-        buffer = bytearray()
+        """Main loop reading complete frames directly from the C-backed Stream."""
         while not self._stop_event.is_set():
             try:
-                byte = await reader.read(1)
-                if not byte:
-                    logger.info("Serial connection closed (EOF).")
-                    break
+                # readuntil delegates the delimiter search to C, saving CPU
+                packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
+                packet = packet_with_sep[:-1]  # remove delimiter
 
-                if byte == protocol.FRAME_DELIMITER:
-                    if buffer:
-                        logger.debug("[SERIAL <- MCU] FRAME RECEIVED: %s", buffer.hex())
-                        self._process_packet(bytes(buffer))
-                        buffer.clear()
-                else:
-                    buffer.append(byte[0])
-                    if len(buffer) > MAX_SERIAL_FRAME_BYTES:
-                        logger.warning("Serial buffer overflow, clearing.")
-                        buffer.clear()
+                if packet:
+                    # logger.debug("[SERIAL <- MCU] RAW: [%s]", packet.hex())
+                    self._process_packet(packet)
+
+            except asyncio.LimitOverrunError:
+                logger.warning("Serial packet too large, flushing.")
+                self.state.record_serial_decode_error()
+                # Drain the overrun data
+                await reader.read(MAX_SERIAL_FRAME_BYTES)
+            except asyncio.IncompleteReadError as e:
+                # EOF reached, connection closed
+                logger.info("Serial connection closed (EOF). Partial data: %s", e.partial.hex() if e.partial else "None")
+                break
             except Exception as e:
                 logger.error("Error in _read_loop: %s", e)
                 break
@@ -269,7 +284,9 @@ class SerialTransport:
         except (CobsDecodeError, ValueError) as exc:
             logger.warning("Malformed frame: %s", exc)
             self.state.record_serial_decode_error()
-
+        except Exception as exc:
+            logger.error("Error dispatching MCU frame: %s", exc)
+            self.state.record_serial_decode_error()
     async def _serial_sender(self, cmd: int, pl: bytes) -> bool:
         """Low-level serial frame sender."""
         if not self.writer or self.writer.is_closing():
@@ -316,7 +333,7 @@ class SerialTransport:
                     except asyncio.TimeoutError:
                         logger.warning("Baudrate negotiation timeout, retrying...")
                         raise
-        except tenacity.RetryError:
+        except (tenacity.RetryError, asyncio.TimeoutError):
             pass
         finally:
             self._negotiating = False

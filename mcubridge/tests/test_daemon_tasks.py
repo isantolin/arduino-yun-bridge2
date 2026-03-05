@@ -54,13 +54,15 @@ async def test_serial_reader_task_processes_frame(
         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
     ):
         # Patch tenacity retry to fail after first attempt to avoid infinite loops
+        orig_run = SerialTransport._retryable_run.__wrapped__
         with patch.object(SerialTransport, "_retryable_run"):
             transport = SerialTransport(runtime_config, state, cast(Any, service))
 
             # We want to break the loop after one failure
             async def _limited_run(loop):
                 try:
-                    await transport._connect_and_run(loop)
+                    # Use the captured original function
+                    await orig_run(transport, loop)
                 except (ConnectionError, asyncio.IncompleteReadError):
                     # expected first failure
                     pass
@@ -128,12 +130,14 @@ async def test_serial_reader_task_emits_crc_mismatch(
     ):
         transport = SerialTransport(runtime_config, state, cast(Any, service))
 
+        orig_run = SerialTransport._retryable_run.__wrapped__
         async def _limited_run(loop):
             try:
-                await transport._connect_and_run(loop)
+                await orig_run(transport, loop)
             except (ConnectionError, asyncio.IncompleteReadError):
                 pass
             raise RuntimeError("Break Loop")
+
 
         with patch.object(transport, "_retryable_run", _limited_run):
             task = asyncio.create_task(transport.run())
@@ -190,12 +194,14 @@ async def test_serial_reader_task_limits_packet_size(
     ):
         transport = SerialTransport(runtime_config, state, cast(Any, service))
 
+        orig_run = SerialTransport._retryable_run.__wrapped__
         async def _limited_run(loop):
             try:
-                await transport._connect_and_run(loop)
+                await orig_run(transport, loop)
             except (ConnectionError, asyncio.IncompleteReadError):
                 pass
             raise RuntimeError("Break Loop")
+
 
         with patch.object(transport, "_retryable_run", _limited_run):
             task = asyncio.create_task(transport.run())

@@ -55,7 +55,7 @@ async def test_process_packet_crc_mismatch_reports_crc(
 
     # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
     raw = b"\xff" + b"x" * 20
-    monkeypatch.setattr(serial_fast.cobs, "decode", lambda _data: raw)
+    monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)
 
     # Manual call to async method
     await transport._async_process_packet(b"\x02encoded")

@@ -189,7 +189,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        firmware: [bridge_emulator, bridge_control_emulator]
+        firmware: [mcubridge-library-arduino/tests/bridge_emulator, mcubridge-library-arduino/tests/bridge_control_emulator]
     timeout-minutes: 20
     services:
       mosquitto:

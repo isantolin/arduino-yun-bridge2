@@ -14,7 +14,7 @@ void ProcessClass::run(etl::string_view command) {
   if (command.empty()) return;
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN, command,
                                 rpc::MAX_PAYLOAD_SIZE - 1)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
 
@@ -22,7 +22,7 @@ void ProcessClass::runAsync(etl::string_view command) {
   if (command.empty()) return;
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, command,
                                 rpc::MAX_PAYLOAD_SIZE - 1)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
 
@@ -33,7 +33,7 @@ void ProcessClass::poll(int16_t pid) {
 
   const uint16_t pid_u16 = static_cast<uint16_t>(pid);
   if (!_pushPendingProcessPid(pid_u16)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     return;
   }
 

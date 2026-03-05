@@ -340,6 +340,7 @@ class PrometheusExporter:
     """Expose RuntimeState snapshots via the Prometheus text format."""
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
+        from prometheus_client import ProcessCollector
         self._state = state
         # Defensive normalization for tests/injected configs.
         self._host = host if host else "127.0.0.1"
@@ -347,8 +348,13 @@ class PrometheusExporter:
         self._server: asyncio.AbstractServer | None = None
         self._resolved_port: int | None = None
         self._registry = state.metrics.registry
+
         # [OPTIMIZATION] Initialize native prometheus Summary for percentiles
         state.serial_latency_stats.initialize_prometheus(self._registry)
+
+        # [SIL-2 / Library-First] Use native ProcessCollector to get CPU/RAM/FDs for free
+        ProcessCollector(registry=self._registry)
+
         # Register the dynamic state collector
         self._registry.register(RuntimeStateCollector(state))
 

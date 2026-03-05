@@ -148,7 +148,7 @@ void test_bridge_status_gaps() {
   memset(long_msg, 'A', 1023);
   long_msg[1023] = '\0';
   ba.setIdle();
-  Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view(long_msg));
+  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view(long_msg));
   
   // Status ACK (Line 482-483)
   uint8_t ack_pl[2];

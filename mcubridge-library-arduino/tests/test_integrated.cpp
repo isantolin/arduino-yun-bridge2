@@ -178,8 +178,8 @@ void integrated_test_components() {
 }
 
 void integrated_test_error_branches() {
-  Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
-  Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
+  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
+  Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   Bridge.enterSafeState();
   TEST_ASSERT(rpc::security::run_cryptographic_self_tests());
 }

@@ -10,9 +10,9 @@ import sh
 import json
 import os
 import sys
-import time
 from pathlib import Path
 from typing import Any
+import tenacity
 
 STATUS_FILE = Path("/tmp/mcubridge_status.json")
 
@@ -76,29 +76,37 @@ def main() -> None:
     status_topic = f"{topic_prefix}/system/status"
     request_topic = f"{topic_prefix}/system/status/request"
     
-    try:
-        # Start subscriber in background
+    @tenacity.retry(
+        stop=tenacity.stop_after_delay(15),
+        wait=tenacity.wait_fixed(1.0),
+        retry=tenacity.retry_if_exception_type((sh.TimeoutException, TimeoutError, sh.ErrorReturnCode)),
+        reraise=True
+    )
+    def perform_round_trip() -> str:
+        # Start subscriber in background (W=2 means wait max 2 seconds for a message)
         sub_proc = sh.mosquitto_sub(
             *common_args, 
             "-t", status_topic, 
             "-C", "1", 
-            "-W", "7", 
+            "-W", "2", 
             _bg=True
         )
         
-        time.sleep(1) # Wait for sub to establish
-        
-        # Publish request
+        # Publish request immediately
         sh.mosquitto_pub(
             *common_args,
             "-t", request_topic,
             "-m", '{"request":"ping"}'
         )
         
-        # Wait for sub result
+        # Wait for sub result. If it times out or errors, tenacity will retry the whole block.
         output = sub_proc.wait()
+        return output.stdout.decode()
+
+    try:
+        response = perform_round_trip()
         sys.stdout.write("[mcubridge-hw-smoke] Received response:\n")
-        sys.stdout.write(output.stdout.decode() + "\n")
+        sys.stdout.write(response + "\n")
         sys.stderr.write("[mcubridge-hw-smoke] Smoke test completed successfully.\n")
 
     except (sh.TimeoutException, TimeoutError):

@@ -1,7 +1,7 @@
 #ifndef PACKET_BUILDER_H
 #define PACKET_BUILDER_H
 
-#include <etl/algorithm.h>
+#include <etl/array.h>
 #include <etl/string_view.h>
 #include <etl/vector.h>
 
@@ -37,15 +37,15 @@ class PacketBuilder {
   }
 
   PacketBuilder& add_u16(uint16_t value) {
-    uint8_t buf[2];
-    write_u16_be(buf, value);
-    return add(buf, 2);
+    etl::array<uint8_t, 2> buf;
+    write_u16_be(buf.data(), value);
+    return add(buf.data(), 2);
   }
 
   PacketBuilder& add_u32(uint32_t value) {
-    uint8_t buf[4];
-    write_u32_be(buf, value);
-    return add(buf, 4);
+    etl::array<uint8_t, 4> buf;
+    write_u32_be(buf.data(), value);
+    return add(buf.data(), 4);
   }
 
   PacketBuilder& add_pascal_string(etl::string_view str) {

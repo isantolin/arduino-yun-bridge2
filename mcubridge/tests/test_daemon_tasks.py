@@ -19,7 +19,6 @@ from mcubridge.transport import (
     SerialTransport,
 )
 from mcubridge.transport.mqtt import MqttTransport
-from mcubridge.transport.serial import BridgeSerialProtocol
 
 # [REDUCTION] Use shared mocks to avoid duplication
 from tests.mocks import MockFatalSerialService, MockMQTTService, MockSerialService
@@ -36,50 +35,59 @@ async def test_serial_reader_task_processes_frame(
     frame = Frame(command_id=Command.CMD_DIGITAL_READ_RESP.value, payload=payload).to_bytes()
     encoded = cobs.encode(frame) + FRAME_DELIMITER
 
-    # Mock Transport/Protocol
-    mock_transport = MagicMock()
-    mock_transport.is_closing.return_value = False
-
-    # We need a real protocol to test data processing logic, or at least one with real methods
-    mock_protocol = BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-    mock_protocol.connection_made(mock_transport)
-
-    async def _fake_create(*_: object, **__: object):
-        return mock_transport, mock_protocol
-
-    transport = SerialTransport(runtime_config, state, cast(Any, service))
+    # Mock Streams API
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    mock_reader.readuntil.side_effect = [encoded, asyncio.IncompleteReadError(b"", None)]
+    
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.is_closing.return_value = False
+    mock_writer.wait_closed = AsyncMock()
 
     async def _mock_toggle_dtr(_self: Any, _loop: Any) -> None:
-        transport.begin_reset()
+        pass
 
     with (
         patch(
-            "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection",
-            _fake_create,
+            "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection",
+            AsyncMock(return_value=(mock_reader, mock_writer)),
         ),
+        patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
     ):
-        task = asyncio.create_task(transport.run())
+        # Patch tenacity retry to fail after first attempt to avoid infinite loops
+        with patch.object(SerialTransport, "_retryable_run", wraps=SerialTransport(runtime_config, state, cast(Any, service))._retryable_run) as mock_retryable:
+            transport = SerialTransport(runtime_config, state, cast(Any, service))
+            
+            # We want to break the loop after one failure
+            async def _limited_run(loop):
+                try:
+                    await transport._connect_and_run(loop)
+                except (ConnectionError, asyncio.IncompleteReadError):
+                    # expected first failure
+                    pass
+                raise RuntimeError("Break Loop")
 
-        await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+            with patch.object(transport, "_retryable_run", _limited_run):
+                task = asyncio.create_task(transport.run())
 
-        # Inject data
-        mock_protocol.data_received(encoded)
+                await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
-        # Allow async processing
-        await asyncio.sleep(0.1)
+                # Wait for frames to be processed (actual event loop yielding)
+                for _ in range(50):
+                    if service.received_frames:
+                        break
+                    await asyncio.sleep(0.01)
+                
+                assert service.received_frames
+                command_id, received_payload = service.received_frames[0]
+                assert command_id == Command.CMD_DIGITAL_READ_RESP.value
+                assert received_payload == payload
 
-        assert service.received_frames
-        command_id, received_payload = service.received_frames[0]
-        assert command_id == Command.CMD_DIGITAL_READ_RESP.value
-        assert received_payload == payload
-
-        mock_transport.is_closing.return_value = True
-        transport._stop_event.set()
-        try:
-            await asyncio.wait_for(task, timeout=0.5)
-        except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
-            pass
+                transport._stop_event.set()
+                try:
+                    await asyncio.wait_for(task, timeout=0.5)
+                except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
+                    pass
 
 
 @pytest.mark.asyncio
@@ -99,44 +107,52 @@ async def test_serial_reader_task_emits_crc_mismatch(
     corrupted[0] = protocol.UINT8_MASK  # Invalid COBS code
     encoded = cobs.encode(bytes(corrupted)) + FRAME_DELIMITER
 
-    mock_transport = MagicMock()
-    mock_transport.is_closing.return_value = False
-    mock_protocol = BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-    mock_protocol.connection_made(mock_transport)
-
-    async def _fake_create(*_: object, **__: object):
-        return mock_transport, mock_protocol
-
-    transport = SerialTransport(runtime_config, state, cast(Any, service))
+    # Mock Streams API
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    mock_reader.readuntil.side_effect = [encoded, asyncio.IncompleteReadError(b"", None)]
+    
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.is_closing.return_value = False
+    mock_writer.wait_closed = AsyncMock()
 
     async def _mock_toggle_dtr(_self: Any, _loop: Any) -> None:
-        transport.begin_reset()
+        pass
 
     with (
         patch(
-            "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection",
-            _fake_create,
+            "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection",
+            AsyncMock(return_value=(mock_reader, mock_writer)),
         ),
+        patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
     ):
-        task = asyncio.create_task(transport.run())
-        await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+        transport = SerialTransport(runtime_config, state, cast(Any, service))
+        
+        async def _limited_run(loop):
+            try:
+                await transport._connect_and_run(loop)
+            except (ConnectionError, asyncio.IncompleteReadError):
+                pass
+            raise RuntimeError("Break Loop")
 
-        # Inject data
-        mock_protocol.data_received(encoded)
-        await asyncio.sleep(0.1)
+        with patch.object(transport, "_retryable_run", _limited_run):
+            task = asyncio.create_task(transport.run())
+            await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+            
+            # Wait for state to update
+            for _ in range(50):
+                if state.serial_decode_errors > 0:
+                    break
+                await asyncio.sleep(0.01)
 
-        assert not service.received_frames
-        # Should record error
-        assert state.serial_decode_errors > 0
-
-        # Stop
-        mock_transport.is_closing.return_value = True
-        transport._stop_event.set()
-        try:
-            await asyncio.wait_for(task, timeout=0.5)
-        except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
-            pass
+            assert not service.received_frames
+            assert state.serial_decode_errors > 0
+            
+            transport._stop_event.set()
+            try:
+                await asyncio.wait_for(task, timeout=0.5)
+            except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
+                pass
 
 
 @pytest.mark.asyncio
@@ -148,44 +164,54 @@ async def test_serial_reader_task_limits_packet_size(
     state.mark_synchronized()
     service = MockSerialService(runtime_config, state)
 
-    TEST_PAYLOAD_BYTE = 0xAA
-    oversized = bytes([TEST_PAYLOAD_BYTE]) * (MAX_SERIAL_PACKET_BYTES + 16)
-
-    mock_transport = MagicMock()
-    mock_transport.is_closing.return_value = False
-    mock_protocol = BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-    mock_protocol.connection_made(mock_transport)
-
-    async def _fake_create(*_: object, **__: object):
-        return mock_transport, mock_protocol
-
-    transport = SerialTransport(runtime_config, state, cast(Any, service))
+    # Mock Streams API
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    mock_reader.readuntil.side_effect = [
+        asyncio.LimitOverrunError("Too long", 0),
+        asyncio.IncompleteReadError(b"", None)
+    ]
+    
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.is_closing.return_value = False
+    mock_writer.wait_closed = AsyncMock()
 
     async def _mock_toggle_dtr(_self: Any, _loop: Any) -> None:
-        transport.begin_reset()
+        pass
 
     with (
         patch(
-            "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection",
-            _fake_create,
+            "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection",
+            AsyncMock(return_value=(mock_reader, mock_writer)),
         ),
+        patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
     ):
-        task = asyncio.create_task(transport.run())
-        await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+        transport = SerialTransport(runtime_config, state, cast(Any, service))
+        
+        async def _limited_run(loop):
+            try:
+                await transport._connect_and_run(loop)
+            except (ConnectionError, asyncio.IncompleteReadError):
+                pass
+            raise RuntimeError("Break Loop")
 
-        mock_protocol.data_received(oversized + FRAME_DELIMITER)
-        await asyncio.sleep(0.1)
+        with patch.object(transport, "_retryable_run", _limited_run):
+            task = asyncio.create_task(transport.run())
+            await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
-        assert not service.received_frames
-        assert state.serial_decode_errors >= 1
+            for _ in range(50):
+                if state.serial_decode_errors >= 1:
+                    break
+                await asyncio.sleep(0.01)
 
-        mock_transport.is_closing.return_value = True
-        transport._stop_event.set()
-        try:
-            await asyncio.wait_for(task, timeout=0.5)
-        except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
-            pass
+            assert not service.received_frames
+            assert state.serial_decode_errors >= 1
+            
+            transport._stop_event.set()
+            try:
+                await asyncio.wait_for(task, timeout=0.5)
+            except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
+                pass
 
 
 @pytest.mark.asyncio
@@ -195,31 +221,30 @@ async def test_serial_reader_task_propagates_handshake_fatal(
     state = create_runtime_state(runtime_config)
     service = MockFatalSerialService(runtime_config, state)
 
-    mock_transport = MagicMock()
-    mock_transport.is_closing.return_value = False
-    mock_protocol = MagicMock()
-    mock_protocol.connected_future = asyncio.get_running_loop().create_future()
-    mock_protocol.connected_future.set_result(None)
-
-    async def _fake_create(*_: object, **__: object):
-        return mock_transport, mock_protocol
-
-    transport = SerialTransport(runtime_config, state, cast(Any, service))
+    # Mock Streams API
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    mock_reader.readuntil.side_effect = asyncio.IncompleteReadError(b"", None)
+    
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.is_closing.return_value = False
+    mock_writer.wait_closed = AsyncMock()
 
     async def _mock_toggle_dtr(_self: Any, _loop: Any) -> None:
-        transport.begin_reset()
+        pass
 
     with (
         patch(
-            "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection",
-            _fake_create,
+            "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection",
+            AsyncMock(return_value=(mock_reader, mock_writer)),
         ),
+        patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
     ):
+        transport = SerialTransport(runtime_config, state, cast(Any, service))
         task = asyncio.create_task(transport.run())
 
         try:
-            await task
+            await asyncio.wait_for(task, timeout=1)
         except SerialHandshakeFatal:
             pass
         except Exception as exc:
@@ -267,10 +292,11 @@ async def test_mqtt_task_handles_incoming_message(
 
     task = asyncio.create_task(MqttTransport(runtime_config, state, cast(Any, service)).run())
 
-    await asyncio.wait_for(service.handled.wait(), timeout=1)
-
-    task.cancel()
     try:
-        await task
-    except* asyncio.CancelledError:
-        pass
+        await asyncio.wait_for(service.handled.wait(), timeout=1)
+    finally:
+        task.cancel()
+        try:
+            await task
+        except* asyncio.CancelledError:
+            pass

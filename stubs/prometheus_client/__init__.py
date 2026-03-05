@@ -65,6 +65,11 @@ class Summary:
         self._observations.append(float(value))
 
 
+class ProcessCollector:
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        pass
+
+
 def _render_metric_name(name: str) -> str:
     return name.strip() or "metric"
 

@@ -40,7 +40,11 @@ if "serial_asyncio_fast" not in sys.modules:
     from unittest.mock import AsyncMock
 
     mock_saf = MagicMock()
-    # Default return value is a tuple of mocks to satisfy 'transport, proto = await ...'
+    # Mock open_serial_connection to return (StreamReader, StreamWriter)
+    mock_saf.open_serial_connection = AsyncMock(
+        return_value=(MagicMock(spec=asyncio.StreamReader), MagicMock(spec=asyncio.StreamWriter))
+    )
+    # Maintain create_serial_connection for older tests that haven't been migrated yet
     mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
     sys.modules["serial_asyncio_fast"] = mock_saf
 

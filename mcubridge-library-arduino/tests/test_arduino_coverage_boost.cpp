@@ -407,7 +407,7 @@ void test_bridge_handle_dedup_ack_gaps() {
 
 void test_bridge_emit_status_flash() {
   // Line 814-826: Flash variant
-  Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Flash Error"));
+  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, F("Flash Error"));
 }
 
 void test_bridge_gpio_read_gaps() {

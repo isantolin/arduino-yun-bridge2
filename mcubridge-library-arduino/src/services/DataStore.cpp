@@ -17,21 +17,21 @@ void DataStoreClass::put(etl::string_view key, etl::string_view value) {
   if (!Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, key,
                                 rpc::RPC_MAX_DATASTORE_KEY_LENGTH, value,
                                 rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
 
 void DataStoreClass::requestGet(etl::string_view key) {
   if (key.empty()) return;
   if (!_trackPendingDatastoreKey(key)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     return;
   }
 
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_DATASTORE_GET, key,
                                 rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
     _popPendingDatastoreKey();  // Clean up if send failed
-    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
 

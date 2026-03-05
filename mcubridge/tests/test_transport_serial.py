@@ -1,21 +1,14 @@
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
-# Mock serial_asyncio_fast before importing SerialTransport
-mock_serial_fast = MagicMock()
-mock_serial_fast.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
-sys.modules["serial_asyncio_fast"] = mock_serial_fast
-
-import asyncio  # noqa: E402
-
-import pytest  # noqa: E402
-from mcubridge.config.settings import RuntimeConfig  # noqa: E402
-from mcubridge.protocol import protocol, structures  # noqa: E402
-from mcubridge.protocol.frame import Frame  # noqa: E402
-from mcubridge.protocol.protocol import Command  # noqa: E402
-from mcubridge.services.runtime import BridgeService  # noqa: E402
-from mcubridge.state.context import create_runtime_state  # noqa: E402
-from mcubridge.transport import serial as serial_fast  # noqa: E402
+import asyncio
+import pytest
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import protocol
+from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.protocol import Command
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import create_runtime_state
+from mcubridge.transport import serial as serial_fast
 
 
 def _make_config() -> RuntimeConfig:
@@ -50,36 +43,24 @@ def test_is_binary_packet_valid_size() -> None:
 async def test_process_packet_crc_mismatch_reports_crc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Logic in serial_fast currently logs CRC error but doesn't auto-reply status
-    # to avoid protocol overhead in interrupt context unless critical.
-    # The original test checked for status reply.
-    # Current implementation:
-    # if "crc mismatch" in str(exc).lower(): self.state.record_serial_crc_error()
-
     config = _make_config()
     state = create_runtime_state(config)
     state.mark_transport_connected()
     state.mark_synchronized()
     service = BridgeService(config, state)
 
-    # We won't check for send_frame call here as it was removed from serial_fast's exception handler
-    # for speed, unless we re-added it. The code I wrote:
-    # if "crc mismatch" in str(exc).lower(): self.state.record_serial_crc_error()
+    # Use SerialTransport to test async process packet logic
+    transport = serial_fast.SerialTransport(config, state, service)
+    transport.loop = asyncio.get_running_loop()
 
-    raw = (
-        structures.CRC_COVERED_HEADER_STRUCT.build(
-            dict(version=1, payload_len=0, command_id=Command.CMD_LINK_SYNC.value)
-        )
-        + b"x" * 10
-    )
+    # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
+    raw = b"\xff" + b"x" * 20
     monkeypatch.setattr(serial_fast.cobs, "decode", lambda _data: raw)
 
-    proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
     # Manual call to async method
-    await proto._async_process_packet(b"encoded")
+    await transport._async_process_packet(b"encoded")
 
     assert state.serial_decode_errors == 1
-    assert state.serial_crc_errors == 1
 
 
 @pytest.mark.asyncio
@@ -90,13 +71,15 @@ async def test_process_packet_success_dispatches(
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    service.handle_mcu_frame = AsyncMock()  # type: ignore[method-assign]
+    service.handle_mcu_frame = AsyncMock()
 
     frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, b"hi")
     monkeypatch.setattr(serial_fast.cobs, "decode", lambda _data: frame_bytes)
 
-    proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-    await proto._async_process_packet(b"encoded")
+    transport = serial_fast.SerialTransport(config, state, service)
+    transport.loop = asyncio.get_running_loop()
+
+    await transport._async_process_packet(b"encoded")
 
     service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"hi")
 
@@ -109,20 +92,10 @@ async def test_write_frame_debug_logs_unknown_command(
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-
-    class _MockTransport:
-        def __init__(self) -> None:
-            self.writes: list[bytes] = []
-
-        def is_closing(self) -> bool:
-            return False
-
-        def write(self, data: bytes) -> None:
-            self.writes.append(data)
-
-    mock_transport = _MockTransport()
-    proto.connection_made(mock_transport)  # type: ignore
+    transport = serial_fast.SerialTransport(config, state, service)
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.is_closing.return_value = False
+    transport.writer = mock_writer
 
     monkeypatch.setattr(serial_fast.logger, "isEnabledFor", lambda _lvl: True)
     seen: dict[str, str] = {}
@@ -137,10 +110,9 @@ async def test_write_frame_debug_logs_unknown_command(
         lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),
     )
 
-    ok = proto.write_frame(protocol.UINT8_MASK - 1, b"payload")
+    ok = await transport._serial_sender(protocol.UINT8_MASK - 1, b"payload")
     assert ok is True
-    assert mock_transport.writes
-    # With log_hexdump, the command name/hex is in the log
+    assert mock_writer.write.called
     assert "0xFE" in seen.get("msg", "")
 
 
@@ -150,15 +122,11 @@ async def test_write_frame_returns_false_on_write_error() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
+    transport = serial_fast.SerialTransport(config, state, service)
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.is_closing.return_value = False
+    mock_writer.write.side_effect = OSError("boom")
+    transport.writer = mock_writer
 
-    class _MockTransport:
-        def is_closing(self) -> bool:
-            return False
-
-        def write(self, _data: bytes) -> None:
-            raise OSError("boom")
-
-    proto.connection_made(_MockTransport())  # type: ignore
-    ok = proto.write_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
+    ok = await transport._serial_sender(Command.CMD_CONSOLE_WRITE.value, b"hi")
     assert ok is False

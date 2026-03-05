@@ -628,9 +628,9 @@ void test_send_key_val_command() {
 }
 
 // ============================================================================
-// 18. _emitStatus overloads (string_view, FlashStringHelper)
-//     Covers: Bridge.cpp L952-956,964 (_doEmitStatus, _emitStatus string_view),
-//             L975 (_emitStatus FlashStringHelper)
+// 18. emitStatus overloads (string_view, FlashStringHelper)
+//     Covers: Bridge.cpp L952-956,964 (_doEmitStatus, emitStatus string_view),
+//             L975 (emitStatus FlashStringHelper)
 // ============================================================================
 void test_emit_status() {
   printf("  -> test_emit_status\n");
@@ -638,7 +638,7 @@ void test_emit_status() {
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
-  // Trigger _emitStatus via compressed frame with invalid RLE -> MALFORMED
+  // Trigger emitStatus via compressed frame with invalid RLE -> MALFORMED
   rpc::Frame f;
   memset(&f, 0, sizeof(f));
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE) |
@@ -647,8 +647,8 @@ void test_emit_status() {
   f.payload[0] = 0xFF;
   ba.dispatch(f);
 
-  // Trigger _emitStatus via LinkSync with wrong payload length
-  // (calls _emitStatus(MALFORMED) which uses const char* / string_view)
+  // Trigger emitStatus via LinkSync with wrong payload length
+  // (calls emitStatus(MALFORMED) which uses const char* / string_view)
   ba.setIdle();
   ba.assignSharedSecret((const uint8_t*)"mysecret",
                         (const uint8_t*)"mysecret" + 8);
@@ -656,8 +656,8 @@ void test_emit_status() {
   f.header.payload_length = 2;
   ba.dispatch(f);
 
-  // Trigger _emitStatus(FlashStringHelper) via failed mutual auth
-  // This calls _emitStatus(STATUS_ERROR, F("Mutual Auth Failed"))
+  // Trigger emitStatus(FlashStringHelper) via failed mutual auth
+  // This calls emitStatus(STATUS_ERROR, F("Mutual Auth Failed"))
   reset_env(stream);
   {
   auto ba2 = bridge::test::TestAccessor::create(Bridge);
@@ -692,7 +692,7 @@ void test_emit_status_with_observer() {
   Bridge.add_observer(obs);
 
   // Trigger any status emission
-  Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view("test"));
+  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view("test"));
   TEST_ASSERT(obs.error_called);
 
   Bridge.remove_observer(obs);

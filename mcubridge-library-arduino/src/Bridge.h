@@ -280,9 +280,9 @@ class BridgeClass
 
   inline void flushStream() { _stream.flush(); }
   void enterSafeState();  // [SIL-2] Force system into fail-safe state
-  void _emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
-  void _emitStatus(rpc::StatusCode status_code,
-                   const __FlashStringHelper* message);
+  void emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
+  void emitStatus(rpc::StatusCode status_code,
+                  const __FlashStringHelper* message);
 
   // [SIL-2] Large Payload Support
   bool sendChunkyFrame(rpc::CommandId command_id,

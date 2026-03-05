@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sh
 import sys
+import tenacity
 from pathlib import Path
 
 def uci_get(key: str, default: str = "") -> str:
@@ -62,11 +63,20 @@ def main() -> None:
         
         common_args.extend(["--tls-version", "tlsv1.2"])
 
-    try:
+    @tenacity.retry(
+        stop=tenacity.stop_after_attempt(3),
+        wait=tenacity.wait_fixed(0.5),
+        retry=tenacity.retry_if_exception_type(sh.ErrorReturnCode),
+        reraise=True
+    )
+    def do_publish():
         sh.mosquitto_pub(*common_args)
         sh.logger("-t", "mcubridge-led", f"Published LED{pin}={payload} to {mqtt_topic}")
+
+    try:
+        do_publish()
     except sh.ErrorReturnCode as e:
-        sh.logger("-t", "mcubridge-led", "-p", "daemon.err", f"Failed to publish: {e.stderr.decode()}")
+        sh.logger("-t", "mcubridge-led", "-p", "daemon.err", f"Failed to publish after retries: {e.stderr.decode()}")
         sys.stderr.write(f"Error: failed to publish MQTT message: {e}\n")
         sys.exit(4)
 

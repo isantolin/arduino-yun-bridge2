@@ -301,11 +301,11 @@ void BridgeClass::process() {
     if (!_fsm.isUnsynchronized()) {
       switch (error) {
         case rpc::FrameError::CRC_MISMATCH:
-          _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH);
+          emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH);
           break;
         case rpc::FrameError::MALFORMED:
         case rpc::FrameError::OVERFLOW:
-          _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+          emitStatus(rpc::StatusCode::STATUS_MALFORMED);
           break;
       }
     }
@@ -349,7 +349,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                                  frame.header.payload_length),
         etl::span<uint8_t>(scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE));
     if (decoded_len == 0) {
-      _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
       return;
     }
     etl::copy_n(scratch_payload.data(), decoded_len,
@@ -549,7 +549,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
       nonce_length + (has_secret ? kHandshakeTagSize : 0);
 
   if (ctx.frame->header.payload_length != expected_payload) {
-    _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     return;
   }
 
@@ -568,7 +568,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
       if (!rpc::security::timing_safe_equal(payload_data + nonce_length,
                                             expected_tag.data(),
                                             kHandshakeTagSize)) {
-        _emitStatus(rpc::StatusCode::STATUS_ERROR, F("Mutual Auth Failed"));
+        emitStatus(rpc::StatusCode::STATUS_ERROR, F("Mutual Auth Failed"));
         enterSafeState();
         _fsm.handshakeFailed();
         return;
@@ -852,8 +852,8 @@ void BridgeClass::_doEmitStatus(rpc::StatusCode status_code,
   notify_observers(MsgBridgeError{status_code});
 }
 
-void BridgeClass::_emitStatus(rpc::StatusCode status_code,
-                              etl::string_view message) {
+void BridgeClass::emitStatus(rpc::StatusCode status_code,
+                             etl::string_view message) {
   etl::span<const uint8_t> payload;
   if (!message.empty()) {
     payload = etl::span<const uint8_t>(
@@ -863,8 +863,8 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code,
   _doEmitStatus(status_code, payload);
 }
 
-void BridgeClass::_emitStatus(rpc::StatusCode status_code,
-                              const __FlashStringHelper* message) {
+void BridgeClass::emitStatus(rpc::StatusCode status_code,
+                             const __FlashStringHelper* message) {
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE>
       buffer;  // [RAM OPT] Stack allocation
   size_t length = 0;

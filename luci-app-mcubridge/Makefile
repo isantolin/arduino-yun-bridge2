@@ -2,7 +2,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-mcubridge
-PKG_VERSION:=1.1.1
+PKG_VERSION:=2.7.1
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Ignacio Santolin and contributors
@@ -35,7 +35,7 @@ define Package/$(PKG_NAME)
 	SUBMENU:=3. Applications
 	TITLE:=LuCI Support for McuBridge (system Python only)
 	PKG_ARCH:=all
-	DEPENDS:=+luci-base +luci-compat +luci-lua-runtime +uhttpd-mod-lua +openwrt-mcu-core +openwrt-mcu-bridge +mosquitto-client +lua +luaposix
+	DEPENDS:=+luci-base +luci-compat +luci-lua-runtime +uhttpd-mod-lua +mcubridge +mosquitto-client +lua +luaposix
 endef
 
 

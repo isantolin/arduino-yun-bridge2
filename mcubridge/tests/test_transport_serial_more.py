@@ -67,7 +67,7 @@ async def test_negotiate_baudrate_timeout() -> None:
 
         transport = serial_fast.SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
-        
+
         # Mock sender to succeed but don't resolve future
         transport._serial_sender = AsyncMock(return_value=True)
 
@@ -175,6 +175,6 @@ async def test_async_process_packet_os_error(
 
     caplog.set_level("ERROR")
     await transport._async_process_packet(encoded)
-    
+
     assert any("error" in r.getMessage().lower() for r in caplog.records)
     assert any("dispatch" in r.getMessage().lower() for r in caplog.records)

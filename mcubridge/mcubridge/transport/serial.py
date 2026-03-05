@@ -18,7 +18,6 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Final, cast
 
-from cobs import cobs
 from cobs.cobs import encode as cobs_encode, decode as cobs_decode, DecodeError as CobsDecodeError
 import serial
 import serial_asyncio_fast
@@ -144,7 +143,7 @@ class SerialTransport:
     @tenacity.retry(
         wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
         retry=tenacity.retry_if_exception(
-            lambda e: not isinstance(e, asyncio.CancelledError) 
+            lambda e: not isinstance(e, asyncio.CancelledError)
             and "SerialHandshakeFatal" not in type(e).__name__
         ),
     )
@@ -241,7 +240,10 @@ class SerialTransport:
                 await reader.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError as e:
                 # EOF reached, connection closed
-                logger.info("Serial connection closed (EOF). Partial data: %s", e.partial.hex() if e.partial else "None")
+                logger.info(
+                    "Serial connection closed (EOF). Partial data: %s",
+                    e.partial.hex() if e.partial else "None",
+                )
                 break
             except Exception as e:
                 logger.error("Error in _read_loop: %s", e)

@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, MagicMock
 import asyncio
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService

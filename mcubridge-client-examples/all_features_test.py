@@ -3,8 +3,6 @@
 
 import asyncio
 import logging
-import sys
-from typing import Annotated
 import typer
 from mcubridge_client import Bridge
 

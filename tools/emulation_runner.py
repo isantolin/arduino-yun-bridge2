@@ -30,6 +30,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("emulation-runner")
 
+
 @dataclass
 class EmulationState:
     output_lines: list[tuple[str, str]] = field(default_factory=list)
@@ -43,6 +44,7 @@ class EmulationState:
             self.output_lines.append((source, clean_line))
             print(f"[{source}] {clean_line}")
 
+
 class MqttVerifier:
     def __init__(self, host: str, port: int) -> None:
         self.host = host
@@ -50,6 +52,7 @@ class MqttVerifier:
 
     def wait_for_ready(self, timeout: float = 5.0) -> bool:
         import socket
+
         start = time.monotonic()
         while time.monotonic() - start < timeout:
             try:
@@ -59,23 +62,29 @@ class MqttVerifier:
                 time.sleep(0.5)
         return False
 
+
 def _start_worker_thread(target: Any, name: str, *args: Any) -> threading.Thread:
     thread = threading.Thread(target=target, name=name, args=args, daemon=True)
     thread.start()
     return thread
 
+
 def _mcu_stderr_worker(mcu_proc: subprocess.Popen, state: EmulationState) -> None:
     if mcu_proc.stderr:
         for line in iter(mcu_proc.stderr.readline, b""):
-            if not line: break
+            if not line:
+                break
             decoded = line.decode("utf-8", errors="ignore")
             state.on_line(decoded, "mcu")
+
 
 def _daemon_worker(daemon_proc: subprocess.Popen, state: EmulationState) -> None:
     if daemon_proc.stdout:
         for line in iter(daemon_proc.stdout.readline, ""):
-            if not line: break
+            if not line:
+                break
             state.on_line(line, "daemon")
+
 
 def main(
     firmware_path: Annotated[Path, typer.Option("--firmware", help="Path to MCU firmware binary")],
@@ -91,18 +100,15 @@ def main(
 
     # 1. Start Unified socat linking PTY to MCU EXEC
     if os.path.exists(SOCAT_PORT0):
-        try: os.unlink(SOCAT_PORT0)
-        except OSError: pass
+        try:
+            os.unlink(SOCAT_PORT0)
+        except OSError:
+            pass
 
     logger.info("Starting Unified MCU Emulator via socat EXEC...")
     # Use EXEC with default pipes. PTY is only created for the Daemon side.
     mcu_proc = subprocess.Popen(
-        [
-            "socat",
-            "-d", "-d",
-            f"PTY,link={SOCAT_PORT0},raw,echo=0",
-            f"EXEC:{firmware_path.absolute()}"
-        ],
+        ["socat", "-d", "-d", f"PTY,link={SOCAT_PORT0},raw,echo=0", f"EXEC:{firmware_path.absolute()}"],
         stderr=subprocess.PIPE,
         bufsize=0,
     )
@@ -117,11 +123,12 @@ def main(
             sys.exit(1)
         time.sleep(0.1)
 
-    # 2. Start Daemon
+    # 3. Start Daemon
+    p_root = package_root.absolute()
     daemon_env = {
         **os.environ,
         "PYTHONUNBUFFERED": "1",
-        "PYTHONPATH": f"{package_root.absolute()}:{package_root.absolute()}/mcubridge:{package_root.absolute()}/mcubridge-client-examples",
+        "PYTHONPATH": f"{p_root}:{p_root}/mcubridge:{p_root}/mcubridge-client-examples",
         "MCUBRIDGE_SERIAL_PORT": SOCAT_PORT0,
         "MCUBRIDGE_SERIAL_BAUD": "115200",
         "MCUBRIDGE_MQTT_HOST": MQTT_HOST,
@@ -152,7 +159,7 @@ def main(
         if run_scripts:
             logger.info("Running script: %s", run_scripts[0])
             res = subprocess.run([sys.executable, run_scripts[0]], env=daemon_env, check=True, timeout=60)
-            success = (res.returncode == 0)
+            success = res.returncode == 0
     except Exception as e:
         logger.error("Emulation error: %s", e)
     finally:
@@ -160,15 +167,18 @@ def main(
             try:
                 os.kill(p.pid, signal.SIGTERM)
                 p.wait(timeout=2)
-            except:
-                try: os.kill(p.pid, signal.SIGKILL)
-                except: pass
+            except Exception:
+                try:
+                    os.kill(p.pid, signal.SIGKILL)
+                except Exception:
+                    pass
 
     if not success:
         logger.error("Emulation FAILED.")
         sys.exit(1)
     else:
         logger.info("Emulation SUCCESS.")
+
 
 if __name__ == "__main__":
     typer.run(main)

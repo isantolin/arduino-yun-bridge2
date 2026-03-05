@@ -133,10 +133,10 @@ class BridgeDaemon:
         self.state.config_source = get_config_source()
         self.service = BridgeService(config, self.state)
         # Initialize dependencies
-        
+
         async def _dummy_sender(cmd: int, payload: bytes) -> bool:
             return False
-            
+
         self.service.register_serial_sender(_dummy_sender)
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None

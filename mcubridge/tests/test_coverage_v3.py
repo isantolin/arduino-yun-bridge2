@@ -293,15 +293,14 @@ async def test_serial_transport_on_disconnected_hook_error():
     config = create_real_config()
     state = MagicMock()
     service = MagicMock()
+    service.on_serial_connected = AsyncMock()
     service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("Hook fail"))
     transport = SerialTransport(config, state, service)
 
+
     with (
         patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
-        patch(
-            "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection",
-            side_effect=OSError("Connect fail"),
-        ),
+        patch.object(transport, "_open_connection", side_effect=OSError("Connect fail")),
     ):
         with pytest.raises(OSError):
             await transport._connect_and_run(asyncio.get_running_loop())

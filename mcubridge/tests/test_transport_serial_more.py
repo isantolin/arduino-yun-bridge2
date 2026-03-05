@@ -54,15 +54,28 @@ async def test_negotiate_baudrate_success() -> None:
         transport = serial_fast.SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
 
-        # Simulate receiving response via the future
-        async def simulate_resp():
-            await asyncio.sleep(0.1)
-            transport._negotiation_future.set_result(True)
+        # Mock _serial_sender to avoid real I/O and return True
+        async def mock_sender(cmd, payload):
+            # The future is created AFTER sender is called in the retry loop? 
+            # No, let's check code:
+            # 1. loop.create_future()
+            # 2. await self._serial_sender(...)
+            # So it should be there.
+            if transport._negotiation_future and not transport._negotiation_future.done():
+                transport._negotiation_future.set_result(True)
+            return True
 
-        asyncio.create_task(simulate_resp())
+        transport._serial_sender = mock_sender
 
-        # reader.readuntil will be called by temp_reader inside negotiate
-        mock_reader.readuntil.side_effect = asyncio.CancelledError # Exit loop
+        from cobs import cobs
+        from mcubridge.protocol.frame import Frame
+        from mcubridge.protocol.protocol import Command, FRAME_DELIMITER
+
+        resp_frame = Frame(command_id=Command.CMD_SET_BAUDRATE_RESP.value, payload=b"").to_bytes()
+        encoded_resp = cobs.encode(resp_frame) + FRAME_DELIMITER
+
+        # Reader loop in _negotiate_baudrate will call readuntil
+        mock_reader.readuntil.return_value = encoded_resp
 
         ok = await transport._negotiate_baudrate(mock_reader, 115200)
         assert ok is True
@@ -118,10 +131,12 @@ async def test_serial_disconnected_hook_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test on_serial_disconnected hook error is logged and handled."""
-    mock_reader = MagicMock(spec=asyncio.StreamReader)
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    # Return EOF immediately to terminate loop
+    mock_reader.readuntil.side_effect = asyncio.IncompleteReadError(b"", None)
     mock_writer = MagicMock(spec=asyncio.StreamWriter)
     mock_writer.transport = MagicMock()
-    mock_writer.is_closing.return_value = True # Stop immediately
+    mock_writer.wait_closed = AsyncMock()
 
     patch_path = "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection"
     with patch(patch_path, new_callable=AsyncMock) as mock_open:

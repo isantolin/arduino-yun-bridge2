@@ -62,11 +62,11 @@ inline void hkdf(void* out, size_t outLen, const void* key, size_t keyLen,
   // --- Extract phase: PRK = HMAC-Hash(salt, IKM) ---
   const uint8_t* s;
   size_t slen;
-  etl::array<uint8_t, T::HASH_SIZE> zero_salt;
   if (salt && saltLen) {
     s = static_cast<const uint8_t*>(salt);
     slen = saltLen;
   } else {
+    etl::array<uint8_t, T::HASH_SIZE> zero_salt;
     zero_salt.fill(0);
     s = zero_salt.data();
     slen = T::HASH_SIZE;

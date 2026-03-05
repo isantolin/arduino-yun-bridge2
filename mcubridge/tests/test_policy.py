@@ -51,7 +51,6 @@ class TestTopicAuthorization:
             (Topic.DATASTORE.value, "put"),
             (Topic.MAILBOX.value, "read"),
             (Topic.MAILBOX.value, "write"),
-            (Topic.SHELL.value, "run"),
             (Topic.SHELL.value, "run_async"),
             (Topic.SHELL.value, "poll"),
             (Topic.SHELL.value, "kill"),
@@ -86,11 +85,11 @@ class TestTopicAuthorization:
         policy = TopicAuthorization(
             file_write=False,
             datastore_put=False,
-            shell_run=False,
+            shell_run_async=False,
         )
         assert policy.allows(Topic.FILE.value, "write") is False
         assert policy.allows(Topic.DATASTORE.value, "put") is False
-        assert policy.allows(Topic.SHELL.value, "run") is False
+        assert policy.allows(Topic.SHELL.value, "run_async") is False
 
         # Check that others are still allowed
         assert policy.allows(Topic.FILE.value, "read") is True

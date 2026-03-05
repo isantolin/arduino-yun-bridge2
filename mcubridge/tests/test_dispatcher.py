@@ -368,7 +368,7 @@ async def test_dispatch_mcu_frame_orphaned_response_is_ignored() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    await dispatcher.dispatch_mcu_frame(Command.CMD_PROCESS_RUN_RESP.value, b"1")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_PROCESS_POLL_RESP.value, b"1")
 
     assert not any(name == "acknowledge_frame" for name, _ in calls.items)
     assert not any(name == "send_frame" for name, _ in calls.items)

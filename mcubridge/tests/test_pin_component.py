@@ -143,6 +143,7 @@ async def test_handle_digital_read_resp_without_pending_request_publishes_unknow
     assert len(ctx.enqueued) == 1
     message, reply_context = ctx.enqueued[0]
     assert reply_context is None
+    # Pin 1 is unknown if not in pending, publishes to generic value topic
     assert message.payload == b"1"
     assert message.topic_name == topic_path(
         runtime_state.mqtt_topic_prefix,
@@ -209,8 +210,6 @@ async def test_handle_mqtt_mode_command_valid_payload_sends_frame(
     await component.handle_mqtt(
         Topic.DIGITAL,
         [
-            runtime_state.mqtt_topic_prefix,
-            Topic.DIGITAL.value,
             "2",
             PinAction.MODE.value,
         ],
@@ -234,8 +233,6 @@ async def test_handle_mqtt_mode_command_rejects_invalid_payload(
     await component.handle_mqtt(
         Topic.DIGITAL,
         [
-            runtime_state.mqtt_topic_prefix,
-            Topic.DIGITAL.value,
             "2",
             PinAction.MODE.value,
         ],
@@ -260,8 +257,6 @@ async def test_handle_mqtt_read_command_queue_overflow_notifies_mqtt(
     await component.handle_mqtt(
         Topic.DIGITAL,
         [
-            runtime_state.mqtt_topic_prefix,
-            Topic.DIGITAL.value,
             "9",
             PinAction.READ.value,
         ],
@@ -295,8 +290,6 @@ async def test_handle_mqtt_read_command_send_fails_does_not_enqueue_pending(
     await component.handle_mqtt(
         Topic.ANALOG,
         [
-            runtime_state.mqtt_topic_prefix,
-            Topic.ANALOG.value,
             "3",
             PinAction.READ.value,
         ],
@@ -318,8 +311,6 @@ async def test_handle_mqtt_read_command_appends_pending_on_success(
     await component.handle_mqtt(
         Topic.ANALOG,
         [
-            runtime_state.mqtt_topic_prefix,
-            Topic.ANALOG.value,
             "3",
             PinAction.READ.value,
         ],
@@ -347,7 +338,7 @@ async def test_handle_mqtt_write_digital_accepts_empty_payload_as_zero(
 
     await component.handle_mqtt(
         Topic.DIGITAL,
-        [runtime_state.mqtt_topic_prefix, Topic.DIGITAL.value, "5"],
+        ["5"],
         "",
     )
 
@@ -366,7 +357,7 @@ async def test_handle_mqtt_write_rejects_invalid_payload(
 
     await component.handle_mqtt(
         Topic.DIGITAL,
-        [runtime_state.mqtt_topic_prefix, Topic.DIGITAL.value, "5"],
+        ["5"],
         "999",
     )
 
@@ -383,7 +374,7 @@ async def test_handle_mqtt_parses_analog_pin_identifier_prefix_a(
 
     await component.handle_mqtt(
         Topic.ANALOG,
-        [runtime_state.mqtt_topic_prefix, Topic.ANALOG.value, "A1"],
+        ["A1"],
         "10",
     )
 

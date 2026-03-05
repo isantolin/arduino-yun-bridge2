@@ -44,28 +44,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
 
 
 @pytest.mark.asyncio
-async def test_run_sync_no_timeout_waits_for_process(
-    process_component: ProcessComponent,
-) -> None:
-    # Compatibility test for run_sync stub
-    with patch.object(process_component, "run_async", return_value=123):
-        with patch.object(process_component, "poll_process") as mock_poll:
-            # First call running, second call finished and slot removed
-            def _remove(*args):
-                process_component.state.running_processes.pop(123, None)
-                return ProcessOutputBatch(Status.OK.value, 0, b"done", b"", True, False, False)
-
-            mock_poll.side_effect = [
-                ProcessOutputBatch(Status.OK.value, 0, b"run", b"", False, False, False),
-                _remove
-            ]
-
-            status, out, err, code = await process_component.run_sync("cmd")
-            assert status == Status.OK.value
-
-
-@pytest.mark.asyncio
-async def test_start_async_rejects_when_slot_limit_reached(
+async def test_run_async_rejects_when_slot_limit_reached(
     process_component: ProcessComponent,
 ) -> None:
     limit = process_component.state.process_max_concurrent
@@ -73,12 +52,12 @@ async def test_start_async_rejects_when_slot_limit_reached(
     for _ in range(limit):
         await process_component._process_slots.acquire()
 
-    pid = await process_component.start_async("cmd")
+    pid = await process_component.run_async("cmd")
     assert pid == 0
 
 
 @pytest.mark.asyncio
-async def test_collect_output_finishing_process_releases_slot(
+async def test_poll_process_finishing_process_releases_slot(
     process_component: ProcessComponent,
 ) -> None:
     pid = 10
@@ -95,7 +74,7 @@ async def test_collect_output_finishing_process_releases_slot(
     # Acquire one
     await process_component._process_slots.acquire()
 
-    batch = await process_component.collect_output(pid)
+    batch = await process_component.poll_process(pid)
     assert batch.exit_code == 7
 
     # Slot should be released (back to initial)
@@ -103,10 +82,10 @@ async def test_collect_output_finishing_process_releases_slot(
 
 
 @pytest.mark.asyncio
-async def test_monitor_async_process_handles_wait_exception(
+async def test_finalize_callback_async_handles_wait_exception(
     process_component: ProcessComponent,
 ) -> None:
-    # Test finalizing with a fake exit code since _monitor_process is removed
+    # Test finalizing with a fake exit code
     pid = 1
 
     slot = ManagedProcess(pid=pid, command="test")
@@ -122,14 +101,14 @@ async def test_monitor_async_process_handles_wait_exception(
 
 
 @pytest.mark.asyncio
-async def test_finalize_async_process_slot_missing_releases(
+async def test_finalize_process_slot_missing_releases(
     process_component: ProcessComponent,
 ) -> None:
     # If missing, it currently DOES NOT release by design (safety).
     # Update test to expect current value.
     await process_component._process_slots.acquire()
     val_after_acquire = process_component._process_slots._value
-    await process_component._finalize_async_process(999)
+    await process_component._finalize_process(999)
     assert process_component._process_slots._value == val_after_acquire
 
 
@@ -149,7 +128,7 @@ async def test_handle_kill_timeout_releases_slot(
 
     await process_component._process_slots.acquire()
 
-    ok = await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
+    ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
     assert ok is True
     mock_handle.process.terminate.assert_called_once()
 
@@ -168,7 +147,7 @@ async def test_handle_kill_process_lookup_error_is_handled(
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    ok = await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
+    ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
     # Should return True as we attempted termination
     assert ok is True
 

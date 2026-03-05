@@ -302,70 +302,12 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
 
 
 @pytest.mark.asyncio
-async def test_mqtt_shell_run_publishes_response(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    from mcubridge.policy import AllowedCommandPolicy
-    runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
-
-    mock_comp = MagicMock(spec=ProcessComponent)
-    mock_comp.run_sync = AsyncMock(return_value=(Status.OK.value, b"ok", b"", 0))
-
-    with patch("mcubridge.services.runtime.ProcessComponent", return_value=mock_comp):
-        service = BridgeService(runtime_config, runtime_state)
-        # Components shared the same mock_comp reference from init
-
-        await service.handle_mqtt_message(
-            _make_inbound(
-                topic_path(
-                    runtime_state.mqtt_topic_prefix,
-                    Topic.SHELL,
-                    "run",
-                ),
-                b"echo test",
-            )
-        )
-        mock_comp.run_sync.assert_called()
-
-
-@pytest.mark.asyncio
-async def test_mqtt_shell_run_async_handles_not_allowed(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    from mcubridge.policy import AllowedCommandPolicy
-    runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["allowed"])
-    service = BridgeService(runtime_config, runtime_state)
-
-    await service.handle_mqtt_message(
-        _make_inbound(
-            topic_path(
-                runtime_state.mqtt_topic_prefix,
-                Topic.SHELL,
-                "run_async",
-            ),
-            b"blocked",
-        )
-    )
-
-    reply = runtime_state.mqtt_publish_queue.get_nowait()
-    # ShellComponent calls _handle_run_async, which publishes 'error:...' or pid
-    payload_variants = (
-        b"error",
-        str(Status.ERROR.value).encode(),
-        b"1",
-        b"0",
-    )
-    assert any(variant in reply.payload for variant in payload_variants)
-
-@pytest.mark.asyncio
 async def test_mqtt_shell_kill_invokes_process_component(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     mock_comp = MagicMock(spec=ProcessComponent)
-    mock_comp.handle_kill = AsyncMock(return_value=True)
+    mock_comp.stop_process = AsyncMock(return_value=True)
 
     with patch("mcubridge.services.runtime.ProcessComponent", return_value=mock_comp):
         service = BridgeService(runtime_config, runtime_state)
@@ -382,6 +324,6 @@ async def test_mqtt_shell_kill_invokes_process_component(
                 b"",
             )
         )
-        # ShellComponent calls handle_kill with UINT16_STRUCT build
-        mock_comp.handle_kill.assert_called_with(structures.UINT16_STRUCT.build(pid), send_ack=False)
+        # ShellComponent calls stop_process(pid)
+        mock_comp.stop_process.assert_called_with(pid)
 

@@ -416,6 +416,7 @@ class SerialTransport:
                 with attempt:
                     if self.loop:
                         self._negotiation_future = self.loop.create_future()
+
                     if not await self._serial_sender(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                         self._negotiation_future = None
                         raise asyncio.TimeoutError("Write failed")

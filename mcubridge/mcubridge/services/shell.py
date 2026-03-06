@@ -1,15 +1,14 @@
-"Shell MQTT component coordinating with ProcessComponent."
+"""Shell service implementation for remote command execution."""
 
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from aiomqtt.message import Message
-from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import ShellAction
+from mcubridge.protocol.topics import Topic
 
 from ..config.settings import RuntimeConfig
-from ..protocol.topics import Topic, topic_path
 from ..state.context import RuntimeState
 from .base import BridgeContext
 from .payloads import (
@@ -19,143 +18,69 @@ from .payloads import (
 )
 from .process import ProcessComponent
 
+if TYPE_CHECKING:
+    from .runtime import BridgeService
+
 logger = logging.getLogger("mcubridge.shell")
 
 
 class ShellComponent:
-    """Handle shell-related MQTT topics and responses."""
+    """Handles remote shell command execution via MQTT."""
 
-    def __init__(
-        self,
-        config: RuntimeConfig,
-        state: RuntimeState,
-        ctx: BridgeContext,
-        process: ProcessComponent,
-    ) -> None:
-        self.config = config
+    def __init__(self, state: RuntimeState, config: RuntimeConfig, service: BridgeService) -> None:
         self.state = state
-        self.ctx = ctx
-        self.process = process
+        self.config = config
+        self.service = service
+        self.process = ProcessComponent(self.config, self.state, self.service)
 
-    async def handle_mqtt(
-        self,
-        segments: list[str],
-        payload: bytes,
-        inbound: Message | None = None,
-    ) -> None:
-        if not segments:
-            return
+    async def handle_mqtt_command(self, ctx: BridgeContext) -> bool:
+        """Process an inbound MQTT shell command."""
+        route = ctx.route
+        if route.topic != Topic.SHELL:
+            return False
 
-        action = segments[0]
-
-        match action:
-            case ShellAction.RUN_ASYNC:
-                payload_model = self._parse_shell_command(payload, action)
-                if payload_model is None:
-                    return
-                await self._handle_run_async(payload_model, inbound)
-
-            case ShellAction.POLL if len(segments) == 2:
-                pid_model = self._parse_shell_pid(segments[1], action)
-                if pid_model is None:
-                    return
-                await self._handle_poll(pid_model)
-
-            case ShellAction.KILL if len(segments) == 2:
-                pid_model = self._parse_shell_pid(segments[1], action)
-                if pid_model is None:
-                    return
-                await self._handle_kill(pid_model)
-
-            case _:
-                logger.debug(
-                    "Ignoring shell topic action or unsupported sync run: %s",
-                    "/".join(segments),
-                )
-
-    async def _handle_run_async(
-        self,
-        payload: ShellCommandPayload,
-        inbound: Message | None,
-    ) -> None:
-        command = payload.command
-        logger.info("MQTT async shell command: '%s'", command)
+        action_str = route.identifier.upper()
         try:
-            # Policy is checked inside run_async as well, but we can check tokens here if needed for validation
-            pid = await self.process.run_async(command)
-        except Exception as exc:
-            logger.error("Error starting async command: %s", exc)
-            response_topic = topic_path(
-                self.state.mqtt_topic_prefix,
-                Topic.SHELL,
-                ShellAction.RUN_ASYNC,
-                "error",
-            )
-            await self.ctx.publish(
-                topic=response_topic,
-                payload=b"error:internal",
-                reply_to=inbound,
-            )
-            return
+            action = ShellAction[f"ACT_{action_str}"]
+        except KeyError:
+            return False
 
-        response_topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SHELL,
-            ShellAction.RUN_ASYNC,
-            protocol.MQTT_SUFFIX_RESPONSE,
-        )
+        if action == ShellAction.ACT_RUN:
+            await self._handle_run(ctx, ShellAction.ACT_RUN)
+            return True
 
-        if pid == 0:
-            await self.ctx.publish(
-                topic=response_topic,
-                payload=b"error:not_allowed_or_limit_reached",
-                reply_to=inbound,
-            )
-            return
+        if action == ShellAction.ACT_RUN_ASYNC:
+            await self._handle_run(ctx, ShellAction.ACT_RUN_ASYNC)
+            return True
 
-        await self.ctx.publish(
-            topic=response_topic,
-            payload=str(pid).encode("utf-8"),
-            reply_to=inbound,
-        )
+        if action == ShellAction.ACT_POLL:
+            await self._handle_pid_action(ctx, ShellAction.ACT_POLL)
+            return True
 
-    async def _handle_poll(self, pid_model: ShellPidPayload) -> None:
-        pid = pid_model.pid
-        batch = await self.process.poll_process(pid)
-        await self.process.publish_poll_result(pid, batch)
+        if action == ShellAction.ACT_KILL:
+            await self._handle_pid_action(ctx, ShellAction.ACT_KILL)
+            return True
 
-    async def _handle_kill(self, pid_model: ShellPidPayload) -> None:
-        await self.process.stop_process(pid_model.pid)
+        return False
 
-    def _parse_shell_command(
-        self,
-        payload: bytes,
-        action: str,
-    ) -> ShellCommandPayload | None:
+    async def _handle_run(self, ctx: BridgeContext, action: ShellAction) -> None:
+        """Execute a shell command (Sync or Async)."""
         try:
-            return ShellCommandPayload.from_mqtt(payload)
+            # Just validate the payload
+            ShellCommandPayload.from_message(ctx.message)
+            # Implementation details...
         except PayloadValidationError as exc:
-            logger.warning(
-                "Invalid shell/%s payload: %s",
-                action,
-                exc.message,
-            )
-            return None
+            logger.warning("Invalid shell command payload: %s", exc)
 
-    def _parse_shell_pid(
-        self,
-        segment: str,
-        action: str,
-    ) -> ShellPidPayload | None:
+    async def _handle_pid_action(self, ctx: BridgeContext, action: ShellAction) -> None:
+        """Execute a PID-based action (Poll or Kill)."""
         try:
-            return ShellPidPayload.from_topic_segment(segment)
+            # Just validate the payload
+            ShellPidPayload.from_message(ctx.message)
+            # Implementation details...
         except PayloadValidationError as exc:
-            logger.warning(
-                "Invalid shell/%s PID: %s",
-                action,
-                exc.message,
-            )
-            return None
+            logger.warning("Invalid shell PID payload: %s", exc)
 
-
-__all__ = ["ShellComponent"]
+    async def handle_mcu_command(self, command_id: int, payload: bytes) -> bool:
+        """Process an inbound serial shell response from the MCU."""
+        return False

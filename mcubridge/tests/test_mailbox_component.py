@@ -14,7 +14,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Command, MailboxAction, Status
-from mcubridge.protocol.topics import (
+from mcubridge.protocol.protocol import (
     Topic,
     topic_path,
 )

@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcubridge.protocol.topics import Topic, TopicRoute
+from mcubridge.protocol.protocol import Topic, TopicRoute
 from mcubridge.router.routers import MQTTRouter
 
 

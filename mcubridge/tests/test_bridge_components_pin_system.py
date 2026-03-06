@@ -9,7 +9,7 @@ from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.protocol.topics import Topic, topic_path
+from mcubridge.protocol.protocol import Topic, topic_path
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import (

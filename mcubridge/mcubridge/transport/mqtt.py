@@ -1,18 +1,16 @@
-"""MQTT transport helpers for the MCU Bridge daemon."""
+"""MQTT transport implementation using aiomqtt."""
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
-from typing import TYPE_CHECKING, Any
+import socket
+from typing import TYPE_CHECKING, cast
 
 import aiomqtt
-import tenacity
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
-from mcubridge.protocol import topic_path
-from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS
+from mcubridge.mqtt import build_mqtt_connect_properties
+from mcubridge.protocol.topics import MQTT_COMMAND_SUBSCRIPTIONS, topic_path
 from mcubridge.state.context import RuntimeState
 from mcubridge.util import log_hexdump
 from mcubridge.util.mqtt_helper import configure_tls_context
@@ -25,211 +23,130 @@ logger = logging.getLogger("mcubridge")
 
 
 class MqttTransport:
-    """MQTT transport with FSM-based state management."""
+    """Handles MQTT connectivity and message queuing."""
 
-    # FSM States
-    STATE_DISCONNECTED = "disconnected"
-    STATE_CONNECTING = "connecting"
-    STATE_SUBSCRIBING = "subscribing"
-    STATE_READY = "ready"
-
-    def __init__(
-        self,
-        config: RuntimeConfig,
-        state: RuntimeState,
-        service: BridgeService,
-    ) -> None:
-        self.config = config
+    def __init__(self, state: RuntimeState, config: RuntimeConfig, service: BridgeService) -> None:
         self.state = state
+        self.config = config
         self.service = service
-        self.fsm_state = self.STATE_DISCONNECTED
+        self._client: aiomqtt.Client | None = None
+        self._connected_event = asyncio.Event()
 
-        self.machine = Machine(
+        # FSM for connectivity state
+        self._machine = Machine(
             model=self,
-            states=[
-                self.STATE_DISCONNECTED,
-                self.STATE_CONNECTING,
-                self.STATE_SUBSCRIBING,
-                self.STATE_READY,
-            ],
-            initial=self.STATE_DISCONNECTED,
-            model_attribute="fsm_state",
+            states=["disconnected", "connecting", "connected"],
+            initial="disconnected",
             ignore_invalid_triggers=True,
         )
-
-        self.machine.add_transition("connect", "*", self.STATE_CONNECTING)
-        self.machine.add_transition("connected", self.STATE_CONNECTING, self.STATE_SUBSCRIBING)
-        self.machine.add_transition("subscribed", self.STATE_SUBSCRIBING, self.STATE_READY)
-        self.machine.add_transition("disconnect", "*", self.STATE_DISCONNECTED)
-
-    if TYPE_CHECKING:
-
-        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
-            """FSM trigger placeholder."""
-            ...
+        self._machine.add_transition("connect", "disconnected", "connecting")
+        self._machine.add_transition("mark_connected", "connecting", "connected")
+        self._machine.add_transition("mark_disconnected", "*", "disconnected")
 
     async def run(self) -> None:
-        """Main run loop with reconnection logic."""
-        tls_context = configure_tls_context(self.config)
-        reconnect_delay = max(1, self.config.reconnect_delay)
-
-        retryer = tenacity.AsyncRetrying(
-            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
-            retry=tenacity.retry_if_exception_type((aiomqtt.MqttError, OSError, asyncio.TimeoutError)),
-            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-            reraise=True,
-        )
-
-        try:
-            async for attempt in retryer:
-                with attempt:
-                    try:
-                        await self._connect_session(tls_context)
-                    except* (
-                        aiomqtt.MqttError,
-                        OSError,
-                        asyncio.TimeoutError,
-                    ) as exc_group:
-                        # Unwrap exception group to allow tenacity to retry
-                        for exc in exc_group.exceptions:
-                            logger.error("MQTT connection error: %s", exc)
-                        if len(exc_group.exceptions) >= 1:
-                            raise exc_group.exceptions[0]
-                        raise
-                    finally:
-                        if self.fsm_state != self.STATE_DISCONNECTED:
-                            self.trigger("disconnect")
-        except asyncio.CancelledError:
-            logger.info("MQTT transport stopping.")
-            self.trigger("disconnect")
-            raise
-
-    async def _connect_session(self, tls_context: Any) -> None:
-        connect_props = build_mqtt_connect_properties()
-
-        # [SIL-2] Warn if connecting without authentication
-        if not self.config.mqtt_user:
-            logger.warning(
-                "MQTT connecting without authentication (anonymous); "
-                "consider setting mqtt_user/mqtt_pass for production"
-            )
-
-        self.trigger("connect")
-
-        async with aiomqtt.Client(
-            hostname=self.config.mqtt_host,
-            port=self.config.mqtt_port,
-            username=self.config.mqtt_user or None,
-            password=self.config.mqtt_pass or None,
-            tls_context=tls_context,
-            logger=logging.getLogger("mcubridge.mqtt.client"),
-            protocol=aiomqtt.ProtocolVersion.V5,
-            clean_session=None,
-            properties=connect_props,
-        ) as client:
-            self.trigger("connected")
-            logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
-
-            await self._subscribe_topics(client)
-            self.trigger("subscribed")
-
-            async with asyncio.TaskGroup() as task_group:
-                task_group.create_task(self._publisher_loop(client))
-                task_group.create_task(self._subscriber_loop(client))
-
-    async def _subscribe_topics(self, client: aiomqtt.Client) -> None:
-        topics = [(topic_path(self.state.mqtt_topic_prefix, t, *s), int(q)) for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS]
-
-        for topic, qos in topics:
-            await client.subscribe(topic, qos=qos)
-
-        logger.info("Subscribed to %d command topics.", len(topics))
-
-    async def _publisher_loop(self, client: aiomqtt.Client) -> None:
-        """Publishes messages from the internal queue to the MQTT broker."""
-
-        @tenacity.retry(
-            wait=tenacity.wait_fixed(0.1),
-            stop=tenacity.stop_never,
-            retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-            before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
-        )
-        async def _publish_tick() -> None:
-            # [OPTIMIZATION] Flush spool before processing new messages
-            await self.state.flush_mqtt_spool()
-
-            # Wait for next message
-            message = await self.state.mqtt_publish_queue.get()
-            topic_name = message.topic_name
-            props = build_mqtt_properties(message)
-
-            if logger.isEnabledFor(logging.DEBUG):
-                log_hexdump(logger, logging.DEBUG, f"MQTT PUB > {topic_name}", message.payload)
-
-            published = False
+        """Main MQTT loop with exponential backoff and spooling."""
+        while True:
             try:
-                await client.publish(
-                    topic_name,
-                    message.payload,
-                    qos=int(message.qos),
-                    retain=message.retain,
-                    properties=props,
-                )
-                self.state.record_mqtt_publish()
-                published = True
-            except asyncio.CancelledError:
-                raise
-            except aiomqtt.MqttError as exc:
-                logger.warning("MQTT publish failed (%s); requeuing.", exc)
-                raise
+                self.trigger("connect")
+                tls_context = configure_tls_context(self.config)
+                connect_props = build_mqtt_connect_properties()
+
+                async with aiomqtt.Client(
+                    hostname=self.config.mqtt_host,
+                    port=self.config.mqtt_port,
+                    username=self.config.mqtt_user,
+                    password=self.config.mqtt_pass,
+                    protocol=aiomqtt.ProtocolVersion.V5,
+                    tls_context=tls_context,
+                    properties=connect_props,
+                ) as client:
+                    self._client = client
+                    self.trigger("mark_connected")
+                    self._connected_event.set()
+                    logger.info("Connected to MQTT broker at %s:%d", self.config.mqtt_host, self.config.mqtt_port)
+
+                    # Subscribe to command topics
+                    subs = [(t, q) for t, q in MQTT_COMMAND_SUBSCRIPTIONS]
+                    await client.subscribe(subs)
+                    logger.info("Subscribed to %d command topics.", len(subs))
+
+                    # Start workers
+                    async with asyncio.TaskGroup() as tg:
+                        tg.create_task(self._publisher_loop())
+                        tg.create_task(self._receiver_loop())
+                        tg.create_task(self._spool_flusher_loop())
+
+            except (aiomqtt.MqttError, socket.gaierror, ConnectionError) as exc:
+                logger.error("MQTT connection error: %s", exc)
+            except Exception as exc:
+                logger.exception("Unexpected error in MQTT link: %s", exc)
             finally:
+                self.trigger("mark_disconnected")
+                self._connected_event.clear()
+                self._client = None
+                await asyncio.sleep(5)
+
+    def trigger(self, event: str) -> None:
+        """Helper to safely trigger FSM transitions."""
+        try:
+            getattr(self, event)()
+        except (AttributeError, Exception):
+            pass
+
+    async def _publisher_loop(self) -> None:
+        """Process outgoing MQTT messages from the state queue."""
+        while self._client:
+            pub = await self.state.mqtt_publish_queue.get()
+            try:
+                published = False
+                try:
+                    await self._client.publish(
+                        pub.topic,
+                        pub.payload,
+                        qos=pub.qos,
+                        retain=pub.retain,
+                        properties=pub.properties,
+                    )
+                    self.state.record_mqtt_publish(pub.topic)
+                    published = True
+                except aiomqtt.MqttError as exc:
+                    logger.warning("MQTT publish failed: %s", exc)
+
                 if not published:
-                    # Requeue for retry if it wasn't sent
-                    try:
-                        self.state.mqtt_publish_queue.put_nowait(message)
-                    except asyncio.QueueFull:
-                        # Spool if queue is full
-                        await self.state.stash_mqtt_message(message)
+                    self.state.stash_mqtt_message(pub.topic, pub.payload)
+
+            except Exception as exc:
+                logger.error("Error in MQTT publisher loop: %s", exc)
+            finally:
                 self.state.mqtt_publish_queue.task_done()
 
-            # Raise to trigger next tick via tenacity
-            raise Exception("tick")
+    async def _receiver_loop(self) -> None:
+        """Process inbound MQTT messages from the broker."""
+        if not self._client:
+            return
+        async for message in self._client.messages:
+            topic = str(message.topic)
+            payload = cast(bytes, message.payload)
+            logger.debug("[MQTT -> DAEMON] %s (%d bytes)", topic, len(payload))
+            log_hexdump(logger, logging.DEBUG, "[MQTT -> DAEMON]", payload)
 
-        try:
-            await _publish_tick()
-        except asyncio.CancelledError:
-            logger.debug("MQTT publisher loop cancelled.")
-            raise
+            # Route to appropriate service
+            route = topic_path(topic)
+            if route:
+                await self.service.handle_mqtt_message(route, message)
 
-    async def _subscriber_loop(self, client: aiomqtt.Client) -> None:
-        try:
-            # [SIL-2] Use native aiomqtt filters for cleaner dispatching
-            async for message in client.messages:
-                if not str(message.topic):
-                    continue
-                if logger.isEnabledFor(logging.DEBUG):
-                    payload_bytes = bytes(message.payload) if message.payload else b""
-                    log_hexdump(
-                        logger,
-                        logging.DEBUG,
-                        f"MQTT SUB < {message.topic}",
-                        payload_bytes,
-                    )
+    async def _spool_flusher_loop(self) -> None:
+        """Periodically attempt to flush spooled messages."""
+        while self._client:
+            await asyncio.sleep(30)
+            if self._connected_event.is_set():
+                count = await self.state.flush_mqtt_spool(self.enqueue_publish)
+                if count > 0:
+                    logger.info("Successfully flushed %d spooled messages.", count)
 
-                try:
-                    # Dispatch using native topic matching capability
-                    await self.service.handle_mqtt_message(message)
-                except (
-                    ValueError,
-                    TypeError,
-                    AttributeError,
-                    RuntimeError,
-                    KeyError,
-                ) as e:
-                    logger.exception("CRITICAL: Error processing MQTT topic %s: %s", message.topic, e)
-        except asyncio.CancelledError:
-            with contextlib.suppress(asyncio.CancelledError):
-                raise
-        except aiomqtt.MqttError as exc:
-            logger.warning("MQTT subscriber loop interrupted: %s", exc)
-            raise
+    async def enqueue_publish(self, topic: str, payload: bytes, qos: int = 1) -> None:
+        """Enqueue a message for publication."""
+        from mcubridge.protocol.structures import QueuedPublish
+        await self.state.mqtt_publish_queue.put(
+            QueuedPublish(topic=topic, payload=payload, qos=qos)
+        )

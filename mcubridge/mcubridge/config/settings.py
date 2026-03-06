@@ -63,8 +63,8 @@ from ..protocol.protocol import (
     DEFAULT_BAUDRATE,
     DEFAULT_RETRY_LIMIT,
     DEFAULT_SAFE_BAUDRATE,
-    MQTT_DEFAULT_TOPIC_PREFIX,
 )
+from ..protocol.topics import MQTT_DEFAULT_TOPIC_PREFIX
 
 logger = logging.getLogger(__name__)
 

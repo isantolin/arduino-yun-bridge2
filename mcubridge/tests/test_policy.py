@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
-from mcubridge.protocol.topics import Topic
+from mcubridge.protocol.protocol import Topic
 
 
 class TestAllowedCommandPolicy:

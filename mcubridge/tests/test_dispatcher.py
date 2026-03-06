@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status, Topic
-from mcubridge.protocol.topics import TopicRoute, parse_topic
+from mcubridge.protocol.protocol import TopicRoute, parse_topic
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
 from mcubridge.services.dispatcher import BridgeDispatcher
 

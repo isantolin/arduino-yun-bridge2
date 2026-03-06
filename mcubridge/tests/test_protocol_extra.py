@@ -59,7 +59,7 @@ def test_rle_encode_decode_edge_cases() -> None:
 
 
 def test_topics_handshake_topic() -> None:
-    from mcubridge.protocol.topics import (
+    from mcubridge.protocol.protocol import (
         Topic,
         topic_path,
     )

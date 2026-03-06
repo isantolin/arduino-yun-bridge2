@@ -12,7 +12,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, PinAction, Status
-from mcubridge.protocol.topics import Topic, topic_path
+from mcubridge.protocol.protocol import Topic, topic_path
 from mcubridge.services.pin import PinComponent
 from mcubridge.state.context import PendingPinRequest, RuntimeState
 

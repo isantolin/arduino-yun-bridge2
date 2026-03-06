@@ -1,487 +1,237 @@
-"""Periodic metrics publisher and Prometheus exporter for MCU Bridge."""
+"""Prometheus metrics exporter for the MCU Bridge service."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import math
-from collections.abc import Awaitable, Callable, Iterator, Sequence
-from typing import (
-    Any,
-    cast,
-)
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 import msgspec
-import tenacity
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from prometheus_client.core import Metric
+from mcubridge.protocol.protocol import Command
+from mcubridge.protocol.topics import Topic, topic_path
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
-from .protocol.structures import QueuedPublish
-from .protocol.topics import Topic, topic_path
-from .state.context import RuntimeState
+if TYPE_CHECKING:
+    from aiomqtt.message import Message
+    from mcubridge.config.settings import RuntimeConfig
+    from mcubridge.state.context import RuntimeState
 
 logger = logging.getLogger("mcubridge.metrics")
-_BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
-
-PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
 
-def _build_metrics_message(
-    state: RuntimeState,
-    snapshot: dict[str, Any],
-    *,
-    expiry_seconds: float,
-) -> QueuedPublish:
-    topic = topic_path(
-        state.mqtt_topic_prefix,
-        Topic.SYSTEM,
-        "metrics",
-    )
-    message = QueuedPublish(
-        topic_name=topic,
-        # [SIL-2] Fast serialization using msgspec.json.encode handles Structs directly
-        payload=msgspec.json.encode(snapshot),
-        content_type="application/json",
-        message_expiry_interval=int(expiry_seconds),
-    )
+@dataclass
+class BridgeMetrics:
+    """Consolidated metrics for the MCU Bridge ecosystem."""
 
-    mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
-    if snapshot.get("mqtt_spool_degraded"):
-        message = _with_user_property(
-            message,
-            "bridge-spool",
-            mqtt_spool_failure or "unknown",
+    # Serial I/O
+    serial_tx_bytes: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_serial_tx_bytes_total", "Total bytes sent to MCU"
         )
-
-    file_status = _file_status_property(snapshot)
-    if file_status is not None:
-        message = _with_user_property(
-            message,
-            "bridge-files",
-            file_status,
+    )
+    serial_rx_bytes: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_serial_rx_bytes_total", "Total bytes received from MCU"
         )
-
-    if snapshot.get("watchdog_enabled") is not None:
-        enabled = bool(snapshot.get("watchdog_enabled"))
-        message = _with_user_property(
-            message,
-            "bridge-watchdog-enabled",
-            "1" if enabled else "0",
+    )
+    serial_tx_frames: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_serial_tx_frames_total", "Total frames sent to MCU"
         )
-        watchdog_interval = snapshot.get("watchdog_interval")
-        if isinstance(watchdog_interval, (int, float)):
-            message = _with_user_property(
-                message,
-                "bridge-watchdog-interval",
-                str(watchdog_interval),
-            )
-
-    return message
-
-
-def _with_user_property(
-    message: QueuedPublish,
-    key: str,
-    value: str,
-) -> QueuedPublish:
-    user_properties = list(message.user_properties)
-    user_properties.append((key, value))
-    return msgspec.structs.replace(
-        message,
-        user_properties=user_properties,
     )
-
-
-def _file_status_property(snapshot: dict[str, Any]) -> str | None:
-    checks = (
-        ("file_storage_limit_rejections", "quota-blocked"),
-        ("file_write_limit_rejections", "write-limit"),
-    )
-    return next(
-        (
-            label
-            for key, label in checks
-            if (val := snapshot.get(key)) is not None and isinstance(val, (int, float)) and val > 0
-        ),
-        None,
-    )
-
-
-async def _emit_metrics_snapshot(
-    state: RuntimeState,
-    enqueue: PublishEnqueue,
-    *,
-    expiry_seconds: float,
-) -> None:
-    snapshot = state.build_metrics_snapshot()
-    await enqueue(
-        _build_metrics_message(
-            state,
-            snapshot,
-            expiry_seconds=expiry_seconds,
+    serial_rx_frames: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_serial_rx_frames_total", "Total frames received from MCU"
         )
     )
 
+    # Frame Quality
+    crc_errors: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_serial_crc_errors_total", "Total CRC32 validation failures"
+        )
+    )
+    decode_errors: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_serial_decode_errors_total", "Total COBS/Protocol decoding errors"
+        )
+    )
 
-async def _emit_bridge_snapshot(
-    state: RuntimeState,
-    enqueue: PublishEnqueue,
-    flavor: str,
-) -> None:
-    try:
-        snapshot = state.build_handshake_snapshot() if flavor == "handshake" else state.build_bridge_snapshot()
-        await enqueue(
-            _build_bridge_snapshot_message(
-                state,
-                flavor,
-                snapshot,
-            )
+    # MQTT
+    mqtt_messages_received: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_mqtt_rx_messages_total",
+            "Total MQTT messages received from broker",
+            ["topic"],
         )
-    except asyncio.CancelledError:
-        raise
-    except (TypeError, ValueError, OSError) as e:
-        logger.error(
-            "Failed to publish bridge snapshot (serialization/IO): %s",
-            e,
-            extra={"flavor": flavor},
+    )
+    mqtt_messages_published: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_mqtt_tx_messages_total",
+            "Total MQTT messages published to broker",
+            ["topic"],
         )
-    except AttributeError as e:
-        logger.critical(
-            "Unexpected error in bridge snapshot builder: %s",
-            e,
-            exc_info=True,
-            extra={"flavor": flavor},
+    )
+
+    # Latency
+    rpc_roundtrip_latency: Histogram = field(
+        default_factory=lambda: Histogram(
+            "mcubridge_rpc_latency_seconds",
+            "Time from MQTT command to MCU response",
+            ["command"],
         )
+    )
+
+    # MCU State
+    mcu_free_memory: Gauge = field(
+        default_factory=lambda: Gauge(
+            "mcubridge_mcu_free_memory_bytes", "Reported free heap memory on MCU"
+        )
+    )
+    mcu_uptime_seconds: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_mcu_uptime_seconds_total", "MCU uptime estimate"
+        )
+    )
+
+    # Bridge System
+    bridge_restart_count: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_restart_total", "Total daemon restarts"
+        )
+    )
+    task_failures: Counter = field(
+        default_factory=lambda: Counter(
+            "mcubridge_task_failures_total", "Total background task crashes", ["task"]
+        )
+    )
+
+    def record_serial_tx(self, frame_size: int) -> None:
+        self.serial_tx_bytes.inc(frame_size)
+        self.serial_tx_frames.inc()
+
+    def record_serial_rx(self, frame_size: int) -> None:
+        self.serial_rx_bytes.inc(frame_size)
+        self.serial_rx_frames.inc()
+
+    def record_mqtt_rx(self, message: Message) -> None:
+        route = topic_path(str(message.topic))
+        topic_name = route.topic.value if route else "unknown"
+        self.mqtt_messages_received.labels(topic=topic_name).inc()
+
+    def record_mqtt_tx(self, topic: str) -> None:
+        route = topic_path(topic)
+        topic_name = route.topic.value if route else "unknown"
+        self.mqtt_messages_published.labels(topic=topic_name).inc()
+
+    def record_rpc_latency(self, command_id: int, duration: float) -> None:
+        try:
+            cmd_name = Command(command_id).name
+        except ValueError:
+            cmd_name = f"unknown_{command_id}"
+        self.rpc_roundtrip_latency.labels(command=cmd_name).observe(duration)
+
+
+class MetricsManager:
+    """High-level service to manage and expose Prometheus metrics."""
+
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled
+        self.metrics = BridgeMetrics() if enabled else None
+
+    def record_serial_tx(self, frame_size: int) -> None:
+        if self.metrics:
+            self.metrics.record_serial_tx(frame_size)
+
+    def record_serial_rx(self, frame_size: int) -> None:
+        if self.metrics:
+            self.metrics.record_serial_rx(frame_size)
+
+    def record_crc_error(self) -> None:
+        if self.metrics:
+            self.metrics.crc_errors.inc()
+
+    def record_decode_error(self) -> None:
+        if self.metrics:
+            self.metrics.decode_errors.inc()
+
+    def record_mqtt_rx(self, message: Message) -> None:
+        if self.metrics:
+            self.metrics.record_mqtt_rx(message)
+
+    def record_mqtt_tx(self, topic: str) -> None:
+        if self.metrics:
+            self.metrics.record_mqtt_tx(topic)
+
+    def record_rpc_latency(self, command_id: int, duration: float) -> None:
+        if self.metrics:
+            self.metrics.record_rpc_latency(command_id, duration)
+
+    def update_mcu_memory(self, free_bytes: int) -> None:
+        if self.metrics:
+            self.metrics.mcu_free_memory.set(free_bytes)
+
+    def record_task_failure(self, task_name: str) -> None:
+        if self.metrics:
+            self.metrics.task_failures.labels(task=task_name).inc()
+
+
+class PrometheusExporter:
+    """HTTP server providing a Prometheus scrape endpoint."""
+
+    def __init__(self, host: str, port: int) -> None:
+        self.host = host
+        self.port = port
+
+    async def run(self) -> None:
+        """Expose metrics via HTTP server."""
+        logger.info("Starting Prometheus metrics server on %s:%d", self.host, self.port)
+        start_http_server(self.port, self.host)
+        # Keep task alive
+        while True:
+            await asyncio.sleep(3600)
 
 
 async def publish_metrics(
     state: RuntimeState,
-    enqueue: PublishEnqueue,
-    interval: float,
-    *,
-    min_interval: float = 5.0,
+    config: RuntimeConfig,
+    publish_callback: Any,
 ) -> None:
-    """Publish runtime metrics to MQTT at a fixed cadence."""
+    """Periodic task to publish bridge metrics to MQTT."""
+    if not config.metrics_enabled:
+        return
 
-    tick_seconds = _normalize_interval(interval, min_interval)
-    if tick_seconds is None:
-        raise ValueError("interval must be greater than zero")
-    expiry = float(tick_seconds * 2)
+    interval = config.status_interval
+    topic = f"{config.mqtt_topic}/{Topic.METRICS.value}"
 
-    # [OPTIMIZATION] Use tenacity for resilient looping
-    @tenacity.retry(
-        wait=tenacity.wait_fixed(tick_seconds),
-        stop=tenacity.stop_never,
-        retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-        before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
-    )
-    async def _metrics_loop() -> None:
+    while True:
+        await asyncio.sleep(interval)
         try:
-            await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
-        except asyncio.CancelledError:
-            raise
-        except (OSError, RuntimeError, msgspec.MsgspecError) as e:
-            logger.error("Periodic metrics emit failed: %s", e)
-        # Always raise to trigger the wait_fixed loop
-        raise RuntimeError("tick")
-
-    try:
-        await _metrics_loop()
-    except asyncio.CancelledError:
-        logger.info("Metrics publisher cancelled.")
-        raise
+            snapshot = state.capture_snapshot()
+            payload = msgspec.json.encode(snapshot)
+            await publish_callback(topic, payload)
+        except Exception as exc:
+            logger.error("Failed to publish metrics to MQTT: %s", exc)
 
 
 async def publish_bridge_snapshots(
     state: RuntimeState,
-    enqueue: PublishEnqueue,
-    *,
-    summary_interval: float,
-    handshake_interval: float,
-    min_interval: float = 5.0,
+    config: RuntimeConfig,
+    publish_callback: Any,
 ) -> None:
-    """Periodically publish bridge summary and handshake snapshots."""
-
-    summary_seconds = _normalize_interval(summary_interval, min_interval)
-    handshake_seconds = _normalize_interval(handshake_interval, min_interval)
-
-    if summary_seconds is None and handshake_seconds is None:
-        logger.info("Bridge snapshot loops disabled; awaiting cancellation.")
-        # Equivalent to waiting forever until cancelled
-        await asyncio.Event().wait()
+    """Periodic task to publish full bridge state snapshots."""
+    interval = config.bridge_summary_interval
+    if interval <= 0:
         return
 
-    async with asyncio.TaskGroup() as tg:
-        if summary_seconds is not None:
+    topic = f"{config.mqtt_topic}/{Topic.STATUS.value}/summary"
 
-            @tenacity.retry(
-                wait=tenacity.wait_fixed(summary_seconds),
-                stop=tenacity.stop_never,
-                retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-            )
-            async def _summary_loop() -> None:
-                try:
-                    await _emit_bridge_snapshot(state, enqueue, flavor="summary")
-                except asyncio.CancelledError:
-                    raise
-                except (OSError, RuntimeError, msgspec.MsgspecError) as e:
-                    logger.error("Bridge summary emit failed: %s", e)
-                raise RuntimeError("tick")
-
-            tg.create_task(_summary_loop())
-
-        if handshake_seconds is not None:
-
-            @tenacity.retry(
-                wait=tenacity.wait_fixed(handshake_seconds),
-                stop=tenacity.stop_never,
-                retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-            )
-            async def _handshake_loop() -> None:
-                try:
-                    await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
-                except asyncio.CancelledError:
-                    raise
-                except (OSError, RuntimeError, msgspec.MsgspecError) as e:
-                    logger.error("Bridge handshake emit failed: %s", e)
-                raise RuntimeError("tick")
-
-            tg.create_task(_handshake_loop())
-
-
-class RuntimeStateCollector:
-    """[SIL-2] Dynamic collector for Prometheus dimensional metrics.
-
-    Provides on-demand mapping of RuntimeState attributes to Prometheus Gauge
-    and Info families, using labels for grouping related metrics.
-    """
-
-    def __init__(self, state: RuntimeState) -> None:
-        self._state = state
-
-    def collect(self) -> Iterator[Metric]:
-        """Collect dimensional metrics from the current daemon state."""
-        from prometheus_client.core import GaugeMetricFamily
-
-        # 1. Queue Depths (Dimensional)
-        q_depths = GaugeMetricFamily(
-            "mcubridge_queue_depth",
-            "Current number of items in internal asynchronous queues",
-            labels=["queue"],
-        )
-        q_depths.add_metric(["mqtt_publish"], float(self._state.mqtt_publish_queue.qsize()))
-        q_depths.add_metric(["console_tx"], float(len(self._state.console_to_mcu_queue)))
-        q_depths.add_metric(["mailbox_tx"], float(len(self._state.mailbox_queue)))
-        q_depths.add_metric(["mailbox_rx"], float(len(self._state.mailbox_incoming_queue)))
-        q_depths.add_metric(["pending_digital_read"], float(len(self._state.pending_digital_reads)))
-        q_depths.add_metric(["pending_analog_read"], float(len(self._state.pending_analog_reads)))
-        q_depths.add_metric(["running_process"], float(len(self._state.running_processes)))
-        yield q_depths
-
-        # 2. System Status (Gauges)
-        fs_usage = GaugeMetricFamily(
-            "mcubridge_file_storage_bytes_used",
-            "Current filesystem usage in bytes (volatile storage)",
-        )
-        fs_usage.add_metric([], float(self._state.file_storage_bytes_used))
-        yield fs_usage
-
-        link_sync = GaugeMetricFamily(
-            "mcubridge_link_synchronized",
-            "Binary status of serial link synchronization (1=sync, 0=unsync)",
-        )
-        link_sync.add_metric([], 1.0 if self._state.is_synchronized else 0.0)
-        yield link_sync
-
-        # 3. System Health (Dimensional)
-        from .state.context import collect_system_metrics
-
-        health = GaugeMetricFamily(
-            "mcubridge_system_health",
-            "System-level resource utilization metrics",
-            labels=["resource"],
-        )
-        sys_metrics = collect_system_metrics()
-        for key, val in sys_metrics.items():
-            if isinstance(val, (int, float)):
-                health.add_metric([key], float(val))
-        yield health
-
-        # 4. Supervisor Health (Dimensional)
-        super_health = GaugeMetricFamily(
-            "mcubridge_supervisor_worker_restarts",
-            "Total restarts per internal worker task",
-            labels=["worker"],
-        )
-        for name, stats in self._state.supervisor_stats.items():
-            super_health.add_metric([name], float(stats.restarts))
-        yield super_health
-
-
-class PrometheusExporter:
-    """Expose RuntimeState snapshots via the Prometheus text format."""
-
-    def __init__(self, state: RuntimeState, host: str, port: int) -> None:
-        from prometheus_client import ProcessCollector
-        self._state = state
-        # Defensive normalization for tests/injected configs.
-        self._host = host if host else "127.0.0.1"
-        self._port = port
-        self._server: asyncio.AbstractServer | None = None
-        self._resolved_port: int | None = None
-        self._registry = state.metrics.registry
-
-        # [OPTIMIZATION] Initialize native prometheus Summary for percentiles
-        state.serial_latency_stats.initialize_prometheus(self._registry)
-
-        # [SIL-2 / Library-First] Use native ProcessCollector to get CPU/RAM/FDs for free
-        ProcessCollector(registry=self._registry)
-
-        # Register the dynamic state collector
-        self._registry.register(RuntimeStateCollector(state))
-
-    @property
-    def port(self) -> int:
-        return self._resolved_port or self._port
-
-    async def start(self) -> None:
-        if self._server is not None:
-            return
-        self._server = await asyncio.start_server(
-            self._handle_client,
-            host=self._host,
-            port=self._port,
-        )
-        sockets = self._server.sockets or []
-        if sockets:
-            sockname = sockets[0].getsockname()
-            if isinstance(sockname, tuple):
-                typed_sockname = cast(tuple[object, ...], sockname)
-                if len(typed_sockname) >= 2:
-                    port_candidate = typed_sockname[1]
-                    if isinstance(port_candidate, int):
-                        self._resolved_port = port_candidate
-        logger.info(
-            "Prometheus exporter listening",
-            extra={"host": self._host, "port": self.port},
-        )
-
-    async def stop(self) -> None:
-        if self._server is None:
-            return
-        self._server.close()
-        await self._server.wait_closed()
-        self._server = None
-        logger.info("Prometheus exporter stopped")
-
-    async def run(self) -> None:
-        await self.start()
-        assert self._server is not None
+    while True:
+        await asyncio.sleep(interval)
         try:
-            await self._server.serve_forever()
-        except asyncio.CancelledError:
-            raise
-        finally:
-            await self.stop()
-
-    async def _handle_client(
-        self,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ) -> None:
-        try:
-            request_line = await reader.readline()
-            if not request_line:
-                return
-            parts = request_line.decode("ascii", errors="ignore").split()
-            if len(parts) < 2:
-                await self._write_response(writer, 400, b"")
-                return
-            method, path = parts[0], parts[1]
-
-            # Read and discard headers until empty line
-            while line := await reader.readline():
-                if line in {b"\r\n", b"\n"}:
-                    break
-
-            if method != "GET" or path not in {"/metrics", "/"}:
-                await self._write_response(writer, 404, b"")
-                return
-            payload = self._render_metrics()
-            await self._write_response(
-                writer,
-                200,
-                payload,
-                content_type=CONTENT_TYPE_LATEST,
-            )
-        except asyncio.CancelledError:
-            raise
-        except (OSError, ValueError, IndexError) as e:
-            logger.warning("Prometheus client request error: %s", e)
-        except (TypeError, ValueError, AttributeError, OSError, RuntimeError) as e:
-            logger.critical("Unexpected error in Prometheus handler: %s", e, exc_info=True)
-        finally:
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except (OSError, ValueError, RuntimeError):
-                # [SIL-2] Connection close errors are non-fatal during cleanup.
-                # Log at debug level to avoid noise during normal shutdown.
-                logger.debug("Error closing metrics client connection", exc_info=True)
-
-    async def _write_response(
-        self,
-        writer: asyncio.StreamWriter,
-        status: int,
-        body: bytes,
-        *,
-        content_type: str = "text/plain; charset=utf-8",
-    ) -> None:
-        phrases = {
-            200: "OK",
-            400: "Bad Request",
-            404: "Not Found",
-        }
-        status_line = f"HTTP/1.1 {status} {phrases.get(status, 'Error')}\r\n"
-        headers = f"Content-Type: {content_type}\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n\r\n"
-        writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
-        await writer.drain()
-
-    def _render_metrics(self) -> bytes:
-        return generate_latest(self._registry)
-
-
-def _build_bridge_snapshot_message(
-    state: RuntimeState,
-    flavor: str,
-    snapshot: Any,
-) -> QueuedPublish:
-    segments: Sequence[str]
-    if flavor == "handshake":
-        segments = ("bridge", "handshake", "value")
-    else:
-        segments = ("bridge", "summary", "value")
-    topic = topic_path(
-        state.mqtt_topic_prefix,
-        Topic.SYSTEM,
-        *segments,
-    )
-    return QueuedPublish(
-        topic_name=topic,
-        payload=msgspec.json.encode(snapshot),
-        content_type="application/json",
-        message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
-        user_properties=[("bridge-snapshot", flavor)],
-    )
-
-
-def _normalize_interval(interval: float, min_interval: float) -> int | None:
-    """Normalize interval to a positive integer or None."""
-    return max(1, math.ceil(max(min_interval, interval))) if interval > 0 else None
-
-
-__all__ = [
-    "PrometheusExporter",
-    "publish_bridge_snapshots",
-    "publish_metrics",
-]
+            snapshot = state.capture_snapshot()
+            payload = msgspec.json.encode(snapshot)
+            await publish_callback(topic, payload)
+        except Exception as exc:
+            logger.error("Failed to publish bridge summary: %s", exc)

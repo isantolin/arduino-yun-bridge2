@@ -1,18 +1,15 @@
-"""Protocol helper utilities for McuBridge."""
+"""Protocol layer package."""
 
-from . import contracts, frame, protocol, rle, structures
-from .encoding import encode_status_reason
+from __future__ import annotations
+
+from .protocol import Command, Status
 from .topics import Topic, TopicRoute, parse_topic, topic_path
 
 __all__ = [
+    "Command",
+    "Status",
     "Topic",
     "TopicRoute",
-    "encode_status_reason",
     "parse_topic",
     "topic_path",
-    "protocol",
-    "frame",
-    "rle",
-    "structures",
-    "contracts",
 ]

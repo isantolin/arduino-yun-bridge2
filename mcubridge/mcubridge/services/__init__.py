@@ -1,31 +1,17 @@
-"""Service layer for MCU Bridge daemon operations."""
+"""Core service logic for the MCU Bridge daemon."""
 
-from . import payloads
+from __future__ import annotations
+
 from .base import BridgeContext
-from .console import ConsoleComponent
-from .datastore import DatastoreComponent
-from .dispatcher import BridgeDispatcher
-from .file import FileComponent
-from .handshake import SerialHandshakeFatal, SerialHandshakeManager, SerialTimingWindow
-from .mailbox import MailboxComponent
-from .pin import PinComponent
-from .process import ProcessComponent
-from .shell import ShellComponent
-from .system import SystemComponent
+from .dispatcher import Dispatcher as BridgeDispatcher
+from .handshake import HandshakeComponent as SerialHandshakeManager
+from .handshake import SerialHandshakeFatal
+from .runtime import BridgeService
 
 __all__ = [
     "BridgeContext",
     "BridgeDispatcher",
-    "ConsoleComponent",
-    "DatastoreComponent",
-    "FileComponent",
-    "MailboxComponent",
-    "PinComponent",
-    "ProcessComponent",
+    "BridgeService",
     "SerialHandshakeFatal",
     "SerialHandshakeManager",
-    "SerialTimingWindow",
-    "ShellComponent",
-    "SystemComponent",
-    "payloads",
 ]

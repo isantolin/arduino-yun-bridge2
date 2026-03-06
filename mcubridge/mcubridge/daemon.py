@@ -61,7 +61,7 @@ class McuBridgeDaemon:
 
     async def run(self) -> None:
         """Main daemon loop."""
-        configure_logging(self.config.log_level)
+        configure_logging(self.config)
         logger.info("Starting MCU Bridge daemon...")
 
         if self.config.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:

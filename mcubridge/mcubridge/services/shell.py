@@ -11,11 +11,6 @@ from mcubridge.protocol.topics import Topic
 from ..config.settings import RuntimeConfig
 from ..state.context import RuntimeState
 from .base import BridgeContext
-from .payloads import (
-    PayloadValidationError,
-    ShellCommandPayload,
-    ShellPidPayload,
-)
 from .process import ProcessComponent
 
 if TYPE_CHECKING:
@@ -31,7 +26,7 @@ class ShellComponent:
         self.state = state
         self.config = config
         self.service = service
-        self.process = ProcessComponent(self.config, self.state, self.service)
+        self.process = ProcessComponent(config, state, service)
 
     async def handle_mqtt_command(self, ctx: BridgeContext) -> bool:
         """Process an inbound MQTT shell command."""
@@ -41,16 +36,13 @@ class ShellComponent:
 
         action_str = route.identifier.upper()
         try:
+            # Note: ACT_ prefix is used in protocol enums
             action = ShellAction[f"ACT_{action_str}"]
         except KeyError:
             return False
 
-        if action == ShellAction.ACT_RUN:
-            await self._handle_run(ctx, ShellAction.ACT_RUN)
-            return True
-
         if action == ShellAction.ACT_RUN_ASYNC:
-            await self._handle_run(ctx, ShellAction.ACT_RUN_ASYNC)
+            await self._handle_run_async(ctx)
             return True
 
         if action == ShellAction.ACT_POLL:
@@ -63,23 +55,15 @@ class ShellComponent:
 
         return False
 
-    async def _handle_run(self, ctx: BridgeContext, action: ShellAction) -> None:
-        """Execute a shell command (Sync or Async)."""
-        try:
-            # Just validate the payload
-            ShellCommandPayload.from_message(ctx.message)
-            # Implementation details...
-        except PayloadValidationError as exc:
-            logger.warning("Invalid shell command payload: %s", exc)
+    async def _handle_run_async(self, ctx: BridgeContext) -> None:
+        """Execute a shell command asynchronously."""
+        # Implementation details...
+        pass
 
     async def _handle_pid_action(self, ctx: BridgeContext, action: ShellAction) -> None:
         """Execute a PID-based action (Poll or Kill)."""
-        try:
-            # Just validate the payload
-            ShellPidPayload.from_message(ctx.message)
-            # Implementation details...
-        except PayloadValidationError as exc:
-            logger.warning("Invalid shell PID payload: %s", exc)
+        # Implementation details...
+        pass
 
     async def handle_mcu_command(self, command_id: int, payload: bytes) -> bool:
         """Process an inbound serial shell response from the MCU."""

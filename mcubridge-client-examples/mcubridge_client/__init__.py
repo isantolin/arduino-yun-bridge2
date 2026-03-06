@@ -417,7 +417,7 @@ def _payload_bytes(payload: PayloadType) -> bytes:
         return bytes(payload)
     if payload is None:
         return b""
-    if isinstance(payload, str):
+    if isinstance(payload, str):  # type: ignore[reportUnnecessaryIsInstance]
         return payload.encode("utf-8")
     return str(payload).encode("utf-8")
 

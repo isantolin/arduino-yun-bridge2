@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import struct
+import zlib
 from dataclasses import dataclass
 from typing import Final
 
-from .structures import FRAME_STRUCT, MIN_FRAME_SIZE, UINT16_STRUCT
+from .structures import FRAME_STRUCT, MIN_FRAME_SIZE
 
 logger = logging.getLogger("mcubridge.frame")
 
@@ -25,8 +27,6 @@ class Frame:
     @classmethod
     def build(cls, command_id: int, payload: bytes = b"") -> bytes:
         """Build a raw binary frame including CRC32."""
-        import zlib
-        
         header = FRAME_STRUCT.build(PROTOCOL_VERSION, command_id, len(payload))
         data_to_crc = header + payload
         crc = zlib.crc32(data_to_crc) & 0xFFFFFFFF
@@ -35,9 +35,6 @@ class Frame:
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, bytes]:
         """Parse a raw binary frame and verify CRC32."""
-        import zlib
-        import struct
-        
         data = bytes(raw_frame_buffer)
         if len(data) < MIN_FRAME_SIZE:
             raise ValueError(f"Frame too short: {len(data)} bytes")
@@ -54,7 +51,7 @@ class Frame:
 
         payload = data[FRAME_STRUCT.size : FRAME_STRUCT.size + payload_len]
         received_crc = struct.unpack(">I", data[FRAME_STRUCT.size + payload_len : expected_size])[0]
-        
+
         calculated_crc = zlib.crc32(data[: FRAME_STRUCT.size + payload_len]) & 0xFFFFFFFF
         if received_crc != calculated_crc:
             raise ValueError(f"CRC mismatch: received 0x{received_crc:08X}, calculated 0x{calculated_crc:08X}")
@@ -66,6 +63,3 @@ class Frame:
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
         command_id, payload = cls.parse(raw_frame_buffer)
         return cls(command_id=command_id, payload=payload)
-
-
-import struct # For building

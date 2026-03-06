@@ -126,7 +126,7 @@ class MqttTransport:
             return
         async for message in self._client.messages:
             topic = str(message.topic)
-            payload = cast(bytes, message.payload)
+            payload = cast(bytes, message.payload)  # type: ignore[reportUnnecessaryCast]
             logger.debug("[MQTT -> DAEMON] %s (%d bytes)", topic, len(payload))
             log_hexdump(logger, logging.DEBUG, "[MQTT -> DAEMON]", payload)
 

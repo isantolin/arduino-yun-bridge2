@@ -153,7 +153,8 @@ def extract_nonce_counter(nonce: bytes) -> int:
     """
     if len(nonce) != NONCE_TOTAL_BYTES:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
-    return NONCE_COUNTER_STRUCT.parse(nonce[NONCE_RANDOM_BYTES:])
+    res = NONCE_COUNTER_STRUCT.parse(nonce[NONCE_RANDOM_BYTES:])
+    return int(res[0])
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:

@@ -63,10 +63,10 @@ class RuntimeState(msgspec.Struct):
     )
 
     # Subscriptions & Routing
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(default_factory=asyncio.Queue)
-    pending_commands: dict[int, Any] = msgspec.field(default_factory=dict)
-    active_processes: dict[int, Any] = msgspec.field(default_factory=dict)
-    running_processes: dict[int, Any] = msgspec.field(default_factory=dict)
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(default_factory=asyncio.Queue)  # type: ignore[reportUnknownVariableType]
+    pending_commands: dict[int, Any] = msgspec.field(default_factory=dict)  # type: ignore[reportUnknownVariableType]
+    active_processes: dict[int, Any] = msgspec.field(default_factory=dict)  # type: ignore[reportUnknownVariableType]
+    running_processes: dict[int, Any] = msgspec.field(default_factory=dict)  # type: ignore[reportUnknownVariableType]
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
     next_pid: int = 1
@@ -123,7 +123,7 @@ class RuntimeState(msgspec.Struct):
     serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
     serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
     serial_latency_stats: SerialLatencyStats = msgspec.field(default_factory=SerialLatencyStats)
-    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=dict)
+    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=dict)  # type: ignore[reportUnknownVariableType]
 
     # MQTT Stats
     mqtt_dropped_messages: int = 0

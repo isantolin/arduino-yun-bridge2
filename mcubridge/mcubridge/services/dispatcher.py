@@ -176,7 +176,13 @@ class BridgeDispatcher:
             return await self._guard_and_dispatch(
                 r,
                 m,
-                lambda p, i: pin.handle_mqtt(r.topic, list(r.segments), p.decode("utf-8", errors="ignore"), i),
+                lambda p, i: pin.handle_mqtt(
+                    r.topic,
+                    r.segments[0],
+                    r.segments[1] if len(r.segments) > 1 else None,
+                    p.decode("utf-8", errors="ignore"),
+                    i,
+                ),
             )
 
         self.mqtt_router.register(Topic.DIGITAL, pin_mqtt_handler)

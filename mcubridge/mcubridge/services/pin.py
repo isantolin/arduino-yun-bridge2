@@ -115,51 +115,32 @@ class PinComponent(BaseComponent):
 
     async def handle_mqtt(
         self,
-        topic_type: str | Topic,
-        segments: list[str],
+        topic_type: Topic,
+        pin_str: str,
+        action: str | None,
         payload_str: str,
         inbound: Message | None = None,
-    ) -> None:
-        if not segments:
-            return
-
-        try:
-            topic_enum = Topic(topic_type)
-        except ValueError:
-            return
-
-        if not segments:
-            return
-
-        pin_str = segments[0]
+    ) -> bool:
+        """Central entry point for pin-related MQTT messages."""
         pin = self._parse_pin_identifier(pin_str)
         if pin < 0:
-            return
+            return False
 
-        is_analog_read = len(segments) == 2 and segments[1] == PinAction.READ and topic_enum == Topic.ANALOG
-        # Note: Analog write usually targets PWM pins which are subset of digital pins in Arduino numbering,
-        # but capabilities struct reports 'num_analog_inputs' specifically for ADC.
-        # We'll use digital limit for writes and analog limit for analog reads.
-
+        is_analog_read = action == PinAction.READ and topic_type == Topic.ANALOG
         if not self._validate_pin_access(pin, is_analog_read):
-            return
+            return False
 
-        if len(segments) == 2:
-            subtopic = segments[1]
-            if subtopic == PinAction.MODE and topic_enum == Topic.DIGITAL:
-                await self._handle_mode_command(pin, pin_str, payload_str)
-            elif subtopic == PinAction.READ:
-                await self._handle_read_command(topic_enum, pin, inbound)
-            else:
-                logger.debug("Unknown pin subtopic for %s: %s", pin_str, subtopic)
-            return
+        if action == PinAction.MODE and topic_type == Topic.DIGITAL:
+            await self._handle_mode_command(pin, pin_str, payload_str)
+        elif action == PinAction.READ:
+            await self._handle_read_command(topic_type, pin, inbound)
+        elif action is None:
+            await self._handle_write_command(topic_type, pin, payload_str)
+        else:
+            logger.debug("Unsupported pin action: %s", action)
+            return False
 
-        if len(segments) == 1:
-            await self._handle_write_command(
-                topic_enum,
-                pin,
-                payload_str,
-            )
+        return True
 
     async def _handle_mode_command(self, pin: int, pin_str: str, payload_str: str) -> None:
         try:

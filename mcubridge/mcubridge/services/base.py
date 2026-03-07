@@ -72,7 +72,7 @@ class BaseComponent:
         on_overflow: Callable[[], Coroutine[Any, Any, None]] | None = None,
     ):
         """Manages the lifecycle of a pending request transaction.
-        
+
         If request is None, tracking is skipped but the overflow check still applies.
         """
         if len(queue) >= limit:
@@ -83,7 +83,7 @@ class BaseComponent:
 
         if request is not None:
             queue.append(request)
-        
+
         try:
             # yield to allow sending the frame
             yield True

@@ -164,7 +164,7 @@ class Bridge:
                 self._reply_topic,
                 qos=int(QOSLevel.QOS_0),
             )
-            logger.debug("Subscribed to reply topic %s", self._reply_topic)
+            logger.info("Subscribed to reply topic %s", self._reply_topic)
         except MqttError:
             logger.warning(
                 "Failed to subscribe to reply topic %s",
@@ -203,7 +203,7 @@ class Bridge:
         except asyncio.CancelledError:
             raise
         except MqttError as exc:
-            logger.debug("MQTT listener stopped: %s", exc)
+            logger.info("MQTT listener stopped: %s", exc)
         except (OSError, ValueError, RuntimeError) as exc:
             logger.error("Unexpected error in MQTT listener: %s", exc)
 
@@ -214,7 +214,7 @@ class Bridge:
 
         payload = _payload_bytes(message.payload)
 
-        logger.debug(
+        logger.info(
             "MQTT message observed topic=%s size=%d qos=%d",
             topic,
             len(payload),
@@ -240,7 +240,7 @@ class Bridge:
         if not handled:
             preview = payload[:128]
             text = preview.decode("utf-8", errors="ignore")
-            logger.debug(
+            logger.info(
                 "Received unhandled MQTT message: %s -> %s",
                 topic,
                 text,
@@ -258,12 +258,12 @@ class Bridge:
             return
         except asyncio.QueueFull:
             if not drop_oldest:
-                logger.debug("Queue full; overwriting oldest entry")
+                logger.info("Queue full; overwriting oldest entry")
             try:
                 queue.get_nowait()
             except asyncio.QueueEmpty:
                 if drop_oldest:
-                    logger.debug("Queue empty despite full state; skipping")
+                    logger.info("Queue empty despite full state; skipping")
                     return
             try:
                 queue.put_nowait(message)
@@ -330,7 +330,7 @@ class Bridge:
                     await client.subscribe(t, qos=0)
                 subscribed = True
             except MqttError:
-                logger.debug(
+                logger.info(
                     "Subscription to response topics %s failed; " "relying on reply topic",
                     topics,
                 )
@@ -366,7 +366,7 @@ class Bridge:
                     for t in topics:
                         await client.unsubscribe(t)
             except MqttError:
-                logger.debug("Ignoring MQTT unsubscribe error")
+                logger.info("Ignoring MQTT unsubscribe error")
 
     async def _publish_simple(
         self,
@@ -387,7 +387,7 @@ class Bridge:
             await self.set_digital_mode(pin, 1)
         topic = Topic.command("d", pin)
         await self._publish_simple(topic, str(value))
-        logger.debug("digital_write(%d, %d) -> %s", pin, value, topic)
+        logger.info("digital_write(%d, %d) -> %s", pin, value, topic)
 
     async def digital_read(self, pin: int, timeout: float = 10) -> int:
         response = await self._publish_and_wait(
@@ -434,7 +434,7 @@ class Bridge:
         topic = Topic.command("d", pin, "mode")
         await self._publish_simple(topic, str(mode_value))
         self._digital_modes[pin] = mode_value
-        logger.debug("set_digital_mode(%d, %d)", pin, mode_value)
+        logger.info("set_digital_mode(%d, %d)", pin, mode_value)
 
     async def put(self, key: str, value: str, timeout: float = 10) -> None:
         await self._publish_and_wait(
@@ -443,7 +443,7 @@ class Bridge:
             resp_topic=Topic.status("datastore", "get", key),
             timeout=timeout,
         )
-        logger.debug("datastore put('%s', '%s')", key, value)
+        logger.info("datastore put('%s', '%s')", key, value)
 
     async def get(self, key: str, timeout: float = 10) -> str:
         response = await self._publish_and_wait(
@@ -513,7 +513,7 @@ class Bridge:
     async def console_write(self, message: str) -> None:
         topic = Topic.command("console", "in")
         await self._publish_simple(topic, message)
-        logger.debug("console_write('%s')", message)
+        logger.info("console_write('%s')", message)
 
     async def console_read_async(self) -> str | None:
         topic = Topic.status("console", "out")
@@ -527,7 +527,7 @@ class Bridge:
             queue = asyncio.Queue(maxsize=100)
             self._register_route(topic, queue, drop_oldest=True)
             await client.subscribe(topic, qos=0)
-            logger.debug("Subscribed to console output topic: %s", topic)
+            logger.info("Subscribed to console output topic: %s", topic)
 
         try:
             message = await asyncio.wait_for(queue.get(), timeout=0.1)
@@ -564,7 +564,7 @@ class Bridge:
         fn = filename.lstrip("/")
         topic = Topic.command("file", "write", fn)
         await self._publish_simple(topic, content)
-        logger.debug("file_write('%s', %d bytes)", filename, len(content))
+        logger.info("file_write('%s', %d bytes)", filename, len(content))
 
     async def file_read(self, filename: str, timeout: float = 10) -> bytes:
         fn = filename.lstrip("/")
@@ -579,9 +579,9 @@ class Bridge:
         fn = filename.lstrip("/")
         topic = Topic.command("file", "remove", fn)
         await self._publish_simple(topic, b"")
-        logger.debug("file_remove('%s')", filename)
+        logger.info("file_remove('%s')", filename)
 
     async def mailbox_write(self, message: str | bytes) -> None:
         topic = Topic.command("mailbox", "write")
         await self._publish_simple(topic, message)
-        logger.debug("mailbox_write(%d bytes)", len(message))
+        logger.info("mailbox_write(%d bytes)", len(message))

@@ -11,6 +11,7 @@ logger = logging.getLogger("all-features-test")
 
 async def run_test(host, port, user, password):
     client = Bridge(host=host, port=port, username=user, password=password)
+    logger.info("--- Starting UNIFIED ALL-FEATURES E2E Test ---")
     async with client._exit_stack:
         await client.connect()
         # 1. LED test
@@ -45,6 +46,7 @@ async def run_test(host, port, user, password):
         await client.file_remove(test_file)
         logger.info("File IO test passed.")
 
+    logger.info("--- ALL FEATURES VERIFICATION PASSED ---")
     logger.info("ALL FEATURES PASSED.")
 
 def main(

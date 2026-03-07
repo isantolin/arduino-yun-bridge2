@@ -32,6 +32,7 @@ async def run_test(
     bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
 
     await bridge.connect()
+    logging.info("--- Starting LED Pin Control Test ---")
 
     try:
         logging.info(f"Turning pin {pin} ON")
@@ -47,6 +48,7 @@ async def run_test(
     finally:
         await bridge.disconnect()
 
+    logging.info("--- LED Test Complete ---")
     logging.info("Done.")
 
 

@@ -33,6 +33,7 @@ async def run_test(
     bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
     bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
     await bridge.connect()
+    logger.info("--- Starting Mailbox Read Test ---")
 
     try:
         # --- Send phase ---

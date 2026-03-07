@@ -159,13 +159,27 @@ def main(
         time.sleep(15)
         if run_scripts:
             for script in run_scripts:
-                logger.info("Running script: %s", script)
+                print(f"\n{'='*80}")
+                print(f"=== RUNNING E2E TEST: {script}")
+                print(f"{'='*80}\n")
+                sys.stdout.flush()
+
                 try:
-                    subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
+                    # Run with captured output but echoing to parent stdout/stderr
+                    subprocess.run(
+                        [sys.executable, script],
+                        env=daemon_env,
+                        check=True,
+                        timeout=60
+                    )
+                    logger.info("Script %s PASSED.", script)
                 except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                    logger.error("Script %s failed: %s", script, exc)
+                    logger.error("Script %s FAILED: %s", script, exc)
                     all_success = False
                     break
+
+                # Small cool-down between scripts to keep logs separated
+                time.sleep(1)
     except Exception as exc:
         logger.error("Emulation error: %s", exc)
         all_success = False

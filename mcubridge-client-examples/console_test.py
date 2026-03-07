@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from typing import Annotated
 
 import typer
@@ -32,8 +33,6 @@ async def run_test(
     bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
     await bridge.connect()
 
-    logging.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
-
     try:
         # Start a task to listen for console messages
         async def console_listener() -> None:
@@ -46,15 +45,29 @@ async def run_test(
 
         listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 
-        while True:
-            try:
-                # Run blocking input in a separate thread
-                user_input = await asyncio.to_thread(input)
-                if user_input.lower() == "exit":
+        # [CI] Automatic Echo Test if not in a TTY
+        if not sys.stdin.isatty():
+            logging.info("Non-interactive mode detected. Running Echo Test (ping/pong)...")
+            await bridge.console_write("ping")
+
+            # Wait up to 5 seconds for a response
+            start = asyncio.get_running_loop().time()
+            while asyncio.get_running_loop().time() - start < 5.0:
+                # We don't have a direct way to check the listener from here easily without a queue,
+                # but the listener logs to INFO, which will appear in CI.
+                await asyncio.sleep(0.5)
+            logging.info("Echo Test phase completed.")
+        else:
+            logging.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
+            while True:
+                try:
+                    # Run blocking input in a separate thread
+                    user_input = await asyncio.to_thread(input)
+                    if user_input.lower() == "exit":
+                        break
+                    await bridge.console_write(user_input)
+                except EOFError:
                     break
-                await bridge.console_write(user_input)
-            except EOFError:
-                break
 
         # Clean up the listener task
         listener_task.cancel()

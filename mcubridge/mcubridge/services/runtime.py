@@ -14,7 +14,7 @@ from ..config.settings import RuntimeConfig
 from ..protocol.structures import QueuedPublish
 from ..protocol import protocol
 from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
-from ..protocol.structures import UINT16_STRUCT, AckPacket
+from ..protocol.structures import AckPacket
 from ..protocol.topics import Topic, parse_topic, topic_path
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
 from ..state.context import RuntimeState

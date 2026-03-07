@@ -157,7 +157,7 @@ class SerialTransport:
             self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(  # type: ignore
                 url=self.config.serial_port,
                 baudrate=self.config.serial_baud,
-                xonxoff=True,
+                xonxoff=False,
             )
             self.state.serial_writer = self.writer  # type: ignore
 

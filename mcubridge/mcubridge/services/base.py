@@ -69,12 +69,12 @@ class BaseComponent:
         queue: Deque[TReq],
         request: TReq,
         limit: int,
-        on_overflow: Coroutine[Any, Any, None] | None = None,
+        on_overflow: Callable[[], Coroutine[Any, Any, None]] | None = None,
     ):
         """Manages the lifecycle of a pending request transaction."""
         if len(queue) >= limit:
             if on_overflow:
-                await on_overflow
+                await on_overflow()
             yield False
             return
 
@@ -94,7 +94,7 @@ class BaseComponent:
         limit: int,
         command_id: int,
         payload: bytes,
-        on_overflow: Coroutine[Any, Any, None] | None = None,
+        on_overflow: Callable[[], Coroutine[Any, Any, None]] | None = None,
     ) -> bool:
         """Helper to send a frame and track it in a queue with automatic cleanup."""
         async with self._track_transaction(queue, request, limit, on_overflow) as allowed:

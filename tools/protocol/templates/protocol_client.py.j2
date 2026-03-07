@@ -36,7 +36,7 @@ class Topic:
     def command(cmd_name: str, *args: str | int, prefix: str | None = None) -> str:
         """Helper to build a command topic."""
         p = prefix or Topic.PREFIX
-        base = f"{p}/cmd/{cmd_name.lower()}"
+        base = f"{p}/{cmd_name.lower()}"
         if args:
             return f"{base}/{'/'.join(map(str, args))}"
         return base
@@ -45,7 +45,7 @@ class Topic:
     def status(cmd_name: str, *args: str | int, prefix: str | None = None) -> str:
         """Helper to build a status topic."""
         p = prefix or Topic.PREFIX
-        base = f"{p}/status/{cmd_name.lower()}"
+        base = f"{p}/{cmd_name.lower()}"
         if args:
             return f"{base}/{'/'.join(map(str, args))}"
         return base

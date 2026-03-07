@@ -198,7 +198,7 @@ class PinComponent(BaseComponent):
             limit=self.state.pending_pin_request_limit,
             command_id=command.value,
             payload=payload,
-            on_overflow=self._notify_pin_queue_overflow(topic_type, pin, inbound),
+            on_overflow=lambda: self._notify_pin_queue_overflow(topic_type, pin, inbound),
         )
 
     async def _handle_write_command(self, topic_type: Topic, pin: int, payload_str: str) -> None:

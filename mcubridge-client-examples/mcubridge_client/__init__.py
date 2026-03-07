@@ -502,7 +502,7 @@ class Bridge:
             timeout=timeout,
         )
         try:
-            payload = msgspec.json.decode(response)
+            payload = msgspec.msgpack.decode(response)
         except msgspec.DecodeError as exc:
             raise ValueError("Malformed process poll response") from exc
         if not isinstance(payload, dict):

@@ -706,7 +706,7 @@ async def test_mqtt_bridge_handshake_topic_returns_snapshot(
         await service.handle_mqtt_message(msg)
         reply = runtime_state.mqtt_publish_queue.get_nowait()
         assert "bridge/handshake/value" in reply.topic_name
-        data = msgspec.json.decode(reply.payload)
+        data = msgspec.msgpack.decode(reply.payload)
         # [SIL-2] Snapshots use 'synchronised' (UK spelling) per structure definition
         assert "synchronised" in data
 
@@ -724,7 +724,7 @@ async def test_mqtt_bridge_summary_topic_returns_snapshot(
         await service.handle_mqtt_message(msg)
         reply = runtime_state.mqtt_publish_queue.get_nowait()
         assert "bridge/summary/value" in reply.topic_name
-        data = msgspec.json.decode(reply.payload)
+        data = msgspec.msgpack.decode(reply.payload)
         # [SIL-2] Snapshot structure has 'serial_link' and 'handshake'
         assert "serial_link" in data
         assert "handshake" in data

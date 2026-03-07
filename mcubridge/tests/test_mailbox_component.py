@@ -129,7 +129,7 @@ def test_handle_processed_publishes_json(
         Topic.MAILBOX,
         "processed",
     )
-    assert msgspec.json.decode(message.payload) == {"message_id": TEST_MSG_ID}
+    assert msgspec.msgpack.decode(message.payload) == {"message_id": TEST_MSG_ID}
 
 
 def test_handle_push_stores_incoming_queue(
@@ -234,7 +234,7 @@ def test_handle_mqtt_write_overflow_signals_error(
     )
     assert topics[0] == topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available")
     assert topics[1] == overflow_topic
-    error_payload = msgspec.json.decode(bridge.published[1].payload)
+    error_payload = msgspec.msgpack.decode(bridge.published[1].payload)
     assert error_payload["event"] == "write_overflow"
     assert error_payload["overflow_events"] == 1
 

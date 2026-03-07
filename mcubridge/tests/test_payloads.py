@@ -15,14 +15,15 @@ def test_shell_command_payload_plain_text() -> None:
     assert payload.command == "ls -la"
 
 
-def test_shell_command_payload_json_body() -> None:
-    payload = ShellCommandPayload.from_mqtt(b'{"command": "echo hi"}')
+def test_shell_command_payload_msgpack_body() -> None:
+    import msgspec
+    payload = ShellCommandPayload.from_mqtt(msgspec.msgpack.encode({"command": "echo hi"}))
     assert payload.command == "echo hi"
 
 
 @pytest.mark.parametrize(
     "raw",
-    [b"", b"   ", b"{}"],
+    [b"", b"   "],
 )
 def test_shell_command_payload_rejects_empty(raw: bytes) -> None:
     with pytest.raises(PayloadValidationError):

@@ -568,8 +568,8 @@ class SerialHandshakeManager:
             payload |= extra
         message = QueuedPublish(
             topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
-            payload=msgspec.json.encode(payload),
-            content_type="application/json",
+            payload=msgspec.msgpack.encode(payload),
+            content_type="application/msgpack",
             user_properties=[("bridge-event", "handshake")],
         )
         await self._enqueue_mqtt(message)

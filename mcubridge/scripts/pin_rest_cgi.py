@@ -116,9 +116,9 @@ def get_pin_from_path(environ: dict[str, Any]) -> str | None:
 
 
 def json_response(start_response: Any, status: str, data: dict[str, Any]) -> list[bytes]:
-    response_body = msgspec.json.encode(data)
+    response_body = msgspec.msgpack.encode(data)
     headers = [
-        ("Content-Type", "application/json"),
+        ("Content-Type", "application/msgpack"),
         ("Content-Length", str(len(response_body))),
     ]
     start_response(status, headers)
@@ -176,7 +176,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             stream = environ.get("wsgi.input")
             if stream:
                 body = stream.read(content_length)
-        data: dict[str, Any] = msgspec.json.decode(body) if body else {}
+        data: dict[str, Any] = msgspec.msgpack.decode(body) if body else {}
         state = str(data.get("state", "")).upper()
     except (ValueError, msgspec.DecodeError):
         return json_response(

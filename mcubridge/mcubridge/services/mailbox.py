@@ -61,7 +61,7 @@ class MailboxComponent:
                 pass  # Fallback to raw payload if not a valid packet structure
 
         if message_id is not None:
-            body = msgspec.json.encode({"message_id": message_id})
+            body = msgspec.msgpack.encode({"message_id": message_id})
         else:
             body = payload
 
@@ -260,7 +260,7 @@ class MailboxComponent:
             MailboxAction.ERRORS,
         )
 
-        body = msgspec.json.encode(
+        body = msgspec.msgpack.encode(
             {
                 "event": "write_overflow",
                 "reason": protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW,
@@ -281,7 +281,7 @@ class MailboxComponent:
         await self.ctx.publish(
             topic=overflow_topic,
             payload=body,
-            content_type="application/json",
+            content_type="application/msgpack",
             properties=properties,
             reply_to=inbound,
         )

@@ -64,8 +64,8 @@ async def test_publish_metrics_publishes_snapshot(
     expected_topic = "test/prefix/system/metrics"
 
     assert message.topic_name == expected_topic
-    assert msgspec.json.decode(message.payload) == fake_snapshot
-    assert message.content_type == "application/json"
+    assert msgspec.msgpack.decode(message.payload) == fake_snapshot
+    assert message.content_type == "application/msgpack"
     assert ("bridge-spool", "disk-full") in message.user_properties
     assert ("bridge-files", "quota-blocked") in message.user_properties
     assert ("bridge-watchdog-enabled", "1") in message.user_properties

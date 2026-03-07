@@ -39,9 +39,9 @@ def _build_metrics_message(
     )
     message = QueuedPublish(
         topic_name=topic,
-        # [SIL-2] Fast serialization using msgspec.json.encode handles Structs directly
-        payload=msgspec.json.encode(snapshot),
-        content_type="application/json",
+        # [SIL-2] Fast serialization using msgspec.msgpack.encode handles Structs directly
+        payload=msgspec.msgpack.encode(snapshot),
+        content_type="application/msgpack",
         message_expiry_interval=int(expiry_seconds),
     )
 
@@ -468,8 +468,8 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=msgspec.json.encode(snapshot),
-        content_type="application/json",
+        payload=msgspec.msgpack.encode(snapshot),
+        content_type="application/msgpack",
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=[("bridge-snapshot", flavor)],
     )

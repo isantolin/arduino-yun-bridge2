@@ -30,26 +30,24 @@ class ShellCommandPayload(msgspec.Struct, frozen=True):
     @classmethod
     def from_mqtt(cls, payload: bytes) -> ShellCommandPayload:
         """Parse MQTT payload into a validated ShellCommandPayload."""
+        if not payload:
+            raise PayloadValidationError("Shell command payload is empty")
+
+        # Try msgpack format first
+        try:
+            result = msgspec.msgpack.decode(payload, type=cls)
+            normalized = result.command.strip()
+            if not normalized:
+                raise PayloadValidationError("Shell command payload is empty")
+            return cls(command=normalized)
+        except (msgspec.ValidationError, msgspec.DecodeError):
+            pass
+
+        # Fallback to plain text command
         text = payload.decode("utf-8", errors="ignore").strip()
         if not text:
             raise PayloadValidationError("Shell command payload is empty")
-
-        # Accept both plain text and JSON format
-        if text.startswith("{"):
-            try:
-                result = msgspec.json.decode(text.encode("utf-8"), type=cls)
-                # Normalize whitespace
-                normalized = result.command.strip()
-                if not normalized:
-                    raise PayloadValidationError("Shell command payload is empty")
-                return cls(command=normalized)
-            except msgspec.ValidationError as exc:
-                raise PayloadValidationError(str(exc)) from exc
-            except msgspec.DecodeError:
-                # Malformed JSON - treat entire text as command
-                pass
-
-        # Plain text command
+        
         if len(text) > MAX_COMMAND_LEN:
             raise PayloadValidationError("Command cannot exceed 512 characters")
         return cls(command=text)

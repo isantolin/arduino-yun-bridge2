@@ -433,7 +433,7 @@ class BridgeService:
         else:
             log_method("MCU > %s: %s", status.name, desc)
 
-        report = msgspec.json.encode(
+        report = msgspec.msgpack.encode(
             {
                 "status": status.value,
                 "name": status.name,
@@ -455,7 +455,7 @@ class BridgeService:
         await self.publish(
             topic=status_topic,
             payload=report,
-            content_type="application/json",
+            content_type="application/msgpack",
             expiry=MQTT_EXPIRY_SHELL,
             properties=tuple(properties),
         )
@@ -482,8 +482,8 @@ class BridgeService:
         )
         await self.publish(
             topic=topic,
-            payload=msgspec.json.encode(snapshot),
-            content_type="application/json",
+            payload=msgspec.msgpack.encode(snapshot),
+            content_type="application/msgpack",
             expiry=MQTT_EXPIRY_SHELL,
             properties=(("bridge-snapshot", flavor),),
             reply_to=inbound,
@@ -512,7 +512,7 @@ class BridgeService:
             action or "<missing>",
             str(inbound.topic),
         )
-        payload = msgspec.json.encode(
+        payload = msgspec.msgpack.encode(
             {
                 "status": "forbidden",
                 "topic": topic_value,
@@ -527,7 +527,7 @@ class BridgeService:
         await self.publish(
             topic=status_topic,
             payload=payload,
-            content_type="application/json",
+            content_type="application/msgpack",
             expiry=MQTT_EXPIRY_SHELL,
             properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
             reply_to=inbound,

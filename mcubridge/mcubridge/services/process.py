@@ -120,7 +120,7 @@ class ProcessComponent:
             await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
                 protocol.Command.CMD_PROCESS_POLL.value,
                 status=Status.OK,
-                extra=msgspec.json.encode(batch),
+                extra=msgspec.msgpack.encode(batch),
             )
         except (msgspec.ValidationError, ValueError, AttributeError):
             await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
@@ -290,8 +290,8 @@ class ProcessComponent:
         await self.service.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
-                payload=msgspec.json.encode(batch),
-                content_type="application/json",
+                payload=msgspec.msgpack.encode(batch),
+                content_type="application/msgpack",
             )
         )
 

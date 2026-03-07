@@ -277,8 +277,6 @@ class ProcessComponent:
                 return True
             return False
 
-    async def _start_async_subprocess(self, command: str) -> int:
-        return await self.run_async(command)
 
     async def publish_poll_result(self, pid: int, batch: ProcessOutputBatch) -> None:
         """Publish process output batch to MQTT."""

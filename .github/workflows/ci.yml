@@ -123,43 +123,16 @@ jobs:
           if-no-files-found: ignore
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # STAGE 2: Tests (after fast checks pass) - ~15min total
+  # STAGE 2: Tests (after fast checks pass) - ~10min total
   # ═══════════════════════════════════════════════════════════════════════════
-  python-tests:
-    name: Python Tests
+  unified-tests:
+    name: Unified Host Tests & Coverage
     runs-on: ubuntu-latest
     needs: [lint, typecheck, protocol-sync, deps-sync]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
-      - name: Setup Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
-      - name: Install Arduino Dependencies
-        run: |
-          arduino-cli core update-index
-          arduino-cli core install arduino:avr
-          arduino-cli lib install PacketSerial "Embedded Template Library ETL"
-      - name: Run Tests with Coverage
-        run: tox -e coverage
-      - name: Upload Python Coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-python
-          path: coverage/python
-          if-no-files-found: ignore
-
-  arduino-host:
-    name: Arduino Host Tests
-    runs-on: ubuntu-latest
-    needs: [lint, typecheck]
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-python-tox
-      - name: Install Python Tooling Deps
-        run: pip install msgspec jinja2 typer[all] gcovr
       - name: Install Build Tools
         run: |
           sudo apt-get update && sudo apt-get install -y g++ make
@@ -170,10 +143,15 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install arduino:avr
           arduino-cli lib install PacketSerial "Embedded Template Library ETL"
-      - name: Run Host Tests
-        run: ./tools/ci_arduino_host_tests.sh
-      - name: Run Coverage
-        run: ./tools/coverage_arduino.sh
+      - name: Run All Tests with Coverage
+        run: tox -e coverage
+      - name: Upload Python Coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python
+          path: coverage/python
+          if-no-files-found: ignore
       - name: Upload Arduino Coverage
         if: always()
         uses: actions/upload-artifact@v4
@@ -183,13 +161,26 @@ jobs:
           if-no-files-found: ignore
 
   arduino-emulation:
-    name: Arduino Emulation (${{ matrix.firmware }})
+    name: Arduino Emulation (${{ matrix.name }})
     runs-on: ubuntu-latest
     needs: [lint, typecheck]
     strategy:
       fail-fast: false
       matrix:
-        firmware: [mcubridge-library-arduino/tests/bridge_emulator, mcubridge-library-arduino/tests/bridge_control_emulator]
+        include:
+          - name: Full Firmware
+            firmware: mcubridge-library-arduino/tests/bridge_emulator
+            scripts: >-
+              mcubridge-client-examples/process_test.py
+              mcubridge-client-examples/mailbox_read_test.py
+              mcubridge-client-examples/sensor_reader_test.py
+              mcubridge-client-examples/all_features_test.py
+          - name: Control Sketch
+            firmware: mcubridge-library-arduino/tests/bridge_control_emulator
+            scripts: >-
+              mcubridge-client-examples/led13_test.py
+              mcubridge-client-examples/console_test.py
+              mcubridge-client-examples/mailbox_read_test.py
     timeout-minutes: 20
     services:
       mosquitto:
@@ -221,14 +212,7 @@ jobs:
           ./tools/compile_emulator.sh
           python3 -u tools/emulation_runner.py \
             --firmware ${{ matrix.firmware }} \
-            mcubridge-client-examples/led13_test.py \
-            mcubridge-client-examples/console_test.py \
-            mcubridge-client-examples/datastore_test.py \
-            mcubridge-client-examples/fileio_test.py \
-            mcubridge-client-examples/mailbox_read_test.py \
-            mcubridge-client-examples/process_test.py \
-            mcubridge-client-examples/sensor_reader_test.py \
-            mcubridge-client-examples/all_features_test.py
+            ${{ matrix.scripts }}
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
@@ -236,7 +220,7 @@ jobs:
   coverage-report:
     name: Final Summary
     runs-on: ubuntu-latest
-    needs: [python-tests, arduino-host, arduino-examples, arduino-emulation]
+    needs: [unified-tests, arduino-examples, arduino-emulation]
     if: always()
     timeout-minutes: 3
     steps:

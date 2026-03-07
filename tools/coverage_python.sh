@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_COVERAGE_ROOT="$ROOT_DIR/coverage/python"
-DEFAULT_TARGET="mcubridge/tests"
+DEFAULT_TARGET="mcubridge/tests mcubridge-client-examples/client_tests"
 
 usage() {
   cat <<'EOF'

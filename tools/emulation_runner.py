@@ -6,6 +6,7 @@ Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import signal
@@ -152,28 +153,31 @@ def main(
     _start_worker_thread(_daemon_worker, "daemon-worker", daemon_proc, state)
 
     # 4. Run Test
-    success = False
+    all_success = True
     try:
         logger.info("Waiting for stability (15s)...")
         time.sleep(15)
         if run_scripts:
-            logger.info("Running script: %s", run_scripts[0])
-            res = subprocess.run([sys.executable, run_scripts[0]], env=daemon_env, check=True, timeout=60)
-            success = res.returncode == 0
-    except Exception as e:
-        logger.error("Emulation error: %s", e)
+            for script in run_scripts:
+                logger.info("Running script: %s", script)
+                try:
+                    subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    logger.error("Script %s failed: %s", script, exc)
+                    all_success = False
+                    break
+    except Exception as exc:
+        logger.error("Emulation error: %s", exc)
+        all_success = False
     finally:
         for p in [daemon_proc, mcu_proc]:
-            try:
+            with contextlib.suppress(Exception):
                 os.kill(p.pid, signal.SIGTERM)
                 p.wait(timeout=2)
-            except Exception:
-                try:
-                    os.kill(p.pid, signal.SIGKILL)
-                except Exception:
-                    pass
+            with contextlib.suppress(Exception):
+                os.kill(p.pid, signal.SIGKILL)
 
-    if not success:
+    if not all_success:
         logger.error("Emulation FAILED.")
         sys.exit(1)
     else:

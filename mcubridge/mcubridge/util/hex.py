@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
 
 
-def format_hex(data: bytes | bytearray | memoryview | Iterable[int]) -> str:
+def format_hex(data: bytes | bytearray | memoryview) -> str:
     """Formats binary data as a space-separated hex string enclosed in brackets.
 
     Example: [DE AD BE EF]
@@ -14,9 +13,8 @@ def format_hex(data: bytes | bytearray | memoryview | Iterable[int]) -> str:
     if not data:
         return "[]"
 
-    # [SIL-2] Efficient conversion using f-strings for deterministic performance.
-    # Note: Using native Python loop as it is faster than rich overhead for simple hexdumps in syslog.
-    return f"[{' '.join(f'{b:02X}' for b in data)}]"
+    # [SIL-2] Efficient conversion using native .hex() for deterministic performance.
+    return f"[{data.hex(' ').upper()}]"
 
 
 def log_binary_traffic(logger: logging.Logger, level: int, direction: str, label: str, data: bytes) -> None:

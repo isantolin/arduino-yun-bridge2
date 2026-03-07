@@ -119,10 +119,10 @@ async def test_mqtt_task_requeues_on_publish_failure(
 
     class FakeClient:
         def __init__(self, **kwargs: Any) -> None:
-            pass
+            self._client = MagicMock()
+            self._client.on_log = None
 
-        async def __aenter__(self) -> FakeClient:
-            return self
+        async def __aenter__(self) -> FakeClient:            return self
 
         async def __aexit__(self, *args: Any) -> None:
             pass

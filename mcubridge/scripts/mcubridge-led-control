@@ -9,7 +9,11 @@ from __future__ import annotations
 import sh
 import sys
 import tenacity
+import typer
 from pathlib import Path
+from typing import Annotated
+
+app = typer.Typer(add_completion=False)
 
 def uci_get(key: str, default: str = "") -> str:
     try:
@@ -17,20 +21,15 @@ def uci_get(key: str, default: str = "") -> str:
     except sh.ErrorReturnCode:
         return default
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        sys.stderr.write(f"Usage: {sys.argv[0]} on|off [pin]\n")
-        sys.exit(1)
-
-    state_arg = sys.argv[1].lower()
+@app.command()
+def main(
+    state_arg: Annotated[str, typer.Argument(help="State to set the LED to (on/off)")],
+    pin: Annotated[int, typer.Argument(help="Pin number to control")] = 13
+) -> None:
+    state_arg = state_arg.lower()
     if state_arg not in ("on", "off"):
         sys.stderr.write(f"Error: invalid state '{state_arg}'. Use on|off.\n")
-        sys.exit(2)
-
-    pin = sys.argv[2] if len(sys.argv) > 2 else "13"
-    if not pin.isdigit():
-        sys.stderr.write(f"Error: pin must be numeric (got '{pin}').\n")
-        sys.exit(5)
+        raise typer.Exit(code=2)
 
     payload = "1" if state_arg == "on" else "0"
     
@@ -78,7 +77,7 @@ def main() -> None:
     except sh.ErrorReturnCode as e:
         sh.logger("-t", "mcubridge-led", "-p", "daemon.err", f"Failed to publish after retries: {e.stderr.decode()}")
         sys.stderr.write(f"Error: failed to publish MQTT message: {e}\n")
-        sys.exit(4)
+        raise typer.Exit(code=4)
 
 if __name__ == "__main__":
-    main()
+    app()

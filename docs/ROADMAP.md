@@ -8,6 +8,8 @@
 - **O(1) C++ Dispatch**: Replaced switch/case with jump tables for deterministic execution.
 - **Python 3.13.9-r2**: Full compatibility and optimization using uvloop and msgspec.
 - **Mutual Auth Handshake**: Robust HKDF-SHA256 based synchronization with anti-replay protection.
+- **MsgPack over MQTT**: Migrated from JSON to binary serialization for ultra-low latency.
+- **Native Flow Control**: Implemented hardware XON/XOFF support in serial transport.
 - **100% Protocol Sync**: Guaranteed consistency between MPU and MCU via automated code generation.
 - **Race Condition Protection**: Hardened FSM to handle high-speed asynchronous responses.
 

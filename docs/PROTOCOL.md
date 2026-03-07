@@ -76,7 +76,7 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 - **High-Performance Transport**: El daemon utiliza `pyserial-asyncio-fast` para minimizar la latencia y evitar el doble buffering en el enlace serie.
 - **MQTT Publisher**: publica respuestas/telemetría con MQTT v5 (correlation data, response_topic, expiración, metadatos).
 - **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 y vela por el secreto compartido del enlace serie.
-- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` y puede exponer Prometheus por HTTP.
+- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` (MsgPack) y puede exponer Prometheus por HTTP.
 
 ## Seguridad
 
@@ -94,7 +94,7 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 - **Destino de logs**: Por defecto OpenWrt usa `logread` (ring buffer en RAM), NO escribe a `/var/log/` en flash.
 - **Metrics MQTT**: snapshots periódicos en `br/system/metrics`.
 - **Exportador Prometheus**: opcional (por defecto `127.0.0.1:9130`). Campos no numéricos se exponen como `*_info{...} 1`.
-- **Status Writer**: `/tmp/mcubridge_status.json` como snapshot local (tmpfs/RAM).
+- **Status Writer**: `/tmp/mcubridge_status.json` como snapshot local (JSON para compatibilidad LuCI).
 
 ## Máquinas de Estados (FSM)
 

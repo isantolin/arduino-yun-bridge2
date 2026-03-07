@@ -22,7 +22,7 @@ class PayloadValidationError(ValueError):
 class ShellCommandPayload(msgspec.Struct, frozen=True):
     """Represents a shell command request coming from MQTT.
 
-    Accepts either plain text or JSON: {"command": "..."}.
+    Accepts either plain text or MsgPack: {"command": "..."}.
     """
 
     command: Annotated[str, msgspec.Meta(min_length=1, max_length=MAX_COMMAND_LEN)]

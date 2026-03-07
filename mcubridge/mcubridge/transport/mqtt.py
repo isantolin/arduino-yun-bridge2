@@ -110,16 +110,19 @@ class MqttTransport:
         # Create an on_log callback to hook into Paho's internal logging
         def on_log(client: Any, userdata: Any, level: int, buf: str) -> None:
             # Map Paho's log levels to Python's logging module
-            if level == aiomqtt.paho.mqtt.client.MQTT_LOG_INFO:
+            # Paho uses: INFO=1, NOTICE=5, WARNING=4, ERR=8, DEBUG=16
+            if level == 1:
                 logger.debug("[PAHO] %s", buf)
-            elif level == aiomqtt.paho.mqtt.client.MQTT_LOG_NOTICE:
+            elif level == 5:
                 logger.info("[PAHO] %s", buf)
-            elif level == aiomqtt.paho.mqtt.client.MQTT_LOG_WARNING:
+            elif level == 4:
                 logger.warning("[PAHO] %s", buf)
-            elif level == aiomqtt.paho.mqtt.client.MQTT_LOG_ERR:
+            elif level == 8:
                 logger.error("[PAHO] %s", buf)
-            elif level == aiomqtt.paho.mqtt.client.MQTT_LOG_DEBUG:
+            elif level == 16:
                 logger.debug("[PAHO] %s", buf)
+            else:
+                logger.debug("[PAHO %s] %s", level, buf)
 
         # [SIL-2] Warn if connecting without authentication
         if not self.config.mqtt_user:
@@ -142,7 +145,7 @@ class MqttTransport:
             properties=connect_props,
         )
         # Inject on_log callback directly into the underlying Paho client
-        client._client.on_log = on_log
+        client._client.on_log = on_log  # type: ignore[reportPrivateUsage]
 
         async with client as connected_client:
             logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")

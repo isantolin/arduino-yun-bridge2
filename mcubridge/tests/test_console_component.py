@@ -1,5 +1,3 @@
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
 import asyncio
 from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch

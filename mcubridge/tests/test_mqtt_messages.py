@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
-
 from mcubridge.protocol.structures import QueuedPublish, SpoolRecord
 from mcubridge.protocol import protocol
 

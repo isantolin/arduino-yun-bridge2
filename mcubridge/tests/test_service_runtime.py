@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
-
 import asyncio
 import time
 from types import SimpleNamespace
@@ -24,7 +21,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Status
-from mcubridge.protocol.protocol import Topic, topic_path
+from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 

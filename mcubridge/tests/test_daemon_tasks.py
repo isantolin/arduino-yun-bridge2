@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
-
 import asyncio
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch

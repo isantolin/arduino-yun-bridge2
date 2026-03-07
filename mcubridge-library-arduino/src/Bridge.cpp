@@ -380,24 +380,18 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     return;
   }
 
-  // [SIL-2] Phase 3: O(1) Dispatch via Member Function Pointer Table
-  using CategoryHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
-  static constexpr CategoryHandler category_handlers[] = {
-      &BridgeClass::onStatusCommand,      // 0: 48-63
-      &BridgeClass::onSystemCommand,      // 1: 64-79
-      &BridgeClass::onGpioCommand,        // 2: 80-95
-      &BridgeClass::onConsoleCommand,     // 3: 96-111
-      &BridgeClass::onDataStoreCommand,   // 4: 112-127
-      &BridgeClass::onMailboxCommand,     // 5: 128-143
-      &BridgeClass::onFileSystemCommand,  // 6: 144-159
-      &BridgeClass::onProcessCommand      // 7: 160-175
-  };
-
+  // [SIL-2] Phase 3: O(1) Dispatch via Category Switch
   const uint16_t category = (ctx.raw_command - rpc::RPC_STATUS_CODE_MIN) >> 4;
-  if (category < (sizeof(category_handlers) / sizeof(CategoryHandler))) {
-    (this->*category_handlers[category])(ctx);
-  } else {
-    onUnknownCommand(ctx);
+  switch (category) {
+    case 0: onStatusCommand(ctx); break;      // 48-63
+    case 1: onSystemCommand(ctx); break;      // 64-79
+    case 2: onGpioCommand(ctx); break;        // 80-95
+    case 3: onConsoleCommand(ctx); break;     // 96-111
+    case 4: onDataStoreCommand(ctx); break;   // 112-127
+    case 5: onMailboxCommand(ctx); break;     // 128-143
+    case 6: onFileSystemCommand(ctx); break;  // 144-159
+    case 7: onProcessCommand(ctx); break;     // 160-175
+    default: onUnknownCommand(ctx); break;
   }
 }
 

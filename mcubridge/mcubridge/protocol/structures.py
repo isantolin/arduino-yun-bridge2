@@ -1,239 +1,932 @@
-"""Protocol data structures and snapshots for MCU Bridge v2."""
+"""MCU Bridge Data Structures and Schemas.
+
+SINGLE SOURCE OF TRUTH for all data structures.
+Improved robustness for binary parsing (SIL-2) using Construct + Msgspec.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import struct
 import time
-from typing import Any, Final, TypedDict
+from binascii import crc32
+from collections.abc import Iterable
+from enum import IntEnum
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    ClassVar,
+    Final,
+    Self,
+    Type,
+    TypeVar,
+    cast,
+)
 
+import construct as construct_raw
 import msgspec
+from construct import ConstructError
 
-# --- Common Constants & Structs ---
+from . import protocol
 
-class BinaryStruct:
-    """Helper for binary parsing/building."""
-    def __init__(self, fmt: str) -> None:
-        self._struct = struct.Struct(fmt)
-        self.size = self._struct.size
+if TYPE_CHECKING:
+    construct: Any = construct_raw
 
-    def parse(self, data: bytes) -> tuple[Any, ...]:
-        return self._struct.unpack(data[:self._struct.size])
+    Construct = construct_raw.Construct[Any]
+else:
+    construct = construct_raw
 
-    def build(self, *args: Any) -> bytes:
-        return self._struct.pack(*args)
+    Construct = construct_raw.Construct
 
-UINT16_STRUCT = BinaryStruct(">H")
-FRAME_STRUCT = BinaryStruct(">BHH")
-NONCE_COUNTER_STRUCT = BinaryStruct(">Q")
+BinStruct: Final = construct.Struct
 
-MIN_FRAME_SIZE: Final[int] = 9
+# --- Basic Binary Types (Restored from protocol.py) ---
+UINT8_STRUCT: Final = construct.Int8ub
+UINT16_STRUCT: Final = construct.Int16ub
+UINT32_STRUCT: Final = construct.Int32ub
+NONCE_COUNTER_STRUCT: Final = construct.Int64ub
+CRC_STRUCT: Final = construct.Int32ub
 
-
-class McuVersion(msgspec.Struct):
-    major: int = 0
-    minor: int = 0
-
-
-class McuCapabilities(msgspec.Struct):
-    protocol_version: int = 0
-    board_arch: int = 0
-    num_digital_pins: int = 0
-    num_analog_inputs: int = 0
-
-
-class QueueEvent(msgspec.Struct):
-    accepted: bool = False
-    truncated_bytes: int = 0
-    dropped_chunks: int = 0
-    dropped_bytes: int = 0
+# [SIL-2] Explicit Command ID Structure
+# Separates compression flag from the command identifier for explicit handling.
+_RawCommandIdStruct: Final = construct.BitStruct(
+    "compressed" / construct.Flag,
+    "id"
+    / construct.Enum(
+        construct.BitsInteger(15),
+        protocol.Command,
+        protocol.Status,
+        _default=construct.Pass,
+    ),
+)
 
 
-# --- Snapshots (Read-Only) ---
+class CommandIdAdapter(construct.Adapter):
+    """Transparently converts between integer command ID (with flag) and BitStruct."""
 
-class SerialLinkSnapshot(msgspec.Struct):
-    serial_connected: bool = False
-    link_synchronised: bool = False
-    handshake_attempts: int = 0
-    handshake_successes: int = 0
-    handshake_failures: int = 0
-    handshake_last_error: str | None = None
-    handshake_last_unix: float = 0.0
+    def _decode(self, obj: Any, context: Any, path: Any) -> int:
+        # Convert Enum/int from BitStruct back to combined integer
+        cmd_val = int(obj.id)
+        if obj.compressed:
+            cmd_val |= protocol.CMD_FLAG_COMPRESSED
+        return cmd_val
 
-
-class HandshakeSnapshot(msgspec.Struct):
-    nonce: str = ""
-    tag_verified: bool = False
-
-
-class SerialPipelineSnapshot(msgspec.Struct):
-    tx_queue_size: int = 0
-    rx_pending_acks: int = 0
-
-
-class SerialFlowSnapshot(msgspec.Struct):
-    commands_sent: int = 0
-    commands_acked: int = 0
-    retries: int = 0
-    failures: int = 0
-    last_event_unix: float = 0.0
+    def _encode(self, obj: int, context: Any, path: Any) -> dict[str, Any]:
+        # Split combined integer into Flag + ID using Construct mapping where possible
+        # [SIL-2] Use integer division and modulo to avoid bitwise & where applicable
+        # or stick to clear BitStruct mapping if we change the parent.
+        # Actually, using obj.compressed property if it was a BitStruct would be better.
+        return {
+            "compressed": (obj // protocol.CMD_FLAG_COMPRESSED) > 0,
+            "id": obj % protocol.CMD_FLAG_COMPRESSED,
+        }
 
 
-class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    serial_link: SerialLinkSnapshot = msgspec.field(default_factory=SerialLinkSnapshot)
-    handshake: HandshakeSnapshot = msgspec.field(default_factory=HandshakeSnapshot)
-    serial_pipeline: SerialPipelineSnapshot = msgspec.field(default_factory=SerialPipelineSnapshot)
-    serial_flow: SerialFlowSnapshot = msgspec.field(default_factory=SerialFlowSnapshot)
-    mcu_version: McuVersion | None = None
-    capabilities: dict[str, Any] | None = None
+CommandIdStruct: Final = CommandIdAdapter(_RawCommandIdStruct)
+
+CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
+    "version" / construct.Int8ub,
+    "payload_len" / construct.Int16ub,
+    "command_id" / construct.Int16ub,
+)
+
+T = TypeVar("T", bound="BaseStruct")
 
 
-# --- Operational Data ---
+class BaseStruct(msgspec.Struct, frozen=True):
+    """Base class for hybrid Msgspec/Construct structures."""
 
-class SpoolRecord(TypedDict):
-    topic: str
-    payload_base64: str
-    qos: int
-    retain: bool
-    timestamp: float
+    # Subclasses must define this schema
+    SCHEMA: ClassVar[Construct]
+
+    @classmethod
+    def decode(cls: Type[T], data: bytes | bytearray | memoryview, command_id: int | None = None) -> T:
+        """Decode binary data into a typed struct.
+
+        If command_id is provided, uses PayloadSelector (Switch) with a fallback (Select).
+        """
+        if not data and cls is not AckPacket:  # Special case for empty ACKs
+            raise ValueError("Empty payload")
+        try:
+            b_data = bytes(data)
+            if command_id is not None:
+                # [SIL-2] Use Select to try the centralized Switch first, then fallback to class schema.
+                # This provides O(1) speed for known commands but remains resilient.
+                decoder = construct.Select(PayloadSelector, cls.SCHEMA)
+                container: Any = decoder.parse(b_data, command_id=command_id)
+            else:
+                container = cls.SCHEMA.parse(b_data)
+        except (ValueError, TypeError, AttributeError, KeyError, IndexError, ConstructError, msgspec.DecodeError) as e:
+            raise ConstructError(str(e)) from e
+        return msgspec.convert(container, cls)
+
+    def encode(self) -> bytes:
+        """Encode the typed Msgspec struct into binary data."""
+        return self.SCHEMA.build(msgspec.structs.asdict(self))
 
 
-class QueuedPublish(msgspec.Struct):
+# --- Binary Protocol Packets ---
+
+
+class FileWritePacket(BaseStruct, frozen=True):
+    path: str
+    data: bytes
+
+    SCHEMA = BinStruct(
+        "path" / construct.PascalString(construct.Int8ub, "utf-8"),
+        "data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
+    )
+
+
+class FileReadPacket(BaseStruct, frozen=True):
+    path: str
+
+    SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
+
+
+class FileReadResponsePacket(BaseStruct, frozen=True):
+    content: bytes
+
+    SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+
+
+class FileRemovePacket(BaseStruct, frozen=True):
+    path: str
+
+    SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
+
+
+class VersionResponsePacket(BaseStruct, frozen=True):
+    major: Annotated[int, msgspec.Meta(ge=0)]
+    minor: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("major" / construct.Int8ub, "minor" / construct.Int8ub)
+
+
+class FreeMemoryResponsePacket(BaseStruct, frozen=True):
+    value: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("value" / construct.Int16ub)
+
+
+class DigitalReadResponsePacket(BaseStruct, frozen=True):
+    value: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("value" / construct.Int8ub)
+
+
+class AnalogReadResponsePacket(BaseStruct, frozen=True):
+    value: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("value" / construct.Int16ub)
+
+
+class DatastoreGetPacket(BaseStruct, frozen=True):
+    key: str
+
+    SCHEMA = BinStruct("key" / construct.PascalString(construct.Int8ub, "utf-8"))
+
+
+class DatastoreGetResponsePacket(BaseStruct, frozen=True):
+    value: bytes
+
+    SCHEMA = BinStruct("value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes))
+
+
+class DatastorePutPacket(BaseStruct, frozen=True):
+    key: str
+    value: bytes
+
+    SCHEMA = BinStruct(
+        "key" / construct.PascalString(construct.Int8ub, "utf-8"),
+        "value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes),
+    )
+
+
+class MailboxPushPacket(BaseStruct, frozen=True):
+    data: bytes
+
+    SCHEMA = BinStruct("data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+
+
+class MailboxProcessedPacket(BaseStruct, frozen=True):
+    message_id: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("message_id" / construct.Int16ub)
+
+
+class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
+    count: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("count" / construct.Int16ub)
+
+
+class MailboxReadResponsePacket(BaseStruct, frozen=True):
+    content: bytes
+
+    SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+
+
+class PinModePacket(BaseStruct, frozen=True):
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    mode: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("pin" / construct.Int8ub, "mode" / construct.Int8ub)
+
+
+class DigitalWritePacket(BaseStruct, frozen=True):
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    value: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
+
+
+class AnalogWritePacket(BaseStruct, frozen=True):
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    value: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
+
+
+class PinReadPacket(BaseStruct, frozen=True):
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("pin" / construct.Int8ub)
+
+
+class AckPacket(BaseStruct, frozen=True):
+    command_id: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("command_id" / construct.Int16ub)
+
+
+class ConsoleWritePacket(BaseStruct, frozen=True):
+    data: bytes
+
+    SCHEMA = BinStruct("data" / construct.GreedyBytes)
+
+
+class ProcessRunAsyncPacket(BaseStruct, frozen=True):
+    command: str
+
+    SCHEMA = BinStruct("command" / construct.GreedyString("utf-8"))
+
+
+class ProcessKillPacket(BaseStruct, frozen=True):
+    pid: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("pid" / construct.Int16ub)
+
+
+class ProcessPollPacket(BaseStruct, frozen=True):
+    pid: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("pid" / construct.Int16ub)
+
+
+class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
+    pid: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("pid" / construct.Int16ub)
+
+
+class ProcessPollResponsePacket(BaseStruct, frozen=True):
+    status: Annotated[int, msgspec.Meta(ge=0)]
+    exit_code: Annotated[int, msgspec.Meta(ge=0)]
+    stdout: bytes
+    stderr: bytes
+
+    SCHEMA = BinStruct(
+        "status" / construct.Int8ub,
+        "exit_code" / construct.Int8ub,
+        "stdout" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
+        "stderr" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
+    )
+
+
+def _validate_ack_timeout(ctx: Any) -> bool:
+    return protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS <= ctx.ack_timeout_ms <= protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
+
+
+def _validate_ack_retry_limit(ctx: Any) -> bool:
+    return protocol.HANDSHAKE_RETRY_LIMIT_MIN <= ctx.ack_retry_limit <= protocol.HANDSHAKE_RETRY_LIMIT_MAX
+
+
+def _validate_response_timeout(ctx: Any) -> bool:
+    return (
+        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
+        <= ctx.response_timeout_ms
+        <= protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
+    )
+
+
+class HandshakeConfigPacket(BaseStruct, frozen=True):
+    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
+    ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
+    response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct(
+        "ack_timeout_ms" / construct.Int16ub,
+        "ack_retry_limit" / construct.Int8ub,
+        "response_timeout_ms" / construct.Int32ub,
+        # Declarative Protocol Validation
+        construct.Check(_validate_ack_timeout),
+        construct.Check(_validate_ack_retry_limit),
+        construct.Check(_validate_response_timeout),
+    )
+
+
+class CapabilitiesFeatures(msgspec.Struct, frozen=True):
+    """Features bitmask parsed via BitStruct."""
+
+    watchdog: bool
+    rle: bool
+    debug_frames: bool
+    debug_io: bool
+    eeprom: bool
+    dac: bool
+    hw_serial1: bool
+    fpu: bool
+    logic_3v3: bool
+    big_buffer: bool
+    i2c: bool
+    spi: bool
+
+
+class CapabilitiesPacket(BaseStruct, frozen=True):
+    ver: Annotated[int, msgspec.Meta(ge=0)]
+    arch: Annotated[int, msgspec.Meta(ge=0)]
+    dig: Annotated[int, msgspec.Meta(ge=0)]
+    ana: Annotated[int, msgspec.Meta(ge=0)]
+    feat: CapabilitiesFeatures
+
+    SCHEMA = BinStruct(
+        "ver" / construct.Int8ub,
+        "arch" / construct.Int8ub,
+        "dig" / construct.Int8ub,
+        "ana" / construct.Int8ub,
+        "feat"
+        / construct.BitStruct(
+            construct.Padding(32 - 12),
+            "spi" / construct.Flag,
+            "i2c" / construct.Flag,
+            "big_buffer" / construct.Flag,
+            "logic_3v3" / construct.Flag,
+            "fpu" / construct.Flag,
+            "hw_serial1" / construct.Flag,
+            "dac" / construct.Flag,
+            "eeprom" / construct.Flag,
+            "debug_io" / construct.Flag,
+            "debug_frames" / construct.Flag,
+            "rle" / construct.Flag,
+            "watchdog" / construct.Flag,
+        ),
+    )
+
+
+class SetBaudratePacket(BaseStruct, frozen=True):
+    baudrate: Annotated[int, msgspec.Meta(ge=0)]
+
+    SCHEMA = BinStruct("baudrate" / construct.Int32ub)
+
+
+# [SIL-2] Payload Schema Map: Centralized registry for all command payloads.
+# This eliminates manual if/elif dispatching across components.
+PAYLOAD_SCHEMAS: Final[dict[int, Construct]] = {
+    protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket.SCHEMA,
+    protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket.SCHEMA,
+    protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket.SCHEMA,
+    protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket.SCHEMA,
+    protocol.Command.CMD_DATASTORE_GET_RESP: DatastoreGetResponsePacket.SCHEMA,
+    protocol.Command.CMD_MAILBOX_READ_RESP: MailboxReadResponsePacket.SCHEMA,
+    protocol.Command.CMD_MAILBOX_AVAILABLE_RESP: MailboxAvailableResponsePacket.SCHEMA,
+    protocol.Command.CMD_FILE_READ_RESP: FileReadResponsePacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket.SCHEMA,
+    protocol.Command.CMD_GET_CAPABILITIES_RESP: CapabilitiesPacket.SCHEMA,
+    protocol.Command.CMD_SET_BAUDRATE: SetBaudratePacket.SCHEMA,
+    protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket.SCHEMA,
+    protocol.Command.CMD_SET_PIN_MODE: PinModePacket.SCHEMA,
+    protocol.Command.CMD_DIGITAL_WRITE: DigitalWritePacket.SCHEMA,
+    protocol.Command.CMD_ANALOG_WRITE: AnalogWritePacket.SCHEMA,
+    protocol.Command.CMD_DIGITAL_READ: PinReadPacket.SCHEMA,
+    protocol.Command.CMD_ANALOG_READ: PinReadPacket.SCHEMA,
+    protocol.Command.CMD_CONSOLE_WRITE: ConsoleWritePacket.SCHEMA,
+    protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket.SCHEMA,
+    protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket.SCHEMA,
+    protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket.SCHEMA,
+    protocol.Command.CMD_MAILBOX_PROCESSED: MailboxProcessedPacket.SCHEMA,
+    protocol.Command.CMD_FILE_WRITE: FileWritePacket.SCHEMA,
+    protocol.Command.CMD_FILE_READ: FileReadPacket.SCHEMA,
+    protocol.Command.CMD_FILE_REMOVE: FileRemovePacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket.SCHEMA,
+    protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket.SCHEMA,
+    protocol.Status.ACK: AckPacket.SCHEMA,
+    protocol.Status.MALFORMED: AckPacket.SCHEMA,
+}
+
+def _get_command_id(ctx: Any) -> int:
+    return int(ctx.command_id) & ~protocol.CMD_FLAG_COMPRESSED
+
+
+# [SIL-2] Optimized Payload Selector using construct.Switch
+# This provides O(1) schema lookup during parsing.
+PayloadSelector: Final = construct.Switch(
+    _get_command_id,
+    PAYLOAD_SCHEMAS,
+    default=construct.GreedyBytes,
+)
+
+# --- Framing Schema ---
+
+
+def _compute_crc32(data: Any) -> int:
+    return crc32(cast(bytes, data)) & 0xFFFFFFFF
+
+
+FRAME_STRUCT = BinStruct(
+    "content"
+    / construct.RawCopy(
+        BinStruct(
+            "header" / CRC_COVERED_HEADER_STRUCT,
+            "payload" / construct.Bytes(construct.this.header.payload_len),
+        )
+    ),
+    "crc" / construct.Checksum(CRC_STRUCT, _compute_crc32, construct.this.content.data),
+)
+
+# --- High-Level Structure (Msgspec Only) ---
+
+
+class MqttPayload(msgspec.Struct, frozen=True):
     topic: str
     payload: bytes
     qos: int = 1
     retain: bool = False
-    properties: Any = None
+    properties: dict[str, Any] = {}
+
+
+class PinRequest(msgspec.Struct, frozen=True):
+    pin: int
+    state: str
+
+
+class ServiceHealth(msgspec.Struct, frozen=True):
+    name: str
+    status: str
+    restarts: int
+    last_failure_unix: float
+    last_exception: str | None = None
+
+
+class SystemStatus(msgspec.Struct, frozen=True):
+    cpu_percent: float | None
+    memory_total_bytes: int | None
+    memory_available_bytes: int | None
+    load_avg_1m: float | None
+    uptime_seconds: float
+
+
+# --- MQTT Spool Structures ---
+
+
+class QOSLevel(IntEnum):
+    """MQTT Quality-of-Service levels."""
+
+    QOS_0 = 0
+    QOS_1 = 1
+    QOS_2 = 2
+
+
+UserProperty = tuple[str, str]
+
+
+class SpoolRecord(msgspec.Struct, omit_defaults=True):
+    """JSON-serializable record stored in the durable spool (RAM/Disk)."""
+
+    topic_name: str
+    payload: bytes
+    qos: int = 0
+    retain: bool = False
+    content_type: str | None = None
+    payload_format_indicator: int | None = None
+    message_expiry_indicator: int | None = None
+    message_expiry_interval: int | None = None
+    response_topic: str | None = None
+    correlation_data: bytes | None = None
+    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
+
+
+class QueuedPublish(msgspec.Struct):
+    """Serializable MQTT publish packet used by the durable spool."""
+
+    topic_name: str
+    payload: bytes
+    qos: int = 0
+    retain: bool = False
     content_type: str | None = None
     payload_format_indicator: int | None = None
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[tuple[str, str]] | None = None
+    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
 
     def to_record(self) -> SpoolRecord:
-        import base64
-        return {
-            "topic": self.topic,
-            "payload_base64": base64.b64encode(self.payload).decode("ascii"),
-            "qos": self.qos,
-            "retain": self.retain,
-            "timestamp": time.time(),
-        }
+        """Convert to a QueuedPublish to SpoolRecord for serialization."""
+        return SpoolRecord(
+            topic_name=self.topic_name,
+            payload=self.payload,
+            qos=int(self.qos),
+            retain=self.retain,
+            content_type=self.content_type,
+            payload_format_indicator=self.payload_format_indicator,
+            message_expiry_interval=self.message_expiry_interval,
+            response_topic=self.response_topic,
+            correlation_data=self.correlation_data,
+            user_properties=self.user_properties,
+        )
 
     @classmethod
-    def from_record(cls, record: SpoolRecord) -> "QueuedPublish":
-        import base64
+    def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
+        """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
+        data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
+
+        payload = data.get("payload", b"")
+        if isinstance(payload, str):
+            try:
+                import base64
+
+                payload = base64.b64decode(payload)
+            except ValueError:
+                payload = payload.encode("utf-8")
+
+        correlation_data = data.get("correlation_data")
+        if isinstance(correlation_data, str):
+            try:
+                import base64
+
+                correlation_data = base64.b64decode(correlation_data)
+            except ValueError:
+                correlation_data = correlation_data.encode("utf-8")
+
+        raw_props = data.get("user_properties", ())
+        user_properties: list[tuple[str, str]] = []
+        if isinstance(raw_props, Iterable):
+            for item in cast("Iterable[Any]", raw_props):
+                if isinstance(item, (list, tuple)) and len(item) >= 2:  # pyright: ignore[reportUnknownArgumentType]
+                    user_properties.append((str(item[0]), str(item[1])))  # pyright: ignore[reportUnknownArgumentType]
+
         return cls(
-            topic=record["topic"],
-            payload=base64.b64decode(record["payload_base64"]),
-            qos=record["qos"],
-            retain=record["retain"],
+            topic_name=str(data.get("topic_name", "")),
+            payload=payload,
+            qos=int(data.get("qos", 0)),
+            retain=bool(data.get("retain", False)),
+            content_type=data.get("content_type"),
+            payload_format_indicator=data.get("payload_format_indicator"),
+            message_expiry_interval=data.get("message_expiry_interval"),
+            response_topic=data.get("response_topic"),
+            correlation_data=correlation_data,
+            user_properties=user_properties,
         )
 
 
-class SetBaudratePacket(msgspec.Struct):
-    baudrate: int
+# --- Process Service Structures ---
 
 
-class AckPacket(msgspec.Struct):
+class ProcessOutputBatch(msgspec.Struct):
+    """Structured payload describing PROCESS_POLL results."""
+
+    status_byte: int
+    exit_code: int
+    stdout_chunk: bytes
+    stderr_chunk: bytes
+    finished: bool
+    stdout_truncated: bool
+    stderr_truncated: bool
+
+
+# --- Queue Structures ---
+
+
+class QueueEvent(msgspec.Struct):
+    """Outcome of a bounded queue mutation."""
+
+    truncated_bytes: int = 0
+    dropped_chunks: int = 0
+    dropped_bytes: int = 0
+    accepted: bool = False
+
+
+# --- Serial Flow Structures ---
+
+
+class PendingCommand(msgspec.Struct):
+    """Book-keeping for a tracked command in flight."""
+
     command_id: int
-
-
-class PendingCommand:
-    def __init__(self, command_id: int, expected_resp_ids: set[int] | None = None) -> None:
-        self.command_id = command_id
-        self.expected_resp_ids = expected_resp_ids or set()
-        self.attempts = 0
-        self.ack_received = False
-        self.success: bool | None = None
-        self.failure_status: int | None = None
-        self.completion = asyncio.Event()
+    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: set[int]())
+    completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
+    attempts: int = 0
+    success: bool | None = None
+    failure_status: int | None = None
+    ack_received: bool = False
+    reply_topic: str | None = None
+    correlation_data: bytes | None = None
 
     def mark_success(self) -> None:
         self.success = True
-        self.completion.set()
+        if not self.completion.is_set():
+            self.completion.set()
 
     def mark_failure(self, status: int | None) -> None:
         self.success = False
         self.failure_status = status
-        self.completion.set()
+        if not self.completion.is_set():
+            self.completion.set()
 
 
-# --- Payload Packets ---
-
-class VersionResponsePacket(msgspec.Struct):
-    major: int
-    minor: int
-
-class FreeMemoryResponsePacket(msgspec.Struct):
-    value: int
-
-class PinModePacket(msgspec.Struct):
-    pin: int
-    mode: int
-
-class DigitalWritePacket(msgspec.Struct):
-    pin: int
-    value: int
-
-class AnalogWritePacket(msgspec.Struct):
-    pin: int
-    value: int
-
-class PinReadPacket(msgspec.Struct):
-    pin: int
-
-class DigitalReadResponsePacket(msgspec.Struct):
-    value: int
-
-class AnalogReadResponsePacket(msgspec.Struct):
-    value: int
-
-class ProcessKillPacket(msgspec.Struct):
-    pid: int
-
-class ProcessPollPacket(msgspec.Struct):
-    pid: int
-
-class ProcessRunAsyncPacket(msgspec.Struct):
-    command: str
-
-class ProcessRunAsyncResponsePacket(msgspec.Struct):
-    pid: int
-
-class ProcessOutputBatch(msgspec.Struct):
-    pid: int
-    stdout: bytes
-    stderr: bytes
-    is_finished: bool
-    exit_code: int | None
-
-class CapabilitiesPacket(msgspec.Struct):
-    protocol_version: int
-    board_arch: int
-    num_digital_pins: int
-    num_analog_inputs: int
-    features: int
-
-class HandshakeConfigPacket(msgspec.Struct):
-    ack_timeout_ms: int
-    ack_retry_limit: int
-    response_timeout_ms: int
+# --- Status Structures ---
 
 
-PROCESS_STATE_FINISHED = "FINISHED"
+class BaseStats(msgspec.Struct):
+    """Base for statistics containers providing standard dict conversion."""
+
+    def as_dict(self) -> dict[str, Any]:
+        """Export internal state as a dictionary."""
+        return msgspec.structs.asdict(self)
 
 
-# --- Statistics ---
+class SupervisorSnapshot(msgspec.Struct):
+    restarts: Annotated[int, msgspec.Meta(ge=0)]
+    last_failure_unix: float
+    last_exception: str | None
+    backoff_seconds: Annotated[float, msgspec.Meta(ge=0.0)]
+    fatal: bool
 
-class SerialFlowStats:
-    def __init__(self) -> None:
-        self.commands_sent: int = 0
-        self.commands_acked: int = 0
-        self.retries: int = 0
-        self.failures: int = 0
-        self.last_event_unix: float = 0.0
+
+class SupervisorStats(BaseStats):
+    """Task supervisor statistics."""
+
+    restarts: int = 0
+    last_failure_unix: float = 0.0
+    last_exception: str | None = None
+    backoff_seconds: float = 0.0
+    fatal: bool = False
+
+    def as_snapshot(self) -> SupervisorSnapshot:
+        return SupervisorSnapshot(
+            restarts=self.restarts,
+            last_failure_unix=self.last_failure_unix,
+            last_exception=self.last_exception,
+            backoff_seconds=self.backoff_seconds,
+            fatal=self.fatal,
+        )
+
+
+_ARCH_MAPPING: Final[dict[int, str]] = {
+    1: "Atmel AVR",
+    2: "Espressif ESP32",
+    3: "Espressif ESP8266",
+    4: "Microchip SAMD",
+    5: "Microchip SAM",
+    6: "Raspberry Pi RP2040",
+}
+
+
+class McuCapabilities(msgspec.Struct):
+    """Hardware capabilities reported by the MCU."""
+
+    protocol_version: int = 0
+    board_arch: int = 0
+    num_digital_pins: int = 0
+    num_analog_inputs: int = 0
+    features: CapabilitiesFeatures | None = None
+
+    @property
+    def arch_name(self) -> str:
+        return _ARCH_MAPPING.get(self.board_arch, f"Unknown (0x{self.board_arch:02X})")
+
+    def _has(self, feat: str) -> bool:
+        return bool(self.features and getattr(self.features, feat, False))
+
+    @property
+    def has_watchdog(self) -> bool:
+        return self._has("watchdog")
+
+    @property
+    def has_rle(self) -> bool:
+        return self._has("rle")
+
+    @property
+    def has_debug_frames(self) -> bool:
+        return self._has("debug_frames")
+
+    @property
+    def has_debug_io(self) -> bool:
+        return self._has("debug_io")
+
+    @property
+    def has_eeprom(self) -> bool:
+        return self._has("eeprom")
+
+    @property
+    def has_dac(self) -> bool:
+        return self._has("dac")
+
+    @property
+    def has_hw_serial1(self) -> bool:
+        return self._has("hw_serial1")
+
+    @property
+    def has_fpu(self) -> bool:
+        return self._has("fpu")
+
+    @property
+    def is_3v3_logic(self) -> bool:
+        return self._has("logic_3v3")
+
+    @property
+    def has_big_buffer(self) -> bool:
+        return self._has("big_buffer")
+
+    @property
+    def has_i2c(self) -> bool:
+        return self._has("i2c")
+
+    @property
+    def has_spi(self) -> bool:
+        return self._has("spi")
+
+    def as_dict(self) -> dict[str, Any]:
+        """Convert to dictionary including expanded boolean flags."""
+        res = msgspec.structs.asdict(self)
+        fields = (
+            "has_watchdog",
+            "has_rle",
+            "has_debug_frames",
+            "has_debug_io",
+            "has_eeprom",
+            "has_dac",
+            "has_hw_serial1",
+            "has_fpu",
+            "is_3v3_logic",
+            "has_big_buffer",
+            "has_i2c",
+            "has_spi",
+        )
+        for f in fields:
+            res[f] = getattr(self, f)
+        return res
+
+
+class SerialThroughputStats(BaseStats):
+    """Serial link throughput counters."""
+
+    bytes_sent: int = 0
+    bytes_received: int = 0
+    frames_sent: int = 0
+    frames_received: int = 0
+    last_tx_unix: float = 0.0
+    last_rx_unix: float = 0.0
+
+    def record_tx(self, nbytes: int) -> None:
+        self.bytes_sent += nbytes
+        self.frames_sent += 1
+        self.last_tx_unix = time.time()
+
+    def record_rx(self, nbytes: int) -> None:
+        self.bytes_received += nbytes
+        self.frames_received += 1
+        self.last_rx_unix = time.time()
+
+
+# [EXTENDED METRICS] Latency histogram bucket boundaries in milliseconds
+LATENCY_BUCKETS_MS: tuple[float, ...] = (
+    5.0,
+    10.0,
+    25.0,
+    50.0,
+    100.0,
+    250.0,
+    500.0,
+    1000.0,
+    2500.0,
+)
+
+
+class SerialLatencyStats(msgspec.Struct):
+    """RPC command latency histogram."""
+
+    bucket_counts: list[int] = msgspec.field(default_factory=lambda: [0] * len(LATENCY_BUCKETS_MS))
+    overflow_count: int = 0
+    total_observations: int = 0
+    total_latency_ms: float = 0.0
+    min_latency_ms: float = float("inf")
+    max_latency_ms: float = 0.0
+    _summary: Any | None = None  # Prometheus Summary
+
+    def initialize_prometheus(self, registry: Any | None = None) -> None:
+        from prometheus_client import Summary
+
+        self._summary = Summary(
+            "mcubridge_rpc_latency_seconds",
+            "RPC command round-trip latency",
+            registry=registry,
+        )
+
+    def record(self, latency_ms: float) -> None:
+        self.total_observations += 1
+        self.total_latency_ms += latency_ms
+        if latency_ms < self.min_latency_ms:
+            self.min_latency_ms = latency_ms
+        if latency_ms > self.max_latency_ms:
+            self.max_latency_ms = latency_ms
+
+        for i, bucket in enumerate(LATENCY_BUCKETS_MS):
+            if latency_ms <= bucket:
+                self.bucket_counts[i] += 1
+        if latency_ms > LATENCY_BUCKETS_MS[-1]:
+            self.overflow_count += 1
+
+        if self._summary is not None:
+            self._summary.observe(latency_ms / 1000.0)
+
+    def as_dict(self) -> dict[str, Any]:
+        avg = self.total_latency_ms / self.total_observations if self.total_observations > 0 else 0.0
+        return {
+            "buckets": {f"le_{int(b)}ms": self.bucket_counts[i] for i, b in enumerate(LATENCY_BUCKETS_MS)},
+            "overflow": self.overflow_count,
+            "count": self.total_observations,
+            "sum_ms": self.total_latency_ms,
+            "avg_ms": avg,
+            "min_ms": self.min_latency_ms if self.total_observations > 0 else 0.0,
+            "max_ms": self.max_latency_ms,
+        }
+
+
+class McuVersion(msgspec.Struct):
+    major: Annotated[int, msgspec.Meta(ge=0)]
+    minor: Annotated[int, msgspec.Meta(ge=0)]
+
+
+class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    inflight: dict[str, Any] | None = None
+    last_completion: dict[str, Any] | None = None
+
+
+class SerialLinkSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    connected: bool = False
+    writer_attached: bool = False
+    synchronised: bool = False
+
+
+class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    synchronised: bool = False
+    attempts: Annotated[int, msgspec.Meta(ge=0)] = 0
+    successes: Annotated[int, msgspec.Meta(ge=0)] = 0
+    failures: Annotated[int, msgspec.Meta(ge=0)] = 0
+    failure_streak: Annotated[int, msgspec.Meta(ge=0)] = 0
+    last_error: str | None = None
+    last_unix: float = 0.0
+    last_duration: float = 0.0
+    backoff_until: float = 0.0
+    rate_limit_until: float = 0.0
+    fatal_count: Annotated[int, msgspec.Meta(ge=0)] = 0
+    fatal_reason: str | None = None
+    fatal_detail: str | None = None
+    fatal_unix: float = 0.0
+    pending_nonce: bool = False
+    nonce_length: Annotated[int, msgspec.Meta(ge=0)] = 0
+
+
+class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    serial_link: SerialLinkSnapshot
+    handshake: HandshakeSnapshot
+    serial_pipeline: SerialPipelineSnapshot
+    serial_flow: SerialFlowSnapshot
+    mcu_version: McuVersion | None = None
+    capabilities: dict[str, Any] | None = None
+
+
+class SerialFlowSnapshot(msgspec.Struct):
+    """Serial flow control statistics snapshot."""
+
+    commands_sent: Annotated[int, msgspec.Meta(ge=0)]
+    commands_acked: Annotated[int, msgspec.Meta(ge=0)]
+    retries: Annotated[int, msgspec.Meta(ge=0)]
+    failures: Annotated[int, msgspec.Meta(ge=0)]
+    last_event_unix: float
+
+
+class SerialFlowStats(BaseStats):
+    """Serial flow control statistics (Mutable)."""
+
+    commands_sent: int = 0
+    commands_acked: int = 0
+    retries: int = 0
+    failures: int = 0
+    last_event_unix: float = 0.0
 
     def as_snapshot(self) -> SerialFlowSnapshot:
         return SerialFlowSnapshot(
@@ -245,21 +938,76 @@ class SerialFlowStats:
         )
 
 
-class SerialThroughputStats:
-    def __init__(self) -> None:
-        self.tx_bps: float = 0.0
-        self.rx_bps: float = 0.0
+class BridgeStatus(msgspec.Struct):
+    """Root structure for the daemon status file."""
 
+    # Serial Link
+    serial_connected: bool
+    serial_flow: SerialFlowSnapshot
+    link_synchronised: bool
+    handshake_attempts: Annotated[int, msgspec.Meta(ge=0)]
+    handshake_successes: Annotated[int, msgspec.Meta(ge=0)]
+    handshake_failures: Annotated[int, msgspec.Meta(ge=0)]
+    handshake_last_error: str | None
+    handshake_last_unix: float
 
-class SerialLatencyStats:
-    def __init__(self) -> None:
-        self.p50_seconds: float = 0.0
-        self.p90_seconds: float = 0.0
-        self.p99_seconds: float = 0.0
+    # MQTT
+    mqtt_queue_size: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_messages_dropped: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_drop_counts: dict[str, int]
 
+    # Spool
+    mqtt_spooled_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_spooled_replayed: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_spool_errors: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_spool_degraded: bool
+    mqtt_spool_failure_reason: str | None
+    mqtt_spool_retry_attempts: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_spool_backoff_until: float
+    mqtt_spool_last_error: str | None
+    mqtt_spool_recoveries: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_spool_pending: Annotated[int, msgspec.Meta(ge=0)]
 
-class SupervisorStats:
-    def __init__(self) -> None:
-        self.restarts: int = 0
-        self.last_failure_unix: float = 0.0
-        self.last_failure_reason: str | None = None
+    # Storage
+    file_storage_root: str
+    file_storage_bytes_used: Annotated[int, msgspec.Meta(ge=0)]
+    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    file_write_limit_rejections: Annotated[int, msgspec.Meta(ge=0)]
+    file_storage_limit_rejections: Annotated[int, msgspec.Meta(ge=0)]
+
+    # Queues
+    datastore_keys: list[str]
+    mailbox_size: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_dropped_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_dropped_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_truncated_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_truncated_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_incoming_dropped_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_incoming_dropped_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_incoming_truncated_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_incoming_truncated_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    console_queue_size: Annotated[int, msgspec.Meta(ge=0)]
+    console_queue_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    console_dropped_chunks: Annotated[int, msgspec.Meta(ge=0)]
+    console_dropped_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    console_truncated_chunks: Annotated[int, msgspec.Meta(ge=0)]
+    console_truncated_bytes: Annotated[int, msgspec.Meta(ge=0)]
+
+    # System
+    mcu_paused: bool
+    mcu_version: McuVersion | None
+    watchdog_enabled: bool
+    watchdog_interval: float
+    watchdog_beats: Annotated[int, msgspec.Meta(ge=0)]
+    watchdog_last_beat: float
+    running_processes: list[str]
+    allowed_commands: list[str]
+    config_source: str
+
+    # Snapshots
+    bridge: BridgeSnapshot
+    supervisors: dict[str, SupervisorSnapshot]
+    heartbeat_unix: float

@@ -6,9 +6,6 @@ matches what the Python dispatcher actually handles.
 
 from __future__ import annotations
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
@@ -21,7 +18,7 @@ from mcubridge.protocol.protocol import (
     Status,
     Topic,
 )
-from mcubridge.protocol.protocol import TopicRoute, parse_topic, topic_path
+from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
 from mcubridge.services.dispatcher import BridgeDispatcher
 

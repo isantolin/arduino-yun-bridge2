@@ -1,5 +1,3 @@
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
 """Regression tests for RPC protocol helpers."""
 
 from mcubridge.protocol import frame, protocol

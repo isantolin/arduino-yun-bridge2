@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
-
 from collections.abc import Coroutine
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -15,7 +12,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, PinAction, Status
-from mcubridge.protocol.protocol import Topic, topic_path
+from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.pin import PinComponent
 from mcubridge.state.context import PendingPinRequest, RuntimeState
 

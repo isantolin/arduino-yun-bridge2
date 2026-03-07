@@ -85,3 +85,25 @@ class Command(IntEnum):
     CMD_PROCESS_KILL = 163  # None
     CMD_PROCESS_RUN_ASYNC_RESP = 165  # None
     CMD_PROCESS_POLL_RESP = 166  # None
+
+# MQTT Topic Helpers
+class Topic:
+    PREFIX: str = "br"
+
+    @staticmethod
+    def command(cmd_name: str, *args: str | int, prefix: str | None = None) -> str:
+        """Helper to build a command topic."""
+        p = prefix or Topic.PREFIX
+        base = f"{p}/cmd/{cmd_name.lower()}"
+        if args:
+            return f"{base}/{'/'.join(map(str, args))}"
+        return base
+
+    @staticmethod
+    def status(cmd_name: str, *args: str | int, prefix: str | None = None) -> str:
+        """Helper to build a status topic."""
+        p = prefix or Topic.PREFIX
+        base = f"{p}/status/{cmd_name.lower()}"
+        if args:
+            return f"{base}/{'/'.join(map(str, args))}"
+        return base

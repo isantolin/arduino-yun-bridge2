@@ -44,8 +44,8 @@ class SpoolRecord(TypedDict):
 class QueuedPublish(msgspec.Struct, frozen=True):
     """Internal representation of a message waiting to be published."""
 
-    topic_name: str = ""
-    payload: bytes = b""
+    topic_name: str
+    payload: bytes
     qos: int = 0
     retain: bool = False
     content_type: str | None = None
@@ -72,32 +72,33 @@ class QueuedPublish(msgspec.Struct, frozen=True):
         }
 
 
-def build_mqtt_properties(
-    message: QueuedPublish | None = None, *, response_topic: str | None = None
-) -> Properties:
+def build_mqtt_properties(message: QueuedPublish) -> Properties:
     """Construct MQTT 5.0 properties object for aiomqtt/paho."""
     props = Properties(PacketTypes.PUBLISH)
 
-    if message:
-        if message.content_type is not None:
-            props.ContentType = message.content_type
-        if message.message_expiry_interval is not None:
-            props.MessageExpiryInterval = int(message.message_expiry_interval)
-        if message.topic_alias is not None:
-            props.TopicAlias = message.topic_alias
-        if message.response_topic is not None:
-            props.ResponseTopic = message.response_topic
-        if message.correlation_data is not None:
-            props.CorrelationData = message.correlation_data
-        if message.user_properties:
-            props.UserProperty = list(message.user_properties)
-        if message.subscription_identifier is not None:
-            props.SubscriptionIdentifier = list(message.subscription_identifier)
-        if message.payload_format_indicator is not None:
-            props.PayloadFormatIndicator = message.payload_format_indicator
+    if message.content_type is not None:
+        props.ContentType = message.content_type
 
-    if response_topic:
-        props.ResponseTopic = response_topic
+    if message.message_expiry_interval is not None:
+        props.MessageExpiryInterval = int(message.message_expiry_interval)
+
+    if message.topic_alias is not None:
+        props.TopicAlias = message.topic_alias
+
+    if message.response_topic is not None:
+        props.ResponseTopic = message.response_topic
+
+    if message.correlation_data is not None:
+        props.CorrelationData = message.correlation_data
+
+    if message.user_properties:
+        props.UserProperty = list(message.user_properties)
+
+    if message.subscription_identifier is not None:
+        props.SubscriptionIdentifier = list(message.subscription_identifier)
+
+    if message.payload_format_indicator is not None:
+        props.PayloadFormatIndicator = message.payload_format_indicator
 
     return props
 

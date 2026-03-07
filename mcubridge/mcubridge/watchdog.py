@@ -108,7 +108,7 @@ class WatchdogKeepalive:
             self._logger.warning("Failed to emit watchdog trigger: %s", exc)
         else:
             if self._state is not None:
-                self._state.record_watchdog_beat(time.monotonic())  # type: ignore[reportCallIssue]
+                self._state.record_watchdog_beat(time.monotonic())
 
     async def run(self) -> None:
         """Continuously emit watchdog pulses until cancelled."""

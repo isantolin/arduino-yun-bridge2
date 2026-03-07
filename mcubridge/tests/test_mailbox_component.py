@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
-
 import asyncio
 import logging
 from collections.abc import Awaitable, Coroutine
@@ -17,7 +14,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Command, MailboxAction, Status
-from mcubridge.protocol.protocol import (
+from mcubridge.protocol.topics import (
     Topic,
     topic_path,
 )

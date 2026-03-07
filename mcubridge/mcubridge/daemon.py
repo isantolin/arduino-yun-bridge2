@@ -1,4 +1,28 @@
-"""Main entry point for the McuBridge daemon."""
+#!/usr/bin/env python3
+"""Async orchestrator for the Arduino MCU Bridge v2 daemon.
+
+This module contains the main entry point and orchestration logic for the
+MCU Bridge daemon, which manages communication between OpenWrt Linux and
+the Arduino MCU over serial and MQTT.
+
+[SIL-2 COMPLIANCE]
+The daemon implements robust error handling:
+- Deterministic startup (Fail-Fast on missing deps)
+- Task supervision with automatic restart and backoff
+- Fatal exception handling for unrecoverable serial errors
+- Graceful shutdown on SIGTERM/SIGINT
+- Status file cleanup on exit
+
+Architecture:
+    main() -> BridgeDaemon -> TaskGroup
+        ├── serial-link (SerialTransport)
+        ├── mqtt-link (mqtt_task)
+        ├── status-writer (status_writer)
+        ├── metrics-publisher (publish_metrics)
+        ├── bridge-snapshots (optional)
+        ├── watchdog (optional)
+        ├── prometheus-exporter (optional)
+"""
 
 from __future__ import annotations
 
@@ -6,9 +30,17 @@ import asyncio
 import logging
 import sys
 from collections.abc import Awaitable, Callable
+from typing import NoReturn
 
 import msgspec
+import psutil
 import tenacity
+
+# [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
+try:
+    import uvloop
+except ModuleNotFoundError:  # pragma: no cover
+    uvloop = None
 
 from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
@@ -48,94 +80,148 @@ SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
 )
 
 
-class McuBridgeDaemon:
-    """Orchestrates the MCU Bridge services and background tasks."""
+def _cleanup_child_processes() -> None:
+    """Terminates all child processes spawned by this daemon."""
+    try:
+        current_process = psutil.Process()
+        children = current_process.children(recursive=True)
+        if not children:
+            return
 
-    def __init__(self, config: RuntimeConfig) -> None:
+        logger.info("Cleaning up %d child processes...", len(children))
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+
+        # Wait for processes to exit gracefully, then force kill survivors
+        _, alive = psutil.wait_procs(children, timeout=3.0)
+        for child in alive:
+            try:
+                logger.warning("Force killing zombie process %d", child.pid)
+                child.kill()
+            except psutil.NoSuchProcess:
+                pass
+    except psutil.Error as e:
+        logger.error("Error during process cleanup: %s", e)
+
+
+class BridgeDaemon:
+    """Main orchestrator for the MCU Bridge daemon services.
+
+    This class manages the lifecycle of all daemon components including
+    serial communication, MQTT publishing, metrics, and optional features
+    like watchdog and Prometheus exporter.
+
+    Attributes:
+        config: Runtime configuration loaded from UCI.
+        state: Shared runtime state for all components.
+        service: BridgeService instance handling RPC dispatch.
+        watchdog: Optional watchdog keepalive task.
+        exporter: Optional Prometheus metrics exporter.
+    """
+
+    def __init__(self, config: RuntimeConfig):
+        """Initialize the daemon with configuration.
+
+        Args:
+            config: Validated RuntimeConfig from UCI/defaults.
+        """
         self.config = config
         self.state = create_runtime_state(config)
         self.state.config_source = get_config_source()
-        self.service = BridgeService(self.state, self.config)
+        self.service = BridgeService(config, self.state)
+        # Initialize dependencies
+
+        async def _dummy_sender(cmd: int, payload: bytes) -> bool:
+            return False
+
+        self.service.register_serial_sender(_dummy_sender)
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
 
+        if self.config.serial_shared_secret:
+            logger.info("Security check passed: Shared secret is configured.")
+
     async def run(self) -> None:
-        """Main daemon loop."""
-        configure_logging(self.config)
-        logger.info("Starting MCU Bridge daemon...")
-
-        if self.config.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
-            logger.warning("Using default serial shared secret! Please update configuration.")
-
-        if not verify_crypto_integrity():
-            logger.critical("Cryptographic integrity check failed! FIPS 140-3 compliance violation.")
-            sys.exit(1)
+        """Main entry point for daemon execution using native TaskGroup orchestration."""
+        log = logging.getLogger("mcubridge.daemon")
 
         try:
-            async with asyncio.TaskGroup() as tg:
-                # 1. Transport Layers
-                tg.create_task(
-                    self._supervise(
-                        "serial-transport",
-                        lambda: SerialTransport(self.config, self.state, self.service).run(),
+            async with self.service:
+                async with asyncio.TaskGroup() as tg:
+                    # 1. Serial Link (Critical)
+                    tg.create_task(
+                        self._supervise(
+                            "serial-link",
+                            lambda: SerialTransport(self.config, self.state, self.service).run(),
+                            (SerialHandshakeFatal,),
+                        )
                     )
-                )
-                tg.create_task(
-                    self._supervise(
-                        "mqtt-link",
-                        lambda: MqttTransport(self.state, self.config, self.service).run(),
+
+                    # 2. MQTT Link
+                    tg.create_task(
+                        self._supervise(
+                            "mqtt-link",
+                            lambda: MqttTransport(self.config, self.state, self.service).run(),
+                        )
                     )
-                )
 
-                # 2. Core Service
-                tg.create_task(self._supervise("bridge-service", self.service.run))
-
-                # 3. Observability
-                tg.create_task(
-                    self._supervise(
-                        "status-file-writer",
-                        lambda: status_writer(self.state, self.config.status_interval),
+                    # 3. Status & Metrics (Periodic)
+                    tg.create_task(
+                        self._supervise(
+                            "status-writer",
+                            lambda: status_writer(self.state, self.config.status_interval),
+                        )
                     )
-                )
-
-                if self.config.metrics_enabled:
                     tg.create_task(
                         self._supervise(
                             "metrics-publisher",
-                            lambda: publish_metrics(self.state, self.config, self.service.enqueue_mqtt),
+                            lambda: publish_metrics(
+                                self.state,
+                                self.service.enqueue_mqtt,
+                                float(self.config.status_interval),
+                            ),
                         )
                     )
 
-                    if self.config.bridge_summary_interval > 0:
+                    # 4. Optional Features
+                    if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
                         tg.create_task(
                             self._supervise(
                                 "bridge-snapshots",
-                                lambda: publish_bridge_snapshots(self.state, self.config, self.service.enqueue_mqtt),
+                                lambda: publish_bridge_snapshots(
+                                    self.state,
+                                    self.service.enqueue_mqtt,
+                                    summary_interval=float(self.config.bridge_summary_interval),
+                                    handshake_interval=float(self.config.bridge_handshake_interval),
+                                ),
                             )
                         )
 
-                    self.exporter = PrometheusExporter(
-                        self.config.metrics_host,
-                        self.config.metrics_port,
-                    )
-                    tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
+                    if self.config.watchdog_enabled:
+                        self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
+                        tg.create_task(self._supervise("watchdog", self.watchdog.run))
 
-                if self.config.watchdog_enabled:
-                    self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
-                    tg.create_task(self._supervise("watchdog", self.watchdog.run))
+                    if self.config.metrics_enabled:
+                        self.exporter = PrometheusExporter(
+                            self.state,
+                            self.config.metrics_host,
+                            self.config.metrics_port,
+                        )
+                        tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
 
         except* asyncio.CancelledError:
-            logger.info("Daemon shutdown initiated.")
-        except* SerialHandshakeFatal as exc:
-            logger.critical("Fatal serial handshake error: %s", exc)
-            sys.exit(1)
+            log.info("Daemon shutdown initiated (Cancelled).")
         except* Exception as exc_group:
             for exc in exc_group.exceptions:
-                logger.critical("Fatal task error: %s", exc, exc_info=exc)
-            sys.exit(1)
+                log.critical("Fatal task error: %s", exc, exc_info=exc)
+            raise
         finally:
+            _cleanup_child_processes()
             cleanup_status_file()
-            self._cleanup()
+            log.info("MCU Bridge daemon stopped.")
 
     async def _supervise(
         self,
@@ -148,48 +234,73 @@ class McuBridgeDaemon:
     ) -> None:
         """Lightweight supervisor for individual tasks using tenacity."""
         stop = tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never
-        wait = tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff)
 
         retryer = tenacity.AsyncRetrying(
             stop=stop,
-            wait=wait,
-            retry=tenacity.retry_if_exception_type(SUPERVISOR_RECOVERABLE_EXCEPTIONS),
+            wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
+            retry=tenacity.retry_if_exception_type(Exception) & tenacity.retry_if_not_exception_type(fatal_exceptions),
             reraise=True,
         )
 
-        try:
-            async for attempt in retryer:
-                with attempt:
-                    logger.info("Starting task: %s", name)
+        async for attempt in retryer:
+            with attempt:
+                try:
                     await factory()
-        except fatal_exceptions:
-            logger.error("Task %s failed with fatal exception.", name)
-            raise
-        except Exception as exc:
-            logger.error("Task %s exceeded retry limit: %s", name, exc)
-            self.state.record_supervisor_failure(name, 0.0, exc)
-            raise
-
-    def _cleanup(self) -> None:
-        """Final cleanup on daemon exit."""
-        logger.info("Cleaning up MCU Bridge daemon resources...")
+                except SUPERVISOR_RECOVERABLE_EXCEPTIONS as exc:
+                    self.state.record_supervisor_failure(name, backoff=0.0, exc=exc)
+                    raise
 
 
-def main() -> None:
-    """Daemon entry point."""
-    import typer
+def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
+    config = load_runtime_config()
+    configure_logging(config)
 
-    def _run_daemon() -> None:
-        config = load_runtime_config()
-        daemon = McuBridgeDaemon(config)
-        try:
-            asyncio.run(daemon.run())
-        except KeyboardInterrupt:
-            pass
+    # [MIL-SPEC] FIPS 140-3 Power-On Self-Tests (POST)
+    if not verify_crypto_integrity():
+        logger.critical("CRYPTOGRAPHIC INTEGRITY CHECK FAILED! Aborting for security.")
+        sys.exit(1)
 
-    typer.run(_run_daemon)
+    logger.info(
+        "Starting MCU Bridge daemon. Serial: %s@%d MQTT: %s:%d",
+        config.serial_port,
+        config.serial_baud,
+        config.mqtt_host,
+        config.mqtt_port,
+    )
+
+    if config.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
+        logger.critical(
+            "****************************************************************\n"
+            " SECURITY CRITICAL: Using default serial shared secret!\n"
+            " This device is VULNERABLE to local attacks.\n"
+            " Please run 'mcubridge-rotate-credentials' IMMEDIATELY.\n"
+            "****************************************************************"
+        )
+
+    try:
+        if uvloop is None:
+            raise RuntimeError("python3-uvloop is required but not installed")
+        daemon = BridgeDaemon(config)
+        # [SIL-2] Enforce uvloop for deterministic async performance
+        asyncio.run(daemon.run(), loop_factory=uvloop.new_event_loop)
+        sys.exit(0)
+    except KeyboardInterrupt:
+        logger.info("Daemon interrupted by user.")
+        sys.exit(0)
+    except RuntimeError as exc:
+        logger.critical("Startup aborted due to runtime error: %s", exc)
+        sys.exit(1)
+    except ExceptionGroup as exc_group:
+        for group_exc in exc_group.exceptions:
+            logger.critical("Fatal error in task group: %s", group_exc, exc_info=group_exc)
+        sys.exit(1)
+    except OSError as exc:
+        logger.critical("System/OS error during daemon execution: %s", exc, exc_info=True)
+        sys.exit(1)
+    except BaseException as exc:
+        logger.critical("Fatal base exception during daemon execution: %s", exc, exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
-BridgeDaemon = McuBridgeDaemon

@@ -1,5 +1,3 @@
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
 """Tests for serial transport resiliency."""
 
 import asyncio

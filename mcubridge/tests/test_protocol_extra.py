@@ -1,5 +1,3 @@
-import pytest
-pytestmark = pytest.mark.skip(reason="Obsolete API")
 """Extra coverage for mcubridge.protocol components."""
 
 import pytest
@@ -61,7 +59,7 @@ def test_rle_encode_decode_edge_cases() -> None:
 
 
 def test_topics_handshake_topic() -> None:
-    from mcubridge.protocol.protocol import (
+    from mcubridge.protocol.topics import (
         Topic,
         topic_path,
     )

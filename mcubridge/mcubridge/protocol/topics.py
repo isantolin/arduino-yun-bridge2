@@ -1,88 +1,72 @@
-"""MQTT topic definitions and routing for the MCU Bridge service."""
+"""MQTT topic helpers shared across McuBridge components.
+
+This module is the SINGLE SOURCE OF TRUTH for MQTT topic structures.
+Avoid hardcoding topic strings elsewhere.
+"""
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Sequence
-from dataclasses import dataclass
-from enum import StrEnum
-from typing import Final
+import msgspec
 
-logger = logging.getLogger("mcubridge.topics")
-
-# Default topic prefix used across the ecosystem
-MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = "br"
-
-# MQTT Wildcards
-MQTT_WILDCARD_SINGLE: Final[str] = "+"
-MQTT_WILDCARD_MULTI: Final[str] = "#"
-
-# Response suffixes
-MQTT_SUFFIX_RESPONSE: Final[str] = "response"
+from .protocol import Topic
 
 
-class Topic(StrEnum):
-    """Root MQTT topics supported by the bridge."""
+class TopicRoute(msgspec.Struct, frozen=True):
+    """Parsed representation of an MQTT topic targeting the daemon."""
 
-    SYSTEM = "system"
-    DIGITAL = "d"
-    ANALOG = "a"
-    CONSOLE = "console"
-    DATASTORE = "datastore"
-    MAILBOX = "mailbox"
-    FILE = "file"
-    SHELL = "sh"
-    STATUS = "status"
-    METRICS = "metrics"
-
-
-@dataclass(frozen=True)
-class TopicRoute:
-    """Represents a parsed MQTT topic path."""
-
+    raw: str
+    prefix: str
     topic: Topic
-    segments: Sequence[str]
-    identifier: str = ""
-    remainder: Sequence[str] = ()
+    segments: tuple[str, ...]
+
+    @property
+    def identifier(self) -> str:
+        return self.segments[0] if self.segments else ""
+
+    @property
+    def remainder(self) -> tuple[str, ...]:
+        return self.segments[1:] if len(self.segments) > 1 else ()
 
 
-def split_topic_segments(topic: str) -> list[str]:
-    """Split an MQTT topic into its constituent segments."""
-    return [s for s in topic.split("/") if s]
+def split_topic_segments(path: str) -> tuple[str, ...]:
+    """Public helper for service-level topic segment normalization."""
+    return tuple(filter(None, path.split("/")))
 
 
-def parse_topic(topic: str) -> TopicRoute | None:
-    """Parse an MQTT topic string into a TopicRoute."""
-    segments = split_topic_segments(topic)
-    if not segments:
+def topic_path(prefix: str, topic: Topic | str, *segments: str) -> str:
+    """Join prefix, topic and optional sub-segments into a topic path."""
+    parts = list(split_topic_segments(prefix))
+    topic_segment = topic.value if isinstance(topic, Topic) else str(topic)
+    topic_segment = topic_segment.strip("/")
+    if not topic_segment:
+        raise ValueError("topic segment cannot be empty")
+    parts.append(topic_segment)
+    parts.extend(filter(None, (s.strip("/") for s in segments)))
+    return "/".join(parts)
+
+
+# --- Service Specific Topics ---
+
+
+def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
+    """Parse an incoming MQTT topic into a TopicRoute."""
+    prefix_segments = split_topic_segments(prefix)
+    topic_segments = split_topic_segments(topic_name)
+    if len(topic_segments) < len(prefix_segments) + 1:
         return None
-
+    if topic_segments[: len(prefix_segments)] != prefix_segments:
+        return None
+    topic_segment = topic_segments[len(prefix_segments)]
     try:
-        # Check if first segment is the prefix
-        start_idx = 0
-        if segments[0] == MQTT_DEFAULT_TOPIC_PREFIX:
-            start_idx = 1
-
-        if len(segments) <= start_idx:
-            return None
-
-        root = Topic(segments[start_idx])
-        return TopicRoute(
-            topic=root,
-            segments=segments[start_idx:],
-            identifier=segments[start_idx + 1] if len(segments) > start_idx + 1 else "",
-            remainder=segments[start_idx + 2:] if len(segments) > start_idx + 2 else (),
-        )
+        topic_enum = Topic(topic_segment)
     except ValueError:
         return None
-
-
-# For backward compatibility
-topic_path = parse_topic
-
-# Core command subscriptions for the daemon
-MQTT_COMMAND_SUBSCRIPTIONS: Final[list[tuple[str, int]]] = [
-    (f"{MQTT_DEFAULT_TOPIC_PREFIX}/{t.value}/{MQTT_WILDCARD_MULTI}", 1)
-    for t in Topic
-    if t not in (Topic.STATUS, Topic.METRICS)
-]
+    remainder_start = len(prefix_segments) + 1
+    remainder = topic_segments[remainder_start:]
+    normalized_prefix = "/".join(prefix_segments)
+    return TopicRoute(
+        raw=topic_name,
+        prefix=normalized_prefix,
+        topic=topic_enum,
+        segments=remainder,
+    )

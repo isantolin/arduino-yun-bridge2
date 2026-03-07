@@ -185,7 +185,7 @@ class SerialFlowController:
         if command_id in SERIAL_FAILURE_STATUS_CODES:
             # MCU status frames correlation logic
             should_reject = not payload or (
-                len(payload) >= 2 and UINT16_STRUCT.parse(payload[:2]) == pending.command_id  # type: ignore[reportUnnecessaryComparison]
+                len(payload) >= 2 and UINT16_STRUCT.parse(payload[:2]) == pending.command_id
             )
 
             if should_reject or not all(32 <= byte < 127 for byte in payload):

@@ -3,8 +3,7 @@ import random
 import pytest
 from cobs import cobs
 from mcubridge.protocol.frame import Frame
-from mcubridge.protocol.frame import FRAME_STRUCT
-CRC_COVERED_HEADER_SIZE = FRAME_STRUCT.size
+from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
 from tests.test_constants import TEST_RANDOM_SEED
 
 # Deterministic seed for reproducibility

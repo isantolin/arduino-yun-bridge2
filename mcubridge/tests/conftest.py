@@ -27,9 +27,9 @@ except Exception:
 # We use the stub from stubs/uci/ which provides proper UciException and Uci classes.
 if "uci" not in sys.modules:
     # Add stubs to path and import the real stub
-    _stubs_path = str(Path(__file__).parent.parent.parent / "stubs" / "uci_stub")
+    _stubs_path = str(Path(__file__).parent.parent.parent / "stubs")
     if _stubs_path not in sys.path:
-        sys.path.append(_stubs_path)
+        sys.path.insert(0, _stubs_path)
     import uci  # This imports from stubs/uci/
 
     sys.modules["uci"] = uci

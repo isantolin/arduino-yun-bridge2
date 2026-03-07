@@ -11,27 +11,15 @@ from mcubridge.protocol.protocol import Command, ConsoleAction
 from mcubridge.protocol.structures import ConsoleWritePacket
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
-from ..config.settings import RuntimeConfig
 from ..protocol.topics import Topic, topic_path
-from ..state.context import RuntimeState
 from ..util import chunk_bytes
-from .base import BridgeContext
+from .base import BaseComponent
 
 logger = logging.getLogger("mcubridge.console")
 
 
-class ConsoleComponent:
+class ConsoleComponent(BaseComponent):
     """Encapsulate remote console behaviour."""
-
-    def __init__(
-        self,
-        config: RuntimeConfig,
-        state: RuntimeState,
-        ctx: BridgeContext,
-    ) -> None:
-        self.config = config
-        self.state = state
-        self.ctx = ctx
 
     async def handle_write(self, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""

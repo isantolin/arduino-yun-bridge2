@@ -20,7 +20,7 @@ void FileSystemClass::write(etl::string_view filePath,
   etl::vector<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 3> header;
   rpc::PacketBuilder builder(header);
   builder.add_pascal_string(filePath);
-  builder.add_u16(static_cast<uint16_t>(data.size()));
+  builder.add_value(static_cast<uint16_t>(data.size()));
 
   Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE,
                          etl::span<const uint8_t>(header.data(), header.size()),

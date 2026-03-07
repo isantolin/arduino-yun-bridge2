@@ -21,30 +21,18 @@ from mcubridge.protocol.structures import (
     MailboxReadResponsePacket,
 )
 
-from ..config.settings import RuntimeConfig
 from ..protocol.encoding import encode_status_reason
 from ..protocol.topics import (
     Topic,
     topic_path,
 )
-from ..state.context import RuntimeState
-from .base import BridgeContext
+from .base import BaseComponent
 
 logger = logging.getLogger("mcubridge.mailbox")
 
 
-class MailboxComponent:
+class MailboxComponent(BaseComponent):
     """Handle mailbox interactions between MCU and Linux."""
-
-    def __init__(
-        self,
-        config: RuntimeConfig,
-        state: RuntimeState,
-        ctx: BridgeContext,
-    ) -> None:
-        self.config = config
-        self.state = state
-        self.ctx = ctx
 
     async def handle_processed(self, payload: bytes) -> bool:
         topic_name = topic_path(

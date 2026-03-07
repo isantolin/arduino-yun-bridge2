@@ -19,26 +19,14 @@ from mcubridge.protocol.structures import (
 )
 
 from ..config.const import MQTT_EXPIRY_DATASTORE
-from ..config.settings import RuntimeConfig
 from ..protocol.topics import Topic, split_topic_segments, topic_path
-from ..state.context import RuntimeState
-from .base import BridgeContext
+from .base import BaseComponent
 
 logger = logging.getLogger("mcubridge.datastore")
 
 
-class DatastoreComponent:
+class DatastoreComponent(BaseComponent):
     """Encapsulate datastore behaviour for BridgeService."""
-
-    def __init__(
-        self,
-        config: RuntimeConfig,
-        state: RuntimeState,
-        ctx: BridgeContext,
-    ) -> None:
-        self.config = config
-        self.state = state
-        self.ctx = ctx
 
     async def handle_put(self, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""

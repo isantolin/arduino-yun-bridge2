@@ -48,6 +48,14 @@ class PacketBuilder {
     return add(buf.data(), 4);
   }
 
+  template <typename T>
+  PacketBuilder& add_value(T value) {
+    if (sizeof(T) == 1) return add(static_cast<uint8_t>(value));
+    if (sizeof(T) == 2) return add_u16(static_cast<uint16_t>(value));
+    if (sizeof(T) == 4) return add_u32(static_cast<uint32_t>(value));
+    return *this;
+  }
+
   PacketBuilder& add_pascal_string(etl::string_view str) {
     const uint8_t len =
         static_cast<uint8_t>(etl::min<size_t>(str.length(), 255));

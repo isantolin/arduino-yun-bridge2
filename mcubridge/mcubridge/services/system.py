@@ -19,12 +19,12 @@ from ..config.const import MQTT_EXPIRY_DATASTORE, MQTT_EXPIRY_DEFAULT
 from ..config.settings import RuntimeConfig
 from ..protocol.topics import Topic, topic_path
 from ..state.context import RuntimeState
-from .base import BridgeContext
+from .base import BaseComponent, BridgeContext
 
 logger = logging.getLogger("mcubridge.system")
 
 
-class SystemComponent:
+class SystemComponent(BaseComponent):
     """Encapsulate MCU system information flows."""
 
     def __init__(
@@ -33,17 +33,20 @@ class SystemComponent:
         state: RuntimeState,
         ctx: BridgeContext,
     ) -> None:
-        self.config = config
-        self.state = state
-        self.ctx = ctx
+        super().__init__(config, state, ctx)
         self._pending_free_memory: collections.deque[Message] = collections.deque()
         self._pending_version: collections.deque[Message] = collections.deque()
 
-    async def request_mcu_version(self) -> bool:
-        send_ok = await self.ctx.send_frame(Command.CMD_GET_VERSION.value, b"")
-        if send_ok:
-            self.state.mcu_version = None
-        return send_ok
+    async def request_mcu_version(self, inbound: Message | None = None) -> bool:
+        # Use provided inbound message or a sentinel to track the request
+        request = inbound if inbound is not None else cast(Message, object())
+        return await self._safe_send_request(
+            queue=self._pending_version,
+            request=request,
+            limit=10,
+            command_id=Command.CMD_GET_VERSION.value,
+            payload=b"",
+        )
 
     async def handle_set_baudrate_resp(self, payload: bytes) -> None:
         logger.info("MCU acknowledged baudrate change. Switching local UART...")
@@ -99,21 +102,22 @@ class SystemComponent:
 
         match identifier:
             case SystemAction.FREE_MEMORY:
-                if inbound is not None:
-                    self._pending_free_memory.append(inbound)
-                await self.ctx.send_frame(Command.CMD_GET_FREE_MEMORY.value, b"")
-                return True
+                request = inbound if inbound is not None else cast(Message, object())
+                return await self._safe_send_request(
+                    queue=self._pending_free_memory,
+                    request=request,
+                    limit=10,
+                    command_id=Command.CMD_GET_FREE_MEMORY.value,
+                    payload=b"",
+                )
 
             case SystemAction.VERSION:
                 cached_version = self.state.mcu_version
                 if cached_version is not None and inbound is not None:
                     await self._publish_version(cached_version, inbound)
-                elif inbound is not None:
-                    self._pending_version.append(inbound)
-                await self.request_mcu_version()
-                if cached_version is not None:
-                    await self._publish_version(cached_version)
-                return True
+                    return True
+
+                return await self.request_mcu_version(inbound)
 
             case _:
                 return False

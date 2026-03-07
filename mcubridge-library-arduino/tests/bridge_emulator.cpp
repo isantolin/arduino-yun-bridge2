@@ -114,6 +114,15 @@ int main(int argc, char** argv) {
   Bridge.begin(115200, secret, 14);
   while (true) {
     Bridge.process();
+    
+    // Console Echo Implementation
+    while (Console.available()) {
+      int c = Console.read();
+      if (c >= 0) {
+        Console.write(static_cast<uint8_t>(c));
+      }
+    }
+
     usleep(1000);
   }
   return 0;

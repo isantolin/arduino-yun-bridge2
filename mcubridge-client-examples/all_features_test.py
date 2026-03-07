@@ -34,7 +34,15 @@ async def run_test(host, port, user, password):
         if res != "hello":
             raise ValueError(f"DataStore mismatch: {res}")
 
-        # 4. File IO test
+        # 4. Console test
+        logger.info("Testing Console Echo...")
+        await client.console_write("ping")
+        # Give some time for echo to return and be processed by the daemon
+        await asyncio.sleep(2)
+        # We don't verify the read here to keep it simple, but we trigger the write flow.
+        logger.info("Console write triggered.")
+
+        # 5. File IO test
         logger.info("Testing File IO...")
         import uuid
         test_file = f"/tmp/e2e_test_{uuid.uuid4().hex[:8]}.txt"

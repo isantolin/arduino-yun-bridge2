@@ -38,15 +38,16 @@ class SystemComponent(BaseComponent):
         self._pending_version: collections.deque[Message] = collections.deque()
 
     async def request_mcu_version(self, inbound: Message | None = None) -> bool:
-        # Use provided inbound message or a sentinel to track the request
-        request = inbound if inbound is not None else cast(Message, object())
-        return await self._safe_send_request(
+        send_ok = await self._safe_send_request(
             queue=self._pending_version,
-            request=request,
+            request=inbound,
             limit=10,
             command_id=Command.CMD_GET_VERSION.value,
             payload=b"",
         )
+        if send_ok:
+            self.state.mcu_version = None
+        return send_ok
 
     async def handle_set_baudrate_resp(self, payload: bytes) -> None:
         logger.info("MCU acknowledged baudrate change. Switching local UART...")
@@ -102,10 +103,9 @@ class SystemComponent(BaseComponent):
 
         match identifier:
             case SystemAction.FREE_MEMORY:
-                request = inbound if inbound is not None else cast(Message, object())
                 return await self._safe_send_request(
                     queue=self._pending_free_memory,
-                    request=request,
+                    request=inbound,
                     limit=10,
                     command_id=Command.CMD_GET_FREE_MEMORY.value,
                     payload=b"",
@@ -115,9 +115,15 @@ class SystemComponent(BaseComponent):
                 cached_version = self.state.mcu_version
                 if cached_version is not None and inbound is not None:
                     await self._publish_version(cached_version, inbound)
-                    return True
 
-                return await self.request_mcu_version(inbound)
+                # Always request fresh version to sync cache
+                send_ok = await self.request_mcu_version(inbound)
+
+                if cached_version is not None:
+                    # Also broadcast current cached value
+                    await self._publish_version(cached_version)
+
+                return send_ok
 
             case _:
                 return False

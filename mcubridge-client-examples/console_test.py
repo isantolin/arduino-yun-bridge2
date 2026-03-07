@@ -45,16 +45,17 @@ async def run_test(
 
         listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 
-        # [CI] Automatic Echo Test if not in a TTY
-        if not sys.stdin.isatty():
-            logging.info("Non-interactive mode detected. Running Echo Test (ping/pong)...")
+        # [CI] Automatic Echo Test if not in a TTY or forced via env
+        is_interactive = sys.stdin.isatty() and os.environ.get("MCUBRIDGE_NON_INTERACTIVE") != "1"
+
+        if not is_interactive:
+            logging.info("Non-interactive mode. Running Echo Test (ping/pong)...")
             await bridge.console_write("ping")
 
             # Wait up to 5 seconds for a response
             start = asyncio.get_running_loop().time()
             while asyncio.get_running_loop().time() - start < 5.0:
-                # We don't have a direct way to check the listener from here easily without a queue,
-                # but the listener logs to INFO, which will appear in CI.
+                # The listener task will log the pong if it arrives
                 await asyncio.sleep(0.5)
             logging.info("Echo Test phase completed.")
         else:

@@ -67,30 +67,36 @@ class BaseComponent:
     async def _track_transaction(
         self,
         queue: Deque[TReq],
-        request: TReq,
+        request: TReq | None,
         limit: int,
         on_overflow: Callable[[], Coroutine[Any, Any, None]] | None = None,
     ):
-        """Manages the lifecycle of a pending request transaction."""
+        """Manages the lifecycle of a pending request transaction.
+        
+        If request is None, tracking is skipped but the overflow check still applies.
+        """
         if len(queue) >= limit:
             if on_overflow:
                 await on_overflow()
             yield False
             return
 
-        queue.append(request)
+        if request is not None:
+            queue.append(request)
+        
         try:
             # yield to allow sending the frame
             yield True
         except Exception:
-            with contextlib.suppress(ValueError):
-                queue.remove(request)
+            if request is not None:
+                with contextlib.suppress(ValueError):
+                    queue.remove(request)
             raise
 
     async def _safe_send_request(
         self,
         queue: Deque[TReq],
-        request: TReq,
+        request: TReq | None,
         limit: int,
         command_id: int,
         payload: bytes,
@@ -102,7 +108,7 @@ class BaseComponent:
                 return False
 
             ok = await self.ctx.send_frame(command_id, payload)
-            if not ok:
+            if not ok and request is not None:
                 with contextlib.suppress(ValueError):
                     queue.remove(request)
             return ok

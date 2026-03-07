@@ -167,8 +167,8 @@ def test_main_invokes_publish(
     environ = {
         "REQUEST_METHOD": "POST",
         "PATH_INFO": "/pin/7",
-        "CONTENT_LENGTH": str(len(msgspec.msgpack.encode({"state": "ON"}))),
-        "wsgi.input": io.BytesIO(msgspec.msgpack.encode({"state": "ON"})),
+        "CONTENT_LENGTH": str(len(msgspec.json.encode({"state": "ON"}))),
+        "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "ON"})),
     }
     monkeypatch.setattr(os, "environ", environ)
 
@@ -176,7 +176,7 @@ def test_main_invokes_publish(
         captured["status"] = status
 
     result = pin_rest_module.application(environ, start_response)
-    body = msgspec.msgpack.decode(b"".join(result))
+    body = msgspec.json.decode(b"".join(result))
 
     assert captured["topic"] == "br/d/7"
     assert captured["payload"] == "1"
@@ -206,8 +206,8 @@ def test_main_rejects_invalid_state(
     environ = {
         "REQUEST_METHOD": "POST",
         "PATH_INFO": "/pin/9",
-        "CONTENT_LENGTH": str(len(msgspec.msgpack.encode({"state": "MAYBE"}))),
-        "wsgi.input": io.BytesIO(msgspec.msgpack.encode({"state": "MAYBE"})),
+        "CONTENT_LENGTH": str(len(msgspec.json.encode({"state": "MAYBE"}))),
+        "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "MAYBE"})),
     }
     monkeypatch.setattr(os, "environ", environ)
 
@@ -217,7 +217,7 @@ def test_main_rejects_invalid_state(
         captured_status.append(status)
 
     result = pin_rest_module.application(environ, start_response)
-    body = msgspec.msgpack.decode(b"".join(result))
+    body = msgspec.json.decode(b"".join(result))
 
     assert captured_status[0] == "400 Bad Request"
     assert body["status"] == "error"

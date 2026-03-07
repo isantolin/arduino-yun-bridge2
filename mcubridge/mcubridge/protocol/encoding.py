@@ -1,7 +1,7 @@
 """Protocol encoding helpers for McuBridge.
 
 [SIL-2] Modernised error reporting uses numerical Status codes.
-Reason strings are kept for legacy/debug purposes but are secondary.
+Reason strings are kept for debug purposes but are secondary.
 """
 
 from __future__ import annotations

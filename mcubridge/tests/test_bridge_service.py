@@ -111,8 +111,8 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
     reset_payloads = [payload for frame_id, payload in sent_frames if frame_id in {Command.CMD_LINK_RESET.value, 64}]
     assert reset_payloads
     reset_payload = reset_payloads[0]
-    # [SIL-2] Payload can be 0 (legacy) or 5 (new struct: 2+1+2 bytes)
-    assert len(reset_payload) in {0, 5, 7}
+    # [SIL-2] Payload must be 7 bytes (new struct: 2+1+4 bytes)
+    assert len(reset_payload) == 7
     frame_ids = [frame_id for frame_id, _ in sent_frames]
     handshake_ids = [
         frame_id
@@ -140,80 +140,6 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
 
 @pytest.mark.asyncio
-async def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    service = BridgeService(runtime_config, runtime_state)
-
-    sent_frames: list[tuple[int, bytes]] = []
-
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
-        sent_frames.append((command_id, payload))
-        if command_id == Command.CMD_LINK_RESET.value:
-            if len(payload) > 0:
-                # Reject link reset with timing to force legacy path
-                asyncio.create_task(
-                    service.handle_mcu_frame(
-                        Status.NOT_IMPLEMENTED.value,
-                        structures.UINT16_STRUCT.build(Command.CMD_LINK_RESET.value),
-                    )
-                )
-            else:
-                # Accept legacy link reset
-                asyncio.create_task(
-                    service.handle_mcu_frame(
-                        Command.CMD_LINK_RESET_RESP.value,
-                        b"",
-                    )
-                )
-        elif command_id == Command.CMD_LINK_SYNC.value:
-            nonce = service.state.link_handshake_nonce or b""
-            tag = service._handshake.compute_handshake_tag(nonce)
-            response = nonce + tag
-            asyncio.create_task(
-                service.handle_mcu_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    response,
-                )
-            )
-            # Priming capabilities
-            await service._handshake.handle_capabilities_resp(
-                cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
-                    {
-                        "ver": 2,
-                        "arch": 1,
-                        "dig": 20,
-                        "ana": 6,
-                        "feat": {
-                            "i2c": False,
-                            "spi": False,
-                            "big_buffer": False,
-                            "logic_3v3": False,
-                            "fpu": False,
-                            "hw_serial1": False,
-                            "dac": False,
-                            "eeprom": False,
-                            "debug_io": False,
-                            "debug_frames": False,
-                            "rle": False,
-                            "watchdog": False,
-                        },
-                    }
-                )
-            )
-        return True
-
-    service.register_serial_sender(fake_sender)
-
-    await service.on_serial_connected()
-
-    frame_ids = [frame_id for frame_id, _ in sent_frames]
-    assert any(fid == Command.CMD_LINK_RESET.value for fid in frame_ids)
-    # Legacy fallback might imply we are synced or we skipped sync.
-    # If we are synced, good.
-    assert runtime_state.is_synchronized is True
-
 
 @pytest.mark.asyncio
 async def test_repeated_sync_timeouts_become_fatal(

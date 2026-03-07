@@ -15,30 +15,6 @@ from mcubridge.state.context import create_runtime_state
 
 
 @pytest.mark.asyncio
-async def test_handshake_link_reset_retry() -> None:
-    """Test LINK_RESET retry without timing payload when first attempt fails."""
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
-    state = create_runtime_state(config)
-    timing = derive_serial_timing(config)
-    # First call returns False, second returns True
-    send_frame = AsyncMock(side_effect=[False, True, True])
-    manager = SerialHandshakeManager(
-        config=config,
-        state=state,
-        serial_timing=timing,
-        send_frame=send_frame,
-        enqueue_mqtt=AsyncMock(),
-        acknowledge_frame=AsyncMock(),
-    )
-    with patch("asyncio.sleep", return_value=None):
-        await manager._synchronize_attempt()
-
-    # Assert called at least twice for CMD_LINK_RESET
-    assert send_frame.call_count >= 2
-    assert send_frame.call_args_list[0][0][0] == Command.CMD_LINK_RESET.value
-    assert send_frame.call_args_list[1][0][0] == Command.CMD_LINK_RESET.value
-    assert send_frame.call_args_list[1][0][1] == b""
-
 
 @pytest.mark.asyncio
 async def test_handshake_sync_resp_rate_limit() -> None:

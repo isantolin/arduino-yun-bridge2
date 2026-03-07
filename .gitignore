@@ -70,3 +70,5 @@ mcubridge/mcubridge/protocol/protocol.py
 mcubridge-library-arduino/src/protocol/rpc_protocol.h
 mcubridge-library-arduino/src/protocol/rpc_structs.h
 mcubridge-library-arduino/src/etl
+# Auto-generated Client Protocol
+mcubridge-client-examples/mcubridge_client/protocol.py

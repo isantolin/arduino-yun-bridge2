@@ -250,12 +250,6 @@ class SerialHandshakeManager:
             Command.CMD_LINK_RESET.value,
             self._reset_payload,
         )
-        if not reset_ok and self._reset_payload:
-            self._logger.warning("LINK_RESET rejected; retrying without timing payload")
-            reset_ok = await self._send_frame(
-                Command.CMD_LINK_RESET.value,
-                b"",
-            )
         if not reset_ok:
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("link_reset_send_failed")

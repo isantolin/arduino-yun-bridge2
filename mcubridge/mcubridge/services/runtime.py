@@ -413,10 +413,8 @@ class BridgeService:
                 packet = AckPacket.decode(payload)
                 command_id = packet.command_id
                 logger.debug("MCU > ACK received for 0x%02X", command_id)
-            except (msgspec.ValidationError, ValueError):
-                # Fallback for older firmware or malformed payload
-                command_id = UINT16_STRUCT.parse(payload[:2])
-                logger.debug("MCU > ACK received for 0x%02X (fallback parse)", command_id)
+            except (msgspec.ValidationError, ValueError) as exc:
+                logger.warning("MCU > Malformed ACK payload: %s", exc)
         else:
             logger.debug("MCU > ACK received")
 

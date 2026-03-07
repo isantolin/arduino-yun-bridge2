@@ -34,7 +34,7 @@ from ..state.context import RuntimeState
 from ..util import chunk_bytes
 from .base import BridgeContext
 
-# [BACKWARD COMPAT] Expose scandir for unit tests mocking it
+# Expose scandir for unit tests mocking it
 scandir = os.scandir
 
 logger = logging.getLogger("mcubridge.file")

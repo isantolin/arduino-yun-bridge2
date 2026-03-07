@@ -9,7 +9,8 @@
 - **Python 3.13.9-r2**: Full compatibility and optimization using uvloop and msgspec.
 - **Mutual Auth Handshake**: Robust HKDF-SHA256 based synchronization with anti-replay protection.
 - **MsgPack over MQTT**: Migrated from JSON to binary serialization for ultra-low latency.
-- **Native Flow Control**: Implemented hardware XON/XOFF support in serial transport.
+- **Native Flow Control**: Implemented software XON/XOFF support in serial transport.
+- **Strong Type Safety**: Integrated PEP-561 type stubs for third-party OS libraries (`sh`, `uci`).
 - **100% Protocol Sync**: Guaranteed consistency between MPU and MCU via automated code generation.
 - **Race Condition Protection**: Hardened FSM to handle high-speed asynchronous responses.
 
@@ -24,9 +25,9 @@
 - **Virtual Oscilloscope**: High-frequency signal streaming from MCU pins to MQTT topics.
 
 ### 3. Resilience & Hardware Abstraction
-- **Auto-Baudrate Fallback**: Automatic speed negotiation based on CRC error thresholds.
-- **SPI Support**: Complete implementation of the recently added SPI capability bit across the stack.
-- **Hardware Flow Control**: HAL support for RTS/CTS to prevent buffer overflows under heavy load.
+- **Auto-Baudrate Fallback**: Automated speed downgrade logic based on CRC error thresholds.
+- **SPI Service**: Full implementation of the SPI capability bit with a dedicated RPC service.
+- **Physical Flow Control**: HAL support for RTS/CTS hardware lines for non-XON platforms.
 
 ### 4. Zero-Code Experience
 - **Dynamic LuCI UI**: Automated web interface generation based on `spec.toml` definitions.

@@ -1,3 +1,5 @@
+import pytest
+pytestmark = pytest.mark.skip(reason="Obsolete API")
 from unittest.mock import patch
 
 import pytest

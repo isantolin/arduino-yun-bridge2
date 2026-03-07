@@ -18,7 +18,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import msgspec
-from cobs.cobs import encode as cobs_encode, decode as cobs_decode, DecodeError as CobsDecodeError
+from cobs import cobs
 import serial
 import serial_asyncio_fast
 from transitions import Machine
@@ -131,13 +131,13 @@ class SerialTransport:
             if not encoded:
                 return
 
-            decoded = cobs_decode(encoded)
+            decoded = cobs.decode(encoded)
             # Parse frame and route to service
             from mcubridge.protocol.frame import Frame
             cmd_id, pl = Frame.parse(decoded)
             await self.service.handle_mcu_frame(cmd_id, pl)
 
-        except (CobsDecodeError, ValueError) as exc:
+        except (cobs.DecodeError, ValueError) as exc:
             logger.warning("Malformed frame: %s", exc)
             self.state.record_serial_decode_error()
 
@@ -150,7 +150,7 @@ class SerialTransport:
             from mcubridge.protocol.frame import Frame
             cmd_val = command_id.value if isinstance(command_id, Command) else command_id
             frame = Frame.build(cmd_val, payload)
-            encoded = cobs_encode(frame) + b"\x00"
+            encoded = cobs.encode(frame) + b"\x00"
 
             self.writer.write(encoded)
             await self.writer.drain()

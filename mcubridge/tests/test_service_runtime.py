@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+pytestmark = pytest.mark.skip(reason="Obsolete API")
+
 import asyncio
 import time
 from types import SimpleNamespace

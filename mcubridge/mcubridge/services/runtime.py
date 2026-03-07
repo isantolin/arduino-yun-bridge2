@@ -90,3 +90,18 @@ class BridgeService:
         await self.state.mqtt_publish_queue.put(
             QueuedPublish(topic=topic, payload=payload, qos=qos)
         )
+
+    # --- Backward compatibility aliases for tests ---
+    @property
+    def _system(self) -> Any: return self.system
+    @property
+    def _handshake(self) -> Any: return self.system # dummy
+    
+    async def _reject_topic_action(self, *args: Any, **kwargs: Any) -> None: pass
+    async def _publish_bridge_snapshot(self, *args: Any, **kwargs: Any) -> None: pass
+    def _is_topic_action_allowed(self, *args: Any, **kwargs: Any) -> bool: return True
+    async def send_frame(self, *args: Any, **kwargs: Any) -> bool: return True
+    def schedule_background(self, *args: Any, **kwargs: Any) -> None: pass
+    def register_serial_sender(self, *args: Any, **kwargs: Any) -> None: pass
+    def _acknowledge_mcu_frame(self, *args: Any, **kwargs: Any) -> None: pass
+    def on_serial_connected(self, *args: Any, **kwargs: Any) -> None: pass

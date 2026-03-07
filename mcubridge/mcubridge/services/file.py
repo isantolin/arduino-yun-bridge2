@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 
@@ -13,6 +14,14 @@ if TYPE_CHECKING:
     from .runtime import BridgeService
 
 logger = logging.getLogger("mcubridge.file")
+
+
+def _do_write_file(path: Path, data: bytes) -> None:
+    """Internal helper to write bytes to a file path."""
+    if len(data) > 1024 * 1024:
+        logger.warning("Writing large file: %d bytes", len(data))
+    with open(path, "wb") as f:
+        f.write(data)
 
 
 class FileComponent:

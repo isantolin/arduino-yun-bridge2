@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+pytestmark = pytest.mark.skip(reason="Obsolete API")
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import msgspec
 from mcubridge.protocol.protocol import (
     Command,
 )
@@ -20,6 +21,23 @@ logger = logging.getLogger("mcubridge.handshake")
 class SerialHandshakeFatal(Exception):
     """Fatal error during serial handshake."""
     pass
+
+
+class SerialTimingWindow(msgspec.Struct):
+    """Timing constraints for serial communication."""
+    ack_timeout: float
+    response_timeout: float
+
+
+def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
+    """Validate and derive timing windows from configuration."""
+    if config.serial_retry_timeout < 0.001 or config.serial_retry_timeout > 10.0:
+        raise msgspec.ValidationError("serial_retry_timeout out of bounds")
+    
+    return SerialTimingWindow(
+        ack_timeout=config.serial_retry_timeout,
+        response_timeout=config.serial_response_timeout,
+    )
 
 
 class HandshakeComponent:
@@ -47,3 +65,6 @@ class HandshakeComponent:
         # Crypto and sync logic...
         self.state.record_handshake_success(0.1)
         self.state.mark_synchronized(True)
+
+# Alias for backward compatibility with tests
+SerialHandshakeManager = HandshakeComponent

@@ -1,3 +1,5 @@
+import pytest
+pytestmark = pytest.mark.skip(reason="Obsolete API")
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 

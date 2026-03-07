@@ -68,3 +68,5 @@ class ShellComponent:
     async def handle_mcu_command(self, command_id: int, payload: bytes) -> bool:
         """Process an inbound serial shell response from the MCU."""
         return False
+from .payloads import PayloadValidationError
+from .payloads import ShellCommandPayload, ShellPidPayload

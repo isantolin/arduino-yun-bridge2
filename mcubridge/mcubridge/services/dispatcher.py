@@ -56,3 +56,4 @@ class Dispatcher:
         )
         # Logic to route to components...
         await self.service.handle_mqtt_message(route, message)
+BridgeDispatcher = Dispatcher

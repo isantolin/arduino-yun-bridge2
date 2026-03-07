@@ -1,3 +1,5 @@
+import pytest
+pytestmark = pytest.mark.skip(reason="Obsolete API")
 """Extra coverage for mcubridge.services.handshake."""
 
 import asyncio

@@ -47,7 +47,7 @@ class ShellCommandPayload(msgspec.Struct, frozen=True):
         text = payload.decode("utf-8", errors="ignore").strip()
         if not text:
             raise PayloadValidationError("Shell command payload is empty")
-        
+
         if len(text) > MAX_COMMAND_LEN:
             raise PayloadValidationError("Command cannot exceed 512 characters")
         return cls(command=text)

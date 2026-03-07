@@ -107,6 +107,20 @@ class MqttTransport:
     async def _connect_session(self, tls_context: Any) -> None:
         connect_props = build_mqtt_connect_properties()
 
+        # Create an on_log callback to hook into Paho's internal logging
+        def on_log(client: Any, userdata: Any, level: int, buf: str) -> None:
+            # Map Paho's log levels to Python's logging module
+            if level == aiomqtt.paho.mqtt.client.MQTT_LOG_INFO:
+                logger.debug("[PAHO] %s", buf)
+            elif level == aiomqtt.paho.mqtt.client.MQTT_LOG_NOTICE:
+                logger.info("[PAHO] %s", buf)
+            elif level == aiomqtt.paho.mqtt.client.MQTT_LOG_WARNING:
+                logger.warning("[PAHO] %s", buf)
+            elif level == aiomqtt.paho.mqtt.client.MQTT_LOG_ERR:
+                logger.error("[PAHO] %s", buf)
+            elif level == aiomqtt.paho.mqtt.client.MQTT_LOG_DEBUG:
+                logger.debug("[PAHO] %s", buf)
+
         # [SIL-2] Warn if connecting without authentication
         if not self.config.mqtt_user:
             logger.warning(
@@ -116,7 +130,7 @@ class MqttTransport:
 
         self.trigger("connect")
 
-        async with aiomqtt.Client(
+        client = aiomqtt.Client(
             hostname=self.config.mqtt_host,
             port=self.config.mqtt_port,
             username=self.config.mqtt_user or None,
@@ -126,10 +140,14 @@ class MqttTransport:
             protocol=aiomqtt.ProtocolVersion.V5,
             clean_session=None,
             properties=connect_props,
-        ) as client:
-            self.trigger("connected")
-            logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
+        )
+        # Inject on_log callback directly into the underlying Paho client
+        client._client.on_log = on_log
 
+        async with client as connected_client:
+            logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
+            self.trigger("connected")
+            self._mqtt_client = connected_client
             await self._subscribe_topics(client)
             self.trigger("subscribed")
 

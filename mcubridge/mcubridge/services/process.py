@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -199,8 +200,8 @@ class ProcessComponent:
             proc.handle = handle
             proc.trigger("start")
             return pid
-        except Exception as e:
-            logger.error("Failed to start process: %s", e)
+        except Exception as exc:
+            logger.error("Failed to start process: %s", exc)
             self._process_slots.release()
             return 0
 
@@ -271,10 +272,8 @@ class ProcessComponent:
             proc = self.state.running_processes.get(pid)
             if proc:
                 if proc.handle:
-                    try:
+                    with contextlib.suppress(Exception):
                         proc.handle.process.terminate()
-                    except Exception:
-                        pass
                 return True
             return False
 
@@ -305,10 +304,8 @@ class ProcessComponent:
     def _finalize_process_internal(self, pid: int) -> None:
         proc = self.state.running_processes.pop(pid, None)
         if proc:
-            try:
+            with contextlib.suppress(Exception):
                 proc.trigger("finalize")
-            except Exception:
-                pass
             self._process_slots.release()
 
 

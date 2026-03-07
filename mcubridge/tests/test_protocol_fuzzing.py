@@ -52,8 +52,8 @@ def test_cobs_decoding_resilience():
             _ = cobs.decode(raw_data)
         except cobs.DecodeError:
             pass
-        except Exception as e:
-            pytest.fail(f"cobs.decode crashed on iteration {i} with unhandled exception: {type(e).__name__}: {e}")
+        except Exception as exc:
+            pytest.fail(f"cobs.decode crashed on iteration {i} with unhandled exception: {type(exc).__name__}: {exc}")
 
 
 @pytest.mark.fuzz
@@ -70,5 +70,5 @@ def test_frame_header_parsing_resilience():
             _ = Frame.from_bytes(raw_data)
         except ValueError:
             pass
-        except Exception as e:
-            pytest.fail(f"Header parsing crashed on iteration {i} with: {e}")
+        except Exception as exc:
+            pytest.fail(f"Header parsing crashed on iteration {i} with: {exc}")

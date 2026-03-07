@@ -564,8 +564,9 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
     const uint8_t* payload_data = ctx.frame->payload.data();
     if (has_secret) {
+      const char* debug_secret = "DEBUG_INSECURE";
       bool bypass = (_shared_secret.size() == 14 &&
-                     memcmp(_shared_secret.data(), "DEBUG_INSECURE", 14) == 0);
+                     etl::equal(_shared_secret.begin(), _shared_secret.begin() + 14, debug_secret));
       if (!bypass) {
         etl::array<uint8_t, kHandshakeTagSize> expected_tag;
         _computeHandshakeTag(

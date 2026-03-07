@@ -242,11 +242,11 @@ class SerialTransport:
                 # EOF reached, connection closed
                 logger.info(
                     "Serial connection closed (EOF). Partial data: %s",
-                    e.partial.hex() if e.partial else "None",
+                    e.partial.hex(" ") if e.partial else "None",
                 )
                 break
-            except Exception as e:
-                logger.error("Error in _read_loop: %s", e)
+            except Exception as exc:
+                logger.error("Error in _read_loop: %s", exc)
                 break
 
     def _process_packet(self, encoded_packet: bytes) -> None:
@@ -267,7 +267,7 @@ class SerialTransport:
     async def _async_process_packet(self, encoded_packet: bytes) -> None:
         """Async packet processing logic."""
         # [DEBUG] Trace packet intake
-        logger.debug("[SERIAL <- MCU] Processing Packet: %s", encoded_packet.hex())
+        logger.debug("[SERIAL <- MCU] Processing Packet: %s", encoded_packet.hex(" "))
 
         if not _is_binary_packet(encoded_packet):
             self.state.record_serial_decode_error()
@@ -298,7 +298,7 @@ class SerialTransport:
             raw_frame = Frame.build(cmd, pl)
             encoded = cobs_encode(raw_frame) + protocol.FRAME_DELIMITER
 
-            logger.debug("[SERIAL -> MCU] RAW: %s", encoded.hex())
+            logger.debug("[SERIAL -> MCU] RAW: %s", encoded.hex(" "))
             self.writer.write(encoded)
             await self.writer.drain()
 

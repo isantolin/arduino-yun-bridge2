@@ -20,6 +20,7 @@ dependencies = [
     "cryptography==46.0.5",
     "construct==2.10.70",
     "transitions==0.9.3",
+    "sh==2.2.2",
     "uvloop==0.22.1"
 ]
 

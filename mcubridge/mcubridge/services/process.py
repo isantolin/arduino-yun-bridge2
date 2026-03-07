@@ -23,6 +23,7 @@ from ..state.context import (
     ManagedProcess,
     RuntimeState,
 )
+from .base import BaseComponent
 
 if TYPE_CHECKING:
     from .runtime import BridgeService
@@ -32,7 +33,7 @@ logger = logging.getLogger("mcubridge.services.process")
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
 
-class ProcessComponent:
+class ProcessComponent(BaseComponent):
     """Component for managing subprocess execution and output capture.
 
     [SIL-2] Deterministic Execution Model:
@@ -47,8 +48,7 @@ class ProcessComponent:
         state: RuntimeState,
         service: BridgeService,
     ) -> None:
-        self.config = config
-        self.state = state
+        super().__init__(config, state, service)  # type: ignore
         self.service = service
 
         # [SIL-2] Ensure numeric limit for semaphore

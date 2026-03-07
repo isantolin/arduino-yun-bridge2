@@ -28,19 +28,13 @@ void FileSystemClass::write(etl::string_view filePath,
 }
 
 void FileSystemClass::remove(etl::string_view filePath) {
-  if (filePath.empty()) return;
-  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, filePath,
-                                rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-  }
+  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, filePath,
+                                rpc::RPC_MAX_FILEPATH_LENGTH - 1);
 }
 
 void FileSystemClass::read(etl::string_view filePath) {
-  if (filePath.empty()) return;
-  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, filePath,
-                                rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-  }
+  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, filePath,
+                                rpc::RPC_MAX_FILEPATH_LENGTH - 1);
 }
 
 #endif

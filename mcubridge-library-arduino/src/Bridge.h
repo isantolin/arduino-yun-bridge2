@@ -273,10 +273,30 @@ class BridgeClass
                  etl::span<const uint8_t> payload = etl::span<const uint8_t>());
 
   // [SIL-2] Consolidated String Command Helpers (DRY)
+  // These helpers automatically emit STATUS_OVERFLOW if constraints are violated.
   bool sendStringCommand(rpc::CommandId command_id, etl::string_view str,
                          size_t max_len);
   bool sendKeyValCommand(rpc::CommandId command_id, etl::string_view key,
                          size_t max_key, etl::string_view val, size_t max_val);
+
+  // [SIL-2] Generic Value Sender (Boilerplate reduction)
+  template <typename T>
+  bool sendValue(rpc::CommandId command_id, T value) {
+    etl::array<uint8_t, sizeof(T)> payload;
+    if (sizeof(T) == 1) {
+      payload[0] = static_cast<uint8_t>(value);
+    } else if (sizeof(T) == 2) {
+      rpc::write_u16_be(payload.data(), static_cast<uint16_t>(value));
+    } else if (sizeof(T) == 4) {
+      rpc::write_u32_be(payload.data(), static_cast<uint32_t>(value));
+    } else {
+      // Static protection for unsupported types
+      static_assert(sizeof(T) <= 4, "Unsupported value size for sendValue");
+      return false;
+    }
+    return sendFrame(command_id,
+                     etl::span<const uint8_t>(payload.data(), payload.size()));
+  }
 
   inline void flushStream() { _stream.flush(); }
   void enterSafeState();  // [SIL-2] Force system into fail-safe state

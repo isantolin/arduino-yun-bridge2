@@ -910,9 +910,12 @@ bool BridgeClass::sendFrame(rpc::StatusCode status_code,
 
 bool BridgeClass::sendStringCommand(rpc::CommandId command_id,
                                     etl::string_view str, size_t max_len) {
-  if (str.empty() || str.length() > max_len ||
-      str.length() >= rpc::MAX_PAYLOAD_SIZE)
+  if (str.length() > max_len || str.length() >= rpc::MAX_PAYLOAD_SIZE) {
+    emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     return false;
+  }
+
+  if (str.empty()) return true;
 
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   rpc::PacketBuilder(payload).add_pascal_string(str);
@@ -923,9 +926,13 @@ bool BridgeClass::sendStringCommand(rpc::CommandId command_id,
 bool BridgeClass::sendKeyValCommand(rpc::CommandId command_id,
                                     etl::string_view key, size_t max_key,
                                     etl::string_view val, size_t max_val) {
-  if (key.empty() || key.length() > max_key || val.length() > max_val)
+  if (key.length() > max_key || val.length() > max_val ||
+      key.length() + val.length() + 2 > rpc::MAX_PAYLOAD_SIZE) {
+    emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     return false;
-  if (key.length() + val.length() + 2 > rpc::MAX_PAYLOAD_SIZE) return false;
+  }
+
+  if (key.empty()) return true;
 
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   rpc::PacketBuilder(payload).add_pascal_string(key).add_pascal_string(val);

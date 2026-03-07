@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
 from collections.abc import Coroutine
-from typing import Any, Protocol
+from typing import Any, Deque, Protocol, TypeVar
 
 from aiomqtt.message import Message
 
 from ..config.settings import RuntimeConfig
 from ..protocol.structures import QueuedPublish
 from ..state.context import RuntimeState
+
+TReq = TypeVar("TReq")
+
+logger = logging.getLogger("mcubridge.services")
 
 
 class BridgeContext(Protocol):
@@ -49,4 +55,57 @@ class BridgeContext(Protocol):
     ) -> asyncio.Task[Any]: ...
 
 
-__all__ = ["BridgeContext"]
+class BaseComponent:
+    """Base class for services providing shared boilerplate reduction."""
+
+    def __init__(self, config: RuntimeConfig, state: RuntimeState, ctx: BridgeContext) -> None:
+        self.config = config
+        self.state = state
+        self.ctx = ctx
+
+    @contextlib.asynccontextmanager
+    async def _track_transaction(
+        self,
+        queue: Deque[TReq],
+        request: TReq,
+        limit: int,
+        on_overflow: Coroutine[Any, Any, None] | None = None,
+    ):
+        """Manages the lifecycle of a pending request transaction."""
+        if len(queue) >= limit:
+            if on_overflow:
+                await on_overflow
+            yield False
+            return
+
+        queue.append(request)
+        try:
+            # yield to allow sending the frame
+            yield True
+        except Exception:
+            with contextlib.suppress(ValueError):
+                queue.remove(request)
+            raise
+
+    async def _safe_send_request(
+        self,
+        queue: Deque[TReq],
+        request: TReq,
+        limit: int,
+        command_id: int,
+        payload: bytes,
+        on_overflow: Coroutine[Any, Any, None] | None = None,
+    ) -> bool:
+        """Helper to send a frame and track it in a queue with automatic cleanup."""
+        async with self._track_transaction(queue, request, limit, on_overflow) as allowed:
+            if not allowed:
+                return False
+
+            ok = await self.ctx.send_frame(command_id, payload)
+            if not ok:
+                with contextlib.suppress(ValueError):
+                    queue.remove(request)
+            return ok
+
+
+__all__ = ["BridgeContext", "BaseComponent"]

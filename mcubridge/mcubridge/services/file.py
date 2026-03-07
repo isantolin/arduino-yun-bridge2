@@ -32,7 +32,7 @@ from ..protocol.structures import (
 from ..protocol.topics import Topic, split_topic_segments, topic_path
 from ..state.context import RuntimeState
 from ..util import chunk_bytes
-from .base import BridgeContext
+from .base import BaseComponent, BridgeContext
 
 # Expose scandir for unit tests mocking it
 scandir = os.scandir
@@ -51,7 +51,7 @@ def _do_write_file(path: Path, data: bytes) -> None:
             logger.warning("File %s is growing large (>1MB) in RAM!", path)
 
 
-class FileComponent:
+class FileComponent(BaseComponent):
     """Encapsulate file read/write/remove logic."""
 
     def __init__(
@@ -60,9 +60,7 @@ class FileComponent:
         state: RuntimeState,
         ctx: BridgeContext,
     ) -> None:
-        self.config = config
-        self.state = state
-        self.ctx = ctx
+        super().__init__(config, state, ctx)
         self._storage_lock = asyncio.Lock()
         self._usage_seeded = False
         self._ensure_usage_seeded()

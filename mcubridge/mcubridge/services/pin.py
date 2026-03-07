@@ -19,27 +19,16 @@ from mcubridge.protocol.structures import (
 )
 
 from ..config.const import MQTT_EXPIRY_PIN
-from ..config.settings import RuntimeConfig
 from ..protocol.encoding import encode_status_reason
 from ..protocol.topics import Topic, topic_path
-from ..state.context import PendingPinRequest, RuntimeState
-from .base import BridgeContext
+from ..state.context import PendingPinRequest
+from .base import BaseComponent
 
 logger = logging.getLogger("mcubridge.pin")
 
 
-class PinComponent:
+class PinComponent(BaseComponent):
     """Encapsulate pin read/write logic."""
-
-    def __init__(
-        self,
-        config: RuntimeConfig,
-        state: RuntimeState,
-        ctx: BridgeContext,
-    ) -> None:
-        self.config = config
-        self.state = state
-        self.ctx = ctx
 
     async def handle_unexpected_mcu_request(
         self,
@@ -194,53 +183,23 @@ class PinComponent:
         inbound: Message | None = None,
     ) -> None:
         command = Command.CMD_DIGITAL_READ if topic_type == Topic.DIGITAL else Command.CMD_ANALOG_READ
-        queue_limit = self.state.pending_pin_request_limit
-
-        queue_len = (
-            len(self.state.pending_digital_reads)
+        queue = (
+            self.state.pending_digital_reads
             if command == Command.CMD_DIGITAL_READ
-            else len(self.state.pending_analog_reads)
+            else self.state.pending_analog_reads
         )
-        if queue_len >= queue_limit:
-            logger.warning(
-                "Pending %s read queue saturated (limit=%d); " "dropping pin %s",
-                topic_type,
-                queue_limit,
-                pin,
-            )
-            await self._notify_pin_queue_overflow(
-                topic_type,
-                pin,
-                inbound,
-            )
-            return
 
-        # Register pending request BEFORE sending frame to avoid race condition
-        # where MCU response arrives before send_frame returns
         pending_request = PendingPinRequest(pin=pin, reply_context=inbound)
-        if command == Command.CMD_DIGITAL_READ:
-            self.state.pending_digital_reads.append(pending_request)
-        else:
-            self.state.pending_analog_reads.append(pending_request)
-
-        # [SIL-2] Use structured packet encoding
-        # PinReadPacket works for both Digital and Analog reads (1-byte pin payload)
         payload = PinReadPacket(pin=pin).encode()
 
-        send_ok = await self.ctx.send_frame(command.value, payload)
-
-        if not send_ok:
-            # Remove pending request if send failed
-            if command == Command.CMD_DIGITAL_READ:
-                try:
-                    self.state.pending_digital_reads.remove(pending_request)
-                except ValueError:
-                    pass  # Already consumed by response handler
-            else:
-                try:
-                    self.state.pending_analog_reads.remove(pending_request)
-                except ValueError:
-                    pass  # Already consumed by response handler
+        await self._safe_send_request(
+            queue=queue,
+            request=pending_request,
+            limit=self.state.pending_pin_request_limit,
+            command_id=command.value,
+            payload=payload,
+            on_overflow=self._notify_pin_queue_overflow(topic_type, pin, inbound),
+        )
 
     async def _handle_write_command(self, topic_type: Topic, pin: int, payload_str: str) -> None:
         value = self._parse_pin_value(topic_type, payload_str)

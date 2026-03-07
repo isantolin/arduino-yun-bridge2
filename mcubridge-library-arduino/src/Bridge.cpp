@@ -411,8 +411,16 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Switch for Status Codes
   const uint16_t status_val = ctx.raw_command;
   switch (status_val - rpc::RPC_STATUS_CODE_MIN) {
-    case 3: _handleStatusMalformed(ctx); break;  // 51
-    case 8: _handleStatusAck(ctx); break;         // 56
+    case 3: { // 51: MALFORMED
+      auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
+      _handleMalformed(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
+      break;
+    }
+    case 8: { // 56: ACK
+      auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
+      _handleAck(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
+      break;
+    }
     default: break;
   }
 
@@ -423,141 +431,135 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
   }
 }
 
-void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
-  auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
-  _handleAck(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
-}
-
-void BridgeClass::_handleStatusMalformed(
-    const bridge::router::CommandContext& ctx) {
-  auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
-  _handleMalformed(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
-}
-
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch via Jump Table for System Commands
-  typedef void (BridgeClass::*SystemHandler)(const bridge::router::CommandContext&);
-  static const SystemHandler kSystemHandlers[] = {
-      &BridgeClass::_handleGetVersion,      // 0: 64
-      &BridgeClass::_handleGetFreeMemory,   // 1: 66
-      &BridgeClass::_handleLinkSync,        // 2: 68
-      &BridgeClass::_handleLinkReset,       // 3: 70
-      &BridgeClass::_handleGetCapabilities, // 4: 72
-      &BridgeClass::_handleSetBaudrate      // 5: 74
-  };
-
   const uint16_t cmd = ctx.raw_command;
-  if (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-      cmd <= rpc::RPC_SYSTEM_COMMAND_MAX) {
-    const uint16_t index = (cmd - rpc::RPC_SYSTEM_COMMAND_MIN) >> 1;
-    if (index < (sizeof(kSystemHandlers) / sizeof(kSystemHandlers[0]))) {
-      (this->*kSystemHandlers[index])(ctx);
-    }
+  if (cmd < rpc::RPC_SYSTEM_COMMAND_MIN || cmd > rpc::RPC_SYSTEM_COMMAND_MAX) {
+    return;
   }
-}
 
-void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
-  _withResponse(ctx, [&]() {
-    _sendResponse<rpc::payload::VersionResponse>(
-        rpc::CommandId::CMD_GET_VERSION_RESP, kDefaultFirmwareVersionMajor,
-        kDefaultFirmwareVersionMinor);
-  });
-}
+  const uint16_t index = (cmd - rpc::RPC_SYSTEM_COMMAND_MIN) >> 1;
 
-void BridgeClass::_handleGetFreeMemory(
-    const bridge::router::CommandContext& ctx) {
-  _withResponse(ctx, [&]() {
-    _sendResponse<rpc::payload::FreeMemoryResponse>(
-        rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, getFreeMemory());
-  });
-}
+  switch (index) {
+    case 0: // 64: GET_VERSION
+      _withResponse(ctx, [&]() {
+        _sendResponse<rpc::payload::VersionResponse>(
+            rpc::CommandId::CMD_GET_VERSION_RESP, kDefaultFirmwareVersionMajor,
+            kDefaultFirmwareVersionMinor);
+      });
+      break;
 
-void BridgeClass::_handleGetCapabilities(
-    const bridge::router::CommandContext& ctx) {
-  _withResponse(ctx, [&]() {
-    uint8_t arch = 0;
+    case 1: // 66: GET_FREE_MEMORY
+      _withResponse(ctx, [&]() {
+        _sendResponse<rpc::payload::FreeMemoryResponse>(
+            rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, getFreeMemory());
+      });
+      break;
+
+    case 2: // 68: LINK_SYNC
+      _handleLinkSync(ctx);
+      break;
+
+    case 3: // 70: LINK_RESET
+      _withResponse(ctx, [&]() {
+        enterSafeState();
+        if (ctx.frame->header.payload_length == rpc::payload::HandshakeConfig::SIZE) {
+          _applyTimingConfig(etl::span<const uint8_t>(
+              ctx.frame->payload.data(), ctx.frame->header.payload_length));
+        }
+        (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
+      });
+      break;
+
+    case 4: // 72: GET_CAPABILITIES
+      _withResponse(ctx, [&]() {
+        uint8_t arch = 0;
 #if defined(ARDUINO_ARCH_AVR)
-    arch = rpc::RPC_ARCH_AVR;
+        arch = rpc::RPC_ARCH_AVR;
 #elif defined(ARDUINO_ARCH_ESP32)
-    arch = rpc::RPC_ARCH_ESP32;
+        arch = rpc::RPC_ARCH_ESP32;
 #elif defined(ARDUINO_ARCH_ESP8266)
-    arch = rpc::RPC_ARCH_ESP8266;
+        arch = rpc::RPC_ARCH_ESP8266;
 #elif defined(ARDUINO_ARCH_SAMD)
-    arch = rpc::RPC_ARCH_SAMD;
+        arch = rpc::RPC_ARCH_SAMD;
 #elif defined(ARDUINO_ARCH_SAM)
-    arch = rpc::RPC_ARCH_SAM;
+        arch = rpc::RPC_ARCH_SAM;
 #elif defined(ARDUINO_ARCH_RP2040)
-    arch = rpc::RPC_ARCH_RP2040;
+        arch = rpc::RPC_ARCH_RP2040;
 #endif
 
-    uint8_t dig = 0;
+        uint8_t dig = 0;
 #ifdef NUM_DIGITAL_PINS
-    dig = static_cast<uint8_t>(NUM_DIGITAL_PINS);
+        dig = static_cast<uint8_t>(NUM_DIGITAL_PINS);
 #endif
 
-    uint8_t ana = 0;
+        uint8_t ana = 0;
 #ifdef NUM_ANALOG_INPUTS
-    ana = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
+        ana = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
 #endif
 
-    etl::bitset<32> features;
-    features.set(0);  // RLE Bit (1 << 0) - Always enabled
-    if (kBridgeEnableWatchdog) features.set(1);  // Watchdog Bit (1 << 1)
+        etl::bitset<32> features;
+        features.set(0);  // RLE Bit (1 << 0) - Always enabled
+        if (kBridgeEnableWatchdog) features.set(1);  // Watchdog Bit (1 << 1)
 
 #if BRIDGE_DEBUG_FRAMES
-    features.set(2);
+        features.set(2);
 #endif
 #if BRIDGE_DEBUG_IO
-    features.set(3);
+        features.set(3);
 #endif
 #if defined(E2END) && (E2END > 0)
-    features.set(4);
+        features.set(4);
 #endif
 #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
     defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||     \
     defined(ARDUINO_ARCH_ESP32)
-    features.set(5);
+        features.set(5);
 #endif
 #if defined(HAVE_HWSERIAL1)
-    features.set(6);
+        features.set(6);
 #endif
 #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
-    features.set(7);
+        features.set(7);
 #endif
 #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||      \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
     defined(ARDUINO_ARCH_RP2040)
-    features.set(8);
+        features.set(8);
 #endif
 #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
-    features.set(9);
+        features.set(9);
 #endif
 #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-    features.set(10);
+        features.set(10);
 #endif
 #if defined(SCK) || defined(MOSI) || defined(MISO) || \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-    features.set(11);
+        features.set(11);
 #endif
 
-    _sendResponse<rpc::payload::Capabilities>(
-        rpc::CommandId::CMD_GET_CAPABILITIES_RESP, rpc::PROTOCOL_VERSION, arch,
-        dig, ana, static_cast<uint32_t>(features.to_ulong()));
-  });
+        _sendResponse<rpc::payload::Capabilities>(
+            rpc::CommandId::CMD_GET_CAPABILITIES_RESP, rpc::PROTOCOL_VERSION, arch,
+            dig, ana, static_cast<uint32_t>(features.to_ulong()));
+      });
+      break;
+
+    case 5: // 74: SET_BAUDRATE
+      _withPayloadResponse<rpc::payload::SetBaudratePacket>(
+          ctx, [&](const rpc::payload::SetBaudratePacket& msg) {
+            (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP);
+            flushStream();
+            _pending_baudrate = msg.baudrate;
+            _timers.start_with_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE,
+                                      BRIDGE_BAUDRATE_SETTLE_MS,
+                                      static_cast<uint32_t>(millis()));
+          });
+      break;
+
+    default: break;
+  }
 }
 
-void BridgeClass::_handleSetBaudrate(const bridge::router::CommandContext& ctx) {
-  _withPayloadResponse<rpc::payload::SetBaudratePacket>(
-      ctx, [&](const rpc::payload::SetBaudratePacket& msg) {
-        (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP);
-        flushStream();
-        _pending_baudrate = msg.baudrate;
-        _timers.start_with_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE,
-                                  BRIDGE_BAUDRATE_SETTLE_MS,
-                                  static_cast<uint32_t>(millis()));
-      });
-}
 
 void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   const size_t nonce_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
@@ -616,102 +618,72 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   });
 }
 
-void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
-  _withResponse(ctx, [&]() {
-    enterSafeState();
-    if (ctx.frame->header.payload_length ==
-        rpc::payload::HandshakeConfig::SIZE) {
-      _applyTimingConfig(etl::span<const uint8_t>(
-          ctx.frame->payload.data(), ctx.frame->header.payload_length));
-    }
-    (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
-  });
-}
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch via Jump Table for GPIO Commands
-  typedef void (BridgeClass::*GpioHandler)(const bridge::router::CommandContext&);
-  static const GpioHandler kGpioHandlers[] = {
-      &BridgeClass::_handleSetPinMode,    // 0: 80
-      &BridgeClass::_handleDigitalWrite,  // 1: 81
-      &BridgeClass::_handleAnalogWrite,   // 2: 82
-      &BridgeClass::_handleDigitalRead,   // 3: 83
-      &BridgeClass::_handleAnalogRead     // 4: 84
-  };
-
   const uint16_t index = ctx.raw_command - rpc::RPC_GPIO_COMMAND_MIN;
-  if (index < (sizeof(kGpioHandlers) / sizeof(kGpioHandlers[0]))) {
-    (this->*kGpioHandlers[index])(ctx);
-  }
-}
 
-void BridgeClass::_handleSetPinMode(const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::PinMode>(
-      ctx, [](const rpc::payload::PinMode& msg) {
-        if (bridge::hal::isValidPin(msg.pin)) ::pinMode(msg.pin, msg.mode);
-      });
-}
+  switch (index) {
+    case 0: // 80: SET_PIN_MODE
+      _withPayloadAck<rpc::payload::PinMode>(
+          ctx, [](const rpc::payload::PinMode& msg) {
+            if (bridge::hal::isValidPin(msg.pin)) ::pinMode(msg.pin, msg.mode);
+          });
+      break;
 
-void BridgeClass::_handleDigitalWrite(
-    const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::DigitalWrite>(
-      ctx, [](const rpc::payload::DigitalWrite& msg) {
-        if (bridge::hal::isValidPin(msg.pin))
-          ::digitalWrite(msg.pin, msg.value ? HIGH : LOW);
-      });
-}
+    case 1: // 81: DIGITAL_WRITE
+      _withPayloadAck<rpc::payload::DigitalWrite>(
+          ctx, [](const rpc::payload::DigitalWrite& msg) {
+            if (bridge::hal::isValidPin(msg.pin))
+              ::digitalWrite(msg.pin, msg.value ? HIGH : LOW);
+          });
+      break;
 
-void BridgeClass::_handleAnalogWrite(
-    const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::AnalogWrite>(
-      ctx, [](const rpc::payload::AnalogWrite& msg) {
-        if (bridge::hal::isValidPin(msg.pin)) ::analogWrite(msg.pin, msg.value);
-      });
-}
+    case 2: // 82: ANALOG_WRITE
+      _withPayloadAck<rpc::payload::AnalogWrite>(
+          ctx, [](const rpc::payload::AnalogWrite& msg) {
+            if (bridge::hal::isValidPin(msg.pin)) ::analogWrite(msg.pin, msg.value);
+          });
+      break;
 
-void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx) {
-  _handlePinRead<rpc::payload::DigitalReadResponse>(
-      ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP,
-      [](uint8_t pin) { return bridge::hal::isValidPin(pin); },
-      [](uint8_t pin) -> uint8_t {
-        return static_cast<uint8_t>(::digitalRead(pin) & rpc::RPC_UINT8_MASK);
-      });
-}
+    case 3: // 83: DIGITAL_READ
+      _handlePinRead<rpc::payload::DigitalReadResponse>(
+          ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP,
+          [](uint8_t pin) { return bridge::hal::isValidPin(pin); },
+          [](uint8_t pin) -> uint8_t {
+            return static_cast<uint8_t>(::digitalRead(pin) & rpc::RPC_UINT8_MASK);
+          });
+      break;
 
-void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
-  _handlePinRead<rpc::payload::AnalogReadResponse>(
-      ctx, rpc::CommandId::CMD_ANALOG_READ_RESP,
-      [](uint8_t pin) {
+    case 4: // 84: ANALOG_READ
+      _handlePinRead<rpc::payload::AnalogReadResponse>(
+          ctx, rpc::CommandId::CMD_ANALOG_READ_RESP,
+          [](uint8_t pin) {
 #ifdef NUM_ANALOG_INPUTS
-        return pin < NUM_ANALOG_INPUTS;
+            return pin < NUM_ANALOG_INPUTS;
 #else
-        return bridge::hal::isValidPin(pin);
+            return bridge::hal::isValidPin(pin);
 #endif
-      },
-      [](uint8_t pin) -> uint16_t {
-        return static_cast<uint16_t>(::analogRead(pin) & rpc::RPC_UINT16_MAX);
-      });
+          },
+          [](uint8_t pin) -> uint16_t {
+            return static_cast<uint16_t>(::analogRead(pin) & rpc::RPC_UINT16_MAX);
+          });
+      break;
+
+    default: break;
+  }
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
-  if (ctx.raw_command ==
-      rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)) {
-    _handleConsoleWrite(ctx);
+  if (ctx.raw_command == rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)) {
+    _withPayloadAck<rpc::payload::ConsoleWrite>(
+        ctx, [](const rpc::payload::ConsoleWrite& msg) {
+          Console._push(etl::span<const uint8_t>(msg.data, msg.length));
+        });
   }
 }
 
-void BridgeClass::_handleConsoleWrite(
-    const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::ConsoleWrite>(
-      ctx, [](const rpc::payload::ConsoleWrite& msg) {
-        Console._push(etl::span<const uint8_t>(msg.data, msg.length));
-      });
-}
-
-void BridgeClass::onDataStoreCommand(
-    const bridge::router::CommandContext& ctx) {
-  if (ctx.raw_command ==
-      rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)) {
+void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
+  if (ctx.raw_command == rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)) {
     _withPayload<rpc::payload::DatastoreGetResponse>(
         ctx, [](const rpc::payload::DatastoreGetResponse& msg) {
 #if BRIDGE_ENABLE_DATASTORE
@@ -728,131 +700,99 @@ void BridgeClass::onDataStoreCommand(
 }
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch via Jump Table for Mailbox Commands
-  typedef void (BridgeClass::*MailboxHandler)(
-      const bridge::router::CommandContext&);
-  static const MailboxHandler kMailboxHandlers[] = {
-      &BridgeClass::_handleMailboxPush,          // 0: 131
-      &BridgeClass::_handleMailboxReadResp,      // 1: 132
-      &BridgeClass::_handleMailboxAvailableResp  // 2: 133
-  };
-
   const uint16_t index = ctx.raw_command - (rpc::RPC_MAILBOX_COMMAND_MIN + 3);
-  if (index < (sizeof(kMailboxHandlers) / sizeof(kMailboxHandlers[0]))) {
-    (this->*kMailboxHandlers[index])(ctx);
+
+  switch (index) {
+    case 0: // 131: MAILBOX_PUSH
+      _withPayloadAck<rpc::payload::MailboxPush>(
+          ctx, [](const rpc::payload::MailboxPush& msg) {
+#if BRIDGE_ENABLE_MAILBOX
+            Mailbox._onIncomingData(etl::span<const uint8_t>(msg.data, msg.length));
+#endif
+          });
+      break;
+
+    case 1: // 132: MAILBOX_READ_RESP
+      _withPayload<rpc::payload::MailboxReadResponse>(
+          ctx, [](const rpc::payload::MailboxReadResponse& msg) {
+#if BRIDGE_ENABLE_MAILBOX
+            Mailbox._onIncomingData(
+                etl::span<const uint8_t>(msg.content, msg.length));
+#endif
+          });
+      break;
+
+    case 2: // 133: MAILBOX_AVAILABLE_RESP
+      _withPayload<rpc::payload::MailboxAvailableResponse>(
+          ctx, [](const rpc::payload::MailboxAvailableResponse& msg) {
+#if BRIDGE_ENABLE_MAILBOX
+            if (Mailbox._mailbox_available_handler.is_valid()) {
+              Mailbox._mailbox_available_handler(msg.count);
+            }
+#endif
+          });
+      break;
+
+    default: break;
   }
 }
 
-void BridgeClass::_handleMailboxPush(
-    const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::MailboxPush>(
-      ctx, [](const rpc::payload::MailboxPush& msg) {
-#if BRIDGE_ENABLE_MAILBOX
-        Mailbox._onIncomingData(etl::span<const uint8_t>(msg.data, msg.length));
-#endif
-      });
-}
-
-void BridgeClass::_handleMailboxReadResp(
-    const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::MailboxReadResponse>(
-      ctx, [](const rpc::payload::MailboxReadResponse& msg) {
-#if BRIDGE_ENABLE_MAILBOX
-        Mailbox._onIncomingData(
-            etl::span<const uint8_t>(msg.content, msg.length));
-#endif
-      });
-}
-
-void BridgeClass::_handleMailboxAvailableResp(
-    const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::MailboxAvailableResponse>(
-      ctx, [](const rpc::payload::MailboxAvailableResponse& msg) {
-#if BRIDGE_ENABLE_MAILBOX
-        if (Mailbox._mailbox_available_handler.is_valid()) {
-          Mailbox._mailbox_available_handler(msg.count);
-        }
-#endif
-      });
-}
-
-void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
-  _withAck(ctx, []() { /* No payload processing needed for ACK-only write */ });
-}
-
-void BridgeClass::_handleFileReadResp(
-    const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::FileReadResponse>(
-      ctx, [](const rpc::payload::FileReadResponse& msg) {
-#if BRIDGE_ENABLE_FILESYSTEM
-        if (FileSystem._file_system_read_handler.is_valid()) {
-          FileSystem._file_system_read_handler(
-              etl::span<const uint8_t>(msg.content, msg.length));
-        }
-#endif
-      });
-}
-
-void BridgeClass::onFileSystemCommand(
-    const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch via Jump Table for File System Commands
-  typedef void (BridgeClass::*FileSystemHandler)(
-      const bridge::router::CommandContext&);
-  static const FileSystemHandler kFileSystemHandlers[] = {
-      &BridgeClass::_handleFileWrite,    // 0: 144
-      nullptr,                           // 1: 145 (reserved)
-      nullptr,                           // 2: 146 (reserved)
-      &BridgeClass::_handleFileReadResp  // 3: 147
-  };
-
+void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
   const uint16_t index = ctx.raw_command - rpc::RPC_FILESYSTEM_COMMAND_MIN;
-  if (index < (sizeof(kFileSystemHandlers) / sizeof(kFileSystemHandlers[0]))) {
-    FileSystemHandler handler = kFileSystemHandlers[index];
-    if (handler) (this->*handler)(ctx);
+
+  switch (index) {
+    case 0: // 144: FILE_WRITE
+      _withAck(ctx, []() { /* No payload processing needed for ACK-only write */ });
+      break;
+
+    case 3: // 147: FILE_READ_RESP
+      _withPayload<rpc::payload::FileReadResponse>(
+          ctx, [](const rpc::payload::FileReadResponse& msg) {
+#if BRIDGE_ENABLE_FILESYSTEM
+            if (FileSystem._file_system_read_handler.is_valid()) {
+              FileSystem._file_system_read_handler(
+                  etl::span<const uint8_t>(msg.content, msg.length));
+            }
+#endif
+          });
+      break;
+
+    default: break;
   }
 }
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch via Jump Table for Process Commands
-  typedef void (BridgeClass::*ProcessHandler)(
-      const bridge::router::CommandContext&);
-  static const ProcessHandler kProcessHandlers[] = {
-      &BridgeClass::_handleProcessRunAsyncResp,  // 0: 165
-      &BridgeClass::_handleProcessPollResp       // 1: 166
-  };
-
   const uint16_t index = ctx.raw_command - (rpc::RPC_PROCESS_COMMAND_MIN + 5);
-  if (index < (sizeof(kProcessHandlers) / sizeof(kProcessHandlers[0]))) {
-    (this->*kProcessHandlers[index])(ctx);
+
+  switch (index) {
+    case 0: // 165: PROCESS_RUN_ASYNC_RESP
+      _withPayload<rpc::payload::ProcessRunAsyncResponse>(
+          ctx, [](const rpc::payload::ProcessRunAsyncResponse& msg) {
+#if BRIDGE_ENABLE_PROCESS
+            if (Process._process_run_async_handler.is_valid()) {
+              Process._process_run_async_handler(static_cast<int16_t>(msg.pid));
+            }
+#endif
+          });
+      break;
+
+    case 1: // 166: PROCESS_POLL_RESP
+      _withPayload<rpc::payload::ProcessPollResponse>(
+          ctx, [](const rpc::payload::ProcessPollResponse& msg) {
+#if BRIDGE_ENABLE_PROCESS
+            if (Process._process_poll_handler.is_valid()) {
+              Process._process_poll_handler(
+                  static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
+                  etl::span<const uint8_t>(msg.stdout_data, msg.stdout_len),
+                  etl::span<const uint8_t>(msg.stderr_data, msg.stderr_len));
+              Process._popPendingProcessPid();
+            }
+#endif
+          });
+      break;
+
+    default: break;
   }
-}
-
-void BridgeClass::_handleProcessRunAsyncResp(
-    const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::ProcessRunAsyncResponse>(
-      ctx, [](const rpc::payload::ProcessRunAsyncResponse& msg) {
-#if BRIDGE_ENABLE_PROCESS
-        if (Process._process_run_async_handler.is_valid()) {
-          Process._process_run_async_handler(static_cast<int16_t>(msg.pid));
-        }
-#endif
-      });
-}
-
-void BridgeClass::_handleProcessPollResp(
-    const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::ProcessPollResponse>(
-      ctx, [](const rpc::payload::ProcessPollResponse& msg) {
-#if BRIDGE_ENABLE_PROCESS
-        if (Process._process_poll_handler.is_valid()) {
-          Process._process_poll_handler(
-              static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
-              etl::span<const uint8_t>(msg.stdout_data, msg.stdout_len),
-              etl::span<const uint8_t>(msg.stderr_data, msg.stderr_len));
-          Process._popPendingProcessPid();
-        }
-#endif
-      });
 }
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {

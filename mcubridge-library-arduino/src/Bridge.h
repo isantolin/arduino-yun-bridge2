@@ -393,24 +393,8 @@ class BridgeClass
   void onUnknownCommand(const bridge::router::CommandContext& ctx) override;
 
   // [SIL-2] Individual Command Handlers for O(1) Dispatch
-  // Status
-  void _handleStatusAck(const bridge::router::CommandContext& ctx);
-  void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
-
   // System
-  void _handleGetVersion(const bridge::router::CommandContext& ctx);
-  void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
-  void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
-  void _handleSetBaudrate(const bridge::router::CommandContext& ctx);
   void _handleLinkSync(const bridge::router::CommandContext& ctx);
-  void _handleLinkReset(const bridge::router::CommandContext& ctx);
-
-  // GPIO
-  void _handleSetPinMode(const bridge::router::CommandContext& ctx);
-  void _handleDigitalWrite(const bridge::router::CommandContext& ctx);
-  void _handleAnalogWrite(const bridge::router::CommandContext& ctx);
-  void _handleDigitalRead(const bridge::router::CommandContext& ctx);
-  void _handleAnalogRead(const bridge::router::CommandContext& ctx);
 
   template <typename TResp, typename TFunc, typename TValid, typename... Args>
   void _handlePinRead(const bridge::router::CommandContext& ctx, rpc::CommandId resp_cmd, TValid valid_func, TFunc read_func, Args&&... args) {
@@ -423,25 +407,6 @@ class BridgeClass
           }
         });
   }
-
-  // Console
-  void _handleConsoleWrite(const bridge::router::CommandContext& ctx);
-
-  // DataStore
-  void _handleDatastoreGetResp(const bridge::router::CommandContext& ctx);
-
-  // Mailbox
-  void _handleMailboxPush(const bridge::router::CommandContext& ctx);
-  void _handleMailboxReadResp(const bridge::router::CommandContext& ctx);
-  void _handleMailboxAvailableResp(const bridge::router::CommandContext& ctx);
-
-  // FileSystem
-  void _handleFileWrite(const bridge::router::CommandContext& ctx);
-  void _handleFileReadResp(const bridge::router::CommandContext& ctx);
-
-  // Process
-  void _handleProcessRunAsyncResp(const bridge::router::CommandContext& ctx);
-  void _handleProcessPollResp(const bridge::router::CommandContext& ctx);
 
   bool _isRecentDuplicateRx(const rpc::Frame& frame) const;
   void _markRxProcessed(const rpc::Frame& frame);

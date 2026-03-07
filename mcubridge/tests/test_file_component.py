@@ -419,14 +419,14 @@ def test_refresh_storage_usage_handles_subprocess_failures(
     file_component: tuple[FileComponent, DummyBridge],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import subprocess
+    import sh
     component, _ = file_component
 
-    # Mock subprocess.check_output to raise an error
-    def mock_check_output(*args, **kwargs):
-        raise subprocess.CalledProcessError(1, "du")
+    # Mock sh.du to raise an error
+    def mock_du(*args, **kwargs):
+        raise sh.ErrorReturnCode_1(b"du", b"", b"error")
 
-    monkeypatch.setattr(subprocess, "check_output", mock_check_output)
+    monkeypatch.setattr(sh, "du", mock_du)
 
     # Calling refresh_storage_usage should catch the error and return 0
     usage = component._refresh_storage_usage()
@@ -434,10 +434,12 @@ def test_refresh_storage_usage_handles_subprocess_failures(
     assert component.state.file_storage_bytes_used == 0
 
     # Test ValueError when output is malformed
-    def mock_check_output_value_error(*args, **kwargs):
-        return b"not-a-number /tmp/foo"
+    def mock_du_value_error(*args, **kwargs):
+        class MockOut:
+            stdout = b"not-a-number /tmp/foo"
+        return MockOut()
 
-    monkeypatch.setattr(subprocess, "check_output", mock_check_output_value_error)
+    monkeypatch.setattr(sh, "du", mock_du_value_error)
 
     usage2 = component._refresh_storage_usage()
     assert usage2 == 0

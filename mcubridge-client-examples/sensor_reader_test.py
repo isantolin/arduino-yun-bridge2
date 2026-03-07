@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 from typing import Annotated
 
 import typer
@@ -28,13 +27,6 @@ async def run_test(
     interval: float,
     tls_insecure: bool,
 ) -> None:
-    # Validate essential arguments if not running on OpenWrt with UCI
-    if not host or not user or not password:
-        from mcubridge_client.env import read_uci_general
-
-        if not read_uci_general():
-            sys.stderr.write("Error: Missing required connection parameters.\n")
-            raise typer.Exit(code=1)
 
     dump_client_env(logging.getLogger(__name__))
 

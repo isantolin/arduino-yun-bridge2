@@ -36,6 +36,8 @@ compile_variant() {
         -I"${DUMMY_ARDUINO_LIBS}/PacketSerial" \
         "${SRC_DIR}/security/sha256.cpp" \
         "${SRC_DIR}/security/security.cpp" \
+        "${SRC_DIR}/protocol/rle.cpp" \
+        "${SRC_DIR}/protocol/rpc_cobs.cpp" \
         "${SRC_DIR}/hal/hal.cpp" \
         "${SRC_DIR}/Bridge.cpp" \
         "${SRC_DIR}/services/Console.cpp" \

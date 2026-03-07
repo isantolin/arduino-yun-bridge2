@@ -15,7 +15,7 @@ rationale = "Load daemon configuration from UCI"
 [[dependency]]
 name = "aiomqtt"
 openwrt = "python3-aiomqtt"
-pip = "aiomqtt==2.5.0"
+pip = "aiomqtt==2.5.1"
 rationale = "Async MQTT v5 client used for runtime telemetry (Python 3.13 compatible)"
 
 [[dependency]]

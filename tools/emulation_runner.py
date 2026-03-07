@@ -159,9 +159,9 @@ def main(
         time.sleep(15)
         if run_scripts:
             for script in run_scripts:
-                print(f"\n{'='*80}")
-                print(f"=== RUNNING E2E TEST: {script}")
-                print(f"{'='*80}\n")
+                sys.stdout.write(f"\n{'='*80}\n")
+                sys.stdout.write(f"=== RUNNING E2E TEST: {script}\n")
+                sys.stdout.write(f"{'='*80}\n\n")
                 sys.stdout.flush()
 
                 try:

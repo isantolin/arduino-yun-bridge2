@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from typing import Any, Deque, Protocol, TypeVar
 
 from aiomqtt.message import Message

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_COVERAGE_ROOT="$ROOT_DIR/coverage/python"
-DEFAULT_TARGET="mcubridge/tests mcubridge-client-examples/client_tests"
+DEFAULT_TARGETS=("mcubridge/tests" "mcubridge-client-examples/client_tests")
 
 usage() {
   cat <<'EOF'
@@ -16,7 +16,7 @@ Options:
   -h, --help          Show this help
 
 Any remaining arguments are passed to pytest. If no pytest args are supplied,
-the default target is mcubridge/tests.
+the default targets are mcubridge/tests and mcubridge-client-examples/client_tests.
 EOF
 }
 
@@ -72,7 +72,7 @@ PYTEST_ARGS=()
 if [[ $# -gt 0 ]]; then
   PYTEST_ARGS=("$@")
 else
-  PYTEST_ARGS=("$DEFAULT_TARGET")
+  PYTEST_ARGS=("${DEFAULT_TARGETS[@]}")
 fi
 
 python -m pytest \

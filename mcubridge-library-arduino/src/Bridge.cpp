@@ -314,8 +314,8 @@ void BridgeClass::_handleReceivedFrame() {
   dispatch(_rx_frame);
 }
 
-bool BridgeClass::_decompressFrame(const rpc::Frame& original,
-                                   rpc::Frame& effective) {
+etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(
+    const rpc::Frame& original, rpc::Frame& effective) {
   uint16_t raw_command = original.header.command_id;
   bool is_compressed = (raw_command & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   raw_command &= ~rpc::RPC_CMD_FLAG_COMPRESSED;
@@ -330,14 +330,14 @@ bool BridgeClass::_decompressFrame(const rpc::Frame& original,
         etl::span<const uint8_t>(original.payload.data(),
                                  original.header.payload_length),
         etl::span<uint8_t>(scratch.data(), rpc::MAX_PAYLOAD_SIZE));
-    if (len == 0) return false;
+    if (len == 0) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
     etl::copy_n(scratch.data(), len, effective.payload.data());
     effective.header.payload_length = static_cast<uint16_t>(len);
   } else if (original.header.payload_length > 0) {
     etl::copy_n(original.payload.data(), original.header.payload_length,
                 effective.payload.data());
   }
-  return true;
+  return {};
 }
 
 bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
@@ -347,7 +347,8 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
 
 void BridgeClass::dispatch(const rpc::Frame& frame) {
   rpc::Frame effective_frame;
-  if (!_decompressFrame(frame, effective_frame)) {
+  auto result = _decompressFrame(frame, effective_frame);
+  if (!result) {
     emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     return;
   }

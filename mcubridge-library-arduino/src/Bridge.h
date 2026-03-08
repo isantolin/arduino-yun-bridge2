@@ -51,6 +51,7 @@
 #include "etl/bitset.h"
 #include "etl/circular_buffer.h"
 #include "etl/delegate.h"
+#include "etl/expected.h"
 #include "etl/optional.h"
 #include "etl/queue.h"
 #include "etl/span.h"
@@ -454,7 +455,8 @@ class BridgeClass
   // [SIL-2] Private Refactoring Helpers
   void _processIncomingByte(uint8_t byte);
   void _handleReceivedFrame();
-  bool _decompressFrame(const rpc::Frame& original, rpc::Frame& effective);
+  etl::expected<void, rpc::FrameError> _decompressFrame(
+      const rpc::Frame& original, rpc::Frame& effective);
   bool _isSecurityCheckPassed(uint16_t command_id) const;
 
   // [SIL-2] DRY Command Helpers with Lambdas

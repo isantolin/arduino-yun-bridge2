@@ -4,6 +4,7 @@
 #include "config/bridge_config.h"
 
 #if BRIDGE_ENABLE_MAILBOX
+#include "etl/circular_buffer.h"
 #include "etl/delegate.h"
 #include "etl/span.h"
 #include "etl/string_view.h"
@@ -25,6 +26,11 @@ class MailboxClass {
   void requestRead();
   void requestAvailable();
 
+  // [SIL-2] Non-blocking buffer interface
+  bool available() const { return !_rx_buffer.empty(); }
+  size_t size() const { return _rx_buffer.size(); }
+  void clear() { _rx_buffer.clear(); }
+
   inline void onMailboxMessage(MailboxHandler handler) {
     _mailbox_handler = handler;
   }
@@ -37,6 +43,9 @@ class MailboxClass {
 
   MailboxHandler _mailbox_handler;
   MailboxAvailableHandler _mailbox_available_handler;
+
+  // [SIL-2] Static buffer for deterministic memory usage
+  etl::circular_buffer<uint8_t, BRIDGE_MAILBOX_RX_BUFFER_SIZE> _rx_buffer;
 };
 
 extern MailboxClass Mailbox;

@@ -208,26 +208,6 @@ PY
     printf '%s\n' "$value"
 }
 
-normalize_tls_path_in_uci() {
-    # Deprecated: the installer no longer generates TLS CA/cert/key material.
-    # Keep the helper to avoid breaking external automation that might source it.
-    local key="$1" default_value="$2" placeholder="$3"
-    local current
-    current=$(ensure_general_default "$key" "$default_value")
-
-    if [ -n "$placeholder" ] && [ "$current" = "$placeholder" ]; then
-        current="$default_value"
-        uci_set_general "$key" "$current"
-    fi
-
-    if [ ! -s "$current" ]; then
-        current="$default_value"
-        uci_set_general "$key" "$current"
-    fi
-
-    printf '%s\n' "$current"
-}
-
 ensure_secure_serial_secret() {
     ensure_uci_config
     

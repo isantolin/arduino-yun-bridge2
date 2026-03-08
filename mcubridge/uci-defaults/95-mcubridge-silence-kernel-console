@@ -3,7 +3,7 @@
 # with McuBridge protocol on ttyATH0.
 #
 # The Arduino MCU's AR9331 uses ttyATH0 for both:
-#   1. Kernel console (at 250000 baud, set in bootargs)
+#   1. Kernel console (legacy 250000 baud or modern 115200 baud)
 #   2. McuBridge serial protocol (at 115200 baud)
 #
 # Even though the baud rates differ, kernel printk messages can corrupt

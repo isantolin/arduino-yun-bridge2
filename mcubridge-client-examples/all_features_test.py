@@ -26,6 +26,13 @@ async def run_test(host, port, user, password):
         val = await client.digital_read(13)
         logger.info(f"Digital read pin 13: {val}")
 
+        # 2b. Analog test
+        logger.info("Testing Analog Operations...")
+        analog_val = await client.analog_read(0)
+        logger.info(f"Analog read pin A0: {analog_val}")
+        await client.analog_write(9, 128)
+        logger.info("Analog write pin 9 (PWM) set to 128.")
+
         # 3. DataStore test
         logger.info("Testing DataStore...")
         await client.put("test/key", "hello")

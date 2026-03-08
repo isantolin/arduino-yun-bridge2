@@ -280,7 +280,7 @@ El estado de salud del enlace se expone en:
 
 El Arduino MCU presenta un conflicto de hardware: el puerto serial `/dev/ttyATH0` es usado simultáneamente por:
 
-1. **Consola del kernel** (configurada en bootargs a 250000 baud)
+1. **Consola del kernel** (legacy 250000 baud, configurada en bootargs)
 2. **Protocolo McuBridge** (opera a 115200 baud)
 
 Aunque los baud rates difieren, los mensajes `printk` del kernel pueden corromper frames COBS del protocolo, causando errores de parsing como:

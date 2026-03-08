@@ -72,3 +72,4 @@ uci commit mcubridge && /etc/init.d/mcubridge restart
 - `process_test.py`: ilustra cómo consumir el `stdout`/`stderr` de procesos largos mediante polls consecutivos.
 - `br/system/status`: subscríbete para recibir estados de error globales.
 - `br/datastore/get/<clave>/request`: peticiones de lectura al datastore (las respuestas se publican en `br/datastore/get/<clave>`).
+- `analog_write(pin, value)`: permite el control de PWM (0-255) desde Python.

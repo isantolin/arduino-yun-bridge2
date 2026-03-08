@@ -413,6 +413,14 @@ class Bridge:
         )
         return int(response.decode("utf-8"))
 
+    async def analog_write(self, pin: int, value: int) -> None:
+        """Set PWM/Analog output value (0-255)."""
+        if not (0 <= value <= 255):
+            raise ValueError(f"analog_write value {value} out of range (0-255)")
+        topic = Topic.command("a", pin)
+        await self._publish_simple(topic, str(value))
+        logger.info("analog_write(%d, %d) -> %s", pin, value, topic)
+
     async def set_digital_mode(self, pin: int, mode: int | str) -> None:
         if isinstance(mode, str):
             normalized = mode.strip().lower()

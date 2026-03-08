@@ -20,6 +20,12 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **MIL-SPEC Compliance (FIPS 140-3):** Implementación de **HKDF-SHA256** para derivación de claves y **Power-On Self-Tests (POST)** que validan el motor criptográfico en cada arranque.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `mqtt_spool_dir`) no están en `/tmp` (RAM).
 
+### Novedades (marzo 2026)
+
+- **Eliminación de Compatibilidad Legacy:** Refactorización profunda para eliminar lógica obsoleta, incluyendo el baudrate de 250.000 (ahora marcado como legacy), flags de rotación de credenciales antiguos y templates de C++ innecesarios.
+- **Soporte PWM (Analog Write):** Implementación completa de `analog_write()` en el cliente Python, permitiendo el control de actuadores y regulación de potencia vía MQTT.
+- **Validación E2E Analógica:** Los tests de integración ahora cubren lecturas y escrituras analógicas de forma nativa.
+
 ### Novedades (febrero 2026)
 
 - **Despacho O(1) en MCU:** Implementación de tablas de salto para comandos de sistema, GPIO, Mailbox y Process, optimizando el rendimiento y cumpliendo SIL-2.

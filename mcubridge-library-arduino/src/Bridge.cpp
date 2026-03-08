@@ -291,6 +291,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   if (raw_command & rpc::RPC_CMD_FLAG_COMPRESSED) {
     raw_command &= ~rpc::RPC_CMD_FLAG_COMPRESSED;
     decompressed_frame.header = frame.header; decompressed_frame.header.command_id = raw_command;
+    decompressed_frame.crc = frame.crc;
     size_t out_len = rle::decode(etl::span<const uint8_t>(frame.payload.data(), frame.header.payload_length), etl::span<uint8_t>(decompressed_frame.payload.data(), rpc::MAX_PAYLOAD_SIZE));
     decompressed_frame.header.payload_length = static_cast<uint16_t>(out_len); effective_frame = &decompressed_frame;
   }
@@ -420,7 +421,10 @@ void BridgeClass::_applyTimingConfig(const rpc::Frame& frame) {
 }
 
 void BridgeClass::_markRxProcessed(const rpc::Frame& f) { if (_rx_history.full()) _rx_history.pop(); _rx_history.push({f.crc, static_cast<uint32_t>(millis())}); }
-bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& f) const { for (const auto& h : _rx_history) if (h.crc == f.crc) return true; return false; }
+bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& f) const {
+  return etl::any_of(_rx_history.begin(), _rx_history.end(),
+                     [&f](const RxHistory& h) { return h.crc == f.crc; });
+}
 bool BridgeClass::_isHandshakeCommand(uint16_t cmd) const {
   return cmd == rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC) ||
          cmd == rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET) ||

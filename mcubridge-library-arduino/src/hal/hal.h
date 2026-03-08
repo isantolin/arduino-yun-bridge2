@@ -8,6 +8,14 @@
 #include <Arduino.h>
 #include <stdint.h>
 
+// [SIL-2] Undefine Arduino macros to prevent conflicts with ETL algorithms
+#undef min
+#undef max
+
+#include <etl/algorithm.h>
+#include <etl/span.h>
+#include <etl/type_traits.h>
+
 namespace bridge {
 namespace hal {
 
@@ -28,6 +36,46 @@ bool isValidPin(uint8_t pin);
  * @brief Initialize hardware specific features (e.g. Watchdog).
  */
 void init();
+
+namespace detail {
+// SFINAE helpers to detect push_back vs push
+template <typename T, typename V>
+auto push_impl(T& c, const V& v, int) -> decltype(c.push_back(v), void()) {
+  c.push_back(v);
+}
+
+template <typename T, typename V>
+auto push_impl(T& c, const V& v, long) -> decltype(c.push(v), void()) {
+  c.push(v);
+}
+}  // namespace detail
+
+/**
+ * @brief Safely push data into an ETL container with capacity limits.
+ * [SIL-2] Deterministic insertion using ETL algorithms.
+ * @tparam TContainer ETL container type (vector, circular_buffer, etc.)
+ * @param container Target container.
+ * @param data Data span to insert.
+ * @return Number of bytes actually inserted.
+ */
+template <typename TContainer>
+size_t safe_push_back(TContainer& container, etl::span<const uint8_t> data) {
+  if (data.empty()) return 0;
+  
+  const size_t cap = container.capacity();
+  if (cap == 0) return 0;
+
+  const size_t cur = container.size();
+  const size_t space = cap - cur;
+  const size_t len = data.size();
+  const size_t to_copy = (len < space) ? len : space;
+
+  for (size_t i = 0; i < to_copy; ++i) {
+    // Use SFINAE to call either push_back() or push() based on container type
+    detail::push_impl(container, data[i], 0);
+  }
+  return to_copy;
+}
 
 }  // namespace hal
 }  // namespace bridge

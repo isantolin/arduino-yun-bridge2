@@ -186,214 +186,188 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 
 void BridgeClass::process() {
 #if defined(ARDUINO_ARCH_AVR)
-  if (kBridgeEnableWatchdog) {
-    wdt_reset();
-  }
+  if (kBridgeEnableWatchdog) wdt_reset();
 #elif defined(ARDUINO_ARCH_ESP32)
-  if (kBridgeEnableWatchdog) {
-    esp_task_wdt_reset();
-  }
+  if (kBridgeEnableWatchdog) esp_task_wdt_reset();
 #elif defined(ARDUINO_ARCH_ESP8266)
-  if (kBridgeEnableWatchdog) {
-    yield();
-  }
+  if (kBridgeEnableWatchdog) yield();
 #endif
 
   if (_startup_stabilizing) {
     uint8_t drain_limit = BRIDGE_STARTUP_DRAIN_PER_TICK;
-    while (_stream.available() > 0 && drain_limit-- > 0) {
-      _stream.read();
-    }
+    while (_stream.available() > 0 && drain_limit-- > 0) _stream.read();
   } else {
-    // [SIL-2] Streaming COBS Decoder (Zero-Copy parser)
     BRIDGE_ATOMIC_BLOCK {
       while (_stream.available() > 0) {
-        uint8_t byte = _stream.read();
-
-        if (byte == rpc::RPC_FRAME_DELIMITER) {
-          if (_cobs.in_sync && _cobs.bytes_received >= 5 + rpc::CRC_TRAILER_SIZE) {
-            etl::crc32 crc_calc;
-            const size_t data_len = _cobs.bytes_received - rpc::CRC_TRAILER_SIZE;
-            crc_calc.add(&_cobs.buffer[0], &_cobs.buffer[data_len]);
-            
-            uint32_t received_crc = rpc::read_u32_be(&_cobs.buffer[data_len]);
-
-            if (crc_calc.value() == received_crc) {
-              _rx_frame.header.version = _cobs.buffer[0];
-              _rx_frame.header.payload_length = rpc::read_u16_be(&_cobs.buffer[1]);
-              _rx_frame.header.command_id = rpc::read_u16_be(&_cobs.buffer[3]);
-              _rx_frame.crc = received_crc;
-
-              if (_rx_frame.header.version == rpc::PROTOCOL_VERSION &&
-                  _rx_frame.header.payload_length <= rpc::MAX_PAYLOAD_SIZE &&
-                  data_len == static_cast<size_t>(_rx_frame.header.payload_length + 5)) {
-                if (_rx_frame.header.payload_length > 0) {
-                  etl::copy_n(&_cobs.buffer[5], _rx_frame.header.payload_length, _rx_frame.payload.begin());
-                }
-                _frame_received = true;
-                _last_parse_error.reset();
-              } else {
-                _last_parse_error = rpc::FrameError::MALFORMED;
-              }
-            } else {
-              _last_parse_error = rpc::FrameError::CRC_MISMATCH;
-            }
-          } else if (_cobs.in_sync && _cobs.bytes_received > 0) {
-            _last_parse_error = rpc::FrameError::MALFORMED;
-          }
-
-          _cobs.bytes_received = 0;
-          _cobs.block_len = 0;
-          _cobs.in_sync = true;
-          _cobs.code_prev = 0;
-
-          if (_frame_received || _last_parse_error.has_value()) break;
-          continue;
-        }
-
-        if (!_cobs.in_sync) continue;
-
-        if (_cobs.block_len == 0) {
-          _cobs.code = byte;
-          _cobs.block_len = byte - 1;
-          if (_cobs.bytes_received > 0 && _cobs.code_prev != 0xFF) {
-            if (_cobs.bytes_received < rpc::MAX_RAW_FRAME_SIZE) {
-              _cobs.buffer[_cobs.bytes_received++] = 0x00;
-            } else {
-              _cobs.in_sync = false;
-              _last_parse_error = rpc::FrameError::OVERFLOW;
-            }
-          }
-          _cobs.code_prev = _cobs.code;
-        } else {
-          if (_cobs.bytes_received < rpc::MAX_RAW_FRAME_SIZE) {
-            _cobs.buffer[_cobs.bytes_received++] = byte;
-            _cobs.block_len--;
-          } else {
-            _cobs.in_sync = false;
-            _last_parse_error = rpc::FrameError::OVERFLOW;
-          }
-        }
+        _processIncomingByte(_stream.read());
+        if (_frame_received || _last_parse_error.has_value()) break;
       }
     }
   }
 
   if (_frame_received) {
-    BRIDGE_ATOMIC_BLOCK { _consecutive_crc_errors = 0; }
-    _frame_received = false;
-    dispatch(_rx_frame);
+    _handleReceivedFrame();
   } else if (_last_parse_error.has_value()) {
-#if BRIDGE_HOST_TEST
-    fprintf(stderr, "[MCU DECODE ERROR] Code: %d\n", (int)_last_parse_error.value());
-#endif
     rpc::FrameError error = _last_parse_error.value();
-    if (error == rpc::FrameError::CRC_MISMATCH) {
-      BRIDGE_ATOMIC_BLOCK { _consecutive_crc_errors++; }
-      if (_consecutive_crc_errors >= BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS) {
-#if defined(ARDUINO_ARCH_AVR)
-        wdt_enable(kCrcFailResetWatchdogTimeout);
-        for (;;) {
-        }
-#elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-        ESP.restart();
-#else
-        enterSafeState();
-#endif
-      }
-    }
-    if (!_fsm.isUnsynchronized()) {
-      switch (error) {
-        case rpc::FrameError::CRC_MISMATCH:
-          emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH);
-          break;
-        case rpc::FrameError::MALFORMED:
-        case rpc::FrameError::OVERFLOW:
-          emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-          break;
-      }
-    }
     _last_parse_error.reset();
+
+    if (error == rpc::FrameError::CRC_MISMATCH) {
+      BRIDGE_ATOMIC_BLOCK {
+        if (++_consecutive_crc_errors >= BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS) {
+#if defined(ARDUINO_ARCH_AVR)
+          wdt_enable(WDTO_15MS);
+          for (;;) {}
+#elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+          ESP.restart();
+#else
+          enterSafeState();
+#endif
+        }
+      }
+    }
+
+    if (!_fsm.isUnsynchronized()) {
+      emitStatus(error == rpc::FrameError::CRC_MISMATCH
+                     ? rpc::StatusCode::STATUS_CRC_MISMATCH
+                     : rpc::StatusCode::STATUS_MALFORMED);
+    }
   }
 
-  // [RAM-OPT] SimpleTimer tick — check expired timers and dispatch
   const uint32_t now = static_cast<uint32_t>(millis());
-  _last_tick_millis = now;
   const uint8_t expired = _timers.check_expired(now);
-  if (expired & (1U << bridge::scheduler::TIMER_ACK_TIMEOUT))
-    _onAckTimeout();
-  if (expired & (1U << bridge::scheduler::TIMER_RX_DEDUPE))
-    _onRxDedupe();
-  if (expired & (1U << bridge::scheduler::TIMER_BAUDRATE_CHANGE))
-    _onBaudrateChange();
-  if (expired & (1U << bridge::scheduler::TIMER_STARTUP_STABILIZATION))
-    _onStartupStabilized();
+  if (expired & (1U << bridge::scheduler::TIMER_ACK_TIMEOUT)) _onAckTimeout();
+  if (expired & (1U << bridge::scheduler::TIMER_RX_DEDUPE)) _onRxDedupe();
+  if (expired & (1U << bridge::scheduler::TIMER_BAUDRATE_CHANGE)) _onBaudrateChange();
+  if (expired & (1U << bridge::scheduler::TIMER_STARTUP_STABILIZATION)) _onStartupStabilized();
 
   _flushPendingTxQueue();
 }
 
-// [SIL-2] Pin Validation Helper
-// Using bridge::hal::isValidPin directly in implementation
+void BridgeClass::_processIncomingByte(uint8_t byte) {
+  if (byte == rpc::RPC_FRAME_DELIMITER) {
+    if (_cobs.in_sync && _cobs.bytes_received >= 5 + rpc::CRC_TRAILER_SIZE) {
+      const size_t data_len = _cobs.bytes_received - rpc::CRC_TRAILER_SIZE;
+      etl::crc32 crc_calc;
+      crc_calc.add(&_cobs.buffer[0], &_cobs.buffer[data_len]);
+      uint32_t received_crc = rpc::read_u32_be(&_cobs.buffer[data_len]);
 
-void BridgeClass::dispatch(const rpc::Frame& frame) {
-#if BRIDGE_HOST_TEST
-  fprintf(stderr, "[MCU DECODE] dispatch cmd=0x%02X len=%u\n", frame.header.command_id, frame.header.payload_length);
-#endif
-  // [SIL-2] Phase 1: Decompress if needed
-  uint16_t raw_command = frame.header.command_id;
+      if (crc_calc.value() == received_crc) {
+        _rx_frame.header.version = _cobs.buffer[0];
+        _rx_frame.header.payload_length = rpc::read_u16_be(&_cobs.buffer[1]);
+        _rx_frame.header.command_id = rpc::read_u16_be(&_cobs.buffer[3]);
+        _rx_frame.crc = received_crc;
+
+        if (_rx_frame.header.version == rpc::PROTOCOL_VERSION &&
+            _rx_frame.header.payload_length <= rpc::MAX_PAYLOAD_SIZE &&
+            data_len == static_cast<size_t>(_rx_frame.header.payload_length + 5)) {
+          if (_rx_frame.header.payload_length > 0) {
+            etl::copy_n(&_cobs.buffer[5], _rx_frame.header.payload_length,
+                        _rx_frame.payload.begin());
+          }
+          _frame_received = true;
+          _last_parse_error.reset();
+        } else {
+          _last_parse_error = rpc::FrameError::MALFORMED;
+        }
+      } else {
+        _last_parse_error = rpc::FrameError::CRC_MISMATCH;
+      }
+    } else if (_cobs.in_sync && _cobs.bytes_received > 0) {
+      _last_parse_error = rpc::FrameError::MALFORMED;
+    }
+
+    _cobs.bytes_received = 0;
+    _cobs.block_len = 0;
+    _cobs.in_sync = true;
+    _cobs.code_prev = 0;
+    return;
+  }
+
+  if (!_cobs.in_sync) return;
+
+  if (_cobs.block_len == 0) {
+    _cobs.code = byte;
+    _cobs.block_len = byte - 1;
+    if (_cobs.bytes_received > 0 && _cobs.code_prev != 0xFF) {
+      if (_cobs.bytes_received < rpc::MAX_RAW_FRAME_SIZE) {
+        _cobs.buffer[_cobs.bytes_received++] = 0x00;
+      } else {
+        _cobs.in_sync = false;
+        _last_parse_error = rpc::FrameError::OVERFLOW;
+      }
+    }
+    _cobs.code_prev = _cobs.code;
+  } else {
+    if (_cobs.bytes_received < rpc::MAX_RAW_FRAME_SIZE) {
+      _cobs.buffer[_cobs.bytes_received++] = byte;
+      _cobs.block_len--;
+    } else {
+      _cobs.in_sync = false;
+      _last_parse_error = rpc::FrameError::OVERFLOW;
+    }
+  }
+}
+
+void BridgeClass::_handleReceivedFrame() {
+  BRIDGE_ATOMIC_BLOCK { _consecutive_crc_errors = 0; }
+  _frame_received = false;
+  dispatch(_rx_frame);
+}
+
+bool BridgeClass::_decompressFrame(const rpc::Frame& original,
+                                   rpc::Frame& effective) {
+  uint16_t raw_command = original.header.command_id;
   bool is_compressed = (raw_command & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   raw_command &= ~rpc::RPC_CMD_FLAG_COMPRESSED;
 
-  rpc::Frame effective_frame;
-  effective_frame.header = frame.header;
-  effective_frame.header.command_id = raw_command;
-  effective_frame.crc = frame.crc;
+  effective.header = original.header;
+  effective.header.command_id = raw_command;
+  effective.crc = original.crc;
 
-  if (is_compressed && frame.header.payload_length > 0) {
-    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> scratch_payload;
-    size_t decoded_len = rle::decode(
-        etl::span<const uint8_t>(frame.payload.data(),
-                                 frame.header.payload_length),
-        etl::span<uint8_t>(scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE));
-    if (decoded_len == 0) {
-      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-      return;
-    }
-    etl::copy_n(scratch_payload.data(), decoded_len,
-                effective_frame.payload.data());
-    effective_frame.header.payload_length = static_cast<uint16_t>(decoded_len);
-  } else {
-    if (frame.header.payload_length > 0) {
-      etl::copy_n(frame.payload.data(), frame.header.payload_length,
-                  effective_frame.payload.data());
-    }
+  if (is_compressed && original.header.payload_length > 0) {
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> scratch;
+    size_t len = rle::decode(
+        etl::span<const uint8_t>(original.payload.data(),
+                                 original.header.payload_length),
+        etl::span<uint8_t>(scratch.data(), rpc::MAX_PAYLOAD_SIZE));
+    if (len == 0) return false;
+    etl::copy_n(scratch.data(), len, effective.payload.data());
+    effective.header.payload_length = static_cast<uint16_t>(len);
+  } else if (original.header.payload_length > 0) {
+    etl::copy_n(original.payload.data(), original.header.payload_length,
+                effective.payload.data());
+  }
+  return true;
+}
+
+bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
+  if (_fsm.isSynchronized()) return true;
+  return _isHandshakeCommand(command_id);
+}
+
+void BridgeClass::dispatch(const rpc::Frame& frame) {
+  rpc::Frame effective_frame;
+  if (!_decompressFrame(frame, effective_frame)) {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+    return;
   }
 
-  // [SIL-2] Phase 2: Build context
-  bridge::router::CommandContext ctx(&effective_frame, raw_command,
-                                     _isRecentDuplicateRx(effective_frame),
-                                     rpc::requires_ack(raw_command));
-
-  // [SIL-2] Security/Safety Gate: Only allow handshake commands if not
-  // operational.
-  if (!_fsm.isSynchronized() && !_isHandshakeCommand(raw_command)) {
+  uint16_t raw_cmd = effective_frame.header.command_id;
+  if (!_isSecurityCheckPassed(raw_cmd)) {
     sendFrame(rpc::StatusCode::STATUS_ERROR);
     return;
   }
 
-  // [SIL-2] Phase 3: O(1) Dispatch via Jump Table
-  // Eliminates switch/case overhead and provides deterministic execution time.
-  typedef void (BridgeClass::*HandlerFunc)(
-      const bridge::router::CommandContext&);
+  bridge::router::CommandContext ctx(&effective_frame, raw_cmd,
+                                     _isRecentDuplicateRx(effective_frame),
+                                     rpc::requires_ack(raw_cmd));
+
+  typedef void (BridgeClass::*HandlerFunc)(const bridge::router::CommandContext&);
   static const HandlerFunc kHandlers[] = {
-      &BridgeClass::onStatusCommand,     // 0: 48-63
-      &BridgeClass::onSystemCommand,     // 1: 64-79
-      &BridgeClass::onGpioCommand,       // 2: 80-95
-      &BridgeClass::onConsoleCommand,    // 3: 96-111
-      &BridgeClass::onDataStoreCommand,  // 4: 112-127
-      &BridgeClass::onMailboxCommand,    // 5: 128-143
-      &BridgeClass::onFileSystemCommand, // 6: 144-159
-      &BridgeClass::onProcessCommand     // 7: 160-175
-  };
+      &BridgeClass::onStatusCommand,     &BridgeClass::onSystemCommand,
+      &BridgeClass::onGpioCommand,       &BridgeClass::onConsoleCommand,
+      &BridgeClass::onDataStoreCommand,  &BridgeClass::onMailboxCommand,
+      &BridgeClass::onFileSystemCommand, &BridgeClass::onProcessCommand};
 
   const uint16_t category = (ctx.raw_command - rpc::RPC_STATUS_CODE_MIN) >> 4;
   if (category < (sizeof(kHandlers) / sizeof(kHandlers[0]))) {

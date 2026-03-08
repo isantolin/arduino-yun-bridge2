@@ -451,6 +451,12 @@ class BridgeClass
   bool _sendFrame(uint16_t command_id, etl::span<const uint8_t> payload);
   void _sendRawFrame(uint16_t command_id, etl::span<const uint8_t> payload);
 
+  // [SIL-2] Private Refactoring Helpers
+  void _processIncomingByte(uint8_t byte);
+  void _handleReceivedFrame();
+  bool _decompressFrame(const rpc::Frame& original, rpc::Frame& effective);
+  bool _isSecurityCheckPassed(uint16_t command_id) const;
+
   // [SIL-2] DRY Command Helpers with Lambdas
   template <typename F>
   void _withAck(const bridge::router::CommandContext& ctx, F handler) {

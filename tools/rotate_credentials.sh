@@ -75,12 +75,6 @@ while [[ $# -gt 0 ]]; do
       LOCAL_UCI_DIR="$2"; shift 2;;
     --emit-sketch-snippet)
       SNIPPET_PATH="$2"; shift 2;;
-    --emit-arduino-header)
-      echo "[WARN] --emit-arduino-header is deprecated; use --emit-sketch-snippet instead." >&2
-      SNIPPET_PATH="$2"; shift 2;;
-    --sync-arduino)
-      echo "[ERROR] --sync-arduino is no longer supported; paste the snippet into your sketch instead." >&2
-      exit 1;;
     -h|--help)
       show_help; exit 0;;
     *)

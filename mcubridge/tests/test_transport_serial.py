@@ -71,7 +71,7 @@ async def test_process_packet_success_dispatches(
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    service.handle_mcu_frame = AsyncMock()
+    service._on_transport_frame = AsyncMock()
 
     frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, b"hi")
     monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: frame_bytes)
@@ -81,7 +81,7 @@ async def test_process_packet_success_dispatches(
 
     await transport._async_process_packet(b"\x02encoded")
 
-    service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"hi")
+    service._on_transport_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"hi")
 
 
 @pytest.mark.asyncio

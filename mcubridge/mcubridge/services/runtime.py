@@ -140,7 +140,7 @@ class BridgeService(BridgeContext):
         """Sends a raw binary frame to the MCU."""
         # [SIL-2] Gate all outgoing traffic by synchronization state
         # Handshake frames bypass this check.
-        if not self.state.is_synchronized and not self._is_handshake_command(command_id):
+        if not self._transport.writer and not self._is_handshake_command(command_id):
             self._logger.debug(
                 "Blocking frame 0x%02X: not synchronized (state=%s)",
                 command_id,

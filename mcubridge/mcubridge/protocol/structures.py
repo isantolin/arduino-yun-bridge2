@@ -173,7 +173,7 @@ class DigitalReadResponsePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("pin" / UINT8_STRUCT, "value" / UINT16_STRUCT)
+    SCHEMA = BinStruct("pin" / UINT8_STRUCT, "value" / UINT8_STRUCT)
 
 
 class AnalogReadResponsePacket(BaseStruct, frozen=True):

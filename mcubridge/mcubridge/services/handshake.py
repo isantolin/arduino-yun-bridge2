@@ -13,7 +13,6 @@ import asyncio
 import hashlib
 import hmac
 import logging
-import sys
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Annotated, Any
@@ -194,7 +193,6 @@ class SerialHandshakeManager:
 
     def _on_fsm_synchronized(self) -> None:
         """Callback when entering synchronized state."""
-        print("DEBUG: DAEMON SYNCHRONIZED!", file=sys.stderr)
         self._state.mark_synchronized()
 
     def _on_fsm_unsynchronized(self) -> None:

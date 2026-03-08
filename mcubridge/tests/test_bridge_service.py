@@ -45,7 +45,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
         if command_id == Command.CMD_LINK_RESET.value:
             # Use create_task to avoid deadlock with write_lock held by sender
             asyncio.create_task(
-                service.handle_mcu_frame(
+                service._on_transport_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
                 )
@@ -55,7 +55,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
             tag = service._handshake.compute_handshake_tag(nonce)
             response = nonce + tag
             asyncio.create_task(
-                service.handle_mcu_frame(
+                service._on_transport_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
                 )
@@ -325,7 +325,7 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
     async def fake_sender(command_id: int, payload: bytes) -> bool:
         if command_id == Command.CMD_LINK_RESET.value:
             asyncio.create_task(
-                service.handle_mcu_frame(
+                service._on_transport_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
                 )
@@ -337,7 +337,7 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
                 tag[0] ^= 0xFF
             # Corruption happened, now send it back
             asyncio.create_task(
-                service.handle_mcu_frame(
+                service._on_transport_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     nonce + bytes(tag),
                 )
@@ -361,7 +361,7 @@ async def test_mcu_status_frames_increment_counters(
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
     # Status frames don't need link sync in the dispatcher
-    await service.handle_mcu_frame(Status.ERROR.value, b"something failed")
+    service._on_transport_frame(Status.ERROR.value, b"something failed")
     assert runtime_state.mcu_status_counters[Status.ERROR.name] == 1
 
 
@@ -374,7 +374,7 @@ async def test_mcu_frame_before_sync_is_rejected(
     runtime_state.mark_transport_connected()
 
     # Use a non-status, non-pre-sync command
-    await service.handle_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"ignored")
+    service._on_transport_frame(Command.CMD_CONSOLE_WRITE.value, b"ignored")
     # Since it was rejected by dispatcher, no console write occurred (state unchanged)
     assert runtime_state.console_queue_bytes == 0
 
@@ -399,7 +399,7 @@ async def test_mailbox_available_flow() -> None:
     runtime_state.enqueue_mailbox_message(b"msg1", 100)
 
     # MCU checks if mailbox is available
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, b"")
+    service._on_transport_frame(Command.CMD_MAILBOX_AVAILABLE.value, b"")
 
     # Bridge should respond with RESP and 1 message pending
     def _check_mailbox_ack(frame_id: int, payload: bytes) -> bool:
@@ -432,7 +432,7 @@ async def test_mailbox_available_rejects_payload(
     service.register_serial_sender(fake_sender)
 
     # MCU checks availability with invalid payload
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, b"junk")
+    service._on_transport_frame(Command.CMD_MAILBOX_AVAILABLE.value, b"junk")
 
     # Should respond with MALFORMED
     assert any(frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames)
@@ -457,11 +457,11 @@ async def test_mailbox_push_overflow_returns_error(
     service.register_serial_sender(fake_sender)
 
     # First push OK
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x04aam1")
+    service._on_transport_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x04aam1")
     assert len(runtime_state.mailbox_incoming_queue) == 1
 
     # Second push should fail
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x04aam2")
+    service._on_transport_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x04aam2")
     assert any(frame_id in {Status.ERROR.value, Status.OVERFLOW.value, Status.ACK.value} for frame_id, _ in sent_frames)
 
 
@@ -481,7 +481,7 @@ async def test_mailbox_read_requeues_on_send_failure(
     service.register_serial_sender(fail_sender)
 
     # MCU tries to read
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_READ.value, b"")
+    service._on_transport_frame(Command.CMD_MAILBOX_READ.value, b"")
 
     # Message should be back in queue
     assert len(runtime_state.mailbox_queue) == 1
@@ -505,7 +505,7 @@ async def test_datastore_get_from_mcu_returns_cached_value() -> None:
 
     service.register_serial_sender(fake_sender)
 
-    await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, b"\x04key1")
+    service._on_transport_frame(Command.CMD_DATASTORE_GET.value, b"\x04key1")
 
     # Should respond with RESP containing "value1" (or ACK with payload)
     assert any(
@@ -531,7 +531,7 @@ async def test_datastore_get_from_mcu_unknown_key_returns_empty(
 
     service.register_serial_sender(fake_sender)
 
-    await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, b"\x05ghost")
+    service._on_transport_frame(Command.CMD_DATASTORE_GET.value, b"\x05ghost")
 
     # Should respond with ACK but no data payload beyond command ID
     for frame_id, payload in sent_frames:
@@ -553,7 +553,7 @@ async def test_datastore_put_from_mcu_updates_cache_and_mqtt(
         # key=k1 (len 2) + value=v1 (len 2)
         # Structure: PascalString(Int8ub) for key, Prefixed(Int8ub) for value
         payload = b"\x02k1\x02v1"
-        await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, payload)
+        service._on_transport_frame(Command.CMD_DATASTORE_PUT.value, payload)
 
         assert runtime_state.datastore["k1"] == "v1"
         # Check MQTT publish
@@ -860,7 +860,7 @@ async def test_process_run_async_accepts_complex_arguments(
 
         # Payload: Command
         cmd_bytes = b"ls -l /tmp"
-        await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, cmd_bytes)
+        service._on_transport_frame(Command.CMD_PROCESS_RUN_ASYNC.value, cmd_bytes)
 
         # Should have called handle_run_async with command bytes
         mock_comp.handle_run_async.assert_called_with(cmd_bytes)
@@ -884,6 +884,6 @@ async def test_legacy_mcu_pin_read_request_emits_not_implemented(
     service.register_serial_sender(fake_sender)
 
     # MCU requesting pin read (unsupported flow)
-    await service.handle_mcu_frame(Command.CMD_DIGITAL_READ.value, b"\x0d")
+    service._on_transport_frame(Command.CMD_DIGITAL_READ.value, b"\x0d")
 
     assert any(frame_id == Status.NOT_IMPLEMENTED.value for frame_id, _ in sent_frames)

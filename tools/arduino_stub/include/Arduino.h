@@ -139,13 +139,9 @@ public:
         return n;
     }
     // Stub print methods
-    size_t print(const char[]) { return 0; }
-    size_t print(char) { return 0; }
-    size_t print(int, int = 10) { return 0; }
     size_t println(const char[]) { return 0; }
     size_t println(int, int = 10) { return 0; }
     size_t println(void) { return 0; }
-    size_t print(const __FlashStringHelper *) { return 0; }
     size_t println(const __FlashStringHelper *) { return 0; }
 };
 

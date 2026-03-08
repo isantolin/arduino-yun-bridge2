@@ -160,11 +160,11 @@ async def test_async_process_packet_os_error(
     transport = serial_fast.SerialTransport(config, state, service)
     transport.loop = asyncio.get_running_loop()
 
-    # Mock handle_mcu_frame to raise OSError
+    # Mock _on_transport_frame to raise OSError
     async def _raise_os_error(cmd: int, payload: bytes) -> None:
         raise OSError("Device error")
 
-    service.handle_mcu_frame = _raise_os_error  # type: ignore
+    service._on_transport_frame = _raise_os_error  # type: ignore
 
     from cobs.cobs import encode as cobs_encode
     from mcubridge.protocol.frame import Frame

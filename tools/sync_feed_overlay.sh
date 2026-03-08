@@ -69,7 +69,6 @@ import sys
 
 src = sys.argv[1]
 dest_dir = sys.argv[2]
-print(os.path.relpath(src, dest_dir))
 PY
 }
 

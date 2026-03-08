@@ -87,8 +87,8 @@ bool run_cryptographic_self_tests() {
   // 2. HMAC-SHA256 KAT
   etl::array<uint8_t, 16> key_buf;
   etl::array<uint8_t, 64> data_buf;
-  size_t key_len = strlen_P((PGM_P)kat_hmac_key);
-  size_t data_len = strlen_P((PGM_P)kat_hmac_data);
+  size_t key_len = strlen_P(reinterpret_cast<PGM_P>(kat_hmac_key));
+  size_t data_len = strlen_P(reinterpret_cast<PGM_P>(kat_hmac_data));
 
   memcpy_P(key_buf.data(), kat_hmac_key, key_len);
   memcpy_P(data_buf.data(), kat_hmac_data, data_len);

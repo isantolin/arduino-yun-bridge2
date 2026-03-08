@@ -32,7 +32,7 @@ class MockSerialService:
     async def on_serial_disconnected(self) -> None:
         self.serial_disconnected.set()
 
-    async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
+    async def _on_transport_frame(self, command_id: int, payload: bytes) -> None:
         self.received_frames.append((command_id, payload))
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:

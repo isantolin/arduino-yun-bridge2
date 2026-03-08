@@ -60,13 +60,19 @@ CaptureStream g_null_stream;
 }  // namespace
 
 // --- GLOBALS (required by Bridge.cpp when BRIDGE_TEST_NO_GLOBALS is 1) ---
+BridgeClass Bridge(g_null_stream);
+ConsoleClass Console;
 #if BRIDGE_ENABLE_DATASTORE
+DataStoreClass DataStore;
 #endif
 #if BRIDGE_ENABLE_MAILBOX
+MailboxClass Mailbox;
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
+FileSystemClass FileSystem;
 #endif
 #if BRIDGE_ENABLE_PROCESS
+ProcessClass Process;
 #endif
 HardwareSerial Serial;
 

@@ -46,13 +46,12 @@ def hkdf_sha256(ikm: bytes, salt: bytes, info: bytes, length: int) -> bytes:
 
 def derive_handshake_key(shared_secret: bytes) -> bytes:
     """Derive the internal handshake authentication key."""
-    hkdf = HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=HANDSHAKE_HKDF_SALT,
-        info=HANDSHAKE_HKDF_INFO_AUTH,
+    return hkdf_sha256(
+        shared_secret,
+        HANDSHAKE_HKDF_SALT,
+        HANDSHAKE_HKDF_INFO_AUTH,
+        32,
     )
-    return hkdf.derive(shared_secret)
 
 
 def secure_zero(data: bytearray | memoryview) -> None:

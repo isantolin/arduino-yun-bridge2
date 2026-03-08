@@ -5,46 +5,7 @@
 
 #if BRIDGE_ENABLE_MAILBOX
 
-MailboxClass::MailboxClass()
-    : etl::imessage_router(etl::imessage_router::MESSAGE_ROUTER) {}
-
-void MailboxClass::receive(const etl::imessage& msg) {
-  const uint16_t cmd = static_cast<uint16_t>(msg.get_message_id());
-  if (cmd != rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH) &&
-      cmd != rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP) &&
-      cmd != rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)) {
-    return;
-  }
-
-  const auto& cmd_msg = static_cast<const bridge::router::CommandMessage&>(msg);
-
-  if (cmd == rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)) {
-    Bridge._withPayloadAck<rpc::payload::MailboxPush>(
-        cmd_msg, [this](const rpc::payload::MailboxPush& pl) {
-          _onIncomingData(etl::span<const uint8_t>(pl.data, pl.length));
-        });
-  } else if (cmd == rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP)) {
-    Bridge._withPayload<rpc::payload::MailboxReadResponse>(
-        cmd_msg, [this](const rpc::payload::MailboxReadResponse& pl) {
-          _onIncomingData(etl::span<const uint8_t>(pl.content, pl.length));
-        });
-  } else if (cmd ==
-             rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)) {
-    Bridge._withPayload<rpc::payload::MailboxAvailableResponse>(
-        cmd_msg, [this](const rpc::payload::MailboxAvailableResponse& pl) {
-          if (_mailbox_available_handler.is_valid()) {
-            _mailbox_available_handler(pl.count);
-          }
-        });
-  }
-}
-
-bool MailboxClass::accepts(etl::message_id_t id) const {
-  const uint16_t cmd = static_cast<uint16_t>(id);
-  return cmd == rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH) ||
-         cmd == rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP) ||
-         cmd == rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
-}
+MailboxClass::MailboxClass() = default;
 
 void MailboxClass::send(etl::string_view message) {
   if (message.empty()) return;
@@ -77,7 +38,4 @@ void MailboxClass::_onIncomingData(etl::span<const uint8_t> data) {
   }
 }
 
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-MailboxClass Mailbox;
 #endif

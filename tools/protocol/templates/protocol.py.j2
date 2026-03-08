@@ -48,12 +48,6 @@ class Status(IntEnum):
     {{ status.name }} = {{ status.value }}  # {{ status.description }}
     {%- endfor %}
 
-STATUS_VALUES: Final[dict[int, str]] = {s.value: s.name for s in Status}
-
-def calculate_crc32(data: bytes) -> int:
-    import zlib
-    return zlib.crc32(data) & 0xFFFFFFFF
-
 class Command(IntEnum):
     {%- for cmd in commands %}
     {{ cmd.name }} = {{ cmd.value }}
@@ -67,18 +61,11 @@ ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
 
 # Commands that expect a direct response without a prior ACK.
 # The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.
-RESPONSE_ONLY_COMMANDS: Final[frozenset[int]] = frozenset({
+RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({
     {%- for cmd in response_only_commands %}
     Command.{{ cmd.name }}.value,
     {%- endfor %}
 })
-
-REQUIRES_ACK_COMMANDS: Final[frozenset[int]] = frozenset({
-    {%- for cmd in ack_commands %}
-    Command.{{ cmd.name }}.value,
-    {%- endfor %}
-})
-
 
 class Topic(StrEnum):
     {%- for topic in topics %}

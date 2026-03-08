@@ -520,7 +520,7 @@ name = "CMD_XOFF"
 value = 0x4E
 description = "Pause transmission (Flow Control)"
 directions = ["mcu_to_linux"]
-requires_ack = true
+requires_ack = false
 
 [[commands]]
 name = "CMD_XON"
@@ -718,11 +718,9 @@ value = "B"
 pin = "B"
 
 [payloads.DigitalReadResponse]
-pin = "B"
 value = "B"
 
 [payloads.AnalogReadResponse]
-pin = "B"
 value = "H"
 
 [payloads.MailboxProcessed]

@@ -5,9 +5,9 @@ from __future__ import annotations
 import collections
 import logging
 from collections.abc import Callable
-from typing import Any
 
 from aiomqtt.message import Message
+from construct import ConstructError
 from mcubridge.protocol.protocol import Command, PinAction, Status
 from mcubridge.protocol.structures import (
     AnalogReadResponsePacket,
@@ -63,51 +63,29 @@ class PinComponent(BaseComponent):
         payload: bytes,
         resp_name: str,
         topic_type: Topic,
-        decode_packet: Callable[[bytes], Any],
+        parse_value: Callable[[bytes], int],
         pending_queue: collections.deque[PendingPinRequest],
     ) -> None:
         """Shared implementation for digital/analog read response handling."""
         try:
-            packet = decode_packet(payload)
-            value = packet.value
-            received_pin = packet.pin
-        except Exception as exc:
-            logger.error(
-                "Malformed %s payload or decode error: %s (len=%d)",
+            value = parse_value(payload)
+        except (ConstructError, ValueError):
+            logger.warning(
+                "Malformed %s payload: len=%d",
                 resp_name,
-                exc,
                 len(payload),
-                exc_info=True,
             )
             return
 
-        # [SIL-2] Find the matching request in the queue
         request: PendingPinRequest | None = None
-
-        # Safe removal from deque
-        try:
-            for i in range(len(pending_queue)):
-                if pending_queue[i].pin == received_pin:
-                    request = pending_queue[i]
-                    # Create a new deque without the found element to simulate remove()
-                    # (Deques are small here, so this is acceptable for SIL-2 reliability)
-                    new_queue = collections.deque(
-                        [pending_queue[j] for j in range(len(pending_queue)) if j != i]
-                    )
-                    pending_queue.clear()
-                    pending_queue.extend(new_queue)
-                    break
-        except (IndexError, AttributeError) as exc:
-            logger.error("Error searching pending queue: %s", exc)
-
-        if not request:
-            logger.warning("Received %s for pin %d without matching pending request.", resp_name, received_pin)
-            pin_value = received_pin
+        if pending_queue:
+            request = pending_queue.popleft()
         else:
-            pin_value = request.pin
+            logger.warning("Received %s without pending request.", resp_name)
 
+        pin_value = request.pin if request else None
         topic = self._build_pin_topic(topic_type, pin_value)
-        pin_label = str(pin_value)
+        pin_label = str(pin_value) if pin_value is not None else "unknown"
 
         await self.ctx.publish(
             topic=topic,
@@ -118,54 +96,70 @@ class PinComponent(BaseComponent):
         )
 
     async def handle_digital_read_resp(self, payload: bytes) -> None:
-
         await self._handle_pin_read_resp(
             payload=payload,
             resp_name="DIGITAL_READ_RESP",
             topic_type=Topic.DIGITAL,
-            decode_packet=lambda p: DigitalReadResponsePacket.decode(p, Command.CMD_DIGITAL_READ_RESP),
+            parse_value=lambda p: DigitalReadResponsePacket.decode(p, Command.CMD_DIGITAL_READ_RESP).value,
             pending_queue=self.state.pending_digital_reads,
         )
 
     async def handle_analog_read_resp(self, payload: bytes) -> None:
-
         await self._handle_pin_read_resp(
             payload=payload,
             resp_name="ANALOG_READ_RESP",
             topic_type=Topic.ANALOG,
-            decode_packet=lambda p: AnalogReadResponsePacket.decode(p, Command.CMD_ANALOG_READ_RESP),
+            parse_value=lambda p: AnalogReadResponsePacket.decode(p, Command.CMD_ANALOG_READ_RESP).value,
             pending_queue=self.state.pending_analog_reads,
         )
 
-
     async def handle_mqtt(
         self,
-        topic_type: Topic,
-        pin_str: str,
-        action: str | None,
+        topic_type: str | Topic,
+        segments: list[str],
         payload_str: str,
         inbound: Message | None = None,
-    ) -> bool:
-        """Central entry point for pin-related MQTT messages."""
+    ) -> None:
+        if not segments:
+            return
+
+        try:
+            topic_enum = Topic(topic_type)
+        except ValueError:
+            return
+
+        if not segments:
+            return
+
+        pin_str = segments[0]
         pin = self._parse_pin_identifier(pin_str)
         if pin < 0:
-            return False
+            return
 
-        is_analog_read = action == PinAction.READ and topic_type == Topic.ANALOG
+        is_analog_read = len(segments) == 2 and segments[1] == PinAction.READ and topic_enum == Topic.ANALOG
+        # Note: Analog write usually targets PWM pins which are subset of digital pins in Arduino numbering,
+        # but capabilities struct reports 'num_analog_inputs' specifically for ADC.
+        # We'll use digital limit for writes and analog limit for analog reads.
+
         if not self._validate_pin_access(pin, is_analog_read):
-            return False
+            return
 
-        if action == PinAction.MODE and topic_type == Topic.DIGITAL:
-            await self._handle_mode_command(pin, pin_str, payload_str)
-        elif action == PinAction.READ:
-            await self._handle_read_command(topic_type, pin, inbound)
-        elif action is None:
-            await self._handle_write_command(topic_type, pin, payload_str)
-        else:
-            logger.debug("Unsupported pin action: %s", action)
-            return False
+        if len(segments) == 2:
+            subtopic = segments[1]
+            if subtopic == PinAction.MODE and topic_enum == Topic.DIGITAL:
+                await self._handle_mode_command(pin, pin_str, payload_str)
+            elif subtopic == PinAction.READ:
+                await self._handle_read_command(topic_enum, pin, inbound)
+            else:
+                logger.debug("Unknown pin subtopic for %s: %s", pin_str, subtopic)
+            return
 
-        return True
+        if len(segments) == 1:
+            await self._handle_write_command(
+                topic_enum,
+                pin,
+                payload_str,
+            )
 
     async def _handle_mode_command(self, pin: int, pin_str: str, payload_str: str) -> None:
         try:

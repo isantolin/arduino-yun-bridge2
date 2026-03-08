@@ -65,6 +65,7 @@ from mcubridge.state.context import create_runtime_state
 from mcubridge.state.status import cleanup_status_file, status_writer
 from mcubridge.transport import (
     MqttTransport,
+    SerialTransport,
 )
 from mcubridge.watchdog import WatchdogKeepalive
 
@@ -150,11 +151,11 @@ class BridgeDaemon:
         try:
             async with self.service:
                 async with asyncio.TaskGroup() as tg:
-                    # 1. Bridge Service (Serial + Orchestration)
+                    # 1. Serial Link (Critical)
                     tg.create_task(
                         self._supervise(
-                            "bridge-service",
-                            lambda: self.service.run(),
+                            "serial-link",
+                            lambda: SerialTransport(self.config, self.state, self.service).run(),
                             (SerialHandshakeFatal,),
                         )
                     )

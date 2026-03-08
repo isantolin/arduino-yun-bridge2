@@ -15,9 +15,3 @@ async def create_serial_connection(
     *args: Any,
     **kwargs: Any,
 ) -> tuple[SerialTransport, asyncio.Protocol]: ...
-
-async def open_serial_connection(
-    url: str,
-    *args: Any,
-    **kwargs: Any,
-) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]: ...

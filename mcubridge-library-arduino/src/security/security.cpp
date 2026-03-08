@@ -11,90 +11,79 @@
 #ifdef ARDUINO_ARCH_AVR
 #include <avr/pgmspace.h>
 #else
-#ifndef PGM_P
-#define PGM_P const char*
+#ifndef PROGMEM
+#define PROGMEM
 #endif
-#ifndef strlen_P
-#define strlen_P strlen
-#endif
-#ifndef memcmp_P
-#define memcmp_P memcmp
+#ifndef pgm_read_byte
+#define pgm_read_byte(addr) (*(const unsigned char*)(addr))
 #endif
 #ifndef memcpy_P
 #define memcpy_P memcpy
+#endif
+#ifndef memcmp_P
+#define memcmp_P memcmp
 #endif
 #endif
 
 namespace rpc {
 namespace security {
 
-/**
- * @brief Known Answer Test vectors for FIPS 140-3 validation.
- */
-static const uint8_t kat_sha256_input[] PROGMEM = "abc";
-static const uint8_t kat_sha256_expected[] PROGMEM = {
-    0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40,
-    0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17,
-    0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad};
-
-static const uint8_t kat_hmac_key[] PROGMEM = "key";
-static const uint8_t kat_hmac_data[] PROGMEM =
-    "The quick brown fox jumps over the lazy dog";
-static const uint8_t kat_hmac_expected[] PROGMEM = {
-    0xf7, 0xbc, 0x83, 0xf4, 0x30, 0x53, 0x84, 0x24, 0xb1, 0x32, 0x98,
-    0xea, 0xa6, 0xfb, 0x14, 0x3e, 0xf4, 0xd5, 0x9a, 0x14, 0x94, 0x61,
-    0x75, 0x99, 0x74, 0x79, 0xdb, 0xc2, 0xd1, 0xa3, 0xcd, 0x8b};
-
+/// SHA-256 digest size in bytes.
 constexpr size_t kSha256DigestSize = 32;
+/// KAT scratch buffer: large enough for both SHA-256 and HMAC-SHA256 inputs.
+constexpr size_t kKatBufferSize = kSha256DigestSize * 2;
 
-void hkdf_sha256(const uint8_t* ikm, size_t ikm_len, const uint8_t* salt,
-                 size_t salt_len, const uint8_t* info, size_t info_len,
-                 uint8_t* okm, size_t okm_len) {
-  if (okm_len > 32) return;
+/**
+ * [MIL-SPEC] Known Answer Test (KAT) Vectors.
+ * Stored in Flash (PROGMEM) to save RAM on memory-constrained MCUs.
+ */
+static const uint8_t kat_sha256_msg[] PROGMEM = {'a', 'b', 'c'};
+static const uint8_t kat_sha256_expected[] PROGMEM = {
+    0xBA, 0x78, 0x16, 0xBF, 0x8F, 0x01, 0xCF, 0xEA, 0x41, 0x41, 0x40,
+    0xDE, 0x5D, 0xAE, 0x22, 0x23, 0xB0, 0x03, 0x61, 0xA3, 0x96, 0x17,
+    0x7A, 0x9C, 0xB4, 0x10, 0xFF, 0x61, 0xF2, 0x00, 0x15, 0xAD};
 
-  uint8_t prk[32];
-  hmac_sha256(salt, salt_len, ikm, ikm_len, prk, 32);
-
-  uint8_t info_block[128]; 
-  size_t actual_info_len = etl::min<size_t>(info_len, 127);
-  if (actual_info_len > 0) memcpy(info_block, info, actual_info_len);
-  info_block[actual_info_len] = 0x01;
-
-  hmac_sha256(prk, 32, info_block, actual_info_len + 1, okm, okm_len);
-  secure_zero(prk, 32);
-}
-
-void derive_handshake_key(const uint8_t* secret, size_t secret_len,
-                          uint8_t* out_key) {
-  hkdf_sha256(secret, secret_len, rpc::RPC_HANDSHAKE_HKDF_SALT,
-              sizeof(rpc::RPC_HANDSHAKE_HKDF_SALT),
-              rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH,
-              sizeof(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH), out_key, 32);
-}
+static const uint8_t kat_hmac_key[] PROGMEM = {'k', 'e', 'y'};
+static const uint8_t kat_hmac_data[] PROGMEM = {
+    'T', 'h', 'e', ' ', 'q', 'u', 'i', 'c', 'k', ' ', 'b', 'r', 'o', 'w', 'n',
+    ' ', 'f', 'o', 'x', ' ', 'j', 'u', 'm', 'p', 's', ' ', 'o', 'v', 'e', 'r',
+    ' ', 't', 'h', 'e', ' ', 'l', 'a', 'z', 'y', ' ', 'd', 'o', 'g'};
+static const uint8_t kat_hmac_expected[] PROGMEM = {
+    0xF7, 0xBC, 0x83, 0xF4, 0x30, 0x53, 0x84, 0x24, 0xB1, 0x32, 0x98,
+    0xE6, 0xAA, 0x6F, 0xB1, 0x43, 0xEF, 0x4D, 0x59, 0xA1, 0x49, 0x46,
+    0x17, 0x59, 0x97, 0x47, 0x9D, 0xBC, 0x2D, 0x1A, 0x3C, 0xD8};
 
 bool run_cryptographic_self_tests() {
-  SHA256 hash;
+  SHA256 sha256;
   etl::array<uint8_t, kSha256DigestSize> actual;
+  etl::array<uint8_t, kKatBufferSize>
+      buffer;  // Temporary buffer for data loading
 
-  // 1. SHA-256 KAT
-  hash.reset();
-  hash.update(kat_sha256_input, 3);
-  hash.finalize(actual.data(), kSha256DigestSize);
+  // 1. SHA256 KAT ("abc")
+  size_t msg_len = sizeof(kat_sha256_msg);
+  memcpy_P(buffer.data(), kat_sha256_msg, msg_len);
+  sha256.update(buffer.data(), msg_len);
+  sha256.finalize(actual.data(), kSha256DigestSize);
 
+  // Compare actual vs expected (expected is in PROGMEM)
+  // etl::equal might work if we provide a custom iterator or just use memcmp_P
   if (memcmp_P(actual.data(), kat_sha256_expected, kSha256DigestSize) != 0)
     return false;
 
   // 2. HMAC-SHA256 KAT
-  etl::array<uint8_t, 16> key_buf;
-  etl::array<uint8_t, 64> data_buf;
-  size_t key_len = strlen_P(reinterpret_cast<PGM_P>(kat_hmac_key));
-  size_t data_len = strlen_P(reinterpret_cast<PGM_P>(kat_hmac_data));
-
+  // Key is small, can load to stack or use update with PROGMEM if lib supports
+  // it. SHA256 lib usually supports RAM only.
+  etl::array<uint8_t, 32> key_buf;  // Max key size for test
+  size_t key_len = sizeof(kat_hmac_key);
   memcpy_P(key_buf.data(), kat_hmac_key, key_len);
-  memcpy_P(data_buf.data(), kat_hmac_data, data_len);
 
-  hmac_sha256(key_buf.data(), key_len, data_buf.data(), data_len, actual.data(),
-              kSha256DigestSize);
+  sha256.resetHMAC(key_buf.data(), key_len);
+
+  size_t data_len = sizeof(kat_hmac_data);
+  memcpy_P(buffer.data(), kat_hmac_data, data_len);
+  sha256.update(buffer.data(), data_len);
+  sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(),
+                      kSha256DigestSize);
 
   if (memcmp_P(actual.data(), kat_hmac_expected, kSha256DigestSize) != 0)
     return false;

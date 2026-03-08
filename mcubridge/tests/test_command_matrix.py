@@ -175,8 +175,7 @@ class _Pin:
     async def handle_mqtt(
         self,
         _topic: Topic,
-        _pin_str: str,
-        _action: str | None,
+        _parts: list[str],
         _payload_str: str,
         _inbound: _DummyMessage,
     ) -> bool:

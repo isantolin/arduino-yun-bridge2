@@ -60,7 +60,7 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
     key = b"key1"
     value = b"value1"
     # Payload: key_len (1 byte) + key + value_len (1 byte) + value
-    payload = structures.UINT16_STRUCT.build(len(key)) + key + structures.UINT16_STRUCT.build(len(value)) + value
+    payload = structures.UINT8_STRUCT.build(len(key)) + key + structures.UINT8_STRUCT.build(len(value)) + value
 
     # Mock _publish_value
     with patch.object(datastore_component, "_publish_value", new_callable=AsyncMock) as mock_pub:
@@ -78,7 +78,7 @@ async def test_handle_put_malformed(datastore_component: DatastoreComponent) -> 
 
     # Missing value length
     key = b"k"
-    payload = structures.UINT16_STRUCT.build(len(key)) + key
+    payload = structures.UINT8_STRUCT.build(len(key)) + key
     assert await datastore_component.handle_put(payload) is False
 
 
@@ -90,7 +90,7 @@ async def test_handle_get_request_success(
     datastore_component.state.datastore["key1"] = "value1"
 
     key = b"key1"
-    payload = structures.UINT16_STRUCT.build(len(key)) + key
+    payload = structures.UINT8_STRUCT.build(len(key)) + key
 
     await datastore_component.handle_get_request(payload)
 
@@ -109,7 +109,7 @@ async def test_handle_get_request_missing(
     datastore_component: DatastoreComponent,
 ) -> None:
     key = b"missing"
-    payload = structures.UINT16_STRUCT.build(len(key)) + key
+    payload = structures.UINT8_STRUCT.build(len(key)) + key
 
     await datastore_component.handle_get_request(payload)
 

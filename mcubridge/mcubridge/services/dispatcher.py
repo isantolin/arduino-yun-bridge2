@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 from mcubridge.protocol.contracts import response_to_request
 from mcubridge.protocol.protocol import (
     Command,
-    REQUIRES_ACK_COMMANDS,
     Status,
 )
 from mcubridge.protocol.topics import Topic, TopicRoute
@@ -177,13 +176,7 @@ class BridgeDispatcher:
             return await self._guard_and_dispatch(
                 r,
                 m,
-                lambda p, i: pin.handle_mqtt(
-                    r.topic,
-                    r.segments[0],
-                    r.segments[1] if len(r.segments) > 1 else None,
-                    p.decode("utf-8", errors="ignore"),
-                    i,
-                ),
+                lambda p, i: pin.handle_mqtt(r.topic, list(r.segments), p.decode("utf-8", errors="ignore"), i),
             )
 
         self.mqtt_router.register(Topic.DIGITAL, pin_mqtt_handler)
@@ -276,8 +269,7 @@ class BridgeDispatcher:
             logger.debug("Protocol: Ignoring orphaned MCU response %s", command_name)
 
         # 4. Auto-Acknowledgement (if applicable)
-        # [SIL-2] Only acknowledge commands that explicitly require it.
-        if handled_successfully and command_id in REQUIRES_ACK_COMMANDS:
+        if handled_successfully and command_id not in STATUS_VALUES:
             await self.acknowledge_frame(command_id)
 
     async def dispatch_mqtt_message(

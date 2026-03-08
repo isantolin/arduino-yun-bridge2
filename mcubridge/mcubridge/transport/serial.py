@@ -15,39 +15,36 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, Final
+import time
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from cobs.cobs import encode as cobs_encode, decode as cobs_decode, DecodeError as CobsDecodeError
 import serial
 import serial_asyncio_fast
 import tenacity
+from transitions import Machine
 
 from mcubridge.config.const import (
+    MAX_SERIAL_FRAME_BYTES,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
+    DEFAULT_RECONNECT_DELAY,
 )
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
-from mcubridge.state.context import RuntimeState
-from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
+from mcubridge.protocol import protocol, structures
+from mcubridge.protocol.frame import Frame
+from mcubridge.util.hex import log_binary_traffic
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from mcubridge.config.settings import RuntimeConfig
+    from mcubridge.state.context import RuntimeState
 
-logger = logging.getLogger("mcubridge.transport.serial")
-
+logger = logging.getLogger("mcubridge.serial")
 
 def _is_binary_packet(packet: bytes) -> bool:
     """Validate packet header matches protocol v2."""
     if len(packet) < 5:
         return False
     return packet[0] == protocol.PROTOCOL_VERSION
-
-
-def _format_hex(data: bytes) -> str:
-    """Format binary data as a structured hex string [AA BB CC]."""
-    return f"[{' '.join(f'{b:02X}' for b in data)}]"
-
 
 async def serial_sender_not_ready(cmd: int, pl: bytes) -> bool:
     """Fallback sender that logs a warning when the transport is not connected."""
@@ -77,185 +74,271 @@ class SerialTransport:
         self.writer: asyncio.StreamWriter | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
 
-        # [SIL-2] Pre-allocated registries
-        self.registry = MCUHandlerRegistry()
-        self.router = MQTTRouter()
-
         # Register ourselves as the sender for the service
         self.service.register_serial_sender(self._serial_sender)
 
         self._stop_event = asyncio.Event()
         self._negotiating = False
         self._negotiation_future: asyncio.Future[bool] | None = None
-        self._on_frame_callback: Callable[[int, bytes], None] | None = None
 
-        # State Machine (Simplified for SIL-2 reliability)
+        # State Machine
         self.fsm_state: str = self.STATE_DISCONNECTED
-
-    def _set_state(self, new_state: str) -> None:
-        if self.fsm_state != new_state:
-            old_state = self.fsm_state
-            self.fsm_state = new_state
-            logger.info("Serial transport state transition: %s -> %s", old_state, new_state)
-
-    def begin_negotiate(self) -> None:
-        self._set_state(self.STATE_NEGOTIATING)
-
-    def mark_connected(self) -> None:
-        self._set_state(self.STATE_CONNECTED)
-
-    def mark_disconnected(self) -> None:
-        self._set_state(self.STATE_DISCONNECTED)
-
-    def set_on_frame_callback(self, callback: Callable[[int, bytes], None]) -> None:
-        self._on_frame_callback = callback
-
-    async def __aenter__(self) -> SerialTransport:
-        await self.connect()
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.disconnect()
-
-    async def connect(self) -> bool:
-        """Establish serial connection with retries."""
-        if self.fsm_state != self.STATE_DISCONNECTED:
-            return True
-
-        self.begin_negotiate()
-        retryer = tenacity.AsyncRetrying(
-            stop=tenacity.stop_after_attempt(5),
-            wait=tenacity.wait_exponential(multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX),
-            retry=tenacity.retry_if_exception_type((OSError, serial.SerialException)),
-            reraise=False,
+        self._machine = Machine(
+            model=self,
+            states=[
+                self.STATE_DISCONNECTED,
+                self.STATE_NEGOTIATING,
+                self.STATE_CONNECTED,
+            ],
+            initial=self.STATE_DISCONNECTED,
+            after_state_change=self._on_state_change,
+            model_attribute="fsm_state",
+        )
+        self._machine.add_transition(
+            trigger="begin_negotiate",
+            source=self.STATE_DISCONNECTED,
+            dest=self.STATE_NEGOTIATING,
+        )
+        self._machine.add_transition(
+            trigger="mark_connected",
+            source=self.STATE_NEGOTIATING,
+            dest=self.STATE_CONNECTED,
+        )
+        self._machine.add_transition(
+            trigger="mark_disconnected",
+            source="*",
+            dest=self.STATE_DISCONNECTED,
         )
 
-        try:
-            async for attempt in retryer:
-                with attempt:
-                    await self._establish_connection()
-            return True
-        except tenacity.RetryError:
-            self.mark_disconnected()
-            return False
+    # Type hints for dynamic FSM methods
+    def begin_negotiate(self) -> None: pass
+    def mark_connected(self) -> None: pass
+    def mark_disconnected(self) -> None: pass
 
-    async def _establish_connection(self) -> None:
-        logger.info("Opening serial port: %s@%d", self.config.serial_port, self.config.serial_baud)
+    def _on_state_change(self) -> None:
+        logger.debug("Serial transport state: %s", self.fsm_state)
 
-        self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
-            url=self.config.serial_port,
-            baudrate=self.config.serial_baud,
-        )
-        self.mark_connected()
-        self._stop_event.clear()
-        asyncio.create_task(self._read_loop())
+    async def run(self) -> None:
+        """Main transport entry point with auto-reconnect."""
+        self.loop = asyncio.get_running_loop()
+        while not self._stop_event.is_set():
+            try:
+                await self._retryable_run(self.loop)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                if "SerialHandshakeFatal" in type(exc).__name__:
+                    raise
+                logger.error("Transport fatal error: %s", exc, exc_info=True)
+                await asyncio.sleep(DEFAULT_RECONNECT_DELAY)
 
-    async def disconnect(self) -> None:
-        """Orderly close of serial connection."""
+    async def stop(self) -> None:
+        """Gracefully stop the transport."""
         self._stop_event.set()
         if self.writer:
             self.writer.close()
             with contextlib.suppress(Exception):
                 await self.writer.wait_closed()
-        self.mark_disconnected()
-        self.reader = None
-        self.writer = None
 
-    async def write_frame(self, command_id: int, payload: bytes) -> bool:
-        """Writes a COBS-encoded frame to the serial port."""
-        if not self.writer or self.fsm_state != self.STATE_CONNECTED:
-            logger.warning(
-                "Attempted to write frame 0x%02X while not connected (State: %s, Writer: %s)",
-                command_id, self.fsm_state, "Present" if self.writer else "None"
-            )
-            return False
+    @tenacity.retry(
+        wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
+        retry=tenacity.retry_if_exception(
+            lambda e: not isinstance(e, asyncio.CancelledError)
+            and "SerialHandshakeFatal" not in type(e).__name__
+        ),
+    )
+    async def _retryable_run(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Single connection attempt."""
+        logger.info("Connecting to MCU on %s...", self.config.serial_port)
 
-        logger.debug("Writing frame 0x%02X len %d", command_id, len(payload))
-
-        # [SIL-2] Construct binary frame
-        # Version(1) + Length(2) + Command(2) + Payload(N) + CRC(4)
-        frame = bytearray([protocol.PROTOCOL_VERSION])
-        frame.extend(len(payload).to_bytes(2, "big"))
-        frame.extend(command_id.to_bytes(2, "big"))
-        frame.extend(payload)
-
-        crc = protocol.calculate_crc32(bytes(frame))
-        frame.extend(crc.to_bytes(4, "big"))
-
-        # COBS encode
-        encoded = cobs_encode(bytes(frame)) + protocol.FRAME_DELIMITER
+        await self._toggle_dtr(loop)
 
         try:
-            self.writer.write(encoded)
-            await self.writer.drain()
-            logger.debug("[SERIAL -> MCU] %s", _format_hex(bytes(frame)))
-            return True
-        except (OSError, serial.SerialException) as exc:
+            self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(  # type: ignore
+                url=self.config.serial_port,
+                baudrate=self.config.serial_baud,
+                xonxoff=False,
+            )
+            self.state.serial_writer = self.writer  # type: ignore
 
-            logger.warning("Write failed: %s", exc)
-            asyncio.create_task(self.disconnect())
-            return False
+            reader = cast(asyncio.StreamReader, self.reader)  # type: ignore
+            # Start reader loop
+            read_task = loop.create_task(self._read_loop(reader))
 
-    async def _read_loop(self) -> None:
-        """Infinite read loop processing delimited COBS frames."""
-        while not self._stop_event.is_set() and self.reader:
             try:
-                # [OPTIMIZATION] Python C-core delimiter search
-                packet = await self.reader.readuntil(protocol.FRAME_DELIMITER)
-                if not packet:
-                    continue
+                # 1. Negotiate baudrate if needed
+                if self.config.serial_baud != 115200:
+                    self.begin_negotiate()
+                    if not await self._negotiate_baudrate(reader, self.config.serial_baud):
+                        raise ConnectionError("Baudrate negotiation failed")
+                else:
+                    self.begin_negotiate() # Dummy transition
 
-                # Strip delimiter and decode
-                raw_payload = packet[:-1]
-                if not raw_payload:
-                    continue
+                # 2. Complete handshake via service
+                self.mark_connected()
+                await self.service.on_serial_connected()
 
-                try:
-                    decoded = cobs_decode(raw_payload)
-                except CobsDecodeError:
-                    logger.warning("COBS decode error for packet: %s", _format_hex(raw_payload))
-                    continue
+                # 3. Wait for reader to finish or stop event
+                stop_task = loop.create_task(self._stop_event.wait())
+                done, pending = await asyncio.wait(
+                    [read_task, stop_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
 
-                if not _is_binary_packet(decoded):
-                    # Maybe it's a log line?
-                    try:
-                        line = decoded.decode("utf-8", errors="ignore").strip()
-                        if line:
-                            logger.info("[MCU] %s", line)
-                    except Exception:
-                        pass
-                    continue
+                if stop_task in pending:
+                    stop_task.cancel()
 
-                # Parse frame
-                if len(decoded) < 9:
-                    continue
+                if read_task in done:
+                    exc = read_task.exception()
+                    if exc:
+                        raise ConnectionError(f"Serial read loop failed: {exc}")
+                    raise ConnectionError("Serial connection lost (EOF)")
 
-                # CRC Check
-                payload_len = int.from_bytes(decoded[1:3], "big")
-                if len(decoded) != 9 + payload_len:
-                    continue
+            finally:
+                read_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await read_task
+                self.mark_disconnected()
+                await self.service.on_serial_disconnected()
 
-                # Check CRC
-                computed_crc = protocol.calculate_crc32(decoded[:-4])
-                received_crc = int.from_bytes(decoded[-4:], "big")
-                if computed_crc != received_crc:
-                    logger.warning("CRC mismatch on received frame: %s", _format_hex(decoded))
-                    continue
+        except (OSError, serial.SerialException) as exc:
+            logger.warning("Connection failed: %s", exc)
+            raise
+        except Exception as exc:
+            logger.error("CRITICAL RETRY ERROR: %s", exc, exc_info=True)
+            raise
 
-                # Dispatch
-                cmd_id = int.from_bytes(decoded[3:5], "big")
-                payload = bytes(decoded[5 : 5 + payload_len])
+    async def _toggle_dtr(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Hardware reset via DTR toggle."""
+        try:
+            # We must use synchronous serial for DTR control as asyncio wrapper
+            # often lacks it or it's buggy across platforms.
+            def _sync_toggle():
+                with serial.Serial(self.config.serial_port) as s:
+                    s.dtr = False
+                    time.sleep(0.1)
+                    s.dtr = True
+            await loop.run_in_executor(None, _sync_toggle)
+        except Exception as exc:
+            logger.debug("DTR toggle not supported or failed: %s", exc)
 
-                logger.debug("[MCU -> SERIAL] %s", _format_hex(decoded))
+    async def _read_loop(self, reader: asyncio.StreamReader) -> None:
+        """Main loop reading complete frames directly from the C-backed Stream."""
+        while not self._stop_event.is_set():
+            try:
+                # readuntil delegates the delimiter search to C, saving CPU
+                packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
+                packet = packet_with_sep[:-1]  # remove delimiter
 
-                if self._on_frame_callback:
-                    self._on_frame_callback(cmd_id, payload)
+                if packet:
+                    # logger.debug("[SERIAL <- MCU] RAW: [%s]", packet.hex())
+                    self._process_packet(packet)
+
+            except asyncio.LimitOverrunError:
+                logger.warning("Serial packet too large, flushing.")
+                self.state.record_serial_decode_error()
+                # Drain the overrun data
+                await reader.read(MAX_SERIAL_FRAME_BYTES)
+            except asyncio.IncompleteReadError as e:
+                # EOF reached, connection closed
+                logger.info(
+                    "Serial connection closed (EOF). Partial data: %s",
+                    e.partial.hex(" ") if e.partial else "None",
+                )
+                break
             except Exception as exc:
-                if not self._stop_event.is_set():
-                    logger.warning("Read loop error: %s", exc)
-                    asyncio.create_task(self.disconnect())
+                logger.error("Error in _read_loop: %s", exc)
                 break
 
-    async def _serial_sender(self, cmd: int, payload: bytes) -> bool:
-        """Internal adapter for BridgeContext compatibility."""
-        return await self.write_frame(cmd, payload)
+    def _process_packet(self, encoded_packet: bytes) -> None:
+        """Dispatcher for decoded packets."""
+        if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
+            try:
+                raw_frame = cobs_decode(encoded_packet)
+                frame = Frame.from_bytes(raw_frame)
+                if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
+                    self._negotiation_future.set_result(True)
+            except (CobsDecodeError, ValueError):
+                pass
+            return
+
+        if self.loop:
+            self.loop.create_task(self._async_process_packet(encoded_packet))
+
+    async def _async_process_packet(self, encoded_packet: bytes) -> None:
+        """Async packet processing logic."""
+        # [DEBUG] Trace packet intake
+        logger.debug("[SERIAL <- MCU] Processing Packet: %s", encoded_packet.hex(" "))
+
+        if not _is_binary_packet(encoded_packet):
+            self.state.record_serial_decode_error()
+            return
+
+        try:
+            raw_frame = cobs_decode(encoded_packet)
+            frame = Frame.from_bytes(raw_frame)
+
+            if logger.isEnabledFor(logging.DEBUG):
+                log_binary_traffic(logger, logging.DEBUG, "[SERIAL <- MCU]", "RAW", encoded_packet)
+
+            await self.service.handle_mcu_frame(frame.command_id, frame.payload)
+            self.state.record_serial_rx(len(encoded_packet))
+
+        except (CobsDecodeError, ValueError) as exc:
+            logger.warning("Malformed frame: %s", exc)
+            self.state.record_serial_decode_error()
+        except Exception as exc:
+            logger.error("Error dispatching MCU frame: %s", exc)
+            self.state.record_serial_decode_error()
+    async def _serial_sender(self, cmd: int, pl: bytes) -> bool:
+        """Low-level serial frame sender."""
+        if not self.writer or self.writer.is_closing():
+            return False
+
+        try:
+            raw_frame = Frame.build(cmd, pl)
+            encoded = cobs_encode(raw_frame) + protocol.FRAME_DELIMITER
+
+            logger.debug("[SERIAL -> MCU] RAW: %s", encoded.hex(" "))
+            self.writer.write(encoded)
+            await self.writer.drain()
+
+            self.state.record_serial_tx(len(encoded))
+            return True
+        except (OSError, asyncio.CancelledError) as e:
+            logger.warning("Send failed: %s", e)
+            return False
+
+    async def _negotiate_baudrate(self, reader: asyncio.StreamReader, target_baud: int) -> bool:
+        """Execute baudrate switch protocol."""
+        logger.info("Negotiating baudrate switch to %d...", target_baud)
+
+        payload = structures.SetBaudratePacket(baudrate=target_baud).encode()
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(3),
+            wait=tenacity.wait_exponential(multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX),
+            reraise=True
+        )
+
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    if self.loop:
+                        self._negotiation_future = self.loop.create_future()
+
+                    if not await self._serial_sender(protocol.Command.CMD_SET_BAUDRATE.value, payload):
+                        raise asyncio.TimeoutError("Write failed")
+
+                    try:
+                        assert self._negotiation_future is not None
+                        await asyncio.wait_for(self._negotiation_future, timeout=2.0)
+                        return True
+                    except asyncio.TimeoutError:
+                        logger.warning("Baudrate negotiation timeout, retrying...")
+                        raise
+        except (tenacity.RetryError, asyncio.TimeoutError):
+            pass
+        finally:
+            self._negotiating = False
+
+        return False

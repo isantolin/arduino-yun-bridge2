@@ -34,9 +34,6 @@ async def run_test(
     bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
     await bridge.connect()
 
-    # [SIL-2] Wait for MQTT subscription stability
-    await asyncio.sleep(2.0)
-
     logging.info(
         "Requesting a reading from pin %s every %.1f seconds.",
         pin,
@@ -61,20 +58,19 @@ async def run_test(
                 break
 
             if is_analog:
-                value: int = await bridge.analog_read(pin_number, timeout=20)
+                value: int = await bridge.analog_read(pin_number)
                 logging.info(
                     "Received analog value for pin %s: %d",
                     pin,
                     value,
                 )
             else:
-                value = await bridge.digital_read(pin_number, timeout=20)
+                value = await bridge.digital_read(pin_number)
                 logging.info(
                     "Received digital value for pin %s: %d",
                     pin,
                     value,
                 )
-
 
             await asyncio.sleep(interval)
 
@@ -82,7 +78,6 @@ async def run_test(
         logging.info("\nExiting...")
     except Exception as e:
         logging.error(f"An error occurred: {e}")
-        raise
     finally:
         await bridge.disconnect()
 
@@ -97,7 +92,10 @@ def main(
     interval: Annotated[float, typer.Option(help="Read interval in seconds.")] = 2.0,
     tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = False,
 ) -> None:
-    asyncio.run(run_test(host, port, user, password, pin, interval, tls_insecure))
+    try:
+        asyncio.run(run_test(host, port, user, password, pin, interval, tls_insecure))
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

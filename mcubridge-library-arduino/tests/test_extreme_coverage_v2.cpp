@@ -16,10 +16,23 @@ unsigned long millis() { return g_test_millis++; }
 #include "test_constants.h"
 #include "test_support.h"
 
-// --- GLOBALS ---
+// Mocks y Stubs Globales
 HardwareSerial Serial;
 HardwareSerial Serial1;
-Stream* g_arduino_stream_delegate = nullptr;
+BridgeClass Bridge(Serial1);
+ConsoleClass Console;
+#if BRIDGE_ENABLE_DATASTORE
+DataStoreClass DataStore;
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+MailboxClass Mailbox;
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+FileSystemClass FileSystem;
+#endif
+#if BRIDGE_ENABLE_PROCESS
+ProcessClass Process;
+#endif
 
 namespace {
 
@@ -43,20 +56,30 @@ class CaptureStream : public Stream {
 };
 
 void setup_env(CaptureStream& stream) {
-  g_arduino_stream_delegate = &stream;
+  Bridge.~BridgeClass();
+  new (&Bridge) BridgeClass(stream);
   Bridge.begin(115200);
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setIdle();
 }
 
-// --- ACTUAL TESTS ---
+// --- COBERTURA BRIDGE.CPP ---
 void test_bridge_gaps() {
   CaptureStream stream;
   setup_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
   rpc::Frame f;
-  memset(&f, 0, sizeof(f));
+
+  // Gap: _handleSystemCommand default case
+  f.header.command_id = 0x4F;
+  ba.handleSystemCommand(f);
+
+  // Gap: _handleGpioCommand default case
+  f.header.command_id = 0x5F;
+  f.header.payload_length = 1;
+  f.payload[0] = 13;
+  ba.handleGpioCommand(f);
 
   // Gap: dispatch unexpected status codes
   f.header.command_id = 0x3F;  // STATUS_CODE_MAX
@@ -85,12 +108,12 @@ void test_bridge_gaps() {
   Bridge.enterSafeState();
   assert(!Bridge.isSynchronized());
 
-  // Gap: LinkSync without secret
+  // Gap: _handleSystemCommand CMD_LINK_SYNC without secret
   ba.clearSharedSecret();
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   f.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
-  memset(f.payload.data(), 0xAA, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
-  ba.dispatch(f);
+  etl::fill_n(f.payload.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH, uint8_t{0xA});
+  ba.handleSystemCommand(f);
 
   // Gap: onPacketReceived with various errors
   uint8_t crc_err[] = {0x02, 0x00, 0x00, 0x40, 0x00, 0xDE, 0xAD, 0xBE, 0xEF};
@@ -99,19 +122,18 @@ void test_bridge_gaps() {
 
   // Gap: Retransmission logic and failure streak
   ba.setUnsynchronized();
-  ba.fsmHandshakeStart();
   ba.fsmHandshakeComplete();
   ba.fsmSendCritical();
   ba.setAckTimeoutMs(1000);
   ba.setAckRetryLimit(1);
   ba.setRetryCount(ba.getAckRetryLimit());
 
-  Bridge.onAckTimeout();
+  Bridge._onAckTimeout();
   assert(!Bridge.isSynchronized());
 }
 
+// --- COBERTURA DATASTORE LÍMITES ---
 void test_datastore_gaps() {
-#if BRIDGE_ENABLE_DATASTORE
   CaptureStream stream;
   setup_env(stream);
 
@@ -119,9 +141,9 @@ void test_datastore_gaps() {
   for (int i = 0; i < BRIDGE_MAX_PENDING_DATASTORE + 1; ++i) {
     DataStore.requestGet("key");
   }
-#endif
 }
 
+// --- COBERTURA CONSOLE.CPP ---
 void test_console_gaps() {
   CaptureStream stream;
   setup_env(stream);
@@ -130,7 +152,7 @@ void test_console_gaps() {
 
   // Gap: write(buffer, size) chunking
   uint8_t large_buf[rpc::MAX_PAYLOAD_SIZE + 10];
-  memset(large_buf, 'A', sizeof(large_buf));
+  etl::fill_n(large_buf, sizeof(large_buf), uint8_t{'A'});
   Console.write(large_buf, sizeof(large_buf));
 
   // Gap: read() high/low watermarks
@@ -145,8 +167,8 @@ void test_console_gaps() {
   Console.flush();
 }
 
+// --- COBERTURA FILESYSTEM.CPP ---
 void test_filesystem_gaps() {
-#if BRIDGE_ENABLE_FILESYSTEM
   CaptureStream stream;
   setup_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
@@ -156,9 +178,10 @@ void test_filesystem_gaps() {
   FileSystem.write("test.txt", etl::span<const uint8_t>(super_large, sizeof(super_large)));
 
   // Gap: read() with invalid path
+  FileSystem.read(nullptr);
   FileSystem.read("");
   char long_path[rpc::RPC_MAX_FILEPATH_LENGTH + 5];
-  memset(long_path, 'p', sizeof(long_path));
+  etl::fill_n(long_path, sizeof(long_path), 'p');
   long_path[sizeof(long_path) - 1] = '\0';
   FileSystem.read(long_path);
 
@@ -175,34 +198,40 @@ void test_filesystem_gaps() {
   f.header.payload_length = 4;
   memcpy(f.payload.data(), "\0\x02OK", 4);
   ba.dispatch(f);
-#endif
 }
 
+// --- COBERTURA MAILBOX.CPP ---
 void test_mailbox_gaps() {
-#if BRIDGE_ENABLE_MAILBOX
   CaptureStream stream;
   setup_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
+  // Gap: requestRead, requestAvailable
   Mailbox.requestRead();
   Mailbox.requestAvailable();
 
+  // Gap: handleResponse CMD_MAILBOX_AVAILABLE_RESP
   rpc::Frame f;
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
   f.header.payload_length = 2;
   rpc::write_u16_be(f.payload.data(), 5);
   ba.dispatch(f);
-#endif
+
+  // Gap: handleResponse with other command
+  f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+  ba.dispatch(f);
 }
 
+// --- COBERTURA PROCESS.CPP ---
 void test_process_gaps() {
-#if BRIDGE_ENABLE_PROCESS
   CaptureStream stream;
   setup_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
+  // Gap: poll with PID tracking
   Process.runAsync("test");
+  // Simulamos que el Bridge recibió el PID 42
   rpc::Frame f_pid;
   f_pid.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
@@ -212,6 +241,7 @@ void test_process_gaps() {
   Process.poll(42);
   Process.kill(42);
 
+  // Gap: handleResponse CMD_PROCESS_POLL_RESP (not running)
   rpc::Frame f;
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
@@ -223,7 +253,6 @@ void test_process_gaps() {
   rpc::write_u16_be(&f.payload[5], 1);
   f.payload[7] = 'e';
   ba.dispatch(f);
-#endif
 }
 
 }  // namespace
@@ -239,3 +268,4 @@ int main() {
   printf("EXTREME ARDUINO COVERAGE V2 END\n");
   return 0;
 }
+Stream* g_arduino_stream_delegate = nullptr;

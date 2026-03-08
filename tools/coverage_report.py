@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated
 
 import msgspec
+from rich.console import Console as RichConsole
 from rich.table import Table
 import typer
 
@@ -170,6 +171,7 @@ def _build_combined_metrics(
 
 
 def _render_rich_table(rows: list[CoverageMetrics]) -> None:
+    console = RichConsole()
     table = Table(title="MCU Bridge Coverage Summary")
 
     table.add_column("Suite", style="cyan")
@@ -188,6 +190,7 @@ def _render_rich_table(rows: list[CoverageMetrics]) -> None:
             CoverageMetrics.format_percent(row.branch_percent),
         )
 
+    console.print(table)
 
 
 def _render_markdown(rows: list[CoverageMetrics]) -> str:

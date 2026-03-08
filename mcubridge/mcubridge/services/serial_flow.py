@@ -6,171 +6,276 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 import tenacity
+from mcubridge.config.const import (
+    SERIAL_FAILURE_STATUS_CODES,
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_HANDSHAKE_BACKOFF_MAX,
+    SERIAL_MIN_ACK_TIMEOUT,
+    SERIAL_SUCCESS_STATUS_CODES,
+)
+from mcubridge.protocol import protocol, rle
+from mcubridge.protocol.contracts import (
+    expected_responses,
+    response_to_request,
+)
+from mcubridge.protocol.protocol import (
+    ACK_ONLY_COMMANDS,
+    RESPONSE_ONLY_COMMANDS,
+    Status,
+)
+from mcubridge.protocol.structures import UINT16_STRUCT, PendingCommand
 
-from ..config.const import SERIAL_MIN_ACK_TIMEOUT
-from ..config.settings import RuntimeConfig
-from ..protocol.contracts import response_to_request
-from ..protocol.protocol import ACK_ONLY_COMMANDS, RESPONSE_ONLY_COMMANDS, Status
-
-logger = logging.getLogger("mcubridge.service.serial_flow")
-
-
-class PendingRequest:
-    """Represents a request awaiting MCU acknowledgement or response."""
-
-    def __init__(self, command_id: int, payload: bytes) -> None:
-        self.command_id = command_id
-        self.payload = payload
-        self.ack_received = False
-        self.completion = asyncio.Event()
-        self.failure_status: int | None = None
-        self.start_time = time.monotonic()
-
-    def mark_ack(self) -> None:
-        self.ack_received = True
-
-    def mark_success(self) -> None:
-        self.completion.set()
-
-    def mark_failure(self, status: int | None) -> None:
-        self.failure_status = status
-        self.completion.set()
+SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
 
 class SerialFlowController:
-    """Coordinates command queuing and explicit MCU acknowledgement flow."""
+    """Sequentialises MCU commands and retries on missing responses."""
 
-    def __init__(self, config: RuntimeConfig) -> None:
-        self._config = config
-        self._ack_timeout = max(config.serial_retry_timeout * 5.0, SERIAL_MIN_ACK_TIMEOUT * 2.0)
-        self._response_timeout = config.serial_response_timeout * 5.0
-        self._retry_attempts = config.serial_retry_attempts
+    def __init__(
+        self,
+        *,
+        ack_timeout: float,
+        response_timeout: float,
+        max_attempts: int,
+        logger: logging.Logger,
+        metrics_callback: Callable[[str], None] | None = None,
+    ) -> None:
+        self._ack_timeout = max(ack_timeout, SERIAL_MIN_ACK_TIMEOUT)
+        self._response_timeout = max(response_timeout, self._ack_timeout)
+        self._max_attempts = max(1, max_attempts)
+        self._logger = logger
+        self._sender: SendFrameCallable | None = None
         self._condition = asyncio.Condition()
-        self._current: PendingRequest | None = None
+        self._current: PendingCommand | None = None
+        self._metrics_callback = metrics_callback
+        self._pipeline_observer: Callable[[dict[str, Any]], None] | None = None
 
+    #  --- Tenacity Helpers ---
     class _RetryableSerialError(Exception):
-        """Internal error to trigger tenacity retries."""
+        """Marker exception to request another send attempt."""
+
+        pass
 
     class _FatalSerialError(Exception):
-        """Internal error to stop retries (e.g. MCU rejected command)."""
+        """Raised when a frame should not be retried."""
 
-    async def send(self, command_id: int, payload: bytes, sender: Callable[[int, bytes], Awaitable[bool]]) -> bool:
-        """Entry point for all non-status MCU commands."""
-        logger.debug("SerialFlow: send(0x%02X, len=%d)", command_id, len(payload))
+        def __init__(self, status: int | None) -> None:
+            super().__init__(status)
+            self.status = status
 
-        # [SIL-2] Use numerical command IDs for jump table compatibility.
+    def set_sender(self, sender: SendFrameCallable) -> None:
+        self._sender = sender
+
+    def set_metrics_callback(self, callback: Callable[[str], None] | None) -> None:
+        self._metrics_callback = callback
+
+    def set_pipeline_observer(self, observer: Callable[[dict[str, Any]], None] | None) -> None:
+        self._pipeline_observer = observer
+
+    async def reset(self) -> None:
+        async with self._condition:
+            if self._current and not self._current.completion.is_set():
+                self._logger.debug(
+                    "Abandoning pending command 0x%02X due to link reset",
+                    self._current.command_id,
+                )
+                self._current.mark_failure(Status.TIMEOUT.value)
+                self._notify_pipeline(
+                    "abandoned",
+                    self._current,
+                    status=Status.TIMEOUT.value,
+                )
+            self._current = None
+            self._condition.notify_all()
+
+    async def send(self, command_id: int, payload: bytes) -> bool:
+        sender = self._sender
+        if sender is None:
+            self._logger.error(
+                "Serial writer unavailable; dropping frame 0x%02X",
+                command_id,
+            )
+            return False
+
         final_cmd = command_id
         final_payload = payload
 
-        # Check if this command requires tracking
+        # RLE Compression
+        if payload and rle.should_compress(payload):
+            try:
+                compressed = rle.encode(payload)
+                if len(compressed) < len(payload):
+                    final_cmd |= protocol.CMD_FLAG_COMPRESSED
+                    final_payload = compressed
+            except (ValueError, TypeError, OverflowError) as e:
+                self._logger.warning("Compression failed for command 0x%02X: %s", command_id, e)
+
         if not self._should_track(command_id):
-            logger.debug("SerialFlow: command 0x%02X does not require tracking", command_id)
             return await sender(final_cmd, final_payload)
 
-        pending = PendingRequest(command_id, payload)
+        pending = PendingCommand(
+            command_id=command_id,
+            expected_resp_ids=set(expected_responses(command_id)),
+        )
 
         async with self._condition:
-            if self._current:
-                logger.debug("SerialFlow: waiting for current request 0x%02X to finish", self._current.command_id)
             await self._condition.wait_for(lambda: self._current is None)
             self._current = pending
 
         try:
-            logger.debug("SerialFlow: executing request 0x%02X", command_id)
-            return await self._execute_with_retries(pending, sender, final_cmd, final_payload)
+            return await self._execute_with_retries(pending, final_payload, sender, final_cmd)
         finally:
             async with self._condition:
-                logger.debug("SerialFlow: finished request 0x%02X", command_id)
-                self._current = None
-                self._condition.notify_all()
+                if self._current is pending:
+                    self._current = None
+                    self._condition.notify_all()
 
-    def on_ack_received(self, command_id: int) -> None:
-        """Handle explicit STATUS_ACK from MCU."""
-        if self._current and self._current.command_id == command_id:
-            logger.debug("SerialFlow: received ACK for 0x%02X", command_id)
-            self._current.mark_ack()
-        else:
-            logger.debug("SerialFlow: received ACK for 0x%02X but no current request matches", command_id)
+    def _emit_metric(self, event: str) -> None:
+        if self._metrics_callback is None:
+            return
+        self._metrics_callback(event)
 
-    def on_frame_received(self, command_id: int, _payload: bytes) -> None:
-        """Handle any valid frame from MCU (might resolve a pending request)."""
-        if not self._current:
+    def _notify_pipeline(
+        self,
+        event: str,
+        pending: PendingCommand,
+        *,
+        status: int | None = None,
+    ) -> None:
+        if self._pipeline_observer is None:
+            return
+        payload = {
+            "event": event,
+            "command_id": pending.command_id,
+            "attempt": max(1, pending.attempts or 1),
+            "ack_received": pending.ack_received,
+            "status": status,
+            "timestamp": time.time(),
+        }
+        self._pipeline_observer(payload)
+
+    def on_frame_received(self, command_id: int, payload: bytes) -> None:
+        pending = self._current
+        if pending is None:
             return
 
-        # Check if this frame is a response to the current request
+        if command_id == Status.ACK.value:
+            ack_target = pending.command_id
+            if len(payload) >= 2:
+                ack_target = UINT16_STRUCT.parse(payload[:2])
+            if ack_target != pending.command_id:
+                return
+            if not pending.ack_received:
+                pending.ack_received = True
+                self._notify_pipeline("ack", pending)
+            if pending.expected_resp_ids:
+                return
+            pending.mark_success()
+            return
+
         request_id = response_to_request(command_id)
         if request_id is not None:
-            if request_id == self._current.command_id:
-                logger.debug("SerialFlow: received response 0x%02X for request 0x%02X", command_id, request_id)
-                self._current.mark_success()
-
-    def on_status_received(self, status: Status) -> None:
-        """Handle error statuses that might indicate request failure."""
-        if not self._current:
+            if request_id == pending.command_id:
+                pending.mark_success()
             return
 
-        if status not in (Status.OK, Status.ACK):
-            self._current.mark_failure(status.value)
+        if command_id in SERIAL_FAILURE_STATUS_CODES:
+            # MCU status frames correlation logic
+            should_reject = not payload or (
+                len(payload) >= 2 and UINT16_STRUCT.parse(payload[:2]) == pending.command_id
+            )
+
+            if should_reject or not all(32 <= byte < 127 for byte in payload):
+                pending.mark_failure(command_id)
+            return
+
+        if command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
+            pending.mark_success()
 
     def _should_track(self, command_id: int) -> bool:
-        from ..protocol.contracts import expected_responses
         return bool(expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS
 
-    async def _execute_with_retries(
-        self,
-        pending: PendingRequest,
-        sender: Callable[[int, bytes], Awaitable[bool]],
-        command_id: int,
-        payload: bytes,
-    ) -> bool:
-        retryer = tenacity.AsyncRetrying(
-            stop=tenacity.stop_after_attempt(self._retry_attempts + 1),
-            wait=tenacity.wait_fixed(0.1),
+    def _build_retryer(self) -> tenacity.AsyncRetrying:
+        """Build tenacity retryer with configured limits."""
+        return tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(self._max_attempts),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
             retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
-            reraise=False,
+            before_sleep=self._on_retry_sleep,
+            reraise=True,
         )
-
-        try:
-            async for attempt in retryer:
-                with attempt:
-                    await self._single_attempt(pending, sender, command_id, payload)
-            return True
-        except self._FatalSerialError:
-            return False
-        except tenacity.RetryError:
-            logger.warning(
-                "Command 0x%02X failed after %d attempts",
-                pending.command_id,
-                self._retry_attempts + 1,
-            )
-            return False
 
     async def _single_attempt(
         self,
-        pending: PendingRequest,
-        sender: Callable[[int, bytes], Awaitable[bool]],
-        command_id: int,
+        pending: PendingCommand,
         payload: bytes,
-    ) -> None:
+        sender: SendFrameCallable,
+        cmd_to_send: int,
+    ) -> bool:
+        """Execute a single send attempt. Raises on retryable/fatal errors."""
+        pending.attempts = (pending.attempts or 0) + 1
+        self._notify_pipeline("start", pending)
+        self._reset_pending_state(pending)
+        await self._send_and_wait(pending, payload, sender, cmd_to_send)
+        self._emit_metric("ack")
+        self._notify_pipeline("success", pending)
+        return True
+
+    async def _execute_with_retries(
+        self,
+        pending: PendingCommand,
+        payload: bytes,
+        sender: SendFrameCallable,
+        actual_cmd_id: int | None = None,
+    ) -> bool:
+        cmd_to_send = actual_cmd_id if actual_cmd_id is not None else pending.command_id
+
         try:
-            await self._send_and_wait(pending, sender, command_id, payload)
-        except (self._RetryableSerialError, asyncio.TimeoutError):
-            # Reset ephemeral state for retry
-            pending.ack_received = False
-            raise self._RetryableSerialError()
+            retryer = self._build_retryer()
+            return await retryer(self._single_attempt, pending, payload, sender, cmd_to_send)
+        except self._RetryableSerialError:
+            pending.mark_failure(Status.TIMEOUT.value)
+            self._notify_pipeline("failure", pending, status=Status.TIMEOUT.value)
+        except self._FatalSerialError as exc:
+            pending.mark_failure(exc.status)
+            self._notify_pipeline("failure", pending, status=exc.status)
+
+        self._emit_metric("failure")
+        return False
+
+    def _on_retry_sleep(self, retry_state: tenacity.RetryCallState) -> None:
+        self._emit_metric("retry")
+        tenacity.before_sleep_log(self._logger, logging.WARNING)(retry_state)
+
+    def _reset_pending_state(self, pending: PendingCommand) -> None:
+        pending.completion.clear()
+        pending.ack_received = False
+        pending.success = None
+        pending.failure_status = None
 
     async def _send_and_wait(
         self,
-        pending: PendingRequest,
-        sender: Callable[[int, bytes], Awaitable[bool]],
-        command_id: int,
+        pending: PendingCommand,
         payload: bytes,
+        sender: SendFrameCallable,
+        actual_cmd_id: int,
     ) -> None:
-        send_ok = await sender(command_id, payload)
+        send_ok = await sender(actual_cmd_id, payload)
         if not send_ok:
+            self._logger.error(
+                "Serial write failed for command 0x%02X",
+                pending.command_id,
+            )
+            pending.mark_failure(None)
             raise self._FatalSerialError(None)
+
+        self._emit_metric("sent")
 
         # Commands in RESPONSE_ONLY_COMMANDS don't expect ACK, skip ack phase
         expect_ack = pending.command_id not in RESPONSE_ONLY_COMMANDS
@@ -179,22 +284,21 @@ class SerialFlowController:
             # 1. Wait for ACK (if expected)
             if expect_ack and not pending.ack_received:
                 async with asyncio.timeout(self._ack_timeout):
-                    while not pending.ack_received and not pending.completion.is_set():
-                        await asyncio.sleep(0.01)
-
-            # [FIX] If it's an ACK_ONLY command, we are done once ACK is received.
-            if pending.command_id in ACK_ONLY_COMMANDS:
-                pending.mark_success()
+                    while not pending.ack_received:
+                        await pending.completion.wait()
+                        if pending.success is not None:
+                            break
 
             # 2. Wait for Response/Completion
             if not pending.completion.is_set():
                 async with asyncio.timeout(self._response_timeout):
-                    while not pending.completion.is_set():
-                        await asyncio.sleep(0.01)
+                    await pending.completion.wait()
+        except TimeoutError:
+            if not pending.completion.is_set():
+                raise self._RetryableSerialError()
 
-        except asyncio.TimeoutError:
-            logger.warning("Timeout waiting for MCU response to 0x%02X", pending.command_id)
-            raise
+        if pending.success:
+            return
 
         if pending.failure_status is not None:
             try:
@@ -202,9 +306,11 @@ class SerialFlowController:
             except ValueError:
                 status_name = f"0x{pending.failure_status:02X}"
 
-            logger.warning(
+            self._logger.warning(
                 "MCU rejected command 0x%02X with status %s",
                 pending.command_id,
                 status_name,
             )
             raise self._FatalSerialError(pending.failure_status)
+
+        raise self._RetryableSerialError()

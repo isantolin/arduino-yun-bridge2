@@ -1,4 +1,4 @@
-"""Process management component for McuBridge."""
+"""Process management component for McuBridge using native asyncio."""
 
 from __future__ import annotations
 
@@ -9,12 +9,6 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 import msgspec
-
-# [SIL-2] Compatibility import for existing tests mocking sh
-try:
-    import sh
-except ImportError:
-    sh = None  # type: ignore
 
 from ..protocol import protocol, structures
 from ..protocol.protocol import Status
@@ -67,7 +61,7 @@ class ProcessComponent(BaseComponent):
     def _slots(self) -> asyncio.Semaphore:
         return self._process_slots
 
-    # --- MCU Handlers (Required by Dispatcher) ---
+    # --- MCU Handlers ---
 
     async def handle_run_async(self, payload: bytes) -> None:
         """Handle async process execution request from MCU."""
@@ -82,7 +76,6 @@ class ProcessComponent(BaseComponent):
                 )
                 return
 
-            # 2. Policy check
             if not self.state.allowed_policy.is_allowed(command):
                 logger.warning("Process execution denied by policy: %s", command)
                 await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
@@ -91,7 +84,6 @@ class ProcessComponent(BaseComponent):
                 )
                 return
 
-            # 3. Execution
             pid = await self.run_async(command)
             if pid > 0:
                 resp = structures.ProcessRunAsyncResponsePacket(pid=pid).encode()
@@ -153,13 +145,11 @@ class ProcessComponent(BaseComponent):
     # --- Core Logic ---
 
     async def run_async(self, command: str) -> int:
-        """Start a command asynchronously and return its PID."""
-        # [SECURITY] Enforce command policy at the lowest execution level
+        """Start a command asynchronously using native asyncio."""
         if not self.state.allowed_policy.is_allowed(command):
             logger.warning("Process execution denied by policy: %s", command)
             return 0
 
-        # [SIL-2] Deterministic slot management
         if self._process_slots.locked():
             logger.warning("Process slots full (%d), rejecting command.", self.state.process_max_concurrent)
             return 0
@@ -171,62 +161,30 @@ class ProcessComponent(BaseComponent):
             async with self.state.process_lock:
                 self.state.running_processes[pid] = proc
 
-            # [TEST COMPATIBILITY] Detect mocked sh
-            is_mocked_sh = sh is not None and hasattr(sh, "Command") and "Mock" in type(sh.Command).__name__
-            
-            if is_mocked_sh:
-                return self._start_mocked_sh(pid, command, proc)
+            # Native asyncio subprocess execution ONLY
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                shell=True,
+            )
 
-            return await self._start_async_subprocess(pid, command, proc)
+            proc.handle = process
+            proc.trigger("start")
 
+            # Spawn non-blocking reader tasks
+            asyncio.create_task(self._read_stream(pid, process.stdout, False))
+            asyncio.create_task(self._read_stream(pid, process.stderr, True))
+            asyncio.create_task(self._wait_for_completion(pid, process))
+
+            return pid
         except Exception as exc:
             logger.error("Failed to start process: %s", exc)
             self._process_slots.release()
-            if isinstance(exc, (OSError, RuntimeError)):
-                return 0
-            raise
-
-    def _start_mocked_sh(self, pid: int, command: str, proc: ManagedProcess) -> int:
-        """Logic for starting process via mocked sh (tests only)."""
-        loop = asyncio.get_running_loop()
-
-        def _out_cb(chunk: bytes | str) -> None:
-            b_chunk = chunk if isinstance(chunk, bytes) else str(chunk).encode("utf-8")
-            loop.call_soon_threadsafe(self._append_chunk_sync, pid, b_chunk, False)
-
-        def _err_cb(chunk: bytes | str) -> None:
-            b_chunk = chunk if isinstance(chunk, bytes) else str(chunk).encode("utf-8")
-            loop.call_soon_threadsafe(self._append_chunk_sync, pid, b_chunk, True)
-
-        def _done_cb(cmd: Any, success: bool, exit_code: int) -> None:
-            loop.create_task(self._finalize_process(pid, exit_code))
-
-        handle = sh.Command("/bin/sh")("-c", command, _bg=True, _out=_out_cb, _err=_err_cb, _done=_done_cb)
-        proc.handle = handle
-        proc.trigger("start")
-        return pid
-
-    async def _start_async_subprocess(self, pid: int, command: str, proc: ManagedProcess) -> int:
-        """Native asyncio subprocess execution."""
-        process = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            shell=True,
-        )
-
-        proc.handle = process
-        proc.trigger("start")
-
-        # Spawn reader tasks for non-blocking stream capture
-        asyncio.create_task(self._read_stream(pid, process.stdout, False))
-        asyncio.create_task(self._read_stream(pid, process.stderr, True))
-        asyncio.create_task(self._wait_for_completion(pid, process))
-
-        return pid
+            return 0
 
     async def _read_stream(self, pid: int, reader: asyncio.StreamReader | None, is_stderr: bool) -> None:
-        """Efficiently read chunks from a stream and buffer them."""
+        """Read chunks from asyncio stream."""
         if not reader:
             return
         try:
@@ -262,15 +220,14 @@ class ProcessComponent(BaseComponent):
                     proc.trigger("finish")
                     logger.info("Process %d (%s) finished with exit code %s", pid, proc.command, proc.exit_code)
 
-                # [TEST COMPATIBILITY] Tests expect immediate removal from dict
+                # Strictly clean up on finalization
                 del self.state.running_processes[pid]
 
         finally:
-            # Release slot once per process
             self._process_slots.release()
 
     async def _allocate_pid(self) -> int:
-        """Atomically allocate a unique PID for a new process."""
+        """Atomically allocate a unique PID."""
         async with self.state.process_lock:
             pid = self.state.next_pid
             self.state.next_pid = (pid % 65535) + 1
@@ -285,10 +242,10 @@ class ProcessComponent(BaseComponent):
             else:
                 proc.stdout_buffer.extend(chunk)
 
-    # --- Public API for state management ---
+    # --- Public API ---
 
     async def poll_process(self, pid: int) -> structures.ProcessOutputBatch:
-        """Collect and clear buffered output for a given process."""
+        """Collect buffered output for a process."""
         async with self.state.process_lock:
             proc = self.state.running_processes.get(pid)
             if not proc:
@@ -315,10 +272,8 @@ class ProcessComponent(BaseComponent):
                 stderr_truncated=False,
             )
 
-            # Clear buffers after successful poll
             proc.stdout_buffer.clear()
             proc.stderr_buffer.clear()
-
             return batch
 
     async def publish_poll_result(self, pid: int, batch: structures.ProcessOutputBatch) -> None:
@@ -330,19 +285,15 @@ class ProcessComponent(BaseComponent):
         )
 
     async def stop_process(self, pid: int) -> bool:
-        """Terminate a running process."""
+        """Terminate a running process using native handle."""
         async with self.state.process_lock:
             proc = self.state.running_processes.get(pid)
             if not proc or not proc.handle:
                 return False
 
             try:
-                # [TEST COMPATIBILITY] Priority for sh mock structure
-                handle = proc.handle
-                if hasattr(handle, "process") and hasattr(handle.process, "terminate"):
-                    handle.process.terminate()
-                elif hasattr(handle, "terminate"):
-                    handle.terminate()
+                # Strictly using asyncio.subprocess.Process handle
+                proc.handle.terminate()
                 return True
             except Exception as exc:
                 logger.error("Failed to terminate process %d: %s", pid, exc)

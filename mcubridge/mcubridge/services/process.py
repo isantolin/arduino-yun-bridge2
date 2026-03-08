@@ -248,12 +248,15 @@ class ProcessComponent(BaseComponent):
                     stderr_truncated=False,
                 )
 
+            is_finished = proc.fsm_state == PROCESS_STATE_FINISHED
+            exit_code = proc.exit_code if (is_finished and proc.exit_code is not None) else -1
+
             batch = structures.ProcessOutputBatch(
                 status_byte=Status.OK.value,
-                exit_code=proc.exit_code if (proc.fsm_state == PROCESS_STATE_FINISHED and proc.exit_code is not None) else -1,
+                exit_code=exit_code,
                 stdout_chunk=bytes(proc.stdout_buffer),
                 stderr_chunk=bytes(proc.stderr_buffer),
-                finished=(proc.fsm_state == PROCESS_STATE_FINISHED),
+                finished=is_finished,
                 stdout_truncated=False,
                 stderr_truncated=False,
             )

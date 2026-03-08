@@ -453,6 +453,11 @@ class BridgeClass
       const rpc::Frame& original, rpc::Frame& effective);
   bool _isSecurityCheckPassed(uint16_t command_id) const;
 
+  // [SIL-2] Private Type-Safe Value Senders (Refactored)
+  bool _sendValuePacked(rpc::CommandId cmd, uint8_t val);
+  bool _sendValuePacked(rpc::CommandId cmd, uint16_t val);
+  bool _sendValuePacked(rpc::CommandId cmd, uint32_t val);
+
   // [SIL-2] DRY Command Helpers with Lambdas
   template <typename F>
   void _withAck(const bridge::router::CommandContext& ctx, F handler) {

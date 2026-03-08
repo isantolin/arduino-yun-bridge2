@@ -383,12 +383,27 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 // ============================================================================
 
 void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch via Switch for Status Codes
+  // [SIL-2] O(1) Dispatch via Jump Table for Status Codes
+  typedef void (BridgeClass::*StatusHandlerFunc)(
+      const bridge::router::CommandContext&);
+  static const StatusHandlerFunc kStatusHandlers[] = {
+      nullptr,                         // 0: 48
+      nullptr,                         // 1: 49
+      nullptr,                         // 2: 50
+      &BridgeClass::_handleStatusMalformed, // 3: 51 (STATUS_MALFORMED)
+      nullptr,                         // 4: 52
+      nullptr,                         // 5: 53
+      nullptr,                         // 6: 54
+      nullptr,                         // 7: 55
+      &BridgeClass::_handleStatusAck        // 8: 56 (STATUS_ACK)
+  };
+
   const uint16_t status_val = ctx.raw_command;
-  switch (status_val - rpc::RPC_STATUS_CODE_MIN) {
-    case 3: _handleStatusMalformed(ctx); break;  // 51
-    case 8: _handleStatusAck(ctx); break;         // 56
-    default: break;
+  const uint16_t index = status_val - rpc::RPC_STATUS_CODE_MIN;
+
+  if (index < (sizeof(kStatusHandlers) / sizeof(kStatusHandlers[0]))) {
+    StatusHandlerFunc handler = kStatusHandlers[index];
+    if (handler) (this->*handler)(ctx);
   }
 
   if (_status_handler.is_valid()) {

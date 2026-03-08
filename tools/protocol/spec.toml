@@ -520,7 +520,7 @@ name = "CMD_XOFF"
 value = 0x4E
 description = "Pause transmission (Flow Control)"
 directions = ["mcu_to_linux"]
-requires_ack = false
+requires_ack = true
 
 [[commands]]
 name = "CMD_XON"

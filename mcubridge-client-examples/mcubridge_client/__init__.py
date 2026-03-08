@@ -8,7 +8,6 @@ import os
 import secrets
 import shlex
 import ssl
-import sys
 import uuid
 from collections.abc import Iterable, Sequence
 from contextlib import AsyncExitStack

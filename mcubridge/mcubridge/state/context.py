@@ -310,6 +310,11 @@ class RuntimeState(msgspec.Struct):
     def is_synchronized(self) -> bool:
         return self._machine.state == "synchronized"
 
+    @property
+    def fsm_state(self) -> str:
+        """Return the current state of the bridge FSM as a string."""
+        return str(self._machine.state)
+
     def mark_transport_connected(self) -> None:
         """Signal that serial connection is open but unsynchronized."""
         self._machine.trigger("connect")

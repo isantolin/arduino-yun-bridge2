@@ -45,6 +45,7 @@ class BridgeService(BridgeContext):
         self.state = state
         self._logger = logging.getLogger("mcubridge.service.runtime")
         self._tasks: list[asyncio.Task[None]] = []
+        self._dispatch_tasks: set[asyncio.Task[None]] = set()
         self._shutdown_event = asyncio.Event()
         self._serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = None
 
@@ -129,8 +130,6 @@ class BridgeService(BridgeContext):
 
     async def handle_mqtt_message(self, message: Any) -> None:
         """Entry point for all inbound MQTT traffic."""
-        import sys
-        print(f"!!! handle_mqtt_message CALLED: {message.topic}", file=sys.stderr, flush=True)
         # [FIX] USE self.config.mqtt_topic
         await self._dispatcher.dispatch_mqtt_message(
             message,
@@ -142,7 +141,11 @@ class BridgeService(BridgeContext):
         # [SIL-2] Gate all outgoing traffic by synchronization state
         # Handshake frames bypass this check.
         if not self.state.is_synchronized and not self._is_handshake_command(command_id):
-            self._logger.debug("Blocking frame 0x%02X because state is not synchronized (state=%s)", command_id, self.state._machine.state)
+            self._logger.debug(
+                "Blocking frame 0x%02X: not synchronized (state=%s)",
+                command_id,
+                self.state.fsm_state,
+            )
             return False
 
         if command_id in protocol.STATUS_VALUES:
@@ -316,8 +319,6 @@ class BridgeService(BridgeContext):
 
         # 2. Dispatch to components
         # [SIL-2] Keep strong reference to avoid aggressive Python 3.13 GC
-        if not hasattr(self, "_dispatch_tasks"):
-            self._dispatch_tasks = set()
         task = asyncio.create_task(self._dispatcher.dispatch_mcu_frame(command_id, payload))
         self._dispatch_tasks.add(task)
         task.add_done_callback(self._dispatch_tasks.discard)

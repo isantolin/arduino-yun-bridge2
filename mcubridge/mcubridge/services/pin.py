@@ -8,7 +8,6 @@ from collections.abc import Callable
 from typing import Any
 
 from aiomqtt.message import Message
-from construct import ConstructError
 from mcubridge.protocol.protocol import Command, PinAction, Status
 from mcubridge.protocol.structures import (
     AnalogReadResponsePacket,
@@ -119,7 +118,7 @@ class PinComponent(BaseComponent):
         )
 
     async def handle_digital_read_resp(self, payload: bytes) -> None:
-        import sys
+
         await self._handle_pin_read_resp(
             payload=payload,
             resp_name="DIGITAL_READ_RESP",
@@ -129,7 +128,7 @@ class PinComponent(BaseComponent):
         )
 
     async def handle_analog_read_resp(self, payload: bytes) -> None:
-        import sys
+
         await self._handle_pin_read_resp(
             payload=payload,
             resp_name="ANALOG_READ_RESP",
@@ -207,7 +206,6 @@ class PinComponent(BaseComponent):
             payload=payload,
             on_overflow=lambda: self._notify_pin_queue_overflow(topic_type, pin, inbound),
         )
-        print(f"!!! _handle_read_command FINISHED sending", flush=True)
 
     async def _handle_write_command(self, topic_type: Topic, pin: int, payload_str: str) -> None:
         value = self._parse_pin_value(topic_type, payload_str)

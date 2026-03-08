@@ -141,7 +141,6 @@ def main(
         "MCUBRIDGE_LOG_STREAM": "1",
         "MCUBRIDGE_ALLOWED_COMMANDS": "*",
         "MCUBRIDGE_NON_INTERACTIVE": "1",
-        "PYTHONUNBUFFERED": "1",
     }
 
     logger.info("Starting Daemon...")

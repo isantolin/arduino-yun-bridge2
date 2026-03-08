@@ -215,7 +215,7 @@ class ProcessComponent(BaseComponent):
 
                 if exit_code is not None:
                     proc.exit_code = exit_code
-                
+
                 if proc.fsm_state != PROCESS_STATE_FINISHED:
                     proc.trigger("finish")
                     logger.info("Process %d (%s) finished with exit code %s", pid, proc.command, proc.exit_code)

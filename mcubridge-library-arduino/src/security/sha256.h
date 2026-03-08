@@ -49,15 +49,12 @@ class SHA256 {
 
 /**
  * @brief HKDF (RFC 5869) — extract-then-expand using SHA-256.
- *
- * Template kept for call-site compatibility with ::hkdf<SHA256>(...).
  */
-template <typename T>
-inline void hkdf(void* out, size_t outLen, const void* key, size_t keyLen,
-                 const void* salt, size_t saltLen, const void* info,
-                 size_t infoLen) {
-  T hash;
-  etl::array<uint8_t, T::HASH_SIZE> prk;
+inline void hkdf_sha256(void* out, size_t outLen, const void* key, size_t keyLen,
+                        const void* salt, size_t saltLen, const void* info,
+                        size_t infoLen) {
+  SHA256 hash;
+  etl::array<uint8_t, SHA256::HASH_SIZE> prk;
 
   // --- Extract phase: PRK = HMAC-Hash(salt, IKM) ---
   const uint8_t* s;
@@ -66,33 +63,34 @@ inline void hkdf(void* out, size_t outLen, const void* key, size_t keyLen,
     s = static_cast<const uint8_t*>(salt);
     slen = saltLen;
   } else {
-    etl::array<uint8_t, T::HASH_SIZE> zero_salt;
+    etl::array<uint8_t, SHA256::HASH_SIZE> zero_salt;
     zero_salt.fill(0);
     s = zero_salt.data();
-    slen = T::HASH_SIZE;
+    slen = SHA256::HASH_SIZE;
   }
   hash.resetHMAC(s, slen);
   hash.update(key, keyLen);
-  hash.finalizeHMAC(s, slen, prk.data(), T::HASH_SIZE);
+  hash.finalizeHMAC(s, slen, prk.data(), SHA256::HASH_SIZE);
 
   // --- Expand phase: T(i) = HMAC-Hash(PRK, T(i-1) || info || counter) ---
-  etl::array<uint8_t, T::HASH_SIZE> t_block;
+  etl::array<uint8_t, SHA256::HASH_SIZE> t_block;
   uint8_t* outPtr = static_cast<uint8_t*>(out);
   uint8_t counter = 1;
 
   while (outLen > 0) {
-    hash.resetHMAC(prk.data(), T::HASH_SIZE);
+    hash.resetHMAC(prk.data(), SHA256::HASH_SIZE);
     if (counter > 1) {
-      hash.update(t_block.data(), T::HASH_SIZE);
+      hash.update(t_block.data(), SHA256::HASH_SIZE);
     }
     if (info && infoLen) {
       hash.update(info, infoLen);
     }
     hash.update(&counter, 1);
-    hash.finalizeHMAC(prk.data(), T::HASH_SIZE, t_block.data(), T::HASH_SIZE);
+    hash.finalizeHMAC(prk.data(), SHA256::HASH_SIZE, t_block.data(),
+                      SHA256::HASH_SIZE);
     ++counter;
 
-    size_t n = etl::min(outLen, size_t(T::HASH_SIZE));
+    size_t n = etl::min(outLen, size_t(SHA256::HASH_SIZE));
     etl::copy_n(t_block.data(), n, outPtr);
     outPtr += n;
     outLen -= n;
@@ -100,9 +98,9 @@ inline void hkdf(void* out, size_t outLen, const void* key, size_t keyLen,
 
   // Securely zero sensitive material.
   volatile uint8_t* p = prk.data();
-  for (size_t i = 0; i < T::HASH_SIZE; i++) *p++ = 0;
+  for (size_t i = 0; i < SHA256::HASH_SIZE; i++) *p++ = 0;
   p = t_block.data();
-  for (size_t i = 0; i < T::HASH_SIZE; i++) *p++ = 0;
+  for (size_t i = 0; i < SHA256::HASH_SIZE; i++) *p++ = 0;
 }
 
 #endif  // MCUBRIDGE_SHA256_H

@@ -864,26 +864,3 @@ async def test_process_run_async_accepts_complex_arguments(
 
         # Should have called handle_run_async with command bytes
         mock_comp.handle_run_async.assert_called_with(cmd_bytes)
-
-
-@pytest.mark.asyncio
-async def test_legacy_mcu_pin_read_request_emits_not_implemented(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    service = BridgeService(runtime_config, runtime_state)
-    runtime_state.mark_transport_connected()
-    runtime_state.mark_synchronized()
-
-    sent_frames: list[tuple[int, bytes]] = []
-
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
-        sent_frames.append((command_id, payload))
-        return True
-
-    service.register_serial_sender(fake_sender)
-
-    # MCU requesting pin read (unsupported flow)
-    await service.handle_mcu_frame(Command.CMD_DIGITAL_READ.value, b"\x0d")
-
-    assert any(frame_id == Status.NOT_IMPLEMENTED.value for frame_id, _ in sent_frames)

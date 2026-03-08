@@ -142,11 +142,12 @@ class _PinComponent:
     async def handle_mqtt(
         self,
         topic: Topic,
-        parts: list[str],
+        pin_str: str,
+        action: str | None,
         payload_str: str,
         inbound: Any,
     ) -> None:
-        self._calls.add("pin.handle_mqtt", topic, tuple(parts), payload_str, inbound)
+        self._calls.add("pin.handle_mqtt", topic, pin_str, action, payload_str, inbound)
 
 
 class _ProcessComponent:
@@ -537,6 +538,7 @@ async def test_pin_topic_action_deduction_and_policy() -> None:
         inbound2,
         parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
     )
+    # Check if handle_mqtt was called.
     assert any(name == "pin.handle_mqtt" for name, _ in calls2.items)
 
 

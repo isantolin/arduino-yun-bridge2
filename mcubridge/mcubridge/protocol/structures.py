@@ -170,15 +170,17 @@ class FreeMemoryResponsePacket(BaseStruct, frozen=True):
 
 
 class DigitalReadResponsePacket(BaseStruct, frozen=True):
+    pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("value" / construct.Int8ub)
+    SCHEMA = BinStruct("pin" / UINT8_STRUCT, "value" / UINT8_STRUCT)
 
 
 class AnalogReadResponsePacket(BaseStruct, frozen=True):
+    pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("value" / construct.Int16ub)
+    SCHEMA = BinStruct("pin" / UINT8_STRUCT, "value" / UINT16_STRUCT)
 
 
 class DatastoreGetPacket(BaseStruct, frozen=True):

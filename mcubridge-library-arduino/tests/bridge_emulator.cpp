@@ -6,6 +6,8 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <stdarg.h>
 
 #define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
@@ -17,30 +19,36 @@ Stream* g_arduino_stream_delegate = nullptr;
 static int g_fd_in = STDIN_FILENO;
 static int g_fd_out = STDOUT_FILENO;
 
+// Explicit file logger for MCU debug
+void mcu_log(const char* fmt, ...) {
+    FILE* f = fopen("/tmp/mcu_emulator.log", "a");
+    if (!f) return;
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(f, fmt, args);
+    va_end(args);
+    fflush(f);
+    fclose(f);
+}
+
 class HostSerialStream : public Stream {
  public:
   size_t write(uint8_t c) override {
-    fprintf(stderr, "[MCU -> SERIAL] %02X\n", c);
-    size_t n = ::write(g_fd_out, &c, 1);
-    fsync(g_fd_out);
-    return n;
+    return ::write(g_fd_out, &c, 1);
   }
   
   size_t write(const uint8_t* buffer, size_t size) override {
-    for (size_t i = 0; i < size; i++) {
-      fprintf(stderr, "[MCU -> SERIAL] %02X\n", buffer[i]);
-    }
-    size_t n = ::write(g_fd_out, buffer, size);
-    fsync(g_fd_out);
-    return n;
+    return ::write(g_fd_out, buffer, size);
   }
   
   int available() override {
     struct pollfd fds;
     fds.fd = g_fd_in;
     fds.events = POLLIN;
-    if (poll(&fds, 1, 0) > 0) {
-      if (fds.revents & POLLIN) return 1;
+    // [FIX] FIONREAD is unreliable on PTYs. Use poll instead.
+    int res = poll(&fds, 1, 0);
+    if (res > 0 && (fds.revents & POLLIN)) {
+      return 1;
     }
     return 0;
   }
@@ -49,13 +57,12 @@ class HostSerialStream : public Stream {
     uint8_t c;
     ssize_t res = ::read(g_fd_in, &c, 1);
     if (res == 1) {
-      fprintf(stderr, "[SERIAL -> MCU] %02X\n", c);
-      return c;
+      return static_cast<int>(c);
     }
+    // Bridge.cpp now correctly handles b < 0, so EAGAIN is safe.
     return -1;
   }
 
-  
   int peek() override { return -1; }
   void flush() override { fsync(g_fd_out); }
 };
@@ -81,6 +88,9 @@ void delay(uint32_t ms) {
 int main(int argc, char** argv) {
   (void)argc; (void)argv;
   
+  FILE* clear_log = fopen("/tmp/mcu_emulator.log", "w");
+  if (clear_log) fclose(clear_log);
+
   const char* pty_path = getenv("MCU_PTY");
   if (pty_path) {
     int pty_fd = open(pty_path, O_RDWR | O_NOCTTY);
@@ -97,8 +107,6 @@ int main(int argc, char** argv) {
         t.c_cflag &= ~PARENB;
         tcsetattr(pty_fd, TCSANOW, &t);
       }
-      
-      fprintf(stderr, "Using dedicated PTY: %s\n", pty_path);
     }
   }
 
@@ -110,13 +118,13 @@ int main(int argc, char** argv) {
   
   g_arduino_stream_delegate = &MySerial;
   srand(time(NULL));
-  const char* secret = "DEBUG_INSECURE";
-  Bridge.begin(115200, secret, 14);
+  const char* secret = "DEBUG_INSECURE_16";
+  Bridge.begin(115200, secret, 17);
   while (true) {
     Bridge.process();
     
     // Console Echo Implementation
-    while (Console.available()) {
+    while (Console.available() > 0) {
       int c = Console.read();
       if (c >= 0) {
         Console.write(static_cast<uint8_t>(c));
@@ -125,5 +133,6 @@ int main(int argc, char** argv) {
 
     usleep(1000);
   }
+  
   return 0;
 }

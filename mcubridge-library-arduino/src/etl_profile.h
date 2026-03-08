@@ -17,6 +17,9 @@
 // Force calculation on the fly.
 #define ETL_CRC32_USE_TABLE 0
 
+// [PROTOCOL] Use 16-bit message IDs for compatibility with our RPC command space.
+#define ETL_MESSAGE_ID_TYPE uint16_t
+
 // Detected compiler-specific optimizations
 #if defined(__AVR__)
 #define ETL_COMPILER_GCC

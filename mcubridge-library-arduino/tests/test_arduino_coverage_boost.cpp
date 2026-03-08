@@ -22,21 +22,15 @@ static unsigned long g_test_millis = 0;
 unsigned long millis() { return g_test_millis; }
 
 // Global instances required by Bridge.cpp linkage
-ConsoleClass Console;
 #if BRIDGE_ENABLE_DATASTORE
-DataStoreClass DataStore;
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-MailboxClass Mailbox;
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
-FileSystemClass FileSystem;
 #endif
 #if BRIDGE_ENABLE_PROCESS
-ProcessClass Process;
 #endif
 
-BridgeClass Bridge(Serial1);
 
 using namespace bridge::fsm;
 using namespace bridge::test;

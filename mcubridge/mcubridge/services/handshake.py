@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Annotated, Any
@@ -193,6 +194,7 @@ class SerialHandshakeManager:
 
     def _on_fsm_synchronized(self) -> None:
         """Callback when entering synchronized state."""
+        print("DEBUG: DAEMON SYNCHRONIZED!", file=sys.stderr)
         self._state.mark_synchronized()
 
     def _on_fsm_unsynchronized(self) -> None:
@@ -209,9 +211,8 @@ class SerialHandshakeManager:
                 max=SERIAL_HANDSHAKE_BACKOFF_MAX,
                 jitter=1.0,
             ),
-            retry=tenacity.retry_if_result(lambda res: res is False),
             before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-            reraise=False,
+            reraise=True,
         )
 
         try:
@@ -221,10 +222,11 @@ class SerialHandshakeManager:
                     self.reset_fsm()  # Ensure clean slate
                     ok = await self._synchronize_attempt()
                     if not ok:
-                        self.fail_handshake()
-                        return False
+                        # [SIL-2] Raising RuntimeError triggers tenacity retry
+                        raise RuntimeError("Handshake attempt failed")
             return True
-        except tenacity.RetryError:
+        except (tenacity.RetryError, RuntimeError) as exc:
+            self._logger.error("Handshake failed after retries: %s", exc)
             self.fail_handshake()
             return False
         finally:
@@ -256,11 +258,12 @@ class SerialHandshakeManager:
             return False
 
         # [SIL-2] Wait for MCU stabilization period (BRIDGE_STARTUP_STABILIZATION_MS)
-        await asyncio.sleep(0.15)
+        # Sychronized with Bridge.cpp (500ms default)
+        await asyncio.sleep(0.6)
 
         # Transition to SYNCING
         self.start_sync()
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
         our_tag = self.compute_handshake_tag(nonce)
@@ -275,7 +278,7 @@ class SerialHandshakeManager:
             return False
 
         # Transition to CONFIRMING only if we are still in SYNCING.
-        # High-speed emulators may have already triggered complete_handshake().
+        # High-speed emulators may already trigger complete_handshake().
         if self.fsm_state == self.STATE_SYNCING:
             self.start_confirm()
 
@@ -308,6 +311,7 @@ class SerialHandshakeManager:
             )
             await self.handle_handshake_failure("unexpected_sync_resp")
             return False
+
 
         nonce_length = self._state.link_nonce_length or len(expected)
         required_length = nonce_length + protocol.HANDSHAKE_TAG_LENGTH
@@ -351,10 +355,7 @@ class SerialHandshakeManager:
         nonce_mismatch = nonce != expected
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
-        tag_mismatch = (
-            not hmac.compare_digest(tag_bytes, recalculated_tag)
-            and self._config.serial_shared_secret != b"DEBUG_INSECURE"
-        )
+        tag_mismatch = not hmac.compare_digest(tag_bytes, recalculated_tag)
 
         if not nonce_mismatch and not missing_expected_tag:
             is_valid, _ = validate_nonce_counter(nonce, self._state.link_last_nonce_counter)
@@ -507,14 +508,13 @@ class SerialHandshakeManager:
         raise SerialHandshakeFatal("MCU rejected the serial shared secret " f"(reason={reason}). {hint}")
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
-        timeout = max(0.5, self._timing.response_timeout_seconds)
+        # [SIL-2] Use a generous timeout for synchronization (5.0s) to handle emulator jitter
         try:
-            async with asyncio.timeout(timeout):
+            async with asyncio.timeout(5.0):
                 while not self._state.is_synchronized:
                     await self._state.link_sync_event.wait()
-                    # is_synchronized is set in _on_fsm_synchronized.
                 return True
-        except TimeoutError:
+        except (asyncio.TimeoutError, TimeoutError):
             return False
 
     def clear_handshake_expectations(self) -> None:
@@ -603,9 +603,6 @@ class SerialHandshakeManager:
     def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:
         if not secret:
             return b""
-        if secret == b"DEBUG_INSECURE":
-            # Return dummy 16-byte tag to satisfy required_length
-            return b"DEBUG_TAG_UNUSED"
         # [MIL-SPEC] Use HKDF derived key for handshake authentication
         auth_key = derive_handshake_key(secret)
         digest = hmac.new(auth_key, nonce, hashlib.sha256).digest()

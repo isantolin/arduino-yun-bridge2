@@ -302,6 +302,11 @@ class RuntimeState(msgspec.Struct):
         return self._machine.state in {"connected", "synchronized"}
 
     @property
+    def is_transport_connected(self) -> bool:
+        """Alias for is_connected to satisfy orchestration service requirements."""
+        return self.is_connected
+
+    @property
     def is_synchronized(self) -> bool:
         return self._machine.state == "synchronized"
 

@@ -718,9 +718,11 @@ value = "B"
 pin = "B"
 
 [payloads.DigitalReadResponse]
+pin = "B"
 value = "B"
 
 [payloads.AnalogReadResponse]
+pin = "B"
 value = "H"
 
 [payloads.MailboxProcessed]

@@ -8,6 +8,7 @@ import os
 import secrets
 import shlex
 import ssl
+import sys
 import uuid
 from collections.abc import Iterable, Sequence
 from contextlib import AsyncExitStack
@@ -214,28 +215,23 @@ class Bridge:
 
         payload = _payload_bytes(message.payload)
 
-        logger.info(
-            "MQTT message observed topic=%s size=%d qos=%d",
-            topic,
-            len(payload),
-            int(message.qos),
-        )
-
         handled = False
         props = getattr(message, "properties", None)
         correlation = getattr(props, "CorrelationData", None) if props else None
+
         if correlation is not None:
             queue = self._correlation_routes.pop(correlation, None)
             if queue is not None:
                 self._safe_queue_put(queue, message, drop_oldest=False)
                 handled = True
 
-        for prefix, queues in list(self._response_routes.items()):
-            if not topic.startswith(prefix):
-                continue
-            handled = True
-            for queue, drop_oldest in list(queues):
-                self._safe_queue_put(queue, message, drop_oldest=drop_oldest)
+        if not handled:
+            for prefix, queues in list(self._response_routes.items()):
+                if not topic.startswith(prefix):
+                    continue
+                handled = True
+                for queue, drop_oldest in list(queues):
+                    self._safe_queue_put(queue, message, drop_oldest=drop_oldest)
 
         if not handled:
             preview = payload[:128]
@@ -390,6 +386,9 @@ class Bridge:
         logger.info("digital_write(%d, %d) -> %s", pin, value, topic)
 
     async def digital_read(self, pin: int, timeout: float = 10) -> int:
+        from .protocol import Command
+        from .structures import DigitalReadResponsePacket
+
         response = await self._publish_and_wait(
             Topic.command("d", pin, "read"),
             b"",
@@ -399,9 +398,20 @@ class Bridge:
             ),
             timeout=timeout,
         )
-        return int(response.decode("utf-8"))
+        try:
+            packet = DigitalReadResponsePacket.decode(response, Command.CMD_DIGITAL_READ_RESP)
+            return packet.value
+        except Exception:
+            # Fallback for legacy text payloads during transition
+            try:
+                return int(response.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                raise ValueError(f"Failed to decode digital read response: {response.hex()}")
 
     async def analog_read(self, pin: int, timeout: float = 10) -> int:
+        from .protocol import Command
+        from .structures import AnalogReadResponsePacket
+
         response = await self._publish_and_wait(
             Topic.command("a", pin, "read"),
             b"",
@@ -411,7 +421,15 @@ class Bridge:
             ),
             timeout=timeout,
         )
-        return int(response.decode("utf-8"))
+        try:
+            packet = AnalogReadResponsePacket.decode(response, Command.CMD_ANALOG_READ_RESP)
+            return packet.value
+        except Exception:
+            # Fallback for legacy text payloads during transition
+            try:
+                return int(response.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                raise ValueError(f"Failed to decode analog read response: {response.hex()}")
 
     async def set_digital_mode(self, pin: int, mode: int | str) -> None:
         if isinstance(mode, str):

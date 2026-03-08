@@ -9,6 +9,7 @@
 #undef max
 
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
 
 #include <Arduino.h>
 
@@ -26,6 +27,7 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_frame.h"
 #include "Bridge.h"
+#include "../BridgeTestInterface.h"
 
 // --- ASSERTIONS ---
 #define TEST_ASSERT(cond) \
@@ -182,62 +184,6 @@ static bool extract_next_valid_frame(const ByteBuffer<8192>& buffer, size_t& cur
     }
     return false;
 }
-
-// --- BRIDGE ACCESSOR ---
-class TestAccessor {
-public:
-    static TestAccessor create(BridgeClass& b) { return TestAccessor(b); }
-    TestAccessor(BridgeClass& b) : _bridge(b) {}
-    
-    void setUnsynchronized() { _bridge._fsm.resetFsm(); }
-    void setIdle() { 
-        _bridge._startup_stabilizing = false;
-        _bridge._fsm.handshakeStart(); 
-        _bridge._fsm.handshakeComplete(); 
-    }
-    void setAwaitingAck() { 
-        setIdle();
-        _bridge._fsm.sendCritical();
-    }
-    
-    bool isUnsynchronized() const { return _bridge._fsm.isUnsynchronized(); }
-    bool isIdle() const { return _bridge._fsm.isIdle(); }
-    bool isAwaitingAck() const { return _bridge._fsm.isAwaitingAck(); }
-    bool isFault() const { return _bridge._fsm.isFault(); }
-    
-    void dispatch(const rpc::Frame& f) { _bridge.dispatch(f); }
-    void markRxProcessed(const rpc::Frame& f) { _bridge._markRxProcessed(f); }
-    bool isRecentDuplicateRx(const rpc::Frame& f) const { return _bridge._isRecentDuplicateRx(f); }
-    
-    void setAckTimeoutMs(uint16_t t) { _bridge._ack_timeout_ms = t; }
-    void setAckRetryLimit(uint8_t r) { _bridge._ack_retry_limit = r; }
-    void setRetryCount(uint8_t c) { _bridge._retry_count = c; }
-    uint8_t getRetryCount() const { return _bridge._retry_count; }
-    uint8_t getAckRetryLimit() const { return _bridge._ack_retry_limit; }
-    
-    bool isPendingTxQueueFull() const { return _bridge._pending_tx_queue.full(); }
-    void clearSharedSecret() { _bridge._shared_secret.clear(); }
-    void assignSharedSecret(const uint8_t* s, const uint8_t* e) { _bridge._shared_secret.assign(s, e); }
-    bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
-    
-    void computeHandshakeTag(const uint8_t* n, size_t l, uint8_t* o) {
-      _bridge._computeHandshakeTag(etl::span<const uint8_t>(n, l), o);
-    }
-    void setStartupStabilizing(bool s) { _bridge._startup_stabilizing = s; }
-    
-    void handleSystemCommand(const rpc::Frame& f) { 
-        bridge::router::CommandContext ctx(&f, f.header.command_id, false, false);
-        _bridge.onSystemCommand(ctx); 
-    }
-    
-    void fsmHandshakeComplete() { _bridge._fsm.handshakeComplete(); }
-    void fsmSendCritical() { _bridge._fsm.sendCritical(); }
-    void fsmCryptoFault() { _bridge._fsm.cryptoFault(); }
-    void retransmitLastFrame() { _bridge._retransmitLastFrame(); }
-
-private:
-    BridgeClass& _bridge;
-};
 
 } // namespace test
 } // namespace bridge

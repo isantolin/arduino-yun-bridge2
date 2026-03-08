@@ -1,102 +1,144 @@
+#include <fcntl.h>
 #include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <stdarg.h>
 
 #define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
-
-// Match BridgeControl.ino service configuration (must precede Bridge.h).
-#define BRIDGE_ENABLE_DATASTORE 0
-#define BRIDGE_ENABLE_FILESYSTEM 0
-#define BRIDGE_ENABLE_PROCESS 0
-
 #include "Bridge.h"
-#include "protocol/rpc_frame.h"
-#include "protocol/rpc_protocol.h"
 
-using namespace rpc;
+// External delegate for stream
+Stream* g_arduino_stream_delegate = nullptr;
 
-/**
- * @brief Real-time Stream implementation for Linux Host.
- * Maps Arduino Serial calls to Linux stdin/stdout.
- */
+static int g_fd_in = STDIN_FILENO;
+static int g_fd_out = STDOUT_FILENO;
+
+// Explicit file logger for MCU debug
+void mcu_log(const char* fmt, ...) {
+    FILE* f = fopen("/tmp/mcu_emulator.log", "a");
+    if (!f) return;
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(f, fmt, args);
+    va_end(args);
+    fclose(f);
+}
+
 class HostSerialStream : public Stream {
  public:
   size_t write(uint8_t c) override {
-    size_t n = ::write(STDOUT_FILENO, &c, 1);
-    fsync(STDOUT_FILENO);
-    return n;
+    return ::write(g_fd_out, &c, 1);
   }
-
+  
   size_t write(const uint8_t* buffer, size_t size) override {
-    size_t n = ::write(STDOUT_FILENO, buffer, size);
-    fsync(STDOUT_FILENO);
-    return n;
+    return ::write(g_fd_out, buffer, size);
   }
-
+  
   int available() override {
     struct pollfd fds;
-    fds.fd = STDIN_FILENO;
+    fds.fd = g_fd_in;
     fds.events = POLLIN;
-    int ret = poll(&fds, 1, 0);
-    return (ret > 0 && (fds.revents & POLLIN)) ? 1 : 0;
+    // [FIX] FIONREAD is unreliable on PTYs. Use poll instead.
+    int res = poll(&fds, 1, 0);
+    if (res > 0 && (fds.revents & POLLIN)) {
+      return 1;
+    }
+    return 0;
   }
 
   int read() override {
     uint8_t c;
-    if (::read(STDIN_FILENO, &c, 1) == 1) return c;
+    ssize_t res = ::read(g_fd_in, &c, 1);
+    if (res == 1) {
+      return static_cast<int>(c);
+    }
     return -1;
   }
 
   int peek() override { return -1; }
-  void flush() override { fsync(STDOUT_FILENO); }
+  void flush() override { fsync(g_fd_out); }
 };
 
-// Global instances for the Bridge
-Stream* g_arduino_stream_delegate = nullptr;
-HostSerialStream HostSerial;
+HostSerialStream MySerial;
 HardwareSerial Serial;
 HardwareSerial Serial1;
 
-// Stubs for required Arduino symbols
+// --- Millis Implementation ---
 unsigned long millis() {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (ts.tv_sec * 1000) + (ts.tv_nsec / 1000000);
+  return (unsigned long)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
-void delay(unsigned long ms) { usleep(ms * 1000); }
+void delay(uint32_t ms) {
+  struct timespec ts;
+  ts.tv_sec = ms / 1000;
+  ts.tv_nsec = (ms % 1000) * 1000000;
+  nanosleep(&ts, NULL);
+}
 
-// --- INCLUDE THE ACTUAL SKETCH CODE ---
-// We need to define setup() and loop() from the .ino file.
-// Since .ino files are just C++ without some headers, we can include it
-// directly if we provide the necessary context.
-#define main arduino_main  // Rename sketch main if any
-#include "../examples/BridgeControl/BridgeControl.ino"
-#undef main
+// Forward declare the Arduino setup/loop functions
+void setup();
+void loop();
 
-int main() {
-  // Disable buffering for stdin/stdout to ensure real-time serial behavior
-  setvbuf(stdin, NULL, _IONBF, 0);
-  setvbuf(stdout, NULL, _IONBF, 0);
+// Define them here just to make it compile if we don't link the actual INO file
+// (Though in a real host test, we'd #include the .ino or compile it)
+void setup() {
+  Bridge.begin(115200, "DEBUG_INSECURE_16", 17);
+  Console.begin();
+  Console.println("Bridge sincronizado y operando.");
+}
 
-  // Setup the delegate
-  g_arduino_stream_delegate = &HostSerial;
+void loop() {
+  Bridge.process();
+  usleep(1000);
+}
 
-  // Seed the random number generator
-  srand(time(NULL));
+int main(int argc, char** argv) {
+  (void)argc; (void)argv;
+  
+  FILE* clear_log = fopen("/tmp/mcu_emulator.log", "w");
+  if (clear_log) fclose(clear_log);
 
-  // Execute Arduino Lifecycle
-  setup();
-
-  while (true) {
-    loop();
-    // Small sleep to prevent 100% CPU usage while maintaining low latency
-    usleep(100);
+  const char* pty_path = getenv("MCU_PTY");
+  if (pty_path) {
+    int pty_fd = open(pty_path, O_RDWR | O_NOCTTY);
+    if (pty_fd >= 0) {
+      g_fd_in = pty_fd;
+      g_fd_out = pty_fd;
+      
+      // ENSURE RAW MODE ON THE PTY TO PREVENT CORRUPTION
+      struct termios t;
+      if (tcgetattr(pty_fd, &t) == 0) {
+        cfmakeraw(&t);
+        t.c_cflag &= ~CSIZE;
+        t.c_cflag |= CS8;
+        t.c_cflag &= ~PARENB;
+        tcsetattr(pty_fd, TCSANOW, &t);
+      }
+    }
   }
 
+  setvbuf(stdout, NULL, _IONBF, 0);
+  setvbuf(stdin, NULL, _IONBF, 0);
+  
+  int flags = fcntl(g_fd_in, F_GETFL, 0);
+  fcntl(g_fd_in, F_SETFL, flags | O_NONBLOCK);
+  
+  g_arduino_stream_delegate = &MySerial;
+  srand(time(NULL));
+  
+  setup();
+  
+  while (true) {
+    loop();
+  }
+  
   return 0;
 }

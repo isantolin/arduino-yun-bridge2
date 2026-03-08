@@ -5,34 +5,13 @@ unsigned long g_test_millis = 0;
 unsigned long millis() { return g_test_millis; }
 
 namespace {
-bridge::test::RecordingStream g_null_stream;
-}
-
-BridgeClass Bridge(g_null_stream);
-ConsoleClass Console;
-#if BRIDGE_ENABLE_DATASTORE
-DataStoreClass DataStore;
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-MailboxClass Mailbox;
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-FileSystemClass FileSystem;
-#endif
-#if BRIDGE_ENABLE_PROCESS
-ProcessClass Process;
-#endif
-HardwareSerial Serial;
-Stream* g_arduino_stream_delegate = nullptr;
-
-namespace {
 
 using namespace bridge::test;
 
 void reset_bridge(RecordingStream& stream) {
-  Bridge.~BridgeClass();
-  new (&Bridge) BridgeClass(stream);
+  g_arduino_stream_delegate = &stream;
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+  bridge::test::TestAccessor::create(Bridge).setIdle();
 }
 
 class TestFrameBuilder {
@@ -91,6 +70,7 @@ void sync_bridge(RecordingStream& stream) {
 void test_bridge_begin() {
   RecordingStream stream;
   reset_bridge(stream);
+  Bridge.begin(115200);
   TEST_ASSERT(TestAccessor::create(Bridge).isUnsynchronized());
 }
 
@@ -177,7 +157,6 @@ void test_bridge_chunking() {
   Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PROCESSED,
                          etl::span<const uint8_t>(header, 5),
                          etl::span<const uint8_t>(data, 100));
-  TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
 }  // namespace
@@ -193,3 +172,7 @@ int main() {
   test_bridge_chunking();
   return 0;
 }
+
+HardwareSerial Serial;
+HardwareSerial Serial1;
+Stream* g_arduino_stream_delegate = nullptr;

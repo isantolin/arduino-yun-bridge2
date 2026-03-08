@@ -62,17 +62,6 @@ inline void secure_zero_portable(void* buf, size_t len) {
 }
 
 /**
- * @brief Known Answer Tests (KAT) for cryptographic primitives.
- *
- * [MIL-SPEC COMPLIANCE - FIPS 140-3]
- * Mandatory self-tests at startup to ensure the cryptographic engine
- * (SHA256/HMAC) is operating correctly.
- *
- * @return true if all tests pass, false otherwise.
- */
-bool run_cryptographic_self_tests();
-
-/**
  * @brief Timing-safe memory comparison.
  */
 inline bool timing_safe_equal(const uint8_t* a, const uint8_t* b, size_t len) {
@@ -84,18 +73,53 @@ inline bool timing_safe_equal(const uint8_t* a, const uint8_t* b, size_t len) {
 }
 
 /**
+ * @brief Known Answer Tests (KAT) for cryptographic primitives.
+ *
+ * [MIL-SPEC COMPLIANCE - FIPS 140-3]
+ * Mandatory self-tests at startup to ensure the cryptographic engine
+ * (SHA256/HMAC) is operating correctly.
+ *
+ * @return true if all tests pass, false otherwise.
+ */
+bool run_cryptographic_self_tests();
+
+/**
+ * @brief HMAC-SHA256 helper.
+ */
+inline void hmac_sha256(const uint8_t* key, size_t keyLen, const uint8_t* data,
+                        size_t dataLen, uint8_t* out, size_t outLen = 32) {
+  SHA256 hash;
+  hash.resetHMAC(key, keyLen);
+  hash.update(data, dataLen);
+  hash.finalizeHMAC(key, keyLen, out, outLen);
+}
+
+/**
+ * @brief HKDF-SHA256 Extract and Expand.
+ */
+void hkdf_sha256(const uint8_t* ikm, size_t ikm_len, 
+                 const uint8_t* salt, size_t salt_len, 
+                 const uint8_t* info, size_t info_len, 
+                 uint8_t* okm, size_t okm_len);
+
+/**
+ * @brief Derive the handshake authentication key.
+ */
+void derive_handshake_key(const uint8_t* secret, size_t secret_len, uint8_t* out_key);
+
+/**
  * @brief Generate nonce with monotonic counter (anti-replay).
  */
 template <typename RandomFunc>
 inline void generate_nonce_with_counter(uint8_t* out_nonce, uint64_t& counter,
                                         RandomFunc random_func) {
   // [SIL-2] Use ETL algorithm for deterministic generation
-  etl::generate(out_nonce, out_nonce + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+  etl::generate(out_nonce, out_nonce + rpc::RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
                 [&]() { return static_cast<uint8_t>(random_func() & 0xFF); });
 
   counter++;
-  for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_COUNTER_BYTES; i++) {
-    out_nonce[(RPC_HANDSHAKE_NONCE_LENGTH - 1) - i] =
+  for (unsigned i = 0; i < rpc::RPC_HANDSHAKE_NONCE_COUNTER_BYTES; i++) {
+    out_nonce[(rpc::RPC_HANDSHAKE_NONCE_LENGTH - 1) - i] =
         static_cast<uint8_t>((counter >> (i * kBitsPerByte)) & 0xFF);
   }
 }
@@ -104,8 +128,8 @@ inline void generate_nonce_with_counter(uint8_t* out_nonce, uint64_t& counter,
  * @brief Extract counter from nonce (for validation).
  */
 inline uint64_t extract_nonce_counter(const uint8_t* nonce) {
-  return etl::accumulate(nonce + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                         nonce + RPC_HANDSHAKE_NONCE_LENGTH, 0ULL,
+  return etl::accumulate(nonce + rpc::RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+                         nonce + rpc::RPC_HANDSHAKE_NONCE_LENGTH, 0ULL,
                          [](uint64_t acc, uint8_t byte) {
                            return (acc << kBitsPerByte) | byte;
                          });

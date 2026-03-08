@@ -11,8 +11,25 @@ static constexpr size_t kHighWaterNumerator = 3;
 static constexpr size_t kWatermarkDenominator = 4;
 
 ConsoleClass::ConsoleClass()
-    : _begun(false), _xoff_sent(false), _rx_buffer(), _tx_buffer() {
+    : etl::imessage_router(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)),
+      _begun(false),
+      _xoff_sent(false),
+      _rx_buffer(),
+      _tx_buffer() {
   // ETL containers initialize themselves
+}
+
+void ConsoleClass::receive(const etl::imessage& msg) {
+  if (msg.get_message_id() != rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)) return;
+  const auto& cmd_msg = static_cast<const bridge::router::CommandMessage&>(msg);
+  Bridge._withPayloadAck<rpc::payload::ConsoleWrite>(
+      cmd_msg, [this](const rpc::payload::ConsoleWrite& pl) {
+        _push(etl::span<const uint8_t>(pl.data, pl.length));
+      });
+}
+
+bool ConsoleClass::accepts(etl::message_id_t id) const {
+  return id == rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
 }
 
 void ConsoleClass::begin() {
@@ -29,11 +46,10 @@ size_t ConsoleClass::write(uint8_t c) {
     flush();
   }
 
-  // Double check full in case flush didn't clear (e.g. comm failure)
   if (!_tx_buffer.full()) {
     _tx_buffer.push_back(c);
   } else {
-    return 0;  // Should not happen if flush works, but safe return
+    return 0;
   }
 
   if (_tx_buffer.full() || c == '\n') {
@@ -43,27 +59,24 @@ size_t ConsoleClass::write(uint8_t c) {
 }
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
-  if (!_begun) return 0;
+  if (!_begun || size == 0) return 0;
 
-  // If there's buffered data, flush it first to maintain order
   if (!_tx_buffer.empty()) {
     flush();
   }
 
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
-                         etl::span<const uint8_t>(),
-                         etl::span<const uint8_t>(buffer, size));
-  return size;
+  if (Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
+                             etl::span<const uint8_t>(),
+                             etl::span<const uint8_t>(buffer, size))) {
+    return size;
+  }
+  return 0;
 }
 
 int ConsoleClass::available() {
   int size = 0;
   BRIDGE_ATOMIC_BLOCK {
-    if (_rx_buffer.empty()) {
-      size = 0;
-    } else {
-      size = static_cast<int>(_rx_buffer.size());
-    }
+    size = static_cast<int>(_rx_buffer.size());
   }
   return size;
 }
@@ -87,7 +100,6 @@ int ConsoleClass::read() {
       c = _rx_buffer.front();
       _rx_buffer.pop();
 
-      // High/Low watermark logic for XON/XOFF
       const size_t capacity = _rx_buffer.capacity();
       const size_t low_water =
           (capacity * kLowWaterNumerator) / kWatermarkDenominator;
@@ -131,8 +143,6 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
   BRIDGE_ATOMIC_BLOCK {
     if (_rx_buffer.capacity() == 0) return;
 
-    // Calculate available space first, then copy deterministically
-    // Drop new data if buffer is full.
     const size_t space = _rx_buffer.capacity() - _rx_buffer.size();
     const size_t to_copy = etl::min(data.size(), space);
 
@@ -153,3 +163,5 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
     }
   }
 }
+
+ConsoleClass Console;

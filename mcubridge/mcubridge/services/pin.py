@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from aiomqtt.message import Message
 from construct import ConstructError
@@ -63,29 +64,51 @@ class PinComponent(BaseComponent):
         payload: bytes,
         resp_name: str,
         topic_type: Topic,
-        parse_value: Callable[[bytes], int],
+        decode_packet: Callable[[bytes], Any],
         pending_queue: collections.deque[PendingPinRequest],
     ) -> None:
         """Shared implementation for digital/analog read response handling."""
         try:
-            value = parse_value(payload)
-        except (ConstructError, ValueError):
-            logger.warning(
-                "Malformed %s payload: len=%d",
+            packet = decode_packet(payload)
+            value = packet.value
+            received_pin = packet.pin
+        except Exception as exc:
+            logger.error(
+                "Malformed %s payload or decode error: %s (len=%d)",
                 resp_name,
+                exc,
                 len(payload),
+                exc_info=True,
             )
             return
 
+        # [SIL-2] Find the matching request in the queue
         request: PendingPinRequest | None = None
-        if pending_queue:
-            request = pending_queue.popleft()
-        else:
-            logger.warning("Received %s without pending request.", resp_name)
 
-        pin_value = request.pin if request else None
+        # Safe removal from deque
+        try:
+            for i in range(len(pending_queue)):
+                if pending_queue[i].pin == received_pin:
+                    request = pending_queue[i]
+                    # Create a new deque without the found element to simulate remove()
+                    # (Deques are small here, so this is acceptable for SIL-2 reliability)
+                    new_queue = collections.deque(
+                        [pending_queue[j] for j in range(len(pending_queue)) if j != i]
+                    )
+                    pending_queue.clear()
+                    pending_queue.extend(new_queue)
+                    break
+        except (IndexError, AttributeError) as exc:
+            logger.error("Error searching pending queue: %s", exc)
+
+        if not request:
+            logger.warning("Received %s for pin %d without matching pending request.", resp_name, received_pin)
+            pin_value = received_pin
+        else:
+            pin_value = request.pin
+
         topic = self._build_pin_topic(topic_type, pin_value)
-        pin_label = str(pin_value) if pin_value is not None else "unknown"
+        pin_label = str(pin_value)
 
         await self.ctx.publish(
             topic=topic,
@@ -96,22 +119,25 @@ class PinComponent(BaseComponent):
         )
 
     async def handle_digital_read_resp(self, payload: bytes) -> None:
+        import sys
         await self._handle_pin_read_resp(
             payload=payload,
             resp_name="DIGITAL_READ_RESP",
             topic_type=Topic.DIGITAL,
-            parse_value=lambda p: DigitalReadResponsePacket.decode(p, Command.CMD_DIGITAL_READ_RESP).value,
+            decode_packet=lambda p: DigitalReadResponsePacket.decode(p, Command.CMD_DIGITAL_READ_RESP),
             pending_queue=self.state.pending_digital_reads,
         )
 
     async def handle_analog_read_resp(self, payload: bytes) -> None:
+        import sys
         await self._handle_pin_read_resp(
             payload=payload,
             resp_name="ANALOG_READ_RESP",
             topic_type=Topic.ANALOG,
-            parse_value=lambda p: AnalogReadResponsePacket.decode(p, Command.CMD_ANALOG_READ_RESP).value,
+            decode_packet=lambda p: AnalogReadResponsePacket.decode(p, Command.CMD_ANALOG_READ_RESP),
             pending_queue=self.state.pending_analog_reads,
         )
+
 
     async def handle_mqtt(
         self,
@@ -181,6 +207,7 @@ class PinComponent(BaseComponent):
             payload=payload,
             on_overflow=lambda: self._notify_pin_queue_overflow(topic_type, pin, inbound),
         )
+        print(f"!!! _handle_read_command FINISHED sending", flush=True)
 
     async def _handle_write_command(self, topic_type: Topic, pin: int, payload_str: str) -> None:
         value = self._parse_pin_value(topic_type, payload_str)

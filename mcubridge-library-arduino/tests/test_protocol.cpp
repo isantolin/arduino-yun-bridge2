@@ -11,12 +11,6 @@ using namespace rpc;
 
 HardwareSerial Serial;
 HardwareSerial Serial1;
-BridgeClass Bridge(Serial1);
-ConsoleClass Console;
-DataStoreClass DataStore;
-MailboxClass Mailbox;
-FileSystemClass FileSystem;
-ProcessClass Process;
 
 // 1. Helpers Básicos (Original)
 static void test_endianness_helpers() {

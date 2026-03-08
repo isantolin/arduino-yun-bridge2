@@ -14,12 +14,6 @@
 // Mocks y Stubs Globales
 HardwareSerial Serial;
 HardwareSerial Serial1;
-BridgeClass Bridge(Serial1);
-ConsoleClass Console;
-DataStoreClass DataStore;
-MailboxClass Mailbox;
-FileSystemClass FileSystem;
-ProcessClass Process;
 
 namespace {
 

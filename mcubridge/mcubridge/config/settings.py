@@ -97,7 +97,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
     status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
-    debug_logging: bool = DEFAULT_DEBUG_LOGGING
+    debug_logging: bool = True
     console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
@@ -261,6 +261,8 @@ def load_runtime_config() -> RuntimeConfig:
 
     if "debug" in raw_config:
         raw_config["debug_logging"] = parse_bool(raw_config.pop("debug"))
+    elif "debug_logging" in raw_config:
+        raw_config["debug_logging"] = parse_bool(raw_config["debug_logging"])
 
     if "serial_shared_secret" in raw_config:
         secret = raw_config["serial_shared_secret"]

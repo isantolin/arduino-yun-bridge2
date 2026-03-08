@@ -138,12 +138,13 @@ async def test_handle_digital_read_resp_without_pending_request_publishes_unknow
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(structures.PinReadPacket.SCHEMA.build({"pin": 1}))
+    # MCU sends DIGITAL_READ_RESP packet
+    packet_data = structures.DigitalReadResponsePacket(value=1).encode()
+    await component.handle_digital_read_resp(packet_data)
 
     assert len(ctx.enqueued) == 1
     message, reply_context = ctx.enqueued[0]
     assert reply_context is None
-    # Pin 1 is unknown if not in pending, publishes to generic value topic
     assert message.payload == b"1"
     assert message.topic_name == topic_path(
         runtime_state.mqtt_topic_prefix,
@@ -163,7 +164,8 @@ async def test_handle_digital_read_resp_with_pending_request_uses_reply_context(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(bytes([protocol.DIGITAL_LOW]))
+    packet_data = structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode()
+    await component.handle_digital_read_resp(packet_data)
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound
@@ -186,7 +188,8 @@ async def test_handle_analog_read_resp_with_pending_request_decodes_big_endian(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_analog_read_resp(structures.UINT16_STRUCT.build(256))
+    packet_data = structures.AnalogReadResponsePacket(value=256).encode()
+    await component.handle_analog_read_resp(packet_data)
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound
@@ -209,17 +212,15 @@ async def test_handle_mqtt_mode_command_valid_payload_sends_frame(
 
     await component.handle_mqtt(
         Topic.DIGITAL,
-        [
-            "2",
-            PinAction.MODE.value,
-        ],
+        "2",
+        PinAction.MODE.value,
         "1",
     )
 
     assert ctx.sent_frames
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_SET_PIN_MODE.value
-    assert payload == structures.DigitalWritePacket.SCHEMA.build(dict(pin=2, value=1))
+    assert payload == structures.PinModePacket(pin=2, mode=1).encode()
 
 
 @pytest.mark.asyncio
@@ -232,10 +233,8 @@ async def test_handle_mqtt_mode_command_rejects_invalid_payload(
 
     await component.handle_mqtt(
         Topic.DIGITAL,
-        [
-            "2",
-            PinAction.MODE.value,
-        ],
+        "2",
+        PinAction.MODE.value,
         "not-an-int",
     )
 
@@ -256,10 +255,8 @@ async def test_handle_mqtt_read_command_queue_overflow_notifies_mqtt(
 
     await component.handle_mqtt(
         Topic.DIGITAL,
-        [
-            "9",
-            PinAction.READ.value,
-        ],
+        "9",
+        PinAction.READ.value,
         "",
         inbound,
     )
@@ -289,10 +286,8 @@ async def test_handle_mqtt_read_command_send_fails_does_not_enqueue_pending(
 
     await component.handle_mqtt(
         Topic.ANALOG,
-        [
-            "3",
-            PinAction.READ.value,
-        ],
+        "3",
+        PinAction.READ.value,
         "",
     )
 
@@ -310,10 +305,8 @@ async def test_handle_mqtt_read_command_appends_pending_on_success(
 
     await component.handle_mqtt(
         Topic.ANALOG,
-        [
-            "3",
-            PinAction.READ.value,
-        ],
+        "3",
+        PinAction.READ.value,
         "",
         inbound,
     )
@@ -321,7 +314,7 @@ async def test_handle_mqtt_read_command_appends_pending_on_success(
     assert ctx.sent_frames
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_ANALOG_READ.value
-    assert payload == structures.PinReadPacket.SCHEMA.build({"pin": 3})
+    assert payload == structures.PinReadPacket(pin=3).encode()
     assert runtime_state.pending_analog_reads
     request = runtime_state.pending_analog_reads[-1]
     assert request.pin == 3
@@ -338,13 +331,14 @@ async def test_handle_mqtt_write_digital_accepts_empty_payload_as_zero(
 
     await component.handle_mqtt(
         Topic.DIGITAL,
-        ["5"],
+        "5",
+        None,
         "",
     )
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_DIGITAL_WRITE.value
-    assert payload == structures.DigitalWritePacket.SCHEMA.build(dict(pin=5, value=protocol.DIGITAL_LOW))
+    assert payload == structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_LOW).encode()
 
 
 @pytest.mark.asyncio
@@ -357,7 +351,8 @@ async def test_handle_mqtt_write_rejects_invalid_payload(
 
     await component.handle_mqtt(
         Topic.DIGITAL,
-        ["5"],
+        "5",
+        None,
         "999",
     )
 
@@ -374,10 +369,11 @@ async def test_handle_mqtt_parses_analog_pin_identifier_prefix_a(
 
     await component.handle_mqtt(
         Topic.ANALOG,
-        ["A1"],
+        "A1",
+        None,
         "10",
     )
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_ANALOG_WRITE.value
-    assert payload == structures.DigitalWritePacket.SCHEMA.build(dict(pin=1, value=10))
+    assert payload == structures.AnalogWritePacket(pin=1, value=10).encode()

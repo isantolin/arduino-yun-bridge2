@@ -157,6 +157,16 @@ install_etl_dual() {
         echo "[INFO] etl already installed at $target2."
     fi
 
+    # [SIL-2] Optimization: If ETL exists in target2, copy it to target1 if needed
+    if [ "$needs_t1" = true ] && [ "$needs_t2" = false ]; then
+        echo "[INFO] Copying local etl to $target1..."
+        mkdir -p "$target1"
+        rm -rf "$target1/etl"
+        cp -a "$target2/etl" "$target1/etl"
+        echo "[OK] etl copied to $target1."
+        needs_t1=false
+    fi
+
     if [ "$needs_t1" = false ] && [ "$needs_t2" = false ]; then
         return 0
     fi

@@ -99,7 +99,7 @@ def main(
         logger.error("MQTT broker not available")
         sys.exit(1)
 
-    # 1. Start Unified socat linking PTY to MCU EXEC
+    # Start Unified socat linking PTY to MCU EXEC
     if os.path.exists(SOCAT_PORT0):
         try:
             os.unlink(SOCAT_PORT0)
@@ -113,6 +113,7 @@ def main(
         stderr=subprocess.PIPE,
         bufsize=0,
     )
+
     _start_worker_thread(_mcu_stderr_worker, "mcu-socat", mcu_proc, state)
 
     # Wait for PTY
@@ -135,11 +136,12 @@ def main(
         "MCUBRIDGE_MQTT_HOST": MQTT_HOST,
         "MCUBRIDGE_MQTT_PORT": str(MQTT_PORT),
         "MCUBRIDGE_MQTT_TLS": "0",
-        "MCUBRIDGE_SERIAL_SHARED_SECRET": "DEBUG_INSECURE",
-        "MCUBRIDGE_LOG_LEVEL": "DEBUG",
+        "MCUBRIDGE_SERIAL_SHARED_SECRET": "failsafe_secret_mode",
+        "MCUBRIDGE_DEBUG_LOGGING": "1",
         "MCUBRIDGE_LOG_STREAM": "1",
         "MCUBRIDGE_ALLOWED_COMMANDS": "*",
         "MCUBRIDGE_NON_INTERACTIVE": "1",
+        "PYTHONUNBUFFERED": "1",
     }
 
     logger.info("Starting Daemon...")
@@ -156,8 +158,8 @@ def main(
     # 4. Run Test
     all_success = True
     try:
-        logger.info("Waiting for stability (15s)...")
-        time.sleep(15)
+        logger.info("Waiting for stability (30s)...")
+        time.sleep(30)
         if run_scripts:
             for script in run_scripts:
                 sys.stdout.write(f"\n{'='*80}\n")

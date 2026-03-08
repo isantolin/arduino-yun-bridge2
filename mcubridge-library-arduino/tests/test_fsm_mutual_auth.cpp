@@ -34,29 +34,21 @@ Stream* g_arduino_stream_delegate = &g_test_stream;
 HardwareSerial Serial;
 HardwareSerial Serial1;
 
-// Global Instances
-BridgeClass Bridge(g_test_stream);
-ConsoleClass Console;
-DataStoreClass DataStore;
-MailboxClass Mailbox;
-FileSystemClass FileSystem;
-ProcessClass Process;
-
 void test_fsm_initial_state() {
-  BridgeClass localBridge(g_test_stream);
-  localBridge.begin(115200);
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_UNSYNCHRONIZED);
+  Bridge.begin(115200);
+  auto accessor = bridge::test::TestAccessor::create(Bridge);
+  TEST_ASSERT(accessor.isUnsynchronized());
   printf("  -> Initial state: OK\n");
 }
 
 void test_mutual_auth_success() {
-  BridgeClass localBridge(g_test_stream);
   const char* secret = "secret_1234567890123456";
-  localBridge.begin(115200, secret, 23);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  Bridge.begin(115200, secret, strlen(secret));
+  auto accessor = bridge::test::TestAccessor::create(Bridge);
 
   // Prepare valid SYNC frame with correct Tag
-  uint8_t nonce[16] = {0xAA};
+  uint8_t nonce[16];
+  memset(nonce, 0xAA, 16);
   uint8_t tag[16];
 
   // Internal helper to compute expected tag
@@ -72,19 +64,20 @@ void test_mutual_auth_success() {
 
   accessor.dispatch(sync_frame);
 
-  TEST_ASSERT(localBridge.isSynchronized());
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_IDLE);
+  TEST_ASSERT(Bridge.isSynchronized());
+  TEST_ASSERT(accessor.isIdle());
   printf("  -> Mutual Auth Success: OK\n");
 }
 
 void test_mutual_auth_failure_wrong_tag() {
-  BridgeClass localBridge(g_test_stream);
   const char* secret = "secret_1234567890123456";
-  localBridge.begin(115200, secret, 23);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  Bridge.begin(115200, secret, strlen(secret));
+  auto accessor = bridge::test::TestAccessor::create(Bridge);
 
-  uint8_t nonce[16] = {0xAA};
-  uint8_t wrong_tag[16] = {0xFF};
+  uint8_t nonce[16];
+  memset(nonce, 0xAA, 16);
+  uint8_t wrong_tag[16];
+  memset(wrong_tag, 0xFF, 16);
 
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
@@ -95,15 +88,14 @@ void test_mutual_auth_failure_wrong_tag() {
 
   accessor.dispatch(sync_frame);
 
-  TEST_ASSERT(!localBridge.isSynchronized());
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_FAULT);
+  TEST_ASSERT(!Bridge.isSynchronized());
+  TEST_ASSERT(accessor.isFault());
   printf("  -> Mutual Auth Failure (Wrong Tag): OK\n");
 }
 
 void test_mutual_auth_failure_malformed_length() {
-  BridgeClass localBridge(g_test_stream);
-  localBridge.begin(115200, "secret", 6);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  Bridge.begin(115200, "secret", 6);
+  auto accessor = bridge::test::TestAccessor::create(Bridge);
 
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
@@ -113,16 +105,13 @@ void test_mutual_auth_failure_malformed_length() {
 
   accessor.dispatch(sync_frame);
 
-  TEST_ASSERT(
-      localBridge.getStateId() ==
-      bridge::fsm::STATE_UNSYNCHRONIZED);  // Should just ignore malformed
+  TEST_ASSERT(accessor.isUnsynchronized());  // Should just ignore malformed
   printf("  -> Mutual Auth Failure (Malformed Length): OK\n");
 }
 
 void test_fsm_transitions_running() {
-  BridgeClass localBridge(g_test_stream);
-  localBridge.begin(115200);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  Bridge.begin(115200);
+  auto accessor = bridge::test::TestAccessor::create(Bridge);
 
   // Sync without secret
   rpc::Frame sync_frame;
@@ -130,11 +119,11 @@ void test_fsm_transitions_running() {
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   sync_frame.header.payload_length = 16;
   accessor.dispatch(sync_frame);
-  TEST_ASSERT(localBridge.isSynchronized());
+  TEST_ASSERT(Bridge.isSynchronized());
 
   // Send a command that requires ACK
-  localBridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_AWAITING_ACK);
+  Bridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
+  TEST_ASSERT(accessor.isAwaitingAck());
 
   // Receive ACK
   rpc::Frame ack_frame;
@@ -144,14 +133,13 @@ void test_fsm_transitions_running() {
                     rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE));
   accessor.dispatch(ack_frame);
 
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_IDLE);
+  TEST_ASSERT(accessor.isIdle());
   printf("  -> FSM Transitions (Idle -> AwaitingAck -> Idle): OK\n");
 }
 
 void test_fsm_timeout_to_unsynchronized() {
-  BridgeClass localBridge(g_test_stream);
-  localBridge.begin(115200);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  Bridge.begin(115200);
+  auto accessor = bridge::test::TestAccessor::create(Bridge);
 
   // Sync
   rpc::Frame sync_frame;
@@ -164,17 +152,13 @@ void test_fsm_timeout_to_unsynchronized() {
   accessor.setAckRetryLimit(0);
 
   // Send command, wait for ACK
-  localBridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_AWAITING_ACK);
+  Bridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
+  TEST_ASSERT(accessor.isAwaitingAck());
 
   // Explicitly trigger ACK timeout via accessor
   accessor.onAckTimeout();
 
-  if (localBridge.getStateId() != bridge::fsm::STATE_UNSYNCHRONIZED) {
-    printf("DEBUG: Expected state %d, got %d\n",
-           bridge::fsm::STATE_UNSYNCHRONIZED, localBridge.getStateId());
-  }
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_UNSYNCHRONIZED);
+  TEST_ASSERT(accessor.isUnsynchronized());
   printf("  -> FSM Timeout to Unsynchronized: OK\n");
 }
 

@@ -6,7 +6,46 @@
 
 #if BRIDGE_ENABLE_PROCESS
 
-ProcessClass::ProcessClass() { reset(); }
+ProcessClass::ProcessClass()
+    : etl::imessage_router(etl::imessage_router::MESSAGE_ROUTER) {
+  reset();
+}
+
+void ProcessClass::receive(const etl::imessage& msg) {
+  const uint16_t cmd = static_cast<uint16_t>(msg.get_message_id());
+  if (cmd != rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP) &&
+      cmd != rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)) {
+    return;
+  }
+
+  const auto& cmd_msg = static_cast<const bridge::router::CommandMessage&>(msg);
+
+  if (cmd == rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP)) {
+    Bridge._withPayload<rpc::payload::ProcessRunAsyncResponse>(
+        cmd_msg, [this](const rpc::payload::ProcessRunAsyncResponse& pl) {
+          if (_process_run_async_handler.is_valid()) {
+            _process_run_async_handler(static_cast<int16_t>(pl.pid));
+          }
+        });
+  } else if (cmd == rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)) {
+    Bridge._withPayload<rpc::payload::ProcessPollResponse>(
+        cmd_msg, [this](const rpc::payload::ProcessPollResponse& pl) {
+          if (_process_poll_handler.is_valid()) {
+            _process_poll_handler(
+                static_cast<rpc::StatusCode>(pl.status), pl.exit_code,
+                etl::span<const uint8_t>(pl.stdout_data, pl.stdout_len),
+                etl::span<const uint8_t>(pl.stderr_data, pl.stderr_len));
+            _popPendingProcessPid();
+          }
+        });
+  }
+}
+
+bool ProcessClass::accepts(etl::message_id_t id) const {
+  const uint16_t cmd = static_cast<uint16_t>(id);
+  return cmd == rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP) ||
+         cmd == rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
+}
 
 void ProcessClass::reset() { _pending_process_pids.clear(); }
 
@@ -52,4 +91,7 @@ uint16_t ProcessClass::_popPendingProcessPid() {
   return pid;
 }
 
+#endif
+#if BRIDGE_ENABLE_PROCESS
+ProcessClass Process;
 #endif

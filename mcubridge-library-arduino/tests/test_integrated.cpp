@@ -22,77 +22,12 @@ using namespace bridge;
 
 // --- MOCKS ---
 
-class BetterMockStream : public Stream {
- public:
-  uint8_t rx_buf[1024];
-  size_t rx_head = 0;
-  size_t rx_tail = 0;
-
-  size_t write(uint8_t) override { return 1; }
-  size_t write(const uint8_t* b, size_t s) override {
-    (void)b;
-    return s;
-  }
-
-  int available() override {
-    return (rx_tail >= rx_head) ? (rx_tail - rx_head) : 0;
-  }
-
-  int read() override {
-    if (available() > 0) return rx_buf[rx_head++];
-    return -1;
-  }
-
-  int peek() override {
-    if (available() > 0) return rx_buf[rx_head];
-    return -1;
-  }
-
-  void flush() override {}
-
-  void inject(const uint8_t* b, size_t s) {
-    if (rx_tail + s <= sizeof(rx_buf)) {
-      memcpy(rx_buf + rx_tail, b, s);
-      rx_tail += s;
-    }
-  }
-
-  void clear() {
-    rx_head = 0;
-    rx_tail = 0;
-  }
-};
-
-BetterMockStream g_bridge_stream;
 HardwareSerial Serial;
 HardwareSerial Serial1;
-ConsoleClass Console;
-#if BRIDGE_ENABLE_DATASTORE
-DataStoreClass DataStore;
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-MailboxClass Mailbox;
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-FileSystemClass FileSystem;
-#endif
-#if BRIDGE_ENABLE_PROCESS
-ProcessClass Process;
-#endif
-BridgeClass Bridge(g_bridge_stream);
 
-class FullMockStream : public Stream {
- public:
-  size_t write(uint8_t) override { return 1; }
-  size_t write(const uint8_t* b, size_t s) override {
-    (void)b;
-    return s;
-  }
-  int available() override { return 0; }
-  int read() override { return -1; }
-  int peek() override { return -1; }
-  void flush() override {}
-};
+// Bridge, Console, DataStore, etc. are defined in the library.
+// We just need to make sure they use our mock Serial if they are constructed with it.
+// BRIDGE_DEFAULT_SERIAL_PORT defaults to Serial.
 
 // --- TEST SUITES ---
 
@@ -127,10 +62,8 @@ void integrated_test_protocol() {
 }
 
 void integrated_test_bridge_core() {
-  FullMockStream stream;
-  BridgeClass localBridge(stream);
-  localBridge.begin(115200, "secret");
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  Bridge.begin(115200, "secret");
+  auto accessor = bridge::test::TestAccessor::create(Bridge);
 
   rpc::Frame sync;
   sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
@@ -144,7 +77,7 @@ void integrated_test_bridge_core() {
   memcpy(sync.payload.data() + 16, tag, 16);
 
   accessor.dispatch(sync);
-  TEST_ASSERT(localBridge.isSynchronized());
+  TEST_ASSERT(Bridge.isSynchronized());
 
   rpc::Frame gpio;
   gpio.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE);
@@ -153,7 +86,7 @@ void integrated_test_bridge_core() {
   gpio.payload[1] = 1;
   accessor.dispatch(gpio);
 
-  localBridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
+  Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
                         etl::span<const uint8_t>((const uint8_t*)"X", 1));
   accessor.retransmitLastFrame();
 }
@@ -186,10 +119,6 @@ void integrated_test_error_branches() {
 
 void integrated_test_extreme_coverage() {
   auto accessor = bridge::test::TestAccessor::create(Bridge);
-
-// ... (rest of function omitted for brevity) ...
-
-// 20. Callbacks
 #if BRIDGE_ENABLE_DATASTORE
   DataStore.onDataStoreGetResponse(
       DataStoreClass::DataStoreGetHandler::create([](etl::string_view k, etl::span<const uint8_t> v) {
@@ -217,8 +146,6 @@ void integrated_test_extreme_coverage() {
         (void)out;
         (void)err;
       }));
-  Process.onProcessRunAsyncResponse(
-      ProcessClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));
 #endif
 #if BRIDGE_ENABLE_MAILBOX
   Mailbox.onMailboxMessage(

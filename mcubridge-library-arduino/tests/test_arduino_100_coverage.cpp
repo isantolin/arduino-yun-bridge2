@@ -14,12 +14,6 @@
 // Stubs Globales
 HardwareSerial Serial;
 HardwareSerial Serial1;
-BridgeClass Bridge(Serial1);
-ConsoleClass Console;
-DataStoreClass DataStore;
-MailboxClass Mailbox;
-FileSystemClass FileSystem;
-ProcessClass Process;
 
 namespace {
 
@@ -70,7 +64,7 @@ void test_bridge_extra_gaps() {
   // Gap: onUnknownCommand without handler (emits STATUS_CMD_UNKNOWN)
   f.header.command_id = 0xAA;  // Arbitrary unknown
   ba.routeUnknownCommand(
-      bridge::router::CommandContext{&f, 0xAA, false, false});
+      bridge::router::CommandMessage{&f, 0xAA, false, false});
 }
 
 void test_console_extra_gaps() {
@@ -144,7 +138,7 @@ void test_process_extra_gaps() {
 
   // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP with handler
   Process.onProcessRunAsyncResponse(
-      BridgeClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));
+      ProcessClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
   f.header.payload_length = 2;

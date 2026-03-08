@@ -12,6 +12,7 @@ import msgspec
 
 from ..protocol import protocol, structures
 from ..protocol.protocol import Status
+from ..protocol.topics import topic_path
 from ..state.context import (
     PROCESS_STATE_FINISHED,
     ManagedProcess,
@@ -237,13 +238,24 @@ class ProcessComponent(BaseComponent):
         async with self.state.process_lock:
             proc = self.state.running_processes.get(pid)
             if not proc:
-                return structures.ProcessOutputBatch(status=Status.ERROR.value)
+                return structures.ProcessOutputBatch(
+                    status_byte=Status.ERROR.value,
+                    exit_code=-1,
+                    stdout_chunk=b"",
+                    stderr_chunk=b"",
+                    finished=True,
+                    stdout_truncated=False,
+                    stderr_truncated=False,
+                )
 
             batch = structures.ProcessOutputBatch(
-                status=Status.OK.value,
-                stdout=bytes(proc.stdout_buffer),
-                stderr=bytes(proc.stderr_buffer),
-                exit_code=proc.exit_code if proc.state == PROCESS_STATE_FINISHED else -1,
+                status_byte=Status.OK.value,
+                exit_code=proc.exit_code if (proc.fsm_state == PROCESS_STATE_FINISHED and proc.exit_code is not None) else -1,
+                stdout_chunk=bytes(proc.stdout_buffer),
+                stderr_chunk=bytes(proc.stderr_buffer),
+                finished=(proc.fsm_state == PROCESS_STATE_FINISHED),
+                stdout_truncated=False,
+                stderr_truncated=False,
             )
 
             # Clear buffers after successful poll
@@ -251,10 +263,18 @@ class ProcessComponent(BaseComponent):
             proc.stderr_buffer.clear()
 
             # Cleanup process if finished
-            if proc.state == PROCESS_STATE_FINISHED:
+            if proc.fsm_state == PROCESS_STATE_FINISHED:
                 del self.state.running_processes[pid]
 
             return batch
+
+    async def publish_poll_result(self, pid: int, batch: structures.ProcessOutputBatch) -> None:
+        """Publish poll results via MQTT using the standardized topic structure."""
+        topic = topic_path(self.state.mqtt_topic_prefix, protocol.Topic.SHELL, "poll", str(pid), "response")
+        await self.ctx.publish(
+            topic=topic,
+            payload=msgspec.msgpack.encode(batch),
+        )
 
     async def stop_process(self, pid: int) -> bool:
         """Terminate a running process."""

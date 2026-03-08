@@ -129,6 +129,12 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 6;
 #endif
 #endif
 
+// [SIL-2] DEBUG_INSECURE Macro
+// CRITICAL: Set to true ONLY for internal testing. NEVER use in production.
+#ifndef BRIDGE_DEBUG_INSECURE
+#define BRIDGE_DEBUG_INSECURE 0
+#endif
+
 // --- Subsystem Enablement (RAM Optimization) ---
 // Note: Macros are now centralized in config/bridge_config.h
 
@@ -281,22 +287,10 @@ class BridgeClass
                          size_t max_key, etl::string_view val, size_t max_val);
 
   // [SIL-2] Generic Value Sender (Boilerplate reduction)
+  // Refactored to use type-safe dispatching via private overloads
   template <typename T>
   bool sendValue(rpc::CommandId command_id, T value) {
-    etl::array<uint8_t, sizeof(T)> payload;
-    if (sizeof(T) == 1) {
-      payload[0] = static_cast<uint8_t>(value);
-    } else if (sizeof(T) == 2) {
-      rpc::write_u16_be(payload.data(), static_cast<uint16_t>(value));
-    } else if (sizeof(T) == 4) {
-      rpc::write_u32_be(payload.data(), static_cast<uint32_t>(value));
-    } else {
-      // Static protection for unsupported types
-      static_assert(sizeof(T) <= 4, "Unsupported value size for sendValue");
-      return false;
-    }
-    return sendFrame(command_id,
-                     etl::span<const uint8_t>(payload.data(), payload.size()));
+    return _sendValuePacked(command_id, value);
   }
 
   inline void flushStream() { _stream.flush(); }

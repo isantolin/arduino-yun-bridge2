@@ -551,10 +551,12 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
     const uint8_t* payload_data = ctx.frame->payload.data();
     if (has_secret) {
+#if BRIDGE_DEBUG_INSECURE
       const char* debug_secret = "DEBUG_INSECURE";
       bool bypass = (_shared_secret.size() == 14 &&
                      etl::equal(_shared_secret.begin(), _shared_secret.begin() + 14, debug_secret));
       if (!bypass) {
+#endif
         etl::array<uint8_t, kHandshakeTagSize> expected_tag;
         _computeHandshakeTag(
             etl::span<const uint8_t>(payload_data, nonce_length),
@@ -567,7 +569,9 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
           _fsm.handshakeFailed();
           return;
         }
+#if BRIDGE_DEBUG_INSECURE
       }
+#endif
     }
 
     const size_t response_length =
@@ -828,6 +832,26 @@ void BridgeClass::_handleProcessPollResp(
         }
 #endif
       });
+}
+
+// ============================================================================
+// [SIL-2] Private Type-Safe Value Senders (Refactored)
+// ============================================================================
+
+bool BridgeClass::_sendValuePacked(rpc::CommandId cmd, uint8_t val) {
+  return sendFrame(cmd, etl::span<const uint8_t>(&val, 1));
+}
+
+bool BridgeClass::_sendValuePacked(rpc::CommandId cmd, uint16_t val) {
+  etl::array<uint8_t, 2> buffer;
+  rpc::write_u16_be(buffer.data(), val);
+  return sendFrame(cmd, etl::span<const uint8_t>(buffer.data(), 2));
+}
+
+bool BridgeClass::_sendValuePacked(rpc::CommandId cmd, uint32_t val) {
+  etl::array<uint8_t, 4> buffer;
+  rpc::write_u32_be(buffer.data(), val);
+  return sendFrame(cmd, etl::span<const uint8_t>(buffer.data(), 4));
 }
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {

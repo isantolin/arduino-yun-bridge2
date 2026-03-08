@@ -5,6 +5,9 @@
 #include "Bridge.h"
 
 #include <Arduino.h>
+#if defined(ARDUINO_ARCH_AVR)
+#include <avr/wdt.h>
+#endif
 #include <etl/numeric.h>
 #include <etl/span.h>
 #include "protocol/rle.h"

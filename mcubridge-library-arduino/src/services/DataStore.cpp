@@ -9,7 +9,6 @@
 DataStoreClass::DataStoreClass() { reset(); }
 
 void DataStoreClass::reset() {
-  _last_datastore_key.clear();
   _pending_datastore_keys.clear();
 }
 

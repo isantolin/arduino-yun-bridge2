@@ -11,7 +11,7 @@ void ProcessClass::reset() { _pending_process_pids.clear(); }
 
 void ProcessClass::runAsync(etl::string_view command) {
   (void)Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, command,
-                                rpc::RPC_MAX_PROCESS_COMMAND_LENGTH);
+                                rpc::MAX_PAYLOAD_SIZE);
 }
 
 void ProcessClass::poll(int16_t pid) {

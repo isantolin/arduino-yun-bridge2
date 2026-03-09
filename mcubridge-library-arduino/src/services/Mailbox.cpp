@@ -36,8 +36,9 @@ void MailboxClass::_onIncomingData(etl::span<const uint8_t> data) {
   if (data.empty()) return;
 
   BRIDGE_ATOMIC_BLOCK {
-    // [SIL-2] Deterministic insertion using HAL helper
-    (void)bridge::hal::safe_push_back(_rx_buffer, data);
+    const size_t space = _rx_buffer.capacity() - _rx_buffer.size();
+    const size_t to_copy = etl::min(data.size(), space);
+    _rx_buffer.push(data.begin(), data.begin() + to_copy);
   }
 
   if (_mailbox_handler.is_valid()) {

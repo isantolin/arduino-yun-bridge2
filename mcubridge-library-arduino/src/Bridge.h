@@ -129,12 +129,6 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 6;
 #endif
 #endif
 
-// [SIL-2] DEBUG_INSECURE Macro
-// CRITICAL: Set to true ONLY for internal testing. NEVER use in production.
-#ifndef BRIDGE_DEBUG_INSECURE
-#define BRIDGE_DEBUG_INSECURE 0
-#endif
-
 // --- Subsystem Enablement (RAM Optimization) ---
 // Note: Macros are now centralized in config/bridge_config.h
 
@@ -287,10 +281,22 @@ class BridgeClass
                          size_t max_key, etl::string_view val, size_t max_val);
 
   // [SIL-2] Generic Value Sender (Boilerplate reduction)
-  // Refactored to use type-safe dispatching via private overloads
   template <typename T>
   bool sendValue(rpc::CommandId command_id, T value) {
-    return _sendValuePacked(command_id, value);
+    etl::array<uint8_t, sizeof(T)> payload;
+    if (sizeof(T) == 1) {
+      payload[0] = static_cast<uint8_t>(value);
+    } else if (sizeof(T) == 2) {
+      rpc::write_u16_be(payload.data(), static_cast<uint16_t>(value));
+    } else if (sizeof(T) == 4) {
+      rpc::write_u32_be(payload.data(), static_cast<uint32_t>(value));
+    } else {
+      // Static protection for unsupported types
+      static_assert(sizeof(T) <= 4, "Unsupported value size for sendValue");
+      return false;
+    }
+    return sendFrame(command_id,
+                     etl::span<const uint8_t>(payload.data(), payload.size()));
   }
 
   inline void flushStream() { _stream.flush(); }
@@ -409,22 +415,14 @@ class BridgeClass
 
   template <typename TResp, typename TFunc, typename TValid, typename... Args>
   void _handlePinRead(const bridge::router::CommandContext& ctx, rpc::CommandId resp_cmd, TValid valid_func, TFunc read_func, Args&&... args) {
-    if (ctx.is_duplicate) return;
-    auto msg = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
-    if (msg) {
-      if (valid_func(msg->pin)) {
-        // [SIL-2] Pin reads must be deterministic and uncompressed
-        TResp resp{read_func(msg->pin, etl::forward<Args>(args)...)};
-        etl::array<uint8_t, TResp::SIZE> buffer;
-        resp.encode(buffer.data());
-        _sendRawFrame(rpc::to_underlying(resp_cmd), etl::span<const uint8_t>(buffer.data(), TResp::SIZE));
-        _markRxProcessed(*ctx.frame);
-      } else {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-      }
-    } else {
-      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-    }
+    _withPayload<rpc::payload::PinRead>(
+        ctx, [this, resp_cmd, valid_func, read_func, &args...](const rpc::payload::PinRead& msg) {
+          if (valid_func(msg.pin)) {
+            _sendResponse<TResp>(resp_cmd, read_func(msg.pin, etl::forward<Args>(args)...));
+          } else {
+            (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+          }
+        });
   }
 
   // Console
@@ -461,11 +459,6 @@ class BridgeClass
       const rpc::Frame& original, rpc::Frame& effective);
   bool _isSecurityCheckPassed(uint16_t command_id) const;
 
-  // [SIL-2] Private Type-Safe Value Senders (Refactored)
-  bool _sendValuePacked(rpc::CommandId cmd, uint8_t val);
-  bool _sendValuePacked(rpc::CommandId cmd, uint16_t val);
-  bool _sendValuePacked(rpc::CommandId cmd, uint32_t val);
-
   // [SIL-2] DRY Command Helpers with Lambdas
   template <typename F>
   void _withAck(const bridge::router::CommandContext& ctx, F handler) {
@@ -495,8 +488,6 @@ class BridgeClass
       if (!ctx.is_duplicate) {
         _markRxProcessed(*ctx.frame);
       }
-    } else {
-      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     }
   }
 
@@ -504,11 +495,7 @@ class BridgeClass
   void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
     _withAck(ctx, [&]() {
       auto msg = rpc::Payload::parse<T>(*ctx.frame);
-      if (msg) {
-        handler(*msg);
-      } else {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-      }
+      if (msg) handler(*msg);
     });
   }
 
@@ -519,8 +506,6 @@ class BridgeClass
     if (msg) {
       handler(*msg);
       _markRxProcessed(*ctx.frame);
-    } else {
-      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     }
   }
 

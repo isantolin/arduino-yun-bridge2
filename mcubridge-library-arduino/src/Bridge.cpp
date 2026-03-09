@@ -383,27 +383,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 // ============================================================================
 
 void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch via Jump Table for Status Codes
-  typedef void (BridgeClass::*StatusHandlerFunc)(
-      const bridge::router::CommandContext&);
-  static const StatusHandlerFunc kStatusHandlers[] = {
-      nullptr,                         // 0: 48
-      nullptr,                         // 1: 49
-      nullptr,                         // 2: 50
-      &BridgeClass::_handleStatusMalformed, // 3: 51 (STATUS_MALFORMED)
-      nullptr,                         // 4: 52
-      nullptr,                         // 5: 53
-      nullptr,                         // 6: 54
-      nullptr,                         // 7: 55
-      &BridgeClass::_handleStatusAck        // 8: 56 (STATUS_ACK)
-  };
-
+  // [SIL-2] O(1) Dispatch via Switch for Status Codes
   const uint16_t status_val = ctx.raw_command;
-  const uint16_t index = status_val - rpc::RPC_STATUS_CODE_MIN;
-
-  if (index < (sizeof(kStatusHandlers) / sizeof(kStatusHandlers[0]))) {
-    StatusHandlerFunc handler = kStatusHandlers[index];
-    if (handler) (this->*handler)(ctx);
+  switch (status_val - rpc::RPC_STATUS_CODE_MIN) {
+    case 3: _handleStatusMalformed(ctx); break;  // 51
+    case 8: _handleStatusAck(ctx); break;         // 56
+    default: break;
   }
 
   if (_status_handler.is_valid()) {
@@ -414,16 +399,14 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::AckPacket>(ctx, [this](const rpc::payload::AckPacket& msg) {
-    _handleAck(msg.command_id);
-  });
+  auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
+  _handleAck(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
 }
 
 void BridgeClass::_handleStatusMalformed(
     const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::AckPacket>(ctx, [this](const rpc::payload::AckPacket& msg) {
-    _handleMalformed(msg.command_id);
-  });
+  auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
+  _handleMalformed(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
 }
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
@@ -568,12 +551,10 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
     const uint8_t* payload_data = ctx.frame->payload.data();
     if (has_secret) {
-#if BRIDGE_DEBUG_INSECURE
       const char* debug_secret = "DEBUG_INSECURE";
       bool bypass = (_shared_secret.size() == 14 &&
                      etl::equal(_shared_secret.begin(), _shared_secret.begin() + 14, debug_secret));
       if (!bypass) {
-#endif
         etl::array<uint8_t, kHandshakeTagSize> expected_tag;
         _computeHandshakeTag(
             etl::span<const uint8_t>(payload_data, nonce_length),
@@ -586,9 +567,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
           _fsm.handshakeFailed();
           return;
         }
-#if BRIDGE_DEBUG_INSECURE
       }
-#endif
     }
 
     const size_t response_length =
@@ -712,10 +691,10 @@ void BridgeClass::onDataStoreCommand(
         ctx, [](const rpc::payload::DatastoreGetResponse& msg) {
 #if BRIDGE_ENABLE_DATASTORE
           if (DataStore._datastore_get_handler.is_valid()) {
-            auto key = DataStore._popPendingDatastoreKey();
-            if (key) {
+            etl::string_view key = DataStore._popPendingDatastoreKey();
+            if (!key.empty()) {
               DataStore._datastore_get_handler(
-                  *key, etl::span<const uint8_t>(msg.value, msg.value_len));
+                  key, etl::span<const uint8_t>(msg.value, msg.value_len));
             }
           }
 #endif
@@ -849,26 +828,6 @@ void BridgeClass::_handleProcessPollResp(
         }
 #endif
       });
-}
-
-// ============================================================================
-// [SIL-2] Private Type-Safe Value Senders (Refactored)
-// ============================================================================
-
-bool BridgeClass::_sendValuePacked(rpc::CommandId cmd, uint8_t val) {
-  return sendFrame(cmd, etl::span<const uint8_t>(&val, 1));
-}
-
-bool BridgeClass::_sendValuePacked(rpc::CommandId cmd, uint16_t val) {
-  etl::array<uint8_t, 2> buffer;
-  rpc::write_u16_be(buffer.data(), val);
-  return sendFrame(cmd, etl::span<const uint8_t>(buffer.data(), 2));
-}
-
-bool BridgeClass::_sendValuePacked(rpc::CommandId cmd, uint32_t val) {
-  etl::array<uint8_t, 4> buffer;
-  rpc::write_u32_be(buffer.data(), val);
-  return sendFrame(cmd, etl::span<const uint8_t>(buffer.data(), 4));
 }
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {

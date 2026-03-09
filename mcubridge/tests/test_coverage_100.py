@@ -97,7 +97,7 @@ async def test_start_async_subprocess_unexpected_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cover unexpected exception branch in run_async."""
-    with patch("asyncio.create_subprocess_shell", side_effect=RuntimeError("boom")):
+    with patch("sh.Command", side_effect=RuntimeError("boom")):
         pid = await process_component.run_async("echo hello")
         assert pid == 0
 

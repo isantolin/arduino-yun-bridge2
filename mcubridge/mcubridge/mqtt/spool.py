@@ -64,7 +64,7 @@ class MQTTPublishSpool:
                     zict.File(str(self.directory)),
                 )
                 self._fallback_active = False
-            except (OSError, ValueError, msgspec.DecodeError) as exc:
+            except (OSError, ImportError, ValueError, msgspec.DecodeError) as exc:
                 logger.warning("Failed to initialize disk spool: %s. Falling back to RAM-only.", exc)
                 self._slow = {}
                 self._fallback_active = True

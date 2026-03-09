@@ -59,12 +59,11 @@ inline void hkdf_sha256(void* out, size_t outLen, const void* key, size_t keyLen
   // --- Extract phase: PRK = HMAC-Hash(salt, IKM) ---
   const uint8_t* s;
   size_t slen;
-  // cppcheck-suppress variableScope ; False positive: Scope must be wide to maintain pointer lifetime post-assignment
-  etl::array<uint8_t, SHA256::HASH_SIZE> zero_salt;
   if (salt && saltLen) {
     s = static_cast<const uint8_t*>(salt);
     slen = saltLen;
   } else {
+    etl::array<uint8_t, SHA256::HASH_SIZE> zero_salt;
     zero_salt.fill(0);
     s = zero_salt.data();
     slen = SHA256::HASH_SIZE;

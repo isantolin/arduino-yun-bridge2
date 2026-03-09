@@ -1,4 +1,4 @@
-"""Process management component for McuBridge using native asyncio."""
+"""Process management component for McuBridge."""
 
 from __future__ import annotations
 
@@ -9,10 +9,15 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 import msgspec
+import sh  # type: ignore[reportMissingTypeStubs]
 
 from ..protocol import protocol, structures
 from ..protocol.protocol import Status
-from ..protocol.topics import topic_path
+from ..protocol.topics import Topic, topic_path
+from ..protocol.structures import (
+    ProcessOutputBatch,
+    QueuedPublish,
+)
 from ..state.context import (
     PROCESS_STATE_FINISHED,
     ManagedProcess,
@@ -25,14 +30,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("mcubridge.services.process")
 
-PublishEnqueue = Callable[[structures.QueuedPublish], Awaitable[None]]
+PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
 
 class ProcessComponent(BaseComponent):
     """Component for managing subprocess execution and output capture.
 
     [SIL-2] Deterministic Execution Model:
-    - Limited concurrent processes via Semaphore.
+    - Limited concurrent processes.
     - Bounded output buffers per process.
     - Periodic polling for status and output.
     """
@@ -61,7 +66,7 @@ class ProcessComponent(BaseComponent):
     def _slots(self) -> asyncio.Semaphore:
         return self._process_slots
 
-    # --- MCU Handlers ---
+    # --- MCU Handlers (Required by Dispatcher) ---
 
     async def handle_run_async(self, payload: bytes) -> None:
         """Handle async process execution request from MCU."""
@@ -76,6 +81,7 @@ class ProcessComponent(BaseComponent):
                 )
                 return
 
+            # 2. Policy check
             if not self.state.allowed_policy.is_allowed(command):
                 logger.warning("Process execution denied by policy: %s", command)
                 await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
@@ -84,6 +90,7 @@ class ProcessComponent(BaseComponent):
                 )
                 return
 
+            # 3. Execution
             pid = await self.run_async(command)
             if pid > 0:
                 resp = structures.ProcessRunAsyncResponsePacket(pid=pid).encode()
@@ -145,7 +152,8 @@ class ProcessComponent(BaseComponent):
     # --- Core Logic ---
 
     async def run_async(self, command: str) -> int:
-        """Start a command asynchronously using native asyncio."""
+        """Start a command asynchronously and return its PID using sh."""
+        # [SECURITY] Enforce command policy at the lowest execution level
         if not self.state.allowed_policy.is_allowed(command):
             logger.warning("Process execution denied by policy: %s", command)
             return 0
@@ -161,146 +169,143 @@ class ProcessComponent(BaseComponent):
             async with self.state.process_lock:
                 self.state.running_processes[pid] = proc
 
-            # Native asyncio subprocess execution ONLY
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                shell=True,
+            loop = asyncio.get_running_loop()
+
+            def _out_cb(chunk: bytes | str) -> None:
+                if not chunk:
+                    return
+                b_chunk = chunk if isinstance(chunk, bytes) else chunk.encode("utf-8", "replace")
+                loop.call_soon_threadsafe(self._append_chunk_sync, pid, b_chunk, False)
+
+            def _err_cb(chunk: bytes | str) -> None:
+                if not chunk:
+                    return
+                b_chunk = chunk if isinstance(chunk, bytes) else chunk.encode("utf-8", "replace")
+                loop.call_soon_threadsafe(self._append_chunk_sync, pid, b_chunk, True)
+
+            def _done_cb(cmd: Any, success: bool, exit_code: int) -> None:
+                loop.call_soon_threadsafe(self._finalize_sync, pid, exit_code)
+
+            handle = sh.Command("/bin/sh")(
+                "-c", command,
+                _bg=True,
+                _bg_exc=False,
+                _out=_out_cb,
+                _err=_err_cb,
+                _done=_done_cb,
+                _out_bufsize=1024,
+                _err_bufsize=1024
             )
 
-            proc.handle = process
+            proc.handle = handle
             proc.trigger("start")
-
-            # Spawn non-blocking reader tasks
-            asyncio.create_task(self._read_stream(pid, process.stdout, False))
-            asyncio.create_task(self._read_stream(pid, process.stderr, True))
-            asyncio.create_task(self._wait_for_completion(pid, process))
-
             return pid
         except Exception as exc:
             logger.error("Failed to start process: %s", exc)
             self._process_slots.release()
             return 0
 
-    async def _read_stream(self, pid: int, reader: asyncio.StreamReader | None, is_stderr: bool) -> None:
-        """Read chunks from asyncio stream."""
-        if not reader:
-            return
-        try:
-            while not reader.at_eof():
-                chunk = await reader.read(1024)
-                if not chunk:
-                    break
-                self._append_chunk_sync(pid, chunk, is_stderr)
-        except Exception as exc:
-            logger.debug("Stream reader failed for PID %d: %s", pid, exc)
-
-    async def _wait_for_completion(self, pid: int, process: asyncio.subprocess.Process) -> None:
-        """Wait for process exit and trigger finalization."""
-        try:
-            exit_code = await process.wait()
-            await self._finalize_process(pid, exit_code)
-        except Exception as exc:
-            logger.error("Error waiting for process %d: %s", pid, exc)
-            await self._finalize_process(pid, -1)
-
-    async def _finalize_process(self, pid: int, exit_code: int | None = None) -> None:
-        """Finalize process state and release execution slot."""
-        try:
-            async with self.state.process_lock:
-                proc = self.state.running_processes.get(pid)
-                if not proc:
-                    return
-
-                if exit_code is not None:
-                    proc.exit_code = exit_code
-
-                if proc.fsm_state != PROCESS_STATE_FINISHED:
-                    proc.trigger("finish")
-                    logger.info("Process %d (%s) finished with exit code %s", pid, proc.command, proc.exit_code)
-
-                # [SIL-2] Cleanup tracking immediately to release resources
-                del self.state.running_processes[pid]
-
-        finally:
-            # Release slot once per process
-            self._process_slots.release()
-
     async def _allocate_pid(self) -> int:
-        """Atomically allocate a unique PID."""
+        """Atomically allocate a unique PID for a new process."""
         async with self.state.process_lock:
             pid = self.state.next_pid
             self.state.next_pid = (pid % 65535) + 1
             return pid
 
     def _append_chunk_sync(self, pid: int, chunk: bytes, is_stderr: bool) -> None:
-        """Synchronous chunk append."""
-        with contextlib.suppress(KeyError):
-            proc = self.state.running_processes[pid]
+        asyncio.create_task(self._append_chunk_async(pid, chunk, is_stderr))
+
+    async def _append_chunk_async(self, pid: int, chunk: bytes, is_stderr: bool) -> None:
+        async with self.state.process_lock:
+            proc = self.state.running_processes.get(pid)
+        if not proc:
+            return
+        async with proc.io_lock:
             if is_stderr:
                 proc.stderr_buffer.extend(chunk)
             else:
                 proc.stdout_buffer.extend(chunk)
 
-    # --- Public API ---
+    def _finalize_sync(self, pid: int, exit_code: int) -> None:
+        asyncio.create_task(self._finalize_callback_async(pid, exit_code))
 
-    async def poll_process(self, pid: int) -> structures.ProcessOutputBatch:
-        """Collect buffered output for a process."""
+    async def _finalize_callback_async(self, pid: int, exit_code: int) -> None:
+        async with self.state.process_lock:
+            proc = self.state.running_processes.get(pid)
+        if not proc:
+            return
+        async with proc.io_lock:
+            proc.exit_code = exit_code
+            proc.trigger("sigchld")
+            proc.trigger("io_complete")
+        async with self.state.process_lock:
+            if proc.is_drained():
+                self._finalize_process_internal(pid)
+
+    async def poll_process(self, pid: int) -> ProcessOutputBatch:
+        """Fetch pending output and status for a running process."""
         async with self.state.process_lock:
             proc = self.state.running_processes.get(pid)
             if not proc:
-                return structures.ProcessOutputBatch(
-                    status_byte=Status.ERROR.value,
-                    exit_code=-1,
-                    stdout_chunk=b"",
-                    stderr_chunk=b"",
-                    finished=True,
-                    stdout_truncated=False,
-                    stderr_truncated=False,
+                return ProcessOutputBatch(Status.ERROR.value, 1, b"", b"", True, False, False)
+
+            async with proc.io_lock:
+                stdout, stderr, t_out, t_err = proc.pop_payload(protocol.MAX_PAYLOAD_SIZE - 32)
+                is_finished = proc.fsm_state == PROCESS_STATE_FINISHED
+
+                batch = ProcessOutputBatch(
+                    Status.OK.value,
+                    proc.exit_code or 0,
+                    stdout,
+                    stderr,
+                    is_finished,
+                    t_out,
+                    t_err,
                 )
-
-            is_finished = proc.fsm_state == PROCESS_STATE_FINISHED
-            exit_code = proc.exit_code if (is_finished and proc.exit_code is not None) else -1
-
-            batch = structures.ProcessOutputBatch(
-                status_byte=Status.OK.value,
-                exit_code=exit_code,
-                stdout_chunk=bytes(proc.stdout_buffer),
-                stderr_chunk=bytes(proc.stderr_buffer),
-                finished=is_finished,
-                stdout_truncated=False,
-                stderr_truncated=False,
-            )
-
-            proc.stdout_buffer.clear()
-            proc.stderr_buffer.clear()
-
-            return batch
-
-    async def publish_poll_result(self, pid: int, batch: structures.ProcessOutputBatch) -> None:
-        """Publish poll results via MQTT."""
-        topic = topic_path(self.state.mqtt_topic_prefix, protocol.Topic.SHELL, "poll", str(pid), "response")
-        await self.ctx.publish(
-            topic=topic,
-            payload=msgspec.msgpack.encode(batch),
-        )
+                if is_finished and proc.is_drained():
+                    self._finalize_process_internal(pid)
+                return batch
 
     async def stop_process(self, pid: int) -> bool:
-        """Terminate a running process using native handle."""
+        """Terminate a running process."""
         async with self.state.process_lock:
             proc = self.state.running_processes.get(pid)
-            if not proc or not proc.handle:
-                return False
-
-            try:
-                # Strictly using asyncio.subprocess.Process handle
-                proc.handle.terminate()
+            if proc:
+                if proc.handle:
+                    with contextlib.suppress(Exception):
+                        proc.handle.process.terminate()
                 return True
-            except Exception as exc:
-                logger.error("Failed to terminate process %d: %s", pid, exc)
-                # [SIL-2 / TEST COMPAT] Return True as we attempted termination best-effort
-                return True
+            return False
 
 
-__all__ = ["ProcessComponent"]
+    async def publish_poll_result(self, pid: int, batch: ProcessOutputBatch) -> None:
+        """Publish process output batch to MQTT."""
+        response_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SHELL,
+            protocol.ShellAction.POLL,
+            str(pid),
+            protocol.MQTT_SUFFIX_RESPONSE,
+        )
+        await self.service.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=response_topic,
+                payload=msgspec.msgpack.encode(batch),
+                content_type="application/msgpack",
+            )
+        )
+
+    async def _finalize_process(self, pid: int) -> None:
+        async with self.state.process_lock:
+            self._finalize_process_internal(pid)
+
+    def _finalize_process_internal(self, pid: int) -> None:
+        proc = self.state.running_processes.pop(pid, None)
+        if proc:
+            with contextlib.suppress(Exception):
+                proc.trigger("finalize")
+            self._process_slots.release()
+
+
+__all__ = ["ProcessComponent", "ProcessOutputBatch"]
+

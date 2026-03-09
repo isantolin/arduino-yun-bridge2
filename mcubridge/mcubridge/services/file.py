@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sh  # type: ignore[reportMissingTypeStubs]
 from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
@@ -459,11 +460,12 @@ class FileComponent(BaseComponent):
             self.state.file_storage_bytes_used = 0
             return 0
 
-        # [SIL-2 / Library-First] Use native recursive glob for efficient size calculation.
-        # This eliminates the overhead of spawning a 'du' subprocess.
+        # [SIL-2 / Library-First] Delegate size calculation to the OS tool (du)
+        # instead of a manual blocking python loop. 'du' is built into OpenWrt BusyBox.
         try:
-            usage = sum(f.stat().st_size for f in base_dir.rglob("*") if f.is_file())
-        except (OSError, ValueError):
+            out = str(sh.du("-sb", str(base_dir)))
+            usage = int(out.split()[0])
+        except (sh.ErrorReturnCode, ValueError, OSError):
             usage = 0
 
         self.state.file_storage_bytes_used = max(0, usage)

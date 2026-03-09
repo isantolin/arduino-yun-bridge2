@@ -6,7 +6,6 @@
 #if BRIDGE_ENABLE_PROCESS
 #include "etl/circular_buffer.h"
 #include "etl/delegate.h"
-#include "etl/optional.h"
 #include "etl/span.h"
 #include "etl/string_view.h"
 #include "protocol/rpc_protocol.h"
@@ -47,7 +46,7 @@ class ProcessClass {
  private:
   friend class BridgeClass;
   bool _pushPendingProcessPid(uint16_t pid);
-  etl::optional<uint16_t> _popPendingProcessPid();
+  uint16_t _popPendingProcessPid();
 
   ProcessPollHandler _process_poll_handler;
   ProcessRunAsyncHandler _process_run_async_handler;

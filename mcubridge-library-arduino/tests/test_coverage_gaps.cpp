@@ -862,7 +862,7 @@ void test_process_edge_cases() {
   auto pa = bridge::test::ProcessTestAccessor::create(Process);
 
   // Pop from empty queue -> sentinel
-  uint16_t sentinel = pa.popPendingPid();
+  uint16_t sentinel = pa.popPendingPid().value_or(rpc::RPC_INVALID_ID_SENTINEL);
   TEST_ASSERT_EQ_UINT(sentinel, rpc::RPC_INVALID_ID_SENTINEL);
 
   // Process.runAsync when bridge is unsync -> emit overflow (L17)

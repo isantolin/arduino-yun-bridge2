@@ -207,10 +207,8 @@ struct SimpleTimer {
   uint8_t active;  // bitmask: bit i = timer i is running
 
   void clear() {
-    for (uint8_t i = 0; i < NUMBER_OF_TIMERS; ++i) {
-      deadline[i] = 0;
-      period[i] = 0;
-    }
+    etl::fill(etl::begin(deadline), etl::end(deadline), 0);
+    etl::fill(etl::begin(period), etl::end(period), 0);
     active = 0;
   }
 

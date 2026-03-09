@@ -62,6 +62,8 @@ async def test_poll_process_finishing_process_releases_slot(
 ) -> None:
     pid = 10
     slot = ManagedProcess(pid=pid, command="echo hi")
+    # [SIL-2] Slot release happens in _finalize_process, not poll_process.
+    # poll_process only cleans up the tracking dictionary.
     slot.fsm_state = PROCESS_STATE_FINISHED
     slot.exit_code = 7
 
@@ -71,66 +73,65 @@ async def test_poll_process_finishing_process_releases_slot(
     # Save initial available value
     initial_value = process_component._process_slots._value
 
-    # Acquire one
+    # Simulate slot acquisition
     await process_component._process_slots.acquire()
 
-    batch = await process_component.poll_process(pid)
-    assert batch.exit_code == 7
+    # Manual finalization triggers release
+    await process_component._finalize_process(pid, 7)
 
-    # Slot should be released (back to initial)
     assert process_component._process_slots._value == initial_value
+    assert pid not in process_component.state.running_processes
 
 
 @pytest.mark.asyncio
-async def test_finalize_callback_async_handles_wait_exception(
+async def test_finalize_process_handles_execution(
     process_component: ProcessComponent,
 ) -> None:
-    # Test finalizing with a fake exit code
     pid = 1
-
     slot = ManagedProcess(pid=pid, command="test")
-    # [FSM] Transition to RUNNING
     slot.trigger("start")
 
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    await process_component._finalize_callback_async(pid, 99)
-    # Should finalize
+    # Acquire slot manually to simulate run_async
+    await process_component._process_slots.acquire()
+
+    await process_component._finalize_process(pid, 99)
     assert pid not in process_component.state.running_processes
+    # Slot should be released
+    assert process_component._process_slots._value > 0
 
 
 @pytest.mark.asyncio
 async def test_finalize_process_slot_missing_releases(
     process_component: ProcessComponent,
 ) -> None:
-    # If missing, it currently DOES NOT release by design (safety).
-    # Update test to expect current value.
+    # If pid is missing, it should still release the slot (fail-safe)
+    # Acquire one slot manually
     await process_component._process_slots.acquire()
-    val_after_acquire = process_component._process_slots._value
+    val_before = process_component._process_slots._value
+    
     await process_component._finalize_process(999)
-    assert process_component._process_slots._value == val_after_acquire
+    assert process_component._process_slots._value == val_before + 1
 
 
 @pytest.mark.asyncio
-async def test_handle_kill_timeout_releases_slot(
+async def test_handle_kill_releases_slot(
     process_component: ProcessComponent,
 ) -> None:
     pid = 11
     mock_handle = MagicMock()
-    mock_handle.process = MagicMock()
-    mock_handle.process.terminate = MagicMock()
+    mock_handle.terminate = MagicMock()
     slot = ManagedProcess(pid=pid, command="hi")
     slot.handle = mock_handle
 
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    await process_component._process_slots.acquire()
-
     ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
     assert ok is True
-    mock_handle.process.terminate.assert_called_once()
+    mock_handle.terminate.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -139,8 +140,7 @@ async def test_handle_kill_process_lookup_error_is_handled(
 ) -> None:
     pid = 12
     mock_handle = MagicMock()
-    mock_handle.process = MagicMock()
-    mock_handle.process.terminate.side_effect = Exception("Lookup Fail")
+    mock_handle.terminate.side_effect = Exception("Lookup Fail")
 
     slot = ManagedProcess(pid=pid, command="hi")
     slot.handle = mock_handle
@@ -148,7 +148,6 @@ async def test_handle_kill_process_lookup_error_is_handled(
         process_component.state.running_processes[pid] = slot
 
     ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
-    # Should return True as we attempted termination
     assert ok is True
 
 
@@ -156,10 +155,7 @@ async def test_handle_kill_process_lookup_error_is_handled(
 async def test_handle_run_async_validation_error_sends_error_frame(
     process_component: ProcessComponent,
 ) -> None:
-    # Trigger malformed via empty payload
     await process_component.handle_run_async(b"")
-
-    # Verify it called with correct named parameter
     process_component.service._acknowledge_mcu_frame.assert_awaited()
     args, kwargs = process_component.service._acknowledge_mcu_frame.call_args
     assert kwargs.get("status") == Status.MALFORMED

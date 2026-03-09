@@ -21,7 +21,7 @@ def runtime_service(runtime_config, runtime_state) -> BridgeService:
 async def test_poll_process_flushes_stored_buffers(
     runtime_service: BridgeService,
 ) -> None:
-    """Test poll_process returns stored buffers and cleans up if finished."""
+    """Test poll_process returns stored buffers."""
 
     pid = 42
     state = runtime_service.state
@@ -30,22 +30,26 @@ async def test_poll_process_flushes_stored_buffers(
     slot.stdout_buffer.extend(b"hello")
     slot.stderr_buffer.extend(b"world")
 
-    # [FSM] Set state to FINISHED so poll_process knows it's done
+    # [FSM] Set state to FINISHED so poll_process can report the exit code
     slot.fsm_state = PROCESS_STATE_FINISHED
 
     async with state.process_lock:
         state.running_processes[pid] = slot
 
     process_component = cast(ProcessComponent, runtime_service._process)
+    
+    # Poll should return data
     batch = await process_component.poll_process(pid)
 
-    # ProcessOutputBatch fields: status_byte, exit_code, stdout_chunk, stderr_chunk, finished, ...
     assert batch.status_byte == Status.OK.value
     assert batch.exit_code == 3
     assert batch.stdout_chunk == b"hello"
     assert batch.stderr_chunk == b"world"
 
-    # Slot should be removed after final chunk
+    # [SIL-2] Resource cleanup is deterministic and happens in _finalize_process.
+    # Manual call to finalize triggers cleanup from tracking dictionary.
+    await process_component._finalize_process(pid, 3)
+
     async with state.process_lock:
         assert pid not in state.running_processes
 
@@ -86,7 +90,6 @@ async def test_monitor_process_releases_slot(
         "/bin/true",
     )
     slot.handle = mock_handle
-    # [FSM] Transition to RUNNING
     slot.trigger("start")
 
     async with state.process_lock:
@@ -95,10 +98,11 @@ async def test_monitor_process_releases_slot(
     # Save initial value
     initial_value = process_component._process_slots._value
 
-    # Acquire one slot manually
+    # Acquire one slot manually (simulating the one taken by the process)
     await process_component._process_slots.acquire()
 
-    await process_component._finalize_callback_async(77, 5)
+    # [Modernization] Name changed from _finalize_callback_async to _finalize_process
+    await process_component._finalize_process(77, 5)
 
     assert slot.exit_code == 5
 

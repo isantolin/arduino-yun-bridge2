@@ -132,7 +132,7 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 6;
 // [SIL-2] DEBUG_INSECURE Macro
 // CRITICAL: Set to true ONLY for internal testing. NEVER use in production.
 #ifndef BRIDGE_DEBUG_INSECURE
-#define BRIDGE_DEBUG_INSECURE 1
+#define BRIDGE_DEBUG_INSECURE 0
 #endif
 
 // --- Subsystem Enablement (RAM Optimization) ---

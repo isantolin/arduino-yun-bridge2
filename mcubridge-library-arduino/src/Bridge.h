@@ -135,6 +135,10 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 6;
 #define BRIDGE_DEBUG_INSECURE 0
 #endif
 
+// --- Cryptographic Constants (MIL-SPEC) ---
+constexpr size_t BRIDGE_HKDF_KEY_LENGTH = 32;
+constexpr size_t BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE = 64; // HKDF Key + SHA256 Digest
+
 // --- Subsystem Enablement (RAM Optimization) ---
 // Note: Macros are now centralized in config/bridge_config.h
 
@@ -487,6 +491,8 @@ class BridgeClass
       if (!ctx.is_duplicate) {
         _markRxProcessed(*ctx.frame);
       }
+    } else {
+      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     }
   }
 
@@ -494,7 +500,11 @@ class BridgeClass
   void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
     _withAck(ctx, [&]() {
       auto msg = rpc::Payload::parse<T>(*ctx.frame);
-      if (msg) handler(*msg);
+      if (msg) {
+        handler(*msg);
+      } else {
+        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+      }
     });
   }
 
@@ -505,6 +515,8 @@ class BridgeClass
     if (msg) {
       handler(*msg);
       _markRxProcessed(*ctx.frame);
+    } else {
+      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     }
   }
 

@@ -414,14 +414,16 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
-  auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
-  _handleAck(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
+  _withPayload<rpc::payload::AckPacket>(ctx, [this](const rpc::payload::AckPacket& msg) {
+    _handleAck(msg.command_id);
+  });
 }
 
 void BridgeClass::_handleStatusMalformed(
     const bridge::router::CommandContext& ctx) {
-  auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
-  _handleMalformed(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
+  _withPayload<rpc::payload::AckPacket>(ctx, [this](const rpc::payload::AckPacket& msg) {
+    _handleMalformed(msg.command_id);
+  });
 }
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {

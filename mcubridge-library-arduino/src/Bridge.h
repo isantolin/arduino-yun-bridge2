@@ -409,14 +409,22 @@ class BridgeClass
 
   template <typename TResp, typename TFunc, typename TValid, typename... Args>
   void _handlePinRead(const bridge::router::CommandContext& ctx, rpc::CommandId resp_cmd, TValid valid_func, TFunc read_func, Args&&... args) {
-    _withPayload<rpc::payload::PinRead>(
-        ctx, [this, resp_cmd, valid_func, read_func, &args...](const rpc::payload::PinRead& msg) {
-          if (valid_func(msg.pin)) {
-            _sendResponse<TResp>(resp_cmd, read_func(msg.pin, etl::forward<Args>(args)...));
-          } else {
-            (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
-          }
-        });
+    if (ctx.is_duplicate) return;
+    auto msg = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
+    if (msg) {
+      if (valid_func(msg->pin)) {
+        // [SIL-2] Pin reads must be deterministic and uncompressed
+        TResp resp{read_func(msg->pin, etl::forward<Args>(args)...)};
+        etl::array<uint8_t, TResp::SIZE> buffer;
+        resp.encode(buffer.data());
+        _sendRawFrame(rpc::to_underlying(resp_cmd), etl::span<const uint8_t>(buffer.data(), TResp::SIZE));
+        _markRxProcessed(*ctx.frame);
+      } else {
+        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+      }
+    } else {
+      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+    }
   }
 
   // Console

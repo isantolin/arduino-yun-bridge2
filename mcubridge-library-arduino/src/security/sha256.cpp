@@ -1,18 +1,6 @@
 /**
  * @file sha256.cpp
  * @brief SHA-256 / HMAC-SHA256 implementation optimized for ATmega32U4.
- *
- * Key differences from the external Crypto library:
- *  - No virtual functions or base-class vtable (saves ~200 B flash).
- *  - No HKDFCommon / Hash class hierarchy (saves ~400 B flash).
- *  - No Crypto.cpp / clean() / secure_compare() linkage (saves ~100 B).
- *  - Round constants stored in PROGMEM (same as Crypto, avoids 256 B RAM).
- *  - In-place w[] expansion for rounds 16-63 (saves 192 B stack).
- *
- * Algorithm reference: FIPS 180-4, RFC 2104.
- *
- * This file is part of Arduino MCU Ecosystem v2.
- * (C) 2025-2026 Ignacio Santolin and contributors.
  */
 #include "sha256.h"
 #include "security.h"
@@ -66,9 +54,10 @@ void SHA256::reset() {
 }
 
 void SHA256::update(const void* data, size_t len) {
+  if (len == 0) return;
+  const uint8_t* d = static_cast<const uint8_t*>(data);
   length_ += static_cast<uint64_t>(len) << 3;
 
-  const uint8_t* d = static_cast<const uint8_t*>(data);
   while (len > 0) {
     uint8_t room = 64 - chunkSize_;
     if (room > len) room = static_cast<uint8_t>(len);
@@ -87,28 +76,25 @@ void SHA256::finalize(void* hash, size_t len) {
   uint8_t* wb = reinterpret_cast<uint8_t*>(w_.data());
 
   // Pad the last chunk (may need two blocks).
+  wb[chunkSize_] = 0x80;
   if (chunkSize_ <= 55) {
-    wb[chunkSize_] = 0x80;
     etl::fill_n(wb + chunkSize_ + 1, 55 - chunkSize_, uint8_t(0));
-    w_[14] = etl::reverse_bytes(static_cast<uint32_t>(length_ >> 32));
-    w_[15] = etl::reverse_bytes(static_cast<uint32_t>(length_));
-    processChunk();
   } else {
-    wb[chunkSize_] = 0x80;
     etl::fill_n(wb + chunkSize_ + 1, 63 - chunkSize_, uint8_t(0));
     processChunk();
     etl::fill_n(wb, 56, uint8_t(0));
-    w_[14] = etl::reverse_bytes(static_cast<uint32_t>(length_ >> 32));
-    w_[15] = etl::reverse_bytes(static_cast<uint32_t>(length_));
-    processChunk();
   }
+  w_[14] = etl::reverse_bytes(static_cast<uint32_t>(length_ >> 32));
+  w_[15] = etl::reverse_bytes(static_cast<uint32_t>(length_));
+  processChunk();
 
   // Convert hash state to big-endian and copy out.
-  etl::transform(h_.begin(), h_.end(), w_.begin(),
+  etl::array<uint32_t, 8> out;
+  etl::transform(h_.begin(), h_.end(), out.begin(),
                  [](uint32_t val) { return etl::reverse_bytes(val); });
 
   if (len > HASH_SIZE) len = HASH_SIZE;
-  etl::copy_n(reinterpret_cast<const uint8_t*>(w_.data()), len,
+  etl::copy_n(reinterpret_cast<const uint8_t*>(out.data()), len,
               static_cast<uint8_t*>(hash));
 }
 
@@ -122,7 +108,6 @@ void SHA256::processChunk() {
   uint32_t t1, t2;
   uint8_t i;
 
-  // Rounds 0-15: use w_[] directly.
   for (i = 0; i < 16; ++i) {
     t1 = h +
          (etl::rotate_right(e, 6) ^ etl::rotate_right(e, 11) ^
@@ -131,26 +116,16 @@ void SHA256::processChunk() {
     t2 = (etl::rotate_right(a, 2) ^ etl::rotate_right(a, 13) ^
           etl::rotate_right(a, 22)) +
          ((a & b) ^ (a & c) ^ (b & c));
-    h = g;
-    g = f;
-    f = e;
-    e = d + t1;
-    d = c;
-    c = b;
-    b = a;
-    a = t1 + t2;
+    h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
   }
 
-  // Rounds 16-63: expand w[] in-place (saves 192 bytes of stack).
   for (; i < 64; ++i) {
     t1 = w_[(i - 15) & 0x0F];
     t2 = w_[(i - 2) & 0x0F];
     t1 = w_[i & 0x0F] =
         w_[(i - 16) & 0x0F] + w_[(i - 7) & 0x0F] +
-        (etl::rotate_right(t1, 7) ^ etl::rotate_right(t1, 18) ^
-         (t1 >> 3)) +
-        (etl::rotate_right(t2, 17) ^ etl::rotate_right(t2, 19) ^
-         (t2 >> 10));
+        (etl::rotate_right(t1, 7) ^ etl::rotate_right(t1, 18) ^ (t1 >> 3)) +
+        (etl::rotate_right(t2, 17) ^ etl::rotate_right(t2, 19) ^ (t2 >> 10));
 
     t1 = h +
          (etl::rotate_right(e, 6) ^ etl::rotate_right(e, 11) ^
@@ -159,59 +134,48 @@ void SHA256::processChunk() {
     t2 = (etl::rotate_right(a, 2) ^ etl::rotate_right(a, 13) ^
           etl::rotate_right(a, 22)) +
          ((a & b) ^ (a & c) ^ (b & c));
-    h = g;
-    g = f;
-    f = e;
-    e = d + t1;
-    d = c;
-    c = b;
-    b = a;
-    a = t1 + t2;
+    h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
   }
 
-  h_[0] += a;
-  h_[1] += b;
-  h_[2] += c;
-  h_[3] += d;
-  h_[4] += e;
-  h_[5] += f;
-  h_[6] += g;
-  h_[7] += h;
+  h_[0] += a; h_[1] += b; h_[2] += c; h_[3] += d;
+  h_[4] += e; h_[5] += f; h_[6] += g; h_[7] += h;
 }
 
-// --- HMAC helpers ---
+// --- HMAC implementation ---
 
 void SHA256::formatHMACKey(const void* key, size_t len, uint8_t pad) {
-  uint8_t* block = reinterpret_cast<uint8_t*>(w_.data());
-  reset();
+  etl::array<uint8_t, BLOCK_SIZE> k_block;
+  k_block.fill(0);
+
   if (len <= BLOCK_SIZE) {
-    etl::copy_n(static_cast<const uint8_t*>(key), len, block);
+    etl::copy_n(static_cast<const uint8_t*>(key), len, k_block.begin());
   } else {
-    update(key, len);
-    len = HASH_SIZE;
-    finalize(block, len);
-    reset();
+    SHA256 h;
+    h.update(key, len);
+    h.finalize(k_block.data(), HASH_SIZE);
   }
-  etl::fill_n(block + len, BLOCK_SIZE - len, pad);
-  etl::for_each(block, block + len, [pad](uint8_t& b) { b ^= pad; });
+
+  for (size_t i = 0; i < BLOCK_SIZE; ++i) k_block[i] ^= pad;
+  
+  reset();
+  update(k_block.data(), BLOCK_SIZE);
+  rpc::security::secure_zero(k_block.data(), BLOCK_SIZE);
 }
 
 void SHA256::resetHMAC(const void* key, size_t keyLen) {
   formatHMACKey(key, keyLen, 0x36);
-  length_ += 64 * 8;
-  processChunk();
 }
 
 void SHA256::finalizeHMAC(const void* key, size_t keyLen, void* hash,
                           size_t hashLen) {
-  etl::array<uint8_t, HASH_SIZE> temp;
-  finalize(temp.data(), temp.size());
-  formatHMACKey(key, keyLen, 0x5C);
-  length_ += 64 * 8;
-  processChunk();
-  update(temp.data(), temp.size());
-  finalize(hash, hashLen);
+  etl::array<uint8_t, HASH_SIZE> inner;
+  finalize(inner.data(), HASH_SIZE); // Finalize inner hash
 
-  // [MIL-SPEC] Securely zero inner-hash digest using volatile-guaranteed primitive.
-  rpc::security::secure_zero(temp.data(), temp.size());
+  // Outer hash: H(K ^ opad || inner)
+  SHA256 outer;
+  outer.formatHMACKey(key, keyLen, 0x5C);
+  outer.update(inner.data(), HASH_SIZE);
+  outer.finalize(hash, hashLen);
+
+  rpc::security::secure_zero(inner.data(), HASH_SIZE);
 }

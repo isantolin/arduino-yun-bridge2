@@ -111,7 +111,7 @@ async def test_finalize_process_slot_missing_releases(
     # Acquire one slot manually
     await process_component._process_slots.acquire()
     val_before = process_component._process_slots._value
-    
+
     await process_component._finalize_process(999)
     assert process_component._process_slots._value == val_before + 1
 

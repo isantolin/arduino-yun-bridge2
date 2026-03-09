@@ -37,7 +37,7 @@ async def test_poll_process_flushes_stored_buffers(
         state.running_processes[pid] = slot
 
     process_component = cast(ProcessComponent, runtime_service._process)
-    
+
     # Poll should return data
     batch = await process_component.poll_process(pid)
 

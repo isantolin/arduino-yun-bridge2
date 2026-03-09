@@ -135,10 +135,6 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 6;
 #define BRIDGE_DEBUG_INSECURE 0
 #endif
 
-// --- Cryptographic Constants (MIL-SPEC) ---
-constexpr size_t BRIDGE_HKDF_KEY_LENGTH = 32;
-constexpr size_t BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE = 64; // HKDF Key + SHA256 Digest
-
 // --- Subsystem Enablement (RAM Optimization) ---
 // Note: Macros are now centralized in config/bridge_config.h
 

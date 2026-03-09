@@ -17,6 +17,8 @@
 #include <string.h>  // memcpy
 
 #include "Bridge.h"
+#include "etl/optional.h"
+#include "etl/string.h"
 
 namespace bridge {
 namespace test {
@@ -257,7 +259,9 @@ class DataStoreTestAccessor {
   bool trackPendingKey(const char* key) {
     return _ds._trackPendingDatastoreKey(etl::string_view(key));
   }
-  etl::string_view popPendingKey() { return _ds._popPendingDatastoreKey(); }
+  etl::optional<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>> popPendingKey() {
+    return _ds._popPendingDatastoreKey();
+  }
   void clearPendingKeys() { _ds._pending_datastore_keys.clear(); }
 
   static DataStoreTestAccessor create(DataStoreClass& ds) {
@@ -280,7 +284,7 @@ class ProcessTestAccessor {
   explicit ProcessTestAccessor(ProcessClass& p) : _p(p) {}
 
   bool pushPendingPid(uint16_t pid) { return _p._pushPendingProcessPid(pid); }
-  uint16_t popPendingPid() { return _p._popPendingProcessPid(); }
+  etl::optional<uint16_t> popPendingPid() { return _p._popPendingProcessPid(); }
   void clearPendingPids() { _p._pending_process_pids.clear(); }
 
   static ProcessTestAccessor create(ProcessClass& p) {

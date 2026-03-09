@@ -712,10 +712,10 @@ void BridgeClass::onDataStoreCommand(
         ctx, [](const rpc::payload::DatastoreGetResponse& msg) {
 #if BRIDGE_ENABLE_DATASTORE
           if (DataStore._datastore_get_handler.is_valid()) {
-            etl::string_view key = DataStore._popPendingDatastoreKey();
-            if (!key.empty()) {
+            auto key = DataStore._popPendingDatastoreKey();
+            if (key) {
               DataStore._datastore_get_handler(
-                  key, etl::span<const uint8_t>(msg.value, msg.value_len));
+                  *key, etl::span<const uint8_t>(msg.value, msg.value_len));
             }
           }
 #endif

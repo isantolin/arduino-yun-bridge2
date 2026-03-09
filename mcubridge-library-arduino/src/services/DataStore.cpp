@@ -1,3 +1,4 @@
+#include "services/DataStore.h"
 #include "Bridge.h"
 #include "protocol/rpc_protocol.h"
 
@@ -27,20 +28,20 @@ void DataStoreClass::requestGet(etl::string_view key) {
 
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_DATASTORE_GET, key,
                                 rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
-    _popPendingDatastoreKey();  // Clean up if send failed
+    (void)_popPendingDatastoreKey();  // Clean up if send failed
   }
 }
 
-etl::string_view DataStoreClass::_popPendingDatastoreKey() {
+etl::optional<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>>
+DataStoreClass::_popPendingDatastoreKey() {
   if (_pending_datastore_keys.empty()) {
-    _last_datastore_key.clear();
-    return {};
+    return etl::nullopt;
   }
 
-  _last_datastore_key = _pending_datastore_keys.front();
+  etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> key =
+      _pending_datastore_keys.front();
   _pending_datastore_keys.pop();
-  return etl::string_view(_last_datastore_key.data(),
-                          _last_datastore_key.length());
+  return etl::optional<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>>(key);
 }
 
 bool DataStoreClass::_trackPendingDatastoreKey(etl::string_view key) {

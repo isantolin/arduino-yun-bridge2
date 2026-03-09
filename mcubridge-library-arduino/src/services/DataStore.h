@@ -5,6 +5,7 @@
 
 #if BRIDGE_ENABLE_DATASTORE
 #include "etl/delegate.h"
+#include "etl/optional.h"
 #include "etl/queue.h"
 #include "etl/span.h"
 #include "etl/string.h"
@@ -46,14 +47,13 @@ class DataStoreClass : public BridgeObserver {
 
  private:
   bool _trackPendingDatastoreKey(etl::string_view key);
-  etl::string_view _popPendingDatastoreKey();
+  etl::optional<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>> _popPendingDatastoreKey();
 
   DataStoreGetHandler _datastore_get_handler;
 
   etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>,
              BRIDGE_MAX_PENDING_DATASTORE>
       _pending_datastore_keys;
-  etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> _last_datastore_key;
 };
 
 extern DataStoreClass DataStore;

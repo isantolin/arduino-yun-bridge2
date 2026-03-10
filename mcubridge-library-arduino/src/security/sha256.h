@@ -25,8 +25,8 @@
 
 class SHA256 {
  public:
-  static const size_t HASH_SIZE = 32;
-  static const size_t BLOCK_SIZE = 64;
+  static constexpr size_t HASH_SIZE = 32;
+  static constexpr size_t BLOCK_SIZE = 64;
 
   SHA256();
 

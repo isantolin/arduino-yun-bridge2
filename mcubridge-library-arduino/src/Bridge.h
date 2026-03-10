@@ -29,6 +29,7 @@
 // [SIL-2] ETL Configuration MUST be first to ensure consistent profile (e.g. no
 // CRC tables)
 #include "etl_profile.h"
+#include <stdint.h>
 
 // Forward declaration of millis() since we might not include Arduino.h yet
 #if !defined(BRIDGE_HOST_TEST)

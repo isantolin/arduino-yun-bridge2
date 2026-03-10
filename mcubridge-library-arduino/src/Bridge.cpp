@@ -414,9 +414,9 @@ void BridgeClass::_handleStatusMalformed(
 }
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch via Jump Table for System Commands
+  // [SIL-2] O(1) Dispatch via Jump Table for System Commands (Stride 2 for Cmd/Resp)
   typedef void (BridgeClass::*SystemHandler)(const bridge::router::CommandContext&);
-  static const SystemHandler kSystemHandlers[] = {
+  static constexpr SystemHandler kSystemHandlers[] = {
       &BridgeClass::_handleGetVersion,      // 0: 64
       &BridgeClass::_handleGetFreeMemory,   // 1: 66
       &BridgeClass::_handleLinkSync,        // 2: 68
@@ -424,19 +424,11 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleGetCapabilities, // 4: 72
       &BridgeClass::_handleSetBaudrate      // 5: 74
   };
-
-  const uint16_t cmd = ctx.raw_command;
-  if (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-      cmd <= rpc::RPC_SYSTEM_COMMAND_MAX) {
-    const uint16_t index = (cmd - rpc::RPC_SYSTEM_COMMAND_MIN) >> 1;
-    if (index < (sizeof(kSystemHandlers) / sizeof(kSystemHandlers[0]))) {
-      (this->*kSystemHandlers[index])(ctx);
-    }
-  }
+  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, 2);
 }
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
-  _withResponse(ctx, [&]() {
+  _withResponse(ctx, [this]() {
     _sendResponse<rpc::payload::VersionResponse>(
         rpc::CommandId::CMD_GET_VERSION_RESP, kDefaultFirmwareVersionMajor,
         kDefaultFirmwareVersionMinor);
@@ -445,7 +437,7 @@ void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleGetFreeMemory(
     const bridge::router::CommandContext& ctx) {
-  _withResponse(ctx, [&]() {
+  _withResponse(ctx, [this]() {
     _sendResponse<rpc::payload::FreeMemoryResponse>(
         rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, getFreeMemory());
   });
@@ -610,42 +602,34 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for GPIO Commands
   typedef void (BridgeClass::*GpioHandler)(const bridge::router::CommandContext&);
-  static const GpioHandler kGpioHandlers[] = {
+  static constexpr GpioHandler kGpioHandlers[] = {
       &BridgeClass::_handleSetPinMode,    // 0: 80
       &BridgeClass::_handleDigitalWrite,  // 1: 81
       &BridgeClass::_handleAnalogWrite,   // 2: 82
       &BridgeClass::_handleDigitalRead,   // 3: 83
       &BridgeClass::_handleAnalogRead     // 4: 84
   };
-
-  const uint16_t index = ctx.raw_command - rpc::RPC_GPIO_COMMAND_MIN;
-  if (index < (sizeof(kGpioHandlers) / sizeof(kGpioHandlers[0]))) {
-    (this->*kGpioHandlers[index])(ctx);
-  }
+  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers);
 }
 
 void BridgeClass::_handleSetPinMode(const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::PinMode>(
-      ctx, [](const rpc::payload::PinMode& msg) {
-        if (bridge::hal::isValidPin(msg.pin)) ::pinMode(msg.pin, msg.mode);
-      });
+  _handlePinSetter<rpc::payload::PinMode>(ctx, [](const rpc::payload::PinMode& msg) {
+    ::pinMode(msg.pin, msg.mode);
+  });
 }
 
 void BridgeClass::_handleDigitalWrite(
     const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::DigitalWrite>(
-      ctx, [](const rpc::payload::DigitalWrite& msg) {
-        if (bridge::hal::isValidPin(msg.pin))
-          ::digitalWrite(msg.pin, msg.value ? HIGH : LOW);
-      });
+  _handlePinSetter<rpc::payload::DigitalWrite>(ctx, [](const rpc::payload::DigitalWrite& msg) {
+    ::digitalWrite(msg.pin, msg.value ? HIGH : LOW);
+  });
 }
 
 void BridgeClass::_handleAnalogWrite(
     const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::AnalogWrite>(
-      ctx, [](const rpc::payload::AnalogWrite& msg) {
-        if (bridge::hal::isValidPin(msg.pin)) ::analogWrite(msg.pin, msg.value);
-      });
+  _handlePinSetter<rpc::payload::AnalogWrite>(ctx, [](const rpc::payload::AnalogWrite& msg) {
+    ::analogWrite(msg.pin, msg.value);
+  });
 }
 
 void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx) {
@@ -710,16 +694,12 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for Mailbox Commands
   typedef void (BridgeClass::*MailboxHandler)(
       const bridge::router::CommandContext&);
-  static const MailboxHandler kMailboxHandlers[] = {
+  static constexpr MailboxHandler kMailboxHandlers[] = {
       &BridgeClass::_handleMailboxPush,          // 0: 131
       &BridgeClass::_handleMailboxReadResp,      // 1: 132
       &BridgeClass::_handleMailboxAvailableResp  // 2: 133
   };
-
-  const uint16_t index = ctx.raw_command - (rpc::RPC_MAILBOX_COMMAND_MIN + 3);
-  if (index < (sizeof(kMailboxHandlers) / sizeof(kMailboxHandlers[0]))) {
-    (this->*kMailboxHandlers[index])(ctx);
-  }
+  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN + 3, kMailboxHandlers);
 }
 
 void BridgeClass::_handleMailboxPush(
@@ -777,33 +757,24 @@ void BridgeClass::onFileSystemCommand(
   // [SIL-2] O(1) Dispatch via Jump Table for File System Commands
   typedef void (BridgeClass::*FileSystemHandler)(
       const bridge::router::CommandContext&);
-  static const FileSystemHandler kFileSystemHandlers[] = {
+  static constexpr FileSystemHandler kFileSystemHandlers[] = {
       &BridgeClass::_handleFileWrite,    // 0: 144
       nullptr,                           // 1: 145 (reserved)
       nullptr,                           // 2: 146 (reserved)
       &BridgeClass::_handleFileReadResp  // 3: 147
   };
-
-  const uint16_t index = ctx.raw_command - rpc::RPC_FILESYSTEM_COMMAND_MIN;
-  if (index < (sizeof(kFileSystemHandlers) / sizeof(kFileSystemHandlers[0]))) {
-    FileSystemHandler handler = kFileSystemHandlers[index];
-    if (handler) (this->*handler)(ctx);
-  }
+  _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFileSystemHandlers);
 }
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for Process Commands
   typedef void (BridgeClass::*ProcessHandler)(
       const bridge::router::CommandContext&);
-  static const ProcessHandler kProcessHandlers[] = {
+  static constexpr ProcessHandler kProcessHandlers[] = {
       &BridgeClass::_handleProcessRunAsyncResp,  // 0: 165
       &BridgeClass::_handleProcessPollResp       // 1: 166
   };
-
-  const uint16_t index = ctx.raw_command - (rpc::RPC_PROCESS_COMMAND_MIN + 5);
-  if (index < (sizeof(kProcessHandlers) / sizeof(kProcessHandlers[0]))) {
-    (this->*kProcessHandlers[index])(ctx);
-  }
+  _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN + 5, kProcessHandlers);
 }
 
 void BridgeClass::_handleProcessRunAsyncResp(

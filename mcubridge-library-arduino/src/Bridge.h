@@ -475,6 +475,24 @@ class BridgeClass
       const rpc::Frame& original, rpc::Frame& effective);
   bool _isSecurityCheckPassed(uint16_t command_id) const;
 
+  // [SIL-2] Unified Jump Table Dispatch Template
+  template <typename THandler, size_t N>
+  void _dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const THandler (&handlers)[N], uint8_t stride = 1) {
+    if (ctx.raw_command < min_id) return;
+    const uint16_t index = (ctx.raw_command - min_id) / stride;
+    if (index < N && handlers[index]) {
+      (this->*handlers[index])(ctx);
+    }
+  }
+
+  // [SIL-2] DRY Pin Setter Template
+  template <typename TPacket, typename TFunc>
+  void _handlePinSetter(const bridge::router::CommandContext& ctx, TFunc func) {
+    _withPayloadAck<TPacket>(ctx, [this, func](const TPacket& msg) {
+      if (bridge::hal::isValidPin(msg.pin)) func(msg);
+    });
+  }
+
   // [SIL-2] DRY Command Helpers with Lambdas
   template <typename F>
   void _withAck(const bridge::router::CommandContext& ctx, F handler) {

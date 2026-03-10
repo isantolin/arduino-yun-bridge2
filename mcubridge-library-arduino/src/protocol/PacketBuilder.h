@@ -56,6 +56,18 @@ class PacketBuilder {
     return *this;
   }
 
+  // [SIL-2] Variadic Packet Building (C++11 Recursion)
+  template <typename T>
+  PacketBuilder& add_all(T val) {
+    return add_value(val);
+  }
+
+  template <typename T, typename... Args>
+  PacketBuilder& add_all(T first, Args... args) {
+    add_value(first);
+    return add_all(args...);
+  }
+
   PacketBuilder& add_pascal_string(etl::string_view str) {
     const uint8_t len =
         static_cast<uint8_t>(etl::min<size_t>(str.length(), 255));

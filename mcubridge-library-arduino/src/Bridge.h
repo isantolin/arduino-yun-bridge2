@@ -493,6 +493,17 @@ class BridgeClass
     });
   }
 
+  // [SIL-2] Safe Atomic Buffer Push Template
+  template <typename TBuffer>
+  static void safePush(TBuffer& buffer, etl::span<const uint8_t> data) {
+    if (data.empty()) return;
+    BRIDGE_ATOMIC_BLOCK {
+      const size_t space = buffer.capacity() - buffer.size();
+      const size_t to_copy = etl::min(data.size(), space);
+      buffer.push(data.begin(), data.begin() + to_copy);
+    }
+  }
+
   // [SIL-2] DRY Command Helpers with Lambdas
   template <typename F>
   void _withAck(const bridge::router::CommandContext& ctx, F handler) {

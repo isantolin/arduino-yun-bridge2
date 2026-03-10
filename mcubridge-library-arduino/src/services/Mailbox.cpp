@@ -18,7 +18,7 @@ void MailboxClass::send(etl::span<const uint8_t> data) {
 
   constexpr size_t MAILBOX_HEADER_SIZE = 2;
   etl::vector<uint8_t, MAILBOX_HEADER_SIZE> header;
-  rpc::PacketBuilder(header).add_value(static_cast<uint16_t>(data.size()));
+  rpc::PacketBuilder(header).add_all(static_cast<uint16_t>(data.size()));
 
   Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH,
                          etl::span<const uint8_t>(header.data(), header.size()),
@@ -36,11 +36,8 @@ void MailboxClass::requestAvailable() {
 void MailboxClass::_onIncomingData(etl::span<const uint8_t> data) {
   if (data.empty()) return;
 
-  BRIDGE_ATOMIC_BLOCK {
-    const size_t space = _rx_buffer.capacity() - _rx_buffer.size();
-    const size_t to_copy = etl::min(data.size(), space);
-    _rx_buffer.push(data.begin(), data.begin() + to_copy);
-  }
+  // [SIL-2] Use centralized safe push with atomic protection
+  Bridge.safePush(_rx_buffer, data);
 
   if (_mailbox_handler.is_valid()) {
     _mailbox_handler(data);

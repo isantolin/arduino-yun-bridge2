@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command, Status, Topic, DatastoreAction
+from mcubridge.protocol.protocol import Command, Topic
 from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.protocol.topics import TopicRoute
 from mcubridge.services.datastore import DatastoreComponent
@@ -78,7 +78,7 @@ async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
         if call[0][0] == Command.CMD_DIGITAL_READ.value:
             handler = call[0][1]
             break
-    
+
     assert handler is not None
     result = await handler(b"\x01")
     assert result is False
@@ -88,7 +88,7 @@ async def test_dispatcher_mcu_handler_exception(dispatcher: BridgeDispatcher):
     """Cover lines 258-272 in dispatcher.py (Exception in MCU handler)."""
     async def buggy_handler(payload):
         raise RuntimeError("bug")
-    
+
     dispatcher.mcu_registry.get.return_value = buggy_handler
     # Use patch to set is_synchronized
     with patch.object(type(dispatcher.state), "is_synchronized", True):
@@ -101,10 +101,10 @@ async def test_dispatcher_mqtt_no_segments(dispatcher: BridgeDispatcher):
     msg = MagicMock(spec=Message)
     msg.topic = "bridge/system"
     msg.payload = b""
-    
+
     def parse_mock(t):
         return TopicRoute(raw=t, prefix="bridge", topic=Topic.SYSTEM, segments=())
-        
+
     await dispatcher.dispatch_mqtt_message(msg, parse_mock)
 
 @pytest.mark.asyncio
@@ -113,9 +113,9 @@ async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
     msg = MagicMock(spec=Message)
     msg.topic = "bridge/system/test"
     msg.payload = b""
-    
+
     route = TopicRoute(raw=str(msg.topic), prefix="bridge", topic=Topic.SYSTEM, segments=("test",))
-    
+
     with patch.object(dispatcher.mqtt_router, "dispatch", side_effect=RuntimeError("mqtt bug")):
         await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
 
@@ -125,7 +125,7 @@ async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDisp
     # Line 316: Topic.DIGITAL with no segments
     route1 = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
     assert dispatcher._should_reject_topic_action(route1) is None
-    
+
     # Line 319: len(segments) > 1 but segments[1] is empty
     route2 = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("1", ""))
     assert dispatcher._should_reject_topic_action(route2) is None

@@ -87,7 +87,7 @@ class BaseComponent:
         try:
             # yield to allow sending the frame
             yield True
-        except Exception:
+        except BaseException:
             if request is not None:
                 with contextlib.suppress(ValueError):
                     queue.remove(request)

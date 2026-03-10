@@ -16,7 +16,8 @@ void MailboxClass::send(etl::string_view message) {
 void MailboxClass::send(etl::span<const uint8_t> data) {
   if (data.empty()) return;
 
-  etl::vector<uint8_t, 2> header;
+  constexpr size_t MAILBOX_HEADER_SIZE = 2;
+  etl::vector<uint8_t, MAILBOX_HEADER_SIZE> header;
   rpc::PacketBuilder(header).add_value(static_cast<uint16_t>(data.size()));
 
   Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH,

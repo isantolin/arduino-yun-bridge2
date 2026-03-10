@@ -200,7 +200,7 @@ class ProcessComponent(BaseComponent):
             proc.handle = handle
             proc.trigger("start")
             return pid
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             logger.error("Failed to start process: %s", exc)
             self._process_slots.release()
             return 0

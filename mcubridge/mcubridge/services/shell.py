@@ -83,7 +83,7 @@ class ShellComponent:
         try:
             # Policy is checked inside run_async as well, but we can check tokens here if needed for validation
             pid = await self.process.run_async(command)
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             logger.error("Error starting async command: %s", exc)
             response_topic = topic_path(
                 self.state.mqtt_topic_prefix,

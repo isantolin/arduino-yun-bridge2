@@ -17,7 +17,8 @@ void FileSystemClass::write(etl::string_view filePath,
     return;
   }
 
-  etl::vector<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 3> header;
+  constexpr size_t HEADER_METADATA_SIZE = 3;
+  etl::vector<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + HEADER_METADATA_SIZE> header;
   rpc::PacketBuilder builder(header);
   builder.add_pascal_string(filePath);
   builder.add_value(static_cast<uint16_t>(data.size()));

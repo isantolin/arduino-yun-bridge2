@@ -9,6 +9,7 @@ static constexpr size_t kLowWaterNumerator = 1;
 static constexpr size_t kHighWaterNumerator = 3;
 /// Common denominator for both watermark thresholds.
 static constexpr size_t kWatermarkDenominator = 4;
+static constexpr int kNoDataAvailable = -1;
 
 ConsoleClass::ConsoleClass()
     : _begun(false), _xoff_sent(false), _rx_buffer(), _tx_buffer() {
@@ -69,7 +70,7 @@ int ConsoleClass::available() {
 }
 
 int ConsoleClass::peek() {
-  int c = -1;
+  int c = kNoDataAvailable;
   BRIDGE_ATOMIC_BLOCK {
     if (!_rx_buffer.empty()) {
       c = _rx_buffer.front();
@@ -79,7 +80,7 @@ int ConsoleClass::peek() {
 }
 
 int ConsoleClass::read() {
-  int c = -1;
+  int c = kNoDataAvailable;
   bool xon_needed = false;
 
   BRIDGE_ATOMIC_BLOCK {

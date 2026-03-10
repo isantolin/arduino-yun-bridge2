@@ -126,7 +126,7 @@ class SerialTransport:
                 await self._retryable_run(self.loop)
             except asyncio.CancelledError:
                 break
-            except Exception as exc:
+            except (OSError, serial.SerialException, asyncio.TimeoutError, RuntimeError, tenacity.RetryError) as exc:
                 if "SerialHandshakeFatal" in type(exc).__name__:
                     raise
                 logger.error("Transport fatal error: %s", exc, exc_info=True)
@@ -204,7 +204,7 @@ class SerialTransport:
         except (OSError, serial.SerialException) as exc:
             logger.warning("Connection failed: %s", exc)
             raise
-        except Exception as exc:
+        except (asyncio.TimeoutError, RuntimeError, tenacity.RetryError) as exc:
             logger.error("CRITICAL RETRY ERROR: %s", exc, exc_info=True)
             raise
 
@@ -219,7 +219,7 @@ class SerialTransport:
                     time.sleep(0.1)
                     s.dtr = True
             await loop.run_in_executor(None, _sync_toggle)
-        except Exception as exc:
+        except (OSError, serial.SerialException) as exc:
             logger.debug("DTR toggle not supported or failed: %s", exc)
 
     async def _read_loop(self, reader: asyncio.StreamReader) -> None:
@@ -246,7 +246,7 @@ class SerialTransport:
                     e.partial.hex(" ") if e.partial else "None",
                 )
                 break
-            except Exception as exc:
+            except (OSError, serial.SerialException, asyncio.TimeoutError, RuntimeError) as exc:
                 logger.error("Error in _read_loop: %s", exc)
                 break
 
@@ -287,7 +287,7 @@ class SerialTransport:
         except (CobsDecodeError, ValueError) as exc:
             logger.warning("Malformed frame: %s", exc)
             self.state.record_serial_decode_error()
-        except Exception as exc:
+        except (OSError, RuntimeError, KeyError, IndexError, TypeError) as exc:
             logger.error("Error dispatching MCU frame: %s", exc)
             self.state.record_serial_decode_error()
     async def _serial_sender(self, cmd: int, pl: bytes) -> bool:

@@ -383,12 +383,14 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 // ============================================================================
 
 void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] O(1) Dispatch via Switch for Status Codes
+  // [SIL-2] O(1) Dispatch via Switch for Status Codes using Protocol Constants
   const uint16_t status_val = ctx.raw_command;
-  switch (status_val - rpc::RPC_STATUS_CODE_MIN) {
-    case 3: _handleStatusMalformed(ctx); break;  // 51
-    case 8: _handleStatusAck(ctx); break;         // 56
-    default: break;
+  const uint16_t status_offset = status_val - rpc::RPC_STATUS_CODE_MIN;
+
+  if (status_offset == (rpc::to_underlying(rpc::StatusCode::STATUS_ACK) - rpc::RPC_STATUS_CODE_MIN)) {
+    _handleStatusAck(ctx);
+  } else if (status_offset == (rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED) - rpc::RPC_STATUS_CODE_MIN)) {
+    _handleStatusMalformed(ctx);
   }
 
   if (_status_handler.is_valid()) {
@@ -399,14 +401,16 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
-  auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
-  _handleAck(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
+  _withPayload<rpc::payload::AckPacket>(ctx, [this](const rpc::payload::AckPacket& msg) {
+    _handleAck(msg.command_id);
+  });
 }
 
 void BridgeClass::_handleStatusMalformed(
     const bridge::router::CommandContext& ctx) {
-  auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
-  _handleMalformed(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
+  _withPayload<rpc::payload::AckPacket>(ctx, [this](const rpc::payload::AckPacket& msg) {
+    _handleMalformed(msg.command_id);
+  });
 }
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {

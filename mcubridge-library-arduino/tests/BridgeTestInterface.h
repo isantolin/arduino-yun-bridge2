@@ -202,6 +202,10 @@ class TestAccessor {
     _bridge.onUnknownCommand(ctx);
   }
 
+  bool isSecurityCheckPassed(uint16_t command_id) const {
+    return _bridge._isSecurityCheckPassed(command_id);
+  }
+
   static TestAccessor create(BridgeClass& bridge) {
     return TestAccessor(bridge);
   }

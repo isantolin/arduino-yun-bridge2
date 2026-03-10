@@ -79,6 +79,7 @@ TEST_SUITES=(
     "test_arduino_100_coverage"
     "test_coverage_100_final"
     "test_coverage_gaps"
+    "test_coverage_extra_gaps"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites..."
@@ -99,7 +100,7 @@ done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
-gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --print-summary > "${OUTPUT_ROOT}/summary.txt"
+gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 # Optional: also output term summary
 cat "${OUTPUT_ROOT}/summary.txt"

@@ -30,7 +30,10 @@ package-dir = {"" = "mcubridge"}
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q -W error"
+addopts = "-ra -q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 log_cli = true

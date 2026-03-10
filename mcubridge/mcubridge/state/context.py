@@ -898,7 +898,6 @@ class RuntimeState(msgspec.Struct):
         if exc:
             self.mqtt_spool_last_error = str(exc)
         self.record_mqtt_spool_error()
-
     async def stash_mqtt_message(self, message: QueuedPublish) -> bool:
         if not await self.ensure_spool():
             return False
@@ -906,7 +905,8 @@ class RuntimeState(msgspec.Struct):
         if spool is None:
             return False
         try:
-            await asyncio.to_thread(spool.append, message)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, spool.append, message)
             self.record_mqtt_spool()
             return True
         except (MQTTSpoolError, OSError) as exc:

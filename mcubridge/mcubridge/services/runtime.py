@@ -308,7 +308,7 @@ class BridgeService:
 
         try:
             self.state.mqtt_publish_queue.put_nowait(message_to_queue)
-        except asyncio.QueueFull:
+        except (asyncio.QueueFull, asyncio.queues.QueueFull):
             # Dropping strategy: discard oldest, spool it, and insert new
             try:
                 dropped = self.state.mqtt_publish_queue.get_nowait()
@@ -325,7 +325,7 @@ class BridgeService:
                     "MQTT publish queue saturated; dropped oldest message from topic=%s",
                     dropped.topic_name,
                 )
-            except asyncio.QueueEmpty:
+            except (asyncio.QueueEmpty, asyncio.queues.QueueEmpty):
                 # Race condition: someone else emptied it? Just retry insertion
                 self.state.mqtt_publish_queue.put_nowait(message_to_queue)
 

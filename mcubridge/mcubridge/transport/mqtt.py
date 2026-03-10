@@ -161,8 +161,7 @@ class MqttTransport:
     async def _subscribe_topics(self, client: aiomqtt.Client) -> None:
         topics = [(topic_path(self.state.mqtt_topic_prefix, t, *s), int(q)) for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS]
 
-        for topic, qos in topics:
-            await client.subscribe(topic, qos=qos)
+        await client.subscribe(topics)
 
         logger.info("Subscribed to %d command topics.", len(topics))
 

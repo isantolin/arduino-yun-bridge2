@@ -117,7 +117,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   _timers.set_period(bridge::scheduler::TIMER_RX_DEDUPE, BRIDGE_RX_DEDUPE_INTERVAL_MS);
   _timers.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE, BRIDGE_BAUDRATE_SETTLE_MS);
   _timers.set_period(bridge::scheduler::TIMER_STARTUP_STABILIZATION, BRIDGE_STARTUP_STABILIZATION_MS);
-  _last_tick_millis = static_cast<uint32_t>(millis());
+  _last_tick_millis = bridge::now_ms();
 
   // [SIL-2] Memory Integrity POST
   // Verify COBS buffer is functional
@@ -158,7 +158,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   // period
   _startup_stabilizing = true;
   _timers.start(bridge::scheduler::TIMER_STARTUP_STABILIZATION,
-                static_cast<uint32_t>(millis()));
+                bridge::now_ms());
 
   _shared_secret.clear();
   if (!arg_secret.empty()) {
@@ -233,7 +233,7 @@ void BridgeClass::process() {
     }
   }
 
-  const uint32_t now = static_cast<uint32_t>(millis());
+  const uint32_t now = bridge::now_ms();
   const uint8_t expired = _timers.check_expired(now);
   if (expired & (1U << bridge::scheduler::TIMER_ACK_TIMEOUT)) _onAckTimeout();
   if (expired & (1U << bridge::scheduler::TIMER_RX_DEDUPE)) _onRxDedupe();
@@ -530,7 +530,7 @@ void BridgeClass::_handleSetBaudrate(const bridge::router::CommandContext& ctx) 
         _pending_baudrate = msg.baudrate;
         _timers.start_with_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE,
                                   BRIDGE_BAUDRATE_SETTLE_MS,
-                                  static_cast<uint32_t>(millis()));
+                                  bridge::now_ms());
       });
 }
 
@@ -1132,7 +1132,7 @@ void BridgeClass::_onAckTimeout() {
 
   // Restart timer for next retry
   _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT,
-                static_cast<uint32_t>(millis()));
+                bridge::now_ms());
 }
 
 void BridgeClass::_onRxDedupe() {
@@ -1214,7 +1214,7 @@ void BridgeClass::_flushPendingTxQueue() {
   // [SIL-2] Start ACK Timer
   _timers.start_with_period(bridge::scheduler::TIMER_ACK_TIMEOUT,
                             _ack_timeout_ms,
-                            static_cast<uint32_t>(millis()));
+                            bridge::now_ms());
 
   _last_command_id = frame.command_id;
   // NOTE: We do NOT pop here. We pop only when ACK is received.
@@ -1291,7 +1291,7 @@ bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
                    [&frame](const RxHistory& r) { return r.crc == frame.crc; });
 
   if (it != _rx_history.end()) {
-    const uint32_t elapsed = static_cast<uint32_t>(millis()) - it->timestamp;
+    const uint32_t elapsed = bridge::now_ms() - it->timestamp;
     if (_ack_timeout_ms > 0 &&
         elapsed < static_cast<uint32_t>(_ack_timeout_ms))
       return false;
@@ -1302,7 +1302,7 @@ bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
 }
 
 void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
-  _rx_history.push(RxHistory{frame.crc, static_cast<uint32_t>(millis())});
+  _rx_history.push(RxHistory{frame.crc, bridge::now_ms()});
 }
 
 // [SIL-2] ETL Error Handler Implementation

@@ -30,6 +30,21 @@
 // CRC tables)
 #include "etl_profile.h"
 
+// Forward declaration of millis() since we might not include Arduino.h yet
+#if !defined(BRIDGE_HOST_TEST)
+extern "C" unsigned long millis(void);
+#else
+extern unsigned long millis(void);
+#endif
+
+namespace bridge {
+/**
+ * @brief Helper to cast millis() to strictly typed uint32_t.
+ * Prevents repeating static_cast<uint32_t>(millis()) throughout the codebase.
+ */
+inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
+}  // namespace bridge
+
 // [SIL-2] Centralized configuration for class layout consistency (ODR)
 #include <Arduino.h>
 #include <Stream.h>

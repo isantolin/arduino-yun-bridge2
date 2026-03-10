@@ -714,24 +714,22 @@ void BridgeClass::_handleMailboxPush(
 
 void BridgeClass::_handleMailboxReadResp(
     const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::MailboxReadResponse>(
-      ctx, [](const rpc::payload::MailboxReadResponse& msg) {
+  _dispatchResponse<rpc::payload::MailboxReadResponse>(
+      ctx, Mailbox._mailbox_handler,
+      [](MailboxClass::MailboxHandler& h, const rpc::payload::MailboxReadResponse& msg) {
 #if BRIDGE_ENABLE_MAILBOX
-        Mailbox._onIncomingData(
-            etl::span<const uint8_t>(msg.content, msg.length));
+        Mailbox._onIncomingData(etl::span<const uint8_t>(msg.content, msg.length));
 #endif
+        (void)h;
       });
 }
 
 void BridgeClass::_handleMailboxAvailableResp(
     const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::MailboxAvailableResponse>(
-      ctx, [](const rpc::payload::MailboxAvailableResponse& msg) {
-#if BRIDGE_ENABLE_MAILBOX
-        if (Mailbox._mailbox_available_handler.is_valid()) {
-          Mailbox._mailbox_available_handler(msg.count);
-        }
-#endif
+  _dispatchResponse<rpc::payload::MailboxAvailableResponse>(
+      ctx, Mailbox._mailbox_available_handler,
+      [](MailboxClass::MailboxAvailableHandler& h, const rpc::payload::MailboxAvailableResponse& msg) {
+        h(msg.count);
       });
 }
 
@@ -741,14 +739,10 @@ void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleFileReadResp(
     const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::FileReadResponse>(
-      ctx, [](const rpc::payload::FileReadResponse& msg) {
-#if BRIDGE_ENABLE_FILESYSTEM
-        if (FileSystem._file_system_read_handler.is_valid()) {
-          FileSystem._file_system_read_handler(
-              etl::span<const uint8_t>(msg.content, msg.length));
-        }
-#endif
+  _dispatchResponse<rpc::payload::FileReadResponse>(
+      ctx, FileSystem._file_system_read_handler,
+      [](FileSystemClass::FileSystemReadHandler& h, const rpc::payload::FileReadResponse& msg) {
+        h(etl::span<const uint8_t>(msg.content, msg.length));
       });
 }
 
@@ -779,29 +773,22 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleProcessRunAsyncResp(
     const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::ProcessRunAsyncResponse>(
-      ctx, [](const rpc::payload::ProcessRunAsyncResponse& msg) {
-#if BRIDGE_ENABLE_PROCESS
-        if (Process._process_run_async_handler.is_valid()) {
-          Process._process_run_async_handler(static_cast<int16_t>(msg.pid));
-        }
-#endif
+  _dispatchResponse<rpc::payload::ProcessRunAsyncResponse>(
+      ctx, Process._process_run_async_handler,
+      [](ProcessClass::ProcessRunAsyncHandler& h, const rpc::payload::ProcessRunAsyncResponse& msg) {
+        h(static_cast<int16_t>(msg.pid));
       });
 }
 
 void BridgeClass::_handleProcessPollResp(
     const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::ProcessPollResponse>(
-      ctx, [](const rpc::payload::ProcessPollResponse& msg) {
-#if BRIDGE_ENABLE_PROCESS
-        if (Process._process_poll_handler.is_valid()) {
-          Process._process_poll_handler(
-              static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
-              etl::span<const uint8_t>(msg.stdout_data, msg.stdout_len),
-              etl::span<const uint8_t>(msg.stderr_data, msg.stderr_len));
-          Process._popPendingProcessPid();
-        }
-#endif
+  _dispatchResponse<rpc::payload::ProcessPollResponse>(
+      ctx, Process._process_poll_handler,
+      [](ProcessClass::ProcessPollHandler& h, const rpc::payload::ProcessPollResponse& msg) {
+        h(static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
+          etl::span<const uint8_t>(msg.stdout_data, msg.stdout_len),
+          etl::span<const uint8_t>(msg.stderr_data, msg.stderr_len));
+        Process._popPendingProcessPid();
       });
 }
 

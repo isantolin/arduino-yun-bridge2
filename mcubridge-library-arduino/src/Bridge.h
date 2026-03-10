@@ -504,6 +504,14 @@ class BridgeClass
     }
   }
 
+  // [SIL-2] Unified Response Dispatch Template
+  template <typename TPacket, typename TDelegate, typename TFunc>
+  void _dispatchResponse(const bridge::router::CommandContext& ctx, TDelegate& delegate, TFunc func) {
+    _withPayload<TPacket>(ctx, [this, &delegate, func](const TPacket& msg) {
+      if (delegate.is_valid()) func(delegate, msg);
+    });
+  }
+
   // [SIL-2] DRY Command Helpers with Lambdas
   template <typename F>
   void _withAck(const bridge::router::CommandContext& ctx, F handler) {

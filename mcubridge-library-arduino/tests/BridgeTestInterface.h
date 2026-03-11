@@ -284,7 +284,10 @@ class ProcessTestAccessor {
   explicit ProcessTestAccessor(ProcessClass& p) : _p(p) {}
 
   bool pushPendingPid(uint16_t pid) { return _p._pushPendingProcessPid(pid); }
-  uint16_t popPendingPid() { return _p._popPendingProcessPid(); }
+  uint16_t popPendingPid() {
+    auto pid = _p._popPendingProcessPid();
+    return pid.has_value() ? pid.value() : rpc::RPC_INVALID_ID_SENTINEL;
+  }
   void clearPendingPids() { _p._pending_process_pids.clear(); }
 
   static ProcessTestAccessor create(ProcessClass& p) {

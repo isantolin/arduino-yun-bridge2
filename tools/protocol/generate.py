@@ -64,6 +64,12 @@ class StatusDef(msgspec.Struct, frozen=True):
     description: str
 
 
+class CapabilityDef(msgspec.Struct, frozen=True):
+    name: str
+    value: int
+    cpp_condition: str
+
+
 class StructField(msgspec.Struct, frozen=True):
     name: str
     type_code: str  # B, H, I, Q
@@ -119,7 +125,7 @@ class RawProtocolData(msgspec.Struct):
     mqtt_subscriptions: list[dict[str, Any]]
     actions: list[dict[str, Any]]
     topics: list[dict[str, Any]]
-    capabilities: dict[str, int]
+    capabilities: list[dict[str, Any]]
     architectures: dict[str, int]
     status_reasons: dict[str, str]
 
@@ -136,7 +142,7 @@ class ProtocolSpec:
     mqtt_subscriptions: list[dict[str, Any]]
     actions: list[dict[str, Any]]
     topics: list[dict[str, Any]]
-    capabilities: dict[str, int]
+    capabilities: list[CapabilityDef]
     architectures: dict[str, int]
     status_reasons: dict[str, str]
 
@@ -148,6 +154,7 @@ class ProtocolSpec:
         # Convert raw dicts to Structs
         cmds = [msgspec.convert(c, CommandDef) for c in raw.commands]
         statuses = [msgspec.convert(s, StatusDef) for s in raw.statuses]
+        capabilities = [msgspec.convert(c, CapabilityDef) for c in raw.capabilities]
 
         payloads = {}
         for name, fields_dict in raw.payloads.items():
@@ -163,7 +170,7 @@ class ProtocolSpec:
             mqtt_subscriptions=raw.mqtt_subscriptions,
             actions=raw.actions,
             topics=raw.topics,
-            capabilities=raw.capabilities,
+            capabilities=capabilities,
             architectures=raw.architectures,
             status_reasons=raw.status_reasons,
         )

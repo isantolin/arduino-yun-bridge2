@@ -471,77 +471,9 @@ void BridgeClass::_handleGetCapabilities(
     ana = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
 #endif
 
-    etl::bitset<32> features;
-    features.set(0);  // RLE Bit (Always enabled)
-    
-    // Declarative feature mapping
-    const bool feature_map[] = {
-        kBridgeEnableWatchdog, // Bit 1
-#if BRIDGE_DEBUG_FRAMES
-        true, // Bit 2
-#else
-        false,
-#endif
-#if BRIDGE_DEBUG_IO
-        true, // Bit 3
-#else
-        false,
-#endif
-#if defined(E2END) && (E2END > 0)
-        true, // Bit 4
-#else
-        false,
-#endif
-#if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
-    defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||     \
-    defined(ARDUINO_ARCH_ESP32)
-        true, // Bit 5
-#else
-        false,
-#endif
-#if defined(HAVE_HWSERIAL1)
-        true, // Bit 6
-#else
-        false,
-#endif
-#if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
-        true, // Bit 7
-#else
-        false,
-#endif
-#if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||      \
-    defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
-    defined(ARDUINO_ARCH_RP2040)
-        true, // Bit 8
-#else
-        false,
-#endif
-#if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
-        true, // Bit 9
-#else
-        false,
-#endif
-#if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
-    defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-        true, // Bit 10
-#else
-        false,
-#endif
-#if defined(SCK) || defined(MOSI) || defined(MISO) || \
-    defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-        true, // Bit 11
-#else
-        false,
-#endif
-    };
-
-    for (size_t i = 0; i < (sizeof(feature_map) / sizeof(feature_map[0])); ++i) {
-      if (feature_map[i]) features.set(i + 1);
-    }
-
     _sendResponse<rpc::payload::Capabilities>(
         rpc::CommandId::CMD_GET_CAPABILITIES_RESP, rpc::PROTOCOL_VERSION, arch,
-        dig, ana, static_cast<uint32_t>(features.to_ulong()));
+        dig, ana, GENERATE_MCU_CAPABILITIES());
   });
 }
 

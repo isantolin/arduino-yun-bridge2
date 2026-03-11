@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import time
 from binascii import crc32
-from collections.abc import Iterable
 from enum import IntEnum
 from typing import (
     TYPE_CHECKING,
@@ -502,6 +501,21 @@ class QOSLevel(IntEnum):
 UserProperty = tuple[str, str]
 
 
+def _bytes_dec_hook(type_: Any, obj: Any) -> Any:
+    if type_ is bytes and isinstance(obj, str):
+        import base64
+
+        try:
+            return base64.b64decode(obj)
+        except ValueError:
+            return obj.encode("utf-8")
+    raise TypeError(f"Cannot convert {obj!r} to {type_}")
+
+
+def _default_user_properties() -> list[UserProperty]:
+    return []
+
+
 class SpoolRecord(msgspec.Struct, omit_defaults=True):
     """JSON-serializable record stored in the durable spool (RAM/Disk)."""
 
@@ -515,7 +529,7 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
+    user_properties: list[UserProperty] = msgspec.field(default_factory=_default_user_properties)
 
 
 class QueuedPublish(msgspec.Struct):
@@ -530,65 +544,16 @@ class QueuedPublish(msgspec.Struct):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
+    user_properties: list[UserProperty] = msgspec.field(default_factory=_default_user_properties)
 
     def to_record(self) -> SpoolRecord:
-        """Convert to a QueuedPublish to SpoolRecord for serialization."""
-        return SpoolRecord(
-            topic_name=self.topic_name,
-            payload=self.payload,
-            qos=int(self.qos),
-            retain=self.retain,
-            content_type=self.content_type,
-            payload_format_indicator=self.payload_format_indicator,
-            message_expiry_interval=self.message_expiry_interval,
-            response_topic=self.response_topic,
-            correlation_data=self.correlation_data,
-            user_properties=self.user_properties,
-        )
+        """Convert a QueuedPublish to SpoolRecord for serialization."""
+        return msgspec.convert(self, SpoolRecord)
 
     @classmethod
     def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
-        data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
-
-        payload = data.get("payload", b"")
-        if isinstance(payload, str):
-            try:
-                import base64
-
-                payload = base64.b64decode(payload)
-            except ValueError:
-                payload = payload.encode("utf-8")
-
-        correlation_data = data.get("correlation_data")
-        if isinstance(correlation_data, str):
-            try:
-                import base64
-
-                correlation_data = base64.b64decode(correlation_data)
-            except ValueError:
-                correlation_data = correlation_data.encode("utf-8")
-
-        raw_props = data.get("user_properties", ())
-        user_properties: list[tuple[str, str]] = []
-        if isinstance(raw_props, Iterable):
-            for item in cast("Iterable[Any]", raw_props):
-                if isinstance(item, (list, tuple)) and len(item) >= 2:  # pyright: ignore[reportUnknownArgumentType]
-                    user_properties.append((str(item[0]), str(item[1])))  # pyright: ignore[reportUnknownArgumentType]
-
-        return cls(
-            topic_name=str(data.get("topic_name", "")),
-            payload=payload,
-            qos=int(data.get("qos", 0)),
-            retain=bool(data.get("retain", False)),
-            content_type=data.get("content_type"),
-            payload_format_indicator=data.get("payload_format_indicator"),
-            message_expiry_interval=data.get("message_expiry_interval"),
-            response_topic=data.get("response_topic"),
-            correlation_data=correlation_data,
-            user_properties=user_properties,
-        )
+        return msgspec.convert(record, cls, dec_hook=_bytes_dec_hook, strict=False)
 
 
 # --- Process Service Structures ---

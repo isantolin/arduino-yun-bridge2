@@ -31,8 +31,8 @@ class CompressionType(IntEnum):
     NONE = 0
     RLE = 1
 
-{% for cap, val in capabilities.items() %}
-CAPABILITY_{{ cap|upper }}: Final[int] = {{ val }}
+{% for cap in capabilities %}
+CAPABILITY_{{ cap.name|upper }}: Final[int] = {{ cap.value }}
 {%- endfor %}
 
 {% for arch, val in architectures.items() %}

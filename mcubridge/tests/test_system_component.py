@@ -142,9 +142,9 @@ def test_handle_get_version_resp_malformed(
 
         assert runtime_state.mcu_version is None
         assert not ctx.published
-        assert any(
-            "Malformed VersionResponsePacket" in message for message in (record.getMessage() for record in caplog.records)
-        )
+        messages = (record.getMessage() for record in caplog.records)
+        assert any("Malformed VersionResponsePacket" in msg for msg in messages)
+
     _run(_coro())
 
 

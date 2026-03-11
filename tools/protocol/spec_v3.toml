@@ -1,0 +1,43 @@
+# Draft specification for MCU Bridge V3 Protocol
+
+[constants]
+protocol_version = 0x03
+default_baudrate = 115200
+
+# V3 specific
+frame_delimiter = 0x00
+
+[endpoints]
+SYS = 0  # 00
+CTRL = 1 # 01
+DATA = 2 # 10
+BULK = 3 # 11
+
+[commands]
+# SYS endpoint (00)
+PING = 0x01
+PONG = 0x02
+HANDSHAKE = 0x03
+HANDSHAKE_ACK = 0x04
+
+# CTRL endpoint (01)
+DIGITAL_READ = 0x10
+DIGITAL_WRITE = 0x11
+ANALOG_READ = 0x12
+
+# DATA endpoint (10)
+DATASTORE_GET = 0x20
+DATASTORE_PUT = 0x21
+
+# BULK endpoint (11)
+FILE_READ_CHUNK = 0x30
+FILE_WRITE_CHUNK = 0x31
+
+[structs.v3_header]
+description = "Bit-packed 1-byte header"
+fields = [
+    { name = "type", bits = 1, desc = "0=Datagram, 1=Reliable" },
+    { name = "compressed", bits = 1, desc = "1=Compressed" },
+    { name = "endpoint", bits = 2, desc = "00=SYS, 01=CTRL, 10=DATA, 11=BULK" },
+    { name = "sequence", bits = 4, desc = "0-15 Sliding window sequence" }
+]

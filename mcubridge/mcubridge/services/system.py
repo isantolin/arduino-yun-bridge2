@@ -8,7 +8,6 @@ from collections.abc import Awaitable, Callable
 from typing import cast
 
 from aiomqtt.message import Message
-from construct import ConstructError
 from mcubridge.protocol.protocol import Command, SystemAction
 from mcubridge.protocol.structures import (
     FreeMemoryResponsePacket,

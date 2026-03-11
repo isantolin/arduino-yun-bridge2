@@ -22,7 +22,7 @@ from .process import ProcessComponent
 logger = logging.getLogger("mcubridge.shell")
 
 
-class ShellComponent:
+class ShellComponent(BaseComponent):
     """Handle shell-related MQTT topics and responses."""
 
     def __init__(
@@ -32,9 +32,7 @@ class ShellComponent:
         ctx: BridgeContext,
         process: ProcessComponent,
     ) -> None:
-        self.config = config
-        self.state = state
-        self.ctx = ctx
+        super().__init__(config, state, ctx)
         self.process = process
 
     async def handle_mqtt(

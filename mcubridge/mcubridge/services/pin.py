@@ -63,20 +63,16 @@ class PinComponent(BaseComponent):
         payload: bytes,
         resp_name: str,
         topic_type: Topic,
-        parse_value: Callable[[bytes], int],
+        packet_cls: Any,
+        command_id: Command,
         pending_queue: collections.deque[PendingPinRequest],
     ) -> None:
         """Shared implementation for digital/analog read response handling."""
-        try:
-            value = parse_value(payload)
-        except (ConstructError, ValueError):
-            logger.warning(
-                "Malformed %s payload: len=%d",
-                resp_name,
-                len(payload),
-            )
+        packet = self._decode_payload(packet_cls, payload, command_id)
+        if packet is None:
             return
 
+        value = packet.value
         request: PendingPinRequest | None = None
         if pending_queue:
             request = pending_queue.popleft()
@@ -87,6 +83,7 @@ class PinComponent(BaseComponent):
         topic = self._build_pin_topic(topic_type, pin_value)
         pin_label = str(pin_value) if pin_value is not None else "unknown"
 
+        # Special case: Pin reads require 'bridge-pin' property, so we use direct publish for now
         await self.ctx.publish(
             topic=topic,
             payload=str(value).encode("utf-8"),
@@ -100,7 +97,8 @@ class PinComponent(BaseComponent):
             payload=payload,
             resp_name="DIGITAL_READ_RESP",
             topic_type=Topic.DIGITAL,
-            parse_value=lambda p: DigitalReadResponsePacket.decode(p, Command.CMD_DIGITAL_READ_RESP).value,
+            packet_cls=DigitalReadResponsePacket,
+            command_id=Command.CMD_DIGITAL_READ_RESP,
             pending_queue=self.state.pending_digital_reads,
         )
 
@@ -109,7 +107,8 @@ class PinComponent(BaseComponent):
             payload=payload,
             resp_name="ANALOG_READ_RESP",
             topic_type=Topic.ANALOG,
-            parse_value=lambda p: AnalogReadResponsePacket.decode(p, Command.CMD_ANALOG_READ_RESP).value,
+            packet_cls=AnalogReadResponsePacket,
+            command_id=Command.CMD_ANALOG_READ_RESP,
             pending_queue=self.state.pending_analog_reads,
         )
 

@@ -9,6 +9,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any, Deque, Protocol, TypeVar
 
 from aiomqtt.message import Message
+from construct import ConstructError
 
 from ..config.settings import RuntimeConfig
 from ..protocol.structures import QueuedPublish

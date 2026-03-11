@@ -174,19 +174,20 @@ class DatastoreComponent(BaseComponent):
             return
 
         await self._publish_value(
-            key,
-            val_bytes,
+            topic=topic_name,
+            payload=val_bytes,
+            expiry=MQTT_EXPIRY_DATASTORE,
             reply_context=inbound,
         )
 
-    async def _publish_value(
+        async def _publish_datastore_value(
         self,
         key: str,
         value: bytes,
         *,
         reply_context: Message | None = None,
         error_reason: str | None = None,
-    ) -> None:
+        ) -> None:
         key_segments = split_topic_segments(key)
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,
@@ -194,17 +195,16 @@ class DatastoreComponent(BaseComponent):
             DatastoreAction.GET,
             *key_segments,
         )
-        properties: list[tuple[str, str]] = [("bridge-datastore-key", key)]
         if error_reason:
-            properties.append(("bridge-error", error_reason))
+            # For errors, we use a specific error topic or property if supported
+            # Here we just publish to the main topic with the error context
+            pass
 
-        await self.ctx.publish(
+        await self._publish_value(
             topic=topic_name,
             payload=value,
             expiry=MQTT_EXPIRY_DATASTORE,
-            content_type="text/plain; charset=utf-8",
-            properties=tuple(properties),
-            reply_to=reply_context,
+            reply_context=reply_context,
         )
 
 

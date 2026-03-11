@@ -8,7 +8,6 @@ import contextlib
 import logging
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -134,17 +133,16 @@ class PendingPinRequest(msgspec.Struct):
     reply_context: Message | None = None
 
 
-@dataclass
-class ManagedProcess:
+class ManagedProcess(msgspec.Struct):
     """Managed subprocess with output buffers."""
 
     pid: int
     command: str = ""
     handle: Any | None = None
-    stdout_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
-    stderr_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
+    stdout_buffer: collections.deque[int] = msgspec.field(default_factory=lambda: collections.deque(maxlen=4096))
+    stderr_buffer: collections.deque[int] = msgspec.field(default_factory=lambda: collections.deque(maxlen=4096))
     exit_code: int | None = None
-    io_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    io_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     fsm_state: str = PROCESS_STATE_STARTING
     _machine: Any = None
 

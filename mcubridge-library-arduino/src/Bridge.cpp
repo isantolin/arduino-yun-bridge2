@@ -472,45 +472,72 @@ void BridgeClass::_handleGetCapabilities(
 #endif
 
     etl::bitset<32> features;
-    features.set(0);  // RLE Bit (1 << 0) - Always enabled
-    if (kBridgeEnableWatchdog) features.set(1);  // Watchdog Bit (1 << 1)
-
+    features.set(0);  // RLE Bit (Always enabled)
+    
+    // Declarative feature mapping
+    const bool feature_map[] = {
+        kBridgeEnableWatchdog, // Bit 1
 #if BRIDGE_DEBUG_FRAMES
-    features.set(2);
+        true, // Bit 2
+#else
+        false,
 #endif
 #if BRIDGE_DEBUG_IO
-    features.set(3);
+        true, // Bit 3
+#else
+        false,
 #endif
 #if defined(E2END) && (E2END > 0)
-    features.set(4);
+        true, // Bit 4
+#else
+        false,
 #endif
 #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
     defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||     \
     defined(ARDUINO_ARCH_ESP32)
-    features.set(5);
+        true, // Bit 5
+#else
+        false,
 #endif
 #if defined(HAVE_HWSERIAL1)
-    features.set(6);
+        true, // Bit 6
+#else
+        false,
 #endif
 #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
-    features.set(7);
+        true, // Bit 7
+#else
+        false,
 #endif
 #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) ||      \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
     defined(ARDUINO_ARCH_RP2040)
-    features.set(8);
+        true, // Bit 8
+#else
+        false,
 #endif
 #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
-    features.set(9);
+        true, // Bit 9
+#else
+        false,
 #endif
 #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-    features.set(10);
+        true, // Bit 10
+#else
+        false,
 #endif
 #if defined(SCK) || defined(MOSI) || defined(MISO) || \
     defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-    features.set(11);
+        true, // Bit 11
+#else
+        false,
 #endif
+    };
+
+    for (size_t i = 0; i < (sizeof(feature_map) / sizeof(feature_map[0])); ++i) {
+      if (feature_map[i]) features.set(i + 1);
+    }
 
     _sendResponse<rpc::payload::Capabilities>(
         rpc::CommandId::CMD_GET_CAPABILITIES_RESP, rpc::PROTOCOL_VERSION, arch,
@@ -939,34 +966,23 @@ bool BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
 }
 bool BridgeClass::_isHandshakeCommand(uint16_t command_id) const {
   // [SIL-2] Protocol Security: Only allow specific commands during pre-sync phase.
-  
-  // Define allowed ranges
-  struct Range { uint16_t min; uint16_t max; };
+  struct Range { uint16_t min, max; };
   static constexpr Range allowed_ranges[] = {
       {rpc::RPC_STATUS_CODE_MIN, rpc::RPC_STATUS_CODE_MAX},
-      {rpc::RPC_SYSTEM_COMMAND_MIN, rpc::RPC_SYSTEM_COMMAND_MAX}
-  };
-  
-  // Define specific allowed IDs
+      {rpc::RPC_SYSTEM_COMMAND_MIN, rpc::RPC_SYSTEM_COMMAND_MAX}};
+
   static constexpr uint16_t allowed_ids[] = {
       rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP),
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC_RESP),
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP)
-  };
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP)};
 
-  // Check if command is in any allowed range using ETL algorithms
-  if (etl::any_of(etl::begin(allowed_ranges), etl::end(allowed_ranges),
-                  [command_id](const Range& r) {
-                    return command_id >= r.min && command_id <= r.max;
-                  })) {
-    return true;
-  }
-
-  // Check if command matches any specific allowed ID using ETL algorithms
-  return etl::any_of(etl::begin(allowed_ids), etl::end(allowed_ids),
+  return etl::any_of(etl::begin(allowed_ranges), etl::end(allowed_ranges),
+                     [command_id](const Range& r) {
+                       return command_id >= r.min && command_id <= r.max;
+                     }) ||
+         etl::any_of(etl::begin(allowed_ids), etl::end(allowed_ids),
                      [command_id](uint16_t id) { return id == command_id; });
 }
-
 bool BridgeClass::_sendFrame(uint16_t command_id,
                              etl::span<const uint8_t> payload) {
   // [SIL-2] Finite State Machine - Outbound Filter via ETL FSM

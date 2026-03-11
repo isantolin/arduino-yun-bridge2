@@ -44,7 +44,7 @@ class DatastoreComponent(BaseComponent):
         value = value_bytes.decode("utf-8", errors="ignore")
 
         self.state.datastore[key] = value
-        await self._publish_value(key, value_bytes)
+        await self._publish_datastore_value(key, value_bytes)
         return True
 
     async def handle_get_request(self, payload: bytes) -> bool:
@@ -84,7 +84,7 @@ class DatastoreComponent(BaseComponent):
             response_payload,
         )
         if send_ok:
-            await self._publish_value(key, value_bytes)
+            await self._publish_datastore_value(key, value_bytes)
         return send_ok
 
     async def handle_mqtt(
@@ -131,7 +131,7 @@ class DatastoreComponent(BaseComponent):
             return
 
         self.state.datastore[key] = value_text
-        await self._publish_value(
+        await self._publish_datastore_value(
             key,
             value_bytes,
             reply_context=inbound,
@@ -154,7 +154,7 @@ class DatastoreComponent(BaseComponent):
         cached_value = self.state.datastore.get(key)
         if cached_value is None:
             if is_request:
-                await self._publish_value(
+                await self._publish_datastore_value(
                     key,
                     b"",
                     reply_context=inbound,
@@ -166,25 +166,16 @@ class DatastoreComponent(BaseComponent):
 
         # [SIL-2] Handle potential type drift during testing/injection
         val_to_check: Any = cached_value
-        val_bytes = val_to_check.encode("utf-8") if isinstance(val_to_check, str) else val_to_check
+        val_bytes = val_to_check.encode("utf-8") if isinstance(val_to_check, str) else bytes(val_to_check)
 
         # Ignore echoes: if it's not an explicit /request and it has a payload,
         # it is an echo of a published value, so we do not republish.
         if not is_request and inbound and inbound.payload:
             return
 
-        key_segments = split_topic_segments(key)
-        topic_name = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.DATASTORE,
-            DatastoreAction.GET,
-            *key_segments,
-        )
-
-        await self._publish_value(
-            topic=topic_name,
-            payload=val_bytes,
-            expiry=MQTT_EXPIRY_DATASTORE,
+        await self._publish_datastore_value(
+            key,
+            val_bytes,
             reply_context=inbound,
         )
 
@@ -203,10 +194,8 @@ class DatastoreComponent(BaseComponent):
             DatastoreAction.GET,
             *key_segments,
         )
-        if error_reason:
-            # For errors, we use a specific error topic or property if supported
-            # Here we just publish to the main topic with the error context
-            pass
+        # Note: error_reason could be handled via MQTT properties if needed.
+        _ = error_reason
 
         await self._publish_value(
             topic=topic_name,

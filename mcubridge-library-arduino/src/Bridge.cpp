@@ -675,7 +675,7 @@ void BridgeClass::onDataStoreCommand(
     const bridge::router::CommandContext& ctx) {
   _dispatchResponse<rpc::payload::DatastoreGetResponse>(
       ctx, DataStore._datastore_get_handler,
-      [](DataStoreClass::DataStoreGetHandler& h, const rpc::payload::DatastoreGetResponse& msg) {
+      [](const DataStoreClass::DataStoreGetHandler& h, const rpc::payload::DatastoreGetResponse& msg) {
 #if BRIDGE_ENABLE_DATASTORE
         etl::string_view key = DataStore._popPendingDatastoreKey();
         if (!key.empty()) {
@@ -712,7 +712,7 @@ void BridgeClass::_handleMailboxReadResp(
     const bridge::router::CommandContext& ctx) {
   _dispatchResponse<rpc::payload::MailboxReadResponse>(
       ctx, Mailbox._mailbox_handler,
-      [](MailboxClass::MailboxHandler& h, const rpc::payload::MailboxReadResponse& msg) {
+      [](const MailboxClass::MailboxHandler& h, const rpc::payload::MailboxReadResponse& msg) {
 #if BRIDGE_ENABLE_MAILBOX
         Mailbox._onIncomingData(etl::span<const uint8_t>(msg.content, msg.length));
 #endif
@@ -724,7 +724,7 @@ void BridgeClass::_handleMailboxAvailableResp(
     const bridge::router::CommandContext& ctx) {
   _dispatchResponse<rpc::payload::MailboxAvailableResponse>(
       ctx, Mailbox._mailbox_available_handler,
-      [](MailboxClass::MailboxAvailableHandler& h, const rpc::payload::MailboxAvailableResponse& msg) {
+      [](const MailboxClass::MailboxAvailableHandler& h, const rpc::payload::MailboxAvailableResponse& msg) {
         h(msg.count);
       });
 }
@@ -737,7 +737,7 @@ void BridgeClass::_handleFileReadResp(
     const bridge::router::CommandContext& ctx) {
   _dispatchResponse<rpc::payload::FileReadResponse>(
       ctx, FileSystem._file_system_read_handler,
-      [](FileSystemClass::FileSystemReadHandler& h, const rpc::payload::FileReadResponse& msg) {
+      [](const FileSystemClass::FileSystemReadHandler& h, const rpc::payload::FileReadResponse& msg) {
         h(etl::span<const uint8_t>(msg.content, msg.length));
       });
 }
@@ -771,7 +771,7 @@ void BridgeClass::_handleProcessRunAsyncResp(
     const bridge::router::CommandContext& ctx) {
   _dispatchResponse<rpc::payload::ProcessRunAsyncResponse>(
       ctx, Process._process_run_async_handler,
-      [](ProcessClass::ProcessRunAsyncHandler& h, const rpc::payload::ProcessRunAsyncResponse& msg) {
+      [](const ProcessClass::ProcessRunAsyncHandler& h, const rpc::payload::ProcessRunAsyncResponse& msg) {
         h(static_cast<int16_t>(msg.pid));
       });
 }
@@ -780,7 +780,7 @@ void BridgeClass::_handleProcessPollResp(
     const bridge::router::CommandContext& ctx) {
   _dispatchResponse<rpc::payload::ProcessPollResponse>(
       ctx, Process._process_poll_handler,
-      [](ProcessClass::ProcessPollHandler& h, const rpc::payload::ProcessPollResponse& msg) {
+      [](const ProcessClass::ProcessPollHandler& h, const rpc::payload::ProcessPollResponse& msg) {
         h(static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
           etl::span<const uint8_t>(msg.stdout_data, msg.stdout_len),
           etl::span<const uint8_t>(msg.stderr_data, msg.stderr_len));

@@ -106,18 +106,20 @@ async def test_poll_process_running(process_component: ProcessComponent) -> None
 
 @pytest.mark.asyncio
 async def test_stop_process_success(process_component: ProcessComponent) -> None:
-    mock_handle = MagicMock()
-    mock_handle.process = MagicMock()
-    mock_handle.process.terminate = MagicMock()
-    mock_sh = MagicMock(return_value=mock_handle)
+    mock_process = AsyncMock()
+    mock_process.terminate = MagicMock()
+    mock_process.stdout = AsyncMock()
+    mock_process.stdout.read.return_value = b""
+    mock_process.stderr = AsyncMock()
+    mock_process.stderr.read.return_value = b""
+    mock_process.wait.return_value = 0
 
-    with patch("sh.Command", return_value=mock_sh):
+    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
         pid = await process_component.run_async("echo hello")
 
     success = await process_component.stop_process(pid)
     assert success is True
-    mock_handle.process.terminate.assert_called_once()
-
+    mock_process.terminate.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_monitor_process_finishes(process_component: ProcessComponent) -> None:

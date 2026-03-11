@@ -118,8 +118,7 @@ async def test_handle_kill_timeout_releases_slot(
 ) -> None:
     pid = 11
     mock_handle = MagicMock()
-    mock_handle.process = MagicMock()
-    mock_handle.process.terminate = MagicMock()
+    mock_handle.terminate = MagicMock()
     slot = ManagedProcess(pid=pid, command="hi")
     slot.handle = mock_handle
 
@@ -130,8 +129,7 @@ async def test_handle_kill_timeout_releases_slot(
 
     ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
     assert ok is True
-    mock_handle.process.terminate.assert_called_once()
-
+    mock_handle.terminate.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_handle_kill_process_lookup_error_is_handled(

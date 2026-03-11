@@ -9,7 +9,6 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 import msgspec
-import sh  # type: ignore[reportMissingTypeStubs]
 
 from ..protocol import protocol, structures
 from ..protocol.protocol import Status
@@ -152,7 +151,7 @@ class ProcessComponent(BaseComponent):
     # --- Core Logic ---
 
     async def run_async(self, command: str) -> int:
-        """Start a command asynchronously and return its PID using sh."""
+        """Start a command asynchronously using asyncio.subprocess."""
         # [SECURITY] Enforce command policy at the lowest execution level
         if not self.state.allowed_policy.is_allowed(command):
             logger.warning("Process execution denied by policy: %s", command)
@@ -169,36 +168,28 @@ class ProcessComponent(BaseComponent):
             async with self.state.process_lock:
                 self.state.running_processes[pid] = proc
 
-            loop = asyncio.get_running_loop()
+            try:
+                # [OPT] Use asyncio's native subprocess for zero-thread execution
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            except OSError as e:
+                logger.error("Failed to spawn process: %s", e)
+                self._process_slots.release()
+                async with self.state.process_lock:
+                    self.state.running_processes.pop(pid, None)
+                return 0
 
-            def _out_cb(chunk: bytes | str) -> None:
-                if not chunk:
-                    return
-                b_chunk = chunk if isinstance(chunk, bytes) else chunk.encode("utf-8", "replace")
-                loop.call_soon_threadsafe(self._append_chunk_sync, pid, b_chunk, False)
-
-            def _err_cb(chunk: bytes | str) -> None:
-                if not chunk:
-                    return
-                b_chunk = chunk if isinstance(chunk, bytes) else chunk.encode("utf-8", "replace")
-                loop.call_soon_threadsafe(self._append_chunk_sync, pid, b_chunk, True)
-
-            def _done_cb(cmd: Any, success: bool, exit_code: int) -> None:
-                loop.call_soon_threadsafe(self._finalize_sync, pid, exit_code)
-
-            handle = sh.Command("/bin/sh")(
-                "-c", command,
-                _bg=True,
-                _bg_exc=False,
-                _out=_out_cb,
-                _err=_err_cb,
-                _done=_done_cb,
-                _out_bufsize=1024,
-                _err_bufsize=1024
-            )
-
-            proc.handle = handle
+            proc.handle = process
             proc.trigger("start")
+
+            # Spawn reader tasks
+            asyncio.create_task(self._read_stream(pid, process.stdout, False))
+            asyncio.create_task(self._read_stream(pid, process.stderr, True))
+            asyncio.create_task(self._wait_process(pid, process))
+
             return pid
         except (OSError, ValueError, RuntimeError) as exc:
             logger.error("Failed to start process: %s", exc)
@@ -212,8 +203,28 @@ class ProcessComponent(BaseComponent):
             self.state.next_pid = (pid % 65535) + 1
             return pid
 
-    def _append_chunk_sync(self, pid: int, chunk: bytes, is_stderr: bool) -> None:
-        asyncio.create_task(self._append_chunk_async(pid, chunk, is_stderr))
+    async def _read_stream(self, pid: int, stream: asyncio.StreamReader | None, is_stderr: bool) -> None:
+        """Read output from a subprocess stream non-blockingly."""
+        if not stream:
+            return
+        try:
+            while True:
+                chunk = await stream.read(1024)
+                if not chunk:
+                    break
+                await self._append_chunk_async(pid, chunk, is_stderr)
+        except (OSError, asyncio.CancelledError):
+            pass
+
+    async def _wait_process(self, pid: int, process: asyncio.subprocess.Process) -> None:
+        """Wait for subprocess to finish and capture exit code."""
+        try:
+            exit_code = await process.wait()
+            await self._finalize_callback_async(pid, exit_code)
+        except asyncio.CancelledError:
+            with contextlib.suppress(ProcessLookupError):
+                process.terminate()
+            await self._finalize_callback_async(pid, -1)
 
     async def _append_chunk_async(self, pid: int, chunk: bytes, is_stderr: bool) -> None:
         async with self.state.process_lock:
@@ -225,9 +236,6 @@ class ProcessComponent(BaseComponent):
                 proc.stderr_buffer.extend(chunk)
             else:
                 proc.stdout_buffer.extend(chunk)
-
-    def _finalize_sync(self, pid: int, exit_code: int) -> None:
-        asyncio.create_task(self._finalize_callback_async(pid, exit_code))
 
     async def _finalize_callback_async(self, pid: int, exit_code: int) -> None:
         async with self.state.process_lock:
@@ -270,11 +278,12 @@ class ProcessComponent(BaseComponent):
         """Terminate a running process."""
         async with self.state.process_lock:
             proc = self.state.running_processes.get(pid)
-            if proc:
-                if proc.handle:
-                    with contextlib.suppress(Exception):
-                        proc.handle.process.terminate()
-                return True
+            if proc and proc.handle:
+                try:
+                    proc.handle.terminate() # type: ignore
+                    return True
+                except ProcessLookupError:
+                    return False
             return False
 
 

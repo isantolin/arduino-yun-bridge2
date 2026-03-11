@@ -78,7 +78,7 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
     # Check for datastore-miss error
     found_miss = False
     for call in ctx.publish.call_args_list:
-        if call.kwargs.get("properties") and ("bridge-error", "datastore-miss") in call.kwargs["properties"]:
+        if call.kwargs.get("properties") and any(k == "bridge-error" and v == "datastore-miss" for k, v in call.kwargs["properties"]):
             found_miss = True
     assert found_miss
 

@@ -194,14 +194,16 @@ class DatastoreComponent(BaseComponent):
             DatastoreAction.GET,
             *key_segments,
         )
-        # Note: error_reason could be handled via MQTT properties if needed.
-        _ = error_reason
+        properties: list[tuple[str, str]] = [("bridge-datastore-key", key)]
+        if error_reason:
+            properties.append(("bridge-error", error_reason))
 
         await self._publish_value(
             topic=topic_name,
             payload=value,
             expiry=MQTT_EXPIRY_DATASTORE,
             reply_context=reply_context,
+            properties=tuple(properties),
         )
 
 

@@ -121,6 +121,7 @@ class BaseComponent:
         expiry: int,
         reply_context: Message | None = None,
         content_type: str = "text/plain; charset=utf-8",
+        properties: tuple[tuple[str, str], ...] = (),
     ) -> None:
         """Centralized helper for broadcasting a value and sending a targeted reply."""
         # Broadcast to all subscribers
@@ -130,6 +131,7 @@ class BaseComponent:
             expiry=expiry,
             content_type=content_type,
             reply_to=None,
+            properties=properties,
         )
         # Targeted reply if context exists
         if reply_context is not None:
@@ -139,6 +141,7 @@ class BaseComponent:
                 expiry=expiry,
                 content_type=content_type,
                 reply_to=reply_context,
+                properties=properties,
             )
 
     def _decode_payload(self, packet_cls: Any, payload: bytes, command_id: Any) -> Any | None:

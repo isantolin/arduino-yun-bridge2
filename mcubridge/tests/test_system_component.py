@@ -89,8 +89,7 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(runtime_config
         assert len(ctx.published) == 2
         # First is reply (usually)
         # Check that value 1024 is in payload
-        assert b"1024" in ctx.published[0][1]
-
+        assert "1024" in ctx.published[0][1]
     _run(_coro())
 
 
@@ -123,8 +122,7 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(runtime_con
 
         assert runtime_state.mcu_version == (1, 2)
         assert len(ctx.published) >= 1
-        assert b"1.2" in ctx.published[0][1]
-
+        assert "1.2" in ctx.published[0][1]
     _run(_coro())
 
 
@@ -145,9 +143,8 @@ def test_handle_get_version_resp_malformed(
         assert runtime_state.mcu_version is None
         assert not ctx.published
         assert any(
-            "Malformed GET_VERSION_RESP" in message for message in (record.getMessage() for record in caplog.records)
+            "Malformed VersionResponsePacket" in message for message in (record.getMessage() for record in caplog.records)
         )
-
     _run(_coro())
 
 
@@ -163,10 +160,9 @@ def test_handle_mqtt_version_get_with_cached_version(runtime_config, runtime_sta
         await component.handle_mqtt(SystemAction.VERSION, [SystemAction.GET], msg)
 
         assert len(ctx.published) >= 1
-        assert b"2.0" in ctx.published[0][1]
+        assert "2.0" in ctx.published[0][1]
         # It still requests version to refresh cache
         assert len(ctx.sent_frames) == 1
-
     _run(_coro())
 
 

@@ -68,8 +68,13 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
 
         assert result is True
         assert datastore_component.state.datastore["key1"] == "value1"
-        mock_pub.assert_awaited_once_with("key1", value)
-
+        mock_pub.assert_awaited_once_with(
+            topic='br/datastore/get/key1',
+            payload=value,
+            expiry=60,
+            reply_context=None,
+            properties=(('bridge-datastore-key', 'key1'),)
+        )
 
 @pytest.mark.asyncio
 async def test_handle_put_malformed(datastore_component: DatastoreComponent) -> None:

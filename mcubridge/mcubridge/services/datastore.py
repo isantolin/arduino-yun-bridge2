@@ -173,6 +173,14 @@ class DatastoreComponent(BaseComponent):
         if not is_request and inbound and inbound.payload:
             return
 
+        key_segments = split_topic_segments(key)
+        topic_name = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.DATASTORE,
+            DatastoreAction.GET,
+            *key_segments,
+        )
+
         await self._publish_value(
             topic=topic_name,
             payload=val_bytes,
@@ -180,14 +188,14 @@ class DatastoreComponent(BaseComponent):
             reply_context=inbound,
         )
 
-        async def _publish_datastore_value(
+    async def _publish_datastore_value(
         self,
         key: str,
         value: bytes,
         *,
         reply_context: Message | None = None,
         error_reason: str | None = None,
-        ) -> None:
+    ) -> None:
         key_segments = split_topic_segments(key)
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,

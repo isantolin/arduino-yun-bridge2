@@ -11,7 +11,7 @@ from mcubridge.protocol.protocol import ShellAction
 from ..config.settings import RuntimeConfig
 from ..protocol.topics import Topic, topic_path
 from ..state.context import RuntimeState
-from .base import BridgeContext
+from .base import BaseComponent, BridgeContext
 from .payloads import (
     PayloadValidationError,
     ShellCommandPayload,

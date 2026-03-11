@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import collections
 import logging
-from collections.abc import Callable
+from typing import Any
 
 from aiomqtt.message import Message
-from construct import ConstructError
 from mcubridge.protocol.protocol import Command, PinAction, Status
 from mcubridge.protocol.structures import (
     AnalogReadResponsePacket,

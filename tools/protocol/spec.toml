@@ -52,12 +52,12 @@ rle = 0x01
 [[capabilities]]
 name = "watchdog"
 value = 0x00000001
-cpp_condition = "kBridgeEnableWatchdog"
+cpp_condition = "BRIDGE_ENABLE_WATCHDOG"
 
 [[capabilities]]
 name = "rle"
 value = 0x00000002
-cpp_condition = "true"
+cpp_condition = "1"
 
 [[capabilities]]
 name = "debug_frames"

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 from binascii import crc32
+from collections.abc import Iterable
 from enum import IntEnum
 from typing import (
     TYPE_CHECKING,
@@ -502,13 +503,16 @@ UserProperty = tuple[str, str]
 
 
 def _bytes_dec_hook(type_: Any, obj: Any) -> Any:
-    if type_ is bytes and isinstance(obj, str):
-        import base64
+    if type_ is bytes:
+        if isinstance(obj, bytes):
+            return obj
+        if isinstance(obj, str):
+            import base64
 
-        try:
-            return base64.b64decode(obj)
-        except ValueError:
-            return obj.encode("utf-8")
+            try:
+                return base64.b64decode(obj)
+            except ValueError:
+                return obj.encode("utf-8")
     raise TypeError(f"Cannot convert {obj!r} to {type_}")
 
 
@@ -548,12 +552,48 @@ class QueuedPublish(msgspec.Struct):
 
     def to_record(self) -> SpoolRecord:
         """Convert a QueuedPublish to SpoolRecord for serialization."""
-        return msgspec.convert(self, SpoolRecord)
+        return SpoolRecord(
+            topic_name=self.topic_name,
+            payload=self.payload,
+            qos=int(self.qos),
+            retain=self.retain,
+            content_type=self.content_type,
+            payload_format_indicator=self.payload_format_indicator,
+            message_expiry_interval=self.message_expiry_interval,
+            response_topic=self.response_topic,
+            correlation_data=self.correlation_data,
+            user_properties=self.user_properties,
+        )
 
     @classmethod
     def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
-        return msgspec.convert(record, cls, dec_hook=_bytes_dec_hook, strict=False)
+        data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
+
+        payload = _bytes_dec_hook(bytes, data.get("payload", b""))
+        correlation_data = data.get("correlation_data")
+        if correlation_data is not None:
+            correlation_data = _bytes_dec_hook(bytes, correlation_data)
+
+        raw_props = data.get("user_properties", ())
+        user_properties: list[tuple[str, str]] = []
+        if isinstance(raw_props, Iterable):
+            for item in cast("Iterable[Any]", raw_props):
+                if isinstance(item, (list, tuple)) and len(item) >= 2:  # pyright: ignore[reportUnknownArgumentType]
+                    user_properties.append((str(item[0]), str(item[1])))  # pyright: ignore[reportUnknownArgumentType]
+
+        return cls(
+            topic_name=str(data.get("topic_name", "")),
+            payload=payload,
+            qos=int(data.get("qos", 0)),
+            retain=bool(data.get("retain", False)),
+            content_type=data.get("content_type"),
+            payload_format_indicator=data.get("payload_format_indicator"),
+            message_expiry_interval=data.get("message_expiry_interval"),
+            response_topic=data.get("response_topic"),
+            correlation_data=correlation_data,
+            user_properties=user_properties,
+        )
 
 
 # --- Process Service Structures ---

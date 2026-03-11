@@ -42,14 +42,14 @@ bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {
   return true;
 }
 
-uint16_t ProcessClass::_popPendingProcessPid() {
+etl::optional<uint16_t> ProcessClass::_popPendingProcessPid() {
   if (_pending_process_pids.empty()) {
-    return rpc::RPC_INVALID_ID_SENTINEL;
+    return etl::nullopt;
   }
 
   uint16_t pid = _pending_process_pids.front();
   _pending_process_pids.pop();
-  return pid;
+  return etl::make_optional(pid);
 }
 
 #endif

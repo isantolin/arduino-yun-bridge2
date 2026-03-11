@@ -784,7 +784,7 @@ void BridgeClass::_handleProcessPollResp(
         h(static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
           etl::span<const uint8_t>(msg.stdout_data, msg.stdout_len),
           etl::span<const uint8_t>(msg.stderr_data, msg.stderr_len));
-        Process._popPendingProcessPid();
+        (void)Process._popPendingProcessPid();
       });
 }
 

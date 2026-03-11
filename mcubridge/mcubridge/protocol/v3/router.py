@@ -3,7 +3,8 @@
 import asyncio
 import logging
 from enum import IntEnum
-from dataclasses import dataclass
+
+import msgspec
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +14,7 @@ class Endpoint(IntEnum):
     DATA = 2
     BULK = 3
 
-@dataclass
-class V3Header:
+class V3Header(msgspec.Struct, frozen=True):
     type_flag: int
     compressed: int
     endpoint: Endpoint

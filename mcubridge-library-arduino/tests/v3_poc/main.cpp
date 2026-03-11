@@ -11,6 +11,9 @@
 #include <etl/crc32.h>
 #include <etl/span.h>
 
+// Include the V3 Router
+#include "protocol/rpc_v3_router.h"
+
 // --- V3 PoC: In-Place COBS Decoding ---
 // Decodes a COBS framed buffer directly into the same memory, saving 50% RAM.
 size_t cobs_decode_in_place(etl::span<uint8_t> buffer) {
@@ -148,5 +151,29 @@ int main() {
     std::cout << "Timestamp: " << payload->timestamp << std::endl;
     std::cout << "Parsing Cost: 0 bytes copied, O(1) CPU time." << std::endl;
 
+    // 4. Multiplexed Priority Router
+    std::cout << "\n[4] ETL Multiplexed Priority Router:" << std::endl;
+    rpc::v3::V3PriorityRouter router;
+    
+    // Create random order messages
+    rpc::v3::Header h_bulk = {0, rpc::v3::EP_BULK, 0, 1};
+    rpc::v3::Header h_data = {1, rpc::v3::EP_DATA, 0, 1};
+    rpc::v3::Header h_sys  = {2, rpc::v3::EP_SYS,  0, 1};
+    rpc::v3::Header h_ctrl = {3, rpc::v3::EP_CTRL, 0, 1};
+    
+    router.route_incoming(h_bulk, 10, 64);
+    router.route_incoming(h_data, 74, 32);
+    router.route_incoming(h_sys,  106, 0);
+    router.route_incoming(h_ctrl, 106, 2);
+    
+    rpc::v3::V3PendingFrame pop_frame;
+    const char* ep_names[] = {"SYS", "CTRL", "DATA", "BULK"};
+    
+    std::cout << "Dequeuing in strict priority:" << std::endl;
+    while(router.dequeue_highest_priority(pop_frame)) {
+        std::cout << " - Extracted EP: " << ep_names[pop_frame.header.endpoint] 
+                  << " (Seq: " << (int)pop_frame.header.sequence << ")" << std::endl;
+    }
+    
     return 0;
 }

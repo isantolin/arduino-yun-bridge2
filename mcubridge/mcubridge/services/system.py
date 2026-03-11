@@ -58,39 +58,43 @@ class SystemComponent(BaseComponent):
             await cast(Callable[[], Awaitable[None]], ack)()
 
     async def handle_get_free_memory_resp(self, payload: bytes) -> None:
-        try:
-            packet = FreeMemoryResponsePacket.decode(payload, Command.CMD_GET_FREE_MEMORY_RESP)
-        except (ConstructError, ValueError):
-            logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())
+        packet = self._decode_payload(FreeMemoryResponsePacket, payload, Command.CMD_GET_FREE_MEMORY_RESP)
+        if packet is None:
             return
-        free_memory = packet.value
+
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SYSTEM,
             SystemAction.FREE_MEMORY,
             SystemAction.VALUE,
         )
-        reply_context = None
-        if self._pending_free_memory:
-            reply_context = self._pending_free_memory.popleft()
-
-        payload_bytes = str(free_memory).encode("utf-8")
-        await self._publish_broadcast_and_reply(
-            topic, payload_bytes, MQTT_EXPIRY_DEFAULT, reply_context,
-        )
+        reply_context = self._pending_free_memory.popleft() if self._pending_free_memory else None
+        await self._publish_value(topic, str(packet.value), MQTT_EXPIRY_DEFAULT, reply_context)
 
     async def handle_get_version_resp(self, payload: bytes) -> None:
-        try:
-            packet = VersionResponsePacket.decode(payload, Command.CMD_GET_VERSION_RESP)
-            major, minor = packet.major, packet.minor
-        except (ConstructError, ValueError):
-            logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())
+        packet = self._decode_payload(VersionResponsePacket, payload, Command.CMD_GET_VERSION_RESP)
+        if packet is None:
             return
 
+        major, minor = packet.major, packet.minor
         self.state.mcu_version = (major, minor)
         reply_context = self._pending_version.popleft() if self._pending_version else None
         await self._publish_version((major, minor), reply_context)
         logger.info("MCU firmware version reported as %d.%d", major, minor)
+
+    async def _publish_version(
+        self,
+        version: tuple[int, int],
+        reply_context: Message | None = None,
+    ) -> None:
+        major, minor = version
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            SystemAction.VERSION,
+            SystemAction.VALUE,
+        )
+        await self._publish_value(topic, f"{major}.{minor}", MQTT_EXPIRY_DATASTORE, reply_context)
 
     async def handle_mqtt(
         self,
@@ -127,47 +131,6 @@ class SystemComponent(BaseComponent):
 
             case _:
                 return False
-
-    async def _publish_version(
-        self,
-        version: tuple[int, int],
-        reply_context: Message | None = None,
-    ) -> None:
-        major, minor = version
-        topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SYSTEM,
-            SystemAction.VERSION,
-            SystemAction.VALUE,
-        )
-        payload_bytes = f"{major}.{minor}".encode()
-        await self._publish_broadcast_and_reply(
-            topic, payload_bytes, MQTT_EXPIRY_DATASTORE, reply_context,
-        )
-
-    async def _publish_broadcast_and_reply(
-        self,
-        topic: str,
-        payload: bytes,
-        expiry: int,
-        reply_context: Message | None,
-    ) -> None:
-        """Publish broadcast to topic and, if present, a targeted reply."""
-        if reply_context is not None:
-            await self.ctx.publish(
-                topic=topic,
-                payload=payload,
-                expiry=expiry,
-                content_type="text/plain; charset=utf-8",
-                reply_to=reply_context,
-            )
-        await self.ctx.publish(
-            topic=topic,
-            payload=payload,
-            expiry=expiry,
-            content_type="text/plain; charset=utf-8",
-            reply_to=None,
-        )
 
 
 __all__ = ["SystemComponent"]

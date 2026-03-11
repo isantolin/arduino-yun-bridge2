@@ -113,5 +113,40 @@ class BaseComponent:
                     queue.remove(request)
             return ok
 
+    async def _publish_value(
+        self,
+        topic: str,
+        payload: bytes | str,
+        expiry: int,
+        reply_context: Message | None = None,
+        content_type: str = "text/plain; charset=utf-8",
+    ) -> None:
+        """Centralized helper for broadcasting a value and sending a targeted reply."""
+        # Broadcast to all subscribers
+        await self.ctx.publish(
+            topic=topic,
+            payload=payload,
+            expiry=expiry,
+            content_type=content_type,
+            reply_to=None,
+        )
+        # Targeted reply if context exists
+        if reply_context is not None:
+            await self.ctx.publish(
+                topic=topic,
+                payload=payload,
+                expiry=expiry,
+                content_type=content_type,
+                reply_to=reply_context,
+            )
+
+    def _decode_payload(self, packet_cls: Any, payload: bytes, command_id: Any) -> Any | None:
+        """Safely decode an RPC payload using the provided packet class."""
+        try:
+            return packet_cls.decode(payload, command_id)
+        except (ConstructError, ValueError):
+            logger.warning("Malformed %s payload: %s", packet_cls.__name__, payload.hex())
+            return None
+
 
 __all__ = ["BridgeContext", "BaseComponent"]

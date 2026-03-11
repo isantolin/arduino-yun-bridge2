@@ -673,21 +673,17 @@ void BridgeClass::_handleConsoleWrite(
 
 void BridgeClass::onDataStoreCommand(
     const bridge::router::CommandContext& ctx) {
-  if (ctx.raw_command ==
-      rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)) {
-    _withPayload<rpc::payload::DatastoreGetResponse>(
-        ctx, [](const rpc::payload::DatastoreGetResponse& msg) {
+  _dispatchResponse<rpc::payload::DatastoreGetResponse>(
+      ctx, DataStore._datastore_get_handler,
+      [](DataStoreClass::DataStoreGetHandler& h, const rpc::payload::DatastoreGetResponse& msg) {
 #if BRIDGE_ENABLE_DATASTORE
-          if (DataStore._datastore_get_handler.is_valid()) {
-            etl::string_view key = DataStore._popPendingDatastoreKey();
-            if (!key.empty()) {
-              DataStore._datastore_get_handler(
-                  key, etl::span<const uint8_t>(msg.value, msg.value_len));
-            }
-          }
+        etl::string_view key = DataStore._popPendingDatastoreKey();
+        if (!key.empty()) {
+          h(key, etl::span<const uint8_t>(msg.value, msg.value_len));
+        }
 #endif
-        });
-  }
+        (void)h;
+      });
 }
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import sh  # type: ignore[reportMissingTypeStubs]
 from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
@@ -63,7 +62,6 @@ class FileComponent(BaseComponent):
         super().__init__(config, state, ctx)
         self._storage_lock = asyncio.Lock()
         self._usage_seeded = False
-        self._ensure_usage_seeded()
 
     async def handle_write(self, payload: bytes) -> bool:
         try:
@@ -294,7 +292,7 @@ class FileComponent(BaseComponent):
             )
             return False, None, "unsafe_path"
 
-        self._ensure_usage_seeded()
+        await self._ensure_usage_seeded()
 
         try:
             match operation:
@@ -407,7 +405,7 @@ class FileComponent(BaseComponent):
             current_usage = self.state.file_storage_bytes_used
             previous_size = self._existing_file_size(path)
             if previous_size > current_usage:
-                current_usage = self._refresh_storage_usage()
+                current_usage = await self._refresh_storage_usage()
                 previous_size = min(previous_size, current_usage)
 
             projected_usage = current_usage - previous_size + payload_size
@@ -448,13 +446,13 @@ class FileComponent(BaseComponent):
             logger.info("Removed file %s", path)
             return True, None, "ok"
 
-    def _ensure_usage_seeded(self) -> None:
+    async def _ensure_usage_seeded(self) -> None:
         if self._usage_seeded:
             return
-        self._refresh_storage_usage()
+        await self._refresh_storage_usage()
         self._usage_seeded = True
 
-    def _refresh_storage_usage(self) -> int:
+    async def _refresh_storage_usage(self) -> int:
         base_dir = self._get_base_dir()
         if base_dir is None:
             self.state.file_storage_bytes_used = 0
@@ -463,9 +461,19 @@ class FileComponent(BaseComponent):
         # [SIL-2 / Library-First] Delegate size calculation to the OS tool (du)
         # instead of a manual blocking python loop. 'du' is built into OpenWrt BusyBox.
         try:
-            out = str(sh.du("-sb", str(base_dir)))
-            usage = int(out.split()[0])
-        except (sh.ErrorReturnCode, ValueError, OSError):
+            process = await asyncio.create_subprocess_exec(
+                "du",
+                "-sb",
+                str(base_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await process.communicate()
+            if process.returncode == 0:
+                usage = int(stdout.decode().split()[0])
+            else:
+                usage = 0
+        except (ValueError, OSError):
             usage = 0
 
         self.state.file_storage_bytes_used = max(0, usage)

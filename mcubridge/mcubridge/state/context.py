@@ -144,11 +144,9 @@ class ManagedProcess(msgspec.Struct):
     exit_code: int | None = None
     io_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     fsm_state: str = PROCESS_STATE_STARTING
-    _machine: Any = None
-
-    def __post_init__(self) -> None:
-        self._machine = Machine(
-            model=self,
+    _machine: Machine = msgspec.field(
+        default_factory=lambda: Machine(
+            model="self",
             states=[
                 PROCESS_STATE_STARTING,
                 PROCESS_STATE_RUNNING,
@@ -157,22 +155,23 @@ class ManagedProcess(msgspec.Struct):
                 PROCESS_STATE_ZOMBIE,
             ],
             initial=PROCESS_STATE_STARTING,
-            model_attribute="fsm_state",
-            auto_transitions=False,
             ignore_invalid_triggers=True,
+            transitions=[
+                {"trigger": "start", "source": PROCESS_STATE_STARTING, "dest": PROCESS_STATE_RUNNING},
+                {"trigger": "sigchld", "source": PROCESS_STATE_RUNNING, "dest": PROCESS_STATE_DRAINING},
+                {"trigger": "io_complete", "source": PROCESS_STATE_DRAINING, "dest": PROCESS_STATE_FINISHED},
+                {"trigger": "finalize", "source": PROCESS_STATE_FINISHED, "dest": PROCESS_STATE_ZOMBIE},
+                {"trigger": "force_kill", "source": "*", "dest": PROCESS_STATE_ZOMBIE},
+            ],
         )
-        self._machine.add_transition("start", PROCESS_STATE_STARTING, PROCESS_STATE_RUNNING)
-        self._machine.add_transition("sigchld", PROCESS_STATE_RUNNING, PROCESS_STATE_DRAINING)
-        self._machine.add_transition("io_complete", PROCESS_STATE_DRAINING, PROCESS_STATE_FINISHED)
-        self._machine.add_transition("finalize", PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
-        # Allow force cleanup from any state
-        self._machine.add_transition("force_kill", "*", PROCESS_STATE_ZOMBIE)
+    )
 
-    if TYPE_CHECKING:
-
-        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
-            """FSM trigger placeholder."""
-            ...
+    def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
+        """FSM trigger delegation."""
+        result = bool(self._machine.trigger(event, *args, **kwargs))
+        # Sync state for status reporting
+        self.fsm_state = self._machine.state
+        return result
 
     def append_output(
         self,

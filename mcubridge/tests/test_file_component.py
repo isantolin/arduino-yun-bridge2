@@ -415,35 +415,32 @@ def test_normalise_filename_rejects_bad_inputs() -> None:
     assert FileComponent._normalise_filename("a\x00b") is None
 
 
-def test_refresh_storage_usage_handles_subprocess_failures(
+@pytest.mark.asyncio
+async def test_refresh_storage_usage_handles_subprocess_failures(
     file_component: tuple[FileComponent, DummyBridge],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import sh
+    from unittest.mock import AsyncMock, patch
     component, _ = file_component
 
-    # Mock sh.du to raise an error
-    def mock_du(*args, **kwargs):
-        raise sh.ErrorReturnCode_1(b"du", b"", b"error")
+    # Mock asyncio.create_subprocess_exec to return failure
+    mock_process = AsyncMock()
+    mock_process.communicate.return_value = (b"", b"error")
+    mock_process.returncode = 1
 
-    monkeypatch.setattr(sh, "du", mock_du)
-
-    # Calling refresh_storage_usage should catch the error and return 0
-    usage = component._refresh_storage_usage()
-    assert usage == 0
-    assert component.state.file_storage_bytes_used == 0
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+        # Calling refresh_storage_usage should catch the error and return 0
+        usage = await component._refresh_storage_usage()
+        assert usage == 0
+        assert component.state.file_storage_bytes_used == 0
 
     # Test ValueError when output is malformed
-    def mock_du_value_error(*args, **kwargs):
-        class MockOut:
-            stdout = b"not-a-number /tmp/foo"
-        return MockOut()
-
-    monkeypatch.setattr(sh, "du", mock_du_value_error)
-
-    usage2 = component._refresh_storage_usage()
-    assert usage2 == 0
-    assert component.state.file_storage_bytes_used == 0
+    mock_process.communicate.return_value = (b"not-a-number /tmp/foo", b"")
+    mock_process.returncode = 0
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+        usage2 = await component._refresh_storage_usage()
+        assert usage2 == 0
+        assert component.state.file_storage_bytes_used == 0
 
 
 @pytest.mark.asyncio
@@ -751,7 +748,7 @@ async def test_ensure_usage_seeded_only_once(
     original_bytes = component.state.file_storage_bytes_used
 
     # Call again - should not rescan
-    component._ensure_usage_seeded()
+    await component._ensure_usage_seeded()
 
     # Should not have changed
     assert component.state.file_storage_bytes_used == original_bytes

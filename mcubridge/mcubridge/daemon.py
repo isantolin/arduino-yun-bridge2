@@ -37,10 +37,7 @@ import psutil
 import tenacity
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
-try:
-    import uvloop
-except ModuleNotFoundError:  # pragma: no cover
-    uvloop = None
+import uvloop
 
 from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,

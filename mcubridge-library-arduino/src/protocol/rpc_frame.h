@@ -47,6 +47,13 @@ inline void write_u32_be(uint8_t* buffer, uint32_t value) {
 
 constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 
+// --- Protocol Offset Constants [SIL-2] ---
+constexpr size_t VERSION_OFFSET = 0;
+constexpr size_t PAYLOAD_LENGTH_OFFSET = 1;
+constexpr size_t COMMAND_ID_OFFSET = 3;
+constexpr size_t FRAME_HEADER_SIZE = 5;
+constexpr size_t MIN_FRAME_SIZE = FRAME_HEADER_SIZE + CRC_TRAILER_SIZE;
+
 // Define FrameHeader struct before it is used in sizeof()
 #pragma pack(push, 1)
 struct FrameHeader {

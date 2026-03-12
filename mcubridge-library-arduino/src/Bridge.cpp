@@ -245,23 +245,23 @@ void BridgeClass::process() {
 
 void BridgeClass::_processIncomingByte(uint8_t byte) {
   if (byte == rpc::RPC_FRAME_DELIMITER) {
-    if (_cobs.in_sync && _cobs.bytes_received >= 5 + rpc::CRC_TRAILER_SIZE) {
+    if (_cobs.in_sync && _cobs.bytes_received >= rpc::MIN_FRAME_SIZE) {
       const size_t data_len = _cobs.bytes_received - rpc::CRC_TRAILER_SIZE;
       etl::crc32 crc_calc;
       crc_calc.add(&_cobs.buffer[0], &_cobs.buffer[data_len]);
       uint32_t received_crc = rpc::read_u32_be(&_cobs.buffer[data_len]);
 
       if (crc_calc.value() == received_crc) {
-        _rx_frame.header.version = _cobs.buffer[0];
-        _rx_frame.header.payload_length = rpc::read_u16_be(&_cobs.buffer[1]);
-        _rx_frame.header.command_id = rpc::read_u16_be(&_cobs.buffer[3]);
+        _rx_frame.header.version = _cobs.buffer[rpc::VERSION_OFFSET];
+        _rx_frame.header.payload_length = rpc::read_u16_be(&_cobs.buffer[rpc::PAYLOAD_LENGTH_OFFSET]);
+        _rx_frame.header.command_id = rpc::read_u16_be(&_cobs.buffer[rpc::COMMAND_ID_OFFSET]);
         _rx_frame.crc = received_crc;
 
         if (_rx_frame.header.version == rpc::PROTOCOL_VERSION &&
             _rx_frame.header.payload_length <= rpc::MAX_PAYLOAD_SIZE &&
-            data_len == static_cast<size_t>(_rx_frame.header.payload_length + 5)) {
+            data_len == static_cast<size_t>(_rx_frame.header.payload_length + rpc::FRAME_HEADER_SIZE)) {
           if (_rx_frame.header.payload_length > 0) {
-            etl::copy_n(&_cobs.buffer[5], _rx_frame.header.payload_length,
+            etl::copy_n(&_cobs.buffer[rpc::FRAME_HEADER_SIZE], _rx_frame.header.payload_length,
                         _rx_frame.payload.begin());
           }
           _frame_received = true;
@@ -535,8 +535,10 @@ void BridgeClass::_handleGetCapabilities(
 #endif
     };
 
-    for (size_t i = 0; i < (sizeof(feature_map) / sizeof(feature_map[0])); ++i) {
-      if (feature_map[i]) features.set(i + 1);
+    size_t feature_idx = 1;
+    for (bool has_feature : feature_map) {
+      if (has_feature) features.set(feature_idx);
+      feature_idx++;
     }
 
     _sendResponse<rpc::payload::Capabilities>(

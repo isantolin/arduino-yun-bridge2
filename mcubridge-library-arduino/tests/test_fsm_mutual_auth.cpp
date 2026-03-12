@@ -140,7 +140,7 @@ void test_fsm_transitions_running() {
   rpc::Frame ack_frame;
   ack_frame.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_ACK);
   ack_frame.header.payload_length = 2;
-  rpc::write_u16_be(ack_frame.payload.data(),
+  rpc::write_u16_be(etl::span<uint8_t>(ack_frame.payload.data(), 2),
                     rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE));
   accessor.dispatch(ack_frame);
 

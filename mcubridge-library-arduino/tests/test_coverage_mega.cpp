@@ -68,8 +68,8 @@ using namespace bridge::router;
 void feed_frame(uint16_t cmd, const uint8_t* payload, size_t len, bool corrupt_crc = false, uint8_t ver = rpc::PROTOCOL_VERSION) {
   uint8_t raw[1024];
   raw[0] = ver;
-  rpc::write_u16_be(&raw[1], static_cast<uint16_t>(len));
-  rpc::write_u16_be(&raw[3], cmd);
+  rpc::write_u16_be(etl::span<uint8_t>(&raw[1], 2), static_cast<uint16_t>(len));
+  rpc::write_u16_be(etl::span<uint8_t>(&raw[3], 2), cmd);
   if (payload && len > 0) {
     memcpy(&raw[5], payload, len);
   }
@@ -79,7 +79,7 @@ void feed_frame(uint16_t cmd, const uint8_t* payload, size_t len, bool corrupt_c
   crc_calc.add(raw, raw + data_len);
   uint32_t crc = crc_calc.value();
   if (corrupt_crc) crc ^= 0xFFFFFFFF;
-  rpc::write_u32_be(&raw[data_len], crc);
+  rpc::write_u32_be(etl::span<uint8_t>(&raw[data_len], 4), crc);
   
   size_t total_raw = data_len + 4;
   
@@ -152,7 +152,7 @@ void test_bridge_status_gaps() {
   
   // Status ACK (Line 482-483)
   uint8_t ack_pl[2];
-  rpc::write_u16_be(ack_pl, rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION));
+  rpc::write_u16_be(etl::span<uint8_t>(ack_pl, 2), rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION));
   feed_frame(rpc::to_underlying(rpc::StatusCode::STATUS_ACK), ack_pl, 2);
   Bridge.process();
 }

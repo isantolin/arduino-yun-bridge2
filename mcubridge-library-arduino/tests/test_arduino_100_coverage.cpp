@@ -126,7 +126,7 @@ void test_mailbox_extra_gaps() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
   f.header.payload_length = 3;
-  rpc::write_u16_be(f.payload.data(), 1);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 1);
   f.payload[2] = 'M';
   ba.dispatch(f);
 
@@ -134,7 +134,7 @@ void test_mailbox_extra_gaps() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
   f.header.payload_length = 2;
-  rpc::write_u16_be(f.payload.data(), 10);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 10);
   ba.dispatch(f);
 }
 
@@ -148,7 +148,7 @@ void test_process_extra_gaps() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
   f.header.payload_length = 2;
-  rpc::write_u16_be(f.payload.data(), 456);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 456);
   ba.dispatch(f);
 
   // Gap: handleResponse CMD_PROCESS_POLL_RESP without handler

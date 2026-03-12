@@ -147,7 +147,7 @@ void test_bridge_dedup_console_write_retry() {
       rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
   frame.header.payload_length = sizeof(payload);
   memcpy(frame.payload.data(), payload, sizeof(payload));
-  frame.crc = rpc::read_u32_be(&raw_frame[raw_len - rpc::CRC_TRAILER_SIZE]);
+  frame.crc = rpc::read_u32_be(etl::span<const uint8_t>(&raw_frame[raw_len - rpc::CRC_TRAILER_SIZE], 4));
   auto ba = TestAccessor::create(Bridge);
   ba.setIdle();
   g_test_millis = 0;

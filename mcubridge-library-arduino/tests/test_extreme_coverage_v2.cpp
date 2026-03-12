@@ -215,7 +215,7 @@ void test_mailbox_gaps() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
   f.header.payload_length = 2;
-  rpc::write_u16_be(f.payload.data(), 5);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 5);
   ba.dispatch(f);
 
   // Gap: handleResponse with other command
@@ -236,7 +236,7 @@ void test_process_gaps() {
   f_pid.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
   f_pid.header.payload_length = 2;
-  rpc::write_u16_be(f_pid.payload.data(), 42);
+  rpc::write_u16_be(etl::span<uint8_t>(f_pid.payload.data(), 2), 42);
   ba.dispatch(f_pid);
   Process.poll(42);
   Process.kill(42);
@@ -248,9 +248,9 @@ void test_process_gaps() {
   f.header.payload_length = 8;
   f.payload[0] = 0x30;  // OK
   f.payload[1] = 0;     // exit_code
-  rpc::write_u16_be(&f.payload[2], 1);
+  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[2], 2), 1);
   f.payload[4] = 'o';
-  rpc::write_u16_be(&f.payload[5], 1);
+  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[5], 2), 1);
   f.payload[7] = 'e';
   ba.dispatch(f);
 }

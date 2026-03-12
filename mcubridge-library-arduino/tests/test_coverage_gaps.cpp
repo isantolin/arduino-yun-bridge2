@@ -105,7 +105,7 @@ void test_gpio_commands_via_dispatch() {
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE);
   f.header.payload_length = rpc::payload::AnalogWrite::SIZE;
   f.payload[0] = 9;
-  rpc::write_u16_be(&f.payload[1], 128);
+  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[1], 2), 128);
   ba.dispatch(f);
 
   // CMD_DIGITAL_READ (83)
@@ -191,7 +191,7 @@ void test_mailbox_via_dispatch() {
   // CMD_MAILBOX_PUSH (131)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
   f.header.payload_length = 5;
-  rpc::write_u16_be(f.payload.data(), 3);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 3);
   f.payload[2] = 'x';
   f.payload[3] = 'y';
   f.payload[4] = 'z';
@@ -201,7 +201,7 @@ void test_mailbox_via_dispatch() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
   f.header.payload_length = 4;
-  rpc::write_u16_be(f.payload.data(), 2);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 2);
   f.payload[2] = 'A';
   f.payload[3] = 'B';
   ba.dispatch(f);
@@ -212,7 +212,7 @@ void test_mailbox_via_dispatch() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
   f.header.payload_length = 2;
-  rpc::write_u16_be(f.payload.data(), 42);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 42);
   ba.dispatch(f);
 }
 
@@ -234,7 +234,7 @@ void test_filesystem_via_dispatch() {
   f.header.payload_length = 6;
   f.payload[0] = 1;  // path len
   f.payload[1] = 'a';
-  rpc::write_u16_be(&f.payload[2], 2);
+  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[2], 2), 2);
   f.payload[4] = 'd';
   f.payload[5] = 'e';
   ba.dispatch(f);
@@ -246,7 +246,7 @@ void test_filesystem_via_dispatch() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);
   f.header.payload_length = 4;
-  rpc::write_u16_be(f.payload.data(), 2);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 2);
   f.payload[2] = 'O';
   f.payload[3] = 'K';
   ba.dispatch(f);
@@ -271,7 +271,7 @@ void test_process_via_dispatch() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
   f.header.payload_length = 2;
-  rpc::write_u16_be(f.payload.data(), 99);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 99);
   ba.dispatch(f);
 
   // CMD_PROCESS_POLL_RESP (166) with pending PID
@@ -285,9 +285,9 @@ void test_process_via_dispatch() {
   f.header.payload_length = 8;
   f.payload[0] = 0x30;
   f.payload[1] = 0;
-  rpc::write_u16_be(&f.payload[2], 1);
+  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[2], 2), 1);
   f.payload[4] = 'o';
-  rpc::write_u16_be(&f.payload[5], 1);
+  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[5], 2), 1);
   f.payload[7] = 'e';
   ba.dispatch(f);
 }
@@ -355,7 +355,7 @@ void test_system_commands_via_dispatch() {
   // CMD_SET_BAUDRATE (74)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE);
   f.header.payload_length = 4;
-  rpc::write_u32_be(f.payload.data(), 57600);
+  rpc::write_u32_be(etl::span<uint8_t>(f.payload.data(), 4), 57600);
   ba.dispatch(f);
 }
 
@@ -384,7 +384,7 @@ void test_ack_and_retransmit() {
   ack_frame.header.command_id =
       rpc::to_underlying(rpc::StatusCode::STATUS_ACK);
   ack_frame.header.payload_length = 2;
-  rpc::write_u16_be(ack_frame.payload.data(), last_cmd);
+  rpc::write_u16_be(etl::span<uint8_t>(ack_frame.payload.data(), 2), last_cmd);
   ba.dispatch(ack_frame);
   TEST_ASSERT(ba.isIdle());
 
@@ -588,16 +588,16 @@ void test_apply_timing_config() {
 
   // Valid config
   uint8_t config[7];
-  rpc::write_u16_be(config, 500);
+  rpc::write_u16_be(etl::span<uint8_t>(config, 2), 500);
   config[2] = 3;
-  rpc::write_u32_be(config + 3, 5000);
+  rpc::write_u32_be(etl::span<uint8_t>(config + 3, 4), 5000);
   ba.applyTimingConfig(config, 7);
   TEST_ASSERT_EQ_UINT(ba.getAckTimeoutMs(), 500);
 
   // Out-of-range -> clamped to defaults
-  rpc::write_u16_be(config, 1);
+  rpc::write_u16_be(etl::span<uint8_t>(config, 2), 1);
   config[2] = 0;
-  rpc::write_u32_be(config + 3, 1);
+  rpc::write_u32_be(etl::span<uint8_t>(config + 3, 4), 1);
   ba.applyTimingConfig(config, 7);
 }
 
@@ -777,13 +777,13 @@ void test_frame_overflow() {
   etl::vector<uint8_t, 1100> buf;
   buf.resize(total);
   buf[0] = rpc::PROTOCOL_VERSION;
-  rpc::write_u16_be(&buf[1], fake_payload_len);
-  rpc::write_u16_be(&buf[3], 0x40);
+  rpc::write_u16_be(etl::span<uint8_t>(&buf[1], 2), fake_payload_len);
+  rpc::write_u16_be(etl::span<uint8_t>(&buf[3], 2), 0x40);
   memset(&buf[5], 0xAA, fake_payload_len);
 
   etl::crc32 crc_calc;
   crc_calc.add(buf.data(), buf.data() + total - 4);
-  rpc::write_u32_be(&buf[total - 4], crc_calc.value());
+  rpc::write_u32_be(etl::span<uint8_t>(&buf[total - 4], 4), crc_calc.value());
 
   auto result = parser.parse(etl::span<const uint8_t>(buf.data(), total));
   TEST_ASSERT(!result.has_value());
@@ -931,9 +931,9 @@ void test_link_reset_with_config() {
   memset(&f, 0, sizeof(f));
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
   f.header.payload_length = rpc::payload::HandshakeConfig::SIZE;
-  rpc::write_u16_be(f.payload.data(), 500);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 500);
   f.payload[2] = 3;
-  rpc::write_u32_be(f.payload.data() + 3, 5000);
+  rpc::write_u32_be(etl::span<uint8_t>(f.payload.data() + 3, 4), 5000);
   ba.dispatch(f);
 }
 
@@ -1077,7 +1077,7 @@ void test_retransmit_via_malformed() {
   memset(&f, 0, sizeof(f));
   f.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED);
   f.header.payload_length = 2;
-  rpc::write_u16_be(f.payload.data(), ba.getLastCommandId());
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), ba.getLastCommandId());
   ba.dispatch(f);
 }
 
@@ -1126,7 +1126,7 @@ void test_rpc_structs_parse_specializations() {
 
   // MailboxReadResponse specialization
   f.header.payload_length = 4;
-  rpc::write_u16_be(f.payload.data(), 2);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 2);
   f.payload[2] = 'A';
   f.payload[3] = 'B';
   auto mrr = rpc::Payload::parse<rpc::payload::MailboxReadResponse>(f);
@@ -1135,7 +1135,7 @@ void test_rpc_structs_parse_specializations() {
 
   // MailboxReadResponse with invalid length -> MALFORMED
   f.header.payload_length = 2;
-  rpc::write_u16_be(f.payload.data(), 100);
+  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 100);
   auto mrr2 = rpc::Payload::parse<rpc::payload::MailboxReadResponse>(f);
   TEST_ASSERT(!mrr2.has_value());
 }

@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "etl/algorithm.h"
+#include "etl/span.h"
 #include "../protocol/rpc_protocol.h"
 
 namespace rpc {

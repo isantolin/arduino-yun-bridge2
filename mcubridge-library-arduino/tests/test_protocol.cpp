@@ -57,7 +57,7 @@ static void test_builder_roundtrip() {
   TEST_ASSERT(raw_len ==
               sizeof(FrameHeader) + sizeof(payload) + CRC_TRAILER_SIZE);
 
-  uint32_t crc = read_u32_be(raw + raw_len - CRC_TRAILER_SIZE);
+  uint32_t crc = read_u32_be(etl::span<const uint8_t>(raw + raw_len - CRC_TRAILER_SIZE, 4));
   TEST_ASSERT(crc == crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE));
 
   // [SIL-2] New etl::expected API
@@ -136,7 +136,7 @@ static void test_parser_header_validation() {
 
   // Recalcular CRC para que el fallo sea de Header y no de CRC
   uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
-  write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
+  write_u32_be(etl::span<uint8_t>(raw + raw_len - CRC_TRAILER_SIZE, 4), new_crc);
 
   // [SIL-2] etl::expected API
   auto result = parser.parse(etl::span<const uint8_t>(raw, raw_len));
@@ -174,7 +174,7 @@ static void test_parser_header_logical_validation_mismatch() {
 
   // Recalcular CRC para pasar la primera validación
   uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
-  write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
+  write_u32_be(etl::span<uint8_t>(raw + raw_len - CRC_TRAILER_SIZE, 4), new_crc);
 
   // [SIL-2] etl::expected API - debe fallar porque header dice length=3 pero
   // buffer tiene 2

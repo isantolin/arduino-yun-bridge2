@@ -110,7 +110,7 @@ void test_rpc_structs_gaps() {
   rpc::payload::AnalogReadResponse ar{1023};
   uint8_t buf2[2];
   ar.encode(buf2);
-  TEST_ASSERT(rpc::read_u16_be(buf2) == 1023);
+  TEST_ASSERT(rpc::read_u16_be(etl::span<const uint8_t>(buf2, 2)) == 1023);
 
   // AnalogWrite parse
   uint8_t awbuf[] = {5, 200};
@@ -366,7 +366,7 @@ void test_bridge_status_system_gaps() {
   f_mal.header.command_id =
       rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED);
   f_mal.header.payload_length = 2;
-  rpc::write_u16_be(f_mal.payload.data(), 0x1234);
+  rpc::write_u16_be(etl::span<uint8_t>(f_mal.payload.data(), 2), 0x1234);
   CommandContext ctx_mal{&f_mal, f_mal.header.command_id, false, false};
   ba.routeStatusCommand(ctx_mal);
 

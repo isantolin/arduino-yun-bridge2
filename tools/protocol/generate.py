@@ -31,12 +31,26 @@ if MISSING_DEPS:
 # ═════════════════════════════════════════════════════════════════════════════
 
 from pathlib import Path  # noqa: E402
-from typing import Annotated, Optional  # noqa: E402
+from typing import TYPE_CHECKING, Annotated, Optional  # noqa: E402
 
 import typer  # noqa: E402
 from jinja2 import Environment, FileSystemLoader  # noqa: E402
 
-from mcubridge.protocol.structures import ProtocolSpec  # noqa: E402
+# Load ProtocolSpec directly from spec_model.py via importlib.util to avoid
+# triggering the protocol package __init__.py, which eagerly imports the
+# generated protocol.py module — the very file this generator creates.
+if TYPE_CHECKING:
+    from mcubridge.protocol.spec_model import ProtocolSpec
+else:
+    _SPEC_MODEL_PATH = (
+        Path(__file__).resolve().parent.parent.parent
+        / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"
+    )
+    _loader_spec = importlib.util.spec_from_file_location("spec_model", str(_SPEC_MODEL_PATH))
+    assert _loader_spec is not None and _loader_spec.loader is not None
+    _spec_mod = importlib.util.module_from_spec(_loader_spec)
+    _loader_spec.loader.exec_module(_spec_mod)
+    ProtocolSpec = _spec_mod.ProtocolSpec
 
 app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
 

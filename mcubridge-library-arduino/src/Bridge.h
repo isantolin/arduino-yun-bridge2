@@ -479,10 +479,13 @@ class BridgeClass
 
   // [SIL-2] Unified Jump Table Dispatch Template
   template <typename THandler, size_t N>
-  void _dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const THandler (&handlers)[N], uint8_t stride = 1) {
+  void _dispatchJumpTable(const bridge::router::CommandContext& ctx,
+                          uint16_t min_id,
+                          const etl::array<THandler, N>& handlers,
+                          uint8_t stride = 1) {
     if (ctx.raw_command < min_id) return;
     const uint16_t index = (ctx.raw_command - min_id) / stride;
-    if (index < N && handlers[index]) {
+    if (index < handlers.size() && handlers[index]) {
       (this->*handlers[index])(ctx);
     }
   }
@@ -491,7 +494,11 @@ class BridgeClass
   template <typename TPacket, typename TFunc>
   void _handlePinSetter(const bridge::router::CommandContext& ctx, TFunc func) {
     _withPayloadAck<TPacket>(ctx, [this, func](const TPacket& msg) {
-      if (bridge::hal::isValidPin(msg.pin)) func(msg);
+      if (bridge::hal::isValidPin(msg.pin)) {
+        func(msg);
+      } else {
+        emitStatus(rpc::StatusCode::STATUS_ERROR);
+      }
     });
   }
 

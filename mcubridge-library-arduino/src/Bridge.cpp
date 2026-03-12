@@ -424,8 +424,7 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleGetCapabilities, // 4: 72
       &BridgeClass::_handleSetBaudrate      // 5: 74
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers.data(),
-                     kSystemHandlers.size(), 2);
+  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, 2);
 }
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
@@ -639,8 +638,7 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleDigitalRead,   // 3: 83
       &BridgeClass::_handleAnalogRead     // 4: 84
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers.data(),
-                     kGpioHandlers.size());
+  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers);
 }
 
 void BridgeClass::_handleSetPinMode(const bridge::router::CommandContext& ctx) {
@@ -726,8 +724,7 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleMailboxReadResp,      // 1: 132
       &BridgeClass::_handleMailboxAvailableResp  // 2: 133
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN + 3,
-                     kMailboxHandlers.data(), kMailboxHandlers.size());
+  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN + 3, kMailboxHandlers);
 }
 
 void BridgeClass::_handleMailboxPush(
@@ -785,8 +782,7 @@ void BridgeClass::onFileSystemCommand(
       nullptr,                           // 2: 146 (reserved)
       &BridgeClass::_handleFileReadResp  // 3: 147
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN,
-                     kFileSystemHandlers.data(), kFileSystemHandlers.size());
+  _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFileSystemHandlers);
 }
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
@@ -797,8 +793,7 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleProcessRunAsyncResp,  // 0: 165
       &BridgeClass::_handleProcessPollResp       // 1: 166
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN + 5,
-                     kProcessHandlers.data(), kProcessHandlers.size());
+  _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN + 5, kProcessHandlers);
 }
 
 void BridgeClass::_handleProcessRunAsyncResp(

@@ -9,12 +9,14 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import msgspec
+import psutil
 import tenacity
 
 from ..config.const import STATUS_FILE_PATH
 from ..protocol.structures import (
     BridgeStatus,
     McuVersion,
+    ProcessStats,
 )
 from .context import RuntimeState
 
@@ -24,6 +26,7 @@ STATUS_FILE = Path(STATUS_FILE_PATH)
 
 async def status_writer(state: RuntimeState, interval: int) -> None:
     """Persist lightweight status information periodically."""
+    current_process = psutil.Process()
 
     @tenacity.retry(
         wait=tenacity.wait_fixed(interval),
@@ -33,6 +36,22 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
     )
     async def _write_loop() -> None:
         try:
+            # [SIL-2] Resource Monitoring Delegation to psutil
+            child_stats = {}
+            try:
+                for child in current_process.children(recursive=True):
+                    try:
+                        with child.oneshot():
+                            child_stats[str(child.pid)] = ProcessStats(
+                                name=child.name(),
+                                cpu_percent=child.cpu_percent(),
+                                memory_rss_bytes=child.memory_info().rss,
+                            )
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
             serial_writer = state.serial_writer
             serial_connected = serial_writer is not None and not serial_writer.is_closing()
 
@@ -91,6 +110,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 running_processes=[str(pid) for pid in state.running_processes],
                 allowed_commands=list(state.allowed_commands),
                 config_source=state.config_source,
+                process_stats=child_stats,
                 link_synchronised=state.is_synchronized,
                 handshake_attempts=state.handshake_attempts,
                 handshake_successes=state.handshake_successes,

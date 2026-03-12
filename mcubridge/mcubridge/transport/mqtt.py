@@ -169,54 +169,48 @@ class MqttTransport:
         """Publishes messages from the internal queue to the MQTT broker."""
 
         @tenacity.retry(
-            wait=tenacity.wait_fixed(0.1),
-            stop=tenacity.stop_never,
-            retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
+            wait=tenacity.wait_exponential(multiplier=0.1, max=10),
+            retry=tenacity.retry_if_exception_type(aiomqtt.MqttError),
             before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
         )
-        async def _publish_tick() -> None:
-            # [OPTIMIZATION] Flush spool before processing new messages
-            await self.state.flush_mqtt_spool()
-
-            # Wait for next message
-            message = await self.state.mqtt_publish_queue.get()
+        async def _reliable_publish(message: Any) -> None:
+            """Internal helper for a single reliable publish attempt."""
             topic_name = message.topic_name
             props = build_mqtt_properties(message)
 
             if logger.isEnabledFor(logging.DEBUG):
                 log_hexdump(logger, logging.DEBUG, f"MQTT PUB > {topic_name}", message.payload)
 
-            published = False
-            try:
-                await client.publish(
-                    topic_name,
-                    message.payload,
-                    qos=int(message.qos),
-                    retain=message.retain,
-                    properties=props,
-                )
-                self.state.record_mqtt_publish()
-                published = True
-            except asyncio.CancelledError:
-                raise
-            except aiomqtt.MqttError as exc:
-                logger.warning("MQTT publish failed (%s); requeuing.", exc)
-                raise
-            finally:
-                if not published:
-                    # Requeue for retry if it wasn't sent
-                    try:
-                        self.state.mqtt_publish_queue.put_nowait(message)
-                    except asyncio.QueueFull:
-                        # Spool if queue is full
-                        await self.state.stash_mqtt_message(message)
-                self.state.mqtt_publish_queue.task_done()
-
-            # Raise to trigger next tick via tenacity
-            raise Exception("tick")
+            await client.publish(
+                topic_name,
+                message.payload,
+                qos=int(message.qos),
+                retain=message.retain,
+                properties=props,
+            )
+            self.state.record_mqtt_publish()
 
         try:
-            await _publish_tick()
+            while True:
+                # [OPTIMIZATION] Flush spool before processing new messages
+                await self.state.flush_mqtt_spool()
+
+                # Wait for next message
+                message = await self.state.mqtt_publish_queue.get()
+                try:
+                    await _reliable_publish(message)
+                except aiomqtt.MqttError as exc:
+                    logger.warning("MQTT persistent publish failure: %s", exc)
+                    # Spool if tenacity stops or fatal
+                    await self.state.stash_mqtt_message(message)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.error("Unexpected error in MQTT publisher: %s", exc)
+                    await self.state.stash_mqtt_message(message)
+                finally:
+                    self.state.mqtt_publish_queue.task_done()
+
         except asyncio.CancelledError:
             logger.debug("MQTT publisher loop cancelled.")
             raise

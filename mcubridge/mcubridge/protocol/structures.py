@@ -1366,7 +1366,15 @@ class SerialFlowStats(BaseStats):
         )
 
 
-class BridgeStatus(msgspec.Struct):
+class ProcessStats(msgspec.Struct):
+    """Resource usage statistics for a single process."""
+
+    name: str
+    cpu_percent: float
+    memory_rss_bytes: int
+
+
+class BridgeStatus(msgspec.Struct, kw_only=True):
     """Root structure for the daemon status file."""
 
     # Serial Link
@@ -1434,6 +1442,7 @@ class BridgeStatus(msgspec.Struct):
     running_processes: list[str]
     allowed_commands: list[str]
     config_source: str
+    process_stats: dict[str, ProcessStats] = msgspec.field(default_factory=dict)
 
     # Snapshots
     bridge: BridgeSnapshot

@@ -30,6 +30,8 @@ from construct import ConstructError
 from . import protocol
 
 if TYPE_CHECKING:
+    from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
+
     construct: Any = construct_raw
 
     Construct = construct_raw.Construct[Any]
@@ -39,6 +41,319 @@ else:
     Construct = construct_raw.Construct
 
 BinStruct: Final = construct.Struct
+
+
+# =============================================================================
+# 1. Protocol Generation Structures (msgspec)
+# =============================================================================
+
+
+class CommandDef(msgspec.Struct, frozen=True):
+    name: str
+    value: int
+    directions: list[str]
+    category: str | None = None
+    description: str | None = None
+    requires_ack: bool = False
+    expects_direct_response: bool = False
+
+
+class StatusDef(msgspec.Struct, frozen=True):
+    name: str
+    value: int
+    description: str
+
+
+class StructField(msgspec.Struct, frozen=True):
+    name: str
+    type_code: str  # B, H, I, Q
+
+    @property
+    def cpp_type(self) -> str:
+        return {"B": "uint8_t", "H": "uint16_t", "I": "uint32_t", "Q": "uint64_t"}[self.type_code]
+
+    @property
+    def size(self) -> int:
+        return {"B": 1, "H": 2, "I": 4, "Q": 8}[self.type_code]
+
+    @property
+    def read_func(self) -> str | None:
+        return {
+            "B": None,
+            "H": "rpc::read_u16_be",
+            "I": "rpc::read_u32_be",
+            "Q": "rpc::read_u64_be",
+        }[self.type_code]
+
+    @property
+    def write_func(self) -> str | None:
+        func = self.read_func
+        return func.replace("read_", "write_") if func else None
+
+
+class PayloadDef(msgspec.Struct, frozen=True):
+    name: str
+    fields: list[StructField]
+
+    @property
+    def total_size(self) -> int:
+        return sum(f.size for f in self.fields)
+
+    @property
+    def all_bytes(self) -> bool:
+        return all(not f.read_func for f in self.fields)
+
+    @property
+    def byte_inits(self) -> str:
+        return ", ".join(f"data[{i}]" for i in range(len(self.fields)))
+
+
+class RawProtocolData(msgspec.Struct):
+    constants: dict[str, Any]
+    commands: list[dict[str, Any]]
+    statuses: list[dict[str, Any]]
+    payloads: dict[str, dict[str, str]]
+    handshake: dict[str, Any]
+    mqtt_subscriptions: list[dict[str, Any]]
+    actions: list[dict[str, Any]]
+    topics: list[dict[str, Any]]
+    capabilities: dict[str, int]
+    architectures: dict[str, int]
+    status_reasons: dict[str, str]
+
+
+class ProtocolSpec(msgspec.Struct):
+    """Root model of the parsed spec.toml."""
+
+    constants: dict[str, Any]
+    commands: list[CommandDef]
+    statuses: list[StatusDef]
+    payloads: dict[str, PayloadDef]
+    handshake: dict[str, Any]
+    mqtt_subscriptions: list[dict[str, Any]]
+    actions: list[dict[str, Any]]
+    topics: list[dict[str, Any]]
+    capabilities: dict[str, int]
+    architectures: dict[str, int]
+    status_reasons: dict[str, str]
+
+    @classmethod
+    def load(cls, path: Path) -> ProtocolSpec:
+        import msgspec.toml
+
+        with path.open("rb") as f:
+            raw = msgspec.toml.decode(f.read(), type=RawProtocolData)
+
+        # Convert raw dicts to Structs
+        cmds = [msgspec.convert(c, CommandDef) for c in raw.commands]
+        statuses = [msgspec.convert(s, StatusDef) for s in raw.statuses]
+
+        pls = {}
+        for name, fields_dict in raw.payloads.items():
+            fields = [StructField(name=k, type_code=v) for k, v in fields_dict.items()]
+            pls[name] = PayloadDef(name=name, fields=fields)
+
+        return cls(
+            constants=raw.constants,
+            commands=cmds,
+            statuses=statuses,
+            payloads=pls,
+            handshake=raw.handshake,
+            mqtt_subscriptions=raw.mqtt_subscriptions,
+            actions=raw.actions,
+            topics=raw.topics,
+            capabilities=raw.capabilities,
+            architectures=raw.architectures,
+            status_reasons=raw.status_reasons,
+        )
+
+
+# =============================================================================
+# 2. Runtime Configuration Structures (msgspec)
+# =============================================================================
+
+
+class RuntimeConfig(msgspec.Struct, kw_only=True):
+    """Strongly typed configuration for the daemon."""
+
+    # Imports moved inside __post_init__ or methods to avoid circularity
+    # but we need constants for defaults.
+    from mcubridge.config.const import (
+        DEFAULT_ALLOW_NON_TMP_PATHS,
+        DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
+        DEFAULT_BRIDGE_SUMMARY_INTERVAL,
+        DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+        DEFAULT_DEBUG_LOGGING,
+        DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+        DEFAULT_FILE_SYSTEM_ROOT,
+        DEFAULT_FILE_WRITE_MAX_BYTES,
+        DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+        DEFAULT_MAILBOX_QUEUE_LIMIT,
+        DEFAULT_METRICS_ENABLED,
+        DEFAULT_METRICS_HOST,
+        DEFAULT_METRICS_PORT,
+        DEFAULT_MQTT_CAFILE,
+        DEFAULT_MQTT_HOST,
+        DEFAULT_MQTT_PORT,
+        DEFAULT_MQTT_QUEUE_LIMIT,
+        DEFAULT_MQTT_SPOOL_DIR,
+        DEFAULT_MQTT_TLS_INSECURE,
+        DEFAULT_PENDING_PIN_REQUESTS,
+        DEFAULT_PROCESS_MAX_CONCURRENT,
+        DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+        DEFAULT_PROCESS_TIMEOUT,
+        DEFAULT_RECONNECT_DELAY,
+        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+        DEFAULT_SERIAL_PORT,
+        DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+        DEFAULT_SERIAL_RETRY_TIMEOUT,
+        DEFAULT_SERIAL_SHARED_SECRET,
+        DEFAULT_STATUS_INTERVAL,
+        DEFAULT_WATCHDOG_INTERVAL,
+        MIN_SERIAL_SHARED_SECRET_LEN,
+    )
+    from mcubridge.protocol.protocol import (
+        DEFAULT_BAUDRATE,
+        DEFAULT_RETRY_LIMIT,
+        DEFAULT_SAFE_BAUDRATE,
+        MQTT_DEFAULT_TOPIC_PREFIX,
+    )
+
+    serial_port: str = DEFAULT_SERIAL_PORT
+    serial_baud: Annotated[int, msgspec.Meta(ge=300)] = DEFAULT_BAUDRATE
+    serial_safe_baud: Annotated[int, msgspec.Meta(ge=300)] = DEFAULT_SAFE_BAUDRATE
+    mqtt_host: str = DEFAULT_MQTT_HOST
+    mqtt_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = DEFAULT_MQTT_PORT
+    mqtt_user: str | None = None
+    mqtt_pass: str | None = None
+    mqtt_tls: bool = True
+    mqtt_cafile: str | None = DEFAULT_MQTT_CAFILE
+    mqtt_certfile: str | None = None
+    mqtt_keyfile: str | None = None
+    mqtt_topic: str = MQTT_DEFAULT_TOPIC_PREFIX
+    allowed_commands: tuple[str, ...] = ()
+    file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
+    process_timeout: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_TIMEOUT
+
+    mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
+    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_WRITE_MAX_BYTES
+    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_STORAGE_QUOTA_BYTES
+
+    allowed_policy: Any | None = None
+
+    mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
+    reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
+    status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
+    debug_logging: bool = DEFAULT_DEBUG_LOGGING
+    console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+    mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
+    mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+    pending_pin_request_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PENDING_PIN_REQUESTS
+    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01)] = DEFAULT_SERIAL_RETRY_TIMEOUT
+    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02)] = DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    serial_retry_attempts: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_RETRY_LIMIT
+    serial_handshake_min_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
+    serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
+    watchdog_enabled: bool = True
+    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1)] = DEFAULT_WATCHDOG_INTERVAL
+    topic_authorization: Any = None
+
+    # msgspec handle bytes naturally.
+    serial_shared_secret: Annotated[bytes, msgspec.Meta(min_length=MIN_SERIAL_SHARED_SECRET_LEN)] = (
+        DEFAULT_SERIAL_SHARED_SECRET
+    )
+
+    mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
+    process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
+    metrics_enabled: bool = DEFAULT_METRICS_ENABLED
+    metrics_host: str = DEFAULT_METRICS_HOST
+    metrics_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = DEFAULT_METRICS_PORT
+    bridge_summary_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_SUMMARY_INTERVAL
+    bridge_handshake_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
+    allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
+
+    @property
+    def tls_enabled(self) -> bool:
+        return self.mqtt_tls
+
+    def __post_init__(self) -> None:
+        from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET, VOLATILE_STORAGE_PATHS
+        from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
+
+        # [SIL-2] Automated Normalization: Strip and clean inputs
+        self.serial_port = self.serial_port.strip()
+        self.mqtt_host = self.mqtt_host.strip()
+        self.file_system_root = str(Path(self.file_system_root).expanduser().resolve())
+        self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).expanduser().resolve())
+
+        # Normalize Optional strings
+        if self.mqtt_user is not None:
+            self.mqtt_user = self.mqtt_user.strip() or None
+        if self.mqtt_pass is not None:
+            self.mqtt_pass = self.mqtt_pass.strip() or None
+        if self.mqtt_cafile is not None:
+            self.mqtt_cafile = self.mqtt_cafile.strip() or None
+        if self.mqtt_certfile is not None:
+            self.mqtt_certfile = self.mqtt_certfile.strip() or None
+        if self.mqtt_keyfile is not None:
+            self.mqtt_keyfile = self.mqtt_keyfile.strip() or None
+
+        # [SIL-2] MQTT Topic Normalization
+        from mcubridge.protocol.topics import split_topic_segments
+
+        raw_topic = str(self.mqtt_topic).strip()
+        segments = split_topic_segments(raw_topic)
+        if not segments:
+            raise ValueError("mqtt_topic must contain at least one segment")
+        self.mqtt_topic = "/".join(segments)
+
+        self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
+        if self.topic_authorization is None:
+            self.topic_authorization = TopicAuthorization()
+
+        # [SIL-2] Strict Semantic Validations
+        if self.serial_response_timeout < self.serial_retry_timeout * 2:
+            raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
+
+        if self.watchdog_enabled and self.watchdog_interval < 0.5:
+            raise ValueError("watchdog_interval must be >= 0.5s when enabled")
+
+        if not self.serial_shared_secret:
+            raise ValueError("serial_shared_secret must be configured")
+
+        if self.serial_shared_secret == b"changeme123":
+            raise ValueError("serial_shared_secret placeholder is insecure")
+
+        # Unique symbol check for minimum entropy
+        unique_symbols = {byte for byte in self.serial_shared_secret}
+        if len(unique_symbols) < 4 and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
+            raise ValueError("serial_shared_secret must contain at least four distinct bytes")
+
+        # Logic-based cross-field validations
+        if self.file_storage_quota_bytes < self.file_write_max_bytes:
+            raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
+
+        if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
+            raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
+
+        # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
+        if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            raise ValueError(
+                f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
+            )
+
+        if not self.allow_non_tmp_paths:
+            if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                raise ValueError(
+                    f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
+                )
+
+
+# =============================================================================
+# 3. Legacy and Operational Structures
+# =============================================================================
 
 # --- Basic Binary Types (Restored from protocol.py) ---
 UINT8_STRUCT: Final = construct.Int8ub

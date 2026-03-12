@@ -502,24 +502,6 @@ class QOSLevel(IntEnum):
 UserProperty = tuple[str, str]
 
 
-def _bytes_dec_hook(type_: Any, obj: Any) -> Any:
-    if type_ is bytes:
-        if isinstance(obj, bytes):
-            return obj
-        if isinstance(obj, str):
-            import base64
-
-            try:
-                return base64.b64decode(obj)
-            except ValueError:
-                return obj.encode("utf-8")
-    raise TypeError(f"Cannot convert {obj!r} to {type_}")
-
-
-def _default_user_properties() -> list[UserProperty]:
-    return []
-
-
 class SpoolRecord(msgspec.Struct, omit_defaults=True):
     """JSON-serializable record stored in the durable spool (RAM/Disk)."""
 
@@ -533,7 +515,7 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(default_factory=_default_user_properties)
+    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
 
 
 class QueuedPublish(msgspec.Struct):
@@ -548,10 +530,10 @@ class QueuedPublish(msgspec.Struct):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(default_factory=_default_user_properties)
+    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
 
     def to_record(self) -> SpoolRecord:
-        """Convert a QueuedPublish to SpoolRecord for serialization."""
+        """Convert to a QueuedPublish to SpoolRecord for serialization."""
         return SpoolRecord(
             topic_name=self.topic_name,
             payload=self.payload,
@@ -570,10 +552,23 @@ class QueuedPublish(msgspec.Struct):
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
         data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
 
-        payload = _bytes_dec_hook(bytes, data.get("payload", b""))
+        payload = data.get("payload", b"")
+        if isinstance(payload, str):
+            try:
+                import base64
+
+                payload = base64.b64decode(payload)
+            except ValueError:
+                payload = payload.encode("utf-8")
+
         correlation_data = data.get("correlation_data")
-        if correlation_data is not None:
-            correlation_data = _bytes_dec_hook(bytes, correlation_data)
+        if isinstance(correlation_data, str):
+            try:
+                import base64
+
+                correlation_data = base64.b64decode(correlation_data)
+            except ValueError:
+                correlation_data = correlation_data.encode("utf-8")
 
         raw_props = data.get("user_properties", ())
         user_properties: list[tuple[str, str]] = []

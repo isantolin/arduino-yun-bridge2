@@ -75,4 +75,3 @@ mcubridge-client-examples/mcubridge_client/protocol.py
 mcubridge-library-arduino/tests/bridge_emulator
 .gitignore
 mcubridge-library-arduino/tests/bridge_control_emulator
-mcubridge-library-arduino/build-variants

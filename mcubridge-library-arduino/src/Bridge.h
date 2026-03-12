@@ -93,18 +93,10 @@ inline uint16_t getFreeMemory() { return bridge::hal::getFreeMemory(); }
 // --- Configuration ---
 
 #ifndef BRIDGE_ENABLE_WATCHDOG
-#define BRIDGE_ENABLE_WATCHDOG 1
-#endif
-
-// Prevent macro collision if kBridgeEnableWatchdog is defined elsewhere
-#ifdef kBridgeEnableWatchdog
-#undef kBridgeEnableWatchdog
-#endif
-
-#if BRIDGE_ENABLE_WATCHDOG
 constexpr bool kBridgeEnableWatchdog = true;
 #else
-constexpr bool kBridgeEnableWatchdog = false;
+constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
+
 #endif
 
 #if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG

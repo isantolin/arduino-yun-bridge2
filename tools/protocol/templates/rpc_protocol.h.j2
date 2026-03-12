@@ -30,8 +30,8 @@ constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = { {{ handshake.hkdf_info_auth
 constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {{ handshake.hkdf_info_auth_len }};
 {%- endif %}
 
-{% for cap in capabilities -%}
-constexpr uint32_t RPC_CAPABILITY_{{ cap.name|upper }} = {{ cap.value }};
+{% for cap, val in capabilities.items() -%}
+constexpr uint32_t RPC_CAPABILITY_{{ cap|upper }} = {{ val }};
 {% endfor %}
 {% for arch, val in architectures.items() -%}
 constexpr uint8_t RPC_ARCH_{{ arch|upper }} = {{ val }};
@@ -74,19 +74,6 @@ constexpr bool requires_ack(uint16_t command_id) {
     return requires_ack(static_cast<CommandId>(command_id));
 }
 
-// Capabilities Evaluator
-inline uint32_t get_mcu_capabilities() {
-    uint32_t caps = 0;
-{% for cap in capabilities %}
-#if {{ cap.cpp_condition }}
-    caps |= RPC_CAPABILITY_{{ cap.name|upper }};
-#endif
-{% endfor %}
-    return caps;
-}
-
 } // namespace rpc
-
-#define GENERATE_MCU_CAPABILITIES() rpc::get_mcu_capabilities()
 
 #endif // RPC_PROTOCOL_H

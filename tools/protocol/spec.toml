@@ -49,65 +49,19 @@ rle_single_escape_marker = 0xFF
 none = 0x00
 rle = 0x01
 
-[[capabilities]]
-name = "watchdog"
-value = 0x00000001
-cpp_condition = "BRIDGE_ENABLE_WATCHDOG"
-
-[[capabilities]]
-name = "rle"
-value = 0x00000002
-cpp_condition = "1"
-
-[[capabilities]]
-name = "debug_frames"
-value = 0x00000004
-cpp_condition = "BRIDGE_DEBUG_FRAMES"
-
-[[capabilities]]
-name = "debug_io"
-value = 0x00000008
-cpp_condition = "BRIDGE_DEBUG_IO"
-
-[[capabilities]]
-name = "eeprom"
-value = 0x00000010
-cpp_condition = "defined(E2END) && (E2END > 0)"
-
-[[capabilities]]
-name = "dac"
-value = 0x00000020
-cpp_condition = "(defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(ARDUINO_ARCH_ESP32)"
-
-[[capabilities]]
-name = "hw_serial1"
-value = 0x00000040
-cpp_condition = "defined(HAVE_HWSERIAL1)"
-
-[[capabilities]]
-name = "fpu"
-value = 0x00000080
-cpp_condition = "defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)"
-
-[[capabilities]]
-name = "logic_3v3"
-value = 0x00000100
-cpp_condition = "defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || defined(ARDUINO_ARCH_RP2040)"
-
-[[capabilities]]
-name = "big_buffer"
-value = 0x00000200
-cpp_condition = "defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)"
-
-[[capabilities]]
-name = "i2c"
-value = 0x00000400
-cpp_condition = "defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)"
-
-[[capabilities]]
-name = "spi"
-value = 0x00000800
-cpp_condition = "defined(SCK) || defined(MOSI) || defined(MISO) || defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)"
+[capabilities]
+watchdog = 0x00000001
+rle = 0x00000002
+debug_frames = 0x00000004
+debug_io = 0x00000008
+eeprom = 0x00000010
+dac = 0x00000020
+hw_serial1 = 0x00000040
+fpu = 0x00000080
+logic_3v3 = 0x00000100
+big_buffer = 0x00000200
+i2c = 0x00000400
+spi = 0x00000800
 
 [architectures]
 avr = 1

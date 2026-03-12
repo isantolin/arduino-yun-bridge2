@@ -68,14 +68,14 @@ void SHA256::reset() {
 void SHA256::update(const void* data, size_t len) {
   length_ += static_cast<uint64_t>(len) << 3;
 
-  const uint8_t* d = static_cast<const uint8_t*>(data);
-  while (len > 0) {
+  etl::span<const uint8_t> d(static_cast<const uint8_t*>(data), len);
+  while (!d.empty()) {
     uint8_t room = 64 - chunkSize_;
-    if (room > len) room = static_cast<uint8_t>(len);
-    etl::copy_n(d, room, reinterpret_cast<uint8_t*>(w_.data()) + chunkSize_);
-    chunkSize_ += room;
-    len -= room;
-    d += room;
+    size_t to_copy = etl::min(static_cast<size_t>(room), d.size());
+    etl::copy_n(d.begin(), to_copy,
+                reinterpret_cast<uint8_t*>(w_.data()) + chunkSize_);
+    chunkSize_ += static_cast<uint8_t>(to_copy);
+    d = d.subspan(to_copy);
     if (chunkSize_ == 64) {
       processChunk();
       chunkSize_ = 0;
@@ -107,8 +107,8 @@ void SHA256::finalize(void* hash, size_t len) {
   etl::transform(h_.begin(), h_.end(), w_.begin(),
                  [](uint32_t val) { return etl::reverse_bytes(val); });
 
-  if (len > HASH_SIZE) len = HASH_SIZE;
-  etl::copy_n(reinterpret_cast<const uint8_t*>(w_.data()), len,
+  size_t to_copy = etl::min(len, static_cast<size_t>(HASH_SIZE));
+  etl::copy_n(reinterpret_cast<const uint8_t*>(w_.data()), to_copy,
               static_cast<uint8_t*>(hash));
 }
 
@@ -213,5 +213,5 @@ void SHA256::finalizeHMAC(const void* key, size_t keyLen, void* hash,
   finalize(hash, hashLen);
 
   // [MIL-SPEC] Securely zero inner-hash digest using volatile-guaranteed primitive.
-  rpc::security::secure_zero(temp.data(), temp.size());
+  rpc::security::secure_zero(etl::span<uint8_t>(temp.data(), temp.size()));
 }

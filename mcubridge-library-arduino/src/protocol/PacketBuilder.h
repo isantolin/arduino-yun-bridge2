@@ -38,13 +38,13 @@ class PacketBuilder {
 
   PacketBuilder& add_u16(uint16_t value) {
     etl::array<uint8_t, 2> buf;
-    write_u16_be(buf.data(), value);
+    write_u16_be(etl::span<uint8_t>(buf.data(), 2), value);
     return add(buf.data(), 2);
   }
 
   PacketBuilder& add_u32(uint32_t value) {
     etl::array<uint8_t, 4> buf;
-    write_u32_be(buf.data(), value);
+    write_u32_be(etl::span<uint8_t>(buf.data(), 4), value);
     return add(buf.data(), 4);
   }
 

@@ -303,9 +303,11 @@ class BridgeClass
     if (sizeof(T) == 1) {
       payload[0] = static_cast<uint8_t>(value);
     } else if (sizeof(T) == 2) {
-      rpc::write_u16_be(payload.data(), static_cast<uint16_t>(value));
+      rpc::write_u16_be(etl::span<uint8_t>(payload.data(), 2),
+                        static_cast<uint16_t>(value));
     } else if (sizeof(T) == 4) {
-      rpc::write_u32_be(payload.data(), static_cast<uint32_t>(value));
+      rpc::write_u32_be(etl::span<uint8_t>(payload.data(), 4),
+                        static_cast<uint32_t>(value));
     } else {
       // Static protection for unsupported types
       static_assert(sizeof(T) <= 4, "Unsupported value size for sendValue");

@@ -39,9 +39,12 @@ constexpr int kBitsPerByte = 8;
  * barrier to prevent the compiler from optimizing away the zeroing
  * operation, even if the buffer is not used afterward.
  */
-inline void secure_zero(volatile uint8_t* buf, size_t len) {
-  while (len--) {
-    *buf++ = 0;
+inline void secure_zero(etl::span<uint8_t> buf) {
+  if (buf.empty()) return;
+  volatile uint8_t* p = static_cast<volatile uint8_t*>(buf.data());
+  size_t n = buf.size();
+  while (n--) {
+    *p++ = 0;
   }
 #if defined(__GNUC__) || defined(__clang__)
   asm volatile("" ::: "memory");
@@ -51,14 +54,8 @@ inline void secure_zero(volatile uint8_t* buf, size_t len) {
 /**
  * @brief Portable version of secure_zero for non-volatile buffers.
  */
-inline void secure_zero_portable(void* buf, size_t len) {
-  volatile uint8_t* p = static_cast<volatile uint8_t*>(buf);
-  while (len--) {
-    *p++ = 0;
-  }
-#if defined(__GNUC__) || defined(__clang__)
-  asm volatile("" ::: "memory");
-#endif
+inline void secure_zero_portable(etl::span<uint8_t> buf) {
+  secure_zero(buf);
 }
 
 /**

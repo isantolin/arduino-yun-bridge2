@@ -249,12 +249,12 @@ void BridgeClass::_processIncomingByte(uint8_t byte) {
       const size_t data_len = _cobs.bytes_received - rpc::CRC_TRAILER_SIZE;
       etl::crc32 crc_calc;
       crc_calc.add(&_cobs.buffer[0], &_cobs.buffer[data_len]);
-      uint32_t received_crc = rpc::read_u32_be(&_cobs.buffer[data_len]);
+      uint32_t received_crc = rpc::read_u32_be(etl::span<const uint8_t>(&_cobs.buffer[data_len], 4));
 
       if (crc_calc.value() == received_crc) {
         _rx_frame.header.version = _cobs.buffer[rpc::VERSION_OFFSET];
-        _rx_frame.header.payload_length = rpc::read_u16_be(&_cobs.buffer[rpc::PAYLOAD_LENGTH_OFFSET]);
-        _rx_frame.header.command_id = rpc::read_u16_be(&_cobs.buffer[rpc::COMMAND_ID_OFFSET]);
+        _rx_frame.header.payload_length = rpc::read_u16_be(etl::span<const uint8_t>(&_cobs.buffer[rpc::PAYLOAD_LENGTH_OFFSET], 2));
+        _rx_frame.header.command_id = rpc::read_u16_be(etl::span<const uint8_t>(&_cobs.buffer[rpc::COMMAND_ID_OFFSET], 2));
         _rx_frame.crc = received_crc;
 
         if (_rx_frame.header.version == rpc::PROTOCOL_VERSION &&
@@ -364,14 +364,14 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                                      rpc::requires_ack(raw_cmd));
 
   typedef void (BridgeClass::*HandlerFunc)(const bridge::router::CommandContext&);
-  static const HandlerFunc kHandlers[] = {
+  static constexpr etl::array<HandlerFunc, 8> kHandlers{{
       &BridgeClass::onStatusCommand,     &BridgeClass::onSystemCommand,
       &BridgeClass::onGpioCommand,       &BridgeClass::onConsoleCommand,
       &BridgeClass::onDataStoreCommand,  &BridgeClass::onMailboxCommand,
-      &BridgeClass::onFileSystemCommand, &BridgeClass::onProcessCommand};
+      &BridgeClass::onFileSystemCommand, &BridgeClass::onProcessCommand}};
 
   const uint16_t category = (ctx.raw_command - rpc::RPC_STATUS_CODE_MIN) >> 4;
-  if (category < (sizeof(kHandlers) / sizeof(kHandlers[0]))) {
+  if (category < kHandlers.size()) {
     (this->*kHandlers[category])(ctx);
   } else {
     onUnknownCommand(ctx);
@@ -416,15 +416,16 @@ void BridgeClass::_handleStatusMalformed(
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for System Commands (Stride 2 for Cmd/Resp)
   typedef void (BridgeClass::*SystemHandler)(const bridge::router::CommandContext&);
-  static constexpr SystemHandler kSystemHandlers[] = {
+  static constexpr etl::array<SystemHandler, 6> kSystemHandlers{{
       &BridgeClass::_handleGetVersion,      // 0: 64
       &BridgeClass::_handleGetFreeMemory,   // 1: 66
       &BridgeClass::_handleLinkSync,        // 2: 68
       &BridgeClass::_handleLinkReset,       // 3: 70
       &BridgeClass::_handleGetCapabilities, // 4: 72
       &BridgeClass::_handleSetBaudrate      // 5: 74
-  };
-  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, 2);
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers.data(),
+                     kSystemHandlers.size(), 2);
 }
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
@@ -631,14 +632,15 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for GPIO Commands
   typedef void (BridgeClass::*GpioHandler)(const bridge::router::CommandContext&);
-  static constexpr GpioHandler kGpioHandlers[] = {
+  static constexpr etl::array<GpioHandler, 5> kGpioHandlers{{
       &BridgeClass::_handleSetPinMode,    // 0: 80
       &BridgeClass::_handleDigitalWrite,  // 1: 81
       &BridgeClass::_handleAnalogWrite,   // 2: 82
       &BridgeClass::_handleDigitalRead,   // 3: 83
       &BridgeClass::_handleAnalogRead     // 4: 84
-  };
-  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers);
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers.data(),
+                     kGpioHandlers.size());
 }
 
 void BridgeClass::_handleSetPinMode(const bridge::router::CommandContext& ctx) {
@@ -719,12 +721,13 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for Mailbox Commands
   typedef void (BridgeClass::*MailboxHandler)(
       const bridge::router::CommandContext&);
-  static constexpr MailboxHandler kMailboxHandlers[] = {
+  static constexpr etl::array<MailboxHandler, 3> kMailboxHandlers{{
       &BridgeClass::_handleMailboxPush,          // 0: 131
       &BridgeClass::_handleMailboxReadResp,      // 1: 132
       &BridgeClass::_handleMailboxAvailableResp  // 2: 133
-  };
-  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN + 3, kMailboxHandlers);
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN + 3,
+                     kMailboxHandlers.data(), kMailboxHandlers.size());
 }
 
 void BridgeClass::_handleMailboxPush(
@@ -776,24 +779,26 @@ void BridgeClass::onFileSystemCommand(
   // [SIL-2] O(1) Dispatch via Jump Table for File System Commands
   typedef void (BridgeClass::*FileSystemHandler)(
       const bridge::router::CommandContext&);
-  static constexpr FileSystemHandler kFileSystemHandlers[] = {
+  static constexpr etl::array<FileSystemHandler, 4> kFileSystemHandlers{{
       &BridgeClass::_handleFileWrite,    // 0: 144
       nullptr,                           // 1: 145 (reserved)
       nullptr,                           // 2: 146 (reserved)
       &BridgeClass::_handleFileReadResp  // 3: 147
-  };
-  _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFileSystemHandlers);
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN,
+                     kFileSystemHandlers.data(), kFileSystemHandlers.size());
 }
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for Process Commands
   typedef void (BridgeClass::*ProcessHandler)(
       const bridge::router::CommandContext&);
-  static constexpr ProcessHandler kProcessHandlers[] = {
+  static constexpr etl::array<ProcessHandler, 2> kProcessHandlers{{
       &BridgeClass::_handleProcessRunAsyncResp,  // 0: 165
       &BridgeClass::_handleProcessPollResp       // 1: 166
-  };
-  _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN + 5, kProcessHandlers);
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN + 5,
+                     kProcessHandlers.data(), kProcessHandlers.size());
 }
 
 void BridgeClass::_handleProcessRunAsyncResp(
@@ -882,7 +887,7 @@ void BridgeClass::_sendRawFrame(uint16_t command_id,
     if (_hardware_serial == &Serial) log_stream = &Console;
 #endif
     bridge::logging::log_traffic(*log_stream, "[SERIAL -> MCU]", "RAW",
-                                 raw_buffer.data(), raw_len);
+                                 etl::span<const uint8_t>(raw_buffer.data(), raw_len));
 #endif
 
     etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> cobs_buffer;
@@ -969,20 +974,20 @@ bool BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
 bool BridgeClass::_isHandshakeCommand(uint16_t command_id) const {
   // [SIL-2] Protocol Security: Only allow specific commands during pre-sync phase.
   struct Range { uint16_t min, max; };
-  static constexpr Range allowed_ranges[] = {
+  static constexpr etl::array<Range, 2> allowed_ranges{{
       {rpc::RPC_STATUS_CODE_MIN, rpc::RPC_STATUS_CODE_MAX},
-      {rpc::RPC_SYSTEM_COMMAND_MIN, rpc::RPC_SYSTEM_COMMAND_MAX}};
+      {rpc::RPC_SYSTEM_COMMAND_MIN, rpc::RPC_SYSTEM_COMMAND_MAX}}};
 
-  static constexpr uint16_t allowed_ids[] = {
+  static constexpr etl::array<uint16_t, 3> allowed_ids{{
       rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP),
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC_RESP),
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP)};
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP)}};
 
-  return etl::any_of(etl::begin(allowed_ranges), etl::end(allowed_ranges),
+  return etl::any_of(allowed_ranges.begin(), allowed_ranges.end(),
                      [command_id](const Range& r) {
                        return command_id >= r.min && command_id <= r.max;
                      }) ||
-         etl::any_of(etl::begin(allowed_ids), etl::end(allowed_ids),
+         etl::any_of(allowed_ids.begin(), allowed_ids.end(),
                      [command_id](uint16_t id) { return id == command_id; });
 }
 bool BridgeClass::_sendFrame(uint16_t command_id,
@@ -1232,8 +1237,8 @@ void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce,
                       kSha256DigestSize);
   etl::copy_n(digest, kHandshakeTagSize, out_tag);
 
-  rpc::security::secure_zero(handshake_key, BRIDGE_HKDF_KEY_LENGTH);
-  rpc::security::secure_zero(digest, kSha256DigestSize);
+  rpc::security::secure_zero(etl::span<uint8_t>(handshake_key, BRIDGE_HKDF_KEY_LENGTH));
+  rpc::security::secure_zero(etl::span<uint8_t>(digest, kSha256DigestSize));
 }
 
 void BridgeClass::_applyTimingConfig(etl::span<const uint8_t> payload) {

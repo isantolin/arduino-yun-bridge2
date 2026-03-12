@@ -11,6 +11,7 @@ import time
 from binascii import crc32
 from collections.abc import Iterable
 from enum import IntEnum
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -169,7 +170,116 @@ class ProtocolSpec(msgspec.Struct):
 
 
 # =============================================================================
-# 2. Runtime Configuration Structures (msgspec)
+# 2. Security and Policy Structures (msgspec)
+# =============================================================================
+
+
+class AllowedCommandPolicy(msgspec.Struct, frozen=True):
+    """Normalised allow-list for shell/process commands."""
+
+    entries: tuple[str, ...]
+
+    @property
+    def allow_all(self) -> bool:
+        from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD
+
+        return ALLOWED_COMMAND_WILDCARD in self.entries
+
+    def is_allowed(self, command: str) -> bool:
+        import fnmatch
+
+        pieces = command.strip().split()
+        if not pieces:
+            return False
+        return self.allow_all or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in self.entries)
+
+    def __contains__(self, item: str) -> bool:
+        return item.lower() in self.entries
+
+    def as_tuple(self) -> tuple[str, ...]:
+        return self.entries
+
+    @classmethod
+    def from_iterable(
+        cls,
+        entries: Iterable[str],
+    ) -> AllowedCommandPolicy:
+        from mcubridge.config.common import normalise_allowed_commands
+
+        normalised = normalise_allowed_commands(entries)
+        return cls(entries=normalised)
+
+
+class TopicAuthorization(msgspec.Struct, frozen=True):
+    """Per-topic allow flags for MQTT-driven actions.
+
+    Optimized for lookup speed using a pre-calculated frozenset of allowed (topic, action) tuples.
+    """
+
+    file_read: bool = True
+    file_write: bool = True
+    file_remove: bool = True
+    datastore_get: bool = True
+    datastore_put: bool = True
+    mailbox_read: bool = True
+    mailbox_write: bool = True
+    shell_run_async: bool = True
+    shell_poll: bool = True
+    shell_kill: bool = True
+    console_input: bool = True
+    digital_write: bool = True
+    digital_read: bool = True
+    digital_mode: bool = True
+    analog_write: bool = True
+    analog_read: bool = True
+
+    # Cache for allowed permissions (not serialized)
+    _allowed_cache: Final[frozenset[tuple[str, str]]] = frozenset()
+
+    def __post_init__(self) -> None:
+        """Build the optimized lookup cache."""
+        from mcubridge.protocol.protocol import (
+            AnalogAction,
+            ConsoleAction,
+            DatastoreAction,
+            DigitalAction,
+            FileAction,
+            MailboxAction,
+            ShellAction,
+        )
+        from mcubridge.protocol.topics import Topic
+
+        # Static mapping to avoid recreation in __post_init__
+        _TOPIC_AUTH_MAPPING: Final[dict[tuple[str, str], str]] = {
+            (Topic.FILE.value, FileAction.READ.value): "file_read",
+            (Topic.FILE.value, FileAction.WRITE.value): "file_write",
+            (Topic.FILE.value, FileAction.REMOVE.value): "file_remove",
+            (Topic.DATASTORE.value, DatastoreAction.GET.value): "datastore_get",
+            (Topic.DATASTORE.value, DatastoreAction.PUT.value): "datastore_put",
+            (Topic.MAILBOX.value, MailboxAction.READ.value): "mailbox_read",
+            (Topic.MAILBOX.value, MailboxAction.WRITE.value): "mailbox_write",
+            (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): "shell_run_async",
+            (Topic.SHELL.value, ShellAction.POLL.value): "shell_poll",
+            (Topic.SHELL.value, ShellAction.KILL.value): "shell_kill",
+            (Topic.CONSOLE.value, ConsoleAction.IN.value): "console_input",
+            (Topic.CONSOLE.value, ConsoleAction.INPUT.value): "console_input",
+            (Topic.DIGITAL.value, DigitalAction.WRITE.value): "digital_write",
+            (Topic.DIGITAL.value, DigitalAction.READ.value): "digital_read",
+            (Topic.DIGITAL.value, DigitalAction.MODE.value): "digital_mode",
+            (Topic.ANALOG.value, AnalogAction.WRITE.value): "analog_write",
+            (Topic.ANALOG.value, AnalogAction.READ.value): "analog_read",
+        }
+
+        allowed = [k for k, a in _TOPIC_AUTH_MAPPING.items() if getattr(self, a)]
+        object.__setattr__(self, "_allowed_cache", frozenset(allowed))
+
+    def allows(self, topic: str, action: str) -> bool:
+        """Check if action is allowed on topic. O(1) complexity."""
+        return (topic.lower(), action.lower()) in self._allowed_cache
+
+
+# =============================================================================
+# 3. Runtime Configuration Structures (msgspec)
 # =============================================================================
 
 
@@ -240,7 +350,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_WRITE_MAX_BYTES
     file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_STORAGE_QUOTA_BYTES
 
-    allowed_policy: Any | None = None
+    allowed_policy: AllowedCommandPolicy | None = None
 
     mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
@@ -257,7 +367,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
     watchdog_enabled: bool = True
     watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1)] = DEFAULT_WATCHDOG_INTERVAL
-    topic_authorization: Any = None
+    topic_authorization: TopicAuthorization | None = None
 
     # msgspec handle bytes naturally.
     serial_shared_secret: Annotated[bytes, msgspec.Meta(min_length=MIN_SERIAL_SHARED_SECRET_LEN)] = (
@@ -280,7 +390,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
     def __post_init__(self) -> None:
         from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET, VOLATILE_STORAGE_PATHS
-        from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
 
         # [SIL-2] Automated Normalization: Strip and clean inputs
         self.serial_port = self.serial_port.strip()
@@ -310,8 +419,12 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.mqtt_topic = "/".join(segments)
 
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
-        if self.topic_authorization is None:
-            self.topic_authorization = TopicAuthorization()
+        if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
+            self.topic_authorization = (
+                msgspec.convert(self.topic_authorization, TopicAuthorization)
+                if self.topic_authorization
+                else TopicAuthorization()
+            )
 
         # [SIL-2] Strict Semantic Validations
         if self.serial_response_timeout < self.serial_retry_timeout * 2:

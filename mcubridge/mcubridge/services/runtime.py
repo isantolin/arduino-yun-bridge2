@@ -495,7 +495,9 @@ class BridgeService:
         if not action:
             return True
         topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
-        return self.state.topic_authorization.allows(topic_value, action)
+        if self.state.topic_authorization:
+            return self.state.topic_authorization.allows(topic_value, action)
+        return False
 
     async def _reject_topic_action(
         self,

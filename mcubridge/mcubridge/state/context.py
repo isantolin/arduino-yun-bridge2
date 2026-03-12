@@ -363,7 +363,7 @@ class RuntimeState(msgspec.Struct):
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(default_factory=lambda: AllowedCommandPolicy.from_iterable(()))
-    topic_authorization: TopicAuthorization = msgspec.field(default_factory=TopicAuthorization)
+    topic_authorization: TopicAuthorization | None = None
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES

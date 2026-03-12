@@ -136,14 +136,14 @@ class FileComponent(BaseComponent):
         # Quota check
         if not await self._write_with_quota(path, payload):
             await self.ctx.publish(
-                inbound.topic,
+                str(inbound.topic),
                 encode_status_reason(Status.ERROR, "Quota exceeded or write failed"),
                 reply_to=inbound,
             )
             return True
 
         self._metadata_cache.pop(str(path), None)
-        await self.ctx.publish(inbound.topic, b"OK", reply_to=inbound)
+        await self.ctx.publish(str(inbound.topic), b"OK", reply_to=inbound)
         return True
 
     async def _handle_mqtt_read(self, route: Any, inbound: Message) -> bool:
@@ -154,7 +154,7 @@ class FileComponent(BaseComponent):
         path = self._resolve_path(path_str)
         if not path.is_file():
             await self.ctx.publish(
-                inbound.topic,
+                str(inbound.topic),
                 encode_status_reason(Status.ERROR, "File not found"),
                 reply_to=inbound,
             )
@@ -162,7 +162,7 @@ class FileComponent(BaseComponent):
 
         data = await asyncio.to_thread(path.read_bytes)
         self._metadata_cache[str(path)] = {"size": len(data), "mtime": path.stat().st_mtime}
-        await self.ctx.publish(inbound.topic, data, reply_to=inbound)
+        await self.ctx.publish(str(inbound.topic), data, reply_to=inbound)
         return True
 
     async def _handle_mqtt_remove(self, route: Any, inbound: Message) -> bool:
@@ -173,10 +173,10 @@ class FileComponent(BaseComponent):
         path = self._resolve_path(path_str)
         if await self._remove_with_tracking(path):
             self._metadata_cache.pop(str(path), None)
-            await self.ctx.publish(inbound.topic, b"OK", reply_to=inbound)
+            await self.ctx.publish(str(inbound.topic), b"OK", reply_to=inbound)
         else:
             await self.ctx.publish(
-                inbound.topic,
+                str(inbound.topic),
                 encode_status_reason(Status.ERROR, "File not found or protected"),
                 reply_to=inbound,
             )

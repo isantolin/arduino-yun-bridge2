@@ -73,9 +73,11 @@ bool run_cryptographic_self_tests();
 /**
  * @brief Timing-safe memory comparison.
  */
-inline bool timing_safe_equal(const uint8_t* a, const uint8_t* b, size_t len) {
+inline bool timing_safe_equal(etl::span<const uint8_t> a,
+                              etl::span<const uint8_t> b) {
+  if (a.size() != b.size()) return false;
   volatile uint8_t result = 0;
-  for (size_t i = 0; i < len; i++) {
+  for (size_t i = 0; i < a.size(); i++) {
     result |= a[i] ^ b[i];
   }
   return result == 0;
@@ -85,10 +87,14 @@ inline bool timing_safe_equal(const uint8_t* a, const uint8_t* b, size_t len) {
  * @brief Generate nonce with monotonic counter (anti-replay).
  */
 template <typename RandomFunc>
-inline void generate_nonce_with_counter(uint8_t* out_nonce, uint64_t& counter,
+inline void generate_nonce_with_counter(etl::span<uint8_t> out_nonce,
+                                        uint64_t& counter,
                                         RandomFunc random_func) {
+  if (out_nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return;
+
   // [SIL-2] Use ETL algorithm for deterministic generation
-  etl::generate(out_nonce, out_nonce + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+  etl::generate(out_nonce.begin(),
+                out_nonce.begin() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
                 [&]() { return static_cast<uint8_t>(random_func() & 0xFF); });
 
   counter++;
@@ -101,9 +107,10 @@ inline void generate_nonce_with_counter(uint8_t* out_nonce, uint64_t& counter,
 /**
  * @brief Extract counter from nonce (for validation).
  */
-inline uint64_t extract_nonce_counter(const uint8_t* nonce) {
-  return etl::accumulate(nonce + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                         nonce + RPC_HANDSHAKE_NONCE_LENGTH, 0ULL,
+inline uint64_t extract_nonce_counter(etl::span<const uint8_t> nonce) {
+  if (nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return 0;
+  return etl::accumulate(nonce.begin() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+                         nonce.begin() + RPC_HANDSHAKE_NONCE_LENGTH, 0ULL,
                          [](uint64_t acc, uint8_t byte) {
                            return (acc << kBitsPerByte) | byte;
                          });
@@ -112,7 +119,7 @@ inline uint64_t extract_nonce_counter(const uint8_t* nonce) {
 /**
  * @brief Validate nonce counter is strictly greater than last seen.
  */
-inline bool validate_nonce_counter(const uint8_t* nonce,
+inline bool validate_nonce_counter(etl::span<const uint8_t> nonce,
                                    uint64_t& last_counter) {
   uint64_t current = extract_nonce_counter(nonce);
   if (current <= last_counter) {

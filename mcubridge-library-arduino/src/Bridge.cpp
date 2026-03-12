@@ -584,9 +584,11 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
         _computeHandshakeTag(
             etl::span<const uint8_t>(payload_data, nonce_length),
             expected_tag.data());
-        if (!rpc::security::timing_safe_equal(payload_data + nonce_length,
-                                              expected_tag.data(),
-                                              kHandshakeTagSize)) {
+        if (!rpc::security::timing_safe_equal(
+                etl::span<const uint8_t>(payload_data + nonce_length,
+                                         kHandshakeTagSize),
+                etl::span<const uint8_t>(expected_tag.data(),
+                                         kHandshakeTagSize))) {
           emitStatus(rpc::StatusCode::STATUS_ERROR, F("Mutual Auth Failed"));
           enterSafeState();
           _fsm.handshakeFailed();
@@ -1219,11 +1221,13 @@ void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce,
   uint8_t* digest = key_and_digest.data() +
                     BRIDGE_HKDF_KEY_LENGTH;  // BRIDGE_HKDF_KEY_LENGTH bytes
 
-  hkdf_sha256(handshake_key, BRIDGE_HKDF_KEY_LENGTH, _shared_secret.data(),
-              _shared_secret.size(), rpc::RPC_HANDSHAKE_HKDF_SALT,
-              rpc::RPC_HANDSHAKE_HKDF_SALT_LEN,
-              rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH,
-              rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN);
+  hkdf_sha256(etl::span<uint8_t>(handshake_key, BRIDGE_HKDF_KEY_LENGTH),
+              etl::span<const uint8_t>(_shared_secret.data(),
+                                       _shared_secret.size()),
+              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT,
+                                       rpc::RPC_HANDSHAKE_HKDF_SALT_LEN),
+              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH,
+                                       rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN));
 
   SHA256 sha256;
   sha256.resetHMAC(handshake_key, BRIDGE_HKDF_KEY_LENGTH);
@@ -1232,7 +1236,8 @@ void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce,
                       kSha256DigestSize);
   etl::copy_n(digest, kHandshakeTagSize, out_tag);
 
-  rpc::security::secure_zero(etl::span<uint8_t>(handshake_key, BRIDGE_HKDF_KEY_LENGTH));
+  rpc::security::secure_zero(
+      etl::span<uint8_t>(handshake_key, BRIDGE_HKDF_KEY_LENGTH));
   rpc::security::secure_zero(etl::span<uint8_t>(digest, kSha256DigestSize));
 }
 

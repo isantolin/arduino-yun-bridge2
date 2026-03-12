@@ -208,7 +208,7 @@ class BridgeClass
   using CommandHandler = etl::delegate<void(const rpc::Frame&)>;
   using DigitalReadHandler = etl::delegate<void(uint8_t)>;
   using AnalogReadHandler = etl::delegate<void(uint16_t)>;
-  using GetFreeMemoryHandler = etl::delegate<void(uint16_t)>;
+  using GetFreeMemoryHandler = etl::delegate<uint16_t()>;
   using StatusHandler =
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
 

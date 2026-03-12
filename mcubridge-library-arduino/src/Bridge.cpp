@@ -862,7 +862,7 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code,
   if (message) {
     const char* p = reinterpret_cast<const char*>(message);
     length = strnlen_P(p, rpc::MAX_PAYLOAD_SIZE);
-    memcpy_P(buffer.data(), p, length);
+    etl::copy_n(reinterpret_cast<const uint8_t*>(p), length, buffer.begin());
   }
   _doEmitStatus(status_code, etl::span<const uint8_t>(buffer.data(), length));
 }

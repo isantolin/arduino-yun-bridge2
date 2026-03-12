@@ -61,7 +61,7 @@ bool run_cryptographic_self_tests() {
 
   // 1. SHA256 KAT ("abc")
   size_t msg_len = sizeof(kat_sha256_msg);
-  memcpy_P(buffer.data(), kat_sha256_msg, msg_len);
+  etl::copy_n(kat_sha256_msg, msg_len, buffer.begin());
   sha256.update(buffer.data(), msg_len);
   sha256.finalize(actual.data(), kSha256DigestSize);
 
@@ -75,12 +75,12 @@ bool run_cryptographic_self_tests() {
   // it. SHA256 lib usually supports RAM only.
   etl::array<uint8_t, 32> key_buf;  // Max key size for test
   size_t key_len = sizeof(kat_hmac_key);
-  memcpy_P(key_buf.data(), kat_hmac_key, key_len);
+  etl::copy_n(kat_hmac_key, key_len, key_buf.begin());
 
   sha256.resetHMAC(key_buf.data(), key_len);
 
   size_t data_len = sizeof(kat_hmac_data);
-  memcpy_P(buffer.data(), kat_hmac_data, data_len);
+  etl::copy_n(kat_hmac_data, data_len, buffer.begin());
   sha256.update(buffer.data(), data_len);
   sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(),
                       kSha256DigestSize);

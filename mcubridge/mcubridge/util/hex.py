@@ -17,7 +17,9 @@ def format_hex(data: bytes | bytearray | memoryview) -> str:
     return f"[{data.hex(' ').upper()}]"
 
 
-def log_binary_traffic(logger: logging.Logger, level: int, direction: str, label: str, data: bytes) -> None:
+def log_binary_traffic(
+    logger: logging.Logger, level: int, direction: str, label: str, data: bytes | bytearray | memoryview
+) -> None:
     """Logs binary traffic with a standardized hex format for syslog.
 
     Format: %s %s: [DE AD BE EF]

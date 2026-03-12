@@ -342,7 +342,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mqtt_certfile: str | None = None
     mqtt_keyfile: str | None = None
     mqtt_topic: str = MQTT_DEFAULT_TOPIC_PREFIX
-    allowed_commands: tuple[str, ...] = ()
+
+    # [SIL-2] Accept Any to allow raw strings from UCI/Tests, then coerce in __post_init__
+    allowed_commands: Any = ()
+
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
     process_timeout: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_TIMEOUT
 
@@ -355,7 +358,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
     status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
-    debug_logging: bool = DEFAULT_DEBUG_LOGGING
+    debug_logging: bool = msgspec.field(default=DEFAULT_DEBUG_LOGGING, name="debug")
     console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
@@ -369,10 +372,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1)] = DEFAULT_WATCHDOG_INTERVAL
     topic_authorization: TopicAuthorization | None = None
 
-    # msgspec handle bytes naturally.
-    serial_shared_secret: Annotated[bytes, msgspec.Meta(min_length=MIN_SERIAL_SHARED_SECRET_LEN)] = (
-        DEFAULT_SERIAL_SHARED_SECRET
-    )
+    # [SIL-2] Security: Accept Any to allow raw strings from UCI/Tests,
+    # then coerce to bytes in __post_init__ to avoid msgspec base64 errors.
+    serial_shared_secret: Any = DEFAULT_SERIAL_SHARED_SECRET
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -397,6 +399,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.file_system_root = str(Path(self.file_system_root).expanduser().resolve())
         self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).expanduser().resolve())
 
+        # Support single string for allowed_commands (common in tests/UCI)
+        if isinstance(self.allowed_commands, str):
+            self.allowed_commands = tuple(self.allowed_commands.split())
+
         # Normalize Optional strings
         if self.mqtt_user is not None:
             self.mqtt_user = self.mqtt_user.strip() or None
@@ -419,12 +425,17 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.mqtt_topic = "/".join(segments)
 
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
+        self.allowed_commands = self.allowed_policy.entries if self.allowed_policy else ()
         if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
             self.topic_authorization = (
                 msgspec.convert(self.topic_authorization, TopicAuthorization)
                 if self.topic_authorization
                 else TopicAuthorization()
             )
+
+        # [SIL-2] Coerce secret to bytes
+        if isinstance(self.serial_shared_secret, str):
+            self.serial_shared_secret = self.serial_shared_secret.strip().encode("utf-8")
 
         # [SIL-2] Strict Semantic Validations
         if self.serial_response_timeout < self.serial_retry_timeout * 2:
@@ -440,9 +451,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             raise ValueError("serial_shared_secret placeholder is insecure")
 
         # Unique symbol check for minimum entropy
-        unique_symbols = {byte for byte in self.serial_shared_secret}
-        if len(unique_symbols) < 4 and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
-            raise ValueError("serial_shared_secret must contain at least four distinct bytes")
+        if isinstance(self.serial_shared_secret, bytes):
+            unique_symbols = {byte for byte in self.serial_shared_secret}
+            if len(unique_symbols) < 4 and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
+                raise ValueError("serial_shared_secret must contain at least four distinct bytes")
 
         # Logic-based cross-field validations
         if self.file_storage_quota_bytes < self.file_write_max_bytes:

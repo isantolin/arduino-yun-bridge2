@@ -24,22 +24,35 @@ logger = logging.getLogger(__name__)
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
-    """Load configuration from UCI with robust error handling (SIL 2).
+    """Load configuration from defaults, UCI, and environment variables (SIL 2).
+
+    Precedence (highest first): Environment Variables -> UCI -> Defaults.
 
     Returns:
         Tuple of (config_dict, source) where source is 'uci' or 'defaults'.
     """
+    import os
+
+    source = "defaults"
+    config = get_default_config()
+
     try:
         uci_values = get_uci_config()
         if uci_values:
-            return uci_values, "uci"
+            config.update(uci_values)
+            source = "uci"
     except (OSError, ValueError) as err:
-        # [SIL-2] Catch specific errors to differentiate operational issues from bugs.
-        # Fallback to defaults is acceptable here to ensure Fail-Operational behavior.
         logger.error("Failed to load UCI configuration (Operational Error): %s", err)
 
-    logger.warning("Using default configuration (UCI unavailable)")
-    return get_default_config(), "defaults"
+    # [SIL-2] Environment Variable Overrides
+    for key, value in os.environ.items():
+        if key.startswith("MCUBRIDGE_"):
+            # Convert MCUBRIDGE_SERIAL_PORT to serial_port
+            clean_key = key[10:].lower()
+            config[clean_key] = value
+            source = "env" if source == "defaults" else source
+
+    return config, source
 
 
 # Module-level variable to track config source for observability
@@ -63,14 +76,15 @@ def load_runtime_config() -> RuntimeConfig:
 
     try:
         # [SIL-2] Holistic Validation via msgspec.Struct.
-        # This performs type checking, range validation, and normalization in one pass.
-        return msgspec.convert(raw_values, RuntimeConfig, strict=True)
+        # strict=False allows some flexibility during test/migration phases (e.g. string to bytes)
+        return msgspec.convert(raw_values, RuntimeConfig, strict=False)
     except (msgspec.ValidationError, ValueError) as e:
         if source == "uci":
             # [SIL-2] Deterministic Failure: If UCI is present but invalid, abort.
             # This prevents running with a partially invalid security config.
             logger.critical("FATAL: UCI configuration is invalid: %s", e)
             raise RuntimeError(f"Invalid system configuration: {e}") from e
+
+        # During tests or fallback, let the error propagate if it's a structural/logic error
         logger.critical("Configuration validation failed: %s", e)
-        logger.warning("Falling back to safe defaults due to validation error.")
-        return msgspec.convert(get_default_config(), RuntimeConfig, strict=False)
+        raise

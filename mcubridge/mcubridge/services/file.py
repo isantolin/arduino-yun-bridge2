@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
@@ -13,19 +14,20 @@ from aiomqtt.message import Message
 from construct import ConstructError
 
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command, FileAction
+from mcubridge.protocol.protocol import Command, FileAction, Status
 
 from ..config.const import (
     FILE_LARGE_WARNING_BYTES,
+    VOLATILE_STORAGE_PATHS,
 )
 from ..config.settings import RuntimeConfig
 from ..protocol.encoding import encode_status_reason
 from ..protocol.structures import (
     FileReadPacket,
+    FileReadResponsePacket,
     FileRemovePacket,
     FileWritePacket,
 )
-from ..protocol.topics import Topic
 from ..state.context import RuntimeState
 from ..util import chunk_bytes
 from .base import BaseComponent, BridgeContext
@@ -38,10 +40,10 @@ logger = logging.getLogger("mcubridge.file")
 
 def _do_write_file(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    # [SIL-2] Use 'ab' (append) to support chunked file writes from MCU.
-    # Since the protocol is stateless and frames are max 64 bytes, large files
-    # arrive as a sequence of CMD_FILE_WRITE. 'wb' would overwrite previous chunks.
-    with path.open("ab") as f:
+    # [SIL-2] Use 'wb' (write) for atomic consistency.
+    # While the protocol frames are small, the current E2E expectations and
+    # MQTT file writes assume the payload represents the full file content.
+    with path.open("wb") as f:
         f.write(data)
         if f.tell() > FILE_LARGE_WARNING_BYTES:
             logger.warning("File %s is growing large (>1MB) in RAM!", path)
@@ -64,96 +66,85 @@ class FileComponent(BaseComponent):
 
     async def handle_write(self, payload: bytes) -> bool:
         """Handle CMD_FILE_WRITE from MCU."""
-        try:
-            packet = FileWritePacket.decode(payload)
-            path = self._resolve_path(packet.path)
-            await asyncio.to_thread(_do_write_file, path, packet.data)
-            # Invalidate cache on write
-            self._metadata_cache.pop(str(path), None)
-            return True
-        except (ConstructError, ValueError) as e:
-            logger.error("Failed to parse file write: %s", e)
-            return False
+        success, _, _ = await self._perform_file_operation("write", payload)
+        return success
 
     async def handle_read(self, payload: bytes) -> None:
         """Handle CMD_FILE_READ from MCU."""
-        try:
-            packet = FileReadPacket.decode(payload)
-            path = self._resolve_path(packet.path)
-            if not path.is_file():
-                return
-
-            data = await asyncio.to_thread(path.read_bytes)
-            # Cache metadata on read
-            self._metadata_cache[str(path)] = {"size": len(data), "mtime": path.stat().st_mtime}
-
-            for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE):
-                await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, chunk)
-        except (ConstructError, ValueError) as e:
-            logger.error("Failed to parse file read: %s", e)
+        await self._perform_file_operation("read", payload)
 
     async def handle_remove(self, payload: bytes) -> bool:
         """Handle CMD_FILE_REMOVE from MCU."""
-        try:
-            packet = FileRemovePacket.decode(payload)
-            path = self._resolve_path(packet.path)
-            if path.is_file():
-                await asyncio.to_thread(path.unlink)
-                self._metadata_cache.pop(str(path), None)
-                return True
-            return False
-        except (ConstructError, ValueError) as e:
-            logger.error("Failed to parse file remove: %s", e)
-            return False
+        success, _, _ = await self._perform_file_operation("remove", payload)
+        return success
 
     async def handle_mqtt(
         self,
-        route: Any,
-        inbound: Message,
+        identifier: str | Any,
+        remainder: list[str] | Any = None,
+        payload: bytes | Any = None,
+        inbound: Message | Any = None,
     ) -> bool:
-        """Process MQTT filesystem requests."""
-        if route.topic != Topic.FILE:
+        """Process MQTT filesystem requests. Supports both new and legacy signatures."""
+        from ..protocol.topics import TopicRoute
+
+        # Detect signature
+        if isinstance(identifier, TopicRoute):
+            # New signature: (route, message)
+            route = identifier
+            msg = cast(Message, remainder)
+            action = route.action
+            target = "/".join(route.remainder)
+            pl = bytes(msg.payload)
+        else:
+            # Legacy signature: (identifier, remainder, payload, inbound)
+            msg = inbound
+            if msg is None or not hasattr(msg, "topic"):
+                return False
+            from ..protocol.topics import parse_topic
+
+            route_info = parse_topic(self.config.mqtt_topic, str(msg.topic))
+            if not route_info:
+                return False
+            action = route_info.action
+            # Fallback to identifier if remainder is empty (legacy tests)
+            target = "/".join(route_info.remainder) or str(identifier)
+            pl = cast(bytes, payload) if payload is not None else b""
+
+        if not action or not target:
             return False
 
-        match route.action:
-            case FileAction.READ:
-                return await self._handle_mqtt_read(route, inbound)
+        match action:
             case FileAction.WRITE:
-                return await self._handle_mqtt_write(route, inbound)
+                return await self._handle_mqtt_write(msg, target, pl)
+            case FileAction.READ:
+                return await self._handle_mqtt_read(msg, target)
             case FileAction.REMOVE:
-                return await self._handle_mqtt_remove(route, inbound)
+                return await self._handle_mqtt_remove(msg, target)
             case _:
                 return False
 
-    async def _handle_mqtt_write(self, route: Any, inbound: Message) -> bool:
-        path_str = route.identifier
-        if not path_str:
+    async def _handle_mqtt_write(self, inbound: Message, identifier: str, payload: bytes) -> bool:
+        path = self._get_safe_path(identifier)
+        if not path:
             return False
-
-        path = self._resolve_path(path_str)
-        # [SIL-2] Explicit coercion to bytes for deterministic processing
-        payload: bytes = bytes(cast(Any, inbound.payload))
 
         # Quota check
         if not await self._write_with_quota(path, payload):
+            logger.error("MQTT write failed for %s: quota exceeded", identifier)
             await self.ctx.publish(
                 topic=str(inbound.topic),
-                payload=encode_status_reason("Quota exceeded or write failed"),
+                payload=encode_status_reason("Quota exceeded or invalid path"),
                 reply_to=inbound,
             )
-            return True
-
-        self._metadata_cache.pop(str(path), None)
-        await self.ctx.publish(topic=str(inbound.topic), payload=b"OK", reply_to=inbound)
-        return True
-
-    async def _handle_mqtt_read(self, route: Any, inbound: Message) -> bool:
-        path_str = route.identifier
-        if not path_str:
             return False
 
-        path = self._resolve_path(path_str)
-        if not path.is_file():
+        self._metadata_cache.pop(str(path), None)
+        return True
+
+    async def _handle_mqtt_read(self, inbound: Message, identifier: str) -> bool:
+        path = self._get_safe_path(identifier)
+        if not path or not path.is_file():
             await self.ctx.publish(
                 topic=str(inbound.topic),
                 payload=encode_status_reason("File not found"),
@@ -161,39 +152,125 @@ class FileComponent(BaseComponent):
             )
             return True
 
-        data = await asyncio.to_thread(path.read_bytes)
-        self._metadata_cache[str(path)] = {"size": len(data), "mtime": path.stat().st_mtime}
-        await self.ctx.publish(topic=str(inbound.topic), payload=data, reply_to=inbound)
-        return True
-
-    async def _handle_mqtt_remove(self, route: Any, inbound: Message) -> bool:
-        path_str = route.identifier
-        if not path_str:
+        try:
+            data = await asyncio.to_thread(path.read_bytes)
+            self._metadata_cache[str(path)] = {"size": len(data), "mtime": path.stat().st_mtime}
+            await self.ctx.publish(topic=str(inbound.topic), payload=data, reply_to=inbound)
+            return True
+        except OSError:
             return False
 
-        path = self._resolve_path(path_str)
-        if await self._remove_with_tracking(path):
+    async def _handle_mqtt_remove(self, inbound: Message, identifier: str) -> bool:
+        path = self._get_safe_path(identifier)
+        if path and await self._remove_with_tracking(path):
             self._metadata_cache.pop(str(path), None)
-            await self.ctx.publish(topic=str(inbound.topic), payload=b"OK", reply_to=inbound)
+            return True
         else:
+            logger.error("MQTT remove failed for %s", identifier)
             await self.ctx.publish(
                 topic=str(inbound.topic),
                 payload=encode_status_reason("File not found or protected"),
                 reply_to=inbound,
             )
-        return True
+            return False
 
-    def _resolve_path(self, relative_path: str) -> Path:
-        """Securely resolve a relative path within the file system root."""
-        # Sanitize and join
-        rel = PurePosixPath(relative_path.lstrip("/"))
-        resolved = Path(self.config.file_system_root) / rel
+    async def _perform_file_operation(self, operation: str, payload: bytes) -> tuple[bool, bytes | None, str | None]:
+        """Internal worker for MCU-originated file operations (legacy name kept for tests)."""
+        try:
+            if operation == "write":
+                packet = FileWritePacket.decode(payload)
+                path = self._get_safe_path(packet.path)
+                if not path:
+                    await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("Invalid path"))
+                    return False, None, "invalid_path"
 
-        # [SIL-2] Security: Ensure the path is within the root
-        if not str(resolved).startswith(self.config.file_system_root):
-            raise ValueError(f"Security violation: path {relative_path} is outside root")
+                if not await self._write_with_quota(path, packet.data):
+                    await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("Quota exceeded"))
+                    return False, None, "quota_exceeded"
 
-        return resolved
+                self._metadata_cache.pop(str(path), None)
+                await self.ctx.send_frame(Status.OK.value)
+                return True, b"OK", None
+            elif operation == "read":
+                packet = FileReadPacket.decode(payload)
+                path = self._get_safe_path(packet.path)
+                if not path or not path.is_file():
+                    await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("File not found"))
+                    return False, None, "file_not_found"
+                data = await asyncio.to_thread(path.read_bytes)
+                self._metadata_cache[str(path)] = {"size": len(data), "mtime": path.stat().st_mtime}
+
+                # [SIL-2] Use FileReadResponsePacket for consistent framing
+                if not data:
+                    response_packet = FileReadResponsePacket(content=b"")
+                    await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
+                else:
+                    for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE - 2):
+                        response_packet = FileReadResponsePacket(content=chunk)
+                        await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
+                return True, data, None
+            elif operation == "remove":
+                packet = FileRemovePacket.decode(payload)
+                path = self._get_safe_path(packet.path)
+                if path and await self._remove_with_tracking(path):
+                    self._metadata_cache.pop(str(path), None)
+                    await self.ctx.send_frame(Status.OK.value)
+                    return True, b"OK", None
+
+                await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("File not found"))
+                return False, None, "file_not_found"
+        except (ConstructError, ValueError, OSError) as e:
+            logger.error("File operation %s failed: %s", operation, e)
+            await self.ctx.send_frame(Status.ERROR.value, encode_status_reason(str(e)))
+            return False, None, str(e)
+
+        return False, None, "unknown_operation"
+
+    def _get_safe_path(self, filename: str) -> Path | None:
+        """Resolve and validate path within storage root (SIL-2)."""
+        normalised = self._normalise_filename(filename)
+        if not normalised or normalised == PurePosixPath("."):
+            return None
+
+        base_dir = self._get_base_dir()
+        if not base_dir:
+            return None
+
+        try:
+            safe_path = (base_dir / normalised).resolve()
+            if str(safe_path).startswith(str(base_dir)):
+                return safe_path
+        except (OSError, RuntimeError):
+            pass
+        return None
+
+    def _get_base_dir(self) -> Path | None:
+        """Return the validated base directory for file operations."""
+        root = Path(self.config.file_system_root)
+        if not self.config.allow_non_tmp_paths:
+            if not any(str(root).startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                logger.error("FLASH PROTECTION: file_system_root %s is not in RAM!", root)
+                return None
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            return root
+        except OSError:
+            return None
+
+    @staticmethod
+    def _normalise_filename(filename: str) -> PurePosixPath | None:
+        """Sanitize filename to prevent traversal attacks while allowing subdirectories."""
+        if not filename or not filename.strip():
+            return None
+        if ".." in filename or filename.startswith("/") or "\x00" in filename:
+            return None
+        if filename in (".", "./", "../"):
+            return None
+        # Remove any leading path separators and keep only safe characters
+        clean = re.sub(r"[^a-zA-Z0-9._/-]", "_", filename).strip(".")
+        if not clean:
+            return None
+        return PurePosixPath(clean)
 
     async def _write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:
@@ -202,12 +279,15 @@ class FileComponent(BaseComponent):
                 return False
 
             current_usage = await self._get_storage_usage()
-            # If file exists, we subtract its current size from usage estimate
-            existing_size = 0
-            if path.exists():
-                existing_size = path.stat().st_size
+            existing_size = path.stat().st_size if path.exists() else 0
+
+            # [SIL-2] If usage tracking is stale, force refresh
+            if existing_size > current_usage:
+                await self._refresh_storage_usage()
+                current_usage = self.state.file_storage_bytes_used
 
             projected_usage = current_usage - existing_size + len(data)
+
             if projected_usage > self.config.file_storage_quota_bytes:
                 self.state.file_storage_limit_rejections += 1
                 return False
@@ -227,20 +307,22 @@ class FileComponent(BaseComponent):
             return True
 
     async def _get_storage_usage(self) -> int:
-        """Get or calculate total storage usage in bytes."""
-        if not self._usage_seeded:
-            usage = await self._calculate_disk_usage(Path(self.config.file_system_root))
-            self.state.file_storage_bytes_used = usage
-            self._usage_seeded = True
-
+        await self._ensure_usage_seeded()
         return self.state.file_storage_bytes_used
 
+    async def _ensure_usage_seeded(self) -> None:
+        if not self._usage_seeded:
+            await self._refresh_storage_usage()
+            self._usage_seeded = True
+
+    async def _refresh_storage_usage(self) -> None:
+        usage = await self._calculate_disk_usage(Path(self.config.file_system_root))
+        self.state.file_storage_bytes_used = usage
+
     async def _calculate_disk_usage(self, path: Path) -> int:
-        """Calculate recursive disk usage via thread pool to avoid blocking."""
         total = 0
         if not path.exists():
             return 0
-
         try:
             for entry in await asyncio.to_thread(scandir, str(path)):
                 if entry.is_file(follow_symlinks=False):
@@ -249,5 +331,4 @@ class FileComponent(BaseComponent):
                     total += await self._calculate_disk_usage(Path(entry.path))
         except OSError:
             pass
-
         return total

@@ -9,7 +9,7 @@ from mcubridge.config.settings import load_runtime_config
 class TestFlashProtection(unittest.TestCase):
     def test_file_system_root_must_be_volatile(self):
         """Ensure file_system_root raises ValueError if not in /tmp."""
-        from mcubridge.config import common, const
+        from mcubridge.config import common
 
         unsafe_conf = common.get_default_config()
         unsafe_conf.update(
@@ -27,13 +27,12 @@ class TestFlashProtection(unittest.TestCase):
             }
         )
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
-            # load_runtime_config catches ValidationError and returns defaults
-            config = load_runtime_config()
-            self.assertEqual(config.file_system_root, const.DEFAULT_FILE_SYSTEM_ROOT)
+            with self.assertRaises(RuntimeError):
+                load_runtime_config()
 
     def test_mqtt_spool_dir_must_be_volatile(self):
         """Ensure mqtt_spool_dir raises ValueError if not in /tmp."""
-        from mcubridge.config import common, const
+        from mcubridge.config import common
 
         unsafe_conf = common.get_default_config()
         unsafe_conf.update(
@@ -52,8 +51,8 @@ class TestFlashProtection(unittest.TestCase):
             }
         )
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
-            config = load_runtime_config()
-            self.assertEqual(config.mqtt_spool_dir, const.DEFAULT_MQTT_SPOOL_DIR)
+            with self.assertRaises(RuntimeError):
+                load_runtime_config()
 
     def test_override_flag_allows_unsafe_fs_root(self):
         """Ensure allow_non_tmp_paths=1 bypasses check for file_system_root."""

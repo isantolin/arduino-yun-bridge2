@@ -109,14 +109,7 @@ class _Datastore:
     async def handle_get_request(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_mqtt(
-        self,
-        _identifier: str,
-        _remainder: list[str],
-        _payload: bytes,
-        _payload_str: str,
-        _inbound: _DummyMessage,
-    ) -> bool:
+    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
         return True
 
 
@@ -130,13 +123,7 @@ class _File:
     async def handle_remove(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_mqtt(
-        self,
-        _identifier: str,
-        _remainder: list[str],
-        _payload: bytes,
-        _inbound: _DummyMessage,
-    ) -> bool:
+    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
         return True
 
 
@@ -153,12 +140,7 @@ class _Mailbox:
     async def handle_processed(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_mqtt(
-        self,
-        _identifier: str,
-        _payload: bytes,
-        _inbound: _DummyMessage,
-    ) -> bool:
+    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
         return True
 
 
@@ -172,13 +154,7 @@ class _Pin:
     async def handle_unexpected_mcu_request(self, _command: Any, _payload: bytes) -> bool:
         return True
 
-    async def handle_mqtt(
-        self,
-        _topic: Topic,
-        _parts: list[str],
-        _payload_str: str,
-        _inbound: _DummyMessage,
-    ) -> bool:
+    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
         return True
 
 
@@ -194,12 +170,7 @@ class _Process:
 
 
 class _Shell:
-    async def handle_mqtt(
-        self,
-        _parts: list[str],
-        _payload: bytes,
-        _inbound: _DummyMessage,
-    ) -> bool:
+    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
         return True
 
 
@@ -213,12 +184,7 @@ class _System:
     async def handle_set_baudrate_resp(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_mqtt(
-        self,
-        _identifier: str,
-        _remainder: list[str],
-        _inbound: _DummyMessage,
-    ) -> bool:
+    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
         return True
 
 

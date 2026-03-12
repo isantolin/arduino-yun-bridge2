@@ -6,6 +6,8 @@ Avoid hardcoding topic strings elsewhere.
 
 from __future__ import annotations
 
+from typing import Any
+
 import msgspec
 
 from .protocol import Topic
@@ -22,6 +24,24 @@ class TopicRoute(msgspec.Struct, frozen=True):
     @property
     def identifier(self) -> str:
         return self.segments[0] if self.segments else ""
+
+    @property
+    def action(self) -> Any:
+        """Infer the service action from the first segment if applicable.
+        Ignore segments that indicate a response flavor.
+        """
+        from .protocol import FileAction, ShellAction, SystemAction
+
+        if not self.segments or "response" in self.segments or "value" in self.segments:
+            return None
+        val = self.segments[0]
+        # Attempt to map to known action enums
+        for enum_cls in (FileAction, ShellAction, SystemAction):
+            try:
+                return enum_cls(val)
+            except ValueError:
+                continue
+        return val
 
     @property
     def remainder(self) -> tuple[str, ...]:

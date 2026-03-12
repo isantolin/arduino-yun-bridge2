@@ -188,7 +188,6 @@ class MqttTransport:
                 retain=message.retain,
                 properties=props,
             )
-            self.state.record_mqtt_publish()
 
         try:
             while True:
@@ -197,8 +196,11 @@ class MqttTransport:
 
                 # Wait for next message
                 message = await self.state.mqtt_publish_queue.get()
+                published = False
                 try:
                     await _reliable_publish(message)
+                    self.state.record_mqtt_publish()
+                    published = True
                 except aiomqtt.MqttError as exc:
                     logger.warning("MQTT persistent publish failure: %s", exc)
                     # Spool if tenacity stops or fatal
@@ -209,6 +211,12 @@ class MqttTransport:
                     logger.error("Unexpected error in MQTT publisher: %s", exc)
                     await self.state.stash_mqtt_message(message)
                 finally:
+                    if not published:
+                        # [SIL-2] Fail-Safe: Re-enqueue if not sent (e.g. on cancellation)
+                        try:
+                            self.state.mqtt_publish_queue.put_nowait(message)
+                        except asyncio.QueueFull:
+                            await self.state.stash_mqtt_message(message)
                     self.state.mqtt_publish_queue.task_done()
 
         except asyncio.CancelledError:

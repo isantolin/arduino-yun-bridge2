@@ -103,8 +103,9 @@ def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
     }
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
-    # Strict validation should now raise ValueError during load_runtime_config in test mode
-    with pytest.raises(ValueError, match="FLASH PROTECTION"):
+    # Strict validation should now raise msgspec.ValidationError during load_runtime_config in test mode
+    import msgspec
+    with pytest.raises(msgspec.ValidationError, match="FLASH PROTECTION"):
         settings.load_runtime_config()
 
 

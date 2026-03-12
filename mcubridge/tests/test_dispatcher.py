@@ -40,12 +40,10 @@ class _FileComponent:
 
     async def handle_mqtt(
         self,
-        identifier: str,
-        remainder: list[str],
-        payload: bytes,
-        inbound: Any,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
-        self._calls.add("file.handle_mqtt", identifier, tuple(remainder), payload, inbound)
+        self._calls.add("file.handle_mqtt", args, kwargs)
 
 
 class _ConsoleComponent:

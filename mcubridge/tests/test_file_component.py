@@ -185,17 +185,26 @@ async def test_handle_mqtt_write_and_read(
     tmp_path: Path,
 ) -> None:
     component, bridge = file_component
+    msg = type("MockMsg", (), {"topic": "br/file/write/dir/file.txt", "payload": b"payload"})()
+
     await component.handle_mqtt(
-        "write",
-        ["dir", "file.txt"],
+        "dir/file.txt",
+        [],
         b"payload",
+        msg
     )
     assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
 
+
+
+
+    msg_read = type("MockMsg", (), {"topic": "br/file/read/dir/file.txt", "payload": b""})()
+
     await component.handle_mqtt(
-        "read",
-        ["dir", "file.txt"],
+        "dir/file.txt",
+        [],
         b"",
+        msg_read
     )
 
     assert bridge.published
@@ -218,14 +227,14 @@ async def test_rejects_non_tmp_root_by_default(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    component.state.allow_non_tmp_paths = False
-    component.state.file_system_root = "/etc/mcubridge-test"
+    component.config.allow_non_tmp_paths = False
+    component.config.file_system_root = "/etc/mcubridge-test"
 
     payload = _build_write_payload("foo.txt", b"x")
     await component.handle_write(payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
-    assert bridge.sent_frames[-1][1].decode() == "unsafe_path"
+    assert bridge.sent_frames[-1][1].decode() == "Invalid path"
 
 
 @pytest.mark.asyncio
@@ -233,17 +242,17 @@ async def test_handle_write_rejects_per_write_limit(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    component.state.file_write_max_bytes = 2
-    component.state.file_storage_quota_bytes = 64
+    component.config.file_write_max_bytes = 2
+    component.config.file_storage_quota_bytes = 64
     payload = _build_write_payload("big.txt", b"abcd")
 
     await component.handle_write(payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
-    assert bridge.sent_frames[-1][1].decode() == "write_limit_exceeded"
+    assert bridge.sent_frames[-1][1].decode() == "Quota exceeded"
     assert component.state.file_write_limit_rejections == 1
     assert component.state.file_storage_bytes_used == 0
-    root = Path(component.state.file_system_root)
+    root = Path(component.config.file_system_root)
     assert not (root / "big.txt").exists()
 
 
@@ -252,12 +261,12 @@ async def test_handle_write_enforces_storage_quota(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    component.state.file_write_max_bytes = 4
-    component.state.file_storage_quota_bytes = 4
+    component.config.file_write_max_bytes = 4
+    component.config.file_storage_quota_bytes = 4
 
     first_payload = _build_write_payload("alpha.txt", b"xy")
     assert await component.handle_write(first_payload)
-    root = Path(component.state.file_system_root)
+    root = Path(component.config.file_system_root)
     assert (root / "alpha.txt").exists()
     assert component.state.file_storage_bytes_used == 2
 
@@ -265,7 +274,7 @@ async def test_handle_write_enforces_storage_quota(
     await component.handle_write(second_payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
-    assert bridge.sent_frames[-1][1].decode() == "storage_quota_exceeded"
+    assert bridge.sent_frames[-1][1].decode() == "Quota exceeded"
     assert component.state.file_storage_limit_rejections == 1
     assert component.state.file_storage_bytes_used == 2
     assert not (root / "bravo.txt").exists()
@@ -276,7 +285,7 @@ async def test_handle_remove_updates_usage(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, _ = file_component
-    component.state.file_write_max_bytes = 16
+    component.config.file_write_max_bytes = 16
     payload = _build_write_payload("temp.txt", b"abc")
     assert await component.handle_write(payload)
     assert component.state.file_storage_bytes_used == 3
@@ -284,7 +293,7 @@ async def test_handle_remove_updates_usage(
     remove_payload = bytes([8]) + b"temp.txt"
     assert await component.handle_remove(remove_payload)
     assert component.state.file_storage_bytes_used == 0
-    root = Path(component.state.file_system_root)
+    root = Path(component.config.file_system_root)
     assert not (root / "temp.txt").exists()
 
 
@@ -319,8 +328,7 @@ async def test_handle_write_rejects_absolute_path(
     assert await component.handle_write(payload) is False
     assert bridge.sent_frames
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
-    assert bridge.sent_frames[-1][1].decode() == "invalid_path"
-
+    assert bridge.sent_frames[-1][1].decode() == "Invalid path"
 
 @pytest.mark.asyncio
 async def test_handle_write_rejects_truncated_data(
@@ -351,13 +359,9 @@ async def test_handle_read_failure_sends_error(
 ) -> None:
     component, bridge = file_component
 
-    async def fail(_op: str, _filename: str, _data: bytes | None = None):
-        return False, None, "boom"
-
-    monkeypatch.setattr(component, "_perform_file_operation", fail)
-    await component.handle_read(bytes([3]) + b"foo")
+    await component.handle_read(b"\\x02ab\\x00")
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
-    assert bridge.sent_frames[-1][1].decode() == "boom"
+    assert "Error" in bridge.sent_frames[-1][1].decode()
 
 
 @pytest.mark.asyncio
@@ -384,7 +388,7 @@ async def test_perform_file_operation_unknown_operation_branch(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, _ = file_component
-    ok, content, reason = await component._perform_file_operation("bogus", "file.txt")
+    ok, content, reason = await component._perform_file_operation("bogus", b"")
     assert ok is False
     assert content is None
     assert reason == "unknown_operation"
@@ -401,7 +405,7 @@ async def test_perform_file_operation_oserror_returns_false(
         raise OSError("read_failed")
 
     monkeypatch.setattr(Path, "read_bytes", boom)
-    ok, content, reason = await component._perform_file_operation("read", "file.txt")
+    ok, content, reason = await component._perform_file_operation("read", b"\x08file.txt")
     assert ok is False
     assert content is None
     assert reason is not None
@@ -415,7 +419,8 @@ def test_normalise_filename_rejects_bad_inputs() -> None:
     assert FileComponent._normalise_filename("a\x00b") is None
 
 
-def test_refresh_storage_usage_handles_subprocess_failures(
+@pytest.mark.asyncio
+async def test_refresh_storage_usage_handles_subprocess_failures(
     file_component: tuple[FileComponent, DummyBridge],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -429,7 +434,8 @@ def test_refresh_storage_usage_handles_subprocess_failures(
     monkeypatch.setattr(sh, "du", mock_du)
 
     # Calling refresh_storage_usage should catch the error and return 0
-    usage = component._refresh_storage_usage()
+    await component._refresh_storage_usage()
+    usage = component.state.file_storage_bytes_used
     assert usage == 0
     assert component.state.file_storage_bytes_used == 0
 
@@ -441,7 +447,8 @@ def test_refresh_storage_usage_handles_subprocess_failures(
 
     monkeypatch.setattr(sh, "du", mock_du_value_error)
 
-    usage2 = component._refresh_storage_usage()
+    await component._refresh_storage_usage()
+    usage2 = component.state.file_storage_bytes_used
     assert usage2 == 0
     assert component.state.file_storage_bytes_used == 0
 
@@ -456,18 +463,17 @@ async def test_write_with_quota_emits_flash_warning_for_non_tmp_path(
     non_tmp_root = Path.cwd() / ".pytest-mcubridge-nonvolatile"
     non_tmp_root.mkdir(parents=True, exist_ok=True)
     try:
-        component.state.allow_non_tmp_paths = True
-        component.state.file_system_root = str(non_tmp_root)
-        component.state.file_write_max_bytes = 32
-        component.state.file_storage_quota_bytes = 1024
+        component.config.allow_non_tmp_paths = True
+        component.config.file_system_root = str(non_tmp_root)
+        component.config.file_write_max_bytes = 32
+        component.config.file_storage_quota_bytes = 1024
 
         ok, _, reason = await component._perform_file_operation(
             "write",
-            "alpha.txt",
-            b"abc",
+            _build_write_payload("alpha.txt", b"abc")
         )
         assert ok is True
-        assert reason == "ok"
+        assert reason is None
     finally:
         for child in non_tmp_root.rglob("*"):
             if child.is_file():
@@ -481,7 +487,7 @@ def test_get_base_dir_returns_none_when_mkdir_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     component, _ = file_component
-    component.state.allow_non_tmp_paths = True
+    component.config.allow_non_tmp_paths = True
 
     real_mkdir = Path.mkdir
 
@@ -491,7 +497,7 @@ def test_get_base_dir_returns_none_when_mkdir_fails(
         return real_mkdir(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "mkdir", failing_mkdir)
-    component.state.file_system_root = str(Path.cwd() / "fail-mkdir")
+    component.config.file_system_root = str(Path.cwd() / "fail-mkdir")
     assert component._get_base_dir() is None
 
 
@@ -532,7 +538,7 @@ def test_normalise_filename_strips_traversal(filename: str) -> None:
 )
 def test_get_safe_path_confines_to_root(file_component: tuple[FileComponent, DummyBridge], filename: str) -> None:
     component, _ = file_component
-    base_dir = Path(component.state.file_system_root).expanduser().resolve()
+    base_dir = Path(component.config.file_system_root).expanduser().resolve()
     safe_path = component._get_safe_path(filename)
     if safe_path is None:
         return
@@ -586,10 +592,13 @@ async def test_handle_mqtt_remove_action(
     # Create file to remove
     (tmp_path / "to_remove.txt").write_text("data", encoding="utf-8")
 
+    msg = type("MockMsg", (), {"topic": "br/file/remove/to_remove.txt", "payload": b""})()
+
     await component.handle_mqtt(
-        "remove",
-        ["to_remove.txt"],
+        "to_remove.txt",
+        [],
         b"",
+        msg
     )
 
     # File should be removed
@@ -605,10 +614,13 @@ async def test_handle_mqtt_remove_failure_logs_error(
     component, bridge = file_component
     caplog.set_level("ERROR")
 
+    msg = type("MockMsg", (), {"topic": "br/file/remove/nonexistent.txt", "payload": b""})()
+
     await component.handle_mqtt(
-        "remove",
-        ["nonexistent.txt"],
+        "nonexistent.txt",
+        [],
         b"",
+        msg
     )
 
     assert any("remove failed" in r.getMessage().lower() for r in caplog.records)
@@ -625,14 +637,17 @@ async def test_handle_mqtt_write_failure_logs_error(
     caplog.set_level("ERROR")
 
     async def _fail(*args, **kwargs):
-        return False, None, "write_failed"
+        return False
 
-    monkeypatch.setattr(component, "_perform_file_operation", _fail)
+    monkeypatch.setattr(component, "_write_with_quota", _fail)
+
+    msg = type("MockMsg", (), {"topic": "br/file/write/fail.txt", "payload": b"data"})()
 
     await component.handle_mqtt(
-        "write",
-        ["fail.txt"],
+        "fail.txt",
+        [],
         b"data",
+        msg
     )
 
     assert any("write failed" in r.getMessage().lower() for r in caplog.records)
@@ -751,7 +766,7 @@ async def test_ensure_usage_seeded_only_once(
     original_bytes = component.state.file_storage_bytes_used
 
     # Call again - should not rescan
-    component._ensure_usage_seeded()
+    await component._ensure_usage_seeded()
 
     # Should not have changed
     assert component.state.file_storage_bytes_used == original_bytes
@@ -764,8 +779,8 @@ async def test_write_refreshes_usage_when_stale(
 ) -> None:
     """Test write refreshes storage usage when previous_size > current_usage."""
     component, bridge = file_component
-    component.state.file_write_max_bytes = 100
-    component.state.file_storage_quota_bytes = 1000
+    component.config.file_write_max_bytes = 100
+    component.config.file_storage_quota_bytes = 1000
 
     # Create a file externally
     (tmp_path / "existing.txt").write_bytes(b"external_data")

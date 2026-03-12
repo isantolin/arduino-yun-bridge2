@@ -93,6 +93,8 @@ jobs:
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
+      - name: Install Luacheck
+        run: sudo apt-get install -y lua-check
       - run: tox -e lua
 
   arduino-examples:

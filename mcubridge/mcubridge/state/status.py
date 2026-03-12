@@ -37,7 +37,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
     async def _write_loop() -> None:
         try:
             # [SIL-2] Resource Monitoring Delegation to psutil
-            child_stats = {}
+            child_stats: dict[str, ProcessStats] = {}
             try:
                 for child in current_process.children(recursive=True):
                     try:

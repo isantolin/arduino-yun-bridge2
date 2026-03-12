@@ -135,9 +135,7 @@ class BridgeDispatcher:
         async def file_mqtt_handler(r: TopicRoute, m: Message) -> bool:
             if len(r.segments) < 2:
                 return False
-            return await self._guard_and_dispatch(
-                r, m, lambda p, i: file.handle_mqtt(r.identifier, list(r.remainder), p, i)
-            )
+            return await self._guard_and_dispatch(r, m, lambda _p, _i: file.handle_mqtt(r, m))
 
         self.mqtt_router.register(Topic.FILE, file_mqtt_handler)
 

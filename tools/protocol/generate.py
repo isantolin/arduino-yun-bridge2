@@ -30,21 +30,13 @@ if MISSING_DEPS:
     sys.exit(1)
 # ═════════════════════════════════════════════════════════════════════════════
 
-from dataclasses import dataclass  # noqa: E402
 from pathlib import Path  # noqa: E402
-from typing import Annotated, Any, Optional  # noqa: E402
+from typing import Annotated, Optional  # noqa: E402
 
-import msgspec  # noqa: E402
 import typer  # noqa: E402
 from jinja2 import Environment, FileSystemLoader  # noqa: E402
 
-from mcubridge.protocol.structures import (
-    CommandDef,
-    PayloadDef,
-    ProtocolSpec,
-    StatusDef,
-    StructField,
-)
+from mcubridge.protocol.structures import ProtocolSpec  # noqa: E402
 
 app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
 

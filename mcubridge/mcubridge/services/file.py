@@ -6,14 +6,14 @@ import asyncio
 import logging
 import os
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 
 import zict
 from aiomqtt.message import Message
 from construct import ConstructError
 
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command, FileAction, Status
+from mcubridge.protocol.protocol import Command, FileAction
 
 from ..config.const import (
     FILE_LARGE_WARNING_BYTES,
@@ -131,19 +131,20 @@ class FileComponent(BaseComponent):
             return False
 
         path = self._resolve_path(path_str)
-        payload = bytes(inbound.payload) if inbound.payload else b""
+        # [SIL-2] Explicit coercion to bytes for deterministic processing
+        payload: bytes = bytes(cast(Any, inbound.payload))
 
         # Quota check
         if not await self._write_with_quota(path, payload):
             await self.ctx.publish(
-                str(inbound.topic),
-                encode_status_reason(Status.ERROR, "Quota exceeded or write failed"),
+                topic=str(inbound.topic),
+                payload=encode_status_reason("Quota exceeded or write failed"),
                 reply_to=inbound,
             )
             return True
 
         self._metadata_cache.pop(str(path), None)
-        await self.ctx.publish(str(inbound.topic), b"OK", reply_to=inbound)
+        await self.ctx.publish(topic=str(inbound.topic), payload=b"OK", reply_to=inbound)
         return True
 
     async def _handle_mqtt_read(self, route: Any, inbound: Message) -> bool:
@@ -154,15 +155,15 @@ class FileComponent(BaseComponent):
         path = self._resolve_path(path_str)
         if not path.is_file():
             await self.ctx.publish(
-                str(inbound.topic),
-                encode_status_reason(Status.ERROR, "File not found"),
+                topic=str(inbound.topic),
+                payload=encode_status_reason("File not found"),
                 reply_to=inbound,
             )
             return True
 
         data = await asyncio.to_thread(path.read_bytes)
         self._metadata_cache[str(path)] = {"size": len(data), "mtime": path.stat().st_mtime}
-        await self.ctx.publish(str(inbound.topic), data, reply_to=inbound)
+        await self.ctx.publish(topic=str(inbound.topic), payload=data, reply_to=inbound)
         return True
 
     async def _handle_mqtt_remove(self, route: Any, inbound: Message) -> bool:
@@ -173,11 +174,11 @@ class FileComponent(BaseComponent):
         path = self._resolve_path(path_str)
         if await self._remove_with_tracking(path):
             self._metadata_cache.pop(str(path), None)
-            await self.ctx.publish(str(inbound.topic), b"OK", reply_to=inbound)
+            await self.ctx.publish(topic=str(inbound.topic), payload=b"OK", reply_to=inbound)
         else:
             await self.ctx.publish(
-                str(inbound.topic),
-                encode_status_reason(Status.ERROR, "File not found or protected"),
+                topic=str(inbound.topic),
+                payload=encode_status_reason("File not found or protected"),
                 reply_to=inbound,
             )
         return True

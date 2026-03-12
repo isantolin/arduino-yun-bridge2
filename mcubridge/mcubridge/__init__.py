@@ -25,3 +25,4 @@ def _check_dependencies():
     except ImportError:
         # Build-time tools or environments without MQTT can still use core packages.
         pass
+_check_dependencies()

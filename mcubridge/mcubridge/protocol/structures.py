@@ -149,7 +149,7 @@ class ProtocolSpec(msgspec.Struct):
         cmds = [msgspec.convert(c, CommandDef) for c in raw.commands]
         statuses = [msgspec.convert(s, StatusDef) for s in raw.statuses]
 
-        pls = {}
+        pls: dict[str, PayloadDef] = {}
         for name, fields_dict in raw.payloads.items():
             fields = [StructField(name=k, type_code=v) for k, v in fields_dict.items()]
             pls[name] = PayloadDef(name=name, fields=fields)
@@ -1442,7 +1442,9 @@ class BridgeStatus(msgspec.Struct, kw_only=True):
     running_processes: list[str]
     allowed_commands: list[str]
     config_source: str
-    process_stats: dict[str, ProcessStats] = msgspec.field(default_factory=dict)
+    process_stats: dict[str, ProcessStats] = msgspec.field(
+        default_factory=lambda: cast(dict[str, ProcessStats], {})
+    )
 
     # Snapshots
     bridge: BridgeSnapshot

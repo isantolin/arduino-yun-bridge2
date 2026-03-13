@@ -1,10 +1,12 @@
 # Roadmap
 
-> **Current Release**: v2.5.1 (OpenWrt 25.12.0 final compatible)
+> **Current Release**: v2.8.0 (OpenWrt 25.12.0 final compatible)
 
 ## Completed (Q1 2026)
 
-### 1. OpenWrt 25.12 & SIL-2 Modernization
+### 1. OpenWrt 25.12 & SIL-2 Modernization (C++14)
+- **C++14 Migration**: Leveraging modern language features (lambdas, digit separators) for cleaner, safer code.
+- **Strict SIL-2 Compliance**: All C-style casts replaced with `static_cast<void>` and reinforced memory safety.
 - **O(1) C++ Dispatch**: Replaced switch/case with jump tables for deterministic execution.
 - **Python 3.13.9-r2**: Full compatibility and optimization using uvloop and msgspec.
 - **Mutual Auth Handshake**: Robust HKDF-SHA256 based synchronization with anti-replay protection.

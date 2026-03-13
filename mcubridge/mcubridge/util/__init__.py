@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterable
 
-from .hex import format_hex, log_binary_traffic
+from .hex import format_hex, log_binary_traffic, log_hexdump
 
 __all__ = [
     "parse_bool",
@@ -24,18 +23,6 @@ def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
     return [payload[i : i + chunk_size] for i in range(0, len(payload), chunk_size)]
-
-
-def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: bytes) -> None:
-    """Log binary data in hexadecimal format using syslog-friendly output.
-
-    Format: [HEXDUMP] %s: %s
-    """
-    if not logger_instance.isEnabledFor(level):
-        return
-
-    hex_str = data.hex(" ").upper()
-    logger_instance.log(level, "[HEXDUMP] %s: %s", label, hex_str)
 
 
 _TRUE_STRINGS = frozenset({"1", "yes", "on", "true", "enable", "enabled"})

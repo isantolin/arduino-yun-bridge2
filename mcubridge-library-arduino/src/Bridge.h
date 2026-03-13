@@ -438,7 +438,7 @@ class BridgeClass
           if (valid_func(msg.pin)) {
             _sendResponse<TResp>(resp_cmd, read_func(msg.pin, etl::forward<Args>(args)...));
           } else {
-            (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+            static_cast<void>(sendFrame(rpc::StatusCode::STATUS_MALFORMED));
           }
         });
   }
@@ -586,7 +586,7 @@ class BridgeClass
     T resp{etl::forward<Args>(args)...};
     etl::array<uint8_t, T::SIZE> buffer;
     resp.encode(buffer.data());
-    (void)_sendFrame(cmd_raw, etl::span<const uint8_t>(buffer.data(), T::SIZE));
+    static_cast<void>(_sendFrame(cmd_raw, etl::span<const uint8_t>(buffer.data(), T::SIZE)));
   }
 
   void _retransmitLastFrame();

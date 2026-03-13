@@ -26,11 +26,11 @@ void MailboxClass::send(etl::span<const uint8_t> data) {
 }
 
 void MailboxClass::requestRead() {
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
+  static_cast<void>(Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ));
 }
 
 void MailboxClass::requestAvailable() {
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
+  static_cast<void>(Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE));
 }
 
 void MailboxClass::_onIncomingData(etl::span<const uint8_t> data) {

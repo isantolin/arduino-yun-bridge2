@@ -11,8 +11,8 @@ ProcessClass::ProcessClass() { reset(); }
 void ProcessClass::reset() { _pending_process_pids.clear(); }
 
 void ProcessClass::runAsync(etl::string_view command) {
-  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, command,
-                                rpc::MAX_PAYLOAD_SIZE - 1);
+  static_cast<void>(Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, command,
+                                rpc::MAX_PAYLOAD_SIZE - 1));
 }
 
 void ProcessClass::poll(int16_t pid) {
@@ -31,7 +31,7 @@ void ProcessClass::poll(int16_t pid) {
 
 void ProcessClass::kill(int16_t pid) {
   if (pid < 0) return;
-  (void)Bridge.sendValue(rpc::CommandId::CMD_PROCESS_KILL, static_cast<uint16_t>(pid));
+  static_cast<void>(Bridge.sendValue(rpc::CommandId::CMD_PROCESS_KILL, static_cast<uint16_t>(pid)));
 }
 
 bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {

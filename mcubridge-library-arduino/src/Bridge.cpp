@@ -550,7 +550,7 @@ void BridgeClass::_handleGetCapabilities(
 void BridgeClass::_handleSetBaudrate(const bridge::router::CommandContext& ctx) {
   _withPayloadResponse<rpc::payload::SetBaudratePacket>(
       ctx, [&](const rpc::payload::SetBaudratePacket& msg) {
-        (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP);
+        static_cast<void>(sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP));
         flushStream();
         _pending_baudrate = msg.baudrate;
         _timers.start_with_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE,
@@ -610,8 +610,8 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
         etl::copy_n(tag.begin(), kHandshakeTagSize,
                     buffer.begin() + nonce_length);
       }
-      (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP,
-                      etl::span<const uint8_t>(buffer.data(), response_length));
+      static_cast<void>(sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP,
+                      etl::span<const uint8_t>(buffer.data(), response_length)));
       _fsm.handshakeComplete();
       notify_observers(MsgBridgeSynchronized());
     }
@@ -626,7 +626,7 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
       _applyTimingConfig(etl::span<const uint8_t>(
           ctx.frame->payload.data(), ctx.frame->header.payload_length));
     }
-    (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
+    static_cast<void>(sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP));
   });
 }
 
@@ -713,7 +713,7 @@ void BridgeClass::onDataStoreCommand(
           h(key, etl::span<const uint8_t>(msg.value, msg.value_len));
         }
 #endif
-        (void)h;
+        static_cast<void>(h);
       });
 }
 
@@ -747,7 +747,7 @@ void BridgeClass::_handleMailboxReadResp(
 #if BRIDGE_ENABLE_MAILBOX
         Mailbox._onIncomingData(etl::span<const uint8_t>(msg.content, msg.length));
 #endif
-        (void)h;
+        static_cast<void>(h);
       });
 }
 
@@ -815,7 +815,7 @@ void BridgeClass::_handleProcessPollResp(
         h(static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
           etl::span<const uint8_t>(msg.stdout_data, msg.stdout_len),
           etl::span<const uint8_t>(msg.stderr_data, msg.stderr_len));
-        (void)Process._popPendingProcessPid();
+        static_cast<void>(Process._popPendingProcessPid());
       });
 }
 
@@ -823,7 +823,7 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   if (_command_handler.is_valid()) {
     _command_handler(*ctx.frame);
   } else {
-    (void)sendFrame(rpc::StatusCode::STATUS_CMD_UNKNOWN);
+    static_cast<void>(sendFrame(rpc::StatusCode::STATUS_CMD_UNKNOWN));
   }
 }
 
@@ -835,7 +835,7 @@ void BridgeClass::_sendAck(uint16_t command_id) {
 
 void BridgeClass::_doEmitStatus(rpc::StatusCode status_code,
                                 etl::span<const uint8_t> payload) {
-  (void)sendFrame(status_code, payload);
+  static_cast<void>(sendFrame(status_code, payload));
   if (_status_handler.is_valid()) _status_handler(status_code, payload);
 
   // [SIL-2] Notify Observers
@@ -1289,7 +1289,7 @@ void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
 // [SIL-2] ETL Error Handler Implementation
 namespace etl {
 void __attribute__((weak)) handle_error(const etl::exception& e) {
-  (void)e;
+  static_cast<void>(e);
   Bridge.enterSafeState();
 }
 }  // namespace etl

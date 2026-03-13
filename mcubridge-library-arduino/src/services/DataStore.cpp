@@ -13,9 +13,9 @@ void DataStoreClass::reset() {
 }
 
 void DataStoreClass::put(etl::string_view key, etl::string_view value) {
-  (void)Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, key,
+  static_cast<void>(Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, key,
                                 rpc::RPC_MAX_DATASTORE_KEY_LENGTH, value,
-                                rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
+                                rpc::RPC_MAX_DATASTORE_KEY_LENGTH));
 }
 
 void DataStoreClass::requestGet(etl::string_view key) {

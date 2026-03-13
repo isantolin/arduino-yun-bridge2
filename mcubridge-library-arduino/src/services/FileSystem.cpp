@@ -29,13 +29,13 @@ void FileSystemClass::write(etl::string_view filePath,
 }
 
 void FileSystemClass::remove(etl::string_view filePath) {
-  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, filePath,
-                                rpc::RPC_MAX_FILEPATH_LENGTH - 1);
+  static_cast<void>(Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, filePath,
+                                rpc::RPC_MAX_FILEPATH_LENGTH - 1));
 }
 
 void FileSystemClass::read(etl::string_view filePath) {
-  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, filePath,
-                                rpc::RPC_MAX_FILEPATH_LENGTH - 1);
+  static_cast<void>(Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, filePath,
+                                rpc::RPC_MAX_FILEPATH_LENGTH - 1));
 }
 
 #endif

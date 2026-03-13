@@ -917,7 +917,7 @@ bool BridgeClass::sendStringCommand(rpc::CommandId command_id,
     return false;
   }
 
-  if (str.empty()) return true;
+  if (str.empty()) return false;
 
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   rpc::PacketBuilder(payload).add_pascal_string(str);
@@ -934,7 +934,7 @@ bool BridgeClass::sendKeyValCommand(rpc::CommandId command_id,
     return false;
   }
 
-  if (key.empty()) return true;
+  if (key.empty()) return false;
 
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   rpc::PacketBuilder(payload).add_pascal_string(key).add_pascal_string(val);

@@ -68,8 +68,12 @@ TEST_FILES=(
     "${TEST_DIR}/test_extreme_coverage.cpp"
     "${TEST_DIR}/test_extreme_coverage_v2.cpp"
     "${TEST_DIR}/test_arduino_100_coverage.cpp"
+    "${TEST_DIR}/test_arduino_coverage_boost.cpp"
     "${TEST_DIR}/test_coverage_100_final.cpp"
+    "${TEST_DIR}/test_coverage_extra_gaps.cpp"
+    "${TEST_DIR}/test_coverage_final_push.cpp"
     "${TEST_DIR}/test_coverage_gaps.cpp"
+    "${TEST_DIR}/test_coverage_mega.cpp"
 )
 
 COMPILE_FLAGS=(

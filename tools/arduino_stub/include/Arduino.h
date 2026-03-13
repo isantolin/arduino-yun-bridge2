@@ -25,6 +25,7 @@ inline void operator delete(void*, void*) noexcept {}
 #define OUTPUT 1
 #define INPUT_PULLUP 2
 #define LED_BUILTIN 13
+#define NUM_DIGITAL_PINS 30
 
 // Print bases
 #define BIN 2

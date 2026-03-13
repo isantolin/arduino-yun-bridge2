@@ -111,7 +111,7 @@ constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
 #if defined(ARDUINO_ARCH_ESP32) && BRIDGE_ENABLE_WATCHDOG
 #include <esp_task_wdt.h>
 #ifndef BRIDGE_WATCHDOG_TIMEOUT_MS
-#define BRIDGE_WATCHDOG_TIMEOUT_MS 2000
+#define BRIDGE_WATCHDOG_TIMEOUT_MS 2'000
 
 #endif
 

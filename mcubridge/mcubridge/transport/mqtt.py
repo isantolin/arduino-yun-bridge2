@@ -207,7 +207,7 @@ class MqttTransport:
                     await self.state.stash_mqtt_message(message)
                 except asyncio.CancelledError:
                     raise
-                except Exception as exc:
+                except Exception as exc:  # [SIL-2] Last-resort guardian: prevents message loss on unforeseen errors
                     logger.error("Unexpected error in MQTT publisher: %s", exc)
                     await self.state.stash_mqtt_message(message)
                 finally:

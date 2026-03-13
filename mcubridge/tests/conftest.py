@@ -19,8 +19,8 @@ import pytest
 warnings.simplefilter("ignore", ResourceWarning)
 try:
     warnings.filterwarnings("ignore", category=pytest.PytestUnraisableExceptionWarning)
-except Exception:
-    pass
+except AttributeError:
+    pass  # pytest < 7.x lacks PytestUnraisableExceptionWarning
 
 # [TEST FIX] Mock 'uci' module strictly before importing mcubridge.common.
 # This simulates the OpenWrt environment where 'uci' is available.

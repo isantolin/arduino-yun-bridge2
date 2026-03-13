@@ -745,11 +745,9 @@ def test_do_write_file_large_warning(
 
     # Create a file that exceeds the warning threshold
     test_file = tmp_path / "large.bin"
-    # First write some data to get close to the limit
-    test_file.write_bytes(b"x" * (FILE_LARGE_WARNING_BYTES - 10))
 
-    # Now append data to push it over
-    _do_write_file(test_file, b"y" * 20)
+    # _do_write_file uses "wb" (overwrite), so the single payload must exceed the limit
+    _do_write_file(test_file, b"x" * (FILE_LARGE_WARNING_BYTES + 1))
 
     assert any("growing large" in r.getMessage() for r in caplog.records)
 

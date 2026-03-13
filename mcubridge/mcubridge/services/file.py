@@ -7,7 +7,7 @@ import logging
 import os
 import re
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any
 
 import zict
 from aiomqtt.message import Message
@@ -28,6 +28,7 @@ from ..protocol.structures import (
     FileRemovePacket,
     FileWritePacket,
 )
+from ..protocol.topics import TopicRoute
 from ..state.context import RuntimeState
 from ..util import chunk_bytes
 from .base import BaseComponent, BridgeContext
@@ -80,36 +81,13 @@ class FileComponent(BaseComponent):
 
     async def handle_mqtt(
         self,
-        identifier: str | Any,
-        remainder: list[str] | Any = None,
-        payload: bytes | Any = None,
-        inbound: Message | Any = None,
+        route: TopicRoute,
+        msg: Message,
     ) -> bool:
-        """Process MQTT filesystem requests. Supports both new and legacy signatures."""
-        from ..protocol.topics import TopicRoute
-
-        # Detect signature
-        if isinstance(identifier, TopicRoute):
-            # New signature: (route, message)
-            route = identifier
-            msg = cast(Message, remainder)
-            action = route.action
-            target = "/".join(route.remainder)
-            pl = bytes(msg.payload)
-        else:
-            # Legacy signature: (identifier, remainder, payload, inbound)
-            msg = inbound
-            if msg is None or not hasattr(msg, "topic"):
-                return False
-            from ..protocol.topics import parse_topic
-
-            route_info = parse_topic(self.config.mqtt_topic, str(msg.topic))
-            if not route_info:
-                return False
-            action = route_info.action
-            # Fallback to identifier if remainder is empty (legacy tests)
-            target = "/".join(route_info.remainder) or str(identifier)
-            pl = cast(bytes, payload) if payload is not None else b""
+        """Process MQTT filesystem requests."""
+        action = route.action
+        target = "/".join(route.remainder)
+        pl = bytes(msg.payload)
 
         if not action or not target:
             return False

@@ -30,13 +30,8 @@ class DatastoreComponent(BaseComponent):
 
     async def handle_put(self, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
-        try:
-            packet = DatastorePutPacket.decode(payload, Command.CMD_DATASTORE_PUT)
-        except (ConstructError, ValueError):
-            logger.warning(
-                "Malformed DATASTORE_PUT payload: %s",
-                payload.hex(),
-            )
+        packet = self._decode_payload(DatastorePutPacket, payload, Command.CMD_DATASTORE_PUT)
+        if packet is None:
             return False
 
         key = packet.key

@@ -73,10 +73,14 @@ async def test_file_handle_remove_malformed() -> None:
 
 @pytest.mark.asyncio
 async def test_file_handle_mqtt_unknown() -> None:
+    from mcubridge.protocol.topics import Topic, TopicRoute
+
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     fc = FileComponent(config, state, MagicMock())
-    await fc.handle_mqtt("unknown", ["path"], b"")
+    route = TopicRoute(raw="br/file/unknown/path", prefix="br", topic=Topic.FILE, segments=("unknown", "path"))
+    msg = type("MockMsg", (), {"topic": "br/file/unknown/path", "payload": b""})()
+    await fc.handle_mqtt(route, msg)
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.base import BridgeContext
@@ -186,26 +187,24 @@ async def test_handle_mqtt_write_and_read(
 ) -> None:
     component, bridge = file_component
     msg = type("MockMsg", (), {"topic": "br/file/write/dir/file.txt", "payload": b"payload"})()
-
-    await component.handle_mqtt(
-        "dir/file.txt",
-        [],
-        b"payload",
-        msg
+    route = TopicRoute(
+        raw="br/file/write/dir/file.txt", prefix="br",
+        topic=Topic.FILE, segments=("write", "dir", "file.txt"),
     )
+
+    await component.handle_mqtt(route, msg)
     assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
 
 
 
 
     msg_read = type("MockMsg", (), {"topic": "br/file/read/dir/file.txt", "payload": b""})()
-
-    await component.handle_mqtt(
-        "dir/file.txt",
-        [],
-        b"",
-        msg_read
+    route_read = TopicRoute(
+        raw="br/file/read/dir/file.txt", prefix="br",
+        topic=Topic.FILE, segments=("read", "dir", "file.txt"),
     )
+
+    await component.handle_mqtt(route_read, msg_read)
 
     assert bridge.published
     assert bridge.published[-1].payload == b"payload"
@@ -369,7 +368,9 @@ async def test_handle_mqtt_missing_filename_is_ignored(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    await component.handle_mqtt("read", [], b"")
+    route = TopicRoute(raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",))
+    msg = type("MockMsg", (), {"topic": "br/file/read", "payload": b""})()
+    await component.handle_mqtt(route, msg)
     assert bridge.published == []
 
 
@@ -378,9 +379,10 @@ async def test_handle_mqtt_unknown_action_is_ignored(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    await component.handle_mqtt("unknown", ["file.txt"], b"")
+    route = TopicRoute(raw="br/file/unknown/file.txt", prefix="br", topic=Topic.FILE, segments=("unknown", "file.txt"))
+    msg = type("MockMsg", (), {"topic": "br/file/unknown/file.txt", "payload": b""})()
+    await component.handle_mqtt(route, msg)
     assert bridge.published == []
-    pass  # Relaxed for refactor
 
 
 @pytest.mark.asyncio
@@ -593,13 +595,12 @@ async def test_handle_mqtt_remove_action(
     (tmp_path / "to_remove.txt").write_text("data", encoding="utf-8")
 
     msg = type("MockMsg", (), {"topic": "br/file/remove/to_remove.txt", "payload": b""})()
-
-    await component.handle_mqtt(
-        "to_remove.txt",
-        [],
-        b"",
-        msg
+    route = TopicRoute(
+        raw="br/file/remove/to_remove.txt", prefix="br",
+        topic=Topic.FILE, segments=("remove", "to_remove.txt"),
     )
+
+    await component.handle_mqtt(route, msg)
 
     # File should be removed
     assert not (tmp_path / "to_remove.txt").exists()
@@ -615,13 +616,12 @@ async def test_handle_mqtt_remove_failure_logs_error(
     caplog.set_level("ERROR")
 
     msg = type("MockMsg", (), {"topic": "br/file/remove/nonexistent.txt", "payload": b""})()
-
-    await component.handle_mqtt(
-        "nonexistent.txt",
-        [],
-        b"",
-        msg
+    route = TopicRoute(
+        raw="br/file/remove/nonexistent.txt", prefix="br",
+        topic=Topic.FILE, segments=("remove", "nonexistent.txt"),
     )
+
+    await component.handle_mqtt(route, msg)
 
     assert any("remove failed" in r.getMessage().lower() for r in caplog.records)
 
@@ -642,13 +642,9 @@ async def test_handle_mqtt_write_failure_logs_error(
     monkeypatch.setattr(component, "_write_with_quota", _fail)
 
     msg = type("MockMsg", (), {"topic": "br/file/write/fail.txt", "payload": b"data"})()
+    route = TopicRoute(raw="br/file/write/fail.txt", prefix="br", topic=Topic.FILE, segments=("write", "fail.txt"))
 
-    await component.handle_mqtt(
-        "fail.txt",
-        [],
-        b"data",
-        msg
-    )
+    await component.handle_mqtt(route, msg)
 
     assert any("write failed" in r.getMessage().lower() for r in caplog.records)
 
@@ -801,11 +797,12 @@ async def test_handle_mqtt_read_failure(
     """Test handle_mqtt read action handles failure."""
     component, bridge = file_component
 
-    await component.handle_mqtt(
-        "read",
-        ["nonexistent.txt"],
-        b"",
+    msg = type("MockMsg", (), {"topic": "br/file/read/nonexistent.txt", "payload": b""})()
+    route = TopicRoute(
+        raw="br/file/read/nonexistent.txt", prefix="br",
+        topic=Topic.FILE, segments=("read", "nonexistent.txt"),
     )
+    await component.handle_mqtt(route, msg)
 
     # Should not publish since file doesn't exist
     # (or publishes error)

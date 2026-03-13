@@ -24,28 +24,8 @@ from __future__ import annotations
 
 from ssl import TLSVersion
 
-from ..protocol import protocol
-
 # ==============================================================================
-# SECTION 1: STATUS CODES (Application Logic)
-# ==============================================================================
-
-# -- Status Codes --
-SERIAL_FAILURE_STATUS_CODES: frozenset[int] = frozenset(
-    {
-        protocol.Status.ERROR.value,
-        protocol.Status.CMD_UNKNOWN.value,
-        protocol.Status.MALFORMED.value,
-        protocol.Status.CRC_MISMATCH.value,
-        protocol.Status.TIMEOUT.value,
-        protocol.Status.NOT_IMPLEMENTED.value,
-    }
-)
-SERIAL_SUCCESS_STATUS_CODES: frozenset[int] = frozenset({protocol.Status.OK.value})
-
-
-# ==============================================================================
-# SECTION 2: APPLICATION DEFAULTS
+# SECTION 1: APPLICATION DEFAULTS
 # ==============================================================================
 # These values define the default behavior of the Python daemon.
 # They can usually be overridden by UCI configuration or Environment Variables.
@@ -154,6 +134,24 @@ SUPERVISOR_MIN_RESTART_WINDOW: float = 1.0
 # -- Feature Flags --
 DEFAULT_MQTT_TLS_INSECURE: bool = False
 DEFAULT_ALLOW_NON_TMP_PATHS: bool = False
+
+# ==============================================================================
+# STATUS CODES (Application Logic) — loaded after defaults to avoid circular
+# imports with mcubridge.protocol.structures.RuntimeConfig.
+# ==============================================================================
+from ..protocol import protocol  # noqa: E402  # pylint: disable=wrong-import-position
+
+SERIAL_FAILURE_STATUS_CODES: frozenset[int] = frozenset(
+    {
+        protocol.Status.ERROR.value,
+        protocol.Status.CMD_UNKNOWN.value,
+        protocol.Status.MALFORMED.value,
+        protocol.Status.CRC_MISMATCH.value,
+        protocol.Status.TIMEOUT.value,
+        protocol.Status.NOT_IMPLEMENTED.value,
+    }
+)
+SERIAL_SUCCESS_STATUS_CODES: frozenset[int] = frozenset({protocol.Status.OK.value})
 
 
 __all__ = [

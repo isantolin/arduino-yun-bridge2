@@ -231,3 +231,24 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
   }
   return false;
 }
+
+// ---------------------------------------------------------------------------
+// Canonical bridge reset helper – available when BRIDGE_ENABLE_TEST_INTERFACE
+// is defined (all test files except test_protocol.cpp).
+// ---------------------------------------------------------------------------
+
+#ifdef BRIDGE_ENABLE_TEST_INTERFACE
+#include "BridgeTestInterface.h"
+
+static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
+                                     unsigned long baudrate = 0) {
+  bridge.~BridgeClass();
+  new (&bridge) BridgeClass(stream);
+  if (baudrate) {
+    bridge.begin(baudrate);
+  } else {
+    bridge.begin();
+  }
+  bridge::test::TestAccessor::create(bridge).setIdle();
+}
+#endif

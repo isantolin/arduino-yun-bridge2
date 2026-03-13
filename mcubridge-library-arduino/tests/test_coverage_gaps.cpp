@@ -43,11 +43,7 @@ ProcessClass Process;
 namespace {
 
 void reset_env(BiStream& stream) {
-  Bridge.~BridgeClass();
-  new (&Bridge) BridgeClass(stream);
-  Bridge.begin();
-  auto ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setIdle();
+  reset_bridge_core(Bridge, stream);
   Console.begin();
   DataStore.reset();
   Process.reset();

@@ -14,50 +14,15 @@
 #define BRIDGE_ENABLE_PROCESS 0
 
 #include "Bridge.h"
+#include "host_serial_stream.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 
 using namespace rpc;
 
-/**
- * @brief Real-time Stream implementation for Linux Host.
- * Maps Arduino Serial calls to Linux stdin/stdout.
- */
-class HostSerialStream : public Stream {
- public:
-  size_t write(uint8_t c) override {
-    size_t n = ::write(STDOUT_FILENO, &c, 1);
-    fsync(STDOUT_FILENO);
-    return n;
-  }
-
-  size_t write(const uint8_t* buffer, size_t size) override {
-    size_t n = ::write(STDOUT_FILENO, buffer, size);
-    fsync(STDOUT_FILENO);
-    return n;
-  }
-
-  int available() override {
-    struct pollfd fds;
-    fds.fd = STDIN_FILENO;
-    fds.events = POLLIN;
-    int ret = poll(&fds, 1, 0);
-    return (ret > 0 && (fds.revents & POLLIN)) ? 1 : 0;
-  }
-
-  int read() override {
-    uint8_t c;
-    if (::read(STDIN_FILENO, &c, 1) == 1) return c;
-    return -1;
-  }
-
-  int peek() override { return -1; }
-  void flush() override { fsync(STDOUT_FILENO); }
-};
-
 // Global instances for the Bridge
 Stream* g_arduino_stream_delegate = nullptr;
-HostSerialStream HostSerial;
+HostSerialStream<false> HostSerial;
 HardwareSerial Serial;
 HardwareSerial Serial1;
 

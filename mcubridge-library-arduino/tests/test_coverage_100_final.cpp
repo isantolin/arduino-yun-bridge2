@@ -41,10 +41,7 @@ HardwareSerial Serial;
 
 namespace {
 void setup_env(TxCaptureStream& stream) {
-  Bridge.~BridgeClass();
-  new (&Bridge) BridgeClass(stream);
-  Bridge.begin();
-  bridge::test::TestAccessor::create(Bridge).setIdle();
+  reset_bridge_core(Bridge, stream);
 }
 
 void test_fsm_gaps() {

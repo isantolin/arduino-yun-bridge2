@@ -38,11 +38,8 @@ namespace {
 using bridge::test::TestAccessor;
 
 static void reset_bridge_with_stream(BiStream& stream) {
-  Bridge.~BridgeClass();
-  new (&Bridge) BridgeClass(stream);
-  Bridge.begin();
+  reset_bridge_core(Bridge, stream);
   Console.begin();
-  TestAccessor::create(Bridge).setIdle();
 }
 
 static void restore_bridge_to_serial() {

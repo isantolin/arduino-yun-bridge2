@@ -24,13 +24,7 @@ ProcessClass Process;
 namespace {
 
 void setup_test_env(TxCaptureStream& stream) {
-  Bridge.~BridgeClass();
-  new (&Bridge) BridgeClass(stream);
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-
-  // Manually force sync state to enable command processing
-  auto ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setIdle();
+  reset_bridge_core(Bridge, stream, rpc::RPC_DEFAULT_BAUDRATE);
   Console.begin();
 }
 

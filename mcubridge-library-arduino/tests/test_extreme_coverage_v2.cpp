@@ -37,11 +37,7 @@ ProcessClass Process;
 namespace {
 
 void setup_env(BiStream& stream) {
-  Bridge.~BridgeClass();
-  new (&Bridge) BridgeClass(stream);
-  Bridge.begin(115200);
-  auto ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setIdle();
+  reset_bridge_core(Bridge, stream, 115200);
 }
 
 // --- COBERTURA BRIDGE.CPP ---

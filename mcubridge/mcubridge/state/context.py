@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
+import functools
 import logging
 import time
 from collections.abc import Mapping
@@ -88,6 +89,7 @@ PROCESS_STATE_FINISHED = "FINISHED"
 PROCESS_STATE_ZOMBIE = "ZOMBIE"
 
 
+@functools.lru_cache(maxsize=256)
 def resolve_command_id(command_id: int) -> str:
     """Resolve command/status ID to human-readable name."""
     try:

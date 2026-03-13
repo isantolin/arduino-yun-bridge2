@@ -146,6 +146,7 @@ class SerialTransport:
             lambda e: not isinstance(e, asyncio.CancelledError)
             and "SerialHandshakeFatal" not in type(e).__name__
         ),
+        before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
     )
     async def _retryable_run(self, loop: asyncio.AbstractEventLoop) -> None:
         """Single connection attempt."""

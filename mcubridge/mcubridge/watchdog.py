@@ -118,6 +118,7 @@ class WatchdogKeepalive:
             wait=tenacity.wait_fixed(self._interval),
             stop=tenacity.stop_never,
             retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
+            before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
         )
         async def _kick_loop() -> None:
             self.kick()

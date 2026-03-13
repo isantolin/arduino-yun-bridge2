@@ -218,6 +218,7 @@ async def publish_bridge_snapshots(
                 wait=tenacity.wait_fixed(summary_seconds),
                 stop=tenacity.stop_never,
                 retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
+                before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
             )
             async def _summary_loop() -> None:
                 try:
@@ -236,6 +237,7 @@ async def publish_bridge_snapshots(
                 wait=tenacity.wait_fixed(handshake_seconds),
                 stop=tenacity.stop_never,
                 retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
+                before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
             )
             async def _handshake_loop() -> None:
                 try:

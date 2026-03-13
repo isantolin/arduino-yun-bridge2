@@ -69,7 +69,11 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
         
         echo "Building $sketch_name for $FQBN..."
         
-        BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--warnings" "default")
+        # [C++14] Override the platform default -std=gnu++11 with gnu++14.
+        # GCC uses the last -std= flag, so appending via compiler.cpp.extra_flags
+        # effectively selects C++14 for our library code.
+        BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--warnings" "default"
+                     "--build-property" "compiler.cpp.extra_flags=-std=gnu++14")
         
         # Add extra properties
         BUILD_FLAGS+=("${EXTRA_PROPS[@]}")

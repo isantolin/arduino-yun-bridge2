@@ -84,7 +84,6 @@ COMPILE_FLAGS=(
     -DBRIDGE_TEST_NO_GLOBALS=1
     -DUNITY_INCLUDE_DOUBLE
     -I"${SRC_DIR}"
-    -I"${TEST_DIR}/mocks"
     -I"${TEST_DIR}/Unity"
     -I"${STUB_DIR}"
 )

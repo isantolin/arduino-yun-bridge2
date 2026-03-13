@@ -33,7 +33,6 @@ compile_variant() {
         -I"${SRC_DIR}" \
         -I"${TEST_DIR}/mocks" \
         -I"${STUB_DIR}" \
-        -I"${DUMMY_ARDUINO_LIBS}/PacketSerial" \
         "${SRC_DIR}/security/sha256.cpp" \
         "${SRC_DIR}/security/security.cpp" \
         "${SRC_DIR}/protocol/rle.cpp" \

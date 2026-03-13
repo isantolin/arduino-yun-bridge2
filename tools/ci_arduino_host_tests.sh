@@ -87,7 +87,6 @@ COMPILE_FLAGS=(
     -I"${TEST_DIR}/mocks"
     -I"${TEST_DIR}/Unity"
     -I"${STUB_DIR}"
-    -I"${DUMMY_ARDUINO_LIBS}/PacketSerial"
 )
 
 echo "[host-cpp] Compiling and running all test suites..."

@@ -18,15 +18,19 @@
 #define ETL_CRC32_USE_TABLE 0
 
 // Detected compiler-specific optimizations
+// NOTE: We compile with -std=c++14 for language features (digit separators,
+// using aliases), but ETL must stay at CPP11 level because avr-gcc 5.4
+// (arduino:avr 1.8.7) lacks full relaxed-constexpr support that ETL
+// requires when ETL_CPP14_SUPPORTED is set.
 #if defined(__AVR__)
 #define ETL_COMPILER_GCC
-#define ETL_CPP14_SUPPORTED 1
+#define ETL_CPP11_SUPPORTED 1
 #elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
 #define ETL_COMPILER_GCC
-#define ETL_CPP14_SUPPORTED 1
+#define ETL_CPP11_SUPPORTED 1
 #else
 #define ETL_COMPILER_GENERIC
-#define ETL_CPP14_SUPPORTED 1
+#define ETL_CPP11_SUPPORTED 1
 #endif
 
 // [SIL-2] ETL Callback Timer locking for Arduino

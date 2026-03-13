@@ -77,7 +77,7 @@ TEST_FILES=(
 )
 
 COMPILE_FLAGS=(
-    -std=c++11
+    -std=c++14
     -O0
     -g
     -DBRIDGE_HOST_TEST=1

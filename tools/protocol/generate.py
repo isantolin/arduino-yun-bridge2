@@ -68,6 +68,20 @@ class JinjaGenerator:
             loader=FileSystemLoader(str(TEMPLATE_DIR)),
             keep_trailing_newline=True,
         )
+        self.env.filters["cpp_digits"] = self._cpp_digit_separator
+
+    @staticmethod
+    def _cpp_digit_separator(value: object) -> str:
+        """Format integers >= 10'000 with C++14 digit separators."""
+        if not isinstance(value, int) or abs(value) < 10_000:
+            return str(value)
+        s = str(abs(value))
+        parts: list[str] = []
+        while s:
+            parts.append(s[-3:])
+            s = s[:-3]
+        result = "'".join(reversed(parts))
+        return f"-{result}" if value < 0 else result
 
     def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("rpc_protocol.h.j2")

@@ -239,7 +239,7 @@ struct SimpleTimer {
   uint8_t check_expired(uint32_t now) {
     uint8_t expired = 0;
     for (uint8_t i = 0; i < NUMBER_OF_TIMERS; ++i) {
-      if ((active & (1U << i)) && (now - deadline[i]) < 0x80000000UL) {
+      if ((active & (1U << i)) && (now - deadline[i]) < 0x8000'0000UL) {
         expired |= (1U << i);
         active &= ~(1U << i);
       }

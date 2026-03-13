@@ -98,7 +98,7 @@
 // File size warning threshold (bytes) - used by daemon for RAM monitoring.
 // Matches Python: mcubridge.const.FILE_LARGE_WARNING_BYTES = 1048576
 #ifndef BRIDGE_FILE_LARGE_WARNING_BYTES
-#define BRIDGE_FILE_LARGE_WARNING_BYTES 1048576UL
+#define BRIDGE_FILE_LARGE_WARNING_BYTES 1'048'576UL
 #endif
 
 // [SIL-2] Startup drain limits: bounded byte consumption to prevent
@@ -127,7 +127,7 @@
 // [SIL-2] RX Deduplication reset interval (ms)
 // After this period, the same CRC will be accepted again (retry recovery)
 #ifndef BRIDGE_RX_DEDUPE_INTERVAL_MS
-#define BRIDGE_RX_DEDUPE_INTERVAL_MS 1000UL
+#define BRIDGE_RX_DEDUPE_INTERVAL_MS 1'000UL
 #endif
 
 // [RAM-OPT] RX History size for duplicate detection

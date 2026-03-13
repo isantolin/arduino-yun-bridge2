@@ -13,10 +13,10 @@
 namespace rpc {
 
 {% for const in constants -%}
-constexpr {{ const.type }} {{ const.name }} = {{ const.value }};
+constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits }};
 {% endfor %}
 {% for const in handshake_constants -%}
-constexpr {{ const.type }} {{ const.name }} = {{ const.value }};
+constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits }};
 {% endfor %}
 constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;
 

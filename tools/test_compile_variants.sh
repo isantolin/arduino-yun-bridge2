@@ -25,7 +25,7 @@ compile_variant() {
     
     local out_bin="${BUILD_DIR}/test_${variant_name}"
     
-    g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
+    g++ -std=c++14 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
         -DBRIDGE_ENABLE_DATASTORE=${enable_val} \
         -DBRIDGE_ENABLE_FILESYSTEM=${enable_val} \
         -DBRIDGE_ENABLE_MAILBOX=${enable_val} \

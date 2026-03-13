@@ -20,13 +20,13 @@
 // Detected compiler-specific optimizations
 #if defined(__AVR__)
 #define ETL_COMPILER_GCC
-#define ETL_CPP11_SUPPORTED 1
+#define ETL_CPP14_SUPPORTED 1
 #elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
 #define ETL_COMPILER_GCC
-#define ETL_CPP11_SUPPORTED 1
+#define ETL_CPP14_SUPPORTED 1
 #else
 #define ETL_COMPILER_GENERIC
-#define ETL_CPP11_SUPPORTED 1
+#define ETL_CPP14_SUPPORTED 1
 #endif
 
 // [SIL-2] ETL Callback Timer locking for Arduino

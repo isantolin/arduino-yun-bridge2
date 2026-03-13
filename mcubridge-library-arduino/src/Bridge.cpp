@@ -363,7 +363,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                                      _isRecentDuplicateRx(effective_frame),
                                      rpc::requires_ack(raw_cmd));
 
-  typedef void (BridgeClass::*HandlerFunc)(const bridge::router::CommandContext&);
+  using HandlerFunc = void (BridgeClass::*)(const bridge::router::CommandContext&);
   static constexpr etl::array<HandlerFunc, 8> kHandlers{{
       &BridgeClass::onStatusCommand,     &BridgeClass::onSystemCommand,
       &BridgeClass::onGpioCommand,       &BridgeClass::onConsoleCommand,
@@ -415,7 +415,7 @@ void BridgeClass::_handleStatusMalformed(
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for System Commands (Stride 2 for Cmd/Resp)
-  typedef void (BridgeClass::*SystemHandler)(const bridge::router::CommandContext&);
+  using SystemHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
   static constexpr etl::array<SystemHandler, 6> kSystemHandlers{{
       &BridgeClass::_handleGetVersion,      // 0: 64
       &BridgeClass::_handleGetFreeMemory,   // 1: 66
@@ -632,7 +632,7 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for GPIO Commands
-  typedef void (BridgeClass::*GpioHandler)(const bridge::router::CommandContext&);
+  using GpioHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
   static constexpr etl::array<GpioHandler, 5> kGpioHandlers{{
       &BridgeClass::_handleSetPinMode,    // 0: 80
       &BridgeClass::_handleDigitalWrite,  // 1: 81
@@ -719,9 +719,9 @@ void BridgeClass::onDataStoreCommand(
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for Mailbox Commands
-  typedef void (BridgeClass::*MailboxHandler)(
+  using MailboxDispatchHandler = void (BridgeClass::*)(
       const bridge::router::CommandContext&);
-  static constexpr etl::array<MailboxHandler, 3> kMailboxHandlers{{
+  static constexpr etl::array<MailboxDispatchHandler, 3> kMailboxHandlers{{
       &BridgeClass::_handleMailboxPush,          // 0: 131
       &BridgeClass::_handleMailboxReadResp,      // 1: 132
       &BridgeClass::_handleMailboxAvailableResp  // 2: 133
@@ -776,7 +776,7 @@ void BridgeClass::_handleFileReadResp(
 void BridgeClass::onFileSystemCommand(
     const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for File System Commands
-  typedef void (BridgeClass::*FileSystemHandler)(
+  using FileSystemHandler = void (BridgeClass::*)(
       const bridge::router::CommandContext&);
   static constexpr etl::array<FileSystemHandler, 4> kFileSystemHandlers{{
       &BridgeClass::_handleFileWrite,    // 0: 144
@@ -789,7 +789,7 @@ void BridgeClass::onFileSystemCommand(
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for Process Commands
-  typedef void (BridgeClass::*ProcessHandler)(
+  using ProcessHandler = void (BridgeClass::*)(
       const bridge::router::CommandContext&);
   static constexpr etl::array<ProcessHandler, 2> kProcessHandlers{{
       &BridgeClass::_handleProcessRunAsyncResp,  // 0: 165

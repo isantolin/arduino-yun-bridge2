@@ -30,20 +30,7 @@ ProcessClass Process;
 
 namespace {
 
-class TestStream : public Stream {
- public:
-  ByteBuffer<8192> tx;
-  ByteBuffer<8192> rx;
-  size_t write(uint8_t c) override { tx.push(c); return 1; }
-  size_t write(const uint8_t* b, size_t s) override { tx.append(b, s); return s; }
-  int available() override { return rx.remaining(); }
-  int read() override { return rx.read_byte(); }
-  int peek() override { return rx.peek_byte(); }
-  void flush() override {}
-  void feed(const uint8_t* b, size_t s) { rx.append(b, s); }
-};
-
-void reset_env(TestStream& stream) {
+void reset_env(BiStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
   Bridge.begin();
@@ -57,7 +44,7 @@ void reset_env(TestStream& stream) {
 
 void test_bridge_send_chunky_frame_overflow() {
   printf("  -> test_bridge_send_chunky_frame_overflow\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   
   // Header + Data > MAX_PAYLOAD_SIZE should return false (implicit)
@@ -71,7 +58,7 @@ void test_bridge_send_chunky_frame_overflow() {
 
 void test_bridge_is_security_check_passed_fail() {
   printf("  -> test_bridge_is_security_check_passed_fail\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
   
@@ -84,7 +71,7 @@ void test_bridge_is_security_check_passed_fail() {
 
 void test_datastore_value_truncation() {
   printf("  -> test_datastore_value_truncation\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -106,7 +93,7 @@ void test_datastore_value_truncation() {
 
 void test_datastore_get_malformed() {
   printf("  -> test_datastore_get_malformed\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -123,7 +110,7 @@ void test_datastore_get_malformed() {
 
 void test_console_write_fail() {
   printf("  -> test_console_write_fail\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
   auto ca = bridge::test::ConsoleTestAccessor::create(Console);

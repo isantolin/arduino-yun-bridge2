@@ -18,18 +18,7 @@ void delay(unsigned long ms) { g_test_millis += ms; }
 using namespace rpc;
 using namespace bridge;
 
-// Dummy stream for testing
-class MockStream : public Stream {
- public:
-  size_t write(uint8_t) override { return 1; }
-  size_t write(const uint8_t* b, size_t s) override { return s; }
-  int available() override { return 0; }
-  int read() override { return -1; }
-  int peek() override { return -1; }
-  void flush() override {}
-};
-
-MockStream g_test_stream;
+TxCaptureStream g_test_stream;
 Stream* g_arduino_stream_delegate = &g_test_stream;
 HardwareSerial Serial;
 HardwareSerial Serial1;

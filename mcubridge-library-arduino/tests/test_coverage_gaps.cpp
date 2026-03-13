@@ -42,26 +42,7 @@ ProcessClass Process;
 
 namespace {
 
-class TestStream : public Stream {
- public:
-  ByteBuffer<8192> tx;
-  ByteBuffer<8192> rx;
-  size_t write(uint8_t c) override {
-    tx.push(c);
-    return 1;
-  }
-  size_t write(const uint8_t* b, size_t s) override {
-    tx.append(b, s);
-    return s;
-  }
-  int available() override { return rx.remaining(); }
-  int read() override { return rx.read_byte(); }
-  int peek() override { return rx.peek_byte(); }
-  void flush() override {}
-  void feed(const uint8_t* b, size_t s) { rx.append(b, s); }
-};
-
-void reset_env(TestStream& stream) {
+void reset_env(BiStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
   Bridge.begin();
@@ -80,7 +61,7 @@ void reset_env(TestStream& stream) {
 // ============================================================================
 void test_gpio_commands_via_dispatch() {
   printf("  -> test_gpio_commands_via_dispatch\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -112,17 +93,17 @@ void test_gpio_commands_via_dispatch() {
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ);
   f.header.payload_length = rpc::payload::PinRead::SIZE;
   f.payload[0] = 7;
-  stream.tx.clear();
+  stream.tx_buf.clear();
   ba.dispatch(f);
-  TEST_ASSERT(stream.tx.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
 
   // CMD_ANALOG_READ (84)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ);
   f.header.payload_length = rpc::payload::PinRead::SIZE;
   f.payload[0] = 0;
-  stream.tx.clear();
+  stream.tx_buf.clear();
   ba.dispatch(f);
-  TEST_ASSERT(stream.tx.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
 }
 
 // ============================================================================
@@ -131,7 +112,7 @@ void test_gpio_commands_via_dispatch() {
 // ============================================================================
 void test_console_write_via_dispatch() {
   printf("  -> test_console_write_via_dispatch\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -150,7 +131,7 @@ void test_console_write_via_dispatch() {
 // ============================================================================
 void test_datastore_resp_via_dispatch() {
   printf("  -> test_datastore_resp_via_dispatch\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -178,7 +159,7 @@ void test_datastore_resp_via_dispatch() {
 // ============================================================================
 void test_mailbox_via_dispatch() {
   printf("  -> test_mailbox_via_dispatch\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -222,7 +203,7 @@ void test_mailbox_via_dispatch() {
 // ============================================================================
 void test_filesystem_via_dispatch() {
   printf("  -> test_filesystem_via_dispatch\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -258,7 +239,7 @@ void test_filesystem_via_dispatch() {
 // ============================================================================
 void test_process_via_dispatch() {
   printf("  -> test_process_via_dispatch\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -298,7 +279,7 @@ void test_process_via_dispatch() {
 // ============================================================================
 void test_unknown_command_via_dispatch() {
   printf("  -> test_unknown_command_via_dispatch\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -323,7 +304,7 @@ void test_unknown_command_via_dispatch() {
 // ============================================================================
 void test_system_commands_via_dispatch() {
   printf("  -> test_system_commands_via_dispatch\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -333,24 +314,24 @@ void test_system_commands_via_dispatch() {
   // CMD_GET_VERSION (64)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
   f.header.payload_length = 0;
-  stream.tx.clear();
+  stream.tx_buf.clear();
   ba.dispatch(f);
-  TEST_ASSERT(stream.tx.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
 
   // CMD_GET_FREE_MEMORY (66)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
   f.header.payload_length = 0;
-  stream.tx.clear();
+  stream.tx_buf.clear();
   ba.dispatch(f);
-  TEST_ASSERT(stream.tx.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
 
   // CMD_GET_CAPABILITIES (72)
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
   f.header.payload_length = 0;
-  stream.tx.clear();
+  stream.tx_buf.clear();
   ba.dispatch(f);
-  TEST_ASSERT(stream.tx.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
 
   // CMD_SET_BAUDRATE (74)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE);
@@ -366,7 +347,7 @@ void test_system_commands_via_dispatch() {
 // ============================================================================
 void test_ack_and_retransmit() {
   printf("  -> test_ack_and_retransmit\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -410,7 +391,7 @@ void test_ack_and_retransmit() {
 // ============================================================================
 void test_ack_timeout_with_status_handler() {
   printf("  -> test_ack_timeout_with_status_handler\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -436,7 +417,7 @@ void test_ack_timeout_with_status_handler() {
 // ============================================================================
 void test_timer_callbacks() {
   printf("  -> test_timer_callbacks\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -464,7 +445,7 @@ void test_timer_callbacks() {
 // ============================================================================
 void test_fsm_transitions() {
   printf("  -> test_fsm_transitions\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -529,7 +510,7 @@ struct TestObserver : public BridgeObserver {
 
 void test_observer_notifications() {
   printf("  -> test_observer_notifications\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
 
   TestObserver obs;
@@ -578,7 +559,7 @@ void test_hal_free_memory() {
 // ============================================================================
 void test_apply_timing_config() {
   printf("  -> test_apply_timing_config\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -607,7 +588,7 @@ void test_apply_timing_config() {
 // ============================================================================
 void test_send_key_val_command() {
   printf("  -> test_send_key_val_command\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   DataStore.put("testkey", "testval");
 }
@@ -619,7 +600,7 @@ void test_send_key_val_command() {
 // ============================================================================
 void test_emit_status() {
   printf("  -> test_emit_status\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -665,7 +646,7 @@ void test_emit_status() {
 // ============================================================================
 void test_emit_status_with_observer() {
   printf("  -> test_emit_status_with_observer\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
 
   struct ErrorObserver : public BridgeObserver {
@@ -689,7 +670,7 @@ void test_emit_status_with_observer() {
 // ============================================================================
 void test_cobs_overflow_in_process() {
   printf("  -> test_cobs_overflow_in_process\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
 
   // Feed a very long COBS stream to overflow the buffer.
@@ -833,7 +814,7 @@ void test_command_router() {
 // ============================================================================
 void test_console_edge_cases() {
   printf("  -> test_console_edge_cases\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
 
   // available() when empty -> 0
@@ -856,7 +837,7 @@ void test_console_edge_cases() {
 // ============================================================================
 void test_process_edge_cases() {
   printf("  -> test_process_edge_cases\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
 
   auto pa = bridge::test::ProcessTestAccessor::create(Process);
@@ -877,7 +858,7 @@ void test_process_edge_cases() {
 // ============================================================================
 void test_link_sync_full() {
   printf("  -> test_link_sync_full\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -888,9 +869,9 @@ void test_link_sync_full() {
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   f.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
   memset(f.payload.data(), 0xAA, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
-  stream.tx.clear();
+  stream.tx_buf.clear();
   ba.dispatch(f);
-  TEST_ASSERT(stream.tx.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
 
   // LinkSync WITH secret (correct tag -> success)
   reset_env(stream);
@@ -910,9 +891,9 @@ void test_link_sync_full() {
   memcpy(f.payload.data(), nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
   memcpy(f.payload.data() + rpc::RPC_HANDSHAKE_NONCE_LENGTH, tag,
          rpc::RPC_HANDSHAKE_TAG_LENGTH);
-  stream.tx.clear();
+  stream.tx_buf.clear();
   ba2.dispatch(f);
-  TEST_ASSERT(stream.tx.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
   TEST_ASSERT(Bridge.isSynchronized());
   }
 }
@@ -923,7 +904,7 @@ void test_link_sync_full() {
 // ============================================================================
 void test_link_reset_with_config() {
   printf("  -> test_link_reset_with_config\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -942,7 +923,7 @@ void test_link_reset_with_config() {
 // ============================================================================
 void test_dedup_with_ack() {
   printf("  -> test_dedup_with_ack\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -974,7 +955,7 @@ void test_dedup_with_ack() {
 // ============================================================================
 void test_status_null_handler() {
   printf("  -> test_status_null_handler\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -1063,7 +1044,7 @@ void test_rpc_structs_encode() {
 // ============================================================================
 void test_retransmit_via_malformed() {
   printf("  -> test_retransmit_via_malformed\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -1087,7 +1068,7 @@ void test_retransmit_via_malformed() {
 // ============================================================================
 void test_send_frame_critical_path() {
   printf("  -> test_send_frame_critical_path\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
 
   // DataStore.requestGet sends a critical frame via sendStringCommand
@@ -1146,7 +1127,7 @@ void test_rpc_structs_parse_specializations() {
 // ============================================================================
 void test_status_handler_callback() {
   printf("  -> test_status_handler_callback\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -1169,13 +1150,13 @@ void test_status_handler_callback() {
 // ============================================================================
 void test_debug_io_log() {
   printf("  -> test_debug_io_log\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
 
   // Sending any frame triggers the debug log path
-  stream.tx.clear();
+  stream.tx_buf.clear();
   Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
-  TEST_ASSERT(stream.tx.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
 }
 
 // ============================================================================
@@ -1183,7 +1164,7 @@ void test_debug_io_log() {
 // ============================================================================
 void test_flush_when_awaiting_ack() {
   printf("  -> test_flush_when_awaiting_ack\n");
-  TestStream stream;
+  BiStream stream;
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 

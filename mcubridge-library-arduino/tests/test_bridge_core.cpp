@@ -1,11 +1,18 @@
-#include "TestUtils.h"
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#define ARDUINO_STUB_CUSTOM_MILLIS 1
+
+#include "Bridge.h"
+#include "BridgeTestInterface.h"
+#include "protocol/rpc_frame.h"
+#include "protocol/rpc_protocol.h"
+#include "test_support.h"
 
 // --- GLOBALS ---
 unsigned long g_test_millis = 0;
 unsigned long millis() { return g_test_millis; }
 
 namespace {
-bridge::test::RecordingStream g_null_stream;
+BiStream g_null_stream;
 }
 
 BridgeClass Bridge(g_null_stream);
@@ -27,9 +34,9 @@ Stream* g_arduino_stream_delegate = nullptr;
 
 namespace {
 
-using namespace bridge::test;
+using bridge::test::TestAccessor;
 
-void reset_bridge(RecordingStream& stream) {
+void reset_bridge(BiStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
@@ -63,8 +70,8 @@ class TestFrameBuilder {
   }
 };
 
-void sync_bridge(RecordingStream& stream) {
-  stream.tx_buffer.clear();
+void sync_bridge(BiStream& stream) {
+  stream.tx_buf.clear();
   auto ba = TestAccessor::create(Bridge);
   if (ba.isSharedSecretEmpty()) {
     const char* test_secret = "test_secret";
@@ -83,48 +90,48 @@ void sync_bridge(RecordingStream& stream) {
       TestFrameBuilder::build(encoded_frame, sizeof(encoded_frame),
                               rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC),
                               payload, sizeof(payload));
-  stream.inject_rx(encoded_frame, frame_len);
+  stream.feed(encoded_frame, frame_len);
   Bridge.process();
-  stream.tx_buffer.clear();
+  stream.tx_buf.clear();
 }
 
 void test_bridge_begin() {
-  RecordingStream stream;
+  BiStream stream;
   reset_bridge(stream);
   TEST_ASSERT(TestAccessor::create(Bridge).isUnsynchronized());
 }
 
 void test_bridge_send_frame() {
-  RecordingStream stream;
+  BiStream stream;
   reset_bridge(stream);
   sync_bridge(stream);
   uint8_t payload[] = {0x01, 0x02, 0x03};
   bool result = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION,
                                  etl::span<const uint8_t>(payload, 3));
   TEST_ASSERT(result == true);
-  TEST_ASSERT(stream.tx_buffer.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
 }
 
 void test_bridge_process_rx() {
-  RecordingStream stream;
+  BiStream stream;
   reset_bridge(stream);
   uint8_t encoded_frame[128];
   const size_t encoded_len = TestFrameBuilder::build(
       encoded_frame, 128, rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION),
       nullptr, 0);
-  stream.inject_rx(encoded_frame, encoded_len);
+  stream.feed(encoded_frame, encoded_len);
   Bridge.process();
 }
 
 void test_bridge_handshake() {
-  RecordingStream stream;
+  BiStream stream;
   reset_bridge(stream);
   sync_bridge(stream);
   TEST_ASSERT(Bridge.isSynchronized());
 }
 
 void test_bridge_flow_control() {
-  RecordingStream stream;
+  BiStream stream;
   reset_bridge(stream);
   rpc::Frame xoff;
   xoff.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_XOFF);
@@ -133,7 +140,7 @@ void test_bridge_flow_control() {
 }
 
 void test_bridge_dedup_console_write_retry() {
-  RecordingStream stream;
+  BiStream stream;
   reset_bridge(stream);
   rpc::Frame frame;
   uint8_t raw_frame[rpc::MAX_RAW_FRAME_SIZE];
@@ -157,7 +164,7 @@ void test_bridge_dedup_console_write_retry() {
 }
 
 void test_bridge_ack_malformed_timeout_paths() {
-  RecordingStream stream;
+  BiStream stream;
   reset_bridge(stream);
   sync_bridge(stream);
   const uint8_t payload[] = {'X'};
@@ -168,7 +175,7 @@ void test_bridge_ack_malformed_timeout_paths() {
 }
 
 void test_bridge_chunking() {
-  RecordingStream stream;
+  BiStream stream;
   reset_bridge(stream);
   TestAccessor::create(Bridge).setIdle();
   uint8_t header[5] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
@@ -177,7 +184,7 @@ void test_bridge_chunking() {
   Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PROCESSED,
                          etl::span<const uint8_t>(header, 5),
                          etl::span<const uint8_t>(data, 100));
-  TEST_ASSERT(stream.tx_buffer.len > 0);
+  TEST_ASSERT(stream.tx_buf.len > 0);
 }
 
 }  // namespace

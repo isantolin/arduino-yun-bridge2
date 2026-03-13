@@ -22,48 +22,7 @@ using namespace bridge;
 
 // --- MOCKS ---
 
-class BetterMockStream : public Stream {
- public:
-  uint8_t rx_buf[1024];
-  size_t rx_head = 0;
-  size_t rx_tail = 0;
-
-  size_t write(uint8_t) override { return 1; }
-  size_t write(const uint8_t* b, size_t s) override {
-    (void)b;
-    return s;
-  }
-
-  int available() override {
-    return (rx_tail >= rx_head) ? (rx_tail - rx_head) : 0;
-  }
-
-  int read() override {
-    if (available() > 0) return rx_buf[rx_head++];
-    return -1;
-  }
-
-  int peek() override {
-    if (available() > 0) return rx_buf[rx_head];
-    return -1;
-  }
-
-  void flush() override {}
-
-  void inject(const uint8_t* b, size_t s) {
-    if (rx_tail + s <= sizeof(rx_buf)) {
-      memcpy(rx_buf + rx_tail, b, s);
-      rx_tail += s;
-    }
-  }
-
-  void clear() {
-    rx_head = 0;
-    rx_tail = 0;
-  }
-};
-
-BetterMockStream g_bridge_stream;
+BiStream g_bridge_stream;
 HardwareSerial Serial;
 HardwareSerial Serial1;
 ConsoleClass Console;
@@ -80,19 +39,6 @@ FileSystemClass FileSystem;
 ProcessClass Process;
 #endif
 BridgeClass Bridge(g_bridge_stream);
-
-class FullMockStream : public Stream {
- public:
-  size_t write(uint8_t) override { return 1; }
-  size_t write(const uint8_t* b, size_t s) override {
-    (void)b;
-    return s;
-  }
-  int available() override { return 0; }
-  int read() override { return -1; }
-  int peek() override { return -1; }
-  void flush() override {}
-};
 
 // --- TEST SUITES ---
 
@@ -127,7 +73,7 @@ void integrated_test_protocol() {
 }
 
 void integrated_test_bridge_core() {
-  FullMockStream stream;
+  TxCaptureStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin(115200, "secret");
   auto accessor = bridge::test::TestAccessor::create(localBridge);

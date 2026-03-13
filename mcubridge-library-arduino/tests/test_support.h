@@ -8,6 +8,8 @@
 #include <string.h>
 
 #include "etl/crc32.h"
+#include "protocol/rpc_frame.h"
+#include "protocol/rpc_protocol.h"
 #include "unity.h"
 
 static inline uint32_t crc32_ieee(const void* data, size_t len) {
@@ -109,8 +111,8 @@ class TxCaptureStream : public Stream {
  */
 class BiStream : public Stream {
  public:
-  ByteBuffer<4096> rx_buf;
-  ByteBuffer<4096> tx_buf;
+  ByteBuffer<8192> rx_buf;
+  ByteBuffer<8192> tx_buf;
 
   int available() override { return rx_buf.remaining(); }
   int read() override { return rx_buf.read_byte(); }
@@ -126,4 +128,106 @@ class BiStream : public Stream {
   void flush() override {}
 
   void feed(const uint8_t* data, size_t len) { rx_buf.append(data, len); }
+  void clear() {
+    rx_buf.clear();
+    tx_buf.clear();
+  }
 };
+
+// ---------------------------------------------------------------------------
+// COBS encoder/decoder for building test frames.
+// ---------------------------------------------------------------------------
+
+struct TestCOBS {
+  static size_t encode(const uint8_t* src, size_t len, uint8_t* dst) {
+    uint8_t* start = dst;
+    uint8_t* code_ptr = dst++;
+    uint8_t code = 1;
+    for (size_t i = 0; i < len; ++i) {
+      if (src[i] == 0) {
+        *code_ptr = code;
+        code_ptr = dst++;
+        code = 1;
+      } else {
+        *dst++ = src[i];
+        if (++code == 0xFF) {
+          *code_ptr = code;
+          code_ptr = dst++;
+          code = 1;
+        }
+      }
+    }
+    *code_ptr = code;
+    return static_cast<size_t>(dst - start);
+  }
+
+  static size_t decode(const uint8_t* source, size_t length,
+                       uint8_t* destination) {
+    const uint8_t* src = source;
+    const uint8_t* end = source + length;
+    uint8_t* out = destination;
+    while (src < end) {
+      uint8_t code = *src++;
+      if (code == 0) return 0;
+      for (uint8_t i = 1; i < code; ++i) {
+        if (src < end) {
+          *out++ = *src++;
+        } else {
+          break;
+        }
+      }
+      if (code < 0xFF && src < end) {
+        *out++ = 0;
+      }
+    }
+    return static_cast<size_t>(out - destination);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Frame extraction helper – decodes COBS segments and validates CRC.
+// ---------------------------------------------------------------------------
+
+template <size_t N>
+static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
+                                     size_t& cursor, rpc::Frame& out_frame) {
+  rpc::FrameParser parser;
+  uint8_t decoded_buf[1024];
+
+  while (cursor < buffer.len) {
+    if (buffer.data[cursor] == rpc::RPC_FRAME_DELIMITER) {
+      cursor++;
+      continue;
+    }
+
+    size_t end = cursor;
+    while (end < buffer.len && buffer.data[end] != rpc::RPC_FRAME_DELIMITER)
+      end++;
+
+    const size_t segment_len =
+        (end < buffer.len) ? (end - cursor + 1) : (end - cursor);
+    size_t decoded_len =
+        TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf);
+
+    if (decoded_len >= 9) {
+      etl::crc32 calc;
+      calc.reset();
+      calc.add(decoded_buf, decoded_buf + (decoded_len - 4));
+      uint32_t cv = calc.value();
+      decoded_buf[decoded_len - 4] = static_cast<uint8_t>((cv >> 24) & 0xFF);
+      decoded_buf[decoded_len - 3] = static_cast<uint8_t>((cv >> 16) & 0xFF);
+      decoded_buf[decoded_len - 2] = static_cast<uint8_t>((cv >> 8) & 0xFF);
+      decoded_buf[decoded_len - 1] = static_cast<uint8_t>(cv & 0xFF);
+
+      auto result =
+          parser.parse(etl::span<const uint8_t>(decoded_buf, decoded_len));
+      if (result) {
+        out_frame = result.value();
+        cursor = end;
+        return true;
+      }
+    }
+    cursor = end;
+  }
+  return false;
+}

@@ -10,7 +10,6 @@ from tempfile import NamedTemporaryFile
 
 import msgspec
 import psutil
-import tenacity
 
 from ..config.const import STATUS_FILE_PATH
 from ..protocol.structures import (
@@ -18,6 +17,7 @@ from ..protocol.structures import (
     McuVersion,
     ProcessStats,
 )
+from ..util.periodic import periodic_task
 from .context import RuntimeState
 
 logger = logging.getLogger("mcubridge.status")
@@ -28,13 +28,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
     """Persist lightweight status information periodically."""
     current_process = psutil.Process()
 
-    @tenacity.retry(
-        wait=tenacity.wait_fixed(interval),
-        stop=tenacity.stop_never,
-        retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-        before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
-    )
-    async def _write_loop() -> None:
+    async def _write_tick() -> None:
         try:
             # [SIL-2] Resource Monitoring Delegation to psutil
             child_stats: dict[str, ProcessStats] = {}
@@ -133,11 +127,9 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
             raise
         except (OSError, RuntimeError, msgspec.MsgspecError) as e:
             logger.error("Periodic status write failed: %s", e)
-        # Always raise to trigger the wait_fixed loop
-        raise RuntimeError("tick")
 
     try:
-        await _write_loop()
+        await periodic_task(_write_tick, interval, logger)
     except asyncio.CancelledError:
         logger.info("Status writer task cancelled.")
         raise

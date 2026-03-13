@@ -218,12 +218,10 @@ def main_cmd(
 
 def main(argv=None):
     if argv:
-        from typer.main import get_command
-        from click.testing import CliRunner
+        from typer.testing import CliRunner
 
         runner = CliRunner()
-        # Ensure we pass the list correctly to the typer app
-        result = runner.invoke(get_command(app), argv)
+        result = runner.invoke(app, argv)
         if result.exit_code != 0:
             if result.exception:
                 raise result.exception

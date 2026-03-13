@@ -12,13 +12,13 @@ from typing import (
 )
 
 import msgspec
-import tenacity
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from prometheus_client.core import Metric
 
 from .protocol.structures import QueuedPublish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
+from .util.periodic import periodic_task
 
 logger = logging.getLogger("mcubridge.metrics")
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
@@ -168,25 +168,16 @@ async def publish_metrics(
         raise ValueError("interval must be greater than zero")
     expiry = float(tick_seconds * 2)
 
-    # [OPTIMIZATION] Use tenacity for resilient looping
-    @tenacity.retry(
-        wait=tenacity.wait_fixed(tick_seconds),
-        stop=tenacity.stop_never,
-        retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-        before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
-    )
-    async def _metrics_loop() -> None:
+    async def _metrics_tick() -> None:
         try:
             await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
         except asyncio.CancelledError:
             raise
         except (OSError, RuntimeError, msgspec.MsgspecError) as e:
             logger.error("Periodic metrics emit failed: %s", e)
-        # Always raise to trigger the wait_fixed loop
-        raise RuntimeError("tick")
 
     try:
-        await _metrics_loop()
+        await periodic_task(_metrics_tick, tick_seconds, logger)
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
         raise
@@ -214,41 +205,27 @@ async def publish_bridge_snapshots(
     async with asyncio.TaskGroup() as tg:
         if summary_seconds is not None:
 
-            @tenacity.retry(
-                wait=tenacity.wait_fixed(summary_seconds),
-                stop=tenacity.stop_never,
-                retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-                before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
-            )
-            async def _summary_loop() -> None:
+            async def _summary_tick() -> None:
                 try:
                     await _emit_bridge_snapshot(state, enqueue, flavor="summary")
                 except asyncio.CancelledError:
                     raise
                 except (OSError, RuntimeError, msgspec.MsgspecError) as e:
                     logger.error("Bridge summary emit failed: %s", e)
-                raise RuntimeError("tick")
 
-            tg.create_task(_summary_loop())
+            tg.create_task(periodic_task(_summary_tick, summary_seconds, logger))
 
         if handshake_seconds is not None:
 
-            @tenacity.retry(
-                wait=tenacity.wait_fixed(handshake_seconds),
-                stop=tenacity.stop_never,
-                retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-                before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
-            )
-            async def _handshake_loop() -> None:
+            async def _handshake_tick() -> None:
                 try:
                     await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
                 except asyncio.CancelledError:
                     raise
                 except (OSError, RuntimeError, msgspec.MsgspecError) as e:
                     logger.error("Bridge handshake emit failed: %s", e)
-                raise RuntimeError("tick")
 
-            tg.create_task(_handshake_loop())
+            tg.create_task(periodic_task(_handshake_tick, handshake_seconds, logger))
 
 
 class RuntimeStateCollector:

@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import sh
-import json
 import os
 import sys
 import typer

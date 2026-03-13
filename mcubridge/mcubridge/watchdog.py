@@ -9,7 +9,6 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-import tenacity
 from transitions import Machine
 
 from .config.const import (
@@ -18,6 +17,7 @@ from .config.const import (
     WATCHDOG_TRIGGER_TOKEN,
 )
 from .state.context import RuntimeState
+from .util.periodic import periodic_task
 
 WatchdogWrite = Callable[[bytes], None]
 
@@ -114,22 +114,19 @@ class WatchdogKeepalive:
         """Continuously emit watchdog pulses until cancelled."""
         self.start()
 
-        @tenacity.retry(
-            wait=tenacity.wait_fixed(self._interval),
-            stop=tenacity.stop_never,
-            retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-            before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
-        )
-        async def _kick_loop() -> None:
-            self.kick()
-            raise Exception("tick")
-
         try:
-            await _kick_loop()
+            await periodic_task(
+                self._async_kick,
+                self._interval,
+                self._logger,
+            )
         except asyncio.CancelledError:
             self.stop()
             self._logger.debug("Watchdog keepalive cancelled")
             raise
+
+    async def _async_kick(self) -> None:
+        self.kick()
 
 
 __all__ = ["WatchdogKeepalive"]

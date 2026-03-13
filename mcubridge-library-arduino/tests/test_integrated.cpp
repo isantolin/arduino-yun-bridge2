@@ -230,28 +230,20 @@ void integrated_test_extreme_coverage() {
 #endif
 }
 
-int main() {
-  printf("INTEGRATED ARDUINO TEST START\n");
-  fflush(stdout);
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
   Bridge.begin(115200);
   bridge::test::TestAccessor::create(Bridge).setIdle();
-
-  printf("Running: integrated_test_rle\n");
-  integrated_test_rle();
-  printf("Running: integrated_test_protocol\n");
-  integrated_test_protocol();
-  printf("Running: integrated_test_bridge_core\n");
-  integrated_test_bridge_core();
-  printf("Running: integrated_test_components\n");
-  integrated_test_components();
-  printf("Running: integrated_test_error_branches\n");
-  integrated_test_error_branches();
-  printf("Running: integrated_test_extreme_coverage\n");
-  integrated_test_extreme_coverage();
-
-  printf("INTEGRATED ARDUINO TEST END\n");
-  fflush(stdout);
-  return 0;
+  UNITY_BEGIN();
+  RUN_TEST(integrated_test_rle);
+  RUN_TEST(integrated_test_protocol);
+  RUN_TEST(integrated_test_bridge_core);
+  RUN_TEST(integrated_test_components);
+  RUN_TEST(integrated_test_error_branches);
+  RUN_TEST(integrated_test_extreme_coverage);
+  return UNITY_END();
 }
 
 Stream* g_arduino_stream_delegate = nullptr;

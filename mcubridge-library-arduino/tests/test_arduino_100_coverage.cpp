@@ -183,28 +183,20 @@ void test_security_gaps() {
 
 }  // namespace
 
-int main() {
-  printf("ARDUINO 100%% COVERAGE TEST START\n");
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
   setup_coverage_env();
-
-  printf("  -> Testing rpc_frame_gaps\n");
-  test_rpc_frame_gaps();
-  printf("  -> Testing bridge_extra_gaps\n");
-  test_bridge_extra_gaps();
-  printf("  -> Testing console_extra_gaps\n");
-  test_console_extra_gaps();
-  printf("  -> Testing test_datastore_extra_gaps\n");
-  test_datastore_extra_gaps();
-  printf("  -> Testing mailbox_extra_gaps\n");
-  test_mailbox_extra_gaps();
-  printf("  -> Testing process_extra_gaps\n");
-  test_process_extra_gaps();
-  printf("  -> Testing rle_gaps\n");
-  test_rle_gaps();
-  printf("  -> Testing security_gaps\n");
-  test_security_gaps();
-
-  printf("ARDUINO 100%% COVERAGE TEST END\n");
-  return 0;
+  UNITY_BEGIN();
+  RUN_TEST(test_rpc_frame_gaps);
+  RUN_TEST(test_bridge_extra_gaps);
+  RUN_TEST(test_console_extra_gaps);
+  RUN_TEST(test_datastore_extra_gaps);
+  RUN_TEST(test_mailbox_extra_gaps);
+  RUN_TEST(test_process_extra_gaps);
+  RUN_TEST(test_rle_gaps);
+  RUN_TEST(test_security_gaps);
+  return UNITY_END();
 }
 Stream* g_arduino_stream_delegate = nullptr;

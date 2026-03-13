@@ -97,9 +97,13 @@ static void test_mailbox_send_outbound_frame() {
 
 }  // namespace
 
-int main() {
-  test_console_write_outbound_frame();
-  test_datastore_put_outbound_frame();
-  test_mailbox_send_outbound_frame();
-  return 0;
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_console_write_outbound_frame);
+  RUN_TEST(test_datastore_put_outbound_frame);
+  RUN_TEST(test_mailbox_send_outbound_frame);
+  return UNITY_END();
 }

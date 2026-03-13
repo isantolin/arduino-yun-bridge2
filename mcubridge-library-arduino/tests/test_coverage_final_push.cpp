@@ -268,20 +268,20 @@ void test_structs_gaps() {
   rpc::payload::SetBaudratePacket::parse(buf);
 }
 
-int main() {
-  printf("FINAL 100%% COVERAGE TEST START\n");
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
   Bridge.begin(115200);
-
-  test_bridge_core_gaps();
-  test_bridge_router_gaps();
-  test_bridge_internal_logic_gaps();
-  test_bridge_send_gaps();
-  test_fsm_internal_gaps();
-  test_security_cpp_gaps();
-  test_hal_gaps();
-  test_subsystems_gaps();
-  test_structs_gaps();
-
-  printf("FINAL 100%% COVERAGE TEST END\n");
-  return 0;
+  UNITY_BEGIN();
+  RUN_TEST(test_bridge_core_gaps);
+  RUN_TEST(test_bridge_router_gaps);
+  RUN_TEST(test_bridge_internal_logic_gaps);
+  RUN_TEST(test_bridge_send_gaps);
+  RUN_TEST(test_fsm_internal_gaps);
+  RUN_TEST(test_security_cpp_gaps);
+  RUN_TEST(test_hal_gaps);
+  RUN_TEST(test_subsystems_gaps);
+  RUN_TEST(test_structs_gaps);
+  return UNITY_END();
 }

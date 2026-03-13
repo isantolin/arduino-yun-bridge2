@@ -178,14 +178,16 @@ void test_fsm_timeout_to_unsynchronized() {
   printf("  -> FSM Timeout to Unsynchronized: OK\n");
 }
 
-int main() {
-  printf("FSM & MUTUAL AUTH TEST SUITE\n");
-  test_fsm_initial_state();
-  test_mutual_auth_success();
-  test_mutual_auth_failure_wrong_tag();
-  test_mutual_auth_failure_malformed_length();
-  test_fsm_transitions_running();
-  test_fsm_timeout_to_unsynchronized();
-  printf("ALL TESTS PASSED\n");
-  return 0;
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_fsm_initial_state);
+  RUN_TEST(test_mutual_auth_success);
+  RUN_TEST(test_mutual_auth_failure_wrong_tag);
+  RUN_TEST(test_mutual_auth_failure_malformed_length);
+  RUN_TEST(test_fsm_transitions_running);
+  RUN_TEST(test_fsm_timeout_to_unsynchronized);
+  return UNITY_END();
 }

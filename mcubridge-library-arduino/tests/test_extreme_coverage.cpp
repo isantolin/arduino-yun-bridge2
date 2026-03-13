@@ -129,14 +129,16 @@ void test_extreme_process_mailbox() {
 
 }  // namespace
 
-int main() {
-  printf("EXTREME ARDUINO COVERAGE TEST START\n");
-  test_extreme_bridge_commands();
-  test_extreme_datastore();
-  test_extreme_filesystem();
-  test_extreme_process_mailbox();
-  printf("EXTREME ARDUINO COVERAGE TEST END\n");
-  return 0;
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_extreme_bridge_commands);
+  RUN_TEST(test_extreme_datastore);
+  RUN_TEST(test_extreme_filesystem);
+  RUN_TEST(test_extreme_process_mailbox);
+  return UNITY_END();
 }
 
 Stream* g_arduino_stream_delegate = nullptr;

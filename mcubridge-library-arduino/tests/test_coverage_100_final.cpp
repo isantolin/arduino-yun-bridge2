@@ -11,6 +11,7 @@
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "security/security.h"
+#include "unity.h"
 
 // Global for simulating time
 static unsigned long g_test_millis = 0;
@@ -99,11 +100,13 @@ void test_fsm_gaps() {
 
 }  // namespace
 
-int main() {
-  printf("FINAL ARDUINO 100%% COVERAGE TEST START\n");
-  test_fsm_gaps();
-  printf("FINAL ARDUINO 100%% COVERAGE TEST END\n");
-  return 0;
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_fsm_gaps);
+  return UNITY_END();
 }
 
 Stream* g_arduino_stream_delegate = nullptr;

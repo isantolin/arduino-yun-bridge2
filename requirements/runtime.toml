@@ -100,6 +100,12 @@ pip = "typer[all]==0.24.1"
 rationale = "Modern CLI generation library for tools and examples"
 
 [[dependency]]
+name = "structlog"
+openwrt = "python3-structlog"
+pip = "structlog==25.4.0"
+rationale = "Structured logging with JSON output for production syslog"
+
+[[dependency]]
 name = "rich"
 openwrt = "python3-rich"
 pip = "rich==14.3.3"

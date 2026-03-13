@@ -48,6 +48,16 @@ SOURCES=(
     "${SRC_DIR}/services/Process.cpp"
 )
 
+# Unity test framework (compiled as C, linked with C++ tests)
+UNITY_DIR="${TEST_DIR}/Unity"
+UNITY_OBJ="${BUILD_DIR}/unity.o"
+if [ -f "${UNITY_DIR}/unity.c" ]; then
+    gcc -c -O0 -g -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
+else
+    echo "[WARN] Unity not found at ${UNITY_DIR}; test assertions will fail."
+    UNITY_OBJ=""
+fi
+
 # [SIL-2] Automatically discover all test suites
 TEST_FILES=(
     "${TEST_DIR}/test_integrated.cpp"
@@ -68,8 +78,10 @@ COMPILE_FLAGS=(
     -g
     -DBRIDGE_HOST_TEST=1
     -DBRIDGE_TEST_NO_GLOBALS=1
+    -DUNITY_INCLUDE_DOUBLE
     -I"${SRC_DIR}"
     -I"${TEST_DIR}/mocks"
+    -I"${TEST_DIR}/Unity"
     -I"${STUB_DIR}"
     -I"${DUMMY_ARDUINO_LIBS}/PacketSerial"
 )
@@ -78,7 +90,7 @@ echo "[host-cpp] Compiling and running all test suites..."
 for test_file in "${TEST_FILES[@]}"; do
     test_name=$(basename "${test_file}" .cpp)
     echo "  -> Processing ${test_name}..."
-    g++ "${COMPILE_FLAGS[@]}" "${SOURCES[@]}" "${test_file}" -o "${BUILD_DIR}/${test_name}"
+    g++ "${COMPILE_FLAGS[@]}" "${SOURCES[@]}" "${test_file}" ${UNITY_OBJ} -o "${BUILD_DIR}/${test_name}"
     "${BUILD_DIR}/${test_name}"
 done
 

@@ -8,14 +8,11 @@ import logging
 from typing import Any, Annotated
 
 import typer
-from mcubridge_client import Bridge, build_bridge_args, dump_client_env
+from mcubridge_client import Bridge
+from mcubridge_client.cli import bridge_session, configure_logging
 
 app = typer.Typer(help="Example: Run an async shell command and stream its output via MQTT polls.")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+configure_logging()
 
 POLL_INTERVAL = 0.5
 
@@ -81,27 +78,17 @@ async def run_test(
     tls_insecure: bool,
 ) -> None:
 
-    dump_client_env(logging.getLogger(__name__))
+    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
+        command_to_run: list[str] = [
+            "sh",
+            "-c",
+            ("for i in $(seq 1 4); do " 'echo "tick:$i"; sleep 0.5; ' "done; >&2 echo 'process complete'"),
+        ]
 
-    bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
-    bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
-    await bridge.connect()
-
-    command_to_run: list[str] = [
-        "sh",
-        "-c",
-        ("for i in $(seq 1 4); do " 'echo "tick:$i"; sleep 0.5; ' "done; >&2 echo 'process complete'"),
-    ]
-
-    try:
         logging.info("Launching async command: %s", " ".join(command_to_run))
         pid: int = await bridge.run_shell_command_async(command_to_run)
         logging.info("Async process PID %d started; polling for output", pid)
         await _stream_poll_updates(bridge, pid)
-    except Exception as exc:  # pragma: no cover - runtime diagnostics
-        logging.error("An error occurred: %s", exc)
-    finally:
-        await bridge.disconnect()
 
     logging.info("Done.")
 

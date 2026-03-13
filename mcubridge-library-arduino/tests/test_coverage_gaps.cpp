@@ -1203,46 +1203,48 @@ void test_flush_when_awaiting_ack() {
 
 }  // namespace
 
-int main() {
-  printf("COVERAGE GAPS TEST START\n");
-  test_gpio_commands_via_dispatch();
-  test_console_write_via_dispatch();
-  test_datastore_resp_via_dispatch();
-  test_mailbox_via_dispatch();
-  test_filesystem_via_dispatch();
-  test_process_via_dispatch();
-  test_unknown_command_via_dispatch();
-  test_system_commands_via_dispatch();
-  test_ack_and_retransmit();
-  test_ack_timeout_with_status_handler();
-  test_timer_callbacks();
-  test_fsm_transitions();
-  test_observer_notifications();
-  test_bridge_events_defaults();
-  test_hal_free_memory();
-  test_apply_timing_config();
-  test_send_key_val_command();
-  test_emit_status();
-  test_emit_status_with_observer();
-  test_cobs_overflow_in_process();
-  test_cobs_decode();
-  test_frame_overflow();
-  test_command_router();
-  test_console_edge_cases();
-  test_process_edge_cases();
-  test_link_sync_full();
-  test_link_reset_with_config();
-  test_dedup_with_ack();
-  test_status_null_handler();
-  test_rpc_structs_encode();
-  test_retransmit_via_malformed();
-  test_send_frame_critical_path();
-  test_rpc_structs_parse_specializations();
-  test_status_handler_callback();
-  test_debug_io_log();
-  test_flush_when_awaiting_ack();
-  printf("COVERAGE GAPS TEST END\n");
-  return 0;
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_gpio_commands_via_dispatch);
+  RUN_TEST(test_console_write_via_dispatch);
+  RUN_TEST(test_datastore_resp_via_dispatch);
+  RUN_TEST(test_mailbox_via_dispatch);
+  RUN_TEST(test_filesystem_via_dispatch);
+  RUN_TEST(test_process_via_dispatch);
+  RUN_TEST(test_unknown_command_via_dispatch);
+  RUN_TEST(test_system_commands_via_dispatch);
+  RUN_TEST(test_ack_and_retransmit);
+  RUN_TEST(test_ack_timeout_with_status_handler);
+  RUN_TEST(test_timer_callbacks);
+  RUN_TEST(test_fsm_transitions);
+  RUN_TEST(test_observer_notifications);
+  RUN_TEST(test_bridge_events_defaults);
+  RUN_TEST(test_hal_free_memory);
+  RUN_TEST(test_apply_timing_config);
+  RUN_TEST(test_send_key_val_command);
+  RUN_TEST(test_emit_status);
+  RUN_TEST(test_emit_status_with_observer);
+  RUN_TEST(test_cobs_overflow_in_process);
+  RUN_TEST(test_cobs_decode);
+  RUN_TEST(test_frame_overflow);
+  RUN_TEST(test_command_router);
+  RUN_TEST(test_console_edge_cases);
+  RUN_TEST(test_process_edge_cases);
+  RUN_TEST(test_link_sync_full);
+  RUN_TEST(test_link_reset_with_config);
+  RUN_TEST(test_dedup_with_ack);
+  RUN_TEST(test_status_null_handler);
+  RUN_TEST(test_rpc_structs_encode);
+  RUN_TEST(test_retransmit_via_malformed);
+  RUN_TEST(test_send_frame_critical_path);
+  RUN_TEST(test_rpc_structs_parse_specializations);
+  RUN_TEST(test_status_handler_callback);
+  RUN_TEST(test_debug_io_log);
+  RUN_TEST(test_flush_when_awaiting_ack);
+  return UNITY_END();
 }
 
 Stream* g_arduino_stream_delegate = nullptr;

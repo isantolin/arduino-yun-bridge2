@@ -27,16 +27,11 @@
 #include "protocol/rpc_frame.h"
 #include "Bridge.h"
 
-// --- ASSERTIONS ---
-#define TEST_ASSERT(cond) \
-    if (!(cond)) { fprintf(stderr, "[FATAL] Assertion failed at %s:%d: %s\n", __FILE__, __LINE__, #cond); abort(); }
+// --- ASSERTIONS (Unity) ---
+#include "unity.h"
 
 #define TEST_ASSERT_EQ_UINT(actual, expected) \
-    if ((size_t)(actual) != (size_t)(expected)) { \
-        fprintf(stderr, "[FATAL] Assertion failed at %s:%d: %s == %s (got %zu, exp %zu)\n", \
-                __FILE__, __LINE__, #actual, #expected, (size_t)(actual), (size_t)(expected)); \
-        abort(); \
-    }
+    TEST_ASSERT_EQUAL_UINT32((unsigned long)(expected), (unsigned long)(actual))
 
 // --- TIME SIMULATION ---
 extern unsigned long g_test_millis;

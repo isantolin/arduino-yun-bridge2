@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "etl/crc32.h"
+#include "unity.h"
 
 static inline uint32_t crc32_ieee(const void* data, size_t len) {
   etl::crc32 crc_calc;
@@ -16,27 +17,9 @@ static inline uint32_t crc32_ieee(const void* data, size_t len) {
   return crc_calc.value();
 }
 
-#define TEST_ASSERT(cond)                                                  \
-  do {                                                                     \
-    if (!(cond)) {                                                         \
-      fprintf(stderr, "[FATAL] Assertion failed at %s:%d: %s\n", __FILE__, \
-              __LINE__, #cond);                                            \
-      abort();                                                             \
-    }                                                                      \
-  } while (0)
-
-#define TEST_ASSERT_EQ_UINT(actual, expected)                                 \
-  do {                                                                        \
-    const unsigned long _a = (unsigned long)(actual);                         \
-    const unsigned long _e = (unsigned long)(expected);                       \
-    if (_a != _e) {                                                           \
-      fprintf(                                                                \
-          stderr,                                                             \
-          "[FATAL] Assertion failed at %s:%d: %s == %s (got %lu, exp %lu)\n", \
-          __FILE__, __LINE__, #actual, #expected, _a, _e);                    \
-      abort();                                                                \
-    }                                                                         \
-  } while (0)
+/* Legacy convenience macros – map to Unity assertions. */
+#define TEST_ASSERT_EQ_UINT(actual, expected)     \
+  TEST_ASSERT_EQUAL_UINT32((unsigned long)(expected), (unsigned long)(actual))
 
 static inline void test_memfill(uint8_t* buf, size_t len, uint8_t value) {
   etl::fill_n(buf, len, value);

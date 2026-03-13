@@ -434,25 +434,25 @@ void test_bridge_gpio_read_gaps() {
 
 void test_etl_handle_error_gap() {}
 
-int main() {
-  printf("ARDUINO COVERAGE BOOST TEST START\n");
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
   Bridge.begin(115200);
-
-  test_fsm_only();
-  test_rle_gaps();
-  test_rpc_structs_gaps();
-  test_bridge_core_gaps();
-  test_bridge_core_timeout_status();
-  test_fsm_gaps_more();
-  test_router_gaps();
-  test_services_gaps();
-  test_bridge_status_system_gaps();
-  test_bridge_handle_dedup_ack_gaps();
-  test_bridge_emit_status_flash();
-  test_bridge_gpio_read_gaps();
-
-  printf("ARDUINO COVERAGE BOOST TEST END\n");
-  return 0;
+  UNITY_BEGIN();
+  RUN_TEST(test_fsm_only);
+  RUN_TEST(test_rle_gaps);
+  RUN_TEST(test_rpc_structs_gaps);
+  RUN_TEST(test_bridge_core_gaps);
+  RUN_TEST(test_bridge_core_timeout_status);
+  RUN_TEST(test_fsm_gaps_more);
+  RUN_TEST(test_router_gaps);
+  RUN_TEST(test_services_gaps);
+  RUN_TEST(test_bridge_status_system_gaps);
+  RUN_TEST(test_bridge_handle_dedup_ack_gaps);
+  RUN_TEST(test_bridge_emit_status_flash);
+  RUN_TEST(test_bridge_gpio_read_gaps);
+  return UNITY_END();
 }
 
 Stream* g_arduino_stream_delegate = nullptr;

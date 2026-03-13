@@ -8,14 +8,10 @@ import logging
 from typing import Annotated
 
 import typer
-from mcubridge_client import Bridge, build_bridge_args, dump_client_env
+from mcubridge_client.cli import bridge_session, configure_logging
 
 app = typer.Typer(help="Example: Send a mailbox message and read back responses.")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -28,14 +24,9 @@ async def run_test(
     max_polls: int,
 ) -> None:
 
-    dump_client_env(logger)
+    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
+        logger.info("--- Starting Mailbox Read Test ---")
 
-    bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
-    bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
-    await bridge.connect()
-    logger.info("--- Starting Mailbox Read Test ---")
-
-    try:
         # --- Send phase ---
         message_to_send = "hello_from_mailbox_test"
         logger.info("Sending message to mailbox: '%s'", message_to_send)
@@ -60,9 +51,6 @@ async def run_test(
             )
         if max_polls > 0:
             logger.info("Reached max polls (%d), exiting.", max_polls)
-    finally:
-        await bridge.disconnect()
-        logger.info("Disconnected from MQTT broker.")
 
     logger.info("Done.")
 

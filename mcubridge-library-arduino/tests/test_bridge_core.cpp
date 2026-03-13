@@ -182,14 +182,18 @@ void test_bridge_chunking() {
 
 }  // namespace
 
-int main() {
-  test_bridge_begin();
-  test_bridge_send_frame();
-  test_bridge_process_rx();
-  test_bridge_handshake();
-  test_bridge_flow_control();
-  test_bridge_dedup_console_write_retry();
-  test_bridge_ack_malformed_timeout_paths();
-  test_bridge_chunking();
-  return 0;
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_bridge_begin);
+  RUN_TEST(test_bridge_send_frame);
+  RUN_TEST(test_bridge_process_rx);
+  RUN_TEST(test_bridge_handshake);
+  RUN_TEST(test_bridge_flow_control);
+  RUN_TEST(test_bridge_dedup_console_write_retry);
+  RUN_TEST(test_bridge_ack_malformed_timeout_paths);
+  RUN_TEST(test_bridge_chunking);
+  return UNITY_END();
 }

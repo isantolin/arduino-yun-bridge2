@@ -141,15 +141,17 @@ void test_console_write_fail() {
 
 } // namespace
 
-int main() {
-  printf("ARDUINO EXTRA GAPS TEST START\n");
-  test_bridge_send_chunky_frame_overflow();
-  test_bridge_is_security_check_passed_fail();
-  test_datastore_value_truncation();
-  test_datastore_get_malformed();
-  test_console_write_fail();
-  printf("ARDUINO EXTRA GAPS TEST END\n");
-  return 0;
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_bridge_send_chunky_frame_overflow);
+  RUN_TEST(test_bridge_is_security_check_passed_fail);
+  RUN_TEST(test_datastore_value_truncation);
+  RUN_TEST(test_datastore_get_malformed);
+  RUN_TEST(test_console_write_fail);
+  return UNITY_END();
 }
 
 Stream* g_arduino_stream_delegate = nullptr;

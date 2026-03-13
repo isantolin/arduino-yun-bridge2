@@ -173,18 +173,18 @@ void test_hal_gaps() {
   TEST_ASSERT(bridge::hal::isValidPin(30) == false);
 }
 
-int main() {
-  printf("COVERAGE MEGA TEST START\n");
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
   Bridge.begin(115200);
-
-  test_bridge_process_gaps();
-  test_bridge_gpio_gaps();
-  test_bridge_status_gaps();
-  test_bridge_send_gaps();
-  test_fsm_internal_gaps();
-  test_security_cpp_gaps();
-  test_hal_gaps();
-
-  printf("COVERAGE MEGA TEST END\n");
-  return 0;
+  UNITY_BEGIN();
+  RUN_TEST(test_bridge_process_gaps);
+  RUN_TEST(test_bridge_gpio_gaps);
+  RUN_TEST(test_bridge_status_gaps);
+  RUN_TEST(test_bridge_send_gaps);
+  RUN_TEST(test_fsm_internal_gaps);
+  RUN_TEST(test_security_cpp_gaps);
+  RUN_TEST(test_hal_gaps);
+  return UNITY_END();
 }

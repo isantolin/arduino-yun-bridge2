@@ -8,14 +8,10 @@ import logging
 from typing import Annotated
 
 import typer
-from mcubridge_client import Bridge, build_bridge_args, dump_client_env
+from mcubridge_client.cli import bridge_session, configure_logging
 
 app = typer.Typer(help="Poll sensor values via the async bridge client.")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+configure_logging()
 
 
 async def run_test(
@@ -28,29 +24,23 @@ async def run_test(
     tls_insecure: bool,
 ) -> None:
 
-    dump_client_env(logging.getLogger(__name__))
+    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
+        logging.info(
+            "Requesting a reading from pin %s every %.1f seconds.",
+            pin,
+            interval,
+        )
+        logging.info("Press Ctrl+C to exit.")
 
-    bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
-    bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
-    await bridge.connect()
+        is_analog = pin.lower().startswith("a")
+        # Handle optional 'd' or 'a' prefix safely
+        try:
+            raw_pin_str = pin[1:] if pin[0].isalpha() else pin
+            pin_number = int(raw_pin_str)
+        except ValueError:
+            logging.error(f"Invalid pin format: {pin}")
+            raise typer.Exit(code=1)
 
-    logging.info(
-        "Requesting a reading from pin %s every %.1f seconds.",
-        pin,
-        interval,
-    )
-    logging.info("Press Ctrl+C to exit.")
-
-    is_analog = pin.lower().startswith("a")
-    # Handle optional 'd' or 'a' prefix safely
-    try:
-        raw_pin_str = pin[1:] if pin[0].isalpha() else pin
-        pin_number = int(raw_pin_str)
-    except ValueError:
-        logging.error(f"Invalid pin format: {pin}")
-        raise typer.Exit(code=1)
-
-    try:
         start_time = asyncio.get_running_loop().time()
         while True:
             if asyncio.get_running_loop().time() - start_time > 10.0:
@@ -73,13 +63,6 @@ async def run_test(
                 )
 
             await asyncio.sleep(interval)
-
-    except asyncio.CancelledError:
-        logging.info("\nExiting...")
-    except Exception as e:
-        logging.error(f"An error occurred: {e}")
-    finally:
-        await bridge.disconnect()
 
 
 @app.command()

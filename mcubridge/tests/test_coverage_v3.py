@@ -1,5 +1,6 @@
 import asyncio
 import errno
+import logging.handlers
 import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -36,10 +37,13 @@ def create_real_config():
 def test_configure_logging_stream_env():
     config = create_real_config()
     with patch.dict(os.environ, {"MCUBRIDGE_LOG_STREAM": "1"}):
-        with patch("mcubridge.config.logging.dictConfig") as mock_dict_config:
-            logging_config.configure_logging(config)
-            mock_dict_config.assert_called_once()
-            assert mock_dict_config.call_args[0][0]["root"]["handlers"] == ["console"]
+        logging_config.configure_logging(config)
+        import logging as _logging
+
+        root = _logging.getLogger()
+        assert len(root.handlers) == 1
+        assert isinstance(root.handlers[0], _logging.StreamHandler)
+        assert not isinstance(root.handlers[0], _logging.handlers.SysLogHandler)
 
 
 def test_configure_logging_syslog_fallback(tmp_path):
@@ -47,34 +51,29 @@ def test_configure_logging_syslog_fallback(tmp_path):
     fake_fallback = tmp_path / "log_fallback"
     fake_fallback.touch()
 
-    original_exists = Path.exists
-
-    def fake_exists(self):
-        if str(self) == str(fake_fallback):
-            return True
-        if "/non/existent" in str(self):
-            return False
-        return original_exists(self)
+    mock_handler = MagicMock()
 
     with (
-        patch.object(Path, "exists", fake_exists),
         patch("mcubridge.config.logging.SYSLOG_SOCKET", Path("/non/existent/dev/log")),
         patch("mcubridge.config.logging.SYSLOG_SOCKET_FALLBACK", fake_fallback),
+        patch("logging.handlers.SysLogHandler", return_value=mock_handler) as mock_cls,
     ):
-        with patch("mcubridge.config.logging.dictConfig") as mock_dict_config:
-            logging_config.configure_logging(config)
-            mock_dict_config.assert_called_once()
-            handlers = mock_dict_config.call_args[0][0]["root"]["handlers"]
-            assert "syslog" in handlers
+        mock_cls.LOG_DAEMON = logging.handlers.SysLogHandler.LOG_DAEMON
+        logging_config.configure_logging(config)
+        mock_cls.assert_called_once_with(
+            address=str(fake_fallback),
+            facility=logging.handlers.SysLogHandler.LOG_DAEMON,
+        )
 
 
 def test_configure_logging_debug():
     config = create_real_config()
     config.debug_logging = True
-    with patch("mcubridge.config.logging.dictConfig") as mock_dict_config:
-        logging_config.configure_logging(config)
-        mock_dict_config.assert_called_once()
-        assert mock_dict_config.call_args[0][0]["root"]["level"] == "DEBUG"
+    logging_config.configure_logging(config)
+    import logging as _logging
+
+    root = _logging.getLogger()
+    assert root.level == _logging.DEBUG
 
 
 # --- mcubridge.daemon ---

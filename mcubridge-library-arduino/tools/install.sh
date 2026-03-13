@@ -205,6 +205,13 @@ install_etl_dual() {
 }
 install_etl_dual
 
+# Unity test framework (host tests only)
+install_dependency "Unity" \
+    "https://codeload.github.com/ThrowTheSwitch/Unity/zip/refs/tags/v2.6.1" \
+    "unity.h" \
+    "src" \
+    "${LIB_ROOT}/tests"
+
 # Verify our own src directory exists
 if [ ! -d "${LIB_ROOT}/src" ]; then
     echo "[ERROR] Source directory not found: ${LIB_ROOT}/src" >&2

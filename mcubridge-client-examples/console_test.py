@@ -10,14 +10,10 @@ import sys
 from typing import Annotated
 
 import typer
-from mcubridge_client import Bridge, build_bridge_args, dump_client_env
+from mcubridge_client.cli import bridge_session, configure_logging
 
 app = typer.Typer(help="Interactive console helper for the Arduino bridge.")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+configure_logging()
 
 
 async def run_test(
@@ -28,13 +24,7 @@ async def run_test(
     tls_insecure: bool,
 ) -> None:
 
-    dump_client_env(logging.getLogger(__name__))
-
-    bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
-    bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
-    await bridge.connect()
-
-    try:
+    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
         # Start a task to listen for console messages
         async def console_listener() -> None:
             while True:
@@ -75,12 +65,7 @@ async def run_test(
         listener_task.cancel()
         await asyncio.gather(listener_task, return_exceptions=True)
 
-    except asyncio.CancelledError:
-        logging.info("\nExiting...")
-    except Exception as e:
-        logging.error(f"An error occurred: {e}")
-    finally:
-        await bridge.disconnect()
+    logging.info("Done.")
 
 
 @app.command()
@@ -91,10 +76,7 @@ def main(
     password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
     tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = False,
 ) -> None:
-    try:
-        asyncio.run(run_test(host, port, user, password, tls_insecure))
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(run_test(host, port, user, password, tls_insecure))
 
 
 if __name__ == "__main__":

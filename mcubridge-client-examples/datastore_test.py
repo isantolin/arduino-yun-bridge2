@@ -8,14 +8,10 @@ import logging
 from typing import Annotated
 
 import typer
-from mcubridge_client import Bridge, build_bridge_args, dump_client_env
+from mcubridge_client.cli import bridge_session, configure_logging
 
 app = typer.Typer(help="Exercise datastore interactions using the bridge client.")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+configure_logging()
 
 
 async def run_test(
@@ -26,56 +22,50 @@ async def run_test(
     tls_insecure: bool,
 ) -> None:
 
-    dump_client_env(logging.getLogger(__name__))
+    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
+        logging.info("--- Starting DataStore Bridge Client Test ---")
 
-    bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
-    bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
-    await bridge.connect()
+        # --- Test 1: Put and Get a new key-value pair ---
+        logging.info("[Test 1: Put and Get a new key-value pair]")
+        key1: str = "client_test/temperature"
+        value1: str = "25.5"
 
-    logging.info("--- Starting DataStore Bridge Client Test ---")
+        await bridge.put(key1, value1)
+        logging.info(f"Put value '{value1}' to key '{key1}'")
 
-    # --- Test 1: Put and Get a new key-value pair ---
-    logging.info("[Test 1: Put and Get a new key-value pair]")
-    key1: str = "client_test/temperature"
-    value1: str = "25.5"
+        retrieved_value: str = await bridge.get(key1)
+        if retrieved_value == value1:
+            logging.info(
+                "SUCCESS: Retrieved value '%s' matches put value '%s'.",
+                retrieved_value,
+                value1,
+            )
+        else:
+            logging.error(
+                "FAILURE: Retrieved value '%s' does not match put value '%s'.",
+                retrieved_value,
+                value1,
+            )
 
-    await bridge.put(key1, value1)
-    logging.info(f"Put value '{value1}' to key '{key1}'")
+        # --- Test 2: Get a non-existent key ---
+        logging.info("\n[Test 2: Get a non-existent key]")
+        key2: str = "non_existent/key"
 
-    retrieved_value: str = await bridge.get(key1)
-    if retrieved_value == value1:
-        logging.info(
-            "SUCCESS: Retrieved value '%s' matches put value '%s'.",
-            retrieved_value,
-            value1,
-        )
-    else:
-        logging.error(
-            "FAILURE: Retrieved value '%s' does not match put value '%s'.",
-            retrieved_value,
-            value1,
-        )
+        retrieved_value_2: str = await bridge.get(key2)
+        # Expecting an empty payload for a non-existent key
+        if retrieved_value_2 == "":
+            logging.info(
+                "SUCCESS: Empty value returned for non-existent key '%s'.",
+                key2,
+            )
+        else:
+            logging.error(
+                "FAILURE: Value '%s' returned for non-existent key '%s'.",
+                retrieved_value_2,
+                key2,
+            )
 
-    # --- Test 2: Get a non-existent key ---
-    logging.info("\n[Test 2: Get a non-existent key]")
-    key2: str = "non_existent/key"
-
-    retrieved_value_2: str = await bridge.get(key2)
-    # Expecting an empty payload for a non-existent key
-    if retrieved_value_2 == "":
-        logging.info(
-            "SUCCESS: Empty value returned for non-existent key '%s'.",
-            key2,
-        )
-    else:
-        logging.error(
-            "FAILURE: Value '%s' returned for non-existent key '%s'.",
-            retrieved_value_2,
-            key2,
-        )
-
-    logging.info("\n--- Test Complete ---")
-    await bridge.disconnect()
+    logging.info("Done.")
 
 
 @app.command()

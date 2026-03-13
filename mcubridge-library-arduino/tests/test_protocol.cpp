@@ -194,21 +194,22 @@ static void test_builder_buffer_too_small() {
   TEST_ASSERT(len == 0);
 }
 
-int main() {
-  test_endianness_helpers();
-  test_crc_helpers();
-  test_builder_roundtrip();
-  test_builder_payload_limit();
-  test_parser_incomplete_packets();
-  test_parser_crc_failure();
-  test_parser_header_validation();
-  test_parser_overflow_guard();
+void setUp(void) {}
+void tearDown(void) {}
 
-  // Tests de cobertura adicionales recuperados
-  test_parser_header_logical_validation_mismatch();
-  test_builder_buffer_too_small();
-
-  return 0;
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_endianness_helpers);
+  RUN_TEST(test_crc_helpers);
+  RUN_TEST(test_builder_roundtrip);
+  RUN_TEST(test_builder_payload_limit);
+  RUN_TEST(test_parser_incomplete_packets);
+  RUN_TEST(test_parser_crc_failure);
+  RUN_TEST(test_parser_header_validation);
+  RUN_TEST(test_parser_overflow_guard);
+  RUN_TEST(test_parser_header_logical_validation_mismatch);
+  RUN_TEST(test_builder_buffer_too_small);
+  return UNITY_END();
 }
 
 Stream* g_arduino_stream_delegate = nullptr;

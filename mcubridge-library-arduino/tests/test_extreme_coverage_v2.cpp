@@ -238,15 +238,17 @@ void test_process_gaps() {
 
 }  // namespace
 
-int main() {
-  printf("EXTREME ARDUINO COVERAGE V2 START\n");
-  test_bridge_gaps();
-  test_datastore_gaps();
-  test_console_gaps();
-  test_filesystem_gaps();
-  test_mailbox_gaps();
-  test_process_gaps();
-  printf("EXTREME ARDUINO COVERAGE V2 END\n");
-  return 0;
+void setUp(void) {}
+void tearDown(void) {}
+
+int main(void) {
+  UNITY_BEGIN();
+  RUN_TEST(test_bridge_gaps);
+  RUN_TEST(test_datastore_gaps);
+  RUN_TEST(test_console_gaps);
+  RUN_TEST(test_filesystem_gaps);
+  RUN_TEST(test_mailbox_gaps);
+  RUN_TEST(test_process_gaps);
+  return UNITY_END();
 }
 Stream* g_arduino_stream_delegate = nullptr;

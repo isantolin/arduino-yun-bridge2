@@ -14,15 +14,6 @@ STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 
 # Find library paths (local or system)
 ETL_PATH="${LIB_DIR}/src"
-# CI environment usually has these in specific paths or we install them via install.sh
-# For the emulator, we assume dependencies are already in src/ via install.sh
-PACKETSERIAL_PATH="${DUMMY_ARDUINO_LIBS:-/tmp/arduino_libs}/PacketSerial/src"
-
-# Fallback for paths if not provided via environment (local dev)
-CURRENT_USER="$(whoami)"
-if [ ! -d "${PACKETSERIAL_PATH}" ]; then
-    PACKETSERIAL_PATH="/home/${CURRENT_USER}/Arduino/libraries/PacketSerial/src"
-fi
 
 # Use the python from the current environment (e.g. tox virtualenv)
 PYTHON_CMD=$(command -v python || command -v python3)
@@ -45,7 +36,6 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
-    -I"${PACKETSERIAL_PATH}" \
     "${SRC_DIR}/security/sha256.cpp" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
@@ -67,7 +57,6 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
-    -I"${PACKETSERIAL_PATH}" \
     "${SRC_DIR}/security/sha256.cpp" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \

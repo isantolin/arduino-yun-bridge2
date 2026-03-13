@@ -45,6 +45,16 @@ SOURCES=(
     "${SRC_ROOT}/services/Process.cpp"
 )
 
+# Unity test framework
+UNITY_DIR="${TEST_ROOT}/Unity"
+UNITY_OBJ="${BUILD_DIR}/unity.o"
+if [ -f "${UNITY_DIR}/unity.c" ]; then
+    gcc -c -O0 -g -fprofile-arcs -ftest-coverage -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
+else
+    echo "ERROR: Unity not found at ${UNITY_DIR}; run install.sh first."
+    exit 1
+fi
+
 # Compiler flags
 CXXFLAGS=(
     "-std=c++11"
@@ -62,9 +72,11 @@ CXXFLAGS=(
     "-DBRIDGE_ENABLE_MAILBOX=1"
     "-DBRIDGE_ENABLE_FILESYSTEM=1"
     "-DBRIDGE_ENABLE_PROCESS=1"
+    "-DUNITY_INCLUDE_DOUBLE"
     "-I${SRC_ROOT}"
     "-I${STUB_INCLUDE}"
     "-I${TEST_ROOT}/mocks"
+    "-I${TEST_ROOT}/Unity"
 )
 
 # [SIL-2] All test suites contribute to coverage via cumulative .gcda
@@ -92,7 +104,7 @@ for suite in "${TEST_SUITES[@]}"; do
     
     # Compile suite including all required sources
     # Run from BUILD_DIR so .gcno/.gcda files land here
-    g++ "${CXXFLAGS[@]}" "${suite_src}" "${SOURCES[@]}" -o "${suite_bin}"
+    g++ "${CXXFLAGS[@]}" "${suite_src}" "${SOURCES[@]}" ${UNITY_OBJ} -o "${suite_bin}"
     
     # Execute
     "${suite_bin}"

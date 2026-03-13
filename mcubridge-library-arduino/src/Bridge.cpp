@@ -474,7 +474,7 @@ void BridgeClass::_handleGetCapabilities(
     etl::bitset<32> features;
     features.set(0);  // RLE Bit (Always enabled)
     
-    // Declarative feature mapping
+    // Declarative feature mapping using C++11/14 initialization
     const bool feature_map[] = {
         kBridgeEnableWatchdog, // Bit 1
 #if BRIDGE_DEBUG_FRAMES
@@ -535,10 +535,10 @@ void BridgeClass::_handleGetCapabilities(
 #endif
     };
 
-    size_t feature_idx = 1;
+    uint8_t i = 1;
     for (bool has_feature : feature_map) {
-      if (has_feature) features.set(feature_idx);
-      feature_idx++;
+      if (has_feature) features.set(i);
+      i++;
     }
 
     _sendResponse<rpc::payload::Capabilities>(
@@ -549,7 +549,7 @@ void BridgeClass::_handleGetCapabilities(
 
 void BridgeClass::_handleSetBaudrate(const bridge::router::CommandContext& ctx) {
   _withPayloadResponse<rpc::payload::SetBaudratePacket>(
-      ctx, [&](const rpc::payload::SetBaudratePacket& msg) {
+      ctx, [this](const rpc::payload::SetBaudratePacket& msg) {
         static_cast<void>(sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP));
         flushStream();
         _pending_baudrate = msg.baudrate;
@@ -570,11 +570,10 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     return;
   }
 
-  _withResponse(ctx, [&]() {
+  _withResponse(ctx, [this, payload_data = ctx.frame->payload.data(), nonce_length, has_secret]() {
     enterSafeState();
     _fsm.handshakeStart();  // Transition to Syncing state
 
-    const uint8_t* payload_data = ctx.frame->payload.data();
     if (has_secret) {
       const char* debug_secret = "DEBUG_INSECURE";
       bool bypass = (_shared_secret.size() == 14 &&
@@ -619,7 +618,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
-  _withResponse(ctx, [&]() {
+  _withResponse(ctx, [this, &ctx]() {
     enterSafeState();
     if (ctx.frame->header.payload_length ==
         rpc::payload::HandshakeConfig::SIZE) {
@@ -632,8 +631,7 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for GPIO Commands
-  using GpioHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
-  static constexpr etl::array<GpioHandler, 5> kGpioHandlers{{
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 5> kGpioHandlers{{
       &BridgeClass::_handleSetPinMode,    // 0: 80
       &BridgeClass::_handleDigitalWrite,  // 1: 81
       &BridgeClass::_handleAnalogWrite,   // 2: 82
@@ -713,15 +711,13 @@ void BridgeClass::onDataStoreCommand(
           h(key, etl::span<const uint8_t>(msg.value, msg.value_len));
         }
 #endif
-        static_cast<void>(h);
+        (void)h;
       });
 }
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for Mailbox Commands
-  using MailboxDispatchHandler = void (BridgeClass::*)(
-      const bridge::router::CommandContext&);
-  static constexpr etl::array<MailboxDispatchHandler, 3> kMailboxHandlers{{
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 3> kMailboxHandlers{{
       &BridgeClass::_handleMailboxPush,          // 0: 131
       &BridgeClass::_handleMailboxReadResp,      // 1: 132
       &BridgeClass::_handleMailboxAvailableResp  // 2: 133
@@ -747,7 +743,7 @@ void BridgeClass::_handleMailboxReadResp(
 #if BRIDGE_ENABLE_MAILBOX
         Mailbox._onIncomingData(etl::span<const uint8_t>(msg.content, msg.length));
 #endif
-        static_cast<void>(h);
+        (void)h;
       });
 }
 
@@ -776,9 +772,7 @@ void BridgeClass::_handleFileReadResp(
 void BridgeClass::onFileSystemCommand(
     const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for File System Commands
-  using FileSystemHandler = void (BridgeClass::*)(
-      const bridge::router::CommandContext&);
-  static constexpr etl::array<FileSystemHandler, 4> kFileSystemHandlers{{
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 4> kFileSystemHandlers{{
       &BridgeClass::_handleFileWrite,    // 0: 144
       nullptr,                           // 1: 145 (reserved)
       nullptr,                           // 2: 146 (reserved)
@@ -789,9 +783,7 @@ void BridgeClass::onFileSystemCommand(
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
   // [SIL-2] O(1) Dispatch via Jump Table for Process Commands
-  using ProcessHandler = void (BridgeClass::*)(
-      const bridge::router::CommandContext&);
-  static constexpr etl::array<ProcessHandler, 2> kProcessHandlers{{
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 2> kProcessHandlers{{
       &BridgeClass::_handleProcessRunAsyncResp,  // 0: 165
       &BridgeClass::_handleProcessPollResp       // 1: 166
   }};
@@ -815,9 +807,10 @@ void BridgeClass::_handleProcessPollResp(
         h(static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
           etl::span<const uint8_t>(msg.stdout_data, msg.stdout_len),
           etl::span<const uint8_t>(msg.stderr_data, msg.stderr_len));
-        static_cast<void>(Process._popPendingProcessPid());
+        (void)Process._popPendingProcessPid();
       });
 }
+
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   if (_command_handler.is_valid()) {

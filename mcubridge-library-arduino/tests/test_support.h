@@ -95,3 +95,52 @@ struct ByteBuffer {
     return (int)data[pos];
   }
 };
+
+// ---------------------------------------------------------------------------
+// Reusable mock Stream classes for test binaries.
+// ---------------------------------------------------------------------------
+
+/**
+ * Tx-only capture stream – records writes, no readable data.
+ */
+class TxCaptureStream : public Stream {
+ public:
+  ByteBuffer<4096> tx;
+
+  size_t write(uint8_t c) override {
+    tx.push(c);
+    return 1;
+  }
+  size_t write(const uint8_t* b, size_t s) override {
+    tx.append(b, s);
+    return s;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+};
+
+/**
+ * Bidirectional mock stream – captures writes and feeds reads via feed().
+ */
+class BiStream : public Stream {
+ public:
+  ByteBuffer<4096> rx_buf;
+  ByteBuffer<4096> tx_buf;
+
+  int available() override { return rx_buf.remaining(); }
+  int read() override { return rx_buf.read_byte(); }
+  int peek() override { return rx_buf.peek_byte(); }
+  size_t write(uint8_t b) override {
+    tx_buf.push(b);
+    return 1;
+  }
+  size_t write(const uint8_t* b, size_t s) override {
+    tx_buf.append(b, s);
+    return s;
+  }
+  void flush() override {}
+
+  void feed(const uint8_t* data, size_t len) { rx_buf.append(data, len); }
+};

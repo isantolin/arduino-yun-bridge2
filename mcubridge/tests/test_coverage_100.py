@@ -165,7 +165,7 @@ def test_queues_make_room_for_complex() -> None:
 
 def test_common_encode_status_reason() -> None:
     """Cover encode_status_reason function."""
-    from mcubridge.config.common import encode_status_reason
+    from mcubridge.protocol.encoding import encode_status_reason
 
     result = encode_status_reason("test_reason")
     assert result == b"test_reason"

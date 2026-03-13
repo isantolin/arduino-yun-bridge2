@@ -93,7 +93,7 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
         cls,
         entries: Iterable[str],
     ) -> AllowedCommandPolicy:
-        from mcubridge.config.common import normalise_allowed_commands
+        from mcubridge.util import normalise_allowed_commands
 
         normalised = normalise_allowed_commands(entries)
         return cls(entries=normalised)

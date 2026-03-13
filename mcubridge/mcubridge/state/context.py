@@ -626,13 +626,24 @@ class RuntimeState(msgspec.Struct):
         if evt.accepted:
             self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
+    def _mailbox_overflow(self, queue_len: int, payload_len: int, *, incoming: bool) -> bool:
+        """Return True if the mailbox queue is full. Updates overflow counters."""
+        if queue_len < self.mailbox_queue_limit:
+            return False
+        if incoming:
+            self.mailbox_incoming_dropped_messages += 1
+            self.mailbox_incoming_dropped_bytes += payload_len
+            self.mailbox_incoming_overflow_events += 1
+        else:
+            self.mailbox_dropped_messages += 1
+            self.mailbox_dropped_bytes += payload_len
+            self.mailbox_outgoing_overflow_events += 1
+        return True
+
     def enqueue_mailbox_message(self, payload: bytes, logger: logging.Logger) -> bool:
         # Simplified with zict: keys are timestamps
         key = str(time.time_ns())
-        if len(self.mailbox_queue) >= self.mailbox_queue_limit:
-            self.mailbox_dropped_messages += 1
-            self.mailbox_dropped_bytes += len(payload)
-            self.mailbox_outgoing_overflow_events += 1
+        if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
             return False
         self.mailbox_queue[key] = payload
         self.mailbox_queue_bytes += len(payload)
@@ -652,10 +663,7 @@ class RuntimeState(msgspec.Struct):
         return msg
 
     def requeue_mailbox_message_front(self, payload: bytes) -> None:
-        if len(self.mailbox_queue) >= self.mailbox_queue_limit:
-            self.mailbox_dropped_messages += 1
-            self.mailbox_dropped_bytes += len(payload)
-            self.mailbox_outgoing_overflow_events += 1
+        if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
             return
         # [SIL-2] Requeue at front by using a decremental index to stay before time.time_ns()
         self._mailbox_requeue_idx -= 1
@@ -665,10 +673,7 @@ class RuntimeState(msgspec.Struct):
 
     def enqueue_mailbox_incoming(self, payload: bytes, logger: logging.Logger) -> bool:
         key = str(time.time_ns())
-        if len(self.mailbox_incoming_queue) >= self.mailbox_queue_limit:
-            self.mailbox_incoming_dropped_messages += 1
-            self.mailbox_incoming_dropped_bytes += len(payload)
-            self.mailbox_incoming_overflow_events += 1
+        if self._mailbox_overflow(len(self.mailbox_incoming_queue), len(payload), incoming=True):
             return False
         self.mailbox_incoming_queue[key] = payload
         self.mailbox_incoming_queue_bytes += len(payload)

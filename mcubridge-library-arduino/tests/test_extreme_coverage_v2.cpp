@@ -36,26 +36,7 @@ ProcessClass Process;
 
 namespace {
 
-class CaptureStream : public Stream {
- public:
-  ByteBuffer<4096> tx;
-  ByteBuffer<4096> rx;
-  size_t write(uint8_t c) override {
-    tx.push(c);
-    return 1;
-  }
-  size_t write(const uint8_t* b, size_t s) override {
-    tx.append(b, s);
-    return s;
-  }
-  int available() override { return rx.remaining(); }
-  int read() override { return rx.read_byte(); }
-  int peek() override { return -1; }
-  void flush() override {}
-  void feed(const uint8_t* b, size_t s) { rx.append(b, s); }
-};
-
-void setup_env(CaptureStream& stream) {
+void setup_env(BiStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
   Bridge.begin(115200);
@@ -65,7 +46,7 @@ void setup_env(CaptureStream& stream) {
 
 // --- COBERTURA BRIDGE.CPP ---
 void test_bridge_gaps() {
-  CaptureStream stream;
+  BiStream stream;
   setup_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -134,7 +115,7 @@ void test_bridge_gaps() {
 
 // --- COBERTURA DATASTORE LÍMITES ---
 void test_datastore_gaps() {
-  CaptureStream stream;
+  BiStream stream;
   setup_env(stream);
 
   // Gap: _trackPendingDatastoreKey overflow
@@ -145,7 +126,7 @@ void test_datastore_gaps() {
 
 // --- COBERTURA CONSOLE.CPP ---
 void test_console_gaps() {
-  CaptureStream stream;
+  BiStream stream;
   setup_env(stream);
   Console.begin();
   auto ca = bridge::test::ConsoleTestAccessor::create(Console);
@@ -169,7 +150,7 @@ void test_console_gaps() {
 
 // --- COBERTURA FILESYSTEM.CPP ---
 void test_filesystem_gaps() {
-  CaptureStream stream;
+  BiStream stream;
   setup_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -202,7 +183,7 @@ void test_filesystem_gaps() {
 
 // --- COBERTURA MAILBOX.CPP ---
 void test_mailbox_gaps() {
-  CaptureStream stream;
+  BiStream stream;
   setup_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -225,7 +206,7 @@ void test_mailbox_gaps() {
 
 // --- COBERTURA PROCESS.CPP ---
 void test_process_gaps() {
-  CaptureStream stream;
+  BiStream stream;
   setup_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 

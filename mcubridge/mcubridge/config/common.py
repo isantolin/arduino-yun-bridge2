@@ -9,9 +9,6 @@ from typing import Any, Final, cast
 
 # [SIL-2] STRICT DEPENDENCY: On OpenWrt, uci is a mandatory system package.
 import uci
-from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
-from mcubridge.protocol.encoding import encode_status_reason
-from mcubridge.util import log_hexdump, normalise_allowed_commands, parse_bool
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +56,6 @@ def get_default_config() -> dict[str, Any]:
 
 
 __all__: Final[tuple[str, ...]] = (
-    "normalise_allowed_commands",
-    "parse_bool",
-    "encode_status_reason",
     "get_default_config",
     "get_uci_config",
-    "build_mqtt_connect_properties",
-    "build_mqtt_properties",
-    "log_hexdump",
 )

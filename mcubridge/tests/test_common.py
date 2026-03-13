@@ -6,13 +6,9 @@ import importlib
 from unittest.mock import MagicMock, patch
 
 from mcubridge.config import common
-from mcubridge.config.common import (
-    build_mqtt_connect_properties,
-    build_mqtt_properties,
-    encode_status_reason,
-    normalise_allowed_commands,
-    parse_bool,
-)
+from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
+from mcubridge.protocol.encoding import encode_status_reason
+from mcubridge.util import normalise_allowed_commands, parse_bool
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
 

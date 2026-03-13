@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 from aiomqtt.message import Message
-from construct import ConstructError
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, ConsoleAction
 from mcubridge.protocol.structures import ConsoleWritePacket
@@ -23,13 +22,13 @@ class ConsoleComponent(BaseComponent):
 
     async def handle_write(self, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
-        try:
-            packet = ConsoleWritePacket.decode(payload)
-            data = packet.data
-        except (ConstructError, ValueError) as e:
-            logger.warning("Malformed ConsoleWrite payload: %s", e)
+        packet = self._decode_payload(
+            ConsoleWritePacket, payload, Command.CMD_CONSOLE_WRITE,
+        )
+        if packet is None:
             return
 
+        data = packet.data
         if not data:
             return
 

@@ -23,25 +23,7 @@ ProcessClass Process;
 
 namespace {
 
-// Stream de captura para verificar salida del Bridge
-class CaptureStream : public Stream {
- public:
-  ByteBuffer<4096> tx;
-  size_t write(uint8_t c) override {
-    tx.push(c);
-    return 1;
-  }
-  size_t write(const uint8_t* b, size_t s) override {
-    tx.append(b, s);
-    return s;
-  }
-  int available() override { return 0; }
-  int read() override { return -1; }
-  int peek() override { return -1; }
-  void flush() override {}
-};
-
-void setup_test_env(CaptureStream& stream) {
+void setup_test_env(TxCaptureStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
@@ -54,7 +36,7 @@ void setup_test_env(CaptureStream& stream) {
 
 // --- TEST: SISTEMA Y GPIO (BRIDGE.CPP) ---
 void test_extreme_bridge_commands() {
-  CaptureStream stream;
+  TxCaptureStream stream;
   setup_test_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
@@ -83,7 +65,7 @@ void test_extreme_bridge_commands() {
 
 // --- TEST: DATASTORE LÍMITES (DATASTORE.CPP) ---
 void test_extreme_datastore() {
-  CaptureStream stream;
+  TxCaptureStream stream;
   setup_test_env(stream);
 
   // 1. Put con Key/Value nulos
@@ -108,7 +90,7 @@ void test_extreme_datastore() {
 
 // --- TEST: FILESYSTEM ERRORES (FILESYSTEM.CPP) ---
 void test_extreme_filesystem() {
-  CaptureStream stream;
+  TxCaptureStream stream;
   setup_test_env(stream);
 
   // 1. Write con path nulo o data nula
@@ -132,7 +114,7 @@ void test_extreme_filesystem() {
 
 // --- TEST: PROCESS Y MAILBOX (PROCESS.CPP / MAILBOX.CPP) ---
 void test_extreme_process_mailbox() {
-  CaptureStream stream;
+  TxCaptureStream stream;
   setup_test_env(stream);
 
   // 1. Mailbox: Send con data nula

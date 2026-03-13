@@ -17,25 +17,7 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "BridgeTestInterface.h"
 
-// --- Mock Stream Implementation ---
-class MockStream : public Stream {
- public:
-  ByteBuffer<4096> rx_buf;
-  ByteBuffer<4096> tx_buf;
-
-  int available() override { return rx_buf.remaining(); }
-  int read() override { return rx_buf.read_byte(); }
-  int peek() override { return rx_buf.peek_byte(); }
-  size_t write(uint8_t b) override {
-    tx_buf.push(b);
-    return 1;
-  }
-  void flush() override {}
-
-  void feed(const uint8_t* data, size_t len) { rx_buf.append(data, len); }
-};
-
-MockStream g_mock_stream;
+BiStream g_mock_stream;
 Stream* g_arduino_stream_delegate = &g_mock_stream;
 
 HardwareSerial Serial;

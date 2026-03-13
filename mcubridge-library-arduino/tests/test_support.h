@@ -68,14 +68,14 @@ struct ByteBuffer {
     if (pos >= len) {
       return -1;
     }
-    return (int)data[pos++];
+    return static_cast<int>(data[pos++]);
   }
 
   int peek_byte() const {
     if (pos >= len) {
       return -1;
     }
-    return (int)data[pos];
+    return static_cast<int>(data[pos]);
   }
 };
 

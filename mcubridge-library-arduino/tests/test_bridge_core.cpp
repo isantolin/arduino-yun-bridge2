@@ -173,7 +173,7 @@ void test_bridge_chunking() {
   TestAccessor::create(Bridge).setIdle();
   uint8_t header[5] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
   uint8_t data[100];
-  for (size_t i = 0; i < 100; i++) data[i] = (uint8_t)i;
+  for (size_t i = 0; i < 100; i++) data[i] = static_cast<uint8_t>(i);
   Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PROCESSED,
                          etl::span<const uint8_t>(header, 5),
                          etl::span<const uint8_t>(data, 100));

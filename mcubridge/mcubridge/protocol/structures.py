@@ -26,7 +26,7 @@ from typing import (
 
 import construct as construct_raw
 import msgspec
-from construct import ConstructError
+from mcubridge.protocol import mcubridge_pb2
 
 from . import protocol
 
@@ -44,17 +44,33 @@ else:
 BinStruct: Final = construct.Struct
 
 
+# [SIL-2] DRY: Single source of truth for capability feature bit positions.
+_CAPABILITY_BITS: Final[dict[str, int]] = {
+    "watchdog": 1, "rle": 2, "debug_frames": 4, "debug_io": 8,
+    "eeprom": 16, "dac": 32, "hw_serial1": 64, "fpu": 128,
+    "logic_3v3": 256, "big_buffer": 512, "i2c": 1024, "spi": 2048,
+}
+
+
+def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
+    """Convert a capability feature dict to its integer bitmask."""
+    return sum(bit for name, bit in _CAPABILITY_BITS.items() if feat_dict.get(name))
+
+
+def _int_to_capabilities(val: int) -> dict[str, bool]:
+    """Convert an integer bitmask to a capability feature dict."""
+    return {name: bool(val & bit) for name, bit in _CAPABILITY_BITS.items()}
+
+
 # =============================================================================
 # 1. Protocol Generation Structures (re-exported from spec_model)
 # =============================================================================
 
 from .spec_model import (  # noqa: E402, F401
     CommandDef as CommandDef,
-    PayloadDef as PayloadDef,
     ProtocolSpec as ProtocolSpec,
     RawProtocolData as RawProtocolData,
     StatusDef as StatusDef,
-    StructField as StructField,
 )
 
 
@@ -370,9 +386,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 # =============================================================================
 
 # --- Basic Binary Types (Restored from protocol.py) ---
-UINT8_STRUCT: Final = construct.Int8ub
-UINT16_STRUCT: Final = construct.Int16ub
-UINT32_STRUCT: Final = construct.Int32ub
 NONCE_COUNTER_STRUCT: Final = construct.Int64ub
 CRC_STRUCT: Final = construct.Int32ub
 
@@ -422,36 +435,85 @@ CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
 T = TypeVar("T", bound="BaseStruct")
 
 
-class BaseStruct(msgspec.Struct, frozen=True):
-    """Base class for hybrid Msgspec/Construct structures."""
+class ProtobufCompatSchema:
+    def __init__(self, pb_class: type, struct_class: type):
+        self.pb_class = pb_class
+        self.struct_class = struct_class
 
-    # Subclasses must define this schema
-    SCHEMA: ClassVar[Construct]
+    def build(self, obj: dict[str, Any] | msgspec.Struct) -> bytes:
+        from google.protobuf.json_format import ParseDict
+        pb_obj = self.pb_class()
+        if isinstance(obj, dict):
+            # Shallow copy to avoid modifying original
+            d: dict[str, Any] = dict(obj)
+            # Special case for Capabilities feat mapping if passed as dict
+            if self.struct_class.__name__ == "CapabilitiesPacket" and "feat" in d:
+                d["feat"] = _capabilities_to_int(d["feat"])
+            ParseDict(d, pb_obj)
+        else:
+            # If it's already a msgspec struct
+            d: dict[str, Any] = msgspec.structs.asdict(obj)
+            # handle nested CapabilitiesFeatures
+            if self.struct_class.__name__ == "CapabilitiesPacket" and "feat" in d:
+                d["feat"] = _capabilities_to_int(d["feat"])
+            ParseDict(d, pb_obj)
+        return pb_obj.SerializeToString()
+
+    def parse(self, data: bytes) -> dict[str, Any]:
+        pb_obj = self.pb_class()
+        pb_obj.ParseFromString(bytes(data))
+        from google.protobuf.json_format import MessageToDict
+        d = MessageToDict(pb_obj, preserving_proto_field_name=True, use_integers_for_enums=True)
+        # Handle CapabilitiesPacket bitset mapping
+        if self.struct_class.__name__ == "CapabilitiesPacket" and "feat" in d:
+            d["feat"] = _int_to_capabilities(d["feat"])
+        return d
+
+    def sizeof(self) -> int:
+        # Protobuf size is variable, but for compatibility we can return a representative size
+        # or the max size if known.
+        return 64 # MAX_PAYLOAD_SIZE fallback
+
+
+class BaseStruct(msgspec.Struct, frozen=True):
+    """Base class for hybrid Msgspec/Nanopb structures."""
+
+    PB_CLASS: ClassVar[type]
+
+    # Re-implementing SCHEMA as a class property for Python 3.13 compatibility
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if hasattr(cls, "PB_CLASS"):
+            cls.SCHEMA = ProtobufCompatSchema(cls.PB_CLASS, cls) # type: ignore
 
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview, command_id: int | None = None) -> T:
-        """Decode binary data into a typed struct.
-
-        If command_id is provided, uses PayloadSelector (Switch) with a fallback (Select).
-        """
-        if not data and cls is not AckPacket:  # Special case for empty ACKs
-            raise ValueError("Empty payload")
         try:
-            b_data = bytes(data)
-            if command_id is not None:
-                # [SIL-2] Use Select to try the centralized Switch first, then fallback to class schema.
-                # This provides O(1) speed for known commands but remains resilient.
-                decoder = construct.Select(PayloadSelector, cls.SCHEMA)
-                container: Any = decoder.parse(b_data, command_id=command_id)
-            else:
-                container = cls.SCHEMA.parse(b_data)
-        except (ValueError, TypeError, AttributeError, KeyError, IndexError, ConstructError, msgspec.DecodeError) as e:
-            raise ConstructError(str(e)) from e
-        return msgspec.convert(container, cls)
+            pb_obj = cls.PB_CLASS()
+            pb_obj.ParseFromString(bytes(data))
+            from google.protobuf.json_format import MessageToDict
+            d = MessageToDict(
+                pb_obj,
+                preserving_proto_field_name=True,
+                use_integers_for_enums=True,
+                always_print_fields_with_no_presence=True,
+            )
+            if cls.__name__ == "CapabilitiesPacket" and "feat" in d:
+                d["feat"] = _int_to_capabilities(int(d["feat"]))
+            return msgspec.convert(d, cls)
+        except Exception as e:
+            from construct import ConstructError
+            raise ConstructError(f"Malformed {cls.__name__} payload: {bytes(data).hex()} - Error: {e}") from e
 
     def encode(self) -> bytes:
-        """Encode the typed Msgspec struct into binary data."""
-        return self.SCHEMA.build(msgspec.structs.asdict(self))
+        pb_obj = self.PB_CLASS()
+        d = msgspec.structs.asdict(self)
+        for field in pb_obj.DESCRIPTOR.fields:
+            if self.__class__.__name__ == "CapabilitiesPacket" and field.name == "feat":
+                setattr(pb_obj, field.name, _capabilities_to_int(d["feat"]))
+            elif field.name in d:
+                setattr(pb_obj, field.name, d[field.name])
+        return pb_obj.SerializeToString()
 
 
 # --- Binary Protocol Packets ---
@@ -461,162 +523,156 @@ class FileWritePacket(BaseStruct, frozen=True):
     path: str
     data: bytes
 
-    SCHEMA = BinStruct(
-        "path" / construct.PascalString(construct.Int8ub, "utf-8"),
-        "data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
-    )
+    PB_CLASS = mcubridge_pb2.FileWrite
 
 
 class FileReadPacket(BaseStruct, frozen=True):
     path: str
 
-    SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
+    PB_CLASS = mcubridge_pb2.FileRead
 
 
 class FileReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
-    SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+    PB_CLASS = mcubridge_pb2.FileReadResponse
 
 
 class FileRemovePacket(BaseStruct, frozen=True):
     path: str
 
-    SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
+    PB_CLASS = mcubridge_pb2.FileRemove
 
 
 class VersionResponsePacket(BaseStruct, frozen=True):
     major: Annotated[int, msgspec.Meta(ge=0)]
     minor: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("major" / construct.Int8ub, "minor" / construct.Int8ub)
+    PB_CLASS = mcubridge_pb2.VersionResponse
 
 
 class FreeMemoryResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("value" / construct.Int16ub)
+    PB_CLASS = mcubridge_pb2.FreeMemoryResponse
 
 
 class DigitalReadResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("value" / construct.Int8ub)
+    PB_CLASS = mcubridge_pb2.DigitalReadResponse
 
 
 class AnalogReadResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("value" / construct.Int16ub)
+    PB_CLASS = mcubridge_pb2.AnalogReadResponse
 
 
 class DatastoreGetPacket(BaseStruct, frozen=True):
     key: str
 
-    SCHEMA = BinStruct("key" / construct.PascalString(construct.Int8ub, "utf-8"))
+    PB_CLASS = mcubridge_pb2.DatastoreGet
 
 
 class DatastoreGetResponsePacket(BaseStruct, frozen=True):
     value: bytes
 
-    SCHEMA = BinStruct("value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes))
+    PB_CLASS = mcubridge_pb2.DatastoreGetResponse
 
 
 class DatastorePutPacket(BaseStruct, frozen=True):
     key: str
     value: bytes
 
-    SCHEMA = BinStruct(
-        "key" / construct.PascalString(construct.Int8ub, "utf-8"),
-        "value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes),
-    )
+    PB_CLASS = mcubridge_pb2.DatastorePut
 
 
 class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
-    SCHEMA = BinStruct("data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+    PB_CLASS = mcubridge_pb2.MailboxPush
 
 
 class MailboxProcessedPacket(BaseStruct, frozen=True):
     message_id: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("message_id" / construct.Int16ub)
+    PB_CLASS = mcubridge_pb2.MailboxProcessed
 
 
 class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
     count: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("count" / construct.Int16ub)
+    PB_CLASS = mcubridge_pb2.MailboxAvailableResponse
 
 
 class MailboxReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
-    SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+    PB_CLASS = mcubridge_pb2.MailboxReadResponse
 
 
 class PinModePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     mode: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("pin" / construct.Int8ub, "mode" / construct.Int8ub)
+    PB_CLASS = mcubridge_pb2.PinMode
 
 
 class DigitalWritePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
+    PB_CLASS = mcubridge_pb2.DigitalWrite
 
 
 class AnalogWritePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
+    PB_CLASS = mcubridge_pb2.AnalogWrite
 
 
 class PinReadPacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("pin" / construct.Int8ub)
+    PB_CLASS = mcubridge_pb2.PinRead
 
 
 class AckPacket(BaseStruct, frozen=True):
     command_id: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("command_id" / construct.Int16ub)
+    PB_CLASS = mcubridge_pb2.AckPacket
 
 
 class ConsoleWritePacket(BaseStruct, frozen=True):
     data: bytes
 
-    SCHEMA = BinStruct("data" / construct.GreedyBytes)
+    PB_CLASS = mcubridge_pb2.ConsoleWrite
 
 
 class ProcessRunAsyncPacket(BaseStruct, frozen=True):
     command: str
 
-    SCHEMA = BinStruct("command" / construct.GreedyString("utf-8"))
+    PB_CLASS = mcubridge_pb2.ProcessRunAsync
 
 
 class ProcessKillPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("pid" / construct.Int16ub)
+    PB_CLASS = mcubridge_pb2.ProcessKill
 
 
 class ProcessPollPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("pid" / construct.Int16ub)
+    PB_CLASS = mcubridge_pb2.ProcessPoll
 
 
 class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("pid" / construct.Int16ub)
+    PB_CLASS = mcubridge_pb2.ProcessRunAsyncResponse
 
 
 class ProcessPollResponsePacket(BaseStruct, frozen=True):
@@ -625,28 +681,7 @@ class ProcessPollResponsePacket(BaseStruct, frozen=True):
     stdout: bytes
     stderr: bytes
 
-    SCHEMA = BinStruct(
-        "status" / construct.Int8ub,
-        "exit_code" / construct.Int8ub,
-        "stdout" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
-        "stderr" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
-    )
-
-
-def _validate_ack_timeout(ctx: Any) -> bool:
-    return protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS <= ctx.ack_timeout_ms <= protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
-
-
-def _validate_ack_retry_limit(ctx: Any) -> bool:
-    return protocol.HANDSHAKE_RETRY_LIMIT_MIN <= ctx.ack_retry_limit <= protocol.HANDSHAKE_RETRY_LIMIT_MAX
-
-
-def _validate_response_timeout(ctx: Any) -> bool:
-    return (
-        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
-        <= ctx.response_timeout_ms
-        <= protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
-    )
+    PB_CLASS = mcubridge_pb2.ProcessPollResponse
 
 
 class HandshakeConfigPacket(BaseStruct, frozen=True):
@@ -654,15 +689,7 @@ class HandshakeConfigPacket(BaseStruct, frozen=True):
     ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
     response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct(
-        "ack_timeout_ms" / construct.Int16ub,
-        "ack_retry_limit" / construct.Int8ub,
-        "response_timeout_ms" / construct.Int32ub,
-        # Declarative Protocol Validation
-        construct.Check(_validate_ack_timeout),
-        construct.Check(_validate_ack_retry_limit),
-        construct.Check(_validate_response_timeout),
-    )
+    PB_CLASS = mcubridge_pb2.HandshakeConfig
 
 
 class CapabilitiesFeatures(msgspec.Struct, frozen=True):
@@ -689,83 +716,17 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
     ana: Annotated[int, msgspec.Meta(ge=0)]
     feat: CapabilitiesFeatures
 
-    SCHEMA = BinStruct(
-        "ver" / construct.Int8ub,
-        "arch" / construct.Int8ub,
-        "dig" / construct.Int8ub,
-        "ana" / construct.Int8ub,
-        "feat"
-        / construct.BitStruct(
-            construct.Padding(32 - 12),
-            "spi" / construct.Flag,
-            "i2c" / construct.Flag,
-            "big_buffer" / construct.Flag,
-            "logic_3v3" / construct.Flag,
-            "fpu" / construct.Flag,
-            "hw_serial1" / construct.Flag,
-            "dac" / construct.Flag,
-            "eeprom" / construct.Flag,
-            "debug_io" / construct.Flag,
-            "debug_frames" / construct.Flag,
-            "rle" / construct.Flag,
-            "watchdog" / construct.Flag,
-        ),
-    )
+    PB_CLASS = mcubridge_pb2.Capabilities
 
 
 class SetBaudratePacket(BaseStruct, frozen=True):
     baudrate: Annotated[int, msgspec.Meta(ge=0)]
 
-    SCHEMA = BinStruct("baudrate" / construct.Int32ub)
+    PB_CLASS = mcubridge_pb2.SetBaudratePacket
 
 
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.
 # This eliminates manual if/elif dispatching across components.
-PAYLOAD_SCHEMAS: Final[dict[int, Construct]] = {
-    protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket.SCHEMA,
-    protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket.SCHEMA,
-    protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket.SCHEMA,
-    protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket.SCHEMA,
-    protocol.Command.CMD_DATASTORE_GET_RESP: DatastoreGetResponsePacket.SCHEMA,
-    protocol.Command.CMD_MAILBOX_READ_RESP: MailboxReadResponsePacket.SCHEMA,
-    protocol.Command.CMD_MAILBOX_AVAILABLE_RESP: MailboxAvailableResponsePacket.SCHEMA,
-    protocol.Command.CMD_FILE_READ_RESP: FileReadResponsePacket.SCHEMA,
-    protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket.SCHEMA,
-    protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket.SCHEMA,
-    protocol.Command.CMD_GET_CAPABILITIES_RESP: CapabilitiesPacket.SCHEMA,
-    protocol.Command.CMD_SET_BAUDRATE: SetBaudratePacket.SCHEMA,
-    protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket.SCHEMA,
-    protocol.Command.CMD_SET_PIN_MODE: PinModePacket.SCHEMA,
-    protocol.Command.CMD_DIGITAL_WRITE: DigitalWritePacket.SCHEMA,
-    protocol.Command.CMD_ANALOG_WRITE: AnalogWritePacket.SCHEMA,
-    protocol.Command.CMD_DIGITAL_READ: PinReadPacket.SCHEMA,
-    protocol.Command.CMD_ANALOG_READ: PinReadPacket.SCHEMA,
-    protocol.Command.CMD_CONSOLE_WRITE: ConsoleWritePacket.SCHEMA,
-    protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket.SCHEMA,
-    protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket.SCHEMA,
-    protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket.SCHEMA,
-    protocol.Command.CMD_MAILBOX_PROCESSED: MailboxProcessedPacket.SCHEMA,
-    protocol.Command.CMD_FILE_WRITE: FileWritePacket.SCHEMA,
-    protocol.Command.CMD_FILE_READ: FileReadPacket.SCHEMA,
-    protocol.Command.CMD_FILE_REMOVE: FileRemovePacket.SCHEMA,
-    protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket.SCHEMA,
-    protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket.SCHEMA,
-    protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket.SCHEMA,
-    protocol.Status.ACK: AckPacket.SCHEMA,
-    protocol.Status.MALFORMED: AckPacket.SCHEMA,
-}
-
-def _get_command_id(ctx: Any) -> int:
-    return int(ctx.command_id) & ~protocol.CMD_FLAG_COMPRESSED
-
-
-# [SIL-2] Optimized Payload Selector using construct.Switch
-# This provides O(1) schema lookup during parsing.
-PayloadSelector: Final = construct.Switch(
-    _get_command_id,
-    PAYLOAD_SCHEMAS,
-    default=construct.GreedyBytes,
-)
 
 # --- Framing Schema ---
 

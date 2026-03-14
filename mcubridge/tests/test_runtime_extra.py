@@ -76,9 +76,9 @@ async def test_runtime_handle_ack_fallback() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    # Payload valid length (2) but msgspec decode fails if it's not a valid struct
-    # AckPacket is UINT16, so any 2 bytes is technically valid for UINT16_STRUCT.
+    # Payload valid length (2) but decode may fail for malformed data.
+    # AckPacket is a protobuf message with a single uint32 field.
     # Let's try to trigger a failure in AckPacket.decode.
     with patch("mcubridge.protocol.structures.AckPacket.decode", side_effect=ValueError):
         await service._handle_ack(b"\x00\x40")
-        # Should use fallback UINT16_STRUCT.parse
+        # Should handle the decode failure gracefully

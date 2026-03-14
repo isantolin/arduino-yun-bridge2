@@ -2,6 +2,7 @@
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -82,14 +83,21 @@ void sync_bridge(BiStream& stream) {
   ba.setStartupStabilizing(false);
   const uint8_t nonce[16] = {1, 2,  3,  4,  5,  6,  7,  8,
                              9, 10, 11, 12, 13, 14, 15, 16};
-  uint8_t payload[32];
-  memcpy(payload, nonce, 16);
-  ba.computeHandshakeTag(nonce, 16, payload + 16);
+
+  rpc::payload::LinkSync sync_msg = {};
+  sync_msg.nonce.size = 16;
+  memcpy(sync_msg.nonce.bytes, nonce, 16);
+  sync_msg.tag.size = 16;
+  ba.computeHandshakeTag(nonce, 16, sync_msg.tag.bytes);
+
+  rpc::Frame frame;
+  bridge::test::set_pb_payload(frame, sync_msg);
+
   uint8_t encoded_frame[rpc::MAX_RAW_FRAME_SIZE + 32];
-  const size_t frame_len =
-      TestFrameBuilder::build(encoded_frame, sizeof(encoded_frame),
-                              rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC),
-                              payload, sizeof(payload));
+  const size_t frame_len = TestFrameBuilder::build(
+      encoded_frame, sizeof(encoded_frame),
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), frame.payload.data(),
+      frame.header.payload_length);
   stream.feed(encoded_frame, frame_len);
   Bridge.process();
   stream.tx_buf.clear();
@@ -143,24 +151,36 @@ void test_bridge_dedup_console_write_retry() {
   BiStream stream;
   reset_bridge(stream);
   rpc::Frame frame;
-  uint8_t raw_frame[rpc::MAX_RAW_FRAME_SIZE];
-  rpc::FrameBuilder builder;
-  const uint8_t payload[] = {'h', 'e', 'l', 'l', 'o'};
-  size_t raw_len =
-      builder.build(etl::span<uint8_t>(raw_frame),
-                    rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE),
-                    etl::span<const uint8_t>(payload));
+
+  rpc::payload::ConsoleWrite msg = {};
+  msg.data.size = 5;
+  memcpy(msg.data.bytes, "hello", 5);
+
+  frame.header.version = rpc::PROTOCOL_VERSION;
   frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
-  frame.header.payload_length = sizeof(payload);
-  memcpy(frame.payload.data(), payload, sizeof(payload));
-  frame.crc = rpc::read_u32_be(etl::span<const uint8_t>(&raw_frame[raw_len - rpc::CRC_TRAILER_SIZE], 4));
+  bridge::test::set_pb_payload(frame, msg);
+
+  // Calculate CRC for deduplication using etl::crc32
+  uint8_t header_buf[rpc::FRAME_HEADER_SIZE];
+  header_buf[0] = frame.header.version;
+  rpc::write_u16_be(etl::span<uint8_t>(header_buf + 1, 2),
+                    frame.header.payload_length);
+  rpc::write_u16_be(etl::span<uint8_t>(header_buf + 3, 2),
+                    frame.header.command_id);
+
+  etl::crc32 crc_calc;
+  crc_calc.add(header_buf, header_buf + rpc::FRAME_HEADER_SIZE);
+  crc_calc.add(frame.payload.data(),
+               frame.payload.data() + frame.header.payload_length);
+  frame.crc = crc_calc.value();
+
   auto ba = TestAccessor::create(Bridge);
   ba.setIdle();
   g_test_millis = 0;
   ba.dispatch(frame);
   Bridge.process();
-  TEST_ASSERT_EQ_UINT(Console.available(), sizeof(payload));
+  TEST_ASSERT_EQ_UINT(Console.available(), 5);
 }
 
 void test_bridge_ack_malformed_timeout_paths() {

@@ -26,7 +26,7 @@ from mcubridge.protocol.protocol import (
     RESPONSE_ONLY_COMMANDS,
     Status,
 )
-from mcubridge.protocol.structures import UINT16_STRUCT, PendingCommand
+from mcubridge.protocol.structures import AckPacket, PendingCommand
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
@@ -164,8 +164,11 @@ class SerialFlowController:
 
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
-            if len(payload) >= 2:
-                ack_target = UINT16_STRUCT.parse(payload[:2])
+            if payload:
+                try:
+                    ack_target = AckPacket.decode(payload).command_id
+                except Exception:
+                    pass
             if ack_target != pending.command_id:
                 return
             if not pending.ack_received:
@@ -183,12 +186,17 @@ class SerialFlowController:
             return
 
         if command_id in SERIAL_FAILURE_STATUS_CODES:
-            # MCU status frames correlation logic
-            should_reject = not payload or (
-                len(payload) >= 2 and UINT16_STRUCT.parse(payload[:2]) == pending.command_id
-            )
+            # MCU status frames correlation logic — try AckPacket protobuf first
+            if not payload:
+                should_reject = True
+            else:
+                try:
+                    should_reject = AckPacket.decode(payload).command_id == pending.command_id
+                except Exception:
+                    # Non-protobuf (human-readable string) → reject only if binary
+                    should_reject = not all(32 <= byte < 127 for byte in payload)
 
-            if should_reject or not all(32 <= byte < 127 for byte in payload):
+            if should_reject:
                 pending.mark_failure(command_id)
             return
 

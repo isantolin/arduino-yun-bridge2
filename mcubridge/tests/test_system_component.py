@@ -5,10 +5,7 @@ import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import SystemAction
-from mcubridge.protocol.structures import (
-    FreeMemoryResponsePacket,
-    VersionResponsePacket,
-)
+from mcubridge.protocol import structures
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState, create_runtime_state
@@ -81,9 +78,7 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(runtime_config
         component._pending_free_memory.append(msg)
 
         # Payload: 2 bytes (uint16)
-        payload = FreeMemoryResponsePacket(value=1024).encode()
-
-        await component.handle_get_free_memory_resp(payload)
+        await component.handle_get_free_memory_resp(structures.FreeMemoryResponsePacket(value=1024).encode())
 
         # It publishes twice (one for reply, one for broadcast)
         assert len(ctx.published) == 2
@@ -116,7 +111,7 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(runtime_con
         component._pending_version.append(msg)
 
         # Payload: major=1, minor=2
-        payload = VersionResponsePacket(major=1, minor=2).encode()
+        payload = structures.VersionResponsePacket(major=1, minor=2).encode()
 
         await component.handle_get_version_resp(payload)
 
@@ -143,7 +138,11 @@ def test_handle_get_version_resp_malformed(
         assert runtime_state.mcu_version is None
         assert not ctx.published
         messages = (record.getMessage() for record in caplog.records)
-        assert any("Malformed VersionResponsePacket" in msg for msg in messages)
+        assert any(
+            "Malformed structures.VersionResponsePacket" in msg
+            or "Malformed VersionResponsePacket" in msg
+            for msg in messages
+        )
 
     _run(_coro())
 

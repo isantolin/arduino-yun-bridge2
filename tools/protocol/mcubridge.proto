@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package mcubridge;
+
+import "nanopb.proto";
+
+// [SIL-2] Nanopb options for static allocation
+// These are used by the nanopb generator to create fixed-size structures.
+
+message VersionResponse {
+    uint32 major = 1;
+    uint32 minor = 2;
+}
+
+message FreeMemoryResponse {
+    uint32 value = 1;
+}
+
+message Capabilities {
+    uint32 ver = 1;
+    uint32 arch = 2;
+    uint32 dig = 3;
+    uint32 ana = 4;
+    uint32 feat = 5;
+}
+
+message PinMode {
+    uint32 pin = 1;
+    uint32 mode = 2;
+}
+
+message DigitalWrite {
+    uint32 pin = 1;
+    uint32 value = 2;
+}
+
+message AnalogWrite {
+    uint32 pin = 1;
+    uint32 value = 2;
+}
+
+message PinRead {
+    uint32 pin = 1;
+}
+
+message DigitalReadResponse {
+    uint32 value = 1;
+}
+
+message AnalogReadResponse {
+    uint32 value = 1;
+}
+
+message ConsoleWrite {
+    bytes data = 1 [(nanopb).max_size = 64];
+}
+
+message DatastorePut {
+    string key = 1 [(nanopb).max_size = 32];
+    bytes value = 2 [(nanopb).max_size = 64];
+}
+
+message DatastoreGet {
+    string key = 1 [(nanopb).max_size = 32];
+}
+
+message DatastoreGetResponse {
+    bytes value = 1 [(nanopb).max_size = 64];
+}
+
+message MailboxPush {
+    bytes data = 1 [(nanopb).max_size = 64];
+}
+
+message MailboxProcessed {
+    uint32 message_id = 1;
+}
+
+message MailboxAvailableResponse {
+    uint32 count = 1;
+}
+
+message MailboxReadResponse {
+    bytes content = 1 [(nanopb).max_size = 64];
+}
+
+message FileWrite {
+    string path = 1 [(nanopb).max_size = 64];
+    bytes data = 2 [(nanopb).max_size = 64];
+}
+
+message FileRead {
+    string path = 1 [(nanopb).max_size = 64];
+}
+
+message FileRemove {
+    string path = 1 [(nanopb).max_size = 64];
+}
+
+message FileReadResponse {
+    bytes content = 1 [(nanopb).max_size = 64];
+}
+
+message ProcessRunAsync {
+    string command = 1 [(nanopb).max_size = 64];
+}
+
+message ProcessRunAsyncResponse {
+    uint32 pid = 1;
+}
+
+message ProcessPoll {
+    uint32 pid = 1;
+}
+
+message ProcessPollResponse {
+    uint32 status = 1;
+    uint32 exit_code = 2;
+    bytes stdout = 3 [(nanopb).max_size = 64];
+    bytes stderr = 4 [(nanopb).max_size = 64];
+}
+
+message ProcessKill {
+    uint32 pid = 1;
+}
+
+message AckPacket {
+    uint32 command_id = 1;
+}
+
+message HandshakeConfig {
+    uint32 ack_timeout_ms = 1;
+    uint32 ack_retry_limit = 2;
+    uint32 response_timeout_ms = 3;
+}
+
+message SetBaudratePacket {
+    uint32 baudrate = 1;
+}
+
+message LinkSync {
+    bytes nonce = 1 [(nanopb).max_size = 16];
+    bytes tag = 2 [(nanopb).max_size = 16];
+}

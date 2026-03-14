@@ -224,239 +224,7 @@ class JinjaGenerator:
 
     def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("rpc_structs.h.j2")
-
-        # Line-split long complex payload definitions to satisfy linter
-        c_write = "struct ConsoleWrite { const uint8_t* data; size_t length; "
-        c_write += "static ConsoleWrite parse(const uint8_t* d, size_t l) { return {d, l}; } };"
-
-        ds_get = "struct DatastoreGet { etl::string_view key; static DatastoreGet parse(const uint8_t* d) { "
-        ds_get += "return {etl::string_view(reinterpret_cast<const char*>(d + 1), d[0])}; } };"
-
-        ds_get_resp = "struct DatastoreGetResponse { const uint8_t* value; uint8_t value_len; "
-        ds_get_resp += "static DatastoreGetResponse parse(const uint8_t* d) { return {d + 1, d[0]}; } };"
-
-        ds_put = "struct DatastorePut { etl::string_view key; const uint8_t* value; uint8_t value_len; "
-        ds_put += "static DatastorePut parse(const uint8_t* d) { uint8_t k = d[0]; return "
-        ds_put += "{etl::string_view(reinterpret_cast<const char*>(d + 1), k), d + 1 + k + 1, d[1 + k]}; } };"
-
-        m_push = "struct MailboxPush { const uint8_t* data; uint16_t length; "
-        m_push += "static MailboxPush parse(const uint8_t* d) { return {d + 2, rpc::read_u16_be(d)}; } };"
-
-        m_read_resp = "struct MailboxReadResponse { const uint8_t* content; uint16_t length; "
-        m_read_resp += "static MailboxReadResponse parse(const uint8_t* d) { "
-        m_read_resp += "return {d + 2, rpc::read_u16_be(d)}; } };"
-
-        f_write = "struct FileWrite { etl::string_view path; const uint8_t* data; uint16_t data_len; "
-        f_write += "static FileWrite parse(const uint8_t* d) { uint8_t p = d[0]; return "
-        f_write += "{etl::string_view(reinterpret_cast<const char*>(d + 1), p), d + 1 + p + 2, "
-        f_write += "rpc::read_u16_be(d + 1 + p)}; } };"
-
-        f_read = "struct FileRead { etl::string_view path; static FileRead parse(const uint8_t* d) { "
-        f_read += "return {etl::string_view(reinterpret_cast<const char*>(d + 1), d[0])}; } };"
-
-        f_read_resp = "struct FileReadResponse { const uint8_t* content; uint16_t length; "
-        f_read_resp += "static FileReadResponse parse(const uint8_t* d) { return {d + 2, rpc::read_u16_be(d)}; } };"
-
-        f_remove = "struct FileRemove { etl::string_view path; static FileRemove parse(const uint8_t* d) { "
-        f_remove += "return {etl::string_view(reinterpret_cast<const char*>(d + 1), d[0])}; } };"
-
-        p_run = "struct ProcessRun { etl::string_view command; static ProcessRun parse(const uint8_t* d, size_t l) { "
-        p_run += "return {etl::string_view(reinterpret_cast<const char*>(d), l)}; } };"
-
-        p_run_async = "struct ProcessRunAsync { etl::string_view command; "
-        p_run_async += "static ProcessRunAsync parse(const uint8_t* d, size_t l) { "
-        p_run_async += "return {etl::string_view(reinterpret_cast<const char*>(d), l)}; } };"
-
-        p_run_resp = "struct ProcessRunResponse { uint8_t status; const uint8_t* stdout_data; "
-        p_run_resp += "uint16_t stdout_len; const uint8_t* stderr_data; uint16_t stderr_len; uint8_t exit_code; "
-        p_run_resp += "static ProcessRunResponse parse(const uint8_t* d) { ProcessRunResponse m; m.status = d[0]; "
-        p_run_resp += "m.stdout_len = rpc::read_u16_be(d + 1); m.stdout_data = d + 3; "
-        p_run_resp += "m.stderr_len = rpc::read_u16_be(d + 3 + m.stdout_len); "
-        p_run_resp += "m.stderr_data = d + 3 + m.stdout_len + 2; "
-        p_run_resp += "m.exit_code = d[3 + m.stdout_len + 2 + m.stderr_len]; return m; } };"
-
-        p_poll_resp = "struct ProcessPollResponse { uint8_t status; uint8_t exit_code; "
-        p_poll_resp += "const uint8_t* stdout_data; uint16_t stdout_len; const uint8_t* stderr_data; "
-        p_poll_resp += "uint16_t stderr_len; static ProcessPollResponse parse(const uint8_t* d) { "
-        p_poll_resp += "ProcessPollResponse m; m.status = d[0]; m.exit_code = d[1]; "
-        p_poll_resp += "m.stdout_len = rpc::read_u16_be(d + 2); m.stdout_data = d + 4; "
-        p_poll_resp += "m.stderr_len = rpc::read_u16_be(d + 4 + m.stdout_len); "
-        p_poll_resp += "m.stderr_data = d + 4 + m.stdout_len + 2; return m; } };"
-
-        complex_payloads = [
-            c_write, ds_get, ds_get_resp, ds_put, m_push, m_read_resp, f_write,
-            f_read, f_read_resp, f_remove, p_run, p_run_async, p_run_resp, p_poll_resp
-        ]
-
-        manual_specs = [
-            {
-                "name": "payload::ConsoleWrite",
-                "body": [
-                    "return etl::expected<payload::ConsoleWrite, rpc::FrameError>(",
-                    "    payload::ConsoleWrite::parse(frame.payload.data(), frame.header.payload_length));"
-                ],
-            },
-            {
-                "name": "payload::ProcessRun",
-                "body": [
-                    "return etl::expected<payload::ProcessRun, rpc::FrameError>(",
-                    "    payload::ProcessRun::parse(frame.payload.data(), frame.header.payload_length));"
-                ],
-            },
-            {
-                "name": "payload::ProcessRunAsync",
-                "body": [
-                    "return etl::expected<payload::ProcessRunAsync, rpc::FrameError>(",
-                    "    payload::ProcessRunAsync::parse(frame.payload.data(), frame.header.payload_length));"
-                ],
-            },
-            {
-                "name": "payload::DatastoreGet",
-                "body": [
-                    "if (frame.header.payload_length < 1 || "
-                    "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "}",
-                    "return etl::expected<payload::DatastoreGet, rpc::FrameError>(",
-                    "    payload::DatastoreGet::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::DatastoreGetResponse",
-                "body": [
-                    "if (frame.header.payload_length < 1 || "
-                    "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "}",
-                    "return etl::expected<payload::DatastoreGetResponse, rpc::FrameError>(",
-                    "    payload::DatastoreGetResponse::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::DatastorePut",
-                "body": [
-                    "if (frame.header.payload_length < 2) "
-                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint8_t k = frame.payload[0];",
-                    "if (frame.header.payload_length < (size_t)(k + 2))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint8_t v = frame.payload[k + 1];",
-                    "if (frame.header.payload_length < (size_t)(k + v + 2))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "return etl::expected<payload::DatastorePut, rpc::FrameError>(",
-                    "    payload::DatastorePut::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::MailboxPush",
-                "body": [
-                    "if (frame.header.payload_length < 2) "
-                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint16_t l = rpc::read_u16_be(frame.payload.data());",
-                    "if (frame.header.payload_length < (size_t)(l + 2))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "return etl::expected<payload::MailboxPush, rpc::FrameError>(",
-                    "    payload::MailboxPush::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::MailboxReadResponse",
-                "body": [
-                    "if (frame.header.payload_length < 2) "
-                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint16_t l = rpc::read_u16_be(frame.payload.data());",
-                    "if (frame.header.payload_length < (size_t)(l + 2))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "return etl::expected<payload::MailboxReadResponse, rpc::FrameError>(",
-                    "    payload::MailboxReadResponse::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::FileWrite",
-                "body": [
-                    "if (frame.header.payload_length < 3) "
-                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint8_t p = frame.payload[0];",
-                    "if (frame.header.payload_length < (size_t)(p + 3))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint16_t d = rpc::read_u16_be(frame.payload.data() + 1 + p);",
-                    "if (frame.header.payload_length < (size_t)(p + d + 3))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "return etl::expected<payload::FileWrite, rpc::FrameError>(",
-                    "    payload::FileWrite::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::FileRead",
-                "body": [
-                    "if (frame.header.payload_length < 1 || "
-                    "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "}",
-                    "return etl::expected<payload::FileRead, rpc::FrameError>(",
-                    "    payload::FileRead::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::FileReadResponse",
-                "body": [
-                    "if (frame.header.payload_length < 2) "
-                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint16_t l = rpc::read_u16_be(frame.payload.data());",
-                    "if (frame.header.payload_length < (size_t)(l + 2))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "return etl::expected<payload::FileReadResponse, rpc::FrameError>(",
-                    "    payload::FileReadResponse::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::FileRemove",
-                "body": [
-                    "if (frame.header.payload_length < 1 || "
-                    "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "}",
-                    "return etl::expected<payload::FileRemove, rpc::FrameError>(",
-                    "    payload::FileRemove::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::ProcessRunResponse",
-                "body": [
-                    "if (frame.header.payload_length < 6) "
-                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint16_t o = rpc::read_u16_be(frame.payload.data() + 1);",
-                    "if (frame.header.payload_length < (size_t)(o + 5))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint16_t e = rpc::read_u16_be(frame.payload.data() + 3 + o);",
-                    "if (frame.header.payload_length < (size_t)(o + e + 6))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "return etl::expected<payload::ProcessRunResponse, rpc::FrameError>(",
-                    "    payload::ProcessRunResponse::parse(frame.payload.data()));"
-                ],
-            },
-            {
-                "name": "payload::ProcessPollResponse",
-                "body": [
-                    "if (frame.header.payload_length < 6) "
-                    "return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint16_t o = rpc::read_u16_be(frame.payload.data() + 2);",
-                    "if (frame.header.payload_length < (size_t)(o + 6))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "uint16_t e = rpc::read_u16_be(frame.payload.data() + 4 + o);",
-                    "if (frame.header.payload_length < (size_t)(o + e + 6))",
-                    "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
-                    "return etl::expected<payload::ProcessPollResponse, rpc::FrameError>(",
-                    "    payload::ProcessPollResponse::parse(frame.payload.data()));"
-                ],
-            },
-        ]
-
-        render = template.render(
-            payloads=spec.payloads.values(),
-            complex_payloads=complex_payloads,
-            manual_parse_specializations=manual_specs,
-        )
+        render = template.render()
         out_path.write_text(render, encoding="utf-8")
 
     def generate_python(self, spec: ProtocolSpec, out_path: Path) -> None:
@@ -696,6 +464,95 @@ def main(
         py.parent.mkdir(parents=True, exist_ok=True)
         gen.generate_python(spec, py)
         sys.stderr.write(f"Generated {py}\n")
+
+    # [PHASE 3] Protobuf & Nanopb compilation
+    import shutil
+    import subprocess
+
+    proto_dir = spec_path.parent
+    py_out = py.parent if py else Path("mcubridge/mcubridge/protocol")
+    cpp_out = cpp.parent if cpp else Path("mcubridge-library-arduino/src/protocol")
+
+    py_out.mkdir(parents=True, exist_ok=True)
+    cpp_out.mkdir(parents=True, exist_ok=True)
+
+    nanopb_plugin = shutil.which("protoc-gen-nanopb")
+    if nanopb_plugin is None:
+        sys.stderr.write(
+            "Error: protoc-gen-nanopb not found. Install nanopb: pip install nanopb\n"
+        )
+        sys.exit(1)
+
+    # Step 1: Generate Python protobuf bindings + type stubs
+    #   nanopb_pb2.py, mcubridge_pb2.py, nanopb_pb2.pyi, mcubridge_pb2.pyi
+    for proto_file in ("nanopb.proto", "mcubridge.proto"):
+        py_cmd = [
+            sys.executable, "-m", "grpc_tools.protoc",
+            f"--proto_path={proto_dir}",
+            f"--python_out={py_out}",
+            f"--pyi_out={py_out}",
+            proto_file,
+        ]
+        try:
+            subprocess.check_call(py_cmd)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            sys.stderr.write(f"Error generating Python protobuf for {proto_file}: {e}\n")
+            sys.exit(1)
+
+    # Fix relative imports: protoc generates "import nanopb_pb2" but the
+    # file lives inside the mcubridge.protocol package and needs a relative import.
+    for suffix in (".py", ".pyi"):
+        pb2_file = py_out / f"mcubridge_pb2{suffix}"
+        if pb2_file.exists():
+            content = pb2_file.read_text(encoding="utf-8")
+            content = content.replace("import nanopb_pb2", "from . import nanopb_pb2")
+            pb2_file.write_text(content, encoding="utf-8")
+
+    # Strip per-class DESCRIPTOR declarations from the .pyi stub.
+    # protoc emits "DESCRIPTOR: _descriptor.Descriptor" in every message class,
+    # which conflicts with the base Message.DESCRIPTOR type in pyright.
+    # Also remove the nanopb_pb2 import that becomes unused after stripping.
+    pyi_file = py_out / "mcubridge_pb2.pyi"
+    if pyi_file.exists():
+        import re
+        pyi_content = pyi_file.read_text(encoding="utf-8")
+        pyi_content = re.sub(
+            r"^    DESCRIPTOR: _ClassVar\[_descriptor\.Descriptor\]\n",
+            "",
+            pyi_content,
+            flags=re.MULTILINE,
+        )
+        # Remove unused nanopb_pb2 import (only referenced by stripped DESCRIPTOR lines)
+        pyi_content = re.sub(
+            r"^from \. import nanopb_pb2 as _nanopb_pb2\n",
+            "",
+            pyi_content,
+            flags=re.MULTILINE,
+        )
+        pyi_file.write_text(pyi_content, encoding="utf-8")
+
+    # Remove nanopb_pb2.pyi — we never import nanopb types directly and the
+    # auto-generated stub uses ClassVar at module scope which pyright rejects.
+    nanopb_pyi = py_out / "nanopb_pb2.pyi"
+    if nanopb_pyi.exists():
+        nanopb_pyi.unlink()
+
+    sys.stderr.write(f"Generated Python protobuf bindings in {py_out}\n")
+
+    # Step 2: Generate C nanopb bindings (mcubridge.pb.h + mcubridge.pb.c)
+    c_cmd = [
+        sys.executable, "-m", "grpc_tools.protoc",
+        f"--proto_path={proto_dir}",
+        f"--plugin=protoc-gen-nanopb={nanopb_plugin}",
+        f"--nanopb_out={cpp_out}",
+        "mcubridge.proto",
+    ]
+    try:
+        subprocess.check_call(c_cmd)
+        sys.stderr.write(f"Generated nanopb C bindings in {cpp_out}\n")
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        sys.stderr.write(f"Error generating nanopb C bindings: {e}\n")
+        sys.exit(1)
 
     if py_client:
         py_client.parent.mkdir(parents=True, exist_ok=True)

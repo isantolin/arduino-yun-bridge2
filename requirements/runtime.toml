@@ -140,3 +140,15 @@ name = "xxd"
 openwrt = "xxd"
 pip = ""
 rationale = "Hex-dump utility used by diagnostic scripts"
+
+[[dependency]]
+name = "nanopb"
+openwrt = "python3-nanopb"
+pip = "nanopb"
+rationale = "Nanopb library for Protobuf generation"
+
+[[dependency]]
+name = "grpcio-tools"
+openwrt = "python3-grpcio-tools"
+pip = "grpcio-tools"
+rationale = "Protobuf compiler tools for Python"

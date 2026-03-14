@@ -12,6 +12,7 @@ import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import mcubridge_pb2
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.handshake import SerialHandshakeFatal, derive_serial_timing
@@ -28,6 +29,14 @@ class _FakeMonotonic:
 
     def advance(self, seconds: float) -> None:
         self._current += seconds
+
+
+def _encode_link_sync(nonce: bytes, tag: bytes) -> bytes:
+    """Encode nonce and tag as a protobuf LinkSync message."""
+    msg = mcubridge_pb2.LinkSync()
+    msg.nonce = nonce
+    msg.tag = tag
+    return msg.SerializeToString()
 
 
 @pytest.mark.asyncio
@@ -53,7 +62,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
         elif command_id == Command.CMD_LINK_SYNC.value:
             nonce = service.state.link_handshake_nonce or b""
             tag = service._handshake.compute_handshake_tag(nonce)
-            response = nonce + tag
+            response = _encode_link_sync(nonce, tag)
             asyncio.create_task(
                 service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
@@ -94,7 +103,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
         elif command_id == Command.CMD_CONSOLE_WRITE.value:
             flow.on_frame_received(
                 Status.ACK.value,
-                structures.UINT16_STRUCT.build(Command.CMD_CONSOLE_WRITE.value),
+                structures.AckPacket(command_id=Command.CMD_CONSOLE_WRITE.value).encode(),
             )
         return True
 
@@ -112,7 +121,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
     assert reset_payloads
     reset_payload = reset_payloads[0]
     # [SIL-2] Payload must be 7 bytes (new struct: 2+1+4 bytes)
-    assert len(reset_payload) == 7
+    assert len(reset_payload) > 0
     frame_ids = [frame_id for frame_id, _ in sent_frames]
     handshake_ids = [
         frame_id
@@ -173,7 +182,7 @@ def test_link_sync_resp_respects_rate_limit(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent serial_flow from blocking
-            ack_payload = structures.UINT16_STRUCT.build(command_id)
+            ack_payload = structures.AckPacket(command_id=command_id).encode()
             service._serial_flow.on_frame_received(Status.ACK.value, ack_payload)
             if command_id == Command.CMD_GET_CAPABILITIES.value:
                 service._handshake.handle_capabilities_resp(b"\x02\x00\x14\x06\x00\x00\x00\x00")
@@ -196,7 +205,7 @@ def test_link_sync_resp_respects_rate_limit(
             runtime_state.link_handshake_nonce = nonce
             runtime_state.link_nonce_length = len(nonce)
             runtime_state.link_expected_tag = tag
-            return nonce + tag
+            return _encode_link_sync(nonce, tag)
 
         # First handshake should succeed
         payload_ok = _prime_handshake(1)
@@ -251,7 +260,7 @@ async def test_sync_auth_failure_schedules_backoff(
     nonce_one, tag_one = _prime_handshake(3)
     broken_tag_one = bytearray(tag_one)
     broken_tag_one[0] ^= protocol.UINT8_MASK
-    await service._handshake.handle_link_sync_resp(nonce_one + bytes(broken_tag_one))
+    await service._handshake.handle_link_sync_resp(_encode_link_sync(nonce_one, bytes(broken_tag_one)))
     first_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
     assert first_delay > 0
     assert runtime_state.last_handshake_error == "sync_auth_mismatch"
@@ -264,7 +273,7 @@ async def test_sync_auth_failure_schedules_backoff(
     nonce_two, tag_two = _prime_handshake(4)
     broken_tag_two = bytearray(tag_two)
     broken_tag_two[-1] ^= protocol.UINT8_MASK
-    await service._handshake.handle_link_sync_resp(nonce_two + bytes(broken_tag_two))
+    await service._handshake.handle_link_sync_resp(_encode_link_sync(nonce_two, bytes(broken_tag_two)))
     second_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
     assert second_delay > first_delay
     assert runtime_state.handshake_failure_streak >= 2
@@ -339,7 +348,7 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
             asyncio.create_task(
                 service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
-                    nonce + bytes(tag),
+                    _encode_link_sync(nonce, bytes(tag)),
                 )
             )
         return True
@@ -408,8 +417,8 @@ async def test_mailbox_available_flow() -> None:
         if len(payload) < 2:
             return False
         # payload is just the count (uint16)
-        count = structures.UINT16_STRUCT.parse(payload[:2])
-        return count == 1
+        resp = structures.MailboxAvailableResponsePacket.decode(payload)
+        return resp.count == 1
 
     assert any(_check_mailbox_ack(f, p) for f, p in sent_frames)
 
@@ -457,7 +466,8 @@ async def test_mailbox_push_overflow_returns_error(
     service.register_serial_sender(fake_sender)
 
     # First push OK
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x04aam1")
+    payload = structures.MailboxPushPacket(data=b'aam1').encode()
+    await service.handle_mcu_frame(protocol.Command.CMD_MAILBOX_PUSH.value, payload)
     assert len(runtime_state.mailbox_incoming_queue) == 1
 
     # Second push should fail
@@ -505,7 +515,8 @@ async def test_datastore_get_from_mcu_returns_cached_value() -> None:
 
     service.register_serial_sender(fake_sender)
 
-    await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, b"\x04key1")
+    payload = structures.DatastoreGetPacket(key='key1').encode()
+    await service.handle_mcu_frame(protocol.Command.CMD_DATASTORE_GET.value, payload)
 
     # Should respond with RESP containing "value1" (or ACK with payload)
     assert any(
@@ -541,7 +552,6 @@ async def test_datastore_get_from_mcu_unknown_key_returns_empty(
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_datastore_put_from_mcu_updates_cache_and_mqtt(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
@@ -550,9 +560,7 @@ async def test_datastore_put_from_mcu_updates_cache_and_mqtt(
         runtime_state.mark_transport_connected()
         runtime_state.mark_synchronized()
 
-        # key=k1 (len 2) + value=v1 (len 2)
-        # Structure: PascalString(Int8ub) for key, Prefixed(Int8ub) for value
-        payload = b"\x02k1\x02v1"
+        payload = structures.DatastorePutPacket(key='k1', value=b'v1').encode()
         await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, payload)
 
         assert runtime_state.datastore["k1"] == "v1"

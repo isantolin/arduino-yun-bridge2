@@ -205,6 +205,69 @@ install_etl_dual() {
 }
 install_etl_dual
 
+# Nanopb C runtime (same dual-install pattern as ETL)
+# [SIL-2] Pinned to a specific release for reproducible builds
+NANOPB_VERSION="0.4.9.1"
+install_nanopb_dual() {
+    local url="https://codeload.github.com/nanopb/nanopb/zip/refs/tags/${NANOPB_VERSION}"
+    local check_file="pb.h"
+    local target1="$LIB_DIR"
+    local target2="${LIB_ROOT}/src"
+
+    local needs_t1=false
+    local needs_t2=false
+
+    if [ ! -f "$target1/nanopb/$check_file" ]; then
+        needs_t1=true
+    else
+        echo "[INFO] nanopb already installed at $target1."
+    fi
+    if [ ! -f "$target2/nanopb/$check_file" ]; then
+        needs_t2=true
+    else
+        echo "[INFO] nanopb already installed at $target2."
+    fi
+
+    if [ "$needs_t1" = false ] && [ "$needs_t2" = false ]; then
+        return 0
+    fi
+
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    local zip_path="$tmp_dir/nanopb.zip"
+
+    if ! download_zip "nanopb" "$url" "$zip_path"; then
+        echo "[ERROR] Failed to download nanopb." >&2
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    unzip -q "$zip_path" -d "$tmp_dir"
+    local extracted_root
+    extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d -name "nanopb-*" | head -n1)
+
+    # Only copy the C runtime files (pb.h, pb_*.c, pb_*.h)
+    local nanopb_files="pb.h pb_common.c pb_common.h pb_decode.c pb_decode.h pb_encode.c pb_encode.h"
+
+    if [ "$needs_t1" = true ]; then
+        mkdir -p "$target1/nanopb"
+        for f in $nanopb_files; do
+            cp "$extracted_root/$f" "$target1/nanopb/"
+        done
+        echo "[OK] nanopb ${NANOPB_VERSION} installed to $target1."
+    fi
+    if [ "$needs_t2" = true ]; then
+        mkdir -p "$target2/nanopb"
+        for f in $nanopb_files; do
+            cp "$extracted_root/$f" "$target2/nanopb/"
+        done
+        echo "[OK] nanopb ${NANOPB_VERSION} installed to $target2."
+    fi
+
+    rm -rf "$tmp_dir"
+}
+install_nanopb_dual
+
 # Unity test framework (host tests only)
 install_dependency "Unity" \
     "https://codeload.github.com/ThrowTheSwitch/Unity/zip/refs/tags/v2.6.1" \

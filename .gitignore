@@ -70,6 +70,14 @@ mcubridge/mcubridge/protocol/protocol.py
 mcubridge-library-arduino/src/protocol/rpc_protocol.h
 mcubridge-library-arduino/src/protocol/rpc_structs.h
 mcubridge-library-arduino/src/etl
+mcubridge-library-arduino/src/nanopb
+# Auto-generated Protobuf / Nanopb bindings
+mcubridge/mcubridge/protocol/mcubridge_pb2.py
+mcubridge/mcubridge/protocol/mcubridge_pb2.pyi
+mcubridge/mcubridge/protocol/nanopb_pb2.py
+mcubridge/mcubridge/protocol/nanopb_pb2.pyi
+mcubridge-library-arduino/src/protocol/mcubridge.pb.h
+mcubridge-library-arduino/src/protocol/mcubridge.pb.c
 # Auto-generated Client Protocol
 mcubridge-client-examples/mcubridge_client/protocol.py
 mcubridge-library-arduino/tests/bridge_emulator

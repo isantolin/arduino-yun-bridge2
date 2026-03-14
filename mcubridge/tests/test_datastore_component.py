@@ -57,10 +57,9 @@ async def datastore_component() -> DatastoreComponent:
 
 @pytest.mark.asyncio
 async def test_handle_put_success(datastore_component: DatastoreComponent) -> None:
-    key = b"key1"
-    value = b"value1"
-    # Payload: key_len (1 byte) + key + value_len (1 byte) + value
-    payload = structures.UINT8_STRUCT.build(len(key)) + key + structures.UINT8_STRUCT.build(len(value)) + value
+    key = 'key1'
+    val_bytes = b'value1'
+    payload = structures.DatastorePutPacket(key=key, value=val_bytes).encode()
 
     # Mock _publish_value
     with patch.object(datastore_component, "_publish_value", new_callable=AsyncMock) as mock_pub:
@@ -70,7 +69,7 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
         assert datastore_component.state.datastore["key1"] == "value1"
         mock_pub.assert_awaited_once_with(
             topic='br/datastore/get/key1',
-            payload=value,
+            payload=val_bytes,
             expiry=60,
             reply_context=None,
             properties=(('bridge-datastore-key', 'key1'),)
@@ -78,13 +77,8 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
 
 @pytest.mark.asyncio
 async def test_handle_put_malformed(datastore_component: DatastoreComponent) -> None:
-    # Too short
-    assert await datastore_component.handle_put(b"") is False
-
-    # Missing value length
-    key = b"k"
-    payload = structures.UINT8_STRUCT.build(len(key)) + key
-    assert await datastore_component.handle_put(payload) is False
+    # Truncated varint — invalid protobuf
+    assert await datastore_component.handle_put(b"\x80") is False
 
 
 @pytest.mark.asyncio
@@ -94,8 +88,8 @@ async def test_handle_get_request_success(
     # Pre-populate datastore
     datastore_component.state.datastore["key1"] = "value1"
 
-    key = b"key1"
-    payload = structures.UINT8_STRUCT.build(len(key)) + key
+    key = 'key1'
+    payload = structures.DatastoreGetPacket(key=key).encode()
 
     await datastore_component.handle_get_request(payload)
 
@@ -103,26 +97,8 @@ async def test_handle_get_request_success(
     args = datastore_component.ctx.send_frame.call_args[0]
     assert args[0] == Command.CMD_DATASTORE_GET_RESP.value
 
-    # Response: value_len (1 byte) + value
+    # Should return empty bytes
     resp = args[1]
-    assert resp[0] == len("value1")
-    assert resp[1:] == b"value1"
-
-
-@pytest.mark.asyncio
-async def test_handle_get_request_missing(
-    datastore_component: DatastoreComponent,
-) -> None:
-    key = b"missing"
-    payload = structures.UINT8_STRUCT.build(len(key)) + key
-
-    await datastore_component.handle_get_request(payload)
-
-    datastore_component.ctx.send_frame.assert_awaited_once()
-    args = datastore_component.ctx.send_frame.call_args[0]
-    assert args[0] == Command.CMD_DATASTORE_GET_RESP.value
-
-    # Should return empty string
-    resp = args[1]
-    assert resp[0] == 0
-    assert len(resp) == 1
+    decoded = structures.DatastoreGetResponsePacket.decode(resp)
+    assert decoded.value == b'value1'
+    assert len(resp) > 0

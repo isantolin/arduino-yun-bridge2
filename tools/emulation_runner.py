@@ -108,10 +108,12 @@ def main(
 
     logger.info("Starting Unified MCU Emulator via socat EXEC...")
     # Use EXEC with default pipes. PTY is only created for the Daemon side.
+    # start_new_session isolates socat from terminal SIGHUP signals.
     mcu_proc = subprocess.Popen(
         ["socat", "-d", "-d", f"PTY,link={SOCAT_PORT0},raw,echo=0", f"EXEC:{firmware_path.absolute()}"],
         stderr=subprocess.PIPE,
         bufsize=0,
+        start_new_session=True,
     )
     _start_worker_thread(_mcu_stderr_worker, "mcu-socat", mcu_proc, state)
 
@@ -185,12 +187,26 @@ def main(
         logger.error("Emulation error: %s", exc)
         all_success = False
     finally:
-        for p in [daemon_proc, mcu_proc]:
+        # Terminate daemon (same process group — plain kill only)
+        for p in [daemon_proc]:
             with contextlib.suppress(Exception):
                 os.kill(p.pid, signal.SIGTERM)
                 p.wait(timeout=2)
             with contextlib.suppress(Exception):
                 os.kill(p.pid, signal.SIGKILL)
+        # Terminate socat+MCU (separate session — use process group)
+        for p in [mcu_proc]:
+            with contextlib.suppress(Exception):
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+                except (ProcessLookupError, OSError):
+                    os.kill(p.pid, signal.SIGTERM)
+                p.wait(timeout=2)
+            with contextlib.suppress(Exception):
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+                except (ProcessLookupError, OSError):
+                    os.kill(p.pid, signal.SIGKILL)
 
     if not all_success:
         logger.error("Emulation FAILED.")

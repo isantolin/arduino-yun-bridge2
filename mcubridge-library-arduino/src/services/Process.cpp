@@ -11,8 +11,11 @@ ProcessClass::ProcessClass() { reset(); }
 void ProcessClass::reset() { _pending_process_pids.clear(); }
 
 void ProcessClass::runAsync(etl::string_view command) {
-  static_cast<void>(Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, command,
-                                rpc::MAX_PAYLOAD_SIZE - 1));
+  rpc::payload::ProcessRunAsync msg = {};
+  const size_t len = etl::min(command.length(), sizeof(msg.command) - 1);
+  etl::copy_n(command.data(), len, msg.command);
+  msg.command[len] = '\0';
+  static_cast<void>(Bridge.sendPbFrame(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, msg));
 }
 
 void ProcessClass::poll(int16_t pid) {
@@ -24,14 +27,18 @@ void ProcessClass::poll(int16_t pid) {
     return;
   }
 
-  if (!Bridge.sendValue(rpc::CommandId::CMD_PROCESS_POLL, pid_u16)) {
+  rpc::payload::ProcessPoll msg = {};
+  msg.pid = pid_u16;
+  if (!Bridge.sendPbFrame(rpc::CommandId::CMD_PROCESS_POLL, msg)) {
     _popPendingProcessPid();  // Cleanup if failed to send
   }
 }
 
 void ProcessClass::kill(int16_t pid) {
   if (pid < 0) return;
-  static_cast<void>(Bridge.sendValue(rpc::CommandId::CMD_PROCESS_KILL, static_cast<uint16_t>(pid)));
+  rpc::payload::ProcessKill msg = {};
+  msg.pid = static_cast<uint16_t>(pid);
+  static_cast<void>(Bridge.sendPbFrame(rpc::CommandId::CMD_PROCESS_KILL, msg));
 }
 
 bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {

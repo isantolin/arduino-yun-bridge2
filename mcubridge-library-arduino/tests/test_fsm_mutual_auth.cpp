@@ -5,6 +5,7 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -55,9 +56,12 @@ void test_mutual_auth_success() {
   sync_frame.header.version = rpc::PROTOCOL_VERSION;
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync_frame.header.payload_length = 32;
-  memcpy(sync_frame.payload.data(), nonce, 16);
-  memcpy(sync_frame.payload.data() + 16, tag, 16);
+  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  sync_msg.nonce.size = 16;
+  memcpy(sync_msg.nonce.bytes, nonce, 16);
+  sync_msg.tag.size = 16;
+  memcpy(sync_msg.tag.bytes, tag, 16);
+  bridge::test::set_pb_payload(sync_frame, sync_msg);
 
   accessor.dispatch(sync_frame);
 
@@ -78,9 +82,12 @@ void test_mutual_auth_failure_wrong_tag() {
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync_frame.header.payload_length = 32;
-  memcpy(sync_frame.payload.data(), nonce, 16);
-  memcpy(sync_frame.payload.data() + 16, wrong_tag, 16);
+  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  sync_msg.nonce.size = 16;
+  memcpy(sync_msg.nonce.bytes, nonce, 16);
+  sync_msg.tag.size = 16;
+  memcpy(sync_msg.tag.bytes, wrong_tag, 16);
+  bridge::test::set_pb_payload(sync_frame, sync_msg);
 
   accessor.dispatch(sync_frame);
 
@@ -97,14 +104,13 @@ void test_mutual_auth_failure_malformed_length() {
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync_frame.header.payload_length =
-      16;  // Too short, expected 32 when secret is set
+  // Corrupt payload with invalid data that pb_decode will reject
+  sync_frame.payload[0] = 0xFF; // Invalid protobuf tag
+  sync_frame.header.payload_length = 1;
 
   accessor.dispatch(sync_frame);
 
-  TEST_ASSERT(
-      localBridge.getStateId() ==
-      bridge::fsm::STATE_UNSYNCHRONIZED);  // Should just ignore malformed
+  TEST_ASSERT_EQUAL(bridge::fsm::STATE_UNSYNCHRONIZED, localBridge.getStateId());
   printf("  -> Mutual Auth Failure (Malformed Length): OK\n");
 }
 
@@ -117,7 +123,9 @@ void test_fsm_transitions_running() {
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync_frame.header.payload_length = 16;
+  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  sync_msg.nonce.size = 16;
+  bridge::test::set_pb_payload(sync_frame, sync_msg);
   accessor.dispatch(sync_frame);
   TEST_ASSERT(localBridge.isSynchronized());
 
@@ -128,9 +136,9 @@ void test_fsm_transitions_running() {
   // Receive ACK
   rpc::Frame ack_frame;
   ack_frame.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_ACK);
-  ack_frame.header.payload_length = 2;
-  rpc::write_u16_be(etl::span<uint8_t>(ack_frame.payload.data(), 2),
-                    rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE));
+  rpc::payload::AckPacket ack_msg = mcubridge_AckPacket_init_default;
+  ack_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE);
+  bridge::test::set_pb_payload(ack_frame, ack_msg);
   accessor.dispatch(ack_frame);
 
   TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_IDLE);
@@ -146,7 +154,9 @@ void test_fsm_timeout_to_unsynchronized() {
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync_frame.header.payload_length = 16;
+  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  sync_msg.nonce.size = 16;
+  bridge::test::set_pb_payload(sync_frame, sync_msg);
   accessor.dispatch(sync_frame);
 
   // Disable retries for immediate timeout

@@ -92,11 +92,13 @@ class ProcessComponent(BaseComponent):
             # 3. Execution
             pid = await self.run_async(command)
             if pid > 0:
-                resp = structures.ProcessRunAsyncResponsePacket(pid=pid).encode()
                 await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     status=Status.OK,
-                    extra=resp,
+                )
+                resp = structures.ProcessRunAsyncResponsePacket(pid=pid).encode()
+                await self.service.send_frame(
+                    protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value, resp,
                 )
             else:
                 await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
@@ -119,7 +121,15 @@ class ProcessComponent(BaseComponent):
             await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
                 protocol.Command.CMD_PROCESS_POLL.value,
                 status=Status.OK,
-                extra=msgspec.msgpack.encode(batch),
+            )
+            resp = structures.ProcessPollResponsePacket(
+                status=batch.status_byte,
+                exit_code=batch.exit_code,
+                stdout=batch.stdout_chunk,
+                stderr=batch.stderr_chunk,
+            ).encode()
+            await self.service.send_frame(
+                protocol.Command.CMD_PROCESS_POLL_RESP.value, resp,
             )
         except (msgspec.ValidationError, ValueError, AttributeError):
             await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]

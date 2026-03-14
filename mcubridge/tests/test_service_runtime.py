@@ -90,7 +90,7 @@ async def test_acknowledge_mcu_frame_no_sender_is_noop() -> None:
 
 
 @pytest.mark.asyncio
-async def test_acknowledge_mcu_frame_truncates_extra_payload() -> None:
+async def test_acknowledge_mcu_frame_sends_ack_packet() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     service = BridgeService(config, state)
@@ -103,18 +103,15 @@ async def test_acknowledge_mcu_frame_truncates_extra_payload() -> None:
 
     service.register_serial_sender(_sender)
 
-    extra = b"x" * (protocol.MAX_PAYLOAD_SIZE * 2)
     await service._acknowledge_mcu_frame(
         protocol.Command.CMD_GET_FREE_MEMORY.value,
         status=Status.MALFORMED,
-        extra=extra,
     )
 
     assert sent
     status_cmd, payload = sent[0]
     assert status_cmd == Status.MALFORMED.value
-    assert payload.startswith(structures.UINT16_STRUCT.build(protocol.Command.CMD_GET_FREE_MEMORY.value))
-    assert len(payload) <= protocol.MAX_PAYLOAD_SIZE
+    assert payload == structures.AckPacket(command_id=protocol.Command.CMD_GET_FREE_MEMORY.value).encode()
 
 
 @pytest.mark.asyncio
@@ -202,7 +199,7 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    await service._system.handle_get_version_resp(bytes([1, 2]))
+    await service._system.handle_get_version_resp(structures.VersionResponsePacket(major=1, minor=2).encode())
 
     assert state.mcu_version == (1, 2)
     queued = state.mqtt_publish_queue.get_nowait()

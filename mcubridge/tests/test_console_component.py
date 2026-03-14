@@ -28,7 +28,8 @@ def console_component() -> ConsoleComponent:
 @pytest.mark.asyncio
 async def test_handle_write(console_component: ConsoleComponent) -> None:
     payload = b"console output"
-    await console_component.handle_write(payload)
+    from mcubridge.protocol import structures
+    await console_component.handle_write(structures.ConsoleWritePacket(data=payload).encode())
 
     console_component.ctx.publish.assert_awaited_once()
     call_args = console_component.ctx.publish.call_args
@@ -62,7 +63,9 @@ async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> 
 
     await console_component.handle_mqtt_input(payload)
 
-    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, payload)
+    from mcubridge.protocol import structures
+    expected = structures.ConsoleWritePacket(data=payload).encode()
+    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, expected)
 
 
 @pytest.mark.asyncio
@@ -104,5 +107,7 @@ async def test_flush_queue(console_component: ConsoleComponent) -> None:
 
     await console_component.flush_queue()
 
-    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"queued")
+    from mcubridge.protocol import structures
+    expected = structures.ConsoleWritePacket(data=b'queued').encode()
+    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, expected)
     assert len(queue) == 0

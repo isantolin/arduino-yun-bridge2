@@ -50,19 +50,24 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include <Arduino.h>
 #include <Stream.h>
 
+#undef min
+#undef max
+
 #include "config/bridge_config.h"
 #include "etl/algorithm.h"
 #include "etl/crc32.h"
 #include "etl/observer.h"
 #include "etl/random.h"
 #include "hal/hal.h"
-#include "protocol/PacketBuilder.h"
 #include "protocol/rpc_cobs.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
-#undef min
-#undef max
+
+// Nanopb core headers
+#include "nanopb/pb_common.h"
+#include "nanopb/pb_decode.h"
+#include "nanopb/pb_encode.h"
 #include "etl/array.h"
 #include "etl/bitset.h"
 #include "etl/circular_buffer.h"
@@ -296,25 +301,16 @@ class BridgeClass
   bool sendKeyValCommand(rpc::CommandId command_id, etl::string_view key,
                          size_t max_key, etl::string_view val, size_t max_val);
 
-  // [SIL-2] Generic Value Sender (Boilerplate reduction)
+  // [SIL-2] Protobuf Frame Sender (replaces raw sendValue)
   template <typename T>
-  bool sendValue(rpc::CommandId command_id, T value) {
-    etl::array<uint8_t, sizeof(T)> payload;
-    if (sizeof(T) == 1) {
-      payload[0] = static_cast<uint8_t>(value);
-    } else if (sizeof(T) == 2) {
-      rpc::write_u16_be(etl::span<uint8_t>(payload.data(), 2),
-                        static_cast<uint16_t>(value));
-    } else if (sizeof(T) == 4) {
-      rpc::write_u32_be(etl::span<uint8_t>(payload.data(), 4),
-                        static_cast<uint32_t>(value));
-    } else {
-      // Static protection for unsupported types
-      static_assert(sizeof(T) <= 4, "Unsupported value size for sendValue");
+  bool sendPbFrame(rpc::CommandId command_id, const T& msg) {
+    uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
       return false;
     }
     return sendFrame(command_id,
-                     etl::span<const uint8_t>(payload.data(), payload.size()));
+                     etl::span<const uint8_t>(buffer, stream.bytes_written));
   }
 
   inline void flushStream() { _stream.flush(); }
@@ -583,10 +579,13 @@ class BridgeClass
 
   template <typename T, typename... Args>
   void _sendResponse(uint16_t cmd_raw, Args&&... args) {
-    T resp{etl::forward<Args>(args)...};
-    etl::array<uint8_t, T::SIZE> buffer;
-    resp.encode(buffer.data());
-    static_cast<void>(_sendFrame(cmd_raw, etl::span<const uint8_t>(buffer.data(), T::SIZE)));
+    T resp = {etl::forward<Args>(args)...};
+    uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    if (pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &resp)) {
+      static_cast<void>(_sendFrame(
+          cmd_raw, etl::span<const uint8_t>(buffer, stream.bytes_written)));
+    }
   }
 
   void _retransmitLastFrame();

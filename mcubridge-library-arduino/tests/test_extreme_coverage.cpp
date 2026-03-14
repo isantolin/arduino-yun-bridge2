@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "BridgeTestInterface.h"

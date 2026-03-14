@@ -2,6 +2,7 @@
 
 #include "Bridge.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/rpc_structs.h"
 
 /// XON resume threshold: fraction of buffer capacity (numerator / denominator).
 static constexpr size_t kLowWaterNumerator = 1;
@@ -51,9 +52,21 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
     flush();
   }
 
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
-                         etl::span<const uint8_t>(),
-                         etl::span<const uint8_t>(buffer, size));
+  // Protobuf overhead: 1 byte tag + 1 byte length = 2 bytes
+  static constexpr size_t kMaxChunk =
+      rpc::MAX_PAYLOAD_SIZE - 2;
+
+  size_t offset = 0;
+  while (offset < size) {
+    const size_t chunk = etl::min(size - offset, kMaxChunk);
+    rpc::payload::ConsoleWrite msg = {};
+    msg.data.size = static_cast<pb_size_t>(chunk);
+    etl::copy_n(buffer + offset, chunk, msg.data.bytes);
+    if (!Bridge.sendPbFrame(rpc::CommandId::CMD_CONSOLE_WRITE, msg)) {
+      return offset;
+    }
+    offset += chunk;
+  }
   return size;
 }
 
@@ -114,9 +127,10 @@ void ConsoleClass::flush() {
   }
 
   if (!_tx_buffer.empty()) {
-    if (Bridge.sendChunkyFrame(
-            rpc::CommandId::CMD_CONSOLE_WRITE, etl::span<const uint8_t>(),
-            etl::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size()))) {
+    rpc::payload::ConsoleWrite msg = {};
+    msg.data.size = static_cast<pb_size_t>(_tx_buffer.size());
+    etl::copy_n(_tx_buffer.data(), _tx_buffer.size(), msg.data.bytes);
+    if (Bridge.sendPbFrame(rpc::CommandId::CMD_CONSOLE_WRITE, msg)) {
       _tx_buffer.clear();
     }
   }

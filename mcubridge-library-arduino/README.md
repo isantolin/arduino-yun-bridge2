@@ -13,7 +13,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 - `src/`
   - Public headers available to sketches (`Bridge.h`, `Console.h`, `Mailbox.h`, etc.).
   - `services/`: implementation files and classes that depend on the Arduino core (e.g. `Bridge.cpp`).
-  - `protocol/`: protocol helpers shared with the Linux daemon (COBS encoder, CRC, frame builder).
+  - `protocol/`: protocol helpers shared with the Linux daemon (COBS encoder, CRC, frame builder, nanopb-generated payload structs).
 - `examples/`
   - Arduino sketches demonstrating usage of the library (`BridgeControl`).
 - `docs/`
@@ -77,8 +77,8 @@ void loop() {
 ## Building From Source
 
 - The library targets AVR-based Arduino MCU boards. Ensure the Arduino AVR core is installed.
-- The shared protocol headers are kept aligned with the Python daemon under `mcubridge/mcubridge/rpc`.
-- Recent updates align the datastore, mailbox, and filesystem payloads with the binary protocol specification (length-prefixed values and `STATUS_*` propagation). The async process helpers now queue partial outputs so repeated `Bridge.processPoll()` calls deliver the full stream, and the library automatically issues additional polls when partial chunks arrive.
+- The shared protocol headers are kept aligned with the Python daemon under `mcubridge/mcubridge/protocol`.
+- All payload serialization uses **Protocol Buffers (proto3)** via nanopb (static, no heap). The `sendPbFrame<T>()` template in `Bridge.h` encodes protobuf messages and sends them as RPC frames. Payload decoding uses `Payload::parse<T>()` which wraps nanopb's `pb_decode`.
 - MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via MQTT (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`).
 
 ## Contributing

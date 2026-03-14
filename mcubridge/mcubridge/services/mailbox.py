@@ -14,7 +14,7 @@ from mcubridge.protocol.protocol import (
     Status,
 )
 from mcubridge.protocol.structures import (
-    UINT16_STRUCT,
+    AckPacket,
     MailboxAvailableResponsePacket,
     MailboxProcessedPacket,
     MailboxPushPacket,
@@ -96,7 +96,7 @@ class MailboxComponent(BaseComponent):
         if payload:
             await self.ctx.send_frame(
                 Status.MALFORMED.value,
-                UINT16_STRUCT.build(Command.CMD_MAILBOX_AVAILABLE.value),
+                AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value).encode(),
             )
             return False
 

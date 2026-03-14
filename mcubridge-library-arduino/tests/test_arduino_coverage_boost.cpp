@@ -5,6 +5,7 @@
 
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
 #include "fsm/bridge_fsm.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_structs.h"
@@ -94,61 +95,39 @@ void test_rle_gaps() {
 }
 
 void test_rpc_structs_gaps() {
-  // VersionResponse encode
+  // VersionResponse round-trip
   rpc::payload::VersionResponse vr{1, 2};
-  uint8_t buf[2];
-  vr.encode(buf);
-  TEST_ASSERT(buf[0] == 1);
+  uint8_t buf[16];
+  pb_ostream_t stream = pb_ostream_from_buffer(buf, sizeof(buf));
+  TEST_ASSERT(pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::VersionResponse>::fields(), &vr));
+  
+  rpc::payload::VersionResponse vr_dec = {};
+  pb_istream_t istream = pb_istream_from_buffer(buf, stream.bytes_written);
+  TEST_ASSERT(pb_decode(&istream, rpc::Payload::Descriptor<rpc::payload::VersionResponse>::fields(), &vr_dec));
+  TEST_ASSERT_EQUAL(1, vr_dec.major);
+  TEST_ASSERT_EQUAL(2, vr_dec.minor);
 
-  // VersionResponse parse
-  uint8_t vbuf[] = {3, 4};
-  rpc::payload::VersionResponse vr2 =
-      rpc::payload::VersionResponse::parse(vbuf);
-  TEST_ASSERT(vr2.major == 3);
-
-  // AnalogReadResponse encode
+  // AnalogReadResponse round-trip
   rpc::payload::AnalogReadResponse ar{1023};
-  uint8_t buf2[2];
-  ar.encode(buf2);
-  TEST_ASSERT(rpc::read_u16_be(etl::span<const uint8_t>(buf2, 2)) == 1023);
+  uint8_t buf2[16];
+  stream = pb_ostream_from_buffer(buf2, sizeof(buf2));
+  TEST_ASSERT(pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::AnalogReadResponse>::fields(), &ar));
+  
+  rpc::payload::AnalogReadResponse ar_dec = {};
+  istream = pb_istream_from_buffer(buf2, stream.bytes_written);
+  TEST_ASSERT(pb_decode(&istream, rpc::Payload::Descriptor<rpc::payload::AnalogReadResponse>::fields(), &ar_dec));
+  TEST_ASSERT_EQUAL(1023, ar_dec.value);
 
-  // AnalogWrite parse
-  uint8_t awbuf[] = {5, 200};
-  rpc::payload::AnalogWrite aw = rpc::payload::AnalogWrite::parse(awbuf);
-  TEST_ASSERT(aw.pin == 5);
-
-  // MailboxPush parse
-  uint8_t mpbuf[] = {0, 3, 'A', 'B', 'C'};
-  rpc::payload::MailboxPush mp = rpc::payload::MailboxPush::parse(mpbuf);
-  TEST_ASSERT(mp.length == 3);
-
-  // AckPacket parse
-  uint8_t apbuf[] = {0, 0x42};
-  rpc::payload::AckPacket ap = rpc::payload::AckPacket::parse(apbuf);
-  TEST_ASSERT(ap.command_id == 0x42);
-
-  // Payload::parse template paths
-  rpc::Frame f;
-  f.header.payload_length = 1;
-  // VersionResponse::SIZE is 2
-  auto res = rpc::Payload::parse<rpc::payload::VersionResponse>(f);
-  TEST_ASSERT(res.has_value() == false);
-
-  // Line 261: Success return
-  f.header.payload_length = 2;
-  auto res2 = rpc::Payload::parse<rpc::payload::VersionResponse>(f);
-  TEST_ASSERT(res2.has_value() == true);
-
-  // Line 289-290: MailboxPush error paths
-  f.header.payload_length = 1;
-  auto res3 = rpc::Payload::parse<rpc::payload::MailboxPush>(f);
-  TEST_ASSERT(res3.has_value() == false);
-
-  uint8_t mbuf[2] = {0, 10};  // length 10
-  etl::copy_n(mbuf, 2, f.payload.data());
-  f.header.payload_length = 5;  // < 10+2
-  auto res4 = rpc::Payload::parse<rpc::payload::MailboxPush>(f);
-  TEST_ASSERT(res4.has_value() == false);
+  // PinMode round-trip
+  rpc::payload::PinMode pm{13, 1};
+  uint8_t buf3[16];
+  stream = pb_ostream_from_buffer(buf3, sizeof(buf3));
+  TEST_ASSERT(pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::PinMode>::fields(), &pm));
+  rpc::payload::PinMode pm_dec = {};
+  istream = pb_istream_from_buffer(buf3, stream.bytes_written);
+  TEST_ASSERT(pb_decode(&istream, rpc::Payload::Descriptor<rpc::payload::PinMode>::fields(), &pm_dec));
+  TEST_ASSERT_EQUAL(13, pm_dec.pin);
+  TEST_ASSERT_EQUAL(1, pm_dec.mode);
 }
 
 void test_bridge_core_gaps() {

@@ -74,12 +74,12 @@ The project follows modern, best-practice development conventions:
 *   **Import Sorting:** Python imports are sorted with `isort`.
 *   **Linting:** The code is linted with `ruff` and `flake8`.
 *   **Static Type Checking:** Python code is type-checked with `pyright`.
-*   **Protocol as Code:** The communication protocol is defined in `tools/protocol/spec.toml` and the corresponding code is generated using `tools/protocol/generate.py`. This ensures that the protocol is always in sync between the C++ and Python codebases.
-*   **Architecture:** Data structures are centralized in `mcubridge/protocol/structures.py` to serve as a single source of truth, utilizing `construct` for binary schemas and `msgspec` for typed structs. This implementation is 100% synchronized with `tools/protocol/spec.toml`.
-    *   **Frame Layer:** Uses full `construct` integration with `Checksum` for automatic CRC32 validation and `Switch` for payload schema resolution.
-    *   **Packet Layer:** Uses full `construct` + `msgspec` validation (including `ge=0` checks) to parse payloads into typed objects on demand.
+*   **Protocol as Code:** The communication protocol is defined in `tools/protocol/spec.toml` (enums, constants) and `tools/protocol/mcubridge.proto` (payload schemas, proto3). The corresponding code is generated using `tools/protocol/generate.py`, which invokes `protoc` + nanopb to produce both Python (`mcubridge_pb2.py`) and C++ (`mcubridge.pb.h`) bindings. This ensures that the protocol is always in sync between the C++ and Python codebases.
+*   **Architecture:** Payload serialization uses **Protocol Buffers (proto3)** on both sides: `protobuf` (Python) and **nanopb** (C++, static allocation, no heap). Frame-level constructs (CRC, header) are handled by `construct` (Python) and internal C++ helpers. The `rpc_structs.h` file provides typed aliases (`rpc::payload::*`) and `Payload::parse<T>()` / `sendPbFrame<T>()` wrappers for type-safe protobuf encode/decode.
+    *   **Frame Layer:** Uses `construct` for automatic CRC32 validation and header parsing.
+    *   **Packet Layer:** Uses **protobuf** (`mcubridge_pb2`) to decode payloads into typed messages.
     *   **C++ Dispatch:** Uses O(1) jump tables of member function pointers for command dispatch, eliminating `switch/case` overhead and reducing stack depth.
-    *   **C++ Validation:** Implements static type-safe validation wrappers (`rpc::Payload::parse<T>`) generated automatically from `spec.toml`.
+    *   **C++ Validation:** Implements `rpc::Payload::parse<T>` using nanopb `pb_decode` with automatic field descriptor resolution via `REGISTER_DESCRIPTOR` macros generated from `mcubridge.proto`.
 *   **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, and SPI.
 *   **Observability:** Built-in Prometheus exporter exposes extensive runtime metrics, including task supervisor health, queue depths, serial latency histograms, CPU temperature, and I/O throughput. Logs use structured hex format `[DE AD BE EF]` with directional labels `[MCU -> SERIAL]` and `[SERIAL -> MCU]`.
 *   **Robustness:**
@@ -87,5 +87,5 @@ The project follows modern, best-practice development conventions:
     *   **Race Condition Guard:** State machine includes guards to prevent invalid transitions during high-speed asynchronous responses.
     *   **Cleanup:** Child processes are robustly terminated using `psutil` traversal on shutdown.
     *   **E2E Testing:** Automated integration testing (`tox -e e2e`) verifies the full stack against a native C++ emulator.
-*   **Status:** The ecosystem is fully modernized and synchronized. All services use typed `BaseStruct` packets. The C++ library strictly adheres to SIL-2 standards with O(1) dispatch and ETL integration.
+*   **Status:** The ecosystem is fully modernized and synchronized. All services use **protobuf/nanopb** typed messages for payload serialization. The C++ library strictly adheres to SIL-2 standards with O(1) dispatch and ETL integration.
 *   **Automated CI/CD:** The project uses GitHub Actions to automate the build and test process.

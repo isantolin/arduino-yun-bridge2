@@ -29,13 +29,22 @@ if ! ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     exit 1
 fi
 
+echo "[emulator] Installing library dependencies..."
+DUMMY_ARDUINO_LIBS=${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}
+"${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
+
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++14 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 \
     -I"${SRC_DIR}" \
+    -I"${SRC_DIR}/nanopb" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
+    "${SRC_DIR}/nanopb/pb_common.c" \
+    "${SRC_DIR}/nanopb/pb_encode.c" \
+    "${SRC_DIR}/nanopb/pb_decode.c" \
+    "${SRC_DIR}/protocol/mcubridge.pb.c" \
     "${SRC_DIR}/security/sha256.cpp" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
@@ -54,9 +63,14 @@ echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++14 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 \
     -I"${SRC_DIR}" \
+    -I"${SRC_DIR}/nanopb" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
+    "${SRC_DIR}/nanopb/pb_common.c" \
+    "${SRC_DIR}/nanopb/pb_encode.c" \
+    "${SRC_DIR}/nanopb/pb_decode.c" \
+    "${SRC_DIR}/protocol/mcubridge.pb.c" \
     "${SRC_DIR}/security/sha256.cpp" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \

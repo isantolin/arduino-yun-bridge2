@@ -5,6 +5,7 @@
 
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
 #include "fsm/bridge_fsm.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_frame.h"
@@ -77,6 +78,16 @@ void feed_frame(uint16_t cmd, const uint8_t* payload, size_t len, bool corrupt_c
   g_mock_stream.feed(cobs, dst - cobs);
 }
 
+// Helper to build a Nanopb frame and feed it
+template <typename T>
+void feed_pb_frame(uint16_t cmd, const T& msg) {
+  uint8_t payload_buf[rpc::MAX_PAYLOAD_SIZE];
+  pb_ostream_t out_stream = pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+  if (pb_encode(&out_stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
+    feed_frame(cmd, payload_buf, out_stream.bytes_written);
+  }
+}
+
 void test_bridge_process_gaps() {
   printf("  -> bridge_process_gaps\n");
   auto ba = TestAccessor::create(Bridge);
@@ -110,15 +121,25 @@ void test_bridge_gpio_gaps() {
   ba.setIdle();
 
   uint8_t pin = 25; 
-  uint8_t pl[2] = {pin, 1};
   
-  feed_frame(rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ), pl, 1);
+  rpc::payload::PinRead pr_msg = mcubridge_PinRead_init_default;
+  pr_msg.pin = pin;
+  feed_pb_frame(rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ), pr_msg);
   Bridge.process();
-  feed_frame(rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ), pl, 1);
+  
+  feed_pb_frame(rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ), pr_msg);
   Bridge.process();
-  feed_frame(rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), pl, 2);
+  
+  rpc::payload::DigitalWrite dw_msg = mcubridge_DigitalWrite_init_default;
+  dw_msg.pin = pin;
+  dw_msg.value = 1;
+  feed_pb_frame(rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), dw_msg);
   Bridge.process();
-  feed_frame(rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE), pl, 2);
+  
+  rpc::payload::AnalogWrite aw_msg = mcubridge_AnalogWrite_init_default;
+  aw_msg.pin = pin;
+  aw_msg.value = 128;
+  feed_pb_frame(rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE), aw_msg);
   Bridge.process();
 }
 
@@ -133,9 +154,9 @@ void test_bridge_status_gaps() {
   Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view(long_msg));
   
   // Status ACK (Line 482-483)
-  uint8_t ack_pl[2];
-  rpc::write_u16_be(etl::span<uint8_t>(ack_pl, 2), rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION));
-  feed_frame(rpc::to_underlying(rpc::StatusCode::STATUS_ACK), ack_pl, 2);
+  rpc::payload::AckPacket ack_msg = mcubridge_AckPacket_init_default;
+  ack_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
+  feed_pb_frame(rpc::to_underlying(rpc::StatusCode::STATUS_ACK), ack_msg);
   Bridge.process();
 }
 

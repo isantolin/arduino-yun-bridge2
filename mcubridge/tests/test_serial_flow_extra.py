@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.protocol.structures import UINT16_STRUCT, PendingCommand
+from mcubridge.protocol.structures import AckPacket, PendingCommand
 from mcubridge.services.serial_flow import SerialFlowController
 
 
@@ -40,7 +40,7 @@ async def test_serial_flow_on_frame_ack_mismatch() -> None:
     flow._current = pending
 
     # ACK for different command
-    payload = UINT16_STRUCT.build(Command.CMD_GET_FREE_MEMORY.value)
+    payload = AckPacket(command_id=Command.CMD_GET_FREE_MEMORY.value).encode()
     flow.on_frame_received(Status.ACK.value, payload)
     assert not pending.ack_received
 

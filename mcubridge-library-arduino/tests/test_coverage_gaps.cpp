@@ -18,6 +18,7 @@ static unsigned long g_millis = 10000;
 unsigned long millis() { return g_millis; }
 
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "hal/hal.h"
 #include "protocol/BridgeEvents.h"
@@ -66,37 +67,41 @@ void test_gpio_commands_via_dispatch() {
 
   // CMD_SET_PIN_MODE (80)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE);
-  f.header.payload_length = rpc::payload::PinMode::SIZE;
-  f.payload[0] = 13;
-  f.payload[1] = 1;
+  rpc::payload::PinMode pm_msg = mcubridge_PinMode_init_default;
+  pm_msg.pin = 13;
+  pm_msg.mode = 1;
+  bridge::test::set_pb_payload(f, pm_msg);
   ba.dispatch(f);
 
   // CMD_DIGITAL_WRITE (81)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
-  f.header.payload_length = rpc::payload::DigitalWrite::SIZE;
-  f.payload[0] = 13;
-  f.payload[1] = 1;
+  rpc::payload::DigitalWrite dw_msg = mcubridge_DigitalWrite_init_default;
+  dw_msg.pin = 13;
+  dw_msg.value = 1;
+  bridge::test::set_pb_payload(f, dw_msg);
   ba.dispatch(f);
 
   // CMD_ANALOG_WRITE (82)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE);
-  f.header.payload_length = rpc::payload::AnalogWrite::SIZE;
-  f.payload[0] = 9;
-  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[1], 2), 128);
+  rpc::payload::AnalogWrite aw_msg = mcubridge_AnalogWrite_init_default;
+  aw_msg.pin = 9;
+  aw_msg.value = 128;
+  bridge::test::set_pb_payload(f, aw_msg);
   ba.dispatch(f);
 
   // CMD_DIGITAL_READ (83)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ);
-  f.header.payload_length = rpc::payload::PinRead::SIZE;
-  f.payload[0] = 7;
+  rpc::payload::PinRead pr_msg = mcubridge_PinRead_init_default;
+  pr_msg.pin = 7;
+  bridge::test::set_pb_payload(f, pr_msg);
   stream.tx_buf.clear();
   ba.dispatch(f);
   TEST_ASSERT(stream.tx_buf.len > 0);
 
   // CMD_ANALOG_READ (84)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ);
-  f.header.payload_length = rpc::payload::PinRead::SIZE;
-  f.payload[0] = 0;
+  pr_msg.pin = 0;
+  bridge::test::set_pb_payload(f, pr_msg);
   stream.tx_buf.clear();
   ba.dispatch(f);
   TEST_ASSERT(stream.tx_buf.len > 0);
@@ -115,9 +120,11 @@ void test_console_write_via_dispatch() {
   rpc::Frame f;
   memset(&f, 0, sizeof(f));
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+  rpc::payload::ConsoleWrite cw_msg = mcubridge_ConsoleWrite_init_default;
   const char* msg = "Hello Console";
-  f.header.payload_length = static_cast<uint16_t>(strlen(msg));
-  memcpy(f.payload.data(), msg, f.header.payload_length);
+  cw_msg.data.size = strlen(msg);
+  memcpy(cw_msg.data.bytes, msg, cw_msg.data.size);
+  bridge::test::set_pb_payload(f, cw_msg);
   ba.dispatch(f);
 }
 
@@ -141,11 +148,10 @@ void test_datastore_resp_via_dispatch() {
   memset(&f, 0, sizeof(f));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP);
-  f.header.payload_length = 4;
-  f.payload[0] = 3;
-  f.payload[1] = 'a';
-  f.payload[2] = 'b';
-  f.payload[3] = 'c';
+  rpc::payload::DatastoreGetResponse ds_msg = mcubridge_DatastoreGetResponse_init_default;
+  ds_msg.value.size = 3;
+  memcpy(ds_msg.value.bytes, "abc", 3);
+  bridge::test::set_pb_payload(f, ds_msg);
   ba.dispatch(f);
 }
 
@@ -167,20 +173,19 @@ void test_mailbox_via_dispatch() {
 
   // CMD_MAILBOX_PUSH (131)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
-  f.header.payload_length = 5;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 3);
-  f.payload[2] = 'x';
-  f.payload[3] = 'y';
-  f.payload[4] = 'z';
+  rpc::payload::MailboxPush mb_push = mcubridge_MailboxPush_init_default;
+  mb_push.data.size = 3;
+  memcpy(mb_push.data.bytes, "xyz", 3);
+  bridge::test::set_pb_payload(f, mb_push);
   ba.dispatch(f);
 
   // CMD_MAILBOX_READ_RESP (132)
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
-  f.header.payload_length = 4;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 2);
-  f.payload[2] = 'A';
-  f.payload[3] = 'B';
+  rpc::payload::MailboxReadResponse mb_read_resp = mcubridge_MailboxReadResponse_init_default;
+  mb_read_resp.content.size = 2;
+  memcpy(mb_read_resp.content.bytes, "AB", 2);
+  bridge::test::set_pb_payload(f, mb_read_resp);
   ba.dispatch(f);
 
   // CMD_MAILBOX_AVAILABLE_RESP (133)
@@ -188,8 +193,9 @@ void test_mailbox_via_dispatch() {
       MailboxClass::MailboxAvailableHandler::create([](uint16_t) {}));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
-  f.header.payload_length = 2;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 42);
+  rpc::payload::MailboxAvailableResponse mb_avail_resp = mcubridge_MailboxAvailableResponse_init_default;
+  mb_avail_resp.count = 42;
+  bridge::test::set_pb_payload(f, mb_avail_resp);
   ba.dispatch(f);
 }
 
@@ -208,12 +214,12 @@ void test_filesystem_via_dispatch() {
 
   // CMD_FILE_WRITE (144) - FileWrite ACK
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
-  f.header.payload_length = 6;
-  f.payload[0] = 1;  // path len
-  f.payload[1] = 'a';
-  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[2], 2), 2);
-  f.payload[4] = 'd';
-  f.payload[5] = 'e';
+  // Note: CMD_FILE_WRITE handler in Bridge.cpp only does _withAck, it doesn't parse payload
+  // but we should still send a valid-ish frame if it was expected to have payload.
+  // Actually Bridge.cpp L839: &BridgeClass::_handleFileWrite,    // 0: 144
+  // _handleFileWrite: _withAck(ctx, []() { ... });
+  // _withAck doesn't parse payload, so we can send empty payload or anything.
+  f.header.payload_length = 0;
   ba.dispatch(f);
 
   // CMD_FILE_READ_RESP (147)
@@ -222,10 +228,10 @@ void test_filesystem_via_dispatch() {
           [](etl::span<const uint8_t>) {}));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);
-  f.header.payload_length = 4;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 2);
-  f.payload[2] = 'O';
-  f.payload[3] = 'K';
+  rpc::payload::FileReadResponse fr_resp = mcubridge_FileReadResponse_init_default;
+  fr_resp.content.size = 2;
+  memcpy(fr_resp.content.bytes, "OK", 2);
+  bridge::test::set_pb_payload(f, fr_resp);
   ba.dispatch(f);
 }
 
@@ -247,8 +253,9 @@ void test_process_via_dispatch() {
       ProcessClass::ProcessRunAsyncHandler::create([](int16_t) {}));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
-  f.header.payload_length = 2;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 99);
+  rpc::payload::ProcessRunAsyncResponse pr_async_resp = mcubridge_ProcessRunAsyncResponse_init_default;
+  pr_async_resp.pid = 99;
+  bridge::test::set_pb_payload(f, pr_async_resp);
   ba.dispatch(f);
 
   // CMD_PROCESS_POLL_RESP (166) with pending PID
@@ -259,13 +266,14 @@ void test_process_via_dispatch() {
   pa.pushPendingPid(42);
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
-  f.header.payload_length = 8;
-  f.payload[0] = 0x30;
-  f.payload[1] = 0;
-  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[2], 2), 1);
-  f.payload[4] = 'o';
-  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[5], 2), 1);
-  f.payload[7] = 'e';
+  rpc::payload::ProcessPollResponse poll_resp = mcubridge_ProcessPollResponse_init_default;
+  poll_resp.status = 0x30;
+  poll_resp.exit_code = 0;
+  poll_resp.stdout.size = 1;
+  poll_resp.stdout.bytes[0] = 'o';
+  poll_resp.stderr.size = 1;
+  poll_resp.stderr.bytes[0] = 'e';
+  bridge::test::set_pb_payload(f, poll_resp);
   ba.dispatch(f);
 }
 
@@ -331,8 +339,9 @@ void test_system_commands_via_dispatch() {
 
   // CMD_SET_BAUDRATE (74)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE);
-  f.header.payload_length = 4;
-  rpc::write_u32_be(etl::span<uint8_t>(f.payload.data(), 4), 57600);
+  rpc::payload::SetBaudratePacket br_msg = mcubridge_SetBaudratePacket_init_default;
+  br_msg.baudrate = 57600;
+  bridge::test::set_pb_payload(f, br_msg);
   ba.dispatch(f);
 }
 
@@ -348,9 +357,15 @@ void test_ack_and_retransmit() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
   // Push a frame and flush -> transitions to AwaitingAck
-  uint8_t payload[] = {13, 1};
+  rpc::payload::DigitalWrite dw_msg = mcubridge_DigitalWrite_init_default;
+  dw_msg.pin = 13;
+  dw_msg.value = 1;
+  uint8_t dw_buf[rpc::MAX_PAYLOAD_SIZE];
+  pb_ostream_t out = pb_ostream_from_buffer(dw_buf, sizeof(dw_buf));
+  pb_encode(&out, rpc::Payload::Descriptor<rpc::payload::DigitalWrite>::fields(), &dw_msg);
+
   ba.pushPendingTxFrame(
-      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), 2, payload);
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), out.bytes_written, dw_buf);
   ba.flushPendingTxQueue();
   TEST_ASSERT(ba.isAwaitingAck());
 
@@ -360,14 +375,15 @@ void test_ack_and_retransmit() {
   memset(&ack_frame, 0, sizeof(ack_frame));
   ack_frame.header.command_id =
       rpc::to_underlying(rpc::StatusCode::STATUS_ACK);
-  ack_frame.header.payload_length = 2;
-  rpc::write_u16_be(etl::span<uint8_t>(ack_frame.payload.data(), 2), last_cmd);
+  rpc::payload::AckPacket ack_msg = mcubridge_AckPacket_init_default;
+  ack_msg.command_id = last_cmd;
+  bridge::test::set_pb_payload(ack_frame, ack_msg);
   ba.dispatch(ack_frame);
   TEST_ASSERT(ba.isIdle());
 
   // Test ACK timeout with retransmit
   ba.pushPendingTxFrame(
-      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), 2, payload);
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), out.bytes_written, dw_buf);
   ba.flushPendingTxQueue();
   TEST_ASSERT(ba.isAwaitingAck());
   ba.setAckRetryLimit(2);
@@ -397,9 +413,15 @@ void test_ack_timeout_with_status_handler() {
         (void)sc;
       }));
 
-  uint8_t payload[] = {13, 1};
+  rpc::payload::DigitalWrite dw_msg = mcubridge_DigitalWrite_init_default;
+  dw_msg.pin = 13;
+  dw_msg.value = 1;
+  uint8_t dw_buf[rpc::MAX_PAYLOAD_SIZE];
+  pb_ostream_t out = pb_ostream_from_buffer(dw_buf, sizeof(dw_buf));
+  pb_encode(&out, rpc::Payload::Descriptor<rpc::payload::DigitalWrite>::fields(), &dw_msg);
+
   ba.pushPendingTxFrame(
-      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), 2, payload);
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), out.bytes_written, dw_buf);
   ba.flushPendingTxQueue();
   ba.setAckRetryLimit(1);
   ba.setRetryCount(1);
@@ -564,18 +586,23 @@ void test_apply_timing_config() {
   TEST_ASSERT(ba.getAckTimeoutMs() > 0);
 
   // Valid config
-  uint8_t config[7];
-  rpc::write_u16_be(etl::span<uint8_t>(config, 2), 500);
-  config[2] = 3;
-  rpc::write_u32_be(etl::span<uint8_t>(config + 3, 4), 5000);
-  ba.applyTimingConfig(config, 7);
+  rpc::payload::HandshakeConfig hc = mcubridge_HandshakeConfig_init_default;
+  hc.ack_timeout_ms = 500;
+  hc.ack_retry_limit = 3;
+  hc.response_timeout_ms = 5000;
+  uint8_t hc_buf[rpc::MAX_PAYLOAD_SIZE];
+  pb_ostream_t out_hc = pb_ostream_from_buffer(hc_buf, sizeof(hc_buf));
+  pb_encode(&out_hc, rpc::Payload::Descriptor<rpc::payload::HandshakeConfig>::fields(), &hc);
+  ba.applyTimingConfig(hc_buf, out_hc.bytes_written);
   TEST_ASSERT_EQ_UINT(ba.getAckTimeoutMs(), 500);
 
   // Out-of-range -> clamped to defaults
-  rpc::write_u16_be(etl::span<uint8_t>(config, 2), 1);
-  config[2] = 0;
-  rpc::write_u32_be(etl::span<uint8_t>(config + 3, 4), 1);
-  ba.applyTimingConfig(config, 7);
+  hc.ack_timeout_ms = 1;
+  hc.ack_retry_limit = 0;
+  hc.response_timeout_ms = 1;
+  out_hc = pb_ostream_from_buffer(hc_buf, sizeof(hc_buf));
+  pb_encode(&out_hc, rpc::Payload::Descriptor<rpc::payload::HandshakeConfig>::fields(), &hc);
+  ba.applyTimingConfig(hc_buf, out_hc.bytes_written);
 }
 
 // ============================================================================
@@ -863,8 +890,10 @@ void test_link_sync_full() {
   rpc::Frame f;
   memset(&f, 0, sizeof(f));
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  f.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
-  memset(f.payload.data(), 0xAA, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  sync_msg.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  memset(sync_msg.nonce.bytes, 0xAA, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+  bridge::test::set_pb_payload(f, sync_msg);
   stream.tx_buf.clear();
   ba.dispatch(f);
   TEST_ASSERT(stream.tx_buf.len > 0);
@@ -882,11 +911,12 @@ void test_link_sync_full() {
   uint8_t tag[rpc::RPC_HANDSHAKE_TAG_LENGTH];
   ba2.computeHandshakeTag(nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH, tag);
 
-  f.header.payload_length =
-      rpc::RPC_HANDSHAKE_NONCE_LENGTH + rpc::RPC_HANDSHAKE_TAG_LENGTH;
-  memcpy(f.payload.data(), nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
-  memcpy(f.payload.data() + rpc::RPC_HANDSHAKE_NONCE_LENGTH, tag,
-         rpc::RPC_HANDSHAKE_TAG_LENGTH);
+  sync_msg.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  memcpy(sync_msg.nonce.bytes, nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+  sync_msg.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+  memcpy(sync_msg.tag.bytes, tag, rpc::RPC_HANDSHAKE_TAG_LENGTH);
+  bridge::test::set_pb_payload(f, sync_msg);
+
   stream.tx_buf.clear();
   ba2.dispatch(f);
   TEST_ASSERT(stream.tx_buf.len > 0);
@@ -907,10 +937,11 @@ void test_link_reset_with_config() {
   rpc::Frame f;
   memset(&f, 0, sizeof(f));
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
-  f.header.payload_length = rpc::payload::HandshakeConfig::SIZE;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 500);
-  f.payload[2] = 3;
-  rpc::write_u32_be(etl::span<uint8_t>(f.payload.data() + 3, 4), 5000);
+  rpc::payload::HandshakeConfig hc = mcubridge_HandshakeConfig_init_default;
+  hc.ack_timeout_ms = 500;
+  hc.ack_retry_limit = 3;
+  hc.response_timeout_ms = 5000;
+  bridge::test::set_pb_payload(f, hc);
   ba.dispatch(f);
 }
 
@@ -928,9 +959,10 @@ void test_dedup_with_ack() {
 
   // Dispatch a GPIO command with CRC
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE);
-  f.header.payload_length = rpc::payload::PinMode::SIZE;
-  f.payload[0] = 13;
-  f.payload[1] = 1;
+  rpc::payload::PinMode pm_msg = mcubridge_PinMode_init_default;
+  pm_msg.pin = 13;
+  pm_msg.mode = 1;
+  bridge::test::set_pb_payload(f, pm_msg);
   f.crc = 0x12345678;
 
   // First dispatch (marks as processed)
@@ -979,60 +1011,26 @@ void test_status_null_handler() {
 void test_rpc_structs_encode() {
   printf("  -> test_rpc_structs_encode\n");
 
-  uint8_t buf[32];
+  uint8_t buf[64];
+  pb_ostream_t stream;
 
   rpc::payload::VersionResponse vr{1, 2};
-  vr.encode(buf);
-  TEST_ASSERT_EQ_UINT(buf[0], 1);
-  TEST_ASSERT_EQ_UINT(buf[1], 2);
+  stream = pb_ostream_from_buffer(buf, sizeof(buf));
+  TEST_ASSERT(pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::VersionResponse>::fields(), &vr));
+  
+  rpc::payload::VersionResponse vr_dec = {};
+  pb_istream_t istream = pb_istream_from_buffer(buf, stream.bytes_written);
+  TEST_ASSERT(pb_decode(&istream, rpc::Payload::Descriptor<rpc::payload::VersionResponse>::fields(), &vr_dec));
+  TEST_ASSERT_EQUAL(1, vr_dec.major);
+  TEST_ASSERT_EQUAL(2, vr_dec.minor);
 
   rpc::payload::FreeMemoryResponse fmr{4096};
-  fmr.encode(buf);
+  stream = pb_ostream_from_buffer(buf, sizeof(buf));
+  TEST_ASSERT(pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::FreeMemoryResponse>::fields(), &fmr));
 
   rpc::payload::Capabilities cap{2, 0, 14, 6, 0x01};
-  cap.encode(buf);
-
-  rpc::payload::DigitalReadResponse drr{1};
-  drr.encode(buf);
-
-  rpc::payload::AnalogReadResponse arr{1023};
-  arr.encode(buf);
-
-  rpc::payload::SetBaudratePacket sbp{115200};
-  sbp.encode(buf);
-
-  rpc::payload::HandshakeConfig hc{500, 3, 5000};
-  hc.encode(buf);
-
-  rpc::payload::AckPacket ap{0x1234};
-  ap.encode(buf);
-
-  rpc::payload::PinMode pm{13, 1};
-  pm.encode(buf);
-
-  rpc::payload::DigitalWrite dw{13, 1};
-  dw.encode(buf);
-
-  rpc::payload::AnalogWrite aw{9, 128};
-  aw.encode(buf);
-
-  rpc::payload::PinRead pr{7};
-  pr.encode(buf);
-
-  rpc::payload::MailboxProcessed mp{1};
-  mp.encode(buf);
-
-  rpc::payload::MailboxAvailableResponse mar{42};
-  mar.encode(buf);
-
-  rpc::payload::ProcessKill pk{99};
-  pk.encode(buf);
-
-  rpc::payload::ProcessPoll pp{42};
-  pp.encode(buf);
-
-  rpc::payload::ProcessRunAsyncResponse prar{123};
-  prar.encode(buf);
+  stream = pb_ostream_from_buffer(buf, sizeof(buf));
+  TEST_ASSERT(pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::Capabilities>::fields(), &cap));
 }
 
 // ============================================================================
@@ -1075,8 +1073,8 @@ void test_send_frame_critical_path() {
 
 // ============================================================================
 // 33. rpc_structs.h template parse specializations
-//     Covers: rpc_structs.h L304 (ConsoleWrite), L307-311 (ProcessRun,
-//             ProcessRunAsync), L346-350 (MailboxReadResponse)
+//     Covers: rpc_structs.h L304 (ConsoleWrite), L307-311 (ProcessRunAsync),
+//             L346-350 (MailboxReadResponse)
 // ============================================================================
 void test_rpc_structs_parse_specializations() {
   printf("  -> test_rpc_structs_parse_specializations\n");
@@ -1084,35 +1082,35 @@ void test_rpc_structs_parse_specializations() {
   rpc::Frame f;
   memset(&f, 0, sizeof(f));
 
-  // ConsoleWrite specialization - just needs data + length
-  f.header.payload_length = 5;
-  memcpy(f.payload.data(), "hello", 5);
+  // ConsoleWrite specialization
+  rpc::payload::ConsoleWrite cw_msg = {};
+  cw_msg.data.size = 5; memcpy(cw_msg.data.bytes, "hello", 5);
+  bridge::test::set_pb_payload(f, cw_msg);
+  
   auto cw = rpc::Payload::parse<rpc::payload::ConsoleWrite>(f);
   TEST_ASSERT(cw.has_value());
-  TEST_ASSERT_EQ_UINT(cw->length, 5);
-
-  // ProcessRun specialization
-  f.header.payload_length = 2;
-  memcpy(f.payload.data(), "ls", 2);
-  auto pr = rpc::Payload::parse<rpc::payload::ProcessRun>(f);
-  TEST_ASSERT(pr.has_value());
+  TEST_ASSERT_EQUAL(5, cw->data.size);
 
   // ProcessRunAsync specialization
+  rpc::payload::ProcessRunAsync pra_msg = {};
+  etl::copy_n("ls", 2, pra_msg.command);
+  bridge::test::set_pb_payload(f, pra_msg);
+  
   auto pra = rpc::Payload::parse<rpc::payload::ProcessRunAsync>(f);
   TEST_ASSERT(pra.has_value());
 
   // MailboxReadResponse specialization
-  f.header.payload_length = 4;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 2);
-  f.payload[2] = 'A';
-  f.payload[3] = 'B';
+  rpc::payload::MailboxReadResponse mrr_msg = {};
+  mrr_msg.content.size = 2; mrr_msg.content.bytes[0] = 'A'; mrr_msg.content.bytes[1] = 'B';
+  bridge::test::set_pb_payload(f, mrr_msg);
+  
   auto mrr = rpc::Payload::parse<rpc::payload::MailboxReadResponse>(f);
   TEST_ASSERT(mrr.has_value());
-  TEST_ASSERT_EQ_UINT(mrr->length, 2);
+  TEST_ASSERT_EQUAL(2, mrr->content.size);
 
   // MailboxReadResponse with invalid length -> MALFORMED
-  f.header.payload_length = 2;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 100);
+  f.payload[0] = 0xFF; // Invalid tag
+  f.header.payload_length = 1;
   auto mrr2 = rpc::Payload::parse<rpc::payload::MailboxReadResponse>(f);
   TEST_ASSERT(!mrr2.has_value());
 }

@@ -22,7 +22,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Novedades (marzo 2026)
 
-- **Eliminación de Compatibilidad Legacy:** Refactorización profunda para eliminar lógica obsoleta, incluyendo el baudrate de 250.000 (ahora marcado como legacy), flags de rotación de credenciales antiguos y templates de C++ innecesarios.
+- **Serialización Protobuf (proto3):** Todos los payloads RPC se definen como mensajes Protocol Buffers en `mcubridge.proto` y se codifican con **protobuf** (Python) y **nanopb** (C++, estático, sin heap). Eliminación completa de empaquetado manual de bytes.
 - **Soporte PWM (Analog Write):** Implementación completa de `analog_write()` en el cliente Python, permitiendo el control de actuadores y regulación de potencia vía MQTT.
 - **Validación E2E Analógica:** Los tests de integración ahora cubren lecturas y escrituras analógicas de forma nativa.
 

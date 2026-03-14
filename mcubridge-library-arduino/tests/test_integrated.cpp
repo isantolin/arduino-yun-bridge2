@@ -7,6 +7,7 @@
 #include <etl/span.h>
 
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_frame.h"
@@ -80,27 +81,45 @@ void integrated_test_bridge_core() {
 
   rpc::Frame sync;
   sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync.header.payload_length = 32;  // 16 nonce + 16 tag
+  
   uint8_t nonce[16];
   etl::fill_n(nonce, 16, uint8_t{0xAA});
-  memcpy(sync.payload.data(), nonce, 16);
-
   uint8_t tag[16];
   accessor.computeHandshakeTag(nonce, 16, tag);
-  memcpy(sync.payload.data() + 16, tag, 16);
+
+  rpc::payload::LinkSync sync_msg = {};
+  sync_msg.nonce.size = 16;
+  memcpy(sync_msg.nonce.bytes, nonce, 16);
+  sync_msg.tag.size = 16;
+  memcpy(sync_msg.tag.bytes, tag, 16);
+
+  pb_ostream_t out_stream = pb_ostream_from_buffer(sync.payload.data(), sync.payload.size());
+  pb_encode(&out_stream, rpc::Payload::Descriptor<rpc::payload::LinkSync>::fields(), &sync_msg);
+  sync.header.payload_length = static_cast<uint16_t>(out_stream.bytes_written);
 
   accessor.dispatch(sync);
   TEST_ASSERT(localBridge.isSynchronized());
 
   rpc::Frame gpio;
   gpio.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE);
-  gpio.header.payload_length = 2;
-  gpio.payload[0] = 13;
-  gpio.payload[1] = 1;
+  
+  rpc::payload::PinMode gpio_msg = {13, 1};
+  out_stream = pb_ostream_from_buffer(gpio.payload.data(), gpio.payload.size());
+  pb_encode(&out_stream, rpc::Payload::Descriptor<rpc::payload::PinMode>::fields(), &gpio_msg);
+  gpio.header.payload_length = static_cast<uint16_t>(out_stream.bytes_written);
+  
   accessor.dispatch(gpio);
 
+  rpc::payload::ConsoleWrite console_msg = {};
+  console_msg.data.size = 1;
+  console_msg.data.bytes[0] = 'X';
+  
+  uint8_t console_buf[64];
+  out_stream = pb_ostream_from_buffer(console_buf, sizeof(console_buf));
+  pb_encode(&out_stream, rpc::Payload::Descriptor<rpc::payload::ConsoleWrite>::fields(), &console_msg);
+
   localBridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
-                        etl::span<const uint8_t>((const uint8_t*)"X", 1));
+                        etl::span<const uint8_t>(console_buf, out_stream.bytes_written));
   accessor.retransmitLastFrame();
 }
 

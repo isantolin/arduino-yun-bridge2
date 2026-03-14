@@ -28,8 +28,8 @@ from ..config.const import (
 )
 from ..config.settings import RuntimeConfig
 from ..protocol.structures import QueuedPublish
-from ..protocol import protocol
-from ..protocol.protocol import MAX_PAYLOAD_SIZE, Command, Status
+from ..protocol import mcubridge_pb2, protocol
+from ..protocol.protocol import Command, Status
 from ..protocol.structures import CapabilitiesPacket, HandshakeConfigPacket
 from ..protocol.topics import Topic, topic_path
 from ..security.security import (
@@ -108,8 +108,6 @@ _IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
         "sync_length_mismatch",
     }
 )
-
-_STATUS_PAYLOAD_WINDOW = max(0, MAX_PAYLOAD_SIZE - 2)
 
 
 class SerialHandshakeManager:
@@ -264,7 +262,10 @@ class SerialHandshakeManager:
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
         our_tag = self.compute_handshake_tag(nonce)
-        sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, nonce + our_tag)
+        sync_msg = mcubridge_pb2.LinkSync()
+        sync_msg.nonce = nonce
+        sync_msg.tag = our_tag
+        sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_msg.SerializeToString())
         if not sync_ok:
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("link_sync_send_failed")
@@ -304,13 +305,10 @@ class SerialHandshakeManager:
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 status=Status.MALFORMED,
-                extra=payload[:_STATUS_PAYLOAD_WINDOW],
             )
             await self.handle_handshake_failure("unexpected_sync_resp")
             return False
 
-        nonce_length = self._state.link_nonce_length or len(expected)
-        required_length = nonce_length + protocol.HANDSHAKE_TAG_LENGTH
         rate_limit = self._config.serial_handshake_min_interval
         if rate_limit > 0:
             now = time.monotonic()
@@ -322,29 +320,29 @@ class SerialHandshakeManager:
                 await self._acknowledge_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     status=Status.MALFORMED,
-                    extra=payload[:_STATUS_PAYLOAD_WINDOW],
                 )
                 await self.handle_handshake_failure("sync_rate_limited")
                 return False
             self._state.handshake_rate_until = now + rate_limit
 
-        if len(payload) != required_length:
+        try:
+            resp_msg = mcubridge_pb2.LinkSync()
+            resp_msg.ParseFromString(payload)
+            nonce = bytes(resp_msg.nonce)
+            tag_bytes = bytes(resp_msg.tag)
+        except Exception:
             self._logger.warning(
-                "LINK_SYNC_RESP malformed length (expected %d got %d)",
-                required_length,
+                "LINK_SYNC_RESP protobuf decode failed (len=%d)",
                 len(payload),
             )
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 status=Status.MALFORMED,
-                extra=payload[:_STATUS_PAYLOAD_WINDOW],
             )
             self.clear_handshake_expectations()
-            await self.handle_handshake_failure("sync_length_mismatch")
+            await self.handle_handshake_failure("sync_decode_failed")
             return False
 
-        nonce = payload[:nonce_length]
-        tag_bytes = payload[nonce_length:required_length]
         expected_tag = self._state.link_expected_tag
         recalculated_tag = self.compute_handshake_tag(nonce)
 
@@ -370,7 +368,6 @@ class SerialHandshakeManager:
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 status=Status.MALFORMED,
-                extra=payload[:_STATUS_PAYLOAD_WINDOW],
             )
             self.clear_handshake_expectations()
             await self.handle_handshake_failure(

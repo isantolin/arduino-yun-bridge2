@@ -4,6 +4,7 @@
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_frame.h"

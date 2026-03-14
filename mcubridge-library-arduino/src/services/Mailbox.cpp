@@ -1,7 +1,6 @@
 #include "services/Mailbox.h"
 
 #include "Bridge.h"
-#include "protocol/PacketBuilder.h"
 
 #if BRIDGE_ENABLE_MAILBOX
 
@@ -16,13 +15,17 @@ void MailboxClass::send(etl::string_view message) {
 void MailboxClass::send(etl::span<const uint8_t> data) {
   if (data.empty()) return;
 
-  constexpr size_t MAILBOX_HEADER_SIZE = 2;
-  etl::vector<uint8_t, MAILBOX_HEADER_SIZE> header;
-  rpc::PacketBuilder(header).add_all(static_cast<uint16_t>(data.size()));
+  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+  
+  rpc::payload::MailboxPush msg = {};
+  msg.data.size = static_cast<pb_size_t>(etl::min<size_t>(data.size(), sizeof(msg.data.bytes)));
+  etl::copy_n(data.begin(), msg.data.size, msg.data.bytes);
 
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH,
-                         etl::span<const uint8_t>(header.data(), header.size()),
-                         data);
+  if (pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::MailboxPush>::fields(), &msg)) {
+    static_cast<void>(Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_PUSH,
+                         etl::span<const uint8_t>(buffer, stream.bytes_written)));
+  }
 }
 
 void MailboxClass::requestRead() {

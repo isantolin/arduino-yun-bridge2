@@ -2,7 +2,6 @@
 
 #include "Bridge.h"
 #include "etl/vector.h"
-#include "protocol/PacketBuilder.h"
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
@@ -17,15 +16,18 @@ void FileSystemClass::write(etl::string_view filePath,
     return;
   }
 
-  constexpr size_t HEADER_METADATA_SIZE = 3;
-  etl::vector<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + HEADER_METADATA_SIZE> header;
-  rpc::PacketBuilder builder(header);
-  builder.add_pascal_string(filePath);
-  builder.add_value(static_cast<uint16_t>(data.size()));
+  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
 
-  Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE,
-                         etl::span<const uint8_t>(header.data(), header.size()),
-                         data);
+  rpc::payload::FileWrite msg = {};
+  etl::copy_n(filePath.data(), filePath.length(), msg.path);
+  msg.data.size = static_cast<pb_size_t>(etl::min<size_t>(data.size(), sizeof(msg.data.bytes)));
+  etl::copy_n(data.begin(), msg.data.size, msg.data.bytes);
+
+  if (pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::FileWrite>::fields(), &msg)) {
+    static_cast<void>(Bridge.sendFrame(rpc::CommandId::CMD_FILE_WRITE,
+                         etl::span<const uint8_t>(buffer, stream.bytes_written)));
+  }
 }
 
 void FileSystemClass::remove(etl::string_view filePath) {

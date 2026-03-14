@@ -12,7 +12,6 @@ from aiomqtt.message import Message
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
 from ..config.settings import RuntimeConfig
 from ..protocol.structures import QueuedPublish
-from ..protocol import protocol
 from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
 from ..protocol.structures import AckPacket
 from ..protocol.topics import Topic, parse_topic, topic_path
@@ -41,8 +40,6 @@ logger = logging.getLogger("mcubridge.service")
 
 
 STATUS_VALUES = {status.value for status in Status}
-
-_MAX_PAYLOAD_BYTES = int(protocol.MAX_PAYLOAD_SIZE)
 
 _STATUS_DESCRIPTIONS: dict[Status, str] = {
     Status.OK: "Operation completed successfully",
@@ -377,14 +374,9 @@ class BridgeService:
         command_id: int,
         *,
         status: Status = Status.ACK,
-        extra: bytes = b"",
     ) -> None:
         # [SIL-2] Use structured packet for acknowledgements
         payload = AckPacket(command_id=command_id).encode()
-        if extra:
-            remaining = _MAX_PAYLOAD_BYTES - len(payload)
-            if remaining > 0:
-                payload += extra[:remaining]
         if not self._serial_sender:
             logger.error(
                 "Serial sender not registered; cannot emit status 0x%02X",

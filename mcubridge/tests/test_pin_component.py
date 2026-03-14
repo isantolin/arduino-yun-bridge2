@@ -125,7 +125,8 @@ async def test_handle_digital_read_resp_malformed_payload_is_ignored(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(b"")
+    # Truncated varint — invalid protobuf
+    await component.handle_digital_read_resp(b"\x80")
 
     assert ctx.enqueued == []
 
@@ -138,13 +139,13 @@ async def test_handle_digital_read_resp_without_pending_request_publishes_unknow
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(structures.PinReadPacket.SCHEMA.build({"pin": 1}))
+    await component.handle_digital_read_resp(structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode())
 
     assert len(ctx.enqueued) == 1
     message, reply_context = ctx.enqueued[0]
     assert reply_context is None
-    # Pin 1 is unknown if not in pending, publishes to generic value topic
-    assert message.payload == b"1"
+    # No pending request, publishes DIGITAL_LOW (0) to generic value topic
+    assert message.payload == b"0"
     assert message.topic_name == topic_path(
         runtime_state.mqtt_topic_prefix,
         Topic.DIGITAL,
@@ -163,7 +164,7 @@ async def test_handle_digital_read_resp_with_pending_request_uses_reply_context(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(bytes([protocol.DIGITAL_LOW]))
+    await component.handle_digital_read_resp(structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode())
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound
@@ -186,7 +187,7 @@ async def test_handle_analog_read_resp_with_pending_request_decodes_big_endian(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_analog_read_resp(structures.UINT16_STRUCT.build(256))
+    await component.handle_analog_read_resp(structures.AnalogReadResponsePacket(value=256).encode())
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound

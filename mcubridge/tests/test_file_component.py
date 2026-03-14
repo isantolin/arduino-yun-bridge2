@@ -1,6 +1,8 @@
 """Tests for FileComponent MCU/MQTT behaviour."""
 
 from __future__ import annotations
+from mcubridge.protocol import protocol
+from mcubridge.protocol import structures
 
 import asyncio
 import string
@@ -13,7 +15,7 @@ from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.protocol.structures import QueuedPublish
-from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.protocol import Status
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.file import FileComponent
 from mcubridge.state.context import RuntimeState
@@ -88,8 +90,8 @@ def file_component(
 
 
 def _build_write_payload(filename: str, data: bytes) -> bytes:
-    encoded = filename.encode("utf-8")
-    return bytes([len(encoded)]) + encoded + len(data).to_bytes(2, "big") + data
+    from mcubridge.protocol import structures
+    return structures.FileWritePacket(path=filename, data=data).encode()
 
 
 @pytest.mark.asyncio
@@ -97,14 +99,14 @@ async def test_handle_write_and_read_roundtrip(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    payload = bytes([3]) + b"foo" + (4).to_bytes(2, "big") + b"data"
+    payload = structures.FileWritePacket(path='foo', data=b'data').encode()
     await component.handle_write(payload)
 
-    read_payload = bytes([3]) + b"foo"
+    read_payload = structures.FileReadPacket(path='foo').encode()
     await component.handle_read(read_payload)
 
-    assert bridge.sent_frames[-1][0] == Command.CMD_FILE_READ_RESP.value
-    assert bridge.sent_frames[-1][1] == b"\x00\x04data"
+    assert bridge.sent_frames[-1][0] == protocol.Command.CMD_FILE_READ_RESP.value
+    assert structures.FileReadResponsePacket.decode(bridge.sent_frames[-1][1]).content == b'data'
 
 
 @pytest.mark.asyncio
@@ -126,7 +128,7 @@ async def test_handle_remove_sends_ok_on_success(
 ) -> None:
     component, bridge = file_component
     (tmp_path / "rm.txt").write_text("x", encoding="utf-8")
-    payload = bytes([6]) + b"rm.txt"
+    payload = structures.FileRemovePacket(path='rm.txt').encode()
     assert await component.handle_remove(payload) is True
     assert not (tmp_path / "rm.txt").exists()
     assert bridge.sent_frames[-1][0] == Status.OK.value
@@ -144,23 +146,22 @@ async def test_handle_read_large_payload_chunking(
     component, bridge = file_component
 
     # Create a file significantly larger than MAX_PAYLOAD_SIZE (64)
-    # 128 bytes requires at least 3 chunks (since payload overhead is 2 bytes, data ~62 per frame)
     original_data = b"x" * 128
     (tmp_path / "read_large.txt").write_bytes(original_data)
 
-    payload = bytes([14]) + b"read_large.txt"
+    from mcubridge.protocol import structures
+    payload = structures.FileReadPacket(path='read_large.txt').encode()
     await component.handle_read(payload)
 
     # Reconstruct what was sent
     total_received = b""
     frames_count = 0
     for cmd, data in bridge.sent_frames:
-        if cmd == Command.CMD_FILE_READ_RESP.value:
+        if cmd == protocol.Command.CMD_FILE_READ_RESP.value:
             frames_count += 1
-            # Format: [Len:2][Data]
-            chunk_len = int.from_bytes(data[:2], "big")
-            chunk_data = data[2:]
-            assert len(chunk_data) == chunk_len
+            # Format: Protobuf
+            resp = structures.FileReadResponsePacket.decode(data)
+            chunk_data = resp.content
             total_received += chunk_data
 
     assert len(total_received) == 128
@@ -174,7 +175,8 @@ async def test_handle_remove_missing_file(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    payload = bytes([7]) + b"missing"
+    from mcubridge.protocol import structures
+    payload = structures.FileRemovePacket(path='missing').encode()
     await component.handle_remove(payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
@@ -289,7 +291,7 @@ async def test_handle_remove_updates_usage(
     assert await component.handle_write(payload)
     assert component.state.file_storage_bytes_used == 3
 
-    remove_payload = bytes([8]) + b"temp.txt"
+    remove_payload = structures.FileRemovePacket(path='temp.txt').encode()
     assert await component.handle_remove(remove_payload)
     assert component.state.file_storage_bytes_used == 0
     root = Path(component.config.file_system_root)
@@ -563,7 +565,8 @@ async def test_handle_read_large_payload_truncation_reproduction(
     original_data = b"x" * 128
     (tmp_path / "read_large.txt").write_bytes(original_data)
 
-    payload = bytes([14]) + b"read_large.txt"
+    from mcubridge.protocol import structures
+    payload = structures.FileReadPacket(path='read_large.txt').encode()
     await component.handle_read(payload)
 
     # We expect multiple frames or a sequence that delivers all 128 bytes.
@@ -571,12 +574,13 @@ async def test_handle_read_large_payload_truncation_reproduction(
 
     # Reconstruct what was sent
     total_received = b""
+    frames_count = 0
     for cmd, data in bridge.sent_frames:
-        if cmd == Command.CMD_FILE_READ_RESP.value:
-            # Format: [Len:2][Data]
-            chunk_len = int.from_bytes(data[:2], "big")
-            chunk_data = data[2:]
-            assert len(chunk_data) == chunk_len
+        if cmd == protocol.Command.CMD_FILE_READ_RESP.value:
+            frames_count += 1
+            # Format: Protobuf
+            resp = structures.FileReadResponsePacket.decode(data)
+            chunk_data = resp.content
             total_received += chunk_data
 
     # This assertion should FAIL currently because it only sends the first chunk (~62 bytes)
@@ -658,12 +662,13 @@ async def test_handle_read_empty_file(
     component, bridge = file_component
     (tmp_path / "empty.txt").write_bytes(b"")
 
-    payload = bytes([9]) + b"empty.txt"
+    from mcubridge.protocol import structures
+    payload = structures.FileReadPacket(path='empty.txt').encode()
     await component.handle_read(payload)
 
     # Should send a frame with length 0
-    assert bridge.sent_frames[-1][0] == Command.CMD_FILE_READ_RESP.value
-    assert bridge.sent_frames[-1][1] == b"\x00\x00"
+    assert bridge.sent_frames[-1][0] == protocol.Command.CMD_FILE_READ_RESP.value
+    assert bridge.sent_frames[-1][1] == b''
 
 
 @pytest.mark.asyncio

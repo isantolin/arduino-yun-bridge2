@@ -52,10 +52,8 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
 
     runtime_state.pending_digital_reads.append(PendingPinRequest(pin=7, reply_context=None))
 
-    await service.handle_mcu_frame(
-        Command.CMD_DIGITAL_READ_RESP.value,
-        bytes([1]),
-    )
+    payload = structures.DigitalReadResponsePacket(value=1).encode()
+    await service.handle_mcu_frame(Command.CMD_DIGITAL_READ_RESP.value, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
     expected_topic = topic_path(
@@ -71,7 +69,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == structures.UINT16_STRUCT.build(Command.CMD_DIGITAL_READ_RESP.value)
+    assert ack_payload == structures.AckPacket(command_id=Command.CMD_DIGITAL_READ_RESP.value).encode()
 
 
 @pytest.mark.asyncio
@@ -92,10 +90,8 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     runtime_state.pending_analog_reads.append(PendingPinRequest(pin=3, reply_context=None))
 
     TEST_EXIT_CODE = 0x7F
-    await service.handle_mcu_frame(
-        Command.CMD_ANALOG_READ_RESP.value,
-        bytes([0, TEST_EXIT_CODE]),
-    )
+    payload = structures.AnalogReadResponsePacket(value=TEST_EXIT_CODE).encode()
+    await service.handle_mcu_frame(Command.CMD_ANALOG_READ_RESP.value, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
     expected_topic = topic_path(
@@ -111,7 +107,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == structures.UINT16_STRUCT.build(Command.CMD_ANALOG_READ_RESP.value)
+    assert ack_payload == structures.AckPacket(command_id=Command.CMD_ANALOG_READ_RESP.value).encode()
 
 
 @pytest.mark.asyncio
@@ -128,7 +124,7 @@ async def test_mqtt_digital_write_sends_frame(
         sent_frames.append((command_id, payload))
         flow.on_frame_received(
             Status.ACK.value,
-            structures.UINT16_STRUCT.build(command_id),
+            structures.AckPacket(command_id=command_id).encode(),
         )
         return True
 
@@ -229,10 +225,8 @@ async def test_mcu_free_memory_response_enqueues_value(
 
     service.register_serial_sender(fake_sender)
 
-    await service.handle_mcu_frame(
-        Command.CMD_GET_FREE_MEMORY_RESP.value,
-        bytes([0, 100]),
-    )
+    payload = structures.FreeMemoryResponsePacket(value=100).encode()
+    await service.handle_mcu_frame(Command.CMD_GET_FREE_MEMORY_RESP.value, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
     expected_topic = topic_path(
@@ -248,7 +242,7 @@ async def test_mcu_free_memory_response_enqueues_value(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == structures.UINT16_STRUCT.build(Command.CMD_GET_FREE_MEMORY_RESP.value)
+    assert ack_payload == structures.AckPacket(command_id=Command.CMD_GET_FREE_MEMORY_RESP.value).encode()
 
 
 @pytest.mark.asyncio

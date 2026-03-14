@@ -35,6 +35,10 @@ if [[ "${1:-}" == "--install-only" ]]; then
 fi
 
 SOURCES=(
+    "${SRC_DIR}/nanopb/pb_common.c"
+    "${SRC_DIR}/nanopb/pb_encode.c"
+    "${SRC_DIR}/nanopb/pb_decode.c"
+    "${SRC_DIR}/protocol/mcubridge.pb.c"
     "${SRC_DIR}/security/sha256.cpp"
     "${SRC_DIR}/security/security.cpp"
     "${SRC_DIR}/hal/hal.cpp"
@@ -84,6 +88,8 @@ COMPILE_FLAGS=(
     -DBRIDGE_TEST_NO_GLOBALS=1
     -DUNITY_INCLUDE_DOUBLE
     -I"${SRC_DIR}"
+    -I"${SRC_DIR}/nanopb"
+    -I"${SRC_DIR}/protocol"
     -I"${TEST_DIR}/Unity"
     -I"${STUB_DIR}"
 )

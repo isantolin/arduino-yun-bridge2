@@ -205,32 +205,25 @@ install_etl_dual() {
 }
 install_etl_dual
 
-# Nanopb C runtime (same dual-install pattern as ETL)
+# Nanopb C runtime — vendored into src/nanopb ONLY
 # [SIL-2] Pinned to a specific release for reproducible builds
+# NOTE: Unlike ETL (header-only), nanopb has .c source files.
+# Installing it as BOTH a standalone Arduino library AND vendored inside
+# McuBridge/src/ causes duplicate symbol errors at link time.
+# Therefore we install ONLY to src/nanopb (vendored), which is included
+# via relative #include "nanopb/pb_common.h" in Bridge.h.
 NANOPB_VERSION="0.4.9.1"
-install_nanopb_dual() {
+install_nanopb() {
     local url="https://codeload.github.com/nanopb/nanopb/zip/refs/tags/${NANOPB_VERSION}"
     local check_file="pb.h"
-    local target1="$LIB_DIR"
-    local target2="${LIB_ROOT}/src"
+    local target="${LIB_ROOT}/src"
 
-    local needs_t1=false
-    local needs_t2=false
-
-    if [ ! -f "$target1/nanopb/$check_file" ]; then
-        needs_t1=true
-    else
-        echo "[INFO] nanopb already installed at $target1."
-    fi
-    if [ ! -f "$target2/nanopb/$check_file" ]; then
-        needs_t2=true
-    else
-        echo "[INFO] nanopb already installed at $target2."
-    fi
-
-    if [ "$needs_t1" = false ] && [ "$needs_t2" = false ]; then
+    if [ -f "$target/nanopb/$check_file" ]; then
+        echo "[INFO] nanopb already installed at $target."
         return 0
     fi
+
+    echo "[WARN] nanopb missing. Installing..."
 
     local tmp_dir
     tmp_dir=$(mktemp -d)
@@ -249,24 +242,15 @@ install_nanopb_dual() {
     # Only copy the C runtime files (pb.h, pb_*.c, pb_*.h)
     local nanopb_files="pb.h pb_common.c pb_common.h pb_decode.c pb_decode.h pb_encode.c pb_encode.h"
 
-    if [ "$needs_t1" = true ]; then
-        mkdir -p "$target1/nanopb"
-        for f in $nanopb_files; do
-            cp "$extracted_root/$f" "$target1/nanopb/"
-        done
-        echo "[OK] nanopb ${NANOPB_VERSION} installed to $target1."
-    fi
-    if [ "$needs_t2" = true ]; then
-        mkdir -p "$target2/nanopb"
-        for f in $nanopb_files; do
-            cp "$extracted_root/$f" "$target2/nanopb/"
-        done
-        echo "[OK] nanopb ${NANOPB_VERSION} installed to $target2."
-    fi
+    mkdir -p "$target/nanopb"
+    for f in $nanopb_files; do
+        cp "$extracted_root/$f" "$target/nanopb/"
+    done
+    echo "[OK] nanopb ${NANOPB_VERSION} installed to $target."
 
     rm -rf "$tmp_dir"
 }
-install_nanopb_dual
+install_nanopb
 
 # Unity test framework (host tests only)
 install_dependency "Unity" \

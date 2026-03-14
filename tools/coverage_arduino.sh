@@ -32,6 +32,10 @@ fi
 
 # Sources to track for coverage
 SOURCES=(
+    "${SRC_ROOT}/nanopb/pb_common.c"
+    "${SRC_ROOT}/nanopb/pb_encode.c"
+    "${SRC_ROOT}/nanopb/pb_decode.c"
+    "${SRC_ROOT}/protocol/mcubridge.pb.c"
     "${SRC_ROOT}/security/sha256.cpp"
     "${SRC_ROOT}/security/security.cpp"
     "${SRC_ROOT}/hal/hal.cpp"
@@ -74,6 +78,8 @@ CXXFLAGS=(
     "-DBRIDGE_ENABLE_PROCESS=1"
     "-DUNITY_INCLUDE_DOUBLE"
     "-I${SRC_ROOT}"
+    "-I${SRC_ROOT}/nanopb"
+    "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}"
     "-I${TEST_ROOT}/mocks"
     "-I${TEST_ROOT}/Unity"

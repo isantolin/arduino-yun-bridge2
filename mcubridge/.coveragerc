@@ -1,6 +1,6 @@
 [run]
 branch = True
-source = mcubridge/mcubridge
+source = mcubridge
 omit =
     *_pb2.py
     *_pb2.pyi
@@ -9,3 +9,6 @@ omit =
 show_missing = True
 skip_covered = False
 fail_under = 90
+omit =
+    *_pb2.py
+    *_pb2.pyi

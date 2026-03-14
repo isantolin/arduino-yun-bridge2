@@ -549,10 +549,18 @@ def main(
     ]
     try:
         subprocess.check_call(c_cmd)
-        sys.stderr.write(f"Generated nanopb C bindings in {cpp_out}\n")
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         sys.stderr.write(f"Error generating nanopb C bindings: {e}\n")
         sys.exit(1)
+
+    # Post-process: rewrite nanopb includes so the vendored src/nanopb/ headers
+    # are found by the Arduino build system (which adds src/ to -I, not src/nanopb/).
+    pb_h = cpp_out / "mcubridge.pb.h"
+    pb_h.write_text(
+        pb_h.read_text(encoding="utf-8").replace('#include <pb.h>', '#include "nanopb/pb.h"'),
+        encoding="utf-8",
+    )
+    sys.stderr.write(f"Generated nanopb C bindings in {cpp_out}\n")
 
     if py_client:
         py_client.parent.mkdir(parents=True, exist_ok=True)

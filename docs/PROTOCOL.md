@@ -665,7 +665,7 @@ Respuestas (Linux → MCU):
 
 - **`0xA4` CMD_PROCESS_RUN_RESP (Linux → MCU)**: respuesta al `CMD_PROCESS_RUN`.
 - **`0xA5` CMD_PROCESS_RUN_ASYNC_RESP (Linux → MCU)**: protobuf `ProcessRunAsyncResponse { pid: uint32 }`.
-- **`0xA6` CMD_PROCESS_POLL_RESP (Linux → MCU)**: protobuf `ProcessPollResponse { status, exit_code, stdout: bytes, stderr: bytes }`.
+- **`0xA6` CMD_PROCESS_POLL_RESP (Linux → MCU)**: protobuf `ProcessPollResponse { status, exit_code, stdout_data: bytes, stderr_data: bytes }`.
 
 Notas:
 - Todos los payloads de proceso usan mensajes protobuf definidos en `tools/protocol/mcubridge.proto`.

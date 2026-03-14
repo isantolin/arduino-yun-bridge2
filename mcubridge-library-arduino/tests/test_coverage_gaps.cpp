@@ -269,10 +269,10 @@ void test_process_via_dispatch() {
   rpc::payload::ProcessPollResponse poll_resp = mcubridge_ProcessPollResponse_init_default;
   poll_resp.status = 0x30;
   poll_resp.exit_code = 0;
-  poll_resp.stdout.size = 1;
-  poll_resp.stdout.bytes[0] = 'o';
-  poll_resp.stderr.size = 1;
-  poll_resp.stderr.bytes[0] = 'e';
+  poll_resp.stdout_data.size = 1;
+  poll_resp.stdout_data.bytes[0] = 'o';
+  poll_resp.stderr_data.size = 1;
+  poll_resp.stderr_data.bytes[0] = 'e';
   bridge::test::set_pb_payload(f, poll_resp);
   ba.dispatch(f);
 }

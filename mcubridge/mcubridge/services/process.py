@@ -125,8 +125,8 @@ class ProcessComponent(BaseComponent):
             resp = structures.ProcessPollResponsePacket(
                 status=batch.status_byte,
                 exit_code=batch.exit_code,
-                stdout=batch.stdout_chunk,
-                stderr=batch.stderr_chunk,
+                stdout_data=batch.stdout_chunk,
+                stderr_data=batch.stderr_chunk,
             ).encode()
             await self.service.send_frame(
                 protocol.Command.CMD_PROCESS_POLL_RESP.value, resp,

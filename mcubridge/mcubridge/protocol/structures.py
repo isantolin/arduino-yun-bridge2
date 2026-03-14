@@ -678,8 +678,8 @@ class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
 class ProcessPollResponsePacket(BaseStruct, frozen=True):
     status: Annotated[int, msgspec.Meta(ge=0)]
     exit_code: Annotated[int, msgspec.Meta(ge=0)]
-    stdout: bytes
-    stderr: bytes
+    stdout_data: bytes
+    stderr_data: bytes
 
     PB_CLASS = mcubridge_pb2.ProcessPollResponse
 

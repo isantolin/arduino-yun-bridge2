@@ -97,58 +97,44 @@ inline uint16_t getFreeMemory() { return bridge::hal::getFreeMemory(); }
 
 // --- Configuration ---
 
-#ifndef BRIDGE_ENABLE_WATCHDOG
-constexpr bool kBridgeEnableWatchdog = true;
-#else
-constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
+namespace bridge {
+namespace config {
 
+#ifdef BRIDGE_ENABLE_WATCHDOG
+static constexpr bool ENABLE_WATCHDOG = (BRIDGE_ENABLE_WATCHDOG != 0);
+#else
+static constexpr bool ENABLE_WATCHDOG = true;
 #endif
 
+// [SIL-2] Multi-platform watchdog timeout configuration
 #if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
-#ifndef BRIDGE_WATCHDOG_TIMEOUT
-#define BRIDGE_WATCHDOG_TIMEOUT WDTO_2S
-
+static constexpr uint16_t WATCHDOG_TIMEOUT_VAL = WDTO_2S;
+#elif (defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)) && BRIDGE_ENABLE_WATCHDOG
+static constexpr uint32_t WATCHDOG_TIMEOUT_MS = 2000UL;
 #endif
 
-#endif
-
-// [SIL-2] Multi-platform watchdog support
-#if defined(ARDUINO_ARCH_ESP32) && BRIDGE_ENABLE_WATCHDOG
-#include <esp_task_wdt.h>
-#ifndef BRIDGE_WATCHDOG_TIMEOUT_MS
-#define BRIDGE_WATCHDOG_TIMEOUT_MS 2'000
-
-#endif
-
-#endif
-
-#if defined(ARDUINO_ARCH_ESP8266) && BRIDGE_ENABLE_WATCHDOG
-// ESP8266 uses yield() for watchdog - software WDT
-
-#endif
-
+// [SIL-2] Firmware Version Information
 #ifdef BRIDGE_FIRMWARE_VERSION_MAJOR
-constexpr uint8_t kDefaultFirmwareVersionMajor = BRIDGE_FIRMWARE_VERSION_MAJOR;
+static constexpr uint8_t FIRMWARE_VERSION_MAJOR = BRIDGE_FIRMWARE_VERSION_MAJOR;
 #else
-constexpr uint8_t kDefaultFirmwareVersionMajor = 2;
-
+static constexpr uint8_t FIRMWARE_VERSION_MAJOR = 2;
 #endif
 
 #ifdef BRIDGE_FIRMWARE_VERSION_MINOR
-constexpr uint8_t kDefaultFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
+static constexpr uint8_t FIRMWARE_VERSION_MINOR = BRIDGE_FIRMWARE_VERSION_MINOR;
 #else
-constexpr uint8_t kDefaultFirmwareVersionMinor = 8;
-
+static constexpr uint8_t FIRMWARE_VERSION_MINOR = 8;
 #endif
 
-// [RAM-OPT] Reduced from 4 to 2 observers on AVR for SRAM savings.
-#ifndef BRIDGE_MAX_OBSERVERS
+// [RAM-OPT] Reduced observers on AVR for SRAM savings
 #if defined(ARDUINO_ARCH_AVR)
-#define BRIDGE_MAX_OBSERVERS 2
+static constexpr uint8_t MAX_OBSERVERS = 2U;
 #else
-#define BRIDGE_MAX_OBSERVERS 4
+static constexpr uint8_t MAX_OBSERVERS = 4U;
 #endif
-#endif
+
+}  // namespace config
+}  // namespace bridge
 
 // --- Subsystem Enablement (RAM Optimization) ---
 // Note: Macros are now centralized in config/bridge_config.h

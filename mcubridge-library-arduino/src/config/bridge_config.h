@@ -1,156 +1,99 @@
 #pragma once
 
-// Compile-time configuration for the Arduino-side library.
-//
-// These are *not* protocol constants (they do not affect the on-wire format).
-// They control local flow-control tuning and other MCU-side implementation
-// details.
+#include <stdint.h>
+
+/**
+ * @file bridge_config.h
+ * @brief Compile-time configuration for the Arduino-side library.
+ *
+ * [SIL-2 COMPLIANCE]
+ * Configuration is defined using constexpr to ensure type safety and
+ * compile-time evaluation. Macros are avoided to prevent namespace pollution
+ * and allow the compiler to perform better static analysis.
+ */
+
+namespace bridge {
+namespace config {
 
 // --- Subsystem Enablement (RAM Optimization) ---
 // [SIL-2] Centralized here to ensure consistent class layout (ODR compliance)
 
-#ifndef BRIDGE_ENABLE_DATASTORE
-#define BRIDGE_ENABLE_DATASTORE 1
+#ifdef BRIDGE_ENABLE_DATASTORE
+static constexpr bool ENABLE_DATASTORE = (BRIDGE_ENABLE_DATASTORE != 0);
+#else
+static constexpr bool ENABLE_DATASTORE = true;
 #endif
 
-#ifndef BRIDGE_ENABLE_FILESYSTEM
-#define BRIDGE_ENABLE_FILESYSTEM 1
+#ifdef BRIDGE_ENABLE_FILESYSTEM
+static constexpr bool ENABLE_FILESYSTEM = (BRIDGE_ENABLE_FILESYSTEM != 0);
+#else
+static constexpr bool ENABLE_FILESYSTEM = true;
 #endif
 
-#ifndef BRIDGE_ENABLE_MAILBOX
-#define BRIDGE_ENABLE_MAILBOX 1
+#ifdef BRIDGE_ENABLE_MAILBOX
+static constexpr bool ENABLE_MAILBOX = (BRIDGE_ENABLE_MAILBOX != 0);
+#else
+static constexpr bool ENABLE_MAILBOX = true;
 #endif
 
-#ifndef BRIDGE_ENABLE_PROCESS
-#define BRIDGE_ENABLE_PROCESS 1
+#ifdef BRIDGE_ENABLE_PROCESS
+static constexpr bool ENABLE_PROCESS = (BRIDGE_ENABLE_PROCESS != 0);
+#else
+static constexpr bool ENABLE_PROCESS = true;
 #endif
 
 // [SIL-2] Resource Allocation Tuning
 // On memory constrained AVR (Mega/Yun), limit the pending queue to 1 frame.
-// The stop-and-wait ARQ protocol only keeps one outstanding frame at a time,
-// so depth=1 is sufficient for normal serial operation.
 #if defined(ARDUINO_ARCH_AVR)
-#ifndef BRIDGE_MAX_PENDING_TX_FRAMES
-#define BRIDGE_MAX_PENDING_TX_FRAMES 1
-#endif
+static constexpr uint16_t MAX_PENDING_TX_FRAMES = 1U;
 #else
 #include "../protocol/rpc_protocol.h"
-#ifndef BRIDGE_MAX_PENDING_TX_FRAMES
-#define BRIDGE_MAX_PENDING_TX_FRAMES (rpc::RPC_MAX_PENDING_TX_FRAMES + 1)
-#endif
+static constexpr uint16_t MAX_PENDING_TX_FRAMES =
+    static_cast<uint16_t>(rpc::RPC_MAX_PENDING_TX_FRAMES + 1);
 #endif
 
 // Assumed RX buffer size for the underlying serial implementation.
-// AVR HardwareSerial uses 64 bytes by default in many cores.
-#ifndef BRIDGE_HW_RX_BUFFER_SIZE
-#define BRIDGE_HW_RX_BUFFER_SIZE 64
-#endif
+static constexpr uint16_t HW_RX_BUFFER_SIZE = 64U;
 
 // High/low watermarks to emit XOFF/XON based on bytes available.
-// Defaults: 75% / 25% of the assumed HW RX buffer.
-#ifndef BRIDGE_RX_HIGH_WATER_MARK
-#define BRIDGE_RX_HIGH_WATER_MARK ((BRIDGE_HW_RX_BUFFER_SIZE * 3) / 4)
-#endif
-
-#ifndef BRIDGE_RX_LOW_WATER_MARK
-#define BRIDGE_RX_LOW_WATER_MARK ((BRIDGE_HW_RX_BUFFER_SIZE * 1) / 4)
-#endif
+static constexpr uint16_t RX_HIGH_WATER_MARK = (HW_RX_BUFFER_SIZE * 3) / 4;
+static constexpr uint16_t RX_LOW_WATER_MARK = (HW_RX_BUFFER_SIZE * 1) / 4;
 
 // Console ring buffers (MCU-side only; not part of the protocol).
-// Defaults to 48 bytes to keep SRAM usage predictable on AVR.
 #if defined(ARDUINO_ARCH_AVR)
-// [RAM-OPT] Reduce console buffers for AVR to save SRAM.
-// 8 bytes per buffer keeps total console overhead at 16 bytes.
-#ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 8U
-#endif
-
-#ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 8U
-#endif
-
-#ifndef BRIDGE_MAILBOX_RX_BUFFER_SIZE
-#define BRIDGE_MAILBOX_RX_BUFFER_SIZE 8U
-#endif
+static constexpr uint16_t CONSOLE_RX_BUFFER_SIZE = 8U;
+static constexpr uint16_t CONSOLE_TX_BUFFER_SIZE = 8U;
+static constexpr uint16_t MAILBOX_RX_BUFFER_SIZE = 8U;
 #else
-#ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 64U
-#endif
-
-#ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 64U
-#endif
-
-#ifndef BRIDGE_MAILBOX_RX_BUFFER_SIZE
-#define BRIDGE_MAILBOX_RX_BUFFER_SIZE 128U
-#endif
+static constexpr uint16_t CONSOLE_RX_BUFFER_SIZE = 64U;
+static constexpr uint16_t CONSOLE_TX_BUFFER_SIZE = 64U;
+static constexpr uint16_t MAILBOX_RX_BUFFER_SIZE = 128U;
 #endif
 
 // Pending request queue sizes (MCU-side only; not part of the protocol).
-#ifndef BRIDGE_MAX_PENDING_DATASTORE
-#define BRIDGE_MAX_PENDING_DATASTORE 1U
-#endif
+static constexpr uint16_t MAX_PENDING_DATASTORE = 1U;
+static constexpr uint16_t MAX_PENDING_PROCESS_POLLS = 1U;
 
-#ifndef BRIDGE_MAX_PENDING_PROCESS_POLLS
-#define BRIDGE_MAX_PENDING_PROCESS_POLLS 1U
-#endif
+// File size warning threshold (bytes)
+static constexpr uint32_t FILE_LARGE_WARNING_BYTES = 1048576UL;
 
-// File size warning threshold (bytes) - used by daemon for RAM monitoring.
-// Matches Python: mcubridge.const.FILE_LARGE_WARNING_BYTES = 1048576
-#ifndef BRIDGE_FILE_LARGE_WARNING_BYTES
-#define BRIDGE_FILE_LARGE_WARNING_BYTES 1'048'576UL
-#endif
+// [SIL-2] Startup drain limits
+static constexpr uint16_t STARTUP_DRAIN_PER_TICK = 64U;
+static constexpr uint16_t STARTUP_DRAIN_FINAL = 256U;
 
-// [SIL-2] Startup drain limits: bounded byte consumption to prevent
-// runaway loops on garbage data before COBS sync.
-#ifndef BRIDGE_STARTUP_DRAIN_PER_TICK
-#define BRIDGE_STARTUP_DRAIN_PER_TICK 64U
-#endif
+// [SIL-2] Timing constants
+static constexpr uint32_t STARTUP_STABILIZATION_MS = 100UL;
+static constexpr uint32_t BAUDRATE_SETTLE_MS = 50UL;
+static constexpr uint16_t MAX_CONSECUTIVE_CRC_ERRORS = 5U;
+static constexpr uint32_t RX_DEDUPE_INTERVAL_MS = 1000UL;
+static constexpr uint16_t RX_HISTORY_SIZE = 1U;
 
-#ifndef BRIDGE_STARTUP_DRAIN_FINAL
-#define BRIDGE_STARTUP_DRAIN_FINAL 256U
-#endif
-
-// [SIL-2] Magic Numbers extracted to constants for clarity and safety tuning
-#ifndef BRIDGE_STARTUP_STABILIZATION_MS
-#define BRIDGE_STARTUP_STABILIZATION_MS 100UL
-#endif
-
-#ifndef BRIDGE_BAUDRATE_SETTLE_MS
-#define BRIDGE_BAUDRATE_SETTLE_MS 50UL
-#endif
-
-#ifndef BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS
-#define BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS 5U
-#endif
-
-// [SIL-2] RX Deduplication reset interval (ms)
-// After this period, the same CRC will be accepted again (retry recovery)
-#ifndef BRIDGE_RX_DEDUPE_INTERVAL_MS
-#define BRIDGE_RX_DEDUPE_INTERVAL_MS 1'000UL
-#endif
-
-// [RAM-OPT] RX History size for duplicate detection
-// 1 entry covers BRIDGE_RX_DEDUPE_INTERVAL_MS (1000ms) which is
-// sufficient for typical serial retry windows on AVR.
-#ifndef BRIDGE_RX_HISTORY_SIZE
-#define BRIDGE_RX_HISTORY_SIZE 1U
-#endif
-
-// [SIL-2] HMAC key derivation buffer sizes (SHA256 specific)
-// Buffer holds handshake_key (32 bytes) + digest (32 bytes)
-#ifndef BRIDGE_HKDF_KEY_LENGTH
-#define BRIDGE_HKDF_KEY_LENGTH 32
-#endif
-
-#ifndef BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE
-#define BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE 64
-#endif
+// [SIL-2] HMAC key derivation buffer sizes
+static constexpr uint16_t HKDF_KEY_LENGTH = 32U;
+static constexpr uint16_t KEY_AND_DIGEST_BUFFER_SIZE = 64U;
 
 // [SIL-2] Serial Port Configuration
-// Force Bridge to use the USB CDC port (Serial) instead of Hardware UART
-// (Serial1) on compatible boards (Yun, Leonardo, etc.). Essential for direct
-// PC-to-MCU connection debugging.
-#ifndef BRIDGE_USE_USB_SERIAL
-#define BRIDGE_USE_USB_SERIAL 1
-#endif
+static constexpr bool USE_USB_SERIAL = true;
+
+}  // namespace config
+}  // namespace bridge

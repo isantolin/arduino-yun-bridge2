@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import tenacity
+from construct import ConstructError
 from mcubridge.config.const import (
     SERIAL_FAILURE_STATUS_CODES,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -167,7 +168,7 @@ class SerialFlowController:
             if payload:
                 try:
                     ack_target = AckPacket.decode(payload).command_id
-                except Exception:
+                except (ConstructError, ValueError):
                     pass
             if ack_target != pending.command_id:
                 return
@@ -192,7 +193,7 @@ class SerialFlowController:
             else:
                 try:
                     should_reject = AckPacket.decode(payload).command_id == pending.command_id
-                except Exception:
+                except (ConstructError, ValueError):
                     # Non-protobuf (human-readable string) → reject only if binary
                     should_reject = not all(32 <= byte < 127 for byte in payload)
 

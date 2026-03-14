@@ -25,6 +25,7 @@ from typing import (
 )
 
 import construct as construct_raw
+import google.protobuf.message
 import msgspec
 from mcubridge.protocol import mcubridge_pb2
 
@@ -501,9 +502,13 @@ class BaseStruct(msgspec.Struct, frozen=True):
             if cls.__name__ == "CapabilitiesPacket" and "feat" in d:
                 d["feat"] = _int_to_capabilities(int(d["feat"]))
             return msgspec.convert(d, cls)
-        except Exception as e:
+        except (msgspec.MsgspecError, google.protobuf.message.DecodeError, ValueError, TypeError, AttributeError) as e:
             from construct import ConstructError
             raise ConstructError(f"Malformed {cls.__name__} payload: {bytes(data).hex()} - Error: {e}") from e
+        except Exception as e:
+            # [SIL-2] Catch-all for unexpected protobuf internal errors to prevent daemon crash
+            from construct import ConstructError
+            raise ConstructError(f"Protobuf internal error in {cls.__name__}: {e}") from e
 
     def encode(self) -> bytes:
         pb_obj = self.PB_CLASS()

@@ -61,16 +61,16 @@ constexpr uint8_t kCrcFailResetWatchdogTimeout = WDTO_15MS;
 BridgeClass Bridge(BRIDGE_DEFAULT_SERIAL_PORT);
 
 ConsoleClass Console;
-#if BRIDGE_ENABLE_DATASTORE
+#if bridge::config::ENABLE_DATASTORE
 DataStoreClass DataStore;
 #endif
-#if BRIDGE_ENABLE_MAILBOX
+#if bridge::config::ENABLE_MAILBOX
 MailboxClass Mailbox;
 #endif
-#if BRIDGE_ENABLE_FILESYSTEM
+#if bridge::config::ENABLE_FILESYSTEM
 FileSystemClass FileSystem;
 #endif
-#if BRIDGE_ENABLE_PROCESS
+#if bridge::config::ENABLE_PROCESS
 ProcessClass Process;
 #endif
 #endif
@@ -117,9 +117,9 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   // [RAM-OPT] Initialize SimpleTimer (replaces etl::callback_timer<4>)
   _timers.clear();
   _timers.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
-  _timers.set_period(bridge::scheduler::TIMER_RX_DEDUPE, BRIDGE_RX_DEDUPE_INTERVAL_MS);
-  _timers.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE, BRIDGE_BAUDRATE_SETTLE_MS);
-  _timers.set_period(bridge::scheduler::TIMER_STARTUP_STABILIZATION, BRIDGE_STARTUP_STABILIZATION_MS);
+  _timers.set_period(bridge::scheduler::TIMER_RX_DEDUPE, bridge::config::RX_DEDUPE_INTERVAL_MS);
+  _timers.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE, bridge::config::BAUDRATE_SETTLE_MS);
+  _timers.set_period(bridge::scheduler::TIMER_STARTUP_STABILIZATION, bridge::config::STARTUP_STABILIZATION_MS);
   _last_tick_millis = bridge::now_ms();
 
   // [SIL-2] Memory Integrity POST
@@ -148,7 +148,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 // [SIL-2] USB Serial Initialization Fix
 // On ATmega32U4 (Yun/Leonardo), Serial is USB CDC and acts as a Stream,
 // bypassing the HardwareSerial check. We must explicitly initialize it.
-#if BRIDGE_USE_USB_SERIAL
+#if bridge::config::USE_USB_SERIAL
   Serial.begin(arg_baudrate);
 #endif
 
@@ -182,22 +182,22 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 
   // [SIL-2] Register Observers
   add_observer(Console);
-#if BRIDGE_ENABLE_DATASTORE
+#if bridge::config::ENABLE_DATASTORE
   add_observer(DataStore);
 #endif
 }
 
 void BridgeClass::process() {
 #if defined(ARDUINO_ARCH_AVR)
-  if (kBridgeEnableWatchdog) wdt_reset();
+  if (bridge::config::ENABLE_WATCHDOG) wdt_reset();
 #elif defined(ARDUINO_ARCH_ESP32)
-  if (kBridgeEnableWatchdog) esp_task_wdt_reset();
+  if (bridge::config::ENABLE_WATCHDOG) esp_task_wdt_reset();
 #elif defined(ARDUINO_ARCH_ESP8266)
-  if (kBridgeEnableWatchdog) yield();
+  if (bridge::config::ENABLE_WATCHDOG) yield();
 #endif
 
   if (_startup_stabilizing) {
-    uint8_t drain_limit = BRIDGE_STARTUP_DRAIN_PER_TICK;
+    uint8_t drain_limit = bridge::config::STARTUP_DRAIN_PER_TICK;
     while (_stream.available() > 0 && drain_limit-- > 0) _stream.read();
   } else {
     BRIDGE_ATOMIC_BLOCK {
@@ -216,7 +216,7 @@ void BridgeClass::process() {
 
     if (error == rpc::FrameError::CRC_MISMATCH) {
       BRIDGE_ATOMIC_BLOCK {
-        if (++_consecutive_crc_errors >= BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS) {
+        if (++_consecutive_crc_errors >= bridge::config::MAX_CONSECUTIVE_CRC_ERRORS) {
 #if defined(ARDUINO_ARCH_AVR)
           wdt_enable(WDTO_15MS);
           for (;;) {}
@@ -427,14 +427,15 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleGetCapabilities, // 4: 72
       &BridgeClass::_handleSetBaudrate      // 5: 74
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, 2);
+  static constexpr uint8_t kJumpTableStride = 2;
+  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, kJumpTableStride);
 }
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this]() {
     _sendResponse<rpc::payload::VersionResponse>(
-        rpc::CommandId::CMD_GET_VERSION_RESP, kDefaultFirmwareVersionMajor,
-        kDefaultFirmwareVersionMinor);
+        rpc::CommandId::CMD_GET_VERSION_RESP, bridge::config::FIRMWARE_VERSION_MAJOR,
+        bridge::config::FIRMWARE_VERSION_MINOR);
   });
 }
 
@@ -479,7 +480,7 @@ void BridgeClass::_handleGetCapabilities(
     
     // Declarative feature mapping using C++11/14 initialization
     const bool feature_map[] = {
-        kBridgeEnableWatchdog, // Bit 1
+        bridge::config::ENABLE_WATCHDOG, // Bit 1
 #if BRIDGE_DEBUG_FRAMES
         true, // Bit 2
 #else
@@ -640,7 +641,8 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleDigitalRead,   // 3: 83
       &BridgeClass::_handleAnalogRead     // 4: 84
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers);
+  static constexpr uint8_t kJumpTableStride = 2;
+  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers, kJumpTableStride);
 }
 
 void BridgeClass::_handleSetPinMode(const bridge::router::CommandContext& ctx) {
@@ -724,7 +726,8 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleMailboxReadResp,      // 1: 132
       &BridgeClass::_handleMailboxAvailableResp  // 2: 133
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN + 3, kMailboxHandlers);
+  static constexpr uint8_t kJumpTableStride = 2;
+  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, kJumpTableStride);
 }
 
 void BridgeClass::_handleMailboxPush(
@@ -1239,13 +1242,13 @@ void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce,
 
   // [MIL-SPEC] Use HKDF derived key for handshake authentication.
   // [RAM OPT] Allocate scratch buffer on stack (key + digest)
-  etl::array<uint8_t, BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE> key_and_digest;
+  etl::array<uint8_t, bridge::config::KEY_AND_DIGEST_BUFFER_SIZE> key_and_digest;
   uint8_t* handshake_key =
-      key_and_digest.data();  // BRIDGE_HKDF_KEY_LENGTH bytes
+      key_and_digest.data();  // bridge::config::HKDF_KEY_LENGTH bytes
   uint8_t* digest = key_and_digest.data() +
-                    BRIDGE_HKDF_KEY_LENGTH;  // BRIDGE_HKDF_KEY_LENGTH bytes
+                    bridge::config::HKDF_KEY_LENGTH;  // bridge::config::HKDF_KEY_LENGTH bytes
 
-  hkdf_sha256(etl::span<uint8_t>(handshake_key, BRIDGE_HKDF_KEY_LENGTH),
+  hkdf_sha256(etl::span<uint8_t>(handshake_key, bridge::config::HKDF_KEY_LENGTH),
               etl::span<const uint8_t>(_shared_secret.data(),
                                        _shared_secret.size()),
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT,
@@ -1254,14 +1257,14 @@ void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce,
                                        rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN));
 
   SHA256 sha256;
-  sha256.resetHMAC(handshake_key, BRIDGE_HKDF_KEY_LENGTH);
+  sha256.resetHMAC(handshake_key, bridge::config::HKDF_KEY_LENGTH);
   sha256.update(nonce.data(), nonce.size());
-  sha256.finalizeHMAC(handshake_key, BRIDGE_HKDF_KEY_LENGTH, digest,
+  sha256.finalizeHMAC(handshake_key, bridge::config::HKDF_KEY_LENGTH, digest,
                       kSha256DigestSize);
   etl::copy_n(digest, kHandshakeTagSize, out_tag);
 
   rpc::security::secure_zero(
-      etl::span<uint8_t>(handshake_key, BRIDGE_HKDF_KEY_LENGTH));
+      etl::span<uint8_t>(handshake_key, bridge::config::HKDF_KEY_LENGTH));
   rpc::security::secure_zero(etl::span<uint8_t>(digest, kSha256DigestSize));
 }
 

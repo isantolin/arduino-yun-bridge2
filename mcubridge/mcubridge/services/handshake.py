@@ -17,6 +17,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
+import google.protobuf.message
 import msgspec
 import tenacity
 from construct import ConstructError
@@ -330,7 +331,7 @@ class SerialHandshakeManager:
             resp_msg.ParseFromString(payload)
             nonce = bytes(resp_msg.nonce)
             tag_bytes = bytes(resp_msg.tag)
-        except Exception:
+        except (google.protobuf.message.DecodeError, AttributeError, ValueError, TypeError):
             self._logger.warning(
                 "LINK_SYNC_RESP protobuf decode failed (len=%d)",
                 len(payload),

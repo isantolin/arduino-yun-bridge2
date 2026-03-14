@@ -23,7 +23,9 @@ uint16_t getFreeMemory() {
   if (free_bytes > UINT16_MAX) return UINT16_MAX;
   return static_cast<uint16_t>(free_bytes);
 #else
-  return 0;
+  // [SIL-2] Return UINT16_MAX (indeterminate) rather than 0 (out of memory)
+  // for architectures without a known free-memory introspection method.
+  return UINT16_MAX;
 #endif
 }
 
@@ -37,7 +39,8 @@ bool isValidPin(uint8_t pin) {
 }
 
 void init() {
-  // Architecture specific initialization
+  // [EXTENSION POINT] Architecture-specific hardware initialization.
+  // Override per-board when porting to new targets (e.g. watchdog, GPIO mux).
 }
 
 }  // namespace hal

@@ -25,6 +25,10 @@
 #if defined(__AVR__)
 #define ETL_COMPILER_GCC
 #define ETL_CPP11_SUPPORTED 1
+// [SIL-2 GUARD] avr-gcc 5.4 lacks relaxed-constexpr; ETL_CPP14 breaks build.
+#if defined(ETL_CPP14_SUPPORTED)
+#error "ETL_CPP14_SUPPORTED must NOT be set for AVR targets (avr-gcc 5.4 incompatible)"
+#endif
 #elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
 #define ETL_COMPILER_GCC
 #define ETL_CPP11_SUPPORTED 1

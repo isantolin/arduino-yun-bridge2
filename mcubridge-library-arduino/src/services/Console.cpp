@@ -12,6 +12,11 @@ static constexpr size_t kHighWaterNumerator = 3;
 static constexpr size_t kWatermarkDenominator = 4;
 static constexpr int kNoDataAvailable = -1;
 
+/// [SIL-2] Single-source watermark calculation (DRY).
+static constexpr size_t watermark(size_t capacity, size_t numerator) {
+  return (capacity * numerator) / kWatermarkDenominator;
+}
+
 ConsoleClass::ConsoleClass()
     : _begun(false), _xoff_sent(false), _rx_buffer(), _tx_buffer() {
   // ETL containers initialize themselves
@@ -102,11 +107,8 @@ int ConsoleClass::read() {
       _rx_buffer.pop();
 
       // High/Low watermark logic for XON/XOFF
-      const size_t capacity = _rx_buffer.capacity();
-      const size_t low_water =
-          (capacity * kLowWaterNumerator) / kWatermarkDenominator;
-
-      if (_xoff_sent && _rx_buffer.size() < low_water) {
+      if (_xoff_sent &&
+          _rx_buffer.size() < watermark(_rx_buffer.capacity(), kLowWaterNumerator)) {
         xon_needed = true;
       }
     }
@@ -153,11 +155,8 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
 
     _rx_buffer.push(data.begin(), data.begin() + to_copy);
 
-    const size_t capacity = _rx_buffer.capacity();
-    const size_t high_water =
-        (capacity * kHighWaterNumerator) / kWatermarkDenominator;
-
-    if (!_xoff_sent && _rx_buffer.size() > high_water) {
+    if (!_xoff_sent &&
+        _rx_buffer.size() > watermark(_rx_buffer.capacity(), kHighWaterNumerator)) {
       xoff_needed = true;
     }
   }

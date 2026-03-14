@@ -45,6 +45,10 @@ constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
 static_assert(kHandshakeTagSize > 0,
               "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero");
 constexpr size_t kSha256DigestSize = 32;
+/// [SIL-2] COBS protocol: max block code signals no implicit zero insertion.
+constexpr uint8_t kCobsMaxBlockCode = 0xFF;
+/// [SIL-2] COBS protocol: implicit zero byte inserted between blocks.
+constexpr uint8_t kCobsDecodedZero = 0x00;
 #if defined(ARDUINO_ARCH_AVR)
 constexpr uint8_t kCrcFailResetWatchdogTimeout = WDTO_15MS;
 #endif
@@ -287,9 +291,9 @@ void BridgeClass::_processIncomingByte(uint8_t byte) {
   if (_cobs.block_len == 0) {
     _cobs.code = byte;
     _cobs.block_len = byte - 1;
-    if (_cobs.bytes_received > 0 && _cobs.code_prev != 0xFF) {
+    if (_cobs.bytes_received > 0 && _cobs.code_prev != kCobsMaxBlockCode) {
       if (_cobs.bytes_received < rpc::MAX_RAW_FRAME_SIZE) {
-        _cobs.buffer[_cobs.bytes_received++] = 0x00;
+        _cobs.buffer[_cobs.bytes_received++] = kCobsDecodedZero;
       } else {
         _cobs.in_sync = false;
         _last_parse_error = rpc::FrameError::OVERFLOW;

@@ -65,7 +65,8 @@ set -- "${POSITIONAL[@]}"
 OPENWRT_VERSION=${1:-"25.12.0-rc4"}
 OPENWRT_TARGET=${2:-"malta/be"}
 
-OPENWRT_URL="downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
+OPENWRT_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
+OPENWRT_SHA256_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/sha256sums"
 
 # Asegurar rutas absolutas
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -242,6 +243,26 @@ if [ ! -d "$SDK_DIR" ]; then
     while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
         echo "[INFO] Downloading OpenWRT SDK (attempt $((RETRY+1))/$MAX_RETRIES)..."
         wget -O sdk.tar.zst "$OPENWRT_URL"
+        # [SECURITY] SHA256 integrity verification of downloaded SDK
+        SDK_FILENAME="$(basename "$OPENWRT_URL")"
+        if wget -qO sha256sums "$OPENWRT_SHA256_URL"; then
+            EXPECTED_SHA=$(grep "$SDK_FILENAME" sha256sums | awk '{print $1}')
+            rm -f sha256sums
+            if [ -n "$EXPECTED_SHA" ]; then
+                ACTUAL_SHA=$(sha256sum sdk.tar.zst | awk '{print $1}')
+                if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+                    echo "[ERROR] SHA256 mismatch! Expected: $EXPECTED_SHA Got: $ACTUAL_SHA"
+                    rm -f sdk.tar.zst
+                    RETRY=$((RETRY+1)); sleep 2; continue
+                fi
+                echo "[INFO] SHA256 verified: $ACTUAL_SHA"
+            else
+                echo "[WARN] SDK filename not found in sha256sums, skipping verification."
+            fi
+        else
+            echo "[WARN] Could not download sha256sums, skipping verification."
+            rm -f sha256sums 2>/dev/null
+        fi
         if tar --use-compress-program="${ZSTD_DECOMPRESSOR}" -xf sdk.tar.zst; then
             rm sdk.tar.zst; mv openwrt-sdk-* "$SDK_DIR"; SUCCESS=1; break
         else

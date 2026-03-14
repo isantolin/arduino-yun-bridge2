@@ -9,20 +9,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import msgspec
+import psutil
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     Command,
     Status,
     Topic,
 )
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.state.context import create_runtime_state
 
 
 def _make_config(**overrides) -> RuntimeConfig:
@@ -448,7 +446,7 @@ class TestQueues:
         from mcubridge.state.queues import BoundedByteDeque
 
         q = BoundedByteDeque(max_items=5, max_bytes=100)
-        event = q.extend([b"a", b"b", b"c"])
+        q.extend([b"a", b"b", b"c"])
         assert len(q) == 3
 
     def test_appendleft(self):
@@ -674,7 +672,7 @@ class TestStatusWriter:
 
     @pytest.mark.asyncio
     async def test_cleanup_status_file(self, tmp_path):
-        from mcubridge.state.status import STATUS_FILE, cleanup_status_file
+        from mcubridge.state.status import cleanup_status_file
 
         fake_status = tmp_path / "status.json"
         fake_status.write_text("{}")
@@ -1444,5 +1442,3 @@ class TestMqttHelpers:
         assert msg.properties is None
 
 
-import logging.handlers
-import psutil

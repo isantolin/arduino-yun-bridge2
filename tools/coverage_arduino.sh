@@ -98,6 +98,7 @@ TEST_SUITES=(
     "test_coverage_100_final"
     "test_coverage_gaps"
     "test_coverage_extra_gaps"
+    "test_coverage_final_push"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites..."

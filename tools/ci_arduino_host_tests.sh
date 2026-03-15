@@ -10,8 +10,16 @@ STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 BUILD_DIR="${LIB_DIR}/build-host-local"
 mkdir -p "${BUILD_DIR}"
 
-# Use the python from the current environment (e.g. tox virtualenv)
-PYTHON_CMD=$(command -v python || command -v python3)
+# Use the python from the current environment (e.g. tox virtualenv).
+# Fall back to the tox py313 venv when running outside CI/venv,
+# because system Python 3.14 ships an incompatible msgspec.
+if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    PYTHON_CMD=$(command -v python || command -v python3)
+elif [[ -x "${ROOT_DIR}/.tox/py313/bin/python" ]]; then
+    PYTHON_CMD="${ROOT_DIR}/.tox/py313/bin/python"
+else
+    PYTHON_CMD=$(command -v python3 || command -v python)
+fi
 
 # [SIL-2] Ensure dependencies are present (ETL is required in src/etl)
 echo "[host-cpp] Generating protocol bindings..."

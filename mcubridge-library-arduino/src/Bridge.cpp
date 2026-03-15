@@ -220,6 +220,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                                      rpc::requires_ack(raw_cmd),
                                      _isRecentDuplicateRx(effective_frame));
 
+  printf("DEBUG dispatch: raw_cmd=%u, requires_ack=%d, is_duplicate=%d\n", raw_cmd, ctx.requires_ack, ctx.is_duplicate);
+
   if (raw_cmd >= rpc::RPC_STATUS_CODE_MIN && raw_cmd <= rpc::RPC_STATUS_CODE_MAX) onStatusCommand(ctx);
   else if (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN && raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX) onSystemCommand(ctx);
   else if (raw_cmd >= rpc::RPC_GPIO_COMMAND_MIN && raw_cmd <= rpc::RPC_GPIO_COMMAND_MAX) onGpioCommand(ctx);
@@ -594,7 +596,11 @@ bool BridgeClass::_isHandshakeCommand(uint16_t cmd) const {
 }
 
 bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
-  for (auto& r : _rx_history) if (r.crc == frame.crc) return true;
+  printf("DEBUG _isRecentDuplicateRx: size=%zu, empty=%d, frame.crc=%u\n", _rx_history.size(), _rx_history.empty(), frame.crc);
+  for (auto& r : _rx_history) {
+    printf("DEBUG   entry crc=%u\n", r.crc);
+    if (r.crc == frame.crc) return true;
+  }
   return false;
 }
 

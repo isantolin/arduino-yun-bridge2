@@ -36,14 +36,14 @@ unsigned long millis() {
 }
 
 int main(int argc, char** argv) {
-  const char* port = "/tmp/ttyBRIDGE0";
-  if (argc > 1) port = argv[1];
-
-  int fd = open(port, O_RDWR | O_NOCTTY);
-  if (fd < 0) {
-    fprintf(stderr, "Fallback to stdio for port %s\n", port);
-    MySerial.setFds(STDIN_FILENO, STDOUT_FILENO);
-  } else {
+  if (argc > 1) {
+    // Explicit port path: open serial device directly.
+    const char* port = argv[1];
+    int fd = open(port, O_RDWR | O_NOCTTY);
+    if (fd < 0) {
+      fprintf(stderr, "Failed to open port %s\n", port);
+      return 1;
+    }
     struct termios tty;
     if (tcgetattr(fd, &tty) == 0) {
       cfsetospeed(&tty, B115200); cfsetispeed(&tty, B115200);
@@ -54,12 +54,17 @@ int main(int argc, char** argv) {
       tcsetattr(fd, TCSANOW, &tty);
     }
     MySerial.setFds(fd, fd);
+    fprintf(stderr, "McuBridge Emulator Started on %s\n", port);
+  } else {
+    // No port argument: use stdin/stdout (socat EXEC mode).
+    setvbuf(stdin, NULL, _IONBF, 0);
+    setvbuf(stdout, NULL, _IONBF, 0);
+    MySerial.setFds(STDIN_FILENO, STDOUT_FILENO);
+    fprintf(stderr, "McuBridge Emulator Started on stdio\n");
   }
 
   g_arduino_stream_delegate = &MySerial;
   Bridge.begin(115200);
-
-  fprintf(stderr, "McuBridge Emulator Started on %s\n", port);
 
   while (true) {
     Bridge.process();

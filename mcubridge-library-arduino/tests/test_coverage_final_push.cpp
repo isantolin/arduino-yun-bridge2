@@ -161,14 +161,16 @@ void test_status_malformed_dispatch() {
 }
 
 // =====================================================================
-// Bridge.cpp: sendStringCommand unsupported id (L582 - falls through)
+// Bridge.cpp: sendPbCommand in fault state returns false
 // =====================================================================
 void test_send_string_command_unsupported_id() {
   BiStream stream;
   reset_env(stream);
+  auto ba = TestAccessor::create(Bridge);
 
-  // Use a command_id that is not CMD_FILE_READ, CMD_FILE_REMOVE, or CMD_DATASTORE_GET
-  bool result = Bridge.sendStringCommand(rpc::CommandId::CMD_CONSOLE_WRITE, "test", 10);
+  ba.setFault();
+  rpc::payload::DatastorePut msg = mcubridge_DatastorePut_init_zero;
+  bool result = Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_PUT, msg);
   TEST_ASSERT_FALSE(result);
 }
 
@@ -427,19 +429,16 @@ void test_process_startup_drain() {
 }
 
 // =====================================================================
-// Bridge.cpp: sendKeyValCommand overflow
+// Bridge.cpp: sendPbCommand while unsynchronized returns false
 // =====================================================================
 void test_send_key_val_overflow() {
   BiStream stream;
   reset_env(stream);
+  auto ba = TestAccessor::create(Bridge);
 
-  char long_key[300];
-  memset(long_key, 'K', 299);
-  long_key[299] = '\0';
-
-  bool result = Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT,
-    etl::string_view(long_key, 299), 32,
-    etl::string_view("val", 3), 256);
+  ba.setUnsynchronized();
+  rpc::payload::DatastorePut msg = mcubridge_DatastorePut_init_zero;
+  bool result = Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_PUT, msg);
   TEST_ASSERT_FALSE(result);
 }
 
@@ -844,7 +843,7 @@ void test_datastore_request_get_empty_key() {
   BiStream stream;
   reset_env(stream);
 
-  DataStore.requestGet(""); // Should return early
+  DataStore.get("", DataStoreClass::DataStoreGetHandler{}); // Should return early
   TEST_ASSERT(true);
 }
 
@@ -856,9 +855,9 @@ void test_datastore_request_get_send_fails() {
   reset_env(stream);
   auto ba = TestAccessor::create(Bridge);
 
-  // Set fault state so sendStringCommand will fail
+  // Set fault state so sendPbCommand will fail
   ba.setFault();
-  DataStore.requestGet("mykey");
+  DataStore.get("mykey", DataStoreClass::DataStoreGetHandler{});
   // Should have cleaned up the pending key
   TEST_ASSERT(true);
 }
@@ -906,7 +905,7 @@ void test_process_poll_negative_pid() {
   BiStream stream;
   reset_env(stream);
 
-  Process.poll(-1); // Should return early
+  Process.poll(-1, ProcessClass::ProcessPollHandler{}); // Should return early
   TEST_ASSERT(true);
 }
 
@@ -920,11 +919,12 @@ void test_process_poll_queue_full() {
 
   // Fill the queue
   for (int i = 0; i < 20; i++) {
-    if (!pa.pushPendingPid(static_cast<uint16_t>(i))) break;
+    if (pa.pendingPollQueueSize() >= 20) break;
+    pa.pushPendingPid(static_cast<int16_t>(i));
   }
 
   // Now poll should emit overflow
-  Process.poll(99);
+  Process.poll(99, ProcessClass::ProcessPollHandler{});
   TEST_ASSERT(true);
 }
 

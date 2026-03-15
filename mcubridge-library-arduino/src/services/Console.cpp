@@ -46,7 +46,13 @@ int ConsoleClass::read() {
   bool empty = true;
   BRIDGE_ATOMIC_BLOCK {
     empty = _rx_buffer.empty();
-    if (!empty) { c = _rx_buffer.front(); _rx_buffer.pop(); }
+    if (!empty) {
+      c = _rx_buffer.front();
+      _rx_buffer.pop();
+      if (_xoff_sent && _rx_buffer.size() <= _rx_buffer.capacity() / 2) {
+        _xoff_sent = false;
+      }
+    }
   }
   return empty ? -1 : static_cast<int>(c);
 }

@@ -162,9 +162,11 @@ void test_bridge_status_gaps() {
 
 void test_bridge_send_gaps() {
   printf("  -> bridge_send_gaps\n");
-  Bridge.sendStringCommand(rpc::CommandId::CMD_CONSOLE_WRITE, "too long string", 5);
-  Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_GET_RESP, "key", 2, "val", 10);
-  Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_GET_RESP, "key", 10, "val", 2);
+  // Test sendPbCommand with various payloads (replaces removed sendStringCommand/sendKeyValCommand)
+  rpc::payload::DatastorePut put_msg = mcubridge_DatastorePut_init_zero;
+  Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_PUT, put_msg);
+  rpc::payload::DatastoreGet get_msg = mcubridge_DatastoreGet_init_zero;
+  Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_GET, get_msg);
 }
 
 void test_fsm_internal_gaps() {

@@ -31,7 +31,11 @@ class DataStoreClass : public BridgeObserver {
 
   void set(etl::string_view key, etl::span<const uint8_t> value);
   void put(etl::string_view key, etl::span<const uint8_t> value) { set(key, value); }
+  void put(etl::string_view key, etl::string_view value) {
+    set(key, etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(value.data()), value.size()));
+  }
   void get(etl::string_view key, DataStoreGetHandler handler);
+  void reset() { _pending_gets.clear(); }
 
   void _onResponse(const rpc::payload::DatastoreGetResponse& msg);
 

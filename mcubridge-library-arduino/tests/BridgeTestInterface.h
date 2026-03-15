@@ -41,11 +41,59 @@ class TestAccessor {
   void clearSharedSecret() { _bridge._shared_secret.clear(); }
   void fsmHandshakeComplete() { _bridge._fsm.handshakeComplete(); }
   void fsmSendCritical() { _bridge._fsm.sendCritical(); }
+  void fsmCryptoFault() { _bridge._fsm.cryptoFault(); }
+  void fsmResetFsm() { _bridge._fsm.resetFsm(); }
+  void fsmHandshakeFailed() { _bridge._fsm.handshakeFailed(); }
+
+  uint16_t getAckTimeoutMs() const { return _bridge._ack_timeout_ms; }
+
+  void pushPendingTxFrame(uint16_t cmd, uint16_t len, const uint8_t* data) {
+    BridgeClass::PendingTxFrame f;
+    f.command_id = cmd;
+    f.payload_length = len;
+    etl::copy_n(data, len, f.payload.begin());
+    _bridge._pending_tx_queue.push(f);
+  }
+  void flushPendingTxQueue() { _bridge._flushPendingTxQueue(); }
+
+  size_t getRxHistorySize() const { return _bridge._rx_history.size(); }
+  void onRxDedupe() { _bridge._onRxDedupe(); }
+
+  void setPendingBaudrate(uint32_t br) { _bridge._pending_baudrate = br; }
+  uint32_t getPendingBaudrate() const { return _bridge._pending_baudrate; }
+  void onBaudrateChange() { _bridge._onBaudrateChange(); }
+
+  void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
+
+  void applyTimingConfig(const uint8_t* data, size_t len) {
+    _bridge._applyTimingConfig(etl::span<const uint8_t>(data, len));
+  }
+
+  void setLastParseError(rpc::FrameError err) { _bridge._last_parse_error = err; }
+  void clearRxHistory() { _bridge._rx_history.clear(); }
+  void handleMalformed(uint16_t cmd) { _bridge._handleMalformed(cmd); }
+  size_t sharedSecretSize() const { return _bridge._shared_secret.size(); }
+
+  void pushPendingTxFrame(uint16_t cmd, uint16_t len) {
+    BridgeClass::PendingTxFrame f;
+    f.command_id = cmd;
+    f.payload_length = len;
+    _bridge._pending_tx_queue.push(f);
+  }
 
   void dispatch(const rpc::Frame& frame) { _bridge.dispatch(frame); }
   void retransmitLastFrame() { _bridge._retransmitLastFrame(); }
   void computeHandshakeTag(const uint8_t* n, size_t nl, uint8_t* out) {
     _bridge._computeHandshakeTag(etl::span<const uint8_t>(n, nl), out);
+  }
+
+  bool isSecurityCheckPassed(uint16_t cmd) const { return _bridge._isSecurityCheckPassed(cmd); }
+  void onStartupStabilized() { _bridge._onStartupStabilized(); }
+  bool getStartupStabilizing() const { return _bridge._startup_stabilizing; }
+
+  void handleSystemCommand(const rpc::Frame& frame) {
+    bridge::router::CommandContext ctx{&frame, frame.header.command_id, false, false};
+    _bridge.onSystemCommand(ctx);
   }
   
   void routeStatusCommand(const bridge::router::CommandContext& ctx) { _bridge.onStatusCommand(ctx); }
@@ -74,6 +122,7 @@ class ConsoleTestAccessor {
   void pushTxByte(uint8_t b) { _c._tx_buffer.push_back(b); }
   void setXoffSent(bool v) { _c._xoff_sent = v; }
   bool getXoffSent() const { return _c._xoff_sent; }
+  void setBegun(bool v) { _c._begun = v; }
   static ConsoleTestAccessor create(ConsoleClass& c) { return ConsoleTestAccessor(c); }
  private:
   ConsoleClass& _c;
@@ -83,6 +132,14 @@ class DataStoreTestAccessor {
  public:
   explicit DataStoreTestAccessor(DataStoreClass& ds) : _ds(ds) {}
   void clearPendingKeys() { _ds._pending_gets.clear(); }
+  size_t pendingGetQueueSize() const { return _ds._pending_gets.size(); }
+  bool trackPendingKey(etl::string_view) { return !_ds._pending_gets.full(); }
+  etl::string_view popPendingKey() {
+    if (_ds._pending_gets.empty()) return {};
+    auto k = _ds._pending_gets.front().key;
+    _ds._pending_gets.pop();
+    return k;
+  }
   static DataStoreTestAccessor create(DataStoreClass& ds) { return DataStoreTestAccessor(ds); }
  private:
   DataStoreClass& _ds;
@@ -108,6 +165,12 @@ class ProcessTestAccessor {
  public:
   explicit ProcessTestAccessor(ProcessClass& p) : _p(p) {}
   void clearPendingPids() { _p._pending_async_runs.clear(); _p._pending_polls.clear(); }
+  void pushPendingPid(int16_t pid) {
+    ProcessClass::PendingPoll pp;
+    pp.pid = pid;
+    _p._pending_polls.push(pp);
+  }
+  size_t pendingPollQueueSize() const { return _p._pending_polls.size(); }
   static ProcessTestAccessor create(ProcessClass& p) { return ProcessTestAccessor(p); }
  private:
   ProcessClass& _p;

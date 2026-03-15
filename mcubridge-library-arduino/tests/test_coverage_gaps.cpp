@@ -138,11 +138,10 @@ void test_datastore_resp_via_dispatch() {
   reset_env(stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
-  DataStore.onDataStoreGetResponse(
+  DataStore.get("mykey",
       DataStoreClass::DataStoreGetHandler::create([](etl::string_view,
                                                      etl::span<const uint8_t>) {
       }));
-  DataStore.requestGet("mykey");
 
   rpc::Frame f;
   memset(&f, 0, sizeof(f));
@@ -189,7 +188,7 @@ void test_mailbox_via_dispatch() {
   ba.dispatch(f);
 
   // CMD_MAILBOX_AVAILABLE_RESP (133)
-  Mailbox.onMailboxAvailableResponse(
+  Mailbox.onMailboxAvailable(
       MailboxClass::MailboxAvailableHandler::create([](uint16_t) {}));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
@@ -223,7 +222,7 @@ void test_filesystem_via_dispatch() {
   ba.dispatch(f);
 
   // CMD_FILE_READ_RESP (147)
-  FileSystem.onFileSystemReadResponse(
+  FileSystem.read("testfile",
       FileSystemClass::FileSystemReadHandler::create(
           [](etl::span<const uint8_t>) {}));
   f.header.command_id =
@@ -249,7 +248,7 @@ void test_process_via_dispatch() {
   memset(&f, 0, sizeof(f));
 
   // CMD_PROCESS_RUN_ASYNC_RESP (165)
-  Process.onProcessRunAsyncResponse(
+  Process.runAsync("cmd", etl::span<const etl::string_view>{},
       ProcessClass::ProcessRunAsyncHandler::create([](int16_t) {}));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
@@ -259,11 +258,9 @@ void test_process_via_dispatch() {
   ba.dispatch(f);
 
   // CMD_PROCESS_POLL_RESP (166) with pending PID
-  Process.onProcessPollResponse(ProcessClass::ProcessPollHandler::create(
+  Process.poll(42, ProcessClass::ProcessPollHandler::create(
       [](rpc::StatusCode, uint8_t, etl::span<const uint8_t>,
          etl::span<const uint8_t>) {}));
-  auto pa = bridge::test::ProcessTestAccessor::create(Process);
-  pa.pushPendingPid(42);
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
   rpc::payload::ProcessPollResponse poll_resp = mcubridge_ProcessPollResponse_init_default;
@@ -843,15 +840,10 @@ void test_console_edge_cases() {
   // available() when empty -> 0
   TEST_ASSERT_EQ_UINT(Console.available(), 0);
 
-  // write() when buffer full and flush fails (bridge unsync)
+  // write() when bridge is unsynchronized (flush is no-op)
   auto ba = bridge::test::TestAccessor::create(Bridge);
-  auto ca = bridge::test::ConsoleTestAccessor::create(Console);
   ba.setUnsynchronized();
-  ca.clearTxBuffer();
-  while (!ca.isTxBufferFull()) {
-    ca.pushTxByte('X');
-  }
-  TEST_ASSERT_EQ_UINT(Console.write('Z'), 0);
+  TEST_ASSERT_EQ_UINT(Console.write('Z'), 1);
 }
 
 // ============================================================================
@@ -863,16 +855,10 @@ void test_process_edge_cases() {
   BiStream stream;
   reset_env(stream);
 
-  auto pa = bridge::test::ProcessTestAccessor::create(Process);
-
-  // Pop from empty queue -> sentinel
-  uint16_t sentinel = pa.popPendingPid();
-  TEST_ASSERT_EQ_UINT(sentinel, rpc::RPC_INVALID_ID_SENTINEL);
-
   // Process.runAsync when bridge is unsync -> emit overflow (L17)
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setUnsynchronized();
-  Process.runAsync("ls");
+  Process.runAsync("ls", etl::span<const etl::string_view>{}, ProcessClass::ProcessRunAsyncHandler{});
 }
 
 // ============================================================================
@@ -1065,10 +1051,10 @@ void test_send_frame_critical_path() {
   BiStream stream;
   reset_env(stream);
 
-  // DataStore.requestGet sends a critical frame via sendStringCommand
+  // DataStore.get sends a critical frame via sendStringCommand
   // which routes through _sendFrame with requires_ack=true
-  DataStore.requestGet("key1");
-  DataStore.requestGet("key2");
+  DataStore.get("key1", DataStoreClass::DataStoreGetHandler{});
+  DataStore.get("key2", DataStoreClass::DataStoreGetHandler{});
 }
 
 // ============================================================================

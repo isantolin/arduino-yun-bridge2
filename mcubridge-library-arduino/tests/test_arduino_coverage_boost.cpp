@@ -156,16 +156,6 @@ void test_bridge_core_gaps() {
   ba.setLastParseError(rpc::FrameError::OVERFLOW);
   Bridge.process();
 
-  // Line 870-871: String command edge cases
-  TEST_ASSERT(Bridge.sendStringCommand(rpc::CommandId::CMD_DATASTORE_GET, "",
-                                       10) == false);
-  TEST_ASSERT(Bridge.sendStringCommand(rpc::CommandId::CMD_DATASTORE_GET,
-                                       "too_long", 5) == false);
-
-  // Line 893: KeyVal command edge cases
-  TEST_ASSERT(Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, "",
-                                       10, "val", 10) == false);
-
   // Line 914: Chunky frame header too large
   uint8_t header[rpc::MAX_PAYLOAD_SIZE + 1];
   TEST_ASSERT(Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
@@ -182,7 +172,7 @@ void test_bridge_core_gaps() {
   rpc::Frame f_sync;
   f_sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   f_sync.header.payload_length = 1;  // Wrong
-  ba.handleSystemCommand(f_sync);
+  ba.routeSystemCommand(bridge::router::CommandContext{&f_sync, f_sync.header.command_id, false, false});
 }
 
 static bool g_timeout_called = false;

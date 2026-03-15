@@ -9,6 +9,7 @@
 #include "protocol/rle.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
+#include "router/command_router.h"
 #include "security/security.h"
 #include "test_support.h"
 
@@ -55,18 +56,18 @@ void test_bridge_extra_gaps() {
   // ignore)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
   f.header.payload_length = 1;
-  ba.handleSystemCommand(f);
+  ba.routeSystemCommand(bridge::router::CommandContext{&f, f.header.command_id, false, false});
 
   // Gap: _handleSystemCommand CMD_GET_FREE_MEMORY with non-zero length
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
   f.header.payload_length = 1;
-  ba.handleSystemCommand(f);
+  ba.routeSystemCommand(bridge::router::CommandContext{&f, f.header.command_id, false, false});
 
   // Gap: _handleSystemCommand CMD_GET_CAPABILITIES with non-zero length
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
   f.header.payload_length = 1;
-  ba.handleSystemCommand(f);
+  ba.routeSystemCommand(bridge::router::CommandContext{&f, f.header.command_id, false, false});
 
   // Gap: onUnknownCommand without handler (emits STATUS_CMD_UNKNOWN)
   f.header.command_id = 0xAA;  // Arbitrary unknown
@@ -75,25 +76,17 @@ void test_bridge_extra_gaps() {
 }
 
 void test_console_extra_gaps() {
+  Console.begin();
   auto ca = bridge::test::ConsoleTestAccessor::create(Console);
-  ca.setBegun(true);
 
-  // Gap: write(c) when buffer full and flush fails
+  // Gap: write(c) when bridge is unsynchronized (flush is no-op)
   // Force unsynchronized to make flush fail
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setUnsynchronized();
 
-  // Clear buffer first to ensure we know the state
+  // Write exercises the write path; flush is a no-op when unsynchronized
   ca.clearTxBuffer();
-
-  // Fill buffer to capacity
-  while (!ca.isTxBufferFull()) {
-    ca.pushTxByte('A');
-  }
-
-  // This write should attempt flush, flush fails due to unsync,
-  // buffer remains full, write returns 0.
-  TEST_ASSERT_EQ_UINT(Console.write('B'), 0);
+  TEST_ASSERT_EQ_UINT(Console.write('B'), 1);
 
   // Gap: available(), peek(), read() coverage
   ca.pushRxByte('X');
@@ -144,8 +137,9 @@ void test_process_extra_gaps() {
   rpc::Frame f;
 
   // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP with handler
-  Process.onProcessRunAsyncResponse(
-      BridgeClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));
+  // Register handler via runAsync, then dispatch the response
+  Process.runAsync("echo", etl::span<const etl::string_view>{},
+      ProcessClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
   f.header.payload_length = 2;

@@ -14,6 +14,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 1: Fast Checks (parallel) - ~3min total
@@ -23,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check for Hardcoded Secrets
         run: |
           echo "Checking for hardcoded secrets..."
@@ -40,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
@@ -51,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
       - name: Install Cppcheck
         run: sudo apt-get update && sudo apt-get install -y cppcheck
@@ -62,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
       - run: tox -e typecheck
 
@@ -71,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
       - run: tox -e deps-sync
 
@@ -80,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
       - run: tox -e protocol
 
@@ -89,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
@@ -105,7 +108,7 @@ jobs:
     env:
       ARDUINO_METRICS_DIR: arduino-logs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
@@ -118,7 +121,7 @@ jobs:
         run: tox -e arduino-examples
       - name: Upload Arduino Logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arduino-logs
           path: arduino-logs
@@ -133,7 +136,7 @@ jobs:
     needs: [lint, typecheck, protocol-sync, deps-sync]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
       - name: Install Build Tools
         run: |
@@ -149,14 +152,14 @@ jobs:
         run: tox -e coverage
       - name: Upload Python Coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-python
           path: coverage/python
           if-no-files-found: ignore
       - name: Upload Arduino Coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-arduino-host
           path: coverage/arduino
@@ -202,7 +205,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
       - name: Install Python Dependencies
         run: pip install -r requirements/runtime.txt
@@ -232,25 +235,25 @@ jobs:
     if: always()
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
 
       - name: Download Python Coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-python
           path: coverage/python
         continue-on-error: true
 
       - name: Download Arduino Coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-arduino-host
           path: coverage/arduino
         continue-on-error: true
 
       - name: Download Arduino Logs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: arduino-logs
           path: arduino-logs
@@ -270,7 +273,7 @@ jobs:
             --github-step-summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Combined Coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-combined
           path: coverage/

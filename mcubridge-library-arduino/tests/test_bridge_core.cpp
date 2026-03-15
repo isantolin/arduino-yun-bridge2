@@ -178,14 +178,11 @@ void test_bridge_dedup_console_write_retry() {
   auto ba = TestAccessor::create(Bridge);
   ba.setIdle();
   Console.begin();
-  printf("DEBUG: isSynchronized=%d, isIdle=%d\n", Bridge.isSynchronized(), ba.isIdle());
-  printf("DEBUG: frame.header.version=%u, cmd=%u, payload_len=%u, crc=%u\n",
-         frame.header.version, frame.header.command_id, frame.header.payload_length, frame.crc);
   g_test_millis = 0;
+  printf("DBG: synced=%d console_avail_pre=%d\n", Bridge.isSynchronized(), Console.available());
   ba.dispatch(frame);
-  printf("DEBUG: Console.available()=%d after dispatch\n", Console.available());
+  printf("DBG: console_avail_post=%d\n", Console.available());
   Bridge.process();
-  printf("DEBUG: Console.available()=%d after process\n", Console.available());
   TEST_ASSERT_EQ_UINT(Console.available(), 5);
 }
 

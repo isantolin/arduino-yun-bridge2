@@ -66,6 +66,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
                         size_t arg_secret_len) {
   _fsm.begin();
   _timers.clear();
+  _rx_history.clear();
   _timers.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
   _timers.set_period(bridge::scheduler::TIMER_RX_DEDUPE, bridge::config::RX_DEDUPE_INTERVAL_MS);
   _timers.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE, bridge::config::BAUDRATE_SETTLE_MS);
@@ -216,11 +217,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     return;
   }
 
-  bridge::router::CommandContext ctx(&effective_frame, raw_cmd,
-                                     rpc::requires_ack(raw_cmd),
-                                     _isRecentDuplicateRx(effective_frame));
-
-  printf("DEBUG dispatch: raw_cmd=%u, requires_ack=%d, is_duplicate=%d\n", raw_cmd, ctx.requires_ack, ctx.is_duplicate);
+  bool dup = _isRecentDuplicateRx(effective_frame);
+  bool ack = rpc::requires_ack(raw_cmd);
+  printf("DBG dispatch: cmd=%u ack=%d dup=%d sec=%d hist_sz=%u crc=%u\n",
+         raw_cmd, ack, dup, _isSecurityCheckPassed(raw_cmd),
+         (unsigned)_rx_history.size(), (unsigned)effective_frame.crc);
+  bridge::router::CommandContext ctx(&effective_frame, raw_cmd, ack, dup);
 
   if (raw_cmd >= rpc::RPC_STATUS_CODE_MIN && raw_cmd <= rpc::RPC_STATUS_CODE_MAX) onStatusCommand(ctx);
   else if (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN && raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX) onSystemCommand(ctx);
@@ -596,11 +598,7 @@ bool BridgeClass::_isHandshakeCommand(uint16_t cmd) const {
 }
 
 bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
-  printf("DEBUG _isRecentDuplicateRx: size=%zu, empty=%d, frame.crc=%u\n", _rx_history.size(), _rx_history.empty(), frame.crc);
-  for (auto& r : _rx_history) {
-    printf("DEBUG   entry crc=%u\n", r.crc);
-    if (r.crc == frame.crc) return true;
-  }
+  for (auto& r : _rx_history) if (r.crc == frame.crc) return true;
   return false;
 }
 

@@ -133,7 +133,14 @@ class DataStoreTestAccessor {
   explicit DataStoreTestAccessor(DataStoreClass& ds) : _ds(ds) {}
   void clearPendingKeys() { _ds._pending_gets.clear(); }
   size_t pendingGetQueueSize() const { return _ds._pending_gets.size(); }
-  bool trackPendingKey(etl::string_view) { return !_ds._pending_gets.full(); }
+  bool trackPendingKey(etl::string_view key) {
+    if (_ds._pending_gets.full()) return false;
+    if (key.size() >= sizeof(rpc::payload::DatastoreGet::key)) return false;
+    DataStoreClass::PendingGet pg;
+    pg.key = key;
+    _ds._pending_gets.push(pg);
+    return true;
+  }
   etl::string_view popPendingKey() {
     if (_ds._pending_gets.empty()) return {};
     auto k = _ds._pending_gets.front().key;

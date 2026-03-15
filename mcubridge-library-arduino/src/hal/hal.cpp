@@ -33,5 +33,11 @@ uint16_t getFreeMemory() {
 #endif
 }
 
+void init() {
+#if defined(ARDUINO_ARCH_AVR)
+  // Enable watchdog or other AVR-specific init
+#endif
+}
+
 }  // namespace hal
 }  // namespace bridge

@@ -217,12 +217,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     return;
   }
 
-  bool dup = _isRecentDuplicateRx(effective_frame);
-  bool ack = rpc::requires_ack(raw_cmd);
-  printf("DBG dispatch: cmd=%u ack=%d dup=%d sec=%d hist_sz=%u crc=%u\n",
-         raw_cmd, ack, dup, _isSecurityCheckPassed(raw_cmd),
-         (unsigned)_rx_history.size(), (unsigned)effective_frame.crc);
-  bridge::router::CommandContext ctx(&effective_frame, raw_cmd, ack, dup);
+  bridge::router::CommandContext ctx(&effective_frame, raw_cmd,
+                                     _isRecentDuplicateRx(effective_frame),
+                                     rpc::requires_ack(raw_cmd));
 
   if (raw_cmd >= rpc::RPC_STATUS_CODE_MIN && raw_cmd <= rpc::RPC_STATUS_CODE_MAX) onStatusCommand(ctx);
   else if (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN && raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX) onSystemCommand(ctx);

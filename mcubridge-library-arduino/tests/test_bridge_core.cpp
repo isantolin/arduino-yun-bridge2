@@ -179,9 +179,7 @@ void test_bridge_dedup_console_write_retry() {
   ba.setIdle();
   Console.begin();
   g_test_millis = 0;
-  printf("DBG: synced=%d console_avail_pre=%d\n", Bridge.isSynchronized(), Console.available());
   ba.dispatch(frame);
-  printf("DBG: console_avail_post=%d\n", Console.available());
   Bridge.process();
   TEST_ASSERT_EQ_UINT(Console.available(), 5);
 }

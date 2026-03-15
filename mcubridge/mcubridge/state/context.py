@@ -876,7 +876,7 @@ class RuntimeState(msgspec.Struct):
 
     def _disable_mqtt_spool(self, reason: str, schedule_retry: bool = True) -> None:
         if self.mqtt_spool:
-            with contextlib.suppress(OSError):
+            with contextlib.suppress(OSError, AttributeError):
                 self.mqtt_spool.close()
         self.mqtt_spool = None
         self.mqtt_spool_degraded = True

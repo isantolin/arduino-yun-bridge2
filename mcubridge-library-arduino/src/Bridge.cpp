@@ -329,6 +329,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     resp.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
     etl::copy_n(tag, rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.tag.bytes);
     
+    _fsm.handshakeStart();
     _fsm.handshakeComplete();
     _sendPbResponse(rpc::CommandId::CMD_LINK_SYNC_RESP, resp);
     notify_observers(MsgBridgeSynchronized());

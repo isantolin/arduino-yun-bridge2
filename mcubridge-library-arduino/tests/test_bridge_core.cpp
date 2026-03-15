@@ -177,6 +177,7 @@ void test_bridge_dedup_console_write_retry() {
 
   auto ba = TestAccessor::create(Bridge);
   ba.setIdle();
+  Console.begin();
   g_test_millis = 0;
   ba.dispatch(frame);
   Bridge.process();

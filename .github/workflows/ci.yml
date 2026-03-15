@@ -173,6 +173,11 @@ jobs:
           - name: Full Firmware
             firmware: mcubridge-library-arduino/tests/bridge_emulator
             scripts: >-
+              mcubridge-client-examples/client_tests/test_smoke_connection.py
+              mcubridge-client-examples/led13_test.py
+              mcubridge-client-examples/console_test.py
+              mcubridge-client-examples/datastore_test.py
+              mcubridge-client-examples/fileio_test.py
               mcubridge-client-examples/process_test.py
               mcubridge-client-examples/mailbox_read_test.py
               mcubridge-client-examples/sensor_reader_test.py
@@ -180,9 +185,11 @@ jobs:
           - name: Control Sketch
             firmware: mcubridge-library-arduino/tests/bridge_control_emulator
             scripts: >-
+              mcubridge-client-examples/client_tests/test_smoke_connection.py
               mcubridge-client-examples/led13_test.py
               mcubridge-client-examples/console_test.py
               mcubridge-client-examples/mailbox_read_test.py
+              mcubridge-client-examples/sensor_reader_test.py
     timeout-minutes: 20
     services:
       mosquitto:

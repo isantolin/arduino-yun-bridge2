@@ -324,6 +324,18 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::LinkSync>(ctx, [this](const rpc::payload::LinkSync& msg) {
     uint8_t tag[rpc::RPC_HANDSHAKE_TAG_LENGTH];
     _computeHandshakeTag(etl::span<const uint8_t>(msg.nonce.bytes, msg.nonce.size), tag);
+
+    // [SIL-2] Verify incoming HMAC tag when mutual auth is configured
+    if (!_shared_secret.empty()) {
+      etl::span<const uint8_t> expected(tag, rpc::RPC_HANDSHAKE_TAG_LENGTH);
+      etl::span<const uint8_t> received(msg.tag.bytes, msg.tag.size);
+      if (!rpc::security::timing_safe_equal(expected, received)) {
+        _fsm.handshakeStart();
+        _fsm.handshakeFailed();
+        return;
+      }
+    }
+
     rpc::payload::LinkSync resp = {};
     resp.nonce.size = msg.nonce.size;
     etl::copy_n(msg.nonce.bytes, msg.nonce.size, resp.nonce.bytes);

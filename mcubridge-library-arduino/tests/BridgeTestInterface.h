@@ -32,6 +32,8 @@ class TestAccessor {
   void setStartupStabilizing(bool v) { _bridge._startup_stabilizing = v; }
   bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
   void assignSharedSecret(const uint8_t* first, const uint8_t* last) { _bridge._shared_secret.assign(first, last); }
+  void setAckRetryLimit(uint8_t limit) { _bridge._ack_retry_limit = limit; }
+  void onAckTimeout() { _bridge._onAckTimeout(); }
 
   void dispatch(const rpc::Frame& frame) { _bridge.dispatch(frame); }
   void retransmitLastFrame() { _bridge._retransmitLastFrame(); }

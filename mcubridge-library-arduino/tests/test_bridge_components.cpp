@@ -70,7 +70,8 @@ static void test_console_write_outbound_frame() {
 static void test_datastore_put_outbound_frame() {
   BiStream stream;
   reset_bridge_with_stream(stream);
-  DataStore.put("k", "v");
+  const uint8_t val[] = {'v'};
+  DataStore.put("k", etl::span<const uint8_t>(val, sizeof(val)));
   Bridge.process();
 
   TEST_ASSERT(stream.tx_buf.len > 0);
@@ -86,7 +87,8 @@ static void test_datastore_put_outbound_frame() {
 static void test_mailbox_send_outbound_frame() {
   BiStream stream;
   reset_bridge_with_stream(stream);
-  Mailbox.send("msg");
+  const uint8_t data[] = {'m', 's', 'g'};
+  Mailbox.send(etl::span<const uint8_t>(data, sizeof(data)));
   Bridge.process();
 
   TEST_ASSERT(stream.tx_buf.len > 0);

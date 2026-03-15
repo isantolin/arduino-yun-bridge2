@@ -35,7 +35,7 @@ ProcessClass Process;
 void test_fsm_initial_state() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200);
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_UNSYNCHRONIZED);
+  TEST_ASSERT(localBridge.isUnsynchronized());
   printf("  -> Initial state: OK\n");
 }
 
@@ -66,7 +66,7 @@ void test_mutual_auth_success() {
   accessor.dispatch(sync_frame);
 
   TEST_ASSERT(localBridge.isSynchronized());
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_IDLE);
+  TEST_ASSERT(localBridge.isIdle());
   printf("  -> Mutual Auth Success: OK\n");
 }
 
@@ -92,7 +92,7 @@ void test_mutual_auth_failure_wrong_tag() {
   accessor.dispatch(sync_frame);
 
   TEST_ASSERT(!localBridge.isSynchronized());
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_FAULT);
+  TEST_ASSERT(localBridge.isFault());
   printf("  -> Mutual Auth Failure (Wrong Tag): OK\n");
 }
 
@@ -110,7 +110,7 @@ void test_mutual_auth_failure_malformed_length() {
 
   accessor.dispatch(sync_frame);
 
-  TEST_ASSERT_EQUAL(bridge::fsm::STATE_UNSYNCHRONIZED, localBridge.getStateId());
+  TEST_ASSERT(localBridge.isUnsynchronized());
   printf("  -> Mutual Auth Failure (Malformed Length): OK\n");
 }
 
@@ -131,7 +131,7 @@ void test_fsm_transitions_running() {
 
   // Send a command that requires ACK
   localBridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_AWAITING_ACK);
+  TEST_ASSERT(localBridge.isAwaitingAck());
 
   // Receive ACK
   rpc::Frame ack_frame;
@@ -141,7 +141,7 @@ void test_fsm_transitions_running() {
   bridge::test::set_pb_payload(ack_frame, ack_msg);
   accessor.dispatch(ack_frame);
 
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_IDLE);
+  TEST_ASSERT(localBridge.isIdle());
   printf("  -> FSM Transitions (Idle -> AwaitingAck -> Idle): OK\n");
 }
 
@@ -164,16 +164,12 @@ void test_fsm_timeout_to_unsynchronized() {
 
   // Send command, wait for ACK
   localBridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_AWAITING_ACK);
+  TEST_ASSERT(localBridge.isAwaitingAck());
 
   // Explicitly trigger ACK timeout via accessor
   accessor.onAckTimeout();
 
-  if (localBridge.getStateId() != bridge::fsm::STATE_UNSYNCHRONIZED) {
-    printf("DEBUG: Expected state %d, got %d\n",
-           bridge::fsm::STATE_UNSYNCHRONIZED, localBridge.getStateId());
-  }
-  TEST_ASSERT(localBridge.getStateId() == bridge::fsm::STATE_UNSYNCHRONIZED);
+  TEST_ASSERT(localBridge.isUnsynchronized());
   printf("  -> FSM Timeout to Unsynchronized: OK\n");
 }
 

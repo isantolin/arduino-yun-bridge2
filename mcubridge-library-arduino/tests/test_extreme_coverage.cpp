@@ -64,14 +64,15 @@ void test_extreme_datastore() {
   setup_test_env(stream);
 
   // 1. Put con Key/Value nulos
-  DataStore.put(nullptr, "val");
-  DataStore.put("key", nullptr);
+  DataStore.put(etl::string_view{}, etl::span<const uint8_t>{});
+  DataStore.put("key", etl::span<const uint8_t>{});
 
   // 2. Put con Key/Value excediendo límites
   char long_key[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 10];
   etl::fill_n(long_key, sizeof(long_key), 'k');
   long_key[sizeof(long_key) - 1] = '\0';
-  DataStore.put(long_key, "val");
+  const uint8_t val_data[] = {'v', 'a', 'l'};
+  DataStore.put(long_key, etl::span<const uint8_t>(val_data, sizeof(val_data)));
 
   // 3. Response con longitud de valor inconsistente
   rpc::Frame resp;
@@ -115,11 +116,12 @@ void test_extreme_process_mailbox() {
   // 1. Mailbox: Send con data nula
   Mailbox.send(etl::span<const uint8_t>());
 
-  // 2. Process: RunAsync con comando nulo o largo
-  Process.runAsync(nullptr);
+  // 2. Process: RunAsync con comando vacío
+  Process.runAsync(etl::string_view{}, etl::span<const etl::string_view>{},
+                   ProcessClass::ProcessRunAsyncHandler{});
 
   // 3. Process: Poll con PID inválido
-  Process.poll(-1);
+  Process.poll(-1, ProcessClass::ProcessPollHandler{});
 }
 
 }  // namespace

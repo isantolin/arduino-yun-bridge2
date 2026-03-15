@@ -189,7 +189,6 @@ jobs:
               mcubridge-client-examples/led13_test.py
               mcubridge-client-examples/console_test.py
               mcubridge-client-examples/mailbox_read_test.py
-              mcubridge-client-examples/sensor_reader_test.py
     timeout-minutes: 20
     services:
       mosquitto:

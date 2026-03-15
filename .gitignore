@@ -84,3 +84,4 @@ mcubridge-library-arduino/tests/bridge_emulator
 .gitignore
 mcubridge-library-arduino/tests/bridge_control_emulator
 mcubridge-library-arduino/tests/Unity
+nohup.out

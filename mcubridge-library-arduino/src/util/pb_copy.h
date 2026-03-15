@@ -4,7 +4,7 @@
 #include "etl/algorithm.h"
 #include "etl/span.h"
 #include "etl/string_view.h"
-#include "pb.h"
+#include "nanopb/pb.h"
 
 namespace rpc {
 namespace util {

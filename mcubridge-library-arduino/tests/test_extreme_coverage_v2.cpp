@@ -13,6 +13,7 @@ unsigned long millis() { return g_test_millis++; }
 #include "BridgeTestInterface.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
+#include "router/command_router.h"
 #include "test_constants.h"
 #include "test_support.h"
 
@@ -50,13 +51,13 @@ void test_bridge_gaps() {
 
   // Gap: _handleSystemCommand default case
   f.header.command_id = 0x4F;
-  ba.handleSystemCommand(f);
+  ba.routeSystemCommand(bridge::router::CommandContext{&f, f.header.command_id, false, false});
 
   // Gap: _handleGpioCommand default case
   f.header.command_id = 0x5F;
   f.header.payload_length = 1;
   f.payload[0] = 13;
-  ba.handleGpioCommand(f);
+  ba.routeGpioCommand(bridge::router::CommandContext{&f, f.header.command_id, false, false});
 
   // Gap: dispatch unexpected status codes
   f.header.command_id = 0x3F;  // STATUS_CODE_MAX
@@ -78,7 +79,7 @@ void test_bridge_gaps() {
   ba.setAckTimeoutMs(1000);
   ba.setAckRetryLimit(3);
   ba.markRxProcessed(f);
-  g_test_millis += 1500;  // Move into the retry window (elapsed > ack_timeout)
+  g_test_millis += 1500;
   assert(ba.isRecentDuplicateRx(f));
 
   // Gap: enterSafeState reset logic
@@ -90,7 +91,7 @@ void test_bridge_gaps() {
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   f.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
   etl::fill_n(f.payload.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH, uint8_t{0xA});
-  ba.handleSystemCommand(f);
+  ba.routeSystemCommand(bridge::router::CommandContext{&f, static_cast<uint16_t>(rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC)), false, false});
 
   // Gap: onPacketReceived with various errors
   uint8_t crc_err[] = {0x02, 0x00, 0x00, 0x40, 0x00, 0xDE, 0xAD, 0xBE, 0xEF};
@@ -99,13 +100,14 @@ void test_bridge_gaps() {
 
   // Gap: Retransmission logic and failure streak
   ba.setUnsynchronized();
+  ba.fsmHandshakeStart();
   ba.fsmHandshakeComplete();
   ba.fsmSendCritical();
   ba.setAckTimeoutMs(1000);
   ba.setAckRetryLimit(1);
   ba.setRetryCount(ba.getAckRetryLimit());
 
-  Bridge._onAckTimeout();
+  ba.onAckTimeout();
   assert(!Bridge.isSynchronized());
 }
 
@@ -115,8 +117,8 @@ void test_datastore_gaps() {
   setup_env(stream);
 
   // Gap: _trackPendingDatastoreKey overflow
-  for (int i = 0; i < BRIDGE_MAX_PENDING_DATASTORE + 1; ++i) {
-    DataStore.requestGet("key");
+  for (int i = 0; i < static_cast<int>(bridge::config::MAX_PENDING_DATASTORE) + 1; ++i) {
+    DataStore.get("key", DataStoreClass::DataStoreGetHandler{});
   }
 }
 
@@ -133,7 +135,7 @@ void test_console_gaps() {
   Console.write(large_buf, sizeof(large_buf));
 
   // Gap: read() high/low watermarks
-  for (int i = 0; i < BRIDGE_CONSOLE_RX_BUFFER_SIZE; ++i)
+  for (int i = 0; i < static_cast<int>(bridge::config::CONSOLE_RX_BUFFER_SIZE); ++i)
     ca.pushRxByte(static_cast<uint8_t>(i));
   ca.setXoffSent(true);
   while (!ca.isRxBufferEmpty()) Console.read();
@@ -155,18 +157,18 @@ void test_filesystem_gaps() {
   FileSystem.write("test.txt", etl::span<const uint8_t>(super_large, sizeof(super_large)));
 
   // Gap: read() with invalid path
-  FileSystem.read(nullptr);
-  FileSystem.read("");
+  FileSystem.read(etl::string_view{}, FileSystemClass::FileSystemReadHandler{});
+  FileSystem.read("", FileSystemClass::FileSystemReadHandler{});
   char long_path[rpc::RPC_MAX_FILEPATH_LENGTH + 5];
   etl::fill_n(long_path, sizeof(long_path), 'p');
   long_path[sizeof(long_path) - 1] = '\0';
-  FileSystem.read(long_path);
+  FileSystem.read(long_path, FileSystemClass::FileSystemReadHandler{});
 
   // Gap: remove with overflowed path
   FileSystem.remove(long_path);
 
   // Gap: handleResponse with valid read handler
-  FileSystem.onFileSystemReadResponse(
+  FileSystem.read("testfile",
       FileSystemClass::FileSystemReadHandler::create([](etl::span<const uint8_t> d) {
         (void)d;
       }));
@@ -207,7 +209,10 @@ void test_process_gaps() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
   // Gap: poll with PID tracking
-  Process.runAsync("test");
+  {
+    etl::string_view cmd{"test"};
+    Process.runAsync(cmd, etl::span<const etl::string_view>{}, ProcessClass::ProcessRunAsyncHandler{});
+  }
   // Simulamos que el Bridge recibió el PID 42
   rpc::Frame f_pid;
   f_pid.header.command_id =
@@ -215,7 +220,7 @@ void test_process_gaps() {
   f_pid.header.payload_length = 2;
   rpc::write_u16_be(etl::span<uint8_t>(f_pid.payload.data(), 2), 42);
   ba.dispatch(f_pid);
-  Process.poll(42);
+  Process.poll(42, ProcessClass::ProcessPollHandler{});
   Process.kill(42);
 
   // Gap: handleResponse CMD_PROCESS_POLL_RESP (not running)

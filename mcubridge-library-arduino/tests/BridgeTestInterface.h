@@ -34,6 +34,13 @@ class TestAccessor {
   void assignSharedSecret(const uint8_t* first, const uint8_t* last) { _bridge._shared_secret.assign(first, last); }
   void setAckRetryLimit(uint8_t limit) { _bridge._ack_retry_limit = limit; }
   void onAckTimeout() { _bridge._onAckTimeout(); }
+  void setAckTimeoutMs(uint16_t ms) { _bridge._ack_timeout_ms = ms; }
+  uint8_t getAckRetryLimit() const { return _bridge._ack_retry_limit; }
+  void markRxProcessed(const rpc::Frame& f) { _bridge._markRxProcessed(f); }
+  bool isRecentDuplicateRx(const rpc::Frame& f) const { return _bridge._isRecentDuplicateRx(f); }
+  void clearSharedSecret() { _bridge._shared_secret.clear(); }
+  void fsmHandshakeComplete() { _bridge._fsm.handshakeComplete(); }
+  void fsmSendCritical() { _bridge._fsm.sendCritical(); }
 
   void dispatch(const rpc::Frame& frame) { _bridge.dispatch(frame); }
   void retransmitLastFrame() { _bridge._retransmitLastFrame(); }
@@ -65,6 +72,8 @@ class ConsoleTestAccessor {
   bool isTxBufferFull() const { return _c._tx_buffer.full(); }
   void clearTxBuffer() { _c._tx_buffer.clear(); }
   void pushTxByte(uint8_t b) { _c._tx_buffer.push_back(b); }
+  void setXoffSent(bool v) { _c._xoff_sent = v; }
+  bool getXoffSent() const { return _c._xoff_sent; }
   static ConsoleTestAccessor create(ConsoleClass& c) { return ConsoleTestAccessor(c); }
  private:
   ConsoleClass& _c;

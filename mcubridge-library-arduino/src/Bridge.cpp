@@ -267,7 +267,7 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleAnalogWrite, &BridgeClass::_handleDigitalRead,
       &BridgeClass::_handleAnalogRead
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers, 2);
+  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers);
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {

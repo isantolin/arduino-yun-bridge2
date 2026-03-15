@@ -1,169 +1,77 @@
-#include <etl/algorithm.h>
-
+#include "Console.h"
 #include "Bridge.h"
-#include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
 
-/// XON resume threshold: fraction of buffer capacity (numerator / denominator).
-static constexpr size_t kLowWaterNumerator = 1;
-/// XOFF pause threshold: fraction of buffer capacity (numerator / denominator).
-static constexpr size_t kHighWaterNumerator = 3;
-/// Common denominator for both watermark thresholds.
-static constexpr size_t kWatermarkDenominator = 4;
-static constexpr int kNoDataAvailable = -1;
-
-/// [SIL-2] Single-source watermark calculation (DRY).
-static constexpr size_t watermark(size_t capacity, size_t numerator) {
-  return (capacity * numerator) / kWatermarkDenominator;
-}
-
-ConsoleClass::ConsoleClass()
-    : _begun(false), _xoff_sent(false), _rx_buffer(), _tx_buffer() {
-  // ETL containers initialize themselves
-}
+ConsoleClass::ConsoleClass() : _begun(false), _xoff_sent(false) {}
 
 void ConsoleClass::begin() {
-  _begun = true;
-  _xoff_sent = false;
   _rx_buffer.clear();
   _tx_buffer.clear();
+  _begun = true;
+  _xoff_sent = false;
+}
+
+void ConsoleClass::_push(etl::span<const uint8_t> data) {
+  if (!_begun) return;
+  BRIDGE_ATOMIC_BLOCK {
+    const size_t space = _rx_buffer.capacity() - _rx_buffer.size();
+    const size_t to_copy = etl::min(data.size(), space);
+    _rx_buffer.push(data.begin(), data.begin() + to_copy);
+  }
 }
 
 size_t ConsoleClass::write(uint8_t c) {
   if (!_begun) return 0;
-
-  if (_tx_buffer.full()) {
-    flush();
-  }
-
-  // Double check full in case flush didn't clear (e.g. comm failure)
-  if (!_tx_buffer.full()) {
+  BRIDGE_ATOMIC_BLOCK {
+    if (_tx_buffer.full()) flush();
     _tx_buffer.push_back(c);
-  } else {
-    return 0;  // Should not happen if flush works, but safe return
-  }
-
-  if (_tx_buffer.full() || c == '\n') {
-    flush();
   }
   return 1;
 }
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
-  if (!_begun) return 0;
-
-  // If there's buffered data, flush it first to maintain order
-  if (!_tx_buffer.empty()) {
-    flush();
-  }
-
-  // Protobuf overhead: 1 byte tag + 1 byte length = 2 bytes
-  static constexpr size_t kMaxChunk =
-      rpc::MAX_PAYLOAD_SIZE - 2;
-
-  size_t offset = 0;
-  while (offset < size) {
-    const size_t chunk = etl::min(size - offset, kMaxChunk);
-    rpc::payload::ConsoleWrite msg = {};
-    msg.data.size = static_cast<pb_size_t>(chunk);
-    etl::copy_n(buffer + offset, chunk, msg.data.bytes);
-    if (!Bridge.sendPbFrame(rpc::CommandId::CMD_CONSOLE_WRITE, msg)) {
-      return offset;
-    }
-    offset += chunk;
-  }
-  return size;
+  if (!_begun || !buffer) return 0;
+  size_t sent = 0;
+  while (sent < size) write(buffer[sent++]);
+  return sent;
 }
 
 int ConsoleClass::available() {
-  int size = 0;
-  BRIDGE_ATOMIC_BLOCK {
-    if (_rx_buffer.empty()) {
-      size = 0;
-    } else {
-      size = static_cast<int>(_rx_buffer.size());
-    }
-  }
-  return size;
-}
-
-int ConsoleClass::peek() {
-  int c = kNoDataAvailable;
-  BRIDGE_ATOMIC_BLOCK {
-    if (!_rx_buffer.empty()) {
-      c = _rx_buffer.front();
-    }
-  }
-  return c;
+  int count = 0;
+  BRIDGE_ATOMIC_BLOCK { count = static_cast<int>(_rx_buffer.size()); }
+  return count;
 }
 
 int ConsoleClass::read() {
-  int c = kNoDataAvailable;
-  bool xon_needed = false;
-
+  uint8_t c = 0;
+  bool empty = true;
   BRIDGE_ATOMIC_BLOCK {
-    if (!_rx_buffer.empty()) {
-      c = _rx_buffer.front();
-      _rx_buffer.pop();
-
-      // High/Low watermark logic for XON/XOFF
-      if (_xoff_sent &&
-          _rx_buffer.size() < watermark(_rx_buffer.capacity(), kLowWaterNumerator)) {
-        xon_needed = true;
-      }
-    }
+    empty = _rx_buffer.empty();
+    if (!empty) { c = _rx_buffer.front(); _rx_buffer.pop(); }
   }
+  return empty ? -1 : static_cast<int>(c);
+}
 
-  if (xon_needed) {
-    if (Bridge.sendFrame(rpc::CommandId::CMD_XON)) {
-      BRIDGE_ATOMIC_BLOCK { _xoff_sent = false; }
-    }
+int ConsoleClass::peek() {
+  uint8_t c = 0;
+  bool empty = true;
+  BRIDGE_ATOMIC_BLOCK {
+    empty = _rx_buffer.empty();
+    if (!empty) c = _rx_buffer.front();
   }
-
-  return c;
+  return empty ? -1 : static_cast<int>(c);
 }
 
 void ConsoleClass::flush() {
-  if (!_begun) {
-    return;
-  }
-
-  if (!_tx_buffer.empty()) {
-    rpc::payload::ConsoleWrite msg = {};
-    msg.data.size = static_cast<pb_size_t>(_tx_buffer.size());
-    etl::copy_n(_tx_buffer.data(), _tx_buffer.size(), msg.data.bytes);
-    if (Bridge.sendPbFrame(rpc::CommandId::CMD_CONSOLE_WRITE, msg)) {
-      _tx_buffer.clear();
-    }
-  }
-
-  Bridge.flushStream();
-}
-
-void ConsoleClass::_push(etl::span<const uint8_t> data) {
-  if (data.empty()) return;
-
-  bool xoff_needed = false;
-
+  if (!_begun) return;
+  etl::span<const uint8_t> data;
   BRIDGE_ATOMIC_BLOCK {
-    if (_rx_buffer.capacity() == 0) return;
-
-    // Calculate available space first, then copy deterministically
-    // Drop new data if buffer is full.
-    const size_t space = _rx_buffer.capacity() - _rx_buffer.size();
-    const size_t to_copy = etl::min(data.size(), space);
-
-    _rx_buffer.push(data.begin(), data.begin() + to_copy);
-
-    if (!_xoff_sent &&
-        _rx_buffer.size() > watermark(_rx_buffer.capacity(), kHighWaterNumerator)) {
-      xoff_needed = true;
-    }
+    if (_tx_buffer.empty()) return;
+    data = etl::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size());
   }
-
-  if (xoff_needed) {
-    if (Bridge.sendFrame(rpc::CommandId::CMD_XOFF)) {
-      BRIDGE_ATOMIC_BLOCK { _xoff_sent = true; }
-    }
+  rpc::payload::ConsoleWrite msg = {};
+  msg.data.size = static_cast<pb_size_t>(data.size());
+  etl::copy_n(data.data(), data.size(), msg.data.bytes);
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_CONSOLE_WRITE, msg)) {
+    BRIDGE_ATOMIC_BLOCK { _tx_buffer.clear(); }
   }
 }

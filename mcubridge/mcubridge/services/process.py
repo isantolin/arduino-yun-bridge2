@@ -321,7 +321,7 @@ class ProcessComponent(BaseComponent):
     def _finalize_process_internal(self, pid: int) -> None:
         proc = self.state.running_processes.pop(pid, None)
         if proc:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(AttributeError, ValueError):
                 proc.trigger("finalize")
             self._process_slots.release()
 

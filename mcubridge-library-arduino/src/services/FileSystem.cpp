@@ -1,43 +1,37 @@
-#include "services/FileSystem.h"
-
+#include "FileSystem.h"
 #include "Bridge.h"
-#include "etl/vector.h"
+#include "util/pb_copy.h"
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
-FileSystemClass::FileSystemClass() = default;
+FileSystemClass::FileSystemClass() {}
 
-void FileSystemClass::write(etl::string_view filePath,
-                            etl::span<const uint8_t> data) {
-  if (filePath.empty() || data.empty()) return;
-
-  if (filePath.length() > rpc::RPC_MAX_FILEPATH_LENGTH - 1) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-    return;
-  }
-
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-  pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
-
+void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data) {
   rpc::payload::FileWrite msg = {};
-  etl::copy_n(filePath.data(), filePath.length(), msg.path);
-  msg.data.size = static_cast<pb_size_t>(etl::min<size_t>(data.size(), sizeof(msg.data.bytes)));
-  etl::copy_n(data.begin(), msg.data.size, msg.data.bytes);
+  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
+  rpc::util::pb_copy_bytes(data, msg.data);
+  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, msg);
+}
 
-  if (pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::FileWrite>::fields(), &msg)) {
-    static_cast<void>(Bridge.sendFrame(rpc::CommandId::CMD_FILE_WRITE,
-                         etl::span<const uint8_t>(buffer, stream.bytes_written)));
+void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler) {
+  rpc::payload::FileRead msg = {};
+  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ, msg)) {
+    _read_handler = handler;
   }
 }
 
-void FileSystemClass::remove(etl::string_view filePath) {
-  static_cast<void>(Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, filePath,
-                                rpc::RPC_MAX_FILEPATH_LENGTH - 1));
+void FileSystemClass::remove(etl::string_view path) {
+  rpc::payload::FileRemove msg = {};
+  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
+  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, msg);
 }
 
-void FileSystemClass::read(etl::string_view filePath) {
-  static_cast<void>(Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, filePath,
-                                rpc::RPC_MAX_FILEPATH_LENGTH - 1));
-}
+// [SIL-2] Intentional no-op: write-back to Linux is handled by the daemon.\nvoid FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) { (void)msg; }
 
+void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
+  if (_read_handler.is_valid()) {
+    _read_handler(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+  }
+}
 #endif

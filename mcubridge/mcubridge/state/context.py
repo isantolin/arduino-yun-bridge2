@@ -876,7 +876,7 @@ class RuntimeState(msgspec.Struct):
 
     def _disable_mqtt_spool(self, reason: str, schedule_retry: bool = True) -> None:
         if self.mqtt_spool:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):
                 self.mqtt_spool.close()
         self.mqtt_spool = None
         self.mqtt_spool_degraded = True
@@ -1006,7 +1006,7 @@ class RuntimeState(msgspec.Struct):
         return max(0.0, time.monotonic() - self._handshake_last_started)
 
     def cleanup(self) -> None:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError, RuntimeError, AttributeError):
             if self.mqtt_spool:
                 self.mqtt_spool.close()
             if self.mailbox_queue:
@@ -1029,7 +1029,7 @@ class RuntimeState(msgspec.Struct):
                     # Avoid creating mocks during cleanup if running_processes was mocked
                     handle = getattr(slot, "handle", None)
                     if handle:
-                        with contextlib.suppress(Exception):
+                        with contextlib.suppress(OSError, ProcessLookupError):
                             handle.terminate()
 
             self.serial_tx_allowed.clear()

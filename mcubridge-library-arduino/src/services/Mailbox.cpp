@@ -1,50 +1,43 @@
-#include "services/Mailbox.h"
-
+#include "Mailbox.h"
 #include "Bridge.h"
+#include "util/pb_copy.h"
 
 #if BRIDGE_ENABLE_MAILBOX
 
-MailboxClass::MailboxClass() = default;
+MailboxClass::MailboxClass() {}
 
-void MailboxClass::send(etl::string_view message) {
-  if (message.empty()) return;
-  send(etl::span<const uint8_t>(
-      reinterpret_cast<const uint8_t*>(message.data()), message.length()));
-}
-
-void MailboxClass::send(etl::span<const uint8_t> data) {
-  if (data.empty()) return;
-
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-  pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
-  
+void MailboxClass::write(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush msg = {};
-  msg.data.size = static_cast<pb_size_t>(etl::min<size_t>(data.size(), sizeof(msg.data.bytes)));
-  etl::copy_n(data.begin(), msg.data.size, msg.data.bytes);
-
-  if (pb_encode(&stream, rpc::Payload::Descriptor<rpc::payload::MailboxPush>::fields(), &msg)) {
-    static_cast<void>(Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_PUSH,
-                         etl::span<const uint8_t>(buffer, stream.bytes_written)));
-  }
+  rpc::util::pb_copy_bytes(data, msg.data);
+  Bridge.sendPbCommand(rpc::CommandId::CMD_MAILBOX_PUSH, msg);
 }
 
 void MailboxClass::requestRead() {
-  static_cast<void>(Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ));
+  Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
 void MailboxClass::requestAvailable() {
-  static_cast<void>(Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE));
+  Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
 void MailboxClass::_onIncomingData(etl::span<const uint8_t> data) {
-  if (data.empty()) return;
-
-  // [SIL-2] Use centralized safe push with atomic protection
-  Bridge.safePush(_rx_buffer, data);
-
+  BRIDGE_ATOMIC_BLOCK {
+    const size_t space = _rx_buffer.capacity() - _rx_buffer.size();
+    const size_t to_copy = etl::min(data.size(), space);
+    _rx_buffer.push(data.begin(), data.begin() + to_copy);
+  }
   if (_mailbox_handler.is_valid()) {
     _mailbox_handler(data);
   }
 }
 
+void MailboxClass::_onResponse(const rpc::payload::MailboxReadResponse& msg) {
+  _onIncomingData(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+}
+
+void MailboxClass::_onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg) {
+  if (_available_handler.is_valid()) {
+    _available_handler(static_cast<uint16_t>(msg.count));
+  }
+}
 #endif

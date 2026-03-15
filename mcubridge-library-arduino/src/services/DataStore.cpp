@@ -1,60 +1,33 @@
+#include "DataStore.h"
 #include "Bridge.h"
-#include "protocol/rpc_protocol.h"
-
-// [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
+#include "util/pb_copy.h"
 
 #if BRIDGE_ENABLE_DATASTORE
 
-DataStoreClass::DataStoreClass() { reset(); }
+DataStoreClass::DataStoreClass() {}
 
-void DataStoreClass::reset() {
-  _last_datastore_key.clear();
-  _pending_datastore_keys.clear();
+void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
+  rpc::payload::DatastorePut msg = {};
+  rpc::util::pb_copy_string(key, msg.key, sizeof(msg.key));
+  rpc::util::pb_copy_bytes(value, msg.value);
+  Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_PUT, msg);
 }
 
-void DataStoreClass::put(etl::string_view key, etl::string_view value) {
-  static_cast<void>(Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, key,
-                                rpc::RPC_MAX_DATASTORE_KEY_LENGTH, value,
-                                rpc::RPC_MAX_DATASTORE_KEY_LENGTH));
-}
-
-void DataStoreClass::requestGet(etl::string_view key) {
-  if (key.empty()) return;
-  if (!_trackPendingDatastoreKey(key)) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-    return;
-  }
-
-  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_DATASTORE_GET, key,
-                                rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
-    _popPendingDatastoreKey();  // Clean up if send failed
+void DataStoreClass::get(etl::string_view key, DataStoreGetHandler handler) {
+  if (_pending_gets.full()) return;
+  rpc::payload::DatastoreGet msg = {};
+  rpc::util::pb_copy_string(key, msg.key, sizeof(msg.key));
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_GET, msg)) {
+    _pending_gets.push({handler, key});
   }
 }
 
-etl::string_view DataStoreClass::_popPendingDatastoreKey() {
-  if (_pending_datastore_keys.empty()) {
-    _last_datastore_key.clear();
-    return {};
+void DataStoreClass::_onResponse(const rpc::payload::DatastoreGetResponse& msg) {
+  if (_pending_gets.empty()) return;
+  PendingGet pending = _pending_gets.front();
+  _pending_gets.pop();
+  if (pending.handler.is_valid()) {
+    pending.handler(pending.key, etl::span<const uint8_t>(msg.value.bytes, msg.value.size));
   }
-
-  _last_datastore_key = _pending_datastore_keys.front();
-  _pending_datastore_keys.pop();
-  return etl::string_view(_last_datastore_key.data(),
-                          _last_datastore_key.length());
 }
-
-bool DataStoreClass::_trackPendingDatastoreKey(etl::string_view key) {
-  if (key.empty() || key.length() > rpc::RPC_MAX_DATASTORE_KEY_LENGTH) {
-    return false;
-  }
-
-  if (_pending_datastore_keys.full()) {
-    return false;
-  }
-
-  _pending_datastore_keys.push(
-      etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key.data(), key.length()));
-  return true;
-}
-
 #endif

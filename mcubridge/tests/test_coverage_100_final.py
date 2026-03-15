@@ -1278,8 +1278,10 @@ class TestBridgeServiceEdges:
 
     @pytest.mark.asyncio
     async def test_schedule_background_not_entered(self, service):
+        coro = asyncio.sleep(0)
         with pytest.raises(RuntimeError):
-            await service.schedule_background(asyncio.sleep(0))
+            await service.schedule_background(coro)
+        coro.close()
 
     @pytest.mark.asyncio
     async def test_send_frame_no_sender(self, service):

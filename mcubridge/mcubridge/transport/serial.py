@@ -137,7 +137,7 @@ class SerialTransport:
         self._stop_event.set()
         if self.writer:
             self.writer.close()
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError, RuntimeError):
                 await self.writer.wait_closed()
 
     @tenacity.retry(

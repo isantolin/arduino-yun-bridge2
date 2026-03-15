@@ -1,62 +1,59 @@
 #ifndef SERVICES_PROCESS_H
 #define SERVICES_PROCESS_H
 
+#include <stdint.h>
 #include "config/bridge_config.h"
-
-#if BRIDGE_ENABLE_PROCESS
-#include "etl/circular_buffer.h"
+#undef min
+#undef max
 #include "etl/delegate.h"
+#include "etl/queue.h"
 #include "etl/span.h"
 #include "etl/string_view.h"
-#include "etl/optional.h"
-#include "protocol/rpc_protocol.h"
+#include "protocol/BridgeEvents.h"
+#include "protocol/rpc_structs.h"
 
 #if defined(BRIDGE_HOST_TEST)
-namespace bridge {
-namespace test {
-class ProcessTestAccessor;
-}
-}  // namespace bridge
+namespace bridge { namespace test { class ProcessTestAccessor; } }
 #endif
 
-class BridgeClass;
-
-class ProcessClass {
+class ProcessClass : public BridgeObserver {
 #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::ProcessTestAccessor;
 #endif
  public:
-  using ProcessPollHandler =
-      etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>,
-                         etl::span<const uint8_t>)>;
   using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
+  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>, etl::span<const uint8_t>)>;
 
   ProcessClass();
-  void reset();
-  void runAsync(etl::string_view command);
-  void poll(int16_t pid);
-  void kill(int16_t pid);
 
-  inline void onProcessPollResponse(ProcessPollHandler handler) {
-    _process_poll_handler = handler;
-  }
-  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) {
-    _process_run_async_handler = handler;
-  }
+  // [SIL-2] Observer Interface
+  void notification(MsgBridgeSynchronized) override { /* ready */ }
+  void notification(MsgBridgeLost) override { reset(); }
+
+  void runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler);
+  void poll(int16_t pid, ProcessPollHandler handler);
+  void kill(int16_t pid);
+  void reset();
+
+  void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);
+  void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
 
  private:
-  friend class BridgeClass;
-  bool _pushPendingProcessPid(uint16_t pid);
-  etl::optional<uint16_t> _popPendingProcessPid();
+  struct PendingAsyncRun {
+    ProcessRunAsyncHandler handler;
+  };
 
-  ProcessPollHandler _process_poll_handler;
-  ProcessRunAsyncHandler _process_run_async_handler;
+  struct PendingPoll {
+    int16_t pid;
+    ProcessPollHandler handler;
+  };
 
-  // [SIL-2] Use circular buffer for safe PID tracking
-  etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS>
-      _pending_process_pids;
+  // [SIL-2] Use ETL containers for safe queue management
+  etl::queue<PendingAsyncRun, bridge::config::MAX_PENDING_PROCESS_POLLS> _pending_async_runs;
+  etl::queue<PendingPoll, bridge::config::MAX_PENDING_PROCESS_POLLS> _pending_polls;
 };
 
+#if BRIDGE_ENABLE_PROCESS
 extern ProcessClass Process;
 #endif
 

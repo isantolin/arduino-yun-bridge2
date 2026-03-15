@@ -6,7 +6,7 @@ namespace rpc {
 namespace cobs {
 
 size_t encode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
-    if (src.empty() || dst.size() < (src.size() + src.size() / 254 + 2)) {
+    if (src.empty() || dst.size() < (src.size() + src.size() / COBS_MAX_BLOCK_SIZE + 2)) {
         return 0;
     }
 

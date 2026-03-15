@@ -198,48 +198,49 @@ enum TimerId : uint8_t {
   NUMBER_OF_TIMERS = 4
 };
 
-// [RAM-OPT] Lightweight timer replacing etl::callback_timer<4>.
-// etl::callback_timer + 4 etl::delegate<void()> cost ~136-152 bytes RAM.
-// SimpleTimer: 4 deadlines + 1 period + 1 bitmask = ~21 bytes.
+// [RAM-OPT] Lightweight timer replacing etl::callback_timer<N>.
+template <size_t N>
 struct SimpleTimer {
-  uint32_t deadline[NUMBER_OF_TIMERS];
-  uint32_t period[NUMBER_OF_TIMERS];
-  uint8_t active;  // bitmask: bit i = timer i is running
+  uint32_t deadline[N];
+  uint32_t period[N];
+  uint8_t active;  // bitmask
 
   void clear() {
-    etl::fill(etl::begin(deadline), etl::end(deadline), 0);
-    etl::fill(etl::begin(period), etl::end(period), 0);
+    for(size_t i=0; i<N; ++i) { deadline[i] = 0; period[i] = 0; }
     active = 0;
   }
 
   void set_period(uint8_t id, uint32_t ms) {
-    period[id] = ms;
+    if (id < N) period[id] = ms;
   }
 
   void start(uint8_t id, uint32_t now) {
-    deadline[id] = now + period[id];
-    active |= (1U << id);
+    if (id < N) {
+      deadline[id] = now + period[id];
+      active |= (1U << id);
+    }
   }
 
   void start_with_period(uint8_t id, uint32_t ms, uint32_t now) {
-    period[id] = ms;
-    deadline[id] = now + ms;
-    active |= (1U << id);
+    if (id < N) {
+      period[id] = ms;
+      deadline[id] = now + ms;
+      active |= (1U << id);
+    }
   }
 
   void stop(uint8_t id) {
-    active &= ~(1U << id);
+    if (id < N) active &= ~(1U << id);
   }
 
   bool is_active(uint8_t id) const {
-    return (active & (1U << id)) != 0;
+    return (id < N) && (active & (1U << id)) != 0;
   }
 
-  // Returns bitmask of expired timers and clears them
   uint8_t check_expired(uint32_t now) {
     uint8_t expired = 0;
-    for (uint8_t i = 0; i < NUMBER_OF_TIMERS; ++i) {
-      if ((active & (1U << i)) && (now - deadline[i]) < 0x8000'0000UL) {
+    for (uint8_t i = 0; i < N; ++i) {
+      if ((active & (1U << i)) && (now - deadline[i]) < 0x80000000UL) {
         expired |= (1U << i);
         active &= ~(1U << i);
       }

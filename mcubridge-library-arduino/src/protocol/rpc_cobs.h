@@ -13,6 +13,9 @@
 namespace rpc {
 namespace cobs {
 
+/// Maximum bytes in a single COBS block before a mandatory code byte (0xFE = 254).
+static constexpr size_t COBS_MAX_BLOCK_SIZE = 0xFE;
+
 /**
  * @brief Encodes a source buffer into a destination buffer using COBS.
  * @return The length of the encoded data, or 0 on error.

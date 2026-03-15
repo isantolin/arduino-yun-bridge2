@@ -10,15 +10,11 @@
 #include "etl/span.h"
 #include "etl/vector.h"
 
-#if defined(BRIDGE_HOST_TEST)
-namespace bridge {
-namespace test {
-class ConsoleTestAccessor;
-}
-}  // namespace bridge
-#endif
-
 #include "protocol/BridgeEvents.h"
+
+#if defined(BRIDGE_HOST_TEST)
+namespace bridge { namespace test { class ConsoleTestAccessor; } }
+#endif
 
 class ConsoleClass : public Stream, public BridgeObserver {
 #if defined(BRIDGE_HOST_TEST)
@@ -47,8 +43,8 @@ class ConsoleClass : public Stream, public BridgeObserver {
   bool _xoff_sent;
 
   // [SIL-2] Use ETL containers for safe buffer management
-  etl::circular_buffer<uint8_t, BRIDGE_CONSOLE_RX_BUFFER_SIZE> _rx_buffer;
-  etl::vector<uint8_t, BRIDGE_CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
+  etl::circular_buffer<uint8_t, bridge::config::CONSOLE_RX_BUFFER_SIZE> _rx_buffer;
+  etl::vector<uint8_t, bridge::config::CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
 };
 
 extern ConsoleClass Console;

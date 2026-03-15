@@ -7,6 +7,7 @@ Improved robustness for binary parsing (SIL-2) using Construct + Msgspec.
 from __future__ import annotations
 
 import asyncio
+import base64
 import time
 from binascii import crc32
 from collections.abc import Iterable
@@ -850,8 +851,6 @@ class QueuedPublish(msgspec.Struct):
         payload = data.get("payload", b"")
         if isinstance(payload, str):
             try:
-                import base64
-
                 payload = base64.b64decode(payload)
             except ValueError:
                 payload = payload.encode("utf-8")
@@ -859,8 +858,6 @@ class QueuedPublish(msgspec.Struct):
         correlation_data = data.get("correlation_data")
         if isinstance(correlation_data, str):
             try:
-                import base64
-
                 correlation_data = base64.b64decode(correlation_data)
             except ValueError:
                 correlation_data = correlation_data.encode("utf-8")

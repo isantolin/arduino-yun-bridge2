@@ -1,62 +1,59 @@
+#include "Process.h"
 #include "Bridge.h"
-#include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
-
-// [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
+#include "util/pb_copy.h"
 
 #if BRIDGE_ENABLE_PROCESS
 
-ProcessClass::ProcessClass() { reset(); }
+ProcessClass::ProcessClass() {}
 
-void ProcessClass::reset() { _pending_process_pids.clear(); }
-
-void ProcessClass::runAsync(etl::string_view command) {
+void ProcessClass::runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler) {
+  if (_pending_async_runs.full()) return;
   rpc::payload::ProcessRunAsync msg = {};
-  const size_t len = etl::min(command.length(), sizeof(msg.command) - 1);
-  etl::copy_n(command.data(), len, msg.command);
-  msg.command[len] = '\0';
-  static_cast<void>(Bridge.sendPbFrame(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, msg));
+  rpc::util::pb_copy_string(command, msg.command, sizeof(msg.command));
+  (void)args;
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, msg)) {
+    _pending_async_runs.push({handler});
+  }
 }
 
-void ProcessClass::poll(int16_t pid) {
-  if (pid < 0) return;
-
-  const uint16_t pid_u16 = static_cast<uint16_t>(pid);
-  if (!_pushPendingProcessPid(pid_u16)) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-    return;
-  }
-
+void ProcessClass::poll(int16_t pid, ProcessPollHandler handler) {
+  if (_pending_polls.full()) return;
   rpc::payload::ProcessPoll msg = {};
-  msg.pid = pid_u16;
-  if (!Bridge.sendPbFrame(rpc::CommandId::CMD_PROCESS_POLL, msg)) {
-    _popPendingProcessPid();  // Cleanup if failed to send
+  msg.pid = pid;
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_POLL, msg)) {
+    _pending_polls.push({pid, handler});
   }
 }
 
 void ProcessClass::kill(int16_t pid) {
-  if (pid < 0) return;
   rpc::payload::ProcessKill msg = {};
-  msg.pid = static_cast<uint16_t>(pid);
-  static_cast<void>(Bridge.sendPbFrame(rpc::CommandId::CMD_PROCESS_KILL, msg));
+  msg.pid = pid;
+  Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_KILL, msg);
 }
 
-bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {
-  if (_pending_process_pids.full()) {
-    return false;
+void ProcessClass::_onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg) {
+  if (_pending_async_runs.empty()) return;
+  PendingAsyncRun pending = _pending_async_runs.front();
+  _pending_async_runs.pop();
+  if (pending.handler.is_valid()) {
+    pending.handler(static_cast<int16_t>(msg.pid));
   }
-  _pending_process_pids.push(pid);
-  return true;
 }
 
-etl::optional<uint16_t> ProcessClass::_popPendingProcessPid() {
-  if (_pending_process_pids.empty()) {
-    return etl::nullopt;
+void ProcessClass::_onPollResponse(const rpc::payload::ProcessPollResponse& msg) {
+  if (_pending_polls.empty()) return;
+  PendingPoll pending = _pending_polls.front();
+  _pending_polls.pop();
+  if (pending.handler.is_valid()) {
+    pending.handler(static_cast<rpc::StatusCode>(msg.status), 
+                    static_cast<uint8_t>(msg.exit_code),
+                    etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
+                    etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
   }
-
-  uint16_t pid = _pending_process_pids.front();
-  _pending_process_pids.pop();
-  return etl::make_optional(pid);
 }
 
+void ProcessClass::reset() {
+  _pending_async_runs.clear();
+  _pending_polls.clear();
+}
 #endif

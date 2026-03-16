@@ -21,17 +21,6 @@ from ..router.routers import MCUHandlerRegistry, MQTTRouter
 if TYPE_CHECKING:
     from aiomqtt import Message
 
-    from . import (
-        ConsoleComponent,
-        DatastoreComponent,
-        FileComponent,
-        MailboxComponent,
-        PinComponent,
-        ProcessComponent,
-        ShellComponent,
-        SystemComponent,
-    )
-
 logger = logging.getLogger("mcubridge.dispatcher")
 
 STATUS_VALUES = {status.value for status in Status}

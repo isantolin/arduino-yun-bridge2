@@ -13,6 +13,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import svcs
+
 import pytest
 
 # [TEST FIX] Global warning suppression for Python 3.13 strictness
@@ -206,8 +208,6 @@ def make_component_container(
     makes ``svcs.Container.get()`` wrongly detect them as async context
     managers.  We strip those attributes so ``get()`` works synchronously.
     """
-    import svcs
-
     from mcubridge.services import (
         ConsoleComponent,
         DatastoreComponent,

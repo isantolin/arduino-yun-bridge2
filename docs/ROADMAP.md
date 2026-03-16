@@ -30,7 +30,6 @@
 ### 3. Resilience & Hardware Abstraction
 - **Auto-Baudrate Fallback**: Automated speed downgrade logic based on CRC error thresholds.
 - **SPI Service**: Full implementation of the SPI capability bit with a dedicated RPC service.
-- **Physical Flow Control**: HAL support for RTS/CTS hardware lines for non-XON platforms.
 
 ### 4. Zero-Code Experience
 - **Dynamic LuCI UI**: Automated web interface generation based on `spec.toml` definitions.

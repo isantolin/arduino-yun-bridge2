@@ -438,8 +438,14 @@ void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandConte
 
 #if BRIDGE_ENABLE_FILESYSTEM
 void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
-  // [SIL-2] Placeholder for future FS write implementation. Currently ACK only.
-  _withAck(ctx, []() {});
+  rpc::payload::FileWrite msg = {};
+  etl::span<uint8_t> data_span(_transient_buffer, sizeof(_transient_buffer));
+  rpc::util::pb_setup_decode_span(msg.data, data_span);
+
+  _withPayload<rpc::payload::FileWrite>(ctx, [this, &data_span](const rpc::payload::FileWrite& msg) {
+    // Pass the actual captured data span to the filesystem service
+    FileSystem._onWrite(msg, etl::span<const uint8_t>(data_span.data(), data_span.size()));
+  }, msg);
 }
 void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
   _dispatchWithBytes<rpc::payload::FileReadResponse>(

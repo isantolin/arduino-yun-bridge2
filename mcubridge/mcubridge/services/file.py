@@ -103,6 +103,13 @@ class FileComponent(BaseComponent):
                 return False
 
     async def _handle_mqtt_write(self, inbound: Message, identifier: str, payload: bytes) -> bool:
+        if identifier.startswith("mcu/"):
+            mcu_path = identifier[4:]
+            if not mcu_path:
+                return False
+            packet = FileWritePacket(path=mcu_path, data=payload)
+            return await self.ctx.send_frame(Command.CMD_FILE_WRITE.value, packet.encode())
+
         path = self._get_safe_path(identifier)
         if not path:
             return False

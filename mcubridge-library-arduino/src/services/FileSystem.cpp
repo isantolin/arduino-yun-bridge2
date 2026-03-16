@@ -27,7 +27,19 @@ void FileSystemClass::remove(etl::string_view path) {
   Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, msg);
 }
 
-// [SIL-2] Intentional no-op: write-back to Linux is handled by the daemon.\nvoid FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) { (void)msg; }
+void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<const uint8_t> data) {
+  if (bridge::hal::hasSD()) {
+    // [SIL-2] Use HAL abstraction to write data to SD card.
+    if (bridge::hal::writeFile(msg.path, data)) {
+      Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
+    } else {
+      Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+    }
+  } else {
+    // If no SD card present, signal error back to Linux daemon.
+    Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+  }
+}
 
 void FileSystemClass::_onResponse(etl::span<const uint8_t> content) {
   if (_read_handler.is_valid()) {

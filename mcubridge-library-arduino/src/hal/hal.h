@@ -29,6 +29,20 @@ bool isValidPin(uint8_t pin);
  */
 void init();
 
+/**
+ * @brief Check if a functional SD card is present and initialized.
+ * @return true if SD is available, false otherwise.
+ */
+bool hasSD();
+
+/**
+ * @brief Write data to a file on the SD card.
+ * @param path The file path.
+ * @param data The data to write.
+ * @return true on success, false otherwise.
+ */
+bool writeFile(const char* path, etl::span<const uint8_t> data);
+
 }  // namespace hal
 }  // namespace bridge
 

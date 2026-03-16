@@ -866,24 +866,27 @@ class TestProcessComponent:
 
     @pytest.mark.asyncio
     async def test_handle_run_async_malformed(self, process_comp):
-        from construct import ConstructError
-
-        with pytest.raises(ConstructError):
-            await process_comp.handle_run_async(b"\xff\xff\xff")
+        await process_comp.handle_run_async(b"\xff\xff\xff")
+        process_comp.service._acknowledge_mcu_frame.assert_called_with(
+            Command.CMD_PROCESS_RUN_ASYNC.value,
+            status=Status.MALFORMED,
+        )
 
     @pytest.mark.asyncio
     async def test_handle_poll_malformed(self, process_comp):
-        from construct import ConstructError
-
-        with pytest.raises(ConstructError):
-            await process_comp.handle_poll(b"\xff\xff\xff")
+        await process_comp.handle_poll(b"\xff\xff\xff")
+        process_comp.service._acknowledge_mcu_frame.assert_called_with(
+            Command.CMD_PROCESS_POLL.value,
+            status=Status.MALFORMED,
+        )
 
     @pytest.mark.asyncio
     async def test_handle_kill_malformed(self, process_comp):
-        from construct import ConstructError
-
-        with pytest.raises(ConstructError):
-            await process_comp.handle_kill(b"\xff\xff\xff")
+        await process_comp.handle_kill(b"\xff\xff\xff")
+        process_comp.service._acknowledge_mcu_frame.assert_called_with(
+            Command.CMD_PROCESS_KILL.value,
+            status=Status.MALFORMED,
+        )
 
     @pytest.mark.asyncio
     async def test_handle_kill_no_ack(self, process_comp):

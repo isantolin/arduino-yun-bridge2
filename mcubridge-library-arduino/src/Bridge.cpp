@@ -26,6 +26,7 @@
 
 namespace {
 constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+constexpr uint8_t kRpcCommandStride = 2;  // Pair: CMD + RESP
 }
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
@@ -257,7 +258,7 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleLinkSync, &BridgeClass::_handleLinkReset,
       &BridgeClass::_handleGetCapabilities, &BridgeClass::_handleSetBaudrate
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, 2);
+  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, kRpcCommandStride);
 }
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
@@ -284,7 +285,7 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 3> kMailboxHandlers{{
       &BridgeClass::_handleMailboxPush, &BridgeClass::_handleMailboxReadResp, &BridgeClass::_handleMailboxAvailableResp
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, 2);
+  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, kRpcCommandStride);
 #endif
 }
 
@@ -556,7 +557,19 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::string_view messa
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
-  (void)message; emitStatus(status_code, etl::span<const uint8_t>());
+  if (message == nullptr) {
+    emitStatus(status_code, etl::span<const uint8_t>());
+    return;
+  }
+  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
+#if defined(ARDUINO_ARCH_AVR)
+  strncpy_P(reinterpret_cast<char*>(buffer), (PGM_P)message, sizeof(buffer));
+#else
+  strncpy(reinterpret_cast<char*>(buffer), reinterpret_cast<const char*>(message), sizeof(buffer));
+#endif
+  buffer[sizeof(buffer) - 1] = '\0';
+  size_t len = strlen(reinterpret_cast<char*>(buffer));
+  emitStatus(status_code, etl::span<const uint8_t>(buffer, len));
 }
 
 bool BridgeClass::sendFrame(rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
@@ -643,8 +656,8 @@ bool BridgeClass::_isHandshakeCommand(uint16_t cmd) const {
 }
 
 bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
-  for (auto& r : _rx_history) if (r.crc == frame.crc) return true;
-  return false;
+  return etl::any_of(_rx_history.begin(), _rx_history.end(),
+                     [&frame](const RxHistoryItem& r) { return r.crc == frame.crc; });
 }
 
 void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
@@ -653,7 +666,28 @@ void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
 }
 
 etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Frame& org, rpc::Frame& eff) {
-  eff = org; return {};
+  eff.header = org.header;
+  eff.crc = org.crc;
+  
+  if (!(org.header.command_id & rpc::RPC_CMD_FLAG_COMPRESSED)) {
+    eff.payload = org.payload;
+    return {};
+  }
+
+  // Clear compression flag for the effective frame
+  eff.header.command_id &= ~rpc::RPC_CMD_FLAG_COMPRESSED;
+  
+  size_t decoded_len = rle::decode(
+      etl::span<const uint8_t>(org.payload.data(), org.header.payload_length),
+      etl::span<uint8_t>(eff.payload.data(), eff.payload.size())
+  );
+
+  if (decoded_len == 0 && org.header.payload_length > 0) {
+    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
+  }
+
+  eff.header.payload_length = static_cast<uint16_t>(decoded_len);
+  return {};
 }
 
 void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce, uint8_t* out_tag) {
@@ -669,7 +703,18 @@ void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce, uint8_t* 
   rpc::security::secure_zero(etl::span<uint8_t>(handshake_key, bridge::config::HKDF_KEY_LENGTH));
 }
 
-void BridgeClass::_applyTimingConfig(etl::span<const uint8_t> payload) { (void)payload; }
+void BridgeClass::_applyTimingConfig(etl::span<const uint8_t> payload) {
+  rpc::payload::HandshakeConfig msg = {};
+  pb_istream_t stream = pb_istream_from_buffer(payload.data(), payload.size());
+  if (pb_decode(&stream, rpc::Payload::Descriptor<rpc::payload::HandshakeConfig>::fields(), &msg)) {
+    if (msg.ack_timeout_ms > 0) {
+      _ack_timeout_ms = msg.ack_timeout_ms;
+      _timers.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
+    }
+    if (msg.ack_retry_limit > 0) _ack_retry_limit = msg.ack_retry_limit;
+    if (msg.response_timeout_ms > 0) _response_timeout_ms = msg.response_timeout_ms;
+  }
+}
 
 // --- Global Instances (PROPERLY PROTECTED FOR HOST TESTS) ---
 // Unit tests define BRIDGE_TEST_NO_GLOBALS to supply their own fixtures.

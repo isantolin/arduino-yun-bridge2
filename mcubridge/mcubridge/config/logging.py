@@ -16,6 +16,18 @@ SYSLOG_SOCKET = Path("/dev/log")
 SYSLOG_SOCKET_FALLBACK = Path("/var/run/log")
 
 
+def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) -> structlog.types.EventDict:
+    """Format binary fields as standardized hex strings [DE AD BE EF]."""
+    for key, value in event_dict.items():
+        if isinstance(value, (bytes, bytearray)):
+            if not value:
+                event_dict[key] = "[]"
+                continue
+            hex_str = " ".join(f"{b:02X}" for b in value)
+            event_dict[key] = f"[{hex_str}]"
+    return event_dict
+
+
 def configure_logging(config: RuntimeConfig) -> None:
     """Configure logging with structlog: JSON for syslog, colored for console."""
 
@@ -29,6 +41,7 @@ def configure_logging(config: RuntimeConfig) -> None:
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso", key="ts"),
         structlog.stdlib.ExtraAdder(),
+        hexdump_processor,
     ]
 
     structlog.configure(

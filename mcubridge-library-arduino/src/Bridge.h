@@ -299,12 +299,8 @@ class BridgeClass
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   bool _sendFrame(uint16_t command_id, etl::span<const uint8_t> payload);
 
-  template <typename THandler, size_t N>
-  void _dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const etl::array<THandler, N>& handlers, uint8_t stride = 1) {
-    if (ctx.raw_command < min_id) return;
-    const uint8_t index = static_cast<uint8_t>((ctx.raw_command - min_id) / stride);
-    if (index < handlers.size() && handlers[index]) (this->*handlers[index])(ctx);
-  }
+  using CmdHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+  void _dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const CmdHandler* handlers, uint8_t count, uint8_t stride = 1);
 
   template <typename TPacket, typename TFunc>
   void _handlePinSetter(const bridge::router::CommandContext& ctx, TFunc func) {

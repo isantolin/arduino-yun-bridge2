@@ -198,12 +198,11 @@ void BridgeClass::_processIncomingByte(uint8_t byte) {
 
 void BridgeClass::_handleReceivedFrame() {
   _flags.frame_received = false;
-  rpc::Frame frame = _rx_frame;
-  if (_isRecentDuplicateRx(frame)) {
-    if (rpc::requires_ack(frame.header.command_id)) _sendAckAndFlush(frame.header.command_id);
+  if (_isRecentDuplicateRx(_rx_frame)) {
+    if (rpc::requires_ack(_rx_frame.header.command_id)) _sendAckAndFlush(_rx_frame.header.command_id);
     return;
   }
-  dispatch(frame);
+  dispatch(_rx_frame);
 }
 
 void BridgeClass::dispatch(const rpc::Frame& frame) {
@@ -261,7 +260,7 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleLinkSync, &BridgeClass::_handleLinkReset,
       &BridgeClass::_handleGetCapabilities, &BridgeClass::_handleSetBaudrate
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, kRpcCommandStride);
+  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers.data(), kSystemHandlers.size(), kRpcCommandStride);
 }
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
@@ -270,7 +269,7 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleAnalogWrite, &BridgeClass::_handleDigitalRead,
       &BridgeClass::_handleAnalogRead
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers);
+  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers.data(), kGpioHandlers.size());
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
@@ -288,7 +287,7 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 3> kMailboxHandlers{{
       &BridgeClass::_handleMailboxPush, &BridgeClass::_handleMailboxReadResp, &BridgeClass::_handleMailboxAvailableResp
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, kRpcCommandStride);
+  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers.data(), kMailboxHandlers.size(), kRpcCommandStride);
 #endif
 }
 
@@ -490,6 +489,12 @@ void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::AckPacket>(ctx, [this](const rpc::payload::AckPacket& msg) { _handleMalformed(static_cast<uint16_t>(msg.command_id)); });
+}
+
+void BridgeClass::_dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const CmdHandler* handlers, uint8_t count, uint8_t stride) {
+  if (ctx.raw_command < min_id) return;
+  const uint8_t index = static_cast<uint8_t>((ctx.raw_command - min_id) / stride);
+  if (index < count && handlers[index]) (this->*handlers[index])(ctx);
 }
 
 void BridgeClass::_handleAck(uint16_t command_id) {

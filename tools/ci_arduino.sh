@@ -73,7 +73,9 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
         # GCC uses the last -std= flag, so appending via compiler.cpp.extra_flags
         # effectively selects C++14 for our library code.
         BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--warnings" "default"
-                     "--build-property" "compiler.cpp.extra_flags=-std=gnu++14")
+                     "--build-property" "compiler.cpp.extra_flags=-std=gnu++14 -fno-exceptions -flto"
+                     "--build-property" "compiler.c.extra_flags=-flto"
+                     "--build-property" "compiler.c.elf.extra_flags=-flto")
         
         # Add extra properties
         BUILD_FLAGS+=("${EXTRA_PROPS[@]}")

@@ -2,7 +2,6 @@
 #include <Arduino.h>
 #include <etl/numeric.h>
 #include <etl/span.h>
-#include <etl/bitset.h>
 #include "util/pb_copy.h"
 
 #if (defined(_GLIBCXX_VECTOR) || defined(_GLIBCXX_STRING) || \
@@ -366,12 +365,12 @@ void BridgeClass::_handleGetCapabilities(const bridge::router::CommandContext& c
     resp.ver = rpc::PROTOCOL_VERSION;
 #if defined(ARDUINO_ARCH_AVR)
     resp.arch = rpc::RPC_ARCH_AVR;
-    resp.dig = 14; resp.ana = 6;
+    resp.dig = bridge::config::AVR_DIGITAL_PINS; resp.ana = bridge::config::AVR_ANALOG_PINS;
 #else
     resp.arch = rpc::RPC_ARCH_SAMD;
-    resp.dig = 20; resp.ana = 8;
+    resp.dig = bridge::config::SAMD_DIGITAL_PINS; resp.ana = bridge::config::SAMD_ANALOG_PINS;
 #endif
-    resp.feat = 0x01;
+    resp.feat = bridge::config::CAPABILITIES_FEAT_EXTENDED;
     _sendPbResponse(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, resp);
   });
 }

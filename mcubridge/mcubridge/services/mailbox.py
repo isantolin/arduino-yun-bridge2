@@ -45,7 +45,7 @@ class MailboxComponent(BaseComponent):
             try:
                 packet = MailboxProcessedPacket.decode(payload, Command.CMD_MAILBOX_PROCESSED)
                 message_id = packet.message_id
-            except (ValueError, ValueError) as exc:
+            except ValueError as exc:
                 logger.warning("MCU > Malformed Mailbox processed payload: %s", exc)
 
         if message_id is not None:

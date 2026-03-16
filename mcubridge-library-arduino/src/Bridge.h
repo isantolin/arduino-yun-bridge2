@@ -54,7 +54,6 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include "nanopb/pb_decode.h"
 #include "nanopb/pb_encode.h"
 #include "etl/array.h"
-#include "etl/bitset.h"
 #include "etl/circular_buffer.h"
 #include "etl/delegate.h"
 #include "etl/expected.h"
@@ -303,7 +302,7 @@ class BridgeClass
   template <typename THandler, size_t N>
   void _dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const etl::array<THandler, N>& handlers, uint8_t stride = 1) {
     if (ctx.raw_command < min_id) return;
-    const uint16_t index = (ctx.raw_command - min_id) / stride;
+    const uint8_t index = static_cast<uint8_t>((ctx.raw_command - min_id) / stride);
     if (index < handlers.size() && handlers[index]) (this->*handlers[index])(ctx);
   }
 

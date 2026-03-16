@@ -7,23 +7,7 @@
 #include <Arduino.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
-
-#ifdef ARDUINO_ARCH_AVR
-#include <avr/pgmspace.h>
-#else
-#ifndef PROGMEM
-#define PROGMEM
-#endif
-#ifndef pgm_read_byte
-#define pgm_read_byte(addr) (*(const unsigned char*)(addr))
-#endif
-#ifndef memcpy_P
-#define memcpy_P memcpy
-#endif
-#ifndef memcmp_P
-#define memcmp_P memcmp
-#endif
-#endif
+#include "hal/hal.h"
 
 namespace rpc {
 namespace security {

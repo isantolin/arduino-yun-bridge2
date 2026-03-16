@@ -540,11 +540,13 @@ def main(
     sys.stderr.write(f"Generated Python protobuf bindings in {py_out}\n")
 
     # Step 2: Generate C nanopb bindings (mcubridge.pb.h + mcubridge.pb.c)
+    options_file = proto_dir / "mcubridge.options"
+    nanopb_out_arg = f"-f{options_file}:{cpp_out}" if options_file.exists() else str(cpp_out)
     c_cmd = [
         sys.executable, "-m", "grpc_tools.protoc",
         f"--proto_path={proto_dir}",
         f"--plugin=protoc-gen-nanopb={nanopb_plugin}",
-        f"--nanopb_out={cpp_out}",
+        f"--nanopb_out={nanopb_out_arg}",
         "mcubridge.proto",
     ]
     try:

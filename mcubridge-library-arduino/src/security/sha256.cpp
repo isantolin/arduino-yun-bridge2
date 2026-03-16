@@ -19,19 +19,7 @@
 
 #include <etl/algorithm.h>
 #include <etl/binary.h>
-
-// --- Platform-specific PROGMEM support ---
-#ifdef ARDUINO_ARCH_AVR
-#include <avr/pgmspace.h>
-#else
-#ifndef PROGMEM
-#define PROGMEM
-#endif
-#ifndef pgm_read_dword
-#define pgm_read_dword(addr) \
-  (*reinterpret_cast<const uint32_t*>(addr))  // NOLINT
-#endif
-#endif
+#include "hal/hal.h"
 
 // SHA-256 round constants (FIPS 180-4 §4.2.2).
 static const uint32_t K[64] PROGMEM = {

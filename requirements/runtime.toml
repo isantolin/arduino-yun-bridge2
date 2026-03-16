@@ -135,11 +135,11 @@ rationale = "Hex-dump utility used by diagnostic scripts [BUILD-ONLY]"
 [[dependency]]
 name = "nanopb"
 openwrt = "python3-nanopb"
-pip = "nanopb"
+pip = "nanopb==0.4.9.1"
 rationale = "Nanopb library for Protobuf generation [BUILD-ONLY]"
 
 [[dependency]]
 name = "grpcio-tools"
 openwrt = "python3-grpcio-tools"
-pip = "grpcio-tools"
+pip = "grpcio-tools==1.78.0"
 rationale = "Protobuf compiler tools for Python [BUILD-ONLY]"

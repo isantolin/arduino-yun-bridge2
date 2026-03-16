@@ -42,7 +42,6 @@ define Package/$(PKG_NAME)
 	TITLE:=MCU Bridge Daemon and Core Scripts
 	PKG_ARCH:=all
 	PROVIDES:=mcubridge
-	DEPENDS:=+python3
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
 		+python3 \

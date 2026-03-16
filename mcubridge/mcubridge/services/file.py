@@ -197,7 +197,7 @@ class FileComponent(BaseComponent):
 
                 await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("File not found"))
                 return False, None, "file_not_found"
-        except (ValueError, ValueError, OSError) as e:
+        except (ValueError, OSError) as e:
             logger.error("File operation %s failed: %s", operation, e)
             await self.ctx.send_frame(Status.ERROR.value, encode_status_reason(str(e)))
             return False, None, str(e)

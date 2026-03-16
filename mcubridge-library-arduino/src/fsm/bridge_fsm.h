@@ -234,10 +234,12 @@ struct SimpleTimer {
     return (id < N) && (active & (1U << id)) != 0;
   }
 
+  static constexpr uint32_t TIMER_OVERFLOW_THRESHOLD = 0x80000000UL;
+
   uint8_t check_expired(uint32_t now) {
     uint8_t expired = 0;
     for (uint8_t i = 0; i < N; ++i) {
-      if ((active & (1U << i)) && (now - deadline[i]) < 0x80000000UL) {
+      if ((active & (1U << i)) && (now - deadline[i]) < TIMER_OVERFLOW_THRESHOLD) {
         expired |= (1U << i);
         active &= ~(1U << i);
       }

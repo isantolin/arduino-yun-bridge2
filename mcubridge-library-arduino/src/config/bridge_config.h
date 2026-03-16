@@ -111,5 +111,14 @@ static constexpr uint32_t RX_DEDUPE_INTERVAL_MS = 1000UL;
 static constexpr uint16_t HKDF_KEY_LENGTH = 32U;
 static constexpr uint16_t KEY_AND_DIGEST_BUFFER_SIZE = 64U;
 
+// --- Hardware pin defaults (when NUM_DIGITAL_PINS is unavailable) ---
+static constexpr uint8_t AVR_DIGITAL_PINS = 14U;
+static constexpr uint8_t AVR_ANALOG_PINS = 6U;
+static constexpr uint8_t SAMD_DIGITAL_PINS = 20U;
+static constexpr uint8_t SAMD_ANALOG_PINS = 8U;
+static constexpr uint8_t FALLBACK_MAX_PIN = 32U;
+static constexpr uint16_t FALLBACK_FREE_MEMORY = 1024U;
+static constexpr uint32_t CAPABILITIES_FEAT_EXTENDED = 0x01U;
+
 }  // namespace config
 }  // namespace bridge

@@ -46,13 +46,6 @@ def _is_binary_packet(packet: bytes) -> bool:
         return False
     return packet[0] == protocol.PROTOCOL_VERSION
 
-async def serial_sender_not_ready(cmd: int, pl: bytes) -> bool:
-    """Fallback sender that logs a warning when the transport is not connected."""
-    _ = cmd
-    _ = pl
-    logger.warning("Attempted to send frame while serial transport is disconnected")
-    return False
-
 
 class SerialTransport:
     """High-performance asyncio serial transport."""

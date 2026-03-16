@@ -1,0 +1,43 @@
+# Nanopb field-level options for mcubridge.proto
+# Reduces RAM footprint by narrowing integer widths where protocol values fit.
+#
+# Fields that hold pin numbers, small counts, modes, or flags can safely use
+# uint8 (IS_8) or uint16 (IS_16) instead of the default uint32.
+
+# --- Pin operations ---
+mcubridge.PinMode.pin                   int_size:IS_8
+mcubridge.PinMode.mode                  int_size:IS_8
+mcubridge.DigitalWrite.pin              int_size:IS_8
+mcubridge.DigitalWrite.value            int_size:IS_8
+mcubridge.AnalogWrite.pin               int_size:IS_8
+mcubridge.AnalogWrite.value             int_size:IS_16
+mcubridge.PinRead.pin                   int_size:IS_8
+mcubridge.DigitalReadResponse.value     int_size:IS_8
+mcubridge.AnalogReadResponse.value      int_size:IS_16
+
+# --- Capabilities ---
+mcubridge.Capabilities.ver              int_size:IS_8
+mcubridge.Capabilities.arch             int_size:IS_8
+mcubridge.Capabilities.dig              int_size:IS_8
+mcubridge.Capabilities.ana              int_size:IS_8
+mcubridge.Capabilities.feat             int_size:IS_8
+
+# --- Version ---
+mcubridge.VersionResponse.major         int_size:IS_8
+mcubridge.VersionResponse.minor         int_size:IS_8
+
+# --- Mailbox ---
+mcubridge.MailboxProcessed.message_id   int_size:IS_16
+mcubridge.MailboxAvailableResponse.count int_size:IS_16
+
+# --- Ack ---
+mcubridge.AckPacket.command_id          int_size:IS_16
+
+# --- Handshake config ---
+mcubridge.HandshakeConfig.ack_timeout_ms      int_size:IS_16
+mcubridge.HandshakeConfig.ack_retry_limit     int_size:IS_8
+mcubridge.HandshakeConfig.response_timeout_ms int_size:IS_16
+
+# --- Process ---
+mcubridge.ProcessPollResponse.status    int_size:IS_8
+mcubridge.ProcessPollResponse.exit_code int_size:IS_16

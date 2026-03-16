@@ -82,12 +82,6 @@ pip = "cryptography==46.0.5"
 rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
 
 [[dependency]]
-name = "construct"
-openwrt = "python3-construct"
-pip = "construct==2.10.70"
-rationale = "Declarative binary protocol parsing"
-
-[[dependency]]
 name = "transitions"
 openwrt = "python3-transitions"
 pip = "transitions==0.9.3"

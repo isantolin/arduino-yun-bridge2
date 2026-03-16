@@ -17,6 +17,7 @@ class TestAccessor {
   void setUnsynchronized() { _bridge._fsm.resetFsm(); }
   void setIdle() {
     _bridge._fsm.resetFsm();
+    _bridge._fsm.stabilized();
     _bridge._fsm.handshakeStart();
     _bridge._fsm.handshakeComplete();
   }
@@ -29,7 +30,10 @@ class TestAccessor {
   uint8_t getRetryCount() const { return _bridge._retry_count; }
   void setRetryCount(uint8_t count) { _bridge._retry_count = count; }
 
-  void setStartupStabilizing(bool v) { _bridge._startup_stabilizing = v; }
+  void setStartupStabilizing(bool v) { 
+    if (v) _bridge._fsm.resetFsm(); // resetFsm starts at STATE_STABILIZING
+    else _bridge._fsm.stabilized();
+  }
   bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
   void assignSharedSecret(const uint8_t* first, const uint8_t* last) { _bridge._shared_secret.assign(first, last); }
   void setAckRetryLimit(uint8_t limit) { _bridge._ack_retry_limit = limit; }
@@ -89,7 +93,7 @@ class TestAccessor {
 
   bool isSecurityCheckPassed(uint16_t cmd) const { return _bridge._isSecurityCheckPassed(cmd); }
   void onStartupStabilized() { _bridge._onStartupStabilized(); }
-  bool getStartupStabilizing() const { return _bridge._startup_stabilizing; }
+  bool getStartupStabilizing() const { return _bridge._fsm.isStabilizing(); }
 
   void handleSystemCommand(const rpc::Frame& frame) {
     bridge::router::CommandContext ctx{&frame, frame.header.command_id, false, false};

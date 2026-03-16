@@ -74,6 +74,7 @@ void integrated_test_bridge_core() {
   BridgeClass localBridge(stream);
   localBridge.begin(115200, "secret");
   auto accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
 
   rpc::Frame sync;
   sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
@@ -121,7 +122,9 @@ void tearDown(void) {}
 
 int main(void) {
   Bridge.begin(115200);
-  bridge::test::TestAccessor::create(Bridge).setIdle();
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.onStartupStabilized();
+  ba.setIdle();
   UNITY_BEGIN();
   RUN_TEST(integrated_test_rle);
   RUN_TEST(integrated_test_protocol);

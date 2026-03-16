@@ -58,8 +58,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _pending_tx_queue(),
       _fsm(),
       _timers(),
-      _last_tick_millis(0),
-      _startup_stabilizing(false) {
+      _last_tick_millis(0) {
   _timers.clear();
 }
 
@@ -90,7 +89,6 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
     _hardware_serial->begin(arg_baudrate);
   }
 
-  _startup_stabilizing = true;
   _timers.start(bridge::scheduler::TIMER_STARTUP_STABILIZATION, bridge::now_ms());
 
   _shared_secret.clear();
@@ -128,7 +126,7 @@ void BridgeClass::process() {
   if (expired & (1U << bridge::scheduler::TIMER_BAUDRATE_CHANGE)) _onBaudrateChange();
   if (expired & (1U << bridge::scheduler::TIMER_STARTUP_STABILIZATION)) _onStartupStabilized();
 
-  if (_startup_stabilizing) {
+  if (_fsm.isStabilizing()) {
     uint16_t drain_limit = bridge::config::STARTUP_DRAIN_PER_TICK;
     while (_stream.available() > 0 && drain_limit-- > 0) _stream.read();
   } else {
@@ -554,11 +552,11 @@ void BridgeClass::_onBaudrateChange() {
 void BridgeClass::_onStartupStabilized() {
   uint16_t drain_limit = bridge::config::STARTUP_DRAIN_FINAL;
   while (_stream.available() > 0 && drain_limit-- > 0) _stream.read();
-  _startup_stabilizing = false;
+  _fsm.stabilized();
 }
 
 void BridgeClass::enterSafeState() {
-  _fsm.resetFsm(); _timers.clear(); _startup_stabilizing = false;
+  _fsm.resetFsm(); _timers.clear();
   _pending_baudrate = 0; _retry_count = 0; _clearPendingTxQueue();
   _frame_received = false; _rx_history.clear(); _consecutive_crc_errors = 0;
 #if BRIDGE_ENABLE_PROCESS

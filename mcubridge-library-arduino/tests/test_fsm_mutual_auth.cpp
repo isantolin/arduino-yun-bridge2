@@ -35,6 +35,7 @@ ProcessClass Process;
 void test_fsm_initial_state() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200);
+  bridge::test::TestAccessor::create(localBridge).onStartupStabilized();
   TEST_ASSERT(localBridge.isUnsynchronized());
   printf("  -> Initial state: OK\n");
 }
@@ -44,6 +45,7 @@ void test_mutual_auth_success() {
   const char* secret = "secret_1234567890123456";
   localBridge.begin(115200, secret, 23);
   auto accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
 
   // Prepare valid SYNC frame with correct Tag
   uint8_t nonce[16] = {0xAA};
@@ -75,6 +77,7 @@ void test_mutual_auth_failure_wrong_tag() {
   const char* secret = "secret_1234567890123456";
   localBridge.begin(115200, secret, 23);
   auto accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
 
   uint8_t nonce[16] = {0xAA};
   uint8_t wrong_tag[16] = {0xFF};
@@ -100,6 +103,7 @@ void test_mutual_auth_failure_malformed_length() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200, "secret", 6);
   auto accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
 
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
@@ -118,6 +122,7 @@ void test_fsm_transitions_running() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200);
   auto accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
 
   // Sync without secret
   rpc::Frame sync_frame;
@@ -149,6 +154,7 @@ void test_fsm_timeout_to_unsynchronized() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200);
   auto accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
 
   // Sync
   rpc::Frame sync_frame;

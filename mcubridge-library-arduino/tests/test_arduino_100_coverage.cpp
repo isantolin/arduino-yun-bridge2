@@ -28,6 +28,7 @@ namespace {
 void setup_coverage_env() {
   Bridge.begin();
   auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.onStartupStabilized();
   ba.setIdle();
 }
 

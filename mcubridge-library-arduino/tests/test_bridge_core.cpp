@@ -106,7 +106,10 @@ void sync_bridge(BiStream& stream) {
 void test_bridge_begin() {
   BiStream stream;
   reset_bridge(stream);
-  TEST_ASSERT(TestAccessor::create(Bridge).isUnsynchronized());
+  auto ba = TestAccessor::create(Bridge);
+  TEST_ASSERT(ba.getStartupStabilizing());
+  ba.onStartupStabilized();
+  TEST_ASSERT(ba.isUnsynchronized());
 }
 
 void test_bridge_send_frame() {

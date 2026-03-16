@@ -249,6 +249,8 @@ static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
   } else {
     bridge.begin();
   }
-  bridge::test::TestAccessor::create(bridge).setIdle();
+  auto ba = bridge::test::TestAccessor::create(bridge);
+  ba.onStartupStabilized();
+  ba.setIdle();
 }
 #endif

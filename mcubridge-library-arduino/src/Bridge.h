@@ -422,7 +422,6 @@ class BridgeClass
   bridge::fsm::BridgeFsm _fsm;
   bridge::scheduler::SimpleTimer<4> _timers;
   uint32_t _last_tick_millis;
-  bool _startup_stabilizing;
 };
 
 extern BridgeClass Bridge;

@@ -135,6 +135,7 @@ void test_bridge_core_gaps() {
 
   // Line 270: BridgeFsm::handshakeFailed()
   ba.fsmResetFsm();
+  ba.onStartupStabilized();
   ba.fsmHandshakeFailed();
   TEST_ASSERT(ba.isFault());
 

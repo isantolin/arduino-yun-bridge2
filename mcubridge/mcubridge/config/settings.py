@@ -24,15 +24,13 @@ logger = logging.getLogger(__name__)
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
-    """Load configuration from defaults, UCI, and environment variables (SIL 2).
+    """Load configuration from defaults and UCI (SIL 2).
 
-    Precedence (highest first): Environment Variables -> UCI -> Defaults.
+    Precedence (highest first): UCI -> Defaults.
 
     Returns:
         Tuple of (config_dict, source) where source is 'uci' or 'defaults'.
     """
-    import os
-
     source = "defaults"
     config = get_default_config()
 
@@ -43,14 +41,6 @@ def _load_raw_config() -> tuple[dict[str, Any], str]:
             source = "uci"
     except (OSError, ValueError) as err:
         logger.error("Failed to load UCI configuration (Operational Error): %s", err)
-
-    # [SIL-2] Environment Variable Overrides
-    for key, value in os.environ.items():
-        if key.startswith("MCUBRIDGE_"):
-            # Convert MCUBRIDGE_SERIAL_PORT to serial_port
-            clean_key = key[10:].lower()
-            config[clean_key] = value
-            source = "env" if source == "defaults" else source
 
     return config, source
 
@@ -65,13 +55,19 @@ def get_config_source() -> str:
     return _ConfigState.source
 
 
-def load_runtime_config() -> RuntimeConfig:
+def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfig:
     """Load, normalize, and validate the daemon configuration (SIL 2).
 
     This is the primary entry point for configuration loading. It ensures that
     the returned RuntimeConfig is valid and follows all flash protection rules.
+
+    Args:
+        overrides: Optional dictionary of configuration overrides (e.g. from CLI).
     """
     raw_values, source = _load_raw_config()
+    if overrides:
+        raw_values.update(overrides)
+        source = "cli"
     _ConfigState.source = source
 
     try:

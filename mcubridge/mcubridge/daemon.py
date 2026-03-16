@@ -248,8 +248,29 @@ class BridgeDaemon:
                     raise
 
 
+import argparse
+
 def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
-    config = load_runtime_config()
+    parser = argparse.ArgumentParser(description="Arduino MCU Bridge Daemon v2")
+    parser.add_argument("--serial-port", help="Serial port to use")
+    parser.add_argument("--serial-baud", type=int, help="Serial baud rate")
+    parser.add_argument("--mqtt-host", help="MQTT host")
+    parser.add_argument("--mqtt-port", type=int, help="MQTT port")
+    parser.add_argument("--mqtt-tls", type=int, help="Use TLS for MQTT (0 or 1)")
+    parser.add_argument("--serial-shared-secret", help="Shared secret for serial link")
+    parser.add_argument("--allowed-commands", help="Comma-separated list of allowed shell commands")
+    parser.add_argument("--non-interactive", action="store_true", help="Enable non-interactive mode")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    args = parser.parse_args()
+
+    # Filter out None values to avoid overriding UCI with Nones
+    overrides = {k.replace("-", "_"): v for k, v in vars(args).items() if v is not None}
+    if args.debug:
+        overrides["debug_logging"] = True
+    if args.allowed_commands:
+        overrides["allowed_commands"] = args.allowed_commands.split(",") if args.allowed_commands != "*" else "*"
+
+    config = load_runtime_config(overrides)
     configure_logging(config)
 
     # [MIL-SPEC] FIPS 140-3 Power-On Self-Tests (POST)

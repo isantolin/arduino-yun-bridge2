@@ -392,74 +392,83 @@ void BridgeClass::_handleAnalogWrite(const bridge::router::CommandContext& ctx) 
 }
 
 void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::PinRead>(ctx, [this](const rpc::payload::PinRead& msg) {
-    if (bridge::hal::isValidPin(msg.pin)) {
-      rpc::payload::DigitalReadResponse resp = {};
-      resp.value = static_cast<uint32_t>(::digitalRead(msg.pin));
-      _sendPbResponse(rpc::CommandId::CMD_DIGITAL_READ_RESP, resp);
-    } else {
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-    }
-  });
+  _handlePinRead<rpc::payload::DigitalReadResponse>(
+      ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP, bridge::hal::isValidPin,
+      [](uint8_t p) { return ::digitalRead(p); });
 }
 
 void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::PinRead>(ctx, [this](const rpc::payload::PinRead& msg) {
-    if (bridge::hal::isValidPin(msg.pin)) {
-      rpc::payload::AnalogReadResponse resp = {};
-      resp.value = static_cast<uint32_t>(::analogRead(msg.pin));
-      _sendPbResponse(rpc::CommandId::CMD_ANALOG_READ_RESP, resp);
-    } else {
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-    }
-  });
+  _handlePinRead<rpc::payload::AnalogReadResponse>(
+      ctx, rpc::CommandId::CMD_ANALOG_READ_RESP, bridge::hal::isValidPin,
+      [](uint8_t p) { return ::analogRead(p); });
 }
 
 void BridgeClass::_handleConsoleWrite(const bridge::router::CommandContext& ctx) {
-  _dispatchWithBytes<rpc::payload::ConsoleWrite>(ctx, &rpc::payload::ConsoleWrite::data, [](etl::span<const uint8_t> s) { Console._push(s); }, true);
+  _dispatchWithBytes<rpc::payload::ConsoleWrite>(
+      ctx, &rpc::payload::ConsoleWrite::data,
+      [](auto s) { Console._push(s); }, true);
 }
 
 #if BRIDGE_ENABLE_DATASTORE
 void BridgeClass::_handleDatastoreGetResp(const bridge::router::CommandContext& ctx) {
-  _dispatchWithBytes<rpc::payload::DatastoreGetResponse>(ctx, &rpc::payload::DatastoreGetResponse::value, [](etl::span<const uint8_t> s) { DataStore._onResponse(s); });
+  _dispatchWithBytes<rpc::payload::DatastoreGetResponse>(
+      ctx, &rpc::payload::DatastoreGetResponse::value,
+      [](auto s) { DataStore._onResponse(s); });
 }
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
 void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& ctx) {
-  _dispatchWithBytes<rpc::payload::MailboxPush>(ctx, &rpc::payload::MailboxPush::data, [](etl::span<const uint8_t> s) { Mailbox._onIncomingData(s); }, true);
+  _dispatchWithBytes<rpc::payload::MailboxPush>(
+      ctx, &rpc::payload::MailboxPush::data,
+      [](auto s) { Mailbox._onIncomingData(s); }, true);
 }
 void BridgeClass::_handleMailboxReadResp(const bridge::router::CommandContext& ctx) {
-  _dispatchWithBytes<rpc::payload::MailboxReadResponse>(ctx, &rpc::payload::MailboxReadResponse::content, [](etl::span<const uint8_t> s) { Mailbox._onIncomingData(s); });
+  _dispatchWithBytes<rpc::payload::MailboxReadResponse>(
+      ctx, &rpc::payload::MailboxReadResponse::content,
+      [](auto s) { Mailbox._onIncomingData(s); });
 }
 void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::MailboxAvailableResponse>(ctx, [](const rpc::payload::MailboxAvailableResponse& msg) { Mailbox._onAvailableResponse(msg); });
+  _withPayload<rpc::payload::MailboxAvailableResponse>(
+      ctx, [](auto& msg) { Mailbox._onAvailableResponse(msg); });
 }
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) { _withAck(ctx, [](){}); }
+void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
+  // [SIL-2] Placeholder for future FS write implementation. Currently ACK only.
+  _withAck(ctx, []() {});
+}
 void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
-  _dispatchWithBytes<rpc::payload::FileReadResponse>(ctx, &rpc::payload::FileReadResponse::content, [](etl::span<const uint8_t> s) { FileSystem._onResponse(s); });
+  _dispatchWithBytes<rpc::payload::FileReadResponse>(
+      ctx, &rpc::payload::FileReadResponse::content,
+      [](auto s) { FileSystem._onResponse(s); });
 }
 #endif
 
 #if BRIDGE_ENABLE_PROCESS
 void BridgeClass::_handleProcessRunAsyncResp(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::ProcessRunAsyncResponse>(ctx, [](const rpc::payload::ProcessRunAsyncResponse& msg) { Process._onRunAsyncResponse(msg); });
+  _withPayload<rpc::payload::ProcessRunAsyncResponse>(
+      ctx, [](auto& msg) { Process._onRunAsyncResponse(msg); });
 }
 void BridgeClass::_handleProcessPollResp(const bridge::router::CommandContext& ctx) {
   uint8_t stdout_buffer[rpc::MAX_PAYLOAD_SIZE];
   uint8_t stderr_buffer[rpc::MAX_PAYLOAD_SIZE];
-  etl::span<uint8_t> stdout_span(stdout_buffer, sizeof(stdout_buffer));
-  etl::span<uint8_t> stderr_span(stderr_buffer, sizeof(stderr_buffer));
+  etl::span<uint8_t> stdout_span(stdout_buffer);
+  etl::span<uint8_t> stderr_span(stderr_buffer);
+
   rpc::payload::ProcessPollResponse msg = {};
   rpc::util::pb_setup_decode_span(msg.stdout_data, stdout_span);
   rpc::util::pb_setup_decode_span(msg.stderr_data, stderr_span);
 
-  _withPayload<rpc::payload::ProcessPollResponse>(ctx, [stdout_span, stderr_span](const rpc::payload::ProcessPollResponse& inner_msg) {
-    Process._onPollResponse(inner_msg, etl::span<const uint8_t>(stdout_span.data(), stdout_span.size()), etl::span<const uint8_t>(stderr_span.data(), stderr_span.size()));
-  }, msg);
+  _withPayload<rpc::payload::ProcessPollResponse>(
+      ctx,
+      [&](const auto& inner_msg) {
+        Process._onPollResponse(
+            inner_msg, etl::span<const uint8_t>(stdout_span),
+            etl::span<const uint8_t>(stderr_span));
+      },
+      msg);
 }
 #endif
 

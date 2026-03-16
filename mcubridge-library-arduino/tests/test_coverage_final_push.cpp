@@ -333,10 +333,9 @@ void test_apply_timing_config_with_payload() {
   pb_encode(&os, rpc::Payload::Descriptor<rpc::payload::HandshakeConfig>::fields(), &config);
 
   ba.applyTimingConfig(buffer, os.bytes_written);
-
-  // _applyTimingConfig is currently a no-op; verify it doesn't crash
-  // Default ack_timeout_ms remains unchanged
-  TEST_ASSERT_EQUAL_UINT16(200, ba.getAckTimeoutMs());
+  
+  // _applyTimingConfig updates the timeout to 500ms
+  TEST_ASSERT_EQUAL_UINT16(500, ba.getAckTimeoutMs());
 }
 
 // =====================================================================

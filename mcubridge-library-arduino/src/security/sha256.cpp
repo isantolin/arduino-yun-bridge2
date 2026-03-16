@@ -19,7 +19,7 @@
 
 #include <etl/algorithm.h>
 #include <etl/binary.h>
-#include "hal/hal.h"
+#include "hal/progmem_compat.h"
 
 // SHA-256 round constants (FIPS 180-4 §4.2.2).
 static const uint32_t K[64] PROGMEM = {

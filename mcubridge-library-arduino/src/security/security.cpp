@@ -7,7 +7,7 @@
 #include <Arduino.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include "hal/hal.h"
+#include "hal/progmem_compat.h"
 
 namespace rpc {
 namespace security {

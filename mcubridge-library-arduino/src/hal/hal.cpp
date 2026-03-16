@@ -12,8 +12,8 @@ namespace bridge {
 namespace hal {
 
 bool isValidPin(uint8_t pin) {
-  (void)pin;
 #if defined(BRIDGE_HOST_TEST)
+  (void)pin;
   return true; // Always allow in host tests/emulator
 #elif defined(NUM_DIGITAL_PINS)
   return pin < NUM_DIGITAL_PINS;

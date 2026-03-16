@@ -380,15 +380,15 @@ void BridgeClass::_handleSetBaudrate(const bridge::router::CommandContext& ctx) 
 }
 
 void BridgeClass::_handleSetPinMode(const bridge::router::CommandContext& ctx) {
-  _handlePinSetter<rpc::payload::PinMode>(ctx, [](const rpc::payload::PinMode& msg) { ::pinMode(msg.pin, msg.mode); });
+  _handlePinSetter<rpc::payload::PinMode>(ctx, [](const auto& msg) { ::pinMode(msg.pin, msg.mode); });
 }
 
 void BridgeClass::_handleDigitalWrite(const bridge::router::CommandContext& ctx) {
-  _handlePinSetter<rpc::payload::DigitalWrite>(ctx, [](const rpc::payload::DigitalWrite& msg) { ::digitalWrite(msg.pin, msg.value); });
+  _handlePinSetter<rpc::payload::DigitalWrite>(ctx, [](const auto& msg) { ::digitalWrite(msg.pin, msg.value); });
 }
 
 void BridgeClass::_handleAnalogWrite(const bridge::router::CommandContext& ctx) {
-  _handlePinSetter<rpc::payload::AnalogWrite>(ctx, [](const rpc::payload::AnalogWrite& msg) { ::analogWrite(msg.pin, msg.value); });
+  _handlePinSetter<rpc::payload::AnalogWrite>(ctx, [](const auto& msg) { ::analogWrite(msg.pin, msg.value); });
 }
 
 void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx) {

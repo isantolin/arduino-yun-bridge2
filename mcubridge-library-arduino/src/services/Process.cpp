@@ -9,8 +9,23 @@ ProcessClass::ProcessClass() {}
 void ProcessClass::runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler) {
   if (_pending_async_runs.full()) return;
   rpc::payload::ProcessRunAsync msg = {};
-  rpc::util::pb_copy_string(command, msg.command, sizeof(msg.command));
-  (void)args;
+  
+  // Concatenate command + args into the fixed-size proto field
+  char buffer[sizeof(msg.command)];
+  etl::copy_n(command.data(), etl::min(command.size(), sizeof(buffer) - 1), buffer);
+  size_t offset = etl::min(command.size(), sizeof(buffer) - 1);
+  buffer[offset] = '\0';
+
+  for (const auto& arg : args) {
+    if (offset + arg.size() + 1 >= sizeof(buffer)) break;
+    buffer[offset++] = ' ';
+    etl::copy_n(arg.data(), arg.size(), buffer + offset);
+    offset += arg.size();
+    buffer[offset] = '\0';
+  }
+
+  rpc::util::pb_copy_string(etl::string_view(buffer), msg.command, sizeof(msg.command));
+
   if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, msg)) {
     _pending_async_runs.push({handler});
   }

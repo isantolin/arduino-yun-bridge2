@@ -183,33 +183,30 @@ class BridgeClass
   bool sendFrame(rpc::StatusCode status_code, etl::span<const uint8_t> payload = {});
   bool sendFrame(rpc::CommandId command_id, etl::span<const uint8_t> payload = {});
   bool sendChunkyFrame(rpc::CommandId command_id, etl::span<const uint8_t> header, etl::span<const uint8_t> data) {
-    uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-    size_t len = etl::min(header.size() + data.size(), sizeof(buffer));
-    etl::copy_n(header.data(), etl::min(header.size(), len), buffer);
-    if (len > header.size()) etl::copy_n(data.data(), len - header.size(), buffer + header.size());
-    return sendFrame(command_id, etl::span<const uint8_t>(buffer, len));
+    size_t len = etl::min(header.size() + data.size(), sizeof(_transient_buffer));
+    etl::copy_n(header.data(), etl::min(header.size(), len), _transient_buffer);
+    if (len > header.size()) etl::copy_n(data.data(), len - header.size(), _transient_buffer + header.size());
+    return sendFrame(command_id, etl::span<const uint8_t>(_transient_buffer, len));
   }
 
   template <typename T>
   bool sendPbCommand(rpc::CommandId command_id, const T& msg) {
-    uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer, sizeof(_transient_buffer));
     if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
       return false;
     }
     return sendFrame(command_id,
-                       etl::span<const uint8_t>(buffer, stream.bytes_written));
+                       etl::span<const uint8_t>(_transient_buffer, stream.bytes_written));
   }
 
   template <typename T>
   bool sendPbFrame(rpc::StatusCode status_code, const T& msg) {
-    uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer, sizeof(_transient_buffer));
     if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
       return false;
     }
     _sendRawFrame(rpc::to_underlying(status_code),
-                  etl::span<const uint8_t>(buffer, stream.bytes_written));
+                  etl::span<const uint8_t>(_transient_buffer, stream.bytes_written));
     return true;
   }
 
@@ -361,8 +358,7 @@ class BridgeClass
 
   template <typename TPacket, typename F, typename TField>
   void _dispatchWithBytes(const bridge::router::CommandContext& ctx, TField TPacket::*field, F handler, bool ack = false) {
-    uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-    etl::span<uint8_t> span(buffer, sizeof(buffer));
+    etl::span<uint8_t> span(_transient_buffer, sizeof(_transient_buffer));
     TPacket msg = {};
     rpc::util::pb_setup_decode_span(msg.*field, span);
 
@@ -420,7 +416,13 @@ class BridgeClass
   rpc::CobsState _cobs;
   rpc::FrameBuilder _frame_builder;
   etl::optional<rpc::FrameError> _last_parse_error;
-  bool _frame_received;
+  
+  struct {
+    uint8_t frame_received : 1;
+    uint8_t startup_stabilized : 1;
+    uint8_t reserved : 6;
+  } _flags;
+
   rpc::Frame _rx_frame;
   etl::random_xorshift _rng;
   uint16_t _last_command_id;
@@ -439,12 +441,23 @@ class BridgeClass
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
 
+  // [OPTIMIZATION] Shared buffer for transient operations (TX encoding, RX processing)
+  // Large enough for MAX_RAW_FRAME_SIZE + 2 (COBS overhead)
+  uint8_t _transient_buffer[rpc::MAX_RAW_FRAME_SIZE + 2];
+
   struct PendingTxFrame {
     uint16_t command_id;
     uint16_t payload_length;
-    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+    uint16_t buffer_offset;
   };
   etl::queue<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES> _pending_tx_queue;
+#if defined(ARDUINO_ARCH_AVR)
+  // On AVR, we only have space for 1 pending frame anyway.
+  uint8_t _tx_payload_pool[rpc::MAX_PAYLOAD_SIZE];
+#else
+  uint8_t _tx_payload_pool[bridge::config::MAX_PENDING_TX_FRAMES * rpc::MAX_PAYLOAD_SIZE];
+#endif
+  uint16_t _tx_pool_head;
 
   bridge::fsm::BridgeFsm _fsm;
   bridge::scheduler::SimpleTimer<4> _timers;

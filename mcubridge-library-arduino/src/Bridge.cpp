@@ -40,7 +40,8 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _shared_secret(),
       _cobs{0, 0, 0, 0, true, {0}},
       _frame_builder(),
-      _frame_received(false),
+      _last_parse_error(),
+      _flags{false, false, 0},
       _rx_frame{},
       _rng(millis()),
       _last_command_id(0),
@@ -57,9 +58,12 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _get_free_memory_handler(),
       _status_handler(),
       _pending_tx_queue(),
+      _tx_pool_head(0),
       _fsm(),
       _timers(),
       _last_tick_millis(0) {
+  _flags.frame_received = false;
+  _flags.startup_stabilized = false;
   _timers.clear();
 }
 
@@ -134,12 +138,12 @@ void BridgeClass::process() {
     BRIDGE_ATOMIC_BLOCK {
       while (_stream.available() > 0) {
         _processIncomingByte(_stream.read());
-        if (_frame_received || _last_parse_error.has_value()) break;
+        if (_flags.frame_received || _last_parse_error.has_value()) break;
       }
     }
   }
 
-  if (_frame_received) {
+  if (_flags.frame_received) {
     _handleReceivedFrame();
   } else if (_last_parse_error.has_value()) {
     rpc::FrameError error = _last_parse_error.value();
@@ -159,17 +163,17 @@ void BridgeClass::process() {
 void BridgeClass::_processIncomingByte(uint8_t byte) {
   if (byte == rpc::RPC_FRAME_DELIMITER) {
     if (_cobs.in_sync && _cobs.bytes_received >= rpc::MIN_FRAME_SIZE) {
-      etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> decoded;
+      // [OPTIMIZATION] Use shared transient buffer for decoding
       size_t decoded_len = rpc::cobs::decode(
           etl::span<const uint8_t>(_cobs.buffer.data(), _cobs.bytes_received),
-          etl::span<uint8_t>(decoded.data(), decoded.size()));
+          etl::span<uint8_t>(_transient_buffer, sizeof(_transient_buffer)));
 
       if (decoded_len > 0) {
         rpc::FrameParser parser;
-        auto result = parser.parse(etl::span<const uint8_t>(decoded.data(), decoded_len));
+        auto result = parser.parse(etl::span<const uint8_t>(_transient_buffer, decoded_len));
         if (result.has_value()) {
           _rx_frame = result.value();
-          _frame_received = true;
+          _flags.frame_received = true;
           _consecutive_crc_errors = 0;
         } else {
           _last_parse_error = result.error();
@@ -194,7 +198,7 @@ void BridgeClass::_processIncomingByte(uint8_t byte) {
 }
 
 void BridgeClass::_handleReceivedFrame() {
-  _frame_received = false;
+  _flags.frame_received = false;
   rpc::Frame frame = _rx_frame;
   if (_isRecentDuplicateRx(frame)) {
     if (rpc::requires_ack(frame.header.command_id)) _sendAckAndFlush(frame.header.command_id);
@@ -452,10 +456,14 @@ void BridgeClass::_handleProcessRunAsyncResp(const bridge::router::CommandContex
       ctx, [](auto& msg) { Process._onRunAsyncResponse(msg); });
 }
 void BridgeClass::_handleProcessPollResp(const bridge::router::CommandContext& ctx) {
-  uint8_t stdout_buffer[rpc::MAX_PAYLOAD_SIZE];
-  uint8_t stderr_buffer[rpc::MAX_PAYLOAD_SIZE];
-  etl::span<uint8_t> stdout_span(stdout_buffer);
-  etl::span<uint8_t> stderr_span(stderr_buffer);
+  // [OPTIMIZATION] Reuse transient buffer for STDOUT/STDERR decoding.
+  // We divide the shared buffer in two halves.
+  static constexpr size_t HALF_BUF = rpc::MAX_PAYLOAD_SIZE / 2;
+  uint8_t* stdout_ptr = _transient_buffer;
+  uint8_t* stderr_ptr = _transient_buffer + HALF_BUF;
+  
+  etl::span<uint8_t> stdout_span(stdout_ptr, HALF_BUF);
+  etl::span<uint8_t> stderr_span(stderr_ptr, HALF_BUF);
 
   rpc::payload::ProcessPollResponse msg = {};
   rpc::util::pb_setup_decode_span(msg.stdout_data, stdout_span);
@@ -510,7 +518,7 @@ void BridgeClass::_retransmitLastFrame() {
     }
   }
   if (has_frame) {
-    _sendRawFrame(f.command_id, etl::span<const uint8_t>(f.payload.data(), f.payload_length));
+    _sendRawFrame(f.command_id, etl::span<const uint8_t>(_tx_payload_pool + f.buffer_offset, f.payload_length));
     _retry_count++;
   }
 }
@@ -548,7 +556,7 @@ void BridgeClass::enterSafeState() {
   BRIDGE_ATOMIC_BLOCK { _fsm.resetFsm(); }
   _timers.clear();
   _pending_baudrate = 0; _retry_count = 0; _clearPendingTxQueue();
-  _frame_received = false; _rx_history.clear(); _consecutive_crc_errors = 0;
+  _flags.frame_received = false; _rx_history.clear(); _consecutive_crc_errors = 0;
 #if BRIDGE_ENABLE_PROCESS
   Process.reset();
 #endif
@@ -570,15 +578,14 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, const __FlashStringHel
     emitStatus(status_code, etl::span<const uint8_t>());
     return;
   }
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
 #if defined(ARDUINO_ARCH_AVR)
-  strncpy_P(reinterpret_cast<char*>(buffer), (PGM_P)message, sizeof(buffer));
+  strncpy_P(reinterpret_cast<char*>(_transient_buffer), (PGM_P)message, sizeof(_transient_buffer));
 #else
-  strncpy(reinterpret_cast<char*>(buffer), reinterpret_cast<const char*>(message), sizeof(buffer));
+  strncpy(reinterpret_cast<char*>(_transient_buffer), reinterpret_cast<const char*>(message), sizeof(_transient_buffer));
 #endif
-  buffer[sizeof(buffer) - 1] = '\0';
-  size_t len = strlen(reinterpret_cast<char*>(buffer));
-  emitStatus(status_code, etl::span<const uint8_t>(buffer, len));
+  _transient_buffer[sizeof(_transient_buffer) - 1] = '\0';
+  size_t len = strlen(reinterpret_cast<char*>(_transient_buffer));
+  emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer, len));
 }
 
 bool BridgeClass::sendFrame(rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
@@ -590,13 +597,17 @@ bool BridgeClass::sendFrame(rpc::CommandId command_id, etl::span<const uint8_t> 
 }
 
 void BridgeClass::_sendRawFrame(uint16_t command_id, etl::span<const uint8_t> payload) {
-  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw;
-  size_t raw_len = _frame_builder.build(raw, command_id, payload);
+  // [OPTIMIZATION] Build raw frame on stack (safe now that other buffers are static)
+  // and encode to the shared static transient buffer.
+  uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
+  
+  size_t raw_len = _frame_builder.build(etl::span<uint8_t>(raw_buffer, sizeof(raw_buffer)), command_id, payload);
   if (raw_len > 0) {
-    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> cobs;
-    size_t enc_len = rpc::cobs::encode(etl::span<const uint8_t>(raw.data(), raw_len), etl::span<uint8_t>(cobs.data(), cobs.size()));
+    size_t enc_len = rpc::cobs::encode(
+        etl::span<const uint8_t>(raw_buffer, raw_len),
+        etl::span<uint8_t>(_transient_buffer, sizeof(_transient_buffer)));
     if (enc_len > 0) {
-      _stream.write(cobs.data(), enc_len);
+      _stream.write(_transient_buffer, enc_len);
       _stream.write(rpc::RPC_FRAME_DELIMITER);
       flushStream();
     }
@@ -613,7 +624,7 @@ void BridgeClass::_flushPendingTxQueue() {
     }
   }
   if (has_frame) {
-    _sendRawFrame(f.command_id, etl::span<const uint8_t>(f.payload.data(), f.payload_length));
+    _sendRawFrame(f.command_id, etl::span<const uint8_t>(_tx_payload_pool + f.buffer_offset, f.payload_length));
     BRIDGE_ATOMIC_BLOCK { _fsm.sendCritical(); }
     _retry_count = 0;
     _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT, bridge::now_ms());
@@ -622,11 +633,23 @@ void BridgeClass::_flushPendingTxQueue() {
 }
 
 void BridgeClass::_clearPendingTxQueue() {
-  BRIDGE_ATOMIC_BLOCK { while (!_pending_tx_queue.empty()) _pending_tx_queue.pop(); }
+  BRIDGE_ATOMIC_BLOCK { 
+    while (!_pending_tx_queue.empty()) _pending_tx_queue.pop();
+    _tx_pool_head = 0;
+  }
 }
 
 void BridgeClass::_clearAckState() {
-  BRIDGE_ATOMIC_BLOCK { if (_fsm.isAwaitingAck()) _fsm.ackReceived(); }
+  BRIDGE_ATOMIC_BLOCK { 
+    if (_fsm.isAwaitingAck()) {
+      _fsm.ackReceived();
+      if (!_pending_tx_queue.empty()) {
+        _pending_tx_queue.pop();
+        // [OPTIMIZATION] Reset pool if all pending ACKs are done
+        if (_pending_tx_queue.empty()) _tx_pool_head = 0;
+      }
+    }
+  }
   _retry_count = 0;
 }
 
@@ -649,8 +672,18 @@ bool BridgeClass::_sendFrame(uint16_t command_id, etl::span<const uint8_t> paylo
 
   if (rpc::requires_ack(command_id)) {
     if (_isQueueFull()) return false;
-    PendingTxFrame f; f.command_id = command_id; f.payload_length = static_cast<uint16_t>(payload.size());
-    etl::copy_n(payload.data(), f.payload_length, f.payload.begin());
+    
+    // [OPTIMIZATION] Check if we have space in the shared TX pool
+    if (_tx_pool_head + payload.size() > sizeof(_tx_payload_pool)) return false;
+
+    PendingTxFrame f; 
+    f.command_id = command_id; 
+    f.payload_length = static_cast<uint16_t>(payload.size());
+    f.buffer_offset = _tx_pool_head;
+    
+    etl::copy_n(payload.data(), f.payload_length, _tx_payload_pool + _tx_pool_head);
+    _tx_pool_head += f.payload_length;
+
     BRIDGE_ATOMIC_BLOCK { _pending_tx_queue.push(f); }
     _flushPendingTxQueue();
     return true;

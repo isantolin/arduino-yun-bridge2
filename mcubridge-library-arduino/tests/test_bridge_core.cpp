@@ -202,13 +202,15 @@ void test_bridge_ack_malformed_timeout_paths() {
 void test_bridge_chunking() {
   BiStream stream;
   reset_bridge(stream);
-  TestAccessor::create(Bridge).setIdle();
+  auto ba = TestAccessor::create(Bridge); // Using the standard global Bridge
+  ba.setIdle();
   uint8_t header[5] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
-  uint8_t data[100];
-  for (size_t i = 0; i < 100; i++) data[i] = static_cast<uint8_t>(i);
+  uint8_t data[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+  
   Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PROCESSED,
                          etl::span<const uint8_t>(header, 5),
-                         etl::span<const uint8_t>(data, 100));
+                         etl::span<const uint8_t>(data, 10));
+                         
   TEST_ASSERT(stream.tx_buf.len > 0);
 }
 

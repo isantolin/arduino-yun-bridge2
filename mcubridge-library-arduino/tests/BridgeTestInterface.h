@@ -52,10 +52,13 @@ class TestAccessor {
   uint16_t getAckTimeoutMs() const { return _bridge._ack_timeout_ms; }
 
   void pushPendingTxFrame(uint16_t cmd, uint16_t len, const uint8_t* data) {
+    if (_bridge._tx_pool_head + len > sizeof(_bridge._tx_payload_pool)) return;
     BridgeClass::PendingTxFrame f;
     f.command_id = cmd;
     f.payload_length = len;
-    etl::copy_n(data, len, f.payload.begin());
+    f.buffer_offset = _bridge._tx_pool_head;
+    etl::copy_n(data, len, _bridge._tx_payload_pool + _bridge._tx_pool_head);
+    _bridge._tx_pool_head += len;
     _bridge._pending_tx_queue.push(f);
   }
   void flushPendingTxQueue() { _bridge._flushPendingTxQueue(); }
@@ -82,6 +85,8 @@ class TestAccessor {
     BridgeClass::PendingTxFrame f;
     f.command_id = cmd;
     f.payload_length = len;
+    f.buffer_offset = _bridge._tx_pool_head;
+    _bridge._tx_pool_head += len; // Simulate dummy data skip
     _bridge._pending_tx_queue.push(f);
   }
 

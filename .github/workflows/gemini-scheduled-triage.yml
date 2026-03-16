@@ -67,7 +67,7 @@ jobs:
       - name: 'Find untriaged issues'
         id: 'find_issues'
         env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           GITHUB_REPOSITORY: '${{ github.repository }}'
           GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN || github.token }}'
         run: |-
@@ -92,7 +92,7 @@ jobs:
           ${{ steps.find_issues.outputs.issues_to_triage != '[]' }}
         uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
         env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           GITHUB_TOKEN: '' # Do not pass any auth token here since this runs on untrusted inputs
           ISSUES_TO_TRIAGE: '${{ steps.find_issues.outputs.issues_to_triage }}'
           REPOSITORY: '${{ github.repository }}'
@@ -159,7 +159,7 @@ jobs:
 
       - name: 'Apply labels'
         env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           AVAILABLE_LABELS: '${{ needs.triage.outputs.available_labels }}'
           TRIAGED_ISSUES: '${{ needs.triage.outputs.triaged_issues }}'
         uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd' # ratchet:actions/github-script@v8.0.0

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 import google.protobuf.message
 import msgspec
 import tenacity
-from construct import ConstructError
+
 from transitions import Machine
 
 from ..config.const import (
@@ -443,7 +443,7 @@ class SerialHandshakeManager:
                 features=cap.feat,
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
-        except (ConstructError, TypeError, ValueError, KeyError) as exc:
+        except (ValueError, TypeError, ValueError, KeyError) as exc:
             self._logger.warning("Failed to unpack capabilities: %s", exc)
 
     async def handle_link_reset_resp(self, payload: bytes) -> bool:

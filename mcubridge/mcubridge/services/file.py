@@ -11,7 +11,7 @@ from typing import Any
 
 import zict
 from aiomqtt.message import Message
-from construct import ConstructError
+
 
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, FileAction, Status
@@ -197,7 +197,7 @@ class FileComponent(BaseComponent):
 
                 await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("File not found"))
                 return False, None, "file_not_found"
-        except (ConstructError, ValueError, OSError) as e:
+        except (ValueError, ValueError, OSError) as e:
             logger.error("File operation %s failed: %s", operation, e)
             await self.ctx.send_frame(Status.ERROR.value, encode_status_reason(str(e)))
             return False, None, str(e)

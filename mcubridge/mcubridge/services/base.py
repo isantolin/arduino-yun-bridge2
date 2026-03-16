@@ -9,7 +9,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any, Deque, Protocol, TypeVar
 
 from aiomqtt.message import Message
-from construct import ConstructError
+
 
 from ..config.settings import RuntimeConfig
 from ..protocol.structures import QueuedPublish
@@ -148,7 +148,7 @@ class BaseComponent:
         """Safely decode an RPC payload using the provided packet class."""
         try:
             return packet_cls.decode(payload, command_id)
-        except (ConstructError, ValueError):
+        except (ValueError):
             logger.warning("Malformed %s payload: %s", packet_cls.__name__, payload.hex())
             return None
 

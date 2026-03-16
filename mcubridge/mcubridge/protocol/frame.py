@@ -24,9 +24,9 @@ before transmission.
 
 from __future__ import annotations
 
+import struct
+from binascii import crc32
 import msgspec
-from construct import ConstructError, StreamError  # type: ignore
-from mcubridge.protocol.structures import FRAME_STRUCT
 
 from . import protocol
 
@@ -57,65 +57,64 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
     @staticmethod
     def build(command_id: int, payload: bytes = b"") -> bytes:
-        """Build a raw frame (header + payload + CRC) for COBS encoding.
-
-        Implementation using 'construct' library for declarative serialization.
-        """
+        """Build a raw frame (header + payload + CRC) for COBS encoding."""
         payload_len = len(payload)
         if payload_len > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(f"Payload too large ({payload_len} bytes); " f"max is {protocol.MAX_PAYLOAD_SIZE}")
+            raise ValueError(f"Payload too large ({payload_len} bytes); max is {protocol.MAX_PAYLOAD_SIZE}")
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
-        # [SIL-2] Decompose command ID for BitStruct is handled by CommandIdAdapter in structures.py
-        return FRAME_STRUCT.build(
-            {
-                "content": {
-                    "value": {
-                        "header": {
-                            "version": protocol.PROTOCOL_VERSION,
-                            "payload_len": payload_len,
-                            "command_id": command_id,
-                        },
-                        "payload": payload,
-                    }
-                }
-            }
+        header_bytes = struct.pack(
+            protocol.CRC_COVERED_HEADER_FORMAT,
+            protocol.PROTOCOL_VERSION,
+            payload_len,
+            command_id
         )
+
+        frame_content = header_bytes + payload
+        crc_val = crc32(frame_content) & 0xFFFFFFFF
+
+        crc_bytes = struct.pack(protocol.CRC_FORMAT, crc_val)
+
+        return frame_content + crc_bytes
 
     @staticmethod
     def parse(raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, bytes]:
-        """Parse a decoded frame and validate header, payload, and CRC.
-
-        Implementation using 'construct' library for declarative parsing.
-        """
+        """Parse a decoded frame and validate header, payload, and CRC."""
         data_bytes = bytes(raw_frame_buffer)
         if len(data_bytes) < protocol.MIN_FRAME_SIZE:
             raise ValueError(f"Incomplete frame: size {len(data_bytes)} < {protocol.MIN_FRAME_SIZE}")
 
+        header_bytes = data_bytes[:protocol.CRC_COVERED_HEADER_SIZE]
         try:
-            container = FRAME_STRUCT.parse(data_bytes)
-        except (
-            ValueError,
-            TypeError,
-            AttributeError,
-            KeyError,
-            IndexError,
-            msgspec.DecodeError,
-            ConstructError,
-            StreamError,  # type: ignore
-        ) as e:  # type: ignore
-            raise ValueError(f"Frame parsing failed: {e}") from e
+            version, payload_len, command_id = struct.unpack(
+                protocol.CRC_COVERED_HEADER_FORMAT,
+                header_bytes
+            )
+        except struct.error as e:
+            raise ValueError(f"Malformed header structure: {e}") from e
 
-        header = container.content.value.header
-        if header.version != protocol.PROTOCOL_VERSION:
-            raise ValueError(f"Invalid version {header.version} != {protocol.PROTOCOL_VERSION}")
+        if version != protocol.PROTOCOL_VERSION:
+            raise ValueError(f"Invalid version {version} != {protocol.PROTOCOL_VERSION}")
 
-        payload_bytes = container.content.value.payload
-        if len(payload_bytes) != header.payload_len:
-            raise ValueError(f"Payload length mismatch: {len(payload_bytes)} != {header.payload_len}")
+        expected_total_size = protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE
+        if len(data_bytes) != expected_total_size:
+            raise ValueError(f"Frame length mismatch: expected {expected_total_size}, got {len(data_bytes)}")
 
-        return int(header.command_id), payload_bytes
+        payload_start = protocol.CRC_COVERED_HEADER_SIZE
+        payload_end = payload_start + payload_len
+        payload = data_bytes[payload_start:payload_end]
+
+        content_for_crc = data_bytes[:payload_end]
+        expected_crc = crc32(content_for_crc) & 0xFFFFFFFF
+
+        crc_bytes = data_bytes[payload_end:]
+        (received_crc,) = struct.unpack(protocol.CRC_FORMAT, crc_bytes)
+
+        if expected_crc != received_crc:
+            raise ValueError(f"CRC mismatch: expected {expected_crc:08X}, got {received_crc:08X}")
+
+        return command_id, payload
 
     def to_bytes(self) -> bytes:
         """Serialize the instance using :meth:`build`."""
@@ -126,3 +125,4 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
         command_id, payload = cls.parse(raw_frame_buffer)
         return cls(command_id=command_id, payload=payload)
+

@@ -6,7 +6,7 @@ import logging
 
 import msgspec
 from aiomqtt.message import Message
-from construct import ConstructError
+
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     Command,
@@ -45,7 +45,7 @@ class MailboxComponent(BaseComponent):
             try:
                 packet = MailboxProcessedPacket.decode(payload, Command.CMD_MAILBOX_PROCESSED)
                 message_id = packet.message_id
-            except (ConstructError, ValueError) as exc:
+            except (ValueError, ValueError) as exc:
                 logger.warning("MCU > Malformed Mailbox processed payload: %s", exc)
 
         if message_id is not None:

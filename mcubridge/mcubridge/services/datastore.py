@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from aiomqtt.message import Message
-from construct import ConstructError
+
 from mcubridge.protocol.protocol import (
     Command,
     DatastoreAction,
@@ -46,7 +46,7 @@ class DatastoreComponent(BaseComponent):
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
         try:
             packet = DatastoreGetPacket.decode(payload, Command.CMD_DATASTORE_GET)
-        except (ConstructError, ValueError):
+        except (ValueError):
             logger.warning(
                 "Malformed DATASTORE_GET payload: %s",
                 payload.hex() if payload else "(empty)",

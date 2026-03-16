@@ -58,7 +58,6 @@ define Package/$(PKG_NAME)
 		+python3-tenacity \
 		+python3-uvloop \
 		+python3-cryptography \
-		+python3-construct \
 		+python3-transitions \
 		+python3-typer \
 		+python3-structlog \

@@ -1,7 +1,7 @@
 """MCU Bridge Data Structures and Schemas.
 
 SINGLE SOURCE OF TRUTH for all data structures.
-Improved robustness for binary parsing (SIL-2) using Construct + Msgspec.
+Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import time
-from binascii import crc32
 from collections.abc import Iterable
 from enum import IntEnum
 from pathlib import Path
@@ -25,7 +24,6 @@ from typing import (
     cast,
 )
 
-import construct as construct_raw
 import google.protobuf.message
 import msgspec
 from mcubridge.protocol import mcubridge_pb2
@@ -34,16 +32,6 @@ from . import protocol
 
 if TYPE_CHECKING:
     from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
-
-    construct: Any = construct_raw
-
-    Construct = construct_raw.Construct[Any]
-else:
-    construct = construct_raw
-
-    Construct = construct_raw.Construct
-
-BinStruct: Final = construct.Struct
 
 
 # [SIL-2] DRY: Single source of truth for capability feature bit positions.
@@ -384,55 +372,8 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
 
 # =============================================================================
-# 3. Legacy and Operational Structures
+# 3. Operational Structures
 # =============================================================================
-
-# --- Basic Binary Types (Restored from protocol.py) ---
-NONCE_COUNTER_STRUCT: Final = construct.Int64ub
-CRC_STRUCT: Final = construct.Int32ub
-
-# [SIL-2] Explicit Command ID Structure
-# Separates compression flag from the command identifier for explicit handling.
-_RawCommandIdStruct: Final = construct.BitStruct(
-    "compressed" / construct.Flag,
-    "id"
-    / construct.Enum(
-        construct.BitsInteger(15),
-        protocol.Command,
-        protocol.Status,
-        _default=construct.Pass,
-    ),
-)
-
-
-class CommandIdAdapter(construct.Adapter):
-    """Transparently converts between integer command ID (with flag) and BitStruct."""
-
-    def _decode(self, obj: Any, context: Any, path: Any) -> int:
-        # Convert Enum/int from BitStruct back to combined integer
-        cmd_val = int(obj.id)
-        if obj.compressed:
-            cmd_val |= protocol.CMD_FLAG_COMPRESSED
-        return cmd_val
-
-    def _encode(self, obj: int, context: Any, path: Any) -> dict[str, Any]:
-        # Split combined integer into Flag + ID using Construct mapping where possible
-        # [SIL-2] Use integer division and modulo to avoid bitwise & where applicable
-        # or stick to clear BitStruct mapping if we change the parent.
-        # Actually, using obj.compressed property if it was a BitStruct would be better.
-        return {
-            "compressed": (obj // protocol.CMD_FLAG_COMPRESSED) > 0,
-            "id": obj % protocol.CMD_FLAG_COMPRESSED,
-        }
-
-
-CommandIdStruct: Final = CommandIdAdapter(_RawCommandIdStruct)
-
-CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
-    "version" / construct.Int8ub,
-    "payload_len" / construct.Int16ub,
-    "command_id" / construct.Int16ub,
-)
 
 T = TypeVar("T", bound="BaseStruct")
 
@@ -731,24 +672,6 @@ class SetBaudratePacket(BaseStruct, frozen=True):
 
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.
 # This eliminates manual if/elif dispatching across components.
-
-# --- Framing Schema ---
-
-
-def _compute_crc32(data: Any) -> int:
-    return crc32(cast(bytes, data)) & 0xFFFFFFFF
-
-
-FRAME_STRUCT = BinStruct(
-    "content"
-    / construct.RawCopy(
-        BinStruct(
-            "header" / CRC_COVERED_HEADER_STRUCT,
-            "payload" / construct.Bytes(construct.this.header.payload_len),
-        )
-    ),
-    "crc" / construct.Checksum(CRC_STRUCT, _compute_crc32, construct.this.content.data),
-)
 
 # --- High-Level Structure (Msgspec Only) ---
 

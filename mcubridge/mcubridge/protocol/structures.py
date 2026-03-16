@@ -28,8 +28,6 @@ import google.protobuf.message
 import msgspec
 from mcubridge.protocol import mcubridge_pb2
 
-from . import protocol
-
 if TYPE_CHECKING:
     from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
 

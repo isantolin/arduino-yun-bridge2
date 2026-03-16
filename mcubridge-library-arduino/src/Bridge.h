@@ -352,11 +352,26 @@ class BridgeClass
     if (ctx.requires_ack) _sendAckAndFlush(ctx.frame->header.command_id);
   }
 
-  template <typename TPacket, typename F> void _withPayloadResponse(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
+  template <typename F> void _withPayloadResponse(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
     if (!ctx.is_duplicate) {
       auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
       if (res.has_value()) handler(res.value());
     }
+  }
+
+  template <typename TPacket, typename F, typename TField>
+  void _dispatchWithBytes(const bridge::router::CommandContext& ctx, TField TPacket::*field, F handler, bool ack = false) {
+    uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
+    etl::span<uint8_t> span(buffer, sizeof(buffer));
+    TPacket msg = {};
+    rpc::util::pb_setup_decode_span(msg.*field, span);
+
+    auto logic = [&handler, &span](const TPacket&) {
+      handler(etl::span<const uint8_t>(span.data(), span.size()));
+    };
+
+    if (ack) _withPayloadAck<TPacket>(ctx, logic, msg);
+    else _withPayload<TPacket>(ctx, logic, msg);
   }
 
   template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
@@ -386,6 +401,18 @@ class BridgeClass
   void _clearPendingTxQueue();
   void _clearAckState();
   void _retransmitLastFrame();
+
+  bool _isQueueFull() const {
+    bool full = false;
+    BRIDGE_ATOMIC_BLOCK { full = _pending_tx_queue.full(); }
+    return full;
+  }
+
+  bool _isQueueEmpty() const {
+    bool empty = true;
+    BRIDGE_ATOMIC_BLOCK { empty = _pending_tx_queue.empty(); }
+    return empty;
+  }
 
   Stream& _stream;
   HardwareSerial* _hardware_serial;

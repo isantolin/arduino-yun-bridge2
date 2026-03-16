@@ -415,49 +415,21 @@ void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_handleConsoleWrite(const bridge::router::CommandContext& ctx) {
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-  etl::span<uint8_t> span(buffer, sizeof(buffer));
-  rpc::payload::ConsoleWrite msg = {};
-  rpc::util::pb_setup_decode_span(msg.data, span);
-
-  _withPayloadAck<rpc::payload::ConsoleWrite>(ctx, [&span](const rpc::payload::ConsoleWrite&) {
-    Console._push(etl::span<const uint8_t>(span.data(), span.size()));
-  }, msg);
+  _dispatchWithBytes<rpc::payload::ConsoleWrite>(ctx, &rpc::payload::ConsoleWrite::data, [](etl::span<const uint8_t> s) { Console._push(s); }, true);
 }
 
 #if BRIDGE_ENABLE_DATASTORE
 void BridgeClass::_handleDatastoreGetResp(const bridge::router::CommandContext& ctx) {
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-  etl::span<uint8_t> span(buffer, sizeof(buffer));
-  rpc::payload::DatastoreGetResponse msg = {};
-  rpc::util::pb_setup_decode_span(msg.value, span);
-
-  _withPayload<rpc::payload::DatastoreGetResponse>(ctx, [span](const rpc::payload::DatastoreGetResponse&) {
-    DataStore._onResponse(etl::span<const uint8_t>(span.data(), span.size()));
-  }, msg);
+  _dispatchWithBytes<rpc::payload::DatastoreGetResponse>(ctx, &rpc::payload::DatastoreGetResponse::value, [](etl::span<const uint8_t> s) { DataStore._onResponse(s); });
 }
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
 void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& ctx) {
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-  etl::span<uint8_t> span(buffer, sizeof(buffer));
-  rpc::payload::MailboxPush msg = {};
-  rpc::util::pb_setup_decode_span(msg.data, span);
-
-  _withPayloadAck<rpc::payload::MailboxPush>(ctx, [span](const rpc::payload::MailboxPush&) {
-    Mailbox._onIncomingData(etl::span<const uint8_t>(span.data(), span.size()));
-  }, msg);
+  _dispatchWithBytes<rpc::payload::MailboxPush>(ctx, &rpc::payload::MailboxPush::data, [](etl::span<const uint8_t> s) { Mailbox._onIncomingData(s); }, true);
 }
 void BridgeClass::_handleMailboxReadResp(const bridge::router::CommandContext& ctx) {
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-  etl::span<uint8_t> span(buffer, sizeof(buffer));
-  rpc::payload::MailboxReadResponse msg = {};
-  rpc::util::pb_setup_decode_span(msg.content, span);
-
-  _withPayload<rpc::payload::MailboxReadResponse>(ctx, [span](const rpc::payload::MailboxReadResponse&) {
-    Mailbox._onIncomingData(etl::span<const uint8_t>(span.data(), span.size()));
-  }, msg);
+  _dispatchWithBytes<rpc::payload::MailboxReadResponse>(ctx, &rpc::payload::MailboxReadResponse::content, [](etl::span<const uint8_t> s) { Mailbox._onIncomingData(s); });
 }
 void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::MailboxAvailableResponse>(ctx, [](const rpc::payload::MailboxAvailableResponse& msg) { Mailbox._onAvailableResponse(msg); });
@@ -467,14 +439,7 @@ void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandConte
 #if BRIDGE_ENABLE_FILESYSTEM
 void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) { _withAck(ctx, [](){}); }
 void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-  etl::span<uint8_t> span(buffer, sizeof(buffer));
-  rpc::payload::FileReadResponse msg = {};
-  rpc::util::pb_setup_decode_span(msg.content, span);
-
-  _withPayload<rpc::payload::FileReadResponse>(ctx, [span](const rpc::payload::FileReadResponse&) {
-    FileSystem._onResponse(etl::span<const uint8_t>(span.data(), span.size()));
-  }, msg);
+  _dispatchWithBytes<rpc::payload::FileReadResponse>(ctx, &rpc::payload::FileReadResponse::content, [](etl::span<const uint8_t> s) { FileSystem._onResponse(s); });
 }
 #endif
 
@@ -511,7 +476,9 @@ void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext& c
 }
 
 void BridgeClass::_handleAck(uint16_t command_id) {
-  if (_fsm.isAwaitingAck() && (command_id == _last_command_id)) {
+  bool awaiting = false;
+  BRIDGE_ATOMIC_BLOCK { awaiting = _fsm.isAwaitingAck(); }
+  if (awaiting && (command_id == _last_command_id)) {
     _clearAckState();
     _timers.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
     BRIDGE_ATOMIC_BLOCK { if (!_pending_tx_queue.empty()) _pending_tx_queue.pop(); }
@@ -524,17 +491,29 @@ void BridgeClass::_handleMalformed(uint16_t command_id) {
 }
 
 void BridgeClass::_retransmitLastFrame() {
-  if (!_pending_tx_queue.empty()) {
-    auto& f = _pending_tx_queue.front();
+  PendingTxFrame f;
+  bool has_frame = false;
+  BRIDGE_ATOMIC_BLOCK {
+    if (!_pending_tx_queue.empty()) {
+      f = _pending_tx_queue.front();
+      has_frame = true;
+    }
+  }
+  if (has_frame) {
     _sendRawFrame(f.command_id, etl::span<const uint8_t>(f.payload.data(), f.payload_length));
     _retry_count++;
   }
 }
 
 void BridgeClass::_onAckTimeout() {
-  if (!_fsm.isAwaitingAck()) return;
+  bool awaiting = false;
+  BRIDGE_ATOMIC_BLOCK { awaiting = _fsm.isAwaitingAck(); }
+  if (!awaiting) return;
+
   if (_retry_count >= _ack_retry_limit) {
-    _fsm.timeout(); enterSafeState(); return;
+    BRIDGE_ATOMIC_BLOCK { _fsm.timeout(); }
+    enterSafeState();
+    return;
   }
   _retransmitLastFrame();
   _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT, bridge::now_ms());
@@ -552,11 +531,12 @@ void BridgeClass::_onBaudrateChange() {
 void BridgeClass::_onStartupStabilized() {
   uint16_t drain_limit = bridge::config::STARTUP_DRAIN_FINAL;
   while (_stream.available() > 0 && drain_limit-- > 0) _stream.read();
-  _fsm.stabilized();
+  BRIDGE_ATOMIC_BLOCK { _fsm.stabilized(); }
 }
 
 void BridgeClass::enterSafeState() {
-  _fsm.resetFsm(); _timers.clear();
+  BRIDGE_ATOMIC_BLOCK { _fsm.resetFsm(); }
+  _timers.clear();
   _pending_baudrate = 0; _retry_count = 0; _clearPendingTxQueue();
   _frame_received = false; _rx_history.clear(); _consecutive_crc_errors = 0;
 #if BRIDGE_ENABLE_PROCESS
@@ -602,12 +582,21 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, etl::span<const uint8_t> pa
 }
 
 void BridgeClass::_flushPendingTxQueue() {
-  if (_fsm.isAwaitingAck() || _pending_tx_queue.empty()) return;
-  auto& f = _pending_tx_queue.front();
-  _sendRawFrame(f.command_id, etl::span<const uint8_t>(f.payload.data(), f.payload_length));
-  _fsm.sendCritical(); _retry_count = 0;
-  _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT, bridge::now_ms());
-  _last_command_id = f.command_id;
+  PendingTxFrame f;
+  bool has_frame = false;
+  BRIDGE_ATOMIC_BLOCK {
+    if (!_fsm.isAwaitingAck() && !_pending_tx_queue.empty()) {
+      f = _pending_tx_queue.front();
+      has_frame = true;
+    }
+  }
+  if (has_frame) {
+    _sendRawFrame(f.command_id, etl::span<const uint8_t>(f.payload.data(), f.payload_length));
+    BRIDGE_ATOMIC_BLOCK { _fsm.sendCritical(); }
+    _retry_count = 0;
+    _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT, bridge::now_ms());
+    _last_command_id = f.command_id;
+  }
 }
 
 void BridgeClass::_clearPendingTxQueue() {
@@ -615,7 +604,7 @@ void BridgeClass::_clearPendingTxQueue() {
 }
 
 void BridgeClass::_clearAckState() {
-  if (_fsm.isAwaitingAck()) _fsm.ackReceived();
+  BRIDGE_ATOMIC_BLOCK { if (_fsm.isAwaitingAck()) _fsm.ackReceived(); }
   _retry_count = 0;
 }
 
@@ -627,14 +616,21 @@ void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
 }
 
 bool BridgeClass::_sendFrame(uint16_t command_id, etl::span<const uint8_t> payload) {
-  if (_fsm.isFault()) return false;
-  if (_fsm.isUnsynchronized() && !_isHandshakeCommand(command_id)) return false;
+  bool fault = false;
+  bool unsync = false;
+  BRIDGE_ATOMIC_BLOCK {
+    fault = _fsm.isFault();
+    unsync = _fsm.isUnsynchronized();
+  }
+  if (fault) return false;
+  if (unsync && !_isHandshakeCommand(command_id)) return false;
+
   if (rpc::requires_ack(command_id)) {
-    if (_pending_tx_queue.full()) return false;
+    if (_isQueueFull()) return false;
     PendingTxFrame f; f.command_id = command_id; f.payload_length = static_cast<uint16_t>(payload.size());
     etl::copy_n(payload.data(), f.payload_length, f.payload.begin());
     BRIDGE_ATOMIC_BLOCK { _pending_tx_queue.push(f); }
-    if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
+    _flushPendingTxQueue();
     return true;
   }
   _sendRawFrame(command_id, payload);

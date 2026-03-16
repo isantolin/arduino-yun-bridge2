@@ -107,6 +107,7 @@ jobs:
     timeout-minutes: 10
     env:
       ARDUINO_METRICS_DIR: arduino-logs
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
@@ -135,6 +136,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, typecheck, protocol-sync, deps-sync]
     timeout-minutes: 20
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox

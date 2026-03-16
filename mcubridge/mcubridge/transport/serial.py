@@ -286,10 +286,10 @@ class SerialTransport:
             self.state.record_serial_rx(len(encoded_packet))
 
         except (CobsDecodeError, ValueError) as exc:
-            logger.warning("Malformed frame: %s", exc)
+            log_binary_traffic(logger, logging.WARNING, "[SERIAL <- MCU]", f"Malformed (Err: {exc})", encoded_packet)
             self.state.record_serial_decode_error()
         except (OSError, RuntimeError, KeyError, IndexError, TypeError) as exc:
-            logger.error("Error dispatching MCU frame: %s", exc)
+            log_binary_traffic(logger, logging.ERROR, "[SERIAL <- MCU]", f"Dispatch (Err: {exc})", encoded_packet)
             self.state.record_serial_decode_error()
     async def _serial_sender(self, cmd: int, pl: bytes) -> bool:
         """Low-level serial frame sender."""

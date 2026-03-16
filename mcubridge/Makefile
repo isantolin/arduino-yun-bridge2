@@ -65,10 +65,7 @@ define Package/$(PKG_NAME)
 		+python3-sh \
 		+python3-zict \
 		+python3-heapdict \
-		+mosquitto-client \
-		+xxd \
-		+python3-nanopb \
-		+python3-grpcio-tools
+		+mosquitto-client
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

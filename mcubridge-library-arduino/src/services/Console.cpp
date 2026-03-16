@@ -30,9 +30,25 @@ size_t ConsoleClass::write(uint8_t c) {
 }
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
-  if (!_begun || !buffer) return 0;
+  if (!_begun || !buffer || size == 0) return 0;
+
   size_t sent = 0;
-  while (sent < size) write(buffer[sent++]);
+  while (sent < size) {
+    size_t remaining;
+    BRIDGE_ATOMIC_BLOCK { remaining = _tx_buffer.capacity() - _tx_buffer.size(); }
+
+    if (remaining == 0) {
+      flush();
+      BRIDGE_ATOMIC_BLOCK { remaining = _tx_buffer.capacity() - _tx_buffer.size(); }
+      if (remaining == 0) break; // Could not clear space
+    }
+
+    size_t to_copy = etl::min(size - sent, remaining);
+    BRIDGE_ATOMIC_BLOCK {
+      _tx_buffer.insert(_tx_buffer.end(), buffer + sent, buffer + sent + to_copy);
+    }
+    sent += to_copy;
+  }
   return sent;
 }
 

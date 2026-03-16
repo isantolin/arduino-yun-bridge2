@@ -20,9 +20,13 @@ MAKEFILE_PATH = ROOT / "mcubridge" / "Makefile"
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
 BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
 
-# [MODIFICACIÓN FASE 3] Paquetes exclusivos del sistema (OpenWrt)
-# Estos paquetes NO se incluirán en runtime.txt para evitar errores en pip install local
+# --- [FILTRADO INTELIGENTE DE DEPENDENCIAS] ---
+
+# uci: Solo en OpenWrt (Makefile), no en pip (runtime.txt) para evitar errores locales.
 SYSTEM_ONLY_PACKAGES = {"uci"}
+
+# jinja2, nanopb, grpcio-tools, xxd: Solo en pip (Dev/CI), no en el APK de OpenWrt para ahorrar Flash.
+BUILD_ONLY_PACKAGES = {"jinja2", "nanopb", "grpcio-tools", "xxd"}
 
 
 class ManifestError(RuntimeError):
@@ -53,17 +57,20 @@ def load_manifest() -> list[dict]:
 
 
 def collect_pip_specs(deps: Sequence[dict]) -> list[str]:
-    # 1. Recolectar especificaciones crudas
+    # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci)
     specs = {dep["pip"] for dep in deps if dep.get("pip")}
-
-    # 2. Filtrar paquetes marcados como SYSTEM_ONLY
     filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
     return sorted(filtered)
 
 
 def collect_openwrt_packages(deps: Sequence[dict]) -> list[str]:
-    # Mantiene todos los paquetes para el Makefile (incluyendo uci)
-    return [dep["openwrt"] for dep in deps if dep.get("openwrt")]
+    # Mantiene todo EXCEPTO los paquetes exclusivos de construcción (jinja2, etc)
+    # Esto asegura que el APK sea ultra-lean.
+    return [
+        dep["openwrt"]
+        for dep in deps
+        if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES
+    ]
 
 
 def write_requirements(deps: Sequence[dict], *, dry_run: bool = False) -> bool:

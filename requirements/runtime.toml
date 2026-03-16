@@ -24,14 +24,17 @@ openwrt = "python3-paho-mqtt"
 pip = "paho-mqtt==2.1.0"
 rationale = "Synchronous MQTT client for legacy CGI scripts"
 
-# pyserial removed: replaced by built-in termios (mcubridge.transport.termios_serial)
-# This eliminates the dependency on an unmaintained package (last release 2020)
-
 [[dependency]]
 name = "python-cobs"
 openwrt = "python3-cobs"
 pip = "cobs==1.2.2"
 rationale = "COBS framing for the RPC protocol"
+
+[[dependency]]
+name = "jinja2"
+openwrt = "python3-jinja2"
+pip = "jinja2==3.1.6"
+rationale = "Template engine for professional and auditable code generation [BUILD-ONLY]"
 
 [[dependency]]
 name = "msgspec"
@@ -122,3 +125,21 @@ name = "mosquitto-client"
 openwrt = "mosquitto-client"
 pip = ""
 rationale = "CLI MQTT tools used by credential rotation and health-check scripts"
+
+[[dependency]]
+name = "xxd"
+openwrt = "xxd"
+pip = ""
+rationale = "Hex-dump utility used by diagnostic scripts [BUILD-ONLY]"
+
+[[dependency]]
+name = "nanopb"
+openwrt = "python3-nanopb"
+pip = "nanopb"
+rationale = "Nanopb library for Protobuf generation [BUILD-ONLY]"
+
+[[dependency]]
+name = "grpcio-tools"
+openwrt = "python3-grpcio-tools"
+pip = "grpcio-tools"
+rationale = "Protobuf compiler tools for Python [BUILD-ONLY]"

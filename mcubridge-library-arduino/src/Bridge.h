@@ -48,6 +48,7 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_cobs.h"
 #include "protocol/rpc_structs.h"
+#include "util/pb_copy.h"
 
 #include "nanopb/pb_common.h"
 #include "nanopb/pb_decode.h"
@@ -343,23 +344,23 @@ class BridgeClass
     if (!ctx.is_duplicate) handler();
   }
 
-  template <typename TPacket, typename F> void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
+  template <typename TPacket, typename F> void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
     if (!ctx.is_duplicate) {
-      auto res = rpc::Payload::parse<TPacket>(*ctx.frame);
+      auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
       if (res.has_value()) handler(res.value());
     }
     if (ctx.requires_ack) _sendAckAndFlush(ctx.frame->header.command_id);
   }
 
-  template <typename TPacket, typename F> void _withPayloadResponse(const bridge::router::CommandContext& ctx, F handler) {
+  template <typename TPacket, typename F> void _withPayloadResponse(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
     if (!ctx.is_duplicate) {
-      auto res = rpc::Payload::parse<TPacket>(*ctx.frame);
+      auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
       if (res.has_value()) handler(res.value());
     }
   }
 
-  template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
-    auto res = rpc::Payload::parse<TPacket>(*ctx.frame);
+  template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
+    auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
     if (res.has_value()) handler(res.value());
   }
 

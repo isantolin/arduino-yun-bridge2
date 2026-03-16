@@ -36,7 +36,7 @@ class ProcessClass : public BridgeObserver {
   void reset();
 
   void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);
-  void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
+  void _onPollResponse(const rpc::payload::ProcessPollResponse& msg, etl::span<const uint8_t> stdout_data, etl::span<const uint8_t> stderr_data);
 
  private:
   struct PendingAsyncRun {

@@ -52,12 +52,12 @@ message AnalogReadResponse {
 }
 
 message ConsoleWrite {
-    bytes data = 1 [(nanopb).max_size = 64];
+    bytes data = 1 [(nanopb).type = FT_CALLBACK];
 }
 
 message DatastorePut {
     string key = 1 [(nanopb).max_size = 32];
-    bytes value = 2 [(nanopb).max_size = 64];
+    bytes value = 2 [(nanopb).type = FT_CALLBACK];
 }
 
 message DatastoreGet {
@@ -65,11 +65,11 @@ message DatastoreGet {
 }
 
 message DatastoreGetResponse {
-    bytes value = 1 [(nanopb).max_size = 64];
+    bytes value = 1 [(nanopb).type = FT_CALLBACK];
 }
 
 message MailboxPush {
-    bytes data = 1 [(nanopb).max_size = 64];
+    bytes data = 1 [(nanopb).type = FT_CALLBACK];
 }
 
 message MailboxProcessed {
@@ -81,12 +81,12 @@ message MailboxAvailableResponse {
 }
 
 message MailboxReadResponse {
-    bytes content = 1 [(nanopb).max_size = 64];
+    bytes content = 1 [(nanopb).type = FT_CALLBACK];
 }
 
 message FileWrite {
     string path = 1 [(nanopb).max_size = 64];
-    bytes data = 2 [(nanopb).max_size = 64];
+    bytes data = 2 [(nanopb).type = FT_CALLBACK];
 }
 
 message FileRead {
@@ -98,7 +98,7 @@ message FileRemove {
 }
 
 message FileReadResponse {
-    bytes content = 1 [(nanopb).max_size = 64];
+    bytes content = 1 [(nanopb).type = FT_CALLBACK];
 }
 
 message ProcessRunAsync {
@@ -116,8 +116,8 @@ message ProcessPoll {
 message ProcessPollResponse {
     uint32 status = 1;
     uint32 exit_code = 2;
-    bytes stdout_data = 3 [(nanopb).max_size = 64];
-    bytes stderr_data = 4 [(nanopb).max_size = 64];
+    bytes stdout_data = 3 [(nanopb).type = FT_CALLBACK];
+    bytes stderr_data = 4 [(nanopb).type = FT_CALLBACK];
 }
 
 message ProcessKill {

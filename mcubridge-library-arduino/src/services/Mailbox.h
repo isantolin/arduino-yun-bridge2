@@ -38,7 +38,7 @@ class MailboxClass : public BridgeObserver {
   void onMailboxAvailable(MailboxAvailableHandler handler) { _available_handler = handler; }
 
   void _onIncomingData(etl::span<const uint8_t> data);
-  void _onResponse(const rpc::payload::MailboxReadResponse& msg);
+  void _onResponse(etl::span<const uint8_t> content);
   void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
 
  private:

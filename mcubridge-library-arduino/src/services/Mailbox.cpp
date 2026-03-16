@@ -8,7 +8,7 @@ MailboxClass::MailboxClass() {}
 
 void MailboxClass::write(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush msg = {};
-  rpc::util::pb_copy_bytes(data, msg.data);
+  rpc::util::pb_setup_encode_span(msg.data, data);
   Bridge.sendPbCommand(rpc::CommandId::CMD_MAILBOX_PUSH, msg);
 }
 
@@ -31,8 +31,8 @@ void MailboxClass::_onIncomingData(etl::span<const uint8_t> data) {
   }
 }
 
-void MailboxClass::_onResponse(const rpc::payload::MailboxReadResponse& msg) {
-  _onIncomingData(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+void MailboxClass::_onResponse(etl::span<const uint8_t> content) {
+  _onIncomingData(content);
 }
 
 void MailboxClass::_onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg) {

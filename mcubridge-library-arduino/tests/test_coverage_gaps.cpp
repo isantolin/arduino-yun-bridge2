@@ -127,8 +127,8 @@ void test_console_write_via_dispatch() {
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
   rpc::payload::ConsoleWrite cw_msg = mcubridge_ConsoleWrite_init_default;
   const char* msg = "Hello Console";
-  cw_msg.data.size = strlen(msg);
-  memcpy(cw_msg.data.bytes, msg, cw_msg.data.size);
+  etl::span<const uint8_t> span(reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+  rpc::util::pb_setup_encode_span(cw_msg.data, span);
   bridge::test::set_pb_payload(f, cw_msg);
   ba.dispatch(f);
 }
@@ -153,8 +153,9 @@ void test_datastore_resp_via_dispatch() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP);
   rpc::payload::DatastoreGetResponse ds_msg = mcubridge_DatastoreGetResponse_init_default;
-  ds_msg.value.size = 3;
-  memcpy(ds_msg.value.bytes, "abc", 3);
+  uint8_t val[] = "abc";
+  etl::span<const uint8_t> span(val, 3);
+  rpc::util::pb_setup_encode_span(ds_msg.value, span);
   bridge::test::set_pb_payload(f, ds_msg);
   ba.dispatch(f);
 }
@@ -178,8 +179,9 @@ void test_mailbox_via_dispatch() {
   // CMD_MAILBOX_PUSH (131)
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
   rpc::payload::MailboxPush mb_push = mcubridge_MailboxPush_init_default;
-  mb_push.data.size = 3;
-  memcpy(mb_push.data.bytes, "xyz", 3);
+  uint8_t push_data[] = "xyz";
+  etl::span<const uint8_t> push_span(push_data, 3);
+  rpc::util::pb_setup_encode_span(mb_push.data, push_span);
   bridge::test::set_pb_payload(f, mb_push);
   ba.dispatch(f);
 
@@ -187,8 +189,9 @@ void test_mailbox_via_dispatch() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
   rpc::payload::MailboxReadResponse mb_read_resp = mcubridge_MailboxReadResponse_init_default;
-  mb_read_resp.content.size = 2;
-  memcpy(mb_read_resp.content.bytes, "AB", 2);
+  uint8_t read_data[] = "AB";
+  etl::span<const uint8_t> read_span(read_data, 2);
+  rpc::util::pb_setup_encode_span(mb_read_resp.content, read_span);
   bridge::test::set_pb_payload(f, mb_read_resp);
   ba.dispatch(f);
 
@@ -233,8 +236,9 @@ void test_filesystem_via_dispatch() {
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);
   rpc::payload::FileReadResponse fr_resp = mcubridge_FileReadResponse_init_default;
-  fr_resp.content.size = 2;
-  memcpy(fr_resp.content.bytes, "OK", 2);
+  uint8_t fr_data[] = "OK";
+  etl::span<const uint8_t> fr_span(fr_data, 2);
+  rpc::util::pb_setup_encode_span(fr_resp.content, fr_span);
   bridge::test::set_pb_payload(f, fr_resp);
   ba.dispatch(f);
 }
@@ -271,10 +275,12 @@ void test_process_via_dispatch() {
   rpc::payload::ProcessPollResponse poll_resp = mcubridge_ProcessPollResponse_init_default;
   poll_resp.status = 0x30;
   poll_resp.exit_code = 0;
-  poll_resp.stdout_data.size = 1;
-  poll_resp.stdout_data.bytes[0] = 'o';
-  poll_resp.stderr_data.size = 1;
-  poll_resp.stderr_data.bytes[0] = 'e';
+  uint8_t out_data[] = "o";
+  etl::span<const uint8_t> out_span(out_data, 1);
+  rpc::util::pb_setup_encode_span(poll_resp.stdout_data, out_span);
+  uint8_t err_data[] = "e";
+  etl::span<const uint8_t> err_span(err_data, 1);
+  rpc::util::pb_setup_encode_span(poll_resp.stderr_data, err_span);
   bridge::test::set_pb_payload(f, poll_resp);
   ba.dispatch(f);
 }
@@ -1081,12 +1087,19 @@ void test_rpc_structs_parse_specializations() {
 
   // ConsoleWrite specialization
   rpc::payload::ConsoleWrite cw_msg = {};
-  cw_msg.data.size = 5; memcpy(cw_msg.data.bytes, "hello", 5);
+  uint8_t cw_data[] = "hello";
+  etl::span<const uint8_t> cw_span(cw_data, 5);
+  rpc::util::pb_setup_encode_span(cw_msg.data, cw_span);
   bridge::test::set_pb_payload(f, cw_msg);
   
-  auto cw = rpc::Payload::parse<rpc::payload::ConsoleWrite>(f);
+  uint8_t out_buf[64];
+  etl::span<uint8_t> out_span(out_buf, 64);
+  rpc::payload::ConsoleWrite cw_receive = {};
+  rpc::util::pb_setup_decode_span(cw_receive.data, out_span);
+
+  auto cw = rpc::Payload::parse<rpc::payload::ConsoleWrite>(f, cw_receive);
   TEST_ASSERT(cw.has_value());
-  TEST_ASSERT_EQUAL(5, cw->data.size);
+  TEST_ASSERT_EQUAL(5, out_span.size());
 
   // ProcessRunAsync specialization
   rpc::payload::ProcessRunAsync pra_msg = {};
@@ -1098,12 +1111,19 @@ void test_rpc_structs_parse_specializations() {
 
   // MailboxReadResponse specialization
   rpc::payload::MailboxReadResponse mrr_msg = {};
-  mrr_msg.content.size = 2; mrr_msg.content.bytes[0] = 'A'; mrr_msg.content.bytes[1] = 'B';
+  uint8_t mrr_data[] = "AB";
+  etl::span<const uint8_t> mrr_span(mrr_data, 2);
+  rpc::util::pb_setup_encode_span(mrr_msg.content, mrr_span);
   bridge::test::set_pb_payload(f, mrr_msg);
   
-  auto mrr = rpc::Payload::parse<rpc::payload::MailboxReadResponse>(f);
+  uint8_t mrr_out_buf[64];
+  etl::span<uint8_t> mrr_out_span(mrr_out_buf, 64);
+  rpc::payload::MailboxReadResponse mrr_receive = {};
+  rpc::util::pb_setup_decode_span(mrr_receive.content, mrr_out_span);
+
+  auto mrr = rpc::Payload::parse<rpc::payload::MailboxReadResponse>(f, mrr_receive);
   TEST_ASSERT(mrr.has_value());
-  TEST_ASSERT_EQUAL(2, mrr->content.size);
+  TEST_ASSERT_EQUAL(2, mrr_out_span.size());
 
   // MailboxReadResponse with invalid length -> MALFORMED
   f.payload[0] = 0xFF; // Invalid tag

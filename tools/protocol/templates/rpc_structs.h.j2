@@ -101,8 +101,7 @@ REGISTER_DESCRIPTOR(SetBaudratePacket, mcubridge_SetBaudratePacket);
 REGISTER_DESCRIPTOR(LinkSync, mcubridge_LinkSync);
 
 template <typename T>
-inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
-    T msg = {};
+inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame, T msg = {}) {
     pb_istream_t stream = pb_istream_from_buffer(frame.payload.data(), frame.header.payload_length);
     if (!pb_decode(&stream, Descriptor<T>::fields(), &msg)) {
         return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);

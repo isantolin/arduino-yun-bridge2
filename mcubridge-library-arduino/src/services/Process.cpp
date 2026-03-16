@@ -40,15 +40,15 @@ void ProcessClass::_onRunAsyncResponse(const rpc::payload::ProcessRunAsyncRespon
   }
 }
 
-void ProcessClass::_onPollResponse(const rpc::payload::ProcessPollResponse& msg) {
+void ProcessClass::_onPollResponse(const rpc::payload::ProcessPollResponse& msg, etl::span<const uint8_t> stdout_data, etl::span<const uint8_t> stderr_data) {
   if (_pending_polls.empty()) return;
   PendingPoll pending = _pending_polls.front();
   _pending_polls.pop();
   if (pending.handler.is_valid()) {
     pending.handler(static_cast<rpc::StatusCode>(msg.status), 
                     static_cast<uint8_t>(msg.exit_code),
-                    etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
-                    etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
+                    stdout_data,
+                    stderr_data);
   }
 }
 

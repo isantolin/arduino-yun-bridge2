@@ -30,6 +30,50 @@ inline void pb_copy_bytes(etl::span<const uint8_t> src, PbBytesField& field) {
   etl::copy_n(src.data(), field.size, field.bytes);
 }
 
+/**
+ * @brief Setup a nanopb field to use a simple byte-span encoding callback.
+ *
+ * This enables streaming without copying data into the message structure.
+ */
+inline bool pb_encode_span_callback(pb_ostream_t* stream, const pb_field_t* field,
+                                   void* const* arg) {
+  if (arg == nullptr || *arg == nullptr) return true;
+  const etl::span<const uint8_t>* span = static_cast<const etl::span<const uint8_t>*>(*arg);
+  if (!pb_encode_tag_for_field(stream, field)) return false;
+  return pb_encode_string(stream, span->data(), span->size());
+}
+
+template <typename PbCallbackField>
+inline void pb_setup_encode_span(PbCallbackField& field, const etl::span<const uint8_t>& src) {
+  field.funcs.encode = &pb_encode_span_callback;
+  field.arg = const_cast<etl::span<const uint8_t>*>(&src);
+}
+
+/**
+ * @brief Setup a nanopb field to use a simple byte-span decoding callback.
+ *
+ * The callback will copy incoming bytes into the provided span, up to its capacity.
+ * The arg must be a pointer to an etl::span<uint8_t>.
+ */
+inline bool pb_decode_span_callback(pb_istream_t* stream, const pb_field_t* field,
+                                   void** arg) {
+  if (arg == nullptr || *arg == nullptr) return true;
+  etl::span<uint8_t>* span = static_cast<etl::span<uint8_t>*>(*arg);
+  
+  size_t to_read = etl::min(static_cast<size_t>(stream->bytes_left), span->size());
+  if (!pb_read(stream, span->data(), to_read)) return false;
+  
+  // Update the span to reflect what was actually read (shrinking it)
+  *span = etl::span<uint8_t>(span->data(), to_read);
+  return true;
+}
+
+template <typename PbCallbackField>
+inline void pb_setup_decode_span(PbCallbackField& field, etl::span<uint8_t>& dst) {
+  field.funcs.decode = &pb_decode_span_callback;
+  field.arg = &dst;
+}
+
 } // namespace util
 } // namespace rpc
 

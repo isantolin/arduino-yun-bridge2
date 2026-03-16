@@ -9,7 +9,7 @@ FileSystemClass::FileSystemClass() {}
 void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data) {
   rpc::payload::FileWrite msg = {};
   rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
-  rpc::util::pb_copy_bytes(data, msg.data);
+  rpc::util::pb_setup_encode_span(msg.data, data);
   Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, msg);
 }
 
@@ -29,9 +29,9 @@ void FileSystemClass::remove(etl::string_view path) {
 
 // [SIL-2] Intentional no-op: write-back to Linux is handled by the daemon.\nvoid FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) { (void)msg; }
 
-void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
+void FileSystemClass::_onResponse(etl::span<const uint8_t> content) {
   if (_read_handler.is_valid()) {
-    _read_handler(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+    _read_handler(content);
   }
 }
 #endif

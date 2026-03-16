@@ -37,7 +37,7 @@ class DataStoreClass : public BridgeObserver {
   void get(etl::string_view key, DataStoreGetHandler handler);
   void reset() { _pending_gets.clear(); }
 
-  void _onResponse(const rpc::payload::DatastoreGetResponse& msg);
+  void _onResponse(etl::span<const uint8_t> value);
 
  private:
   struct PendingGet {

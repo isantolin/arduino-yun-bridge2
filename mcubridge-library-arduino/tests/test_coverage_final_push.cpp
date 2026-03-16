@@ -802,8 +802,8 @@ void test_console_push_xoff_trigger() {
   frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
 
   rpc::payload::ConsoleWrite msg = {};
-  msg.data.size = 3;
-  memcpy(msg.data.bytes, data, 3);
+  etl::span<const uint8_t> data_span(data, 3);
+  rpc::util::pb_setup_encode_span(msg.data, data_span);
   bridge::test::set_pb_payload(frame, msg);
   frame.crc = 1;
 

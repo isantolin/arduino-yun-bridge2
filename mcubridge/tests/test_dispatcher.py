@@ -11,6 +11,7 @@ from mcubridge.protocol.topics import TopicRoute, parse_topic
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
 from mcubridge.services.dispatcher import BridgeDispatcher
 
+from .conftest import make_component_container
 from .mqtt_helpers import make_inbound_message
 
 
@@ -239,14 +240,16 @@ def _make_dispatcher(
         _publish_bridge_snapshot,
     )
     dispatcher.register_components(
-        console=_ConsoleComponent(calls),
-        datastore=_DatastoreComponent(calls),
-        file=_FileComponent(calls),
-        mailbox=_MailboxComponent(calls),
-        pin=_PinComponent(calls),
-        process=_ProcessComponent(calls),
-        shell=_ShellComponent(calls),
-        system=_SystemComponent(calls),
+        make_component_container(
+            console=_ConsoleComponent(calls),
+            datastore=_DatastoreComponent(calls),
+            file=_FileComponent(calls),
+            mailbox=_MailboxComponent(calls),
+            pin=_PinComponent(calls),
+            process=_ProcessComponent(calls),
+            shell=_ShellComponent(calls),
+            system=_SystemComponent(calls),
+        )
     )
 
     async def _handle_link_sync_resp(payload: bytes) -> bool:
@@ -581,7 +584,7 @@ def test_payload_bytes_converts_supported_types_and_rejects_others() -> None:
 async def test_unexpected_mcu_gpio_requests_drop_if_pin_missing() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
-    dispatcher.pin = None
+    dispatcher._container = None
     # Use dispatch_mcu_frame which uses the registered lambda
     await dispatcher.dispatch_mcu_frame(Command.CMD_DIGITAL_READ.value, b"")
     assert not any(name == "pin.handle_unexpected_mcu_request" for name, _ in calls.items)

@@ -12,6 +12,8 @@ from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.state.context import create_runtime_state
 from aiomqtt.message import Message
 
+from .conftest import make_component_container
+
 @pytest.fixture
 def runtime_config() -> RuntimeConfig:
     from mcubridge.config.const import (
@@ -54,14 +56,16 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state):
     )
     # Register components with mocks
     d.register_components(
-        console=MagicMock(),
-        datastore=MagicMock(),
-        file=MagicMock(),
-        mailbox=MagicMock(),
-        pin=MagicMock(),
-        process=MagicMock(),
-        shell=MagicMock(),
-        system=MagicMock(),
+        make_component_container(
+            console=MagicMock(),
+            datastore=MagicMock(),
+            file=MagicMock(),
+            mailbox=MagicMock(),
+            pin=MagicMock(),
+            process=MagicMock(),
+            shell=MagicMock(),
+            system=MagicMock(),
+        )
     )
     return d
 
@@ -70,7 +74,7 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state):
 @pytest.mark.asyncio
 async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
     """Cover line 165-166 in dispatcher.py (Pin component not registered)."""
-    dispatcher.pin = None
+    dispatcher._container = None
     # CMD_DIGITAL_READ = 0x23
     # Find the handler registered for CMD_DIGITAL_READ
     handler = None
@@ -133,7 +137,7 @@ async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDisp
 @pytest.mark.asyncio
 async def test_dispatcher_handle_system_topic_no_component(dispatcher: BridgeDispatcher):
     """Cover line 347 in dispatcher.py."""
-    dispatcher.system = None
+    dispatcher._container = None
     route = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",))
     result = await dispatcher._handle_system_topic(route, MagicMock())
     assert result is False

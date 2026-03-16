@@ -22,6 +22,8 @@ from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
 from mcubridge.services.dispatcher import BridgeDispatcher
 
+from .conftest import make_component_container
+
 
 @dataclass(slots=True)
 class _DummyMessage:
@@ -224,14 +226,16 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
     )
 
     dispatcher.register_components(
-        console=cast(Any, _Console()),
-        datastore=cast(Any, _Datastore()),
-        file=cast(Any, _File()),
-        mailbox=cast(Any, _Mailbox()),
-        pin=cast(Any, _Pin()),
-        process=cast(Any, _Process()),
-        shell=cast(Any, _Shell()),
-        system=cast(Any, _System()),
+        make_component_container(
+            console=cast(Any, _Console()),
+            datastore=cast(Any, _Datastore()),
+            file=cast(Any, _File()),
+            mailbox=cast(Any, _Mailbox()),
+            pin=cast(Any, _Pin()),
+            process=cast(Any, _Process()),
+            shell=cast(Any, _Shell()),
+            system=cast(Any, _System()),
+        )
     )
 
     for topic_enum, pattern, _qos in MQTT_COMMAND_SUBSCRIPTIONS:
@@ -274,14 +278,16 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     )
 
     dispatcher.register_components(
-        console=cast(Any, _Console()),
-        datastore=cast(Any, _Datastore()),
-        file=cast(Any, _File()),
-        mailbox=cast(Any, _Mailbox()),
-        pin=cast(Any, _Pin()),
-        process=cast(Any, _Process()),
-        shell=cast(Any, _Shell()),
-        system=cast(Any, _System()),
+        make_component_container(
+            console=cast(Any, _Console()),
+            datastore=cast(Any, _Datastore()),
+            file=cast(Any, _File()),
+            mailbox=cast(Any, _Mailbox()),
+            pin=cast(Any, _Pin()),
+            process=cast(Any, _Process()),
+            shell=cast(Any, _Shell()),
+            system=cast(Any, _System()),
+        )
     )
     dispatcher.register_system_handlers(
         handle_link_sync_resp=_noop_link_handler,

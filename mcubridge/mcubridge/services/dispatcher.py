@@ -6,6 +6,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+import svcs
+
 from mcubridge.protocol.contracts import response_to_request
 from mcubridge.protocol.protocol import (
     Command,
@@ -65,35 +67,30 @@ class BridgeDispatcher:
 
         self.on_frame_received_callback = on_frame_received
 
-        self.console: ConsoleComponent | None = None
-        self.datastore: DatastoreComponent | None = None
-        self.file: FileComponent | None = None
-        self.mailbox: MailboxComponent | None = None
-        self.pin: PinComponent | None = None
-        self.process: ProcessComponent | None = None
-        self.shell: ShellComponent | None = None
-        self.system: SystemComponent | None = None
+        self._container: svcs.Container | None = None
 
-    def register_components(
-        self,
-        console: ConsoleComponent,
-        datastore: DatastoreComponent,
-        file: FileComponent,
-        mailbox: MailboxComponent,
-        pin: PinComponent,
-        process: ProcessComponent,
-        shell: ShellComponent,
-        system: SystemComponent,
-    ) -> None:
+    def register_components(self, container: svcs.Container) -> None:
         """Register all component handlers with the registries."""
-        self.console = console
-        self.datastore = datastore
-        self.file = file
-        self.mailbox = mailbox
-        self.pin = pin
-        self.process = process
-        self.shell = shell
-        self.system = system
+        from . import (
+            ConsoleComponent,
+            DatastoreComponent,
+            FileComponent,
+            MailboxComponent,
+            PinComponent,
+            ProcessComponent,
+            ShellComponent,
+            SystemComponent,
+        )
+
+        self._container = container
+        console = container.get(ConsoleComponent)
+        datastore = container.get(DatastoreComponent)
+        file = container.get(FileComponent)
+        mailbox = container.get(MailboxComponent)
+        pin = container.get(PinComponent)
+        process = container.get(ProcessComponent)
+        shell = container.get(ShellComponent)
+        system = container.get(SystemComponent)
 
         # Console
         self.mcu_registry.register(Command.CMD_XOFF.value, console.handle_xoff)
@@ -157,8 +154,11 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_ANALOG_READ_RESP.value, pin.handle_analog_read_resp)
 
         async def _handle_mcu_read(cmd: Command, p: bytes) -> bool:
-            if self.pin:
-                await self.pin.handle_unexpected_mcu_request(cmd, p)
+            if self._container:
+                from . import PinComponent
+
+                pin_cmp = self._container.get(PinComponent)
+                await pin_cmp.handle_unexpected_mcu_request(cmd, p)
                 return True
             logger.warning("Pin component not registered; dropping unexpected %s", cmd.name)
             return False
@@ -340,8 +340,11 @@ class BridgeDispatcher:
             case "bridge":
                 return await self._handle_bridge_topic(route, inbound)
             case _:
-                if self.system:
-                    return await self.system.handle_mqtt(route.identifier, list(route.remainder), inbound)
+                if self._container:
+                    from . import SystemComponent
+
+                    system = self._container.get(SystemComponent)
+                    return await system.handle_mqtt(route.identifier, list(route.remainder), inbound)
         return False
 
     async def _handle_bridge_topic(self, route: TopicRoute, inbound: Message) -> bool:

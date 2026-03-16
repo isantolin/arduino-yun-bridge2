@@ -988,6 +988,8 @@ class TestDispatcherEdgeCases:
         from mcubridge.protocol.topics import TopicRoute
         from mcubridge.services.dispatcher import BridgeDispatcher
 
+        from .conftest import make_component_container
+
         config = _make_config()
         state = create_runtime_state(config)
         d = BridgeDispatcher(
@@ -1001,14 +1003,16 @@ class TestDispatcherEdgeCases:
             publish_bridge_snapshot=AsyncMock(),
         )
         d.register_components(
-            console=MagicMock(),
-            datastore=MagicMock(),
-            file=MagicMock(),
-            mailbox=MagicMock(),
-            pin=MagicMock(),
-            process=MagicMock(),
-            shell=MagicMock(),
-            system=MagicMock(),
+            make_component_container(
+                console=MagicMock(),
+                datastore=MagicMock(),
+                file=MagicMock(),
+                mailbox=MagicMock(),
+                pin=MagicMock(),
+                process=MagicMock(),
+                shell=MagicMock(),
+                system=MagicMock(),
+            )
         )
         route = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
         result = d._should_reject_topic_action(route)

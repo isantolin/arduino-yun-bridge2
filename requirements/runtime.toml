@@ -139,6 +139,12 @@ pip = "nanopb==0.4.9.1"
 rationale = "Nanopb library for Protobuf generation [BUILD-ONLY]"
 
 [[dependency]]
+name = "svcs"
+openwrt = "python3-svcs"
+pip = "svcs==25.1.0"
+rationale = "Structured service locator for component lifecycle management"
+
+[[dependency]]
 name = "grpcio-tools"
 openwrt = "python3-grpcio-tools"
 pip = "grpcio-tools==1.78.0"

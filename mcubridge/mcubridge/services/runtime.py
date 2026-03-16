@@ -7,6 +7,7 @@ from collections.abc import Coroutine
 from typing import Any
 
 import msgspec
+import svcs
 from aiomqtt.message import Message
 
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
@@ -26,6 +27,16 @@ from . import (
     ProcessComponent,
     ShellComponent,
     SystemComponent,
+)
+from . import (
+    console as _console_mod,
+    datastore as _datastore_mod,
+    file as _file_mod,
+    mailbox as _mailbox_mod,
+    pin as _pin_mod,
+    process as _process_mod,
+    shell as _shell_mod,
+    system as _system_mod,
 )
 from .dispatcher import BridgeDispatcher
 from .handshake import (
@@ -88,6 +99,17 @@ class BridgeService:
         self._shell = ShellComponent(config, state, self, self._process)
         self._system = SystemComponent(config, state, self)
 
+        self._registry = svcs.Registry()
+        self._registry.register_value(_console_mod.ConsoleComponent, self._console)
+        self._registry.register_value(_datastore_mod.DatastoreComponent, self._datastore)
+        self._registry.register_value(_file_mod.FileComponent, self._file)
+        self._registry.register_value(_mailbox_mod.MailboxComponent, self._mailbox)
+        self._registry.register_value(_pin_mod.PinComponent, self._pin)
+        self._registry.register_value(_process_mod.ProcessComponent, self._process)
+        self._registry.register_value(_shell_mod.ShellComponent, self._shell)
+        self._registry.register_value(_system_mod.SystemComponent, self._system)
+        self._container = svcs.Container(self._registry)
+
         self._handshake = SerialHandshakeManager(
             config=config,
             state=state,
@@ -122,16 +144,7 @@ class BridgeService:
             publish_bridge_snapshot=self._publish_bridge_snapshot,
             on_frame_received=self._serial_flow.on_frame_received,
         )
-        self._dispatcher.register_components(
-            console=self._console,
-            datastore=self._datastore,
-            file=self._file,
-            mailbox=self._mailbox,
-            pin=self._pin,
-            process=self._process,
-            shell=self._shell,
-            system=self._system,
-        )
+        self._dispatcher.register_components(self._container)
         self._dispatcher.register_system_handlers(
             handle_link_sync_resp=self._handshake.handle_link_sync_resp,
             handle_link_reset_resp=self._handshake.handle_link_reset_resp,

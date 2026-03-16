@@ -61,6 +61,7 @@ jobs:
           ${{ steps.get_labels.outputs.available_labels != '' }}
         uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
         env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           GITHUB_TOKEN: '' # Do NOT pass any auth tokens here since this runs on untrusted inputs
           ISSUE_TITLE: '${{ github.event.issue.title }}'
           ISSUE_BODY: '${{ github.event.issue.body }}'
@@ -122,6 +123,7 @@ jobs:
 
       - name: 'Apply labels'
         env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           ISSUE_NUMBER: '${{ github.event.issue.number }}'
           AVAILABLE_LABELS: '${{ needs.triage.outputs.available_labels }}'
           SELECTED_LABELS: '${{ needs.triage.outputs.selected_labels }}'

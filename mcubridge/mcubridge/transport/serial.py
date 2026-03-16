@@ -318,6 +318,7 @@ class SerialTransport:
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(3),
             wait=tenacity.wait_exponential(multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX),
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=True
         )
 
@@ -335,7 +336,6 @@ class SerialTransport:
                         await asyncio.wait_for(self._negotiation_future, timeout=2.0)
                         return True
                     except asyncio.TimeoutError:
-                        logger.warning("Baudrate negotiation timeout, retrying...")
                         raise
         except (tenacity.RetryError, asyncio.TimeoutError):
             pass

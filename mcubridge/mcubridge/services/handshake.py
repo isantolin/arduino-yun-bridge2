@@ -401,6 +401,7 @@ class SerialHandshakeManager:
             stop=tenacity.stop_after_attempt(5),
             wait=tenacity.wait_incrementing(start=0.5, increment=0.5),
             retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
+            before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
             reraise=False,
         )
 

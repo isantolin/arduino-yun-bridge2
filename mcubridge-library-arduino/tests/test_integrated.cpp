@@ -112,7 +112,7 @@ void integrated_test_components() {
 }
 
 void integrated_test_error_branches() {
-  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
+  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, F("err"));
   Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   Bridge.enterSafeState();
 }

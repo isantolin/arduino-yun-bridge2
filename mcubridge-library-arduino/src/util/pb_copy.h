@@ -55,7 +55,7 @@ inline void pb_setup_encode_span(PbCallbackField& field, const etl::span<const u
  * The callback will copy incoming bytes into the provided span, up to its capacity.
  * The arg must be a pointer to an etl::span<uint8_t>.
  */
-inline bool pb_decode_span_callback(pb_istream_t* stream, const pb_field_t* field,
+inline bool pb_decode_span_callback(pb_istream_t* stream, const pb_field_t* /* field */,
                                    void** arg) {
   if (arg == nullptr || *arg == nullptr) return true;
   etl::span<uint8_t>* span = static_cast<etl::span<uint8_t>*>(*arg);

@@ -34,12 +34,6 @@ pip = "cobs==1.2.2"
 rationale = "COBS framing for the RPC protocol"
 
 [[dependency]]
-name = "jinja2"
-openwrt = "python3-jinja2"
-pip = "jinja2==3.1.6"
-rationale = "Template engine for professional and auditable code generation"
-
-[[dependency]]
 name = "msgspec"
 openwrt = "python3-msgspec"
 pip = "msgspec==0.20.0"
@@ -128,21 +122,3 @@ name = "mosquitto-client"
 openwrt = "mosquitto-client"
 pip = ""
 rationale = "CLI MQTT tools used by credential rotation and health-check scripts"
-
-[[dependency]]
-name = "xxd"
-openwrt = "xxd"
-pip = ""
-rationale = "Hex-dump utility used by diagnostic scripts"
-
-[[dependency]]
-name = "nanopb"
-openwrt = "python3-nanopb"
-pip = "nanopb"
-rationale = "Nanopb library for Protobuf generation"
-
-[[dependency]]
-name = "grpcio-tools"
-openwrt = "python3-grpcio-tools"
-pip = "grpcio-tools"
-rationale = "Protobuf compiler tools for Python"

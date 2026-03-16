@@ -352,7 +352,7 @@ class BridgeClass
     if (ctx.requires_ack) _sendAckAndFlush(ctx.frame->header.command_id);
   }
 
-  template <typename F> void _withPayloadResponse(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
+  template <typename TPacket, typename F> void _withPayloadResponse(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
     if (!ctx.is_duplicate) {
       auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
       if (res.has_value()) handler(res.value());

@@ -50,7 +50,6 @@ define Package/$(PKG_NAME)
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
 		+python3-cobs \
-		+python3-jinja2 \
 		+python3-msgspec \
 		+python3-psutil \
 		+python3-prometheus-client \

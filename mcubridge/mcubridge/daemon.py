@@ -30,11 +30,13 @@ import asyncio
 import logging
 import sys
 from collections.abc import Awaitable, Callable
-from typing import NoReturn
+from typing import Any
 
 import msgspec
 import psutil
 import tenacity
+import typer
+from typing_extensions import Annotated
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
 import uvloop
@@ -248,9 +250,6 @@ class BridgeDaemon:
                     raise
 
 
-import typer
-from typing_extensions import Annotated
-
 app = typer.Typer(help="Arduino MCU Bridge Daemon v2", add_completion=False)
 
 
@@ -261,23 +260,39 @@ def main(
     mqtt_host: Annotated[str | None, typer.Option(help="MQTT host")] = None,
     mqtt_port: Annotated[int | None, typer.Option(help="MQTT port")] = None,
     mqtt_tls: Annotated[int | None, typer.Option(help="Use TLS for MQTT (0 or 1)")] = None,
-    serial_shared_secret: Annotated[str | None, typer.Option(help="Shared secret for serial link")] = None,
-    allowed_commands: Annotated[str | None, typer.Option(help="Comma-separated list of allowed shell commands")] = None,
-    non_interactive: Annotated[bool, typer.Option(help="Enable non-interactive mode")] = False,
+    serial_shared_secret: Annotated[
+        str | None, typer.Option(help="Shared secret for serial link")
+    ] = None,
+    allowed_commands: Annotated[
+        str | None, typer.Option(help="Comma-separated list of allowed shell commands")
+    ] = None,
+    non_interactive: Annotated[
+        bool, typer.Option(help="Enable non-interactive mode")
+    ] = False,
     debug: Annotated[bool, typer.Option("--debug", help="Enable debug logging")] = False,
 ) -> None:
     """Main entry point for the MCU Bridge daemon."""
     overrides: dict[str, Any] = {}
-    if serial_port: overrides["serial_port"] = serial_port
-    if serial_baud: overrides["serial_baud"] = serial_baud
-    if mqtt_host: overrides["mqtt_host"] = mqtt_host
-    if mqtt_port: overrides["mqtt_port"] = mqtt_port
-    if mqtt_tls is not None: overrides["mqtt_tls"] = bool(mqtt_tls)
-    if serial_shared_secret: overrides["serial_shared_secret"] = serial_shared_secret
-    if non_interactive: overrides["non_interactive"] = True
-    if debug: overrides["debug_logging"] = True
+    if serial_port:
+        overrides["serial_port"] = serial_port
+    if serial_baud:
+        overrides["serial_baud"] = serial_baud
+    if mqtt_host:
+        overrides["mqtt_host"] = mqtt_host
+    if mqtt_port:
+        overrides["mqtt_port"] = mqtt_port
+    if mqtt_tls is not None:
+        overrides["mqtt_tls"] = bool(mqtt_tls)
+    if serial_shared_secret:
+        overrides["serial_shared_secret"] = serial_shared_secret
+    if non_interactive:
+        overrides["non_interactive"] = True
+    if debug:
+        overrides["debug_logging"] = True
     if allowed_commands:
-        overrides["allowed_commands"] = allowed_commands.split(",") if allowed_commands != "*" else "*"
+        overrides["allowed_commands"] = (
+            allowed_commands.split(",") if allowed_commands != "*" else "*"
+        )
 
     config = load_runtime_config(overrides)
     configure_logging(config)

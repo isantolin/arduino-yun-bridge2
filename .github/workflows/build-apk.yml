@@ -29,7 +29,7 @@ jobs:
           ./1_compile.sh --skip-host-deps
 
       - name: Upload APK Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openwrt-apk-packages
           path: bin/

@@ -222,15 +222,31 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                                      _isRecentDuplicateRx(effective_frame),
                                      rpc::requires_ack(raw_cmd));
 
-  if (raw_cmd >= rpc::RPC_STATUS_CODE_MIN && raw_cmd <= rpc::RPC_STATUS_CODE_MAX) onStatusCommand(ctx);
-  else if (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN && raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX) onSystemCommand(ctx);
-  else if (raw_cmd >= rpc::RPC_GPIO_COMMAND_MIN && raw_cmd <= rpc::RPC_GPIO_COMMAND_MAX) onGpioCommand(ctx);
-  else if (raw_cmd >= rpc::RPC_CONSOLE_COMMAND_MIN && raw_cmd <= rpc::RPC_CONSOLE_COMMAND_MAX) onConsoleCommand(ctx);
-  else if (raw_cmd >= rpc::RPC_DATASTORE_COMMAND_MIN && raw_cmd <= rpc::RPC_DATASTORE_COMMAND_MAX) onDataStoreCommand(ctx);
-  else if (raw_cmd >= rpc::RPC_MAILBOX_COMMAND_MIN && raw_cmd <= rpc::RPC_MAILBOX_COMMAND_MAX) onMailboxCommand(ctx);
-  else if (raw_cmd >= rpc::RPC_FILESYSTEM_COMMAND_MIN && raw_cmd <= rpc::RPC_FILESYSTEM_COMMAND_MAX) onFileSystemCommand(ctx);
-  else if (raw_cmd >= rpc::RPC_PROCESS_COMMAND_MIN && raw_cmd <= rpc::RPC_PROCESS_COMMAND_MAX) onProcessCommand(ctx);
-  else onUnknownCommand(ctx);
+  struct CommandRange {
+    uint16_t min;
+    uint16_t max;
+    void (BridgeClass::*handler)(const bridge::router::CommandContext&);
+  };
+
+  static constexpr etl::array<CommandRange, 8> kRanges{{
+      {rpc::RPC_STATUS_CODE_MIN, rpc::RPC_STATUS_CODE_MAX, &BridgeClass::onStatusCommand},
+      {rpc::RPC_SYSTEM_COMMAND_MIN, rpc::RPC_SYSTEM_COMMAND_MAX, &BridgeClass::onSystemCommand},
+      {rpc::RPC_GPIO_COMMAND_MIN, rpc::RPC_GPIO_COMMAND_MAX, &BridgeClass::onGpioCommand},
+      {rpc::RPC_CONSOLE_COMMAND_MIN, rpc::RPC_CONSOLE_COMMAND_MAX, &BridgeClass::onConsoleCommand},
+      {rpc::RPC_DATASTORE_COMMAND_MIN, rpc::RPC_DATASTORE_COMMAND_MAX, &BridgeClass::onDataStoreCommand},
+      {rpc::RPC_MAILBOX_COMMAND_MIN, rpc::RPC_MAILBOX_COMMAND_MAX, &BridgeClass::onMailboxCommand},
+      {rpc::RPC_FILESYSTEM_COMMAND_MIN, rpc::RPC_FILESYSTEM_COMMAND_MAX, &BridgeClass::onFileSystemCommand},
+      {rpc::RPC_PROCESS_COMMAND_MIN, rpc::RPC_PROCESS_COMMAND_MAX, &BridgeClass::onProcessCommand}}};
+
+  bool handled = false;
+  for (const auto& range : kRanges) {
+    if (raw_cmd >= range.min && raw_cmd <= range.max) {
+      (this->*range.handler)(ctx);
+      handled = true;
+      break;
+    }
+  }
+  if (!handled) onUnknownCommand(ctx);
 
   if (!ctx.is_duplicate) _markRxProcessed(effective_frame);
 }

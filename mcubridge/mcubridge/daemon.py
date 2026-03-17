@@ -321,26 +321,13 @@ def main(
 
     try:
         if uvloop is None:
-            raise RuntimeError("python3-uvloop is required but not installed")
+            raise RuntimeError("python3-uvloop is required")
         daemon = BridgeDaemon(config)
-        # [SIL-2] Enforce uvloop for deterministic async performance
         asyncio.run(daemon.run(), loop_factory=uvloop.new_event_loop)
-        sys.exit(0)
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user.")
-        sys.exit(0)
-    except RuntimeError as exc:
-        logger.critical("Startup aborted due to runtime error: %s", exc)
-        sys.exit(1)
-    except ExceptionGroup as exc_group:
-        for group_exc in exc_group.exceptions:
-            logger.critical("Fatal error in task group: %s", group_exc, exc_info=group_exc)
-        sys.exit(1)
-    except OSError as exc:
-        logger.critical("System/OS error during daemon execution: %s", exc, exc_info=True)
-        sys.exit(1)
-    except BaseException as exc:
-        logger.critical("Fatal base exception during daemon execution: %s", exc, exc_info=True)
+    except Exception as exc:
+        logger.critical("Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError))
         sys.exit(1)
 
 

@@ -1,5 +1,6 @@
 #include "hal.h"
 #include "config/bridge_config.h"
+#include "protocol/rpc_protocol.h"
 
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/io.h>
@@ -58,6 +59,36 @@ bool writeFile(const char* path, etl::span<const uint8_t> data) {
 #else
   (void)path; (void)data;
   return false;
+#endif
+}
+
+uint32_t getCapabilities() {
+  uint32_t caps = 0;
+#if BRIDGE_ENABLE_WATCHDOG
+  caps |= rpc::RPC_CAPABILITY_WATCHDOG;
+#endif
+#if BRIDGE_ENABLE_RLE
+  caps |= rpc::RPC_CAPABILITY_RLE;
+#endif
+#if defined(ARDUINO_ARCH_AVR) && defined(SERIAL_PORT_HARDWARE1)
+  caps |= rpc::RPC_CAPABILITY_HW_SERIAL1;
+#endif
+#if defined(BRIDGE_ENABLE_DAC)
+  caps |= rpc::RPC_CAPABILITY_DAC;
+#endif
+  return caps;
+}
+
+void getPinCounts(uint8_t& digital, uint8_t& analog) {
+#if defined(ARDUINO_ARCH_AVR)
+  digital = bridge::config::AVR_DIGITAL_PINS;
+  analog = bridge::config::AVR_ANALOG_PINS;
+#elif defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM)
+  digital = bridge::config::SAMD_DIGITAL_PINS;
+  analog = bridge::config::SAMD_ANALOG_PINS;
+#else
+  digital = bridge::config::FALLBACK_MAX_PIN;
+  analog = 0;
 #endif
 }
 

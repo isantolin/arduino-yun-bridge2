@@ -40,11 +40,18 @@ bool hasSD();
 
 /**
  * @brief Write data to a file on the SD card.
- * @param path The file path.
- * @param data The data to write.
- * @return true on success, false otherwise.
  */
 bool writeFile(const char* path, etl::span<const uint8_t> data);
+
+/**
+ * @brief Get MCU capabilities bitmask.
+ */
+uint32_t getCapabilities();
+
+/**
+ * @brief Get architecture specific pin counts.
+ */
+void getPinCounts(uint8_t& digital, uint8_t& analog);
 
 }  // namespace hal
 }  // namespace bridge

@@ -74,6 +74,24 @@ inline void pb_setup_decode_span(PbCallbackField& field, etl::span<uint8_t>& dst
   field.arg = &dst;
 }
 
+/**
+ * @brief Join parts (command + args) into a single null-terminated string.
+ */
+inline void pb_copy_join(etl::string_view base, etl::span<const etl::string_view> parts, char* dst, size_t dst_size) {
+  size_t offset = etl::min(base.length(), dst_size - 1);
+  etl::copy_n(base.data(), offset, dst);
+  dst[offset] = '\0';
+
+  for (const auto& part : parts) {
+    if (offset + 1 >= dst_size) break;
+    dst[offset++] = ' ';
+    size_t to_copy = etl::min(part.length(), dst_size - offset - 1);
+    etl::copy_n(part.data(), to_copy, dst + offset);
+    offset += to_copy;
+    dst[offset] = '\0';
+  }
+}
+
 } // namespace util
 } // namespace rpc
 

@@ -408,7 +408,9 @@ class BridgeClass
   void _onStartupStabilized();
   void _handleAck(uint16_t command_id);
   void _handleMalformed(uint16_t command_id);
+  void _finalizeCriticalCommand(uint16_t command_id);
   void _sendAckAndFlush(uint16_t command_id);
+  void _sendError(rpc::StatusCode status, uint16_t command_id = 0);
   void _doEmitStatus(rpc::StatusCode status_code, etl::span<const uint8_t> payload);
   void _computeHandshakeTag(etl::span<const uint8_t> nonce, uint8_t* out_tag);
   void _applyTimingConfig(etl::span<const uint8_t> payload);

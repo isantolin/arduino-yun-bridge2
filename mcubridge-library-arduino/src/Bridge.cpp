@@ -390,12 +390,11 @@ void BridgeClass::_handleGetCapabilities(const bridge::router::CommandContext& c
     resp.ver = rpc::PROTOCOL_VERSION;
 #if defined(ARDUINO_ARCH_AVR)
     resp.arch = rpc::RPC_ARCH_AVR;
-    resp.dig = bridge::config::AVR_DIGITAL_PINS; resp.ana = bridge::config::AVR_ANALOG_PINS;
 #else
     resp.arch = rpc::RPC_ARCH_SAMD;
-    resp.dig = bridge::config::SAMD_DIGITAL_PINS; resp.ana = bridge::config::SAMD_ANALOG_PINS;
 #endif
-    resp.feat = bridge::config::CAPABILITIES_FEAT_EXTENDED;
+    bridge::hal::getPinCounts(resp.dig, resp.ana);
+    resp.feat = bridge::hal::getCapabilities();
     _sendPbResponse(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, resp);
   });
 }
@@ -512,7 +511,13 @@ void BridgeClass::_handleProcessPollResp(const bridge::router::CommandContext& c
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   if (_command_handler.is_valid()) _command_handler(*ctx.frame);
-  else sendFrame(rpc::StatusCode::STATUS_CMD_UNKNOWN);
+  else _sendError(rpc::StatusCode::STATUS_CMD_UNKNOWN, ctx.raw_command);
+}
+
+void BridgeClass::_sendError(rpc::StatusCode status, uint16_t command_id) {
+  rpc::payload::AckPacket msg = {};
+  msg.command_id = command_id;
+  _sendPbResponse(status, msg);
 }
 
 void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {

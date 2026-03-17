@@ -59,7 +59,13 @@ async def run_test(host, port, user, password):
         if content != b"e2e-data":
             raise ValueError(f"File content mismatch: {content}")
         await client.file_remove(test_file)
-        logger.info("File IO test passed.")
+        
+        # Test MCU SD Write
+        logger.info("Testing MCU SD Card Write...")
+        mcu_test_file = f"mcu/test_sd_{uuid.uuid4().hex[:8]}.txt"
+        await client.file_write(mcu_test_file, "mcu-data")
+        
+        logger.info("File IO tests passed.")
 
     logger.info("--- ALL FEATURES VERIFICATION PASSED ---")
     logger.info("ALL FEATURES PASSED.")

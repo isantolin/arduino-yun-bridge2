@@ -414,6 +414,18 @@ if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
     ./scripts/feeds install -f -p mcubridge -a
 fi
 
+# ==============================================================================
+# [FIX CRITICO] Rust host build on CI (LLVM download-ci-llvm)
+# ==============================================================================
+# Rust bootstrap (x.py) panics on CI if download-ci-llvm is 'true'.
+# Debe ser 'if-unchanged' para evitar el error en GitHub Actions.
+RUST_MAKEFILE="package/feeds/packages/rust/Makefile"
+if [ -f "$RUST_MAKEFILE" ]; then
+    echo "[FIX] Patching rust host build config for CI..."
+    sed -i 's/llvm.download-ci-llvm=true/llvm.download-ci-llvm=if-unchanged/g' "$RUST_MAKEFILE"
+fi
+# ==============================================================================
+
 # [FIX] Cleanup uboot again
 [ -d "package/feeds/base/uboot-ath79" ] && rm -rf package/feeds/base/uboot-ath79
 

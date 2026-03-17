@@ -11,6 +11,7 @@ unsigned long millis() { return g_test_millis++; }
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "BridgeTestInterface.h"
+#include "BridgeTestHelper.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "router/command_router.h"
@@ -89,8 +90,10 @@ void test_bridge_gaps() {
   // Gap: _handleSystemCommand CMD_LINK_SYNC without secret
   ba.clearSharedSecret();
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  f.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
-  etl::fill_n(f.payload.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH, uint8_t{0xA});
+  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  sync_msg.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  etl::fill_n(sync_msg.nonce.bytes, rpc::RPC_HANDSHAKE_NONCE_LENGTH, uint8_t{0xA});
+  bridge::test::set_pb_payload(f, sync_msg);
   ba.routeSystemCommand(bridge::router::CommandContext{&f, static_cast<uint16_t>(rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC)), false, false});
 
   // Gap: onPacketReceived with various errors
@@ -174,8 +177,10 @@ void test_filesystem_gaps() {
       }));
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);
-  f.header.payload_length = 4;
-  memcpy(f.payload.data(), "\0\x02OK", 4);
+  rpc::payload::FileReadResponse fr_msg = mcubridge_FileReadResponse_init_default;
+  uint8_t fr_data[] = "OK";
+  rpc::util::pb_setup_encode_span(fr_msg.content, etl::span<const uint8_t>(fr_data, 2));
+  bridge::test::set_pb_payload(f, fr_msg);
   ba.dispatch(f);
 }
 
@@ -193,8 +198,9 @@ void test_mailbox_gaps() {
   rpc::Frame f;
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
-  f.header.payload_length = 2;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 5);
+  rpc::payload::MailboxAvailableResponse mb_msg = mcubridge_MailboxAvailableResponse_init_default;
+  mb_msg.count = 5;
+  bridge::test::set_pb_payload(f, mb_msg);
   ba.dispatch(f);
 
   // Gap: handleResponse with other command
@@ -227,13 +233,16 @@ void test_process_gaps() {
   rpc::Frame f;
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
-  f.header.payload_length = 8;
-  f.payload[0] = 0x30;  // OK
-  f.payload[1] = 0;     // exit_code
-  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[2], 2), 1);
-  f.payload[4] = 'o';
-  rpc::write_u16_be(etl::span<uint8_t>(&f.payload[5], 2), 1);
-  f.payload[7] = 'e';
+  rpc::payload::ProcessPollResponse poll_resp = mcubridge_ProcessPollResponse_init_default;
+  poll_resp.status = static_cast<uint32_t>(rpc::StatusCode::STATUS_OK);
+  poll_resp.exit_code = 0;
+  
+  uint8_t out_data[] = "o";
+  uint8_t err_data[] = "e";
+  rpc::util::pb_setup_encode_span(poll_resp.stdout_data, etl::span<const uint8_t>(out_data, 1));
+  rpc::util::pb_setup_encode_span(poll_resp.stderr_data, etl::span<const uint8_t>(err_data, 1));
+  
+  bridge::test::set_pb_payload(f, poll_resp);
   ba.dispatch(f);
 }
 

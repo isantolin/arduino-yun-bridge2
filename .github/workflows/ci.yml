@@ -112,7 +112,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-python-tox
       - name: Setup Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "$HOME/bin" >> $GITHUB_PATH
       - name: Install Arduino Dependencies
         run: |
           arduino-cli core update-index
@@ -145,7 +147,9 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y g++ make
       - name: Setup Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "$HOME/bin" >> $GITHUB_PATH
       - name: Install Arduino Dependencies
         run: |
           arduino-cli core update-index

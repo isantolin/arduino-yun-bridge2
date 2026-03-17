@@ -1,6 +1,11 @@
 /*
   Corrected Smoke Test for MCU Bridge 2.0
   Waits for Console connection to avoid spamming the bus before handshake.
+
+  [CONFIGURACIÓN]
+  Para ahorrar memoria (Flash/RAM) desactivando servicios (Process, FileSystem, etc.), 
+  DEBES editar el archivo de la librería:
+  -> mcubridge-library-arduino/src/config/bridge_config.h
 */
 
 #include <Bridge.h>

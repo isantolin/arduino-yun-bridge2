@@ -1,24 +1,18 @@
 /*
  * BridgeControl - Sketch Funcional con Password en Runtime
- * * Ahora el secreto se define AQUÍ en el sketch y se pasa a la librería.
+ *
+ * [CONFIGURACIÓN]
+ * Para ahorrar memoria (Flash/RAM) desactivando servicios (Process, FileSystem, etc.), 
+ * DEBES editar el archivo de la librería:
+ * -> mcubridge-library-arduino/src/config/bridge_config.h
+ *
+ * Cambiar los #define BRIDGE_ENABLE_... de 1 a 0 según sea necesario.
  */
 
 // CONFIGURACIÓN DEL SECRETO
 // Este password debe coincidir con el configurado en el lado de Linux
-// (/etc/mcu-bridge.conf o similar)
+// (/etc/config/mcubridge o similar)
 #define BRIDGE_SECRET "DEBUG_INSECURE"
-
-// [MEMORY] Disable unused services to save Flash and RAM on ATmega32U4.
-// These can be re-enabled by setting the corresponding macro to 1.
-#ifndef BRIDGE_ENABLE_DATASTORE
-#define BRIDGE_ENABLE_DATASTORE 0
-#endif
-#ifndef BRIDGE_ENABLE_FILESYSTEM
-#define BRIDGE_ENABLE_FILESYSTEM 0
-#endif
-#ifndef BRIDGE_ENABLE_PROCESS
-#define BRIDGE_ENABLE_PROCESS 0
-#endif
 
 #include <Bridge.h>
 #include <string.h>

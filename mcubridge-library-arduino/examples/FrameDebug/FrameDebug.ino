@@ -1,5 +1,9 @@
 // [SIL-2] Use centralized bridge_config.h for consistency.
-// Do not override layout macros here to avoid ODR violations.
+// [CONFIGURACIÓN]
+// Para ahorrar memoria (Flash/RAM) desactivando servicios (Process, FileSystem, etc.), 
+// DEBES editar el archivo de la librería:
+// -> mcubridge-library-arduino/src/config/bridge_config.h
+//
 #define BRIDGE_SECRET \
   "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 

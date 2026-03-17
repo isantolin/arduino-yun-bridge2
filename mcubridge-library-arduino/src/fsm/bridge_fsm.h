@@ -20,6 +20,8 @@
 
 #include "etl/fsm.h"
 #include "etl/message.h"
+#include "etl/array.h"
+#include "etl/bitset.h"
 
 namespace bridge {
 namespace fsm {
@@ -198,13 +200,14 @@ enum TimerId : uint8_t {
 // [RAM-OPT] Lightweight timer replacing etl::callback_timer<N>.
 template <size_t N>
 struct SimpleTimer {
-  uint32_t deadline[N];
-  uint32_t period[N];
-  uint8_t active;  // bitmask
+  etl::array<uint32_t, N> deadline;
+  etl::array<uint32_t, N> period;
+  etl::bitset<N> active;
 
   void clear() {
-    for(size_t i=0; i<N; ++i) { deadline[i] = 0; period[i] = 0; }
-    active = 0;
+    deadline.fill(0);
+    period.fill(0);
+    active.reset();
   }
 
   void set_period(uint8_t id, uint32_t ms) {
@@ -214,7 +217,7 @@ struct SimpleTimer {
   void start(uint8_t id, uint32_t now) {
     if (id < N) {
       deadline[id] = now + period[id];
-      active |= (1U << id);
+      active.set(id);
     }
   }
 
@@ -222,29 +225,29 @@ struct SimpleTimer {
     if (id < N) {
       period[id] = ms;
       deadline[id] = now + ms;
-      active |= (1U << id);
+      active.set(id);
     }
   }
 
   void stop(uint8_t id) {
-    if (id < N) active &= ~(1U << id);
+    if (id < N) active.reset(id);
   }
 
   bool is_active(uint8_t id) const {
-    return (id < N) && (active & (1U << id)) != 0;
+    return (id < N) && active.test(id);
   }
 
   static constexpr uint32_t TIMER_OVERFLOW_THRESHOLD = 0x80000000UL;
 
   uint8_t check_expired(uint32_t now) {
-    uint8_t expired = 0;
+    uint8_t expired_mask = 0;
     for (uint8_t i = 0; i < N; ++i) {
-      if ((active & (1U << i)) && (now - deadline[i]) < TIMER_OVERFLOW_THRESHOLD) {
-        expired |= (1U << i);
-        active &= ~(1U << i);
+      if (active.test(i) && (now - deadline[i]) < TIMER_OVERFLOW_THRESHOLD) {
+        expired_mask |= (1U << i);
+        active.reset(i);
       }
     }
-    return expired;
+    return expired_mask;
   }
 };
 

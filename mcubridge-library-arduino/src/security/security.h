@@ -42,13 +42,10 @@ constexpr int kBitsPerByte = 8;
  */
 inline void secure_zero(etl::span<uint8_t> buf) {
   if (buf.empty()) return;
-  volatile uint8_t* p = static_cast<volatile uint8_t*>(buf.data());
-  size_t n = buf.size();
-  while (n--) {
-    *p++ = 0;
-  }
+  etl::fill(buf.begin(), buf.end(), 0);
 #if defined(__GNUC__) || defined(__clang__)
-  asm volatile("" ::: "memory");
+  // [MIL-SPEC] Force compiler to respect the zeroing even if buffer is not used afterward.
+  asm volatile("" : : "r"(buf.data()) : "memory");
 #endif
 }
 

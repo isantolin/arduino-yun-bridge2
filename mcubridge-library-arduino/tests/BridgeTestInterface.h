@@ -129,9 +129,9 @@ class ConsoleTestAccessor {
   bool isTxBufferFull() const { return _c._tx_buffer.full(); }
   void clearTxBuffer() { _c._tx_buffer.clear(); }
   void pushTxByte(uint8_t b) { _c._tx_buffer.push_back(b); }
-  void setXoffSent(bool v) { _c._xoff_sent = v; }
-  bool getXoffSent() const { return _c._xoff_sent; }
-  void setBegun(bool v) { _c._begun = v; }
+  void setXoffSent(bool v) { _c._flags.set(ConsoleClass::XOFF_SENT, v); }
+  bool getXoffSent() const { return _c._flags.test(ConsoleClass::XOFF_SENT); }
+  void setBegun(bool v) { _c._flags.set(ConsoleClass::BEGUN, v); }
   static ConsoleTestAccessor create(ConsoleClass& c) { return ConsoleTestAccessor(c); }
  private:
   ConsoleClass& _c;

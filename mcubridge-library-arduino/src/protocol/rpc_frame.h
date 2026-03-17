@@ -9,6 +9,7 @@
 #undef min
 #undef max
 #include "etl/array.h"
+#include "etl/binary.h"
 #include "etl/crc32.h"
 #include "etl/expected.h"
 #include "etl/span.h"
@@ -20,33 +21,31 @@ namespace rpc {
 // Reads a uint16_t from a Big Endian buffer.
 inline uint16_t read_u16_be(etl::span<const uint8_t> buffer) {
   if (buffer.size() < 2) return 0;
-  return (static_cast<uint16_t>(buffer[0]) << 8) |
-         (static_cast<uint16_t>(buffer[1]));
+  uint16_t value;
+  etl::copy_n(buffer.data(), 2, reinterpret_cast<uint8_t*>(&value));
+  return etl::reverse_bytes(value);
 }
 
 // Writes a uint16_t to a Big Endian buffer.
 inline void write_u16_be(etl::span<uint8_t> buffer, uint16_t value) {
   if (buffer.size() < 2) return;
-  buffer[0] = static_cast<uint8_t>((value >> 8) & 0xFF);
-  buffer[1] = static_cast<uint8_t>(value & 0xFF);
+  uint16_t swapped = etl::reverse_bytes(value);
+  etl::copy_n(reinterpret_cast<const uint8_t*>(&swapped), 2, buffer.data());
 }
 
 // Reads a uint32_t from a Big Endian buffer.
 inline uint32_t read_u32_be(etl::span<const uint8_t> buffer) {
   if (buffer.size() < 4) return 0;
-  return (static_cast<uint32_t>(buffer[0]) << 24) |
-         (static_cast<uint32_t>(buffer[1]) << 16) |
-         (static_cast<uint32_t>(buffer[2]) << 8) |
-         (static_cast<uint32_t>(buffer[3]));
+  uint32_t value;
+  etl::copy_n(buffer.data(), 4, reinterpret_cast<uint8_t*>(&value));
+  return etl::reverse_bytes(value);
 }
 
 // Writes a uint32_t to a Big Endian buffer.
 inline void write_u32_be(etl::span<uint8_t> buffer, uint32_t value) {
   if (buffer.size() < 4) return;
-  buffer[0] = static_cast<uint8_t>((value >> 24) & 0xFF);
-  buffer[1] = static_cast<uint8_t>((value >> 16) & 0xFF);
-  buffer[2] = static_cast<uint8_t>((value >> 8) & 0xFF);
-  buffer[3] = static_cast<uint8_t>(value & 0xFF);
+  uint32_t swapped = etl::reverse_bytes(value);
+  etl::copy_n(reinterpret_cast<const uint8_t*>(&swapped), 4, buffer.data());
 }
 
 constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);

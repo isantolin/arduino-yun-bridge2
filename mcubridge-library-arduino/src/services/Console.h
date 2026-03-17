@@ -6,6 +6,7 @@
 #include "config/bridge_config.h"
 #undef min
 #undef max
+#include "etl/bitset.h"
 #include "etl/circular_buffer.h"
 #include "etl/span.h"
 #include "etl/vector.h"
@@ -21,12 +22,18 @@ class ConsoleClass : public Stream, public BridgeObserver {
   friend class bridge::test::ConsoleTestAccessor;
 #endif
  public:
+  enum ConsoleFlag : uint8_t {
+    BEGUN = 0,
+    XOFF_SENT = 1,
+    NUM_FLAGS = 2
+  };
+
   ConsoleClass();
   void begin();
 
   // [SIL-2] Observer Interface
   void notification(MsgBridgeSynchronized) override { begin(); }
-  void notification(MsgBridgeLost) override { _begun = false; }
+  void notification(MsgBridgeLost) override { _flags.reset(BEGUN); }
 
   size_t write(uint8_t c) override;
   size_t write(const uint8_t* buffer, size_t size) override;
@@ -39,8 +46,7 @@ class ConsoleClass : public Stream, public BridgeObserver {
   void flush() override;
 
  private:
-  bool _begun;
-  bool _xoff_sent;
+  etl::bitset<NUM_FLAGS> _flags;
 
   // [SIL-2] Use ETL containers for safe buffer management
   etl::circular_buffer<uint8_t, bridge::config::CONSOLE_RX_BUFFER_SIZE> _rx_buffer;

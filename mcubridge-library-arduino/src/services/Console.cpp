@@ -2,17 +2,17 @@
 #include "Bridge.h"
 #include "util/pb_copy.h"
 
-ConsoleClass::ConsoleClass() : _begun(false), _xoff_sent(false) {}
+ConsoleClass::ConsoleClass() { _flags.reset(); }
 
 void ConsoleClass::begin() {
   _rx_buffer.clear();
   _tx_buffer.clear();
-  _begun = true;
-  _xoff_sent = false;
+  _flags.set(BEGUN);
+  _flags.reset(XOFF_SENT);
 }
 
 void ConsoleClass::_push(etl::span<const uint8_t> data) {
-  if (!_begun) return;
+  if (!_flags.test(BEGUN)) return;
   BRIDGE_ATOMIC_BLOCK {
     const size_t space = _rx_buffer.capacity() - _rx_buffer.size();
     const size_t to_copy = etl::min(data.size(), space);
@@ -21,7 +21,7 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
 }
 
 size_t ConsoleClass::write(uint8_t c) {
-  if (!_begun) return 0;
+  if (!_flags.test(BEGUN)) return 0;
   BRIDGE_ATOMIC_BLOCK {
     if (_tx_buffer.full()) flush();
     _tx_buffer.push_back(c);
@@ -30,7 +30,7 @@ size_t ConsoleClass::write(uint8_t c) {
 }
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
-  if (!_begun || !buffer || size == 0) return 0;
+  if (!_flags.test(BEGUN) || !buffer || size == 0) return 0;
 
   size_t sent = 0;
   while (sent < size) {
@@ -66,8 +66,8 @@ int ConsoleClass::read() {
     if (!empty) {
       c = _rx_buffer.front();
       _rx_buffer.pop();
-      if (_xoff_sent && _rx_buffer.size() <= _rx_buffer.capacity() / 2) {
-        _xoff_sent = false;
+      if (_flags.test(XOFF_SENT) && _rx_buffer.size() <= _rx_buffer.capacity() / 2) {
+        _flags.reset(XOFF_SENT);
       }
     }
   }
@@ -85,7 +85,7 @@ int ConsoleClass::peek() {
 }
 
 void ConsoleClass::flush() {
-  if (!_begun) return;
+  if (!_flags.test(BEGUN)) return;
   etl::span<const uint8_t> data;
   BRIDGE_ATOMIC_BLOCK {
     if (_tx_buffer.empty()) return;

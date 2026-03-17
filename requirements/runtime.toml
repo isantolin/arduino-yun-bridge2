@@ -93,7 +93,7 @@ rationale = "Modern CLI generation library for tools and examples"
 [[dependency]]
 name = "structlog"
 openwrt = "python3-structlog"
-pip = "structlog==25.4.0"
+pip = "structlog==25.5.0"
 rationale = "Structured logging with JSON output for production syslog"
 
 [[dependency]]

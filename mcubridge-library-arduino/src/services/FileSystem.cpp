@@ -7,24 +7,17 @@
 FileSystemClass::FileSystemClass() {}
 
 void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data) {
-  rpc::payload::FileWrite msg = {};
-  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
-  rpc::util::pb_setup_encode_span(msg.data, data);
-  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, msg);
+  Bridge.sendKeyDataCommand(rpc::CommandId::CMD_FILE_WRITE, path, &rpc::payload::FileWrite::path, data, &rpc::payload::FileWrite::data);
 }
 
 void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler) {
-  rpc::payload::FileRead msg = {};
-  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
-  if (Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ, msg)) {
+  if (Bridge.sendKeyCommand(rpc::CommandId::CMD_FILE_READ, path, &rpc::payload::FileRead::path)) {
     _read_handler = handler;
   }
 }
 
 void FileSystemClass::remove(etl::string_view path) {
-  rpc::payload::FileRemove msg = {};
-  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
-  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, msg);
+  Bridge.sendKeyCommand(rpc::CommandId::CMD_FILE_REMOVE, path, &rpc::payload::FileRemove::path);
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<const uint8_t> data) {

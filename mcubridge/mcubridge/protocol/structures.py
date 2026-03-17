@@ -26,17 +26,26 @@ from typing import (
 
 import google.protobuf.message
 import msgspec
-from mcubridge.protocol import mcubridge_pb2
+from mcubridge.protocol import mcubridge_pb2, protocol
 
 if TYPE_CHECKING:
     from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
 
 
-# [SIL-2] DRY: Single source of truth for capability feature bit positions.
+# [SIL-2] DRY: Use generated constants from protocol.py.
 _CAPABILITY_BITS: Final[dict[str, int]] = {
-    "watchdog": 1, "rle": 2, "debug_frames": 4, "debug_io": 8,
-    "eeprom": 16, "dac": 32, "hw_serial1": 64, "fpu": 128,
-    "logic_3v3": 256, "big_buffer": 512, "i2c": 1024, "spi": 2048,
+    "watchdog": protocol.CAPABILITY_WATCHDOG,
+    "rle": protocol.CAPABILITY_RLE,
+    "debug_frames": protocol.CAPABILITY_DEBUG_FRAMES,
+    "debug_io": protocol.CAPABILITY_DEBUG_IO,
+    "eeprom": protocol.CAPABILITY_EEPROM,
+    "dac": protocol.CAPABILITY_DAC,
+    "hw_serial1": protocol.CAPABILITY_HW_SERIAL1,
+    "fpu": protocol.CAPABILITY_FPU,
+    "logic_3v3": protocol.CAPABILITY_LOGIC_3V3,
+    "big_buffer": protocol.CAPABILITY_BIG_BUFFER,
+    "i2c": protocol.CAPABILITY_I2C,
+    "spi": protocol.CAPABILITY_SPI,
 }
 
 

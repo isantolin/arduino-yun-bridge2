@@ -135,8 +135,9 @@ install_dependency() {
 #   1. Global Arduino libraries (standard practice)
 #   2. Local src/ directory (required for host-based unit tests and SIL-2 isolation)
 # [OPTIMIZATION] Download once, copy to both locations
+ETL_VERSION="20.46.2"
 install_etl_dual() {
-    local url="https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master"
+    local url="https://codeload.github.com/ETLCPP/etl/zip/refs/tags/${ETL_VERSION}"
     local check_file="array.h"
     local sub_path="include/etl"
     local target1="$LIB_DIR"

@@ -86,6 +86,7 @@ TEST_FILES=(
     "${TEST_DIR}/test_coverage_final_push.cpp"
     "${TEST_DIR}/test_coverage_gaps.cpp"
     "${TEST_DIR}/test_coverage_mega.cpp"
+    "${TEST_DIR}/test_coverage_ultra.cpp"
 )
 
 COMPILE_FLAGS=(

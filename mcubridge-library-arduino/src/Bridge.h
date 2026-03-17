@@ -53,7 +53,7 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include "nanopb/pb_common.h"
 #include "nanopb/pb_decode.h"
 #include "nanopb/pb_encode.h"
-#include "etl/array.h"
+#include "etl/bitset.h"
 #include "etl/circular_buffer.h"
 #include "etl/delegate.h"
 #include "etl/expected.h"
@@ -72,6 +72,13 @@ static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024,
 inline uint16_t getFreeMemory() { return bridge::hal::getFreeMemory(); }
 
 namespace bridge {
+
+enum FlagId : uint8_t {
+  FRAME_RECEIVED = 0,
+  STARTUP_STABILIZED = 1,
+  NUM_FLAGS = 2
+};
+
 namespace config {
 
 #if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
@@ -438,11 +445,7 @@ class BridgeClass
   rpc::FrameBuilder _frame_builder;
   etl::optional<rpc::FrameError> _last_parse_error;
   
-  struct {
-    uint8_t frame_received : 1;
-    uint8_t startup_stabilized : 1;
-    uint8_t reserved : 6;
-  } _flags;
+  etl::bitset<bridge::NUM_FLAGS> _flags;
 
   rpc::Frame _rx_frame;
   etl::random_xorshift _rng;

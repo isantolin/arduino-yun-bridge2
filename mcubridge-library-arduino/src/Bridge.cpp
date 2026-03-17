@@ -40,7 +40,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _cobs{0, 0, 0, 0, true, {0}},
       _frame_builder(),
       _last_parse_error(),
-      _flags{false, false, 0},
+      _flags(),
       _rx_frame{},
       _rng(millis()),
       _last_command_id(0),
@@ -61,8 +61,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _fsm(),
       _timers(),
       _last_tick_millis(0) {
-  _flags.frame_received = false;
-  _flags.startup_stabilized = false;
+  _flags.reset();
   _timers.clear();
 }
 
@@ -137,12 +136,12 @@ void BridgeClass::process() {
     BRIDGE_ATOMIC_BLOCK {
       while (_stream.available() > 0) {
         _processIncomingByte(_stream.read());
-        if (_flags.frame_received || _last_parse_error.has_value()) break;
+        if (_flags.test(bridge::FlagId::FRAME_RECEIVED) || _last_parse_error.has_value()) break;
       }
     }
   }
 
-  if (_flags.frame_received) {
+  if (_flags.test(bridge::FlagId::FRAME_RECEIVED)) {
     _handleReceivedFrame();
   } else if (_last_parse_error.has_value()) {
     rpc::FrameError error = _last_parse_error.value();
@@ -172,7 +171,7 @@ void BridgeClass::_processIncomingByte(uint8_t byte) {
         auto result = parser.parse(etl::span<const uint8_t>(_transient_buffer, decoded_len));
         if (result.has_value()) {
           _rx_frame = result.value();
-          _flags.frame_received = true;
+          _flags.set(bridge::FlagId::FRAME_RECEIVED);
           _consecutive_crc_errors = 0;
         } else {
           _last_parse_error = result.error();
@@ -197,7 +196,7 @@ void BridgeClass::_processIncomingByte(uint8_t byte) {
 }
 
 void BridgeClass::_handleReceivedFrame() {
-  _flags.frame_received = false;
+  _flags.reset(bridge::FlagId::FRAME_RECEIVED);
   if (_isRecentDuplicateRx(_rx_frame)) {
     if (rpc::requires_ack(_rx_frame.header.command_id)) _sendAckAndFlush(_rx_frame.header.command_id);
     return;
@@ -605,7 +604,7 @@ void BridgeClass::enterSafeState() {
   BRIDGE_ATOMIC_BLOCK { _fsm.resetFsm(); }
   _timers.clear();
   _pending_baudrate = 0; _retry_count = 0; _clearPendingTxQueue();
-  _flags.frame_received = false; _rx_history.clear(); _consecutive_crc_errors = 0;
+  _flags.reset(bridge::FlagId::FRAME_RECEIVED); _rx_history.clear(); _consecutive_crc_errors = 0;
 #if BRIDGE_ENABLE_PROCESS
   Process.reset();
 #endif

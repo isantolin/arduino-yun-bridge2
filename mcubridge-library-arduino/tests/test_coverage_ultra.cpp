@@ -124,11 +124,15 @@ void test_bridge_helpers_coverage() {
     
     // 1. sendKeyCommand
     Bridge.sendKeyCommand(rpc::CommandId::CMD_DATASTORE_GET, "testkey", &rpc::payload::DatastoreGet::key);
+    Bridge.sendKeyCommand(rpc::CommandId::CMD_FILE_READ, "testfile", &rpc::payload::FileRead::path);
+    Bridge.sendKeyCommand(rpc::CommandId::CMD_FILE_REMOVE, "testfile", &rpc::payload::FileRemove::path);
     
     // 2. sendKeyDataCommand
     uint8_t data[] = {0xDE, 0xAD};
     Bridge.sendKeyDataCommand(rpc::CommandId::CMD_DATASTORE_PUT, "testkey", &rpc::payload::DatastorePut::key,
                               etl::span<const uint8_t>(data, 2), &rpc::payload::DatastorePut::value);
+    Bridge.sendKeyDataCommand(rpc::CommandId::CMD_FILE_WRITE, "testfile", &rpc::payload::FileWrite::path,
+                              etl::span<const uint8_t>(data, 2), &rpc::payload::FileWrite::data);
                               
     // 3. sendDataCommand
     Bridge.sendDataCommand(rpc::CommandId::CMD_MAILBOX_PUSH, etl::span<const uint8_t>(data, 2), &rpc::payload::MailboxPush::data);
@@ -146,6 +150,24 @@ void test_capabilities_dispatch_coverage() {
     ba.dispatch(f);
 }
 
+// --- 8. rpc::Payload::parse Exhaustivo ---
+void test_payload_parse_all_descriptors() {
+    rpc::Frame f = {};
+    
+    // Probar parseo de diversos tipos para cubrir rpc_structs.h REGISTER_DESCRIPTOR
+    rpc::payload::Capabilities caps = {};
+    rpc::Payload::parse<rpc::payload::Capabilities>(f, caps);
+    
+    rpc::payload::VersionResponse ver = {};
+    rpc::Payload::parse<rpc::payload::VersionResponse>(f, ver);
+    
+    rpc::payload::MailboxAvailableResponse mb_avail = {};
+    rpc::Payload::parse<rpc::payload::MailboxAvailableResponse>(f, mb_avail);
+    
+    rpc::payload::ProcessPollResponse proc_poll = {};
+    rpc::Payload::parse<rpc::payload::ProcessPollResponse>(f, proc_poll);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_dispatch_out_of_bounds);
@@ -155,6 +177,7 @@ int main(void) {
     RUN_TEST(test_payload_parse_malformed);
     RUN_TEST(test_bridge_helpers_coverage);
     RUN_TEST(test_capabilities_dispatch_coverage);
+    RUN_TEST(test_payload_parse_all_descriptors);
     return UNITY_END();
 }
 

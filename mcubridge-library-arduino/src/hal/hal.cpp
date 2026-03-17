@@ -80,7 +80,10 @@ uint32_t getCapabilities() {
 }
 
 void getPinCounts(uint8_t& digital, uint8_t& analog) {
-#if defined(ARDUINO_ARCH_AVR)
+#if defined(BRIDGE_HOST_TEST)
+  digital = bridge::config::SAMD_DIGITAL_PINS;
+  analog = bridge::config::SAMD_ANALOG_PINS;
+#elif defined(ARDUINO_ARCH_AVR)
   digital = bridge::config::AVR_DIGITAL_PINS;
   analog = bridge::config::AVR_ANALOG_PINS;
 #elif defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM)

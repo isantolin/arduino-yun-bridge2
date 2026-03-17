@@ -242,15 +242,23 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
 }
 
 void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
-  switch (static_cast<rpc::StatusCode>(ctx.raw_command)) {
-    case rpc::StatusCode::STATUS_ACK: _handleStatusAck(ctx); break;
-    case rpc::StatusCode::STATUS_MALFORMED: _handleStatusMalformed(ctx); break;
-    default:
-      if (_status_handler.is_valid()) {
-        _status_handler(static_cast<rpc::StatusCode>(ctx.raw_command),
-                        etl::span<const uint8_t>(ctx.frame->payload.data(), ctx.frame->header.payload_length));
-      }
-      break;
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 9> kStatusHandlers{{
+      nullptr, // 48: STATUS_OK (No-op here)
+      nullptr, // 49: STATUS_ERROR
+      nullptr, // 50: STATUS_CMD_UNKNOWN
+      &BridgeClass::_handleStatusMalformed, // 51
+      nullptr, // 52
+      nullptr, // 53
+      nullptr, // 54
+      nullptr, // 55
+      &BridgeClass::_handleStatusAck // 56
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_STATUS_CODE_MIN, kStatusHandlers.data(), kStatusHandlers.size());
+
+  // [SIL-2] If not handled by jump table, call the optional external observer
+  if (_status_handler.is_valid()) {
+    _status_handler(static_cast<rpc::StatusCode>(ctx.raw_command),
+                    etl::span<const uint8_t>(ctx.frame->payload.data(), ctx.frame->header.payload_length));
   }
 }
 

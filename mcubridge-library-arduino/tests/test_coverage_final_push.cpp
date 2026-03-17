@@ -726,8 +726,8 @@ void test_console_write_full_buffer_flush_fails() {
   ba.setFault();
 
   size_t result = Console.write((uint8_t)'X');
-  // write() always returns 1 when begun (calls flush then push_back)
-  TEST_ASSERT_EQUAL(1u, result);
+  // write() returns 0 when full and flush fails (fault state)
+  TEST_ASSERT_EQUAL(0u, result);
 }
 
 // =====================================================================

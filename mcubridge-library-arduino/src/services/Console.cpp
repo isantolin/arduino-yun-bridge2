@@ -22,8 +22,9 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
 
 size_t ConsoleClass::write(uint8_t c) {
   if (!_flags.test(BEGUN)) return 0;
+  if (_tx_buffer.full()) flush();
   BRIDGE_ATOMIC_BLOCK {
-    if (_tx_buffer.full()) flush();
+    if (_tx_buffer.full()) return 0;
     _tx_buffer.push_back(c);
   }
   return 1;
@@ -31,14 +32,25 @@ size_t ConsoleClass::write(uint8_t c) {
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (!_flags.test(BEGUN) || !buffer || size == 0) return 0;
-  
-  BRIDGE_ATOMIC_BLOCK {
-    const size_t space = _tx_buffer.capacity() - _tx_buffer.size();
-    const size_t to_copy = etl::min(size, space);
-    _tx_buffer.insert(_tx_buffer.end(), buffer, buffer + to_copy);
-    return to_copy;
+
+  size_t sent = 0;
+  while (sent < size) {
+    size_t space;
+    BRIDGE_ATOMIC_BLOCK { space = _tx_buffer.capacity() - _tx_buffer.size(); }
+
+    if (space == 0) {
+      flush();
+      BRIDGE_ATOMIC_BLOCK { space = _tx_buffer.capacity() - _tx_buffer.size(); }
+      if (space == 0) break;
+    }
+
+    const size_t to_copy = etl::min(size - sent, space);
+    BRIDGE_ATOMIC_BLOCK {
+      _tx_buffer.insert(_tx_buffer.end(), buffer + sent, buffer + sent + to_copy);
+    }
+    sent += to_copy;
   }
-  return 0;
+  return sent;
 }
 
 int ConsoleClass::available() {

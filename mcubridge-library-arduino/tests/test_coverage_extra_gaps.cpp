@@ -117,10 +117,9 @@ void test_console_write_fail() {
     ca.pushTxByte('A');
   }
   
-  // Console.write() always returns 1 when _begun: flush may fail but
-  // circular buffer push_back drops oldest element on full buffer
+  // Console.write() returns 0 when full and flush fails (unsync)
   size_t wrote = Console.write('B');
-  TEST_ASSERT_EQ_UINT(wrote, 1);
+  TEST_ASSERT_EQ_UINT(wrote, 0);
 }
 
 } // namespace

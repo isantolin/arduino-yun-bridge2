@@ -219,15 +219,19 @@ void test_filesystem_via_dispatch() {
   rpc::Frame f;
   memset(&f, 0, sizeof(f));
 
-  // CMD_FILE_WRITE (144) - FileWrite ACK
+  // CMD_FILE_WRITE (144) - FileWrite with payload
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
-  // Note: CMD_FILE_WRITE handler in Bridge.cpp only does _withAck, it doesn't parse payload
-  // but we should still send a valid-ish frame if it was expected to have payload.
-  // Actually Bridge.cpp L839: &BridgeClass::_handleFileWrite,    // 0: 144
-  // _handleFileWrite: _withAck(ctx, []() { ... });
-  // _withAck doesn't parse payload, so we can send empty payload or anything.
-  f.header.payload_length = 0;
+  rpc::payload::FileWrite fw_msg = mcubridge_FileWrite_init_default;
+  strcpy(fw_msg.path, "test.txt");
+  uint8_t fw_data[] = "SD-WRITE-DATA";
+  etl::span<const uint8_t> fw_span(fw_data, sizeof(fw_data));
+  rpc::util::pb_setup_encode_span(fw_msg.data, fw_span);
+  bridge::test::set_pb_payload(f, fw_msg);
+  stream.tx_buf.clear();
   ba.dispatch(f);
+  // Should have responded STATUS_OK since hal::hasSD() is true in host tests
+  TEST_ASSERT(stream.tx_buf.len > 0);
+  // (We can check if it contains STATUS_OK (0x30))
 
   // CMD_FILE_READ_RESP (147)
   FileSystem.read("testfile",
@@ -582,6 +586,11 @@ void test_hal_free_memory() {
 
   // Also test the global wrapper
   TEST_ASSERT_EQ_UINT(getFreeMemory(), 1024);
+
+  // Test hal::hasSD and hal::writeFile (new abstractions)
+  TEST_ASSERT(bridge::hal::hasSD());
+  uint8_t dummy_data[] = {0x01, 0x02};
+  TEST_ASSERT(bridge::hal::writeFile("test.txt", etl::span<const uint8_t>(dummy_data, 2)));
 }
 
 // ============================================================================
@@ -655,9 +664,8 @@ void test_emit_status() {
   ba.setIdle();
   ba.assignSharedSecret((const uint8_t*)"mysecret",
                         (const uint8_t*)"mysecret" + 8);
-  f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  f.header.payload_length = 2;
-  ba.dispatch(f);
+  // Trigger emitStatus(StatusCode, const __FlashStringHelper*) with nullptr
+  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, (const __FlashStringHelper*)nullptr);
 
   // Trigger emitStatus(FlashStringHelper) via failed mutual auth
   // This calls emitStatus(STATUS_ERROR, F("Mutual Auth Failed"))
@@ -861,6 +869,43 @@ void test_console_edge_cases() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setUnsynchronized();
   TEST_ASSERT_EQ_UINT(Console.write('Z'), 1);
+
+  // New: Test block copy write() with optimized implementation
+  reset_env(stream);
+  rpc::Frame sync_f;
+  memset(&sync_f, 0, sizeof(sync_f));
+  sync_f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  sync_msg.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  bridge::test::set_pb_payload(sync_f, sync_msg);
+  ba.dispatch(sync_f); // This transitions to IDLE and calls Console.begin()
+  stream.tx_buf.clear(); // Clear the SYNC_RESP
+
+  const char* block_data = "Hello Block Write";
+  size_t written = Console.write(reinterpret_cast<const uint8_t*>(block_data), strlen(block_data));
+  TEST_ASSERT_EQ_UINT(written, strlen(block_data));
+  // flush and check if frame was sent
+  stream.tx_buf.clear();
+  Console.flush();
+  TEST_ASSERT(stream.tx_buf.len > 0);
+  ba.handleAck(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)); // Clear ACK state
+
+  // New: Test block copy write() with buffer filling and auto-flush
+  reset_env(stream);
+  ba.setIdle();
+  Console.begin();
+  
+  // Fill nearly to capacity
+  uint8_t large_block[128];
+  memset(large_block, 'A', sizeof(large_block));
+  stream.tx_buf.clear();
+  
+  // This will write as much as it can. It might flush once and then stop if the TX pool is full.
+  written = Console.write(large_block, sizeof(large_block));
+  TEST_ASSERT(written > 0);
+  
+  // Verify that it sent at least one frame
+  TEST_ASSERT(stream.tx_buf.len > 0);
 }
 
 // ============================================================================

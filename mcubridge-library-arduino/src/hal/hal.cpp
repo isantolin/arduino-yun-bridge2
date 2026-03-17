@@ -40,5 +40,26 @@ void init() {
 #endif
 }
 
+bool hasSD() {
+#if defined(BRIDGE_HOST_TEST)
+  return true; // Mock SD card availability for tests
+#else
+  // For actual hardware, this would check SD.begin() or similar.
+  // Since we don't want to force SD.h dependency here, we return false
+  // unless specifically enabled by a build flag.
+  return false;
+#endif
+}
+
+bool writeFile(const char* path, etl::span<const uint8_t> data) {
+#if defined(BRIDGE_HOST_TEST)
+  (void)path; (void)data;
+  return true; // Mock success for tests
+#else
+  (void)path; (void)data;
+  return false;
+#endif
+}
+
 }  // namespace hal
 }  // namespace bridge

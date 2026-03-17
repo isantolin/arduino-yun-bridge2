@@ -6,7 +6,10 @@
 #define BRIDGE_HAL_H
 
 #include <Arduino.h>
+#undef min
+#undef max
 #include <stdint.h>
+#include "etl/span.h"
 
 namespace bridge {
 namespace hal {

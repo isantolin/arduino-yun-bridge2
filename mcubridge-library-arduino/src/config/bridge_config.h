@@ -69,7 +69,8 @@
 #if defined(ARDUINO_ARCH_AVR)
 #define BRIDGE_CONSOLE_TX_BUFFER_SIZE_VAL 4
 #else
-#define BRIDGE_CONSOLE_TX_BUFFER_SIZE_VAL 64
+// MAX_PAYLOAD_SIZE is 64. Protobuf tags take ~2 bytes. Safe value is 60.
+#define BRIDGE_CONSOLE_TX_BUFFER_SIZE_VAL 60
 #endif
 #endif
 

@@ -2,7 +2,6 @@ import pytest
 from mcubridge.protocol.structures import _capabilities_to_int, _int_to_capabilities, RuntimeConfig
 from mcubridge.daemon import BridgeService
 from mcubridge.state.context import RuntimeState, _coerce_snapshot_float, ManagedProcess
-import asyncio
 
 def test_capabilities_conversion_exhaustive():
     """Test all possible capability bit combinations to cover structures.py."""
@@ -32,6 +31,6 @@ async def test_context_error_paths():
     cfg = RuntimeConfig()
     state = RuntimeState()
     service = BridgeService(cfg, state=state)
-    
+
     # Test handling of missing transport when sending (logs error, no exception)
     await service.send_frame(0x40, b"")

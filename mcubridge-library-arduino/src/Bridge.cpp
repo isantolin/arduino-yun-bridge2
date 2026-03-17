@@ -273,35 +273,61 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
-  if (ctx.raw_command == rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)) _handleConsoleWrite(ctx);
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 1> kConsoleHandlers{{
+      &BridgeClass::_handleConsoleWrite
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_CONSOLE_COMMAND_MIN, kConsoleHandlers.data(), kConsoleHandlers.size());
 }
 
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_DATASTORE
-  if (ctx.raw_command == rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)) _handleDatastoreGetResp(ctx);
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 3> kDataStoreHandlers{{
+      nullptr, // 112
+      nullptr, // 113
+      &BridgeClass::_handleDatastoreGetResp // 114
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers.data(), kDataStoreHandlers.size());
 #endif
 }
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_MAILBOX
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 3> kMailboxHandlers{{
-      &BridgeClass::_handleMailboxPush, &BridgeClass::_handleMailboxReadResp, &BridgeClass::_handleMailboxAvailableResp
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 6> kMailboxHandlers{{
+      nullptr, // 128
+      nullptr, // 129
+      nullptr, // 130
+      &BridgeClass::_handleMailboxPush, // 131
+      &BridgeClass::_handleMailboxReadResp, // 132
+      &BridgeClass::_handleMailboxAvailableResp // 133
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers.data(), kMailboxHandlers.size(), kRpcCommandStride);
+  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers.data(), kMailboxHandlers.size());
 #endif
 }
 
 void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_FILESYSTEM
-  if (ctx.raw_command == rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)) _handleFileWrite(ctx);
-  else if (ctx.raw_command == rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP)) _handleFileReadResp(ctx);
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 4> kFsHandlers{{
+      &BridgeClass::_handleFileWrite, // 144
+      nullptr, // 145
+      nullptr, // 146
+      &BridgeClass::_handleFileReadResp // 147
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers.data(), kFsHandlers.size());
 #endif
 }
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_PROCESS
-  if (ctx.raw_command == rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP)) _handleProcessRunAsyncResp(ctx);
-  else if (ctx.raw_command == rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)) _handleProcessPollResp(ctx);
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 7> kProcessHandlers{{
+      nullptr, // 160
+      nullptr, // 161
+      nullptr, // 162
+      nullptr, // 163
+      nullptr, // 164
+      &BridgeClass::_handleProcessRunAsyncResp, // 165
+      &BridgeClass::_handleProcessPollResp // 166
+  }};
+  _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers.data(), kProcessHandlers.size());
 #endif
 }
 

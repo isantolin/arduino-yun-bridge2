@@ -417,12 +417,13 @@ fi
 # ==============================================================================
 # [FIX CRITICO] Rust host build on CI (LLVM download-ci-llvm)
 # ==============================================================================
-# Rust bootstrap (x.py) panics on CI if download-ci-llvm is 'true'.
-# Debe ser 'if-unchanged' para evitar el error en GitHub Actions.
+# Rust bootstrap (x.py) panics on CI if download-ci-llvm is 'true' or 'if-unchanged'
+# without a managed Git repo. Debe ser 'false' para GitHub Actions.
 RUST_MAKEFILE="package/feeds/packages/rust/Makefile"
 if [ -f "$RUST_MAKEFILE" ]; then
     echo "[FIX] Patching rust host build config for CI..."
-    sed -i 's/llvm.download-ci-llvm=true/llvm.download-ci-llvm=if-unchanged/g' "$RUST_MAKEFILE"
+    sed -i 's/llvm.download-ci-llvm=true/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
+    sed -i 's/llvm.download-ci-llvm=if-unchanged/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
 fi
 # ==============================================================================
 

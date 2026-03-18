@@ -106,6 +106,13 @@ def main(
         except OSError:
             pass
 
+    # [FIX] Ensure emulator filesystem root exists and is clean
+    emulator_fs_root = Path("/tmp/mcubridge-host-fs")
+    if emulator_fs_root.exists():
+        import shutil
+        shutil.rmtree(emulator_fs_root)
+    emulator_fs_root.mkdir(parents=True, exist_ok=True)
+
     logger.info("Starting Unified MCU Emulator via socat EXEC...")
     # Use EXEC with default pipes. PTY is only created for the Daemon side.
     # start_new_session isolates socat from terminal SIGHUP signals.

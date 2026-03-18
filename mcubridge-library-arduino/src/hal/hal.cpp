@@ -147,18 +147,24 @@ bool writeFile(const char* path, etl::span<const uint8_t> data) {
   char full_path[kHostFilesystemPathCapacity] = {};
   if (!resolve_host_path(path, full_path, sizeof(full_path)) ||
       !ensure_host_parent_directories(full_path)) {
+    fprintf(stderr, "[HAL-FS] ERROR: Failed to resolve path or create parents for '%s'\n", path);
     return false;
   }
 
   FILE* file = fopen(full_path, "wb");
   if (file == nullptr) {
+    fprintf(stderr, "[HAL-FS] ERROR: Failed to open file for write: '%s' (errno=%d)\n", full_path, errno);
     return false;
   }
 
   const size_t bytes_written = fwrite(data.data(), 1U, data.size(), file);
   const int flush_status = fflush(file);
   const int close_status = fclose(file);
-  return (bytes_written == data.size()) && (flush_status == 0) && (close_status == 0);
+  const bool success = (bytes_written == data.size()) && (flush_status == 0) && (close_status == 0);
+  if (!success) {
+    fprintf(stderr, "[HAL-FS] ERROR: Failed to finalize write for '%s'\n", full_path);
+  }
+  return success;
 #else
   (void)path; (void)data;
   return false;
@@ -177,25 +183,30 @@ bool readFileChunk(
 #if defined(BRIDGE_HOST_TEST)
   char full_path[kHostFilesystemPathCapacity] = {};
   if (!resolve_host_path(path, full_path, sizeof(full_path))) {
+    fprintf(stderr, "[HAL-FS] ERROR: Failed to resolve path for read: '%s'\n", path);
     return false;
   }
 
   struct stat stat_buffer = {};
   if ((::stat(full_path, &stat_buffer) != 0) || !S_ISREG(stat_buffer.st_mode)) {
+    fprintf(stderr, "[HAL-FS] ERROR: File not found or not regular for read: '%s'\n", full_path);
     return false;
   }
 
   const size_t file_size = static_cast<size_t>(stat_buffer.st_size);
   if (offset > file_size) {
+    fprintf(stderr, "[HAL-FS] ERROR: Read offset %zu exceeds file size %zu for '%s'\n", offset, file_size, full_path);
     return false;
   }
 
   FILE* file = fopen(full_path, "rb");
   if (file == nullptr) {
+    fprintf(stderr, "[HAL-FS] ERROR: Failed to open file for read: '%s' (errno=%d)\n", full_path, errno);
     return false;
   }
 
   if ((offset > 0U) && (fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) {
+    fprintf(stderr, "[HAL-FS] ERROR: Failed to seek to offset %zu for '%s'\n", offset, full_path);
     fclose(file);
     return false;
   }
@@ -204,6 +215,7 @@ bool readFileChunk(
   const bool read_failed = ferror(file) != 0;
   const int close_status = fclose(file);
   if (read_failed || (close_status != 0)) {
+    fprintf(stderr, "[HAL-FS] ERROR: Failed to finalize read for '%s'\n", full_path);
     return false;
   }
 

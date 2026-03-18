@@ -283,8 +283,8 @@ class SerialTransport:
                     self._switch_local_baudrate(self.config.serial_baud)
                     self._negotiation_future.set_result(True)
                     return
-            except (CobsDecodeError, ValueError):
-                pass
+            except (CobsDecodeError, ValueError) as e:
+                logger.debug("Discarding malformed frame during read: %s", e)
 
         if self.loop:
             self.loop.create_task(self._async_process_packet(encoded_packet))

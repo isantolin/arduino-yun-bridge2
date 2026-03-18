@@ -384,8 +384,8 @@ class FileComponent(BaseComponent):
             safe_path = (base_dir / normalised).resolve()
             if str(safe_path).startswith(str(base_dir)):
                 return safe_path
-        except (OSError, RuntimeError):
-            pass
+        except (OSError, RuntimeError) as e:
+            logger.debug("Failed to close remote file descriptor: %s", e)
         return None
 
     def _get_base_dir(self) -> Path | None:

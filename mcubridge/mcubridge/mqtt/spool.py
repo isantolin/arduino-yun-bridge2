@@ -135,8 +135,8 @@ class MQTTPublishSpool:
                 try:
                     self._spool[key] = record
                     self._tail += 1
-                except (OSError, ValueError, TypeError, AttributeError, RuntimeError, msgspec.EncodeError):
-                    pass # Absolute worst case, message is lost but daemon lives
+                except (OSError, ValueError, TypeError, AttributeError, RuntimeError, msgspec.EncodeError) as e:
+                    logger.error("Spool corruption or write failure: %s. Message lost.", e)
 
     def pop_next(self) -> QueuedPublish | None:
         with self._lock:

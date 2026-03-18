@@ -92,7 +92,7 @@ def _cleanup_child_processes() -> None:
             try:
                 child.terminate()
             except psutil.NoSuchProcess:
-                pass
+                logger.debug("Child process already gone during cleanup")
 
         # Wait for processes to exit gracefully, then force kill survivors
         _, alive = psutil.wait_procs(children, timeout=3.0)
@@ -101,7 +101,7 @@ def _cleanup_child_processes() -> None:
                 logger.warning("Force killing zombie process %d", child.pid)
                 child.kill()
             except psutil.NoSuchProcess:
-                pass
+                logger.debug("Child process already gone during cleanup")
     except psutil.Error as e:
         logger.error("Error during process cleanup: %s", e)
 

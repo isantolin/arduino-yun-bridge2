@@ -38,19 +38,22 @@ void FileSystemClass::remove(etl::string_view path) {
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<const uint8_t> data) {
+  // [SIL-2] Check hardware availability via HAL. Filesystem operations are 
+  // only implemented if an SD card or external flash is present.
   if (bridge::hal::hasSD()) {
-    // [SIL-2] Use HAL abstraction to write data to SD card.
     if (bridge::hal::writeFile(msg.path, data)) {
       Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
     } else {
       Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
     }
   } else {
+    // Graceful degradation: Report not implemented if hardware is missing.
     Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
   }
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
+  // [SIL-2] Graceful degradation: Read requires SD hardware support.
   if (!bridge::hal::hasSD()) {
     Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
     return;

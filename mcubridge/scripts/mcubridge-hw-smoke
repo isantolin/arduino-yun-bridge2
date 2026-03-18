@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """Run a basic McuBridge hardware smoke test locally on the device.
 
-[SIL-2] Improved robustness using Python 'sh' library and structured validation.
+[SIL-2] Improved robustness using native aiomqtt and structured validation.
 """
 
 from __future__ import annotations
 
-import sh
-import uci
+import asyncio
+import logging
 import os
 import sys
-import typer
+import ssl
+import subprocess
 from pathlib import Path
 from typing import Any, Annotated
-import msgspec
+
+import aiomqtt
 import tenacity
+import typer
+import uci
 
 app = typer.Typer(add_completion=False)
 STATUS_FILE = Path("/tmp/mcubridge_status.json")
@@ -26,35 +30,65 @@ def uci_get(key: str, default: str = "") -> str:
     except (uci.UciException, RuntimeError):
         return default
 
+async def perform_round_trip(
+    host: str,
+    port: int,
+    topic_prefix: str,
+    tls_params: dict[str, Any] | None,
+    auth_params: dict[str, Any] | None
+) -> str:
+    status_topic = f"{topic_prefix}/system/status"
+    request_topic = f"{topic_prefix}/system/status/request"
+
+    @tenacity.retry(
+        stop=tenacity.stop_after_delay(15),
+        wait=tenacity.wait_fixed(1.0),
+        retry=tenacity.retry_if_exception_type((asyncio.TimeoutError, aiomqtt.MqttError)),
+        reraise=True
+    )
+    async def _round_trip():
+        async with aiomqtt.Client(
+            hostname=host,
+            port=port,
+            username=auth_params["username"] if auth_params else None,
+            password=auth_params["password"] if auth_params else None,
+            tls_context=tls_params["context"] if tls_params else None,
+            tls_insecure=tls_params["insecure"] if tls_params else False
+        ) as client:
+            async with client.messages() as messages:
+                await client.subscribe(status_topic)
+                await client.publish(request_topic, payload='{"request":"ping"}')
+                
+                # Wait for response with timeout
+                async with asyncio.timeout(5.0):
+                    async for message in messages:
+                        return message.payload.decode()
+        raise TimeoutError("No response received from daemon")
+
+    return await _round_trip()
+
 @app.command()
 def main() -> None:
-    # 1. Dependency Check
-    for cmd in ["mosquitto_pub", "mosquitto_sub"]:
-        if not sh.which(cmd):
-            sys.stderr.write(f"[mcubridge-hw-smoke] ERROR: {cmd} is required. Install 'mosquitto-client'.\n")
-            raise typer.Exit(code=1)
-
-    # 2. Configuration Load
+    # 1. Configuration Load
     serial_secret = uci_get("serial_shared_secret")
     if not serial_secret or serial_secret == "changeme123":
         sys.stderr.write("[mcubridge-hw-smoke] ERROR: Serial secret missing or insecure.\n")
         raise typer.Exit(code=1)
 
     host = uci_get("mqtt_host", "127.0.0.1")
-    port = uci_get("mqtt_port", "8883")
+    port = int(uci_get("mqtt_port", "1883"))
     topic_prefix = uci_get("mqtt_topic", "br")
     tls_enabled = uci_get("mqtt_tls", "1") == "1"
-    user = uci_get("mqtt_user")
-    pw = uci_get("mqtt_pass")
+    user = uci_get("mqtt_user") or None
+    pw = uci_get("mqtt_pass") or None
     cafile = uci_get("mqtt_cafile")
     insecure = uci_get("mqtt_tls_insecure", "0") == "1"
 
-    # 3. Environment Check
+    # 2. Environment Check
     init_script = Path("/etc/init.d/mcubridge")
     if init_script.exists():
-        try:
-            sh.Command(str(init_script))("status")
-        except sh.ErrorReturnCode:
+        res = subprocess.run([str(init_script), "status"], capture_output=True)
+        if res.returncode != 0:
             sys.stderr.write("[mcubridge-hw-smoke] ERROR: McuBridge service is not running.\n")
             raise typer.Exit(code=1)
 
@@ -62,50 +96,38 @@ def main() -> None:
         sys.stderr.write(f"[mcubridge-hw-smoke] ERROR: Status file {STATUS_FILE} missing or empty.\n")
         raise typer.Exit(code=1)
 
-    # 4. Prepare Mosquitto Arguments
-    common_args: list[str] = ["-h", host, "-p", port]
-    if user: common_args.extend(["-u", user])
-    if pw: common_args.extend(["-P", pw])
-
+    # 3. Prepare MQTT Parameters
+    auth_params = {"username": user, "password": pw} if user else None
+    
+    tls_params = None
     if tls_enabled:
-        if cafile and Path(cafile).exists():
-            common_args.extend(["--cafile", cafile])
-        elif Path("/etc/ssl/certs/ca-certificates.crt").exists():
-            common_args.extend(["--cafile", "/etc/ssl/certs/ca-certificates.crt"])
+        if not cafile or not Path(cafile).exists():
+            fallback_ca = Path("/etc/ssl/certs/ca-certificates.crt")
+            cafile = str(fallback_ca) if fallback_ca.exists() else None
+        
+        ctx = ssl.create_default_context(cafile=cafile)
+        ctx.check_hostname = not insecure
         if insecure:
-            common_args.append("--insecure")
+            ctx.verify_mode = ssl.CERT_NONE
+            
+        tls_params = {
+            "context": ctx,
+            "insecure": insecure
+        }
 
-    # 5. Run Smoke Test (Round Trip)
+    # 4. Run Smoke Test
     sys.stderr.write(f"[mcubridge-hw-smoke] Checking MQTT round trip via {host}:{port}...\n")
     
-    status_topic = f"{topic_prefix}/system/status"
-    request_topic = f"{topic_prefix}/system/status/request"
-    
-    @tenacity.retry(
-        stop=tenacity.stop_after_delay(15),
-        wait=tenacity.wait_fixed(1.0),
-        retry=tenacity.retry_if_exception_type((sh.TimeoutException, TimeoutError, sh.ErrorReturnCode)),
-        reraise=True
-    )
-    def perform_round_trip() -> str:
-        # Declarative background subscriber
-        # (W=2 means wait max 2 seconds for a message)
-        with sh.mosquitto_sub(*common_args, t=status_topic, C=1, W=2, _bg=True) as sub:
-            # Publish request
-            sh.mosquitto_pub(*common_args, t=request_topic, m='{"request":"ping"}')
-            # The context manager ensures cleanup, we just wait for the output
-            return str(sub.wait())
-
     try:
-        response = perform_round_trip()
+        response = asyncio.run(perform_round_trip(host, port, topic_prefix, tls_params, auth_params))
         sys.stdout.write("[mcubridge-hw-smoke] Received response:\n")
         sys.stdout.write(response + "\n")
         sys.stderr.write("[mcubridge-hw-smoke] Smoke test completed successfully.\n")
 
-    except (sh.TimeoutException, TimeoutError):
+    except (asyncio.TimeoutError, TimeoutError):
         sys.stderr.write("[mcubridge-hw-smoke] ERROR: Did not receive response from daemon (Timeout).\n")
         raise typer.Exit(code=1)
-    except (sh.ErrorReturnCode, OSError, ValueError) as e:
+    except (aiomqtt.MqttError, OSError, ValueError) as e:
         sys.stderr.write(f"[mcubridge-hw-smoke] ERROR: System or tool failed: {e}\n")
         raise typer.Exit(code=1)
 

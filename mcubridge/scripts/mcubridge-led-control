@@ -6,15 +6,25 @@ Usage: mcubridge-led-control on|off [pin]
 
 from __future__ import annotations
 
-import sh
+import logging
+import logging.handlers
 import uci
 import sys
+import ssl
 import tenacity
 import typer
+import paho.mqtt.publish as publish
 from pathlib import Path
 from typing import Annotated
 
 app = typer.Typer(add_completion=False)
+
+# Configure syslog logging
+logger = logging.getLogger("mcubridge-led")
+logger.setLevel(logging.INFO)
+syslog_handler = logging.handlers.SysLogHandler(address="/dev/log")
+syslog_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+logger.addHandler(syslog_handler)
 
 def uci_get(key: str, default: str = "") -> str:
     try:
@@ -39,45 +49,52 @@ def main(
     mqtt_topic = f"{topic_prefix}/d/{pin}"
     
     # MQTT Config
-    common_args = [
-        "-h", uci_get("mqtt_host", "127.0.0.1"),
-        "-p", uci_get("mqtt_port", "8883"),
-        "-t", mqtt_topic,
-        "-m", payload,
-    ]
+    host = uci_get("mqtt_host", "127.0.0.1")
+    port = int(uci_get("mqtt_port", "1883"))
+    user = uci_get("mqtt_user") or None
+    pw = uci_get("mqtt_pass") or None
     
-    user = uci_get("mqtt_user")
-    if user: common_args.extend(["-u", user])
-    
-    pw = uci_get("mqtt_pass")
-    if pw: common_args.extend(["-P", pw])
+    auth = None
+    if user:
+        auth = {"username": user, "password": pw}
 
+    tls_config = None
     if uci_get("mqtt_tls", "1") == "1":
         cafile = uci_get("mqtt_cafile")
-        if cafile and Path(cafile).exists():
-            common_args.extend(["--cafile", cafile])
-        elif Path("/etc/ssl/certs/ca-certificates.crt").exists():
-            common_args.extend(["--cafile", "/etc/ssl/certs/ca-certificates.crt"])
+        if not cafile or not Path(cafile).exists():
+            fallback_ca = Path("/etc/ssl/certs/ca-certificates.crt")
+            cafile = str(fallback_ca) if fallback_ca.exists() else None
         
-        if uci_get("mqtt_tls_insecure", "0") == "1":
-            common_args.append("--insecure")
+        insecure = uci_get("mqtt_tls_insecure", "0") == "1"
         
-        common_args.extend(["--tls-version", "tlsv1.2"])
+        # Build TLS configuration dictionary for paho-mqtt
+        tls_config = {
+            "ca_certs": cafile,
+            "tls_version": ssl.PROTOCOL_TLSv1_2,
+            "cert_reqs": ssl.CERT_NONE if insecure else ssl.CERT_REQUIRED
+        }
 
     @tenacity.retry(
         stop=tenacity.stop_after_attempt(3),
         wait=tenacity.wait_fixed(0.5),
-        retry=tenacity.retry_if_exception_type(sh.ErrorReturnCode),
+        retry=tenacity.retry_if_exception_type(Exception),
         reraise=True
     )
     def do_publish():
-        sh.mosquitto_pub(*common_args)
-        sh.logger("-t", "mcubridge-led", f"Published LED{pin}={payload} to {mqtt_topic}")
+        publish.single(
+            mqtt_topic,
+            payload=payload,
+            hostname=host,
+            port=port,
+            auth=auth,
+            tls=tls_config
+        )
+        logger.info(f"Published LED{pin}={payload} to {mqtt_topic}")
 
     try:
         do_publish()
-    except sh.ErrorReturnCode as e:
-        sh.logger("-t", "mcubridge-led", "-p", "daemon.err", f"Failed to publish after retries: {e.stderr.decode()}")
+    except Exception as e:
+        logger.error(f"Failed to publish after retries: {e}")
         sys.stderr.write(f"Error: failed to publish MQTT message: {e}\n")
         raise typer.Exit(code=4)
 

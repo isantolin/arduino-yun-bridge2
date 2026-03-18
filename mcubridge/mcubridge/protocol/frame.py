@@ -64,32 +64,33 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
-        header_bytes = struct.pack(
+        # [PHASE 3] Efficient pre-allocated construction
+        buf = bytearray(protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE)
+        struct.pack_into(
             protocol.CRC_COVERED_HEADER_FORMAT,
+            buf, 0,
             protocol.PROTOCOL_VERSION,
             payload_len,
             command_id
         )
+        if payload_len > 0:
+            buf[protocol.CRC_COVERED_HEADER_SIZE : protocol.CRC_COVERED_HEADER_SIZE + payload_len] = payload
 
-        frame_content = header_bytes + payload
-        crc_val = crc32(frame_content) & 0xFFFFFFFF
+        crc_val = crc32(memoryview(buf)[:-protocol.CRC_SIZE]) & 0xFFFFFFFF
+        struct.pack_into(protocol.CRC_FORMAT, buf, len(buf) - protocol.CRC_SIZE, crc_val)
 
-        crc_bytes = struct.pack(protocol.CRC_FORMAT, crc_val)
-
-        return frame_content + crc_bytes
+        return bytes(buf)
 
     @staticmethod
     def parse(raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, bytes]:
         """Parse a decoded frame and validate header, payload, and CRC."""
-        data_bytes = bytes(raw_frame_buffer)
-        if len(data_bytes) < protocol.MIN_FRAME_SIZE:
-            raise ValueError(f"Incomplete frame: size {len(data_bytes)} < {protocol.MIN_FRAME_SIZE}")
+        view = memoryview(raw_frame_buffer)
+        if len(view) < protocol.MIN_FRAME_SIZE:
+            raise ValueError(f"Incomplete frame: size {len(view)} < {protocol.MIN_FRAME_SIZE}")
 
-        header_bytes = data_bytes[:protocol.CRC_COVERED_HEADER_SIZE]
         try:
-            version, payload_len, command_id = struct.unpack(
-                protocol.CRC_COVERED_HEADER_FORMAT,
-                header_bytes
+            version, payload_len, command_id = struct.unpack_from(
+                protocol.CRC_COVERED_HEADER_FORMAT, view, 0
             )
         except struct.error as e:
             raise ValueError(f"Malformed header structure: {e}") from e
@@ -98,18 +99,13 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
             raise ValueError(f"Invalid version {version} != {protocol.PROTOCOL_VERSION}")
 
         expected_total_size = protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE
-        if len(data_bytes) != expected_total_size:
-            raise ValueError(f"Frame length mismatch: expected {expected_total_size}, got {len(data_bytes)}")
+        if len(view) != expected_total_size:
+            raise ValueError(f"Frame length mismatch: expected {expected_total_size}, got {len(view)}")
 
-        payload_start = protocol.CRC_COVERED_HEADER_SIZE
-        payload_end = payload_start + payload_len
-        payload = data_bytes[payload_start:payload_end]
+        payload = view[protocol.CRC_COVERED_HEADER_SIZE : protocol.CRC_COVERED_HEADER_SIZE + payload_len].tobytes()
 
-        content_for_crc = data_bytes[:payload_end]
-        expected_crc = crc32(content_for_crc) & 0xFFFFFFFF
-
-        crc_bytes = data_bytes[payload_end:]
-        (received_crc,) = struct.unpack(protocol.CRC_FORMAT, crc_bytes)
+        expected_crc = crc32(view[:-protocol.CRC_SIZE]) & 0xFFFFFFFF
+        (received_crc,) = struct.unpack_from(protocol.CRC_FORMAT, view, len(view) - protocol.CRC_SIZE)
 
         if expected_crc != received_crc:
             raise ValueError(f"CRC mismatch: expected {expected_crc:08X}, got {received_crc:08X}")
@@ -125,4 +121,3 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
         command_id, payload = cls.parse(raw_frame_buffer)
         return cls(command_id=command_id, payload=payload)
-

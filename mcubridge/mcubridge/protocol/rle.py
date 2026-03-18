@@ -20,6 +20,8 @@ Only encodes runs of 4+ identical bytes (break-even at 3).
 
 from __future__ import annotations
 
+import re
+import struct
 from itertools import repeat
 from typing import Final
 
@@ -30,163 +32,86 @@ ESCAPE_BYTE: Final[int] = 0xFF
 MIN_RUN_LENGTH: Final[int] = 4
 
 # Maximum run length in a single encoded sequence (254 + 2 = 256)
-# Note: 255 is reserved as special marker for single-byte escapes
 MAX_RUN_LENGTH: Final[int] = 256
+
+# Struct format for RLE escape sequence: [Escape(B), Count-2(B), Value(B)]
+RLE_ESCAPE_FORMAT: Final[str] = "BBB"
+RLE_ESCAPE_SIZE: Final[int] = 3
 
 
 def encode(data: bytes | bytearray | memoryview) -> bytes:
-    """
-    Encode data using RLE.
-
-    Args:
-        data: Raw bytes to compress
-
-    Returns:
-        RLE-encoded bytes
-    """
+    """Encode data using RLE with struct.pack for sequences."""
     if not data:
         return b""
 
-    # Ensure efficient indexing
-    src = memoryview(data) if not isinstance(data, (bytes, bytearray)) else data
-    src_len = len(src)
-    src_pos = 0
     result = bytearray()
+    last_end = 0
+    # Pattern matches runs of 4-256 same bytes OR any sequence of 0xFF
+    for m in re.finditer(b'(.)\\1{3,255}|\\xff+', bytes(data)):
+        start, end = m.span()
+        result.extend(data[last_end:start])  # Literal gap
 
-    while src_pos < src_len:
-        current = src[src_pos]
+        chunk = m.group(0)
+        char = chunk[0]
+        length = len(chunk)
 
-        # Count consecutive identical bytes
-        run_len = 1
-        while src_pos + run_len < src_len and src[src_pos + run_len] == current and run_len < MAX_RUN_LENGTH:
-            run_len += 1
-
-        if run_len >= MIN_RUN_LENGTH:
-            # Encode as run: ESCAPE, count-2, byte
-            result.append(ESCAPE_BYTE)
-            result.append(run_len - 2)
-            result.append(current)
-            src_pos += run_len
-        elif current == ESCAPE_BYTE:
-            # Escape byte(s) but not enough for MIN_RUN_LENGTH
-            # Encode as: ESCAPE, run_len-2, 0xFF
-            # For 1 byte: ESCAPE, 255 (special marker), 0xFF = single 0xFF
-            # For 2 bytes: ESCAPE, 0, 0xFF = two 0xFF
-            # For 3 bytes: ESCAPE, 1, 0xFF = three 0xFF
-            if run_len == 1:
-                # Special case: single 0xFF uses 255 as marker
-                result.append(ESCAPE_BYTE)
-                result.append(255)  # Special: means exactly 1
-                result.append(ESCAPE_BYTE)
-            else:
-                result.append(ESCAPE_BYTE)
-                result.append(run_len - 2)
-                result.append(ESCAPE_BYTE)
-            src_pos += run_len
+        if char == ESCAPE_BYTE:
+            # All 0xFF must be escaped. Split into chunks of 256 if needed.
+            for i in range(0, length, MAX_RUN_LENGTH):
+                chunk_len = min(length - i, MAX_RUN_LENGTH)
+                result.extend(struct.pack(RLE_ESCAPE_FORMAT, ESCAPE_BYTE, 255 if chunk_len == 1 else chunk_len - 2, ESCAPE_BYTE))
         else:
-            # Literal byte
-            result.append(current)
-            src_pos += 1
+            # Non-0xFF run of 4+ bytes
+            result.extend(struct.pack(RLE_ESCAPE_FORMAT, ESCAPE_BYTE, length - 2, char))
+        last_end = end
 
+    result.extend(data[last_end:])
     return bytes(result)
 
 
 def decode(data: bytes | bytearray | memoryview) -> bytes:
-    """
-    Decode RLE-encoded data.
-
-    Args:
-        data: RLE-encoded bytes
-
-    Returns:
-        Decoded raw bytes
-
-    Raises:
-        ValueError: If data is malformed
-    """
+    """Decode RLE data using regex for fast block copying and struct.unpack_from."""
     if not data:
         return b""
 
-    src = memoryview(data) if not isinstance(data, (bytes, bytearray)) else data
-    src_len = len(src)
-    src_pos = 0
+    data_bytes = bytes(data)
     result = bytearray()
+    last_end = 0
 
-    while src_pos < src_len:
-        current = src[src_pos]
-        src_pos += 1
+    # Find all escape sequences (0xFF followed by 2 bytes)
+    for m in re.finditer(b'\\xff..', data_bytes, re.DOTALL):
+        start, end = m.span()
+        # Copy literal data before this escape sequence
+        result.extend(data_bytes[last_end:start])
+        
+        _, count_m2, val = struct.unpack_from(RLE_ESCAPE_FORMAT, m.group(0), 0)
+        run_len = 1 if count_m2 == 255 else count_m2 + 2
+        result.extend(repeat(val, run_len))
+        
+        last_end = end
 
-        if current == ESCAPE_BYTE:
-            # Encoded run: need at least 2 more bytes
-            if src_pos + 2 > src_len:
-                raise ValueError(
-                    f"Malformed RLE: escape at position {src_pos - 1} " f"but only {src_len - src_pos} bytes remaining"
-                )
+    # Check for truncated escape sequence at the end
+    if data_bytes.find(b'\xff', last_end) != -1:
+         raise ValueError("Malformed RLE: truncated escape sequence")
 
-            count_minus_2 = src[src_pos]
-            byte_val = src[src_pos + 1]
-            src_pos += 2
-
-            # Special case: 255 means exactly 1 byte (for single 0xFF)
-            if count_minus_2 == 255:
-                run_len = 1
-            else:
-                run_len = count_minus_2 + 2
-
-            # Efficient extension avoiding list allocation
-            result.extend(repeat(byte_val, run_len))
-        else:
-            # Literal byte
-            result.append(current)
+    # Copy any remaining literal data
+    result.extend(data_bytes[last_end:])
 
     return bytes(result)
 
 
 def should_compress(data: bytes | bytearray | memoryview) -> bool:
-    """
-    Check if compression would be beneficial.
-
-    Quick heuristic: count potential runs without full encoding.
-    Returns True if encoding is likely to save space.
-
-    Args:
-        data: Raw bytes to analyze
-
-    Returns:
-        True if compression is recommended
-    """
+    """Heuristic to decide if compression is beneficial using regex."""
     if len(data) < 8:
-        return False  # Too small to benefit
+        return False
 
-    src = memoryview(data) if not isinstance(data, (bytes, bytearray)) else data
-    src_len = len(src)
-    potential_savings = 0
-    escape_count = 0
-    i = 0
+    data_bytes = bytes(data)
+    # Savings from runs of non-0xFF bytes (N bytes become 3)
+    savings = sum(len(m.group(0)) - 3 for m in re.finditer(b'([^\xff])\\1{3,}', data_bytes))
+    # Penalty for 0xFF (each 0xFF costs 2 extra bytes)
+    penalty = data_bytes.count(b'\xff') * 2
 
-    while i < src_len:
-        current = src[i]
-
-        if current == ESCAPE_BYTE:
-            escape_count += 1
-            i += 1
-            continue
-
-        # Count run
-        run_len = 1
-        while i + run_len < src_len and src[i + run_len] == current:
-            run_len += 1
-
-        if run_len >= MIN_RUN_LENGTH:
-            # Run of N bytes becomes 3 bytes, saving N-3 bytes
-            potential_savings += run_len - 3
-
-        i += run_len
-
-    # Each escape byte in non-run context costs 2 extra bytes
-    escape_cost = escape_count * 2
-
-    return potential_savings > escape_cost + 4  # Need meaningful savings
+    return savings > penalty + 4
 
 
 def compression_ratio(original: bytes, compressed: bytes) -> float:

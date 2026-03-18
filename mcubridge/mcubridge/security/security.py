@@ -16,6 +16,7 @@ import ctypes
 import hashlib
 import hmac
 import secrets
+import struct
 from typing import Final
 
 from cryptography.hazmat.primitives import hashes
@@ -25,7 +26,6 @@ from ..protocol.protocol import (
     HANDSHAKE_HKDF_INFO_AUTH,
     HANDSHAKE_HKDF_SALT,
 )
-import struct as _struct
 
 # Constants for nonce format
 NONCE_RANDOM_BYTES: Final[int] = 8
@@ -55,131 +55,35 @@ def derive_handshake_key(shared_secret: bytes) -> bytes:
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
-    """Securely zero memory, resistant to interpreter optimization.
-
-    [MIL-SPEC] Uses ctypes.memset to directly write zeros to memory,
-    bypassing Python's memory management which might optimize away
-    simple assignments.
-
-    Use this to clear sensitive data like:
-    - Cryptographic keys
-    - HMAC digests after comparison
-    - Nonces after use
-    - Shared secrets in temporary buffers
-
-    Args:
-        data: Mutable buffer to zero (bytearray or memoryview).
-              Immutable bytes objects cannot be zeroed.
-
-    Raises:
-        TypeError: If data is not a mutable buffer type.
-
-    Example:
-        >>> secret = bytearray(b"sensitive_key_material")
-        >>> secure_zero(secret)
-        >>> assert secret == bytearray(len(secret))  # All zeros
-
-    Reference: CWE-14, CERT C MSC06-C (adapted for Python)
-    """
-    if isinstance(data, memoryview):
-        # Get underlying buffer for memoryview
-        buf = (ctypes.c_char * len(data)).from_buffer(data)
-        ctypes.memset(ctypes.addressof(buf), 0, len(data))
-    else:
-        # data is bytearray (type narrowed by signature)
-        buf = (ctypes.c_char * len(data)).from_buffer(data)
-        ctypes.memset(ctypes.addressof(buf), 0, len(data))
+    """Securely zero memory, resistant to interpreter optimization."""
+    buf = (ctypes.c_char * len(data)).from_buffer(data)
+    ctypes.memset(ctypes.addressof(buf), 0, len(data))
 
 
 def secure_zero_bytes_copy(data: bytes) -> bytes:
-    """Return a zeroed copy of the same length (for immutable bytes).
-
-    Since bytes objects are immutable, we cannot zero them in place.
-    This function returns a zeroed bytes object of the same length,
-    but the original data remains in memory until garbage collected.
-
-    For true secure zeroing, use bytearray from the start.
-
-    Args:
-        data: Original bytes object.
-
-    Returns:
-        Zeroed bytes object of the same length.
-    """
+    """Return a zeroed copy of the same length (for immutable bytes)."""
     return bytes(len(data))
 
 
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
-    """Generate a 16-byte nonce with monotonic counter (anti-replay).
-
-    [MIL-SPEC] Generates a nonce with structure:
-    - Bytes 0-7:  Random data (cryptographically secure)
-    - Bytes 8-15: Monotonic counter (big-endian, anti-replay)
-
-    The counter prevents replay attacks by ensuring each nonce
-    is unique and can be validated as newer than previous nonces.
-
-    Args:
-        counter: Current counter value (will be incremented).
-
-    Returns:
-        Tuple of (nonce_bytes, new_counter_value).
-
-    Example:
-        >>> counter = 0
-        >>> nonce, counter = generate_nonce_with_counter(counter)
-        >>> len(nonce)
-        16
-        >>> counter
-        1
-    """
+    """Generate a 16-byte nonce with monotonic counter using struct.pack_into."""
     new_counter = counter + 1
-    random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
-    counter_part = _struct.pack('>Q', new_counter)  # Big-endian uint64
-    return random_part + counter_part, new_counter
+    nonce = bytearray(NONCE_TOTAL_BYTES)
+    nonce[:NONCE_RANDOM_BYTES] = secrets.token_bytes(NONCE_RANDOM_BYTES)
+    struct.pack_into(">Q", nonce, NONCE_RANDOM_BYTES, new_counter)
+    return bytes(nonce), new_counter
 
 
 def extract_nonce_counter(nonce: bytes) -> int:
-    """Extract the counter from a nonce (for validation).
-
-    Args:
-        nonce: 16-byte nonce with counter in bytes 8-15.
-
-    Returns:
-        64-bit counter value.
-
-    Raises:
-        ValueError: If nonce is not 16 bytes.
-    """
+    """Extract the counter from a nonce using struct.unpack_from."""
     if len(nonce) != NONCE_TOTAL_BYTES:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
-    return _struct.unpack('>Q', nonce[NONCE_RANDOM_BYTES:])[0]
+    (val,) = struct.unpack_from(">Q", nonce, NONCE_RANDOM_BYTES)
+    return val
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
-    """Validate nonce counter is strictly greater than last seen.
-
-    [MIL-SPEC] Anti-replay protection: rejects any nonce with a counter
-    less than or equal to the last accepted counter.
-
-    Args:
-        nonce: 16-byte nonce to validate.
-        last_counter: Last accepted counter value.
-
-    Returns:
-        Tuple of (is_valid, new_last_counter).
-        If valid, new_last_counter is the current nonce's counter.
-        If invalid, new_last_counter is unchanged (equals last_counter).
-
-    Example:
-        >>> last = 0
-        >>> nonce, _ = generate_nonce_with_counter(5)
-        >>> valid, last = validate_nonce_counter(nonce, last)
-        >>> valid
-        True
-        >>> last
-        6
-    """
+    """Validate nonce counter is strictly greater than last seen."""
     try:
         current = extract_nonce_counter(nonce)
     except ValueError:
@@ -192,14 +96,7 @@ def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
 
 
 def verify_crypto_integrity() -> bool:
-    """Perform Known Answer Tests (KAT) for cryptographic primitives.
-
-    [MIL-SPEC COMPLIANCE - FIPS 140-3]
-    Mandatory self-tests at startup to ensure the cryptographic engine
-    (hashlib/hmac) is operating correctly before processing real data.
-
-    Vectors from NIST/RFC 4231.
-    """
+    """Perform Known Answer Tests (KAT) for cryptographic primitives."""
     # 1. SHA256 KAT ("abc")
     msg = b"abc"
     expected_sha = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"

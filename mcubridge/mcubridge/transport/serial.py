@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import struct
 import time
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -41,10 +42,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mcubridge.serial")
 
 def _is_binary_packet(packet: bytes) -> bool:
-    """Validate packet header matches protocol v2."""
-    if len(packet) < 5:
+    """Validate packet header matches protocol v2 using struct."""
+    if len(packet) < protocol.CRC_COVERED_HEADER_SIZE:
         return False
-    return packet[0] == protocol.PROTOCOL_VERSION
+    (version,) = struct.unpack_from(protocol.UINT8_FORMAT, packet, 0)
+    return version == protocol.PROTOCOL_VERSION
 
 
 class SerialTransport:

@@ -24,12 +24,12 @@ inline void log_hex(Print& stream, etl::span<const uint8_t> data) {
   }
 
   stream.print('[');
-  // [SIL-2] Use ETL algorithm for standardized formatting
+  // [SIL-2] Use ETL for-each algorithm with C++14 generic lambda
   size_t i = 0;
-  etl::for_each(data.begin(), data.end(), [&](uint8_t byte) {
+  etl::for_each(data.begin(), data.end(), [&stream, &i, size = data.size()](auto byte) {
     if (byte < 0x10) stream.print('0');
     stream.print(byte, HEX);
-    if (++i < data.size()) stream.print(' ');
+    if (++i < size) stream.print(' ');
   });
   stream.print(']');
 }

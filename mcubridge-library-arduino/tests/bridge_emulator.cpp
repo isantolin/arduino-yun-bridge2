@@ -72,6 +72,7 @@ int main(int argc, char** argv) {
       int c = Console.read();
       if (c >= 0) Console.write(static_cast<uint8_t>(c));
     }
+    Console.flush();
     usleep(1000);
   }
   return 0;

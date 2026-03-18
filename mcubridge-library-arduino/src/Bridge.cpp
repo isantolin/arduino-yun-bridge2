@@ -99,7 +99,8 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
     size_t actual_len = (arg_secret_len > 0) ? arg_secret_len : arg_secret.length();
     if (actual_len > _shared_secret.capacity()) actual_len = _shared_secret.capacity();
     const uint8_t* start = reinterpret_cast<const uint8_t*>(arg_secret.data());
-    _shared_secret.assign(start, start + actual_len);
+    // [SIL-2] Use ETL copy for safe and idiomatic assignment
+    etl::copy(start, start + actual_len, etl::back_inserter(_shared_secret));
   }
 
   _fsm.resetFsm();
@@ -238,15 +239,15 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       {rpc::RPC_FILESYSTEM_COMMAND_MIN, rpc::RPC_FILESYSTEM_COMMAND_MAX, &BridgeClass::onFileSystemCommand},
       {rpc::RPC_PROCESS_COMMAND_MIN, rpc::RPC_PROCESS_COMMAND_MAX, &BridgeClass::onProcessCommand}}};
 
-  bool handled = false;
-  for (const auto& range : kRanges) {
-    if (raw_cmd >= range.min && raw_cmd <= range.max) {
-      (this->*range.handler)(ctx);
-      handled = true;
-      break;
-    }
+  // [SIL-2] Modernized search using etl::find_if and generic lambda
+  auto it = etl::find_if(kRanges.begin(), kRanges.end(),
+                         [raw_cmd](const auto& range) { return raw_cmd >= range.min && raw_cmd <= range.max; });
+
+  if (it != kRanges.end()) {
+    (this->*it->handler)(ctx);
+  } else {
+    onUnknownCommand(ctx);
   }
-  if (!handled) onUnknownCommand(ctx);
 
   if (!ctx.is_duplicate) _markRxProcessed(effective_frame);
 }

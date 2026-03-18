@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from aiomqtt.message import Message
-from mcubridge.protocol.topics import TopicRoute
+from mcubridge.protocol.topics import Topic, TopicRoute
 
 McuHandler = Callable[[bytes], Awaitable[bool | None]]
 MqttHandler = Callable[[TopicRoute, Message], Awaitable[bool]]
@@ -25,27 +25,24 @@ class MCUHandlerRegistry:
 
 
 class MQTTRouter:
-    """Topic-based dispatcher for inbound MQTT messages supporting wildcards (+, #)."""
+    """Topic-based dispatcher for inbound MQTT messages."""
 
     def __init__(self) -> None:
-        self._handlers: list[tuple[str, MqttHandler]] = []
+        self._handlers: dict[Topic, list[MqttHandler]] = {}
 
-    def register(self, topic: str, handler: MqttHandler) -> None:
-        """Register a handler for a topic pattern."""
-        self._handlers.append((topic, handler))
+    def register(self, topic: Topic, handler: MqttHandler) -> None:
+        bucket = self._handlers.setdefault(topic, [])
+        bucket.append(handler)
 
     async def dispatch(
         self,
         route: TopicRoute,
         inbound: Message,
     ) -> bool:
-        """Dispatch message to handlers matching the topic pattern."""
-        for pattern, handler in self._handlers:
-            # [SIL-2] Use aiomqtt's native wildcard matching for deterministic rounting
-            if inbound.topic.matches(pattern):
-                handled = await handler(route, inbound)
-                if handled:
-                    return True
+        for handler in self._handlers.get(route.topic, []):
+            handled = await handler(route, inbound)
+            if handled:
+                return True
         return False
 
 

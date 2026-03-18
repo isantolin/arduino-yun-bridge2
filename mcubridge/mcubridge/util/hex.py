@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 
 
-def format_hex(data: bytes | bytearray | memoryview) -> str:
+from typing import Any
+
+
+def format_hex(data: bytes | bytearray | memoryview[Any]) -> str:
     """Formats binary data as a space-separated hex string enclosed in brackets.
 
     Example: [DE AD BE EF]
@@ -18,7 +21,7 @@ def format_hex(data: bytes | bytearray | memoryview) -> str:
 
 
 def log_binary_traffic(
-    logger: logging.Logger, level: int, direction: str, label: str, data: bytes | bytearray | memoryview
+    logger: logging.Logger, level: int, direction: str, label: str, data: bytes | bytearray | memoryview[Any]
 ) -> None:
     """Logs binary traffic with a standardized hex format for syslog.
 

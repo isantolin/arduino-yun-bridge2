@@ -255,6 +255,7 @@ class BridgeClass
 
   void _handleStatusAck(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
+  void _handleNoOp(const bridge::router::CommandContext& ctx) { (void)ctx; }
   void _handleGetVersion(const bridge::router::CommandContext& ctx);
   void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
   void _handleGetCapabilities(const bridge::router::CommandContext& ctx);

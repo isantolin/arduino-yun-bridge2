@@ -6,7 +6,7 @@ import logging
 import logging.handlers
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import structlog
 
@@ -21,8 +21,10 @@ SYSLOG_SOCKET_FALLBACK = Path("/var/run/log")
 def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) -> structlog.types.EventDict:
     """Format binary fields as standardized hex strings [DE AD BE EF]."""
     for key, value in event_dict.items():
-        if isinstance(value, (bytes, bytearray, memoryview)):
+        if isinstance(value, (bytes, bytearray)):
             event_dict[key] = format_hex(value)
+        elif isinstance(value, memoryview):
+            event_dict[key] = format_hex(cast("memoryview[Any]", value))
     return event_dict
 
 

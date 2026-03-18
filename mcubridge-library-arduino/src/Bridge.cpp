@@ -148,11 +148,12 @@ void BridgeClass::process() {
         static_cast<void>(_stream.read());
     }
   } else {
-    BRIDGE_ATOMIC_BLOCK {
-      while (_stream.available() > 0) {
-        _processIncomingByte(static_cast<uint8_t>(_stream.read()));
-        if (_flags.test(bridge::FlagId::FRAME_RECEIVED) || _last_parse_error.has_value()) break;
-      }
+    // [SIL-2] Minimize atomic block duration to prevent ISR jitter
+    while (_stream.available() > 0) {
+      uint8_t byte;
+      BRIDGE_ATOMIC_BLOCK { byte = static_cast<uint8_t>(_stream.read()); }
+      _processIncomingByte(byte);
+      if (_flags.test(bridge::FlagId::FRAME_RECEIVED) || _last_parse_error.has_value()) break;
     }
   }
 
@@ -272,16 +273,16 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
 }
 
 void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 9> kStatusHandlers{{
-      nullptr, // 48: STATUS_OK (No-op here)
-      nullptr, // 49: STATUS_ERROR
-      nullptr, // 50: STATUS_CMD_UNKNOWN
-      &BridgeClass::_handleStatusMalformed, // 51
-      nullptr, // 52
-      nullptr, // 53
-      nullptr, // 54
-      nullptr, // 55
-      &BridgeClass::_handleStatusAck // 56
+  static constexpr etl::array<CmdHandler, 9> kStatusHandlers{{
+      &BridgeClass::_handleNoOp,            // 48: STATUS_OK (No-op here)
+      &BridgeClass::_handleNoOp,            // 49: STATUS_ERROR
+      &BridgeClass::_handleNoOp,            // 50: STATUS_CMD_UNKNOWN
+      &BridgeClass::_handleStatusMalformed, // 51: MALFORMED
+      &BridgeClass::_handleNoOp,            // 52
+      &BridgeClass::_handleNoOp,            // 53
+      &BridgeClass::_handleNoOp,            // 54
+      &BridgeClass::_handleNoOp,            // 55
+      &BridgeClass::_handleStatusAck        // 56: ACK
   }};
   _dispatchJumpTable(ctx, rpc::RPC_STATUS_CODE_MIN, kStatusHandlers.data(), kStatusHandlers.size());
 
@@ -293,7 +294,7 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 6> kSystemHandlers{{
+  static constexpr etl::array<CmdHandler, 6> kSystemHandlers{{
       &BridgeClass::_handleGetVersion, &BridgeClass::_handleGetFreeMemory,
       &BridgeClass::_handleLinkSync, &BridgeClass::_handleLinkReset,
       &BridgeClass::_handleGetCapabilities, &BridgeClass::_handleSetBaudrate
@@ -302,7 +303,7 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 5> kGpioHandlers{{
+  static constexpr etl::array<CmdHandler, 5> kGpioHandlers{{
       &BridgeClass::_handleSetPinMode, &BridgeClass::_handleDigitalWrite,
       &BridgeClass::_handleAnalogWrite, &BridgeClass::_handleDigitalRead,
       &BridgeClass::_handleAnalogRead
@@ -311,7 +312,7 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 1> kConsoleHandlers{{
+  static constexpr etl::array<CmdHandler, 1> kConsoleHandlers{{
       &BridgeClass::_handleConsoleWrite
   }};
   _dispatchJumpTable(ctx, rpc::RPC_CONSOLE_COMMAND_MIN, kConsoleHandlers.data(), kConsoleHandlers.size());
@@ -319,9 +320,9 @@ void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_DATASTORE
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 3> kDataStoreHandlers{{
-      nullptr, // 112
-      nullptr, // 113
+  static constexpr etl::array<CmdHandler, 3> kDataStoreHandlers{{
+      &BridgeClass::_handleNoOp, // 112
+      &BridgeClass::_handleNoOp, // 113
       &BridgeClass::_handleDatastoreGetResp // 114
   }};
   _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers.data(), kDataStoreHandlers.size());
@@ -330,10 +331,10 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_MAILBOX
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 6> kMailboxHandlers{{
-      nullptr, // 128
-      nullptr, // 129
-      nullptr, // 130
+  static constexpr etl::array<CmdHandler, 6> kMailboxHandlers{{
+      &BridgeClass::_handleNoOp, // 128
+      &BridgeClass::_handleNoOp, // 129
+      &BridgeClass::_handleNoOp, // 130
       &BridgeClass::_handleMailboxPush, // 131
       &BridgeClass::_handleMailboxReadResp, // 132
       &BridgeClass::_handleMailboxAvailableResp // 133
@@ -344,7 +345,7 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_FILESYSTEM
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 4> kFsHandlers{{
+  static constexpr etl::array<CmdHandler, 4> kFsHandlers{{
       &BridgeClass::_handleFileWrite, // 144
       &BridgeClass::_handleFileRead, // 145
       &BridgeClass::_handleFileRemove, // 146
@@ -356,12 +357,12 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_PROCESS
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 7> kProcessHandlers{{
-      nullptr, // 160
-      nullptr, // 161
-      nullptr, // 162
-      nullptr, // 163
-      nullptr, // 164
+  static constexpr etl::array<CmdHandler, 7> kProcessHandlers{{
+      &BridgeClass::_handleNoOp, // 160
+      &BridgeClass::_handleNoOp, // 161
+      &BridgeClass::_handleNoOp, // 162
+      &BridgeClass::_handleNoOp, // 163
+      &BridgeClass::_handleNoOp, // 164
       &BridgeClass::_handleProcessRunAsyncResp, // 165
       &BridgeClass::_handleProcessPollResp // 166
   }};

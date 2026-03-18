@@ -59,7 +59,14 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
             # All 0xFF must be escaped. Split into chunks of 256 if needed.
             for i in range(0, length, MAX_RUN_LENGTH):
                 chunk_len = min(length - i, MAX_RUN_LENGTH)
-                result.extend(struct.pack(RLE_ESCAPE_FORMAT, ESCAPE_BYTE, 255 if chunk_len == 1 else chunk_len - 2, ESCAPE_BYTE))
+                result.extend(
+                    struct.pack(
+                        RLE_ESCAPE_FORMAT,
+                        ESCAPE_BYTE,
+                        255 if chunk_len == 1 else chunk_len - 2,
+                        ESCAPE_BYTE,
+                    )
+                )
         else:
             # Non-0xFF run of 4+ bytes
             result.extend(struct.pack(RLE_ESCAPE_FORMAT, ESCAPE_BYTE, length - 2, char))
@@ -83,11 +90,11 @@ def decode(data: bytes | bytearray | memoryview) -> bytes:
         start, end = m.span()
         # Copy literal data before this escape sequence
         result.extend(data_bytes[last_end:start])
-        
+
         _, count_m2, val = struct.unpack_from(RLE_ESCAPE_FORMAT, m.group(0), 0)
         run_len = 1 if count_m2 == 255 else count_m2 + 2
         result.extend(repeat(val, run_len))
-        
+
         last_end = end
 
     # Check for truncated escape sequence at the end

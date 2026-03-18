@@ -336,14 +336,15 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
     service = BridgeService(runtime_config, runtime_state)
 
     async def fake_sender(command_id: int, payload: bytes) -> bool:
-        if command_id == Command.CMD_LINK_RESET.value:
+        raw_cmd = command_id & 0xFF
+        if raw_cmd == Command.CMD_LINK_RESET.value:
             asyncio.create_task(
                 service.handle_mcu_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
                 )
             )
-        elif command_id == Command.CMD_LINK_SYNC.value:
+        elif raw_cmd == Command.CMD_LINK_SYNC.value:
             nonce = service.state.link_handshake_nonce or b""
             tag = bytearray(service._handshake.compute_handshake_tag(nonce))
             if tag:

@@ -297,20 +297,25 @@ class ProcessComponent(BaseComponent):
                 parent = psutil.Process(proc_entry.handle.pid)
                 children = parent.children(recursive=True)
                 for child in children:
-                    with contextlib.suppress(psutil.NoSuchProcess):
+                    with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
                         child.terminate()
 
-                parent.terminate()
+                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                    parent.terminate()
 
                 # Brief wait for graceful termination before force-killing
-                _, alive = psutil.wait_procs(children + [parent], timeout=0.2)
-                for proc in alive:
-                    with contextlib.suppress(psutil.NoSuchProcess):
-                        proc.kill()
+                if children or parent:
+                    try:
+                        _, alive = psutil.wait_procs(children + [parent], timeout=0.2)
+                        for proc in alive:
+                            with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                                proc.kill()
+                    except (psutil.NoSuchProcess, ProcessLookupError):
+                        pass
 
                 return True
             except (psutil.NoSuchProcess, ProcessLookupError):
-                return False
+                return True  # Process already gone is a success for us
             except Exception as e:
                 logger.error("Error stopping process %d: %s", pid, e)
                 return False

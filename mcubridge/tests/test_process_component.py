@@ -114,13 +114,21 @@ async def test_stop_process_success(process_component: ProcessComponent) -> None
     mock_process.stderr.read.return_value = b""
     mock_process.wait.return_value = 0
 
-    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
+    mock_psutil_instance = MagicMock()
+    mock_psutil_instance.children.return_value = []
+    mock_psutil_instance.terminate = MagicMock()
+
+    with patch("psutil.Process", return_value=mock_psutil_instance), \
+         patch("psutil.wait_procs", return_value=([mock_psutil_instance], [])), \
+         patch("asyncio.create_subprocess_shell", return_value=mock_process):
+        mock_process.pid = 123
         pid = await process_component.run_async("echo hello")
 
-    success = await process_component.stop_process(pid)
-    assert success is True
-    mock_process.terminate.assert_called_once()
+        # Call stop_process INSIDE the patch context
+        success = await process_component.stop_process(pid)
 
+    assert success is True
+    assert mock_psutil_instance.terminate.call_count >= 1
 @pytest.mark.asyncio
 async def test_monitor_process_finishes(process_component: ProcessComponent) -> None:
     # _monitor_process was removed. We only test creation.

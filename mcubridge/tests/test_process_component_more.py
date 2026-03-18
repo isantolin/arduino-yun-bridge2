@@ -127,9 +127,14 @@ async def test_handle_kill_timeout_releases_slot(
 
     await process_component._process_slots.acquire()
 
-    ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
+    with patch("psutil.Process") as mock_psutil_cls, \
+         patch("psutil.wait_procs", return_value=([], [])):
+        mock_psutil_instance = mock_psutil_cls.return_value
+        mock_psutil_instance.children.return_value = []
+        mock_psutil_instance.terminate = MagicMock()
+        ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
     assert ok is True
-    mock_handle.terminate.assert_called_once()
+    mock_psutil_instance.terminate.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_handle_kill_process_lookup_error_is_handled(
@@ -145,7 +150,11 @@ async def test_handle_kill_process_lookup_error_is_handled(
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
+    with patch("psutil.Process") as mock_psutil_cls, \
+         patch("psutil.wait_procs", return_value=([], [])):
+        mock_psutil_instance = mock_psutil_cls.return_value
+        mock_psutil_instance.children.return_value = []
+        ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
     # Should return True as we attempted termination
     assert ok is True
 

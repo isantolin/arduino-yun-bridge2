@@ -20,6 +20,7 @@ import struct
 from typing import Final
 
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from ..protocol.protocol import (
@@ -63,6 +64,11 @@ def secure_zero(data: bytearray | memoryview) -> None:
 def secure_zero_bytes_copy(data: bytes) -> bytes:
     """Return a zeroed copy of the same length (for immutable bytes)."""
     return bytes(len(data))
+
+
+def timing_safe_equal(a: bytes, b: bytes) -> bool:
+    """Timing-safe comparison delegating to cryptography library."""
+    return bytes_eq(a, b)
 
 
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
@@ -123,6 +129,7 @@ __all__ = [
     "generate_nonce_with_counter",
     "secure_zero",
     "secure_zero_bytes_copy",
+    "timing_safe_equal",
     "validate_nonce_counter",
     "verify_crypto_integrity",
     "hkdf_sha256",

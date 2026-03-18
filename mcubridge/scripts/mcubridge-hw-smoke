@@ -12,10 +12,11 @@ import sys
 import typer
 from pathlib import Path
 from typing import Any, Annotated
+import msgspec
 import tenacity
 
 app = typer.Typer(add_completion=False)
-STATUS_FILE = Path("/tmp/mcubridge_status.json")
+STATUS_FILE = Path("/tmp/mcubridge_status.msgpack")
 
 def uci_get(key: str, default: str = "") -> str:
     try:
@@ -85,25 +86,13 @@ def main() -> None:
         reraise=True
     )
     def perform_round_trip() -> str:
-        # Start subscriber in background (W=2 means wait max 2 seconds for a message)
-        sub_proc = sh.mosquitto_sub(
-            *common_args, 
-            "-t", status_topic, 
-            "-C", "1", 
-            "-W", "2", 
-            _bg=True
-        )
-        
-        # Publish request immediately
-        sh.mosquitto_pub(
-            *common_args,
-            "-t", request_topic,
-            "-m", '{"request":"ping"}'
-        )
-        
-        # Wait for sub result. If it times out or errors, tenacity will retry the whole block.
-        output = sub_proc.wait()
-        return output.stdout.decode()
+        # Declarative background subscriber
+        # (W=2 means wait max 2 seconds for a message)
+        with sh.mosquitto_sub(*common_args, t=status_topic, C=1, W=2, _bg=True) as sub:
+            # Publish request
+            sh.mosquitto_pub(*common_args, t=request_topic, m='{"request":"ping"}')
+            # The context manager ensures cleanup, we just wait for the output
+            return str(sub.wait())
 
     try:
         response = perform_round_trip()

@@ -96,7 +96,7 @@ DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT: int = 65536
 DEFAULT_PENDING_PIN_REQUESTS: int = 32
 
 # -- Telemetry & Status --
-STATUS_FILE_PATH: str = "/tmp/mcubridge_status.json"
+STATUS_FILE_PATH: str = "/tmp/mcubridge_status.msgpack"
 DEFAULT_STATUS_INTERVAL: int = 5
 DEFAULT_BRIDGE_SUMMARY_INTERVAL: int = 60
 DEFAULT_BRIDGE_HANDSHAKE_INTERVAL: int = 300

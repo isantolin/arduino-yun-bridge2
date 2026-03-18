@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import hmac
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -37,6 +36,7 @@ from ..security.security import (
     derive_handshake_key,
     generate_nonce_with_counter,
     secure_zero,
+    timing_safe_equal,
     validate_nonce_counter,
 )
 from ..state.context import McuCapabilities, RuntimeState
@@ -351,7 +351,7 @@ class SerialHandshakeManager:
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
         tag_mismatch = (
-            not hmac.compare_digest(tag_bytes, recalculated_tag)
+            not timing_safe_equal(tag_bytes, recalculated_tag)
             and self._config.serial_shared_secret != b"DEBUG_INSECURE"
         )
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import psutil
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -285,16 +286,34 @@ class ProcessComponent(BaseComponent):
                 return batch
 
     async def stop_process(self, pid: int) -> bool:
-        """Terminate a running process."""
+        """Terminate a running process and its children recursively."""
         async with self.state.process_lock:
-            proc = self.state.running_processes.get(pid)
-            if proc and proc.handle:
-                try:
-                    proc.handle.terminate() # type: ignore
-                    return True
-                except ProcessLookupError:
-                    return False
-            return False
+            proc_entry = self.state.running_processes.get(pid)
+            if not proc_entry or not proc_entry.handle:
+                return False
+
+            try:
+                # [SIL-2] Use psutil to kill the entire process tree
+                parent = psutil.Process(proc_entry.handle.pid)
+                children = parent.children(recursive=True)
+                for child in children:
+                    with contextlib.suppress(psutil.NoSuchProcess):
+                        child.terminate()
+                
+                parent.terminate()
+                
+                # Brief wait for graceful termination before force-killing
+                _, alive = psutil.wait_procs(children + [parent], timeout=0.2)
+                for proc in alive:
+                    with contextlib.suppress(psutil.NoSuchProcess):
+                        proc.kill()
+                
+                return True
+            except (psutil.NoSuchProcess, ProcessLookupError):
+                return False
+            except Exception as e:
+                logger.error("Error stopping process %d: %s", pid, e)
+                return False
 
 
     async def publish_poll_result(self, pid: int, batch: ProcessOutputBatch) -> None:

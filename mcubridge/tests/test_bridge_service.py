@@ -51,7 +51,8 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
     async def fake_sender(command_id: int, payload: bytes) -> bool:
         sent_frames.append((command_id, payload))
-        if command_id == Command.CMD_LINK_RESET.value:
+        raw_cmd = command_id & 0xFF  # Strip high-order flags like COMPRESSED (0x8000)
+        if raw_cmd == Command.CMD_LINK_RESET.value:
             # Use create_task to avoid deadlock with write_lock held by sender
             asyncio.create_task(
                 service.handle_mcu_frame(
@@ -59,48 +60,51 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                     b"",
                 )
             )
-        elif command_id == Command.CMD_LINK_SYNC.value:
+        elif raw_cmd == Command.CMD_LINK_SYNC.value:
             nonce = service.state.link_handshake_nonce or b""
             tag = service._handshake.compute_handshake_tag(nonce)
             response = _encode_link_sync(nonce, tag)
-            asyncio.create_task(
-                service.handle_mcu_frame(
+
+            async def _respond():
+                await asyncio.sleep(0.1)
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
                 )
-            )
-            # Priming capabilities
-            await service._handshake.handle_capabilities_resp(
-                cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
-                    {
-                        "ver": 2,
-                        "arch": 1,
-                        "dig": 20,
-                        "ana": 6,
-                        "feat": {
-                            "i2c": False,
-                            "spi": False,
-                            "big_buffer": False,
-                            "logic_3v3": False,
-                            "fpu": False,
-                            "hw_serial1": False,
-                            "dac": False,
-                            "eeprom": False,
-                            "debug_io": False,
-                            "debug_frames": False,
-                            "rle": False,
-                            "watchdog": False,
-                        },
-                    }
+                # Priming capabilities AFTER sync resp is handled
+                await service._handshake.handle_capabilities_resp(
+                    cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
+                        {
+                            "ver": 2,
+                            "arch": 1,
+                            "dig": 20,
+                            "ana": 6,
+                            "feat": {
+                                "i2c": False,
+                                "spi": False,
+                                "big_buffer": False,
+                                "logic_3v3": False,
+                                "fpu": False,
+                                "hw_serial1": False,
+                                "dac": False,
+                                "eeprom": False,
+                                "debug_io": False,
+                                "debug_frames": False,
+                                "rle": False,
+                                "watchdog": False,
+                            },
+                        }
+                    )
                 )
-            )
-        elif command_id == Command.CMD_GET_VERSION.value:
+
+            asyncio.create_task(_respond())
+        elif raw_cmd == Command.CMD_GET_VERSION.value:
             # Direct flow injection bypasses lock issues
             flow.on_frame_received(
                 Command.CMD_GET_VERSION_RESP.value,
                 b"\x01\x02",
             )
-        elif command_id == Command.CMD_CONSOLE_WRITE.value:
+        elif raw_cmd == Command.CMD_CONSOLE_WRITE.value:
             flow.on_frame_received(
                 Status.ACK.value,
                 structures.AckPacket(command_id=Command.CMD_CONSOLE_WRITE.value).encode(),
@@ -124,9 +128,9 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
     assert len(reset_payload) > 0
     frame_ids = [frame_id for frame_id, _ in sent_frames]
     handshake_ids = [
-        frame_id
+        frame_id & 0xFF
         for frame_id in frame_ids
-        if frame_id
+        if (frame_id & 0xFF)
         in {
             Command.CMD_LINK_RESET.value,
             Command.CMD_LINK_SYNC.value,
@@ -136,8 +140,8 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
         Command.CMD_LINK_RESET.value,
         Command.CMD_LINK_SYNC.value,
     ]
-    assert Command.CMD_GET_VERSION.value in frame_ids
-    assert any(frame_id == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames)
+    assert any((frame_id & 0xFF) == Command.CMD_GET_VERSION.value for frame_id in frame_ids)
+    assert any((frame_id & 0xFF) == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames)
     assert runtime_state.console_queue_bytes == 0
     assert runtime_state.mcu_version is None
     assert runtime_state.handshake_attempts == 1

@@ -299,15 +299,15 @@ class ProcessComponent(BaseComponent):
                 for child in children:
                     with contextlib.suppress(psutil.NoSuchProcess):
                         child.terminate()
-                
+
                 parent.terminate()
-                
+
                 # Brief wait for graceful termination before force-killing
                 _, alive = psutil.wait_procs(children + [parent], timeout=0.2)
                 for proc in alive:
                     with contextlib.suppress(psutil.NoSuchProcess):
                         proc.kill()
-                
+
                 return True
             except (psutil.NoSuchProcess, ProcessLookupError):
                 return False

@@ -490,8 +490,7 @@ void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
   etl::span<uint8_t> data_span(_transient_buffer, sizeof(_transient_buffer));
   rpc::util::pb_setup_decode_span(msg.data, data_span);
 
-  _withPayload<rpc::payload::FileWrite>(ctx, [this, &data_span](const rpc::payload::FileWrite& msg) {
-    // Pass the actual captured data span to the filesystem service
+  _withPayload<rpc::payload::FileWrite>(ctx, [&msg, &data_span](const rpc::payload::FileWrite&) {
     FileSystem._onWrite(msg, etl::span<const uint8_t>(data_span.data(), data_span.size()));
   }, msg);
 }

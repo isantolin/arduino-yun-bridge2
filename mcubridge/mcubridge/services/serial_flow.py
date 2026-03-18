@@ -302,7 +302,7 @@ class SerialFlowController:
             if not pending.completion.is_set():
                 async with asyncio.timeout(self._response_timeout):
                     await pending.completion.wait()
-        except TimeoutError:
+        except asyncio.TimeoutError:
             if not pending.completion.is_set():
                 raise self._RetryableSerialError()
 

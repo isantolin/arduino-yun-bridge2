@@ -10,7 +10,6 @@ This module implements secure handshake with:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -19,6 +18,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 import google.protobuf.message
 import msgspec
 import tenacity
+from cryptography.hazmat.primitives import hashes, hmac
 
 from transitions import Machine
 
@@ -347,7 +347,7 @@ class SerialHandshakeManager:
         expected_tag = self._state.link_expected_tag
         recalculated_tag = self.compute_handshake_tag(nonce)
 
-        nonce_mismatch = nonce != expected
+        nonce_mismatch = not timing_safe_equal(nonce, expected)
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
         tag_mismatch = (
@@ -509,11 +509,10 @@ class SerialHandshakeManager:
         timeout = max(0.5, self._timing.response_timeout_seconds)
         try:
             async with asyncio.timeout(timeout):
-                while not self._state.is_synchronized:
+                if not self._state.is_synchronized:
                     await self._state.link_sync_event.wait()
-                    # is_synchronized is set in _on_fsm_synchronized.
-                return True
-        except TimeoutError:
+                return self._state.is_synchronized
+        except asyncio.TimeoutError:
             return False
 
     def clear_handshake_expectations(self) -> None:
@@ -607,7 +606,9 @@ class SerialHandshakeManager:
             return b"DEBUG_TAG_UNUSED"
         # [MIL-SPEC] Use HKDF derived key for handshake authentication
         auth_key = derive_handshake_key(secret)
-        digest = hmac.new(auth_key, nonce, hashlib.sha256).digest()
+        h = hmac.HMAC(auth_key, hashes.SHA256())
+        h.update(nonce)
+        digest = h.finalize()
         return digest[: protocol.HANDSHAKE_TAG_LENGTH]
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:

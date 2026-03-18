@@ -58,9 +58,8 @@ def topic_path(prefix: str, topic: Topic | str, *segments: str) -> str:
     parts = list(split_topic_segments(prefix))
     topic_segment = topic.value if isinstance(topic, Topic) else str(topic)
     topic_segment = topic_segment.strip("/")
-    if not topic_segment:
-        raise ValueError("topic segment cannot be empty")
-    parts.append(topic_segment)
+    if topic_segment:
+        parts.append(topic_segment)
     parts.extend(filter(None, (s.strip("/") for s in segments)))
     return "/".join(parts)
 

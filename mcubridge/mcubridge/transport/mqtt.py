@@ -241,14 +241,8 @@ class MqttTransport:
                 try:
                     # Dispatch using native topic matching capability
                     await self.service.handle_mqtt_message(message)
-                except (
-                    ValueError,
-                    TypeError,
-                    AttributeError,
-                    RuntimeError,
-                    KeyError,
-                ) as e:
-                    logger.exception("CRITICAL: Error processing MQTT topic %s: %s", message.topic, e)
+                except Exception as e:
+                    logger.error("Error processing MQTT message on topic %s: %s", message.topic, e)
         except asyncio.CancelledError:
             with contextlib.suppress(asyncio.CancelledError):
                 raise

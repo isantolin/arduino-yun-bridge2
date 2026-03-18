@@ -255,7 +255,8 @@ class SerialHandshakeManager:
             return False
 
         # [SIL-2] Wait for MCU stabilization period (BRIDGE_STARTUP_STABILIZATION_MS)
-        await asyncio.sleep(0.15)
+        # Increased to 0.5s for QEMU/Emulation robustness
+        await asyncio.sleep(0.5)
 
         # Transition to SYNCING
         self.start_sync()

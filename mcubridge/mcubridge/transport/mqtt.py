@@ -227,14 +227,21 @@ class MqttTransport:
         try:
             # [SIL-2] Use native aiomqtt filters for cleaner dispatching
             async for message in client.messages:
-                if not str(message.topic):
+                # Early validation of topic string to prevent Paho/aiomqtt edge cases
+                try:
+                    topic_str = str(message.topic)
+                except Exception:
                     continue
+
+                if not topic_str:
+                    continue
+
                 if logger.isEnabledFor(logging.DEBUG):
                     payload_bytes = bytes(message.payload) if message.payload else b""
                     log_hexdump(
                         logger,
                         logging.DEBUG,
-                        f"MQTT SUB < {message.topic}",
+                        f"MQTT SUB < {topic_str}",
                         payload_bytes,
                     )
 
@@ -242,7 +249,7 @@ class MqttTransport:
                     # Dispatch using native topic matching capability
                     await self.service.handle_mqtt_message(message)
                 except Exception as e:
-                    logger.error("Error processing MQTT message on topic %s: %s", message.topic, e)
+                    logger.error("Error processing MQTT message on topic %s: %s", topic_str, e)
         except asyncio.CancelledError:
             with contextlib.suppress(asyncio.CancelledError):
                 raise

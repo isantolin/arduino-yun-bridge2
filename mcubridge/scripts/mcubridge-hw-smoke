@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import sh
+import uci
 import os
 import sys
 import typer
@@ -20,8 +21,9 @@ STATUS_FILE = Path("/tmp/mcubridge_status.json")
 
 def uci_get(key: str, default: str = "") -> str:
     try:
-        return str(sh.uci("-q", "get", f"mcubridge.general.{key}")).strip()
-    except sh.ErrorReturnCode:
+        u = uci.Uci()
+        return u.get("mcubridge", "general", key)
+    except (uci.UciException, RuntimeError):
         return default
 
 @app.command()

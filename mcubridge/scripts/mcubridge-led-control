@@ -7,6 +7,7 @@ Usage: mcubridge-led-control on|off [pin]
 from __future__ import annotations
 
 import sh
+import uci
 import sys
 import tenacity
 import typer
@@ -17,8 +18,9 @@ app = typer.Typer(add_completion=False)
 
 def uci_get(key: str, default: str = "") -> str:
     try:
-        return str(sh.uci("-q", "get", f"mcubridge.general.{key}")).strip()
-    except sh.ErrorReturnCode:
+        u = uci.Uci()
+        return u.get("mcubridge", "general", key)
+    except (uci.UciException, RuntimeError):
         return default
 
 @app.command()

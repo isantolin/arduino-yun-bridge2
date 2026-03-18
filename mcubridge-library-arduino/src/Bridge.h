@@ -372,17 +372,17 @@ class BridgeClass
     if (!ctx.is_duplicate) handler();
   }
 
-  template <typename TPacket, typename F> void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
+  template <typename TPacket, typename F> void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
     if (!ctx.is_duplicate) {
-      auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
+      auto res = rpc::Payload::parse<TPacket>(*ctx.frame);
       if (res.has_value()) handler(res.value());
     }
     if (ctx.requires_ack) _sendAckAndFlush(ctx.frame->header.command_id);
   }
 
-  template <typename TPacket, typename F> void _withPayloadResponse(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
+  template <typename TPacket, typename F> void _withPayloadResponse(const bridge::router::CommandContext& ctx, F handler) {
     if (!ctx.is_duplicate) {
-      auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
+      auto res = rpc::Payload::parse<TPacket>(*ctx.frame);
       if (res.has_value()) handler(res.value());
     }
   }
@@ -401,7 +401,20 @@ class BridgeClass
     else _withPayload<TPacket>(ctx, logic, msg);
   }
 
-  template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
+  template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
+    auto res = rpc::Payload::parse<TPacket>(*ctx.frame);
+    if (res.has_value()) handler(res.value());
+  }
+
+  template <typename TPacket, typename F> void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler, TPacket msg) {
+    if (!ctx.is_duplicate) {
+      auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
+      if (res.has_value()) handler(res.value());
+    }
+    if (ctx.requires_ack) _sendAckAndFlush(ctx.frame->header.command_id);
+  }
+
+  template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler, TPacket msg) {
     auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
     if (res.has_value()) handler(res.value());
   }

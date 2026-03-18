@@ -216,12 +216,16 @@ class SerialHandshakeManager:
         try:
             async for attempt in retryer:
                 with attempt:
-                    self._state.record_handshake_attempt()
-                    self.reset_fsm()  # Ensure clean slate
-                    ok = await self._synchronize_attempt()
-                    if not ok:
-                        self.fail_handshake()
-                        return False
+                    try:
+                        self._state.record_handshake_attempt()
+                        self.reset_fsm()  # Ensure clean slate
+                        ok = await self._synchronize_attempt()
+                        if not ok:
+                            self.fail_handshake()
+                            return False
+                    finally:
+                        # [MIL-SPEC] Always zeroize expectations after each attempt
+                        self.clear_handshake_expectations()
             return True
         except tenacity.RetryError:
             self.fail_handshake()

@@ -13,7 +13,7 @@ from mcubridge.protocol.protocol import (
     Command,
     Status,
 )
-from mcubridge.protocol.topics import Topic, TopicRoute
+from mcubridge.protocol.topics import Topic, TopicRoute, topic_path
 from mcubridge.state.context import RuntimeState, resolve_command_id
 
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
@@ -86,14 +86,25 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_XON.value, console.handle_xon)
         self.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, console.handle_write)
         self.mqtt_router.register(
-            Topic.CONSOLE, lambda r, m: self._guard_and_dispatch(r, m, console.handle_mqtt_input)
+            topic_path(self.state.mqtt_topic_prefix, Topic.CONSOLE, "in"),
+            lambda r, m: self._guard_and_dispatch(r, m, console.handle_mqtt_input)
         )
 
         # Datastore
         self.mcu_registry.register(Command.CMD_DATASTORE_PUT.value, datastore.handle_put)
         self.mcu_registry.register(Command.CMD_DATASTORE_GET.value, datastore.handle_get_request)
         self.mqtt_router.register(
-            Topic.DATASTORE,
+            topic_path(self.state.mqtt_topic_prefix, Topic.DATASTORE, "put", "#"),
+            lambda r, m: self._guard_and_dispatch(
+                r,
+                m,
+                lambda p, i: datastore.handle_mqtt(
+                    r.identifier, list(r.remainder), p, p.decode("utf-8", errors="ignore"), i
+                ),
+            ),
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.DATASTORE, "get", "#"),
             lambda r, m: self._guard_and_dispatch(
                 r,
                 m,
@@ -109,7 +120,11 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_MAILBOX_READ.value, mailbox.handle_read)
         self.mcu_registry.register(Command.CMD_MAILBOX_PROCESSED.value, mailbox.handle_processed)
         self.mqtt_router.register(
-            Topic.MAILBOX,
+            topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "write"),
+            lambda r, m: self._guard_and_dispatch(r, m, lambda p, i: mailbox.handle_mqtt(r.identifier, p, i)),
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "read"),
             lambda r, m: self._guard_and_dispatch(r, m, lambda p, i: mailbox.handle_mqtt(r.identifier, p, i)),
         )
 
@@ -123,7 +138,18 @@ class BridgeDispatcher:
                 return False
             return await self._guard_and_dispatch(r, m, lambda _p, _i: file.handle_mqtt(r, m))
 
-        self.mqtt_router.register(Topic.FILE, file_mqtt_handler)
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.FILE, "write", "#"),
+            file_mqtt_handler
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.FILE, "read", "#"),
+            file_mqtt_handler
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.FILE, "remove", "#"),
+            file_mqtt_handler
+        )
 
         # Process
         self.mcu_registry.register(
@@ -134,7 +160,15 @@ class BridgeDispatcher:
 
         # Shell (MQTT only)
         self.mqtt_router.register(
-            Topic.SHELL,
+            topic_path(self.state.mqtt_topic_prefix, Topic.SHELL, "run_async"),
+            lambda r, m: self._guard_and_dispatch(r, m, lambda p, i: shell.handle_mqtt(list(r.segments), p, i)),
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.SHELL, "poll", "#"),
+            lambda r, m: self._guard_and_dispatch(r, m, lambda p, i: shell.handle_mqtt(list(r.segments), p, i)),
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.SHELL, "kill", "#"),
             lambda r, m: self._guard_and_dispatch(r, m, lambda p, i: shell.handle_mqtt(list(r.segments), p, i)),
         )
 
@@ -166,8 +200,26 @@ class BridgeDispatcher:
                 lambda p, i: pin.handle_mqtt(r.topic, list(r.segments), p.decode("utf-8", errors="ignore"), i),
             )
 
-        self.mqtt_router.register(Topic.DIGITAL, pin_mqtt_handler)
-        self.mqtt_router.register(Topic.ANALOG, pin_mqtt_handler)
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.DIGITAL, "+", "mode"),
+            pin_mqtt_handler
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.DIGITAL, "+", "read"),
+            pin_mqtt_handler
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.DIGITAL, "+"),
+            pin_mqtt_handler
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.ANALOG, "+", "read"),
+            pin_mqtt_handler
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.ANALOG, "+"),
+            pin_mqtt_handler
+        )
 
         # System
         self.mcu_registry.register(
@@ -182,7 +234,26 @@ class BridgeDispatcher:
             Command.CMD_SET_BAUDRATE_RESP.value,
             system.handle_set_baudrate_resp,
         )
-        self.mqtt_router.register(Topic.SYSTEM, self._handle_system_topic)
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "free_memory", "get"),
+            self._handle_system_topic
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "version", "get"),
+            self._handle_system_topic
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", "handshake", "get"),
+            self._handle_system_topic
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", "summary", "get"),
+            self._handle_system_topic
+        )
+        self.mqtt_router.register(
+            topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", "state", "get"),
+            self._handle_system_topic
+        )
 
     def register_system_handlers(
         self,

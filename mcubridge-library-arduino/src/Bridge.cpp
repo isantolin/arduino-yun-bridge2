@@ -489,13 +489,14 @@ void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandConte
 
 #if BRIDGE_ENABLE_FILESYSTEM
 void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
-  rpc::payload::FileWrite msg = {};
-  etl::span<uint8_t> data_span(_transient_buffer, sizeof(_transient_buffer));
-  rpc::util::pb_setup_decode_span(msg.data, data_span);
-
-  _withPayload<rpc::payload::FileWrite>(ctx, [&msg, &data_span](const rpc::payload::FileWrite&) {
-    FileSystem._onWrite(msg, etl::span<const uint8_t>(data_span.data(), data_span.size()));
-  }, msg);
+  _dispatchWithBytes<rpc::payload::FileWrite>(
+      ctx, &rpc::payload::FileWrite::data,
+      [this, &ctx](etl::span<const uint8_t> data) {
+        rpc::payload::FileWrite msg = {};
+        if (rpc::Payload::parse<rpc::payload::FileWrite>(*ctx.frame, msg).has_value()) {
+            FileSystem._onWrite(msg, data);
+        }
+      }, true);
 }
 void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
   _dispatchWithBytes<rpc::payload::FileReadResponse>(
@@ -511,26 +512,18 @@ void BridgeClass::_handleProcessRunAsyncResp(const bridge::router::CommandContex
 }
 void BridgeClass::_handleProcessPollResp(const bridge::router::CommandContext& ctx) {
   // [OPTIMIZATION] Reuse transient buffer for STDOUT/STDERR decoding.
-  // We divide the shared buffer in two halves.
   static constexpr size_t HALF_BUF = rpc::MAX_PAYLOAD_SIZE / 2;
-  uint8_t* stdout_ptr = _transient_buffer;
-  uint8_t* stderr_ptr = _transient_buffer + HALF_BUF;
-  
-  etl::span<uint8_t> stdout_span(stdout_ptr, HALF_BUF);
-  etl::span<uint8_t> stderr_span(stderr_ptr, HALF_BUF);
+  etl::span<uint8_t> stdout_span(_transient_buffer, HALF_BUF);
+  etl::span<uint8_t> stderr_span(_transient_buffer + HALF_BUF, HALF_BUF);
 
   rpc::payload::ProcessPollResponse msg = {};
   rpc::util::pb_setup_decode_span(msg.stdout_data, stdout_span);
   rpc::util::pb_setup_decode_span(msg.stderr_data, stderr_span);
 
-  _withPayload<rpc::payload::ProcessPollResponse>(
-      ctx,
-      [&](const auto& inner_msg) {
-        Process._onPollResponse(
-            inner_msg, etl::span<const uint8_t>(stdout_span),
-            etl::span<const uint8_t>(stderr_span));
-      },
-      msg);
+  _withPayload<rpc::payload::ProcessPollResponse>(ctx, [&](const auto& inner_msg) {
+    Process._onPollResponse(inner_msg, etl::span<const uint8_t>(stdout_span.data(), stdout_span.size()), 
+                           etl::span<const uint8_t>(stderr_span.data(), stderr_span.size()));
+  }, msg);
 }
 #endif
 

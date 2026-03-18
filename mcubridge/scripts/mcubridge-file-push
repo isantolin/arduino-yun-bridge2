@@ -37,7 +37,7 @@ def main(source_file, target_path, mcu, host, port):
                 click.echo(f"Pushing {len(data)} bytes to {topic}...")
                 await client.publish(topic, payload=data, qos=1)
                 click.echo("Success.")
-        except Exception as e:
+        except (aiomqtt.MqttError, OSError, ValueError) as e:
             click.echo(f"Error: {e}", err=True)
             sys.exit(1)
 

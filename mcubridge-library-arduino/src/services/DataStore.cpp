@@ -7,12 +7,17 @@
 DataStoreClass::DataStoreClass() {}
 
 void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
-  Bridge.sendKeyDataCommand(rpc::CommandId::CMD_DATASTORE_PUT, key, &rpc::payload::DatastorePut::key, value, &rpc::payload::DatastorePut::value);
+  rpc::payload::DatastorePut msg = {};
+  rpc::util::pb_copy_string(key, msg.key, sizeof(msg.key));
+  rpc::util::pb_setup_encode_span(msg.value, value);
+  Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_PUT, msg);
 }
 
 void DataStoreClass::get(etl::string_view key, DataStoreGetHandler handler) {
   if (_pending_gets.full()) return;
-  if (Bridge.sendKeyCommand(rpc::CommandId::CMD_DATASTORE_GET, key, &rpc::payload::DatastoreGet::key)) {
+  rpc::payload::DatastoreGet msg = {};
+  rpc::util::pb_copy_string(key, msg.key, sizeof(msg.key));
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_GET, msg)) {
     _pending_gets.push({handler, key});
   }
 }

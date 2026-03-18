@@ -16,7 +16,7 @@ import msgspec
 import tenacity
 
 app = typer.Typer(add_completion=False)
-STATUS_FILE = Path("/tmp/mcubridge_status.msgpack")
+STATUS_FILE = Path("/tmp/mcubridge_status.json")
 
 def uci_get(key: str, default: str = "") -> str:
     try:

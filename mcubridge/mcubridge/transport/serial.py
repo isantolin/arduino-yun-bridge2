@@ -30,6 +30,7 @@ from mcubridge.config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
     DEFAULT_RECONNECT_DELAY,
+    SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
 )
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.frame import Frame
@@ -41,9 +42,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("mcubridge.serial")
 
-def _is_binary_packet(packet: bytes) -> bool:
-    """Validate packet header matches protocol v2 using struct."""
-    if len(packet) < protocol.CRC_COVERED_HEADER_SIZE:
+_RAW_FRAME_MIN_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.CRC_SIZE
+_RAW_FRAME_MAX_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE
+_DEFAULT_SAFE_BAUD: Final[int] = 115200
+
+
+def _is_raw_binary_frame(packet: bytes) -> bool:
+    """Validate a decoded raw frame matches the protocol envelope."""
+    if len(packet) < _RAW_FRAME_MIN_SIZE or len(packet) > _RAW_FRAME_MAX_SIZE:
         return False
     (version,) = struct.unpack_from(protocol.UINT8_FORMAT, packet, 0)
     return version == protocol.PROTOCOL_VERSION
@@ -105,10 +111,30 @@ class SerialTransport:
             dest=self.STATE_DISCONNECTED,
         )
 
-    # Type hints for dynamic FSM methods
-    def begin_negotiate(self) -> None: pass
-    def mark_connected(self) -> None: pass
-    def mark_disconnected(self) -> None: pass
+    def _trigger_transition(self, transition_name: str) -> None:
+        transition = getattr(self, transition_name, None)
+        if not callable(transition):
+            raise RuntimeError(f"Missing serial FSM transition: {transition_name}")
+        cast(Any, transition)()
+
+    def _decode_frame(self, encoded_packet: bytes) -> Frame:
+        raw_frame = cobs_decode(encoded_packet)
+        if not _is_raw_binary_frame(raw_frame):
+            raise ValueError("Decoded serial frame does not match the binary protocol envelope")
+        return Frame.from_bytes(raw_frame)
+
+    def _switch_local_baudrate(self, target_baud: int) -> None:
+        writer = self.writer
+        if writer is None or writer.is_closing():
+            raise RuntimeError("Cannot switch local UART baudrate without an active serial writer")
+
+        transport = getattr(writer, "transport", None)
+        serial_port = getattr(transport, "serial", None)
+        if serial_port is None:
+            raise RuntimeError("Serial transport does not expose the underlying UART")
+
+        serial_port.baudrate = target_baud
+        logger.info("Local UART switched to %d baud", target_baud)
 
     def _on_state_change(self) -> None:
         logger.debug("Serial transport state: %s", self.fsm_state)
@@ -150,9 +176,13 @@ class SerialTransport:
         await self._toggle_dtr(loop)
 
         try:
+            connect_baud = self.config.serial_safe_baud
+            if connect_baud <= 0:
+                connect_baud = _DEFAULT_SAFE_BAUD
+
             self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(  # type: ignore
                 url=self.config.serial_port,
-                baudrate=self.config.serial_baud,
+                baudrate=connect_baud,
                 xonxoff=False,
             )
             self.state.serial_writer = self.writer  # type: ignore
@@ -163,15 +193,13 @@ class SerialTransport:
 
             try:
                 # 1. Negotiate baudrate if needed
-                if self.config.serial_baud != 115200:
-                    self.begin_negotiate()
-                    if not await self._negotiate_baudrate(reader, self.config.serial_baud):
+                self._trigger_transition("begin_negotiate")
+                if self.config.serial_baud != connect_baud:
+                    if not await self._negotiate_baudrate(self.config.serial_baud):
                         raise ConnectionError("Baudrate negotiation failed")
-                else:
-                    self.begin_negotiate() # Dummy transition
 
                 # 2. Complete handshake via service
-                self.mark_connected()
+                self._trigger_transition("mark_connected")
                 await self.service.on_serial_connected()
 
                 # 3. Wait for reader to finish or stop event
@@ -194,7 +222,7 @@ class SerialTransport:
                 read_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await read_task
-                self.mark_disconnected()
+                self._trigger_transition("mark_disconnected")
                 await self.service.on_serial_disconnected()
 
         except (OSError, serial.SerialException) as exc:
@@ -250,13 +278,13 @@ class SerialTransport:
         """Dispatcher for decoded packets."""
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
             try:
-                raw_frame = cobs_decode(encoded_packet)
-                frame = Frame.from_bytes(raw_frame)
+                frame = self._decode_frame(encoded_packet)
                 if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
+                    self._switch_local_baudrate(self.config.serial_baud)
                     self._negotiation_future.set_result(True)
+                    return
             except (CobsDecodeError, ValueError):
                 pass
-            return
 
         if self.loop:
             self.loop.create_task(self._async_process_packet(encoded_packet))
@@ -266,13 +294,8 @@ class SerialTransport:
         # [DEBUG] Trace packet intake
         logger.debug("[SERIAL <- MCU] Processing Packet: %s", encoded_packet.hex(" "))
 
-        if not _is_binary_packet(encoded_packet):
-            self.state.record_serial_decode_error()
-            return
-
         try:
-            raw_frame = cobs_decode(encoded_packet)
-            frame = Frame.from_bytes(raw_frame)
+            frame = self._decode_frame(encoded_packet)
 
             if logger.isEnabledFor(logging.DEBUG):
                 log_binary_traffic(logger, logging.DEBUG, "[SERIAL <- MCU]", "RAW", encoded_packet)
@@ -305,7 +328,7 @@ class SerialTransport:
             logger.warning("Send failed: %s", e)
             return False
 
-    async def _negotiate_baudrate(self, reader: asyncio.StreamReader, target_baud: int) -> bool:
+    async def _negotiate_baudrate(self, target_baud: int) -> bool:
         """Execute baudrate switch protocol."""
         logger.info("Negotiating baudrate switch to %d...", target_baud)
 
@@ -317,18 +340,24 @@ class SerialTransport:
             reraise=True
         )
 
+        if self.loop is None:
+            raise RuntimeError("Serial event loop is not initialized")
+
+        self._negotiating = True
         try:
             async for attempt in retryer:
                 with attempt:
-                    if self.loop:
-                        self._negotiation_future = self.loop.create_future()
+                    self._negotiation_future = self.loop.create_future()
 
                     if not await self._serial_sender(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                         raise asyncio.TimeoutError("Write failed")
 
                     try:
                         assert self._negotiation_future is not None
-                        await asyncio.wait_for(self._negotiation_future, timeout=2.0)
+                        await asyncio.wait_for(
+                            self._negotiation_future,
+                            timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+                        )
                         return True
                     except asyncio.TimeoutError:
                         raise
@@ -336,5 +365,6 @@ class SerialTransport:
             pass
         finally:
             self._negotiating = False
+            self._negotiation_future = None
 
         return False

@@ -326,7 +326,15 @@ def main(
         asyncio.run(daemon.run(), loop_factory=uvloop.new_event_loop)
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user.")
-    except Exception as exc:
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        TypeError,
+        asyncio.TimeoutError,
+        msgspec.MsgspecError,
+        tenacity.RetryError,
+    ) as exc:
         logger.critical("Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError))
         sys.exit(1)
 

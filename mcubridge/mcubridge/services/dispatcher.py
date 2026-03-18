@@ -117,6 +117,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_FILE_WRITE.value, file.handle_write)
         self.mcu_registry.register(Command.CMD_FILE_READ.value, file.handle_read)
         self.mcu_registry.register(Command.CMD_FILE_REMOVE.value, file.handle_remove)
+        self.mcu_registry.register(Command.CMD_FILE_READ_RESP.value, file.handle_read_response)
 
         async def file_mqtt_handler(r: TopicRoute, m: Message) -> bool:
             if len(r.segments) < 2:

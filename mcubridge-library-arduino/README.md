@@ -1,6 +1,6 @@
 # McuBridge Arduino Library
 
-[![C++ Standard](https://img.shields.io/badge/C%2B%2B-11-00599C?logo=cplusplus)](https://isocpp.org/)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-14-00599C?logo=cplusplus)](https://isocpp.org/)
 [![ETL](https://img.shields.io/badge/ETL-20.39+-green)](https://www.etlcpp.com/)
 [![SIL-2](https://img.shields.io/badge/IEC%2061508-SIL--2-brightgreen)](https://en.wikipedia.org/wiki/IEC_61508)
 [![FIPS 140-3](https://img.shields.io/badge/MIL--SPEC-FIPS%20140--3-critical)](https://csrc.nist.gov/publications/detail/fips/140/3/final)

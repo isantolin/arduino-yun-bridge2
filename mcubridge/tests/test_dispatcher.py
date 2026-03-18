@@ -39,6 +39,10 @@ class _FileComponent:
         self._calls.add("file.handle_remove", payload)
         return True
 
+    async def handle_read_response(self, payload: bytes) -> bool:
+        self._calls.add("file.handle_read_response", payload)
+        return True
+
     async def handle_mqtt(
         self,
         *args: Any,

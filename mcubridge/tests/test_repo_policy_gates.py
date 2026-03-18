@@ -277,7 +277,7 @@ def test_no_print_repo_wide() -> None:
 
 
 def test_no_stl_in_mcu_src_or_tests() -> None:
-    """MCU code must stay C++11-friendly and avoid STL usage (src + tests)."""
+    """MCU code must stay C++14-friendly and avoid STL usage (src + tests)."""
 
     mcu_src_root = _REPO_ROOT / "mcubridge-library-arduino" / "src"
     mcu_tests_root = _REPO_ROOT / "mcubridge-library-arduino" / "tests"

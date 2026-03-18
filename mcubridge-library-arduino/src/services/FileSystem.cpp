@@ -4,20 +4,37 @@
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
+namespace {
+constexpr size_t kReadChunkSize = rpc::MAX_PAYLOAD_SIZE - 2U;
+
+void send_read_response(etl::span<const uint8_t> data) {
+  rpc::payload::FileReadResponse msg = {};
+  rpc::util::pb_setup_encode_span(msg.content, data);
+  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ_RESP, msg);
+}
+}
+
 FileSystemClass::FileSystemClass() {}
 
 void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data) {
-  Bridge.sendKeyDataCommand(rpc::CommandId::CMD_FILE_WRITE, path, &rpc::payload::FileWrite::path, data, &rpc::payload::FileWrite::data);
+  rpc::payload::FileWrite msg = {};
+  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
+  rpc::util::pb_setup_encode_span(msg.data, data);
+  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, msg);
 }
 
 void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler) {
-  if (Bridge.sendKeyCommand(rpc::CommandId::CMD_FILE_READ, path, &rpc::payload::FileRead::path)) {
+  rpc::payload::FileRead msg = {};
+  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ, msg)) {
     _read_handler = handler;
   }
 }
 
 void FileSystemClass::remove(etl::string_view path) {
-  Bridge.sendKeyCommand(rpc::CommandId::CMD_FILE_REMOVE, path, &rpc::payload::FileRemove::path);
+  rpc::payload::FileRemove msg = {};
+  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
+  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, msg);
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<const uint8_t> data) {
@@ -29,7 +46,61 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<con
       Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
     }
   } else {
-    // If no SD card present, signal error back to Linux daemon.
+    Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+  }
+}
+
+void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
+  if (!bridge::hal::hasSD()) {
+    Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    return;
+  }
+
+  uint8_t read_buffer[kReadChunkSize] = {};
+  size_t offset = 0U;
+  bool sent_payload = false;
+
+  while (true) {
+    size_t bytes_read = 0U;
+    bool has_more = false;
+    const bool read_ok = bridge::hal::readFileChunk(
+        msg.path,
+        offset,
+        etl::span<uint8_t>(read_buffer, sizeof(read_buffer)),
+        bytes_read,
+        has_more);
+    if (!read_ok) {
+      Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+      return;
+    }
+
+    if (bytes_read > 0U) {
+      send_read_response(etl::span<const uint8_t>(read_buffer, bytes_read));
+      sent_payload = true;
+      offset += bytes_read;
+    } else if (!sent_payload) {
+      send_read_response(etl::span<const uint8_t>());
+    }
+
+    if (!has_more) {
+      break;
+    }
+  }
+
+  if (sent_payload) {
+    send_read_response(etl::span<const uint8_t>());
+  }
+}
+
+void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
+  if (!bridge::hal::hasSD()) {
+    Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    return;
+  }
+
+  if (bridge::hal::removeFile(msg.path)) {
+    Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
+  } else {
     Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
   }
 }

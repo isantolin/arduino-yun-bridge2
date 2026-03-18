@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import asyncio
 import pytest
+from cobs.cobs import encode as cobs_encode
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import Command
@@ -31,12 +32,12 @@ def _make_config() -> RuntimeConfig:
     )
 
 
-def test_is_binary_packet_valid_size() -> None:
-    assert serial_fast._is_binary_packet(b"\x02\x00\x00\x00\x00") is True
-    assert serial_fast._is_binary_packet(bytearray(b"\x02\x00\x00\x00\x00")) is True
-    assert serial_fast._is_binary_packet(b"") is False
-    # Use actual constant name MAX_SERIAL_FRAME_BYTES
-    assert serial_fast._is_binary_packet(b"a" * (serial_fast.MAX_SERIAL_FRAME_BYTES + 1)) is False
+def test_is_raw_binary_frame_valid_size() -> None:
+    frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, b"hi")
+    assert serial_fast._is_raw_binary_frame(frame_bytes) is True
+    assert serial_fast._is_raw_binary_frame(bytearray(frame_bytes)) is True
+    assert serial_fast._is_raw_binary_frame(b"") is False
+    assert serial_fast._is_raw_binary_frame(b"a" * (serial_fast._RAW_FRAME_MAX_SIZE + 1)) is False
 
 
 @pytest.mark.asyncio
@@ -65,7 +66,6 @@ async def test_process_packet_crc_mismatch_reports_crc(
 
 @pytest.mark.asyncio
 async def test_process_packet_success_dispatches(
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -74,14 +74,42 @@ async def test_process_packet_success_dispatches(
     service.handle_mcu_frame = AsyncMock()
 
     frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, b"hi")
-    monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: frame_bytes)
+    encoded = cobs_encode(frame_bytes)
 
     transport = serial_fast.SerialTransport(config, state, service)
     transport.loop = asyncio.get_running_loop()
 
-    await transport._async_process_packet(b"\x02encoded")
+    await transport._async_process_packet(encoded)
 
     service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"hi")
+
+
+@pytest.mark.asyncio
+async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
+    config = _make_config()
+    config.serial_baud = 230400
+    config.serial_safe_baud = 115200
+    state = create_runtime_state(config)
+    service = BridgeService(config, state)
+
+    transport = serial_fast.SerialTransport(config, state, service)
+    transport.loop = asyncio.get_running_loop()
+
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.is_closing.return_value = False
+    serial_port = MagicMock()
+    serial_port.baudrate = config.serial_safe_baud
+    mock_writer.transport = MagicMock(serial=serial_port)
+    transport.writer = mock_writer
+
+    transport._negotiating = True
+    transport._negotiation_future = transport.loop.create_future()
+
+    encoded = cobs_encode(Frame.build(Command.CMD_SET_BAUDRATE_RESP.value, b""))
+    transport._process_packet(encoded)
+
+    assert await transport._negotiation_future is True
+    assert serial_port.baudrate == config.serial_baud
 
 
 @pytest.mark.asyncio

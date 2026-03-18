@@ -239,15 +239,15 @@ struct SimpleTimer {
 
   static constexpr uint32_t TIMER_OVERFLOW_THRESHOLD = 0x80000000UL;
 
-  uint8_t check_expired(uint32_t now) {
-    uint8_t expired_mask = 0;
+  etl::bitset<N> check_expired(uint32_t now) {
+    etl::bitset<N> expired;
     for (uint8_t i = 0; i < N; ++i) {
       if (active.test(i) && (now - deadline[i]) < TIMER_OVERFLOW_THRESHOLD) {
-        expired_mask |= (1U << i);
+        expired.set(i);
         active.reset(i);
       }
     }
-    return expired_mask;
+    return expired;
   }
 };
 

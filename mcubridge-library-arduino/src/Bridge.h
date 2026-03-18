@@ -210,30 +210,6 @@ class BridgeClass
                        etl::span<const uint8_t>(_transient_buffer, stream.bytes_written));
   }
 
-  // [SIL-2] Boilerplate reduction helpers for services
-  template <typename T, typename KeyField>
-  bool sendKeyCommand(rpc::CommandId cmd, etl::string_view key, KeyField T::*field) {
-    T msg = {};
-    rpc::util::pb_copy_string(key, msg.*field, sizeof(msg.*field));
-    return sendPbCommand(cmd, msg);
-  }
-
-  template <typename T, typename KeyField, typename DataField>
-  bool sendKeyDataCommand(rpc::CommandId cmd, etl::string_view key, KeyField T::*k_field,
-                          etl::span<const uint8_t> data, DataField T::*d_field) {
-    T msg = {};
-    rpc::util::pb_copy_string(key, msg.*k_field, sizeof(msg.*k_field));
-    rpc::util::pb_setup_encode_span(msg.*d_field, data);
-    return sendPbCommand(cmd, msg);
-  }
-
-  template <typename T, typename DataField>
-  bool sendDataCommand(rpc::CommandId cmd, etl::span<const uint8_t> data, DataField T::*field) {
-    T msg = {};
-    rpc::util::pb_setup_encode_span(msg.*field, data);
-    return sendPbCommand(cmd, msg);
-  }
-
   template <typename T>
   bool sendPbFrame(rpc::StatusCode status_code, const T& msg) {
     pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer, sizeof(_transient_buffer));
@@ -316,6 +292,8 @@ class BridgeClass
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
   void _handleFileWrite(const bridge::router::CommandContext& ctx);
+  void _handleFileRead(const bridge::router::CommandContext& ctx);
+  void _handleFileRemove(const bridge::router::CommandContext& ctx);
   void _handleFileReadResp(const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_PROCESS

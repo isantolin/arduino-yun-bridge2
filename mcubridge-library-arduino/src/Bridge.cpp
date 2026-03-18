@@ -26,6 +26,18 @@
 namespace {
 constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
 constexpr uint8_t kRpcCommandStride = 2;  // Pair: CMD + RESP
+
+constexpr uint8_t bit_index_from_mask(uint32_t mask) {
+  uint8_t bit_index = 0;
+  while (mask > 1U) {
+    mask /= 2U;
+    ++bit_index;
+  }
+  return bit_index;
+}
+
+constexpr uint8_t kCompressedCommandBit =
+    bit_index_from_mask(rpc::RPC_CMD_FLAG_COMPRESSED);
 }
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
@@ -124,11 +136,11 @@ void BridgeClass::process() {
 #endif
 
   const uint32_t now = bridge::now_ms();
-  const uint8_t expired = _timers.check_expired(now);
-  if (expired & (1U << bridge::scheduler::TIMER_ACK_TIMEOUT)) _onAckTimeout();
-  if (expired & (1U << bridge::scheduler::TIMER_RX_DEDUPE)) _onRxDedupe();
-  if (expired & (1U << bridge::scheduler::TIMER_BAUDRATE_CHANGE)) _onBaudrateChange();
-  if (expired & (1U << bridge::scheduler::TIMER_STARTUP_STABILIZATION)) _onStartupStabilized();
+  const auto expired = _timers.check_expired(now);
+  if (expired.test(bridge::scheduler::TIMER_ACK_TIMEOUT)) _onAckTimeout();
+  if (expired.test(bridge::scheduler::TIMER_RX_DEDUPE)) _onRxDedupe();
+  if (expired.test(bridge::scheduler::TIMER_BAUDRATE_CHANGE)) _onBaudrateChange();
+  if (expired.test(bridge::scheduler::TIMER_STARTUP_STABILIZATION)) _onStartupStabilized();
 
   if (_fsm.isStabilizing()) {
     uint16_t drain_limit = bridge::config::STARTUP_DRAIN_PER_TICK;
@@ -334,8 +346,8 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
 #if BRIDGE_ENABLE_FILESYSTEM
   static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 4> kFsHandlers{{
       &BridgeClass::_handleFileWrite, // 144
-      nullptr, // 145
-      nullptr, // 146
+      &BridgeClass::_handleFileRead, // 145
+      &BridgeClass::_handleFileRemove, // 146
       &BridgeClass::_handleFileReadResp // 147
   }};
   _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers.data(), kFsHandlers.size());
@@ -496,6 +508,16 @@ void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::FileWrite>(ctx, [&msg, &data_span](const rpc::payload::FileWrite&) {
     FileSystem._onWrite(msg, etl::span<const uint8_t>(data_span.data(), data_span.size()));
   }, msg);
+}
+void BridgeClass::_handleFileRead(const bridge::router::CommandContext& ctx) {
+  _withPayload<rpc::payload::FileRead>(ctx, [](const rpc::payload::FileRead& msg) {
+    FileSystem._onRead(msg);
+  });
+}
+void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& ctx) {
+  _withPayload<rpc::payload::FileRemove>(ctx, [](const rpc::payload::FileRemove& msg) {
+    FileSystem._onRemove(msg);
+  });
 }
 void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
   _dispatchWithBytes<rpc::payload::FileReadResponse>(
@@ -777,13 +799,12 @@ etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Fr
   eff.header = org.header;
   eff.crc = org.crc;
   
-  if (!(org.header.command_id & rpc::RPC_CMD_FLAG_COMPRESSED)) {
+  if (!bitRead(org.header.command_id, kCompressedCommandBit)) {
     eff.payload = org.payload;
     return {};
   }
 
-  // Clear compression flag for the effective frame
-  eff.header.command_id &= ~rpc::RPC_CMD_FLAG_COMPRESSED;
+  bitWrite(eff.header.command_id, kCompressedCommandBit, 0);
   
   size_t decoded_len = rle::decode(
       etl::span<const uint8_t>(org.payload.data(), org.header.payload_length),

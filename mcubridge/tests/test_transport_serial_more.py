@@ -25,10 +25,9 @@ def _make_config() -> RuntimeConfig:
 
 @pytest.mark.asyncio
 async def test_negotiate_baudrate_success() -> None:
-    mock_reader = MagicMock(spec=asyncio.StreamReader)
-
     patch_path = "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection"
     with patch(patch_path, new_callable=AsyncMock) as mock_open:
+        mock_reader = MagicMock(spec=asyncio.StreamReader)
         mock_writer = MagicMock(spec=asyncio.StreamWriter)
         mock_writer.is_closing.return_value = False
         mock_open.return_value = (mock_reader, mock_writer)
@@ -48,15 +47,14 @@ async def test_negotiate_baudrate_success() -> None:
 
         transport._serial_sender = mock_sender
 
-        ok = await transport._negotiate_baudrate(mock_reader, 115200)
+        ok = await transport._negotiate_baudrate(115200)
         assert ok is True
 
 @pytest.mark.asyncio
 async def test_negotiate_baudrate_timeout() -> None:
-    mock_reader = MagicMock(spec=asyncio.StreamReader)
-
     patch_path = "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection"
     with patch(patch_path, new_callable=AsyncMock) as mock_open:
+        mock_reader = MagicMock(spec=asyncio.StreamReader)
         mock_writer = MagicMock(spec=asyncio.StreamWriter)
         mock_writer.is_closing.return_value = False
         mock_open.return_value = (mock_reader, mock_writer)
@@ -73,8 +71,41 @@ async def test_negotiate_baudrate_timeout() -> None:
 
         # Mock sleep to avoid waiting
         with patch("asyncio.sleep", AsyncMock()):
-            ok = await transport._negotiate_baudrate(mock_reader, 115200)
+            ok = await transport._negotiate_baudrate(115200)
             assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_retryable_run_opens_uart_at_safe_baud() -> None:
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    mock_reader.readuntil.side_effect = asyncio.IncompleteReadError(b"", None)
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.transport = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+
+    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection"
+    with patch(patch_path, new_callable=AsyncMock) as mock_open:
+        mock_open.return_value = (mock_reader, mock_writer)
+
+        config = _make_config()
+        config.serial_baud = 230400
+        config.serial_safe_baud = 115200
+        state = create_runtime_state(config)
+        service = BridgeService(config, state)
+
+        transport = serial_fast.SerialTransport(config, state, service)
+        orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__
+
+        with (
+            patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
+            patch.object(transport, "_negotiate_baudrate", new_callable=AsyncMock, return_value=True),
+            patch.object(service, "on_serial_connected", new_callable=AsyncMock),
+            patch.object(service, "on_serial_disconnected", new_callable=AsyncMock),
+        ):
+            with pytest.raises(ConnectionError, match="Serial connection lost"):
+                await orig_run(transport, asyncio.get_running_loop())
+
+        assert mock_open.await_args.kwargs["baudrate"] == config.serial_safe_baud
 
 
 @pytest.mark.asyncio

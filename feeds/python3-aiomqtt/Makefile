@@ -20,7 +20,7 @@ define Package/python3-aiomqtt
   SECTION:=lang
   CATEGORY:=Languages
   SUBMENU:=Python
-  TITLE:=Idiomatic asyncio MQTT client (v2.5.0)
+  TITLE:=Idiomatic asyncio MQTT client (v2.5.1)
   URL:=https://github.com/empicano/aiomqtt
   PKG_ARCH:=all
   DEPENDS:=+python3-light +python3-paho-mqtt

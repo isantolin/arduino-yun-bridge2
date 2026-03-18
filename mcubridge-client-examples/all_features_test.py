@@ -64,6 +64,11 @@ async def run_test(host, port, user, password):
         logger.info("Testing MCU SD Card Write...")
         mcu_test_file = f"mcu/test_sd_{uuid.uuid4().hex[:8]}.txt"
         await client.file_write(mcu_test_file, "mcu-data")
+        mcu_content = await client.file_read(mcu_test_file)
+        logger.info(f"MCU file read content: {mcu_content}")
+        if mcu_content != b"mcu-data":
+            raise ValueError(f"MCU file content mismatch: {mcu_content}")
+        await client.file_remove(mcu_test_file)
 
         logger.info("File IO tests passed.")
 

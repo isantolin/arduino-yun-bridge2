@@ -160,7 +160,7 @@ class MqttTransport:
             try:
                 if original_on_message:
                     original_on_message(c, userdata, msg)
-            except Exception as e:
+            except (OSError, RuntimeError, TypeError, ValueError) as e:
                 # Silence the specific aiomqtt "Invalid topic" error to avoid log flood
                 if "Invalid topic" not in str(e):
                     logger.error("Exception in MQTT on_message for topic %s: %s", msg.topic, e)
@@ -229,7 +229,7 @@ class MqttTransport:
                     await self.state.stash_mqtt_message(message)
                 except asyncio.CancelledError:
                     raise
-                except Exception as exc:  # [SIL-2] Last-resort guardian: prevents message loss on unforeseen errors
+                except (OSError, RuntimeError, ValueError, TypeError) as exc:
                     logger.error("Unexpected error in MQTT publisher: %s", exc)
                     await self.state.stash_mqtt_message(message)
                 finally:
@@ -252,7 +252,7 @@ class MqttTransport:
                 # Early validation of topic string to prevent Paho/aiomqtt edge cases
                 try:
                     topic_str = str(message.topic)
-                except Exception:
+                except (TypeError, ValueError):
                     continue
 
                 if not topic_str:
@@ -270,7 +270,7 @@ class MqttTransport:
                 try:
                     # Dispatch using native topic matching capability
                     await self.service.handle_mqtt_message(message)
-                except Exception as e:
+                except (AttributeError, IndexError, KeyError, OSError, RuntimeError, TypeError, ValueError) as e:
                     logger.error("Error processing MQTT message on topic %s: %s", topic_str, e)
         except asyncio.CancelledError:
             with contextlib.suppress(asyncio.CancelledError):

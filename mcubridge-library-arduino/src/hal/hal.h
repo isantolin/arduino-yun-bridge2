@@ -44,6 +44,21 @@ bool hasSD();
 bool writeFile(const char* path, etl::span<const uint8_t> data);
 
 /**
+ * @brief Read a chunk from a file on the SD card.
+ */
+bool readFileChunk(
+    const char* path,
+    size_t offset,
+    etl::span<uint8_t> buffer,
+    size_t& bytes_read,
+    bool& has_more);
+
+/**
+ * @brief Remove a file from the SD card.
+ */
+bool removeFile(const char* path);
+
+/**
  * @brief Get MCU capabilities bitmask.
  */
 uint32_t getCapabilities();

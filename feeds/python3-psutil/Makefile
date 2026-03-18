@@ -5,7 +5,7 @@ PKG_VERSION:=7.2.2
 PKG_RELEASE:=1
 
 PYPI_NAME:=psutil
-PKG_HASH:=skip
+PKG_HASH:=0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372
 PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://files.pythonhosted.org/packages/source/p/psutil/
 

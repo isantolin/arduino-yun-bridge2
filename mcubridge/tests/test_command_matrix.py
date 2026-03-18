@@ -125,6 +125,9 @@ class _File:
     async def handle_remove(self, _payload: bytes) -> bool:
         return True
 
+    async def handle_read_response(self, _payload: bytes) -> bool:
+        return True
+
     async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
         return True
 

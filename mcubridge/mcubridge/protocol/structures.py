@@ -451,11 +451,15 @@ class BaseStruct(msgspec.Struct, frozen=True):
             if cls.__name__ == "CapabilitiesPacket" and "feat" in d:
                 d["feat"] = _int_to_capabilities(int(d["feat"]))
             return msgspec.convert(d, cls)
-        except (msgspec.MsgspecError, google.protobuf.message.DecodeError, ValueError, TypeError, AttributeError) as e:
+        except (
+            msgspec.MsgspecError,
+            google.protobuf.message.Error,
+            ValueError,
+            TypeError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             raise ValueError(f"Malformed {cls.__name__} payload: {bytes(data).hex()} - Error: {e}") from e
-        except Exception as e:
-            # [SIL-2] Catch-all for unexpected protobuf internal errors to prevent daemon crash
-            raise ValueError(f"Protobuf internal error in {cls.__name__}: {e}") from e
 
     def encode(self) -> bytes:
         pb_obj = self.PB_CLASS()

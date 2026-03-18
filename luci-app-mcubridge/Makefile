@@ -2,7 +2,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-mcubridge
-PKG_VERSION:=2.7.1
+PKG_VERSION:=2.8.1
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Ignacio Santolin and contributors
@@ -63,4 +63,3 @@ define Package/$(PKG_NAME)/install
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
-

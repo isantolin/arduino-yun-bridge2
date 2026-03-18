@@ -316,7 +316,7 @@ class ProcessComponent(BaseComponent):
                 return True
             except (psutil.NoSuchProcess, ProcessLookupError):
                 return True  # Process already gone is a success for us
-            except Exception as e:
+            except (psutil.AccessDenied, OSError, RuntimeError, ValueError) as e:
                 logger.error("Error stopping process %d: %s", pid, e)
                 return False
 
@@ -351,4 +351,3 @@ class ProcessComponent(BaseComponent):
 
 
 __all__ = ["ProcessComponent", "ProcessOutputBatch"]
-

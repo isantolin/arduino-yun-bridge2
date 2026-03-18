@@ -10,7 +10,7 @@
 
 // Match BridgeControl.ino service configuration (must precede Bridge.h).
 #define BRIDGE_ENABLE_DATASTORE 0
-#define BRIDGE_ENABLE_FILESYSTEM 0
+#define BRIDGE_ENABLE_FILESYSTEM 1
 #define BRIDGE_ENABLE_PROCESS 0
 
 #include "Bridge.h"

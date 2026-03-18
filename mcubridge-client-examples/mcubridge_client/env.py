@@ -6,11 +6,14 @@ not rely on environment variables for configuration.
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import logging
 import os
 import sys
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Any, cast
 
 
 def _is_openwrt() -> bool:
@@ -20,12 +23,16 @@ def _is_openwrt() -> bool:
 
 
 def read_uci_general() -> dict[str, str]:
-    try:
-        from mcubridge.config.common import get_uci_config
-    except (ImportError, RuntimeError):
+    if not _is_openwrt():
         return {}
 
-    if not _is_openwrt():
+    spec = importlib.util.find_spec("mcubridge.config.common")
+    if spec is None:
+        return {}
+
+    module = importlib.import_module("mcubridge.config.common")
+    get_uci_config = cast(Callable[[], dict[str, Any]] | None, getattr(module, "get_uci_config", None))
+    if not callable(get_uci_config):
         return {}
 
     try:

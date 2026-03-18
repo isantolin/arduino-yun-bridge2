@@ -151,6 +151,6 @@ def _write_status_file(payload: BridgeStatus) -> None:
         dir=STATUS_FILE.parent,
         delete=False,
     ) as handle:
-        handle.write(msgspec.msgpack.encode(payload))
+        handle.write(msgspec.json.encode(payload))
         temp_name = handle.name
     Path(temp_name).replace(STATUS_FILE)

@@ -122,20 +122,32 @@ void test_payload_parse_malformed() {
 void test_bridge_helpers_coverage() {
     ba.setIdle();
     
-    // 1. sendKeyCommand
-    Bridge.sendKeyCommand(rpc::CommandId::CMD_DATASTORE_GET, "testkey", &rpc::payload::DatastoreGet::key);
-    Bridge.sendKeyCommand(rpc::CommandId::CMD_FILE_READ, "testfile", &rpc::payload::FileRead::path);
-    Bridge.sendKeyCommand(rpc::CommandId::CMD_FILE_REMOVE, "testfile", &rpc::payload::FileRemove::path);
-    
-    // 2. sendKeyDataCommand
+    rpc::payload::DatastoreGet datastore_get = {};
+    rpc::util::pb_copy_string("testkey", datastore_get.key, sizeof(datastore_get.key));
+    Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_GET, datastore_get);
+
+    rpc::payload::FileRead file_read = {};
+    rpc::util::pb_copy_string("testfile", file_read.path, sizeof(file_read.path));
+    Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ, file_read);
+
+    rpc::payload::FileRemove file_remove = {};
+    rpc::util::pb_copy_string("testfile", file_remove.path, sizeof(file_remove.path));
+    Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, file_remove);
+
     uint8_t data[] = {0xDE, 0xAD};
-    Bridge.sendKeyDataCommand(rpc::CommandId::CMD_DATASTORE_PUT, "testkey", &rpc::payload::DatastorePut::key,
-                              etl::span<const uint8_t>(data, 2), &rpc::payload::DatastorePut::value);
-    Bridge.sendKeyDataCommand(rpc::CommandId::CMD_FILE_WRITE, "testfile", &rpc::payload::FileWrite::path,
-                              etl::span<const uint8_t>(data, 2), &rpc::payload::FileWrite::data);
-                              
-    // 3. sendDataCommand
-    Bridge.sendDataCommand(rpc::CommandId::CMD_MAILBOX_PUSH, etl::span<const uint8_t>(data, 2), &rpc::payload::MailboxPush::data);
+    rpc::payload::DatastorePut datastore_put = {};
+    rpc::util::pb_copy_string("testkey", datastore_put.key, sizeof(datastore_put.key));
+    rpc::util::pb_setup_encode_span(datastore_put.value, etl::span<const uint8_t>(data, 2));
+    Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_PUT, datastore_put);
+
+    rpc::payload::FileWrite file_write = {};
+    rpc::util::pb_copy_string("testfile", file_write.path, sizeof(file_write.path));
+    rpc::util::pb_setup_encode_span(file_write.data, etl::span<const uint8_t>(data, 2));
+    Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, file_write);
+
+    rpc::payload::MailboxPush mailbox_push = {};
+    rpc::util::pb_setup_encode_span(mailbox_push.data, etl::span<const uint8_t>(data, 2));
+    Bridge.sendPbCommand(rpc::CommandId::CMD_MAILBOX_PUSH, mailbox_push);
 
     // 4. sendPbFrame (Status with payload)
     rpc::payload::AckPacket ack = {rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE)};

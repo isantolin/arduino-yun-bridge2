@@ -15,7 +15,7 @@ from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.protocol.structures import QueuedPublish
-from mcubridge.protocol.protocol import Status
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.file import FileComponent
 from mcubridge.state.context import RuntimeState
@@ -210,6 +210,135 @@ async def test_handle_mqtt_write_and_read(
 
     assert bridge.published
     assert bridge.published[-1].payload == b"payload"
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_write_to_mcu_storage_enabled(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    msg = type("MockMsg", (), {"topic": "br/file/write/mcu/test.txt", "payload": b"payload"})()
+    route = TopicRoute(
+        raw="br/file/write/mcu/test.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("write", "mcu", "test.txt"),
+    )
+
+    await component.handle_mqtt(route, msg)
+
+    assert bridge.sent_frames
+    assert bridge.sent_frames[-1][0] == Command.CMD_FILE_WRITE.value
+    packet = structures.FileWritePacket.decode(bridge.sent_frames[-1][1])
+    assert packet.path == "test.txt"
+    assert packet.data == b"payload"
+    assert not bridge.published
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_write_to_mcu_storage_disabled(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    component._mcu_backend_enabled = False
+    msg = type("MockMsg", (), {"topic": "br/file/write/mcu/test.txt", "payload": b"payload"})()
+    route = TopicRoute(
+        raw="br/file/write/mcu/test.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("write", "mcu", "test.txt"),
+    )
+
+    await component.handle_mqtt(route, msg)
+
+    assert not bridge.sent_frames
+    assert bridge.published
+    assert bridge.published[-1].topic_name == "br/file/write/response/mcu/test.txt"
+    assert bridge.published[-1].payload == b"MCU filesystem unavailable on this target"
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_read_from_mcu_storage_enabled(
+    file_component: tuple[FileComponent, DummyBridge],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component, bridge = file_component
+
+    async def _send_frame(command_id: int, payload: bytes = b"") -> bool:
+        bridge.sent_frames.append((command_id, payload))
+        if command_id == Command.CMD_FILE_READ.value:
+            await component.handle_read_response(
+                structures.FileReadResponsePacket(content=b"mcu-").encode()
+            )
+            await component.handle_read_response(
+                structures.FileReadResponsePacket(content=b"data").encode()
+            )
+            await component.handle_read_response(
+                structures.FileReadResponsePacket(content=b"").encode()
+            )
+        return True
+
+    monkeypatch.setattr(bridge, "send_frame", _send_frame)
+
+    msg = type("MockMsg", (), {"topic": "br/file/read/mcu/test.txt", "payload": b""})()
+    route = TopicRoute(
+        raw="br/file/read/mcu/test.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("read", "mcu", "test.txt"),
+    )
+
+    await component.handle_mqtt(route, msg)
+
+    assert bridge.sent_frames
+    assert bridge.sent_frames[0][0] == Command.CMD_FILE_READ.value
+    packet = structures.FileReadPacket.decode(bridge.sent_frames[0][1])
+    assert packet.path == "test.txt"
+    assert bridge.published[-1].topic_name == "br/file/read/response/mcu/test.txt"
+    assert bridge.published[-1].payload == b"mcu-data"
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_read_from_mcu_storage_disabled(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    component._mcu_backend_enabled = False
+
+    msg = type("MockMsg", (), {"topic": "br/file/read/mcu/test.txt", "payload": b""})()
+    route = TopicRoute(
+        raw="br/file/read/mcu/test.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("read", "mcu", "test.txt"),
+    )
+
+    await component.handle_mqtt(route, msg)
+
+    assert not bridge.sent_frames
+    assert bridge.published[-1].topic_name == "br/file/read/response/mcu/test.txt"
+    assert bridge.published[-1].payload == b"MCU filesystem unavailable on this target"
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_remove_from_mcu_storage_enabled(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    msg = type("MockMsg", (), {"topic": "br/file/remove/mcu/test.txt", "payload": b""})()
+    route = TopicRoute(
+        raw="br/file/remove/mcu/test.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("remove", "mcu", "test.txt"),
+    )
+
+    await component.handle_mqtt(route, msg)
+
+    assert bridge.sent_frames
+    assert bridge.sent_frames[-1][0] == Command.CMD_FILE_REMOVE.value
+    packet = structures.FileRemovePacket.decode(bridge.sent_frames[-1][1])
+    assert packet.path == "test.txt"
 
 
 @pytest.mark.asyncio
@@ -809,5 +938,6 @@ async def test_handle_mqtt_read_failure(
     )
     await component.handle_mqtt(route, msg)
 
-    # Should not publish since file doesn't exist
-    # (or publishes error)
+    assert bridge.published
+    assert bridge.published[-1].topic_name == "br/file/read/response/nonexistent.txt"
+    assert bridge.published[-1].payload == b"File not found"

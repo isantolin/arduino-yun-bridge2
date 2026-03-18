@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcubridge"
-version = "2.8.0"
+version = "2.8.1"
 description = "Arduino MCU Bridge Protocol for OpenWrt (Python 3.13)"
 requires-python = ">=3.13"
 dependencies = [
@@ -21,7 +21,7 @@ dependencies = [
     "transitions==0.9.3",
     "sh==2.2.2",
     "uvloop==0.22.1",
-    "structlog==25.4.0",
+    "structlog==25.5.0",
     "typer[all]==0.24.1",
     "rich==14.3.3",
     "zict==3.0.0",

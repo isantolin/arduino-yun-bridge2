@@ -75,6 +75,7 @@ TEST_FILES=(
     "${TEST_DIR}/test_integrated.cpp"
     "${TEST_DIR}/test_bridge_core.cpp"
     "${TEST_DIR}/test_bridge_components.cpp"
+    "${TEST_DIR}/test_host_filesystem.cpp"
     "${TEST_DIR}/test_protocol.cpp"
     "${TEST_DIR}/test_fsm_mutual_auth.cpp"
     "${TEST_DIR}/test_extreme_coverage.cpp"

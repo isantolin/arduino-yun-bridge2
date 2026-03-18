@@ -88,7 +88,7 @@ class BaseComponent:
         try:
             # yield to allow sending the frame
             yield True
-        except BaseException:
+        except (asyncio.CancelledError, Exception):
             if request is not None:
                 with contextlib.suppress(ValueError):
                     queue.remove(request)

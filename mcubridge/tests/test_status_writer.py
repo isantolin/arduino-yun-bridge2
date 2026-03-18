@@ -22,8 +22,8 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         writes: list[dict[str, object]] = []
 
         def fake_write(payload: Any) -> None:
-            data = msgspec.msgpack.encode(payload)
-            writes.append(msgspec.msgpack.decode(data))
+            data = msgspec.json.encode(payload)
+            writes.append(msgspec.json.decode(data))
             status_path.write_bytes(data)
 
         monkeypatch.setattr(status, "STATUS_FILE", status_path)
@@ -160,7 +160,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         assert payload["watchdog_last_beat"] == 101.0
 
         assert status_path.exists()
-        file_payload = msgspec.msgpack.decode(status_path.read_bytes())
+        file_payload = msgspec.json.decode(status_path.read_bytes())
         assert file_payload["mqtt_queue_limit"] == 42
 
     asyncio.run(run())

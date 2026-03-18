@@ -189,10 +189,15 @@ class BridgeClass
   bool sendFrame(rpc::StatusCode status_code, etl::span<const uint8_t> payload = {});
   bool sendFrame(rpc::CommandId command_id, etl::span<const uint8_t> payload = {});
   bool sendChunkyFrame(rpc::CommandId command_id, etl::span<const uint8_t> header, etl::span<const uint8_t> data) {
-    size_t len = etl::min(header.size() + data.size(), sizeof(_transient_buffer));
-    etl::copy_n(header.data(), etl::min(header.size(), len), _transient_buffer);
-    if (len > header.size()) etl::copy_n(data.data(), len - header.size(), _transient_buffer + header.size());
-    return sendFrame(command_id, etl::span<const uint8_t>(_transient_buffer, len));
+    const size_t h_len = etl::min(header.size(), sizeof(_transient_buffer));
+    const size_t d_len = etl::min(data.size(), sizeof(_transient_buffer) - h_len);
+    
+    // [SIL-2] Use etl::copy for deterministic and safe buffer assembly
+    etl::copy_n(header.data(), h_len, _transient_buffer);
+    if (d_len > 0) {
+        etl::copy_n(data.data(), d_len, _transient_buffer + h_len);
+    }
+    return sendFrame(command_id, etl::span<const uint8_t>(_transient_buffer, h_len + d_len));
   }
 
   template <typename T>

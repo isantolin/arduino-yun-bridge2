@@ -99,7 +99,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
     size_t actual_len = (arg_secret_len > 0) ? arg_secret_len : arg_secret.length();
     if (actual_len > _shared_secret.capacity()) actual_len = _shared_secret.capacity();
     const uint8_t* start = reinterpret_cast<const uint8_t*>(arg_secret.data());
-    // [SIL-2] Use ETL copy for safe and idiomatic assignment
+    // [SIL-2/C++14] Use etl::copy with back_inserter for safe and bounded assignment
     etl::copy(start, start + actual_len, etl::back_inserter(_shared_secret));
   }
 
@@ -123,8 +123,8 @@ void BridgeClass::process() {
   if (bridge::config::ENABLE_WATCHDOG) yield();
 #endif
 
-  uint32_t now = bridge::now_ms();
-  uint8_t expired = _timers.check_expired(now);
+  const uint32_t now = bridge::now_ms();
+  const uint8_t expired = _timers.check_expired(now);
   if (expired & (1U << bridge::scheduler::TIMER_ACK_TIMEOUT)) _onAckTimeout();
   if (expired & (1U << bridge::scheduler::TIMER_RX_DEDUPE)) _onRxDedupe();
   if (expired & (1U << bridge::scheduler::TIMER_BAUDRATE_CHANGE)) _onBaudrateChange();
@@ -132,11 +132,13 @@ void BridgeClass::process() {
 
   if (_fsm.isStabilizing()) {
     uint16_t drain_limit = bridge::config::STARTUP_DRAIN_PER_TICK;
-    while (_stream.available() > 0 && drain_limit-- > 0) _stream.read();
+    while (_stream.available() > 0 && drain_limit-- > 0) {
+        static_cast<void>(_stream.read());
+    }
   } else {
     BRIDGE_ATOMIC_BLOCK {
       while (_stream.available() > 0) {
-        _processIncomingByte(_stream.read());
+        _processIncomingByte(static_cast<uint8_t>(_stream.read()));
         if (_flags.test(bridge::FlagId::FRAME_RECEIVED) || _last_parse_error.has_value()) break;
       }
     }
@@ -145,7 +147,7 @@ void BridgeClass::process() {
   if (_flags.test(bridge::FlagId::FRAME_RECEIVED)) {
     _handleReceivedFrame();
   } else if (_last_parse_error.has_value()) {
-    rpc::FrameError error = _last_parse_error.value();
+    const rpc::FrameError error = _last_parse_error.value();
     _last_parse_error.reset();
     if (error == rpc::FrameError::CRC_MISMATCH) {
       if (++_consecutive_crc_errors >= bridge::config::MAX_CONSECUTIVE_CRC_ERRORS) {
@@ -159,17 +161,17 @@ void BridgeClass::process() {
   }
 }
 
-void BridgeClass::_processIncomingByte(uint8_t byte) {
+void BridgeClass::_processIncomingByte(const uint8_t byte) {
   if (byte == rpc::RPC_FRAME_DELIMITER) {
     if (_cobs.in_sync && _cobs.bytes_received >= rpc::MIN_FRAME_SIZE) {
       // [OPTIMIZATION] Use shared transient buffer for decoding
-      size_t decoded_len = rpc::cobs::decode(
+      const size_t decoded_len = rpc::cobs::decode(
           etl::span<const uint8_t>(_cobs.buffer.data(), _cobs.bytes_received),
           etl::span<uint8_t>(_transient_buffer, sizeof(_transient_buffer)));
 
       if (decoded_len > 0) {
         rpc::FrameParser parser;
-        auto result = parser.parse(etl::span<const uint8_t>(_transient_buffer, decoded_len));
+        const auto result = parser.parse(etl::span<const uint8_t>(_transient_buffer, decoded_len));
         if (result.has_value()) {
           _rx_frame = result.value();
           _flags.set(bridge::FlagId::FRAME_RECEIVED);

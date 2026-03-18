@@ -48,6 +48,21 @@ inline void write_u32_be(etl::span<uint8_t> buffer, uint32_t value) {
   etl::copy_n(reinterpret_cast<const uint8_t*>(&swapped), 4, buffer.data());
 }
 
+// Reads a uint64_t from a Big Endian buffer.
+inline uint64_t read_u64_be(etl::span<const uint8_t> buffer) {
+  if (buffer.size() < 8) return 0;
+  uint64_t value;
+  etl::copy_n(buffer.data(), 8, reinterpret_cast<uint8_t*>(&value));
+  return etl::reverse_bytes(value);
+}
+
+// Writes a uint64_t to a Big Endian buffer.
+inline void write_u64_be(etl::span<uint8_t> buffer, uint64_t value) {
+  if (buffer.size() < 8) return;
+  uint64_t swapped = etl::reverse_bytes(value);
+  etl::copy_n(reinterpret_cast<const uint8_t*>(&swapped), 8, buffer.data());
+}
+
 constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 
 // --- Protocol Offset Constants [SIL-2] ---

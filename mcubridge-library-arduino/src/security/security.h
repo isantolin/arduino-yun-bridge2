@@ -26,12 +26,10 @@
 #include "etl/algorithm.h"
 #include "etl/span.h"
 #include "../protocol/rpc_protocol.h"
+#include "../protocol/rpc_frame.h"
 
 namespace rpc {
 namespace security {
-
-/// Number of bits per byte (used for counter-to-byte shifting).
-constexpr int kBitsPerByte = 8;
 
 /**
  * @brief Securely zero memory, resistant to compiler optimization.
@@ -95,10 +93,7 @@ inline void generate_nonce_with_counter(etl::span<uint8_t> out_nonce,
                 [&]() { return static_cast<uint8_t>(random_func() & 0xFF); });
 
   counter++;
-  for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_COUNTER_BYTES; i++) {
-    out_nonce[(RPC_HANDSHAKE_NONCE_LENGTH - 1) - i] =
-        static_cast<uint8_t>((counter >> (i * kBitsPerByte)) & 0xFF);
-  }
+  rpc::write_u64_be(out_nonce.subspan(RPC_HANDSHAKE_NONCE_RANDOM_BYTES), counter);
 }
 
 /**
@@ -106,11 +101,7 @@ inline void generate_nonce_with_counter(etl::span<uint8_t> out_nonce,
  */
 inline uint64_t extract_nonce_counter(etl::span<const uint8_t> nonce) {
   if (nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return 0;
-  return etl::accumulate(nonce.begin() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                         nonce.begin() + RPC_HANDSHAKE_NONCE_LENGTH, 0ULL,
-                         [](uint64_t acc, uint8_t byte) {
-                           return (acc << kBitsPerByte) | byte;
-                         });
+  return rpc::read_u64_be(nonce.subspan(RPC_HANDSHAKE_NONCE_RANDOM_BYTES));
 }
 
 /**

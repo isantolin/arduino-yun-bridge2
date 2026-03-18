@@ -144,8 +144,25 @@ class MqttTransport:
             clean_session=None,
             properties=connect_props,
         )
-        # Inject on_log callback directly into the underlying Paho client
+
+        # [SIL-2] Safety: Wrap Paho's on_message to prevent internal exceptions (e.g. Invalid Topic)
+        # from escaping to Paho's core, which causes log flooding in some environments.
+        original_on_message = client._client.on_message
+
+        def safe_on_message(c: Any, userdata: Any, msg: Any) -> None:
+            if not msg or not msg.topic:
+                return
+            try:
+                if original_on_message:
+                    original_on_message(c, userdata, msg)
+            except Exception as e:
+                # Silence the specific aiomqtt "Invalid topic" error to avoid log flood
+                if "Invalid topic" not in str(e):
+                    logger.error("Exception in MQTT on_message for topic %s: %s", msg.topic, e)
+
+        # Inject callbacks directly into the underlying Paho client
         client._client.on_log = on_log  # type: ignore[reportPrivateUsage]
+        client._client.on_message = safe_on_message  # type: ignore[reportPrivateUsage]
 
         async with client as connected_client:
             logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")

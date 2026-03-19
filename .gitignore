@@ -46,7 +46,6 @@ luci-app-mcubridge/dist/
 **/*.apk
 **/*.deb
 **/*.whl
-.vscode
 *.csv
 .hypothesis/
 .tox/

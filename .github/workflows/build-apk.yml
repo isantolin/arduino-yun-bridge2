@@ -34,3 +34,31 @@ jobs:
           name: openwrt-apk-packages
           path: bin/
           if-no-files-found: error
+
+  verify-apk:
+    name: Verify APK Installation (QEMU MIPS)
+    needs: build-apk
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Install Verification Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-mips python3-pexpect wget e2fsprogs
+
+      - name: Download APK Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: openwrt-apk-packages
+          path: bin-download/
+
+      - name: Run OpenWrt Smoke Test
+        run: |
+          # The APKs might be deep in the directory structure depending on how they were uploaded
+          # We search for them and put them in a flat directory for the script
+          mkdir -p apks-flat
+          find bin-download/ -name "*.apk" -exec cp {} apks-flat/ \;
+          python3 tools/openwrt_smoke_test.py apks-flat/

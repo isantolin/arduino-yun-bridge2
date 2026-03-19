@@ -1,0 +1,12 @@
+{
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [
+    "mcubridge/tests"
+  ],
+  "python.analysis.extraPaths": [
+    "mcubridge",
+    "stubs"
+  ],
+  "python.envFile": "${workspaceFolder}/.env"
+}

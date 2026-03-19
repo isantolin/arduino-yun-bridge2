@@ -391,12 +391,12 @@ void BridgeClass::_handleGetFreeMemory(const bridge::router::CommandContext& ctx
 void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::LinkSync>(ctx, [this](const rpc::payload::LinkSync& msg) {
     uint8_t tag[rpc::RPC_HANDSHAKE_TAG_LENGTH];
-    _computeHandshakeTag(etl::span<const uint8_t>(msg.nonce.bytes, msg.nonce.size), tag);
+    _computeHandshakeTag(etl::span<const uint8_t>(msg.nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH), tag);
 
     // [SIL-2] Verify incoming HMAC tag when mutual auth is configured
     if (!_shared_secret.empty()) {
       etl::span<const uint8_t> expected(tag, rpc::RPC_HANDSHAKE_TAG_LENGTH);
-      etl::span<const uint8_t> received(msg.tag.bytes, msg.tag.size);
+      etl::span<const uint8_t> received(msg.tag, rpc::RPC_HANDSHAKE_TAG_LENGTH);
       if (!rpc::security::timing_safe_equal(expected, received)) {
         _fsm.handshakeStart();
         _fsm.handshakeFailed();
@@ -405,10 +405,8 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     }
 
     rpc::payload::LinkSync resp = {};
-    resp.nonce.size = msg.nonce.size;
-    etl::copy_n(msg.nonce.bytes, msg.nonce.size, resp.nonce.bytes);
-    resp.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
-    etl::copy_n(tag, rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.tag.bytes);
+    etl::copy_n(msg.nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH, resp.nonce);
+    etl::copy_n(tag, rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.tag);
     
     _fsm.handshakeStart();
     _fsm.handshakeComplete();

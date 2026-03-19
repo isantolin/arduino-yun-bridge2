@@ -140,6 +140,6 @@ message SetBaudratePacket {
 }
 
 message LinkSync {
-    bytes nonce = 1 [(nanopb).max_size = 16];
-    bytes tag = 2 [(nanopb).max_size = 16];
+    bytes nonce = 1 [(nanopb).max_size = 16, (nanopb).fixed_length = true];
+    bytes tag = 2 [(nanopb).max_size = 16, (nanopb).fixed_length = true];
 }

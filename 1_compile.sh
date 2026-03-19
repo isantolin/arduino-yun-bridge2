@@ -61,8 +61,8 @@ done
 
 set -- "${POSITIONAL[@]}"
 
-# [CONFIG] Target Final OpenWrt 25.12.0-rc4
-OPENWRT_VERSION=${1:-"25.12.0-rc4"}
+# [CONFIG] Target Final OpenWrt 25.12.0
+OPENWRT_VERSION=${1:-"25.12.0"}
 OPENWRT_TARGET=${2:-"malta/be"}
 
 OPENWRT_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"

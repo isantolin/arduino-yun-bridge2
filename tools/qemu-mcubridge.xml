@@ -1,4 +1,5 @@
 <domain type="kvm">
+  <!-- Configuración para emular OpenWrt -->
   <name>openwrt-mcubridge</name>
   <metadata>
     <libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0">

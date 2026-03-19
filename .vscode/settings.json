@@ -17,5 +17,16 @@
     "${workspaceFolder}/tools/arduino_stub/include/**"
   ],
   "C_Cpp.default.cppStandard": "c++14",
-  "C_Cpp.default.compilerPath": "/usr/bin/g++"
+  "C_Cpp.default.compilerPath": "/usr/bin/g++",
+  "makefile.makefilePath": "mcubridge/Makefile",
+  "makefile.configurations": [
+    {
+      "name": "mcubridge-daemon",
+      "makefilePath": "mcubridge/Makefile"
+    },
+    {
+      "name": "luci-app",
+      "makefilePath": "luci-app-mcubridge/Makefile"
+    }
+  ]
 }

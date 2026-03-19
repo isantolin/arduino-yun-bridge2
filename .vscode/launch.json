@@ -1,0 +1,75 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Debug Daemon",
+      "type": "python",
+      "request": "launch",
+      "program": "mcubridge/mcubridge/daemon.py",
+      "args": [
+        "--serial-port", "/dev/ttyUSB0",
+        "--baudrate", "115200",
+        "--mqtt-host", "127.0.0.1"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/mcubridge:${workspaceFolder}/stubs"
+      }
+    },
+    {
+      "name": "Python: Debug Current Test File",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "${file}"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/mcubridge:${workspaceFolder}/stubs"
+      }
+    },
+    {
+      "name": "C++: Debug Integrated Test (Host)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/mcubridge-library-arduino/build-host-local/test_integrated",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/mcubridge-library-arduino",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "Compile All Host Tests",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "C++: Debug Emulator (Native)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/mcubridge-library-arduino/tests/bridge_emulator",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/mcubridge-library-arduino",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "Compile Emulator (Base)",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
+}

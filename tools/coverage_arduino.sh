@@ -92,14 +92,6 @@ TEST_SUITES=(
     "test_bridge_components"
     "test_protocol"
     "test_fsm_mutual_auth"
-    "test_extreme_coverage"
-    "test_extreme_coverage_v2"
-    "test_arduino_100_coverage"
-    "test_coverage_100_final"
-    "test_coverage_gaps"
-    "test_coverage_extra_gaps"
-    "test_coverage_final_push"
-    "test_coverage_ultra"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites..."

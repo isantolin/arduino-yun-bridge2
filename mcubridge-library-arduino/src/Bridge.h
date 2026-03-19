@@ -99,6 +99,12 @@ static constexpr uint8_t FIRMWARE_VERSION_MINOR = BRIDGE_FIRMWARE_VERSION_MINOR;
 static constexpr uint8_t FIRMWARE_VERSION_MINOR = 8;
 #endif
 
+#ifdef BRIDGE_FIRMWARE_VERSION_PATCH
+static constexpr uint8_t FIRMWARE_VERSION_PATCH = BRIDGE_FIRMWARE_VERSION_PATCH;
+#else
+static constexpr uint8_t FIRMWARE_VERSION_PATCH = 1;
+#endif
+
 }  // namespace config
 }  // namespace bridge
 
@@ -179,6 +185,9 @@ class BridgeClass
   bool isAwaitingAck() const { return _fsm.isAwaitingAck(); }
   bool isIdle() const { return _fsm.isIdle(); }
   bool isFault() const { return _fsm.isFault(); }
+
+  void sendXoff() { sendFrame(rpc::CommandId::CMD_XOFF); }
+  void sendXon() { sendFrame(rpc::CommandId::CMD_XON); }
 
   void enterSafeState();
   void emitStatus(rpc::StatusCode status_code, etl::string_view message = {});

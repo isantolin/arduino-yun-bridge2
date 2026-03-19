@@ -375,6 +375,7 @@ void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
     rpc::payload::VersionResponse resp = {};
     resp.major = bridge::config::FIRMWARE_VERSION_MAJOR;
     resp.minor = bridge::config::FIRMWARE_VERSION_MINOR;
+    resp.patch = bridge::config::FIRMWARE_VERSION_PATCH;
     _sendPbResponse(rpc::CommandId::CMD_GET_VERSION_RESP, resp);
   });
 }

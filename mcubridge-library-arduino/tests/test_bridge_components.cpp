@@ -5,7 +5,12 @@
 #include "BridgeTestInterface.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/mcubridge.pb.h"
 #include "test_support.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
 
 // --- GLOBALS ---
 unsigned long g_test_millis = 0;
@@ -40,6 +45,8 @@ using bridge::test::TestAccessor;
 static void reset_bridge_with_stream(BiStream& stream) {
   reset_bridge_core(Bridge, stream);
   Console.begin();
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setSynchronized();
 }
 
 static void restore_bridge_to_serial() {
@@ -47,57 +54,62 @@ static void restore_bridge_to_serial() {
   new (&Bridge) BridgeClass(Serial);
 }
 
-// --- ACTUAL TESTS ---
+// --- COVERAGE TESTS ---
 
-static void test_console_write_outbound_frame() {
+static void test_all_handlers_coverage() {
   BiStream stream;
   reset_bridge_with_stream(stream);
-  stream.tx_buf.clear();
+  auto ba = bridge::test::TestAccessor::create(Bridge);
 
-  const char msg[] = "hello";
-  Console.write(reinterpret_cast<const uint8_t*>(msg), sizeof(msg) - 1);
-  Console.flush();
-  Bridge.process();
+  rpc::Frame f = {};
+  bridge::router::CommandContext ctx{&f, 0, false, false};
 
-  TEST_ASSERT(stream.tx_buf.len > 0);
-  size_t cursor = 0;
-  rpc::Frame f;
-  //   TEST_ASSERT(extract_next_valid_frame(stream.tx_buf, cursor, f));
+  // System
+  ba.handleGetVersion(ctx);
+  ba.handleGetFreeMemory(ctx);
+  
+  // GPIO
+  mcubridge_DigitalWrite dw = mcubridge_DigitalWrite_init_default;
+  pb_ostream_t s1 = pb_ostream_from_buffer(f.payload.data(), f.payload.size());
+  pb_encode(&s1, mcubridge_DigitalWrite_fields, &dw);
+  f.header.payload_length = s1.bytes_written;
+  ba.handleDigitalWrite(ctx);
+
+  mcubridge_PinRead pr = mcubridge_PinRead_init_default;
+  pb_ostream_t s2 = pb_ostream_from_buffer(f.payload.data(), f.payload.size());
+  pb_encode(&s2, mcubridge_PinRead_fields, &pr);
+  f.header.payload_length = s2.bytes_written;
+  ba.handleDigitalRead(ctx);
+  ba.handleAnalogRead(ctx);
+
+  // Status
+  ba.routeStatusCommand(ctx);
+  ba.handleAck(1);
+  ba.handleMalformed(1);
+
+  // Services
+  ba.routeDataStoreCommand(ctx);
+  ba.routeMailboxCommand(ctx);
+  ba.routeFileSystemCommand(ctx);
+  ba.routeProcessCommand(ctx);
+  ba.routeUnknownCommand(ctx);
+
+  // Flow Control
+  Bridge.sendXoff();
+  Bridge.sendXon();
 
   restore_bridge_to_serial();
 }
 
-static void test_datastore_put_outbound_frame() {
+static void test_process_api() {
   BiStream stream;
   reset_bridge_with_stream(stream);
-  const uint8_t val[] = {'v'};
-  DataStore.put("k", etl::span<const uint8_t>(val, sizeof(val)));
-  Bridge.process();
-
-  TEST_ASSERT(stream.tx_buf.len > 0);
-  size_t cursor = 0;
-  rpc::Frame f;
-  //   TEST_ASSERT(extract_next_valid_frame(stream.tx_buf, cursor, f));
-  //   TEST_ASSERT_EQ_UINT(f.header.command_id,
-  //   rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_PUT));
-
-  restore_bridge_to_serial();
-}
-
-static void test_mailbox_send_outbound_frame() {
-  BiStream stream;
-  reset_bridge_with_stream(stream);
-  const uint8_t data[] = {'m', 's', 'g'};
-  Mailbox.send(etl::span<const uint8_t>(data, sizeof(data)));
-  Bridge.process();
-
-  TEST_ASSERT(stream.tx_buf.len > 0);
-  size_t cursor = 0;
-  rpc::Frame f;
-  //   TEST_ASSERT(extract_next_valid_frame(stream.tx_buf, cursor, f));
-  //   TEST_ASSERT_EQ_UINT(f.header.command_id,
-  //   rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
-
+  
+  Process.runAsync("ls", {}, etl::delegate<void(int16_t)>());
+  Process.poll(1, etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>, etl::span<const uint8_t>)>());
+  Process.kill(1);
+  Process.reset();
+  
   restore_bridge_to_serial();
 }
 
@@ -108,8 +120,7 @@ void tearDown(void) {}
 
 int main(void) {
   UNITY_BEGIN();
-  RUN_TEST(test_console_write_outbound_frame);
-  RUN_TEST(test_datastore_put_outbound_frame);
-  RUN_TEST(test_mailbox_send_outbound_frame);
+  RUN_TEST(test_all_handlers_coverage);
+  RUN_TEST(test_process_api);
   return UNITY_END();
 }

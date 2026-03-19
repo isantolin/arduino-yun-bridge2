@@ -25,10 +25,14 @@ void ProcessClass::poll(int16_t pid, ProcessPollHandler handler) {
   }
 }
 
-void ProcessClass::kill(int16_t pid) {
+void ProcessClass::kill(int16_t pid, ProcessKillHandler handler) {
   rpc::payload::ProcessKill msg = {};
   msg.pid = pid;
-  Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_KILL, msg);
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_KILL, msg)) {
+    if (handler.is_valid()) handler(rpc::StatusCode::STATUS_OK);
+  } else {
+    if (handler.is_valid()) handler(rpc::StatusCode::STATUS_ERROR);
+  }
 }
 
 void ProcessClass::_onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg) {

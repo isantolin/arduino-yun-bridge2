@@ -98,6 +98,7 @@ class TestAccessor {
 
   bool isSecurityCheckPassed(uint16_t cmd) const { return _bridge._isSecurityCheckPassed(cmd); }
   void onStartupStabilized() { _bridge._onStartupStabilized(); }
+  void setSynchronized() { _bridge._fsm.stabilized(); _bridge._fsm.handshakeStart(); _bridge._fsm.handshakeComplete(); }
   bool getStartupStabilizing() const { return _bridge._fsm.isStabilizing(); }
 
   void handleSystemCommand(const rpc::Frame& frame) {
@@ -114,6 +115,12 @@ class TestAccessor {
   void routeFileSystemCommand(const bridge::router::CommandContext& ctx) { _bridge.onFileSystemCommand(ctx); }
   void routeProcessCommand(const bridge::router::CommandContext& ctx) { _bridge.onProcessCommand(ctx); }
   void routeUnknownCommand(const bridge::router::CommandContext& ctx) { _bridge.onUnknownCommand(ctx); }
+
+  void handleGetVersion(const bridge::router::CommandContext& ctx) { _bridge._handleGetVersion(ctx); }
+  void handleGetFreeMemory(const bridge::router::CommandContext& ctx) { _bridge._handleGetFreeMemory(ctx); }
+  void handleDigitalWrite(const bridge::router::CommandContext& ctx) { _bridge._handleDigitalWrite(ctx); }
+  void handleDigitalRead(const bridge::router::CommandContext& ctx) { _bridge._handleDigitalRead(ctx); }
+  void handleAnalogRead(const bridge::router::CommandContext& ctx) { _bridge._handleAnalogRead(ctx); }
 
   static TestAccessor create(BridgeClass& bridge) { return TestAccessor(bridge); }
  private:

@@ -2,11 +2,20 @@
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestArgs": [
-    "mcubridge/tests"
+    "mcubridge/tests",
+    "mcubridge-client-examples/client_tests"
   ],
   "python.analysis.extraPaths": [
     "mcubridge",
-    "stubs"
+    "stubs",
+    "mcubridge-client-examples"
   ],
-  "python.envFile": "${workspaceFolder}/.env"
+  "python.envFile": "${workspaceFolder}/.env",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/mcubridge-library-arduino/src/**",
+    "${workspaceFolder}/mcubridge-library-arduino/tests/**",
+    "${workspaceFolder}/tools/arduino_stub/include/**"
+  ],
+  "C_Cpp.default.cppStandard": "c++14",
+  "C_Cpp.default.compilerPath": "/usr/bin/g++"
 }

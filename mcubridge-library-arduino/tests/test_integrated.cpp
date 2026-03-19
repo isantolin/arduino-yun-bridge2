@@ -85,10 +85,8 @@ void integrated_test_bridge_core() {
   accessor.computeHandshakeTag(nonce, 16, tag);
   
   rpc::payload::LinkSync sync_msg = {};
-  sync_msg.nonce.size = 16;
-  memcpy(sync_msg.nonce.bytes, nonce, 16);
-  sync_msg.tag.size = 16;
-  memcpy(sync_msg.tag.bytes, tag, 16);
+  memcpy(sync_msg.nonce, nonce, 16);
+  memcpy(sync_msg.tag, tag, 16);
 
   pb_ostream_t out_stream = pb_ostream_from_buffer(sync.payload.data(), sync.payload.size());
   pb_encode(&out_stream, rpc::Payload::Descriptor<rpc::payload::LinkSync>::fields(), &sync_msg);

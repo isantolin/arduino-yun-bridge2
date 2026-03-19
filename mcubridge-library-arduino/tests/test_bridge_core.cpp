@@ -85,10 +85,8 @@ void sync_bridge(BiStream& stream) {
                              9, 10, 11, 12, 13, 14, 15, 16};
 
   rpc::payload::LinkSync sync_msg = {};
-  sync_msg.nonce.size = 16;
-  memcpy(sync_msg.nonce.bytes, nonce, 16);
-  sync_msg.tag.size = 16;
-  ba.computeHandshakeTag(nonce, 16, sync_msg.tag.bytes);
+  memcpy(sync_msg.nonce, nonce, 16);
+  ba.computeHandshakeTag(nonce, 16, sync_msg.tag);
 
   rpc::Frame frame;
   bridge::test::set_pb_payload(frame, sync_msg);

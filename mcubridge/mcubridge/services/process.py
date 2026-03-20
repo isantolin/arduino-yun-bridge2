@@ -1,29 +1,33 @@
-"""Process management component for McuBridge."""
-
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
-import psutil
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 import msgspec
+import psutil
+from aiomqtt.message import Message
 
 from ..protocol import protocol, structures
-from ..protocol.protocol import Status
-from ..protocol.topics import Topic, topic_path
+from ..protocol.protocol import ShellAction, Status
 from ..protocol.structures import (
     ProcessOutputBatch,
     QueuedPublish,
 )
+from ..protocol.topics import Topic, topic_path
 from ..state.context import (
     PROCESS_STATE_FINISHED,
     ManagedProcess,
     RuntimeState,
 )
 from .base import BaseComponent
+from .payloads import (
+    PayloadValidationError,
+    ShellCommandPayload,
+    ShellPidPayload,
+)
 
 if TYPE_CHECKING:
     from .runtime import BridgeService
@@ -40,6 +44,7 @@ class ProcessComponent(BaseComponent):
     - Limited concurrent processes.
     - Bounded output buffers per process.
     - Periodic polling for status and output.
+    - Unified handling for MCU and MQTT shell requests.
     """
 
     def __init__(
@@ -65,6 +70,128 @@ class ProcessComponent(BaseComponent):
     @property
     def _slots(self) -> asyncio.Semaphore:
         return self._process_slots
+
+    # --- MQTT Handlers ---
+
+    async def handle_mqtt(
+        self,
+        segments: list[str],
+        payload: bytes,
+        inbound: Message | None = None,
+    ) -> None:
+        """Handle shell-related MQTT topics."""
+        if not segments:
+            return
+
+        action = segments[0]
+
+        match action:
+            case ShellAction.RUN_ASYNC:
+                payload_model = self._parse_shell_command(payload, action)
+                if payload_model is None:
+                    return
+                await self._handle_mqtt_run_async(payload_model, inbound)
+
+            case ShellAction.POLL if len(segments) == 2:
+                pid_model = self._parse_shell_pid(segments[1], action)
+                if pid_model is None:
+                    return
+                await self._handle_mqtt_poll(pid_model)
+
+            case ShellAction.KILL if len(segments) == 2:
+                pid_model = self._parse_shell_pid(segments[1], action)
+                if pid_model is None:
+                    return
+                await self._handle_mqtt_kill(pid_model)
+
+            case _:
+                logger.debug(
+                    "Ignoring shell topic action: %s",
+                    "/".join(segments),
+                )
+
+    async def _handle_mqtt_run_async(
+        self,
+        payload: ShellCommandPayload,
+        inbound: Message | None,
+    ) -> None:
+        command = payload.command
+        logger.info("MQTT async shell command: '%s'", command)
+        try:
+            pid = await self.run_async(command)
+        except (OSError, ValueError, RuntimeError) as exc:
+            logger.error("Error starting async command: %s", exc)
+            response_topic = topic_path(
+                self.state.mqtt_topic_prefix,
+                Topic.SHELL,
+                ShellAction.RUN_ASYNC,
+                "error",
+            )
+            await self.service.publish(
+                topic=response_topic,
+                payload=b"error:internal",
+                reply_to=inbound,
+            )
+            return
+
+        response_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SHELL,
+            ShellAction.RUN_ASYNC,
+            protocol.MQTT_SUFFIX_RESPONSE,
+        )
+
+        if pid == 0:
+            await self.service.publish(
+                topic=response_topic,
+                payload=b"error:not_allowed_or_limit_reached",
+                reply_to=inbound,
+            )
+            return
+
+        await self.service.publish(
+            topic=response_topic,
+            payload=str(pid).encode("utf-8"),
+            reply_to=inbound,
+        )
+
+    async def _handle_mqtt_poll(self, pid_model: ShellPidPayload) -> None:
+        pid = pid_model.pid
+        batch = await self.poll_process(pid)
+        await self.publish_poll_result(pid, batch)
+
+    async def _handle_mqtt_kill(self, pid_model: ShellPidPayload) -> None:
+        await self.stop_process(pid_model.pid)
+
+    def _parse_shell_command(
+        self,
+        payload: bytes,
+        action: str,
+    ) -> ShellCommandPayload | None:
+        try:
+            return ShellCommandPayload.from_mqtt(payload)
+        except PayloadValidationError as exc:
+            logger.warning(
+                "Invalid shell/%s payload: %s",
+                action,
+                exc.message,
+            )
+            return None
+
+    def _parse_shell_pid(
+        self,
+        segment: str,
+        action: str,
+    ) -> ShellPidPayload | None:
+        try:
+            return ShellPidPayload.from_topic_segment(segment)
+        except PayloadValidationError as exc:
+            logger.warning(
+                "Invalid shell/%s PID: %s",
+                action,
+                exc.message,
+            )
+            return None
 
     # --- MCU Handlers (Required by Dispatcher) ---
 

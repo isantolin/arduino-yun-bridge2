@@ -173,8 +173,6 @@ class _Process:
     async def handle_poll(self, _payload: bytes) -> bool:
         return True
 
-
-class _Shell:
     async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
         return True
 
@@ -236,7 +234,6 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             mailbox=cast(Any, _Mailbox()),
             pin=cast(Any, _Pin()),
             process=cast(Any, _Process()),
-            shell=cast(Any, _Shell()),
             system=cast(Any, _System()),
         )
     )
@@ -288,7 +285,6 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             mailbox=cast(Any, _Mailbox()),
             pin=cast(Any, _Pin()),
             process=cast(Any, _Process()),
-            shell=cast(Any, _Shell()),
             system=cast(Any, _System()),
         )
     )

@@ -318,6 +318,9 @@ async def test_mqtt_shell_kill_invokes_process_component(
                 b"",
             )
         )
-        # ShellComponent calls stop_process(pid)
-        mock_comp.stop_process.assert_called_with(pid)
+        # ProcessComponent handles shell topics
+        mock_comp.handle_mqtt.assert_called()
+        args = mock_comp.handle_mqtt.call_args[0]
+        # args[0] is segments, args[1] is payload
+        assert args[0] == ["kill", str(pid)]
 

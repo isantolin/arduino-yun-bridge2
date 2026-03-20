@@ -10,7 +10,6 @@ from .handshake import SerialHandshakeFatal, SerialHandshakeManager, SerialTimin
 from .mailbox import MailboxComponent
 from .pin import PinComponent
 from .process import ProcessComponent
-from .shell import ShellComponent
 from .system import SystemComponent
 
 __all__ = [
@@ -25,7 +24,6 @@ __all__ = [
     "SerialHandshakeFatal",
     "SerialHandshakeManager",
     "SerialTimingWindow",
-    "ShellComponent",
     "SystemComponent",
     "payloads",
 ]

@@ -67,7 +67,6 @@ class BridgeDispatcher:
             MailboxComponent,
             PinComponent,
             ProcessComponent,
-            ShellComponent,
             SystemComponent,
         )
 
@@ -78,7 +77,6 @@ class BridgeDispatcher:
         mailbox = container.get(MailboxComponent)
         pin = container.get(PinComponent)
         process = container.get(ProcessComponent)
-        shell = container.get(ShellComponent)
         system = container.get(SystemComponent)
 
         # Console
@@ -133,10 +131,10 @@ class BridgeDispatcher:
         )
         self.mcu_registry.register(Command.CMD_PROCESS_POLL.value, process.handle_poll)
 
-        # Shell (MQTT only)
+        # Shell (MQTT only - now handled by unified ProcessComponent)
         self.mqtt_router.register(
             Topic.SHELL,
-            lambda r, m: self._guard_and_dispatch(r, m, lambda p, i: shell.handle_mqtt(list(r.segments), p, i)),
+            lambda r, m: self._guard_and_dispatch(r, m, lambda p, i: process.handle_mqtt(list(r.segments), p, i)),
         )
 
         # Pin (GPIO)

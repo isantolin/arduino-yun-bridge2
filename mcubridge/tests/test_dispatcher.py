@@ -169,14 +169,6 @@ class _ProcessComponent:
         return True
 
 
-class _ShellComponent:
-    def __init__(self, calls: _Calls) -> None:
-        self._calls = calls
-
-    async def handle_mqtt(self, parts: list[str], payload: bytes, inbound: Any) -> None:
-        self._calls.add("shell.handle_mqtt", tuple(parts), payload, inbound)
-
-
 class _SystemComponent:
     def __init__(self, calls: _Calls) -> None:
         self._calls = calls
@@ -251,7 +243,6 @@ def _make_dispatcher(
             mailbox=_MailboxComponent(calls),
             pin=_PinComponent(calls),
             process=_ProcessComponent(calls),
-            shell=_ShellComponent(calls),
             system=_SystemComponent(calls),
         )
     )

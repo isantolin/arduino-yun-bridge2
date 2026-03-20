@@ -605,31 +605,31 @@ class TestMqttBuildProperties:
 # ============================================================================
 
 
-class TestShellComponent:
+class TestShellMqttLogic:
     @pytest.fixture
     def shell_comp(self):
-        from mcubridge.services.shell import ShellComponent
+        from mcubridge.services.process import ProcessComponent
 
         config = _make_config()
         state = create_runtime_state(config)
         ctx = MagicMock()
         ctx.publish = AsyncMock()
-        process = MagicMock()
-        process.run_async = AsyncMock(return_value=42)
-        process.poll_process = AsyncMock()
-        process.stop_process = AsyncMock(return_value=True)
-        process.publish_poll_result = AsyncMock()
-        return ShellComponent(config, state, ctx, process)
+        ctx.enqueue_mqtt = AsyncMock()
+        comp = ProcessComponent(config, state, ctx)
+        comp.poll_process = AsyncMock()
+        comp.stop_process = AsyncMock(return_value=True)
+        comp.publish_poll_result = AsyncMock()
+        return comp
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_poll(self, shell_comp):
         await shell_comp.handle_mqtt(["poll", "42"], b"", None)
-        shell_comp.process.poll_process.assert_called_once_with(42)
+        shell_comp.poll_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_kill(self, shell_comp):
         await shell_comp.handle_mqtt(["kill", "42"], b"", None)
-        shell_comp.process.stop_process.assert_called_once_with(42)
+        shell_comp.stop_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_unknown_action(self, shell_comp):
@@ -1010,7 +1010,6 @@ class TestDispatcherEdgeCases:
                 mailbox=MagicMock(),
                 pin=MagicMock(),
                 process=MagicMock(),
-                shell=MagicMock(),
                 system=MagicMock(),
             )
         )

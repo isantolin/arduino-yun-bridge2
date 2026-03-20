@@ -75,8 +75,7 @@ namespace bridge {
 
 enum FlagId : uint8_t {
   FRAME_RECEIVED = 0,
-  STARTUP_STABILIZED = 1,
-  NUM_FLAGS = 2
+  NUM_FLAGS = 1
 };
 
 namespace config {

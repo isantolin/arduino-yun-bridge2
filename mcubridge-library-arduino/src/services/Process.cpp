@@ -35,6 +35,13 @@ void ProcessClass::kill(int16_t pid, ProcessKillHandler handler) {
   }
 }
 
+bool ProcessClass::_kill(uint32_t pid) {
+  (void)pid;
+  // [SIL-2] Single-task MCU: Kill is primarily an acknowledgement 
+  // that a session or polling task should stop.
+  return true;
+}
+
 void ProcessClass::_onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg) {
   if (_pending_async_runs.empty()) return;
   PendingAsyncRun pending = _pending_async_runs.front();

@@ -59,7 +59,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
     return;
   }
 
-  uint8_t read_buffer[kReadChunkSize] = {};
+  etl::array<uint8_t, kReadChunkSize> read_buffer;
   size_t offset = 0U;
   bool sent_payload = false;
 
@@ -69,7 +69,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
     const bool read_ok = bridge::hal::readFileChunk(
         msg.path,
         offset,
-        etl::span<uint8_t>(read_buffer, sizeof(read_buffer)),
+        etl::span<uint8_t>(read_buffer.data(), read_buffer.size()),
         bytes_read,
         has_more);
     if (!read_ok) {

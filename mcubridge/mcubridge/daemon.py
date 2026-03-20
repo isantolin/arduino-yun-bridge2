@@ -231,13 +231,36 @@ class BridgeDaemon:
         min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF,
         max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
     ) -> None:
-        """Lightweight supervisor for individual tasks using tenacity."""
+        """Lightweight supervisor with Circuit Breaker logic."""
+        # [SIL-2] Circuit Breaker: Stop after 10 consecutive failures at max backoff
+        # to prevent infinite CPU thrashing on persistent hardware failure.
+        max_consecutive_max_backoff = 10
+        consecutive_max_backoff_count = 0
+
+        def _check_circuit_breaker(retry_state: tenacity.RetryCallState) -> bool:
+            nonlocal consecutive_max_backoff_count
+            if retry_state.idle_for >= max_backoff:
+                consecutive_max_backoff_count += 1
+            else:
+                consecutive_max_backoff_count = 0
+
+            if consecutive_max_backoff_count >= max_consecutive_max_backoff:
+                logger.critical(
+                    "CIRCUIT BREAKER: Task '%s' tripped after %d failures at max backoff. "
+                    "Marking as UNRECOVERABLE.",
+                    name, max_consecutive_max_backoff
+                )
+                return False
+            return True
+
         stop = tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never
 
         retryer = tenacity.AsyncRetrying(
             stop=stop,
             wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
-            retry=tenacity.retry_if_exception_type(Exception) & tenacity.retry_if_not_exception_type(fatal_exceptions),
+            retry=tenacity.retry_if_exception_type(Exception) &
+                  tenacity.retry_if_not_exception_type(fatal_exceptions) &
+                  tenacity.retry_if_result(_check_circuit_breaker),
             reraise=True,
         )
 
@@ -315,9 +338,13 @@ def main(
             "****************************************************************\n"
             " SECURITY CRITICAL: Using default serial shared secret!\n"
             " This device is VULNERABLE to local attacks.\n"
+            " [STRICT PROVISIONING] Network services (MQTT) are BLOCKED.\n"
             " Please run 'mcubridge-rotate-credentials' IMMEDIATELY.\n"
             "****************************************************************"
         )
+        # In strict mode, we force the MQTT config to disabled if secret is default
+        config = msgspec.structs.replace(config, mqtt_enabled=False)
+        logger.warning("STRICT MODE: MQTT transport has been DISABLED for security.")
 
     try:
         if uvloop is None:

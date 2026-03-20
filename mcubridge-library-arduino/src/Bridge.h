@@ -263,7 +263,7 @@ class BridgeClass
 
   void _handleStatusAck(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
-  void _handleNoOp(const bridge::router::CommandContext& ctx) { (void)ctx; }
+  void _unusedCommandSlot(const bridge::router::CommandContext& ctx);
   void _handleGetVersion(const bridge::router::CommandContext& ctx);
   void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
   void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
@@ -275,6 +275,7 @@ class BridgeClass
   void _handleAnalogWrite(const bridge::router::CommandContext& ctx);
   void _handleDigitalRead(const bridge::router::CommandContext& ctx);
   void _handleAnalogRead(const bridge::router::CommandContext& ctx);
+  void _handleProcessKill(const bridge::router::CommandContext& ctx);
 
   template <typename TResponse, typename TValid, typename TFunc>
   void _handlePinRead(const bridge::router::CommandContext& ctx, rpc::CommandId resp_cmd, TValid valid_func, TFunc read_func) {
@@ -445,6 +446,7 @@ class BridgeClass
   uint8_t _retry_count;
   uint32_t _pending_baudrate;
   
+  etl::circular_buffer<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_fifo;
   etl::circular_buffer<RxHistoryItem, bridge::config::RX_HISTORY_SIZE> _rx_history;
   
   uint16_t _consecutive_crc_errors;
@@ -457,9 +459,8 @@ class BridgeClass
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
 
-  // [OPTIMIZATION] Shared buffer for transient operations (TX encoding, RX processing)
-  // Large enough for MAX_RAW_FRAME_SIZE + 2 (COBS overhead)
-  uint8_t _transient_buffer[rpc::MAX_RAW_FRAME_SIZE + 2];
+  // [SIL-2] Unified buffers using ETL containers
+  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> _transient_buffer;
 
   struct PendingTxFrame {
     uint16_t command_id;
@@ -467,11 +468,11 @@ class BridgeClass
     uint16_t buffer_offset;
   };
   etl::queue<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES> _pending_tx_queue;
+
 #if defined(ARDUINO_ARCH_AVR)
-  // On AVR, we only have space for 1 pending frame anyway.
-  uint8_t _tx_payload_pool[rpc::MAX_PAYLOAD_SIZE];
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _tx_payload_pool;
 #else
-  uint8_t _tx_payload_pool[bridge::config::MAX_PENDING_TX_FRAMES * rpc::MAX_PAYLOAD_SIZE];
+  etl::array<uint8_t, bridge::config::MAX_PENDING_TX_FRAMES * rpc::MAX_PAYLOAD_SIZE> _tx_payload_pool;
 #endif
   uint16_t _tx_pool_head;
 

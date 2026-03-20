@@ -89,7 +89,7 @@ constexpr size_t MAX_RAW_FRAME_SIZE =
 
 struct Frame {
   FrameHeader header;
-  etl::array<uint8_t, MAX_PAYLOAD_SIZE> payload;
+  etl::span<const uint8_t> payload;
   uint32_t crc;
 };
 
@@ -122,12 +122,12 @@ class FrameParser {
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
     if (payload_len > MAX_PAYLOAD_SIZE)
       return etl::unexpected<FrameError>(FrameError::OVERFLOW);
-    Frame result{};
+    
+    Frame result;
     result.header.version = buffer[0];
     result.header.payload_length = payload_len;
     result.header.command_id = read_u16_be(buffer.subspan(3));
-    if (payload_len > 0)
-      etl::copy_n(buffer.begin() + 5, payload_len, result.payload.begin());
+    result.payload = buffer.subspan(5, payload_len);
     result.crc = crc_calc.value();
     return result;
   }

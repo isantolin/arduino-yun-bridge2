@@ -62,6 +62,7 @@ static void test_all_handlers_coverage() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
 
   rpc::Frame f = {};
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
   bridge::router::CommandContext ctx{&f, 0, false, false};
 
   // System
@@ -70,15 +71,17 @@ static void test_all_handlers_coverage() {
   
   // GPIO
   mcubridge_DigitalWrite dw = mcubridge_DigitalWrite_init_default;
-  pb_ostream_t s1 = pb_ostream_from_buffer(f.payload.data(), f.payload.size());
+  pb_ostream_t s1 = pb_ostream_from_buffer(payload_buffer.data(), payload_buffer.size());
   pb_encode(&s1, mcubridge_DigitalWrite_fields, &dw);
   f.header.payload_length = s1.bytes_written;
+  f.payload = etl::span<const uint8_t>(payload_buffer.data(), s1.bytes_written);
   ba.handleDigitalWrite(ctx);
 
   mcubridge_PinRead pr = mcubridge_PinRead_init_default;
-  pb_ostream_t s2 = pb_ostream_from_buffer(f.payload.data(), f.payload.size());
+  pb_ostream_t s2 = pb_ostream_from_buffer(payload_buffer.data(), payload_buffer.size());
   pb_encode(&s2, mcubridge_PinRead_fields, &pr);
   f.header.payload_length = s2.bytes_written;
+  f.payload = etl::span<const uint8_t>(payload_buffer.data(), s2.bytes_written);
   ba.handleDigitalRead(ctx);
   ba.handleAnalogRead(ctx);
 

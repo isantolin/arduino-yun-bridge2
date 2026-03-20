@@ -57,7 +57,7 @@ class TestAccessor {
     f.command_id = cmd;
     f.payload_length = len;
     f.buffer_offset = _bridge._tx_pool_head;
-    etl::copy_n(data, len, _bridge._tx_payload_pool + _bridge._tx_pool_head);
+    etl::copy_n(data, len, _bridge._tx_payload_pool.data() + _bridge._tx_pool_head);
     _bridge._tx_pool_head += len;
     _bridge._pending_tx_queue.push(f);
   }
@@ -93,7 +93,7 @@ class TestAccessor {
   void dispatch(const rpc::Frame& frame) { _bridge.dispatch(frame); }
   void retransmitLastFrame() { _bridge._retransmitLastFrame(); }
   void computeHandshakeTag(const uint8_t* n, size_t nl, uint8_t* out) {
-    _bridge._computeHandshakeTag(etl::span<const uint8_t>(n, nl), out);
+    _bridge._computeHandshakeTag(etl::span<const uint8_t>(n, nl), etl::span<uint8_t>(out, 16));
   }
 
   bool isSecurityCheckPassed(uint16_t cmd) const { return _bridge._isSecurityCheckPassed(cmd); }

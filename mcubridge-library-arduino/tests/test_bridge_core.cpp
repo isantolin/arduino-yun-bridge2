@@ -70,7 +70,6 @@ class TestFrameBuilder {
     return encoded_len + 1;
   }
 };
-
 void sync_bridge(BiStream& stream) {
   stream.tx_buf.clear();
   auto ba = TestAccessor::create(Bridge);
@@ -89,16 +88,17 @@ void sync_bridge(BiStream& stream) {
   ba.computeHandshakeTag(nonce, 16, sync_msg.tag);
 
   rpc::Frame frame;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
+  frame.payload = etl::span<const uint8_t>(payload_buffer.data(), payload_buffer.size());
   bridge::test::set_pb_payload(frame, sync_msg);
 
   uint8_t encoded_frame[rpc::MAX_RAW_FRAME_SIZE + 32];
-  const size_t frame_len = TestFrameBuilder::build(
+  const size_t encoded_len = TestFrameBuilder::build(
       encoded_frame, sizeof(encoded_frame),
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), frame.payload.data(),
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), payload_buffer.data(),
       frame.header.payload_length);
-  stream.feed(encoded_frame, frame_len);
+  stream.feed(encoded_frame, encoded_len);
   Bridge.process();
-  stream.tx_buf.clear();
 }
 
 void test_bridge_begin() {
@@ -161,6 +161,9 @@ void test_bridge_dedup_console_write_retry() {
   frame.header.version = rpc::PROTOCOL_VERSION;
   frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
+  frame.payload = etl::span<const uint8_t>(payload_buffer.data(), payload_buffer.size());
   bridge::test::set_pb_payload(frame, msg);
 
   // Calculate CRC for deduplication using etl::crc32

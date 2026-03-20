@@ -53,42 +53,48 @@ void test_mutual_auth_success() {
 
   // Internal helper to compute expected tag
   accessor.computeHandshakeTag(nonce, 16, tag);
+rpc::Frame sync_frame;
+sync_frame.header.version = rpc::PROTOCOL_VERSION;
+sync_frame.header.command_id =
+    rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+memcpy(sync_msg.nonce, nonce, 16);
+memcpy(sync_msg.tag, tag, 16);
 
-  rpc::Frame sync_frame;
-  sync_frame.header.version = rpc::PROTOCOL_VERSION;
-  sync_frame.header.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
-  memcpy(sync_msg.nonce, nonce, 16);
-  memcpy(sync_msg.tag, tag, 16);
-  bridge::test::set_pb_payload(sync_frame, sync_msg);
+etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_success;
+sync_frame.payload = etl::span<const uint8_t>(payload_buffer_success.data(), payload_buffer_success.size());
+bridge::test::set_pb_payload(sync_frame, sync_msg);
 
-  accessor.dispatch(sync_frame);
+accessor.dispatch(sync_frame);
 
-  TEST_ASSERT(localBridge.isSynchronized());
-  TEST_ASSERT(localBridge.isIdle());
-  printf("  -> Mutual Auth Success: OK\n");
+TEST_ASSERT(localBridge.isSynchronized());
+TEST_ASSERT(localBridge.isIdle());
+printf("  -> Mutual Auth Success: OK\n");
 }
 
 void test_mutual_auth_failure_wrong_tag() {
-  BridgeClass localBridge(g_test_stream);
-  const char* secret = "secret_1234567890123456";
-  localBridge.begin(115200, secret, 23);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
-  accessor.onStartupStabilized();
+BridgeClass localBridge(g_test_stream);
+const char* secret = "secret_1234567890123456";
+localBridge.begin(115200, secret, 23);
+auto accessor = bridge::test::TestAccessor::create(localBridge);
+accessor.onStartupStabilized();
 
-  uint8_t nonce[16] = {0xAA};
-  uint8_t wrong_tag[16] = {0xFF};
+uint8_t nonce[16] = {0xAA};
+uint8_t wrong_tag[16] = {0xFF};
 
-  rpc::Frame sync_frame;
-  sync_frame.header.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
-  memcpy(sync_msg.nonce, nonce, 16);
-  memcpy(sync_msg.tag, wrong_tag, 16);
-  bridge::test::set_pb_payload(sync_frame, sync_msg);
+rpc::Frame sync_frame;
+sync_frame.header.version = rpc::PROTOCOL_VERSION;
+sync_frame.header.command_id =
+    rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+memcpy(sync_msg.nonce, nonce, 16);
+memcpy(sync_msg.tag, wrong_tag, 16);
 
-  accessor.dispatch(sync_frame);
+etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_failure;
+sync_frame.payload = etl::span<const uint8_t>(payload_buffer_failure.data(), payload_buffer_failure.size());
+bridge::test::set_pb_payload(sync_frame, sync_msg);
+
+accessor.dispatch(sync_frame);
 
   TEST_ASSERT(!localBridge.isSynchronized());
   TEST_ASSERT(localBridge.isFault());
@@ -104,8 +110,10 @@ void test_mutual_auth_failure_malformed_length() {
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  // Corrupt payload with invalid data that pb_decode will reject
-  sync_frame.payload[0] = 0xFF; // Invalid protobuf tag
+  
+  uint8_t payload_buffer[1] = {0xFF};
+  sync_frame.header.payload_length = sizeof(payload_buffer);
+  sync_frame.payload = etl::span<const uint8_t>(payload_buffer, sizeof(payload_buffer));
   sync_frame.header.payload_length = 1;
 
   accessor.dispatch(sync_frame);
@@ -125,7 +133,11 @@ void test_fsm_transitions_running() {
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_sync;
+  sync_frame.payload = etl::span<const uint8_t>(payload_buffer_sync.data(), payload_buffer_sync.size());
   bridge::test::set_pb_payload(sync_frame, sync_msg);
+  
   accessor.dispatch(sync_frame);
   TEST_ASSERT(localBridge.isSynchronized());
 
@@ -138,6 +150,9 @@ void test_fsm_transitions_running() {
   ack_frame.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_ACK);
   rpc::payload::AckPacket ack_msg = mcubridge_AckPacket_init_default;
   ack_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE);
+  
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_ack;
+  ack_frame.payload = etl::span<const uint8_t>(payload_buffer_ack.data(), payload_buffer_ack.size());
   bridge::test::set_pb_payload(ack_frame, ack_msg);
   accessor.dispatch(ack_frame);
 
@@ -156,6 +171,9 @@ void test_fsm_timeout_to_unsynchronized() {
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_sync;
+  sync_frame.payload = etl::span<const uint8_t>(payload_buffer_sync.data(), payload_buffer_sync.size());
   bridge::test::set_pb_payload(sync_frame, sync_msg);
   accessor.dispatch(sync_frame);
 

@@ -234,31 +234,41 @@ class BridgeDaemon:
         """Lightweight supervisor with Circuit Breaker logic."""
         # [SIL-2] Circuit Breaker: Stop after 10 consecutive failures at max backoff
         # to prevent infinite CPU thrashing on persistent hardware failure.
-        cb_state = {"consecutive_max_backoff": 0}
         max_consecutive_max_backoff = 10
 
-        def _check_circuit_breaker(retry_state: tenacity.RetryCallState) -> bool:
-            if retry_state.idle_for >= max_backoff:
-                cb_state["consecutive_max_backoff"] += 1
-            else:
-                cb_state["consecutive_max_backoff"] = 0
+        class _CircuitBreakerRetry(tenacity.retry_base):
+            def __init__(self) -> None:
+                self.consecutive_max_backoff = 0
 
-            if cb_state["consecutive_max_backoff"] >= max_consecutive_max_backoff:
-                logger.critical(
-                    "CIRCUIT BREAKER: Task '%s' tripped after %d failures at max backoff. "
-                    "Marking as UNRECOVERABLE.",
-                    name, max_consecutive_max_backoff
-                )
-                return False
-            return True
+            def __call__(self, retry_state: tenacity.RetryCallState) -> bool:
+                if not retry_state.outcome or not retry_state.outcome.failed:
+                    return False
+
+                exc = retry_state.outcome.exception()
+                # Bypass retry on fatal exceptions and asyncio cancellation
+                if isinstance(exc, (*fatal_exceptions, asyncio.CancelledError)):
+                    return False
+
+                if retry_state.idle_for >= max_backoff:
+                    self.consecutive_max_backoff += 1
+                else:
+                    self.consecutive_max_backoff = 0
+
+                if self.consecutive_max_backoff >= max_consecutive_max_backoff:
+                    logger.critical(
+                        "CIRCUIT BREAKER: Task '%s' tripped after %d failures at max backoff. "
+                        "Marking as UNRECOVERABLE.",
+                        name, max_consecutive_max_backoff
+                    )
+                    return False
+                return True
+
         stop = tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never
 
         retryer = tenacity.AsyncRetrying(
             stop=stop,
             wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
-            retry=tenacity.retry_if_exception_type(Exception) &
-                  tenacity.retry_if_not_exception_type(fatal_exceptions) &
-                  tenacity.retry_if_result(_check_circuit_breaker),
+            retry=_CircuitBreakerRetry(),
             reraise=True,
         )
 

@@ -88,7 +88,8 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 
 ## Componentes
 
-- **BridgeService (Python 3.13.9-r2)**: orquesta la comunicación MCU↔Linux, aplica políticas de topics y delega en componentes (`FileComponent`, `ProcessComponent`, etc.).
+- **BridgeService (Python 3.13.9-r2)**: orquesta la comunicación MCU↔Linux, aplica políticas de topics y delega en componentes operativos (`FileComponent`, `ProcessComponent`, `DatastoreComponent`, etc.).
+- **ProcessComponent**: gestiona de forma unificada la ejecución de subprocesos asíncronos y los comandos de shell/consola MQTT, aplicando la política de seguridad y controlando la concurrencia.
 - **RuntimeState**: mantiene el estado mutable (colas MQTT, handshake, spool, métricas) y expone snapshots consistentes para status, MQTT y Prometheus.
 - **High-Performance Transport**: El daemon utiliza `pyserial-asyncio-fast` para minimizar la latencia y evitar el doble buffering en el enlace serie.
 - **MQTT Publisher**: publica respuestas/telemetría con MQTT v5 (correlation data, response_topic, expiración, metadatos).

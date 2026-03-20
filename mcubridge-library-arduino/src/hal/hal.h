@@ -68,6 +68,11 @@ uint32_t getCapabilities();
  */
 uint8_t getArchId();
 
+/**
+ * @brief Get architecture specific pin counts.
+ */
+void getPinCounts(uint8_t& digital, uint8_t& analog);
+
 }  // namespace hal
 }  // namespace bridge
 

@@ -22,6 +22,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Novedades (marzo 2026)
 
+- **Unificación de Componentes (Shell + Process):** Eliminación de la capa redundante `ShellComponent`. Toda la lógica de comandos shell/consola vía MQTT ha sido absorbida por el **ProcessComponent**, centralizando la gestión de PIDs, concurrencia y políticas de seguridad en un solo módulo determinista.
 - **Serialización Protobuf (proto3):** Todos los payloads RPC se definen como mensajes Protocol Buffers en `mcubridge.proto` y se codifican con **protobuf** (Python) y **nanopb** (C++, estático, sin heap). Eliminación completa de empaquetado manual de bytes.
 - **Soporte PWM (Analog Write):** Implementación completa de `analog_write()` en el cliente Python, permitiendo el control de actuadores y regulación de potencia vía MQTT.
 - **Validación E2E Analógica:** Los tests de integración ahora cubren lecturas y escrituras analógicas de forma nativa.
@@ -202,8 +203,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ## Arquitectura
 
-- **Callbacks de estado:** Registra `Bridge.onStatus(...)` en tus sketches para recibir `STATUS_*` desde Linux, incluyendo mensajes de error descriptivos cuando una operación (p.ej. I/O de archivos) falla.
-1.  **`mcubridge`**: El daemon principal de Python, scripts del sistema y configuración base (fusionado: daemon + core).
+1.  **`mcubridge`**: El daemon principal de Python, que integra los componentes operativos (File, Process, Datastore, etc.), gestiona el despacho MQTT/Serie y aplica las políticas de seguridad.
 2.  **`mcubridge-library-arduino`**: La librería C++ para el sketch que se ejecuta en el MCU.
 3.  **`luci-app-mcubridge`**: La interfaz de configuración web.
 4.  **`mcubridge-client-examples`**: Paquete cliente con ejemplos de uso.

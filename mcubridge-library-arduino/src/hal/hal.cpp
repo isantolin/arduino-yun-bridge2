@@ -2,6 +2,8 @@
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
 #include "etl/bitset.h"
+#include "etl/string.h"
+#include "etl/to_string.h"
 
 #if defined(BRIDGE_HOST_TEST)
 #include <errno.h>
@@ -39,6 +41,8 @@ constexpr size_t kHostFilesystemRootLength = sizeof(kHostFilesystemRoot) - 1U;
 constexpr size_t kHostFilesystemPathCapacity =
     kHostFilesystemRootLength + rpc::RPC_MAX_FILEPATH_LENGTH + 2U;
 
+using PathString = etl::string<kHostFilesystemPathCapacity>;
+
 bool ensure_host_directory(const char* path) {
   if (::mkdir(path, 0700) == 0) {
     return true;
@@ -62,41 +66,37 @@ bool is_host_path_safe(const char* path) {
   return true;
 }
 
-bool resolve_host_path(const char* relative_path, char* output, size_t output_size) {
+bool resolve_host_path(const char* relative_path, PathString& output) {
   if (!is_host_path_safe(relative_path) || !ensure_host_directory(kHostFilesystemRoot)) {
     return false;
   }
 
-  const int written = snprintf(
-      output,
-      output_size,
-      "%s/%s",
-      kHostFilesystemRoot,
-      relative_path);
-  return (written > 0) && (static_cast<size_t>(written) < output_size);
+  output.assign(kHostFilesystemRoot);
+  output.append("/");
+  output.append(relative_path);
+  return true;
 }
 
-bool ensure_host_parent_directories(const char* full_path) {
-  char path_buffer[kHostFilesystemPathCapacity] = {};
-  const size_t max_length = sizeof(path_buffer) - 1U;
-  const size_t full_path_length = strnlen(full_path, max_length);
+bool ensure_host_parent_directories(const PathString& full_path) {
+  PathString path_buffer;
+  const size_t full_path_length = full_path.size();
 
-  if ((full_path_length == 0U) || (full_path_length >= max_length)) {
+  if (full_path_length == 0U) {
     return false;
   }
 
-  memcpy(path_buffer, full_path, full_path_length);
-  path_buffer[full_path_length] = '\0';
+  path_buffer = full_path;
 
   for (size_t index = kHostFilesystemRootLength + 1U; index < full_path_length; ++index) {
     if (path_buffer[index] != '/') {
       continue;
     }
+    char original = path_buffer[index];
     path_buffer[index] = '\0';
-    if (!ensure_host_directory(path_buffer)) {
+    if (!ensure_host_directory(path_buffer.c_str())) {
       return false;
     }
-    path_buffer[index] = '/';
+    path_buffer[index] = original;
   }
   return true;
 }
@@ -119,7 +119,7 @@ uint16_t getFreeMemory() {
   int v;
   return static_cast<uint16_t>(reinterpret_cast<int>(&v) - (__brkval == 0 ? reinterpret_cast<int>(&__heap_start) : reinterpret_cast<int>(__brkval)));
 #elif defined(ARDUINO_ARCH_ESP32)
-  return (uint16_t)ESP.getFreeHeap();
+  return static_cast<uint16_t>(ESP.getFreeHeap());
 #else
   return bridge::config::FALLBACK_FREE_MEMORY;
 #endif
@@ -135,36 +135,27 @@ bool hasSD() {
 #if defined(BRIDGE_HOST_TEST)
   return true; // Mock SD card availability for tests
 #else
-  // For actual hardware, this would check SD.begin() or similar.
-  // Since we don't want to force SD.h dependency here, we return false
-  // unless specifically enabled by a build flag.
   return false;
 #endif
 }
 
 bool writeFile(const char* path, etl::span<const uint8_t> data) {
 #if defined(BRIDGE_HOST_TEST)
-  char full_path[kHostFilesystemPathCapacity] = {};
-  if (!resolve_host_path(path, full_path, sizeof(full_path)) ||
+  PathString full_path;
+  if (!resolve_host_path(path, full_path) ||
       !ensure_host_parent_directories(full_path)) {
-    fprintf(stderr, "[HAL-FS] ERROR: Failed to resolve path or create parents for '%s'\n", path);
     return false;
   }
 
-  FILE* file = fopen(full_path, "wb");
+  FILE* file = fopen(full_path.c_str(), "wb");
   if (file == nullptr) {
-    fprintf(stderr, "[HAL-FS] ERROR: Failed to open file for write: '%s' (errno=%d)\n", full_path, errno);
     return false;
   }
 
   const size_t bytes_written = fwrite(data.data(), 1U, data.size(), file);
   const int flush_status = fflush(file);
   const int close_status = fclose(file);
-  const bool success = (bytes_written == data.size()) && (flush_status == 0) && (close_status == 0);
-  if (!success) {
-    fprintf(stderr, "[HAL-FS] ERROR: Failed to finalize write for '%s'\n", full_path);
-  }
-  return success;
+  return (bytes_written == data.size()) && (flush_status == 0) && (close_status == 0);
 #else
   (void)path; (void)data;
   return false;
@@ -181,32 +172,27 @@ bool readFileChunk(
   has_more = false;
 
 #if defined(BRIDGE_HOST_TEST)
-  char full_path[kHostFilesystemPathCapacity] = {};
-  if (!resolve_host_path(path, full_path, sizeof(full_path))) {
-    fprintf(stderr, "[HAL-FS] ERROR: Failed to resolve path for read: '%s'\n", path);
+  PathString full_path;
+  if (!resolve_host_path(path, full_path)) {
     return false;
   }
 
   struct stat stat_buffer = {};
-  if ((::stat(full_path, &stat_buffer) != 0) || !S_ISREG(stat_buffer.st_mode)) {
-    fprintf(stderr, "[HAL-FS] ERROR: File not found or not regular for read: '%s'\n", full_path);
+  if ((::stat(full_path.c_str(), &stat_buffer) != 0) || !S_ISREG(stat_buffer.st_mode)) {
     return false;
   }
 
   const size_t file_size = static_cast<size_t>(stat_buffer.st_size);
   if (offset > file_size) {
-    fprintf(stderr, "[HAL-FS] ERROR: Read offset %zu exceeds file size %zu for '%s'\n", offset, file_size, full_path);
     return false;
   }
 
-  FILE* file = fopen(full_path, "rb");
+  FILE* file = fopen(full_path.c_str(), "rb");
   if (file == nullptr) {
-    fprintf(stderr, "[HAL-FS] ERROR: Failed to open file for read: '%s' (errno=%d)\n", full_path, errno);
     return false;
   }
 
   if ((offset > 0U) && (fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) {
-    fprintf(stderr, "[HAL-FS] ERROR: Failed to seek to offset %zu for '%s'\n", offset, full_path);
     fclose(file);
     return false;
   }
@@ -215,7 +201,6 @@ bool readFileChunk(
   const bool read_failed = ferror(file) != 0;
   const int close_status = fclose(file);
   if (read_failed || (close_status != 0)) {
-    fprintf(stderr, "[HAL-FS] ERROR: Failed to finalize read for '%s'\n", full_path);
     return false;
   }
 
@@ -231,11 +216,11 @@ bool readFileChunk(
 
 bool removeFile(const char* path) {
 #if defined(BRIDGE_HOST_TEST)
-  char full_path[kHostFilesystemPathCapacity] = {};
-  if (!resolve_host_path(path, full_path, sizeof(full_path))) {
+  PathString full_path;
+  if (!resolve_host_path(path, full_path)) {
     return false;
   }
-  return ::unlink(full_path) == 0;
+  return ::unlink(full_path.c_str()) == 0;
 #else
   (void)path;
   return false;
@@ -256,6 +241,15 @@ uint32_t getCapabilities() {
 #if defined(BRIDGE_ENABLE_DAC)
   caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_DAC));
 #endif
+#if BRIDGE_ENABLE_I2C
+  caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_I2C));
+#endif
+#if BRIDGE_ENABLE_SPI
+  caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_SPI));
+#endif
+  if (hasSD()) {
+    caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_SD));
+  }
   return static_cast<uint32_t>(caps.to_ulong());
 }
 
@@ -277,3 +271,4 @@ void getPinCounts(uint8_t& digital, uint8_t& analog) {
 
 }  // namespace hal
 }  // namespace bridge
+

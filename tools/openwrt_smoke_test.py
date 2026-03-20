@@ -9,6 +9,14 @@ import subprocess
 import shutil
 from pathlib import Path
 
+def log_info(msg: str) -> None:
+    sys.stdout.write(f"{msg}\n")
+    sys.stdout.flush()
+
+def log_error(msg: str) -> None:
+    sys.stderr.write(f"{msg}\n")
+    sys.stderr.flush()
+
 # Configuration based on tools/qemu-mcubridge.xml and 1_compile.sh
 OPENWRT_VERSION = "25.12.0"
 TARGET = "malta/be"
@@ -18,11 +26,11 @@ ROOTFS_GZ = f"openwrt-{OPENWRT_VERSION}-malta-be-rootfs-ext4.img.gz"
 ROOTFS_IMG = "openwrt-rootfs.img"
 
 def run(cmd, check=True):
-    print(f"[EXEC] {' '.join(cmd)}")
+    log_info(f"[EXEC] {' '.join(cmd)}")
     return subprocess.run(cmd, check=check)
 
 def download_images():
-    print("[INFO] Downloading OpenWrt images...")
+    log_info("[INFO] Downloading OpenWrt images...")
     if not Path(KERNEL_FILE).exists():
         run(["wget", "-q", f"{BASE_URL}/{KERNEL_FILE}"])
 
@@ -32,7 +40,7 @@ def download_images():
         shutil.move(f"openwrt-{OPENWRT_VERSION}-malta-be-rootfs-ext4.img", ROOTFS_IMG)
 
 def create_apk_disk(apk_dir):
-    print("[INFO] Creating APK data disk...")
+    log_info("[INFO] Creating APK data disk...")
     apk_disk = "apks.img"
     # Create a 20MB ext4 disk
     run(["dd", "if=/dev/zero", f"of={apk_disk}", "bs=1M", "count=20"])
@@ -46,16 +54,17 @@ def create_apk_disk(apk_dir):
     # In CI we have sudo
     run(["sudo", "mount", apk_disk, str(mnt)])
     try:
-        for apk in Path(apk_dir).glob("*.apk"):
+        apk_files = list(Path(apk_dir).glob("*.apk"))
+        for apk in apk_files:
             shutil.copy(apk, mnt)
-        print(f"[INFO] Copied {len(list(Path(apk_dir).glob('*.apk')))} APKs to disk.")
+        log_info(f"[INFO] Copied {len(apk_files)} APKs to disk.")
     finally:
         run(["sudo", "umount", str(mnt)])
 
     return apk_disk
 
 def run_test(apk_disk):
-    print("[INFO] Starting QEMU Emulation...")
+    log_info("[INFO] Starting QEMU Emulation...")
     # Based on the XML but adapted for CLI/CI
     qemu_cmd = [
         "qemu-system-mips",
@@ -76,16 +85,16 @@ def run_test(apk_disk):
     child.logfile = sys.stdout
 
     try:
-        print("[WAIT] Waiting for OpenWrt to boot...")
+        log_info("[WAIT] Waiting for OpenWrt to boot...")
         child.expect("Please press Enter to activate this console", timeout=120)
         child.sendline("")
 
         child.expect("root@OpenWrt:/#", timeout=30)
-        print("[INFO] Console active. Mounting APK disk...")
+        log_info("[INFO] Console active. Mounting APK disk...")
         child.sendline("mount /dev/vdb /mnt")
 
         child.expect("root@OpenWrt:/#", timeout=10)
-        print("[INFO] Installing APKs...")
+        log_info("[INFO] Installing APKs...")
         # Install all APKs found in /mnt
         # Use --allow-untrusted because they are locally built
         child.sendline("apk add --allow-untrusted /mnt/*.apk")
@@ -94,36 +103,37 @@ def run_test(apk_disk):
         child.expect("OK", timeout=120)
         child.expect("root@OpenWrt:/#", timeout=10)
 
-        print("[INFO] Verifying McuBridge installation...")
+        log_info("[INFO] Verifying McuBridge installation...")
         child.sendline("ls -l /etc/init.d/mcubridge")
         child.expect("/etc/init.d/mcubridge")
 
-        print("[INFO] Starting McuBridge service...")
+        log_info("[INFO] Starting McuBridge service...")
         child.sendline("/etc/init.d/mcubridge enable")
         child.expect("root@OpenWrt:/#")
         child.sendline("/etc/init.d/mcubridge start")
         child.expect("root@OpenWrt:/#")
 
-        print("[INFO] Checking if process is running...")
+        log_info("[INFO] Checking if process is running...")
         child.sendline("pgrep -f mcubridge")
         # pgrep returns the PID if found
         child.expect(r"\d+")
 
-        print("[SUCCESS] Smoke test passed!")
+        log_info("[SUCCESS] Smoke test passed!")
         child.sendline("poweroff")
         child.expect(pexpect.EOF)
 
     except Exception as e:
-        print(f"\n[ERROR] Test failed: {e}")
+        log_error(f"\n[ERROR] Test failed: {e}")
         child.terminate(force=True)
         sys.exit(1)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <apk_directory>")
+        log_error(f"Usage: {sys.argv[0]} <apk_directory>")
         sys.exit(1)
 
     apk_dir = sys.argv[1]
     download_images()
     apk_disk = create_apk_disk(apk_dir)
     run_test(apk_disk)
+

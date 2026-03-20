@@ -46,6 +46,7 @@ _CAPABILITY_BITS: Final[dict[str, int]] = {
     "big_buffer": protocol.CAPABILITY_BIG_BUFFER,
     "i2c": protocol.CAPABILITY_I2C,
     "spi": protocol.CAPABILITY_SPI,
+    "sd": protocol.CAPABILITY_SD,
 }
 
 
@@ -663,6 +664,7 @@ class CapabilitiesFeatures(msgspec.Struct, frozen=True):
     big_buffer: bool
     i2c: bool
     spi: bool
+    sd: bool
 
 
 class CapabilitiesPacket(BaseStruct, frozen=True):
@@ -982,6 +984,10 @@ class McuCapabilities(msgspec.Struct):
     def has_spi(self) -> bool:
         return self._has("spi")
 
+    @property
+    def has_sd(self) -> bool:
+        return self._has("sd")
+
     def as_dict(self) -> dict[str, Any]:
         """Convert to dictionary including expanded boolean flags."""
         res = msgspec.structs.asdict(self)
@@ -998,6 +1004,7 @@ class McuCapabilities(msgspec.Struct):
             "has_big_buffer",
             "has_i2c",
             "has_spi",
+            "has_sd",
         )
         for f in fields:
             res[f] = getattr(self, f)

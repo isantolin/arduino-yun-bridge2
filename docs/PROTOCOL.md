@@ -538,6 +538,7 @@ Raw (before COBS):
     | 9 | `512` | Big Buffer | Buffer RX serial extendido (>64 bytes). |
     | 10 | `1024` | I2C | Soporte hardware I2C (Wire/SDA/SCL). |
     | 11 | `2048` | SPI | Soporte hardware SPI (SCK/MOSI/MISO). |
+    | 12 | `4096` | SD | Tarjeta SD física detectada y funcional. |
 
 - **`0x4E` CMD_XOFF (MCU → Linux)** / **`0x4F` CMD_XON (MCU → Linux)**
   - Sin payload.
@@ -656,14 +657,12 @@ Notas operativas:
 
 ### 5.7 Gestión de procesos (0xA0)
 
-- **`0xA0` CMD_PROCESS_RUN (MCU → Linux)**: `command: char[]`.
 - **`0xA1` CMD_PROCESS_RUN_ASYNC (MCU → Linux)**: protobuf `ProcessRunAsync { command: string }`.
 - **`0xA2` CMD_PROCESS_POLL (MCU → Linux)**: protobuf `ProcessPoll { pid: uint32 }`.
 - **`0xA3` CMD_PROCESS_KILL (MCU → Linux)**: protobuf `ProcessKill { pid: uint32 }`.
 
 Respuestas (Linux → MCU):
 
-- **`0xA4` CMD_PROCESS_RUN_RESP (Linux → MCU)**: respuesta al `CMD_PROCESS_RUN`.
 - **`0xA5` CMD_PROCESS_RUN_ASYNC_RESP (Linux → MCU)**: protobuf `ProcessRunAsyncResponse { pid: uint32 }`.
 - **`0xA6` CMD_PROCESS_POLL_RESP (Linux → MCU)**: protobuf `ProcessPollResponse { status, exit_code, stdout_data: bytes, stderr_data: bytes }`.
 

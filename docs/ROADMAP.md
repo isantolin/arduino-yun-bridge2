@@ -20,17 +20,12 @@
 ## Future Strategic Goals (2026-2027)
 
 ### 1. Lifecycle Management & FOTA
-- **Integrated OTA Service**: Automated firmware detection and flashing using `avrdude`/`esptool`.
 - **Safe-Bootloader Handshake**: Protocol extension to trigger MCU bootloader mode via RPC.
 
-### 2. Deep Observability
-- **Remote Stack Guard**: Real-time reporting of MCU stack high-water mark and static memory usage to Prometheus.
-- **Virtual Oscilloscope**: High-frequency signal streaming from MCU pins to MQTT topics.
-
-### 3. Resilience & Hardware Abstraction
+### 2. Resilience & Hardware Abstraction
 - **Auto-Baudrate Fallback**: Automated speed downgrade logic based on CRC error thresholds.
 - **SPI Service**: Full implementation of the SPI capability bit with a dedicated RPC service.
 
-### 4. Zero-Code Experience
+### 3. Zero-Code Experience
 - **Dynamic LuCI UI**: Automated web interface generation based on `spec.toml` definitions.
 - **Pythonic MCU Mocking**: Local development library that transparently uses the emulator when hardware is missing.

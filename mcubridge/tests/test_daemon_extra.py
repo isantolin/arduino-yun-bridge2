@@ -27,12 +27,11 @@ async def test_daemon_supervise_restarts() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     daemon = BridgeDaemon(config)
 
-    call_count = 0
+    state = {"call_count": 0}
 
     async def failing_task():
-        nonlocal call_count
-        call_count += 1
-        if call_count <= 2:
+        state["call_count"] += 1
+        if state["call_count"] <= 2:
             raise ValueError("fail")
         return  # Clean exit
 
@@ -40,7 +39,7 @@ async def test_daemon_supervise_restarts() -> None:
         # Should restart and eventually return
         await daemon._supervise("test-restart", failing_task)
 
-    assert call_count == 3
+    assert state["call_count"] == 3
     assert "test-restart" in daemon.state.supervisor_stats
 
 

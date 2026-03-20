@@ -78,11 +78,12 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
     }
 
     if (bytes_read > 0U) {
-      send_read_response(etl::span<const uint8_t>(read_buffer, bytes_read));
+      send_read_response(etl::span<const uint8_t>(read_buffer.data(), bytes_read));
       sent_payload = true;
       offset += bytes_read;
     } else if (!sent_payload) {
       send_read_response(etl::span<const uint8_t>());
+      sent_payload = true;
     }
 
     if (!has_more) {

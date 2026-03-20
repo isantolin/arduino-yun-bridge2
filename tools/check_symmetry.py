@@ -39,11 +39,10 @@ def check_symmetry():
             missing.append(handler)
 
     if missing:
-        print(f"ERROR: Missing C++ handlers for commands: {', '.join(missing)}")
+        sys.stderr.write(f"ERROR: Missing C++ handlers for commands: {', '.join(missing)}\n")
         return 1
 
-    print("Symmetry check PASSED: All critical handlers detected.")
+    sys.stdout.write("Symmetry check PASSED: All critical handlers detected.\n")
     return 0
-
 if __name__ == "__main__":
     sys.exit(check_symmetry())

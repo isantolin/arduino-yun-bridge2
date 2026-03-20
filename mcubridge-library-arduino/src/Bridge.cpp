@@ -187,11 +187,11 @@ void BridgeClass::_processIncomingByte(const uint8_t byte) {
       // [OPTIMIZATION] Use shared transient buffer for decoding
       const size_t decoded_len = rpc::cobs::decode(
           etl::span<const uint8_t>(_cobs.buffer.data(), _cobs.bytes_received),
-          etl::span<uint8_t>(_transient_buffer, sizeof(_transient_buffer)));
+          etl::span<uint8_t>(_transient_buffer.data(), _transient_buffer.size()));
 
       if (decoded_len > 0) {
         rpc::FrameParser parser;
-        const auto result = parser.parse(etl::span<const uint8_t>(_transient_buffer, decoded_len));
+        const auto result = parser.parse(etl::span<const uint8_t>(_transient_buffer.data(), decoded_len));
         if (result.has_value()) {
           _rx_frame = result.value();
           _flags.set(bridge::FlagId::FRAME_RECEIVED);
@@ -392,7 +392,7 @@ void BridgeClass::_handleGetFreeMemory(const bridge::router::CommandContext& ctx
 void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::LinkSync>(ctx, [this](const rpc::payload::LinkSync& msg) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> tag;
-    _computeHandshakeTag(etl::span<const uint8_t>(msg.nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH), tag.data());
+    _computeHandshakeTag(etl::span<const uint8_t>(msg.nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH), etl::span<uint8_t>(tag.data(), tag.size()));
 
     // [SIL-2] Verify incoming HMAC tag when mutual auth is configured
     if (!_shared_secret.empty()) {
@@ -499,7 +499,7 @@ void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandConte
 #if BRIDGE_ENABLE_FILESYSTEM
 void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
   rpc::payload::FileWrite msg = {};
-  etl::span<uint8_t> data_span(_transient_buffer, sizeof(_transient_buffer));
+  etl::span<uint8_t> data_span(_transient_buffer.data(), _transient_buffer.size());
   rpc::util::pb_setup_decode_span(msg.data, data_span);
 
   _withPayload<rpc::payload::FileWrite>(ctx, [&data_span](const rpc::payload::FileWrite& parsed_msg) {
@@ -538,8 +538,8 @@ void BridgeClass::_handleProcessPollResp(const bridge::router::CommandContext& c
   // [OPTIMIZATION] Reuse transient buffer for STDOUT/STDERR decoding.
   // We divide the shared buffer in two halves.
   static constexpr size_t HALF_BUF = rpc::MAX_PAYLOAD_SIZE / 2;
-  uint8_t* stdout_ptr = _transient_buffer;
-  uint8_t* stderr_ptr = _transient_buffer + HALF_BUF;
+  uint8_t* stdout_ptr = _transient_buffer.data();
+  uint8_t* stderr_ptr = _transient_buffer.data() + HALF_BUF;
   
   etl::span<uint8_t> stdout_span(stdout_ptr, HALF_BUF);
   etl::span<uint8_t> stderr_span(stderr_ptr, HALF_BUF);
@@ -579,8 +579,9 @@ void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext& c
 }
 
 void BridgeClass::_unusedCommandSlot(const bridge::router::CommandContext& ctx) {
-  (void)ctx;
-  // This slot is intentionally left empty in the jump table.
+  // [SIL-2] Diagnostics: Report unknown command back to the sender
+  // rather than ignoring it silently.
+  onUnknownCommand(ctx);
 }
 
 void BridgeClass::_dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const CmdHandler* handlers, uint8_t count, uint8_t stride) {
@@ -614,7 +615,7 @@ void BridgeClass::_retransmitLastFrame() {
     }
   }
   if (has_frame) {
-    _sendRawFrame(f.command_id, etl::span<const uint8_t>(_tx_payload_pool + f.buffer_offset, f.payload_length));
+    _sendRawFrame(f.command_id, etl::span<const uint8_t>(_tx_payload_pool.data() + f.buffer_offset, f.payload_length));
     _retry_count++;
   }
 }
@@ -675,13 +676,13 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, const __FlashStringHel
     return;
   }
 #if defined(ARDUINO_ARCH_AVR)
-  strncpy_P(reinterpret_cast<char*>(_transient_buffer), (PGM_P)message, sizeof(_transient_buffer));
+  strncpy_P(reinterpret_cast<char*>(_transient_buffer.data()), (PGM_P)message, _transient_buffer.size() - 1);
 #else
-  strncpy(reinterpret_cast<char*>(_transient_buffer), reinterpret_cast<const char*>(message), sizeof(_transient_buffer));
+  strncpy(reinterpret_cast<char*>(_transient_buffer.data()), reinterpret_cast<const char*>(message), _transient_buffer.size() - 1);
 #endif
-  _transient_buffer[sizeof(_transient_buffer) - 1] = '\0';
-  size_t len = strlen(reinterpret_cast<char*>(_transient_buffer));
-  emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer, len));
+  _transient_buffer[_transient_buffer.size() - 1] = '\0';
+  size_t len = strlen(reinterpret_cast<char*>(_transient_buffer.data()));
+  emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer.data(), len));
 }
 
 bool BridgeClass::sendFrame(rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
@@ -720,7 +721,7 @@ void BridgeClass::_flushPendingTxQueue() {
     }
   }
   if (has_frame) {
-    _sendRawFrame(f.command_id, etl::span<const uint8_t>(_tx_payload_pool + f.buffer_offset, f.payload_length));
+    _sendRawFrame(f.command_id, etl::span<const uint8_t>(_tx_payload_pool.data() + f.buffer_offset, f.payload_length));
     BRIDGE_ATOMIC_BLOCK { _fsm.sendCritical(); }
     _retry_count = 0;
     _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT, bridge::now_ms());
@@ -770,14 +771,14 @@ bool BridgeClass::_sendFrame(uint16_t command_id, etl::span<const uint8_t> paylo
     if (_isQueueFull()) return false;
     
     // [OPTIMIZATION] Check if we have space in the shared TX pool
-    if (_tx_pool_head + payload.size() > sizeof(_tx_payload_pool)) return false;
+    if (_tx_pool_head + payload.size() > _tx_payload_pool.size()) return false;
 
     PendingTxFrame f; 
     f.command_id = command_id; 
     f.payload_length = static_cast<uint16_t>(payload.size());
     f.buffer_offset = _tx_pool_head;
     
-    etl::copy_n(payload.data(), f.payload_length, _tx_payload_pool + _tx_pool_head);
+    etl::copy_n(payload.data(), f.payload_length, _tx_payload_pool.data() + _tx_pool_head);
     _tx_pool_head += f.payload_length;
 
     BRIDGE_ATOMIC_BLOCK { _pending_tx_queue.push(f); }
@@ -833,7 +834,7 @@ etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Fr
   return {};
 }
 
-void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce, uint8_t* out_tag) {
+void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce, etl::span<uint8_t> out_tag) {
   etl::array<uint8_t, bridge::config::HKDF_KEY_LENGTH> handshake_key;
   hkdf_sha256(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()),
               etl::span<const uint8_t>(_shared_secret.data(), _shared_secret.size()),
@@ -842,7 +843,7 @@ void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce, uint8_t* 
   SHA256 sha256;
   sha256.resetHMAC(handshake_key.data(), handshake_key.size());
   sha256.update(nonce.data(), nonce.size());
-  sha256.finalizeHMAC(handshake_key.data(), handshake_key.size(), out_tag, rpc::RPC_HANDSHAKE_TAG_LENGTH);
+  sha256.finalizeHMAC(handshake_key.data(), handshake_key.size(), out_tag.data(), out_tag.size());
   rpc::security::secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
 }
 

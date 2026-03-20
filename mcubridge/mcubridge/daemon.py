@@ -234,17 +234,16 @@ class BridgeDaemon:
         """Lightweight supervisor with Circuit Breaker logic."""
         # [SIL-2] Circuit Breaker: Stop after 10 consecutive failures at max backoff
         # to prevent infinite CPU thrashing on persistent hardware failure.
+        cb_state = {"consecutive_max_backoff": 0}
         max_consecutive_max_backoff = 10
-        consecutive_max_backoff_count = 0
 
         def _check_circuit_breaker(retry_state: tenacity.RetryCallState) -> bool:
-            nonlocal consecutive_max_backoff_count
             if retry_state.idle_for >= max_backoff:
-                consecutive_max_backoff_count += 1
+                cb_state["consecutive_max_backoff"] += 1
             else:
-                consecutive_max_backoff_count = 0
+                cb_state["consecutive_max_backoff"] = 0
 
-            if consecutive_max_backoff_count >= max_consecutive_max_backoff:
+            if cb_state["consecutive_max_backoff"] >= max_consecutive_max_backoff:
                 logger.critical(
                     "CIRCUIT BREAKER: Task '%s' tripped after %d failures at max backoff. "
                     "Marking as UNRECOVERABLE.",
@@ -252,7 +251,6 @@ class BridgeDaemon:
                 )
                 return False
             return True
-
         stop = tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never
 
         retryer = tenacity.AsyncRetrying(

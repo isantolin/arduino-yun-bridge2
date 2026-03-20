@@ -70,6 +70,10 @@ class MqttTransport:
 
     async def run(self) -> None:
         """Main run loop with reconnection logic."""
+        if not self.config.mqtt_enabled:
+            logger.info("MQTT transport is DISABLED in configuration.")
+            return
+
         tls_context = configure_tls_context(self.config)
         reconnect_delay = max(1, self.config.reconnect_delay)
 

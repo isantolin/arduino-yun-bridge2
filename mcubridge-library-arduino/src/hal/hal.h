@@ -64,9 +64,9 @@ bool removeFile(const char* path);
 uint32_t getCapabilities();
 
 /**
- * @brief Get architecture specific pin counts.
+ * @brief Get the architecture specific ID.
  */
-void getPinCounts(uint8_t& digital, uint8_t& analog);
+uint8_t getArchId();
 
 }  // namespace hal
 }  // namespace bridge

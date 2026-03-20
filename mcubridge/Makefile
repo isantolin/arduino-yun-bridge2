@@ -63,6 +63,8 @@ define Package/$(PKG_NAME)
 		+python3-sh \
 		+python3-zict \
 		+python3-heapdict \
+		+python3-markdown-it-py \
+		+python3-mdurl \
 		+mosquitto-client \
 		+python3-svcs
 	# AUTO-GENERATED RUNTIME DEPENDS END

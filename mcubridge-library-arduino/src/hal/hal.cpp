@@ -26,6 +26,25 @@ namespace bridge {
 namespace hal {
 
 namespace {
+// [SIL-2] Use constexpr for compile-time architecture identification
+#if defined(BRIDGE_HOST_TEST)
+constexpr uint8_t CURRENT_ARCH = rpc::RPC_ARCH_SAMD;
+constexpr uint8_t DIGITAL_PINS = bridge::config::SAMD_DIGITAL_PINS;
+constexpr uint8_t ANALOG_PINS = bridge::config::SAMD_ANALOG_PINS;
+#elif defined(ARDUINO_ARCH_AVR)
+constexpr uint8_t CURRENT_ARCH = rpc::RPC_ARCH_AVR;
+constexpr uint8_t DIGITAL_PINS = bridge::config::AVR_DIGITAL_PINS;
+constexpr uint8_t ANALOG_PINS = bridge::config::AVR_ANALOG_PINS;
+#elif defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM)
+constexpr uint8_t CURRENT_ARCH = rpc::RPC_ARCH_SAMD;
+constexpr uint8_t DIGITAL_PINS = bridge::config::SAMD_DIGITAL_PINS;
+constexpr uint8_t ANALOG_PINS = bridge::config::SAMD_ANALOG_PINS;
+#else
+constexpr uint8_t CURRENT_ARCH = 0; // Unknown
+constexpr uint8_t DIGITAL_PINS = bridge::config::FALLBACK_MAX_PIN;
+constexpr uint8_t ANALOG_PINS = 0;
+#endif
+
 constexpr uint8_t bit_index_from_mask(uint32_t mask) {
   uint8_t bit_index = 0;
   while (mask > 1U) {
@@ -104,14 +123,7 @@ bool ensure_host_parent_directories(const PathString& full_path) {
 }
 
 bool isValidPin(uint8_t pin) {
-#if defined(BRIDGE_HOST_TEST)
-  (void)pin;
-  return true; // Always allow in host tests/emulator
-#elif defined(NUM_DIGITAL_PINS)
-  return pin < NUM_DIGITAL_PINS;
-#else
-  return pin <= bridge::config::FALLBACK_MAX_PIN;
-#endif
+  return pin < DIGITAL_PINS;
 }
 
 uint16_t getFreeMemory() {
@@ -254,19 +266,12 @@ uint32_t getCapabilities() {
 }
 
 void getPinCounts(uint8_t& digital, uint8_t& analog) {
-#if defined(BRIDGE_HOST_TEST)
-  digital = bridge::config::SAMD_DIGITAL_PINS;
-  analog = bridge::config::SAMD_ANALOG_PINS;
-#elif defined(ARDUINO_ARCH_AVR)
-  digital = bridge::config::AVR_DIGITAL_PINS;
-  analog = bridge::config::AVR_ANALOG_PINS;
-#elif defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM)
-  digital = bridge::config::SAMD_DIGITAL_PINS;
-  analog = bridge::config::SAMD_ANALOG_PINS;
-#else
-  digital = bridge::config::FALLBACK_MAX_PIN;
-  analog = 0;
-#endif
+  digital = DIGITAL_PINS;
+  analog = ANALOG_PINS;
+}
+
+uint8_t getArchId() {
+  return CURRENT_ARCH;
 }
 
 }  // namespace hal

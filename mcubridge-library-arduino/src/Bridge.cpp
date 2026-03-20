@@ -426,11 +426,7 @@ void BridgeClass::_handleGetCapabilities(const bridge::router::CommandContext& c
   _withResponse(ctx, [this]() {
     rpc::payload::Capabilities resp = {};
     resp.ver = rpc::PROTOCOL_VERSION;
-#if defined(ARDUINO_ARCH_AVR)
-    resp.arch = rpc::RPC_ARCH_AVR;
-#else
-    resp.arch = rpc::RPC_ARCH_SAMD;
-#endif
+    resp.arch = bridge::hal::getArchId();
     bridge::hal::getPinCounts(resp.dig, resp.ana);
     resp.feat = bridge::hal::getCapabilities();
     _sendPbResponse(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, resp);

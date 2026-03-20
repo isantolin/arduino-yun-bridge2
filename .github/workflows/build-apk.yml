@@ -17,6 +17,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
+      - name: Cache OpenWrt SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt-sdk
+            dl
+          key: ${{ runner.os }}-openwrt-sdk-25.12.0-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-sdk-25.12.0-
+
       - name: Install Host Dependencies
         run: |
           sudo apt-get update

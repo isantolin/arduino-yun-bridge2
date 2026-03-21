@@ -518,6 +518,32 @@ class Bridge:
         payload_dict = cast(dict[str, Any], payload)
         return cast(ShellPollResponse, payload_dict)
 
+    async def spi_begin(self) -> None:
+        await self._publish_simple(Topic.command("spi", "begin"), b"")
+        logger.info("spi_begin()")
+
+    async def spi_end(self) -> None:
+        await self._publish_simple(Topic.command("spi", "end"), b"")
+        logger.info("spi_end()")
+
+    async def spi_config(self, frequency: int = 4000000, bit_order: int = 1, data_mode: int = 0) -> None:
+        config = {"frequency": frequency, "bit_order": bit_order, "data_mode": data_mode}
+        await self._publish_simple(Topic.command("spi", "config"), msgspec.json.encode(config))
+        logger.info("spi_config(%s)", config)
+
+    async def spi_transfer(self, data: bytes, timeout: float = 10) -> bytes:
+        response = await self._publish_and_wait(
+            Topic.command("spi", "transfer"),
+            data,
+            resp_topic=Topic.status("spi", "transfer", "resp"),
+            timeout=timeout,
+        )
+        return response
+
+    async def enter_bootloader(self) -> None:
+        await self._publish_simple(Topic.command("system", "bootloader"), b"")
+        logger.info("enter_bootloader()")
+
     async def console_write(self, message: str) -> None:
         topic = Topic.command("console", "in")
         await self._publish_simple(topic, message)

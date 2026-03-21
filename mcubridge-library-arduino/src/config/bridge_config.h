@@ -28,6 +28,10 @@
 #endif
 #endif
 
+#ifndef BRIDGE_ENABLE_SPI
+#define BRIDGE_ENABLE_SPI 1
+#endif
+
 #ifndef BRIDGE_ENABLE_WATCHDOG
 #define BRIDGE_ENABLE_WATCHDOG 1
 #endif
@@ -97,6 +101,7 @@ static constexpr bool ENABLE_DATASTORE = (BRIDGE_ENABLE_DATASTORE != 0);
 static constexpr bool ENABLE_FILESYSTEM = (BRIDGE_ENABLE_FILESYSTEM != 0);
 static constexpr bool ENABLE_MAILBOX = (BRIDGE_ENABLE_MAILBOX != 0);
 static constexpr bool ENABLE_PROCESS = (BRIDGE_ENABLE_PROCESS != 0);
+static constexpr bool ENABLE_SPI = (BRIDGE_ENABLE_SPI != 0);
 static constexpr bool ENABLE_WATCHDOG = (BRIDGE_ENABLE_WATCHDOG != 0);
 static constexpr bool USE_USB_SERIAL = (BRIDGE_USE_USB_SERIAL != 0);
 

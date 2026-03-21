@@ -7,6 +7,7 @@
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "test_support.h"
+#include "services/SPIService.h"
 
 // --- GLOBALS ---
 unsigned long g_test_millis = 0;
@@ -29,6 +30,9 @@ FileSystemClass FileSystem;
 #endif
 #if BRIDGE_ENABLE_PROCESS
 ProcessClass Process;
+#endif
+#if BRIDGE_ENABLE_SPI
+SPIServiceClass SPIService;
 #endif
 HardwareSerial Serial;
 Stream* g_arduino_stream_delegate = nullptr;

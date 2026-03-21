@@ -44,6 +44,8 @@ SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT: float = 2.0
 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL: float = 0.0
 # How many fatal handshake failures before restarting the serial task
 DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES: int = 15
+# CRC error threshold before triggering baudrate fallback
+DEFAULT_SERIAL_FALLBACK_THRESHOLD: int = 5
 # Backoff strategy for handshake retries
 SERIAL_HANDSHAKE_BACKOFF_BASE: float = 1.0
 SERIAL_HANDSHAKE_BACKOFF_MAX: float = 60.0

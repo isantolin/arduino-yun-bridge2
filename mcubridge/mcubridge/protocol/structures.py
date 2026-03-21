@@ -135,6 +135,13 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
     digital_mode: bool = True
     analog_write: bool = True
     analog_read: bool = True
+    system_version: bool = True
+    system_free_memory: bool = True
+    system_bootloader: bool = True
+    spi_begin: bool = True
+    spi_end: bool = True
+    spi_transfer: bool = True
+    spi_config: bool = True
 
     # Cache for allowed permissions (not serialized)
     _allowed_cache: Final[frozenset[tuple[str, str]]] = frozenset()
@@ -149,6 +156,8 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
             FileAction,
             MailboxAction,
             ShellAction,
+            SpiAction,
+            SystemAction,
         )
         from mcubridge.protocol.topics import Topic
 
@@ -171,6 +180,13 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
             (Topic.DIGITAL.value, DigitalAction.MODE.value): "digital_mode",
             (Topic.ANALOG.value, AnalogAction.WRITE.value): "analog_write",
             (Topic.ANALOG.value, AnalogAction.READ.value): "analog_read",
+            (Topic.SYSTEM.value, SystemAction.VERSION.value): "system_version",
+            (Topic.SYSTEM.value, SystemAction.FREE_MEMORY.value): "system_free_memory",
+            (Topic.SYSTEM.value, SystemAction.BOOTLOADER.value): "system_bootloader",
+            (Topic.SPI.value, SpiAction.BEGIN.value): "spi_begin",
+            (Topic.SPI.value, SpiAction.END.value): "spi_end",
+            (Topic.SPI.value, SpiAction.TRANSFER.value): "spi_transfer",
+            (Topic.SPI.value, SpiAction.CONFIG.value): "spi_config",
         }
 
         allowed = [k for k, a in _TOPIC_AUTH_MAPPING.items() if getattr(self, a)]
@@ -216,6 +232,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
         DEFAULT_PROCESS_TIMEOUT,
         DEFAULT_RECONNECT_DELAY,
+        DEFAULT_SERIAL_FALLBACK_THRESHOLD,
         DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
         DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
         DEFAULT_SERIAL_PORT,
@@ -269,6 +286,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01)] = DEFAULT_SERIAL_RETRY_TIMEOUT
     serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02)] = DEFAULT_SERIAL_RESPONSE_TIMEOUT
     serial_retry_attempts: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_RETRY_LIMIT
+    serial_fallback_threshold: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_FALLBACK_THRESHOLD
     serial_handshake_min_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
     serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
     mqtt_enabled: bool = True
@@ -682,6 +700,32 @@ class SetBaudratePacket(BaseStruct, frozen=True):
     baudrate: Annotated[int, msgspec.Meta(ge=0)]
 
     PB_CLASS = mcubridge_pb2.SetBaudratePacket
+
+
+class EnterBootloaderPacket(BaseStruct, frozen=True):
+    magic: Annotated[int, msgspec.Meta(ge=0)]
+
+    PB_CLASS = mcubridge_pb2.EnterBootloader
+
+
+class SpiTransferPacket(BaseStruct, frozen=True):
+    data: bytes
+
+    PB_CLASS = mcubridge_pb2.SpiTransfer
+
+
+class SpiTransferResponsePacket(BaseStruct, frozen=True):
+    data: bytes
+
+    PB_CLASS = mcubridge_pb2.SpiTransferResponse
+
+
+class SpiConfigPacket(BaseStruct, frozen=True):
+    bit_order: Annotated[int, msgspec.Meta(ge=0)]
+    data_mode: Annotated[int, msgspec.Meta(ge=0)]
+    frequency: Annotated[int, msgspec.Meta(ge=0)]
+
+    PB_CLASS = mcubridge_pb2.SpiConfig
 
 
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.

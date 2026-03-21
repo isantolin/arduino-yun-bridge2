@@ -11,6 +11,7 @@
 #include "protocol/rpc_protocol.h"
 #include "router/command_router.h"
 #include "security/security.h"
+#include "services/SPIService.h"
 #include "test_support.h"
 
 // Stubs Globales
@@ -22,6 +23,9 @@ DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
+#if BRIDGE_ENABLE_SPI
+SPIServiceClass SPIService;
+#endif
 
 namespace {
 

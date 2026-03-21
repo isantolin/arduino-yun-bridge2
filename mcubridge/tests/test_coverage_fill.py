@@ -63,6 +63,7 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state):
             mailbox=MagicMock(),
             pin=MagicMock(),
             process=MagicMock(),
+            spi=MagicMock(),
             system=MagicMock(),
         )
     )

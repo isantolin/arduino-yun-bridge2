@@ -10,6 +10,7 @@
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "security/security.h"
+#include "services/SPIService.h"
 #include "test_support.h"
 
 static unsigned long g_test_millis = 0;
@@ -31,6 +32,9 @@ DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
+#if BRIDGE_ENABLE_SPI
+SPIServiceClass SPIService;
+#endif
 
 void test_fsm_initial_state() {
   BridgeClass localBridge(g_test_stream);

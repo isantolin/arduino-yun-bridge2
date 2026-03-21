@@ -49,6 +49,7 @@ class ICommandHandler {
   virtual void onMailboxCommand(const CommandContext& ctx) = 0;
   virtual void onFileSystemCommand(const CommandContext& ctx) = 0;
   virtual void onProcessCommand(const CommandContext& ctx) = 0;
+  virtual void onSpiCommand(const CommandContext& ctx) = 0;
   virtual void onUnknownCommand(const CommandContext& ctx) = 0;
 };
 

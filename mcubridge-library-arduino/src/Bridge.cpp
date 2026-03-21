@@ -1,4 +1,5 @@
 #include "Bridge.h"
+#include "services/SPIService.h"
 #include <Arduino.h>
 #include <etl/numeric.h>
 #include <etl/span.h>
@@ -247,8 +248,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 
   // [SIL-2] O(1) Group Dispatch Table
   // Groups are: Status(0x30), System(0x40), GPIO(0x50), Console(0x60), 
-  //             Datastore(0x70), Mailbox(0x80), FileSystem(0x90), Process(0xA0)
-  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 8> kGroupHandlers{{
+  //             Datastore(0x70), Mailbox(0x80), FileSystem(0x90), Process(0xA0),
+  //             SPI(0xB0)
+  static constexpr etl::array<void (BridgeClass::*)(const bridge::router::CommandContext&), 9> kGroupHandlers{{
       &BridgeClass::onStatusCommand,    // 0x30
       &BridgeClass::onSystemCommand,    // 0x40
       &BridgeClass::onGpioCommand,      // 0x50
@@ -256,7 +258,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       &BridgeClass::onDataStoreCommand, // 0x70
       &BridgeClass::onMailboxCommand,   // 0x80
       &BridgeClass::onFileSystemCommand,// 0x90
-      &BridgeClass::onProcessCommand    // 0xA0
+      &BridgeClass::onProcessCommand,   // 0xA0
+      &BridgeClass::onSpiCommand        // 0xB0
   }};
 
   const uint8_t group_idx = (raw_cmd >> 4) - 3;
@@ -295,12 +298,22 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
-  static constexpr etl::array<CmdHandler, 6> kSystemHandlers{{
-      &BridgeClass::_handleGetVersion, &BridgeClass::_handleGetFreeMemory,
-      &BridgeClass::_handleLinkSync, &BridgeClass::_handleLinkReset,
-      &BridgeClass::_handleGetCapabilities, &BridgeClass::_handleSetBaudrate
+  static constexpr etl::array<CmdHandler, 13> kSystemHandlers{{
+      &BridgeClass::_handleGetVersion,      // 0: 64
+      &BridgeClass::_unusedCommandSlot,     // 1: 65
+      &BridgeClass::_handleGetFreeMemory,   // 2: 66
+      &BridgeClass::_unusedCommandSlot,     // 3: 67
+      &BridgeClass::_handleLinkSync,        // 4: 68
+      &BridgeClass::_unusedCommandSlot,     // 5: 69
+      &BridgeClass::_handleLinkReset,       // 6: 70
+      &BridgeClass::_unusedCommandSlot,     // 7: 71
+      &BridgeClass::_handleGetCapabilities, // 8: 72
+      &BridgeClass::_unusedCommandSlot,     // 9: 73
+      &BridgeClass::_handleSetBaudrate,     // 10: 74
+      &BridgeClass::_unusedCommandSlot,     // 11: 75
+      &BridgeClass::_handleEnterBootloader  // 12: 76
   }};
-  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers.data(), kSystemHandlers.size(), kRpcCommandStride);
+  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers.data(), kSystemHandlers.size());
 }
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
@@ -369,6 +382,96 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
   }};
   _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers.data(), kProcessHandlers.size());
 #endif
+}
+
+void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_SPI
+  static constexpr etl::array<CmdHandler, 5> kSpiHandlers{{
+      &BridgeClass::_handleSpiBegin,
+      &BridgeClass::_handleSpiTransfer,
+      &BridgeClass::_unusedCommandSlot, // 0xB2: TRANSFER_RESP (not expected from Linux)
+      &BridgeClass::_handleSpiEnd,
+      &BridgeClass::_handleSpiSetConfig
+  }};
+  // SPI command range is 0xB0-0xBF (176-191)
+  _dispatchJumpTable(ctx, 176, kSpiHandlers.data(), kSpiHandlers.size());
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+#endif
+}
+
+void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_SPI
+  _withAck(ctx, []() { SPIService.begin(); });
+#else
+  (void)ctx;
+#endif
+}
+
+void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_SPI
+  _withAck(ctx, []() { SPIService.end(); });
+#else
+  (void)ctx;
+#endif
+}
+
+void BridgeClass::_handleSpiSetConfig(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_SPI
+  _withPayloadAck<rpc::payload::SpiConfig>(ctx, [](const rpc::payload::SpiConfig& msg) {
+    uint8_t bitOrder = (msg.bit_order == 0) ? 0 : 1; // LSBFIRST=0, MSBFIRST=1
+    uint8_t dataMode = static_cast<uint8_t>(msg.data_mode);
+    SPIService.setConfig(msg.frequency, bitOrder, dataMode);
+  });
+#else
+  (void)ctx;
+#endif
+}
+
+void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_SPI
+  if (ctx.is_duplicate) return;
+
+  rpc::payload::SpiTransfer req = {};
+  static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
+  etl::span<uint8_t> decode_span(buffer.data(), buffer.size());
+  rpc::util::pb_setup_decode_span(req.data, decode_span);
+
+  auto res = rpc::Payload::parse<rpc::payload::SpiTransfer>(*ctx.frame, req);
+  if (res.has_value()) {
+    if (SPIService.isInitialized()) {
+      size_t len = decode_span.size();
+      if (len > 0) {
+        SPIService.transfer(buffer.data(), len);
+      }
+
+      rpc::payload::SpiTransferResponse resp = {};
+      etl::span<const uint8_t> out_span(buffer.data(), len);
+      rpc::util::pb_setup_encode_span(resp.data, out_span);
+      _sendPbResponse(rpc::CommandId::CMD_SPI_TRANSFER_RESP, resp);
+    }
+  }
+#else
+  (void)ctx;
+#endif
+}
+
+void BridgeClass::_handleEnterBootloader(const bridge::router::CommandContext& ctx) {
+  _withPayloadAck<rpc::payload::EnterBootloader>(ctx, [this](const rpc::payload::EnterBootloader& msg) {
+    if (msg.magic == 0xDEADC0DE) {
+      this->flushStream();
+      delay(100);
+#if defined(ARDUINO_ARCH_AVR)
+      wdt_enable(WDTO_15MS);
+      for (;;) {}
+#elif defined(ARDUINO_ARCH_ESP32)
+      ESP.restart();
+#elif defined(ARDUINO_ARCH_SAMD)
+      NVIC_SystemReset();
+#endif
+    }
+  });
 }
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
@@ -877,6 +980,9 @@ FileSystemClass FileSystem;
 #endif
 #if BRIDGE_ENABLE_PROCESS
 ProcessClass Process;
+#endif
+#if BRIDGE_ENABLE_SPI
+SPIServiceClass SPIService;
 #endif
 #endif
 

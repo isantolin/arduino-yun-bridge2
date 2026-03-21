@@ -1010,6 +1010,7 @@ class TestDispatcherEdgeCases:
                 mailbox=MagicMock(),
                 pin=MagicMock(),
                 process=MagicMock(),
+                spi=MagicMock(),
                 system=MagicMock(),
             )
         )

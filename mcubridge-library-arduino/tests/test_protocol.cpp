@@ -4,6 +4,7 @@
 
 #include "Bridge.h"
 #include "protocol/rpc_frame.h"
+#include "services/SPIService.h"
 #include "test_constants.h"
 #include "test_support.h"
 
@@ -17,6 +18,9 @@ DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
+#if BRIDGE_ENABLE_SPI
+SPIServiceClass SPIService;
+#endif
 
 // 1. Helpers Básicos (Original)
 static void test_endianness_helpers() {

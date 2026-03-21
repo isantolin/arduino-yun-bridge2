@@ -147,6 +147,9 @@ class BridgeClass
 #if BRIDGE_ENABLE_PROCESS
   friend class ProcessClass;
 #endif
+#if BRIDGE_ENABLE_SPI
+  friend class SPIServiceClass;
+#endif
 #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::TestAccessor;
   friend class bridge::test::ConsoleTestAccessor;
@@ -253,6 +256,7 @@ class BridgeClass
   void onMailboxCommand(const bridge::router::CommandContext& ctx) override;
   void onFileSystemCommand(const bridge::router::CommandContext& ctx) override;
   void onProcessCommand(const bridge::router::CommandContext& ctx) override;
+  void onSpiCommand(const bridge::router::CommandContext& ctx) override;
   void onUnknownCommand(const bridge::router::CommandContext& ctx) override;
 
  private:
@@ -268,6 +272,7 @@ class BridgeClass
   void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
   void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
   void _handleSetBaudrate(const bridge::router::CommandContext& ctx);
+  void _handleEnterBootloader(const bridge::router::CommandContext& ctx);
   void _handleLinkSync(const bridge::router::CommandContext& ctx);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);
   void _handleSetPinMode(const bridge::router::CommandContext& ctx);
@@ -276,6 +281,10 @@ class BridgeClass
   void _handleDigitalRead(const bridge::router::CommandContext& ctx);
   void _handleAnalogRead(const bridge::router::CommandContext& ctx);
   void _handleProcessKill(const bridge::router::CommandContext& ctx);
+  void _handleSpiBegin(const bridge::router::CommandContext& ctx);
+  void _handleSpiEnd(const bridge::router::CommandContext& ctx);
+  void _handleSpiTransfer(const bridge::router::CommandContext& ctx);
+  void _handleSpiSetConfig(const bridge::router::CommandContext& ctx);
 
   template <typename TResponse, typename TValid, typename TFunc>
   void _handlePinRead(const bridge::router::CommandContext& ctx, rpc::CommandId resp_cmd, TValid valid_func, TFunc read_func) {

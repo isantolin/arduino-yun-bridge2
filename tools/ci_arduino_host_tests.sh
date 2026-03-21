@@ -58,6 +58,8 @@ SOURCES=(
     "${SRC_DIR}/services/Mailbox.cpp"
     "${SRC_DIR}/services/FileSystem.cpp"
     "${SRC_DIR}/services/Process.cpp"
+    "${SRC_DIR}/services/SPIService.cpp"
+    "${ROOT_DIR}/tools/arduino_stub/SPI.cpp"
 )
 
 # Unity test framework (compiled as C, linked with C++ tests)

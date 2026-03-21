@@ -56,6 +56,10 @@ using AckPacket = mcubridge_AckPacket;
 using HandshakeConfig = mcubridge_HandshakeConfig;
 using SetBaudratePacket = mcubridge_SetBaudratePacket;
 using LinkSync = mcubridge_LinkSync;
+using EnterBootloader = mcubridge_EnterBootloader;
+using SpiTransfer = mcubridge_SpiTransfer;
+using SpiTransferResponse = mcubridge_SpiTransferResponse;
+using SpiConfig = mcubridge_SpiConfig;
 
 } // namespace payload
 
@@ -99,6 +103,10 @@ REGISTER_DESCRIPTOR(AckPacket, mcubridge_AckPacket);
 REGISTER_DESCRIPTOR(HandshakeConfig, mcubridge_HandshakeConfig);
 REGISTER_DESCRIPTOR(SetBaudratePacket, mcubridge_SetBaudratePacket);
 REGISTER_DESCRIPTOR(LinkSync, mcubridge_LinkSync);
+REGISTER_DESCRIPTOR(EnterBootloader, mcubridge_EnterBootloader);
+REGISTER_DESCRIPTOR(SpiTransfer, mcubridge_SpiTransfer);
+REGISTER_DESCRIPTOR(SpiTransferResponse, mcubridge_SpiTransferResponse);
+REGISTER_DESCRIPTOR(SpiConfig, mcubridge_SpiConfig);
 
 template <typename T>
 inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame, T msg = {}) {

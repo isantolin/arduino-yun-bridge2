@@ -81,6 +81,7 @@ class SerialTransport:
         self._stop_event = asyncio.Event()
         self._negotiating = False
         self._negotiation_future: asyncio.Future[bool] | None = None
+        self._consecutive_crc_errors = 0
 
         # State Machine
         self.fsm_state: str = self.STATE_DISCONNECTED
@@ -306,9 +307,27 @@ class SerialTransport:
         except (CobsDecodeError, ValueError) as exc:
             log_binary_traffic(logger, logging.WARNING, "[SERIAL <- MCU]", f"Malformed (Err: {exc})", encoded_packet)
             self.state.record_serial_decode_error()
+            await self._check_baudrate_fallback()
         except (OSError, RuntimeError, KeyError, IndexError, TypeError) as exc:
             log_binary_traffic(logger, logging.ERROR, "[SERIAL <- MCU]", f"Dispatch (Err: {exc})", encoded_packet)
             self.state.record_serial_decode_error()
+            await self._check_baudrate_fallback()
+
+    async def _check_baudrate_fallback(self) -> None:
+        """Monitor CRC error rate and trigger fallback if threshold exceeded."""
+        self._consecutive_crc_errors += 1
+        if self._consecutive_crc_errors >= self.config.serial_fallback_threshold:
+            logger.warning(
+                "CRC error threshold reached (%d). Attempting baudrate fallback to safe speed (%d).",
+                self._consecutive_crc_errors,
+                self.config.serial_safe_baud,
+            )
+            self._consecutive_crc_errors = 0
+            if self.config.serial_baud != self.config.serial_safe_baud:
+                await self._negotiate_baudrate(self.config.serial_safe_baud)
+            else:
+                logger.error("Already at safe baudrate; cannot fallback further.")
+
     async def _serial_sender(self, cmd: int, pl: bytes) -> bool:
         """Low-level serial frame sender."""
         if not self.writer or self.writer.is_closing():

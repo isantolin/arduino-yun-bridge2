@@ -67,6 +67,7 @@ class BridgeDispatcher:
             MailboxComponent,
             PinComponent,
             ProcessComponent,
+            SpiComponent,
             SystemComponent,
         )
 
@@ -77,6 +78,7 @@ class BridgeDispatcher:
         mailbox = container.get(MailboxComponent)
         pin = container.get(PinComponent)
         process = container.get(ProcessComponent)
+        spi = container.get(SpiComponent)
         system = container.get(SystemComponent)
 
         # Console
@@ -167,6 +169,15 @@ class BridgeDispatcher:
 
         self.mqtt_router.register(Topic.DIGITAL, pin_mqtt_handler)
         self.mqtt_router.register(Topic.ANALOG, pin_mqtt_handler)
+
+        # SPI
+        self.mcu_registry.register(Command.CMD_SPI_TRANSFER_RESP.value, spi.handle_transfer_resp)
+        self.mqtt_router.register(
+            Topic.SPI,
+            lambda r, m: self._guard_and_dispatch(
+                r, m, lambda p, i: spi.handle_mqtt(r.identifier, list(r.remainder), p, i)
+            ),
+        )
 
         # System
         self.mcu_registry.register(

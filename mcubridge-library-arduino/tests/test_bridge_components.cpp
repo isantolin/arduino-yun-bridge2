@@ -11,6 +11,7 @@
 #include "services/Process.h"
 #include "services/DataStore.h"
 #include "services/Mailbox.h"
+#include "services/SPIService.h"
 
 // --- GLOBALS ---
 unsigned long g_test_millis = 0;
@@ -33,6 +34,9 @@ FileSystemClass FileSystem;
 #endif
 #if BRIDGE_ENABLE_PROCESS
 ProcessClass Process;
+#endif
+#if BRIDGE_ENABLE_SPI
+SPIServiceClass SPIService;
 #endif
 HardwareSerial Serial;
 HardwareSerial Serial1;

@@ -38,6 +38,8 @@ filesystem_command_min = 0x90
 filesystem_command_max = 0x9F
 process_command_min = 0xA0
 process_command_max = 0xAF
+spi_command_min = 0xB0
+spi_command_max = 0xBF
 
 # RLE compression constants
 rle_escape_byte = 0xFF
@@ -242,6 +244,26 @@ topic = "FILE"
 segments = ["remove", "#"]
 qos = 0
 
+[[mqtt_subscriptions]]
+topic = "SPI"
+segments = ["begin"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SPI"
+segments = ["end"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SPI"
+segments = ["transfer"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SPI"
+segments = ["config"]
+qos = 0
+
 [[topics]]
 name = "ANALOG"
 value = "a"
@@ -271,6 +293,10 @@ name = "SHELL"
 value = "sh"
 description = "Shell command execution"
 [[topics]]
+name = "SPI"
+value = "spi"
+description = "SPI bus operations"
+[[topics]]
 name = "STATUS"
 value = "status"
 description = "System status reporting"
@@ -291,6 +317,22 @@ description = "Write file content"
 name = "FILE_REMOVE"
 value = "remove"
 description = "Remove file"
+[[actions]]
+name = "SPI_BEGIN"
+value = "begin"
+description = "Initialize SPI bus"
+[[actions]]
+name = "SPI_END"
+value = "end"
+description = "Deinitialize SPI bus"
+[[actions]]
+name = "SPI_TRANSFER"
+value = "transfer"
+description = "Full-duplex SPI transfer"
+[[actions]]
+name = "SPI_CONFIG"
+value = "config"
+description = "Configure SPI parameters"
 [[actions]]
 name = "SHELL_RUN_ASYNC"
 value = "run_async"
@@ -355,6 +397,10 @@ description = "System free memory"
 name = "SYSTEM_VERSION"
 value = "version"
 description = "System version"
+[[actions]]
+name = "SYSTEM_BOOTLOADER"
+value = "bootloader"
+description = "Enter bootloader mode"
 [[actions]]
 name = "SYSTEM_GET"
 value = "get"
@@ -515,6 +561,13 @@ name = "CMD_SET_BAUDRATE_RESP"
 value = 0x4B
 category = "system"
 directions = ["mcu_to_linux"]
+
+[[commands]]
+name = "CMD_ENTER_BOOTLOADER"
+value = 0x4C
+category = "system"
+directions = ["linux_to_mcu"]
+requires_ack = true
 
 [[commands]]
 name = "CMD_XOFF"
@@ -683,3 +736,38 @@ name = "CMD_PROCESS_POLL_RESP"
 value = 0xA6
 category = "process"
 directions = ["linux_to_mcu"]
+
+# --- SPI COMMANDS REASSIGNED TO 0xB0-0xBF ---
+[[commands]]
+name = "CMD_SPI_BEGIN"
+value = 0xB0
+category = "spi"
+directions = ["linux_to_mcu"]
+requires_ack = true
+
+[[commands]]
+name = "CMD_SPI_TRANSFER"
+value = 0xB1
+category = "spi"
+directions = ["linux_to_mcu"]
+expects_direct_response = true
+
+[[commands]]
+name = "CMD_SPI_TRANSFER_RESP"
+value = 0xB2
+category = "spi"
+directions = ["mcu_to_linux"]
+
+[[commands]]
+name = "CMD_SPI_END"
+value = 0xB3
+category = "spi"
+directions = ["linux_to_mcu"]
+requires_ack = true
+
+[[commands]]
+name = "CMD_SPI_SET_CONFIG"
+value = 0xB4
+category = "spi"
+directions = ["linux_to_mcu"]
+requires_ack = true

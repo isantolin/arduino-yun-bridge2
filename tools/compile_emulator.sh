@@ -56,6 +56,8 @@ g++ -std=c++14 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "${SRC_DIR}/services/Mailbox.cpp" \
     "${SRC_DIR}/services/FileSystem.cpp" \
     "${SRC_DIR}/services/Process.cpp" \
+    "${SRC_DIR}/services/SPIService.cpp" \
+    "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp" \
     "${TEST_DIR}/bridge_emulator.cpp" \
     -o "${TEST_DIR}/bridge_emulator"
 
@@ -82,6 +84,8 @@ g++ -std=c++14 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "${SRC_DIR}/services/Mailbox.cpp" \
     "${SRC_DIR}/services/FileSystem.cpp" \
     "${SRC_DIR}/services/Process.cpp" \
+    "${SRC_DIR}/services/SPIService.cpp" \
+    "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp" \
     "${TEST_DIR}/bridge_control_emulator.cpp" \
     -o "${TEST_DIR}/bridge_control_emulator"
 

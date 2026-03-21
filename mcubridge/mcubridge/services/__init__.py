@@ -10,6 +10,7 @@ from .handshake import SerialHandshakeFatal, SerialHandshakeManager, SerialTimin
 from .mailbox import MailboxComponent
 from .pin import PinComponent
 from .process import ProcessComponent
+from .spi import SpiComponent
 from .system import SystemComponent
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "MailboxComponent",
     "PinComponent",
     "ProcessComponent",
+    "SpiComponent",
     "SerialHandshakeFatal",
     "SerialHandshakeManager",
     "SerialTimingWindow",

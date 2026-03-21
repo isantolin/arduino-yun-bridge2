@@ -17,15 +17,15 @@
 - **Protobuf Payload Serialization**: All RPC payloads migrated from raw struct packing to Protocol Buffers (proto3) with nanopb (C++) and protobuf (Python).
 - **Race Condition Protection**: Hardened FSM to handle high-speed asynchronous responses.
 
-## Future Strategic Goals (2026-2027)
-
-### 1. Lifecycle Management & FOTA
+### 2. Lifecycle Management & FOTA
 - **Safe-Bootloader Handshake**: Protocol extension to trigger MCU bootloader mode via RPC.
 
-### 2. Resilience & Hardware Abstraction
+### 3. Resilience & Hardware Abstraction
 - **Auto-Baudrate Fallback**: Automated speed downgrade logic based on CRC error thresholds.
 - **SPI Service**: Full implementation of the SPI capability bit with a dedicated RPC service.
 
-### 3. Zero-Code Experience
+## Future Strategic Goals (2026-2027)
+
+### 1. Zero-Code Experience
 - **Dynamic LuCI UI**: Automated web interface generation based on `spec.toml` definitions.
 - **Pythonic MCU Mocking**: Local development library that transparently uses the emulator when hardware is missing.

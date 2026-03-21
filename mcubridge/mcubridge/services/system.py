@@ -10,6 +10,7 @@ from typing import cast
 from aiomqtt.message import Message
 from mcubridge.protocol.protocol import Command, SystemAction
 from mcubridge.protocol.structures import (
+    EnterBootloaderPacket,
     FreeMemoryResponsePacket,
     VersionResponsePacket,
 )
@@ -101,11 +102,14 @@ class SystemComponent(BaseComponent):
         remainder: list[str],
         inbound: Message | None = None,
     ) -> bool:
-        if not (remainder and remainder[0] == SystemAction.GET):
-            return False
-
         match identifier:
+            case SystemAction.BOOTLOADER:
+                packet = EnterBootloaderPacket(magic=0xDEADC0DE)
+                return await self.ctx.send_frame(Command.CMD_ENTER_BOOTLOADER.value, packet.encode())
+
             case SystemAction.FREE_MEMORY:
+                if not (remainder and remainder[0] == SystemAction.GET):
+                    return False
                 return await self._safe_send_request(
                     queue=self._pending_free_memory,
                     request=inbound,
@@ -115,6 +119,8 @@ class SystemComponent(BaseComponent):
                 )
 
             case SystemAction.VERSION:
+                if not (remainder and remainder[0] == SystemAction.GET):
+                    return False
                 cached_version = self.state.mcu_version
                 if cached_version is not None and inbound is not None:
                     await self._publish_version(cached_version, inbound)

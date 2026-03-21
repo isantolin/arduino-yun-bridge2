@@ -143,3 +143,21 @@ message LinkSync {
     bytes nonce = 1 [(nanopb).max_size = 16, (nanopb).fixed_length = true];
     bytes tag = 2 [(nanopb).max_size = 16, (nanopb).fixed_length = true];
 }
+
+message EnterBootloader {
+    uint32 magic = 1; // 0xDEADC0DE
+}
+
+message SpiTransfer {
+    bytes data = 1 [(nanopb).type = FT_CALLBACK];
+}
+
+message SpiTransferResponse {
+    bytes data = 1 [(nanopb).type = FT_CALLBACK];
+}
+
+message SpiConfig {
+    uint32 bit_order = 1; // 0: LSBFIRST, 1: MSBFIRST
+    uint32 data_mode = 2; // 0: SPI_MODE0, 1: SPI_MODE1, 2: SPI_MODE2, 3: SPI_MODE3
+    uint32 frequency = 3; // Hz
+}

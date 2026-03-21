@@ -199,6 +199,7 @@ def make_component_container(
     mailbox: object = None,
     pin: object = None,
     process: object = None,
+    spi: object = None,
     system: object = None,
 ) -> "svcs.Container":
     """Build a ``svcs.Container`` pre-loaded with component instances (or mocks).
@@ -214,6 +215,7 @@ def make_component_container(
         MailboxComponent,
         PinComponent,
         ProcessComponent,
+        SpiComponent,
         SystemComponent,
     )
 
@@ -225,6 +227,7 @@ def make_component_container(
         (MailboxComponent, mailbox),
         (PinComponent, pin),
         (ProcessComponent, process),
+        (SpiComponent, spi),
         (SystemComponent, system),
     ):
         if inst is not None:

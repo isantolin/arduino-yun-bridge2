@@ -14,6 +14,7 @@
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "security/security.h"
+#include "services/SPIService.h"
 #include "test_support.h"
 
 static unsigned long g_test_millis = 0;
@@ -40,6 +41,9 @@ FileSystemClass FileSystem;
 #endif
 #if BRIDGE_ENABLE_PROCESS
 ProcessClass Process;
+#endif
+#if BRIDGE_ENABLE_SPI
+SPIServiceClass SPIService;
 #endif
 
 Stream* g_arduino_stream_delegate = &g_bridge_stream;

@@ -190,6 +190,19 @@ class _SystemComponent:
         return identifier != "nope"
 
 
+class _SpiComponent:
+    def __init__(self, calls: _Calls):
+        self._calls = calls
+
+    async def handle_mqtt(self, identifier: str, remainder: list[str], inbound: Any) -> bool:
+        self._calls.add("spi.handle_mqtt", identifier, tuple(remainder), inbound)
+        return True
+
+    async def handle_transfer_resp(self, payload: bytes) -> bool:
+        self._calls.add("spi.handle_transfer_resp", payload)
+        return True
+
+
 def _make_dispatcher(
     calls: _Calls,
     *,
@@ -243,6 +256,7 @@ def _make_dispatcher(
             mailbox=_MailboxComponent(calls),
             pin=_PinComponent(calls),
             process=_ProcessComponent(calls),
+            spi=_SpiComponent(calls),
             system=_SystemComponent(calls),
         )
     )

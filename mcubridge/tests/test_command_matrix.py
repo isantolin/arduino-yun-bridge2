@@ -177,6 +177,14 @@ class _Process:
         return True
 
 
+class _Spi:
+    async def handle_transfer_resp(self, _payload: bytes) -> bool:
+        return True
+
+    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
+        return True
+
+
 class _System:
     async def handle_get_free_memory_resp(self, _payload: bytes) -> bool:
         return True
@@ -234,6 +242,7 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             mailbox=cast(Any, _Mailbox()),
             pin=cast(Any, _Pin()),
             process=cast(Any, _Process()),
+            spi=cast(Any, _Spi()),
             system=cast(Any, _System()),
         )
     )
@@ -285,6 +294,7 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             mailbox=cast(Any, _Mailbox()),
             pin=cast(Any, _Pin()),
             process=cast(Any, _Process()),
+            spi=cast(Any, _Spi()),
             system=cast(Any, _System()),
         )
     )
@@ -312,9 +322,13 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             Command.CMD_ANALOG_WRITE.value,
             Command.CMD_DIGITAL_READ.value,
             Command.CMD_ANALOG_READ.value,
-        }
-    )
-
+            Command.CMD_ENTER_BOOTLOADER.value,
+            Command.CMD_SPI_BEGIN.value,
+            Command.CMD_SPI_TRANSFER.value,
+            Command.CMD_SPI_END.value,
+            Command.CMD_SPI_SET_CONFIG.value,
+            }
+            )
     mcu_to_linux_requests: set[int] = set()
     for cmd in Command:
         if cmd.name.endswith("_RESP"):

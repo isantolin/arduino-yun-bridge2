@@ -25,6 +25,7 @@ from . import (
     MailboxComponent,
     PinComponent,
     ProcessComponent,
+    SpiComponent,
     SystemComponent,
 )
 from . import (
@@ -34,6 +35,7 @@ from . import (
     mailbox as _mailbox_mod,
     pin as _pin_mod,
     process as _process_mod,
+    spi as _spi_mod,
     system as _system_mod,
 )
 from .dispatcher import BridgeDispatcher
@@ -94,6 +96,7 @@ class BridgeService:
         self._mailbox = MailboxComponent(config, state, self)
         self._pin = PinComponent(config, state, self)
         self._process = ProcessComponent(config, state, self)
+        self._spi = SpiComponent(config, state, self)
         self._system = SystemComponent(config, state, self)
 
         self._registry = svcs.Registry()
@@ -103,6 +106,7 @@ class BridgeService:
         self._registry.register_value(_mailbox_mod.MailboxComponent, self._mailbox)
         self._registry.register_value(_pin_mod.PinComponent, self._pin)
         self._registry.register_value(_process_mod.ProcessComponent, self._process)
+        self._registry.register_value(_spi_mod.SpiComponent, self._spi)
         self._registry.register_value(_system_mod.SystemComponent, self._system)
         self._container = svcs.Container(self._registry)
 

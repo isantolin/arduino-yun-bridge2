@@ -158,3 +158,37 @@ async def test_write_frame_returns_false_on_write_error() -> None:
 
     ok = await transport._serial_sender(Command.CMD_CONSOLE_WRITE.value, b"hi")
     assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_process_packet_fallback_triggers_negotiation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _make_config()
+    config.serial_baud = 115200
+    config.serial_safe_baud = 57600
+    config.serial_fallback_threshold = 2
+    state = create_runtime_state(config)
+    state.mark_transport_connected()
+    state.mark_synchronized()
+    service = BridgeService(config, state)
+
+    transport = serial_fast.SerialTransport(config, state, service)
+    transport.loop = asyncio.get_running_loop()
+
+    # Mock negotiation method
+    transport._negotiate_baudrate = AsyncMock(return_value=True)
+
+    # Create an invalid frame manually
+    raw = b"\xff" + b"x" * 20
+    monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)
+
+    # First error
+    await transport._async_process_packet(b"\x02encoded")
+    assert transport._consecutive_crc_errors == 1
+    transport._negotiate_baudrate.assert_not_called()
+
+    # Second error (threshold reached)
+    await transport._async_process_packet(b"\x02encoded")
+    assert transport._consecutive_crc_errors == 0  # Reset after trigger
+    transport._negotiate_baudrate.assert_awaited_once_with(57600)

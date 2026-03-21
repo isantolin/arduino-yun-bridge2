@@ -3,6 +3,7 @@
 
 #include "Bridge.h"
 #include "hal/hal.h"
+#include "services/SPIService.h"
 #include "test_support.h"
 
 static unsigned long g_test_millis = 0;
@@ -16,6 +17,9 @@ DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
+#if BRIDGE_ENABLE_SPI
+SPIServiceClass SPIService;
+#endif
 Stream* g_arduino_stream_delegate = nullptr;
 
 namespace {

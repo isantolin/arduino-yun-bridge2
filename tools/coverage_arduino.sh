@@ -47,6 +47,8 @@ SOURCES=(
     "${SRC_ROOT}/services/Mailbox.cpp"
     "${SRC_ROOT}/services/FileSystem.cpp"
     "${SRC_ROOT}/services/Process.cpp"
+    "${SRC_ROOT}/services/SPIService.cpp"
+    "${ROOT_DIR}/tools/arduino_stub/SPI.cpp"
 )
 
 # Unity test framework
@@ -76,6 +78,7 @@ CXXFLAGS=(
     "-DBRIDGE_ENABLE_MAILBOX=1"
     "-DBRIDGE_ENABLE_FILESYSTEM=1"
     "-DBRIDGE_ENABLE_PROCESS=1"
+    "-DBRIDGE_ENABLE_SPI=1"
     "-DUNITY_INCLUDE_DOUBLE"
     "-I${SRC_ROOT}"
     "-I${SRC_ROOT}/nanopb"

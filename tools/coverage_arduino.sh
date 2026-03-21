@@ -48,7 +48,7 @@ SOURCES=(
     "${SRC_ROOT}/services/FileSystem.cpp"
     "${SRC_ROOT}/services/Process.cpp"
     "${SRC_ROOT}/services/SPIService.cpp"
-    "${ROOT_DIR}/tools/arduino_stub/SPI.cpp"
+    "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
 
 # Unity test framework

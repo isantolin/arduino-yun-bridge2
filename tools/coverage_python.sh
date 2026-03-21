@@ -77,6 +77,7 @@ fi
 
 python -m pytest \
   -v \
+  -n 5 \
   -o log_cli=false \
   --timeout=60 \
   --timeout-method=thread \

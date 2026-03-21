@@ -31,21 +31,21 @@ async def run_test(
     try:
         logger.info("Initializing SPI...")
         await bridge.spi_begin()
-        
+
         logger.info("Configuring SPI (4MHz, MSBFIRST, MODE0)...")
         await bridge.spi_config(frequency=4000000, bit_order=1, data_mode=0)
-        
+
         test_data = b"\xAA\xBB\xCC\xDD"
         logger.info("Transferring data: %s", test_data.hex())
-        
+
         # This will wait for SPI_TRANSFER_RESP
         # Note: In emulator, it will return zeros since stub doesn't do anything
         resp = await bridge.spi_transfer(test_data, timeout=5)
         logger.info("Received SPI data: %s", resp.hex())
-        
+
         logger.info("Deinitializing SPI...")
         await bridge.spi_end()
-        
+
         logger.info("SPI Service Test PASSED.")
 
         logger.info("--- Starting Bootloader Test ---")

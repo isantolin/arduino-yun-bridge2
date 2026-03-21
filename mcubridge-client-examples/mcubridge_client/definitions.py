@@ -26,6 +26,22 @@ class QOSLevel(IntEnum):
     QOS_2 = 2
 
 
+class SpiBitOrder(IntEnum):
+    """SPI Bit transmission order."""
+
+    LSBFIRST = 0
+    MSBFIRST = 1
+
+
+class SpiMode(IntEnum):
+    """SPI Data modes (CPOL/CPHA combinations)."""
+
+    MODE0 = 0
+    MODE1 = 1
+    MODE2 = 2
+    MODE3 = 3
+
+
 UserProperty = tuple[str, str]
 
 
@@ -139,6 +155,8 @@ __all__ = [
     "MAX_PAYLOAD_SIZE",
     "QOSLevel",
     "QueuedPublish",
+    "SpiBitOrder",
+    "SpiMode",
     "SpoolRecord",
     "UserProperty",
     "build_bridge_args",

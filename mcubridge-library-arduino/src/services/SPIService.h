@@ -6,6 +6,8 @@
 #if BRIDGE_ENABLE_SPI
 
 #include <SPI.h>
+#undef min
+#undef max
 #include "protocol/rpc_structs.h"
 
 class SPIServiceClass {

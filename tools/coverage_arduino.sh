@@ -106,10 +106,10 @@ TEST_SUITES=(
     "test_integrated"
     "test_bridge_core"
     "test_bridge_components"
-    "test_protocol",
-    "test_fsm_mutual_auth",
+    "test_protocol"
+    "test_fsm_mutual_auth"
     "test_arduino_100_coverage"
-    )
+)
 
 echo "[coverage_arduino] Compilando y ejecutando suites en paralelo..."
 

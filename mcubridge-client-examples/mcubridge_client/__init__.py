@@ -25,14 +25,20 @@ from .definitions import (
     DEFAULT_MQTT_TOPIC,
     QOSLevel,
     QueuedPublish,
+    SpiBitOrder,
+    SpiMode,
     build_bridge_args,
     build_mqtt_properties,
 )
 from .env import dump_client_env, read_uci_general
 from .protocol import Command, Topic
+from .spi import SpiDevice
 
 __all__ = [
     "Bridge",
+    "SpiBitOrder",
+    "SpiMode",
+    "SpiDevice",
     "build_bridge_args",
     "dump_client_env",
     "MqttError",
@@ -549,7 +555,22 @@ class Bridge:
         await self._publish_simple(topic, message)
         logger.info("console_write('%s')", message)
 
-    async def console_read_async(self) -> str | None:
+    def spi(
+        self,
+        frequency: int = 4000000,
+        bit_order: SpiBitOrder = SpiBitOrder.MSBFIRST,
+        mode: SpiMode = SpiMode.MODE0,
+    ) -> SpiDevice:
+        """Create a high-level SPI device managed by this bridge.
+
+        Args:
+            frequency: SPI clock frequency in Hz.
+            bit_order: MSBFIRST or LSBFIRST.
+            mode: SPI mode (0-3).
+        """
+        return SpiDevice(self, frequency, bit_order, mode)
+
+    async def console_read(self) -> str | None:
         topic = Topic.status("console", "out")
         client = self._ensure_client()
         queue: asyncio.Queue[Message] | None = None
@@ -565,7 +586,7 @@ class Bridge:
 
         try:
             message = await asyncio.wait_for(queue.get(), timeout=0.1)
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             return None
         except (asyncio.CancelledError, OSError, RuntimeError) as exc:
             logger.error("Error reading from console queue: %s", exc)

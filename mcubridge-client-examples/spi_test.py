@@ -29,22 +29,18 @@ async def run_test(
     logger.info("--- Starting SPI Service Test ---")
 
     try:
-        logger.info("Initializing SPI...")
-        await bridge.spi_begin()
+        # Use high-level SpiDevice abstraction
+        async with bridge.spi(frequency=4000000, mode=0) as spi:
+            logger.info("SPI session started automatically (begin + config)")
 
-        logger.info("Configuring SPI (4MHz, MSBFIRST, MODE0)...")
-        await bridge.spi_config(frequency=4000000, bit_order=1, data_mode=0)
+            test_data = [0xAA, 0xBB, 0xCC, 0xDD]
+            logger.info("Transferring data (list): %s", test_data)
 
-        test_data = b"\xAA\xBB\xCC\xDD"
-        logger.info("Transferring data: %s", test_data.hex())
+            # This will wait for SPI_TRANSFER_RESP
+            resp = await spi.transfer(test_data)
+            logger.info("Received SPI data: %s", resp.hex())
 
-        # This will wait for SPI_TRANSFER_RESP
-        # Note: In emulator, it will return zeros since stub doesn't do anything
-        resp = await bridge.spi_transfer(test_data, timeout=5)
-        logger.info("Received SPI data: %s", resp.hex())
-
-        logger.info("Deinitializing SPI...")
-        await bridge.spi_end()
+            logger.info("SPI session ends automatically (end)")
 
         logger.info("SPI Service Test PASSED.")
 

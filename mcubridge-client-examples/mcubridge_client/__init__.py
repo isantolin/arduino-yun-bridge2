@@ -391,17 +391,17 @@ class Bridge:
     async def digital_write(self, pin: int, value: int) -> None:
         if self._digital_modes.get(pin) != 1:
             await self.set_digital_mode(pin, 1)
-        topic = Topic.command("d", pin)
+        topic = str(Topic.build(Topic.DIGITAL, pin))
         await self._publish_simple(topic, str(value))
         logger.info("digital_write(%d, %d) -> %s", pin, value, topic)
 
     async def digital_read(self, pin: int, timeout: float = 10) -> int:
         response = await self._publish_and_wait(
-            Topic.command("d", pin, "read"),
+            str(Topic.build(Topic.DIGITAL, pin, "read")),
             b"",
             resp_topic=(
-                Topic.status("d", pin, "value"),
-                Topic.status("d", "value"),
+                str(Topic.build(Topic.DIGITAL, pin, "value")),
+                str(Topic.build(Topic.DIGITAL, "value")),
             ),
             timeout=timeout,
         )
@@ -409,11 +409,11 @@ class Bridge:
 
     async def analog_read(self, pin: int, timeout: float = 10) -> int:
         response = await self._publish_and_wait(
-            Topic.command("a", pin, "read"),
+            str(Topic.build(Topic.ANALOG, pin, "read")),
             b"",
             resp_topic=(
-                Topic.status("a", pin, "value"),
-                Topic.status("a", "value"),
+                str(Topic.build(Topic.ANALOG, pin, "value")),
+                str(Topic.build(Topic.ANALOG, "value")),
             ),
             timeout=timeout,
         )
@@ -423,7 +423,7 @@ class Bridge:
         """Set PWM/Analog output value (0-255)."""
         if not (0 <= value <= 255):
             raise ValueError(f"analog_write value {value} out of range (0-255)")
-        topic = Topic.command("a", pin)
+        topic = str(Topic.build(Topic.ANALOG, pin))
         await self._publish_simple(topic, str(value))
         logger.info("analog_write(%d, %d) -> %s", pin, value, topic)
 
@@ -445,34 +445,34 @@ class Bridge:
         if mode_value not in (0, 1, 2):
             raise ValueError(f"Invalid digital mode value: {mode}")
 
-        topic = Topic.command("d", pin, "mode")
+        topic = str(Topic.build(Topic.DIGITAL, pin, "mode"))
         await self._publish_simple(topic, str(mode_value))
         self._digital_modes[pin] = mode_value
         logger.info("set_digital_mode(%d, %d)", pin, mode_value)
 
     async def put(self, key: str, value: str, timeout: float = 10) -> None:
         await self._publish_and_wait(
-            Topic.command("datastore", "put", key),
+            str(Topic.build(Topic.DATASTORE, "put", key)),
             value.encode("utf-8"),
-            resp_topic=Topic.status("datastore", "get", key),
+            resp_topic=str(Topic.build(Topic.DATASTORE, "get", key)),
             timeout=timeout,
         )
         logger.info("datastore put('%s', '%s')", key, value)
 
     async def get(self, key: str, timeout: float = 10) -> str:
         response = await self._publish_and_wait(
-            Topic.command("datastore", "get", key, "request"),
+            str(Topic.build(Topic.DATASTORE, "get", key, "request")),
             b"",
-            resp_topic=Topic.status("datastore", "get", key),
+            resp_topic=str(Topic.build(Topic.DATASTORE, "get", key)),
             timeout=timeout,
         )
         return response.decode("utf-8")
 
     async def get_free_memory(self, timeout: float = 10) -> int:
         response = await self._publish_and_wait(
-            Topic.command("system", "free_memory", "get"),
+            str(Topic.build(Topic.SYSTEM, "free_memory", "get")),
             b"",
-            resp_topic=Topic.status("system", "free_memory", "value"),
+            resp_topic=str(Topic.build(Topic.SYSTEM, "free_memory", "value")),
             timeout=timeout,
         )
         return int(response.decode("utf-8"))
@@ -481,9 +481,9 @@ class Bridge:
         command_str = _format_shell_command(command_parts)
         logger.warning("run_sketch_command falls back to a synchronous shell " "command via MQTT.")
         response = await self._publish_and_wait(
-            Topic.command("sh", "run"),
+            str(Topic.build(Topic.SHELL, "run")),
             command_str.encode("utf-8"),
-            resp_topic=Topic.status("sh", "response"),
+            resp_topic=str(Topic.build(Topic.SHELL, "response")),
             timeout=timeout,
         )
         return response
@@ -491,9 +491,9 @@ class Bridge:
     async def run_shell_command_async(self, command_parts: list[str], timeout: float = 10) -> int:
         command_str = _format_shell_command(command_parts)
         response = await self._publish_and_wait(
-            Topic.command("sh", "run_async"),
+            str(Topic.build(Topic.SHELL, "run_async")),
             command_str.encode("utf-8"),
-            resp_topic=Topic.status("sh", "run_async", "response"),
+            resp_topic=str(Topic.build(Topic.SHELL, "run_async", "response")),
             timeout=timeout,
         )
         text = response.decode("utf-8")
@@ -510,9 +510,9 @@ class Bridge:
         if pid <= 0:
             raise ValueError("pid must be a positive integer")
         response = await self._publish_and_wait(
-            Topic.command("sh", "poll", pid),
+            str(Topic.build(Topic.SHELL, "poll", pid)),
             b"",
-            resp_topic=Topic.status("sh", "poll", pid, "response"),
+            resp_topic=str(Topic.build(Topic.SHELL, "poll", pid, "response")),
             timeout=timeout,
         )
         try:
@@ -525,33 +525,33 @@ class Bridge:
         return cast(ShellPollResponse, payload_dict)
 
     async def spi_begin(self) -> None:
-        await self._publish_simple(Topic.command("spi", "begin"), b"")
+        await self._publish_simple(str(Topic.build(Topic.SPI, "begin")), b"")
         logger.info("spi_begin()")
 
     async def spi_end(self) -> None:
-        await self._publish_simple(Topic.command("spi", "end"), b"")
+        await self._publish_simple(str(Topic.build(Topic.SPI, "end")), b"")
         logger.info("spi_end()")
 
     async def spi_config(self, frequency: int = 4000000, bit_order: int = 1, data_mode: int = 0) -> None:
         config = {"frequency": frequency, "bit_order": bit_order, "data_mode": data_mode}
-        await self._publish_simple(Topic.command("spi", "config"), msgspec.json.encode(config))
+        await self._publish_simple(str(Topic.build(Topic.SPI, "config")), msgspec.json.encode(config))
         logger.info("spi_config(%s)", config)
 
     async def spi_transfer(self, data: bytes, timeout: float = 10) -> bytes:
         response = await self._publish_and_wait(
-            Topic.command("spi", "transfer"),
+            str(Topic.build(Topic.SPI, "transfer")),
             data,
-            resp_topic=Topic.status("spi", "transfer", "resp"),
+            resp_topic=str(Topic.build(Topic.SPI, "transfer", "resp")),
             timeout=timeout,
         )
         return response
 
     async def enter_bootloader(self) -> None:
-        await self._publish_simple(Topic.command("system", "bootloader"), b"")
+        await self._publish_simple(str(Topic.build(Topic.SYSTEM, "bootloader")), b"")
         logger.info("enter_bootloader()")
 
     async def console_write(self, message: str) -> None:
-        topic = Topic.command("console", "in")
+        topic = str(Topic.build(Topic.CONSOLE, "in"))
         await self._publish_simple(topic, message)
         logger.info("console_write('%s')", message)
 
@@ -571,7 +571,7 @@ class Bridge:
         return SpiDevice(self, frequency, bit_order, mode)
 
     async def console_read(self) -> str | None:
-        topic = Topic.status("console", "out")
+        topic = str(Topic.build(Topic.CONSOLE, "out"))
         client = self._ensure_client()
         queue: asyncio.Queue[Message] | None = None
         routes = self._response_routes.get(topic)
@@ -596,10 +596,10 @@ class Bridge:
         return payload.decode("utf-8", errors="ignore")
 
     async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
-        incoming_topic = Topic.status("mailbox", "incoming")
+        incoming_topic = str(Topic.build(Topic.MAILBOX, "incoming"))
         try:
             payload = await self._publish_and_wait(
-                Topic.command("mailbox", "read"),
+                str(Topic.build(Topic.MAILBOX, "read")),
                 b"",
                 resp_topic=incoming_topic,
                 timeout=timeout,
@@ -617,26 +617,26 @@ class Bridge:
 
     async def file_write(self, filename: str, content: str | bytes) -> None:
         fn = filename.lstrip("/")
-        topic = Topic.command("file", "write", fn)
+        topic = str(Topic.build(Topic.FILE, "write", fn))
         await self._publish_simple(topic, content)
         logger.info("file_write('%s', %d bytes)", filename, len(content))
 
     async def file_read(self, filename: str, timeout: float = 10) -> bytes:
         fn = filename.lstrip("/")
         return await self._publish_and_wait(
-            Topic.command("file", "read", fn),
+            str(Topic.build(Topic.FILE, "read", fn)),
             b"",
-            resp_topic=Topic.status("file", "read", "response", fn),
+            resp_topic=str(Topic.build(Topic.FILE, "read", "response", fn)),
             timeout=timeout,
         )
 
     async def file_remove(self, filename: str) -> None:
         fn = filename.lstrip("/")
-        topic = Topic.command("file", "remove", fn)
+        topic = str(Topic.build(Topic.FILE, "remove", fn))
         await self._publish_simple(topic, b"")
         logger.info("file_remove('%s')", filename)
 
     async def mailbox_write(self, message: str | bytes) -> None:
-        topic = Topic.command("mailbox", "write")
+        topic = str(Topic.build(Topic.MAILBOX, "write"))
         await self._publish_simple(topic, message)
         logger.info("mailbox_write(%d bytes)", len(message))

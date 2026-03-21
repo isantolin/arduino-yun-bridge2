@@ -10,7 +10,7 @@ from typing import Any
 
 import msgspec
 
-from .protocol import Topic
+from .protocol import Topic, TopicBuilder
 
 
 class TopicRoute(msgspec.Struct, frozen=True):
@@ -53,15 +53,11 @@ def split_topic_segments(path: str) -> tuple[str, ...]:
     return tuple(filter(None, path.split("/")))
 
 
-def topic_path(prefix: str, topic: Topic | str, *segments: str) -> str:
+def topic_path(prefix: str, topic: Topic | str, *segments: str | int) -> str:
     """Join prefix, topic and optional sub-segments into a topic path."""
-    parts = list(split_topic_segments(prefix))
-    topic_segment = topic.value if isinstance(topic, Topic) else str(topic)
-    topic_segment = topic_segment.strip("/")
-    if topic_segment:
-        parts.append(topic_segment)
-    parts.extend(filter(None, (s.strip("/") for s in segments)))
-    return "/".join(parts)
+    if isinstance(topic, Topic):
+        return str(topic.build(prefix, *segments))
+    return str(TopicBuilder(prefix, topic).add(*segments))
 
 
 # --- Service Specific Topics ---

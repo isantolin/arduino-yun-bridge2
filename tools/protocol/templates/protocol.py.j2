@@ -72,6 +72,45 @@ class Topic(StrEnum):
     {{ topic.name }} = "{{ topic.value }}"  # {{ topic.description }}
     {%- endfor %}
 
+    def build(self, prefix: str, *segments: str | int) -> TopicBuilder:
+        """Create a TopicBuilder for this topic."""
+        return TopicBuilder(prefix, self).add(*segments)
+
+
+class TopicBuilder:
+    """Helper to build MQTT topic paths with segments."""
+
+    def __init__(self, prefix: str, topic: Topic | str):
+        self._prefix: str = prefix.strip("/")
+        self._topic: str = str(topic).strip("/")
+        self._segments: list[str] = []
+
+    def add(self, *segments: str | int) -> TopicBuilder:
+        """Add segments to the topic path."""
+        for s in segments:
+            val: str = str(s).strip("/")
+            if val:
+                self._segments.append(val)
+        return self
+
+    def __str__(self) -> str:
+        """Return the complete topic path."""
+        parts: list[str] = []
+        if self._prefix:
+            parts.append(self._prefix)
+        if self._topic:
+            parts.append(self._topic)
+        parts.extend(self._segments)
+        return "/".join(parts)
+
+    def matches(self, other: str) -> bool:
+        """Check if this topic matches another, supporting MQTT wildcards."""
+        # Note: Basic implementation, could use aiomqtt.Topic.matches if available
+        import fnmatch
+        pattern = str(self).replace("+", "*").replace("#", "*")
+        return fnmatch.fnmatch(other, pattern)
+
+
 {% for action in grouped_actions %}
 class {{ action.class_name }}(StrEnum):
     {%- for item in action.action_items %}

@@ -433,6 +433,7 @@ class JinjaGenerator:
             capabilities=spec.capabilities,
             statuses=spec.statuses,
             commands=spec.commands,
+            topics=spec.topics,
         )
         out_path.write_text(render, encoding="utf-8")
 

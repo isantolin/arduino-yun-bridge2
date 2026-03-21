@@ -33,19 +33,45 @@ class Topic:
     PREFIX: str = "br"
 
     @staticmethod
-    def command(cmd_name: str, *args: str | int, prefix: str | None = None) -> str:
-        """Helper to build a command topic."""
-        p = prefix or Topic.PREFIX
-        base = f"{p}/{cmd_name.lower()}"
-        if args:
-            return f"{base}/{'/'.join(map(str, args))}"
-        return base
+    def build(topic: str, *segments: str | int, prefix: str | None = None) -> TopicBuilder:
+        """Create a TopicBuilder for a given topic."""
+        return TopicBuilder(prefix or Topic.PREFIX, topic).add(*segments)
 
-    @staticmethod
-    def status(cmd_name: str, *args: str | int, prefix: str | None = None) -> str:
-        """Helper to build a status topic."""
-        p = prefix or Topic.PREFIX
-        base = f"{p}/{cmd_name.lower()}"
-        if args:
-            return f"{base}/{'/'.join(map(str, args))}"
-        return base
+    # Common base topics as constants for convenience
+    {%- for topic in topics %}
+    {{ topic.name }}: Final[str] = "{{ topic.value }}"
+    {%- endfor %}
+
+
+class TopicBuilder:
+    """Helper to build MQTT topic paths with segments."""
+
+    def __init__(self, prefix: str, topic: str):
+        self._prefix: str = prefix.strip("/")
+        self._topic: str = topic.strip("/")
+        self._segments: list[str] = []
+
+    def add(self, *segments: str | int) -> TopicBuilder:
+        """Add segments to the topic path."""
+        for s in segments:
+            val: str = str(s).strip("/")
+            if val:
+                self._segments.append(val)
+        return self
+
+    def __str__(self) -> str:
+        """Return the complete topic path."""
+        parts: list[str] = []
+        if self._prefix:
+            parts.append(self._prefix)
+        if self._topic:
+            parts.append(self._topic)
+        parts.extend(self._segments)
+        return "/".join(parts)
+
+    def matches(self, other: str) -> bool:
+        """Check if this topic matches another, supporting MQTT wildcards."""
+        import fnmatch
+        pattern = str(self).replace("+", "*").replace("#", "*")
+        return fnmatch.fnmatch(other, pattern)
+

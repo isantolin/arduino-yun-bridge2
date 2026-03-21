@@ -467,12 +467,13 @@ find "$BIN_DIR" -type f -name '*.apk' -delete
 cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 
 # [FIX] Orden de compilación: Primero librerías críticas
-# Nota: Ahora están en el feed 'mcubridge' que apunta a 'feeds/' plano
-for lib in python3-paho-mqtt python3-aiomqtt python3-tenacity python3-cobs python3-msgspec python3-prometheus-client python3-pyserial-asyncio-fast python3-psutil python3-uvloop python3-cryptography; do
-    echo "[BUILD] Building library $lib..."
-    make package/feeds/mcubridge/$lib/compile V=s
-    
-    # [FIX] Copiar artefactos .apk de librerías
+LIBS="python3-paho-mqtt python3-aiomqtt python3-tenacity python3-cobs python3-msgspec python3-prometheus-client python3-pyserial-asyncio-fast python3-psutil python3-uvloop python3-cryptography"
+echo "[BUILD] Building libraries: $LIBS..."
+# Build all libraries in parallel with as many jobs as cores. V=s is omitted to allow parallel output.
+make -j$(nproc) $(echo "$LIBS" | sed "s| | package/feeds/mcubridge/|g; s|^|package/feeds/mcubridge/|; s|$|/compile|")
+
+# [FIX] Copiar artefactos .apk de librerías
+for lib in $LIBS; do
     find bin/packages/ -name "$lib*.apk" -exec cp {} "$BIN_DIR/" \;
 done
 
@@ -480,8 +481,8 @@ done
 for pkg in luci-app-mcubridge mcubridge; do
     echo "[BUILD] Building package $pkg (.apk)..."
     make package/$pkg/clean V=s || true
-    make package/$pkg/compile V=s
-    
+    make package/$pkg/compile -j$(nproc)
+
     # [FIX] Copiar artefactos .apk (Patrón corregido para formato APK: nombre-ver-rel.apk)
     find bin/packages/ -name "$pkg*.apk" -exec cp {} "$BIN_DIR/" \;
 done

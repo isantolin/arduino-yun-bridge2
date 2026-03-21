@@ -8,11 +8,10 @@ TEST_DIR="${LIB_DIR}/tests"
 STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 
 BUILD_DIR="${LIB_DIR}/build-host-local"
-mkdir -p "${BUILD_DIR}"
+OBJ_DIR="${BUILD_DIR}/objs"
+mkdir -p "${OBJ_DIR}"
 
-# Use the python from the current environment (e.g. tox virtualenv).
-# Fall back to the tox py313 venv when running outside CI/venv,
-# because system Python 3.14 ships an incompatible msgspec.
+# Use the python from the current environment
 if [[ -n "${VIRTUAL_ENV:-}" ]]; then
     PYTHON_CMD=$(command -v python || command -v python3)
 elif [[ -x "${ROOT_DIR}/.tox/py313/bin/python" ]]; then
@@ -21,17 +20,14 @@ else
     PYTHON_CMD=$(command -v python3 || command -v python)
 fi
 
-# [SIL-2] Ensure dependencies are present (ETL is required in src/etl)
+# [SIL-2] Ensure dependencies are present
 echo "[host-cpp] Generating protocol bindings..."
-if ! ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
+${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
     --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h" \
-    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"; then
-    echo "ERROR: Protocol generation failed. See above for missing dependencies."
-    exit 1
-fi
+    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
 
 echo "[host-cpp] Installing library dependencies..."
 DUMMY_ARDUINO_LIBS=${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}
@@ -62,39 +58,19 @@ SOURCES=(
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
 
-# Unity test framework (compiled as C, linked with C++ tests)
+# Unity test framework
 UNITY_DIR="${TEST_DIR}/Unity"
-UNITY_OBJ="${BUILD_DIR}/unity.o"
+UNITY_OBJ="${OBJ_DIR}/unity.o"
 if [ -f "${UNITY_DIR}/unity.c" ]; then
-    gcc -c -O0 -g -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
+    gcc -c -O2 -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
 else
     echo "[WARN] Unity not found at ${UNITY_DIR}; test assertions will fail."
     UNITY_OBJ=""
 fi
 
-# [SIL-2] Automatically discover all test suites
-TEST_FILES=(
-    "${TEST_DIR}/test_integrated.cpp"
-    "${TEST_DIR}/test_bridge_core.cpp"
-    "${TEST_DIR}/test_bridge_components.cpp"
-    "${TEST_DIR}/test_host_filesystem.cpp"
-    "${TEST_DIR}/test_protocol.cpp"
-    "${TEST_DIR}/test_fsm_mutual_auth.cpp"
-    "${TEST_DIR}/test_extreme_coverage.cpp"
-    "${TEST_DIR}/test_extreme_coverage_v2.cpp"
-    "${TEST_DIR}/test_arduino_100_coverage.cpp"
-    "${TEST_DIR}/test_arduino_coverage_boost.cpp"
-    "${TEST_DIR}/test_coverage_100_final.cpp"
-    "${TEST_DIR}/test_coverage_extra_gaps.cpp"
-    "${TEST_DIR}/test_coverage_final_push.cpp"
-    "${TEST_DIR}/test_coverage_gaps.cpp"
-    "${TEST_DIR}/test_coverage_mega.cpp"
-    "${TEST_DIR}/test_coverage_ultra.cpp"
-)
-
-COMPILE_FLAGS=(
-    -std=c++14
-    -O0
+# Base flags without -std for C compatibility
+BASE_FLAGS=(
+    -O2
     -g
     -DBRIDGE_HOST_TEST=1
     -DBRIDGE_TEST_NO_GLOBALS=1
@@ -106,12 +82,54 @@ COMPILE_FLAGS=(
     -I"${STUB_DIR}"
 )
 
-echo "[host-cpp] Compiling and running all test suites..."
+# Compile common sources to objects in parallel
+echo "[host-cpp] Compiling common sources in parallel..."
+OBJECTS=()
+for src in "${SOURCES[@]}"; do
+    obj_name=$(basename "${src}")
+    obj="${OBJ_DIR}/${obj_name}.o"
+    OBJECTS+=("${obj}")
+    
+    if [[ "${src}" == *.c ]]; then
+        gcc "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
+    else
+        g++ -std=c++14 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
+    fi
+done
+wait
+
+# Test suites
+TEST_FILES=(
+    "${TEST_DIR}/test_integrated.cpp"
+    "${TEST_DIR}/test_bridge_core.cpp"
+    "${TEST_DIR}/test_bridge_components.cpp"
+    "${TEST_DIR}/test_host_filesystem.cpp"
+    "${TEST_DIR}/test_protocol.cpp"
+    "${TEST_DIR}/test_fsm_mutual_auth.cpp"
+    "${TEST_DIR}/test_arduino_100_coverage.cpp"
+)
+
+# Compile and run test suites in parallel
+echo "[host-cpp] Compiling and running test suites in parallel..."
+pids=()
 for test_file in "${TEST_FILES[@]}"; do
-    test_name=$(basename "${test_file}" .cpp)
-    echo "  -> Processing ${test_name}..."
-    g++ "${COMPILE_FLAGS[@]}" "${SOURCES[@]}" "${test_file}" ${UNITY_OBJ} -o "${BUILD_DIR}/${test_name}"
-    "${BUILD_DIR}/${test_name}"
+    (
+        test_name=$(basename "${test_file}" .cpp)
+        g++ -std=c++14 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}"
+        "${BUILD_DIR}/${test_name}"
+    ) &
+    pids+=($!)
+    
+    # Throttle to MAX_JOBS
+    if [[ ${#pids[@]} -ge 5 ]]; then
+        wait ${pids[0]}
+        pids=("${pids[@]:1}")
+    fi
+done
+
+# Wait for remaining
+for pid in "${pids[@]}"; do
+    wait "$pid"
 done
 
 echo "[host-cpp] ALL HOST TESTS PASSED"

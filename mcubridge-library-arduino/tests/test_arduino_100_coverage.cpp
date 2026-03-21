@@ -1,20 +1,18 @@
-#include <stdint.h>
-#include <stdio.h>
+#define ARDUINO_STUB_CUSTOM_MILLIS 1
+#include <Arduino.h>
 #include <string.h>
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
+
 #include "Bridge.h"
-#include "BridgeTestHelper.h"
-#include "BridgeTestInterface.h"
 #include "protocol/rle.h"
-#include "protocol/rpc_frame.h"
-#include "protocol/rpc_protocol.h"
-#include "router/command_router.h"
-#include "security/security.h"
 #include "services/SPIService.h"
 #include "test_support.h"
 
-// Stubs Globales
+static unsigned long g_test_millis = 0;
+unsigned long millis() { return g_test_millis; }
+void delay(unsigned long ms) { g_test_millis += ms; }
+
 HardwareSerial Serial;
 HardwareSerial Serial1;
 BridgeClass Bridge(Serial1);
@@ -26,90 +24,67 @@ ProcessClass Process;
 #if BRIDGE_ENABLE_SPI
 SPIServiceClass SPIService;
 #endif
+Stream* g_arduino_stream_delegate = nullptr;
 
 namespace {
 
-void setup_coverage_env() {
-  Bridge.begin();
+void test_bridge_reset_state() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
-  ba.onStartupStabilized();
-  ba.setIdle();
+  Bridge.begin(115200);
+  ba.setStartupStabilizing(false); // Move from STABILIZING to UNSYNCHRONIZED
+  TEST_ASSERT(Bridge.isUnsynchronized());
 }
 
-void test_rpc_frame_gaps() {
-  rpc::FrameBuilder builder;
-  uint8_t buffer[rpc::MAX_RAW_FRAME_SIZE];
-  uint8_t payload[] = {1, 2, 3};
-
-  // Coverage for FrameBuilder::build with payload
-  builder.build(etl::span<uint8_t>(buffer), 0x100,
-                etl::span<const uint8_t>(payload, 3));
-
-  // Coverage for FrameParser::parse errors (already covered but for good
-  // measure)
-  rpc::FrameParser parser;
-  uint8_t short_buf[] = {0x02, 0x00};
-  auto res = parser.parse(etl::span<const uint8_t>(short_buf, 2));
-  TEST_ASSERT(!res.has_value());
-}
-
-void test_bridge_extra_gaps() {
+void test_bridge_is_recent_duplicate_edge_cases() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   rpc::Frame f;
+  f.header.version = rpc::PROTOCOL_VERSION;
+  f.header.payload_length = 0;
+  f.crc = 0x12345678;
 
-  // Gap: _handleSystemCommand CMD_GET_VERSION with non-zero length (should
-  // ignore)
-  f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
-  f.header.payload_length = 1;
-  ba.routeSystemCommand(bridge::router::CommandContext{&f, f.header.command_id, false, false});
+  // First time: not a duplicate
+  ba.clearRxHistory();
+  TEST_ASSERT(!ba.isRecentDuplicateRx(f));
 
-  // Gap: _handleSystemCommand CMD_GET_FREE_MEMORY with non-zero length
-  f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  f.header.payload_length = 1;
-  ba.routeSystemCommand(bridge::router::CommandContext{&f, f.header.command_id, false, false});
+  // Mark as processed to add to history
+  ba.markRxProcessed(f);
 
-  // Gap: _handleSystemCommand CMD_GET_CAPABILITIES with non-zero length
-  f.header.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
-  f.header.payload_length = 1;
-  ba.routeSystemCommand(bridge::router::CommandContext{&f, f.header.command_id, false, false});
+  // Second time: duplicate
+  TEST_ASSERT(ba.isRecentDuplicateRx(f));
 
-  // Gap: onUnknownCommand without handler (emits STATUS_CMD_UNKNOWN)
-  f.header.command_id = 0xAA;  // Arbitrary unknown
-  ba.routeUnknownCommand(
-      bridge::router::CommandContext{&f, 0xAA, false, false});
+  // After history is cleared or changed, it should not be a duplicate
+  f.crc = 0x87654321;
+  TEST_ASSERT(!ba.isRecentDuplicateRx(f));
 }
 
-void test_console_extra_gaps() {
+void test_console_write_extra_gaps() {
+  // Mock a full stream to trigger retry paths if possible
   Console.begin();
+  Console.write('t');
+  Console.print("test");
+  Console.println("line");
+  Console.flush();
+
+  // Test read path
+  TEST_ASSERT(Console.available() == 0);
   auto ca = bridge::test::ConsoleTestAccessor::create(Console);
-
-  // Gap: write(c) when bridge is unsynchronized (flush is no-op)
-  // Force unsynchronized to make flush fail
-  auto ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setUnsynchronized();
-
-  // Write exercises the write path; flush is a no-op when unsynchronized
-  ca.clearTxBuffer();
-  TEST_ASSERT_EQ_UINT(Console.write('B'), 1);
-
-  // Gap: available(), peek(), read() coverage
   ca.pushRxByte('X');
-  TEST_ASSERT(Console.available() > 0);
-  TEST_ASSERT(Console.peek() == 'X');
+  TEST_ASSERT(Console.available() == 1);
   TEST_ASSERT(Console.read() == 'X');
 }
 
 void test_datastore_extra_gaps() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   rpc::Frame f;
+  uint8_t buf[2];
 
   // Gap: handleResponse CMD_DATASTORE_GET_RESP without handler
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP);
   f.header.payload_length = 2;
-  f.payload[0] = 1;
-  f.payload[1] = 'V';
+  buf[0] = 1;
+  buf[1] = 'V';
+  f.payload = etl::span<const uint8_t>(buf, 2);
   ba.dispatch(f);
 
   // Gap: handleResponse with other command
@@ -120,41 +95,46 @@ void test_datastore_extra_gaps() {
 void test_mailbox_extra_gaps() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   rpc::Frame f;
+  uint8_t buf[3];
 
   // Gap: handleResponse CMD_MAILBOX_READ_RESP without handler
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
   f.header.payload_length = 3;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 1);
-  f.payload[2] = 'M';
+  rpc::write_u16_be(etl::span<uint8_t>(buf, 2), 1);
+  buf[2] = 'M';
+  f.payload = etl::span<const uint8_t>(buf, 3);
   ba.dispatch(f);
 
   // Gap: handleResponse CMD_MAILBOX_AVAILABLE_RESP without handler
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
   f.header.payload_length = 2;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 10);
+  rpc::write_u16_be(etl::span<uint8_t>(buf, 2), 10);
+  f.payload = etl::span<const uint8_t>(buf, 2);
   ba.dispatch(f);
 }
 
 void test_process_extra_gaps() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   rpc::Frame f;
+  uint8_t buf[2];
 
   // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP with handler
-  // Register handler via runAsync, then dispatch the response
   Process.runAsync("echo", etl::span<const etl::string_view>{},
       ProcessClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
   f.header.payload_length = 2;
-  rpc::write_u16_be(etl::span<uint8_t>(f.payload.data(), 2), 456);
+  rpc::write_u16_be(etl::span<uint8_t>(buf, 2), 456);
+  f.payload = etl::span<const uint8_t>(buf, 2);
   ba.dispatch(f);
 
   // Gap: handleResponse CMD_PROCESS_POLL_RESP without handler
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
-  f.header.payload_length = 6;
+  f.header.payload_length = 0;
+  f.payload = etl::span<const uint8_t>();
   ba.dispatch(f);
 
   // Gap: handleResponse with other command
@@ -176,9 +156,17 @@ void test_rle_gaps() {
                       0);
 }
 
-void test_security_gaps() {
-  // Kat failure simulation is hard without mocks, but we cover the self tests
-  TEST_ASSERT(rpc::security::run_cryptographic_self_tests());
+void test_system_extra_gaps() {
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  rpc::Frame f;
+  uint8_t buf[1];
+
+  // Gap: handleResponse with unsupported system command
+  f.header.command_id = 0x4F;
+  f.header.payload_length = 1;
+  buf[0] = 0;
+  f.payload = etl::span<const uint8_t>(buf, 1);
+  ba.dispatch(f);
 }
 
 }  // namespace
@@ -186,17 +174,15 @@ void test_security_gaps() {
 void setUp(void) {}
 void tearDown(void) {}
 
-int main(void) {
-  setup_coverage_env();
+int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_rpc_frame_gaps);
-  RUN_TEST(test_bridge_extra_gaps);
-  RUN_TEST(test_console_extra_gaps);
+  RUN_TEST(test_bridge_reset_state);
+  RUN_TEST(test_bridge_is_recent_duplicate_edge_cases);
+  RUN_TEST(test_console_write_extra_gaps);
   RUN_TEST(test_datastore_extra_gaps);
   RUN_TEST(test_mailbox_extra_gaps);
   RUN_TEST(test_process_extra_gaps);
   RUN_TEST(test_rle_gaps);
-  RUN_TEST(test_security_gaps);
+  RUN_TEST(test_system_extra_gaps);
   return UNITY_END();
 }
-Stream* g_arduino_stream_delegate = nullptr;

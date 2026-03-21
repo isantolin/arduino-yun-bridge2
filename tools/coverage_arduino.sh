@@ -8,25 +8,23 @@ TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
 BUILD_DIR="${LIB_ROOT}/build-coverage"
+OBJ_DIR="${BUILD_DIR}/objs"
 
 # Use the python from the current environment (e.g. tox virtualenv)
 PYTHON_CMD=$(command -v python || command -v python3)
 
 # Completely clean previous build artifacts to prevent path mismatches (.gcno/.gcda)
 rm -rf "${BUILD_DIR}"
-mkdir -p "${OUTPUT_ROOT}" "${BUILD_DIR}"
+mkdir -p "${OUTPUT_ROOT}" "${OBJ_DIR}"
 
 # [SIL-2] Library Installation (Dependencies)
 echo "[coverage_arduino] Generating protocol bindings..."
-if ! ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
+${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_ROOT}/protocol/rpc_protocol.h" \
     --cpp-structs "${SRC_ROOT}/protocol/rpc_structs.h" \
-    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"; then
-    echo "ERROR: Protocol generation failed. See above for missing dependencies."
-    exit 1
-fi
+    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
 
 "${ROOT_DIR}/tools/ci_arduino_host_tests.sh" --install-only
 
@@ -53,7 +51,7 @@ SOURCES=(
 
 # Unity test framework
 UNITY_DIR="${TEST_ROOT}/Unity"
-UNITY_OBJ="${BUILD_DIR}/unity.o"
+UNITY_OBJ="${OBJ_DIR}/unity.o"
 if [ -f "${UNITY_DIR}/unity.c" ]; then
     gcc -c -O0 -g -fprofile-arcs -ftest-coverage -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
 else
@@ -61,9 +59,8 @@ else
     exit 1
 fi
 
-# Compiler flags
-CXXFLAGS=(
-    "-std=c++14"
+# Base compiler flags
+BASE_FLAGS=(
     "-O0"
     "-g"
     "-fprofile-arcs"
@@ -88,29 +85,53 @@ CXXFLAGS=(
     "-I${TEST_ROOT}/Unity"
 )
 
+# Compile common sources to objects in parallel
+echo "[coverage_arduino] Compiling common sources in parallel..."
+OBJECTS=()
+for src in "${SOURCES[@]}"; do
+    obj_name=$(basename "${src}")
+    obj="${OBJ_DIR}/${obj_name}.o"
+    OBJECTS+=("${obj}")
+    
+    if [[ "${src}" == *.c ]]; then
+        gcc "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
+    else
+        g++ -std=c++14 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
+    fi
+done
+wait
+
 # [SIL-2] All test suites contribute to coverage via cumulative .gcda
 TEST_SUITES=(
     "test_integrated"
     "test_bridge_core"
     "test_bridge_components"
-    "test_protocol"
-    "test_fsm_mutual_auth"
-)
+    "test_protocol",
+    "test_fsm_mutual_auth",
+    "test_arduino_100_coverage"
+    )
 
-echo "[coverage_arduino] Compilando y ejecutando suites..."
+echo "[coverage_arduino] Compilando y ejecutando suites en paralelo..."
 
 pushd "${BUILD_DIR}" > /dev/null
+pids=()
 for suite in "${TEST_SUITES[@]}"; do
-    echo "  -> Procesando ${suite}..."
-    suite_src="${TEST_ROOT}/${suite}.cpp"
-    suite_bin="${BUILD_DIR}/${suite}"
+    (
+        suite_src="${TEST_ROOT}/${suite}.cpp"
+        suite_bin="${BUILD_DIR}/${suite}"
+        g++ -std=c++14 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${suite_bin}"
+        "${suite_bin}"
+    ) &
+    pids+=($!)
     
-    # Compile suite including all required sources
-    # Run from BUILD_DIR so .gcno/.gcda files land here
-    g++ "${CXXFLAGS[@]}" "${suite_src}" "${SOURCES[@]}" ${UNITY_OBJ} -o "${suite_bin}"
-    
-    # Execute
-    "${suite_bin}"
+    if [[ ${#pids[@]} -ge 5 ]]; then
+        wait ${pids[0]}
+        pids=("${pids[@]:1}")
+    fi
+done
+
+for pid in "${pids[@]}"; do
+    wait "$pid"
 done
 popd > /dev/null
 

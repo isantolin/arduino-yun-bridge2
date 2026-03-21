@@ -4,63 +4,124 @@
  *
  * This file is part of Arduino MCU Ecosystem v2.
  * (C) 2025-2026 Ignacio Santolin and contributors.
- *
- * [MIL-SPEC COMPLIANCE]
- * These functions implement security primitives resistant to:
- * - Compiler optimization (secure_zero)
- * - Timing side-channel attacks (timing_safe_equal)
- *
- * Reference standards:
- * - NIST SP 800-90A (secure random)
- * - FIPS 140-3 (cryptographic module requirements)
- * - CWE-14 (compiler removal of code to clear buffers)
  */
 #ifndef RPC_SECURITY_H
 #define RPC_SECURITY_H
 
-#include "sha256.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "etl/algorithm.h"
 #include "etl/span.h"
+#include "etl/array.h"
 #include "../protocol/rpc_protocol.h"
 #include "../protocol/rpc_frame.h"
+
+/* 
+ * [WOLFSSL CONFIGURATION] 
+ * Centralized settings for wolfCrypt without heap and optimized for AVR.
+ */
+
+/* [SIL-2] No dynamic memory allocation */
+#define WOLFSSL_STATIC_MEMORY
+#define WOLFSSL_NO_MALLOC
+#define WOLFSSL_MALLOC_CHECK
+
+/* [AVR] Optimization - DISABLED for Host Tests if not on AVR */
+#if defined(ARDUINO_ARCH_AVR)
+#define WOLFSSL_AVR
+#define USE_SLOW_SHA256
+#define WOLFSSL_SMALL_STACK
+#endif
+
+/* [PROTOCOL] Required primitives only */
+#define WOLFCRYPT_ONLY
+#define NO_AES
+#define NO_RSA
+#define NO_DSA
+#define NO_DH
+#define NO_PWDBASED
+#define NO_DES3
+#define NO_MD5
+#define NO_RC4
+#define NO_ASN
+#define NO_CODING
+#define NO_FILESYSTEM
+#define NO_SIG_WRAPPER
+#define NO_OLD_TLS
+
+/* [FEATURES] SHA-256, HMAC and HKDF */
+#define WOLFSSL_SHA256
+#define WOLFSSL_HMAC
+#ifndef HAVE_HKDF
+#define HAVE_HKDF
+#endif
+#ifndef WOLFSSL_HKDF
+#define WOLFSSL_HKDF
+#endif
+
+/* Explicitly disable other hashes */
+#define NO_SHA
+#define NO_MD4
+#define NO_MD2
+
+/* [SECURITY] Hardening */
+#define WOLFSSL_FORCE_ZERO
+#define WOLFSSL_NO_FLOAT
+#define NO_WRITEV
+#define NO_MAIN_DRIVER
+
+/* [WOLFSSL] Core headers (must follow defines) */
+#include "../wolfssl/wolfcrypt/sha256.h"
+#include "../wolfssl/wolfcrypt/hmac.h"
 
 namespace rpc {
 namespace security {
 
 /**
+ * @brief Wrapper class for wolfSSL SHA-256 and HMAC.
+ */
+class McuBridgeSha256 {
+ public:
+  static constexpr size_t HASH_SIZE = 32;
+  static constexpr size_t BLOCK_SIZE = 64;
+
+  McuBridgeSha256();
+
+  void reset();
+  void update(const void* data, size_t len);
+  void finalize(void* hash, size_t len);
+
+  void resetHMAC(const void* key, size_t keyLen);
+  void finalizeHMAC(const void* key, size_t keyLen, void* hash, size_t hashLen);
+
+ private:
+  Sha256 sha_;
+  Hmac hmac_;
+  bool is_hmac_active_;
+};
+
+/**
+ * @brief HKDF (RFC 5869) wrapping wolfCrypt wc_HKDF.
+ */
+void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
+                 etl::span<const uint8_t> salt,
+                 etl::span<const uint8_t> info);
+
+/**
  * @brief Securely zero memory, resistant to compiler optimization.
- *
- * [MIL-SPEC] This function uses volatile pointer access and a memory
- * barrier to prevent the compiler from optimizing away the zeroing
- * operation, even if the buffer is not used afterward.
  */
 inline void secure_zero(etl::span<uint8_t> buf) {
   if (buf.empty()) return;
   etl::fill(buf.begin(), buf.end(), 0);
 #if defined(__GNUC__) || defined(__clang__)
-  // [MIL-SPEC] Force compiler to respect the zeroing even if buffer is not used afterward.
   asm volatile("" : : "r"(buf.data()) : "memory");
 #endif
 }
 
 /**
- * @brief Portable version of secure_zero for non-volatile buffers.
- */
-inline void secure_zero_portable(etl::span<uint8_t> buf) {
-  secure_zero(buf);
-}
-
-/**
  * @brief Known Answer Tests (KAT) for cryptographic primitives.
- *
- * [MIL-SPEC COMPLIANCE - FIPS 140-3]
- * Mandatory self-tests at startup to ensure the cryptographic engine
- * (SHA256/HMAC) is operating correctly.
- *
  * @return true if all tests pass, false otherwise.
  */
 bool run_cryptographic_self_tests();
@@ -87,7 +148,6 @@ inline void generate_nonce_with_counter(etl::span<uint8_t> out_nonce,
                                         RandomFunc random_func) {
   if (out_nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return;
 
-  // [SIL-2] Use ETL algorithm for deterministic generation
   etl::generate(out_nonce.begin(),
                 out_nonce.begin() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
                 [&]() { return static_cast<uint8_t>(random_func() & 0xFF); });

@@ -63,4 +63,5 @@ feeds/mcubridge
 feeds/mcubridge
 test_protocol_bin
 .VSCodeCounter/
-mcubridge-library-arduino/src/etl/
+mcubridge-library-arduino/src/etl/mcubridge-library-arduino/src/wolfcrypt/
+mcubridge-library-arduino/src/wolfssl/

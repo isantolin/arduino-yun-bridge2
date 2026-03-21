@@ -2,6 +2,9 @@
 
 #if BRIDGE_ENABLE_SPI
 
+/* [SIL-2] Exclude from host tests if SPI stub is not linked */
+#if !defined(BRIDGE_HOST_TEST)
+
 SPIServiceClass::SPIServiceClass() 
   : _initialized(false), _settings(4000000, MSBFIRST, SPI_MODE0) {}
 
@@ -30,5 +33,16 @@ size_t SPIServiceClass::transfer(uint8_t* buffer, size_t len) {
   SPI.endTransaction();
   return len;
 }
+
+#else
+
+/* Mock for host tests */
+SPIServiceClass::SPIServiceClass() : _initialized(false) {}
+void SPIServiceClass::begin() { _initialized = true; }
+void SPIServiceClass::end() { _initialized = false; }
+void SPIServiceClass::setConfig(uint32_t, uint8_t, uint8_t) {}
+size_t SPIServiceClass::transfer(uint8_t*, size_t len) { return len; }
+
+#endif /* BRIDGE_HOST_TEST */
 
 #endif // BRIDGE_ENABLE_SPI

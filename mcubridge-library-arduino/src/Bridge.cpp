@@ -939,15 +939,22 @@ etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Fr
 
 void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce, etl::span<uint8_t> out_tag) {
   etl::array<uint8_t, bridge::config::HKDF_KEY_LENGTH> handshake_key;
-  hkdf_sha256(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()),
+  rpc::security::hkdf_sha256(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()),
               etl::span<const uint8_t>(_shared_secret.data(), _shared_secret.size()),
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT, rpc::RPC_HANDSHAKE_HKDF_SALT_LEN),
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH, rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN));
-  SHA256 sha256;
+  rpc::security::McuBridgeSha256 sha256;
   sha256.resetHMAC(handshake_key.data(), handshake_key.size());
   sha256.update(nonce.data(), nonce.size());
-  sha256.finalizeHMAC(handshake_key.data(), handshake_key.size(), out_tag.data(), out_tag.size());
+  
+  etl::array<uint8_t, rpc::security::McuBridgeSha256::HASH_SIZE> full_tag;
+  sha256.finalizeHMAC(handshake_key.data(), handshake_key.size(), full_tag.data(), full_tag.size());
+  
+  // Truncate to expected tag length (16 bytes)
+  etl::copy_n(full_tag.begin(), etl::min(full_tag.size(), out_tag.size()), out_tag.begin());
+  
   rpc::security::secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
+  rpc::security::secure_zero(etl::span<uint8_t>(full_tag.data(), full_tag.size()));
 }
 
 void BridgeClass::_applyTimingConfig(etl::span<const uint8_t> payload) {

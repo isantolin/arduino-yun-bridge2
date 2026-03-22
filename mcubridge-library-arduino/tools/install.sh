@@ -191,14 +191,14 @@ install_wolfssl_vendored() {
     cp "$extracted_root/wolfssl/version.h" "$target/wolfssl/" 2>/dev/null || true
     cp "$extracted_root/wolfssl/options.h" "$target/wolfssl/" 2>/dev/null || true
 
-    # [HACK SIL-2] Generar user_settings.h en la RAÍZ de src/ para que Arduino lo encuentre.
+    # Generar user_settings.h en la RAÍZ de src/ para que Arduino lo encuentre en todo momento.
     cat << 'EOF_WOLFSSL' > "$target/user_settings.h"
 #ifndef WOLFSSL_USER_SETTINGS_H
 #define WOLFSSL_USER_SETTINGS_H
 
 #include <stddef.h>
 #include <stdint.h>
-#include <time.h>
+#include <time.h> /* [CRITICAL] Require time_t context BEFORE wolfSSL imports it */
 
 /* * [WOLFSSL CONFIGURATION] 
  * Centralized settings for wolfCrypt without heap and optimized for AVR.
@@ -206,6 +206,7 @@ install_wolfssl_vendored() {
 
 #define WOLFSSL_ARDUINO
 #define SINGLE_THREADED
+#define WC_NO_HARDEN /* Silenciar warnings en CI */
 
 #define USER_TIME
 #define XTIME wolfssl_time
@@ -216,11 +217,11 @@ install_wolfssl_vendored() {
 #define WOLFSSL_NO_MALLOC
 #define WOLFSSL_MALLOC_CHECK
 
-/* [AVR] Optimization - DISABLED for Host Tests if not on AVR */
+/* [AVR] Activamos WOLFSSL_AVR para las definiciones correctas de 16-bit.
+   El conflicto interno con SMALL_STACK se resuelve parcheando settings.h físicamente */
 #if defined(ARDUINO_ARCH_AVR)
 #define WOLFSSL_AVR
 #define USE_SLOW_SHA256
-/* #define WOLFSSL_SMALL_STACK // ERROR FATAL: Entra en colisión estricta con WOLFSSL_NO_MALLOC */
 #endif
 
 /* [PROTOCOL] Required primitives only */
@@ -268,6 +269,10 @@ EOF_WOLFSSL
     if [ -f "$settings_file" ]; then
         echo "#define WOLFSSL_USER_SETTINGS 1" | cat - "$settings_file" > temp_settings.h
         mv temp_settings.h "$settings_file"
+        
+        # [PARCHE FUERZA BRUTA]: Eliminar WOLFSSL_SMALL_STACK de settings.h para que NO
+        # colisione de ninguna manera con WOLFSSL_NO_MALLOC en la compilación AVR
+        sed -i 's/.*#define WOLFSSL_SMALL_STACK.*/\/* WOLFSSL_SMALL_STACK removed *\//g' "$settings_file"
     fi
 
     # Generar implementación del Custom Time para evitar errores de Macros (XTIME) en el enlazador
@@ -297,8 +302,7 @@ EOF_WOLF_TIME
         cp "$extracted_root/wolfcrypt/src/misc.c" "$target/wolfcrypt/src/misc.inc"
     fi
     if [ -f "$target/wolfcrypt/src/hash.c" ]; then
-        sed -i 's|wolfcrypt/src/misc\.c|misc.inc|g' "$target/wolfcrypt/src/hash.c"
-        sed -i 's|<misc\.inc>|"misc.inc"|g' "$target/wolfcrypt/src/hash.c"
+        sed -i 's|.*#include.*misc\.c.*|#include "misc.inc"|g' "$target/wolfcrypt/src/hash.c"
     fi
 
     echo "[OK] wolfssl vendored to $target."

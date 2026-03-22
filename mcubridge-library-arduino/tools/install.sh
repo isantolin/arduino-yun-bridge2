@@ -207,6 +207,11 @@ install_wolfssl_vendored() {
 #define WOLFSSL_ARDUINO
 #define SINGLE_THREADED
 
+/* Manejo de tiempo inerte para Bare-Metal */
+#define USER_TIME
+#define XTIME(t) (0)
+#define XGMTIME(c, t) (0)
+
 /* [SIL-2] No dynamic memory allocation */
 #define WOLFSSL_STATIC_MEMORY
 #define WOLFSSL_NO_MALLOC
@@ -265,8 +270,8 @@ EOF_WOLFSSL
         mv temp_settings.h "$settings_file"
     fi
 
-    # Copiar solo fuentes esenciales
-    local required_c_files="sha256.c hmac.c hash.c error.c logging.c wc_port.c memory.c wc_encrypt.c"
+    # Copiar solo fuentes esenciales (misc.c incluido porque es dependido por hash.c)
+    local required_c_files="sha256.c hmac.c hash.c error.c logging.c wc_port.c memory.c wc_encrypt.c misc.c"
     for f in $required_c_files; do
         if [ -f "$extracted_root/wolfcrypt/src/$f" ]; then
             cp "$extracted_root/wolfcrypt/src/$f" "$target/wolfcrypt/src/"

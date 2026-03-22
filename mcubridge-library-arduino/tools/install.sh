@@ -203,6 +203,10 @@ install_wolfssl_vendored() {
  * Centralized settings for wolfCrypt without heap and optimized for AVR.
  */
 
+/* Entorno Arduino Bare-Metal (Previene inclusión de <pthread.h>) */
+#define WOLFSSL_ARDUINO
+#define SINGLE_THREADED
+
 /* [SIL-2] No dynamic memory allocation */
 #define WOLFSSL_STATIC_MEMORY
 #define WOLFSSL_NO_MALLOC
@@ -212,7 +216,7 @@ install_wolfssl_vendored() {
 #if defined(ARDUINO_ARCH_AVR)
 #define WOLFSSL_AVR
 #define USE_SLOW_SHA256
-#define WOLFSSL_SMALL_STACK
+/* #define WOLFSSL_SMALL_STACK // ERROR: Conflicto absoluto con WOLFSSL_NO_MALLOC */
 #endif
 
 /* [PROTOCOL] Required primitives only */

@@ -45,6 +45,13 @@ SOURCES=(
     "${SRC_DIR}/protocol/mcubridge.pb.c"
     "${SRC_DIR}/security/sha256.cpp"
     "${SRC_DIR}/security/security.cpp"
+    "${SRC_DIR}/wolfssl/wolfcrypt/src/sha256.c"
+    "${SRC_DIR}/wolfssl/wolfcrypt/src/hmac.c"
+    "${SRC_DIR}/wolfssl/wolfcrypt/src/hash.c"
+    "${SRC_DIR}/wolfssl/wolfcrypt/src/error.c"
+    "${SRC_DIR}/wolfssl/wolfcrypt/src/logging.c"
+    "${SRC_DIR}/wolfssl/wolfcrypt/src/wc_port.c"
+    "${SRC_DIR}/wolfssl/wolfcrypt/src/memory.c"
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
     "${SRC_DIR}/protocol/rpc_cobs.cpp"
@@ -74,10 +81,12 @@ BASE_FLAGS=(
     -g
     -DBRIDGE_HOST_TEST=1
     -DBRIDGE_TEST_NO_GLOBALS=1
+    -DWOLFSSL_USER_SETTINGS
     -DUNITY_INCLUDE_DOUBLE
     -I"${SRC_DIR}"
     -I"${SRC_DIR}/nanopb"
     -I"${SRC_DIR}/protocol"
+    -I"${SRC_DIR}/wolfssl"
     -I"${TEST_DIR}/Unity"
     -I"${STUB_DIR}"
 )

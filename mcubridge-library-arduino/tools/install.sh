@@ -206,6 +206,63 @@ install_etl_dual() {
 }
 install_etl_dual
 
+# Instalación dual de wolfSSL (para Arduino y para tests host)
+WOLFSSL_VERSION="5.7.0-stable"
+install_wolfssl_dual() {
+    local url="https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v${WOLFSSL_VERSION}"
+    local check_file="wolfssl/ssl.h"
+    local target1="$LIB_DIR"
+    local target2="${LIB_ROOT}/src"
+
+    local needs_t1=false
+    local needs_t2=false
+
+    if [ ! -f "$target1/wolfssl/$check_file" ]; then
+        needs_t1=true
+    else
+        echo "[INFO] wolfssl already installed at $target1."
+    fi
+    if [ ! -f "$target2/wolfssl/$check_file" ]; then
+        needs_t2=true
+    else
+        echo "[INFO] wolfssl already installed at $target2."
+    fi
+
+    if [ "$needs_t1" = false ] && [ "$needs_t2" = false ]; then
+        return 0
+    fi
+
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    local zip_path="$tmp_dir/wolfssl.zip"
+
+    if ! download_zip "wolfssl" "$url" "$zip_path"; then
+        echo "[ERROR] Failed to download wolfssl." >&2
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    unzip -q "$zip_path" -d "$tmp_dir"
+    local extracted_root
+    extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d -name "wolfssl-*" | head -n1)
+
+    if [ "$needs_t1" = true ]; then
+        mkdir -p "$target1"
+        rm -rf "$target1/wolfssl"
+        cp -a "$extracted_root" "$target1/wolfssl"
+        echo "[OK] wolfssl installed to $target1."
+    fi
+    if [ "$needs_t2" = true ]; then
+        mkdir -p "$target2"
+        rm -rf "$target2/wolfssl"
+        cp -a "$extracted_root" "$target2/wolfssl"
+        echo "[OK] wolfssl installed to $target2."
+    fi
+
+    rm -rf "$tmp_dir"
+}
+install_wolfssl_dual
+
 # Nanopb C runtime — vendored into src/nanopb ONLY
 # [SIL-2] Pinned to a specific release for reproducible builds
 # NOTE: Unlike ETL (header-only), nanopb has .c source files.

@@ -215,15 +215,16 @@ install_wolfssl_vendored() {
 #define WOLFSSL_NO_MALLOC
 #define WOLFSSL_MALLOC_CHECK
 
-/* [AVR] Optimization - DISABLED for Host Tests if not on AVR */
+/* [AVR] Optimization - Evitamos explícitamente WOLFSSL_AVR porque 
+   auto-habilita WOLFSSL_SMALL_STACK, lo que choca irremediablemente con 
+   WOLFSSL_NO_MALLOC (Heap). Declaramos manualmente USE_SLOW_SHA256. */
 #if defined(ARDUINO_ARCH_AVR)
-#define WOLFSSL_AVR
 #define USE_SLOW_SHA256
-/* #define WOLFSSL_SMALL_STACK // ERROR: Conflictivo con WOLFSSL_NO_MALLOC */
 #endif
 
 /* [PROTOCOL] Required primitives only */
 #define WOLFCRYPT_ONLY
+#define NO_CERTS
 #define NO_AES
 #define NO_RSA
 #define NO_DSA
@@ -295,7 +296,8 @@ EOF_WOLF_TIME
         cp "$extracted_root/wolfcrypt/src/misc.c" "$target/wolfcrypt/src/misc.inc"
     fi
     if [ -f "$target/wolfcrypt/src/hash.c" ]; then
-        sed -i 's/^[ \t]*#include.*misc\.c.*/#include "misc.inc"/' "$target/wolfcrypt/src/hash.c"
+        sed -i 's|wolfcrypt/src/misc\.c|misc.inc|g' "$target/wolfcrypt/src/hash.c"
+        sed -i 's|<misc\.inc>|"misc.inc"|g' "$target/wolfcrypt/src/hash.c"
     fi
 
     echo "[OK] wolfssl vendored to $target."

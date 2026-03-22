@@ -191,9 +191,71 @@ install_wolfssl_vendored() {
     cp "$extracted_root/wolfssl/version.h" "$target/wolfssl/" 2>/dev/null || true
     cp "$extracted_root/wolfssl/options.h" "$target/wolfssl/" 2>/dev/null || true
 
-    # [HACK SIL-2] Inyectar WOLFSSL_USER_SETTINGS en la cabecera original.
-    # Esto soluciona el problema de las "unidades de traduccion aisladas" en los .c de Arduino
-    local settings_file="$target/wolfssl/wolfcrypt/settings.h"
+    # [HACK SIL-2] Generar user_settings.h dinámicamente y obligar a wolfSSL a usarlo.
+    # Esto soluciona los problemas de "Unidades de Traducción Aisladas" en compiladores Arduino,
+    # y evita la dependencia de archivos faltantes en el repositorio de CI.
+    local settings_dir="$target/wolfssl/wolfcrypt"
+    cat << 'EOF_WOLFSSL' > "$settings_dir/user_settings.h"
+#ifndef WOLFSSL_USER_SETTINGS_H
+#define WOLFSSL_USER_SETTINGS_H
+
+/* * [WOLFSSL CONFIGURATION] 
+ * Centralized settings for wolfCrypt without heap and optimized for AVR.
+ */
+
+/* [SIL-2] No dynamic memory allocation */
+#define WOLFSSL_STATIC_MEMORY
+#define WOLFSSL_NO_MALLOC
+#define WOLFSSL_MALLOC_CHECK
+
+/* [AVR] Optimization - DISABLED for Host Tests if not on AVR */
+#if defined(ARDUINO_ARCH_AVR)
+#define WOLFSSL_AVR
+#define USE_SLOW_SHA256
+#define WOLFSSL_SMALL_STACK
+#endif
+
+/* [PROTOCOL] Required primitives only */
+#define WOLFCRYPT_ONLY
+#define NO_AES
+#define NO_RSA
+#define NO_DSA
+#define NO_DH
+#define NO_PWDBASED
+#define NO_DES3
+#define NO_MD5
+#define NO_RC4
+#define NO_ASN
+#define NO_CODING
+#define NO_FILESYSTEM
+#define NO_SIG_WRAPPER
+#define NO_OLD_TLS
+
+/* [FEATURES] SHA-256, HMAC and HKDF */
+#define WOLFSSL_SHA256
+#define WOLFSSL_HMAC
+#ifndef HAVE_HKDF
+#define HAVE_HKDF
+#endif
+#ifndef WOLFSSL_HKDF
+#define WOLFSSL_HKDF
+#endif
+
+/* Explicitly disable other hashes */
+#define NO_SHA
+#define NO_MD4
+#define NO_MD2
+
+/* [SECURITY] Hardening */
+#define WOLFSSL_FORCE_ZERO
+#define WOLFSSL_NO_FLOAT
+#define NO_WRITEV
+#define NO_MAIN_DRIVER
+
+#endif /* WOLFSSL_USER_SETTINGS_H */
+EOF_WOLFSSL
+
+    local settings_file="$settings_dir/settings.h"
     if [ -f "$settings_file" ]; then
         echo "#define WOLFSSL_USER_SETTINGS 1" | cat - "$settings_file" > temp_settings.h
         mv temp_settings.h "$settings_file"

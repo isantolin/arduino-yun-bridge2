@@ -203,14 +203,10 @@ install_wolfssl_vendored() {
  * Centralized settings for wolfCrypt without heap and optimized for AVR.
  */
 
-/* Entorno Arduino Bare-Metal (Previene inclusión de <pthread.h>) */
+/* Entorno Arduino Bare-Metal (Permite usar <time.h> nativo de avr-gcc) */
 #define WOLFSSL_ARDUINO
 #define SINGLE_THREADED
-
-/* Manejo de tiempo inerte para Bare-Metal */
-#define USER_TIME
-#define XTIME(t) (0)
-#define XGMTIME(c, t) (0)
+#define WC_NO_HARDEN /* Silencia warning de timing resistance en CI */
 
 /* [SIL-2] No dynamic memory allocation */
 #define WOLFSSL_STATIC_MEMORY
@@ -277,6 +273,11 @@ EOF_WOLFSSL
             cp "$extracted_root/wolfcrypt/src/$f" "$target/wolfcrypt/src/"
         fi
     done
+
+    # [FIX] Reparar el include interno de misc.c que se rompe en el compilador plano de Arduino
+    if [ -f "$target/wolfcrypt/src/hash.c" ]; then
+        sed -i 's|<wolfcrypt/src/misc.c>|"misc.c"|g' "$target/wolfcrypt/src/hash.c"
+    fi
 
     echo "[OK] wolfssl vendored to $target."
     rm -rf "$tmp_dir"

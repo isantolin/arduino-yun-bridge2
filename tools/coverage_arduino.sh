@@ -34,7 +34,6 @@ SOURCES=(
     "${SRC_ROOT}/nanopb/pb_encode.c"
     "${SRC_ROOT}/nanopb/pb_decode.c"
     "${SRC_ROOT}/protocol/mcubridge.pb.c"
-    "${SRC_ROOT}/security/sha256.cpp"
     "${SRC_ROOT}/security/security.cpp"
     "${SRC_ROOT}/wolfcrypt/src/sha256.c"
     "${SRC_ROOT}/wolfcrypt/src/hmac.c"

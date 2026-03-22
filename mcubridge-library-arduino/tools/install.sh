@@ -197,6 +197,10 @@ install_wolfssl_vendored() {
 #ifndef WOLFSSL_USER_SETTINGS_H
 #define WOLFSSL_USER_SETTINGS_H
 
+#include <stddef.h>
+#include <stdint.h>
+#include <time.h> /* [CRITICAL] Require time_t context BEFORE wolfSSL imports it via wc_port.h */
+
 /* * [WOLFSSL CONFIGURATION] 
  * Centralized settings for wolfCrypt without heap and optimized for AVR.
  */
@@ -291,13 +295,12 @@ EOF_WOLF_TIME
     done
 
     # [FIX] Renombrar misc.c a misc.inc para evitar compilarlo doble en Arduino
-    # y parchear hash.c para que use el include local correcto.
+    # y parchear hash.c de forma robusta ignorando espacios o saltos
     if [ -f "$extracted_root/wolfcrypt/src/misc.c" ]; then
         cp "$extracted_root/wolfcrypt/src/misc.c" "$target/wolfcrypt/src/misc.inc"
     fi
     if [ -f "$target/wolfcrypt/src/hash.c" ]; then
-        sed -i 's|wolfcrypt/src/misc\.c|misc.inc|g' "$target/wolfcrypt/src/hash.c"
-        sed -i 's|<misc\.inc>|"misc.inc"|g' "$target/wolfcrypt/src/hash.c"
+        sed -i 's|.*#include.*misc\.c.*|#include "misc.inc"|g' "$target/wolfcrypt/src/hash.c"
     fi
 
     echo "[OK] wolfssl vendored to $target."

@@ -36,13 +36,13 @@ SOURCES=(
     "${SRC_ROOT}/protocol/mcubridge.pb.c"
     "${SRC_ROOT}/security/sha256.cpp"
     "${SRC_ROOT}/security/security.cpp"
-    "${SRC_ROOT}/wolfssl/wolfcrypt/src/sha256.c"
-    "${SRC_ROOT}/wolfssl/wolfcrypt/src/hmac.c"
-    "${SRC_ROOT}/wolfssl/wolfcrypt/src/hash.c"
-    "${SRC_ROOT}/wolfssl/wolfcrypt/src/error.c"
-    "${SRC_ROOT}/wolfssl/wolfcrypt/src/logging.c"
-    "${SRC_ROOT}/wolfssl/wolfcrypt/src/wc_port.c"
-    "${SRC_ROOT}/wolfssl/wolfcrypt/src/memory.c"
+    "${SRC_ROOT}/wolfcrypt/src/sha256.c"
+    "${SRC_ROOT}/wolfcrypt/src/hmac.c"
+    "${SRC_ROOT}/wolfcrypt/src/hash.c"
+    "${SRC_ROOT}/wolfcrypt/src/error.c"
+    "${SRC_ROOT}/wolfcrypt/src/logging.c"
+    "${SRC_ROOT}/wolfcrypt/src/wc_port.c"
+    "${SRC_ROOT}/wolfcrypt/src/memory.c"
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
     "${SRC_ROOT}/protocol/rpc_cobs.cpp"
@@ -88,7 +88,6 @@ BASE_FLAGS=(
     "-I${SRC_ROOT}"
     "-I${SRC_ROOT}/nanopb"
     "-I${SRC_ROOT}/protocol"
-    "-I${SRC_ROOT}/wolfssl"
     "-I${STUB_INCLUDE}"
     "-I${TEST_ROOT}/mocks"
     "-I${TEST_ROOT}/Unity"
@@ -145,7 +144,7 @@ done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
-gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" --exclude "${SRC_ROOT}/nanopb" --exclude "${SRC_ROOT}/etl" --exclude "${SRC_ROOT}/wolfssl" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
+gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" --exclude "${SRC_ROOT}/nanopb" --exclude "${SRC_ROOT}/etl" --exclude "${SRC_ROOT}/wolfssl" --exclude "${SRC_ROOT}/wolfcrypt" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 # Optional: also output term summary
 cat "${OUTPUT_ROOT}/summary.txt"

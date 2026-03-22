@@ -206,31 +206,20 @@ install_etl_dual() {
 }
 install_etl_dual
 
-# Instalación dual de wolfSSL (para Arduino y para tests host)
+# Instalación vendored de wolfSSL (solo los archivos criptográficos necesarios)
+# Esto evita que Arduino intente compilar cientos de archivos .c no relacionados y arregla las rutas.
 WOLFSSL_VERSION="5.7.0-stable"
-install_wolfssl_dual() {
+install_wolfssl_vendored() {
     local url="https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v${WOLFSSL_VERSION}"
-    local check_file="wolfssl/ssl.h"
-    local target1="$LIB_DIR"
-    local target2="${LIB_ROOT}/src"
+    local check_file="wolfssl/wolfcrypt/sha256.h"
+    local target="${LIB_ROOT}/src"
 
-    local needs_t1=false
-    local needs_t2=false
-
-    if [ ! -f "$target1/wolfssl/$check_file" ]; then
-        needs_t1=true
-    else
-        echo "[INFO] wolfssl already installed at $target1."
-    fi
-    if [ ! -f "$target2/wolfssl/$check_file" ]; then
-        needs_t2=true
-    else
-        echo "[INFO] wolfssl already installed at $target2."
-    fi
-
-    if [ "$needs_t1" = false ] && [ "$needs_t2" = false ]; then
+    if [ -f "$target/$check_file" ]; then
+        echo "[INFO] wolfssl already vendored at $target."
         return 0
     fi
+
+    echo "[WARN] wolfssl missing. Vendoring necessary files..."
 
     local tmp_dir
     tmp_dir=$(mktemp -d)
@@ -246,22 +235,26 @@ install_wolfssl_dual() {
     local extracted_root
     extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d -name "wolfssl-*" | head -n1)
 
-    if [ "$needs_t1" = true ]; then
-        mkdir -p "$target1"
-        rm -rf "$target1/wolfssl"
-        cp -a "$extracted_root" "$target1/wolfssl"
-        echo "[OK] wolfssl installed to $target1."
-    fi
-    if [ "$needs_t2" = true ]; then
-        mkdir -p "$target2"
-        rm -rf "$target2/wolfssl"
-        cp -a "$extracted_root" "$target2/wolfssl"
-        echo "[OK] wolfssl installed to $target2."
-    fi
+    mkdir -p "$target/wolfssl"
+    mkdir -p "$target/wolfcrypt/src"
 
+    # 1. Copiar headers a src/wolfssl/wolfcrypt (para que #include <wolfssl/wolfcrypt/...> funcione)
+    cp -a "$extracted_root/wolfssl/wolfcrypt" "$target/wolfssl/"
+    cp "$extracted_root/wolfssl/version.h" "$target/wolfssl/" 2>/dev/null || true
+    cp "$extracted_root/wolfssl/options.h" "$target/wolfssl/" 2>/dev/null || true
+
+    # 2. Copiar solo los fuentes C necesarios a src/wolfcrypt/src/ para que el IDE los compile
+    local required_c_files="sha256.c hmac.c hash.c error.c logging.c wc_port.c memory.c wc_encrypt.c"
+    for f in $required_c_files; do
+        if [ -f "$extracted_root/wolfcrypt/src/$f" ]; then
+            cp "$extracted_root/wolfcrypt/src/$f" "$target/wolfcrypt/src/"
+        fi
+    done
+
+    echo "[OK] wolfssl vendored to $target."
     rm -rf "$tmp_dir"
 }
-install_wolfssl_dual
+install_wolfssl_vendored
 
 # Nanopb C runtime — vendored into src/nanopb ONLY
 # [SIL-2] Pinned to a specific release for reproducible builds

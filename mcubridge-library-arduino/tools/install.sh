@@ -192,7 +192,6 @@ install_wolfssl_vendored() {
     cp "$extracted_root/wolfssl/options.h" "$target/wolfssl/" 2>/dev/null || true
 
     # [HACK SIL-2] Generar user_settings.h dinámicamente y obligar a wolfSSL a usarlo.
-    # Evitamos colisiones de macros delegando XTIME a funciones personalizadas puras.
     local settings_dir="$target/wolfssl/wolfcrypt"
     cat << 'EOF_WOLFSSL' > "$settings_dir/user_settings.h"
 #ifndef WOLFSSL_USER_SETTINGS_H
@@ -202,15 +201,14 @@ install_wolfssl_vendored() {
  * Centralized settings for wolfCrypt without heap and optimized for AVR.
  */
 
-/* Entorno Arduino Bare-Metal */
+/* [SIL-2] Entorno protegido y manejo de tiempo */
 #define WOLFSSL_ARDUINO
 #define SINGLE_THREADED
-#define WC_NO_HARDEN /* Silencia warning de timing resistance en CI */
+#define WC_NO_HARDEN /* Silencia warning de timing resistance */
 
-/* Manejo de tiempo custom para Bare-Metal */
 #define USER_TIME
-#define XTIME(t) custom_time(t)
-#define XGMTIME(c, t) custom_gmtime(c, t)
+#define XTIME wolfssl_time
+#define XGMTIME wolfssl_gmtime
 
 /* [SIL-2] No dynamic memory allocation */
 #define WOLFSSL_STATIC_MEMORY
@@ -221,11 +219,11 @@ install_wolfssl_vendored() {
 #if defined(ARDUINO_ARCH_AVR)
 #define WOLFSSL_AVR
 #define USE_SLOW_SHA256
+/* #define WOLFSSL_SMALL_STACK // ERROR: Conflictivo con WOLFSSL_NO_MALLOC */
 #endif
 
 /* [PROTOCOL] Required primitives only */
 #define WOLFCRYPT_ONLY
-#define NO_CERTS
 #define NO_AES
 #define NO_RSA
 #define NO_DSA
@@ -270,19 +268,20 @@ EOF_WOLFSSL
         mv temp_settings.h "$settings_file"
     fi
 
-    # Generar implementación del Custom Time para evitar errores de Linker y Macros en C
+    # Generar implementación del Custom Time para evitar errores de Macros (XTIME)
     cat << 'EOF_WOLF_TIME' > "$target/wolfcrypt/src/dummy_time.c"
 #include <time.h>
-time_t custom_time(time_t * timer) {
+time_t wolfssl_time(time_t * timer) {
     if (timer) *timer = 0;
     return 0;
 }
-struct tm* custom_gmtime(const time_t* timer, struct tm* tmp) {
+struct tm* wolfssl_gmtime(const time_t* timer, struct tm* tmp) {
+    (void)timer;
     return tmp;
 }
 EOF_WOLF_TIME
 
-    # Copiar solo fuentes esenciales (evitando compilar cientos de archivos TLS)
+    # Copiar solo fuentes esenciales
     local required_c_files="sha256.c hmac.c hash.c error.c logging.c wc_port.c memory.c wc_encrypt.c"
     for f in $required_c_files; do
         if [ -f "$extracted_root/wolfcrypt/src/$f" ]; then
@@ -290,15 +289,13 @@ EOF_WOLF_TIME
         fi
     done
 
-    # [FIX MÚLTIPLES DEFINICIONES] 
-    # misc.c es incluido dinámicamente por hash.c. En lugar de compilarlo como un .c nativo en Arduino,
-    # lo renombramos a .inc y parcheamos las cabeceras.
+    # [FIX] Renombrar misc.c a misc.inc para evitar compilarlo doble en Arduino
+    # y parchear hash.c para que use el include local correcto.
     if [ -f "$extracted_root/wolfcrypt/src/misc.c" ]; then
         cp "$extracted_root/wolfcrypt/src/misc.c" "$target/wolfcrypt/src/misc.inc"
     fi
     if [ -f "$target/wolfcrypt/src/hash.c" ]; then
-        sed -i 's|wolfcrypt/src/misc\.c|misc.inc|g' "$target/wolfcrypt/src/hash.c"
-        sed -i 's|<misc\.inc>|"misc.inc"|g' "$target/wolfcrypt/src/hash.c"
+        sed -i 's/^[ \t]*#include.*misc\.c.*/#include "misc.inc"/' "$target/wolfcrypt/src/hash.c"
     fi
 
     echo "[OK] wolfssl vendored to $target."

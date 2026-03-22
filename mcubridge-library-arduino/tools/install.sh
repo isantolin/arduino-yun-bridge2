@@ -191,20 +191,26 @@ install_wolfssl_vendored() {
     cp "$extracted_root/wolfssl/version.h" "$target/wolfssl/" 2>/dev/null || true
     cp "$extracted_root/wolfssl/options.h" "$target/wolfssl/" 2>/dev/null || true
 
-    # [SIL-2 INJECTION] Inyectamos la configuración directamente en la cabecera de settings.h
-    # Esto elimina de forma garantizada los problemas del enlazador de Arduino con user_settings.h
+    # Inyectar WOLFSSL_USER_SETTINGS en la cabecera original para redirigir toda compilación C/C++
     local settings_file="$target/wolfssl/wolfcrypt/settings.h"
     if [ -f "$settings_file" ]; then
-        cat << 'EOF_WOLFSSL' > temp_config.h
-/* ========================================================= */
-/* McuBridge SIL-2 WolfSSL Configuration                     */
-/* ========================================================= */
-#ifndef WOLFSSL_MCU_BRIDGE_CONFIG
-#define WOLFSSL_MCU_BRIDGE_CONFIG
+        echo "#define WOLFSSL_USER_SETTINGS 1" | cat - "$settings_file" > temp_settings.h
+        mv temp_settings.h "$settings_file"
+    fi
+
+    # [SIL-2] Generar user_settings.h en la RAÍZ de src/ para garantizar que el compilador
+    # de Arduino (que importa src/ por defecto) resuelva la cabecera correctamente en todo contexto.
+    cat << 'EOF_WOLFSSL' > "$target/user_settings.h"
+#ifndef WOLFSSL_USER_SETTINGS_H
+#define WOLFSSL_USER_SETTINGS_H
 
 #include <stddef.h>
 #include <stdint.h>
-#include <time.h> /* [CRITICAL] Require time_t context */
+#include <time.h> /* [CRITICAL] Require time_t context BEFORE wolfSSL imports it */
+
+/* ========================================================= */
+/* McuBridge SIL-2 WolfSSL Configuration                     */
+/* ========================================================= */
 
 #define WOLFSSL_ARDUINO
 #define SINGLE_THREADED
@@ -219,9 +225,10 @@ install_wolfssl_vendored() {
 #define WOLFSSL_NO_MALLOC
 #define WOLFSSL_MALLOC_CHECK
 
-/* [AVR] Activamos WOLFSSL_AVR para las definiciones correctas de 16-bit. */
+/* [AVR] Activamos optimizaciones manuales de AVR.
+   CRÍTICO: NO definir WOLFSSL_AVR, ya que fuerza WOLFSSL_SMALL_STACK internamente
+   en la librería y causa colisión fatal del compilador con WOLFSSL_NO_MALLOC. */
 #if defined(ARDUINO_ARCH_AVR)
-#define WOLFSSL_AVR
 #define USE_SLOW_SHA256
 #endif
 
@@ -263,22 +270,10 @@ install_wolfssl_vendored() {
 #define NO_WRITEV
 #define NO_MAIN_DRIVER
 
-#endif /* WOLFSSL_MCU_BRIDGE_CONFIG */
-/* ========================================================= */
-
+#endif /* WOLFSSL_USER_SETTINGS_H */
 EOF_WOLFSSL
 
-        cat temp_config.h "$settings_file" > temp_settings.h
-        mv temp_settings.h "$settings_file"
-        rm temp_config.h
-        
-        # [PARCHE FUERZA BRUTA]: Eliminar bloqueos y chequeos fatales de wolfSSL en AVR
-        sed -i 's/.*#error static memory does not support small stack.*/\/* error bypassed *\//g' "$settings_file"
-        sed -i 's/.*#error Small stack cannot be used.*/\/* error bypassed *\//g' "$settings_file"
-        sed -i 's/.*#define WOLFSSL_SMALL_STACK.*/\/* WOLFSSL_SMALL_STACK removed *\//g' "$settings_file"
-    fi
-
-    # Generar implementación del Custom Time para evitar errores de Linker (XTIME)
+    # Generar implementación del Custom Time para evitar errores de Macros (XTIME) en el enlazador
     cat << 'EOF_WOLF_TIME' > "$target/wolfcrypt/src/dummy_time.c"
 #include <time.h>
 time_t wolfssl_time(time_t * timer) {
@@ -300,13 +295,12 @@ EOF_WOLF_TIME
     done
 
     # [FIX] Renombrar misc.c a misc.inc para evitar compilarlo doble en Arduino
-    # Y parchear hash.c de forma sólida para asegurar comillas dobles en C.
+    # Y parchear hash.c de forma sólida capturando cualquier variante de include.
     if [ -f "$extracted_root/wolfcrypt/src/misc.c" ]; then
         cp "$extracted_root/wolfcrypt/src/misc.c" "$target/wolfcrypt/src/misc.inc"
     fi
     if [ -f "$target/wolfcrypt/src/hash.c" ]; then
-        sed -i 's|#include <wolfcrypt/src/misc\.c>|#include "misc.inc"|g' "$target/wolfcrypt/src/hash.c"
-        sed -i 's|#include "wolfcrypt/src/misc\.c"|#include "misc.inc"|g' "$target/wolfcrypt/src/hash.c"
+        sed -i 's|.*#include.*misc\.c.*|#include "misc.inc"|g' "$target/wolfcrypt/src/hash.c"
     fi
 
     echo "[OK] wolfssl vendored to $target."

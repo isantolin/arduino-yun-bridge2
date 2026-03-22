@@ -243,6 +243,10 @@ install_wolfssl_vendored() {
     cp "$extracted_root/wolfssl/version.h" "$target/wolfssl/" 2>/dev/null || true
     cp "$extracted_root/wolfssl/options.h" "$target/wolfssl/" 2>/dev/null || true
 
+    # [SIL-2] Inyectar WOLFSSL_USER_SETTINGS para forzar configuración estática en Arduino IDE
+    echo "#define WOLFSSL_USER_SETTINGS 1" | cat - "$target/wolfssl/wolfcrypt/settings.h" > temp_settings.h
+    mv temp_settings.h "$target/wolfssl/wolfcrypt/settings.h"
+
     # 2. Copiar solo los fuentes C necesarios a src/wolfcrypt/src/ para que el IDE los compile
     local required_c_files="sha256.c hmac.c hash.c error.c logging.c wc_port.c memory.c wc_encrypt.c"
     for f in $required_c_files; do

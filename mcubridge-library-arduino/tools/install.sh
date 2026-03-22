@@ -191,24 +191,21 @@ install_wolfssl_vendored() {
     cp "$extracted_root/wolfssl/version.h" "$target/wolfssl/" 2>/dev/null || true
     cp "$extracted_root/wolfssl/options.h" "$target/wolfssl/" 2>/dev/null || true
 
-    # [HACK SIL-2] Generar user_settings.h dinámicamente y obligar a wolfSSL a usarlo.
-    local settings_dir="$target/wolfssl/wolfcrypt"
-    cat << 'EOF_WOLFSSL' > "$settings_dir/user_settings.h"
+    # [HACK SIL-2] Generar user_settings.h en la RAÍZ de src/ para que Arduino lo encuentre.
+    cat << 'EOF_WOLFSSL' > "$target/user_settings.h"
 #ifndef WOLFSSL_USER_SETTINGS_H
 #define WOLFSSL_USER_SETTINGS_H
 
 #include <stddef.h>
 #include <stdint.h>
-#include <time.h> /* [CRITICAL] Require time_t context BEFORE wolfSSL imports it via wc_port.h */
+#include <time.h>
 
 /* * [WOLFSSL CONFIGURATION] 
  * Centralized settings for wolfCrypt without heap and optimized for AVR.
  */
 
-/* [SIL-2] Entorno protegido y manejo de tiempo */
 #define WOLFSSL_ARDUINO
 #define SINGLE_THREADED
-#define WC_NO_HARDEN /* Silencia warning de timing resistance */
 
 #define USER_TIME
 #define XTIME wolfssl_time
@@ -219,16 +216,15 @@ install_wolfssl_vendored() {
 #define WOLFSSL_NO_MALLOC
 #define WOLFSSL_MALLOC_CHECK
 
-/* [AVR] Optimization - Evitamos explícitamente WOLFSSL_AVR porque 
-   auto-habilita WOLFSSL_SMALL_STACK, lo que choca irremediablemente con 
-   WOLFSSL_NO_MALLOC (Heap). Declaramos manualmente USE_SLOW_SHA256. */
+/* [AVR] Optimization - DISABLED for Host Tests if not on AVR */
 #if defined(ARDUINO_ARCH_AVR)
+#define WOLFSSL_AVR
 #define USE_SLOW_SHA256
+/* #define WOLFSSL_SMALL_STACK // ERROR FATAL: Entra en colisión estricta con WOLFSSL_NO_MALLOC */
 #endif
 
 /* [PROTOCOL] Required primitives only */
 #define WOLFCRYPT_ONLY
-#define NO_CERTS
 #define NO_AES
 #define NO_RSA
 #define NO_DSA
@@ -267,13 +263,14 @@ install_wolfssl_vendored() {
 #endif /* WOLFSSL_USER_SETTINGS_H */
 EOF_WOLFSSL
 
-    local settings_file="$settings_dir/settings.h"
+    # Inyectar en settings.h la señal para que busque el user_settings.h que acabamos de crear
+    local settings_file="$target/wolfssl/wolfcrypt/settings.h"
     if [ -f "$settings_file" ]; then
         echo "#define WOLFSSL_USER_SETTINGS 1" | cat - "$settings_file" > temp_settings.h
         mv temp_settings.h "$settings_file"
     fi
 
-    # Generar implementación del Custom Time para evitar errores de Macros (XTIME)
+    # Generar implementación del Custom Time para evitar errores de Macros (XTIME) en el enlazador
     cat << 'EOF_WOLF_TIME' > "$target/wolfcrypt/src/dummy_time.c"
 #include <time.h>
 time_t wolfssl_time(time_t * timer) {
@@ -295,12 +292,13 @@ EOF_WOLF_TIME
     done
 
     # [FIX] Renombrar misc.c a misc.inc para evitar compilarlo doble en Arduino
-    # y parchear hash.c de forma robusta ignorando espacios o saltos
+    # Y parchear hash.c asegurando comillas dobles
     if [ -f "$extracted_root/wolfcrypt/src/misc.c" ]; then
         cp "$extracted_root/wolfcrypt/src/misc.c" "$target/wolfcrypt/src/misc.inc"
     fi
     if [ -f "$target/wolfcrypt/src/hash.c" ]; then
-        sed -i 's|.*#include.*misc\.c.*|#include "misc.inc"|g' "$target/wolfcrypt/src/hash.c"
+        sed -i 's|wolfcrypt/src/misc\.c|misc.inc|g' "$target/wolfcrypt/src/hash.c"
+        sed -i 's|<misc\.inc>|"misc.inc"|g' "$target/wolfcrypt/src/hash.c"
     fi
 
     echo "[OK] wolfssl vendored to $target."

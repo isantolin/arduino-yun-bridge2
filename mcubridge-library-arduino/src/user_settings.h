@@ -1,6 +1,12 @@
 #ifndef WOLFSSL_USER_SETTINGS_H
 #define WOLFSSL_USER_SETTINGS_H
 
+/* [AVR] Suprimir warnings benignos en código de terceros */
+#if defined(ARDUINO_ARCH_AVR)
+    #pragma GCC diagnostic ignored "-Wshift-count-overflow"
+    #pragma GCC diagnostic ignored "-Woverflow"
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -20,6 +26,14 @@
 #define WOLFSSL_TIME_H_EXISTS
 #define WOLFSSL_GMTIME_STRCUT_DEFINED 
 #define WOLFSSL_TM_STRUCT_DEFINED
+
+/* [AVR] Forzar tamaños de tipos para evitar warnings de truncamiento y shift-overflow */
+#if defined(ARDUINO_ARCH_AVR)
+    #define SIZEOF_LONG 4
+    #define SIZEOF_LONG_LONG 8
+    #define WOLFSSL_IAR_ARM_AVR
+    #define NO_64BIT
+#endif
 
 /* [SIL-2] No dynamic memory allocation */
 #define WOLFSSL_STATIC_MEMORY

@@ -143,15 +143,22 @@ uint16_t getFreeMemory() {
 }
 
 void init() {
-#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
-  wdt_enable(WDTO_2S);
-#endif
-
   // [SIL-2] Force all digital pins to a safe state (Input with Pullups) on boot
   // to avoid floating states or accidental actuator activation.
   for (uint8_t pin = 0; pin < DIGITAL_PINS; ++pin) {
     pinMode(pin, INPUT_PULLUP);
   }
+
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
+  wdt_enable(WDTO_2S);
+#elif defined(ARDUINO_ARCH_ESP32) && BRIDGE_ENABLE_WATCHDOG
+  esp_task_wdt_init(2, true);
+  esp_task_wdt_add(NULL);
+#elif defined(ARDUINO_ARCH_ESP8266) && BRIDGE_ENABLE_WATCHDOG
+  ESP.wdtEnable(2000);
+#elif defined(ARDUINO_ARCH_SAMD) && BRIDGE_ENABLE_WATCHDOG
+  // SAMD WDT initialization is usually board-specific; ensure generic safety.
+#endif
 }
 
 bool hasSD() {

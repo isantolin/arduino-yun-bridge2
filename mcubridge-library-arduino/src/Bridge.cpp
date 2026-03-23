@@ -359,55 +359,67 @@ void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
-#if BRIDGE_ENABLE_DATASTORE
-  static constexpr etl::array<CmdHandler, 3> kDataStoreHandlers{{
-      &BridgeClass::_unusedCommandSlot, // 112
-      &BridgeClass::_unusedCommandSlot, // 113
-      &BridgeClass::_handleDatastoreGetResp // 114
-  }};
-  _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers.data(), kDataStoreHandlers.size());
-#endif
+  if constexpr (bridge::config::ENABLE_DATASTORE) {
+    static constexpr etl::array<CmdHandler, 3> kDataStoreHandlers{{
+        &BridgeClass::_unusedCommandSlot, // 112
+        &BridgeClass::_unusedCommandSlot, // 113
+        &BridgeClass::_handleDatastoreGetResp // 114
+    }};
+    _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers.data(), kDataStoreHandlers.size());
+  } else {
+    (void)ctx;
+    emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+  }
 }
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
-#if BRIDGE_ENABLE_MAILBOX
-  static constexpr etl::array<CmdHandler, 6> kMailboxHandlers{{
-      &BridgeClass::_unusedCommandSlot, // 128
-      &BridgeClass::_unusedCommandSlot, // 129
-      &BridgeClass::_unusedCommandSlot, // 130
-      &BridgeClass::_handleMailboxPush, // 131
-      &BridgeClass::_handleMailboxReadResp, // 132
-      &BridgeClass::_handleMailboxAvailableResp // 133
-  }};
-  _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers.data(), kMailboxHandlers.size());
-#endif
+  if constexpr (bridge::config::ENABLE_MAILBOX) {
+    static constexpr etl::array<CmdHandler, 6> kMailboxHandlers{{
+        &BridgeClass::_unusedCommandSlot, // 128
+        &BridgeClass::_unusedCommandSlot, // 129
+        &BridgeClass::_unusedCommandSlot, // 130
+        &BridgeClass::_handleMailboxPush, // 131
+        &BridgeClass::_handleMailboxReadResp, // 132
+        &BridgeClass::_handleMailboxAvailableResp // 133
+    }};
+    _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers.data(), kMailboxHandlers.size());
+  } else {
+    (void)ctx;
+    emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+  }
 }
 
 void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
-#if BRIDGE_ENABLE_FILESYSTEM
-  static constexpr etl::array<CmdHandler, 4> kFsHandlers{{
-      &BridgeClass::_handleFileWrite, // 144
-      &BridgeClass::_handleFileRead, // 145
-      &BridgeClass::_handleFileRemove, // 146
-      &BridgeClass::_handleFileReadResp // 147
-  }};
-  _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers.data(), kFsHandlers.size());
-#endif
+  if constexpr (bridge::config::ENABLE_FILESYSTEM) {
+    static constexpr etl::array<CmdHandler, 4> kFsHandlers{{
+        &BridgeClass::_handleFileWrite, // 144
+        &BridgeClass::_handleFileRead, // 145
+        &BridgeClass::_handleFileRemove, // 146
+        &BridgeClass::_handleFileReadResp // 147
+    }};
+    _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers.data(), kFsHandlers.size());
+  } else {
+    (void)ctx;
+    emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+  }
 }
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
-#if BRIDGE_ENABLE_PROCESS
-  static constexpr etl::array<CmdHandler, 7> kProcessHandlers{{
-      &BridgeClass::_unusedCommandSlot, // 160
-      &BridgeClass::_unusedCommandSlot, // 161
-      &BridgeClass::_handleProcessKill, // 162
-      &BridgeClass::_unusedCommandSlot, // 163
-      &BridgeClass::_unusedCommandSlot, // 164
-      &BridgeClass::_handleProcessRunAsyncResp, // 165
-      &BridgeClass::_handleProcessPollResp // 166
-  }};
-  _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers.data(), kProcessHandlers.size());
-#endif
+  if constexpr (bridge::config::ENABLE_PROCESS) {
+    static constexpr etl::array<CmdHandler, 7> kProcessHandlers{{
+        &BridgeClass::_unusedCommandSlot, // 160
+        &BridgeClass::_unusedCommandSlot, // 161
+        &BridgeClass::_handleProcessKill, // 162
+        &BridgeClass::_unusedCommandSlot, // 163
+        &BridgeClass::_unusedCommandSlot, // 164
+        &BridgeClass::_handleProcessRunAsyncResp, // 165
+        &BridgeClass::_handleProcessPollResp // 166
+    }};
+    _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers.data(), kProcessHandlers.size());
+  } else {
+    (void)ctx;
+    emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+  }
 }
 
 void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {

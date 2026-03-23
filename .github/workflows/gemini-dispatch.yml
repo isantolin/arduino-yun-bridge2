@@ -32,7 +32,6 @@ jobs:
     steps:
       - name: 'Print context for debugging'
         env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           DEBUG_event_name: '${{ github.event_name }}'
           DEBUG_event__action: '${{ github.event.action }}'
           DEBUG_event__comment__author_association: '${{ github.event.comment.author_association }}'
@@ -74,7 +73,7 @@ jobs:
         id: 'mint_identity_token'
         if: |-
           ${{ vars.APP_ID }}
-        uses: 'actions/create-github-app-token@v3' # ratchet:actions/create-github-app-token@v3
+        uses: 'actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf' # ratchet:actions/create-github-app-token@v2
         with:
           app-id: '${{ vars.APP_ID }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
@@ -84,9 +83,8 @@ jobs:
 
       - name: 'Extract command'
         id: 'extract_command'
-        uses: 'actions/github-script@v8' # ratchet:actions/github-script@v8
+        uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # ratchet:actions/github-script@v7
         env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           EVENT_TYPE: '${{ github.event_name }}.${{ github.event.action }}'
           REQUEST: '${{ github.event.comment.body || github.event.review.body || github.event.issue.body }}'
         with:
@@ -105,6 +103,8 @@ jobs:
               core.setOutput('additional_context', additionalContext);
             } else if (request.startsWith("@gemini-cli /triage")) {
               core.setOutput('command', 'triage');
+            } else if (request.startsWith("@gemini-cli /approve")) {
+              core.setOutput('command', 'approve');
             } else if (request.startsWith("@gemini-cli")) {
               const additionalContext = request.replace(/^@gemini-cli/, '').trim();
               core.setOutput('command', 'invoke');
@@ -115,7 +115,6 @@ jobs:
 
       - name: 'Acknowledge request'
         env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           ISSUE_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
           MESSAGE: |-
@@ -168,12 +167,27 @@ jobs:
       additional_context: '${{ needs.dispatch.outputs.additional_context }}'
     secrets: 'inherit'
 
+  plan-execute:
+    needs: 'dispatch'
+    if: |-
+      ${{ needs.dispatch.outputs.command == 'approve' }}
+    uses: './.github/workflows/gemini-plan-execute.yml'
+    permissions:
+      contents: 'write'
+      id-token: 'write'
+      issues: 'write'
+      pull-requests: 'write'
+    with:
+      additional_context: '${{ needs.dispatch.outputs.additional_context }}'
+    secrets: 'inherit'
+
   fallthrough:
     needs:
       - 'dispatch'
       - 'review'
       - 'triage'
       - 'invoke'
+      - 'plan-execute'
     if: |-
       ${{ always() && !cancelled() && (failure() || needs.dispatch.outputs.command == 'fallthrough') }}
     runs-on: 'ubuntu-latest'
@@ -186,7 +200,7 @@ jobs:
         id: 'mint_identity_token'
         if: |-
           ${{ vars.APP_ID }}
-        uses: 'actions/create-github-app-token@v3' # ratchet:actions/create-github-app-token@v3
+        uses: 'actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf' # ratchet:actions/create-github-app-token@v2
         with:
           app-id: '${{ vars.APP_ID }}'
           private-key: '${{ secrets.APP_PRIVATE_KEY }}'
@@ -196,7 +210,6 @@ jobs:
 
       - name: 'Send failure comment'
         env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           ISSUE_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
           MESSAGE: |-

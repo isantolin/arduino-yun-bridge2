@@ -95,12 +95,14 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
         
         # We rely on arduino-cli to find libraries in USER_LIB_DIR
         # WOLFSSL_USER_SETTINGS is defined to use our config.
-        # -fno-strict-aliasing is added to resolve wolfSSL LTO warnings.
-        COMMON_FLAGS="-flto -fno-strict-aliasing -DWOLFSSL_USER_SETTINGS"
+        # -fno-strict-aliasing and -Wno-lto-type-mismatch are added to resolve wolfSSL LTO warnings.
+        COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS"
         BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--warnings" "default"
                      "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
                      "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
-                     "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing")
+                     "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+                     "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+                     "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch")
         
         # Add extra properties
         BUILD_FLAGS+=("${EXTRA_PROPS[@]}")

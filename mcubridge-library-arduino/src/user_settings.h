@@ -15,21 +15,23 @@
 #define WOLFSSL_USER_IO
 #define WOLFSSL_API
 #define USE_SLOW_SHA256
+#define WOLFSSL_NO_ASM
 
 /* Force explicit types to resolve LTO mismatches */
 #include <stdint.h>
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
     #define WC_16BIT_CPU
-    typedef uint8_t  byte;
+    #define SIZEOF_INT 2
+    #define SIZEOF_SHORT 2
+    #define SIZEOF_LONG 4
+    #define SIZEOF_LONG_LONG 8
+    typedef unsigned char byte;
     typedef uint16_t word16;
     typedef uint32_t word32;
     #define WOLFSSL_TYPES_H
 #endif
 
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
-    #define SIZEOF_LONG 4
-    #define SIZEOF_LONG_LONG 8
-    #define WOLFSSL_IAR_ARM_AVR
     #define NO_64BIT
     #undef TIME_OVERRIDES
 #endif

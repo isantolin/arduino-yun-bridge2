@@ -100,7 +100,7 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
         BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--warnings" "default"
                      "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
                      "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
-                     "--build-property" "compiler.c.elf.extra_flags=-flto")
+                     "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing")
         
         # Add extra properties
         BUILD_FLAGS+=("${EXTRA_PROPS[@]}")

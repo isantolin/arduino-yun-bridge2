@@ -7,9 +7,9 @@
     #pragma GCC diagnostic ignored "-Woverflow"
 #endif
 
-/* [CRITICAL] Fuerza la inclusión del tiempo del sistema antes que nada */
 #include <stddef.h>
 #include <stdint.h>
+/* Incluimos el tiempo del sistema PRIMERO */
 #include <time.h>
 
 /* ========================================================= */
@@ -20,7 +20,7 @@
 #define SINGLE_THREADED
 #define WC_NO_HARDEN
 
-/* [TIME] Bloqueo total de redefiniciones para evitar fallos en CI */
+/* [TIME] Evitar redefinición de struct tm y time_t */
 #define NO_ASN_TIME
 #define USER_TIME
 #define HAVE_TIME_H
@@ -29,24 +29,21 @@
 #define WOLFSSL_GMTIME
 #define WOLFSSL_USE_TIME_H
 
-/* Guardas internas de WolfSSL para forzar el salto de definiciones en wc_port.h */
+/* Guardas internas de WolfSSL para forzar el salto de definiciones */
 #define WOLFSSL_TM_STRUCT_DEFINED
 #define WOLFSSL_GMTIME_STRUCT_DEFINED
 #define _TM_DEFINED
 
-/* Mapeo de funciones de tiempo requeridas por USER_TIME */
+/* Mapeo de funciones de tiempo requeridas */
 #define XTIME wolfssl_time
 #define XGMTIME wolfssl_gmtime
 
-/* [AVR] Forzar tamaños de tipos y anular detección automática conflictiva */
+/* [AVR] Forzar tamaños de tipos para evitar warnings */
 #if defined(ARDUINO_ARCH_AVR)
     #define SIZEOF_LONG 4
     #define SIZEOF_LONG_LONG 8
     #define WOLFSSL_IAR_ARM_AVR
     #define NO_64BIT
-    
-    /* Evitar que settings.h active TIME_OVERRIDES automáticamente */
-    #define TIME_OVERRIDES_ALREADY_DEFINED
 #endif
 
 /* [SIL-2] No dynamic memory allocation */

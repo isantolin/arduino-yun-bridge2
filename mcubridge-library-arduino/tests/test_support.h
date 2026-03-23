@@ -209,7 +209,7 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
     size_t decoded_len =
         TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf);
 
-    if (decoded_len >= 9) {
+    if (decoded_len >= 11) {
       etl::crc32 calc;
       calc.reset();
       calc.add(decoded_buf, decoded_buf + (decoded_len - 4));

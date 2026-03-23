@@ -53,7 +53,7 @@ void test_bridge_is_recent_duplicate_edge_cases() {
   TEST_ASSERT(ba.isRecentDuplicateRx(f));
 
   // After history is cleared or changed, it should not be a duplicate
-  f.crc = 0x87654321;
+  f.header.sequence_id = 1;
   TEST_ASSERT(!ba.isRecentDuplicateRx(f));
 }
 

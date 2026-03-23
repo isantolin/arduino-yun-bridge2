@@ -63,7 +63,7 @@ class TestAccessor {
   }
   void flushPendingTxQueue() { _bridge._flushPendingTxQueue(); }
 
-  size_t getRxHistorySize() const { return _bridge._rx_history.size(); }
+  size_t getRxHistorySize() const { return _bridge._rx_history.buffer.size(); }
   void onRxDedupe() { _bridge._onRxDedupe(); }
 
   void setPendingBaudrate(uint32_t br) { _bridge._pending_baudrate = br; }
@@ -90,7 +90,7 @@ class TestAccessor {
     _bridge._pending_tx_queue.push(f);
   }
 
-  void dispatch(const rpc::Frame& frame) { _bridge.dispatch(frame); }
+  void dispatch(const rpc::Frame& frame, uint16_t seq = 0) { _bridge._dispatchCommand(frame, seq); }
   void retransmitLastFrame() { _bridge._retransmitLastFrame(); }
   void computeHandshakeTag(const uint8_t* n, size_t nl, uint8_t* out) {
     _bridge._computeHandshakeTag(etl::span<const uint8_t>(n, nl), etl::span<uint8_t>(out, 16));
@@ -102,7 +102,7 @@ class TestAccessor {
   bool getStartupStabilizing() const { return _bridge._fsm.isStabilizing(); }
 
   void handleSystemCommand(const rpc::Frame& frame) {
-    bridge::router::CommandContext ctx{&frame, frame.header.command_id, false, false};
+    bridge::router::CommandContext ctx{&frame, frame.header.command_id, false, false, frame.header.sequence_id};
     _bridge.onSystemCommand(ctx);
   }
   

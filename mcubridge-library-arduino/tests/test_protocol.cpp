@@ -54,7 +54,7 @@ static void test_builder_roundtrip() {
                              rpc::RPC_FRAME_DELIMITER};
 
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(etl::span<uint8_t>(raw), command_id,
+  size_t raw_len = builder.build(etl::span<uint8_t>(raw), command_id, 0,
                                  etl::span<const uint8_t>(payload));
 
   // Verificación de tamaño RAW (Header + Payload + CRC)
@@ -81,7 +81,7 @@ static void test_builder_payload_limit() {
   uint8_t payload[MAX_PAYLOAD_SIZE + 1];
   test_memfill(payload, sizeof(payload), TEST_BYTE_01);
   uint8_t buffer[rpc::MAX_RAW_FRAME_SIZE] = {0};
-  size_t len = builder.build(etl::span<uint8_t>(buffer), TEST_CMD_ID,
+  size_t len = builder.build(etl::span<uint8_t>(buffer), TEST_CMD_ID, 0,
                              etl::span<const uint8_t>(payload));
   TEST_ASSERT(len == 0);
 }
@@ -111,7 +111,7 @@ static void test_parser_crc_failure() {
   const uint8_t payload[] = {TEST_BYTE_10, TEST_BYTE_20, TEST_BYTE_30};
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
   size_t raw_len =
-      builder.build(etl::span<uint8_t>(raw), TEST_CMD_ID_CRC_FAILURE,
+      builder.build(etl::span<uint8_t>(raw), TEST_CMD_ID_CRC_FAILURE, 0,
                     etl::span<const uint8_t>(payload));
   TEST_ASSERT(raw_len > 0);
 
@@ -131,7 +131,7 @@ static void test_parser_header_validation() {
   const uint8_t payload[] = {TEST_PAYLOAD_BYTE};
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
   size_t raw_len =
-      builder.build(etl::span<uint8_t>(raw), TEST_CMD_ID_HEADER_VALIDATION,
+      builder.build(etl::span<uint8_t>(raw), TEST_CMD_ID_HEADER_VALIDATION, 0,
                     etl::span<const uint8_t>(payload));
   TEST_ASSERT(raw_len > 0);
 
@@ -169,7 +169,7 @@ static void test_parser_header_logical_validation_mismatch() {
 
   uint8_t payload[] = {0x11, 0x22};
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
-  size_t raw_len = builder.build(etl::span<uint8_t>(raw), TEST_CMD_ID,
+  size_t raw_len = builder.build(etl::span<uint8_t>(raw), TEST_CMD_ID, 0,
                                  etl::span<const uint8_t>(payload));
 
   // raw structure: [Ver][LenH][LenL][CmdH][CmdL][P1][P2][CRC]...
@@ -193,7 +193,7 @@ static void test_builder_buffer_too_small() {
   uint8_t payload[] = {0x11, 0x22};
   uint8_t small_buf[5];  // Muy pequeño para Header (5) + Payload (2) + CRC (4)
 
-  size_t len = builder.build(etl::span<uint8_t>(small_buf), TEST_CMD_ID,
+  size_t len = builder.build(etl::span<uint8_t>(small_buf), TEST_CMD_ID, 0,
                              etl::span<const uint8_t>(payload));
   TEST_ASSERT(len == 0);
 }

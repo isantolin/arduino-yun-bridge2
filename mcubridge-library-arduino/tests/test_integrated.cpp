@@ -65,7 +65,7 @@ void integrated_test_protocol() {
   FrameParser p;
   uint8_t raw[128];
   uint8_t pl[] = {0x01, 0x02, 0x03};
-  size_t rl = b.build(etl::span<uint8_t>(raw, 128), 0x100,
+  size_t rl = b.build(etl::span<uint8_t>(raw, 128), 0x100, 0,
                       etl::span<const uint8_t>(pl, 3));
   auto result = p.parse(etl::span<const uint8_t>(raw, rl));
   TEST_ASSERT(result.has_value());
@@ -112,7 +112,7 @@ void integrated_test_components() {
   DataStore.set("k", etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("v"), 1));
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-  Mailbox.write(etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("m"), 1));
+  Mailbox.push(etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("m"), 1));
 #endif
 }
 

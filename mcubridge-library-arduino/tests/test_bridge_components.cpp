@@ -67,7 +67,7 @@ static void test_all_handlers_coverage() {
 
   rpc::Frame f = {};
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
-  bridge::router::CommandContext ctx{&f, 0, false, false};
+  bridge::router::CommandContext ctx{&f, 0, false, false, 0};
 
   // System
   ba.handleGetVersion(ctx);

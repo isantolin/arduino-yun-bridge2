@@ -13,19 +13,15 @@ TEST_DIR="${LIB_DIR}/tests"
 STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 
 # Find library paths (local or system)
-if [ -d "${DUMMY_ARDUINO_LIBS:-}" ]; then
-    ARDUINO_LIBS="${DUMMY_ARDUINO_LIBS}"
-else
-    ARDUINO_LIBS="$HOME/Arduino/libraries"
-    if [ ! -d "$ARDUINO_LIBS" ]; then
-        ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"
-    fi
+if [ -z "${DUMMY_ARDUINO_LIBS:-}" ]; then
+    DUMMY_ARDUINO_LIBS=$(mktemp -d)
 fi
+ARDUINO_LIBS="${DUMMY_ARDUINO_LIBS}"
 
-ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL/src"
-if [ ! -d "$ETL_PATH" ]; then
-    ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL"
-fi
+echo "[emulator] Installing library dependencies..."
+"${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
+
+ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 
 # Use the python from the current environment (e.g. tox virtualenv)
@@ -42,19 +38,15 @@ if ! ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     exit 1
 fi
 
-echo "[emulator] Installing library dependencies..."
-DUMMY_ARDUINO_LIBS=${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}
-"${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
-
 WOLF_SOURCES=(
-    "$WOLFSSL_PATH/src/wolfcrypt/src/sha256.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/hmac.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/hash.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/kdf.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/error.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/logging.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/wc_port.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/memory.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/hash.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/kdf.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/error.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
 )
 
 
@@ -67,8 +59,9 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
+    -I"${ETL_PATH}/include" \
+    -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
-    -I"${WOLFSSL_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \
@@ -98,8 +91,9 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
+    -I"${ETL_PATH}/include" \
+    -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
-    -I"${WOLFSSL_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \

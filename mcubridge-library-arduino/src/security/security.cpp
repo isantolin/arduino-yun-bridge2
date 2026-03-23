@@ -6,7 +6,7 @@
 
 #include <Arduino.h>
 #include "hal/progmem_compat.h"
-#include "../wolfssl/wolfcrypt/error-crypt.h"
+#include <wolfssl/wolfcrypt/error-crypt.h>
 
 namespace rpc {
 namespace security {

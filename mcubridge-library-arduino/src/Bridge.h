@@ -39,10 +39,10 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #undef max
 
 #include "config/bridge_config.h"
-#include "etl/algorithm.h"
-#include "etl/crc32.h"
-#include "etl/observer.h"
-#include "etl/random.h"
+#include <etl/algorithm.h>
+#include <etl/crc32.h>
+#include <etl/observer.h>
+#include <etl/random.h>
 #include "hal/hal.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -53,15 +53,15 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include "nanopb/pb_common.h"
 #include "nanopb/pb_decode.h"
 #include "nanopb/pb_encode.h"
-#include "etl/bitset.h"
-#include "etl/circular_buffer.h"
-#include "etl/delegate.h"
-#include "etl/expected.h"
-#include "etl/optional.h"
-#include "etl/queue.h"
-#include "etl/span.h"
-#include "etl/string_view.h"
-#include "etl/vector.h"
+#include <etl/bitset.h>
+#include <etl/circular_buffer.h>
+#include <etl/delegate.h>
+#include <etl/expected.h>
+#include <etl/optional.h>
+#include <etl/queue.h>
+#include <etl/span.h>
+#include <etl/string_view.h>
+#include <etl/vector.h>
 
 #include "fsm/bridge_fsm.h"
 #include "router/command_router.h"

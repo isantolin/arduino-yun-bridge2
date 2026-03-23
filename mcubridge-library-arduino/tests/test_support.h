@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "etl/crc32.h"
+#include <etl/crc32.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "unity.h"

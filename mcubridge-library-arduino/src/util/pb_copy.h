@@ -1,9 +1,9 @@
 #ifndef PB_COPY_H
 #define PB_COPY_H
 
-#include "etl/algorithm.h"
-#include "etl/span.h"
-#include "etl/string_view.h"
+#include <etl/algorithm.h>
+#include <etl/span.h>
+#include <etl/string_view.h>
 #include "nanopb/pb.h"
 
 namespace rpc {

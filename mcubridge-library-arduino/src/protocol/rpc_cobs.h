@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "etl/span.h"
+#include <etl/span.h>
 
 /**
  * @brief COBS (Consistent Overhead Byte Stuffing) implementation.

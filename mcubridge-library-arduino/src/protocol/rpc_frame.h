@@ -8,11 +8,11 @@
 // ETL requires min/max from <algorithm>, but Arduino.h defines them as macros.
 #undef min
 #undef max
-#include "etl/array.h"
-#include "etl/binary.h"
-#include "etl/crc32.h"
-#include "etl/expected.h"
-#include "etl/span.h"
+#include <etl/array.h>
+#include <etl/binary.h>
+#include <etl/crc32.h>
+#include <etl/expected.h>
+#include <etl/span.h>
 
 namespace rpc {
 

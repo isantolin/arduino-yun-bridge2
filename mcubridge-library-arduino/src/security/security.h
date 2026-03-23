@@ -12,16 +12,16 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "etl/algorithm.h"
-#include "etl/span.h"
-#include "etl/array.h"
+#include <etl/algorithm.h>
+#include <etl/span.h>
+#include <etl/array.h>
 #include "../protocol/rpc_protocol.h"
 #include "../protocol/rpc_frame.h"
 
 
-/* [WOLFSSL] Core headers (must follow defines) */
-#include "../wolfssl/wolfcrypt/sha256.h"
-#include "../wolfssl/wolfcrypt/hmac.h"
+/* [WOLFSSL] Core headers */
+#include <wolfssl/wolfcrypt/sha256.h>
+#include <wolfssl/wolfcrypt/hmac.h>
 
 namespace rpc {
 namespace security {

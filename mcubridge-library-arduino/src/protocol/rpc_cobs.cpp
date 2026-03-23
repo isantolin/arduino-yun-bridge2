@@ -1,6 +1,6 @@
 #include "rpc_cobs.h"
-#include "etl/algorithm.h"
-#include "etl/iterator.h"
+#include <etl/algorithm.h>
+#include <etl/iterator.h>
 
 namespace rpc {
 namespace cobs {

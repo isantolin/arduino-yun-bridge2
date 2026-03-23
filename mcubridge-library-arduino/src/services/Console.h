@@ -6,10 +6,10 @@
 #include "config/bridge_config.h"
 #undef min
 #undef max
-#include "etl/bitset.h"
-#include "etl/circular_buffer.h"
-#include "etl/span.h"
-#include "etl/vector.h"
+#include <etl/bitset.h>
+#include <etl/circular_buffer.h>
+#include <etl/span.h>
+#include <etl/vector.h>
 
 #include "protocol/BridgeEvents.h"
 

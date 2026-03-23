@@ -13,7 +13,8 @@ TEST_DIR="${LIB_DIR}/tests"
 STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 
 # Find library paths (local or system)
-ETL_PATH="${LIB_DIR}/src"
+ETL_PATH="/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library_ETL/src"
+WOLFSSL_PATH="/home/ignaciosantolin/Arduino/libraries/wolfssl/src"
 
 # Use the python from the current environment (e.g. tox virtualenv)
 PYTHON_CMD=$(command -v python || command -v python3)
@@ -33,18 +34,28 @@ echo "[emulator] Installing library dependencies..."
 DUMMY_ARDUINO_LIBS=${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}
 "${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
 
+WOLF_SOURCES=(
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/sha256.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hmac.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hash.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/kdf.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/error.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/logging.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/wc_port.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/memory.c"
+)
+
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 -DWOLFSSL_USER_SETTINGS \
     -I"${SRC_DIR}" \
+    -I"${SRC_DIR}/config" \
     -I"${SRC_DIR}/nanopb" \
-    -I"${SRC_DIR}/wolfssl" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
-    "${SRC_DIR}/wolfcrypt/src/sha256.c" \
-    "${SRC_DIR}/wolfcrypt/src/hmac.c" \
-    "${SRC_DIR}/wolfcrypt/src/hash.c" \
+    -I"${WOLFSSL_PATH}" \
+    "${WOLF_SOURCES[@]}" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \
     "${SRC_DIR}/nanopb/pb_decode.c" \
@@ -68,14 +79,13 @@ echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 -DWOLFSSL_USER_SETTINGS \
     -I"${SRC_DIR}" \
+    -I"${SRC_DIR}/config" \
     -I"${SRC_DIR}/nanopb" \
-    -I"${SRC_DIR}/wolfssl" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
-    "${SRC_DIR}/wolfcrypt/src/sha256.c" \
-    "${SRC_DIR}/wolfcrypt/src/hmac.c" \
-    "${SRC_DIR}/wolfcrypt/src/hash.c" \
+    -I"${WOLFSSL_PATH}" \
+    "${WOLF_SOURCES[@]}" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \
     "${SRC_DIR}/nanopb/pb_decode.c" \

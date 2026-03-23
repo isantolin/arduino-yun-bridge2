@@ -5,9 +5,9 @@
 #include "config/bridge_config.h"
 #undef min
 #undef max
-#include "etl/circular_buffer.h"
-#include "etl/delegate.h"
-#include "etl/span.h"
+#include <etl/circular_buffer.h>
+#include <etl/delegate.h>
+#include <etl/span.h>
 #include "protocol/BridgeEvents.h"
 #include "protocol/rpc_structs.h"
 

@@ -35,13 +35,14 @@ SOURCES=(
     "${SRC_ROOT}/nanopb/pb_decode.c"
     "${SRC_ROOT}/protocol/mcubridge.pb.c"
     "${SRC_ROOT}/security/security.cpp"
-    "${SRC_ROOT}/wolfcrypt/src/sha256.c"
-    "${SRC_ROOT}/wolfcrypt/src/hmac.c"
-    "${SRC_ROOT}/wolfcrypt/src/hash.c"
-    "${SRC_ROOT}/wolfcrypt/src/error.c"
-    "${SRC_ROOT}/wolfcrypt/src/logging.c"
-    "${SRC_ROOT}/wolfcrypt/src/wc_port.c"
-    "${SRC_ROOT}/wolfcrypt/src/memory.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/sha256.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hmac.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hash.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/kdf.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/error.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/logging.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/wc_port.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/memory.c"
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
     "${SRC_ROOT}/protocol/rpc_cobs.cpp"
@@ -85,9 +86,12 @@ BASE_FLAGS=(
     "-DBRIDGE_ENABLE_SPI=1"
     "-DUNITY_INCLUDE_DOUBLE"
     "-I${SRC_ROOT}"
+    "-I${SRC_ROOT}/config"
     "-I${SRC_ROOT}/nanopb"
     "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}"
+    "-I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library_ETL/src"
+    "-I/home/ignaciosantolin/Arduino/libraries/wolfssl/src"
     "-I${TEST_ROOT}/mocks"
     "-I${TEST_ROOT}/Unity"
 )
@@ -103,7 +107,7 @@ for src in "${SOURCES[@]}"; do
     if [[ "${src}" == *.c ]]; then
         gcc "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     else
-        g++ -std=c++14 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
+        g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     fi
 done
 wait
@@ -126,7 +130,7 @@ for suite in "${TEST_SUITES[@]}"; do
     (
         suite_src="${TEST_ROOT}/${suite}.cpp"
         suite_bin="${BUILD_DIR}/${suite}"
-        g++ -std=c++14 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${suite_bin}"
+        g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${suite_bin}"
         "${suite_bin}"
     ) &
     pids+=($!)

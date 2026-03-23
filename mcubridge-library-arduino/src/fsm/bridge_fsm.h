@@ -18,10 +18,10 @@
 #ifndef BRIDGE_FSM_H
 #define BRIDGE_FSM_H
 
-#include "etl/fsm.h"
-#include "etl/message.h"
-#include "etl/array.h"
-#include "etl/bitset.h"
+#include <etl/fsm.h>
+#include <etl/message.h>
+#include <etl/array.h>
+#include <etl/bitset.h>
 
 namespace bridge {
 namespace fsm {

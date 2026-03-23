@@ -1,9 +1,9 @@
 #include "hal.h"
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
-#include "etl/bitset.h"
-#include "etl/string.h"
-#include "etl/to_string.h"
+#include <etl/bitset.h>
+#include <etl/string.h>
+#include <etl/to_string.h>
 
 #if defined(BRIDGE_HOST_TEST)
 #include <errno.h>

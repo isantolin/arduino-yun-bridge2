@@ -9,7 +9,7 @@
 #undef min
 #undef max
 #include <stdint.h>
-#include "etl/span.h"
+#include <etl/span.h>
 
 namespace bridge {
 namespace hal {

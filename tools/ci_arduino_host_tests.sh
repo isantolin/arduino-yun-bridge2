@@ -44,13 +44,14 @@ SOURCES=(
     "${SRC_DIR}/nanopb/pb_decode.c"
     "${SRC_DIR}/protocol/mcubridge.pb.c"
     "${SRC_DIR}/security/security.cpp"
-    "${SRC_DIR}/wolfcrypt/src/sha256.c"
-    "${SRC_DIR}/wolfcrypt/src/hmac.c"
-    "${SRC_DIR}/wolfcrypt/src/hash.c"
-    "${SRC_DIR}/wolfcrypt/src/error.c"
-    "${SRC_DIR}/wolfcrypt/src/logging.c"
-    "${SRC_DIR}/wolfcrypt/src/wc_port.c"
-    "${SRC_DIR}/wolfcrypt/src/memory.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/sha256.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hmac.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hash.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/kdf.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/error.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/logging.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/wc_port.c"
+    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/memory.c"
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
     "${SRC_DIR}/protocol/rpc_cobs.cpp"
@@ -83,10 +84,13 @@ BASE_FLAGS=(
     -DWOLFSSL_USER_SETTINGS
     -DUNITY_INCLUDE_DOUBLE
     -I"${SRC_DIR}"
+    -I"${SRC_DIR}/config"
     -I"${SRC_DIR}/nanopb"
     -I"${SRC_DIR}/protocol"
     -I"${TEST_DIR}/Unity"
     -I"${STUB_DIR}"
+    -I"/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library_ETL/src"
+    -I"/home/ignaciosantolin/Arduino/libraries/wolfssl/src"
 )
 
 # Compile common sources to objects in parallel

@@ -20,17 +20,16 @@
 #define WC_NO_HARDEN /* Silenciar warnings en CI */
 
 /* [TIME] Evitar redefinición de struct tm y time_t */
-#define WOLFSSL_USER_TIME
-#define NO_ASN_TIME
-#define XTIME wolfssl_time
-#define XGMTIME wolfssl_gmtime
+#define USER_TIME
 #define HAVE_TIME_H
 #define HAVE_TIME_T_TYPE
 #define HAVE_TM_TYPE
-/* Indicar a wolfSSL que no intente definir sus propios tipos de tiempo */
-#define WOLFSSL_TIME_H_EXISTS
-#define WOLFSSL_GMTIME_STRUCT_DEFINED 1
-#define WOLFSSL_TM_STRUCT_DEFINED 1
+#define NO_ASN_TIME
+#define XTIME wolfssl_time
+#define XGMTIME wolfssl_gmtime
+#define WOLFSSL_GMTIME
+#define WOLFSSL_GMTIME_STRUCT_DEFINED
+#define WOLFSSL_TM_STRUCT_DEFINED
 
 /* [AVR] Forzar tamaños de tipos para evitar warnings de truncamiento y shift-overflow */
 #if defined(ARDUINO_ARCH_AVR)

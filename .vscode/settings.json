@@ -28,5 +28,6 @@
       "name": "luci-app",
       "makefilePath": "luci-app-mcubridge/Makefile"
     }
-  ]
+  ],
+  "python.analysis.autoImportCompletions": true
 }

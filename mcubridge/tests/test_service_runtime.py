@@ -97,7 +97,7 @@ async def test_acknowledge_mcu_frame_sends_ack_packet() -> None:
 
     sent: list[tuple[int, bytes]] = []
 
-    async def _sender(cmd: int, payload: bytes) -> bool:
+    async def _sender(cmd: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent.append((cmd, payload))
         return True
 

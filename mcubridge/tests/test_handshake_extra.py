@@ -33,7 +33,7 @@ async def test_handshake_sync_resp_rate_limit() -> None:
     state.link_handshake_nonce = b"A" * 16
     state.handshake_rate_until = time.monotonic() + 5.0
     assert await manager.handle_link_sync_resp(0, b"A" * 32) is False
-    manager._acknowledge_frame.assert_called_with(Command.CMD_LINK_SYNC_RESP.value, status=Status.MALFORMED)
+    manager._acknowledge_frame.assert_called_with(Command.CMD_LINK_SYNC_RESP.value, 0, status=Status.MALFORMED)
 
 
 @pytest.mark.asyncio
@@ -123,11 +123,11 @@ async def test_handshake_failure_detail_non_immediate() -> None:
         acknowledge_frame=AsyncMock(),
     )
 
-    await manager.handle_handshake_failure(0, "timeout", detail="initial")
+    await manager.handle_handshake_failure("timeout", detail="initial")
     assert state.handshake_fatal_count == 0
 
     # Second failure triggers fatal
-    await manager.handle_handshake_failure(0, "timeout")
+    await manager.handle_handshake_failure("timeout")
     assert state.handshake_fatal_count == 1
     assert "streak" in state.handshake_fatal_detail
 

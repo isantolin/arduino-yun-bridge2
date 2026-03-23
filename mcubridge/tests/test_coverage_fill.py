@@ -84,13 +84,13 @@ async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
             break
 
     assert handler is not None
-    result = await handler(b"\x01")
+    result = await handler(0, b"\x01")
     assert result is False
 
 @pytest.mark.asyncio
 async def test_dispatcher_mcu_handler_exception(dispatcher: BridgeDispatcher):
     """Cover lines 258-272 in dispatcher.py (Exception in MCU handler)."""
-    async def buggy_handler(payload):
+    async def buggy_handler(seq_id, payload):
         raise RuntimeError("bug")
 
     dispatcher.mcu_registry.get.return_value = buggy_handler

@@ -87,6 +87,7 @@ async def test_handle_unexpected_mcu_request_sends_not_implemented(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     ok = await component.handle_unexpected_mcu_request(
+        0,
         Command.CMD_DIGITAL_READ,
         b"\x01\x02",
     )
@@ -107,6 +108,7 @@ async def test_handle_unexpected_mcu_request_unknown_command(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     ok = await component.handle_unexpected_mcu_request(
+        0,
         Command.CMD_GET_VERSION,
         b"",
     )

@@ -81,10 +81,10 @@ async def test_serial_reader_task_processes_frame(
                     await asyncio.sleep(0.01)
 
                 assert service.received_frames
-                command_id, received_payload = service.received_frames[0]
+                command_id, seq_id, received_payload = service.received_frames[0]
                 assert command_id == Command.CMD_DIGITAL_READ_RESP.value
+                assert seq_id == 0
                 assert received_payload == payload
-
                 transport._stop_event.set()
                 try:
                     await asyncio.wait_for(task, timeout=0.5)

@@ -163,10 +163,10 @@ async def test_repeated_sync_timeouts_become_fatal(
     runtime_config.serial_handshake_fatal_failures = 2
     service = BridgeService(runtime_config, runtime_state)
 
-    await service._handshake.handle_handshake_failure(0, "link_sync_timeout")
+    await service._handshake.handle_handshake_failure("link_sync_timeout")
     assert runtime_state.handshake_failure_streak == 1
 
-    await service._handshake.handle_handshake_failure(0, "link_sync_timeout")
+    await service._handshake.handle_handshake_failure("link_sync_timeout")
     assert runtime_state.handshake_fatal_count == 1
     assert runtime_state.handshake_fatal_reason == "link_sync_timeout"
 
@@ -301,11 +301,11 @@ async def test_transient_handshake_failures_eventually_backoff(
 
     # First few failures don't backoff (streak < threshold)
     for _ in range(2):
-        await service._handshake.handle_handshake_failure(0, "test_fail")
+        await service._handshake.handle_handshake_failure("test_fail")
         assert runtime_state.handshake_backoff_until <= fake_clock.monotonic()
 
     # Next failure triggers exponential backoff
-    await service._handshake.handle_handshake_failure(0, "test_fail")
+    await service._handshake.handle_handshake_failure("test_fail")
     assert runtime_state.handshake_backoff_until > fake_clock.monotonic()
 
 
@@ -353,6 +353,7 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
             asyncio.create_task(
                 service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
+                    0,
                     _encode_link_sync(nonce, bytes(tag)),
                 )
             )

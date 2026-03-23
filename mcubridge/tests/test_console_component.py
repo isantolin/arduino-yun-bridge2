@@ -44,13 +44,13 @@ async def test_flow_control(console_component: ConsoleComponent) -> None:
     assert console_component.state.serial_tx_allowed.is_set() is True
 
     # XOFF
-    await console_component.handle_xoff(b"")
+    await console_component.handle_xoff(0, b"")
     assert console_component.state.mcu_is_paused is True
     assert console_component.state.serial_tx_allowed.is_set() is False
 
     # XON
     with patch.object(console_component, "flush_queue", new_callable=AsyncMock) as mock_flush:
-        await console_component.handle_xon(b"")
+        await console_component.handle_xon(0, b"")
         assert console_component.state.mcu_is_paused is False
         assert console_component.state.serial_tx_allowed.is_set() is True
         mock_flush.assert_awaited_once()

@@ -33,7 +33,7 @@ def _make_config() -> RuntimeConfig:
 
 
 def test_is_raw_binary_frame_valid_size() -> None:
-    frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, 0,  0, b"hi")
+    frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
     assert serial_fast._is_raw_binary_frame(frame_bytes) is True
     assert serial_fast._is_raw_binary_frame(bytearray(frame_bytes)) is True
     assert serial_fast._is_raw_binary_frame(b"") is False
@@ -73,7 +73,7 @@ async def test_process_packet_success_dispatches(
 
     service.handle_mcu_frame = AsyncMock()
 
-    frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, 0,  0, b"hi")
+    frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
     encoded = cobs_encode(frame_bytes)
 
     transport = serial_fast.SerialTransport(config, state, service)
@@ -81,7 +81,7 @@ async def test_process_packet_success_dispatches(
 
     await transport._async_process_packet(encoded)
 
-    service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"hi")
+    service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
 
 
 @pytest.mark.asyncio
@@ -105,7 +105,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
     transport._negotiating = True
     transport._negotiation_future = transport.loop.create_future()
 
-    encoded = cobs_encode(Frame.build(Command.CMD_SET_BAUDRATE_RESP.value, 0,  0, b""))
+    encoded = cobs_encode(Frame.build(Command.CMD_SET_BAUDRATE_RESP.value, 0, b""))
     transport._process_packet(encoded)
 
     assert await transport._negotiation_future is True

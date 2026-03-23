@@ -762,7 +762,7 @@ class TestProtocolFrame:
     def test_decode_rpc_frame_bad_crc(self):
         from mcubridge.protocol.frame import Frame
 
-        frame = bytearray(Frame.build(0x01, 0,  0, b"test"))
+        frame = bytearray(Frame.build(0x01, 0, b"test"))
         frame[-1] ^= 0xFF  # Corrupt CRC
         with pytest.raises(ValueError):
             Frame.parse(bytes(frame))

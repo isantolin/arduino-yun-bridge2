@@ -324,7 +324,7 @@ async def test_dispatch_mcu_frame_handler_success_auto_acks() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    async def handler(payload: bytes) -> bool:
+    async def handler(seq_id: int, payload: bytes) -> bool:
         calls.add("handler", payload)
         return True
 
@@ -340,7 +340,7 @@ async def test_dispatch_mcu_frame_handler_returns_false_no_ack() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    async def handler(_payload: bytes) -> bool:
+    async def handler(seq_id: int, _payload: bytes) -> bool:
         return False
 
     dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)
@@ -354,7 +354,7 @@ async def test_dispatch_mcu_frame_handler_exception_sends_error_for_request() ->
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    async def handler(_payload: bytes) -> bool:
+    async def handler(seq_id: int, _payload: bytes) -> bool:
         raise RuntimeError("boom")
 
     dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)

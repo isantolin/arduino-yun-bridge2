@@ -6,27 +6,30 @@ from tests.test_constants import TEST_CMD_ID
 
 def test_build_and_parse_round_trip() -> None:
     payload = b"\x01\x02\x03"
-    raw = Frame.build(TEST_CMD_ID, 0,  0, payload)
+    raw = Frame.build(TEST_CMD_ID, 0, payload)
 
     assert len(raw) == protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
 
-    parsed_command, parsed_payload = Frame.parse(raw)
+    parsed_command, parsed_seq, parsed_payload = Frame.parse(raw)
     assert parsed_command == TEST_CMD_ID
+    assert parsed_seq == 0
     assert parsed_payload == payload
 
 
 def test_empty_payload_round_trip() -> None:
-    raw = Frame.build(TEST_CMD_ID, 0,  0, b"")
-    parsed_command, parsed_payload = Frame.parse(raw)
+    raw = Frame.build(TEST_CMD_ID, 0, b"")
+    parsed_command, parsed_seq, parsed_payload = Frame.parse(raw)
     assert parsed_command == TEST_CMD_ID
+    assert parsed_seq == 0
     assert parsed_payload == b""
 
 
 def test_max_payload_round_trip() -> None:
     payload = b"p" * protocol.MAX_PAYLOAD_SIZE
-    raw = Frame.build(TEST_CMD_ID, 0,  0, payload)
-    parsed_command, parsed_payload = Frame.parse(raw)
+    raw = Frame.build(TEST_CMD_ID, 0, payload)
+    parsed_command, parsed_seq, parsed_payload = Frame.parse(raw)
     assert parsed_command == TEST_CMD_ID
+    assert parsed_seq == 0
     assert parsed_payload == payload
 
 
@@ -42,12 +45,12 @@ def test_build_rejects_large_payload() -> None:
     payload = b"a" * (protocol.MAX_PAYLOAD_SIZE + 1)
 
     with pytest.raises(ValueError):
-        Frame.build(protocol.Command.CMD_SET_PIN_MODE, 0,  0, payload)
+        Frame.build(protocol.Command.CMD_SET_PIN_MODE, 0, payload)
 
 
 def test_build_rejects_invalid_command_id() -> None:
     with pytest.raises(ValueError):
-        Frame.build(protocol.UINT16_MAX + 1, 0,  0, b"")
+        Frame.build(protocol.UINT16_MAX + 1, 0, b"")
 
 
 def test_parse_rejects_short_frame() -> None:
@@ -59,7 +62,7 @@ def test_parse_rejects_short_frame() -> None:
 
 def test_parse_detects_crc_mismatch() -> None:
     payload = b"valid"
-    raw = Frame.build(protocol.Command.CMD_CONSOLE_WRITE, 0,  0, payload)
+    raw = Frame.build(protocol.Command.CMD_CONSOLE_WRITE, 0, payload)
     corrupted = raw[:-1] + bytes([raw[-1] ^ protocol.UINT8_MASK])
 
     with pytest.raises(ValueError):
@@ -68,13 +71,13 @@ def test_parse_detects_crc_mismatch() -> None:
 
 def test_parse_validates_version_and_length() -> None:
     payload = b"data"
-    raw = bytearray(Frame.build(protocol.Command.CMD_DATASTORE_PUT, 0,  0, payload))
+    raw = bytearray(Frame.build(protocol.Command.CMD_DATASTORE_PUT, 0, payload))
 
     raw[0] ^= 1
     with pytest.raises(ValueError):
         Frame.parse(bytes(raw))
 
-    raw = bytearray(Frame.build(protocol.Command.CMD_DATASTORE_GET, 0,  0, payload))
+    raw = bytearray(Frame.build(protocol.Command.CMD_DATASTORE_GET, 0, payload))
     raw[1] = 0
     raw[2] = 0
     with pytest.raises(ValueError):

@@ -27,6 +27,7 @@ async def _send_ack(
         await asyncio.sleep(delay)
     controller.on_frame_received(
         Status.ACK.value,
+        0,
         AckPacket(command_id=command_id).encode(),
     )
 
@@ -219,10 +220,10 @@ def test_serial_flow_acknowledges_ack_only_command(
             loop.call_soon(
                 controller.on_frame_received,
                 Status.ACK.value,
+                0,
                 AckPacket(command_id=command_id).encode(),
             )
             return True
-
         controller.set_sender(fake_sender)
 
         result = await controller.send(Command.CMD_CONSOLE_WRITE.value, b"")
@@ -249,6 +250,7 @@ def test_serial_flow_handles_response_after_ack(
             def emit_frames() -> None:
                 controller.on_frame_received(
                     Status.ACK.value,
+                    0,
                     AckPacket(command_id=command_id).encode(),
                 )
                 controller.on_frame_received(
@@ -284,6 +286,7 @@ def test_serial_flow_retries_on_mismatched_ack(
                 other_cmd = Command.CMD_DIGITAL_WRITE.value
                 controller.on_frame_received(
                     Status.ACK.value,
+                    0,
                     AckPacket(command_id=other_cmd).encode(),
                 )
 

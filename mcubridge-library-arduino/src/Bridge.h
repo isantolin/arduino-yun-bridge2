@@ -328,24 +328,19 @@ class BridgeClass
 
   void _handleConsoleWrite(const bridge::router::CommandContext& ctx);
 
-#if BRIDGE_ENABLE_DATASTORE
   void _handleDatastoreGetResp(const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_MAILBOX
+
   void _handleMailboxPush(const bridge::router::CommandContext& ctx);
   void _handleMailboxReadResp(const bridge::router::CommandContext& ctx);
   void _handleMailboxAvailableResp(const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
+
   void _handleFileWrite(const bridge::router::CommandContext& ctx);
   void _handleFileRead(const bridge::router::CommandContext& ctx);
   void _handleFileRemove(const bridge::router::CommandContext& ctx);
   void _handleFileReadResp(const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_PROCESS
+
   void _handleProcessRunAsyncResp(const bridge::router::CommandContext& ctx);
   void _handleProcessPollResp(const bridge::router::CommandContext& ctx);
-#endif
 
   void _markRxProcessed(const rpc::Frame& frame);
   bool _isRecentDuplicateRx(const rpc::Frame& frame) const;

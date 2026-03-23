@@ -71,9 +71,11 @@ class TestFrameBuilder {
     raw[cursor++] = (crc >> 16) & 0xFF;
     raw[cursor++] = (crc >> 8) & 0xFF;
     raw[cursor++] = crc & 0xFF;
-    size_t encoded_len = TestCOBS::encode(raw, cursor, out);
-    out[encoded_len] = 0;
-    return encoded_len + 1;
+    
+    out[0] = 0; // Prepend delimiter
+    size_t encoded_len = TestCOBS::encode(raw, cursor, out + 1);
+    out[encoded_len + 1] = 0; // Append delimiter
+    return encoded_len + 2;
   }
 };
 void sync_bridge(BiStream& stream) {
@@ -104,7 +106,12 @@ void sync_bridge(BiStream& stream) {
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), payload_buffer.data(),
       frame.header.payload_length);
   stream.feed(encoded_frame, encoded_len);
-  Bridge.process();
+
+  // Process until all bytes are drained from the mock stream
+  int safety_counter = 0;
+  while (stream.available() > 0 && safety_counter++ < 100) {
+      Bridge.process();
+  }
 }
 
 void test_bridge_begin() {
@@ -135,7 +142,11 @@ void test_bridge_process_rx() {
       encoded_frame, 128, rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION),
       nullptr, 0);
   stream.feed(encoded_frame, encoded_len);
-  Bridge.process();
+  
+  int safety_counter = 0;
+  while (stream.available() > 0 && safety_counter++ < 10) {
+      Bridge.process();
+  }
 }
 
 void test_bridge_handshake() {

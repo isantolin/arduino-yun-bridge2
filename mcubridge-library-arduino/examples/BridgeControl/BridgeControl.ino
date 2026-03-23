@@ -14,7 +14,7 @@
 // (/etc/config/mcubridge o similar)
 #ifndef BRIDGE_SECRET
 #define BRIDGE_SECRET "DEBUG_INSECURE"
-#warning "SECURITY WARNING: Using default BRIDGE_SECRET. Change this before production use!"
+// SECURITY WARNING: Using default BRIDGE_SECRET. Change this before production use!
 #endif
 
 #include <Bridge.h>

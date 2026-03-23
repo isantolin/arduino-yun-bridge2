@@ -547,6 +547,11 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
       etl::span<const uint8_t> expected(tag.data(), tag.size());
       etl::span<const uint8_t> received(msg.tag, rpc::RPC_HANDSHAKE_TAG_LENGTH);
       if (!rpc::security::timing_safe_equal(expected, received)) {
+#if defined(BRIDGE_HOST_TEST)
+        printf("[DEBUG] Handshake Tag Mismatch!\n");
+        printf("  Expected: "); for(int i=0; i<16; i++) printf("%02X ", expected[i]); printf("\n");
+        printf("  Received: "); for(int i=0; i<16; i++) printf("%02X ", received[i]); printf("\n");
+#endif
         _fsm.handshakeStart(); _fsm.handshakeFailed(); return;
       }
     }
@@ -608,54 +613,105 @@ void BridgeClass::_handleConsoleWrite(const bridge::router::CommandContext& ctx)
   _dispatchWithBytes<rpc::payload::ConsoleWrite>(ctx, &rpc::payload::ConsoleWrite::data, [](auto s) { Console._push(s); }, true);
 }
 
-#if BRIDGE_ENABLE_DATASTORE
 void BridgeClass::_handleDatastoreGetResp(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_DATASTORE
   _dispatchWithBytes<rpc::payload::DatastoreGetResponse>(ctx, &rpc::payload::DatastoreGetResponse::value, [](auto s) { DataStore._onResponse(s); });
-}
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
 #endif
+}
 
-#if BRIDGE_ENABLE_MAILBOX
 void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_MAILBOX
   _dispatchWithBytes<rpc::payload::MailboxPush>(ctx, &rpc::payload::MailboxPush::data, [](auto s) { Mailbox._onIncomingData(s); }, true);
-}
-void BridgeClass::_handleMailboxReadResp(const bridge::router::CommandContext& ctx) {
-  _dispatchWithBytes<rpc::payload::MailboxReadResponse>(ctx, &rpc::payload::MailboxReadResponse::content, [](auto s) { Mailbox._onIncomingData(s); });
-}
-void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::MailboxAvailableResponse>(ctx, [](const auto& msg) { Mailbox._onAvailableResponse(msg); });
-}
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
 #endif
+}
 
-#if BRIDGE_ENABLE_FILESYSTEM
+void BridgeClass::_handleMailboxReadResp(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_MAILBOX
+  _dispatchWithBytes<rpc::payload::MailboxReadResponse>(ctx, &rpc::payload::MailboxReadResponse::content, [](auto s) { Mailbox._onIncomingData(s); });
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+#endif
+}
+
+void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_MAILBOX
+  _withPayload<rpc::payload::MailboxAvailableResponse>(ctx, [](const auto& msg) { Mailbox._onAvailableResponse(msg); });
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+#endif
+}
+
 void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_FILESYSTEM
   rpc::payload::FileWrite msg = {};
   etl::span<uint8_t> data_span(_transient_buffer.data(), _transient_buffer.size());
   rpc::util::pb_setup_decode_span(msg.data, data_span);
   _withPayload<rpc::payload::FileWrite>(ctx, [&data_span](const rpc::payload::FileWrite& parsed_msg) {
     FileSystem._onWrite(parsed_msg, etl::span<const uint8_t>(data_span.data(), data_span.size()));
   }, msg);
-}
-void BridgeClass::_handleFileRead(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::FileRead>(ctx, [](const rpc::payload::FileRead& msg) { FileSystem._onRead(msg); });
-}
-void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::FileRemove>(ctx, [](const rpc::payload::FileRemove& msg) { FileSystem._onRemove(msg); });
-}
-void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
-  _dispatchWithBytes<rpc::payload::FileReadResponse>(ctx, &rpc::payload::FileReadResponse::content, [](const auto& s) { FileSystem._onResponse(s); });
-}
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
 #endif
+}
 
-#if BRIDGE_ENABLE_PROCESS
+void BridgeClass::_handleFileRead(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_FILESYSTEM
+  _withPayload<rpc::payload::FileRead>(ctx, [](const rpc::payload::FileRead& msg) { FileSystem._onRead(msg); });
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+#endif
+}
+
+void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_FILESYSTEM
+  _withPayload<rpc::payload::FileRemove>(ctx, [](const rpc::payload::FileRemove& msg) { FileSystem._onRemove(msg); });
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+#endif
+}
+
+void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_FILESYSTEM
+  _dispatchWithBytes<rpc::payload::FileReadResponse>(ctx, &rpc::payload::FileReadResponse::content, [](const auto& s) { FileSystem._onResponse(s); });
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+#endif
+}
+
 void BridgeClass::_handleProcessKill(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_PROCESS
   _withPayloadAck<rpc::payload::ProcessKill>(ctx, [this](const rpc::payload::ProcessKill& msg) {
     if (!Process._kill(msg.pid)) emitStatus(rpc::StatusCode::STATUS_ERROR);
   });
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+#endif
 }
+
 void BridgeClass::_handleProcessRunAsyncResp(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_PROCESS
   _withPayload<rpc::payload::ProcessRunAsyncResponse>(ctx, [](const auto& msg) { Process._onRunAsyncResponse(msg); });
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+#endif
 }
+
 void BridgeClass::_handleProcessPollResp(const bridge::router::CommandContext& ctx) {
+#if BRIDGE_ENABLE_PROCESS
   static constexpr size_t HALF_BUF = rpc::MAX_PAYLOAD_SIZE / 2;
   uint8_t* stdout_ptr = _transient_buffer.data();
   uint8_t* stderr_ptr = _transient_buffer.data() + HALF_BUF;
@@ -667,8 +723,11 @@ void BridgeClass::_handleProcessPollResp(const bridge::router::CommandContext& c
   _withPayload<rpc::payload::ProcessPollResponse>(ctx, [&](const auto& inner_msg) {
     Process._onPollResponse(inner_msg, etl::span<const uint8_t>(stdout_span), etl::span<const uint8_t>(stderr_span));
   }, msg);
-}
+#else
+  (void)ctx;
+  emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
 #endif
+}
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   if (_command_handler.is_valid()) _command_handler(*ctx.frame);

@@ -69,10 +69,18 @@ class FrameParser {
 
     // Read header fields with atomic cursor advancement
     Frame result;
-    reader.read(result.header.version);
-    reader.read(result.header.payload_length);
-    reader.read(result.header.command_id);
-    reader.read(result.header.sequence_id);
+    auto version_opt = reader.read<uint8_t>();
+    auto payload_len_opt = reader.read<uint16_t>();
+    auto command_id_opt = reader.read<uint16_t>();
+    auto sequence_id_opt = reader.read<uint16_t>();
+
+    if (!version_opt || !payload_len_opt || !command_id_opt || !sequence_id_opt)
+      return etl::unexpected<FrameError>(FrameError::MALFORMED);
+
+    result.header.version = *version_opt;
+    result.header.payload_length = *payload_len_opt;
+    result.header.command_id = *command_id_opt;
+    result.header.sequence_id = *sequence_id_opt;
 
     if (result.header.version != PROTOCOL_VERSION)
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
@@ -86,17 +94,49 @@ class FrameParser {
     // Capture payload span and validate CRC
     result.payload = buffer.subspan(FRAME_HEADER_SIZE, result.header.payload_length);
     
-    uint32_t received_crc;
-    reader.skip(result.header.payload_length);
-    reader.read(received_crc);
+    reader.skip<uint8_t>(result.header.payload_length);
+    auto crc_opt = reader.read<uint32_t>();
     
-    if (received_crc != crc_calc.value())
+    if (!crc_opt || *crc_opt != crc_calc.value())
       return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
 
     result.crc = crc_calc.value();
     return result;
   }
 };
+
+/**
+ * @brief Big-Endian Read/Write Helpers [SIL-2]
+ */
+inline uint16_t read_u16_be(etl::span<const uint8_t> buffer) {
+  etl::byte_stream_reader reader(buffer.begin(), buffer.end(), etl::endian::big);
+  return reader.read<uint16_t>().value_or(0);
+}
+
+inline void write_u16_be(etl::span<uint8_t> buffer, uint16_t value) {
+  etl::byte_stream_writer writer(buffer.begin(), buffer.end(), etl::endian::big);
+  writer.write<uint16_t>(value);
+}
+
+inline uint32_t read_u32_be(etl::span<const uint8_t> buffer) {
+  etl::byte_stream_reader reader(buffer.begin(), buffer.end(), etl::endian::big);
+  return reader.read<uint32_t>().value_or(0);
+}
+
+inline void write_u32_be(etl::span<uint8_t> buffer, uint32_t value) {
+  etl::byte_stream_writer writer(buffer.begin(), buffer.end(), etl::endian::big);
+  writer.write<uint32_t>(value);
+}
+
+inline uint64_t read_u64_be(etl::span<const uint8_t> buffer) {
+  etl::byte_stream_reader reader(buffer.begin(), buffer.end(), etl::endian::big);
+  return reader.read<uint64_t>().value_or(0);
+}
+
+inline void write_u64_be(etl::span<uint8_t> buffer, uint64_t value) {
+  etl::byte_stream_writer writer(buffer.begin(), buffer.end(), etl::endian::big);
+  writer.write<uint64_t>(value);
+}
 
 class FrameBuilder {
  public:
@@ -113,18 +153,18 @@ class FrameBuilder {
     // [SIL-2] Big-Endian Strict Stream Writer
     etl::byte_stream_writer writer(buffer.begin(), buffer.end(), etl::endian::big);
 
-    writer.write(static_cast<uint8_t>(PROTOCOL_VERSION));
-    writer.write(payload_len);
-    writer.write(command_id);
-    writer.write(sequence_id);
+    writer.write<uint8_t>(static_cast<uint8_t>(PROTOCOL_VERSION));
+    writer.write<uint16_t>(payload_len);
+    writer.write<uint16_t>(command_id);
+    writer.write<uint16_t>(sequence_id);
 
     if (payload_len > 0) {
-        for (auto b : payload) writer.write(b);
+        for (auto b : payload) writer.write<uint8_t>(b);
     }
 
     etl::crc32 crc_calc;
     crc_calc.add(buffer.begin(), buffer.begin() + (FRAME_HEADER_SIZE + payload_len));
-    writer.write(static_cast<uint32_t>(crc_calc.value()));
+    writer.write<uint32_t>(static_cast<uint32_t>(crc_calc.value()));
 
     return total_len;
   }

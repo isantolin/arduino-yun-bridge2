@@ -54,7 +54,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
     : _stream(arg_stream),
       _hardware_serial(nullptr),
       _shared_secret(),
-      _cobs{0, 0, 0, 0, true, {0}},
+      _cobs{rpc::RxState::AWAITING_SYNC, 0, {0}},
       _frame_builder(),
       _last_parse_error(),
       _flags(),
@@ -97,6 +97,8 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   _last_tick_millis = bridge::now_ms();
 
   _cobs.buffer.fill(0);
+  _cobs.state = rpc::RxState::AWAITING_SYNC;
+  _cobs.bytes_received = 0;
 
   if (!rpc::security::run_cryptographic_self_tests()) {
     enterSafeState();
@@ -172,12 +174,14 @@ void BridgeClass::process() {
       const uint8_t byte = _rx_fifo.front();
       _rx_fifo.pop();
       _processIncomingByte(byte);
-      if (_flags.test(bridge::FlagId::FRAME_RECEIVED) || _last_parse_error.has_value()) break;
+      if (_flags.test(bridge::FlagId::FRAME_RECEIVED) || 
+          _cobs.state == rpc::RxState::FRAME_READY ||
+          _last_parse_error.has_value()) break;
     }
   }
 
-  if (_flags.test(bridge::FlagId::FRAME_RECEIVED)) {
-    _handleReceivedFrame();
+  if (_cobs.state == rpc::RxState::FRAME_READY) {
+      _handleReceivedFrame();
   } else if (_last_parse_error.has_value()) {
     const rpc::FrameError error = _last_parse_error.value();
     _last_parse_error.reset();
@@ -209,51 +213,63 @@ void BridgeClass::forceSafeState() {
 
 void BridgeClass::_processIncomingByte(const uint8_t byte) {
   if (byte == rpc::RPC_FRAME_DELIMITER) {
-    if (_cobs.in_sync && _cobs.bytes_received >= rpc::MIN_FRAME_SIZE) {
-      // [OPTIMIZATION] Use shared transient buffer for decoding
-      const size_t decoded_len = rpc::cobs::decode(
-          etl::span<const uint8_t>(_cobs.buffer.data(), _cobs.bytes_received),
-          etl::span<uint8_t>(_transient_buffer.data(), _transient_buffer.size()));
-
-      if (decoded_len > 0) {
-        rpc::FrameParser parser;
-        const auto result = parser.parse(etl::span<const uint8_t>(_transient_buffer.data(), decoded_len));
-        if (result.has_value()) {
-          _rx_frame = result.value();
-          _flags.set(bridge::FlagId::FRAME_RECEIVED);
-          _consecutive_crc_errors = 0;
-        } else {
-          _last_parse_error = result.error();
-        }
+      if (_cobs.state == rpc::RxState::RECEIVING && _cobs.bytes_received >= rpc::MIN_FRAME_SIZE) {
+          _cobs.state = rpc::RxState::FRAME_READY;
       } else {
-        _last_parse_error = rpc::FrameError::MALFORMED;
+          _cobs.state = rpc::RxState::RECEIVING;
+          _cobs.bytes_received = 0;
       }
-    }
-    _cobs.in_sync = true;
-    _cobs.bytes_received = 0;
-    _cobs.block_len = 0;
-    return;
+      return;
   }
 
-  if (!_cobs.in_sync) return;
-  if (_cobs.bytes_received >= _cobs.buffer.size()) {
-    _cobs.in_sync = false;
-    _last_parse_error = rpc::FrameError::OVERFLOW;
-    return;
+  switch (_cobs.state) {
+      case rpc::RxState::RECEIVING:
+          if (_cobs.bytes_received >= _cobs.buffer.size()) {
+              _cobs.state = rpc::RxState::OVERFLOW;
+              _last_parse_error = rpc::FrameError::OVERFLOW;
+          } else {
+              _cobs.buffer[_cobs.bytes_received++] = byte;
+          }
+          break;
+      case rpc::RxState::AWAITING_SYNC:
+      case rpc::RxState::OVERFLOW:
+      case rpc::RxState::FRAME_READY:
+          // Ignore bytes in these states until next delimiter
+          break;
   }
-  _cobs.buffer[_cobs.bytes_received++] = byte;
 }
 
 void BridgeClass::_handleReceivedFrame() {
-  _flags.reset(bridge::FlagId::FRAME_RECEIVED);
-  const uint16_t sequence_id = _rx_frame.header.sequence_id;
-  if (_rx_history.contains(sequence_id)) {
-    if (rpc::requires_ack(_rx_frame.header.command_id)) {
-      _sendAckAndFlush(_rx_frame.header.command_id, sequence_id);
-    }
-    return;
+  _cobs.state = rpc::RxState::RECEIVING; // Reset FSM for next frame immediately
+
+  // [OPTIMIZATION] Use shared transient buffer for decoding
+  const size_t decoded_len = rpc::cobs::decode(
+      etl::span<const uint8_t>(_cobs.buffer.data(), _cobs.bytes_received),
+      etl::span<uint8_t>(_transient_buffer.data(), _transient_buffer.size()));
+
+  _cobs.bytes_received = 0;
+
+  if (decoded_len > 0) {
+      rpc::FrameParser parser;
+      const auto result = parser.parse(etl::span<const uint8_t>(_transient_buffer.data(), decoded_len));
+      if (result.has_value()) {
+          _rx_frame = result.value();
+          _consecutive_crc_errors = 0;
+
+          const uint16_t sequence_id = _rx_frame.header.sequence_id;
+          if (_rx_history.contains(sequence_id)) {
+              if (rpc::requires_ack(_rx_frame.header.command_id)) {
+                  _sendAckAndFlush(_rx_frame.header.command_id, sequence_id);
+              }
+              return;
+          }
+          _dispatchCommand(_rx_frame, sequence_id);
+      } else {
+          _last_parse_error = result.error();
+      }
+  } else {
+      _last_parse_error = rpc::FrameError::MALFORMED;
   }
-  _dispatchCommand(_rx_frame, sequence_id);
 }
 
 void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id) {

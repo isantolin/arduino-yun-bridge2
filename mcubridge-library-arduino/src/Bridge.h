@@ -141,12 +141,16 @@ static constexpr bool IS_ESP8266 = false;
 #include "protocol/BridgeEvents.h"
 
 namespace rpc {
+enum class RxState : uint8_t {
+  AWAITING_SYNC,  ///< Searching for 0x00 delimiter
+  RECEIVING,      ///< Collecting COBS encoded data
+  FRAME_READY,    ///< Frame complete, awaiting processing
+  OVERFLOW        ///< Buffer limit exceeded, seeking next sync
+};
+
 struct CobsState {
-  uint16_t block_len;
+  RxState state;
   uint16_t bytes_received;
-  uint16_t decoded_len;
-  uint8_t code;
-  bool in_sync;
   etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> buffer;
 };
 }

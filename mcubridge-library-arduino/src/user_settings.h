@@ -15,9 +15,10 @@
 #define WOLFSSL_USER_IO
 
 /* Force explicit types to resolve LTO mismatches */
-typedef unsigned char byte;
-typedef unsigned short word16;
-typedef unsigned long word32;
+#include <stdint.h>
+typedef uint8_t byte;
+typedef uint16_t word16;
+typedef uint32_t word32;
 #define WOLFSSL_TYPES_H
 
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)

@@ -16,10 +16,15 @@
 
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/io.h>
+#include <avr/wdt.h>
 extern "C" {
   extern char *__brkval;
   extern char __heap_start;
 }
+#elif defined(ARDUINO_ARCH_ESP32)
+#include <esp_task_wdt.h>
+#elif defined(ARDUINO_ARCH_ESP8266)
+#include <Arduino.h>
 #endif
 
 namespace bridge {
@@ -138,9 +143,15 @@ uint16_t getFreeMemory() {
 }
 
 void init() {
-#if defined(ARDUINO_ARCH_AVR)
-  // Enable watchdog or other AVR-specific init
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
+  wdt_enable(WDTO_2S);
 #endif
+
+  // [SIL-2] Force all digital pins to a safe state (Input with Pullups) on boot
+  // to avoid floating states or accidental actuator activation.
+  for (uint8_t pin = 0; pin < DIGITAL_PINS; ++pin) {
+    pinMode(pin, INPUT_PULLUP);
+  }
 }
 
 bool hasSD() {

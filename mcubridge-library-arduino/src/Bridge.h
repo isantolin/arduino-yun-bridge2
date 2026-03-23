@@ -106,6 +106,24 @@ static constexpr uint8_t FIRMWARE_VERSION_PATCH = BRIDGE_FIRMWARE_VERSION_PATCH;
 static constexpr uint8_t FIRMWARE_VERSION_PATCH = 1;
 #endif
 
+#if defined(ARDUINO_ARCH_AVR)
+static constexpr bool IS_AVR = true;
+#else
+static constexpr bool IS_AVR = false;
+#endif
+
+#if defined(ARDUINO_ARCH_ESP32)
+static constexpr bool IS_ESP32 = true;
+#else
+static constexpr bool IS_ESP32 = false;
+#endif
+
+#if defined(ARDUINO_ARCH_ESP8266)
+static constexpr bool IS_ESP8266 = true;
+#else
+static constexpr bool IS_ESP8266 = false;
+#endif
+
 }  // namespace config
 }  // namespace bridge
 

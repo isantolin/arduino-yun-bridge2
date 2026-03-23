@@ -11,8 +11,12 @@
 #error "CRITICAL: Standard STL detected. Use ETL only (SIL 2 Violation)."
 #endif
 
-#ifdef ARDUINO_ARCH_AVR
+#if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
+#elif defined(ARDUINO_ARCH_ESP32)
+#include <esp_task_wdt.h>
+#elif defined(ARDUINO_ARCH_ESP8266)
+#include <Arduino.h>
 #endif
 
 #include <string.h>
@@ -131,12 +135,14 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 }
 
 void BridgeClass::process() {
-#if defined(ARDUINO_ARCH_AVR)
-  if (bridge::config::ENABLE_WATCHDOG) wdt_reset();
-#elif defined(ARDUINO_ARCH_ESP32)
-  if (bridge::config::ENABLE_WATCHDOG) esp_task_wdt_reset();
-#elif defined(ARDUINO_ARCH_ESP8266)
-  if (bridge::config::ENABLE_WATCHDOG) yield();
+#if BRIDGE_ENABLE_WATCHDOG
+  #if defined(ARDUINO_ARCH_AVR)
+    wdt_reset();
+  #elif defined(ARDUINO_ARCH_ESP32)
+    esp_task_wdt_reset();
+  #elif defined(ARDUINO_ARCH_ESP8266)
+    yield();
+  #endif
 #endif
 
   const uint32_t now = bridge::now_ms();
@@ -162,7 +168,7 @@ void BridgeClass::process() {
     }
 
     while (!_rx_fifo.empty()) {
-      uint8_t byte = _rx_fifo.front();
+      const uint8_t byte = _rx_fifo.front();
       _rx_fifo.pop();
       _processIncomingByte(byte);
       if (_flags.test(bridge::FlagId::FRAME_RECEIVED) || _last_parse_error.has_value()) break;

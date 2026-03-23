@@ -21,7 +21,7 @@ if [ ! -d "$USER_LIB_DIR" ]; then
 fi
 
 # Define explicit include paths for official libraries
-ETL_INC="$USER_LIB_DIR/Embedded_Template_Library_ETL/src"
+ETL_INC="$USER_LIB_DIR/Embedded_Template_Library/include"
 WOLF_INC="$USER_LIB_DIR/wolfssl/src"
 
 # Update core index
@@ -36,8 +36,8 @@ arduino-cli core install arduino:avr
 echo "Installing official wolfSSL library..."
 arduino-cli lib install wolfSSL
 
-echo "Installing official Embedded Template Library..."
-arduino-cli lib install "Embedded Template Library ETL"
+# echo "Installing official Embedded Template Library..."
+# arduino-cli lib install "Embedded Template Library ETL"
 
 # Install dependencies
 echo "Generating protocol bindings..."
@@ -49,7 +49,8 @@ python3 ./tools/protocol/generate.py \
     --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 
 echo "Installing libraries..."
-./mcubridge-library-arduino/tools/install.sh
+# We pass USER_LIB_DIR to install.sh to ensure it installs there
+./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
 
 # [HOT-PATCH] Force official wolfSSL to use our settings by overwriting its user_settings.h
 echo "Patching official wolfSSL at $WOLF_INC with our user_settings.h..."

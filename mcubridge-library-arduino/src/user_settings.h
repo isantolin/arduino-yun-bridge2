@@ -17,8 +17,9 @@
 /* Force explicit types to resolve LTO mismatches */
 #include <stdint.h>
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+    #define WC_16BIT_CPU
     typedef unsigned char  byte;
-    typedef unsigned short word16;
+    typedef unsigned int   word16;
     typedef unsigned long  word32;
 #else
     typedef uint8_t  byte;

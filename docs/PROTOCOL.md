@@ -379,7 +379,7 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 
 ```
 +--------------------------+---------------------+----------+
-| Cabecera (5 bytes)       | Payload (0-64)      | CRC32    |
+| Cabecera (7 bytes)       | Payload (0-64)      | CRC32    |
 +--------------------------+---------------------+----------+
 ```
 
@@ -390,6 +390,7 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 | `version` | `uint8_t` | Versión del protocolo (actual: `0x02`). |
 | `payload_length` | `uint16_t` | Longitud del payload en bytes. |
 | `command_id` | `uint16_t` | Identificador del comando o status. |
+| `sequence_id` | `uint16_t` | Identificador de secuencia (16-bit) para deduplicación y tracking. |
 
 ### 3.2 CRC
 
@@ -427,13 +428,14 @@ Los status usan el rango `0x30` - `0x3F`.
 Algunos comandos son **fire-and-forget** (no tienen respuesta “de negocio”) pero sí requieren confirmación mediante `STATUS_ACK (0x38)`.
 
 - **Retries por ACK perdido:** Linux puede reenviar el mismo frame si no recibe `STATUS_ACK` dentro de `ack_timeout_ms` (configurable via `CMD_LINK_RESET`).
-- **Idempotencia (mejor esfuerzo, sin `tx_id`):** el protocolo actual no incluye un identificador de transmisión en el header; por eso la idempotencia estricta no puede garantizarse sólo con el wire-format.
-  - El firmware (MCU) implementa deduplicación de **reintentos** para comandos con side-effects (p. ej. consola, mailbox, file write, GPIO write/mode): si llega un duplicado **después** de `ack_timeout_ms` y **antes** del fin del horizonte de retries, el MCU reenvía `STATUS_ACK` pero **no re-ejecuta** el handler.
-  - Para reducir falsos positivos, un frame idéntico recibido **antes** del `ack_timeout_ms` se trata como un comando nuevo (p. ej. repeticiones legítimas a alta frecuencia).
+- **Idempotencia (Garantizada vía `sequence_id`):** El protocolo incluye un `sequence_id` de 16 bits en el header.
+  - El receptor (MCU o Daemon) rastrea el último `sequence_id` procesado exitosamente por cada canal.
+  - Si llega un frame con un `sequence_id` idéntico al último procesado, se considera un **duplicado** (reintento del emisor).
+  - El receptor **reenvía el ACK/Respuesta original** pero **no re-ejecuta** la lógica de negocio, garantizando idempotencia estricta.
 
 Notas:
-- Esta deduplicación es deliberadamente conservadora: protege contra retries por ACK perdido sin “romper” casos de uso de repetición rápida.
-- Si se requiere idempotencia inequívoca para todos los casos, el camino correcto es introducir un `tx_id` (implica versionado del protocolo y regeneración Python/C++).
+- Esta deduplicación protege contra retries por ACK perdido sin “romper” casos de uso de repetición rápida.
+- El `sequence_id` debe incrementarse en cada nuevo comando y mantenerse igual para reintentos del mismo comando.
 
 ### 5.1 Sistema y control de flujo (0x40 – 0x4F)
 
@@ -499,12 +501,12 @@ sequenceDiagram
 
 ```
 # CMD_LINK_SYNC request (Linux → MCU)
-# Header: version=0x02, payload_len=32, cmd_id=0x0044
+# Header: version=0x02, payload_len=32, cmd_id=0x0044, seq_id=0x0001
 # Payload: 16-byte nonce + 16-byte tag
 # CRC32: IEEE 802.3
 
 Raw (before COBS):
-  02 00 20 00 44                  # Header (5 bytes)
+  02 00 20 00 44 00 01            # Header (7 bytes)
   A1 B2 C3 D4 E5 F6 07 18         # Nonce bytes 0-7
   29 3A 4B 5C 6D 7E 8F 90         # Nonce bytes 8-15
   T1 T2 T3 T4 T5 T6 T7 T8         # Tag bytes 0-7
@@ -591,27 +593,27 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 
 ```
 # CMD_DIGITAL_WRITE: Set pin 13 HIGH
-# Header: version=0x02, payload_len=2, cmd_id=0x0051
+# Header: version=0x02, payload_len=2, cmd_id=0x0051, seq_id=0x000A
 # Payload: [pin=13, value=1]
 
 Raw (before COBS):
-  02 00 02 00 51                  # Header (5 bytes)
+  02 00 02 00 51 00 0A            # Header (7 bytes)
   0D 01                           # pin=13, value=HIGH
   B7 A3 2C 1F                     # CRC32 (example)
 
 # CMD_ANALOG_READ: Read analog pin A0
-# cmd_id=0x0054, payload=[pin=14]
+# cmd_id=0x0054, payload=[pin=14], seq_id=0x000B
 
 Raw:
-  02 00 01 00 54                  # Header
+  02 00 01 00 54 00 0B            # Header (7 bytes)
   0E                              # pin=14 (A0)
   XX XX XX XX                     # CRC32
 
-# CMD_ANALOG_READ_RESP: Value = 512 (0x0200)
+# CMD_ANALOG_READ_RESP: Value = 512 (0x0200), seq_id=0x000B
 # cmd_id=0x0056, payload=[value_hi, value_lo]
 
 Raw:
-  02 00 02 00 56                  # Header
+  02 00 02 00 56 00 0B            # Header (7 bytes)
   02 00                           # value=512 (Big Endian)
   XX XX XX XX                     # CRC32
 ```

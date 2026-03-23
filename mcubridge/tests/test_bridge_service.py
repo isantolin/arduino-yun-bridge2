@@ -68,10 +68,12 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                 await asyncio.sleep(0.1)
                 await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
+                    0,
                     response,
                 )
                 # Priming capabilities AFTER sync resp is handled
-                await service._handshake.handle_capabilities_resp(0,
+                await service._handshake.handle_capabilities_resp(
+                    0,
                     cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
                         {
                             "ver": 2,
@@ -105,6 +107,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
         elif raw_cmd == Command.CMD_CONSOLE_WRITE.value:
             flow.on_frame_received(
                 Status.ACK.value,
+                0,
                 structures.AckPacket(command_id=Command.CMD_CONSOLE_WRITE.value).encode(),
             )
         return True

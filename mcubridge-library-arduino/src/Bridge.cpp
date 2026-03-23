@@ -589,7 +589,7 @@ void BridgeClass::_handleMailboxReadResp(const bridge::router::CommandContext& c
   _dispatchWithBytes<rpc::payload::MailboxReadResponse>(ctx, &rpc::payload::MailboxReadResponse::content, [](auto s) { Mailbox._onIncomingData(s); });
 }
 void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::MailboxAvailableResponse>(ctx, [](auto& msg) { Mailbox._onAvailableResponse(msg); });
+  _withPayload<rpc::payload::MailboxAvailableResponse>(ctx, [](const auto& msg) { Mailbox._onAvailableResponse(msg); });
 }
 #endif
 
@@ -609,7 +609,7 @@ void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::FileRemove>(ctx, [](const rpc::payload::FileRemove& msg) { FileSystem._onRemove(msg); });
 }
 void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
-  _dispatchWithBytes<rpc::payload::FileReadResponse>(ctx, &rpc::payload::FileReadResponse::content, [](auto s) { FileSystem._onResponse(s); });
+  _dispatchWithBytes<rpc::payload::FileReadResponse>(ctx, &rpc::payload::FileReadResponse::content, [](const auto& s) { FileSystem._onResponse(s); });
 }
 #endif
 
@@ -620,7 +620,7 @@ void BridgeClass::_handleProcessKill(const bridge::router::CommandContext& ctx) 
   });
 }
 void BridgeClass::_handleProcessRunAsyncResp(const bridge::router::CommandContext& ctx) {
-  _withPayload<rpc::payload::ProcessRunAsyncResponse>(ctx, [](auto& msg) { Process._onRunAsyncResponse(msg); });
+  _withPayload<rpc::payload::ProcessRunAsyncResponse>(ctx, [](const auto& msg) { Process._onRunAsyncResponse(msg); });
 }
 void BridgeClass::_handleProcessPollResp(const bridge::router::CommandContext& ctx) {
   static constexpr size_t HALF_BUF = rpc::MAX_PAYLOAD_SIZE / 2;

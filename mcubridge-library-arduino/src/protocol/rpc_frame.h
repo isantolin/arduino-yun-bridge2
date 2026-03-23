@@ -139,8 +139,8 @@ class FrameParser {
 class FrameBuilder {
  public:
   FrameBuilder() = default;
-  size_t build(etl::span<uint8_t> buffer, uint16_t command_id, uint16_t sequence_id,
-               etl::span<const uint8_t> payload) {
+  static size_t build(etl::span<uint8_t> buffer, uint16_t command_id, uint16_t sequence_id,
+                      etl::span<const uint8_t> payload) {
     if (payload.size() > MAX_PAYLOAD_SIZE) return 0;
     const uint16_t payload_len = static_cast<uint16_t>(payload.size());
     const size_t data_len = 7 + payload_len;

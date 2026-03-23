@@ -12,7 +12,10 @@
 // CONFIGURACIÓN DEL SECRETO
 // Este password debe coincidir con el configurado en el lado de Linux
 // (/etc/config/mcubridge o similar)
+#ifndef BRIDGE_SECRET
 #define BRIDGE_SECRET "DEBUG_INSECURE"
+#warning "SECURITY WARNING: Using default BRIDGE_SECRET. Change this before production use!"
+#endif
 
 #include <Bridge.h>
 #include <string.h>

@@ -187,6 +187,8 @@ bool writeFile(const char* path, etl::span<const uint8_t> data) {
   const int close_status = fclose(file);
   return (bytes_written == data.size()) && (flush_status == 0) && (close_status == 0);
 #else
+  // [SIL-2] Real hardware SD implementation would go here.
+  // Returning false ensures the Service emits STATUS_ERROR to Linux.
   (void)path; (void)data;
   return false;
 #endif
@@ -237,9 +239,8 @@ bool readFileChunk(
   has_more = (offset + bytes_read) < file_size;
   return true;
 #else
-  (void)path;
-  (void)offset;
-  (void)buffer;
+  // [SIL-2] Real hardware SD implementation would go here.
+  (void)path; (void)offset; (void)buffer;
   return false;
 #endif
 }

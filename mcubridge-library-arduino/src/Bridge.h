@@ -218,6 +218,14 @@ class BridgeClass
                   etl::span<const uint8_t> payload);
   void emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
 
+  template <typename T>
+  void emitStatus(rpc::StatusCode status_code, const T& msg) {
+    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), _transient_buffer.size());
+    if (pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
+      emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
+    }
+  }
+
   bool sendFrame(rpc::StatusCode status_code, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
   bool sendFrame(rpc::CommandId command_id, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
   bool sendChunkyFrame(rpc::CommandId command_id, uint16_t sequence_id, etl::span<const uint8_t> header, etl::span<const uint8_t> data) {

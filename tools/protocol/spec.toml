@@ -98,7 +98,7 @@ nonce_counter_bytes = 8
 nonce_format_description = "random[8] || counter[8] (uint64 BE) for anti-replay"
 
 [data_formats]
-crc_covered_header_format = ">BHH"
+crc_covered_header_format = ">BHHH"
 crc_format = ">I"
 uint8_format = ">B"
 uint16_format = ">H"

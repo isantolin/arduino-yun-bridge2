@@ -195,7 +195,7 @@ class ProcessComponent(BaseComponent):
 
     # --- MCU Handlers (Required by Dispatcher) ---
 
-    async def handle_run_async(self, payload: bytes) -> None:
+    async def handle_run_async(self, seq_id: int, payload: bytes) -> None:
         """Handle async process execution request from MCU."""
         try:
             packet = structures.ProcessRunAsyncPacket.decode(payload)
@@ -239,7 +239,7 @@ class ProcessComponent(BaseComponent):
                 status=Status.MALFORMED,
             )
 
-    async def handle_poll(self, payload: bytes) -> None:
+    async def handle_poll(self, seq_id: int, payload: bytes) -> None:
         """Handle process poll request from MCU."""
         try:
             packet = structures.ProcessPollPacket.decode(payload)
@@ -265,7 +265,7 @@ class ProcessComponent(BaseComponent):
                 status=Status.MALFORMED,
             )
 
-    async def handle_kill(self, payload: bytes, *, send_ack: bool = True) -> bool:
+    async def handle_kill(self, seq_id: int, payload: bytes, *, send_ack: bool = True) -> bool:
         """Handle process termination request."""
         try:
             packet = structures.ProcessKillPacket.decode(payload)

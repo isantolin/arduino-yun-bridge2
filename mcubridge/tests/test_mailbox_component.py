@@ -121,7 +121,7 @@ def test_handle_processed_publishes_json(
 ) -> None:
     component, bridge = mailbox_component
     payload = structures.MailboxProcessedPacket(message_id=TEST_MSG_ID).encode()
-    asyncio.run(component.handle_processed(payload))
+    asyncio.run(component.handle_processed(0, payload))
 
     assert bridge.published
     message = bridge.published[-1]
@@ -139,7 +139,7 @@ def test_handle_push_stores_incoming_queue(
 ) -> None:
     component, bridge = mailbox_component
     payload = structures.MailboxPushPacket(data=b"hello").encode()
-    result = asyncio.run(component.handle_push(payload))
+    result = asyncio.run(component.handle_push(0, payload))
     assert result is True
     assert list(runtime_state.mailbox_incoming_queue.values()) == [b"hello"]
 
@@ -158,7 +158,7 @@ def test_handle_push_overflow_sends_error(
     component, bridge = mailbox_component
     runtime_state.mailbox_queue_limit = 0
     payload = structures.MailboxPushPacket(data=b'A').encode()
-    result = asyncio.run(component.handle_push(payload))
+    result = asyncio.run(component.handle_push(0, payload))
     assert result is False
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
     assert runtime_state.mailbox_incoming_overflow_events == 1
@@ -172,7 +172,7 @@ def test_handle_read_success_publishes_available(
     component, bridge = mailbox_component
     runtime_state.enqueue_mailbox_message(b"payload", mailbox_logger)
 
-    result = asyncio.run(component.handle_read(b""))
+    result = asyncio.run(component.handle_read(0, b""))
     assert result is True
 
     command_id, payload = bridge.sent_frames[-1]
@@ -194,7 +194,7 @@ def test_handle_read_requeues_when_send_fails(
     runtime_state.enqueue_mailbox_message(b"fail", mailbox_logger)
     bridge.send_frame_result = False
 
-    result = asyncio.run(component.handle_read(b""))
+    result = asyncio.run(component.handle_read(0, b""))
     assert result is False
     assert list(runtime_state.mailbox_queue.values()) == [b"fail"]
     # No availability topic should be published on failure

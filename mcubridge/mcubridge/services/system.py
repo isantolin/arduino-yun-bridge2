@@ -49,7 +49,7 @@ class SystemComponent(BaseComponent):
             self.state.mcu_version = None
         return send_ok
 
-    async def handle_set_baudrate_resp(self, payload: bytes) -> None:
+    async def handle_set_baudrate_resp(self, seq_id: int, payload: bytes) -> None:
         logger.info("MCU acknowledged baudrate change. Switching local UART...")
         # We need to signal the transport layer to change baudrate.
         # This is a bit of a layer violation or needs a callback.
@@ -57,7 +57,7 @@ class SystemComponent(BaseComponent):
         if ack is not None:
             await cast(Callable[[], Awaitable[None]], ack)()
 
-    async def handle_get_free_memory_resp(self, payload: bytes) -> None:
+    async def handle_get_free_memory_resp(self, seq_id: int, payload: bytes) -> None:
         packet = self._decode_payload(FreeMemoryResponsePacket, payload, Command.CMD_GET_FREE_MEMORY_RESP)
         if packet is None:
             return
@@ -71,7 +71,7 @@ class SystemComponent(BaseComponent):
         reply_context = self._pending_free_memory.popleft() if self._pending_free_memory else None
         await self._publish_value(topic, str(packet.value), MQTT_EXPIRY_DEFAULT, reply_context)
 
-    async def handle_get_version_resp(self, payload: bytes) -> None:
+    async def handle_get_version_resp(self, seq_id: int, payload: bytes) -> None:
         packet = self._decode_payload(VersionResponsePacket, payload, Command.CMD_GET_VERSION_RESP)
         if packet is None:
             return

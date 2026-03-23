@@ -78,7 +78,7 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(runtime_config
         component._pending_free_memory.append(msg)
 
         # Payload: 2 bytes (uint16)
-        await component.handle_get_free_memory_resp(structures.FreeMemoryResponsePacket(value=1024).encode())
+        await component.handle_get_free_memory_resp(0, structures.FreeMemoryResponsePacket(value=1024).encode())
 
         # It publishes twice (one for reply, one for broadcast)
         assert len(ctx.published) == 2
@@ -94,7 +94,7 @@ def test_handle_get_free_memory_resp_ignores_malformed(runtime_config, runtime_s
         component = SystemComponent(runtime_config, runtime_state, ctx)
 
         # Malformed payload (1 byte)
-        await component.handle_get_free_memory_resp(b"\x00")
+        await component.handle_get_free_memory_resp(0, b"\x00")
 
         assert len(ctx.published) == 0
 
@@ -113,7 +113,7 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(runtime_con
         # Payload: major=1, minor=2
         payload = structures.VersionResponsePacket(major=1, minor=2).encode()
 
-        await component.handle_get_version_resp(payload)
+        await component.handle_get_version_resp(0, payload)
 
         assert runtime_state.mcu_version == (1, 2)
         assert len(ctx.published) >= 1
@@ -133,7 +133,7 @@ def test_handle_get_version_resp_malformed(
         caplog.set_level("WARNING", logger="mcubridge.system")
 
         # Use a payload that is definitely too short (1 byte instead of 2)
-        await component.handle_get_version_resp(b"x")
+        await component.handle_get_version_resp(0, b"x")
 
         assert runtime_state.mcu_version is None
         assert not ctx.published
@@ -210,7 +210,7 @@ def test_handle_set_baudrate_resp_calls_callback(runtime_config, runtime_state):
         cb = AsyncMock()
         ctx.on_baudrate_change_ack = cb  # type: ignore
 
-        await component.handle_set_baudrate_resp(b"")
+        await component.handle_set_baudrate_resp(0, b"")
 
         cb.assert_awaited_once()
 

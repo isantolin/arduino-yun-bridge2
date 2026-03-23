@@ -150,7 +150,7 @@ class BridgeService:
             handle_link_reset_resp=self._handshake.handle_link_reset_resp,
             handle_get_capabilities_resp=self._handshake.handle_capabilities_resp,
             handle_ack=self._handle_ack,
-            status_handler_factory=lambda status: lambda p: self.handle_status(status, p),
+            status_handler_factory=lambda status: lambda s, p: self.handle_status(s, status, p),
             handle_process_kill=self._process.handle_kill,
         )
 
@@ -174,7 +174,7 @@ class BridgeService:
         self._serial_sender = sender
         self._serial_flow.set_sender(sender)
 
-    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
+    async def send_frame(self, command_id: int, payload: bytes = b"", seq_id: int | None = None) -> bool:
         if not self._serial_sender:
             logger.error(
                 "Serial sender not registered; cannot send frame 0x%02X",
@@ -248,7 +248,7 @@ class BridgeService:
         await self._serial_flow.reset()
         self._handshake.clear_handshake_expectations()
 
-    async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
+    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
         # [SIL-2] Automate latency tracking using native decorators
         stats = self.state.serial_latency_stats
@@ -257,7 +257,7 @@ class BridgeService:
         # specifically for successful dispatches in the state.
         start = time.perf_counter()
         try:
-            await self._dispatcher.dispatch_mcu_frame(command_id, payload)
+            await self._dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
         except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
                 "Critical error handling MCU frame: CMD=0x%02X payload=%s: %s",
@@ -385,6 +385,7 @@ class BridgeService:
     async def _acknowledge_mcu_frame(
         self,
         command_id: int,
+        seq_id: int,
         *,
         status: Status = Status.ACK,
     ) -> None:
@@ -396,11 +397,12 @@ class BridgeService:
                 status.value,
             )
             return
+
         try:
-            await self._serial_sender(status.value, payload)
-        except (OSError, ValueError) as exc:
-            logger.error(
-                "Failed to emit status 0x%02X for command 0x%02X: %s",
+            await self._serial_sender(status.value, payload, seq_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to enqueue status 0x%02X for command 0x%02X: %s",
                 status.value,
                 command_id,
                 exc,
@@ -412,7 +414,7 @@ class BridgeService:
     # MCU -> Linux handlers
     # ------------------------------------------------------------------
 
-    async def _handle_ack(self, payload: bytes) -> None:
+    async def _handle_ack(self, seq_id: int, payload: bytes) -> None:
         if len(payload) >= 2:
             try:
                 packet = AckPacket.decode(payload)
@@ -423,7 +425,7 @@ class BridgeService:
         else:
             logger.debug("MCU > ACK received")
 
-    async def handle_status(self, status: Status, payload: bytes) -> None:
+    async def handle_status(self, seq_id: int, status: Status, payload: bytes) -> None:
         self.state.record_mcu_status(status)
 
         # [SIL-2] Improved status reporting with descriptive names
@@ -432,9 +434,9 @@ class BridgeService:
 
         log_method = logger.warning if status != Status.ACK else logger.debug
         if text:
-            log_method("MCU > %s: %s (%s)", status.name, desc, text)
+            log_method("MCU > %s (seq=%d): %s (%s)", status.name, seq_id, desc, text)
         else:
-            log_method("MCU > %s: %s", status.name, desc)
+            log_method("MCU > %s (seq=%d): %s", status.name, seq_id, desc)
 
         report = msgspec.msgpack.encode(
             {

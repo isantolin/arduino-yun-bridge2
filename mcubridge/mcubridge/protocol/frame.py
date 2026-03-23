@@ -9,14 +9,16 @@ The frame format is designed for reliable communication:
 - Explicit length fields prevent buffer overruns
 - Version field ensures protocol compatibility
 - Big-endian byte order for cross-platform consistency
+- Sequence ID for deduplication and reliable delivery
 
 Frame Structure (on wire after COBS encoding):
-    [Header (5 bytes)] [Payload (0-64 bytes)] [CRC32 (4 bytes)]
+    [Header (7 bytes)] [Payload (0-64 bytes)] [CRC32 (4 bytes)]
 
 Header Format (big-endian):
     - version (1 byte): Protocol version, must match PROTOCOL_VERSION
     - payload_length (2 bytes): Number of payload bytes
     - command_id (2 bytes): Command or status code from protocol.py
+    - sequence_id (2 bytes): Incremental counter for deduplication
 
 The raw frame is then COBS-encoded and terminated with 0x00 delimiter
 before transmission.
@@ -39,10 +41,12 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
     Attributes:
         command_id: The RPC command or status code (16-bit).
+        sequence_id: The RPC sequence ID (16-bit) for deduplication.
         payload: The frame payload (0 to MAX_PAYLOAD_SIZE bytes).
     """
 
     command_id: int
+    sequence_id: int = 0
     payload: bytes = b""
 
     @property
@@ -56,13 +60,15 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         return self.command_id & ~protocol.CMD_FLAG_COMPRESSED
 
     @staticmethod
-    def build(command_id: int, payload: bytes = b"") -> bytes:
+    def build(command_id: int, sequence_id: int = 0, payload: bytes = b"") -> bytes:
         """Build a raw frame (header + payload + CRC) for COBS encoding."""
         payload_len = len(payload)
         if payload_len > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload too large ({payload_len} bytes); max is {protocol.MAX_PAYLOAD_SIZE}")
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
+        if not 0 <= sequence_id <= protocol.UINT16_MAX:
+            raise ValueError(f"Sequence id {sequence_id} outside 16-bit range")
 
         # [PHASE 3] Efficient pre-allocated construction
         buf = bytearray(protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE)
@@ -71,7 +77,8 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
             buf, 0,
             protocol.PROTOCOL_VERSION,
             payload_len,
-            command_id
+            command_id,
+            sequence_id
         )
         if payload_len > 0:
             buf[protocol.CRC_COVERED_HEADER_SIZE : protocol.CRC_COVERED_HEADER_SIZE + payload_len] = payload
@@ -82,14 +89,18 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         return bytes(buf)
 
     @staticmethod
-    def parse(raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, bytes]:
-        """Parse a decoded frame and validate header, payload, and CRC."""
+    def parse(raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, int, bytes]:
+        """Parse a decoded frame and validate header, payload, and CRC.
+
+        Returns:
+            Tuple of (command_id, sequence_id, payload)
+        """
         view = memoryview(raw_frame_buffer)
         if len(view) < protocol.MIN_FRAME_SIZE:
             raise ValueError(f"Incomplete frame: size {len(view)} < {protocol.MIN_FRAME_SIZE}")
 
         try:
-            version, payload_len, command_id = struct.unpack_from(
+            version, payload_len, command_id, sequence_id = struct.unpack_from(
                 protocol.CRC_COVERED_HEADER_FORMAT, view, 0
             )
         except struct.error as e:
@@ -110,14 +121,14 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         if expected_crc != received_crc:
             raise ValueError(f"CRC mismatch: expected {expected_crc:08X}, got {received_crc:08X}")
 
-        return command_id, payload
+        return command_id, sequence_id, payload
 
     def to_bytes(self) -> bytes:
         """Serialize the instance using :meth:`build`."""
-        return self.build(self.command_id, self.payload)
+        return self.build(self.command_id, self.sequence_id, self.payload)
 
     @classmethod
     def from_bytes(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
-        command_id, payload = cls.parse(raw_frame_buffer)
-        return cls(command_id=command_id, payload=payload)
+        command_id, sequence_id, payload = cls.parse(raw_frame_buffer)
+        return cls(command_id=command_id, sequence_id=sequence_id, payload=payload)

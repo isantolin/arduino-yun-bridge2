@@ -41,7 +41,7 @@ async def test_serial_flow_on_frame_ack_mismatch() -> None:
 
     # ACK for different command
     payload = AckPacket(command_id=Command.CMD_GET_FREE_MEMORY.value).encode()
-    flow.on_frame_received(Status.ACK.value, payload)
+    flow.on_frame_received(Status.ACK.value, 0, payload)
     assert not pending.ack_received
 
 
@@ -57,7 +57,7 @@ async def test_serial_flow_on_frame_failure_human_readable() -> None:
     flow._current = pending
 
     # Human readable error (all printable ASCII) should be ignored
-    flow.on_frame_received(Status.ERROR.value, b"some error")
+    flow.on_frame_received(Status.ERROR.value, 0, b"some error")
     assert pending.success is None
 
 

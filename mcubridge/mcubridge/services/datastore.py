@@ -28,7 +28,7 @@ logger = logging.getLogger("mcubridge.datastore")
 class DatastoreComponent(BaseComponent):
     """Encapsulate datastore behaviour for BridgeService."""
 
-    async def handle_put(self, payload: bytes) -> bool:
+    async def handle_put(self, seq_id: int, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
         packet = self._decode_payload(DatastorePutPacket, payload, Command.CMD_DATASTORE_PUT)
         if packet is None:
@@ -42,7 +42,7 @@ class DatastoreComponent(BaseComponent):
         await self._publish_datastore_value(key, value_bytes)
         return True
 
-    async def handle_get_request(self, payload: bytes) -> bool:
+    async def handle_get_request(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
         try:
             packet = DatastoreGetPacket.decode(payload, Command.CMD_DATASTORE_GET)

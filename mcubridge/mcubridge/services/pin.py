@@ -31,6 +31,7 @@ class PinComponent(BaseComponent):
 
     async def handle_unexpected_mcu_request(
         self,
+        seq_id: int,
         command: Command,
         payload: bytes,
     ) -> bool:
@@ -91,7 +92,7 @@ class PinComponent(BaseComponent):
             reply_to=request.reply_context if request else None,
         )
 
-    async def handle_digital_read_resp(self, payload: bytes) -> None:
+    async def handle_digital_read_resp(self, seq_id: int, payload: bytes) -> None:
         await self._handle_pin_read_resp(
             payload=payload,
             resp_name="DIGITAL_READ_RESP",
@@ -101,7 +102,7 @@ class PinComponent(BaseComponent):
             pending_queue=self.state.pending_digital_reads,
         )
 
-    async def handle_analog_read_resp(self, payload: bytes) -> None:
+    async def handle_analog_read_resp(self, seq_id: int, payload: bytes) -> None:
         await self._handle_pin_read_resp(
             payload=payload,
             resp_name="ANALOG_READ_RESP",

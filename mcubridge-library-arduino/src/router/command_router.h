@@ -24,13 +24,14 @@ namespace router {
  * @brief Command Message - Carries an RPC frame with metadata.
  */
 struct CommandContext {
-  CommandContext(const rpc::Frame* f, uint16_t raw, bool dup, bool ack)
-      : frame(f), raw_command(raw), is_duplicate(dup), requires_ack(ack) {}
+  CommandContext(const rpc::Frame* f, uint16_t raw, bool dup, bool ack, uint16_t seq)
+      : frame(f), raw_command(raw), is_duplicate(dup), requires_ack(ack), sequence_id(seq) {}
 
   const rpc::Frame* frame;  // Effective frame (decompressed if needed)
   uint16_t raw_command;     // Original command ID without flags
   bool is_duplicate;        // Deduplication check result
   bool requires_ack;        // Whether ACK should be sent after handling
+  uint16_t sequence_id;     // Sequence ID for tracking
 };
 
 /**

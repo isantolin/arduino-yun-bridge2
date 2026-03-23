@@ -80,21 +80,21 @@ class FileComponent(BaseComponent):
         self._pending_mcu_read: _PendingMcuRead | None = None
         self._mcu_backend_enabled = True
 
-    async def handle_write(self, payload: bytes) -> bool:
+    async def handle_write(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_WRITE from MCU."""
         success, _, _ = await self._perform_file_operation("write", payload)
         return success
 
-    async def handle_read(self, payload: bytes) -> None:
+    async def handle_read(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_FILE_READ from MCU."""
         await self._perform_file_operation("read", payload)
 
-    async def handle_remove(self, payload: bytes) -> bool:
+    async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_REMOVE from MCU."""
         success, _, _ = await self._perform_file_operation("remove", payload)
         return success
 
-    async def handle_read_response(self, payload: bytes) -> bool:
+    async def handle_read_response(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_READ_RESP from MCU for MQTT-originated mcu/ reads."""
         pending = self._pending_mcu_read
         if pending is None:

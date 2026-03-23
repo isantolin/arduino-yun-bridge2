@@ -30,6 +30,8 @@ class ProcessClass : public BridgeObserver {
   // [SIL-2] Observer Interface
   void notification(MsgBridgeSynchronized) override { /* ready */ }
   void notification(MsgBridgeLost) override { reset(); }
+  void notification(MsgBridgeError) override {}
+  void notification(MsgBridgeCommand) override {}
 
   void runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler);
   void poll(int16_t pid, ProcessPollHandler handler);

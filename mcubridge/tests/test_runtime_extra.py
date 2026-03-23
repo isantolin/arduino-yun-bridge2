@@ -73,7 +73,7 @@ async def test_runtime_acknowledge_frame_no_sender() -> None:
 @pytest.mark.asyncio
 async def test_runtime_handle_ack_fallback() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
-    state = create_runtime_state(config)
+    state = create_runtime_state(config, 0)
     service = BridgeService(config, state)
 
     # Payload valid length (2) but decode may fail for malformed data.

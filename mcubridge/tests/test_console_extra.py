@@ -17,14 +17,14 @@ async def test_console_handle_write_edge_cases() -> None:
     cc = ConsoleComponent(config, state, ctx)
 
     # Malformed
-    await cc.handle_write(b"")
+    await cc.handle_write(0, b"")
     assert ctx.publish.call_count == 0
 
     # Empty data (decoded from valid but empty packet)
     from mcubridge.protocol.structures import ConsoleWritePacket
 
     payload = ConsoleWritePacket(data=b"").encode()
-    await cc.handle_write(payload)
+    await cc.handle_write(0, payload)
     assert ctx.publish.call_count == 0
 
 

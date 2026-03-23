@@ -96,7 +96,7 @@ async def test_dispatcher_mcu_handler_exception(dispatcher: BridgeDispatcher):
     dispatcher.mcu_registry.get.return_value = buggy_handler
     # Use patch to set is_synchronized
     with patch.object(type(dispatcher.state), "is_synchronized", True):
-        await dispatcher.dispatch_mcu_frame(0x99, b"")
+        await dispatcher.dispatch_mcu_frame(0x99, 0, b"")
         dispatcher.send_frame.assert_called()
 
 @pytest.mark.asyncio
@@ -170,5 +170,5 @@ async def test_datastore_handle_get_request_fail_send(runtime_config, runtime_st
     ds = DatastoreComponent(runtime_config, runtime_state, ctx)
     from mcubridge.protocol.structures import DatastoreGetPacket
     payload = DatastoreGetPacket(key="test").encode()
-    result = await ds.handle_get_request(payload)
+    result = await ds.handle_get_request(0, payload)
     assert result is False

@@ -287,7 +287,7 @@ def test_no_stl_in_mcu_src_or_tests() -> None:
     cpp_files = [
         f
         for f in _iter_text_files(mcu_src_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
-        if "etl/" not in str(f) and "nanopb/" not in str(f)
+        if "etl/" not in str(f) and "nanopb/" not in str(f) and "wolfssl/" not in str(f) and "wolfcrypt/" not in str(f)
     ]
     cpp_files += _iter_text_files(mcu_tests_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
 

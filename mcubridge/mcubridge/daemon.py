@@ -133,7 +133,7 @@ class BridgeDaemon:
         self.service = BridgeService(config, self.state)
         # Initialize dependencies
 
-        async def _dummy_sender(cmd: int, payload: bytes) -> bool:
+        async def _dummy_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             return False
 
         self.service.register_serial_sender(_dummy_sender)

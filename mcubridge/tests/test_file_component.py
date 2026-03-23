@@ -100,10 +100,10 @@ async def test_handle_write_and_read_roundtrip(
 ) -> None:
     component, bridge = file_component
     payload = structures.FileWritePacket(path='foo', data=b'data').encode()
-    await component.handle_write(payload)
+    await component.handle_write(0, payload)
 
     read_payload = structures.FileReadPacket(path='foo').encode()
-    await component.handle_read(read_payload)
+    await component.handle_read(0, read_payload)
 
     assert bridge.sent_frames[-1][0] == protocol.Command.CMD_FILE_READ_RESP.value
     assert structures.FileReadResponsePacket.decode(bridge.sent_frames[-1][1]).content == b'data'
@@ -116,7 +116,7 @@ async def test_handle_write_sends_ok_on_success(
 ) -> None:
     component, bridge = file_component
     payload = _build_write_payload("ok.txt", b"abc")
-    assert await component.handle_write(payload) is True
+    assert await component.handle_write(0, payload) is True
     assert (tmp_path / "ok.txt").exists()
     assert bridge.sent_frames[-1][0] == Status.OK.value
 
@@ -129,7 +129,7 @@ async def test_handle_remove_sends_ok_on_success(
     component, bridge = file_component
     (tmp_path / "rm.txt").write_text("x", encoding="utf-8")
     payload = structures.FileRemovePacket(path='rm.txt').encode()
-    assert await component.handle_remove(payload) is True
+    assert await component.handle_remove(0, payload) is True
     assert not (tmp_path / "rm.txt").exists()
     assert bridge.sent_frames[-1][0] == Status.OK.value
 
@@ -151,7 +151,7 @@ async def test_handle_read_large_payload_chunking(
 
     from mcubridge.protocol import structures
     payload = structures.FileReadPacket(path='read_large.txt').encode()
-    await component.handle_read(payload)
+    await component.handle_read(0, payload)
 
     # Reconstruct what was sent
     total_received = b""
@@ -177,7 +177,7 @@ async def test_handle_remove_missing_file(
     component, bridge = file_component
     from mcubridge.protocol import structures
     payload = structures.FileRemovePacket(path='missing').encode()
-    await component.handle_remove(payload)
+    await component.handle_remove(0, payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
 
@@ -264,16 +264,16 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
 ) -> None:
     component, bridge = file_component
 
-    async def _send_frame(command_id: int, payload: bytes = b"") -> bool:
+    async def _send_frame(command_id: int, payload: bytes = b"", seq_id: int | None = None) -> bool:
         bridge.sent_frames.append((command_id, payload))
         if command_id == Command.CMD_FILE_READ.value:
-            await component.handle_read_response(
+            await component.handle_read_response(0,
                 structures.FileReadResponsePacket(content=b"mcu-").encode()
             )
-            await component.handle_read_response(
+            await component.handle_read_response(0,
                 structures.FileReadResponsePacket(content=b"data").encode()
             )
-            await component.handle_read_response(
+            await component.handle_read_response(0,
                 structures.FileReadResponsePacket(content=b"").encode()
             )
         return True
@@ -347,7 +347,7 @@ async def test_handle_write_invalid_path(
 ) -> None:
     component, bridge = file_component
     payload = bytes([2]) + b".." + (1).to_bytes(2, "big") + b"x"
-    await component.handle_write(payload)
+    await component.handle_write(0, payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
 
@@ -361,7 +361,7 @@ async def test_rejects_non_tmp_root_by_default(
     component.config.file_system_root = "/etc/mcubridge-test"
 
     payload = _build_write_payload("foo.txt", b"x")
-    await component.handle_write(payload)
+    await component.handle_write(0, payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
     assert bridge.sent_frames[-1][1].decode() == "Invalid path"
@@ -376,7 +376,7 @@ async def test_handle_write_rejects_per_write_limit(
     component.config.file_storage_quota_bytes = 64
     payload = _build_write_payload("big.txt", b"abcd")
 
-    await component.handle_write(payload)
+    await component.handle_write(0, payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
     assert bridge.sent_frames[-1][1].decode() == "Quota exceeded"
@@ -395,13 +395,13 @@ async def test_handle_write_enforces_storage_quota(
     component.config.file_storage_quota_bytes = 4
 
     first_payload = _build_write_payload("alpha.txt", b"xy")
-    assert await component.handle_write(first_payload)
+    assert await component.handle_write(0, first_payload)
     root = Path(component.config.file_system_root)
     assert (root / "alpha.txt").exists()
     assert component.state.file_storage_bytes_used == 2
 
     second_payload = _build_write_payload("bravo.txt", b"xyz")
-    await component.handle_write(second_payload)
+    await component.handle_write(0, second_payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
     assert bridge.sent_frames[-1][1].decode() == "Quota exceeded"
@@ -417,11 +417,11 @@ async def test_handle_remove_updates_usage(
     component, _ = file_component
     component.config.file_write_max_bytes = 16
     payload = _build_write_payload("temp.txt", b"abc")
-    assert await component.handle_write(payload)
+    assert await component.handle_write(0, payload)
     assert component.state.file_storage_bytes_used == 3
 
     remove_payload = structures.FileRemovePacket(path='temp.txt').encode()
-    assert await component.handle_remove(remove_payload)
+    assert await component.handle_remove(0, remove_payload)
     assert component.state.file_storage_bytes_used == 0
     root = Path(component.config.file_system_root)
     assert not (root / "temp.txt").exists()
@@ -433,7 +433,7 @@ async def test_handle_write_rejects_too_short_payload(
 ) -> None:
     component, bridge = file_component
 
-    assert await component.handle_write(b"") is False
+    assert await component.handle_write(0, b"") is False
     pass  # Relaxed for refactor
 
 
@@ -444,7 +444,7 @@ async def test_handle_write_rejects_missing_data_section(
     component, bridge = file_component
     # path_len=3 but missing 2-byte length field
     payload = bytes([3]) + b"foo"
-    assert await component.handle_write(payload) is False
+    assert await component.handle_write(0, payload) is False
     pass  # Relaxed for refactor
 
 
@@ -455,7 +455,7 @@ async def test_handle_write_rejects_absolute_path(
     component, bridge = file_component
     payload = _build_write_payload("/etc/passwd", b"x")
 
-    assert await component.handle_write(payload) is False
+    assert await component.handle_write(0, payload) is False
     assert bridge.sent_frames
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
     assert bridge.sent_frames[-1][1].decode() == "Invalid path"
@@ -468,7 +468,7 @@ async def test_handle_write_rejects_truncated_data(
     encoded = b"foo"
     # Declares 4 bytes of data but only provides 3.
     payload = bytes([len(encoded)]) + encoded + (4).to_bytes(2, "big") + b"abc"
-    assert await component.handle_write(payload) is False
+    assert await component.handle_write(0, payload) is False
     pass  # Relaxed for refactor
 
 
@@ -477,8 +477,8 @@ async def test_handle_read_rejects_invalid_payloads(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    await component.handle_read(b"")
-    await component.handle_read(bytes([5]) + b"ab")
+    await component.handle_read(0, b"")
+    await component.handle_read(0, bytes([5]) + b"ab")
     pass  # Relaxed for refactor
 
 
@@ -489,7 +489,7 @@ async def test_handle_read_failure_sends_error(
 ) -> None:
     component, bridge = file_component
 
-    await component.handle_read(b"\\x02ab\\x00")
+    await component.handle_read(0, b"\\x02ab\\x00")
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
     assert "Error" in bridge.sent_frames[-1][1].decode()
 
@@ -696,7 +696,7 @@ async def test_handle_read_large_payload_truncation_reproduction(
 
     from mcubridge.protocol import structures
     payload = structures.FileReadPacket(path='read_large.txt').encode()
-    await component.handle_read(payload)
+    await component.handle_read(0, payload)
 
     # We expect multiple frames or a sequence that delivers all 128 bytes.
     # But currently, the implementation explicitly truncates.
@@ -793,7 +793,7 @@ async def test_handle_read_empty_file(
 
     from mcubridge.protocol import structures
     payload = structures.FileReadPacket(path='empty.txt').encode()
-    await component.handle_read(payload)
+    await component.handle_read(0, payload)
 
     # Should send a frame with length 0
     assert bridge.sent_frames[-1][0] == protocol.Command.CMD_FILE_READ_RESP.value
@@ -857,7 +857,7 @@ async def test_handle_remove_invalid_payload(
     component, bridge = file_component
 
     # Invalid payload
-    result = await component.handle_remove(b"")
+    result = await component.handle_remove(0, b"")
     assert result is False
     pass  # Relaxed for refactor
 
@@ -918,7 +918,7 @@ async def test_write_refreshes_usage_when_stale(
 
     # Write to the same file
     payload = _build_write_payload("existing.txt", b"new")
-    await component.handle_write(payload)
+    await component.handle_write(0, payload)
 
     # Usage should be refreshed
     assert component.state.file_storage_bytes_used >= 3

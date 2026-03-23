@@ -100,7 +100,7 @@ for src in "${SOURCES[@]}"; do
     if [[ "${src}" == *.c ]]; then
         gcc "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     else
-        g++ -std=c++14 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
+        g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     fi
 done
 wait
@@ -122,7 +122,7 @@ pids=()
 for test_file in "${TEST_FILES[@]}"; do
     (
         test_name=$(basename "${test_file}" .cpp)
-        g++ -std=c++14 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}"
+        g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}"
         "${BUILD_DIR}/${test_name}"
     ) &
     pids+=($!)

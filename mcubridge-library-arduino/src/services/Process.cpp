@@ -11,7 +11,7 @@ void ProcessClass::runAsync(etl::string_view command, etl::span<const etl::strin
   rpc::payload::ProcessRunAsync msg = {};
   rpc::util::pb_copy_join(command, args, msg.command, sizeof(msg.command));
 
-  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, msg)) {
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, msg)) {
     _pending_async_runs.push({handler});
   }
 }
@@ -20,7 +20,7 @@ void ProcessClass::poll(int16_t pid, ProcessPollHandler handler) {
   if (_pending_polls.full()) return;
   rpc::payload::ProcessPoll msg = {};
   msg.pid = pid;
-  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_POLL, msg)) {
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_POLL, 0, msg)) {
     _pending_polls.push({pid, handler});
   }
 }
@@ -28,7 +28,7 @@ void ProcessClass::poll(int16_t pid, ProcessPollHandler handler) {
 void ProcessClass::kill(int16_t pid, ProcessKillHandler handler) {
   rpc::payload::ProcessKill msg = {};
   msg.pid = pid;
-  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_KILL, msg)) {
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_KILL, 0, msg)) {
     if (handler.is_valid()) handler(rpc::StatusCode::STATUS_OK);
   } else {
     if (handler.is_valid()) handler(rpc::StatusCode::STATUS_ERROR);

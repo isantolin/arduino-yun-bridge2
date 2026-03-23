@@ -59,7 +59,7 @@ class SpiComponent(BaseComponent):
             logger.error("Error handling SPI MQTT action %s: %s", action, e)
             return False
 
-    async def handle_transfer_resp(self, payload: bytes) -> bool:
+    async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_SPI_TRANSFER_RESP from MCU."""
         try:
             packet = structures.SpiTransferResponsePacket.decode(payload)

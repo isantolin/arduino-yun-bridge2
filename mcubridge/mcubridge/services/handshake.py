@@ -41,7 +41,12 @@ from ..security.security import (
 )
 from ..state.context import McuCapabilities, RuntimeState
 
-SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
+from typing import Protocol
+
+class SendFrameCallable(Protocol):
+    async def __call__(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        ...
+
 EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
 AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 
@@ -300,12 +305,13 @@ class SerialHandshakeManager:
 
         return self.fsm_state == self.STATE_SYNCHRONIZED
 
-    async def handle_link_sync_resp(self, payload: bytes) -> bool:
+    async def handle_link_sync_resp(self, seq_id: int, payload: bytes) -> bool:
         expected = self._state.link_handshake_nonce
         if expected is None:
             self._logger.warning("Unexpected LINK_SYNC_RESP without pending nonce")
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
+                seq_id,
                 status=Status.MALFORMED,
             )
             await self.handle_handshake_failure("unexpected_sync_resp")
@@ -321,6 +327,7 @@ class SerialHandshakeManager:
                 )
                 await self._acknowledge_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
+                    seq_id,
                     status=Status.MALFORMED,
                 )
                 await self.handle_handshake_failure("sync_rate_limited")
@@ -339,6 +346,7 @@ class SerialHandshakeManager:
             )
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
+                seq_id,
                 status=Status.MALFORMED,
             )
             self.clear_handshake_expectations()
@@ -369,6 +377,7 @@ class SerialHandshakeManager:
             )
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
+                seq_id,
                 status=Status.MALFORMED,
             )
             self.clear_handshake_expectations()
@@ -429,7 +438,7 @@ class SerialHandshakeManager:
 
         return False
 
-    async def handle_capabilities_resp(self, payload: bytes) -> bool:
+    async def handle_capabilities_resp(self, seq_id: int, payload: bytes) -> bool:
         if self._capabilities_future and not self._capabilities_future.done():
             self._capabilities_future.set_result(payload)
         return True
@@ -448,7 +457,7 @@ class SerialHandshakeManager:
         except (ValueError, TypeError, ValueError, KeyError) as exc:
             self._logger.warning("Failed to unpack capabilities: %s", exc)
 
-    async def handle_link_reset_resp(self, payload: bytes) -> bool:
+    async def handle_link_reset_resp(self, seq_id: int, payload: bytes) -> bool:
         self._logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())
         return True
 

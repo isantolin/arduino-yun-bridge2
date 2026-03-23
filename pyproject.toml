@@ -25,7 +25,8 @@ dependencies = [
     "typer[all]==0.24.1",
     "rich==14.3.3",
     "zict==3.0.0",
-    "heapdict==1.0.1"
+    "heapdict==1.0.1",
+    "svcs==25.1.0"
 ]
 
 [tool.setuptools]

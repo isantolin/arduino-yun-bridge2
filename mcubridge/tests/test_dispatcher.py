@@ -220,7 +220,7 @@ def _make_dispatcher(
     registry = MCUHandlerRegistry()
     router = MQTTRouter()
 
-    async def _send_frame(command_id: int, payload: bytes) -> bool:
+    async def _send_frame(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         calls.add("send_frame", command_id, payload)
         return True
 
@@ -302,7 +302,7 @@ async def test_dispatch_mcu_frame_rejects_pre_sync_without_reply_frames() -> Non
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, is_link_synchronized=False)
 
-    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"xyz")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 0, b"xyz")
 
     assert not any(name == "acknowledge_frame" for name, _ in calls.items)
     assert not any(name == "send_frame" for name, _ in calls.items)
@@ -313,7 +313,7 @@ async def test_dispatch_mcu_frame_allows_status_frames_pre_sync() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, is_link_synchronized=False)
 
-    await dispatcher.dispatch_mcu_frame(Status.ACK.value, b"")
+    await dispatcher.dispatch_mcu_frame(Status.ACK.value, 0, b"")
 
     assert not any(name == "acknowledge_frame" for name, _ in calls.items)
     assert any(name == "handle_ack" for name, _ in calls.items)
@@ -329,7 +329,7 @@ async def test_dispatch_mcu_frame_handler_success_auto_acks() -> None:
         return True
 
     dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)
-    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hello")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 0, b"hello")
 
     assert ("handler", (b"hello",)) in calls.items
     assert any(name == "acknowledge_frame" for name, _ in calls.items)
@@ -344,7 +344,7 @@ async def test_dispatch_mcu_frame_handler_returns_false_no_ack() -> None:
         return False
 
     dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)
-    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hello")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 0, b"hello")
 
     assert not any(name == "acknowledge_frame" for name, _ in calls.items)
 
@@ -358,7 +358,7 @@ async def test_dispatch_mcu_frame_handler_exception_sends_error_for_request() ->
         raise RuntimeError("boom")
 
     dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)
-    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hello")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 0, b"hello")
 
     assert any(name == "send_frame" and args[0] == Status.ERROR.value for name, args in calls.items)
 
@@ -368,7 +368,7 @@ async def test_dispatch_mcu_frame_unhandled_request_sends_not_implemented() -> N
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    await dispatcher.dispatch_mcu_frame(Command.CMD_LINK_SYNC.value, b"")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_LINK_SYNC.value, 0, b"")
 
     assert any(name == "send_frame" and args[0] == Status.NOT_IMPLEMENTED.value for name, args in calls.items)
 
@@ -378,7 +378,7 @@ async def test_dispatch_mcu_frame_orphaned_response_is_ignored() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    await dispatcher.dispatch_mcu_frame(Command.CMD_PROCESS_POLL_RESP.value, b"1")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_PROCESS_POLL_RESP.value, 0, b"1")
 
     assert not any(name == "acknowledge_frame" for name, _ in calls.items)
     assert not any(name == "send_frame" for name, _ in calls.items)
@@ -595,6 +595,6 @@ async def test_unexpected_mcu_gpio_requests_drop_if_pin_missing() -> None:
     dispatcher = _make_dispatcher(calls)
     dispatcher._container = None
     # Use dispatch_mcu_frame which uses the registered lambda
-    await dispatcher.dispatch_mcu_frame(Command.CMD_DIGITAL_READ.value, b"")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_DIGITAL_READ.value, 0, b"")
     assert not any(name == "pin.handle_unexpected_mcu_request" for name, _ in calls.items)
     # Should log warning but not call component

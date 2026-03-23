@@ -158,7 +158,7 @@ class SerialFlowController:
         }
         self._pipeline_observer(payload)
 
-    def on_frame_received(self, command_id: int, payload: bytes) -> None:
+    def on_frame_received(self, command_id: int, sequence_id: int, payload: bytes) -> None:
         pending = self._current
         if pending is None:
             return

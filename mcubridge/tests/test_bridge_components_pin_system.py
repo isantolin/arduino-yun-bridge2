@@ -44,7 +44,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
@@ -53,7 +53,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     runtime_state.pending_digital_reads.append(PendingPinRequest(pin=7, reply_context=None))
 
     payload = structures.DigitalReadResponsePacket(value=1).encode()
-    await service.handle_mcu_frame(Command.CMD_DIGITAL_READ_RESP.value, payload)
+    await service.handle_mcu_frame(Command.CMD_DIGITAL_READ_RESP.value, 0, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
     expected_topic = topic_path(
@@ -81,7 +81,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
@@ -91,7 +91,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
 
     TEST_EXIT_CODE = 0x7F
     payload = structures.AnalogReadResponsePacket(value=TEST_EXIT_CODE).encode()
-    await service.handle_mcu_frame(Command.CMD_ANALOG_READ_RESP.value, payload)
+    await service.handle_mcu_frame(Command.CMD_ANALOG_READ_RESP.value, 0, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
     expected_topic = topic_path(
@@ -120,7 +120,7 @@ async def test_mqtt_digital_write_sends_frame(
     sent_frames: list[tuple[int, bytes]] = []
     flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         flow.on_frame_received(
             Status.ACK.value,
@@ -157,11 +157,10 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     sent_frames: list[tuple[int, bytes]] = []
     flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         flow.on_frame_received(
-            Command.CMD_ANALOG_READ_RESP.value,
-            bytes([0, 0]),
+            Command.CMD_ANALOG_READ_RESP.value, 0, bytes([0, 0]),
         )
         return True
 
@@ -196,15 +195,14 @@ async def test_mcu_digital_read_request_yields_not_implemented(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
     service.register_serial_sender(fake_sender)
 
     await service.handle_mcu_frame(
-        Command.CMD_DIGITAL_READ.value,
-        bytes([9]),
+        Command.CMD_DIGITAL_READ.value, 0, bytes([9]),
     )
 
     assert any(f[0] == Status.NOT_IMPLEMENTED.value for f in sent_frames)
@@ -219,14 +217,14 @@ async def test_mcu_free_memory_response_enqueues_value(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
     service.register_serial_sender(fake_sender)
 
     payload = structures.FreeMemoryResponsePacket(value=100).encode()
-    await service.handle_mcu_frame(Command.CMD_GET_FREE_MEMORY_RESP.value, payload)
+    await service.handle_mcu_frame(Command.CMD_GET_FREE_MEMORY_RESP.value, 0, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
     expected_topic = topic_path(
@@ -257,11 +255,10 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     sent_frames: list[tuple[int, bytes]] = []
     flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         flow.on_frame_received(
-            Command.CMD_GET_VERSION_RESP.value,
-            bytes([1, 2]),
+            Command.CMD_GET_VERSION_RESP.value, 0, bytes([1, 2]),
         )
         return True
 

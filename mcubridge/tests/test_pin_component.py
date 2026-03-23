@@ -126,7 +126,7 @@ async def test_handle_digital_read_resp_malformed_payload_is_ignored(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     # Truncated varint — invalid protobuf
-    await component.handle_digital_read_resp(b"\x80")
+    await component.handle_digital_read_resp(0, b"\x80")
 
     assert ctx.enqueued == []
 
@@ -139,7 +139,9 @@ async def test_handle_digital_read_resp_without_pending_request_publishes_unknow
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode())
+    await component.handle_digital_read_resp(
+        0, structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode()
+    )
 
     assert len(ctx.enqueued) == 1
     message, reply_context = ctx.enqueued[0]
@@ -164,7 +166,9 @@ async def test_handle_digital_read_resp_with_pending_request_uses_reply_context(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode())
+    await component.handle_digital_read_resp(
+        0, structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode()
+    )
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound
@@ -187,7 +191,7 @@ async def test_handle_analog_read_resp_with_pending_request_decodes_big_endian(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_analog_read_resp(structures.AnalogReadResponsePacket(value=256).encode())
+    await component.handle_analog_read_resp(0, structures.AnalogReadResponsePacket(value=256).encode())
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound

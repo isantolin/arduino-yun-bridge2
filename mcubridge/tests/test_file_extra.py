@@ -24,7 +24,7 @@ async def test_file_handle_write_malformed() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     fc = FileComponent(config, state, AsyncMock())
-    assert await fc.handle_write(b"") is False
+    assert await fc.handle_write(0, b"") is False
 
 
 @pytest.mark.asyncio
@@ -38,7 +38,7 @@ async def test_file_handle_write_traversal() -> None:
 
     # Path traversal
     payload = FileWritePacket(path="../etc/passwd", data=b"data").encode()
-    assert await fc.handle_write(payload) is False
+    assert await fc.handle_write(0, payload) is False
     ctx.send_frame.assert_called_with(Status.ERROR.value, ANY)  # INVALID_PATH
 
 
@@ -52,7 +52,7 @@ async def test_file_handle_write_absolute() -> None:
     from mcubridge.protocol.structures import FileWritePacket
 
     payload = FileWritePacket(path="/tmp/foo", data=b"data").encode()
-    assert await fc.handle_write(payload) is False
+    assert await fc.handle_write(0, payload) is False
 
 
 @pytest.mark.asyncio
@@ -60,7 +60,7 @@ async def test_file_handle_read_malformed() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     fc = FileComponent(config, state, AsyncMock())
-    await fc.handle_read(b"")
+    await fc.handle_read(0, b"")
 
 
 @pytest.mark.asyncio
@@ -68,7 +68,7 @@ async def test_file_handle_remove_malformed() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     fc = FileComponent(config, state, AsyncMock())
-    assert await fc.handle_remove(b"") is False
+    assert await fc.handle_remove(0, b"") is False
 
 
 @pytest.mark.asyncio

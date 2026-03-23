@@ -34,7 +34,7 @@ logger = logging.getLogger("mcubridge.mailbox")
 class MailboxComponent(BaseComponent):
     """Handle mailbox interactions between MCU and Linux."""
 
-    async def handle_processed(self, payload: bytes) -> bool:
+    async def handle_processed(self, seq_id: int, payload: bytes) -> bool:
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
@@ -57,7 +57,7 @@ class MailboxComponent(BaseComponent):
         await self.ctx.publish(topic=topic_name, payload=body)
         return True
 
-    async def handle_push(self, payload: bytes) -> bool:
+    async def handle_push(self, seq_id: int, payload: bytes) -> bool:
         packet = self._decode_payload(MailboxPushPacket, payload, Command.CMD_MAILBOX_PUSH)
         if packet is None:
             return False
@@ -89,7 +89,7 @@ class MailboxComponent(BaseComponent):
         )
         return True
 
-    async def handle_available(self, payload: bytes) -> bool:
+    async def handle_available(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_MAILBOX_AVAILABLE."""
         # Strict contract: request MUST have an empty payload.
         # Any payload is rejected to avoid ambiguous "request vs notify" semantics.
@@ -111,7 +111,7 @@ class MailboxComponent(BaseComponent):
         )
         return True
 
-    async def handle_read(self, _: bytes) -> bool:
+    async def handle_read(self, seq_id: int, _: bytes) -> bool:
         original_payload = self.state.pop_mailbox_message()
         message_payload = original_payload if original_payload is not None else b""
 

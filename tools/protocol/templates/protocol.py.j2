@@ -125,16 +125,16 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
     {%- endfor %}
 )
 
-CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHH"
+CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHHH"
 CRC_FORMAT: Final[str] = ">I"
 UINT8_FORMAT: Final[str] = ">B"
 UINT16_FORMAT: Final[str] = ">H"
 UINT32_FORMAT: Final[str] = ">I"
 NONCE_COUNTER_FORMAT: Final[str] = ">Q"
 
-CRC_COVERED_HEADER_SIZE: Final[int] = 5
+CRC_COVERED_HEADER_SIZE: Final[int] = 7
 CRC_SIZE: Final[int] = 4
-MIN_FRAME_SIZE: Final[int] = 9
+MIN_FRAME_SIZE: Final[int] = 11
 
 MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = "incoming_available"
 MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = "outgoing_available"

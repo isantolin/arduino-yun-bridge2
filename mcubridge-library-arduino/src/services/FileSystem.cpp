@@ -10,7 +10,7 @@ constexpr size_t kReadChunkSize = rpc::MAX_PAYLOAD_SIZE - 2U;
 void send_read_response(etl::span<const uint8_t> data) {
   rpc::payload::FileReadResponse msg = {};
   rpc::util::pb_setup_encode_span(msg.content, data);
-  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ_RESP, msg);
+  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ_RESP, 0, msg);
 }
 }
 
@@ -20,13 +20,13 @@ void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data
   rpc::payload::FileWrite msg = {};
   rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
   rpc::util::pb_setup_encode_span(msg.data, data);
-  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, msg);
+  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, 0, msg);
 }
 
 void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler) {
   rpc::payload::FileRead msg = {};
   rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
-  if (Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ, msg)) {
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ, 0, msg)) {
     _read_handler = handler;
   }
 }
@@ -34,7 +34,7 @@ void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler)
 void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove msg = {};
   rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
-  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, msg);
+  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, 0, msg);
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<const uint8_t> data) {

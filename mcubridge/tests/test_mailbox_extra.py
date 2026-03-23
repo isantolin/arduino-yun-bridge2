@@ -17,7 +17,7 @@ async def test_mailbox_handle_processed_fallback() -> None:
     mb = MailboxComponent(config, state, ctx)
 
     # Payload too short or invalid for packet
-    await mb.handle_processed(b"A")
+    await mb.handle_processed(0, b"A")
     ctx.publish.assert_called_once()
     assert ctx.publish.call_args[1]["payload"] == b"A"
 
@@ -32,7 +32,7 @@ async def test_mailbox_handle_read_truncation() -> None:
     mb = MailboxComponent(config, state, ctx)
 
     state.enqueue_mailbox_message(b"A" * 100, MagicMock())
-    await mb.handle_read(b"")
+    await mb.handle_read(0, b"")
 
     # Verify sent payload is truncated to MAX_PAYLOAD_SIZE - 2 (62)
     args = ctx.send_frame.call_args[0]
@@ -50,7 +50,7 @@ async def test_mailbox_handle_read_send_fail() -> None:
 
     msg = b"persistent"
     state.enqueue_mailbox_message(msg, MagicMock())
-    await mb.handle_read(b"")
+    await mb.handle_read(0, b"")
     # Message should be requeued at front
     assert state.pop_mailbox_message() == msg
 

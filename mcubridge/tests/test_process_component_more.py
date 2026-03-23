@@ -39,7 +39,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
     with patch.object(process_component, "poll_process", return_value=batch):
         from mcubridge.protocol.structures import ProcessPollPacket
         payload = ProcessPollPacket(pid=100).encode()
-        await process_component.handle_poll(payload)
+        await process_component.handle_poll(0, payload)
         process_component.service._acknowledge_mcu_frame.assert_awaited()
 
 
@@ -132,7 +132,7 @@ async def test_handle_kill_timeout_releases_slot(
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
         mock_psutil_instance.terminate = MagicMock()
-        ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
+        ok = await process_component.handle_kill(0, structures.ProcessKillPacket(pid=pid).encode())
     assert ok is True
     mock_psutil_instance.terminate.assert_called_once()
 
@@ -154,7 +154,7 @@ async def test_handle_kill_process_lookup_error_is_handled(
          patch("psutil.wait_procs", return_value=([], [])):
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
-        ok = await process_component.handle_kill(structures.ProcessKillPacket(pid=pid).encode())
+        ok = await process_component.handle_kill(0, structures.ProcessKillPacket(pid=pid).encode())
     # Should return True as we attempted termination
     assert ok is True
 
@@ -164,7 +164,7 @@ async def test_handle_run_async_validation_error_sends_error_frame(
     process_component: ProcessComponent,
 ) -> None:
     # Trigger malformed via empty payload
-    await process_component.handle_run_async(b"")
+    await process_component.handle_run_async(0, b"")
 
     # Verify it called with correct named parameter
     process_component.service._acknowledge_mcu_frame.assert_awaited()

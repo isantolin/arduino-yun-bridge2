@@ -20,7 +20,7 @@ logger = logging.getLogger("mcubridge.console")
 class ConsoleComponent(BaseComponent):
     """Encapsulate remote console behaviour."""
 
-    async def handle_write(self, payload: bytes) -> None:
+    async def handle_write(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
         packet = self._decode_payload(
             ConsoleWritePacket, payload, Command.CMD_CONSOLE_WRITE,
@@ -43,13 +43,13 @@ class ConsoleComponent(BaseComponent):
             expiry=MQTT_EXPIRY_CONSOLE,
         )
 
-    async def handle_xoff(self, _: bytes) -> None:
-        logger.warning("MCU > XOFF received, pausing serial output.")
+    async def handle_xoff(self, seq_id: int, _: bytes) -> None:
+        logger.warning("MCU > XOFF received (seq=%d), pausing serial output.", seq_id)
         self.state.mcu_is_paused = True
         self.state.serial_tx_allowed.clear()
 
-    async def handle_xon(self, _: bytes) -> None:
-        logger.info("MCU > XON received, resuming serial output.")
+    async def handle_xon(self, seq_id: int, _: bytes) -> None:
+        logger.info("MCU > XON received (seq=%d), resuming serial output.", seq_id)
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
         await self.flush_queue()

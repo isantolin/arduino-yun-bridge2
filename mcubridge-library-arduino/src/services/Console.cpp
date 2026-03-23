@@ -94,7 +94,7 @@ void ConsoleClass::flush() {
   }
   rpc::payload::ConsoleWrite msg = {};
   rpc::util::pb_setup_encode_span(msg.data, data);
-  if (Bridge.sendPbCommand(rpc::CommandId::CMD_CONSOLE_WRITE, msg)) {
+  if (Bridge.sendPbCommand(rpc::CommandId::CMD_CONSOLE_WRITE, 0, msg)) {
     BRIDGE_ATOMIC_BLOCK { _tx_buffer.clear(); }
   }
 }

@@ -29,7 +29,7 @@ def console_component() -> ConsoleComponent:
 async def test_handle_write(console_component: ConsoleComponent) -> None:
     payload = b"console output"
     from mcubridge.protocol import structures
-    await console_component.handle_write(structures.ConsoleWritePacket(data=payload).encode())
+    await console_component.handle_write(0, structures.ConsoleWritePacket(data=payload).encode())
 
     console_component.ctx.publish.assert_awaited_once()
     call_args = console_component.ctx.publish.call_args

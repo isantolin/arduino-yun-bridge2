@@ -82,6 +82,7 @@ class SerialTransport:
         self._negotiating = False
         self._negotiation_future: asyncio.Future[bool] | None = None
         self._consecutive_crc_errors = 0
+        self._tx_sequence_id = 0
 
         # State Machine
         self.fsm_state: str = self.STATE_DISCONNECTED
@@ -296,12 +297,12 @@ class SerialTransport:
         logger.debug("[SERIAL <- MCU] Processing Packet: %s", encoded_packet.hex(" "))
 
         try:
-            frame = self._decode_frame(encoded_packet)
+            cmd_id, seq_id, payload = Frame.parse(cobs_decode(encoded_packet))
 
             if logger.isEnabledFor(logging.DEBUG):
                 log_binary_traffic(logger, logging.DEBUG, "[SERIAL <- MCU]", "RAW", encoded_packet)
 
-            await self.service.handle_mcu_frame(frame.command_id, frame.payload)
+            await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
             self.state.record_serial_rx(len(encoded_packet))
 
         except (CobsDecodeError, ValueError) as exc:
@@ -328,13 +329,17 @@ class SerialTransport:
             else:
                 logger.error("Already at safe baudrate; cannot fallback further.")
 
-    async def _serial_sender(self, cmd: int, pl: bytes) -> bool:
+    async def _serial_sender(self, cmd: int, pl: bytes, seq: int | None = None) -> bool:
         """Low-level serial frame sender."""
         if not self.writer or self.writer.is_closing():
             return False
 
         try:
-            raw_frame = Frame.build(cmd, pl)
+            if seq is None:
+                self._tx_sequence_id = (self._tx_sequence_id + 1) & 0xFFFF
+                seq = self._tx_sequence_id
+
+            raw_frame = Frame.build(cmd, seq, pl)
             encoded = cobs_encode(raw_frame) + protocol.FRAME_DELIMITER
 
             logger.debug("[SERIAL -> MCU] RAW: %s", encoded.hex(" "))

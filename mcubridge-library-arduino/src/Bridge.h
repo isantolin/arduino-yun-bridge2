@@ -188,46 +188,46 @@ class BridgeClass
   bool isIdle() const { return _fsm.isIdle(); }
   bool isFault() const { return _fsm.isFault(); }
 
-  void sendXoff() { sendFrame(rpc::CommandId::CMD_XOFF); }
-  void sendXon() { sendFrame(rpc::CommandId::CMD_XON); }
+  void sendXoff() { sendFrame(rpc::CommandId::CMD_XOFF, 0); }
+  void sendXon() { sendFrame(rpc::CommandId::CMD_XON, 0); }
 
   void enterSafeState();
+  void forceSafeState();
   void emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
   void emitStatus(rpc::StatusCode status_code,
                   etl::span<const uint8_t> payload);
   void emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
 
-  bool sendFrame(rpc::StatusCode status_code, etl::span<const uint8_t> payload = {});
-  bool sendFrame(rpc::CommandId command_id, etl::span<const uint8_t> payload = {});
-  bool sendChunkyFrame(rpc::CommandId command_id, etl::span<const uint8_t> header, etl::span<const uint8_t> data) {
+  bool sendFrame(rpc::StatusCode status_code, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
+  bool sendFrame(rpc::CommandId command_id, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
+  bool sendChunkyFrame(rpc::CommandId command_id, uint16_t sequence_id, etl::span<const uint8_t> header, etl::span<const uint8_t> data) {
     const size_t h_len = etl::min(header.size(), _transient_buffer.size());
     const size_t d_len = etl::min(data.size(), _transient_buffer.size() - h_len);
     
-    // [SIL-2] Use etl::copy for deterministic and safe buffer assembly
     if (h_len > 0) etl::copy_n(header.data(), h_len, etl::begin(_transient_buffer));
     if (d_len > 0) {
         etl::copy_n(data.data(), d_len, etl::begin(_transient_buffer) + h_len);
     }
-    return sendFrame(command_id, etl::span<const uint8_t>(_transient_buffer.data(), h_len + d_len));
+    return sendFrame(command_id, sequence_id, etl::span<const uint8_t>(_transient_buffer.data(), h_len + d_len));
   }
 
   template <typename T>
-  bool sendPbCommand(rpc::CommandId command_id, const T& msg) {
+  bool sendPbCommand(rpc::CommandId command_id, uint16_t sequence_id, const T& msg) {
     pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), _transient_buffer.size());
     if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
       return false;
     }
-    return sendFrame(command_id,
+    return sendFrame(command_id, sequence_id,
                        etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
   }
 
   template <typename T>
-  bool sendPbFrame(rpc::StatusCode status_code, const T& msg) {
+  bool sendPbFrame(rpc::StatusCode status_code, uint16_t sequence_id, const T& msg) {
     pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), _transient_buffer.size());
     if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
       return false;
     }
-    _sendRawFrame(rpc::to_underlying(status_code),
+    _sendRawFrame(rpc::to_underlying(status_code), sequence_id,
                   etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
     return true;
   }
@@ -260,11 +260,6 @@ class BridgeClass
   void onUnknownCommand(const bridge::router::CommandContext& ctx) override;
 
  private:
-  struct RxHistoryItem {
-    uint32_t crc;
-    uint32_t timestamp;
-  };
-
   void _handleStatusAck(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _unusedCommandSlot(const bridge::router::CommandContext& ctx);
@@ -292,7 +287,7 @@ class BridgeClass
       if (valid_func(msg.pin)) {
         TResponse resp = {};
         resp.value = static_cast<uint32_t>(read_func(msg.pin));
-        _sendPbResponse(resp_cmd, resp);
+        _sendPbResponse(resp_cmd, ctx.sequence_id, resp);
       } else {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
       }
@@ -322,15 +317,14 @@ class BridgeClass
 
   void _markRxProcessed(const rpc::Frame& frame);
   bool _isRecentDuplicateRx(const rpc::Frame& frame) const;
-  void dispatch(const rpc::Frame& frame);
-  void _sendRawFrame(uint16_t command_id, etl::span<const uint8_t> payload);
-  void _sendFrameInternal(const rpc::Frame& frame);
+  void _dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id);
+  void _sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);
   void _processIncomingByte(uint8_t byte);
   void _handleReceivedFrame();
   etl::expected<void, rpc::FrameError> _decompressFrame(const rpc::Frame& original, rpc::Frame& effective);
   bool _isHandshakeCommand(uint16_t command_id) const;
   bool _isSecurityCheckPassed(uint16_t command_id) const;
-  bool _sendFrame(uint16_t command_id, etl::span<const uint8_t> payload);
+  bool _sendFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);
 
   using CmdHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
   void _dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const CmdHandler* handlers, uint8_t count, uint8_t stride = 1);
@@ -353,16 +347,9 @@ class BridgeClass
     }
   }
 
-  template <typename TPacket, typename TDelegate, typename TFunc>
-  void _dispatchResponse(const bridge::router::CommandContext& ctx, TDelegate& delegate, TFunc func) {
-    _withPayload<TPacket>(ctx, [this, &delegate, func](const TPacket& msg) {
-      if (delegate.is_valid()) func(delegate, msg);
-    });
-  }
-
   template <typename F> void _withAck(const bridge::router::CommandContext& ctx, F handler) {
     if (!ctx.is_duplicate) handler();
-    if (ctx.requires_ack) _sendAckAndFlush(ctx.frame->header.command_id);
+    if (ctx.requires_ack) _sendAckAndFlush(ctx.raw_command, ctx.sequence_id);
   }
 
   template <typename F> void _withResponse(const bridge::router::CommandContext& ctx, F handler) {
@@ -374,14 +361,7 @@ class BridgeClass
       auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
       if (res.has_value()) handler(res.value());
     }
-    if (ctx.requires_ack) _sendAckAndFlush(ctx.frame->header.command_id);
-  }
-
-  template <typename TPacket, typename F> void _withPayloadResponse(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
-    if (!ctx.is_duplicate) {
-      auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
-      if (res.has_value()) handler(res.value());
-    }
+    if (ctx.requires_ack) _sendAckAndFlush(ctx.raw_command, ctx.sequence_id);
   }
 
   template <typename TPacket, typename F, typename TField>
@@ -403,12 +383,12 @@ class BridgeClass
     if (res.has_value()) handler(res.value());
   }
 
-  template <typename T> void _sendPbResponse(rpc::CommandId cmd, const T& msg) {
-    sendPbCommand(cmd, msg);
+  template <typename T> void _sendPbResponse(rpc::CommandId cmd, uint16_t sequence_id, const T& msg) {
+    sendPbCommand(cmd, sequence_id, msg);
   }
 
-  template <typename T> void _sendPbResponse(rpc::StatusCode status, const T& msg) {
-    sendPbFrame(status, msg);
+  template <typename T> void _sendPbResponse(rpc::StatusCode status, uint16_t sequence_id, const T& msg) {
+    sendPbFrame(status, sequence_id, msg);
   }
 
   void _onAckTimeout();
@@ -417,10 +397,8 @@ class BridgeClass
   void _onStartupStabilized();
   void _handleAck(uint16_t command_id);
   void _handleMalformed(uint16_t command_id);
-  void _finalizeCriticalCommand(uint16_t command_id);
-  void _sendAckAndFlush(uint16_t command_id);
-  void _sendError(rpc::StatusCode status, uint16_t command_id = 0);
-  void _doEmitStatus(rpc::StatusCode status_code, etl::span<const uint8_t> payload);
+  void _sendAckAndFlush(uint16_t command_id, uint16_t sequence_id);
+  void _sendError(rpc::StatusCode status, uint16_t command_id = 0, uint16_t sequence_id = 0);
   void _computeHandshakeTag(etl::span<const uint8_t> nonce, etl::span<uint8_t> out_tag);
   void _applyTimingConfig(etl::span<const uint8_t> payload);
   void _flushPendingTxQueue();
@@ -432,12 +410,6 @@ class BridgeClass
     bool full = false;
     BRIDGE_ATOMIC_BLOCK { full = _pending_tx_queue.full(); }
     return full;
-  }
-
-  bool _isQueueEmpty() const {
-    bool empty = true;
-    BRIDGE_ATOMIC_BLOCK { empty = _pending_tx_queue.empty(); }
-    return empty;
   }
 
   Stream& _stream;
@@ -452,11 +424,24 @@ class BridgeClass
   rpc::Frame _rx_frame;
   etl::random_xorshift _rng;
   uint16_t _last_command_id;
+  uint16_t _tx_sequence_id;
   uint8_t _retry_count;
   uint32_t _pending_baudrate;
   
   etl::circular_buffer<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_fifo;
-  etl::circular_buffer<RxHistoryItem, bridge::config::RX_HISTORY_SIZE> _rx_history;
+  
+  struct RxHistory {
+    etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> buffer;
+    bool contains(uint16_t id) const {
+      return etl::find(buffer.begin(), buffer.end(), id) != buffer.end();
+    }
+    void push(uint16_t id) {
+      if (buffer.full()) buffer.pop();
+      buffer.push(id);
+    }
+    void clear() { buffer.clear(); }
+  };
+  RxHistory _rx_history;
   
   uint16_t _consecutive_crc_errors;
   uint16_t _ack_timeout_ms;

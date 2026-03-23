@@ -18,7 +18,7 @@ async def test_datastore_handle_put_malformed() -> None:
     ctx.publish = AsyncMock()
     ds = DatastoreComponent(config, state, ctx)
     # Truncated varint — invalid protobuf
-    assert await ds.handle_put(b"\x80") is False
+    assert await ds.handle_put(0, b"\x80") is False
 
 
 @pytest.mark.asyncio
@@ -30,7 +30,7 @@ async def test_datastore_handle_get_malformed() -> None:
     ctx.publish = AsyncMock()
     ds = DatastoreComponent(config, state, ctx)
     # Truncated varint — invalid protobuf
-    assert await ds.handle_get_request(b"\x80") is False
+    assert await ds.handle_get_request(0, b"\x80") is False
     ctx.send_frame.assert_called_with(Status.MALFORMED.value, b"data_get_malformed")
 
 
@@ -50,7 +50,7 @@ async def test_datastore_handle_get_truncation() -> None:
 
     payload = DatastoreGetPacket(key=key).encode()
 
-    await ds.handle_get_request(payload)
+    await ds.handle_get_request(0, payload)
     # Verify the sent frame payload size (should be capped around 255 + prefix)
     args = ctx.send_frame.call_args[0]
     assert args[0] == Command.CMD_DATASTORE_GET_RESP.value

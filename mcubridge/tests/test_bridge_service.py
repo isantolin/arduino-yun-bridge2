@@ -49,15 +49,14 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
     flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         raw_cmd = command_id & 0xFF  # Strip high-order flags like COMPRESSED (0x8000)
         if raw_cmd == Command.CMD_LINK_RESET.value:
             # Use create_task to avoid deadlock with write_lock held by sender
             asyncio.create_task(
                 service.handle_mcu_frame(
-                    Command.CMD_LINK_RESET_RESP.value,
-                    b"",
+                    Command.CMD_LINK_RESET_RESP.value, 0, b"",
                 )
             )
         elif raw_cmd == Command.CMD_LINK_SYNC.value:
@@ -72,7 +71,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                     response,
                 )
                 # Priming capabilities AFTER sync resp is handled
-                await service._handshake.handle_capabilities_resp(
+                await service._handshake.handle_capabilities_resp(0,
                     cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
                         {
                             "ver": 2,
@@ -101,8 +100,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
         elif raw_cmd == Command.CMD_GET_VERSION.value:
             # Direct flow injection bypasses lock issues
             flow.on_frame_received(
-                Command.CMD_GET_VERSION_RESP.value,
-                b"\x01\x02",
+                Command.CMD_GET_VERSION_RESP.value, 0, b"\x01\x02",
             )
         elif raw_cmd == Command.CMD_CONSOLE_WRITE.value:
             flow.on_frame_received(
@@ -162,10 +160,10 @@ async def test_repeated_sync_timeouts_become_fatal(
     runtime_config.serial_handshake_fatal_failures = 2
     service = BridgeService(runtime_config, runtime_state)
 
-    await service._handshake.handle_handshake_failure("link_sync_timeout")
+    await service._handshake.handle_handshake_failure(0, "link_sync_timeout")
     assert runtime_state.handshake_failure_streak == 1
 
-    await service._handshake.handle_handshake_failure("link_sync_timeout")
+    await service._handshake.handle_handshake_failure(0, "link_sync_timeout")
     assert runtime_state.handshake_fatal_count == 1
     assert runtime_state.handshake_fatal_reason == "link_sync_timeout"
 
@@ -183,13 +181,13 @@ def test_link_sync_resp_respects_rate_limit(
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        async def fake_sender(command_id: int, payload: bytes) -> bool:
+        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent serial_flow from blocking
             ack_payload = structures.AckPacket(command_id=command_id).encode()
             service._serial_flow.on_frame_received(Status.ACK.value, ack_payload)
             if command_id == Command.CMD_GET_CAPABILITIES.value:
-                service._handshake.handle_capabilities_resp(b"\x02\x00\x14\x06\x00\x00\x00\x00")
+                service._handshake.handle_capabilities_resp(0, b"\x02\x00\x14\x06\x00\x00\x00\x00")
             return True
 
         service.register_serial_sender(fake_sender)
@@ -215,7 +213,7 @@ def test_link_sync_resp_respects_rate_limit(
         payload_ok = _prime_handshake(1)
         # Force last sync time to ensure we start from a known state
         runtime_state.last_handshake_unix = fake_clock.monotonic()
-        result_ok = await service._handshake.handle_link_sync_resp(payload_ok)
+        result_ok = await service._handshake.handle_link_sync_resp(0, payload_ok)
         assert result_ok is True
 
         # Advance by only 0.1s (less than 5.0s rate limit)
@@ -223,7 +221,7 @@ def test_link_sync_resp_respects_rate_limit(
 
         # Second handshake should be rate limited
         payload_blocked = _prime_handshake(2)
-        rate_limited = await service._handshake.handle_link_sync_resp(payload_blocked)
+        rate_limited = await service._handshake.handle_link_sync_resp(0, payload_blocked)
         assert rate_limited is False
         assert runtime_state.last_handshake_error == "sync_rate_limited"
         assert runtime_state.handshake_failure_streak >= 1
@@ -241,7 +239,7 @@ async def test_sync_auth_failure_schedules_backoff(
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         return True
 
     service.register_serial_sender(fake_sender)
@@ -264,7 +262,7 @@ async def test_sync_auth_failure_schedules_backoff(
     nonce_one, tag_one = _prime_handshake(3)
     broken_tag_one = bytearray(tag_one)
     broken_tag_one[0] ^= protocol.UINT8_MASK
-    await service._handshake.handle_link_sync_resp(_encode_link_sync(nonce_one, bytes(broken_tag_one)))
+    await service._handshake.handle_link_sync_resp(0, _encode_link_sync(nonce_one, bytes(broken_tag_one)))
     first_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
     assert first_delay > 0
     assert runtime_state.last_handshake_error == "sync_auth_mismatch"
@@ -277,7 +275,7 @@ async def test_sync_auth_failure_schedules_backoff(
     nonce_two, tag_two = _prime_handshake(4)
     broken_tag_two = bytearray(tag_two)
     broken_tag_two[-1] ^= protocol.UINT8_MASK
-    await service._handshake.handle_link_sync_resp(_encode_link_sync(nonce_two, bytes(broken_tag_two)))
+    await service._handshake.handle_link_sync_resp(0, _encode_link_sync(nonce_two, bytes(broken_tag_two)))
     second_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
     assert second_delay > first_delay
     assert runtime_state.handshake_failure_streak >= 2
@@ -300,11 +298,11 @@ async def test_transient_handshake_failures_eventually_backoff(
 
     # First few failures don't backoff (streak < threshold)
     for _ in range(2):
-        await service._handshake.handle_handshake_failure("test_fail")
+        await service._handshake.handle_handshake_failure(0, "test_fail")
         assert runtime_state.handshake_backoff_until <= fake_clock.monotonic()
 
     # Next failure triggers exponential backoff
-    await service._handshake.handle_handshake_failure("test_fail")
+    await service._handshake.handle_handshake_failure(0, "test_fail")
     assert runtime_state.handshake_backoff_until > fake_clock.monotonic()
 
 
@@ -335,13 +333,12 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
 
     service = BridgeService(runtime_config, runtime_state)
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         raw_cmd = command_id & 0xFF
         if raw_cmd == Command.CMD_LINK_RESET.value:
             asyncio.create_task(
                 service.handle_mcu_frame(
-                    Command.CMD_LINK_RESET_RESP.value,
-                    b"",
+                    Command.CMD_LINK_RESET_RESP.value, 0, b"",
                 )
             )
         elif raw_cmd == Command.CMD_LINK_SYNC.value:
@@ -375,7 +372,7 @@ async def test_mcu_status_frames_increment_counters(
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
     # Status frames don't need link sync in the dispatcher
-    await service.handle_mcu_frame(Status.ERROR.value, b"something failed")
+    await service.handle_mcu_frame(Status.ERROR.value, 0, b"something failed")
     assert runtime_state.mcu_status_counters[Status.ERROR.name] == 1
 
 
@@ -388,7 +385,7 @@ async def test_mcu_frame_before_sync_is_rejected(
     runtime_state.mark_transport_connected()
 
     # Use a non-status, non-pre-sync command
-    await service.handle_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"ignored")
+    await service.handle_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 0, b"ignored")
     # Since it was rejected by dispatcher, no console write occurred (state unchanged)
     assert runtime_state.console_queue_bytes == 0
 
@@ -403,7 +400,7 @@ async def test_mailbox_available_flow() -> None:
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
@@ -413,7 +410,7 @@ async def test_mailbox_available_flow() -> None:
     runtime_state.enqueue_mailbox_message(b"msg1", 100)
 
     # MCU checks if mailbox is available
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, b"")
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, 0, b"")
 
     # Bridge should respond with RESP and 1 message pending
     def _check_mailbox_ack(frame_id: int, payload: bytes) -> bool:
@@ -439,14 +436,14 @@ async def test_mailbox_available_rejects_payload(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
     service.register_serial_sender(fake_sender)
 
     # MCU checks availability with invalid payload
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, b"junk")
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, 0, b"junk")
 
     # Should respond with MALFORMED
     assert any(frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames)
@@ -464,7 +461,7 @@ async def test_mailbox_push_overflow_returns_error(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
@@ -472,11 +469,11 @@ async def test_mailbox_push_overflow_returns_error(
 
     # First push OK
     payload = structures.MailboxPushPacket(data=b'aam1').encode()
-    await service.handle_mcu_frame(protocol.Command.CMD_MAILBOX_PUSH.value, payload)
+    await service.handle_mcu_frame(protocol.Command.CMD_MAILBOX_PUSH.value, 0, payload)
     assert len(runtime_state.mailbox_incoming_queue) == 1
 
     # Second push should fail
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x04aam2")
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, 0, b"\x00\x04aam2")
     assert any(frame_id in {Status.ERROR.value, Status.OVERFLOW.value, Status.ACK.value} for frame_id, _ in sent_frames)
 
 
@@ -496,7 +493,7 @@ async def test_mailbox_read_requeues_on_send_failure(
     service.register_serial_sender(fail_sender)
 
     # MCU tries to read
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_READ.value, b"")
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_READ.value, 0, b"")
 
     # Message should be back in queue
     assert len(runtime_state.mailbox_queue) == 1
@@ -514,14 +511,14 @@ async def test_datastore_get_from_mcu_returns_cached_value() -> None:
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
     service.register_serial_sender(fake_sender)
 
     payload = structures.DatastoreGetPacket(key='key1').encode()
-    await service.handle_mcu_frame(protocol.Command.CMD_DATASTORE_GET.value, payload)
+    await service.handle_mcu_frame(protocol.Command.CMD_DATASTORE_GET.value, 0, payload)
 
     # Should respond with RESP containing "value1" (or ACK with payload)
     assert any(
@@ -541,13 +538,13 @@ async def test_datastore_get_from_mcu_unknown_key_returns_empty(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
     service.register_serial_sender(fake_sender)
 
-    await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, b"\x05ghost")
+    await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, 0, b"\x05ghost")
 
     # Should respond with ACK but no data payload beyond command ID
     for frame_id, payload in sent_frames:
@@ -566,7 +563,7 @@ async def test_datastore_put_from_mcu_updates_cache_and_mqtt(
         runtime_state.mark_synchronized()
 
         payload = structures.DatastorePutPacket(key='k1', value=b'v1').encode()
-        await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, payload)
+        await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, 0, payload)
 
         assert runtime_state.datastore["k1"] == "v1"
         # Check MQTT publish
@@ -882,7 +879,7 @@ async def test_process_run_async_accepts_complex_arguments(
 
         # Payload: Command
         cmd_bytes = b"ls -l /tmp"
-        await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, cmd_bytes)
+        await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, 0, cmd_bytes)
 
         # Should have called handle_run_async with command bytes
-        mock_comp.handle_run_async.assert_called_with(cmd_bytes)
+        mock_comp.handle_run_async.assert_called_with(0, cmd_bytes)

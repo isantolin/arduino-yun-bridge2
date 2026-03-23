@@ -63,7 +63,7 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
 
     # Mock _publish_value
     with patch.object(datastore_component, "_publish_value", new_callable=AsyncMock) as mock_pub:
-        result = await datastore_component.handle_put(payload)
+        result = await datastore_component.handle_put(0, payload)
 
         assert result is True
         assert datastore_component.state.datastore["key1"] == "value1"
@@ -78,7 +78,7 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
 @pytest.mark.asyncio
 async def test_handle_put_malformed(datastore_component: DatastoreComponent) -> None:
     # Truncated varint — invalid protobuf
-    assert await datastore_component.handle_put(b"\x80") is False
+    assert await datastore_component.handle_put(0, b"\x80") is False
 
 
 @pytest.mark.asyncio
@@ -91,7 +91,7 @@ async def test_handle_get_request_success(
     key = 'key1'
     payload = structures.DatastoreGetPacket(key=key).encode()
 
-    await datastore_component.handle_get_request(payload)
+    await datastore_component.handle_get_request(0, payload)
 
     datastore_component.ctx.send_frame.assert_awaited_once()
     args = datastore_component.ctx.send_frame.call_args[0]

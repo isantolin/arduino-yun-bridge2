@@ -32,7 +32,7 @@ async def test_handshake_sync_resp_rate_limit() -> None:
     )
     state.link_handshake_nonce = b"A" * 16
     state.handshake_rate_until = time.monotonic() + 5.0
-    assert await manager.handle_link_sync_resp(b"A" * 32) is False
+    assert await manager.handle_link_sync_resp(0, b"A" * 32) is False
     manager._acknowledge_frame.assert_called_with(Command.CMD_LINK_SYNC_RESP.value, status=Status.MALFORMED)
 
 
@@ -56,7 +56,7 @@ async def test_handshake_sync_resp_replay_detected() -> None:
 
     # Mock validate_nonce_counter to fail (replay)
     with patch("mcubridge.services.handshake.validate_nonce_counter", return_value=(False, 0)):
-        assert await manager.handle_link_sync_resp(nonce + state.link_expected_tag) is False
+        assert await manager.handle_link_sync_resp(0, nonce + state.link_expected_tag) is False
 
 
 @pytest.mark.asyncio
@@ -103,7 +103,7 @@ async def test_handshake_handle_capabilities_resp() -> None:
     )
     loop = asyncio.get_running_loop()
     manager._capabilities_future = loop.create_future()
-    await manager.handle_capabilities_resp(b"payload")
+    await manager.handle_capabilities_resp(0, b"payload")
     assert manager._capabilities_future.done()
     assert await manager._capabilities_future == b"payload"
 
@@ -123,11 +123,11 @@ async def test_handshake_failure_detail_non_immediate() -> None:
         acknowledge_frame=AsyncMock(),
     )
 
-    await manager.handle_handshake_failure("timeout", detail="initial")
+    await manager.handle_handshake_failure(0, "timeout", detail="initial")
     assert state.handshake_fatal_count == 0
 
     # Second failure triggers fatal
-    await manager.handle_handshake_failure("timeout")
+    await manager.handle_handshake_failure(0, "timeout")
     assert state.handshake_fatal_count == 1
     assert "streak" in state.handshake_fatal_detail
 

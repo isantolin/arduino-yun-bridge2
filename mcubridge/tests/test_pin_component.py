@@ -139,7 +139,7 @@ async def test_handle_digital_read_resp_without_pending_request_publishes_unknow
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(0, 
+    await component.handle_digital_read_resp(
         0, structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode()
     )
 
@@ -166,7 +166,7 @@ async def test_handle_digital_read_resp_with_pending_request_uses_reply_context(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(0, 
+    await component.handle_digital_read_resp(
         0, structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode()
     )
 

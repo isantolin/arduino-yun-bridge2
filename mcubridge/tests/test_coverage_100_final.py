@@ -748,8 +748,8 @@ class TestProtocolFrame:
     def test_frame_encode_decode(self):
         from mcubridge.protocol.frame import Frame
 
-        raw = Frame.build(Command.CMD_DIGITAL_READ.value, 0,  0, b"\x01\x02")
-        cmd_id, seq_id, seq_id, payload = Frame.parse(raw)
+        raw = Frame.build(Command.CMD_DIGITAL_READ.value, 0, b"\x01\x02")
+        cmd_id, seq_id, payload = Frame.parse(raw)
         assert cmd_id == Command.CMD_DIGITAL_READ.value
         assert payload == b"\x01\x02"
 

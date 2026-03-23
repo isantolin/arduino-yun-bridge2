@@ -27,7 +27,8 @@ ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
 
 # Ensure DUMMY_ARDUINO_LIBS is set for CI
-export DUMMY_ARDUINO_LIBS="${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}"
+export DUMMY_ARDUINO_LIBS="${ROOT_DIR}/.dummy_libs"
+mkdir -p "${DUMMY_ARDUINO_LIBS}"
 "${ROOT_DIR}/tools/ci_arduino_host_tests.sh" --install-only
 
 # Get standard library path
@@ -135,6 +136,7 @@ TEST_SUITES=(
     "test_integrated"
     "test_bridge_core"
     "test_bridge_components"
+    "test_host_filesystem"
     "test_protocol"
     "test_fsm_mutual_auth"
     "test_arduino_100_coverage"
@@ -165,7 +167,7 @@ done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
-gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" --exclude "${SRC_ROOT}/nanopb" --exclude "${SRC_ROOT}/etl" --exclude "${SRC_ROOT}/wolfssl" --exclude "${SRC_ROOT}/wolfcrypt" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
+gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*nanopb.*" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*mcubridge\.pb\..*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 # Optional: also output term summary
 cat "${OUTPUT_ROOT}/summary.txt"

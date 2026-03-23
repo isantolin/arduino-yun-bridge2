@@ -58,6 +58,35 @@ void integrated_test_rle() {
   size_t dl = rle::decode(etl::span<const uint8_t>(enc, el),
                           etl::span<uint8_t>(dec, 32));
   TEST_ASSERT(dl == 12 && memcmp(in, dec, 12) == 0);
+
+  // Edge cases
+  TEST_ASSERT_EQUAL(0, rle::encode(etl::span<const uint8_t>(), etl::span<uint8_t>(enc, 32)));
+  TEST_ASSERT_EQUAL(0, rle::decode(etl::span<const uint8_t>(), etl::span<uint8_t>(dec, 32)));
+  
+  // Buffer too small for encode
+  TEST_ASSERT_EQUAL(0, rle::encode(etl::span<const uint8_t>(in, 12), etl::span<uint8_t>(enc, 1)));
+  
+  // Single escape byte
+  uint8_t esc_in[] = {0xFF, 0x01, 0x02};
+  el = rle::encode(etl::span<const uint8_t>(esc_in, 3), etl::span<uint8_t>(enc, 32));
+  dl = rle::decode(etl::span<const uint8_t>(enc, el), etl::span<uint8_t>(dec, 32));
+  TEST_ASSERT_EQUAL(3, dl);
+}
+
+void integrated_test_hal() {
+  uint32_t caps = bridge::hal::getCapabilities();
+  TEST_ASSERT(caps > 0);
+  
+  uint8_t dig, ana;
+  bridge::hal::getPinCounts(dig, ana);
+  
+  TEST_ASSERT(bridge::hal::getArchId() > 0);
+  
+  bool sd = bridge::hal::hasSD();
+  (void)sd;
+  
+  // Invalid pins
+  TEST_ASSERT_FALSE(bridge::hal::isValidPin(255));
 }
 
 void integrated_test_protocol() {
@@ -132,6 +161,7 @@ int main(void) {
   ba.setIdle();
   UNITY_BEGIN();
   RUN_TEST(integrated_test_rle);
+  RUN_TEST(integrated_test_hal);
   RUN_TEST(integrated_test_protocol);
   RUN_TEST(integrated_test_bridge_core);
   RUN_TEST(integrated_test_components);

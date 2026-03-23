@@ -82,21 +82,24 @@ install_dependency() {
     fi
 
     unzip -q "$zip_path" -d "$tmp_dir"
+    # Find the directory that contains the files (excluding the zip itself)
     local extracted_root
-    extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d -name "$name-*" -o -name "$(echo "$name" | tr '[:upper:]' '[:lower:]')-*" | head -n1)
+    extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d ! -path "$tmp_dir" | head -n1)
     
     if [ -z "$extracted_root" ]; then
-        extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d ! -path "$tmp_dir" | head -n1)
+        echo "[ERROR] Could not find extracted directory for $name." >&2
+        rm -rf "$tmp_dir"
+        return 1
     fi
 
     local source_path="$extracted_root"
-    if [ -n "$sub_path" ]; then
-        source_path="$extracted_root/$sub_path"
-    fi
+    # if [ -n "$sub_path" ]; then
+    #    source_path="$extracted_root/$sub_path"
+    # fi
 
-    mkdir -p "$target_base"
-    rm -rf "$target_base/$name"
-    cp -a "$source_path" "$target_base/$name"
+    mkdir -p "$target_base/$name"
+    # Copy ALL contents of extracted_root to target_base/$name
+    cp -a "$extracted_root/." "$target_base/$name/"
     echo "[OK] $name installed."
     rm -rf "$tmp_dir"
 }
@@ -109,7 +112,8 @@ if [ "${1:-}" == "" ]; then
     echo "[INFO] 'wolfSSL' dependency should be installed via Arduino Library Manager."
 else
     # In CI/CD or when a target directory is provided, we install them.
-    install_dependency "Embedded_Template_Library_ETL" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.39.4" "etl/algorithm.h" "" "$LIB_DIR"
+    # ETL: We copy the whole repository to the library directory.
+    install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.39.4" "include/etl/algorithm.h" "" "$LIB_DIR"
     install_dependency "wolfssl" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.7.6-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
 fi
 

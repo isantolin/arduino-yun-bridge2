@@ -44,11 +44,7 @@ else
 fi
 
 # Define explicit include paths for official libraries
-ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL/src"
-if [ ! -d "$ETL_PATH" ]; then
-    # Some versions might not have /src or it's named differently
-    ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL"
-fi
+ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 
 if [[ "${1:-}" == "--install-only" ]]; then
@@ -62,14 +58,14 @@ SOURCES=(
     "${SRC_DIR}/nanopb/pb_decode.c"
     "${SRC_DIR}/protocol/mcubridge.pb.c"
     "${SRC_DIR}/security/security.cpp"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/sha256.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/hmac.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/hash.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/kdf.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/error.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/logging.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/wc_port.c"
-    "$WOLFSSL_PATH/src/wolfcrypt/src/memory.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/hash.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/kdf.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/error.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
     "${SRC_DIR}/protocol/rpc_cobs.cpp"
@@ -109,8 +105,9 @@ BASE_FLAGS=(
     -I"${TEST_DIR}/Unity"
     -I"${STUB_DIR}"
     -I"$ETL_PATH"
+    -I"$ETL_PATH/include"
+    -I"$ETL_PATH/arduino"
     -I"$WOLFSSL_PATH"
-    -I"$WOLFSSL_PATH/src"
 )
 
 # Compile common sources to objects in parallel

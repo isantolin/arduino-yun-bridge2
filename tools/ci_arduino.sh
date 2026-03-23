@@ -13,6 +13,17 @@ if ! command -v arduino-cli &> /dev/null; then
     exit 1
 fi
 
+# Get standard library path
+USER_LIB_DIR="$HOME/Arduino/libraries"
+if [ ! -d "$USER_LIB_DIR" ]; then
+    # Try alternate path for some linux distros/actions
+    USER_LIB_DIR="$HOME/Documents/Arduino/libraries"
+fi
+
+# Define explicit include paths for official libraries
+ETL_INC="$USER_LIB_DIR/Embedded_Template_Library_ETL/src"
+WOLF_INC="$USER_LIB_DIR/wolfssl/src"
+
 # Update core index
 echo "Updating core index..."
 arduino-cli core update-index
@@ -21,11 +32,10 @@ arduino-cli core update-index
 echo "Installing arduino:avr core..."
 arduino-cli core install arduino:avr
 
-# Install official wolfSSL dependency
+# Install official dependencies
 echo "Installing official wolfSSL library..."
 arduino-cli lib install wolfSSL
 
-# Install official ETL dependency
 echo "Installing official Embedded Template Library..."
 arduino-cli lib install "Embedded Template Library ETL"
 
@@ -36,25 +46,30 @@ python3 ./tools/protocol/generate.py \
     --py ./mcubridge/mcubridge/protocol/protocol.py \
     --cpp ./mcubridge-library-arduino/src/protocol/rpc_protocol.h \
     --cpp-structs ./mcubridge-library-arduino/src/protocol/rpc_structs.h \
-    --py-client ./mcubridge-client-examples/mcubridge_client/protocol.py
+    --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 
 echo "Installing libraries..."
-# Use our robust installer to ensure src/etl is populated correctly
-# for relative includes in Bridge.h
 ./mcubridge-library-arduino/tools/install.sh
+
+# [HOT-PATCH] Force official wolfSSL to use our settings by overwriting its user_settings.h
+echo "Patching official wolfSSL at $WOLF_INC with our user_settings.h..."
+# Ensure the directory exists (it should if install was successful)
+mkdir -p "$WOLF_INC"
+cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$WOLF_INC/user_settings.h"
+
+# [HOT-PATCH] Fix gmtime_r conflict in wc_port.c
+echo "Patching wc_port.c to avoid gmtime_r conflict..."
+sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$USER_LIB_DIR/wolfssl/src/wolfcrypt/src/wc_port.c"
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"
 
 # Define target boards (Matrix Build)
-# - Yun: ATmega32u4 (Native USB)
-# - Uno: ATmega328P (No Native USB, small RAM)
-# - Mega: ATmega2560 (No Native USB, large RAM)
 TARGET_BOARDS=("arduino:avr:yun" "arduino:avr:uno" "arduino:avr:mega")
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 
-# Only shift if an argument was provided to avoid 'shift: count must be <= $#' error
+# Only shift if an argument was provided
 if [ "$#" -gt 0 ]; then
     shift
 fi
@@ -77,36 +92,32 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
         
         echo "Building $sketch_name for $FQBN..."
         
-        # [C++14] Override the platform default -std=gnu++11 with gnu++14.
-        # GCC uses the last -std= flag, so appending via compiler.cpp.extra_flags
-        # effectively selects C++14 for our library code.
-        BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--warnings" "default"
-                     "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -flto"
-                     "--build-property" "compiler.c.extra_flags=-flto"
+        # We rely on arduino-cli to find libraries in USER_LIB_DIR
+        # WOLFSSL_USER_SETTINGS is defined to use our config.
+        # -fno-strict-aliasing is added to resolve wolfSSL LTO warnings.
+        COMMON_FLAGS="-flto -fno-strict-aliasing -DWOLFSSL_USER_SETTINGS"
+        BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--warnings" "default"
+                     "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
+                     "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
                      "--build-property" "compiler.c.elf.extra_flags=-flto")
         
         # Add extra properties
         BUILD_FLAGS+=("${EXTRA_PROPS[@]}")
 
         if [ -n "$BUILD_OUTPUT_DIR" ]; then
-            # Create specific output dir for this sketch/board combo
             SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/${FQBN//:/-}/$sketch_name"
             mkdir -p "$SKETCH_BUILD_DIR"
             BUILD_FLAGS+=("--build-path" "$SKETCH_BUILD_DIR")
         fi
 
-        # Force clean build to ensure hardware characteristics (macros, MCU type) are strictly respected
-        # and not polluted by cached artifacts from previous targets in the loop.
-        # We use clean to avoid property pollution.
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"
             BOARD_NAME="${FQBN//:/-}"
             LOG_FILE="$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
             
-            # Run compilation and capture ALL output
             if ! arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
                 echo "✗ $sketch_name failed to compile for $FQBN!"
-                cat "$LOG_FILE" # Ensure failure details are in CI logs
+                cat "$LOG_FILE"
                 if [ "$FQBN" == "arduino:avr:mega" ]; then
                     echo "Critical failure for target $FQBN. Aborting."
                     exit 1

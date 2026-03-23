@@ -47,7 +47,7 @@ WOLF_SOURCES=(
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 -DWOLFSSL_USER_SETTINGS \
+    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${SRC_DIR}/nanopb" \
@@ -77,7 +77,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 -DWOLFSSL_USER_SETTINGS \
+    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${SRC_DIR}/nanopb" \

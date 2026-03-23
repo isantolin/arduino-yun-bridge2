@@ -2,11 +2,13 @@
  * @file security.cpp
  * @brief Implementation of security primitives with wolfSSL backend.
  */
-#include "security.h"
+ #include "security.h"
 
-#include <Arduino.h>
-#include "hal/progmem_compat.h"
-#include <wolfssl/wolfcrypt/error-crypt.h>
+ #include <Arduino.h>
+ #include "hal/progmem_compat.h"
+ #include "user_settings.h"
+ #include <wolfssl/wolfcrypt/settings.h>
+ #include <wolfssl/wolfcrypt/error-crypt.h>
 
 namespace rpc {
 namespace security {

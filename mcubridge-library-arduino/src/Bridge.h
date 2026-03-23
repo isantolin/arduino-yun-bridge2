@@ -39,6 +39,8 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #undef max
 
 #include "config/bridge_config.h"
+#include <Embedded_Template_Library.h>
+#include "etl_profile.h"
 #include <etl/algorithm.h>
 #include <etl/crc32.h>
 #include <etl/observer.h>

@@ -17,7 +17,7 @@
 
 #include <string.h>
 #include <etl/algorithm.h>
-#include <etl/error_handler.h>
+// #include <etl/error_handler.h>
 #include "hal/logging.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"

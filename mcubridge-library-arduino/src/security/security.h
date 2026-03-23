@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #include <etl/algorithm.h>
 #include <etl/span.h>
@@ -18,8 +19,9 @@
 #include "../protocol/rpc_protocol.h"
 #include "../protocol/rpc_frame.h"
 
-
 /* [WOLFSSL] Core headers */
+#include <wolfssl.h>
+#include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/sha256.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 

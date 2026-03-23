@@ -119,8 +119,9 @@ class SerialTransport:
             raise RuntimeError(f"Missing serial FSM transition: {transition_name}")
         cast(Any, transition)()
 
-    def _decode_frame(self, encoded_packet: bytes) -> Frame:
-        raw_frame = cobs_decode(encoded_packet)
+    def _decode_frame(self, encoded_packet: bytes | memoryview) -> Frame:
+        packet_bytes = encoded_packet if isinstance(encoded_packet, bytes) else encoded_packet.tobytes()
+        raw_frame = cobs_decode(packet_bytes)
         if not _is_raw_binary_frame(raw_frame):
             raise ValueError("Decoded serial frame does not match the binary protocol envelope")
         return Frame.from_bytes(raw_frame)
@@ -254,11 +255,11 @@ class SerialTransport:
             try:
                 # readuntil delegates the delimiter search to C, saving CPU
                 packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
-                packet = packet_with_sep[:-1]  # remove delimiter
+                packet_view = memoryview(packet_with_sep)[:-1]  # remove delimiter (Zero-copy)
 
-                if packet:
-                    # logger.debug("[SERIAL <- MCU] RAW: [%s]", packet.hex())
-                    self._process_packet(packet)
+                if packet_view:
+                    # logger.debug("[SERIAL <- MCU] RAW: [%s]", packet_view.hex())
+                    self._process_packet(packet_view)
 
             except asyncio.LimitOverrunError:
                 logger.warning("Serial packet too large, flushing.")
@@ -276,7 +277,7 @@ class SerialTransport:
                 logger.error("Error in _read_loop: %s", exc)
                 break
 
-    def _process_packet(self, encoded_packet: bytes) -> None:
+    def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Dispatcher for decoded packets."""
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
             try:
@@ -291,26 +292,28 @@ class SerialTransport:
         if self.loop:
             self.loop.create_task(self._async_process_packet(encoded_packet))
 
-    async def _async_process_packet(self, encoded_packet: bytes) -> None:
+    async def _async_process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Async packet processing logic."""
         # [DEBUG] Trace packet intake
         logger.debug("[SERIAL <- MCU] Processing Packet: %s", encoded_packet.hex(" "))
 
+        packet_bytes = encoded_packet if isinstance(encoded_packet, bytes) else encoded_packet.tobytes()
+
         try:
-            cmd_id, seq_id, payload = Frame.parse(cobs_decode(encoded_packet))
+            cmd_id, seq_id, payload = Frame.parse(cobs_decode(packet_bytes))
 
             if logger.isEnabledFor(logging.DEBUG):
-                log_binary_traffic(logger, logging.DEBUG, "[SERIAL <- MCU]", "RAW", encoded_packet)
+                log_binary_traffic(logger, logging.DEBUG, "[SERIAL <- MCU]", "RAW", packet_bytes)
 
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
             self.state.record_serial_rx(len(encoded_packet))
 
         except (CobsDecodeError, ValueError) as exc:
-            log_binary_traffic(logger, logging.WARNING, "[SERIAL <- MCU]", f"Malformed (Err: {exc})", encoded_packet)
+            log_binary_traffic(logger, logging.WARNING, "[SERIAL <- MCU]", f"Malformed (Err: {exc})", packet_bytes)
             self.state.record_serial_decode_error()
             await self._check_baudrate_fallback()
         except (OSError, RuntimeError, KeyError, IndexError, TypeError) as exc:
-            log_binary_traffic(logger, logging.ERROR, "[SERIAL <- MCU]", f"Dispatch (Err: {exc})", encoded_packet)
+            log_binary_traffic(logger, logging.ERROR, "[SERIAL <- MCU]", f"Dispatch (Err: {exc})", packet_bytes)
             self.state.record_serial_decode_error()
             await self._check_baudrate_fallback()
 

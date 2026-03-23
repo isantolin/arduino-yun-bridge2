@@ -156,6 +156,8 @@ class JinjaGenerator:
             },
             {"name": "RPC_PROCESS_COMMAND_MIN", "type": "uint16_t", "value": c["process_command_min"]},
             {"name": "RPC_PROCESS_COMMAND_MAX", "type": "uint16_t", "value": c["process_command_max"]},
+            {"name": "RPC_SPI_COMMAND_MIN", "type": "uint16_t", "value": c["spi_command_min"]},
+            {"name": "RPC_SPI_COMMAND_MAX", "type": "uint16_t", "value": c["spi_command_max"]},
         ]
 
         hs = spec.handshake
@@ -272,6 +274,8 @@ class JinjaGenerator:
             {"name": "FILESYSTEM_COMMAND_MAX", "type": "int", "value": c["filesystem_command_max"]},
             {"name": "PROCESS_COMMAND_MIN", "type": "int", "value": c["process_command_min"]},
             {"name": "PROCESS_COMMAND_MAX", "type": "int", "value": c["process_command_max"]},
+            {"name": "SPI_COMMAND_MIN", "type": "int", "value": c["spi_command_min"]},
+            {"name": "SPI_COMMAND_MAX", "type": "int", "value": c["spi_command_max"]},
         ]
 
         hs = spec.handshake

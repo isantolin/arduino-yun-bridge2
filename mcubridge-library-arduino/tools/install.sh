@@ -104,8 +104,14 @@ install_dependency() {
 # 1. Official Dependencies (Library Manager)
 # We no longer vendor ETL or wolfSSL files into src/. 
 # Users should install these libraries via the Arduino Library Manager.
-echo "[INFO] 'Embedded Template Library' dependency should be installed via Arduino Library Manager."
-echo "[INFO] 'wolfSSL' dependency should be installed via Arduino Library Manager."
+if [ "${1:-}" == "" ]; then
+    echo "[INFO] 'Embedded Template Library' dependency should be installed via Arduino Library Manager."
+    echo "[INFO] 'wolfSSL' dependency should be installed via Arduino Library Manager."
+else
+    # In CI/CD or when a target directory is provided, we install them.
+    install_dependency "Embedded_Template_Library_ETL" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.39.4" "etl/algorithm.h" "" "$LIB_DIR"
+    install_dependency "wolfssl" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.7.6-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
+fi
 
 # 2. Nanopb (Still vendored due to custom static config)
 NANOPB_VERSION="0.4.9.1"

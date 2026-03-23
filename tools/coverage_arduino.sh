@@ -29,14 +29,21 @@ ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
 "${ROOT_DIR}/tools/ci_arduino_host_tests.sh" --install-only
 
 # Get standard library path
-ARDUINO_LIBS="$HOME/Arduino/libraries"
-if [ ! -d "$ARDUINO_LIBS" ]; then
-    ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"
+if [ -d "${DUMMY_ARDUINO_LIBS:-}" ]; then
+    ARDUINO_LIBS="${DUMMY_ARDUINO_LIBS}"
+else
+    ARDUINO_LIBS="$HOME/Arduino/libraries"
+    if [ ! -d "$ARDUINO_LIBS" ]; then
+        ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"
+    fi
 fi
 
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL/src"
-WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl/src"
+if [ ! -d "$ETL_PATH" ]; then
+    ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL"
+fi
+WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 
 # Sources to track for coverage
 SOURCES=(
@@ -45,14 +52,14 @@ SOURCES=(
     "${SRC_ROOT}/nanopb/pb_decode.c"
     "${SRC_ROOT}/protocol/mcubridge.pb.c"
     "${SRC_ROOT}/security/security.cpp"
-    "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/hash.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/kdf.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/error.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
+    "$WOLFSSL_PATH/src/wolfcrypt/src/sha256.c"
+    "$WOLFSSL_PATH/src/wolfcrypt/src/hmac.c"
+    "$WOLFSSL_PATH/src/wolfcrypt/src/hash.c"
+    "$WOLFSSL_PATH/src/wolfcrypt/src/kdf.c"
+    "$WOLFSSL_PATH/src/wolfcrypt/src/error.c"
+    "$WOLFSSL_PATH/src/wolfcrypt/src/logging.c"
+    "$WOLFSSL_PATH/src/wolfcrypt/src/wc_port.c"
+    "$WOLFSSL_PATH/src/wolfcrypt/src/memory.c"
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
     "${SRC_ROOT}/protocol/rpc_cobs.cpp"
@@ -65,6 +72,7 @@ SOURCES=(
     "${SRC_ROOT}/services/SPIService.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
+
 
 # Unity test framework
 UNITY_DIR="${TEST_ROOT}/Unity"
@@ -103,6 +111,7 @@ BASE_FLAGS=(
     "-I${STUB_INCLUDE}"
     "-I$ETL_PATH"
     "-I$WOLFSSL_PATH"
+    "-I$WOLFSSL_PATH/src"
     "-I${TEST_ROOT}/mocks"
     "-I${TEST_ROOT}/Unity"
 )

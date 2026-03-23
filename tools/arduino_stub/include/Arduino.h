@@ -36,7 +36,10 @@ inline void operator delete(void*, void*) noexcept {}
 #define HEX 16
 
 // Math macros
-#define abs(x) ((x) > 0 ? (x) : -(x))
+template <typename T>
+inline T abs(T x) {
+    return (x > 0) ? x : -x;
+}
 #undef min
 #undef max
 #define min(a, b) ((a) < (b) ? (a) : (b))

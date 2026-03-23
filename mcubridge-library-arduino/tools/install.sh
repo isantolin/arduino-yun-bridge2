@@ -164,7 +164,12 @@ install_wolfssl_vendored() {
 
     if [ -f "$target/$check_file" ]; then
         echo "[INFO] wolfssl already vendored at $target."
-        return 0
+        # [FIX] Ensure user_settings.h and misc.c are always present even if already vendored
+        if [ ! -f "$target/user_settings.h" ] || [ ! -f "$target/wolfcrypt/src/misc.c" ] || ! grep -q "WOLFSSL_USER_SETTINGS" "$target/wolfssl/wolfcrypt/settings.h"; then
+             echo "[WARN] Required wolfSSL files missing or settings.h not patched. Regenerating..."
+        else
+             return 0
+        fi
     fi
 
     echo "[WARN] wolfssl missing. Vendoring necessary files..."
@@ -190,6 +195,15 @@ install_wolfssl_vendored() {
     cp -a "$extracted_root/wolfssl/wolfcrypt" "$target/wolfssl/"
     cp "$extracted_root/wolfssl/version.h" "$target/wolfssl/" 2>/dev/null || true
     cp "$extracted_root/wolfssl/options.h" "$target/wolfssl/" 2>/dev/null || true
+
+    # [FIX] Copy misc.c and other missing sources that might be included by headers
+    # Some versions use misc.inc which must be renamed to misc.c to match hmac.c include
+    if [ -f "$extracted_root/wolfcrypt/src/misc.c" ]; then
+        cp "$extracted_root/wolfcrypt/src/misc.c" "$target/wolfcrypt/src/"
+    elif [ -f "$extracted_root/wolfcrypt/src/misc.inc" ]; then
+        cp "$extracted_root/wolfcrypt/src/misc.inc" "$target/wolfcrypt/src/misc.c"
+    fi
+    cp "$extracted_root/wolfcrypt/src/asm.c" "$target/wolfcrypt/src/" 2>/dev/null || true
 
     # Inyectar WOLFSSL_USER_SETTINGS en la cabecera original para redirigir toda compilación C/C++
     local settings_file="$target/wolfssl/wolfcrypt/settings.h"

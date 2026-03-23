@@ -34,13 +34,17 @@ DUMMY_ARDUINO_LIBS=${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}
 "${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
-g++ -std=c++14 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 \
+g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
+    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 -DWOLFSSL_USER_SETTINGS \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/nanopb" \
+    -I"${SRC_DIR}/wolfssl" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
+    "${SRC_DIR}/wolfcrypt/src/sha256.c" \
+    "${SRC_DIR}/wolfcrypt/src/hmac.c" \
+    "${SRC_DIR}/wolfcrypt/src/hash.c" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \
     "${SRC_DIR}/nanopb/pb_decode.c" \
@@ -61,13 +65,17 @@ g++ -std=c++14 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -o "${TEST_DIR}/bridge_emulator"
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
-g++ -std=c++14 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 \
+g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
+    -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 -DWOLFSSL_USER_SETTINGS \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/nanopb" \
+    -I"${SRC_DIR}/wolfssl" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
+    "${SRC_DIR}/wolfcrypt/src/sha256.c" \
+    "${SRC_DIR}/wolfcrypt/src/hmac.c" \
+    "${SRC_DIR}/wolfcrypt/src/hash.c" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \
     "${SRC_DIR}/nanopb/pb_decode.c" \

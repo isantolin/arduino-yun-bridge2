@@ -169,10 +169,10 @@ bool hasSD() {
 #endif
 }
 
-bool writeFile(const char* path, etl::span<const uint8_t> data) {
+bool writeFile(etl::string_view path, etl::span<const uint8_t> data) {
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;
-  if (!resolve_host_path(path, full_path) ||
+  if (!resolve_host_path(path.data(), full_path) ||
       !ensure_host_parent_directories(full_path)) {
     return false;
   }
@@ -195,7 +195,7 @@ bool writeFile(const char* path, etl::span<const uint8_t> data) {
 }
 
 bool readFileChunk(
-    const char* path,
+    etl::string_view path,
     size_t offset,
     etl::span<uint8_t> buffer,
     size_t& bytes_read,
@@ -205,7 +205,7 @@ bool readFileChunk(
 
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;
-  if (!resolve_host_path(path, full_path)) {
+  if (!resolve_host_path(path.data(), full_path)) {
     return false;
   }
 
@@ -245,10 +245,10 @@ bool readFileChunk(
 #endif
 }
 
-bool removeFile(const char* path) {
+bool removeFile(etl::string_view path) {
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;
-  if (!resolve_host_path(path, full_path)) {
+  if (!resolve_host_path(path.data(), full_path)) {
     return false;
   }
   return ::unlink(full_path.c_str()) == 0;

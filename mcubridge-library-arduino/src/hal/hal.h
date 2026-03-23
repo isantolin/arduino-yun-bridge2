@@ -11,6 +11,8 @@
 #include <stdint.h>
 #include <etl/span.h>
 
+#include <etl/string_view.h>
+
 namespace bridge {
 namespace hal {
 
@@ -41,13 +43,13 @@ bool hasSD();
 /**
  * @brief Write data to a file on the SD card.
  */
-bool writeFile(const char* path, etl::span<const uint8_t> data);
+bool writeFile(etl::string_view path, etl::span<const uint8_t> data);
 
 /**
  * @brief Read a chunk from a file on the SD card.
  */
 bool readFileChunk(
-    const char* path,
+    etl::string_view path,
     size_t offset,
     etl::span<uint8_t> buffer,
     size_t& bytes_read,
@@ -56,7 +58,7 @@ bool readFileChunk(
 /**
  * @brief Remove a file from the SD card.
  */
-bool removeFile(const char* path);
+bool removeFile(etl::string_view path);
 
 /**
  * @brief Get MCU capabilities bitmask.

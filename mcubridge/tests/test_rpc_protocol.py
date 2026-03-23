@@ -10,7 +10,7 @@ def test_crc_is_32bit() -> None:
 
 def test_frame_build_appends_crc_bytes() -> None:
     payload = b"\x01\x02\x03"
-    raw = frame.Frame.build(protocol.Command.CMD_LINK_RESET.value, 0, payload)
+    raw = frame.Frame.build(protocol.Command.CMD_LINK_RESET.value, 0,  0, payload)
     expected_len = protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
     assert len(raw) == expected_len
 
@@ -18,7 +18,7 @@ def test_frame_build_appends_crc_bytes() -> None:
 def test_frame_build_uses_crc32() -> None:
     """Frame serialization uses CRC32 (4 bytes) via Construct Checksum."""
     payload = b"\xaa" * 4
-    raw = frame.Frame.build(protocol.Command.CMD_LINK_RESET.value, 0, payload)
+    raw = frame.Frame.build(protocol.Command.CMD_LINK_RESET.value, 0,  0, payload)
 
     # CRC is always 4 bytes (Int32ub) via Construct Checksum
     expected_len = protocol.CRC_COVERED_HEADER_SIZE + len(payload) + 4

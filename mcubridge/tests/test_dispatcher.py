@@ -27,19 +27,19 @@ class _FileComponent:
     def __init__(self, calls: _Calls) -> None:
         self._calls = calls
 
-    async def handle_write(self, payload: bytes) -> bool:
+    async def handle_write(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("file.handle_write", payload)
         return True
 
-    async def handle_read(self, payload: bytes) -> bool:
+    async def handle_read(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("file.handle_read", payload)
         return True
 
-    async def handle_remove(self, payload: bytes) -> bool:
+    async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("file.handle_remove", payload)
         return True
 
-    async def handle_read_response(self, payload: bytes) -> bool:
+    async def handle_read_response(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("file.handle_read_response", payload)
         return True
 
@@ -59,15 +59,15 @@ class _ConsoleComponent:
         self._calls.add("console.handle_mqtt_input", payload, inbound)
         return True
 
-    async def handle_xoff(self, payload: bytes) -> bool:
+    async def handle_xoff(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("console.handle_xoff", payload)
         return True
 
-    async def handle_xon(self, payload: bytes) -> bool:
+    async def handle_xon(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("console.handle_xon", payload)
         return True
 
-    async def handle_write(self, payload: bytes) -> bool:
+    async def handle_write(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("console.handle_write", payload)
         return True
 
@@ -76,11 +76,11 @@ class _DatastoreComponent:
     def __init__(self, calls: _Calls) -> None:
         self._calls = calls
 
-    async def handle_put(self, payload: bytes) -> bool:
+    async def handle_put(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("datastore.handle_put", payload)
         return True
 
-    async def handle_get_request(self, payload: bytes) -> bool:
+    async def handle_get_request(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("datastore.handle_get_request", payload)
         return True
 
@@ -106,19 +106,19 @@ class _MailboxComponent:
     def __init__(self, calls: _Calls) -> None:
         self._calls = calls
 
-    async def handle_push(self, payload: bytes) -> bool:
+    async def handle_push(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("mailbox.handle_push", payload)
         return True
 
-    async def handle_available(self, payload: bytes) -> bool:
+    async def handle_available(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("mailbox.handle_available", payload)
         return True
 
-    async def handle_read(self, payload: bytes) -> bool:
+    async def handle_read(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("mailbox.handle_read", payload)
         return True
 
-    async def handle_processed(self, payload: bytes) -> bool:
+    async def handle_processed(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("mailbox.handle_processed", payload)
         return True
 
@@ -130,15 +130,15 @@ class _PinComponent:
     def __init__(self, calls: _Calls) -> None:
         self._calls = calls
 
-    async def handle_digital_read_resp(self, payload: bytes) -> bool:
+    async def handle_digital_read_resp(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("pin.handle_digital_read_resp", payload)
         return True
 
-    async def handle_analog_read_resp(self, payload: bytes) -> bool:
+    async def handle_analog_read_resp(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("pin.handle_analog_read_resp", payload)
         return True
 
-    async def handle_unexpected_mcu_request(self, command: Command, payload: bytes) -> bool:
+    async def handle_unexpected_mcu_request(self, seq_id: int, command: Command, payload: bytes) -> bool:
         self._calls.add("pin.handle_unexpected_mcu_request", command, payload)
         return True
 
@@ -156,15 +156,15 @@ class _ProcessComponent:
     def __init__(self, calls: _Calls) -> None:
         self._calls = calls
 
-    async def handle_run(self, payload: bytes) -> bool:
+    async def handle_run(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("process.handle_run", payload)
         return True
 
-    async def handle_run_async(self, payload: bytes) -> bool:
+    async def handle_run_async(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("process.handle_run_async", payload)
         return True
 
-    async def handle_poll(self, payload: bytes) -> bool:
+    async def handle_poll(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("process.handle_poll", payload)
         return True
 
@@ -173,15 +173,15 @@ class _SystemComponent:
     def __init__(self, calls: _Calls) -> None:
         self._calls = calls
 
-    async def handle_get_free_memory_resp(self, payload: bytes) -> bool:
+    async def handle_get_free_memory_resp(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("system.handle_get_free_memory_resp", payload)
         return True
 
-    async def handle_get_version_resp(self, payload: bytes) -> bool:
+    async def handle_get_version_resp(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("system.handle_get_version_resp", payload)
         return True
 
-    async def handle_set_baudrate_resp(self, payload: bytes) -> bool:
+    async def handle_set_baudrate_resp(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("system.handle_set_baudrate_resp", payload)
         return True
 
@@ -198,7 +198,7 @@ class _SpiComponent:
         self._calls.add("spi.handle_mqtt", identifier, tuple(remainder), inbound)
         return True
 
-    async def handle_transfer_resp(self, payload: bytes) -> bool:
+    async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("spi.handle_transfer_resp", payload)
         return True
 
@@ -261,28 +261,28 @@ def _make_dispatcher(
         )
     )
 
-    async def _handle_link_sync_resp(payload: bytes) -> bool:
+    async def _handle_link_sync_resp(seq_id: int, payload: bytes) -> bool:
         calls.add("handle_link_sync_resp", payload)
         return True
 
-    async def _handle_link_reset_resp(payload: bytes) -> bool:
+    async def _handle_link_reset_resp(seq_id: int, payload: bytes) -> bool:
         calls.add("handle_link_reset_resp", payload)
         return True
 
-    async def _handle_get_capabilities_resp(payload: bytes) -> bool:
+    async def _handle_get_capabilities_resp(seq_id: int, payload: bytes) -> bool:
         calls.add("handle_get_capabilities_resp", payload)
         return True
 
-    async def _handle_ack(payload: bytes) -> None:
+    async def _handle_ack(seq_id: int, payload: bytes) -> None:
         calls.add("handle_ack", payload)
 
     def _status_handler_factory(status: Status):
-        async def _handler(payload: bytes) -> None:
+        async def _handler(seq_id: int, payload: bytes) -> None:
             calls.add("status_handler", status, payload)
 
         return _handler
 
-    async def _handle_process_kill(payload: bytes) -> bool | None:
+    async def _handle_process_kill(seq_id: int, payload: bytes) -> bool | None:
         calls.add("handle_process_kill", payload)
         return True
 

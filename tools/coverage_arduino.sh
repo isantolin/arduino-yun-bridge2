@@ -28,6 +28,16 @@ ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
 
 "${ROOT_DIR}/tools/ci_arduino_host_tests.sh" --install-only
 
+# Get standard library path
+ARDUINO_LIBS="$HOME/Arduino/libraries"
+if [ ! -d "$ARDUINO_LIBS" ]; then
+    ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"
+fi
+
+# Define explicit include paths for official libraries
+ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL/src"
+WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl/src"
+
 # Sources to track for coverage
 SOURCES=(
     "${SRC_ROOT}/nanopb/pb_common.c"
@@ -35,14 +45,14 @@ SOURCES=(
     "${SRC_ROOT}/nanopb/pb_decode.c"
     "${SRC_ROOT}/protocol/mcubridge.pb.c"
     "${SRC_ROOT}/security/security.cpp"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/sha256.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hmac.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hash.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/kdf.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/error.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/logging.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/wc_port.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/memory.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/hash.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/kdf.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/error.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
     "${SRC_ROOT}/protocol/rpc_cobs.cpp"
@@ -76,8 +86,8 @@ BASE_FLAGS=(
     "-DARDUINO=100"
     "-DBRIDGE_HOST_TEST=1"
     "-DBRIDGE_TEST_NO_GLOBALS=1"
-    ""
-    "-DWOLFSSL_USER_SETTINGS -DETL_NO_STL"
+    "-DWOLFSSL_USER_SETTINGS"
+    "-DETL_NO_STL"
     "-DBRIDGE_DEBUG_IO=1"
     "-DBRIDGE_ENABLE_CONSOLE=1"
     "-DBRIDGE_ENABLE_DATASTORE=1"
@@ -91,8 +101,8 @@ BASE_FLAGS=(
     "-I${SRC_ROOT}/nanopb"
     "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}"
-    "-I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library_ETL/src"
-    "-I/home/ignaciosantolin/Arduino/libraries/wolfssl/src"
+    "-I$ETL_PATH"
+    "-I$WOLFSSL_PATH"
     "-I${TEST_ROOT}/mocks"
     "-I${TEST_ROOT}/Unity"
 )

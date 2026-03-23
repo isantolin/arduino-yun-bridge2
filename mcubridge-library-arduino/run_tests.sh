@@ -1,10 +1,22 @@
 #!/bin/bash
 set -e
-cd /home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino
+# Get the script directory and then the project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-CFLAGS="-std=c++17 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_ENABLE_SPI=1  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -Isrc -Isrc/config -Isrc/nanopb -Isrc/protocol -Itests/Unity -I../tools/arduino_stub/include -I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library_ETL/src -I/home/ignaciosantolin/Arduino/libraries/wolfssl/src"
+# Get standard library path
+ARDUINO_LIBS="$HOME/Arduino/libraries"
+if [ ! -d "$ARDUINO_LIBS" ]; then
+    ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"
+fi
+
+# Define explicit include paths for official libraries
+ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL/src"
+WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl/src"
+
+CFLAGS="-std=c++17 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_ENABLE_SPI=1  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -Isrc -Isrc/config -Isrc/nanopb -Isrc/protocol -Itests/Unity -I../tools/arduino_stub/include -I$ETL_PATH -I$WOLFSSL_PATH"
 SOURCES="src/nanopb/pb_common.c src/nanopb/pb_encode.c src/nanopb/pb_decode.c src/protocol/mcubridge.pb.c src/security/security.cpp src/hal/hal.cpp src/protocol/rle.cpp src/protocol/rpc_cobs.cpp src/Bridge.cpp src/services/Console.cpp src/services/DataStore.cpp src/services/Mailbox.cpp src/services/FileSystem.cpp src/services/Process.cpp src/services/SPIService.cpp"
-WOLF_SOURCES="/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/sha256.c /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hmac.c /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hash.c /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/kdf.c /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/error.c /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/logging.c /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/wc_port.c /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/memory.c"
+WOLF_SOURCES="$WOLFSSL_PATH/wolfcrypt/src/sha256.c $WOLFSSL_PATH/wolfcrypt/src/hmac.c $WOLFSSL_PATH/wolfcrypt/src/hash.c $WOLFSSL_PATH/wolfcrypt/src/kdf.c $WOLFSSL_PATH/wolfcrypt/src/error.c $WOLFSSL_PATH/wolfcrypt/src/logging.c $WOLFSSL_PATH/wolfcrypt/src/wc_port.c $WOLFSSL_PATH/wolfcrypt/src/memory.c"
 UNITY="build-host-local/unity.o"
 
 TESTS="test_protocol test_bridge_core test_bridge_components test_fsm_mutual_auth test_integrated"

@@ -13,8 +13,13 @@ TEST_DIR="${LIB_DIR}/tests"
 STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 
 # Find library paths (local or system)
-ETL_PATH="/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library_ETL/src"
-WOLFSSL_PATH="/home/ignaciosantolin/Arduino/libraries/wolfssl/src"
+ARDUINO_LIBS="$HOME/Arduino/libraries"
+if [ ! -d "$ARDUINO_LIBS" ]; then
+    ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"
+fi
+
+ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL/src"
+WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl/src"
 
 # Use the python from the current environment (e.g. tox virtualenv)
 PYTHON_CMD=$(command -v python || command -v python3)
@@ -35,14 +40,14 @@ DUMMY_ARDUINO_LIBS=${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}
 "${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
 
 WOLF_SOURCES=(
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/sha256.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hmac.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/hash.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/kdf.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/error.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/logging.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/wc_port.c"
-    "/home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfcrypt/src/memory.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/hash.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/kdf.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/error.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
 )
 
 echo "[emulator] Compiling native bridge emulator (Base)..."

@@ -118,9 +118,6 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
     #if !defined(BRIDGE_HOST_TEST)
     _hardware_serial->setTimeout(50);
     #endif
-    _packet_serial.setStream(*_hardware_serial);
-  } else {
-    _packet_serial.setStream(_stream);
   }
 
   _packet_serial.setPacketHandler(etl::delegate<void(etl::span<const uint8_t>)>::create<BridgeClass, &BridgeClass::_onPacketReceived>(*this));

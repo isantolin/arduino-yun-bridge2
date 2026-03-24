@@ -175,14 +175,14 @@ fi
 echo "[INFO] Synchronizing runtime dependency manifests..."
 python3 "$REPO_ROOT/tools/sync_runtime_deps.py" || exit 1
 
-# [FIX] Auto-bootstrap de dependencias externas desde GitHub (PacketSerial2)
-DUMMY_LIBS="$REPO_ROOT/.dummy_libs"
-mkdir -p "$DUMMY_LIBS"
-if [ ! -d "$DUMMY_LIBS/PacketSerial2" ]; then
-    echo "[INFO] PacketSerial2 not found. Fetching from GitHub..."
-    git clone --depth 1 https://github.com/isantolin/PacketSerial2 "$DUMMY_LIBS/PacketSerial2"
+# [FIX] Auto-bootstrap de dependencias externas desde GitHub (PacketSerial)
+DUMMY_LIBS="$(pwd)/.dummy_libs"
+if [ ! -d "$DUMMY_LIBS/PacketSerial" ]; then
+    echo "[INFO] PacketSerial not found. Fetching from GitHub..."
+    git clone --depth 1 https://github.com/isantolin/PacketSerial2 "$DUMMY_LIBS/PacketSerial"
 else
-    echo "[INFO] PacketSerial2 already present in .dummy_libs."
+    echo "[INFO] PacketSerial already present in .dummy_libs."
+fi
 fi
 
 echo "[INFO] Regenerating protocol files from spec..."

@@ -54,7 +54,6 @@ BridgeClass::BridgeClass(Stream& arg_stream)
     : _stream(arg_stream),
       _hardware_serial(nullptr),
       _shared_secret(),
-      _packet_serial(),
       _frame_builder(),
       _last_parse_error(rpc::FrameError::NONE),
       _flags(),
@@ -64,7 +63,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _tx_sequence_id(0),
       _retry_count(0),
       _pending_baudrate(0),
-      _rx_fifo(),
+      _rx_storage(),
       _rx_history(),
       _consecutive_crc_errors(0),
       _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
@@ -75,11 +74,15 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _analog_read_handler(),
       _get_free_memory_handler(),
       _status_handler(),
+      _transient_buffer(),
       _pending_tx_queue(),
+      _tx_payload_pool(),
       _tx_pool_head(0),
       _fsm(),
       _timers(),
-      _last_tick_millis(0) {
+      _last_tick_millis(0),
+      _packet_serial(etl::span<uint8_t>(_rx_storage.data(), _rx_storage.size()),
+                     etl::span<uint8_t>(_transient_buffer.data(), _transient_buffer.size())) {
   _flags.reset();
   _timers.clear();
 }
@@ -177,7 +180,7 @@ void BridgeClass::process() {
         static_cast<void>(_stream.read());
     }
   } else {
-    _packet_serial.update();
+    _packet_serial.update(_stream);
   }
 
   if (_last_parse_error != rpc::FrameError::NONE) {
@@ -351,8 +354,7 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
     };
     _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers, sizeof(kDataStoreHandlers) / sizeof(CmdHandler));
   } else {
-    (void)ctx;
-    emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    onUnknownCommand(ctx);
   }
 }
 
@@ -368,8 +370,7 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
     };
     _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, sizeof(kMailboxHandlers) / sizeof(CmdHandler));
   } else {
-    (void)ctx;
-    emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    onUnknownCommand(ctx);
   }
 }
 
@@ -383,8 +384,7 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
     };
     _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers, sizeof(kFsHandlers) / sizeof(CmdHandler));
   } else {
-    (void)ctx;
-    emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    onUnknownCommand(ctx);
   }
 }
 
@@ -401,8 +401,7 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
     };
     _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers, sizeof(kProcessHandlers) / sizeof(CmdHandler));
   } else {
-    (void)ctx;
-    emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    onUnknownCommand(ctx);
   }
 }
 
@@ -417,8 +416,7 @@ void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {
     };
     _dispatchJumpTable(ctx, rpc::RPC_SPI_COMMAND_MIN, kSpiHandlers, sizeof(kSpiHandlers) / sizeof(CmdHandler));
   } else {
-    (void)ctx;
-    emitStatus(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    onUnknownCommand(ctx);
   }
 }
 
@@ -727,6 +725,7 @@ void BridgeClass::enterSafeState() {
 #if BRIDGE_ENABLE_PROCESS
   Process.reset();
 #endif
+  forceSafeState(); // Ensure physical pins are in a safe state (Input Pullup)
   notify_observers(MsgBridgeLost());
 }
 
@@ -756,7 +755,10 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::
   etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
   size_t raw_len = _frame_builder.build(etl::span<uint8_t>(raw_buffer.data(), raw_buffer.size()), command_id, sequence_id, payload);
   if (raw_len > 0) {
-    _packet_serial.send(etl::span<const uint8_t>(raw_buffer.data(), raw_len));
+    auto res = _packet_serial.send(_stream, etl::span<const uint8_t>(raw_buffer.data(), raw_len));
+    if (!res.has_value()) {
+        _last_parse_error = rpc::FrameError::OVERFLOW;
+    }
   }
 }
 

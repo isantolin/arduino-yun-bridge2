@@ -90,19 +90,24 @@ void test_filesystem_api_write() {
   TEST_ASSERT(stream.tx_buf.len > 0);
 }
 
+static bool g_filesystem_read_called = false;
+void filesystem_test_read_handler(etl::span<const uint8_t> data) {
+  g_filesystem_read_called = true;
+}
+
 void test_filesystem_api_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  bool called = false;
-  FileSystem.read("test.txt", [&called](etl::span<const uint8_t> data) { called = true; });
+  g_filesystem_read_called = false;
+  FileSystem.read("test.txt", FileSystemClass::FileSystemReadHandler::create<filesystem_test_read_handler>());
   TEST_ASSERT(stream.tx_buf.len > 0);
   
   uint8_t resp_data[] = {4, 5, 6};
   FileSystem._onResponse(etl::span<const uint8_t>(resp_data, 3));
-  TEST_ASSERT(called);
+  TEST_ASSERT(g_filesystem_read_called);
 }
 
 void test_filesystem_api_remove() {

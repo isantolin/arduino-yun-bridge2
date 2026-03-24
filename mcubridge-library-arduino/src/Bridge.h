@@ -47,7 +47,8 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include <etl/random.h>
 #include "hal/hal.h"
 
-#include <PacketSerial2.h>
+#include <PacketSerial.h>
+#include <Codecs/COBS.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
@@ -198,9 +199,9 @@ class BridgeClass
     }
   }
 
-  bool sendFrame(rpc::StatusCode status_code, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
-  bool sendFrame(rpc::CommandId command_id, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
-  bool sendChunkyFrame(rpc::CommandId command_id, uint16_t sequence_id, etl::span<const uint8_t> header, etl::span<const uint8_t> data) {
+  [[nodiscard]] bool sendFrame(rpc::StatusCode status_code, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
+  [[nodiscard]] bool sendFrame(rpc::CommandId command_id, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
+  [[nodiscard]] bool sendChunkyFrame(rpc::CommandId command_id, uint16_t sequence_id, etl::span<const uint8_t> header, etl::span<const uint8_t> data) {
     const size_t h_len = etl::min(header.size(), _transient_buffer.size());
     const size_t d_len = etl::min(data.size(), _transient_buffer.size() - h_len);
     
@@ -413,7 +414,14 @@ class BridgeClass
   HardwareSerial* _hardware_serial;
   etl::vector<uint8_t, 32> _shared_secret;
   
-  PacketSerial2<COBS> _packet_serial;
+  // PacketSerial2 integration with SIL-2 policies
+  using PacketSerialType = PacketSerial2::PacketSerial<
+      PacketSerial2::COBS, 
+      PacketSerial2::NoCRC, 
+      PacketSerial2::NoLock, // BridgeClass manually locks, so we don't need double locking
+      PacketSerial2::NoWatchdog // BridgeClass feeds WDT
+  >;
+  PacketSerialType _packet_serial;
   rpc::FrameBuilder _frame_builder;
   rpc::FrameError _last_parse_error;
   
@@ -426,7 +434,8 @@ class BridgeClass
   uint8_t _retry_count;
   uint32_t _pending_baudrate;
   
-  etl::circular_buffer<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_fifo;
+  // RX raw packet storage (COBS unencoded bytes)
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_storage;
   
   struct RxHistory {
     etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> buffer;

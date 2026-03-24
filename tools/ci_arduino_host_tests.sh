@@ -46,7 +46,7 @@ fi
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
-PACKETSERIAL2_PATH="$ARDUINO_LIBS/PacketSerial2"
+PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 
 if [[ "${1:-}" == "--install-only" ]]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -77,7 +77,6 @@ SOURCES=(
     "${SRC_DIR}/services/FileSystem.cpp"
     "${SRC_DIR}/services/Process.cpp"
     "${SRC_DIR}/services/SPIService.cpp"
-    "${PACKETSERIAL2_PATH}/PacketSerial2.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
 
@@ -110,7 +109,7 @@ BASE_FLAGS=(
     -I"$ETL_PATH/include"
     -I"$ETL_PATH/arduino"
     -I"$WOLFSSL_PATH"
-    -I"$PACKETSERIAL2_PATH"
+    -I"$PACKETSERIAL_PATH"
 )
 
 # Compile common sources to objects in parallel

@@ -10,6 +10,7 @@ set -u
 # Always work relative to the script location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${LIB_ROOT}/.." && pwd)"
 
 echo "================================================================================"
 echo " McuBridge Arduino Library Installer"
@@ -115,7 +116,14 @@ else
     # ETL: We copy the whole repository to the library directory.
     install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.39.4" "include/etl/algorithm.h" "" "$LIB_DIR"
     install_dependency "wolfssl" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.7.6-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
-    install_dependency "PacketSerial2" "https://github.com/isantolin/PacketSerial2/archive/refs/heads/main.zip" "PacketSerial2.h" "" "$LIB_DIR"
+    # PacketSerial: Use local .dummy_libs if present, otherwise try to download.
+    if [ -d "$ROOT_DIR/.dummy_libs/PacketSerial" ]; then
+        echo "[INFO] Using local PacketSerial from .dummy_libs..."
+        mkdir -p "$LIB_DIR/PacketSerial"
+        cp -a "$ROOT_DIR/.dummy_libs/PacketSerial/src/." "$LIB_DIR/PacketSerial/"
+    else
+        install_dependency "PacketSerial" "https://github.com/isantolin/PacketSerial2/archive/refs/heads/main.zip" "PacketSerial.h" "" "$LIB_DIR"
+    fi
 fi
 
 # 2. Nanopb (Still vendored due to custom static config)

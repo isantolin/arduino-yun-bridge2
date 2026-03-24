@@ -23,7 +23,7 @@ echo "[emulator] Installing library dependencies..."
 
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
-PACKETSERIAL2_PATH="$ARDUINO_LIBS/PacketSerial2"
+PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 
 # Use the python from the current environment (e.g. tox virtualenv)
 PYTHON_CMD=$(command -v python || command -v python3)
@@ -63,7 +63,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
-    -I"${PACKETSERIAL2_PATH}" \
+    -I"${PACKETSERIAL_PATH}" \
     "${WOLF_SOURCES[@]}" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \
@@ -78,9 +78,8 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "${SRC_DIR}/services/DataStore.cpp" \
     "${SRC_DIR}/services/Mailbox.cpp" \
     "${SRC_DIR}/services/FileSystem.cpp" \
-    "${SRC_DIR}/services/Process.cpp" \
-    "${SRC_DIR}/services/SPIService.cpp" \
-    "${PACKETSERIAL2_PATH}/PacketSerial2.cpp" \
+    "${LIB_DIR}/src/services/Process.cpp" \
+    "${LIB_DIR}/src/services/SPIService.cpp" \
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp" \
     "${TEST_DIR}/bridge_emulator.cpp" \
     -o "${TEST_DIR}/bridge_emulator"
@@ -97,7 +96,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
-    -I"${PACKETSERIAL2_PATH}" \
+    -I"${PACKETSERIAL_PATH}" \
     "${WOLF_SOURCES[@]}" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \
@@ -112,9 +111,8 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "${SRC_DIR}/services/DataStore.cpp" \
     "${SRC_DIR}/services/Mailbox.cpp" \
     "${SRC_DIR}/services/FileSystem.cpp" \
-    "${SRC_DIR}/services/Process.cpp" \
-    "${SRC_DIR}/services/SPIService.cpp" \
-    "${PACKETSERIAL2_PATH}/PacketSerial2.cpp" \
+    "${LIB_DIR}/src/services/Process.cpp" \
+    "${LIB_DIR}/src/services/SPIService.cpp" \
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp" \
     "${TEST_DIR}/bridge_control_emulator.cpp" \
     -o "${TEST_DIR}/bridge_control_emulator"

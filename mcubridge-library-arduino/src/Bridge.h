@@ -421,10 +421,10 @@ class BridgeClass
       PacketSerial2::NoLock, // BridgeClass manually locks, so we don't need double locking
       PacketSerial2::NoWatchdog // BridgeClass feeds WDT
   >;
-  PacketSerialType _packet_serial;
+
   rpc::FrameBuilder _frame_builder;
   rpc::FrameError _last_parse_error;
-  
+
   etl::bitset<bridge::NUM_FLAGS> _flags;
 
   rpc::Frame _rx_frame;
@@ -433,10 +433,10 @@ class BridgeClass
   uint16_t _tx_sequence_id;
   uint8_t _retry_count;
   uint32_t _pending_baudrate;
-  
+
   // RX raw packet storage (COBS unencoded bytes)
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_storage;
-  
+
   struct RxHistory {
     etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> buffer;
     bool contains(uint16_t id) const {
@@ -449,7 +449,7 @@ class BridgeClass
     void clear() { buffer.clear(); }
   };
   RxHistory _rx_history;
-  
+
   uint16_t _consecutive_crc_errors;
   uint16_t _ack_timeout_ms;
   uint8_t _ack_retry_limit;
@@ -473,18 +473,19 @@ class BridgeClass
   };
   etl::queue<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES> _pending_tx_queue;
 
-#if defined(ARDUINO_ARCH_AVR)
+  #if defined(ARDUINO_ARCH_AVR)
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _tx_payload_pool;
-#else
+  #else
   etl::array<uint8_t, bridge::config::MAX_PENDING_TX_FRAMES * rpc::MAX_PAYLOAD_SIZE> _tx_payload_pool;
-#endif
+  #endif
   uint16_t _tx_pool_head;
 
   bridge::fsm::BridgeFsm _fsm;
   bridge::scheduler::SimpleTimer<4> _timers;
   uint32_t _last_tick_millis;
-};
 
+  PacketSerialType _packet_serial;
+  };
 extern BridgeClass Bridge;
 
 // Include services at the end to ensure BridgeClass is defined

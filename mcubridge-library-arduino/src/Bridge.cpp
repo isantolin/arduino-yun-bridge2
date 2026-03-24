@@ -268,10 +268,10 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
   };
 
   const uint8_t group_idx = (raw_cmd >> 4) - 3;
-  if (group_idx < (sizeof(kGroupHandlers) / sizeof(CmdHandler))) {
+  if (group_idx < (sizeof(kGroupHandlers) / sizeof(kGroupHandlers[0]))) {
     if constexpr (bridge::config::IS_AVR) {
         CmdHandler handler;
-        memcpy_P(&handler, &kGroupHandlers[group_idx], sizeof(CmdHandler));
+        memcpy_P(&handler, &kGroupHandlers[group_idx], sizeof(handler));
         (this->*handler)(ctx);
     } else {
         (this->*kGroupHandlers[group_idx])(ctx);
@@ -300,7 +300,7 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_unusedCommandSlot,     // 55
       &BridgeClass::_handleStatusAck        // 56: ACK
   };
-  _dispatchJumpTable(ctx, rpc::RPC_STATUS_CODE_MIN, kStatusHandlers, sizeof(kStatusHandlers) / sizeof(CmdHandler));
+  _dispatchJumpTable(ctx, rpc::RPC_STATUS_CODE_MIN, kStatusHandlers, sizeof(kStatusHandlers) / sizeof(kStatusHandlers[0]));
 
   if (_status_handler.is_valid()) {
     _status_handler(static_cast<rpc::StatusCode>(ctx.raw_command), ctx.frame->payload);
@@ -323,7 +323,7 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_unusedCommandSlot,     // 11: 75
       &BridgeClass::_handleEnterBootloader  // 12: 76
   };
-  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, sizeof(kSystemHandlers) / sizeof(CmdHandler));
+  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, sizeof(kSystemHandlers) / sizeof(kSystemHandlers[0]));
 }
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
@@ -332,14 +332,14 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleAnalogWrite, &BridgeClass::_handleDigitalRead,
       &BridgeClass::_handleAnalogRead
   };
-  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers, sizeof(kGpioHandlers) / sizeof(CmdHandler));
+  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers, sizeof(kGpioHandlers) / sizeof(kGpioHandlers[0]));
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
   static const CmdHandler kConsoleHandlers[] PROGMEM = {
       &BridgeClass::_handleConsoleWrite
   };
-  _dispatchJumpTable(ctx, rpc::RPC_CONSOLE_COMMAND_MIN, kConsoleHandlers, sizeof(kConsoleHandlers) / sizeof(CmdHandler));
+  _dispatchJumpTable(ctx, rpc::RPC_CONSOLE_COMMAND_MIN, kConsoleHandlers, sizeof(kConsoleHandlers) / sizeof(kConsoleHandlers[0]));
 }
 
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
@@ -349,7 +349,7 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
         &BridgeClass::_unusedCommandSlot, // 113
         &BridgeClass::_handleDatastoreGetResp // 114
     };
-    _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers, sizeof(kDataStoreHandlers) / sizeof(CmdHandler));
+    _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers, sizeof(kDataStoreHandlers) / sizeof(kDataStoreHandlers[0]));
   } else {
     onUnknownCommand(ctx);
   }
@@ -365,7 +365,7 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
         &BridgeClass::_handleMailboxReadResp, // 132
         &BridgeClass::_handleMailboxAvailableResp // 133
     };
-    _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, sizeof(kMailboxHandlers) / sizeof(CmdHandler));
+    _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, sizeof(kMailboxHandlers) / sizeof(kMailboxHandlers[0]));
   } else {
     onUnknownCommand(ctx);
   }
@@ -379,7 +379,7 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
         &BridgeClass::_handleFileRemove, // 146
         &BridgeClass::_handleFileReadResp // 147
     };
-    _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers, sizeof(kFsHandlers) / sizeof(CmdHandler));
+    _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers, sizeof(kFsHandlers) / sizeof(kFsHandlers[0]));
   } else {
     onUnknownCommand(ctx);
   }
@@ -396,7 +396,7 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
         &BridgeClass::_handleProcessRunAsyncResp, // 165
         &BridgeClass::_handleProcessPollResp // 166
     };
-    _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers, sizeof(kProcessHandlers) / sizeof(CmdHandler));
+    _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers, sizeof(kProcessHandlers) / sizeof(kProcessHandlers[0]));
   } else {
     onUnknownCommand(ctx);
   }
@@ -411,7 +411,7 @@ void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {
         &BridgeClass::_handleSpiEnd,
         &BridgeClass::_handleSpiSetConfig
     };
-    _dispatchJumpTable(ctx, rpc::RPC_SPI_COMMAND_MIN, kSpiHandlers, sizeof(kSpiHandlers) / sizeof(CmdHandler));
+    _dispatchJumpTable(ctx, rpc::RPC_SPI_COMMAND_MIN, kSpiHandlers, sizeof(kSpiHandlers) / sizeof(kSpiHandlers[0]));
   } else {
     onUnknownCommand(ctx);
   }
@@ -673,7 +673,7 @@ void BridgeClass::_dispatchJumpTable(const bridge::router::CommandContext& ctx, 
   if (index < count) {
     if constexpr (bridge::config::IS_AVR) {
         CmdHandler handler;
-        memcpy_P(&handler, &handlers[index], sizeof(CmdHandler));
+        memcpy_P(&handler, &handlers[index], sizeof(handler));
         if (handler) (this->*handler)(ctx);
     } else {
         if (handlers[index]) (this->*handlers[index])(ctx);
@@ -737,7 +737,11 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::string_view messa
 void BridgeClass::emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
   if (message == nullptr) { emitStatus(status_code, etl::span<const uint8_t>()); return; }
   if constexpr (bridge::config::IS_AVR) {
+    #if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
     strncpy_P(reinterpret_cast<char*>(_transient_buffer.data()), (PGM_P)message, _transient_buffer.size() - 1);
+    #else
+    strncpy(reinterpret_cast<char*>(_transient_buffer.data()), reinterpret_cast<const char*>(message), _transient_buffer.size() - 1);
+    #endif
   } else {
     strncpy(reinterpret_cast<char*>(_transient_buffer.data()), reinterpret_cast<const char*>(message), _transient_buffer.size() - 1);
   }

@@ -280,6 +280,22 @@ class BridgeDispatcher:
             logger.debug("Ignoring MQTT message: %s", inbound_topic)
             return
 
+        # [SIL-2] Synchronization Guard: Wait for the serial link to be ready
+        # before dispatching non-system commands. This prevents race conditions
+        # during the handshake stabilization period.
+        if route.topic != Topic.SYSTEM:
+            try:
+                import asyncio
+                async with asyncio.timeout(30.0):
+                    await self.state.link_sync_event.wait()
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "MQTT > Link synchronization timeout; dropping message on topic %s",
+                    inbound_topic,
+                )
+                # Reject with forbidden status if policy allows, or just drop
+                return
+
         try:
             handled = await self.mqtt_router.dispatch(route, inbound)
         except (

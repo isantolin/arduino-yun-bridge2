@@ -79,33 +79,35 @@ namespace bridge {
 
 enum FlagId : uint8_t {
   FRAME_RECEIVED = 0,
-  NUM_FLAGS = 1
+  BRIDGE_BEGUN = 1,
+  NUM_FLAGS = 2
 };
 
 namespace config {
 
 #ifdef BRIDGE_FIRMWARE_VERSION_MAJOR
-static constexpr uint8_t FIRMWARE_VERSION_MAJOR = BRIDGE_FIRMWARE_VERSION_MAJOR;
+inline constexpr uint8_t FIRMWARE_VERSION_MAJOR = BRIDGE_FIRMWARE_VERSION_MAJOR;
 #else
-static constexpr uint8_t FIRMWARE_VERSION_MAJOR = 2;
+inline constexpr uint8_t FIRMWARE_VERSION_MAJOR = 2;
 #endif
 
 #ifdef BRIDGE_FIRMWARE_VERSION_MINOR
-static constexpr uint8_t FIRMWARE_VERSION_MINOR = BRIDGE_FIRMWARE_VERSION_MINOR;
+inline constexpr uint8_t FIRMWARE_VERSION_MINOR = BRIDGE_FIRMWARE_VERSION_MINOR;
 #else
-static constexpr uint8_t FIRMWARE_VERSION_MINOR = 8;
+inline constexpr uint8_t FIRMWARE_VERSION_MINOR = 8;
 #endif
 
 #ifdef BRIDGE_FIRMWARE_VERSION_PATCH
-static constexpr uint8_t FIRMWARE_VERSION_PATCH = BRIDGE_FIRMWARE_VERSION_PATCH;
+inline constexpr uint8_t FIRMWARE_VERSION_PATCH = BRIDGE_FIRMWARE_VERSION_PATCH;
 #else
-static constexpr uint8_t FIRMWARE_VERSION_PATCH = 1;
+inline constexpr uint8_t FIRMWARE_VERSION_PATCH = 4;
 #endif
 
+
 #if defined(ARDUINO_ARCH_AVR)
-static constexpr bool IS_AVR = true;
+inline constexpr bool IS_AVR = true;
 #else
-static constexpr bool IS_AVR = false;
+inline constexpr bool IS_AVR = false;
 #endif
 
 }  // namespace config

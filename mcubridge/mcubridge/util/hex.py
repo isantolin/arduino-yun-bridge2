@@ -21,16 +21,22 @@ def format_hex(data: bytes | bytearray | memoryview[Any]) -> str:
 
 
 def log_binary_traffic(
-    logger: logging.Logger, level: int, direction: str, label: str, data: bytes | bytearray | memoryview[Any]
+    logger: logging.Logger,
+    level: int,
+    direction: str,
+    label: str,
+    data: bytes | bytearray | memoryview[Any],
+    sequence_id: int | None = None,
 ) -> None:
     """Logs binary traffic with a standardized hex format for syslog.
 
-    Format: %s %s: [DE AD BE EF]
+    Format: [DIR] [SEQ:XXXX] [LABEL]: [DE AD BE EF]
     """
     if not logger.isEnabledFor(level):
         return
 
-    logger.log(level, "%s %s: %s", direction, label, format_hex(data))
+    seq_part = f" [SEQ:{sequence_id:04X}]" if sequence_id is not None else ""
+    logger.log(level, "[%s]%s [%s]: %s", direction.upper(), seq_part, label.upper(), format_hex(data))
 
 
 def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: bytes) -> None:

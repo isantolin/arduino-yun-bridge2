@@ -144,14 +144,6 @@ class BridgeFsm : public etl::fsm {
   BridgeFsm() : etl::fsm(NUMBER_OF_STATES), state_list_{} {}
 
   void begin() {
-    static StateStabilizing state_stabilizing;
-    static StateUnsynchronized state_unsynchronized;
-    static StateSyncing state_syncing;
-    static StateReady state_ready;
-    static StateIdle state_idle;
-    static StateAwaitingAck state_awaiting_ack;
-    static StateFault state_fault;
-
     state_list_[STATE_STABILIZING] = &state_stabilizing;
     state_list_[STATE_UNSYNCHRONIZED] = &state_unsynchronized;
     state_list_[STATE_SYNCING] = &state_syncing;
@@ -184,6 +176,13 @@ class BridgeFsm : public etl::fsm {
 
  private:
   etl::ifsm_state* state_list_[NUMBER_OF_STATES];
+  StateStabilizing state_stabilizing;
+  StateUnsynchronized state_unsynchronized;
+  StateSyncing state_syncing;
+  StateReady state_ready;
+  StateIdle state_idle;
+  StateAwaitingAck state_awaiting_ack;
+  StateFault state_fault;
 };
 
 }  // namespace fsm

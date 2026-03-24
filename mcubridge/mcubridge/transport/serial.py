@@ -303,7 +303,7 @@ class SerialTransport:
             cmd_id, seq_id, payload = Frame.parse(cobs_decode(packet_bytes))
 
             if logger.isEnabledFor(logging.DEBUG):
-                log_binary_traffic(logger, logging.DEBUG, "[SERIAL <- MCU]", "RAW", packet_bytes)
+                log_binary_traffic(logger, logging.DEBUG, "MCU -> SERIAL", "RAW", packet_bytes, sequence_id=seq_id)
 
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
             self.state.record_serial_rx(len(encoded_packet))

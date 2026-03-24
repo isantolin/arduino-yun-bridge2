@@ -88,6 +88,16 @@ BridgeClass::BridgeClass(Stream& arg_stream)
 void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
                         size_t arg_secret_len) {
   bridge::hal::init();
+
+  // [SIL-2] Hardware Safety: Pins are initialized to safe state in hal::init().
+  // Additional safety override for actuators if enabled.
+  if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
+    for (uint8_t pin = 0; pin < 20; ++pin) {
+      pinMode(pin, OUTPUT);
+      digitalWrite(pin, LOW);
+    }
+  }
+
   _fsm.begin();
   _timers.clear();
   _rx_history.clear();
@@ -109,10 +119,16 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 
 #if BRIDGE_USE_USB_SERIAL
   Serial.begin(arg_baudrate);
+  #if !defined(BRIDGE_HOST_TEST)
+  Serial.setTimeout(50);
+  #endif
 #endif
 
   if (_hardware_serial != nullptr) {
     _hardware_serial->begin(arg_baudrate);
+    #if !defined(BRIDGE_HOST_TEST)
+    _hardware_serial->setTimeout(50);
+    #endif
   }
 
   _timers.start(bridge::scheduler::TIMER_STARTUP_STABILIZATION, bridge::now_ms());
@@ -136,9 +152,19 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 #if BRIDGE_ENABLE_DATASTORE
   add_observer(DataStore);
 #endif
+#if BRIDGE_ENABLE_MAILBOX
+  add_observer(Mailbox);
+#endif
+#if BRIDGE_ENABLE_PROCESS
+  add_observer(Process);
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  add_observer(FileSystem);
+#endif
 }
 
 void BridgeClass::process() {
+  // [SIL-2] Watchdog Reset: Maintain hardware heartbeat.
 #if BRIDGE_ENABLE_WATCHDOG
   #if defined(ARDUINO_ARCH_AVR)
     wdt_reset();
@@ -862,9 +888,9 @@ void BridgeClass::_sendAckAndFlush(uint16_t command_id, uint16_t sequence_id) {
 }
 
 bool BridgeClass::_sendFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload) {
-  bool fault, unsync; BRIDGE_ATOMIC_BLOCK { fault = _fsm.isFault(); unsync = _fsm.isUnsynchronized(); }
+  bool fault, operational; BRIDGE_ATOMIC_BLOCK { fault = _fsm.isFault(); operational = _fsm.isSynchronized(); }
   if (fault) return false;
-  if (unsync && !_isHandshakeCommand(command_id)) return false;
+  if (!operational && !_isHandshakeCommand(command_id)) return false;
   if (rpc::requires_ack(command_id)) {
     if (_isQueueFull() || (_tx_pool_head + payload.size() > _tx_payload_pool.size())) return false;
     PendingTxFrame f; f.command_id = command_id; f.payload_length = static_cast<uint16_t>(payload.size()); f.buffer_offset = _tx_pool_head;

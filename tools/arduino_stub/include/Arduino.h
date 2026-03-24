@@ -163,6 +163,7 @@ public:
     virtual int read() = 0;
     virtual int peek() = 0;
     virtual void flush() = 0;
+    virtual void setTimeout(unsigned long) {}
 };
 
 extern Stream* g_arduino_stream_delegate;

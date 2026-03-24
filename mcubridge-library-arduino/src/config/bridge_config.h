@@ -33,7 +33,11 @@
 #endif
 
 #ifndef BRIDGE_ENABLE_WATCHDOG
+#if defined(BRIDGE_HOST_TEST)
+#define BRIDGE_ENABLE_WATCHDOG 0
+#else
 #define BRIDGE_ENABLE_WATCHDOG 1
+#endif
 #endif
 
 #ifndef BRIDGE_USE_USB_SERIAL
@@ -43,9 +47,9 @@
 // --- Internal Constants ---
 #ifndef BRIDGE_MAX_OBSERVERS_VAL
 #if defined(ARDUINO_ARCH_AVR)
-#define BRIDGE_MAX_OBSERVERS_VAL 2
-#else
 #define BRIDGE_MAX_OBSERVERS_VAL 4
+#else
+#define BRIDGE_MAX_OBSERVERS_VAL 8
 #endif
 #endif
 
@@ -104,6 +108,12 @@ static constexpr bool ENABLE_PROCESS = (BRIDGE_ENABLE_PROCESS != 0);
 static constexpr bool ENABLE_SPI = (BRIDGE_ENABLE_SPI != 0);
 static constexpr bool ENABLE_WATCHDOG = (BRIDGE_ENABLE_WATCHDOG != 0);
 static constexpr bool USE_USB_SERIAL = (BRIDGE_USE_USB_SERIAL != 0);
+
+// [SIL-2] If true, all digital pins will be set to OUTPUT/LOW during begin().
+#ifndef BRIDGE_SAFE_START_PINS_VAL
+#define BRIDGE_SAFE_START_PINS_VAL 1
+#endif
+static constexpr bool SAFE_START_PINS_ENABLED = (BRIDGE_SAFE_START_PINS_VAL != 0);
 
 static constexpr uint16_t MAX_OBSERVERS = BRIDGE_MAX_OBSERVERS_VAL;
 static constexpr uint16_t RX_HISTORY_SIZE = BRIDGE_RX_HISTORY_SIZE_VAL;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -285,7 +286,6 @@ class BridgeDispatcher:
         # during the handshake stabilization period.
         if route.topic != Topic.SYSTEM:
             try:
-                import asyncio
                 async with asyncio.timeout(30.0):
                     await self.state.link_sync_event.wait()
             except asyncio.TimeoutError:

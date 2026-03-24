@@ -56,7 +56,6 @@ SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
-    "${SRC_ROOT}/protocol/rpc_cobs.cpp"
     "${SRC_ROOT}/Bridge.cpp"
     "${SRC_ROOT}/services/Console.cpp"
     "${SRC_ROOT}/services/DataStore.cpp"

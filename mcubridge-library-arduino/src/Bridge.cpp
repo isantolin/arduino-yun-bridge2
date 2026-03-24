@@ -222,20 +222,13 @@ void BridgeClass::_processIncomingByte(const uint8_t byte) {
       return;
   }
 
-  switch (_cobs.state) {
-      case rpc::RxState::RECEIVING:
-          if (_cobs.bytes_received >= _cobs.buffer.size()) {
-              _cobs.state = rpc::RxState::OVERFLOW;
-              _last_parse_error = rpc::FrameError::OVERFLOW;
-          } else {
-              _cobs.buffer[_cobs.bytes_received++] = byte;
-          }
-          break;
-      case rpc::RxState::AWAITING_SYNC:
-      case rpc::RxState::OVERFLOW:
-      case rpc::RxState::FRAME_READY:
-          // Ignore bytes in these states until next delimiter
-          break;
+  if (_cobs.state == rpc::RxState::RECEIVING) {
+      if (_cobs.bytes_received >= _cobs.buffer.size()) {
+          _cobs.state = rpc::RxState::OVERFLOW;
+          _last_parse_error = rpc::FrameError::OVERFLOW;
+      } else {
+          _cobs.buffer[_cobs.bytes_received++] = byte;
+      }
   }
 }
 
@@ -823,10 +816,9 @@ bool BridgeClass::sendFrame(rpc::StatusCode status_code, uint16_t sequence_id, e
 bool BridgeClass::sendFrame(rpc::CommandId command_id, uint16_t sequence_id, etl::span<const uint8_t> payload) { return _sendFrame(rpc::to_underlying(command_id), sequence_id, payload); }
 
 void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload) {
-  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
-  size_t raw_len = _frame_builder.build(etl::span<uint8_t>(raw_buffer.data(), raw_buffer.size()), command_id, sequence_id, payload);
+  size_t raw_len = _frame_builder.build(etl::span<uint8_t>(_raw_tx_buffer.data(), _raw_tx_buffer.size()), command_id, sequence_id, payload);
   if (raw_len > 0) {
-    size_t enc_len = rpc::cobs::encode(etl::span<const uint8_t>(raw_buffer.data(), raw_len), etl::span<uint8_t>(_transient_buffer.data(), _transient_buffer.size()));
+    size_t enc_len = rpc::cobs::encode(etl::span<const uint8_t>(_raw_tx_buffer.data(), raw_len), etl::span<uint8_t>(_transient_buffer.data(), _transient_buffer.size()));
     if (enc_len > 0) { _stream.write(_transient_buffer.data(), enc_len); _stream.write(rpc::RPC_FRAME_DELIMITER); flushStream(); }
   }
 }
@@ -874,10 +866,9 @@ etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Fr
   eff.header = org.header; eff.crc = org.crc;
   if (!bitRead(org.header.command_id, kCompressedCommandBit)) { eff.payload = org.payload; return {}; }
   bitWrite(eff.header.command_id, kCompressedCommandBit, 0);
-  static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> decompression_buffer;
-  size_t decoded_len = rle::decode(org.payload, etl::span<uint8_t>(decompression_buffer.data(), decompression_buffer.size()));
+  size_t decoded_len = rle::decode(org.payload, etl::span<uint8_t>(_decompression_buffer.data(), _decompression_buffer.size()));
   if (decoded_len == 0 && org.header.payload_length > 0) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
-  eff.header.payload_length = static_cast<uint16_t>(decoded_len); eff.payload = etl::span<const uint8_t>(decompression_buffer.data(), decoded_len);
+  eff.header.payload_length = static_cast<uint16_t>(decoded_len); eff.payload = etl::span<const uint8_t>(_decompression_buffer.data(), decoded_len);
   return {};
 }
 

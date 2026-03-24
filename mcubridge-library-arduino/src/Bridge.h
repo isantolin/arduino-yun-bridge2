@@ -480,8 +480,12 @@ class BridgeClass
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
 
-  // [SIL-2] Unified buffers using ETL containers
-  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> _transient_buffer;
+  // [SIL-2] Optimized Unified buffers to save RAM and stack
+  union {
+    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> _transient_buffer;
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _decompression_buffer;
+    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _raw_tx_buffer;
+  };
 
   struct PendingTxFrame {
     uint16_t command_id;

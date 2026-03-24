@@ -37,6 +37,7 @@ ARDUINO_LIBS="${DUMMY_ARDUINO_LIBS}"
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
+PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 
 # Sources to track for coverage
 SOURCES=(
@@ -110,6 +111,7 @@ BASE_FLAGS=(
     "-I$ETL_PATH/arduino"
     "-I$WOLFSSL_PATH"
     "-I$WOLFSSL_PATH/src"
+    "-I$PACKETSERIAL_PATH"
     "-I${TEST_ROOT}/mocks"
     "-I${TEST_ROOT}/Unity"
     "-I${TEST_ROOT}/Unity/src"

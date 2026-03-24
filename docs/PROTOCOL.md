@@ -400,7 +400,7 @@ CRC32 (4 bytes, Big Endian) sobre cabecera+payload; CRC-32 IEEE 802.3 con polino
 
 | Componente | Función | Implementación MCU (Arduino/C++) | Implementación Daemon (Python) |
 | :--- | :--- | :--- | :--- |
-| **COBS** | Framing / Escaping | **Interna**: `rpc_cobs` (implementación propia COBS). | **Externa**: `cobs` (paquete PyPI) o implementación interna en `mcubridge.transport`. |
+| **COBS** | Framing / Escaping | **Interna**: `PacketSerial` (v2.2, zero-heap). | **Externa**: `cobs` (paquete PyPI). |
 | **CRC32** | Integridad | **Interna**: `etl::crc32` (ETL SIL-2 certified). | **Interna**: `binascii.crc32` (IEEE 802.3 standard). |
 | **Payload Serialization** | Codificación de payloads | **nanopb** (`pb_encode`/`pb_decode`, estático, sin heap). | **protobuf** (`google.protobuf`, bindings `mcubridge_pb2`). |
 | **Endianness** | Byte Order (header/CRC) | `__builtin_bswap16/32` o macros custom. | `struct.pack('>...')` (Big Endian standard library). |

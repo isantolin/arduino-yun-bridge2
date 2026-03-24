@@ -247,7 +247,7 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
 
   uint16_t raw_cmd = effective_frame.header.command_id;
   if (!_isSecurityCheckPassed(raw_cmd)) {
-    sendFrame(rpc::StatusCode::STATUS_ERROR, sequence_id);
+    (void)sendFrame(rpc::StatusCode::STATUS_ERROR, sequence_id);
     return;
   }
 
@@ -520,7 +520,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
   _withAck(ctx, [this, &ctx]() {
     enterSafeState();
-    sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
+    (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
   });
 }
 
@@ -730,7 +730,7 @@ void BridgeClass::enterSafeState() {
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
-  sendFrame(status_code, 0, payload);
+  (void)sendFrame(status_code, 0, payload);
   if (_status_handler.is_valid()) _status_handler(status_code, payload);
   notify_observers(MsgBridgeError{status_code});
 }

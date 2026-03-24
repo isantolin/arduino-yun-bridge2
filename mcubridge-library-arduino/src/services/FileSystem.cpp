@@ -43,20 +43,20 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<con
   // only implemented if an SD card or external flash is present.
   if (bridge::hal::hasSD()) {
     if (bridge::hal::writeFile(msg.path, data)) {
-      Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
+      (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
     } else {
-      Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+      (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
     }
   } else {
     // Graceful degradation: Report not implemented if hardware is missing.
-    Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
   }
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   // [SIL-2] Graceful degradation: Read requires SD hardware support.
   if (!bridge::hal::hasSD()) {
-    Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
     return;
   }
 
@@ -74,7 +74,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         bytes_read,
         has_more);
     if (!read_ok) {
-      Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+      (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
       return;
     }
 
@@ -99,14 +99,14 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
   if (!bridge::hal::hasSD()) {
-    Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
+    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
     return;
   }
 
   if (bridge::hal::removeFile(msg.path)) {
-    Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
+    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
   } else {
-    Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
   }
 }
 

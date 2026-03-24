@@ -146,7 +146,7 @@ void test_fsm_transitions_running() {
   TEST_ASSERT(localBridge.isSynchronized());
 
   // Send a command that requires ACK
-  localBridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
+  (void)localBridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
   TEST_ASSERT(localBridge.isAwaitingAck());
 
   // Receive ACK
@@ -185,7 +185,7 @@ void test_fsm_timeout_to_unsynchronized() {
   accessor.setAckRetryLimit(0);
 
   // Send command, wait for ACK
-  localBridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
+  (void)localBridge.sendFrame(rpc::CommandId::CMD_SET_PIN_MODE);
   TEST_ASSERT(localBridge.isAwaitingAck());
 
   // Explicitly trigger ACK timeout via accessor

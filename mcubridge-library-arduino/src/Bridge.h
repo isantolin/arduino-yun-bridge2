@@ -181,8 +181,8 @@ class BridgeClass
   bool isIdle() const { return _fsm.isIdle(); }
   bool isFault() const { return _fsm.isFault(); }
 
-  void sendXoff() { sendFrame(rpc::CommandId::CMD_XOFF, 0); }
-  void sendXon() { sendFrame(rpc::CommandId::CMD_XON, 0); }
+  void sendXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF, 0); }
+  void sendXon() { (void)sendFrame(rpc::CommandId::CMD_XON, 0); }
 
   void enterSafeState();
   void forceSafeState();

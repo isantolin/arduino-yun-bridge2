@@ -183,7 +183,6 @@ if [ ! -d "$DUMMY_LIBS/PacketSerial" ]; then
 else
     echo "[INFO] PacketSerial already present in .dummy_libs."
 fi
-fi
 
 echo "[INFO] Regenerating protocol files from spec..."
 python3 "$REPO_ROOT/tools/protocol/generate.py" \

@@ -301,9 +301,6 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
 
   const uint8_t group_idx = (raw_cmd >> 4) - 3;
   if (group_idx < (sizeof(kGroupHandlers) / sizeof(CmdHandler))) {
-    _dispatchJumpTable(ctx, (group_idx + 3) << 4, kGroupHandlers, group_idx + 1);
-    // Note: _dispatchJumpTable handles the index check, but we need to pass the right slice.
-    // Actually, it's easier to just call the handler directly since we already have the index.
 #if defined(ARDUINO_ARCH_AVR)
     CmdHandler handler;
     memcpy_P(&handler, &kGroupHandlers[group_idx], sizeof(CmdHandler));
@@ -489,15 +486,16 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
   if constexpr (bridge::config::ENABLE_SPI) {
     if (ctx.is_duplicate) return;
     rpc::payload::SpiTransfer req = {};
-    etl::span<uint8_t> decode_span(_transient_buffer.data(), _transient_buffer.size());
+    static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
+    etl::span<uint8_t> decode_span(buffer.data(), buffer.size());
     rpc::util::pb_setup_decode_span(req.data, decode_span);
     auto res = rpc::Payload::parse<rpc::payload::SpiTransfer>(*ctx.frame, req);
     if (res.has_value()) {
       if (SPIService.isInitialized()) {
         size_t len = decode_span.size();
-        if (len > 0) SPIService.transfer(_transient_buffer.data(), len);
+        if (len > 0) SPIService.transfer(buffer.data(), len);
         rpc::payload::SpiTransferResponse resp = {};
-        etl::span<const uint8_t> out_span(_transient_buffer.data(), len);
+        etl::span<const uint8_t> out_span(buffer.data(), len);
         rpc::util::pb_setup_encode_span(resp.data, out_span);
         _sendPbResponse(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
       }
@@ -833,9 +831,10 @@ bool BridgeClass::sendFrame(rpc::StatusCode status_code, uint16_t sequence_id, e
 bool BridgeClass::sendFrame(rpc::CommandId command_id, uint16_t sequence_id, etl::span<const uint8_t> payload) { return _sendFrame(rpc::to_underlying(command_id), sequence_id, payload); }
 
 void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload) {
-  size_t raw_len = _frame_builder.build(etl::span<uint8_t>(_raw_tx_buffer.data(), _raw_tx_buffer.size()), command_id, sequence_id, payload);
+  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
+  size_t raw_len = _frame_builder.build(etl::span<uint8_t>(raw_buffer.data(), raw_buffer.size()), command_id, sequence_id, payload);
   if (raw_len > 0) {
-    size_t enc_len = rpc::cobs::encode(etl::span<const uint8_t>(_raw_tx_buffer.data(), raw_len), etl::span<uint8_t>(_transient_buffer.data(), _transient_buffer.size()));
+    size_t enc_len = rpc::cobs::encode(etl::span<const uint8_t>(raw_buffer.data(), raw_len), etl::span<uint8_t>(_transient_buffer.data(), _transient_buffer.size()));
     if (enc_len > 0) { _stream.write(_transient_buffer.data(), enc_len); _stream.write(rpc::RPC_FRAME_DELIMITER); flushStream(); }
   }
 }

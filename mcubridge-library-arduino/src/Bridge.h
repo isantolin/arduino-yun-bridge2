@@ -481,10 +481,11 @@ class BridgeClass
   StatusHandler _status_handler;
 
   // [SIL-2] Optimized Unified buffers to save RAM and stack
+  // NOTE: _raw_tx_buffer removed from union because it overlaps with
+  // _transient_buffer during COBS encoding in _sendRawFrame.
   union {
     etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> _transient_buffer;
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _decompression_buffer;
-    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _raw_tx_buffer;
   };
 
   struct PendingTxFrame {

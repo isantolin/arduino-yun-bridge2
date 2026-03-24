@@ -122,7 +122,7 @@ else
         mkdir -p "$LIB_DIR/PacketSerial"
         cp -a "$ROOT_DIR/.dummy_libs/PacketSerial/src/." "$LIB_DIR/PacketSerial/"
     else
-        install_dependency "PacketSerial" "https://github.com/isantolin/PacketSerial2/archive/refs/heads/main.zip" "PacketSerial.h" "" "$LIB_DIR"
+        install_dependency "PacketSerial" "https://github.com/isantolin/PacketSerial2/archive/refs/heads/master.zip" "PacketSerial.h" "" "$LIB_DIR"
     fi
 fi
 

@@ -149,7 +149,7 @@ void init() {
     pinMode(pin, INPUT_PULLUP);
   }
 
-  if constexpr (bridge::config::BRIDGE_ENABLE_WATCHDOG) {
+  if constexpr (bridge::config::ENABLE_WATCHDOG) {
 #if defined(ARDUINO_ARCH_AVR)
     wdt_enable(WDTO_2S);
 #elif defined(ARDUINO_ARCH_ESP32)

@@ -444,7 +444,7 @@ class BridgeClass
   etl::vector<uint8_t, 32> _shared_secret;
   rpc::CobsState _cobs;
   rpc::FrameBuilder _frame_builder;
-  etl::optional<rpc::FrameError> _last_parse_error;
+  rpc::FrameError _last_parse_error;
   
   etl::bitset<bridge::NUM_FLAGS> _flags;
 

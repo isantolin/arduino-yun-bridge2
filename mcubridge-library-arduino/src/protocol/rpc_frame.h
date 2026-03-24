@@ -47,6 +47,7 @@ struct Frame {
  * @brief Parse error codes for FrameParser.
  */
 enum class FrameError {
+  NONE = 0,
   CRC_MISMATCH,
   MALFORMED,
   OVERFLOW

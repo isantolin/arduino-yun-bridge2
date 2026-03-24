@@ -115,6 +115,7 @@ else
     # ETL: We copy the whole repository to the library directory.
     install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.39.4" "include/etl/algorithm.h" "" "$LIB_DIR"
     install_dependency "wolfssl" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.7.6-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
+    install_dependency "PacketSerial2" "https://github.com/isantolin/PacketSerial2/archive/refs/heads/main.zip" "PacketSerial2.h" "" "$LIB_DIR"
 fi
 
 # 2. Nanopb (Still vendored due to custom static config)

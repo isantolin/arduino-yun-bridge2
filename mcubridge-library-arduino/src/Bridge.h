@@ -46,9 +46,10 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include <etl/observer.h>
 #include <etl/random.h>
 #include "hal/hal.h"
+
+#include <PacketSerial2.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_cobs.h"
 #include "protocol/rpc_structs.h"
 #include "util/pb_copy.h"
 
@@ -82,12 +83,6 @@ enum FlagId : uint8_t {
 
 namespace config {
 
-#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
-static constexpr uint16_t WATCHDOG_TIMEOUT_VAL = WDTO_2S;
-#elif (defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)) && BRIDGE_ENABLE_WATCHDOG
-static constexpr uint32_t WATCHDOG_TIMEOUT_MS = 2000UL;
-#endif
-
 #ifdef BRIDGE_FIRMWARE_VERSION_MAJOR
 static constexpr uint8_t FIRMWARE_VERSION_MAJOR = BRIDGE_FIRMWARE_VERSION_MAJOR;
 #else
@@ -112,18 +107,6 @@ static constexpr bool IS_AVR = true;
 static constexpr bool IS_AVR = false;
 #endif
 
-#if defined(ARDUINO_ARCH_ESP32)
-static constexpr bool IS_ESP32 = true;
-#else
-static constexpr bool IS_ESP32 = false;
-#endif
-
-#if defined(ARDUINO_ARCH_ESP8266)
-static constexpr bool IS_ESP8266 = true;
-#else
-static constexpr bool IS_ESP8266 = false;
-#endif
-
 }  // namespace config
 }  // namespace bridge
 
@@ -139,21 +122,6 @@ static constexpr bool IS_ESP8266 = false;
 #endif
 
 #include "protocol/BridgeEvents.h"
-
-namespace rpc {
-enum class RxState : uint8_t {
-  AWAITING_SYNC,  ///< Searching for 0x00 delimiter
-  RECEIVING,      ///< Collecting COBS encoded data
-  FRAME_READY,    ///< Frame complete, awaiting processing
-  OVERFLOW        ///< Buffer limit exceeded, seeking next sync
-};
-
-struct CobsState {
-  RxState state;
-  uint16_t bytes_received;
-  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> buffer;
-};
-}
 
 class BridgeClass
     : public bridge::router::ICommandHandler,
@@ -291,6 +259,9 @@ class BridgeClass
   void onSpiCommand(const bridge::router::CommandContext& ctx) override;
   void onUnknownCommand(const bridge::router::CommandContext& ctx) override;
 
+  // PacketSerial2 callback
+  void _onPacketReceived(etl::span<const uint8_t> packet);
+
  private:
   void _handleStatusAck(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
@@ -346,8 +317,7 @@ class BridgeClass
   bool _isRecentDuplicateRx(const rpc::Frame& frame) const;
   void _dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id);
   void _sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);
-  void _processIncomingByte(uint8_t byte);
-  void _handleReceivedFrame();
+  void _handleReceivedFrame(etl::span<const uint8_t> decoded_payload);
   etl::expected<void, rpc::FrameError> _decompressFrame(const rpc::Frame& original, rpc::Frame& effective) const;
   bool _isHandshakeCommand(uint16_t command_id) const;
   bool _isSecurityCheckPassed(uint16_t command_id) const;
@@ -442,7 +412,8 @@ class BridgeClass
   Stream& _stream;
   HardwareSerial* _hardware_serial;
   etl::vector<uint8_t, 32> _shared_secret;
-  rpc::CobsState _cobs;
+  
+  PacketSerial2<COBS> _packet_serial;
   rpc::FrameBuilder _frame_builder;
   rpc::FrameError _last_parse_error;
   
@@ -481,8 +452,6 @@ class BridgeClass
   StatusHandler _status_handler;
 
   // [SIL-2] Optimized Unified buffers to save RAM and stack
-  // NOTE: _raw_tx_buffer removed from union because it overlaps with
-  // _transient_buffer during COBS encoding in _sendRawFrame.
   union {
     etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> _transient_buffer;
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _decompression_buffer;

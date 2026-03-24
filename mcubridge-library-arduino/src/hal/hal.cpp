@@ -127,7 +127,7 @@ bool ensure_host_parent_directories(const PathString& full_path) {
 #endif
 }
 
-bool isValidPin(uint8_t pin) {
+bool isValidPin(const uint8_t pin) {
   return pin < DIGITAL_PINS;
 }
 
@@ -149,16 +149,18 @@ void init() {
     pinMode(pin, INPUT_PULLUP);
   }
 
-#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
-  wdt_enable(WDTO_2S);
-#elif defined(ARDUINO_ARCH_ESP32) && BRIDGE_ENABLE_WATCHDOG
-  esp_task_wdt_init(2, true);
-  esp_task_wdt_add(NULL);
-#elif defined(ARDUINO_ARCH_ESP8266) && BRIDGE_ENABLE_WATCHDOG
-  ESP.wdtEnable(2000);
-#elif defined(ARDUINO_ARCH_SAMD) && BRIDGE_ENABLE_WATCHDOG
-  // SAMD WDT initialization is usually board-specific; ensure generic safety.
+  if constexpr (bridge::config::BRIDGE_ENABLE_WATCHDOG) {
+#if defined(ARDUINO_ARCH_AVR)
+    wdt_enable(WDTO_2S);
+#elif defined(ARDUINO_ARCH_ESP32)
+    esp_task_wdt_init(2, true);
+    esp_task_wdt_add(NULL);
+#elif defined(ARDUINO_ARCH_ESP8266)
+    ESP.wdtEnable(2000);
+#elif defined(ARDUINO_ARCH_SAMD)
+    // SAMD WDT initialization is usually board-specific; ensure generic safety.
 #endif
+  }
 }
 
 bool hasSD() {

@@ -348,7 +348,7 @@ class BridgeClass
   void _sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);
   void _processIncomingByte(uint8_t byte);
   void _handleReceivedFrame();
-  etl::expected<void, rpc::FrameError> _decompressFrame(const rpc::Frame& original, rpc::Frame& effective);
+  etl::expected<void, rpc::FrameError> _decompressFrame(const rpc::Frame& original, rpc::Frame& effective) const;
   bool _isHandshakeCommand(uint16_t command_id) const;
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   bool _sendFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);

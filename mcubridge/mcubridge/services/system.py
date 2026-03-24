@@ -105,6 +105,7 @@ class SystemComponent(BaseComponent):
         match identifier:
             case SystemAction.BOOTLOADER:
                 packet = EnterBootloaderPacket(magic=0xDEADC0DE)
+                logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
                 return await self.ctx.send_frame(Command.CMD_ENTER_BOOTLOADER.value, packet.encode())
 
             case SystemAction.FREE_MEMORY:

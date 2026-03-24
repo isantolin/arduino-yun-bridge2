@@ -109,6 +109,7 @@ BASE_FLAGS=(
     -I"$ETL_PATH/arduino"
     -I"$WOLFSSL_PATH"
     -I"$PACKETSERIAL_PATH"
+    -I"$PACKETSERIAL_PATH/src"
 )
 
 # Compile common sources to objects in parallel

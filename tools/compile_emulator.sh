@@ -64,6 +64,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
+    -I"${PACKETSERIAL_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \
@@ -96,6 +97,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
+    -I"${PACKETSERIAL_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
     "${SRC_DIR}/nanopb/pb_common.c" \
     "${SRC_DIR}/nanopb/pb_encode.c" \

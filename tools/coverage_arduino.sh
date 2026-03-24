@@ -111,6 +111,7 @@ BASE_FLAGS=(
     "-I$WOLFSSL_PATH"
     "-I$WOLFSSL_PATH/src"
     "-I$PACKETSERIAL_PATH"
+    "-I$PACKETSERIAL_PATH/src"
     "-I${TEST_ROOT}/mocks"
     "-I${TEST_ROOT}/Unity"
     "-I${TEST_ROOT}/Unity/src"

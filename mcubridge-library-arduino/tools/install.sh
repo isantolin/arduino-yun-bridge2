@@ -120,10 +120,12 @@ else
     if [ -d "$ROOT_DIR/.dummy_libs/PacketSerial" ]; then
         echo "[INFO] Using local PacketSerial from .dummy_libs..."
         mkdir -p "$LIB_DIR/PacketSerial"
-        cp -a "$ROOT_DIR/.dummy_libs/PacketSerial/src/." "$LIB_DIR/PacketSerial/"
+        cp -a "$ROOT_DIR/.dummy_libs/PacketSerial/." "$LIB_DIR/PacketSerial/"
     else
         install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "PacketSerial.h" "" "$LIB_DIR"
     fi
+    echo "[DEBUG] Content of $LIB_DIR/PacketSerial:"
+    ls -R "$LIB_DIR/PacketSerial"
 fi
 
 # 2. Nanopb (Still vendored due to custom static config)

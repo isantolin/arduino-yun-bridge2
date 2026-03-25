@@ -28,6 +28,10 @@ PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 # Use the python from the current environment (e.g. tox virtualenv)
 PYTHON_CMD=$(command -v python || command -v python3)
 
+echo "[emulator] Verifying library paths..."
+ls -la "${PACKETSERIAL_PATH}" || echo "PACKETSERIAL_PATH not found"
+ls -la "${PACKETSERIAL_PATH}/src" || echo "PACKETSERIAL_PATH/src not found"
+
 echo "[emulator] Generating protocol bindings..."
 if ! ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/spec.toml" \

@@ -360,11 +360,13 @@ while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
 done
 [ $SUCCESS -ne 1 ] && exit 1
 
-# Install Feeds & Manage Conflicts
-echo "[INFO] Installing feeds..."
-./scripts/feeds install -a
+# [FIX] SIL-2: Install ONLY required packages to avoid recursive dependency hell 
+# in unrelated packages like bigclown, nginx, asterisk, etc.
+echo "[INFO] Installing required packages and their dependencies..."
+./scripts/feeds install mcubridge luci-app-mcubridge
 
 # [FIX] Patch python-uci to include setuptools build dependency (Critical for Python 3.13+)
+# ... (rest of patches) ...
 PYTHON_UCI_MAKEFILE="package/feeds/packages/python-uci/Makefile"
 if [ -f "$PYTHON_UCI_MAKEFILE" ]; then
     echo "[FIX] Patching python-uci build dependencies in $PYTHON_UCI_MAKEFILE..."
@@ -458,8 +460,11 @@ fi
 # Enable Packages
 REQUIRED_PKGS="mcubridge luci-app-mcubridge"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
-# Se ELIMINÓ python3-twisted porque prometheus_client ha sido optimizado para no usarlo.
 REQUIRED_DEPS="python3-paho-mqtt python3-aiomqtt python3-tenacity mosquitto-client luaposix"
+
+# [FIX] Forzar limpieza total de metadatos de configuración para evitar errores de recursión
+# heredados de escaneos previos del SDK.
+rm -rf tmp/ .config*
 
 for pkg in $REQUIRED_PKGS $REQUIRED_DEPS; do
     if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then
@@ -476,23 +481,24 @@ find "$BIN_DIR" -type f -name '*.apk' -delete
 cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 
 # [FIX] Orden de compilación: Primero librerías críticas (extraídas dinámicamente)
-LIBS=$(python3 "$REPO_ROOT/tools/sync_runtime_deps.py" --print-openwrt | grep -vE "^(python3|python3-uci|mosquitto-client|xxd)$" | tr '\n' ' ')
+LIBS=$(python3 "$REPO_ROOT/tools/sync_runtime_deps.py" --print-openwrt | grep -vE "^(python3|python3-uci|mosquitto-client|xxd)$" | xargs)
 echo "[BUILD] Building libraries: $LIBS..."
-# Build all libraries in parallel with as many jobs as cores. V=s is omitted to allow parallel output.
-make -j$(nproc) $(echo "$LIBS" | sed "s| | package/feeds/mcubridge/|g; s|^|package/feeds/mcubridge/|; s|$|/compile|")
 
-# [FIX] Copiar artefactos .apk de librerías
+# Build all libraries in parallel with as many jobs as cores.
 for lib in $LIBS; do
+    echo "[BUILD] Building library $lib (.apk)..."
+    make "package/feeds/mcubridge/$lib/compile" -j$(nproc)
+    
+    # [FIX] Copiar artefactos .apk de librerías
     find bin/packages/ -name "$lib*.apk" -exec cp {} "$BIN_DIR/" \;
 done
 
 # Luego paquetes principales
 for pkg in luci-app-mcubridge mcubridge; do
     echo "[BUILD] Building package $pkg (.apk)..."
-    make package/$pkg/clean V=s || true
-    make package/$pkg/compile -j$(nproc)
+    make "package/$pkg/compile" -j$(nproc)
 
-    # [FIX] Copiar artefactos .apk (Patrón corregido para formato APK: nombre-ver-rel.apk)
+    # [FIX] Copiar artefactos .apk
     find bin/packages/ -name "$pkg*.apk" -exec cp {} "$BIN_DIR/" \;
 done
 cd "$REPO_ROOT" || exit 1

@@ -98,8 +98,7 @@
 #endif
 #endif
 
-namespace bridge {
-namespace config {
+namespace bridge::config {
 
 static constexpr bool ENABLE_DATASTORE = (BRIDGE_ENABLE_DATASTORE != 0);
 static constexpr bool ENABLE_FILESYSTEM = (BRIDGE_ENABLE_FILESYSTEM != 0);
@@ -145,5 +144,4 @@ static constexpr uint8_t FALLBACK_MAX_PIN = 32U;
 static constexpr uint16_t FALLBACK_FREE_MEMORY = 1024U;
 static constexpr uint32_t CAPABILITIES_FEAT_EXTENDED = 0x01U;
 
-}  // namespace config
-}  // namespace bridge
+}  // namespace bridge::config

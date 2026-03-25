@@ -17,8 +17,7 @@
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 
-namespace bridge {
-namespace router {
+namespace bridge::router {
 
 /**
  * @brief Command Message - Carries an RPC frame with metadata.
@@ -54,7 +53,6 @@ class ICommandHandler {
   virtual void onUnknownCommand(const CommandContext& ctx) = 0;
 };
 
-}  // namespace router
-}  // namespace bridge
+}  // namespace bridge::router
 
 #endif  // COMMAND_ROUTER_H

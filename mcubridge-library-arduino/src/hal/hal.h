@@ -13,8 +13,7 @@
 
 #include <etl/string_view.h>
 
-namespace bridge {
-namespace hal {
+namespace bridge::hal {
 
 /**
  * @brief Get the amount of free RAM available.
@@ -75,8 +74,7 @@ uint8_t getArchId();
  */
 void getPinCounts(uint8_t& digital, uint8_t& analog);
 
-}  // namespace hal
-}  // namespace bridge
+}  // namespace bridge::hal
 
 // [SIL-2] Atomic Block Abstraction
 #if defined(ARDUINO_ARCH_AVR)

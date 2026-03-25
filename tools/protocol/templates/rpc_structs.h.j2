@@ -21,9 +21,7 @@
 #include "nanopb/pb_encode.h"
 #include "mcubridge.pb.h"
 
-namespace rpc {
-
-namespace payload {
+namespace rpc::payload {
 
 // Aliases for cleaner code, mapping rpc::payload::Names to mcubridge_Names
 using VersionResponse = mcubridge_VersionResponse;
@@ -61,9 +59,9 @@ using SpiTransfer = mcubridge_SpiTransfer;
 using SpiTransferResponse = mcubridge_SpiTransferResponse;
 using SpiConfig = mcubridge_SpiConfig;
 
-} // namespace payload
+} // namespace rpc::payload
 
-namespace Payload {
+namespace rpc::Payload {
 
 // Map types to their nanopb field descriptors
 template <typename T> struct Descriptor;
@@ -117,8 +115,6 @@ inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame, T msg = 
     return etl::expected<T, rpc::FrameError>(msg);
 }
 
-} // namespace Payload
-
-} // namespace rpc
+} // namespace rpc::Payload
 
 #endif // RPC_STRUCTS_H

@@ -27,8 +27,7 @@ extern "C" {
 #include <Arduino.h>
 #endif
 
-namespace bridge {
-namespace hal {
+namespace bridge::hal {
 
 namespace {
 // [SIL-2] Use constexpr for compile-time architecture identification
@@ -154,7 +153,7 @@ void init() {
     wdt_enable(WDTO_2S);
 #elif defined(ARDUINO_ARCH_ESP32)
     esp_task_wdt_init(2, true);
-    esp_task_wdt_add(NULL);
+    esp_task_wdt_add(nullptr);
 #elif defined(ARDUINO_ARCH_ESP8266)
     ESP.wdtEnable(2000);
 #elif defined(ARDUINO_ARCH_SAMD)
@@ -295,6 +294,5 @@ uint8_t getArchId() {
   return CURRENT_ARCH;
 }
 
-}  // namespace hal
-}  // namespace bridge
+}  // namespace bridge::hal
 

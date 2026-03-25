@@ -23,8 +23,7 @@
 #include <etl/array.h>
 #include <etl/bitset.h>
 
-namespace bridge {
-namespace fsm {
+namespace bridge::fsm {
 
 class BridgeFsm;
 
@@ -185,9 +184,9 @@ class BridgeFsm : public etl::fsm {
   StateFault state_fault;
 };
 
-}  // namespace fsm
+}  // namespace bridge::fsm
 
-namespace scheduler {
+namespace bridge::scheduler {
 enum TimerId : uint8_t {
   TIMER_ACK_TIMEOUT = 0,
   TIMER_RX_DEDUPE = 1,
@@ -250,7 +249,6 @@ struct SimpleTimer {
   }
 };
 
-}  // namespace scheduler
-}  // namespace bridge
+}  // namespace bridge::scheduler
 
 #endif  // BRIDGE_FSM_H

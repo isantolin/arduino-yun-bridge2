@@ -11,8 +11,7 @@
 #include <etl/span.h>
 #include <etl/algorithm.h>
 
-namespace bridge {
-namespace logging {
+namespace bridge::logging {
 
 /**
  * @brief Logs binary data in standardized [DE AD BE EF] format to a stream.
@@ -50,7 +49,6 @@ inline void log_traffic(Print& stream, const char* direction, const char* label,
   stream.println();
 }
 
-}  // namespace logging
-}  // namespace bridge
+}  // namespace bridge::logging
 
 #endif  // BRIDGE_LOGGING_H

@@ -296,8 +296,29 @@ if [ ! -d "$SDK_DIR" ]; then
     [ $SUCCESS -ne 1 ] && { echo "[FATAL] Failed to download and extract OpenWrt SDK after $MAX_RETRIES attempts."; exit 1; }
 fi
 
-# Bootstrap build deps inside SDK
-bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "hatchling" "hatchling==1.18.0"
+# [FIX] Leverage host system build tools to avoid slow SDK-internal host-builds
+bootstrap_python_module_into_prefix() {
+    local python_bin="$1"
+    local prefix_dir="$2"
+    local module_name="$3"
+    local pip_spec="$4"
+
+    echo "[INFO] Bootstrapping $pip_spec in SDK..."
+    "$python_bin" -m pip install --no-cache-dir --prefix "$prefix_dir" "$pip_spec" || {
+        echo "[WARN] Could not bootstrap $module_name via pip, attempting symlink from host..."
+        # Fallback: find host's version and symlink it (Aero-resilient fallback)
+        local host_path=$(python3 -c "import $module_name; print($module_name.__file__)" 2>/dev/null | sed 's/__init__.py//')
+        if [ -n "$host_path" ]; then
+            mkdir -p "$prefix_dir/lib/python3.13/site-packages"
+            ln -sf "$host_path" "$prefix_dir/lib/python3.13/site-packages/"
+        fi
+    }
+}
+
+# Bootstrap critical build tools
+bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "hatchling" "hatchling>=1.18.0"
+bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "maturin" "maturin>=1.4.0"
+bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "Cython" "Cython>=3.0.0"
 
 # [FIX] Force bootstrap maturin for cryptography
 if [ -x "$SDK_DIR/staging_dir/hostpkg/bin/python3" ]; then
@@ -379,6 +400,45 @@ done
 # in unrelated packages like bigclown, nginx, asterisk, etc.
 echo "[INFO] Installing required packages and their dependencies..."
 ./scripts/feeds install mcubridge luci-app-mcubridge
+
+# ==============================================================================
+# [FIX CRITICO] Breaking Kconfig Recursive Dependencies (SDK 25.12.0)
+# ==============================================================================
+echo "[FIX] Breaking Kconfig recursive dependencies..."
+
+# 1. Break libcurl <-> LIBCURL_LDAP recursion via Makefile patch (Nuclear Option)
+LIBCURL_MAKEFILE="feeds/packages/net/curl/Makefile"
+if [ -f "$LIBCURL_MAKEFILE" ]; then
+    echo "[FIX] Removing LDAP from libcurl Makefile..."
+    sed -i 's/+LIBCURL_LDAP:libopenldap//g' "$LIBCURL_MAKEFILE"
+fi
+
+# 2. Total Purge to avoid duplicate definitions (python3-click, etc)
+echo "[INFO] Purging SDK metadata and redundant feeds..."
+rm -rf tmp/ feeds/*.index .config*
+# Remove ONLY the problematic symlinks in package/feeds to force fresh install
+rm -rf package/feeds/*
+
+# 3. Re-install only the essential feeds to minimize Kconfig surface
+echo "[INFO] Re-installing essential feeds..."
+./scripts/feeds update -a
+
+# [FIX] Remove duplicate/problematic upstream packages to avoid recursion
+echo "[FIX] Removing duplicate upstream packages (click, paho-mqtt, etc)..."
+rm -rf feeds/packages/lang/python/python-click
+rm -rf feeds/packages/lang/python/python-click-log
+rm -rf feeds/packages/lang/python/python-paho-mqtt
+rm -rf feeds/packages/lang/python/python-psutil
+rm -rf feeds/packages/lang/python/python-cryptography
+
+./scripts/feeds install mcubridge luci-app-mcubridge
+
+# 4. Break python3-click self-selection if it reappeared
+CLICK_MAKEFILE="package/feeds/mcubridge/python3-click/Makefile"
+if [ -f "$CLICK_MAKEFILE" ]; then
+    sed -i 's/select PACKAGE_python3-click//g' "$CLICK_MAKEFILE"
+fi
+# ==============================================================================
 
 # [FIX] Patch python-uci to include setuptools build dependency (Critical for Python 3.13+)
 # ... (rest of patches) ...

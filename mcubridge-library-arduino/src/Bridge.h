@@ -83,6 +83,8 @@ enum FlagId : uint8_t {
   NUM_FLAGS = 2
 };
 
+}  // namespace bridge
+
 namespace bridge::config {
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -92,8 +94,6 @@ inline constexpr bool IS_AVR = false;
 #endif
 
 }  // namespace bridge::config
-
-}  // namespace bridge
 
 // [SIL-2] Serial Port Selection logic
 #if defined(BRIDGE_FORCE_SERIAL0) || defined(BRIDGE_EMULATION)

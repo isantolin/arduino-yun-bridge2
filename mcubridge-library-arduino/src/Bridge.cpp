@@ -479,9 +479,9 @@ void BridgeClass::_handleEnterBootloader(const bridge::router::CommandContext& c
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this, &ctx]() {
     rpc::payload::VersionResponse resp = {};
-    resp.major = bridge::config::FIRMWARE_VERSION_MAJOR;
-    resp.minor = bridge::config::FIRMWARE_VERSION_MINOR;
-    resp.patch = bridge::config::FIRMWARE_VERSION_PATCH;
+    resp.major = rpc::FIRMWARE_VERSION_MAJOR;
+    resp.minor = rpc::FIRMWARE_VERSION_MINOR;
+    resp.patch = rpc::FIRMWARE_VERSION_PATCH;
     _sendPbResponse(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp);
   });
 }

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
@@ -16,6 +17,7 @@ app = typer.Typer(help="Generate derived dependency files from the runtime manif
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
 REQUIREMENTS_PATH = ROOT / "requirements" / "runtime.txt"
+PYPROJECT_PATH = ROOT / "pyproject.toml"
 MAKEFILE_PATH = ROOT / "mcubridge" / "Makefile"
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
 BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
@@ -87,6 +89,34 @@ def write_requirements(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
     return True
 
 
+def update_pyproject(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
+    if not PYPROJECT_PATH.exists():
+        return False
+    
+    # Collect only runtime dependencies for project.dependencies
+    runtime_pip_specs = sorted([
+        dep["pip"] for dep in deps 
+        if dep.get("pip") and dep["name"] not in BUILD_ONLY_PACKAGES 
+        and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES)
+    ])
+    
+    content = PYPROJECT_PATH.read_text(encoding="utf-8")
+    
+    # Find dependencies list
+    pattern = r'dependencies = \[\s*([\s\S]*?)\s*\]'
+    
+    formatted_deps = "dependencies = [\n" + ",\n".join(f'    "{s}"' for s in runtime_pip_specs) + "\n]"
+    
+    new_content = re.sub(pattern, formatted_deps, content, count=1)
+    
+    if new_content == content:
+        return False
+        
+    if not dry_run:
+        PYPROJECT_PATH.write_text(new_content, encoding="utf-8")
+    return True
+
+
 def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
     lines: list[str] = []
     for index, token in enumerate(tokens):
@@ -149,8 +179,9 @@ def main(
 
     updated_requirements = write_requirements(deps, dry_run=check)
     updated_makefile = update_makefile(deps, dry_run=check)
+    updated_pyproject = update_pyproject(deps, dry_run=check)
 
-    if check and (updated_requirements or updated_makefile):
+    if check and (updated_requirements or updated_makefile or updated_pyproject):
         raise typer.Exit(code=1)
 
 

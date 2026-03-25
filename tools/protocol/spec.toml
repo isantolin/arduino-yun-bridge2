@@ -74,6 +74,39 @@ samd = 4
 sam = 5
 rp2040 = 6
 
+[hardware]
+max_observers_avr = 4
+max_observers_other = 8
+rx_history_size = 1
+rx_buffer_size_avr = 32
+rx_buffer_size_other = 128
+max_pending_tx_frames_avr = 1
+max_pending_tx_frames_other = 2
+console_rx_buffer_size_avr = 4
+console_rx_buffer_size_other = 64
+console_tx_buffer_size_avr = 4
+console_tx_buffer_size_other = 60
+mailbox_rx_buffer_size_avr = 4
+mailbox_rx_buffer_size_other = 128
+max_pending_datastore = 1
+max_pending_process_polls = 1
+file_large_warning_bytes = 1048576
+startup_drain_per_tick = 64
+startup_drain_final = 256
+startup_stabilization_ms = 50
+baudrate_settle_ms = 50
+max_consecutive_crc_errors = 5
+rx_dedupe_interval_ms = 1000
+hkdf_key_length = 32
+key_and_digest_buffer_size = 64
+avr_digital_pins = 14
+avr_analog_pins = 6
+samd_digital_pins = 20
+samd_analog_pins = 8
+fallback_max_pin = 32
+fallback_free_memory = 1024
+capabilities_feat_extended = 1
+
 [handshake]
 nonce_length = 16
 tag_length = 16

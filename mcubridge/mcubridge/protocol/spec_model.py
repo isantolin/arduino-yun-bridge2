@@ -38,6 +38,7 @@ class StatusDef(msgspec.Struct, frozen=True):
 
 class RawProtocolData(msgspec.Struct):
     constants: dict[str, Any]
+    hardware: dict[str, Any]
     commands: list[dict[str, Any]]
     statuses: list[dict[str, Any]]
     handshake: dict[str, Any]
@@ -53,6 +54,7 @@ class ProtocolSpec(msgspec.Struct):
     """Root model of the parsed spec.toml."""
 
     constants: dict[str, Any]
+    hardware: dict[str, Any]
     commands: list[CommandDef]
     statuses: list[StatusDef]
     handshake: dict[str, Any]
@@ -76,6 +78,7 @@ class ProtocolSpec(msgspec.Struct):
 
         return cls(
             constants=raw.constants,
+            hardware=raw.hardware,
             commands=cmds,
             statuses=statuses,
             handshake=raw.handshake,

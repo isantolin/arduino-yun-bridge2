@@ -475,8 +475,8 @@ find "$BIN_DIR" -type f -name '*.apk' -delete
 # [FIX] Asegurar que estamos en el SDK antes de compilar
 cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 
-# [FIX] Orden de compilación: Primero librerías críticas
-LIBS="python3-paho-mqtt python3-aiomqtt python3-tenacity python3-cobs python3-msgspec python3-prometheus-client python3-pyserial-asyncio-fast python3-psutil python3-uvloop python3-cryptography"
+# [FIX] Orden de compilación: Primero librerías críticas (extraídas dinámicamente)
+LIBS=$(python3 "$REPO_ROOT/tools/sync_runtime_deps.py" --print-openwrt | grep -vE "^(python3|python3-uci|mosquitto-client|xxd)$" | tr '\n' ' ')
 echo "[BUILD] Building libraries: $LIBS..."
 # Build all libraries in parallel with as many jobs as cores. V=s is omitted to allow parallel output.
 make -j$(nproc) $(echo "$LIBS" | sed "s| | package/feeds/mcubridge/|g; s|^|package/feeds/mcubridge/|; s|$|/compile|")

@@ -83,26 +83,7 @@ enum FlagId : uint8_t {
   NUM_FLAGS = 2
 };
 
-namespace config {
-
-#ifdef BRIDGE_FIRMWARE_VERSION_MAJOR
-inline constexpr uint8_t FIRMWARE_VERSION_MAJOR = BRIDGE_FIRMWARE_VERSION_MAJOR;
-#else
-inline constexpr uint8_t FIRMWARE_VERSION_MAJOR = 2;
-#endif
-
-#ifdef BRIDGE_FIRMWARE_VERSION_MINOR
-inline constexpr uint8_t FIRMWARE_VERSION_MINOR = BRIDGE_FIRMWARE_VERSION_MINOR;
-#else
-inline constexpr uint8_t FIRMWARE_VERSION_MINOR = 8;
-#endif
-
-#ifdef BRIDGE_FIRMWARE_VERSION_PATCH
-inline constexpr uint8_t FIRMWARE_VERSION_PATCH = BRIDGE_FIRMWARE_VERSION_PATCH;
-#else
-inline constexpr uint8_t FIRMWARE_VERSION_PATCH = 4;
-#endif
-
+namespace bridge::config {
 
 #if defined(ARDUINO_ARCH_AVR)
 inline constexpr bool IS_AVR = true;
@@ -110,7 +91,8 @@ inline constexpr bool IS_AVR = true;
 inline constexpr bool IS_AVR = false;
 #endif
 
-}  // namespace config
+}  // namespace bridge::config
+
 }  // namespace bridge
 
 // [SIL-2] Serial Port Selection logic

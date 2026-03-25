@@ -13,28 +13,28 @@
 namespace rpc {
 
 {% for const in constants -%}
-constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits }};
+inline constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits }}{{ 'UL' if const.type == 'unsigned long' else 'U' if const.type.startswith('uint') or const.type.startswith('unsigned') else '' }};
 {% endfor %}
 {% for const in handshake_constants -%}
-constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits }};
+inline constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits }}{{ 'UL' if const.type == 'unsigned long' else 'U' if const.type.startswith('uint') or const.type.startswith('unsigned') else '' }};
 {% endfor %}
-constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;
+inline constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7U;
 
 {% if handshake.hkdf_salt -%}
-constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = { {{ handshake.hkdf_salt_bytes }} };
-constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {{ handshake.hkdf_salt_len }};
+inline constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = { {{ handshake.hkdf_salt_bytes }} };
+inline constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {{ handshake.hkdf_salt_len }}U;
 {%- endif %}
 
 {% if handshake.hkdf_info_auth -%}
-constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = { {{ handshake.hkdf_info_auth_bytes }} };
-constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {{ handshake.hkdf_info_auth_len }};
+inline constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = { {{ handshake.hkdf_info_auth_bytes }} };
+inline constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {{ handshake.hkdf_info_auth_len }}U;
 {%- endif %}
 
 {% for cap, val in capabilities.items() -%}
-constexpr uint32_t RPC_CAPABILITY_{{ cap|upper }} = {{ val }};
+inline constexpr uint32_t RPC_CAPABILITY_{{ cap|upper }} = {{ val }}U;
 {% endfor %}
 {% for arch, val in architectures.items() -%}
-constexpr uint8_t RPC_ARCH_{{ arch|upper }} = {{ val }};
+inline constexpr uint8_t RPC_ARCH_{{ arch|upper }} = {{ val }}U;
 {% endfor %}
 enum class CompressionType : uint8_t {
     COMPRESSION_NONE = 0,

@@ -54,7 +54,7 @@ test_bridge_components
 test_bridge_core
 test_bridge_refactor
 *.txt
-!requirements/runtime.txt
+requirements/runtime.txt
 PHASE_3_REPORT.md
 .gemini/
 gha-creds-*.json
@@ -67,6 +67,7 @@ test_protocol_bin
 # Auto-generated Protocol bindings
 mcubridge/mcubridge/protocol/protocol.py
 mcubridge-library-arduino/src/protocol/rpc_protocol.h
+mcubridge-library-arduino/src/protocol/rpc_hw_config.h
 mcubridge-library-arduino/src/protocol/rpc_structs.h
 mcubridge-library-arduino/src/etl
 mcubridge-library-arduino/src/nanopb

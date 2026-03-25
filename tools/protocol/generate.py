@@ -12,6 +12,11 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import re
+import shutil
+import subprocess
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated, Optional
 
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
@@ -30,15 +35,10 @@ if MISSING_DEPS:
     sys.exit(1)
 # ═════════════════════════════════════════════════════════════════════════════
 
-from pathlib import Path  # noqa: E402
-from typing import TYPE_CHECKING, Annotated, Optional  # noqa: E402
+import typer
+from jinja2 import Environment, FileSystemLoader
 
-import typer  # noqa: E402
-from jinja2 import Environment, FileSystemLoader  # noqa: E402
-
-# Load ProtocolSpec directly from spec_model.py via importlib.util to avoid
-# triggering the protocol package __init__.py, which eagerly imports the
-# generated protocol.py module — the very file this generator creates.
+# Load ProtocolSpec directly from spec_model.py via importlib.util
 if TYPE_CHECKING:
     from mcubridge.protocol.spec_model import ProtocolSpec
 else:
@@ -54,12 +54,9 @@ else:
 
 app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
 
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 TEMPLATE_DIR = Path(__file__).parent / "templates"
-
-
-# =============================================================================
-# 2. Generators: The Logic
-# =============================================================================
+VERSION_PATH = REPO_ROOT / "VERSION"
 
 
 class JinjaGenerator:
@@ -83,12 +80,17 @@ class JinjaGenerator:
         result = "'".join(reversed(parts))
         return f"-{result}" if value < 0 else result
 
-    def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path) -> None:
+    def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path, version: str) -> None:
         template = self.env.get_template("rpc_protocol.h.j2")
+
+        v_major, v_minor, v_patch = map(int, version.split("."))
 
         c = spec.constants
         constants = [
             {"name": "PROTOCOL_VERSION", "type": "uint8_t", "value": c["protocol_version"]},
+            {"name": "FIRMWARE_VERSION_MAJOR", "type": "uint8_t", "value": v_major},
+            {"name": "FIRMWARE_VERSION_MINOR", "type": "uint8_t", "value": v_minor},
+            {"name": "FIRMWARE_VERSION_PATCH", "type": "uint8_t", "value": v_patch},
             {"name": "RPC_DEFAULT_BAUDRATE", "type": "unsigned long", "value": c["default_baudrate"]},
             {"name": "MAX_PAYLOAD_SIZE", "type": "size_t", "value": c["max_payload_size"]},
             {
@@ -227,6 +229,11 @@ class JinjaGenerator:
     def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("rpc_structs.h.j2")
         render = template.render()
+        out_path.write_text(render, encoding="utf-8")
+
+    def generate_cpp_hw_config(self, spec: ProtocolSpec, out_path: Path) -> None:
+        template = self.env.get_template("rpc_hw_config.h.j2")
+        render = template.render(hardware=spec.hardware)
         out_path.write_text(render, encoding="utf-8")
 
     def generate_python(self, spec: ProtocolSpec, out_path: Path) -> None:
@@ -442,6 +449,39 @@ class JinjaGenerator:
         out_path.write_text(render, encoding="utf-8")
 
 
+def read_version() -> str:
+    if not VERSION_PATH.exists():
+        sys.stderr.write(f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n")
+        return "0.0.0"
+    return VERSION_PATH.read_text(encoding="utf-8").strip()
+
+
+def update_metadata(version: str):
+    # 1. pyproject.toml
+    pyproj = REPO_ROOT / "pyproject.toml"
+    if pyproj.exists():
+        content = pyproj.read_text(encoding="utf-8")
+        content = re.sub(r'version\s*=\s*"[^"]+"', f'version = "{version}"', content, count=1)
+        pyproj.write_text(content, encoding="utf-8")
+        sys.stderr.write(f"Updated {pyproj} to version {version}\n")
+
+    # 2. mcubridge/Makefile
+    makefile = REPO_ROOT / "mcubridge" / "Makefile"
+    if makefile.exists():
+        content = makefile.read_text(encoding="utf-8")
+        content = re.sub(r'PKG_VERSION:=[^\n]+', f'PKG_VERSION:={version}', content)
+        makefile.write_text(content, encoding="utf-8")
+        sys.stderr.write(f"Updated {makefile} to version {version}\n")
+
+    # 3. mcubridge-library-arduino/library.properties
+    lib_prop = REPO_ROOT / "mcubridge-library-arduino" / "library.properties"
+    if lib_prop.exists():
+        content = lib_prop.read_text(encoding="utf-8")
+        content = re.sub(r'version=[^\n]+', f'version={version}', content)
+        lib_prop.write_text(content, encoding="utf-8")
+        sys.stderr.write(f"Updated {lib_prop} to version {version}\n")
+
+
 @app.command()
 def main(
     spec_path: Annotated[Path, typer.Option("--spec", help="Protocol specification file")],
@@ -454,11 +494,19 @@ def main(
 ) -> None:
     spec = ProtocolSpec.load(spec_path)
     gen = JinjaGenerator()
+    version = read_version()
+
+    update_metadata(version)
 
     if cpp:
         cpp.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_header(spec, cpp)
+        gen.generate_cpp_header(spec, cpp, version)
         sys.stderr.write(f"Generated {cpp}\n")
+
+        # Generate hardware config next to the main header
+        hw_config_path = cpp.parent / "rpc_hw_config.h"
+        gen.generate_cpp_hw_config(spec, hw_config_path)
+        sys.stderr.write(f"Generated {hw_config_path}\n")
 
     if cpp_structs:
         cpp_structs.parent.mkdir(parents=True, exist_ok=True)
@@ -471,12 +519,9 @@ def main(
         sys.stderr.write(f"Generated {py}\n")
 
     # [PHASE 3] Protobuf & Nanopb compilation
-    import shutil
-    import subprocess
-
     proto_dir = spec_path.parent
-    py_out = py.parent if py else Path("mcubridge/mcubridge/protocol")
-    cpp_out = cpp.parent if cpp else Path("mcubridge-library-arduino/src/protocol")
+    py_out = py.parent if py else REPO_ROOT / "mcubridge/mcubridge/protocol"
+    cpp_out = cpp.parent if cpp else REPO_ROOT / "mcubridge-library-arduino/src/protocol"
 
     py_out.mkdir(parents=True, exist_ok=True)
     cpp_out.mkdir(parents=True, exist_ok=True)
@@ -489,7 +534,6 @@ def main(
         sys.exit(1)
 
     # Step 1: Generate Python protobuf bindings + type stubs
-    #   nanopb_pb2.py, mcubridge_pb2.py, nanopb_pb2.pyi, mcubridge_pb2.pyi
     for proto_file in ("nanopb.proto", "mcubridge.proto"):
         py_cmd = [
             sys.executable, "-m", "grpc_tools.protoc",
@@ -504,8 +548,7 @@ def main(
             sys.stderr.write(f"Error generating Python protobuf for {proto_file}: {e}\n")
             sys.exit(1)
 
-    # Fix relative imports: protoc generates "import nanopb_pb2" but the
-    # file lives inside the mcubridge.protocol package and needs a relative import.
+    # Fix relative imports
     for suffix in (".py", ".pyi"):
         pb2_file = py_out / f"mcubridge_pb2{suffix}"
         if pb2_file.exists():
@@ -513,10 +556,7 @@ def main(
             content = content.replace("import nanopb_pb2", "from . import nanopb_pb2")
             pb2_file.write_text(content, encoding="utf-8")
 
-    # Strip per-class DESCRIPTOR declarations from the .pyi stub.
-    # protoc emits "DESCRIPTOR: _descriptor.Descriptor" in every message class,
-    # which conflicts with the base Message.DESCRIPTOR type in pyright.
-    # Also remove the nanopb_pb2 import that becomes unused after stripping.
+    # Strip per-class DESCRIPTOR declarations
     pyi_file = py_out / "mcubridge_pb2.pyi"
     if pyi_file.exists():
         import re
@@ -527,7 +567,6 @@ def main(
             pyi_content,
             flags=re.MULTILINE,
         )
-        # Remove unused nanopb_pb2 import (only referenced by stripped DESCRIPTOR lines)
         pyi_content = re.sub(
             r"^from \. import nanopb_pb2 as _nanopb_pb2\n",
             "",
@@ -536,15 +575,13 @@ def main(
         )
         pyi_file.write_text(pyi_content, encoding="utf-8")
 
-    # Remove nanopb_pb2.pyi — we never import nanopb types directly and the
-    # auto-generated stub uses ClassVar at module scope which pyright rejects.
     nanopb_pyi = py_out / "nanopb_pb2.pyi"
     if nanopb_pyi.exists():
         nanopb_pyi.unlink()
 
     sys.stderr.write(f"Generated Python protobuf bindings in {py_out}\n")
 
-    # Step 2: Generate C nanopb bindings (mcubridge.pb.h + mcubridge.pb.c)
+    # Step 2: Generate C nanopb bindings
     options_file = proto_dir / "mcubridge.options"
     nanopb_out_arg = f"-f{options_file}:{cpp_out}" if options_file.exists() else str(cpp_out)
     c_cmd = [
@@ -560,13 +597,13 @@ def main(
         sys.stderr.write(f"Error generating nanopb C bindings: {e}\n")
         sys.exit(1)
 
-    # Post-process: rewrite nanopb includes so the vendored src/nanopb/ headers
-    # are found by the Arduino build system (which adds src/ to -I, not src/nanopb/).
+    # Post-process: rewrite nanopb includes
     pb_h = cpp_out / "mcubridge.pb.h"
-    pb_h.write_text(
-        pb_h.read_text(encoding="utf-8").replace('#include <pb.h>', '#include "nanopb/pb.h"'),
-        encoding="utf-8",
-    )
+    if pb_h.exists():
+        pb_h.write_text(
+            pb_h.read_text(encoding="utf-8").replace('#include <pb.h>', '#include "nanopb/pb.h"'),
+            encoding="utf-8",
+        )
     sys.stderr.write(f"Generated nanopb C bindings in {cpp_out}\n")
 
     if py_client:

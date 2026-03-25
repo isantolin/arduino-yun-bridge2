@@ -25,18 +25,7 @@ dependencies = [
     "transitions==0.9.3",
     "typer[all]==0.24.1",
     "uvloop==0.22.1",
-    "zict==3.0.0"
-]==0.24.1",
-    "uvloop==0.22.1",
-    "zict==3.0.0"
-]==0.24.1",
-    "uvloop==0.22.1",
-    "zict==3.0.0"
-]==0.24.1",
-    "rich==14.3.3",
     "zict==3.0.0",
-    "heapdict==1.0.1",
-    "svcs==25.1.0"
 ]
 
 [tool.setuptools]

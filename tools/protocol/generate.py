@@ -11,12 +11,15 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 from __future__ import annotations
 
 import importlib.util
-import sys
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Optional
+
+import typer
+from jinja2 import Environment, FileSystemLoader
 
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
@@ -34,9 +37,6 @@ if MISSING_DEPS:
     sys.stderr.write("!" * 80 + "\n\n")
     sys.exit(1)
 # ═════════════════════════════════════════════════════════════════════════════
-
-import typer
-from jinja2 import Environment, FileSystemLoader
 
 # Load ProtocolSpec directly from spec_model.py via importlib.util
 if TYPE_CHECKING:
@@ -559,7 +559,6 @@ def main(
     # Strip per-class DESCRIPTOR declarations
     pyi_file = py_out / "mcubridge_pb2.pyi"
     if pyi_file.exists():
-        import re
         pyi_content = pyi_file.read_text(encoding="utf-8")
         pyi_content = re.sub(
             r"^    DESCRIPTOR: _ClassVar\[_descriptor\.Descriptor\]\n",

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import sys
-import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
@@ -92,26 +91,46 @@ def write_requirements(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
 def update_pyproject(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
     if not PYPROJECT_PATH.exists():
         return False
-    
+
     # Collect only runtime dependencies for project.dependencies
     runtime_pip_specs = sorted([
-        dep["pip"] for dep in deps 
-        if dep.get("pip") and dep["name"] not in BUILD_ONLY_PACKAGES 
+        dep["pip"] for dep in deps
+        if dep.get("pip") and dep["name"] not in BUILD_ONLY_PACKAGES
         and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES)
     ])
-    
+
     content = PYPROJECT_PATH.read_text(encoding="utf-8")
-    
-    # Find dependencies list
-    pattern = r'dependencies = \[\s*([\s\S]*?)\s*\]'
-    
-    formatted_deps = "dependencies = [\n" + ",\n".join(f'    "{s}"' for s in runtime_pip_specs) + "\n]"
-    
-    new_content = re.sub(pattern, formatted_deps, content, count=1)
-    
+
+    # Robust replacement of dependencies block
+    lines = content.splitlines()
+    new_lines = []
+    in_dependencies = False
+    replaced = False
+
+    for line in lines:
+        if not replaced and line.strip() == "dependencies = [":
+            in_dependencies = True
+            new_lines.append(line)
+            for spec in runtime_pip_specs:
+                new_lines.append(f'    "{spec}",')
+            # Remove trailing comma from last dependency for strictly valid TOML if preferred,
+            # though most parsers handle it. Ruff likes it.
+            replaced = True
+            continue
+
+        if in_dependencies:
+            if line.strip() == "]":
+                in_dependencies = False
+                new_lines.append(line)
+            continue
+
+        new_lines.append(line)
+
+    new_content = "\n".join(new_lines) + "\n"
+
     if new_content == content:
         return False
-        
+
     if not dry_run:
         PYPROJECT_PATH.write_text(new_content, encoding="utf-8")
     return True

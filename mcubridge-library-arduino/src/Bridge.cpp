@@ -91,6 +91,13 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
                         size_t arg_secret_len) {
   bridge::hal::init();
 
+#if defined(ARDUINO_ARCH_AVR)
+  wdt_enable(WDTO_4S);
+#elif defined(ARDUINO_ARCH_ESP32)
+  esp_task_wdt_init(4, true);
+  esp_task_wdt_add(NULL);
+#endif
+
   if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
     for (uint8_t pin = 0; pin < 20; ++pin) {
       pinMode(pin, OUTPUT);

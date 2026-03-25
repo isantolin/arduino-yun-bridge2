@@ -114,8 +114,8 @@ if [ "${1:-}" == "" ]; then
 else
     # In CI/CD or when a target directory is provided, we install them.
     # ETL: We copy the whole repository to the library directory.
-    install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.39.4" "include/etl/algorithm.h" "" "$LIB_DIR"
-    install_dependency "wolfssl" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.7.6-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
+    install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.44.2" "include/etl/algorithm.h" "" "$LIB_DIR"
+    install_dependency "wolfssl" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.8.4-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
     # PacketSerial: Use local .dummy_libs if present, otherwise try to download.
     if [ -d "$ROOT_DIR/.dummy_libs/PacketSerial" ]; then
         echo "[INFO] Using local PacketSerial from .dummy_libs..."

@@ -99,7 +99,11 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 #endif
 
   if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-    for (uint8_t pin = 0; pin < 20; ++pin) {
+    uint8_t digital_pins = 0;
+    uint8_t analog_pins = 0;
+    bridge::hal::getPinCounts(digital_pins, analog_pins);
+    
+    for (uint8_t pin = 0; pin < digital_pins; ++pin) {
       pinMode(pin, OUTPUT);
       digitalWrite(pin, LOW);
     }
@@ -161,15 +165,15 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 }
 
 void BridgeClass::process() {
-#if BRIDGE_ENABLE_WATCHDOG
-  #if defined(ARDUINO_ARCH_AVR)
-    wdt_reset();
-  #elif defined(ARDUINO_ARCH_ESP32)
-    esp_task_wdt_reset();
-  #elif defined(ARDUINO_ARCH_ESP8266)
-    yield();
-  #endif
-#endif
+  if constexpr (bridge::config::WATCHDOG_ENABLED) {
+    #if defined(ARDUINO_ARCH_AVR)
+      wdt_reset();
+    #elif defined(ARDUINO_ARCH_ESP32)
+      esp_task_wdt_reset();
+    #elif defined(ARDUINO_ARCH_ESP8266)
+      yield();
+    #endif
+  }
 
   const uint32_t now = bridge::now_ms();
   const auto expired = _timers.check_expired(now);

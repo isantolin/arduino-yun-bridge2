@@ -248,12 +248,24 @@ if [ -d "$SDK_DIR" ] && [ ! -f "$SDK_DIR/scripts/feeds" ]; then
 fi
 
 if [ ! -d "$SDK_DIR" ]; then
-    MAX_RETRIES=5; RETRY=0; SUCCESS=0
+    MAX_RETRIES=10; RETRY=0; SUCCESS=0
+    SDK_FILENAME="$(basename "$OPENWRT_URL")"
     while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
         echo "[INFO] Downloading OpenWRT SDK (attempt $((RETRY+1))/$MAX_RETRIES)..."
-        wget -O sdk.tar.zst "$OPENWRT_URL"
+        
+        # Ensure a clean start by removing any partial/corrupt file
+        rm -f sdk.tar.zst
+
+        # Use wget with extreme persistence to overcome network truncation/flakiness
+        # --tries=0 (infinite), --timeout=15, --waitretry=5
+        if command -v wget >/dev/null 2>&1; then
+            echo "[INFO] Using wget with infinite retries for maximum resilience..."
+            wget --tries=0 --timeout=15 --waitretry=5 --retry-connrefused -O sdk.tar.zst "$OPENWRT_URL"
+        else
+            curl -L --http1.1 --retry 10 --retry-delay 5 -o sdk.tar.zst "$OPENWRT_URL"
+        fi
+
         # [SECURITY] SHA256 integrity verification of downloaded SDK
-        SDK_FILENAME="$(basename "$OPENWRT_URL")"
         if wget -qO sha256sums "$OPENWRT_SHA256_URL"; then
             EXPECTED_SHA=$(grep "$SDK_FILENAME" sha256sums | awk '{print $1}')
             rm -f sha256sums
@@ -262,7 +274,7 @@ if [ ! -d "$SDK_DIR" ]; then
                 if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
                     echo "[ERROR] SHA256 mismatch! Expected: $EXPECTED_SHA Got: $ACTUAL_SHA"
                     rm -f sdk.tar.zst
-                    RETRY=$((RETRY+1)); sleep 2; continue
+                    RETRY=$((RETRY+1)); sleep 5; continue
                 fi
                 echo "[INFO] SHA256 verified: $ACTUAL_SHA"
             else
@@ -272,13 +284,16 @@ if [ ! -d "$SDK_DIR" ]; then
             echo "[WARN] Could not download sha256sums, skipping verification."
             rm -f sha256sums 2>/dev/null
         fi
+        
+        echo "[INFO] Extracting SDK..."
         if tar --use-compress-program="${ZSTD_DECOMPRESSOR}" -xf sdk.tar.zst; then
             rm sdk.tar.zst; mv openwrt-sdk-* "$SDK_DIR"; SUCCESS=1; break
         else
-            rm -f sdk.tar.zst; rm -rf openwrt-sdk-*; RETRY=$((RETRY+1)); sleep 2
+            echo "[ERROR] Extraction failed. SDK archive might be corrupt."
+            rm -f sdk.tar.zst; rm -rf openwrt-sdk-*; RETRY=$((RETRY+1)); sleep 5
         fi
     done
-    [ $SUCCESS -ne 1 ] && exit 1
+    [ $SUCCESS -ne 1 ] && { echo "[FATAL] Failed to download and extract OpenWrt SDK after $MAX_RETRIES attempts."; exit 1; }
 fi
 
 # Bootstrap build deps inside SDK

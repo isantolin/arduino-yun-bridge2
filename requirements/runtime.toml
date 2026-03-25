@@ -149,3 +149,39 @@ name = "grpcio-tools"
 openwrt = "python3-grpcio-tools"
 pip = "grpcio-tools==1.78.0"
 rationale = "Protobuf compiler tools for Python [BUILD-ONLY]"
+
+[[dependency]]
+name = "click"
+openwrt = "python3-click"
+pip = "click==8.3.1"
+rationale = "Sub-dependency for typer"
+
+[[dependency]]
+name = "markdown-it-py"
+openwrt = "python3-markdown-it-py"
+pip = "markdown-it-py==3.0.0"
+rationale = "Sub-dependency for rich"
+
+[[dependency]]
+name = "mdurl"
+openwrt = "python3-mdurl"
+pip = "mdurl==0.1.2"
+rationale = "Sub-dependency for markdown-it-py"
+
+[[dependency]]
+name = "pygments"
+openwrt = "python3-pygments"
+pip = "pygments==2.19.1"
+rationale = "Sub-dependency for rich"
+
+[[dependency]]
+name = "shellingham"
+openwrt = "python3-shellingham"
+pip = "shellingham==1.5.4"
+rationale = "Sub-dependency for typer"
+
+[[dependency]]
+name = "typing-extensions"
+openwrt = ""
+pip = "typing-extensions==4.12.2"
+rationale = "Backport of new type system features"

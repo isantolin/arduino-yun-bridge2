@@ -64,7 +64,12 @@ define Package/$(PKG_NAME)
 		+python3-zict \
 		+python3-heapdict \
 		+mosquitto-client \
-		+python3-svcs
+		+python3-svcs \
+		+python3-click \
+		+python3-markdown-it-py \
+		+python3-mdurl \
+		+python3-pygments \
+		+python3-shellingham
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

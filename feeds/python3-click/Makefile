@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-click
-PKG_VERSION:=8.1.8
+PKG_VERSION:=8.3.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=click
-PKG_HASH:=ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a
+PKG_HASH:=12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a
 
 PKG_BUILD_DEPENDS:=python-setuptools/host python-build/host python-installer/host python-wheel/host
 

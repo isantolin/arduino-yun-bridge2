@@ -212,7 +212,16 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> decoded_payload)
   rpc::FrameParser parser;
   const auto result = parser.parse(decoded_payload);
   if (result.has_value()) {
-      _rx_frame = result.value();
+      rpc::Frame raw_frame = result.value();
+      rpc::Frame effective_frame;
+
+      auto decomp_res = _decompressFrame(raw_frame, effective_frame);
+      if (!decomp_res) {
+          emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+          return;
+      }
+
+      _rx_frame = effective_frame;
       _consecutive_crc_errors = 0;
 
       const uint16_t sequence_id = _rx_frame.header.sequence_id;

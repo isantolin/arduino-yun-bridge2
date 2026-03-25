@@ -402,8 +402,8 @@ class BridgeClass
   using PacketSerialType = PacketSerial2::PacketSerial<
       PacketSerial2::COBS, 
       PacketSerial2::NoCRC, 
-      PacketSerial2::NoLock, // BridgeClass manually locks, so we don't need double locking
-      PacketSerial2::NoWatchdog // BridgeClass feeds WDT
+      PacketSerial2::NoLock, 
+      PacketSerial2::NoWatchdog // [SIL-2] BridgeClass centralizes WDT management
   >;
 
   rpc::FrameBuilder _frame_builder;

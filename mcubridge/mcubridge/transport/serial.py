@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import struct
 import time
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -49,10 +48,7 @@ _DEFAULT_SAFE_BAUD: Final[int] = 115200
 
 def _is_raw_binary_frame(packet: bytes) -> bool:
     """Validate a decoded raw frame matches the protocol envelope."""
-    if len(packet) < _RAW_FRAME_MIN_SIZE or len(packet) > _RAW_FRAME_MAX_SIZE:
-        return False
-    (version,) = struct.unpack_from(protocol.UINT8_FORMAT, packet, 0)
-    return version == protocol.PROTOCOL_VERSION
+    return len(packet) >= _RAW_FRAME_MIN_SIZE and len(packet) <= _RAW_FRAME_MAX_SIZE
 
 
 class SerialTransport:

@@ -159,7 +159,7 @@ rationale = "Sub-dependency for typer"
 [[dependency]]
 name = "markdown-it-py"
 openwrt = "python3-markdown-it-py"
-pip = "markdown-it-py==3.0.0"
+pip = "markdown-it-py==4.0.0"
 rationale = "Sub-dependency for rich"
 
 [[dependency]]
@@ -179,9 +179,3 @@ name = "shellingham"
 openwrt = "python3-shellingham"
 pip = "shellingham==1.5.4"
 rationale = "Sub-dependency for typer"
-
-[[dependency]]
-name = "typing-extensions"
-openwrt = ""
-pip = "typing-extensions==4.12.2"
-rationale = "Backport of new type system features"

@@ -30,13 +30,12 @@ import asyncio
 import logging
 import sys
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Annotated
 
 import msgspec
 import psutil
 import tenacity
 import typer
-from typing_extensions import Annotated
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
 import uvloop

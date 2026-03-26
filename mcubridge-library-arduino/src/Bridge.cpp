@@ -739,6 +739,11 @@ void BridgeClass::enterSafeState() {
   BRIDGE_ATOMIC_BLOCK { _fsm.resetFsm(); }
   _timers.clear(); _pending_baudrate = 0; _retry_count = 0; _clearPendingTxQueue();
   _rx_history.clear(); _consecutive_crc_errors = 0;
+  
+  // [MIL-SPEC] Securely zero sensitive data on fault
+  rpc::security::secure_zero(etl::span<uint8_t>(_shared_secret.data(), _shared_secret.size()));
+  _shared_secret.clear();
+
 #if BRIDGE_ENABLE_PROCESS
   Process.reset();
 #endif

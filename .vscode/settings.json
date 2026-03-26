@@ -18,16 +18,9 @@
   ],
   "C_Cpp.default.cppStandard": "c++14",
   "C_Cpp.default.compilerPath": "/usr/bin/g++",
-  "makefile.makefilePath": "mcubridge/Makefile",
-  "makefile.configurations": [
-    {
-      "name": "mcubridge-daemon",
-      "makefilePath": "mcubridge/Makefile"
-    },
-    {
-      "name": "luci-app",
-      "makefilePath": "luci-app-mcubridge/Makefile"
-    }
-  ],
+  "makefile.configureOnOpen": false,
+  "makefile.configureAfterCommand": false,
+  "makefile.loggingLevel": "Normal",
+  "makefile.dryrunSwitches": [],
   "python.analysis.autoImportCompletions": true
 }

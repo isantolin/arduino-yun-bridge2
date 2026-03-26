@@ -3,12 +3,12 @@
   "configurations": [
     {
       "name": "Python: Debug Daemon",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
       "program": "mcubridge/mcubridge/daemon.py",
       "args": [
         "--serial-port", "/dev/ttyUSB0",
-        "--baudrate", "115200",
+        "--serial-baud", "115200",
         "--mqtt-host", "127.0.0.1"
       ],
       "console": "integratedTerminal",
@@ -19,7 +19,7 @@
     },
     {
       "name": "Python: Debug Current Test File",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
       "module": "pytest",
       "args": [

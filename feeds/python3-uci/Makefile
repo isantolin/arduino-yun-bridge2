@@ -8,16 +8,17 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-uci
-PKG_VERSION:=0.7.1
+PKG_VERSION:=0.10.3
 PKG_RELEASE:=1
 
-PYPI_NAME:=uci
-PKG_HASH:=7b789e9d6d7e9d9e9d9e9d9e9d9e9d9e9d9e9d9e9d9e9d9e9d9e9d9e9d9e9d9e
+PYPI_NAME:=pyuci
+PKG_HASH:=3b0f72ea81ed7a7999b2eb73f57a93019c0d359efaa9efb44fdf377fa09c1da6
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=LGPL-2.1-or-later
 PKG_LICENSE_FILES:=LICENSE
 
+include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
@@ -26,9 +27,9 @@ define Package/python3-uci
   CATEGORY:=Languages
   SUBMENU:=Python
   TITLE:=Python bindings for the UCI library
-  URL:=https://github.com/m-p-f/python-uci
+  URL:=https://github.com/turris/pyuci
   DEPENDS:=+python3-light +libuci
-end Package/python3-uci
+endef
 
 define Package/python3-uci/description
   Python 3 bindings for the OpenWrt Unified Configuration Interface (UCI) library.

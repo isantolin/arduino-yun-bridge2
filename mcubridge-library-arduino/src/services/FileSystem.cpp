@@ -64,7 +64,10 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   size_t offset = 0U;
   bool sent_payload = false;
 
-  while (true) {
+  uint16_t chunk_count = 0U;
+  static constexpr uint16_t kMaxChunks = 256U;
+
+  while (chunk_count++ < kMaxChunks) {
     size_t bytes_read = 0U;
     bool has_more = false;
     const bool read_ok = bridge::hal::readFileChunk(

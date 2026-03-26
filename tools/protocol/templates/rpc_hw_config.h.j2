@@ -49,6 +49,17 @@ inline constexpr uint8_t FALLBACK_MAX_PIN = {{ hardware.fallback_max_pin }}U;
 inline constexpr uint16_t FALLBACK_FREE_MEMORY = {{ hardware.fallback_free_memory }}U;
 inline constexpr uint32_t CAPABILITIES_FEAT_EXTENDED = {{ hardware.capabilities_feat_extended }}U;
 
+// SIL-2 Safety & Timing
+inline constexpr uint32_t SERIAL_TIMEOUT_MS = {{ hardware.serial_timeout_ms }}UL;
+inline constexpr uint32_t BOOTLOADER_DELAY_MS = {{ hardware.bootloader_delay_ms }}UL;
+inline constexpr uint16_t FILE_MAX_READ_CHUNKS = {{ hardware.file_max_read_chunks }}U;
+
+// Security Constants
+inline constexpr uint16_t SHA256_DIGEST_SIZE = {{ hardware.sha256_digest_size }}U;
+inline constexpr uint16_t SHA256_KAT_BUFFER_SIZE = {{ hardware.sha256_kat_buffer_size }}U;
+inline constexpr uint16_t HKDF_HANDSHAKE_KEY_LENGTH = {{ hardware.hkdf_handshake_key_length }}U;
+inline constexpr uint16_t HKDF_HANDSHAKE_FULL_TAG_SIZE = {{ hardware.hkdf_handshake_full_tag_size }}U;
+
 } // namespace bridge::config
 
 #endif // RPC_HW_CONFIG_H

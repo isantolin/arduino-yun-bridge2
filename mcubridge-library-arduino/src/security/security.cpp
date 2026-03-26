@@ -1,19 +1,25 @@
-/**
- * @file security.cpp
- * @brief Implementation of security primitives with wolfSSL backend.
+/*
+ * This file is part of Arduino MCU Ecosystem v2.
+ * Copyright (C) 2025-2026 Ignacio Santolin and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
  */
- #include "security.h"
 
- #include <Arduino.h>
- #include "hal/progmem_compat.h"
- #include "user_settings.h"
- #include <wolfssl/wolfcrypt/settings.h>
- #include <wolfssl/wolfcrypt/error-crypt.h>
+#include "security.h"
+#include <Arduino.h>
+#include <wolfssl/wolfcrypt/hash.h>
+#include <wolfssl/wolfcrypt/hmac.h>
+#include <wolfssl/wolfcrypt/kdf.h>
+#include <string.h>
+#include <etl/array.h>
+#include <etl/algorithm.h>
+#include "Bridge.h"
 
 namespace rpc {
 namespace security {
-
-// --- McuBridgeSha256 Implementation ---
 
 McuBridgeSha256::McuBridgeSha256() : is_hmac_active_(false) {
   reset();
@@ -32,21 +38,23 @@ void McuBridgeSha256::update(const void* data, size_t len) {
   }
 }
 
-void McuBridgeSha256::finalize(void* hash, size_t len) {
-  (void)len;
-  wc_Sha256Final(&sha_, static_cast<byte*>(hash));
+void McuBridgeSha256::finalize(void* digest, size_t len) {
+  uint8_t full_digest[32];
+  wc_Sha256Final(&sha_, full_digest);
+  memcpy(digest, full_digest, etl::min(len, (size_t)32));
 }
 
-void McuBridgeSha256::resetHMAC(const void* key, size_t keyLen) {
-  wc_HmacSetKey(&hmac_, WC_SHA256, static_cast<const byte*>(key), static_cast<word32>(keyLen));
+void McuBridgeSha256::resetHMAC(const void* key, size_t key_len) {
+  wc_HmacSetKey(&hmac_, WC_SHA256, static_cast<const byte*>(key), static_cast<word32>(key_len));
   is_hmac_active_ = true;
 }
 
-void McuBridgeSha256::finalizeHMAC(const void* key, size_t keyLen, void* hash, size_t hashLen) {
-  (void)key; (void)keyLen; (void)hashLen;
-  if (is_hmac_active_) {
-    wc_HmacFinal(&hmac_, static_cast<byte*>(hash));
-  }
+void McuBridgeSha256::finalizeHMAC(const void* key, size_t key_len, void* digest, size_t len) {
+  (void)key;
+  (void)key_len;
+  uint8_t full_digest[32];
+  wc_HmacFinal(&hmac_, full_digest);
+  memcpy(digest, full_digest, etl::min(len, (size_t)32));
   is_hmac_active_ = false;
 }
 
@@ -64,9 +72,6 @@ void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
 }
 
 // --- Self-Tests Implementation ---
-
-constexpr size_t kSha256DigestSize = 32;
-constexpr size_t kKatBufferSize = kSha256DigestSize * 2;
 
 static constexpr uint8_t kat_sha256_msg[] PROGMEM = {'a', 'b', 'c'};
 static constexpr uint8_t kat_sha256_expected[] PROGMEM = {
@@ -86,17 +91,17 @@ static constexpr uint8_t kat_hmac_expected[] PROGMEM = {
 
 bool run_cryptographic_self_tests() {
   McuBridgeSha256 sha256;
-  etl::array<uint8_t, kSha256DigestSize> actual;
-  etl::array<uint8_t, kKatBufferSize> buffer;
+  etl::array<uint8_t, bridge::config::SHA256_DIGEST_SIZE> actual;
+  etl::array<uint8_t, bridge::config::SHA256_KAT_BUFFER_SIZE> buffer;
 
   // 1. SHA256 KAT
   sha256.reset();
   size_t msg_len = sizeof(kat_sha256_msg);
   etl::copy_n(kat_sha256_msg, msg_len, buffer.begin());
   sha256.update(buffer.data(), msg_len);
-  sha256.finalize(actual.data(), kSha256DigestSize);
+  sha256.finalize(actual.data(), bridge::config::SHA256_DIGEST_SIZE);
 
-  if (memcmp_P(actual.data(), kat_sha256_expected, kSha256DigestSize) != 0)
+  if (memcmp_P(actual.data(), kat_sha256_expected, bridge::config::SHA256_DIGEST_SIZE) != 0)
     return false;
 
   // 2. HMAC-SHA256 KAT
@@ -109,9 +114,9 @@ bool run_cryptographic_self_tests() {
   size_t data_len = sizeof(kat_hmac_data);
   etl::copy_n(kat_hmac_data, data_len, buffer.begin());
   sha256.update(buffer.data(), data_len);
-  sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(), kSha256DigestSize);
+  sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(), bridge::config::SHA256_DIGEST_SIZE);
 
-  if (memcmp_P(actual.data(), kat_hmac_expected, kSha256DigestSize) != 0)
+  if (memcmp_P(actual.data(), kat_hmac_expected, bridge::config::SHA256_DIGEST_SIZE) != 0)
     return false;
 
   return true;

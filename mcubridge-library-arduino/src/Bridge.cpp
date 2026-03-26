@@ -127,7 +127,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   if (_hardware_serial != nullptr) {
     _hardware_serial->begin(arg_baudrate);
     #if !defined(BRIDGE_HOST_TEST)
-    _hardware_serial->setTimeout(50);
+    _hardware_serial->setTimeout(bridge::config::SERIAL_TIMEOUT_MS);
     #endif
   }
 
@@ -484,7 +484,7 @@ void BridgeClass::_handleEnterBootloader(const bridge::router::CommandContext& c
   _withPayloadAck<rpc::payload::EnterBootloader>(ctx, [this](const rpc::payload::EnterBootloader& msg) {
     if (msg.magic == 0xDEADC0DE) {
       this->flushStream();
-      delay(100);
+      delay(bridge::config::BOOTLOADER_DELAY_MS);
 #if defined(ARDUINO_ARCH_AVR)
       wdt_enable(WDTO_15MS); for (;;) {}
 #elif defined(ARDUINO_ARCH_ESP32)

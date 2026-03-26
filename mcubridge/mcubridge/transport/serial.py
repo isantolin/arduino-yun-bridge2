@@ -43,7 +43,6 @@ logger = logging.getLogger("mcubridge.serial")
 
 _RAW_FRAME_MIN_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.CRC_SIZE
 _RAW_FRAME_MAX_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE
-_DEFAULT_SAFE_BAUD: Final[int] = 115200
 
 
 def _is_raw_binary_frame(packet: bytes) -> bool:
@@ -177,7 +176,7 @@ class SerialTransport:
         try:
             connect_baud = self.config.serial_safe_baud
             if connect_baud <= 0:
-                connect_baud = _DEFAULT_SAFE_BAUD
+                connect_baud = protocol.DEFAULT_SAFE_BAUDRATE
 
             self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(  # type: ignore
                 url=self.config.serial_port,

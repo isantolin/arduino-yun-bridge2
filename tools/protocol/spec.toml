@@ -46,6 +46,8 @@ rle_escape_byte = 0xFF
 rle_min_run_length = 4
 rle_max_run_length = 256
 rle_single_escape_marker = 0xFF
+rle_min_compress_input_size = 8
+rle_min_compress_savings = 4
 
 [compression]
 none = 0x00

@@ -25,7 +25,7 @@ size_t encode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
     } else if (current == ESCAPE_BYTE) {
       if (etl::distance(dst_it, dst.end()) < 3) return 0;
       *dst_it++ = ESCAPE_BYTE;
-      *dst_it++ = (run_len == 1) ? 255 : static_cast<uint8_t>(run_len - 2);
+      *dst_it++ = (run_len == 1) ? SINGLE_ESCAPE_MARKER : static_cast<uint8_t>(run_len - 2);
       *dst_it++ = ESCAPE_BYTE;
       src_it = run_end;
     } else {
@@ -61,7 +61,7 @@ size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
 
       uint8_t count_m2 = *src_it++;
       uint8_t val = *src_it++;
-      size_t run_len = (count_m2 == 255) ? 1 : static_cast<size_t>(count_m2) + 2;
+      size_t run_len = (count_m2 == SINGLE_ESCAPE_MARKER) ? 1 : static_cast<size_t>(count_m2) + 2;
 
       if (static_cast<size_t>(etl::distance(dst_it, dst.end())) < run_len) {
         return 0;

@@ -165,7 +165,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 }
 
 void BridgeClass::process() {
-  if constexpr (bridge::config::WATCHDOG_ENABLED) {
+  if constexpr (bridge::config::ENABLE_WATCHDOG) {
     #if defined(ARDUINO_ARCH_AVR)
       wdt_reset();
     #elif defined(ARDUINO_ARCH_ESP32)

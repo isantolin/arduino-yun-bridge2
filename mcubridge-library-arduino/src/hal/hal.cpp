@@ -133,7 +133,7 @@ bool isValidPin(const uint8_t pin) {
 uint16_t getFreeMemory() {
 #if defined(ARDUINO_ARCH_AVR)
   int v;
-  return static_cast<uint16_t>(reinterpret_cast<int>(&v) - (__brkval == 0 ? reinterpret_cast<int>(&__heap_start) : reinterpret_cast<int>(__brkval)));
+  return static_cast<uint16_t>(reinterpret_cast<uintptr_t>(&v) - (__brkval == 0 ? reinterpret_cast<uintptr_t>(&__heap_start) : reinterpret_cast<uintptr_t>(__brkval)));
 #elif defined(ARDUINO_ARCH_ESP32)
   return static_cast<uint16_t>(ESP.getFreeHeap());
 #else

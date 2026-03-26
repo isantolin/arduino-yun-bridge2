@@ -822,11 +822,11 @@ bool BridgeClass::_isHandshakeCommand(uint16_t cmd) const { return (cmd >= rpc::
 bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const { return _rx_history.contains(frame.header.sequence_id); }
 void BridgeClass::_markRxProcessed(const rpc::Frame& frame) { _rx_history.push(frame.header.sequence_id); }
 
-etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Frame& org, rpc::Frame& eff) const {
+etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Frame& org, rpc::Frame& eff) {
   eff.header = org.header; eff.crc = org.crc;
   if (!bitRead(org.header.command_id, kCompressedCommandBit)) { eff.payload = org.payload; return {}; }
   bitWrite(eff.header.command_id, kCompressedCommandBit, 0);
-  size_t decoded_len = rle::decode(org.payload, etl::span<uint8_t>(const_cast<uint8_t*>(_decompression_buffer.data()), _decompression_buffer.size()));
+  size_t decoded_len = rle::decode(org.payload, etl::span<uint8_t>(_decompression_buffer.data(), _decompression_buffer.size()));
   if (decoded_len == 0 && org.header.payload_length > 0) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
   eff.header.payload_length = static_cast<uint16_t>(decoded_len); eff.payload = etl::span<const uint8_t>(_decompression_buffer.data(), decoded_len);
   return {};

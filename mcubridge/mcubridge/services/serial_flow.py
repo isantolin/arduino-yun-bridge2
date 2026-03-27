@@ -111,7 +111,8 @@ class SerialFlowController:
                 if len(compressed) < len(payload):
                     # [SIL-2] Declarative command ID reconstruction with flags
                     # cmd_flag_compressed is Bit 15 (0x8000)
-                    final_cmd = command_id | 0x8000
+                    from mcubridge.protocol.frame import Frame
+                    final_cmd = Frame.build_command_id(command_id, is_compressed=True)
                     final_payload = compressed
             except (ValueError, TypeError, OverflowError) as e:
                 self._logger.warning("Compression failed for command 0x%02X: %s", command_id, e)

@@ -581,7 +581,10 @@ echo "[BUILD] Building libraries: $LIBS..."
 # Build all libraries in parallel with as many jobs as cores.
 for lib in $LIBS; do
     echo "[BUILD] Building library $lib (.apk)..."
-    make "package/feeds/mcubridge/$lib/compile" -j$(nproc)
+    if ! make "package/feeds/mcubridge/$lib/compile" -j$(nproc); then
+        echo "[RETRY] Build failed for $lib. Rerunning with -j1 V=s to expose error details..."
+        make "package/feeds/mcubridge/$lib/compile" -j1 V=s || exit 1
+    fi
     
     # [FIX] Copiar artefactos .apk de librerías
     find bin/packages/ -name "$lib*.apk" -exec cp {} "$BIN_DIR/" \;
@@ -590,7 +593,10 @@ done
 # Luego paquetes principales
 for pkg in luci-app-mcubridge mcubridge; do
     echo "[BUILD] Building package $pkg (.apk)..."
-    make "package/$pkg/compile" -j$(nproc)
+    if ! make "package/$pkg/compile" -j$(nproc); then
+        echo "[RETRY] Build failed for $pkg. Rerunning with -j1 V=s to expose error details..."
+        make "package/$pkg/compile" -j1 V=s || exit 1
+    fi
 
     # [FIX] Copiar artefactos .apk
     find bin/packages/ -name "$pkg*.apk" -exec cp {} "$BIN_DIR/" \;

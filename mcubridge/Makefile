@@ -44,7 +44,8 @@ define Package/$(PKG_NAME)
 	PROVIDES:=mcubridge
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
-		+python3 \
+		+python3-light \
+		+python3-asyncio \
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
 		+python3-cobs \

@@ -4,6 +4,12 @@ package mcubridge;
 
 import "nanopb.proto";
 
+message RpcContainer {
+    uint32 seq_id = 1;
+    uint32 checksum = 2;
+    bytes payload = 3 [(nanopb).type = FT_CALLBACK];
+}
+
 // [SIL-2] Nanopb options for static allocation
 // These are used by the nanopb generator to create fixed-size structures.
 

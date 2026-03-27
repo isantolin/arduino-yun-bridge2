@@ -458,7 +458,14 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
     if (res.has_value()) {
       if (SPIService.isInitialized()) {
         size_t len = decode_span.size();
-        if (len > 0) SPIService.transfer(buffer.data(), len);
+        if (len > 0) {
+          size_t xferred = SPIService.transfer(buffer.data(), len);
+          if (xferred < len) {
+            enterSafeState();
+            _sendError(rpc::StatusCode::STATUS_ERROR, ctx.raw_command, ctx.sequence_id);
+            return;
+          }
+        }
         rpc::payload::SpiTransferResponse resp = {};
         etl::span<const uint8_t> out_span(buffer.data(), len);
         rpc::util::pb_setup_encode_span(resp.data, out_span);

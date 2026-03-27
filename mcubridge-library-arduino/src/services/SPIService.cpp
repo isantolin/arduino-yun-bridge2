@@ -27,7 +27,14 @@ size_t SPIServiceClass::transfer(uint8_t* buffer, size_t len) {
   if (len == 0) return 0;
 
   SPI.beginTransaction(_settings);
+  // [SIL-2] Timeout protection for SPI
+  uint32_t start = millis();
   for (size_t i = 0; i < len; ++i) {
+    if (millis() - start > 100) { // 100ms timeout
+      // Hardware failure
+      SPI.endTransaction();
+      return 0; // The caller should ideally handle this
+    }
     buffer[i] = SPI.transfer(buffer[i]);
   }
   SPI.endTransaction();

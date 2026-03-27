@@ -351,7 +351,9 @@ class SerialTransport:
             raw_frame = Frame.build(cmd, seq, pl)
             encoded = cobs_encode(raw_frame) + protocol.FRAME_DELIMITER
 
-            logger.debug("[SERIAL -> MCU] RAW: %s", encoded.hex(" "))
+            if logger.isEnabledFor(logging.DEBUG):
+                log_binary_traffic(logger, logging.DEBUG, "SERIAL -> MCU", "RAW", encoded, sequence_id=seq)
+
             self.writer.write(encoded)
             await self.writer.drain()
 

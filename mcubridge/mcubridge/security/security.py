@@ -17,21 +17,24 @@ import hashlib
 import hmac
 import secrets
 from typing import Final
-from construct import Int64ub  # type: ignore
+from construct import Bytes, Int64ub, Struct  # type: ignore
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from ..protocol.protocol import (
-    HANDSHAKE_HKDF_INFO_AUTH,
-    HANDSHAKE_HKDF_SALT,
-)
+from ..protocol import protocol
 
-# Constants for nonce format
-NONCE_RANDOM_BYTES: Final[int] = 8
-NONCE_COUNTER_BYTES: Final[int] = 8
+# [SIL-2] Security Constants from protocol spec
+NONCE_RANDOM_BYTES: Final[int] = protocol.HANDSHAKE_NONCE_RANDOM_BYTES
+NONCE_COUNTER_BYTES: Final[int] = protocol.HANDSHAKE_NONCE_COUNTER_BYTES
 NONCE_TOTAL_BYTES: Final[int] = NONCE_RANDOM_BYTES + NONCE_COUNTER_BYTES
+
+# [SIL-2] Declarative Nonce Structure
+NONCE_STRUCT: Final = Struct(
+    "random" / Bytes(NONCE_RANDOM_BYTES),  # type: ignore
+    "counter" / Int64ub,  # type: ignore
+)  # type: ignore
 
 
 def hkdf_sha256(ikm: bytes, salt: bytes, info: bytes, length: int) -> bytes:
@@ -49,16 +52,22 @@ def derive_handshake_key(shared_secret: bytes) -> bytes:
     """Derive the internal handshake authentication key."""
     return hkdf_sha256(
         shared_secret,
-        HANDSHAKE_HKDF_SALT,
-        HANDSHAKE_HKDF_INFO_AUTH,
+        protocol.HANDSHAKE_HKDF_SALT,
+        protocol.HANDSHAKE_HKDF_INFO_AUTH,
         32,
     )
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
     """Securely zero memory, resistant to interpreter optimization."""
-    buf = (ctypes.c_char * len(data)).from_buffer(data)
-    ctypes.memset(ctypes.addressof(buf), 0, len(data))
+    # [SIL-2] Bulk zeroing for performance
+    data[:] = b"\x00" * len(data)
+    # MIL-SPEC: Use ctypes to bypass high-level optimizations
+    try:
+        buf = (ctypes.c_char * len(data)).from_buffer(data)
+        ctypes.memset(ctypes.addressof(buf), 0, len(data))
+    except (TypeError, ValueError, AttributeError):
+        pass
 
 
 def secure_zero_bytes_copy(data: bytes) -> bytes:
@@ -75,15 +84,22 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     """Generate a 16-byte nonce with monotonic counter using Construct."""
     new_counter = counter + 1
     random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
-    counter_part = Int64ub.build(new_counter)  # type: ignore
-    return random_part + counter_part, new_counter
+    # [SIL-2] Declarative building
+    nonce = NONCE_STRUCT.build({  # type: ignore
+        "random": random_part,
+        "counter": new_counter
+    })
+    return nonce, new_counter
 
 
 def extract_nonce_counter(nonce: bytes) -> int:
     """Extract the counter from a nonce using Construct."""
     if len(nonce) != NONCE_TOTAL_BYTES:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
-    return Int64ub.parse(nonce[NONCE_RANDOM_BYTES:])  # type: ignore
+    try:
+        return NONCE_STRUCT.parse(nonce).counter  # type: ignore
+    except Exception as e:
+        raise ValueError(f"Malformed nonce format: {e}") from e
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:

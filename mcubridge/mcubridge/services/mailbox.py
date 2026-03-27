@@ -126,7 +126,7 @@ class MailboxComponent(BaseComponent):
             )
             # [SIL-2] Declarative truncation via Construct
             try:
-                message_payload = Bytes(max_allowed).parse(message_payload[:max_allowed])  # type: ignore
+                message_payload = Bytes(max_allowed).parse(message_payload)  # type: ignore
             except Exception:
                 message_payload = message_payload[:max_allowed]
             msg_len = len(message_payload)

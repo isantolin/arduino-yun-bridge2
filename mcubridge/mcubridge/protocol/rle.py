@@ -21,28 +21,45 @@ Only encodes runs of 4+ identical bytes (break-even at 3).
 from __future__ import annotations
 
 import re
-from itertools import repeat
 from typing import Final
 
 import msgspec
-from construct import Struct, Int8ub  # type: ignore
+from construct import (  # type: ignore
+    Const,
+    ExprAdapter,
+    GreedyRange,
+    Int8ub,
+    Select,
+    Struct,
+)
 
-# Escape byte used to signal a run
-ESCAPE_BYTE: Final[int] = 0xFF
-
-# Minimum run length to encode (shorter runs are left as literals)
-MIN_RUN_LENGTH: Final[int] = 4
-
-# Maximum run length in a single encoded sequence (254 + 2 = 256)
-MAX_RUN_LENGTH: Final[int] = 256
+from . import protocol
 
 # [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
-RLE_ESCAPE = Struct(
-    "escape" / Int8ub,  # type: ignore
+RLE_ESCAPE: Final = Struct(
+    "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),  # type: ignore
     "count_m2" / Int8ub,  # type: ignore
     "value" / Int8ub,  # type: ignore
 )
-RLE_ESCAPE_SIZE: Final[int] = 3
+
+
+# [SIL-2] Declarative RLE Decoder: Greedy selection between escape sequences and literals
+RLE_DECODER: Final = GreedyRange(
+    Select(
+        # Escape sequence: [0xFF, count_m2, value]
+        ExprAdapter(
+            RLE_ESCAPE,
+            decoder=lambda obj, ctx: bytes([obj.value]) * (1 if obj.count_m2 == 255 else obj.count_m2 + 2),  # type: ignore
+            encoder=lambda obj, ctx: None,  # type: ignore
+        ),
+        # Literal byte (must be < 0xFF for Select to work correctly with Const)
+        ExprAdapter(
+            Int8ub,
+            decoder=lambda obj, ctx: bytes([obj]),  # type: ignore
+            encoder=lambda obj, ctx: obj[0],  # type: ignore
+        ),
+    )
+)  # type: ignore
 
 
 class RLEPayload(msgspec.Struct, frozen=True):
@@ -70,8 +87,13 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
 
     result = bytearray()
     last_end = 0
-    # Pattern matches runs of 4-256 same bytes OR any sequence of 0xFF
-    for m in re.finditer(b'(.)\\1{3,255}|\\xff+', bytes(data)):
+
+    # Pattern matches runs of 4-256 same bytes OR any sequence of RLE_ESCAPE_BYTE
+    # We use a compiled pattern for performance.
+    escape_pattern = re.escape(bytes([protocol.RLE_ESCAPE_BYTE]))
+    pattern = re.compile(b"(.)\\1{3,255}|" + escape_pattern + b"+")
+
+    for m in pattern.finditer(bytes(data)):
         start, end = m.span()
         result.extend(data[last_end:start])  # Literal gap
 
@@ -79,24 +101,26 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
         char = chunk[0]
         length = len(chunk)
 
-        if char == ESCAPE_BYTE:
+        if char == protocol.RLE_ESCAPE_BYTE:
             # All 0xFF must be escaped. Split into chunks of 256 if needed.
-            for i in range(0, length, MAX_RUN_LENGTH):
-                chunk_len = min(length - i, MAX_RUN_LENGTH)
+            for i in range(0, length, protocol.RLE_MAX_RUN_LENGTH):
+                chunk_len = min(length - i, protocol.RLE_MAX_RUN_LENGTH)
                 result.extend(
                     RLE_ESCAPE.build({  # type: ignore
-                        "escape": ESCAPE_BYTE,
+                        "escape": protocol.RLE_ESCAPE_BYTE,
                         "count_m2": 255 if chunk_len == 1 else chunk_len - 2,
-                        "value": ESCAPE_BYTE,
+                        "value": protocol.RLE_ESCAPE_BYTE,
                     })
                 )
         else:
-            # Non-0xFF run of 4+ bytes
-            result.extend(RLE_ESCAPE.build({  # type: ignore
-                "escape": ESCAPE_BYTE,
-                "count_m2": length - 2,
-                "value": char,
-            }))
+            # Non-ESCAPE_BYTE run of 4+ bytes
+            result.extend(
+                RLE_ESCAPE.build({  # type: ignore
+                    "escape": protocol.RLE_ESCAPE_BYTE,
+                    "count_m2": length - 2,
+                    "value": char,
+                })
+            )
         last_end = end
 
     result.extend(data[last_end:])
@@ -104,34 +128,17 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
 
 
 def decode(data: bytes | bytearray | memoryview) -> bytes:
-    """Decode RLE data using regex for fast block copying and construct."""
+    """Decode RLE data using a fully declarative Construct decoder (Sustitución Drástica)."""
     if not data:
         return b""
 
-    data_bytes = bytes(data)
-    result = bytearray()
-    last_end = 0
-
-    # Find all escape sequences (0xFF followed by 2 bytes)
-    for m in re.finditer(b'\\xff..', data_bytes, re.DOTALL):
-        start, end = m.span()
-        # Copy literal data before this escape sequence
-        result.extend(data_bytes[last_end:start])
-
-        obj = RLE_ESCAPE.parse(m.group(0))  # type: ignore
-        run_len = 1 if obj.count_m2 == 255 else obj.count_m2 + 2  # type: ignore
-        result.extend(repeat(obj.value, run_len))  # type: ignore
-
-        last_end = end
-
-    # Check for truncated escape sequence at the end
-    if data_bytes.find(b'\xff', last_end) != -1:
-         raise ValueError("Malformed RLE: truncated escape sequence")
-
-    # Copy any remaining literal data
-    result.extend(data_bytes[last_end:])
-
-    return bytes(result)
+    try:
+        # Construct GreedyRange returns a list of byte chunks
+        chunks: list[bytes] = RLE_DECODER.parse(data)  # type: ignore
+        return b"".join(chunks)
+    except Exception as e:
+        # SIL-2: Deterministic error reporting for malformed streams
+        raise ValueError(f"Malformed RLE stream: {e}") from e
 
 
 def should_compress(data: bytes | bytearray | memoryview) -> bool:
@@ -140,10 +147,13 @@ def should_compress(data: bytes | bytearray | memoryview) -> bool:
         return False
 
     data_bytes = bytes(data)
-    # Savings from runs of non-0xFF bytes (N bytes become 3)
-    savings = sum(len(m.group(0)) - 3 for m in re.finditer(b'([^\xff])\\1{3,}', data_bytes))
-    # Penalty for 0xFF (each 0xFF costs 2 extra bytes)
-    penalty = data_bytes.count(b'\xff') * 2
+    # Savings from runs of non-ESCAPE_BYTE bytes (N bytes become 3)
+    # Use f-string or concat to avoid literal \xff in code where possible
+    pattern = re.compile(b"([^" + re.escape(bytes([protocol.RLE_ESCAPE_BYTE])) + b"])\\1{3,}")
+    savings = sum(len(m.group(0)) - 3 for m in pattern.finditer(data_bytes))
+
+    # Penalty for ESCAPE_BYTE (each ESCAPE_BYTE costs 2 extra bytes)
+    penalty = data_bytes.count(protocol.RLE_ESCAPE_BYTE) * 2
 
     return savings > penalty + 4
 

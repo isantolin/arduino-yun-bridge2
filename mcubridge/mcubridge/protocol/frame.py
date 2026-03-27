@@ -27,10 +27,30 @@ before transmission.
 from __future__ import annotations
 
 from binascii import crc32
+from typing import Final
 import msgspec
-from construct import Struct, Int8ub, Int16ub, Int32ub, Bytes, this, Check, RawCopy, Checksum  # type: ignore
+from construct import (  # type: ignore
+    BitStruct,  # type: ignore
+    BitsInteger,
+    Bytes,
+    Check,
+    Checksum,
+    Flag,
+    Int8ub,
+    Int16ub,
+    Int32ub,
+    RawCopy,
+    Struct,
+    this,
+)
 
 from . import protocol
+
+# [SIL-2] Declarative Command ID Codec: Handles Bit 15 (Compression Flag)
+COMMAND_ID_CODEC: Final = BitStruct(  # type: ignore
+    "is_compressed" / Flag,  # type: ignore
+    "raw_id" / BitsInteger(15),  # type: ignore
+)  # type: ignore
 
 # [SIL-2] Declarative Frame Structure using Construct
 # This ensures big-endian encoding and automatic length/CRC validation.
@@ -76,12 +96,31 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
     @property
     def is_compressed(self) -> bool:
         """Return True if the frame command ID indicates RLE compression."""
-        return bool(self.command_id & protocol.CMD_FLAG_COMPRESSED)
+        # [SIL-2] Declarative flag extraction
+        try:
+            return COMMAND_ID_CODEC.parse(Int16ub.build(self.command_id)).is_compressed  # type: ignore
+        except Exception:
+            return False
 
     @property
     def raw_command_id(self) -> int:
         """Return the command ID without the compression flag."""
-        return self.command_id & ~protocol.CMD_FLAG_COMPRESSED
+        # [SIL-2] Declarative ID extraction
+        try:
+            return COMMAND_ID_CODEC.parse(Int16ub.build(self.command_id)).raw_id  # type: ignore
+        except Exception:
+            return self.command_id
+
+    @staticmethod
+    def build_command_id(raw_id: int, is_compressed: bool = False) -> int:
+        """Declaratively build a command ID with flags."""
+        try:
+            return Int16ub.parse(COMMAND_ID_CODEC.build({  # type: ignore
+                "is_compressed": is_compressed,
+                "raw_id": raw_id
+            }))
+        except Exception:
+            return raw_id | (0x8000 if is_compressed else 0)
 
     @staticmethod
     def build(command_id: int, sequence_id: int = 0, payload: bytes = b"") -> bytes:

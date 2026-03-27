@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from aiomqtt.message import Message
 
@@ -69,7 +69,13 @@ class DatastoreComponent(BaseComponent):
                 key,
                 len(value_bytes),
             )
-            value_bytes = value_bytes[:255]
+            # [SIL-2] Declarative truncation via Construct
+            from construct import Bytes  # type: ignore
+            try:
+                # Cast to bytes to satisfy type checker as Bytes(n).parse returns bytes
+                value_bytes = cast(bytes, Bytes(255).parse(value_bytes))  # type: ignore
+            except Exception:
+                value_bytes = value_bytes[:255]
 
         # [SIL-2] Use structured response packet
         response_payload = DatastoreGetResponsePacket(value=value_bytes).encode()

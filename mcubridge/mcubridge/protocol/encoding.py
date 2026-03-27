@@ -23,6 +23,7 @@ def encode_status_reason(reason: str | None) -> bytes:
 
     # [SIL-2] Declarative truncation to protocol limits
     try:
-        return Bytes(limit).parse(raw[:limit])  # type: ignore
+        # Construct Bytes(n).parse() will take exactly n bytes.
+        return Bytes(limit).parse(raw)  # type: ignore
     except Exception:
         return raw[:limit]

@@ -24,8 +24,6 @@ void setup() {
   // Initialize Console
   Console.begin();
 
-  pinMode(13, OUTPUT);
-
   // CRITICAL: Wait for Console to be ready (Linux handshake complete)
   // This prevents "Rejecting MCU frame before link synchronisation" errors.
   // We must call Bridge.process() to handle the handshake frames!
@@ -55,6 +53,15 @@ void loop() {
   Bridge.process();
 
   // Removed debug print to prevent serial collisions with RPC protocol
+  /*
+  static long lastPrint = 0;
+  if (millis() - lastPrint > 1000) {
+    lastPrint = millis();
+    Console.println("Estado: 0x05 (TIMEOUT)");
+  }
+  */
+}
+
   /*
   static long lastPrint = 0;
   if (millis() - lastPrint > 1000) {

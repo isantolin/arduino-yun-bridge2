@@ -79,7 +79,6 @@ void setup() {
       F("[FrameDebug] Bridge initialized with sketch-defined secret"));
 
   // Wait for handshake with non-blocking LED blink
-  pinMode(13, OUTPUT);
   long lastBlink = 0;
   bool ledState = false;
 
@@ -162,6 +161,14 @@ void loop() {
   // is not available.
   static bool notified = false;
   if (!notified) {
+    Serial.println(
+        F("[FrameDebug] BRIDGE_DEBUG_FRAMES disabled; enable it to collect "
+          "stats."));
+    notified = true;
+  }
+#endif
+}
+{
     Serial.println(
         F("[FrameDebug] BRIDGE_DEBUG_FRAMES disabled; enable it to collect "
           "stats."));

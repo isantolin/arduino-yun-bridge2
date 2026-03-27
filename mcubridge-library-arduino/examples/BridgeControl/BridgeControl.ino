@@ -68,8 +68,6 @@ void setup() {
     }
   }));
 
-  pinMode(13, OUTPUT);
-
   // Bloqueo controlado hasta sincronizar SIN LOGS a Serial.
   while (!Bridge.isSynchronized()) {
     Bridge.process();
@@ -83,6 +81,14 @@ void setup() {
 
 void loop() {
   Bridge.process();
+
+  static unsigned long lastMailboxCheck = 0;
+  if (millis() - lastMailboxCheck > 500) {
+    lastMailboxCheck = millis();
+    Mailbox.requestRead();
+  }
+}
+
 
   static unsigned long lastMailboxCheck = 0;
   if (millis() - lastMailboxCheck > 500) {

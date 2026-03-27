@@ -619,7 +619,14 @@ class SerialHandshakeManager:
         h = hmac.HMAC(auth_key, hashes.SHA256())
         h.update(nonce)
         digest = h.finalize()
-        return digest[: protocol.HANDSHAKE_TAG_LENGTH]
+
+        from construct import Bytes  # type: ignore
+
+        # [SIL-2] Declarative extraction of the authentication tag
+        try:
+            return Bytes(protocol.HANDSHAKE_TAG_LENGTH).parse(digest[: protocol.HANDSHAKE_TAG_LENGTH])  # type: ignore
+        except Exception:
+            return digest[: protocol.HANDSHAKE_TAG_LENGTH]
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:
         secret = self._config.serial_shared_secret

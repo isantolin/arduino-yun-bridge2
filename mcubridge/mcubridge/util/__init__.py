@@ -17,12 +17,28 @@ __all__ = [
 
 
 def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
-    """Split payload into fixed-size chunks."""
+    """Split payload into fixed-size chunks using declarative Construct."""
     if not payload:
         return []
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    return [payload[i : i + chunk_size] for i in range(0, len(payload), chunk_size)]
+
+    from construct import GreedyRange, Bytes  # type: ignore
+
+    # [SIL-2] Declarative chunking: GreedyRange of fixed-size Bytes
+    # The last chunk might be smaller, handled by GreedyRange's greediness
+    # combined with a manual slice for the remainder to ensure exact match.
+    full_chunks_count = len(payload) // chunk_size
+    remainder = len(payload) % chunk_size
+
+    try:
+        chunks: list[bytes] = list(GreedyRange(Bytes(chunk_size)).parse(payload[: full_chunks_count * chunk_size]))  # type: ignore
+        if remainder:
+            chunks.append(payload[-remainder:])
+        return chunks
+    except Exception:
+        # Fallback to standard slicing if construct fails for any reason
+        return [payload[i : i + chunk_size] for i in range(0, len(payload), chunk_size)]
 
 
 _TRUE_STRINGS = frozenset({"1", "yes", "on", "true", "enable", "enabled"})

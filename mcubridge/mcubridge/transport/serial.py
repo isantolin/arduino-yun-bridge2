@@ -46,8 +46,19 @@ _RAW_FRAME_MAX_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.MA
 
 
 def _is_raw_binary_frame(packet: bytes) -> bool:
-    """Validate a decoded raw frame matches the protocol envelope."""
-    return len(packet) >= _RAW_FRAME_MIN_SIZE and len(packet) <= _RAW_FRAME_MAX_SIZE
+    """Validate a decoded raw frame matches the protocol envelope using declarative Construct."""
+    if not packet or len(packet) < protocol.MIN_FRAME_SIZE:
+        return False
+
+    from mcubridge.protocol.frame import RPC_FRAME_HEADER  # type: ignore
+
+    # [SIL-2] Use the actual header definition to validate the envelope
+    # instead of just checking lengths. This ensures the version is correct.
+    try:
+        RPC_FRAME_HEADER.parse(packet)  # type: ignore
+        return True
+    except Exception:
+        return False
 
 
 class SerialTransport:

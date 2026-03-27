@@ -17,7 +17,7 @@ from mcubridge.config.const import (
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
-from mcubridge.protocol import protocol, rle
+from mcubridge.protocol import rle
 from mcubridge.protocol.contracts import (
     expected_responses,
     response_to_request,
@@ -109,7 +109,9 @@ class SerialFlowController:
             try:
                 compressed = rle.encode(payload)
                 if len(compressed) < len(payload):
-                    final_cmd |= protocol.CMD_FLAG_COMPRESSED
+                    # [SIL-2] Declarative command ID reconstruction with flags
+                    # cmd_flag_compressed is Bit 15 (0x8000)
+                    final_cmd = command_id | 0x8000
                     final_payload = compressed
             except (ValueError, TypeError, OverflowError) as e:
                 self._logger.warning("Compression failed for command 0x%02X: %s", command_id, e)

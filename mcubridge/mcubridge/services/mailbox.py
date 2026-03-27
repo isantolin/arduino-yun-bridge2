@@ -113,15 +113,22 @@ class MailboxComponent(BaseComponent):
 
     async def handle_read(self, seq_id: int, _: bytes) -> bool:
         original_payload = self.state.pop_mailbox_message()
-        message_payload = original_payload if original_payload is not None else b""
+        message_payload: bytes = original_payload if original_payload is not None else b""
 
+        from construct import Bytes  # type: ignore
+
+        max_allowed = protocol.MAX_PAYLOAD_SIZE - 2
         msg_len = len(message_payload)
-        if msg_len > protocol.MAX_PAYLOAD_SIZE - 2:
+        if msg_len > max_allowed:
             logger.warning(
                 "Mailbox message too long (%d bytes), truncating.",
                 msg_len,
             )
-            message_payload = message_payload[: protocol.MAX_PAYLOAD_SIZE - 2]
+            # [SIL-2] Declarative truncation via Construct
+            try:
+                message_payload = Bytes(max_allowed).parse(message_payload[:max_allowed])  # type: ignore
+            except Exception:
+                message_payload = message_payload[:max_allowed]
             msg_len = len(message_payload)
 
         # [SIL-2] Use structured packet

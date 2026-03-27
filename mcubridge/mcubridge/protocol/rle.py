@@ -21,7 +21,7 @@ Only encodes runs of 4+ identical bytes (break-even at 3).
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import Final, Any
 
 import msgspec
 from construct import (  # type: ignore

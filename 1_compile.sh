@@ -17,14 +17,14 @@ Options:
   --install-host-deps   Attempt to install missing host dependencies using
                         the system package manager (requires sudo/root).
   --skip-host-deps      Skip dependency installation (default behaviour).
-  --verbose             Enable full build verbosity (V=s).
+  --quiet               Disable build verbosity (V=s is ON by default).
   -h, --help            Show this message and exit.
 EOF
 }
 
 # Default to installing host deps unless explicitly disabled
 INSTALL_HOST_DEPS=1
-VERBOSE=0
+VERBOSE=1
 
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
@@ -37,8 +37,8 @@ while [[ $# -gt 0 ]]; do
             INSTALL_HOST_DEPS=0
             shift
             ;;
-        --verbose)
-            VERBOSE=1
+        --quiet)
+            VERBOSE=0
             shift
             ;;
         -h|--help)
@@ -587,9 +587,13 @@ echo "[BUILD] Building libraries: $LIBS..."
 # Build all libraries in parallel with as many jobs as cores.
 for lib in $LIBS; do
     echo "[BUILD] Building library $lib (.apk)..."
-    if ! make "package/feeds/mcubridge/$lib/compile" -j$(nproc); then
-        echo "[RETRY] Build failed for $lib. Rerunning with -j1 V=s to expose error details..."
-        make "package/feeds/mcubridge/$lib/compile" -j1 V=s || exit 1
+    if [ "$VERBOSE" -eq 1 ]; then
+        make "package/feeds/mcubridge/$lib/compile" -j$(nproc) V=s || exit 1
+    else
+        if ! make "package/feeds/mcubridge/$lib/compile" -j$(nproc); then
+            echo "[RETRY] Build failed for $lib. Rerunning with -j1 V=s to expose error details..."
+            make "package/feeds/mcubridge/$lib/compile" -j1 V=s || exit 1
+        fi
     fi
     
     # [FIX] Copiar artefactos .apk de librerías
@@ -599,9 +603,13 @@ done
 # Luego paquetes principales
 for pkg in luci-app-mcubridge mcubridge; do
     echo "[BUILD] Building package $pkg (.apk)..."
-    if ! make "package/$pkg/compile" -j$(nproc); then
-        echo "[RETRY] Build failed for $pkg. Rerunning with -j1 V=s to expose error details..."
-        make "package/$pkg/compile" -j1 V=s || exit 1
+    if [ "$VERBOSE" -eq 1 ]; then
+        make "package/$pkg/compile" -j$(nproc) V=s || exit 1
+    else
+        if ! make "package/$pkg/compile" -j$(nproc); then
+            echo "[RETRY] Build failed for $pkg. Rerunning with -j1 V=s to expose error details..."
+            make "package/$pkg/compile" -j1 V=s || exit 1
+        fi
     fi
 
     # [FIX] Copiar artefactos .apk

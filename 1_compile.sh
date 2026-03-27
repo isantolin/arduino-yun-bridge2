@@ -98,12 +98,28 @@ sanitize_path() {
 sanitize_path
 
 # ==============================================================================
-# [FIX CRITICO] Compatibilidad Python 3.13 + Rust (PyO3)
+# [FIX CRITICO] Rust/Cargo Bridge para CI (GitHub Actions)
 # ==============================================================================
-# Muchas librerías de Python (bcrypt, cryptography) usan una versión de PyO3
-# que aún no reconoce oficialmente Python 3.13.
-# Esta variable fuerza al compilador Rust a usar la ABI estable (ABI3) y
-# permite que la compilación continúe sin errores.
+# Compilar Rust desde el SDK de OpenWrt toma >1 hora y falla en CI.
+# Si rustc y cargo están en el host, los inyectamos en el SDK.
+inject_rust_into_sdk() {
+    local sdk_host_bin="$SDK_DIR/staging_dir/host/bin"
+    mkdir -p "$sdk_host_bin"
+    
+    if command -v rustc >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
+        echo "[INFO] Injecting host Rust into SDK staging_dir to skip 'rust host-compile'..."
+        ln -sf "$(command -v rustc)" "$sdk_host_bin/rustc"
+        ln -sf "$(command -v cargo)" "$sdk_host_bin/cargo"
+        ln -sf "$(command -v rustdoc)" "$sdk_host_bin/rustdoc"
+        # Marcamos rust como "instalado" para el sistema de feeds de OpenWrt
+        mkdir -p "$SDK_DIR/staging_dir/host/stamp"
+        touch "$SDK_DIR/staging_dir/host/stamp/.rust_installed"
+    else
+        echo "[WARN] Rust/Cargo not found on host. Build might be extremely slow."
+    fi
+}
+
+# [FIX] Compatibilidad Python 3.13 + Rust (PyO3)
 export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 # ==============================================================================
 
@@ -287,7 +303,10 @@ if [ ! -d "$SDK_DIR" ]; then
         
         echo "[INFO] Extracting SDK..."
         if tar --use-compress-program="${ZSTD_DECOMPRESSOR}" -xf sdk.tar.zst; then
-            rm sdk.tar.zst; mv openwrt-sdk-* "$SDK_DIR"; SUCCESS=1; break
+            rm sdk.tar.zst; mv openwrt-sdk-* "$SDK_DIR"; SUCCESS=1;
+            # [FIX] Inyectamos Rust antes de cualquier compilación
+            inject_rust_into_sdk
+            break
         else
             echo "[ERROR] Extraction failed. SDK archive might be corrupt."
             rm -f sdk.tar.zst; rm -rf openwrt-sdk-*; RETRY=$((RETRY+1)); sleep 5

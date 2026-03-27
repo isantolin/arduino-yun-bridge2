@@ -32,6 +32,8 @@ define Build/Configure
 	echo "abi3=false" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "include_dir=$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "lib_dir=$(STAGING_DIR)/usr/lib" >> $(PKG_BUILD_DIR)/pyo3-config.txt
+	# [FIX] Force maturins rust target for cross-compilation
+	$(if $(filter be,$(BOARD)),echo "target=mips-unknown-linux-musl" >> $(PKG_BUILD_DIR)/pyo3-config.txt)
 endef
 
 define Package/python3-cryptography

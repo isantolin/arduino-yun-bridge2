@@ -91,33 +91,40 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
                         size_t arg_secret_len) {
   bridge::hal::init();
 
+  // [SIL-2] Initialize Watchdog as early as possible to prevent hang during boot
+  if constexpr (bridge::config::ENABLE_WATCHDOG) {
 #if defined(ARDUINO_ARCH_AVR)
-  wdt_enable(WDTO_4S);
+    wdt_enable(WDTO_4S);
 #elif defined(ARDUINO_ARCH_ESP32)
-  esp_task_wdt_init(4, true);
-  esp_task_wdt_add(NULL);
+    esp_task_wdt_init(4, true);
+    esp_task_wdt_add(NULL);
 #endif
+  }
 
+  // [SIL-2] Force actuators to safe state before any protocol negotiation
   if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
     uint8_t digital_pins = 0;
     uint8_t analog_pins = 0;
     bridge::hal::getPinCounts(digital_pins, analog_pins);
     
     for (uint8_t pin = 0; pin < digital_pins; ++pin) {
-      pinMode(pin, OUTPUT);
-      digitalWrite(pin, LOW);
+      ::pinMode(pin, OUTPUT);
+      ::digitalWrite(pin, LOW);
     }
   }
 
   _fsm.begin();
   _timers.clear();
   _rx_history.clear();
+  
+  // Set deterministic periods based on protocol spec
   _timers.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
   _timers.set_period(bridge::scheduler::TIMER_RX_DEDUPE, bridge::config::RX_DEDUPE_INTERVAL_MS);
   _timers.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE, bridge::config::BAUDRATE_SETTLE_MS);
   _timers.set_period(bridge::scheduler::TIMER_STARTUP_STABILIZATION, bridge::config::STARTUP_STABILIZATION_MS);
   _last_tick_millis = bridge::now_ms();
 
+  // [MIL-SPEC] Cryptographic Power-On Self-Test (POST)
   if (!rpc::security::run_cryptographic_self_tests()) {
     enterSafeState();
     _fsm.cryptoFault();
@@ -126,9 +133,9 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 
   if (_hardware_serial != nullptr) {
     _hardware_serial->begin(arg_baudrate);
-    #if !defined(BRIDGE_HOST_TEST)
+#if !defined(BRIDGE_HOST_TEST)
     _hardware_serial->setTimeout(bridge::config::SERIAL_TIMEOUT_MS);
-    #endif
+#endif
   }
 
   _packet_serial.setPacketHandler(etl::delegate<void(etl::span<const uint8_t>)>::create<BridgeClass, &BridgeClass::_onPacketReceived>(*this));
@@ -149,19 +156,12 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   _retry_count = 0;
   _rx_history.clear();
 
+  // Feature registration using zero-cost abstractions
   add_observer(Console);
-#if BRIDGE_ENABLE_DATASTORE
-  add_observer(DataStore);
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-  add_observer(Mailbox);
-#endif
-#if BRIDGE_ENABLE_PROCESS
-  add_observer(Process);
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-  add_observer(FileSystem);
-#endif
+  if constexpr (bridge::config::ENABLE_DATASTORE) { add_observer(DataStore); }
+  if constexpr (bridge::config::ENABLE_MAILBOX) { add_observer(Mailbox); }
+  if constexpr (bridge::config::ENABLE_PROCESS) { add_observer(Process); }
+  if constexpr (bridge::config::ENABLE_FILESYSTEM) { add_observer(FileSystem); }
 }
 
 void BridgeClass::process() {
@@ -275,6 +275,7 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
 
   notify_observers(MsgBridgeCommand{raw_cmd, sequence_id, effective_frame.payload});
 
+  // [SIL-2] O(1) Jump Table for Command Categories
   static const CmdHandler kGroupHandlers[] PROGMEM = {
       &BridgeClass::onStatusCommand,    // 0x30
       &BridgeClass::onSystemCommand,    // 0x40
@@ -289,13 +290,13 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
 
   const uint8_t group_idx = (raw_cmd >> 4) - 3;
   if (group_idx < (sizeof(kGroupHandlers) / sizeof(kGroupHandlers[0]))) {
+    CmdHandler handler;
     if constexpr (bridge::config::IS_AVR) {
-        CmdHandler handler;
         memcpy_P(&handler, &kGroupHandlers[group_idx], sizeof(handler));
-        (this->*handler)(ctx);
     } else {
-        (this->*kGroupHandlers[group_idx])(ctx);
+        handler = kGroupHandlers[group_idx];
     }
+    (this->*handler)(ctx);
   } else {
     onUnknownCommand(ctx);
   }
@@ -740,14 +741,16 @@ void BridgeClass::enterSafeState() {
   _timers.clear(); _pending_baudrate = 0; _retry_count = 0; _clearPendingTxQueue();
   _rx_history.clear(); _consecutive_crc_errors = 0;
   
-  // [MIL-SPEC] Securely zero sensitive data on fault
+  // [MIL-SPEC] Securely zero sensitive data on fault (HKDF/Shared Secret)
   rpc::security::secure_zero(etl::span<uint8_t>(_shared_secret.data(), _shared_secret.size()));
   _shared_secret.clear();
 
-#if BRIDGE_ENABLE_PROCESS
-  Process.reset();
-#endif
-  forceSafeState(); // Ensure physical pins are in a safe state (Input Pullup)
+  if constexpr (bridge::config::ENABLE_PROCESS) {
+    Process.reset();
+  }
+  
+  // [SIL-2] Force physical pins to high-impedance safe state
+  forceSafeState(); 
   notify_observers(MsgBridgeLost());
 }
 

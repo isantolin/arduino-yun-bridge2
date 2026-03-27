@@ -1,12 +1,17 @@
 # Single source of truth for McuBridge daemon dependencies.
 
 [[dependency]]
-name = "python3"
-openwrt = "python3"
+name = "python3-light"
+openwrt = "python3-light"
 pip = ""
 rationale = "Base interpreter shipped on the target image"
 
 [[dependency]]
+name = "python3-asyncio"
+openwrt = "python3-asyncio"
+pip = ""
+rationale = "Asyncio standard library component"
+
 [[dependency]]
 name = "aiomqtt"
 openwrt = "python3-aiomqtt"

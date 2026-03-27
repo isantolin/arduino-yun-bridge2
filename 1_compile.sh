@@ -17,12 +17,14 @@ Options:
   --install-host-deps   Attempt to install missing host dependencies using
                         the system package manager (requires sudo/root).
   --skip-host-deps      Skip dependency installation (default behaviour).
+  --verbose             Enable full build verbosity (V=s).
   -h, --help            Show this message and exit.
 EOF
 }
 
 # Default to installing host deps unless explicitly disabled
 INSTALL_HOST_DEPS=1
+VERBOSE=0
 
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
@@ -33,6 +35,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-host-deps)
             INSTALL_HOST_DEPS=0
+            shift
+            ;;
+        --verbose)
+            VERBOSE=1
             shift
             ;;
         -h|--help)

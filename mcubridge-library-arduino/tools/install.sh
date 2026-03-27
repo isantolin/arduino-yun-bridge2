@@ -119,8 +119,12 @@ else
     # PacketSerial: Use local .dummy_libs if present, otherwise try to download.
     if [ -d "$ROOT_DIR/.dummy_libs/PacketSerial" ]; then
         echo "[INFO] Using local PacketSerial from .dummy_libs..."
-        mkdir -p "$LIB_DIR/PacketSerial"
-        cp -a "$ROOT_DIR/.dummy_libs/PacketSerial/." "$LIB_DIR/PacketSerial/"
+        if [ "$(realpath "$LIB_DIR/PacketSerial")" != "$(realpath "$ROOT_DIR/.dummy_libs/PacketSerial")" ]; then
+            mkdir -p "$LIB_DIR/PacketSerial"
+            cp -a "$ROOT_DIR/.dummy_libs/PacketSerial/." "$LIB_DIR/PacketSerial/"
+        else
+            echo "[INFO] Skipping copy as source and destination are the same."
+        fi
     else
         install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "PacketSerial.h" "" "$LIB_DIR"
     fi

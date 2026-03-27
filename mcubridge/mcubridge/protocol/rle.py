@@ -41,9 +41,9 @@ from . import protocol
 
 # [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
 RLE_ESCAPE: Final = Struct(
-    "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),
-    "count_m2" / Int8ub,
-    "value" / Int8ub,
+    "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),  # type: ignore
+    "count_m2" / Int8ub,  # type: ignore
+    "value" / Int8ub,  # type: ignore
 )
 
 # [SIL-2] Declarative RLE Decoder: Greedy selection between escape sequences and literals
@@ -61,7 +61,7 @@ RLE_DECODER: Final = Struct(
             ExprAdapter(
                 FocusedSeq(
                     "value",
-                    "value" / Int8ub,
+                    "value" / Int8ub,  # type: ignore
                     "_" / Check(this.value != protocol.RLE_ESCAPE_BYTE)  # type: ignore
                 ),
                 decoder=lambda obj, ctx: bytes([obj]),  # type: ignore
@@ -145,8 +145,8 @@ def decode(data: bytes | bytearray | memoryview) -> bytes:
 
     try:
         # Construct returns a Container with a 'chunks' list of byte chunks
-        parsed = RLE_DECODER.parse(data)  # type: ignore
-        return b"".join(parsed.chunks)
+        parsed: Any = RLE_DECODER.parse(data)  # type: ignore
+        return b"".join(parsed.chunks)  # type: ignore
     except Exception as e:
         # SIL-2: Deterministic error reporting for malformed streams
         raise ValueError(f"Malformed RLE stream: {e}") from e

@@ -26,11 +26,35 @@ before transmission.
 
 from __future__ import annotations
 
-import struct
 from binascii import crc32
 import msgspec
+from construct import Struct, Int8ub, Int16ub, Int32ub, Bytes, this, Check, RawCopy, Checksum  # type: ignore
 
 from . import protocol
+
+# [SIL-2] Declarative Frame Structure using Construct
+# This ensures big-endian encoding and automatic length/CRC validation.
+RPC_FRAME_HEADER = Struct(
+    "version" / Int8ub,  # type: ignore
+    "payload_len" / Int16ub,  # type: ignore
+    "command_id" / Int16ub,  # type: ignore
+    "sequence_id" / Int16ub,  # type: ignore
+    Check(this.version == protocol.PROTOCOL_VERSION),  # type: ignore
+)
+
+# [SIL-2] Full Frame with Checksum (Sustitución Drástica)
+# Uses RawCopy to capture the bytes for CRC calculation without manual slicing.
+RPC_FRAME = Struct(
+    "header_payload" / RawCopy(Struct(  # type: ignore
+        "header" / RPC_FRAME_HEADER,  # type: ignore
+        "payload" / Bytes(this.header.payload_len),  # type: ignore
+    )),
+    "crc" / Checksum(  # type: ignore
+        Int32ub,
+        lambda data: crc32(data) & 0xFFFFFFFF,  # type: ignore
+        this.header_payload.data
+    ),
+)
 
 
 class Frame(msgspec.Struct, frozen=True, kw_only=True):
@@ -61,7 +85,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
     @staticmethod
     def build(command_id: int, sequence_id: int = 0, payload: bytes = b"") -> bytes:
-        """Build a raw frame (header + payload + CRC) for COBS encoding."""
+        """Build a raw frame (header + payload + CRC) using Construct (Sustitución Drástica)."""
         payload_len = len(payload)
         if payload_len > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload too large ({payload_len} bytes); max is {protocol.MAX_PAYLOAD_SIZE}")
@@ -70,58 +94,48 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         if not 0 <= sequence_id <= protocol.UINT16_MAX:
             raise ValueError(f"Sequence id {sequence_id} outside 16-bit range")
 
-        # [PHASE 3] Efficient pre-allocated construction
-        buf = bytearray(protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE)
-        struct.pack_into(
-            protocol.CRC_COVERED_HEADER_FORMAT,
-            buf, 0,
-            protocol.PROTOCOL_VERSION,
-            payload_len,
-            command_id,
-            sequence_id
-        )
-        if payload_len > 0:
-            buf[protocol.CRC_COVERED_HEADER_SIZE : protocol.CRC_COVERED_HEADER_SIZE + payload_len] = payload
-
-        crc_val = crc32(memoryview(buf)[:-protocol.CRC_SIZE]) & 0xFFFFFFFF
-        struct.pack_into(protocol.CRC_FORMAT, buf, len(buf) - protocol.CRC_SIZE, crc_val)
-
-        return bytes(buf)
+        try:
+            # Entire frame is built via Construct, including Checksum
+            # RawCopy requires the subconstruct value to be passed under the 'value' key during build.
+            return RPC_FRAME.build({  # type: ignore
+                "header_payload": {
+                    "value": {
+                        "header": {
+                            "version": protocol.PROTOCOL_VERSION,
+                            "payload_len": payload_len,
+                            "command_id": command_id,
+                            "sequence_id": sequence_id
+                        },
+                        "payload": payload
+                    }
+                }
+            })
+        except Exception as e:
+            raise ValueError(f"Frame build failed: {e}") from e
 
     @staticmethod
     def parse(raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, int, bytes]:
-        """Parse a decoded frame and validate header, payload, and CRC.
-
-        Returns:
-            Tuple of (command_id, sequence_id, payload)
-        """
-        view = memoryview(raw_frame_buffer)
-        if len(view) < protocol.MIN_FRAME_SIZE:
-            raise ValueError(f"Incomplete frame: size {len(view)} < {protocol.MIN_FRAME_SIZE}")
+        """Parse a decoded frame and validate header, payload, and CRC using Construct."""
+        if len(raw_frame_buffer) < protocol.MIN_FRAME_SIZE:
+            raise ValueError(f"Incomplete frame: size {len(raw_frame_buffer)} < {protocol.MIN_FRAME_SIZE}")
 
         try:
-            version, payload_len, command_id, sequence_id = struct.unpack_from(
-                protocol.CRC_COVERED_HEADER_FORMAT, view, 0
-            )
-        except struct.error as e:
-            raise ValueError(f"Malformed header structure: {e}") from e
+            # Construct handles length validation, header parsing, AND CRC Checksum validation
+            obj = RPC_FRAME.parse(raw_frame_buffer)  # type: ignore
+        except Exception as e:
+            # Maintain compatibility with tests expecting specific error messages
+            err_msg = str(e)
+            if "checksum mismatch" in err_msg.lower():
+                # Extract components for the legacy-style error message if possible
+                # Otherwise provide a generic CRC error
+                raise ValueError("CRC mismatch: verification failed via Construct Checksum") from e
+            if "stream read less than specified amount" in err_msg:
+                raise ValueError(f"Frame length mismatch: {err_msg}") from e
+            raise ValueError(f"Malformed frame: {e}") from e
 
-        if version != protocol.PROTOCOL_VERSION:
-            raise ValueError(f"Invalid version {version} != {protocol.PROTOCOL_VERSION}")
-
-        expected_total_size = protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE
-        if len(view) != expected_total_size:
-            raise ValueError(f"Frame length mismatch: expected {expected_total_size}, got {len(view)}")
-
-        payload = view[protocol.CRC_COVERED_HEADER_SIZE : protocol.CRC_COVERED_HEADER_SIZE + payload_len].tobytes()
-
-        expected_crc = crc32(view[:-protocol.CRC_SIZE]) & 0xFFFFFFFF
-        (received_crc,) = struct.unpack_from(protocol.CRC_FORMAT, view, len(view) - protocol.CRC_SIZE)
-
-        if expected_crc != received_crc:
-            raise ValueError(f"CRC mismatch: expected {expected_crc:08X}, got {received_crc:08X}")
-
-        return command_id, sequence_id, payload
+        # Access fields within the RawCopy 'value' container
+        res = obj.header_payload.value  # type: ignore
+        return res.header.command_id, res.header.sequence_id, res.payload  # type: ignore
 
     def to_bytes(self) -> bytes:
         """Serialize the instance using :meth:`build`."""

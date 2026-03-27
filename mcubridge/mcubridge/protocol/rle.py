@@ -21,9 +21,11 @@ Only encodes runs of 4+ identical bytes (break-even at 3).
 from __future__ import annotations
 
 import re
-import struct
 from itertools import repeat
 from typing import Final
+
+import msgspec
+from construct import Struct, Int8ub  # type: ignore
 
 # Escape byte used to signal a run
 ESCAPE_BYTE: Final[int] = 0xFF
@@ -34,13 +36,35 @@ MIN_RUN_LENGTH: Final[int] = 4
 # Maximum run length in a single encoded sequence (254 + 2 = 256)
 MAX_RUN_LENGTH: Final[int] = 256
 
-# Struct format for RLE escape sequence: [Escape(B), Count-2(B), Value(B)]
-RLE_ESCAPE_FORMAT: Final[str] = "BBB"
+# [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
+RLE_ESCAPE = Struct(
+    "escape" / Int8ub,  # type: ignore
+    "count_m2" / Int8ub,  # type: ignore
+    "value" / Int8ub,  # type: ignore
+)
 RLE_ESCAPE_SIZE: Final[int] = 3
 
 
+class RLEPayload(msgspec.Struct, frozen=True):
+    """Encapsulates RLE-compressed data with a msgspec-compatible interface (Refactor)."""
+
+    data: bytes
+
+    @classmethod
+    def from_uncompressed(cls, data: bytes | bytearray | memoryview) -> "RLEPayload":
+        """Create an RLEPayload by compressing the input data."""
+        return cls(data=encode(data))
+
+    def decompress(self) -> bytes:
+        """Decompress the encapsulated data."""
+        return decode(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+
 def encode(data: bytes | bytearray | memoryview) -> bytes:
-    """Encode data using RLE with struct.pack for sequences."""
+    """Encode data using RLE with construct for sequences."""
     if not data:
         return b""
 
@@ -60,16 +84,19 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
             for i in range(0, length, MAX_RUN_LENGTH):
                 chunk_len = min(length - i, MAX_RUN_LENGTH)
                 result.extend(
-                    struct.pack(
-                        RLE_ESCAPE_FORMAT,
-                        ESCAPE_BYTE,
-                        255 if chunk_len == 1 else chunk_len - 2,
-                        ESCAPE_BYTE,
-                    )
+                    RLE_ESCAPE.build({  # type: ignore
+                        "escape": ESCAPE_BYTE,
+                        "count_m2": 255 if chunk_len == 1 else chunk_len - 2,
+                        "value": ESCAPE_BYTE,
+                    })
                 )
         else:
             # Non-0xFF run of 4+ bytes
-            result.extend(struct.pack(RLE_ESCAPE_FORMAT, ESCAPE_BYTE, length - 2, char))
+            result.extend(RLE_ESCAPE.build({  # type: ignore
+                "escape": ESCAPE_BYTE,
+                "count_m2": length - 2,
+                "value": char,
+            }))
         last_end = end
 
     result.extend(data[last_end:])
@@ -77,7 +104,7 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
 
 
 def decode(data: bytes | bytearray | memoryview) -> bytes:
-    """Decode RLE data using regex for fast block copying and struct.unpack_from."""
+    """Decode RLE data using regex for fast block copying and construct."""
     if not data:
         return b""
 
@@ -91,9 +118,9 @@ def decode(data: bytes | bytearray | memoryview) -> bytes:
         # Copy literal data before this escape sequence
         result.extend(data_bytes[last_end:start])
 
-        _, count_m2, val = struct.unpack_from(RLE_ESCAPE_FORMAT, m.group(0), 0)
-        run_len = 1 if count_m2 == 255 else count_m2 + 2
-        result.extend(repeat(val, run_len))
+        obj = RLE_ESCAPE.parse(m.group(0))  # type: ignore
+        run_len = 1 if obj.count_m2 == 255 else obj.count_m2 + 2  # type: ignore
+        result.extend(repeat(obj.value, run_len))  # type: ignore
 
         last_end = end
 

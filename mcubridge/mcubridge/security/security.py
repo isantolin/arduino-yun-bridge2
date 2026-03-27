@@ -16,8 +16,8 @@ import ctypes
 import hashlib
 import hmac
 import secrets
-import struct
 from typing import Final
+from construct import Int64ub  # type: ignore
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.constant_time import bytes_eq
@@ -72,20 +72,18 @@ def timing_safe_equal(a: bytes, b: bytes) -> bool:
 
 
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
-    """Generate a 16-byte nonce with monotonic counter using struct.pack_into."""
+    """Generate a 16-byte nonce with monotonic counter using Construct."""
     new_counter = counter + 1
-    nonce = bytearray(NONCE_TOTAL_BYTES)
-    nonce[:NONCE_RANDOM_BYTES] = secrets.token_bytes(NONCE_RANDOM_BYTES)
-    struct.pack_into(">Q", nonce, NONCE_RANDOM_BYTES, new_counter)
-    return bytes(nonce), new_counter
+    random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
+    counter_part = Int64ub.build(new_counter)  # type: ignore
+    return random_part + counter_part, new_counter
 
 
 def extract_nonce_counter(nonce: bytes) -> int:
-    """Extract the counter from a nonce using struct.unpack_from."""
+    """Extract the counter from a nonce using Construct."""
     if len(nonce) != NONCE_TOTAL_BYTES:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
-    (val,) = struct.unpack_from(">Q", nonce, NONCE_RANDOM_BYTES)
-    return val
+    return Int64ub.parse(nonce[NONCE_RANDOM_BYTES:])  # type: ignore
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:

@@ -26,6 +26,12 @@ pip = "cobs==1.2.2"
 rationale = "COBS framing for the RPC protocol"
 
 [[dependency]]
+name = "construct"
+openwrt = "python3-construct"
+pip = "construct==2.10.70"
+rationale = "Declarative byte serialization for the frame layer"
+
+[[dependency]]
 name = "jinja2"
 openwrt = "python3-jinja2"
 pip = "jinja2==3.1.6"

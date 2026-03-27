@@ -7,11 +7,6 @@ pip = ""
 rationale = "Base interpreter shipped on the target image"
 
 [[dependency]]
-name = "python3-uci"
-openwrt = "python3-uci"
-pip = ""
-rationale = "Load daemon configuration from UCI"
-
 [[dependency]]
 name = "aiomqtt"
 openwrt = "python3-aiomqtt"

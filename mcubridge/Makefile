@@ -45,7 +45,6 @@ define Package/$(PKG_NAME)
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
 		+python3 \
-		+python3-uci \
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
 		+python3-cobs \

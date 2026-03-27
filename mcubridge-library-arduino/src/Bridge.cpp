@@ -103,14 +103,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 
   // [SIL-2] Force actuators to safe state before any protocol negotiation
   if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-    uint8_t digital_pins = 0;
-    uint8_t analog_pins = 0;
-    bridge::hal::getPinCounts(digital_pins, analog_pins);
-    
-    for (uint8_t pin = 0; pin < digital_pins; ++pin) {
-      ::pinMode(pin, OUTPUT);
-      ::digitalWrite(pin, LOW);
-    }
+    bridge::hal::forceSafeState();
   }
 
   _fsm.begin();
@@ -242,13 +235,7 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> decoded_payload)
 }
 
 void BridgeClass::forceSafeState() {
-  uint8_t digital_pins = 0;
-  uint8_t analog_pins = 0;
-  bridge::hal::getPinCounts(digital_pins, analog_pins);
-
-  for (uint8_t i = 0; i < digital_pins; ++i) {
-    pinMode(i, INPUT_PULLUP);
-  }
+  bridge::hal::forceSafeState();
 #if defined(ARDUINO_ARCH_AVR)
   wdt_enable(WDTO_2S);
 #endif
@@ -764,17 +751,21 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::string_view messa
 
 void BridgeClass::emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
   if (message == nullptr) { emitStatus(status_code, etl::span<const uint8_t>()); return; }
-  if constexpr (bridge::config::IS_AVR) {
-    #if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
-    strncpy_P(reinterpret_cast<char*>(_transient_buffer.data()), (PGM_P)message, _transient_buffer.size() - 1);
-    #else
-    strncpy(reinterpret_cast<char*>(_transient_buffer.data()), reinterpret_cast<const char*>(message), _transient_buffer.size() - 1);
-    #endif
-  } else {
-    strncpy(reinterpret_cast<char*>(_transient_buffer.data()), reinterpret_cast<const char*>(message), _transient_buffer.size() - 1);
+  const size_t max_len = _transient_buffer.size() - 1U;
+#if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
+  strncpy_P(reinterpret_cast<char*>(_transient_buffer.data()), (PGM_P)message, max_len);
+#else
+  etl::string_view msg_view(reinterpret_cast<const char*>(message));
+  const size_t copy_len = etl::min(msg_view.size(), max_len);
+  etl::copy_n(msg_view.data(), copy_len, _transient_buffer.data());
+#endif
+  _transient_buffer[max_len] = '\0';
+  
+  size_t actual_len = 0;
+  while (actual_len < max_len && _transient_buffer[actual_len] != '\0') {
+    actual_len++;
   }
-  _transient_buffer[_transient_buffer.size() - 1] = '\0';
-  emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer.data(), strlen(reinterpret_cast<char*>(_transient_buffer.data()))));
+  emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer.data(), actual_len));
 }
 
 bool BridgeClass::sendFrame(rpc::StatusCode status_code, uint16_t sequence_id, etl::span<const uint8_t> payload) { return _sendFrame(rpc::to_underlying(status_code), sequence_id, payload); }

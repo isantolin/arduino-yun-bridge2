@@ -41,7 +41,7 @@ void McuBridgeSha256::update(const void* data, size_t len) {
 void McuBridgeSha256::finalize(void* digest, size_t len) {
   uint8_t full_digest[32];
   wc_Sha256Final(&sha_, full_digest);
-  memcpy(digest, full_digest, etl::min(len, (size_t)32));
+  etl::copy(full_digest, full_digest + etl::min(len, (size_t)32), static_cast<uint8_t*>(digest));
 }
 
 void McuBridgeSha256::resetHMAC(const void* key, size_t key_len) {
@@ -54,7 +54,7 @@ void McuBridgeSha256::finalizeHMAC(const void* key, size_t key_len, void* digest
   (void)key_len;
   uint8_t full_digest[32];
   wc_HmacFinal(&hmac_, full_digest);
-  memcpy(digest, full_digest, etl::min(len, (size_t)32));
+  etl::copy(full_digest, full_digest + etl::min(len, (size_t)32), static_cast<uint8_t*>(digest));
   is_hmac_active_ = false;
 }
 

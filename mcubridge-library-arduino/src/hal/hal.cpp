@@ -130,6 +130,19 @@ bool isValidPin(const uint8_t pin) {
   return pin < DIGITAL_PINS;
 }
 
+void forceSafeState() {
+  // [SIL-2] Ensure all potential actuator pins are in a safe state before any logic starts.
+  // This prevents spikes or unintended activations during MCU boot/reset.
+  // Using INPUT_PULLUP ensures pins are in a well-defined high-impedance state.
+  uint8_t digital_pins = 0;
+  uint8_t analog_pins = 0;
+  getPinCounts(digital_pins, analog_pins);
+
+  for (uint8_t pin = 0; pin < digital_pins; ++pin) {
+    pinMode(pin, INPUT_PULLUP);
+  }
+}
+
 uint16_t getFreeMemory() {
 #if defined(ARDUINO_ARCH_AVR)
   int v;

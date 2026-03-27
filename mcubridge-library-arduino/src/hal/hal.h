@@ -16,8 +16,12 @@
 namespace bridge::hal {
 
 /**
- * @brief Get the amount of free RAM available.
- * @return Free bytes or UINT16_MAX if detection fails.
+ * @brief Force all safety-critical pins to a safe state (e.g. LOW/Input).
+ */
+void forceSafeState();
+
+/**
+ * @brief Get the amount of free RAM available. * @return Free bytes or UINT16_MAX if detection fails.
  */
 uint16_t getFreeMemory();
 

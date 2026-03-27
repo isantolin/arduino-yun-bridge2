@@ -88,11 +88,3 @@ void loop() {
     Mailbox.requestRead();
   }
 }
-
-
-  static unsigned long lastMailboxCheck = 0;
-  if (millis() - lastMailboxCheck > 500) {
-    lastMailboxCheck = millis();
-    Mailbox.requestRead();
-  }
-}

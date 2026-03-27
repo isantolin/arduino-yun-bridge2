@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
+from mcubridge.protocol.protocol import RLE_ESCAPE_BYTE as ESCAPE_BYTE
 from mcubridge.protocol.rle import (
-    ESCAPE_BYTE,
     compression_ratio,
     decode,
     encode,

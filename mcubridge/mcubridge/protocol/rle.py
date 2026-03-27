@@ -25,40 +25,51 @@ from typing import Final
 
 import msgspec
 from construct import (  # type: ignore
+    Check,
     Const,
     ExprAdapter,
+    FocusedSeq,
     GreedyRange,
     Int8ub,
     Select,
     Struct,
+    Terminated,
+    this,
 )
 
 from . import protocol
 
 # [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
 RLE_ESCAPE: Final = Struct(
-    "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),  # type: ignore
-    "count_m2" / Int8ub,  # type: ignore
-    "value" / Int8ub,  # type: ignore
+    "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),
+    "count_m2" / Int8ub,
+    "value" / Int8ub,
 )
 
-
 # [SIL-2] Declarative RLE Decoder: Greedy selection between escape sequences and literals
-RLE_DECODER: Final = GreedyRange(
-    Select(
-        # Escape sequence: [0xFF, count_m2, value]
-        ExprAdapter(
-            RLE_ESCAPE,
-            decoder=lambda obj, ctx: bytes([obj.value]) * (1 if obj.count_m2 == 255 else obj.count_m2 + 2),  # type: ignore
-            encoder=lambda obj, ctx: None,  # type: ignore
-        ),
-        # Literal byte (must be < 0xFF for Select to work correctly with Const)
-        ExprAdapter(
-            Int8ub,
-            decoder=lambda obj, ctx: bytes([obj]),  # type: ignore
-            encoder=lambda obj, ctx: obj[0],  # type: ignore
-        ),
-    )
+# It is wrapped in a Struct with Terminated to guarantee complete consumption or raise an error.
+RLE_DECODER: Final = Struct(
+    "chunks" / GreedyRange(
+        Select(
+            # Escape sequence: [0xFF, count_m2, value]
+            ExprAdapter(
+                RLE_ESCAPE,
+                decoder=lambda obj, ctx: bytes([obj.value]) * (1 if obj.count_m2 == 255 else obj.count_m2 + 2),  # type: ignore
+                encoder=lambda obj, ctx: None,  # type: ignore
+            ),
+            # Literal byte (MUST NOT be the escape byte)
+            ExprAdapter(
+                FocusedSeq(
+                    "value",
+                    "value" / Int8ub,
+                    "_" / Check(this.value != protocol.RLE_ESCAPE_BYTE)  # type: ignore
+                ),
+                decoder=lambda obj, ctx: bytes([obj]),  # type: ignore
+                encoder=lambda obj, ctx: obj[0],  # type: ignore
+            ),
+        )
+    ),
+    Terminated,
 )  # type: ignore
 
 
@@ -133,9 +144,9 @@ def decode(data: bytes | bytearray | memoryview) -> bytes:
         return b""
 
     try:
-        # Construct GreedyRange returns a list of byte chunks
-        chunks: list[bytes] = RLE_DECODER.parse(data)  # type: ignore
-        return b"".join(chunks)
+        # Construct returns a Container with a 'chunks' list of byte chunks
+        parsed = RLE_DECODER.parse(data)  # type: ignore
+        return b"".join(parsed.chunks)
     except Exception as e:
         # SIL-2: Deterministic error reporting for malformed streams
         raise ValueError(f"Malformed RLE stream: {e}") from e

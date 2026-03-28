@@ -20,8 +20,8 @@
 #define ETL_CRC32_USE_TABLE 0
 
 // Detected compiler-specific optimizations
-// NOTE: We compile with -std=c++14 for language features (digit separators,
-// using aliases), but ETL must stay at CPP11 level because avr-gcc 5.4
+// NOTE: We compile with -std=c++17 for language features (digit separators,
+// using aliases, if constexpr), but ETL must stay at CPP11 level because avr-gcc 5.4
 // (arduino:avr 1.8.7) lacks full relaxed-constexpr support that ETL
 // requires when ETL_CPP14_SUPPORTED is set.
 #if defined(__AVR__)

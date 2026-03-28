@@ -35,6 +35,8 @@ from construct import (  # type: ignore
     Bytes,
     Check,
     Checksum,
+    Enum,
+    ExprAdapter,
     Flag,
     Int8ub,
     Int16ub,
@@ -54,13 +56,19 @@ COMMAND_ID_CODEC: Final = BitStruct(  # type: ignore
 
 # [SIL-2] Declarative Frame Structure using Construct
 # This ensures big-endian encoding and automatic length/CRC validation.
+# We use ExprAdapter to cast EnumIntegerString to int for standard logging compatibility.
 RPC_FRAME_HEADER = Struct(
     "version" / Int8ub,  # type: ignore
     "payload_len" / Int16ub,  # type: ignore
-    "command_id" / Int16ub,  # type: ignore
+    "command_id" / ExprAdapter(  # type: ignore
+        Enum(Int16ub, protocol.Command, protocol.Status),  # type: ignore
+        decoder=lambda obj, ctx: int(obj),  # type: ignore
+        encoder=lambda obj, ctx: obj  # type: ignore
+    ),
     "sequence_id" / Int16ub,  # type: ignore
     Check(this.version == protocol.PROTOCOL_VERSION),  # type: ignore
 )
+
 
 # [SIL-2] Full Frame with Checksum (Sustitución Drástica)
 # Uses RawCopy to capture the bytes for CRC calculation without manual slicing.
@@ -89,7 +97,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         payload: The frame payload (0 to MAX_PAYLOAD_SIZE bytes).
     """
 
-    command_id: int
+    command_id: int | protocol.Command | protocol.Status
     sequence_id: int = 0
     payload: bytes = b""
 
@@ -98,7 +106,9 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """Return True if the frame command ID indicates RLE compression."""
         # [SIL-2] Declarative flag extraction
         try:
-            return COMMAND_ID_CODEC.parse(Int16ub.build(self.command_id)).is_compressed  # type: ignore
+            # Handle both Enum and int
+            val = self.command_id.value if isinstance(self.command_id, (protocol.Command, protocol.Status)) else self.command_id
+            return COMMAND_ID_CODEC.parse(Int16ub.build(val)).is_compressed  # type: ignore
         except Exception:
             return False
 
@@ -107,29 +117,36 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """Return the command ID without the compression flag."""
         # [SIL-2] Declarative ID extraction
         try:
-            return COMMAND_ID_CODEC.parse(Int16ub.build(self.command_id)).raw_id  # type: ignore
+            val = self.command_id.value if isinstance(self.command_id, (protocol.Command, protocol.Status)) else self.command_id
+            return COMMAND_ID_CODEC.parse(Int16ub.build(val)).raw_id  # type: ignore
         except Exception:
-            return self.command_id
+            val = self.command_id.value if isinstance(self.command_id, (protocol.Command, protocol.Status)) else self.command_id
+            return val
 
     @staticmethod
-    def build_command_id(raw_id: int, is_compressed: bool = False) -> int:
+    def build_command_id(raw_id: int | protocol.Command | protocol.Status, is_compressed: bool = False) -> int:
         """Declaratively build a command ID with flags."""
         try:
+            val = raw_id.value if isinstance(raw_id, (protocol.Command, protocol.Status)) else raw_id
             return Int16ub.parse(COMMAND_ID_CODEC.build({  # type: ignore
                 "is_compressed": is_compressed,
-                "raw_id": raw_id
+                "raw_id": val
             }))
         except Exception:
-            return raw_id | (0x8000 if is_compressed else 0)
+            val = raw_id.value if isinstance(raw_id, (protocol.Command, protocol.Status)) else raw_id
+            return val | (0x8000 if is_compressed else 0)
 
     @staticmethod
-    def build(command_id: int, sequence_id: int = 0, payload: bytes = b"") -> bytes:
+    def build(command_id: int | protocol.Command | protocol.Status, sequence_id: int = 0, payload: bytes = b"") -> bytes:
         """Build a raw frame (header + payload + CRC) using Construct (Sustitución Drástica)."""
         payload_len = len(payload)
         if payload_len > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload too large ({payload_len} bytes); max is {protocol.MAX_PAYLOAD_SIZE}")
-        if not 0 <= command_id <= protocol.UINT16_MAX:
-            raise ValueError(f"Command id {command_id} outside 16-bit range")
+        
+        # Validate integer range if it's not an Enum
+        cmd_val = command_id.value if isinstance(command_id, (protocol.Command, protocol.Status)) else command_id
+        if not 0 <= cmd_val <= protocol.UINT16_MAX:
+            raise ValueError(f"Command id {cmd_val} outside 16-bit range")
         if not 0 <= sequence_id <= protocol.UINT16_MAX:
             raise ValueError(f"Sequence id {sequence_id} outside 16-bit range")
 

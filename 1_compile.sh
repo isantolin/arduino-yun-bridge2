@@ -107,26 +107,48 @@ sanitize_path
 # [FIX CRITICO] Rust/Cargo Bridge para CI (GitHub Actions)
 # ==============================================================================
 # Compilar Rust desde el SDK de OpenWrt toma >1 hora y falla en CI.
-# Si rustc y cargo están en el host, los inyectamos en el SDK.
+# Si rustc y cargo están en el host Y soportan el target, los inyectamos.
 inject_rust_into_sdk() {
     local sdk_host_bin="$SDK_DIR/staging_dir/host/bin"
-    mkdir -p "$sdk_host_bin"
+    local sdk_hostpkg_bin="$SDK_DIR/staging_dir/hostpkg/bin"
+    local target="mips-unknown-linux-musl"
     
+    # Limpiar inyecciones previas para evitar estados inconsistentes
+    rm -f "$sdk_host_bin/rustc" "$sdk_host_bin/cargo" "$sdk_host_bin/rustdoc"
+    rm -f "$sdk_hostpkg_bin/maturin" "$SDK_DIR/staging_dir/host/stamp/.rust_installed"
+
+    local can_inject=0
     if command -v rustc >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
-        echo "[INFO] Injecting host Rust into SDK staging_dir to skip 'rust host-compile'..."
+        # Verificar si el target está instalado y es funcional (tiene std)
+        if rustup target list --installed 2>/dev/null | grep -q "^$target$"; then
+            echo "[INFO] Host Rust fully supports $target. Injecting into SDK..."
+            can_inject=1
+        else
+            echo "[WARN] Host Rust missing 'std' library for $target (Tier 3 target)."
+            echo "[INFO] Falling back to SDK-internal Rust build (this will be slow but reliable)."
+        fi
+    fi
+
+    if [ "$can_inject" -eq 1 ]; then
+        mkdir -p "$sdk_host_bin"
         ln -sf "$(command -v rustc)" "$sdk_host_bin/rustc"
         ln -sf "$(command -v cargo)" "$sdk_host_bin/cargo"
         ln -sf "$(command -v rustdoc)" "$sdk_host_bin/rustdoc"
-        # Marcamos rust como "instalado" para el sistema de feeds de OpenWrt
         mkdir -p "$SDK_DIR/staging_dir/host/stamp"
         touch "$SDK_DIR/staging_dir/host/stamp/.rust_installed"
-    else
-        echo "[WARN] Rust/Cargo not found on host. Build might be extremely slow."
+        
+        # Inyectar maturin solo si Rust es funcional
+        if command -v maturin >/dev/null 2>&1; then
+            mkdir -p "$sdk_hostpkg_bin"
+            ln -sf "$(command -v maturin)" "$sdk_hostpkg_bin/maturin"
+        fi
     fi
 }
 
 # [FIX] Compatibilidad Python 3.13 + Rust (PyO3)
 export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+# [FIX] Forzar linker BFD para MIPS (evita fallos con el linker por defecto de Rust)
+export CARGO_TARGET_MIPS_UNKNOWN_LINUX_MUSL_LINKER="mips-openwrt-linux-musl-gcc"
 # ==============================================================================
 
 # --- HOST DEPENDENCIES ---
@@ -320,6 +342,9 @@ if [ ! -d "$SDK_DIR" ]; then
     done
     [ $SUCCESS -ne 1 ] && { echo "[FATAL] Failed to download and extract OpenWrt SDK after $MAX_RETRIES attempts."; exit 1; }
 fi
+
+# [FIX] Asegurar que Rust/Maturin estén inyectados incluso si el SDK ya existía
+inject_rust_into_sdk
 
 # [FIX] Leverage host system build tools to avoid slow SDK-internal host-builds
 bootstrap_python_module_into_prefix() {

@@ -151,10 +151,18 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 
   // Feature registration using zero-cost abstractions
   add_observer(Console);
-  if constexpr (bridge::config::ENABLE_DATASTORE) { add_observer(DataStore); }
-  if constexpr (bridge::config::ENABLE_MAILBOX) { add_observer(Mailbox); }
-  if constexpr (bridge::config::ENABLE_PROCESS) { add_observer(Process); }
-  if constexpr (bridge::config::ENABLE_FILESYSTEM) { add_observer(FileSystem); }
+#if BRIDGE_ENABLE_DATASTORE
+  add_observer(DataStore);
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+  add_observer(Mailbox);
+#endif
+#if BRIDGE_ENABLE_PROCESS
+  add_observer(Process);
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  add_observer(FileSystem);
+#endif
 }
 
 void BridgeClass::process() {
@@ -411,44 +419,44 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {
-  if constexpr (bridge::config::ENABLE_SPI) {
+#if BRIDGE_ENABLE_SPI
     static const CmdHandler kSpiHandlers[] PROGMEM = {
         &BridgeClass::_handleSpiBegin,
         &BridgeClass::_handleSpiTransfer,
         &BridgeClass::_unusedCommandSlot,
         &BridgeClass::_handleSpiEnd,
-        &BridgeClass::_handleSpiSetConfig
+        &BridgeClass::_handleSpiSetConfig,
     };
-    _dispatchJumpTable(ctx, rpc::RPC_SPI_COMMAND_MIN, kSpiHandlers, sizeof(kSpiHandlers) / sizeof(kSpiHandlers[0]));
-  } else {
+    _dispatchJumpTable(ctx, rpc::RPC_SPI_COMMAND_MIN, kSpiHandlers, sizeof(kSpiHandlers) / sizeof(CmdHandler));
+#else
     onUnknownCommand(ctx);
-  }
+#endif
 }
 
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
-  if constexpr (bridge::config::ENABLE_SPI) {
+#if BRIDGE_ENABLE_SPI
     _withAck(ctx, []() { SPIService.begin(); });
-  }
+#endif
 }
 
 void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
-  if constexpr (bridge::config::ENABLE_SPI) {
+#if BRIDGE_ENABLE_SPI
     _withAck(ctx, []() { SPIService.end(); });
-  }
+#endif
 }
 
 void BridgeClass::_handleSpiSetConfig(const bridge::router::CommandContext& ctx) {
-  if constexpr (bridge::config::ENABLE_SPI) {
+#if BRIDGE_ENABLE_SPI
     _withPayloadAck<rpc::payload::SpiConfig>(ctx, [](const rpc::payload::SpiConfig& msg) {
       uint8_t bitOrder = (msg.bit_order == 0) ? 0 : 1;
       uint8_t dataMode = static_cast<uint8_t>(msg.data_mode);
       SPIService.setConfig(msg.frequency, bitOrder, dataMode);
     });
-  }
+#endif
 }
 
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) {
-  if constexpr (bridge::config::ENABLE_SPI) {
+#if BRIDGE_ENABLE_SPI
     if (ctx.is_duplicate) return;
     rpc::payload::SpiTransfer req = {};
     static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
@@ -472,7 +480,7 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
         _sendPbResponse(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
       }
     }
-  }
+#endif
 }
 
 void BridgeClass::_handleEnterBootloader(const bridge::router::CommandContext& ctx) {
@@ -739,10 +747,9 @@ void BridgeClass::enterSafeState() {
   rpc::security::secure_zero(etl::span<uint8_t>(_shared_secret.data(), _shared_secret.size()));
   _shared_secret.clear();
 
-  if constexpr (bridge::config::ENABLE_PROCESS) {
+#if BRIDGE_ENABLE_PROCESS
     Process.reset();
-  }
-  
+#endif
   // [SIL-2] Force physical pins to high-impedance safe state
   forceSafeState(); 
   notify_observers(MsgBridgeLost());

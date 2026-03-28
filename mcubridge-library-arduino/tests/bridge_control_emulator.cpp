@@ -50,6 +50,7 @@ int main() {
 
   // Setup the delegate
   g_arduino_stream_delegate = &HostSerial;
+  fprintf(stderr, "[emulator] Simulated SD card at: /tmp/mcubridge-host-fs\n");
 
   // Seed the random number generator
   srand(time(NULL));

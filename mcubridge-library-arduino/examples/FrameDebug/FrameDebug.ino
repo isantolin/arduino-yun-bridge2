@@ -63,6 +63,10 @@ void clearSnapshotStats() {
 }  // namespace
 
 void setup() {
+  // [SIL-2] Force safe state for actuators before enabling interrupts or protocol
+  pinMode(13, OUTPUT);
+  digitalWrite(13, LOW);
+
   Serial.begin(rpc::RPC_DEFAULT_BAUDRATE);
   // NOTE: Removed blocking wait for Serial to allow daemon handshake
   // independent of USB connection.
@@ -161,14 +165,6 @@ void loop() {
   // is not available.
   static bool notified = false;
   if (!notified) {
-    Serial.println(
-        F("[FrameDebug] BRIDGE_DEBUG_FRAMES disabled; enable it to collect "
-          "stats."));
-    notified = true;
-  }
-#endif
-}
-{
     Serial.println(
         F("[FrameDebug] BRIDGE_DEBUG_FRAMES disabled; enable it to collect "
           "stats."));

@@ -1,23 +1,17 @@
 /*
-  Corrected Smoke Test for MCU Bridge 2.0
-  Waits for Console connection to avoid spamming the bus before handshake.
-
-  [CONFIGURACIÓN]
-  Para ahorrar memoria (Flash/RAM) desactivando servicios (Process, FileSystem, etc.), 
-  DEBES editar el archivo de la librería:
-  -> mcubridge-library-arduino/src/config/bridge_config.h
-*/
-
+ * CorrectedSmokeTest.ino - Full-stack E2E Verification
+ */
 #include <Bridge.h>
-// Console is already declared in Bridge.h in this library version
-// #include <Console.h>
 
-// Secret from UCI (mcubridge.general.serial_shared_secret)
 // Must match the daemon's configuration to pass the handshake.
 #define BRIDGE_SERIAL_SHARED_SECRET \
   "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 
 void setup() {
+  // [SIL-2] Force safe state for actuators before enabling interrupts or protocol
+  pinMode(13, OUTPUT);
+  digitalWrite(13, LOW);
+
   // Initialize Bridge with the shared secret
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
 
@@ -31,11 +25,9 @@ void setup() {
   // possible.
   long lastBlink = 0;
   bool ledState = false;
-
-  while (!Bridge.isSynchronized()) {
+  while (!Console.isReady()) {
     Bridge.process();
-
-    if (millis() - lastBlink > 50) {
+    if (millis() - lastBlink > 100) {
       lastBlink = millis();
       ledState = !ledState;
       digitalWrite(13, ledState ? HIGH : LOW);
@@ -48,19 +40,16 @@ void setup() {
 }
 
 void loop() {
-  // CRITICAL: Must call process() frequently to handle incoming commands
-  // (heartbeats, RPC)
+  // Main processing loop
   Bridge.process();
 
-  // Removed debug print to prevent serial collisions with RPC protocol
-  /*
-  static long lastPrint = 0;
-  if (millis() - lastPrint > 1000) {
-    lastPrint = millis();
-    Console.println("Estado: 0x05 (TIMEOUT)");
+  // Example: Echo serial console input back to verify bi-directional link
+  while (Console.available()) {
+    int c = Console.read();
+    if (c >= 0) {
+      Console.write(static_cast<uint8_t>(c));
+    }
   }
-  */
-}
 
   /*
   static long lastPrint = 0;

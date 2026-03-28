@@ -9,20 +9,26 @@ def test_frame_parse_payload_length_mismatch() -> None:
     # We need a frame where the header payload_len doesn't match the actual payload size.
     # This is hard to build with Frame.build, so we manually construct it.
 
-    import binascii
-    import struct
+    from mcubridge.protocol.frame import RPC_FRAME_HEADER, Int32ub
 
     version = protocol.PROTOCOL_VERSION
     actual_payload = b"ABC"
     claimed_len = 10  # Mismatch
     command_id = 0x40
+    sequence_id = 0x01
 
-    # Header: version(1), claimed_len(2), command_id(2)
-    header = struct.pack(">BHH", version, claimed_len, command_id)
+    # Header: version(1), claimed_len(2), command_id(2), sequence_id(2)
+    header = RPC_FRAME_HEADER.build({
+        "version": version,
+        "payload_len": claimed_len,
+        "command_id": command_id,
+        "sequence_id": sequence_id,
+    })
     content = header + actual_payload
 
-    crc = binascii.crc32(content)
-    raw_frame = content + struct.pack(">I", crc)
+    from binascii import crc32
+    crc = crc32(content)
+    raw_frame = content + Int32ub.build(crc)
 
     # Construct should catch this because Bytes(this.header.payload_len) will fail
     # or the length check at line 126 will catch it if Construct somehow returns.

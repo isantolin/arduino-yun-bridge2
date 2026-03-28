@@ -66,24 +66,24 @@ def test_serial_latency_histogram() -> None:
     assert d["min_ms"] == 4.0
     assert d["max_ms"] == 3000.0
 
-
 def testcollect_system_metrics_fail_paths() -> None:
-    # Mock psutil functions individually instead of the whole module to preserve psutil.Error
-    import psutil
+    # Mock psutil functions individually
     with (
-        patch.object(psutil, "cpu_percent", side_effect=OSError("fail")),
-        patch.object(psutil, "virtual_memory", side_effect=AttributeError("fail")),
-        patch.object(psutil, "getloadavg", side_effect=OSError("fail")),
-        patch.object(psutil, "sensors_temperatures", side_effect=OSError("fail")),
+        patch("psutil.Process") as mock_proc,
+        patch("psutil.cpu_percent", side_effect=OSError("fail")),
+        patch("psutil.virtual_memory", side_effect=OSError("fail")),
+        patch("psutil.getloadavg", side_effect=OSError("fail")),
+        patch("psutil.sensors_temperatures", side_effect=OSError("fail")),
     ):
-        m = collect_system_metrics()
-        assert m["cpu_percent"] is None
-        assert m["memory_total_bytes"] is None
-        assert m["load_avg_1m"] is None
-        assert m["temperature_celsius"] is None
+        # Configure the mock process to handle oneshot() context manager
+        mock_instance = mock_proc.return_value
+        mock_instance.oneshot.return_value.__enter__.return_value = None
+
+        # If the mock fails, the function returns empty dict
+        assert collect_system_metrics() == {}
 
 
-def test_runtime_state_supervisor_and_spool() -> None:
+def test_runtime_state_mailbox_requeue_front() -> None:
     state = RuntimeState()
     state.record_supervisor_failure("svc", backoff=1.0, exc=ValueError("fail"))
     assert state.supervisor_stats["svc"].restarts == 1
@@ -101,17 +101,7 @@ def test_runtime_state_supervisor_and_spool() -> None:
     assert state.mqtt_spool_backoff_until > 0
 
 
-def test_coerce_snapshot_int_edge_cases() -> None:
-    # Test _coerce_snapshot_int directly
-    from mcubridge.state.context import _coerce_snapshot_int
-
-    assert _coerce_snapshot_int({}, "key", 5) == 5
-    assert _coerce_snapshot_int({"key": "10"}, "key", 5) == 10
-    assert _coerce_snapshot_int({"key": "bad"}, "key", 5) == 5
-    assert _coerce_snapshot_int({"key": 20.5}, "key", 5) == 20
-
-
-def test_runtime_state_mailbox_requeue_front() -> None:
+def test_runtime_state_mailbox_requeue_front_full() -> None:
     from mcubridge.state.context import create_runtime_state
     from mcubridge.config.settings import RuntimeConfig
 

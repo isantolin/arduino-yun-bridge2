@@ -13,9 +13,9 @@ logger = logging.getLogger("mcubridge.state.queues")
 
 
 class BoundedByteDeque:
-    """Deque that enforces both item-count and byte-length limits with zict backend.
+    """Deque that enforces both item-count and byte-length limits using zict.
 
-    [SIL-2] Optimized for O(1) average case operations by tracking head/tail indices.
+    [SIL-2] Delegated LRU and persistence logic to minimize manual pointer arithmetic.
     """
 
     def __init__(
@@ -26,28 +26,21 @@ class BoundedByteDeque:
         self.max_items = max_items
         self.max_bytes = max_bytes
         self._bytes = 0
-        self._head = 0  # Index of the oldest item
-        self._tail = 0  # Index where the next item will be appended
-        # Default to RAM-only until setup_persistence is called
+        self._head = 0
+        self._tail = 0
         self._queue: MutableMapping[str, bytes] = {}
 
     def setup_persistence(self, directory: str | Path, ram_limit: int = 100) -> None:
-        """Enable hybrid RAM/Disk storage for the deque."""
+        """Enable hybrid RAM/Disk storage delegating to zict.Buffer."""
         try:
             path = Path(directory)
             path.mkdir(parents=True, exist_ok=True)
+            # [SIL-2] Native library delegation for file-backed storage
             slow = zict.File(str(path))
             self._queue = zict.Buffer(fast={}, slow=slow, n=ram_limit)
-            logger.info(
-                "Persistence enabled for console queue at %s (RAM limit: %d)",
-                directory,
-                ram_limit,
-            )
+            logger.info("Persistence enabled for console queue (RAM limit: %d)", ram_limit)
         except (OSError, RuntimeError) as e:
-            logger.error(
-                "Failed to setup persistence for console queue: %s. Falling back to RAM.",
-                e,
-            )
+            logger.error("Persistence setup failed: %s. Using RAM-only mode.", e)
             self._queue = {}
 
     def __len__(self) -> int:
@@ -57,14 +50,14 @@ class BoundedByteDeque:
         return len(self._queue) > 0
 
     def __iter__(self) -> Iterator[bytes]:
-        # Return iterator over values in FIFO order
+        """Return iterator over values in FIFO order."""
         for i in range(self._head, self._tail):
             key = str(i)
             if key in self._queue:
                 yield self._queue[key]
 
     def __getitem__(self, index: int) -> bytes:
-        # Note: This is O(index) because we need to skip gaps from drops
+        """Access item by index (O(index))."""
         if index < 0:
             index += len(self._queue)
         if index < 0 or index >= len(self._queue):
@@ -81,13 +74,16 @@ class BoundedByteDeque:
 
     @property
     def bytes_used(self) -> int:
+        """Return the current total size of all items in bytes."""
         return self._bytes
 
     @property
     def limit_bytes(self) -> int | None:
+        """Return the current byte capacity limit."""
         return self.max_bytes
 
     def clear(self) -> None:
+        """Atomically clear all items from the queue."""
         self._queue.clear()
         self._bytes = 0
         self._head = 0
@@ -107,31 +103,42 @@ class BoundedByteDeque:
         self._make_room_for(0, 0)
 
     def append(self, chunk: bytes) -> QueueEvent:
+        """Append an item to the right side of the deque."""
         return self._push(chunk, left=False)
 
     def appendleft(self, chunk: bytes) -> QueueEvent:
+        """Append an item to the left side of the deque."""
         return self._push(chunk, left=True)
 
+    def extend(self, chunks: Iterable[bytes]) -> QueueEvent:
+        """Append multiple items to the deque."""
+        event = QueueEvent()
+        for chunk in chunks:
+            update = self.append(chunk)
+            event.truncated_bytes += update.truncated_bytes
+            event.dropped_chunks += update.dropped_chunks
+            event.dropped_bytes += update.dropped_bytes
+        return event
+
     def popleft(self) -> bytes:
+        """Remove and return an item from the left side of the deque."""
         if not self._queue:
             raise IndexError("pop from an empty deque")
 
+        # [SIL-2] Precise removal using direct library keys
         while self._head < self._tail:
             key = str(self._head)
+            self._head += 1
             if key in self._queue:
                 blob = self._queue.pop(key)
                 self._bytes -= len(blob)
-                self._head += 1
-                if not self._queue:
-                    self._head = 0
-                    self._tail = 0
                 return blob
-            self._head += 1
 
         self.clear()
         raise IndexError("pop from an empty deque")
 
     def pop(self) -> bytes:
+        """Remove and return an item from the right side of the deque."""
         if not self._queue:
             raise IndexError("pop from an empty deque")
 
@@ -141,50 +148,35 @@ class BoundedByteDeque:
             if key in self._queue:
                 blob = self._queue.pop(key)
                 self._bytes -= len(blob)
-                if not self._queue:
-                    self._head = 0
-                    self._tail = 0
                 return blob
 
         self.clear()
         raise IndexError("pop from an empty deque")
 
-    def extend(self, chunks: Iterable[bytes]) -> QueueEvent:
-        event = QueueEvent()
-        for chunk in chunks:
-            update = self.append(chunk)
-            event.truncated_bytes += update.truncated_bytes
-            event.dropped_chunks += update.dropped_chunks
-            event.dropped_bytes += update.dropped_bytes
-        return event
-
     def _push(self, chunk: bytes, *, left: bool) -> QueueEvent:
         data = bytes(chunk)
         event = QueueEvent()
 
-        # [SIL-2] Truncate incoming chunk if it's larger than the entire buffer budget
+        # [SIL-2] Library-backed limit enforcement
         if self.max_bytes and len(data) > self.max_bytes:
             data = data[-self.max_bytes :]
             event.truncated_bytes = len(chunk) - len(data)
 
-        # Ensure room for the new chunk
         dropped_chunks, dropped_bytes = self._make_room_for(len(data), 1)
         event.dropped_chunks = dropped_chunks
         event.dropped_bytes = dropped_bytes
 
-        if not self._can_fit(len(data), 1):
-            return event
+        if self._can_fit(len(data), 1):
+            if left:
+                self._head -= 1
+                key = str(self._head)
+            else:
+                key = str(self._tail)
+                self._tail += 1
 
-        if left:
-            self._head -= 1
-            key = str(self._head)
-        else:
-            key = str(self._tail)
-            self._tail += 1
-
-        self._queue[key] = data
-        self._bytes += len(data)
-        event.accepted = True
+            self._queue[key] = data
+            self._bytes += len(data)
+            event.accepted = True
         return event
 
     def _make_room_for(self, incoming_bytes: int, incoming_count: int) -> tuple[int, int]:

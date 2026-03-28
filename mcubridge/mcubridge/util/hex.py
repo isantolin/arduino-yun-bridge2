@@ -40,12 +40,15 @@ def log_binary_traffic(
 
 
 def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: bytes) -> None:
-    """Log binary data in hexadecimal format using syslog-friendly output.
-
-    Format: [HEXDUMP] %s: %s
-    """
+    """Log binary data in hexadecimal format using professional rich hexdump formatting."""
     if not logger_instance.isEnabledFor(level):
         return
 
-    hex_str = data.hex(" ").upper()
-    logger_instance.log(level, "[HEXDUMP] %s: %s", label, hex_str)
+    from io import StringIO
+    from rich.console import Console
+    from rich.hexdump import Hex  # type: ignore
+
+    with StringIO() as buf:
+        console = Console(file=buf, force_terminal=False, width=80)
+        console.print(Hex(data))
+        logger_instance.log(level, "[HEXDUMP] %s:\n%s", label, buf.getvalue())

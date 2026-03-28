@@ -10,20 +10,7 @@ from mcubridge.protocol import protocol
 
 
 def encode_status_reason(reason: str | None) -> bytes:
-    """Return a UTF-8 encoded payload trimming to MAX frame limits using declarative Construct."""
+    """Return a UTF-8 encoded payload trimming to MAX frame limits using native slicing."""
     raw = (reason or "").encode("utf-8", errors="ignore")
-    if not raw:
-        return b""
-
-    from construct import Bytes  # type: ignore
-
-    limit = protocol.MAX_PAYLOAD_SIZE
-    if len(raw) <= limit:
-        return raw
-
-    # [SIL-2] Declarative truncation to protocol limits
-    try:
-        # Construct Bytes(n).parse() will take exactly n bytes.
-        return Bytes(limit).parse(raw)  # type: ignore
-    except Exception:
-        return raw[:limit]
+    # [SIL-2] Direct slicing delegates truncation to Python's C core
+    return raw[: protocol.MAX_PAYLOAD_SIZE]

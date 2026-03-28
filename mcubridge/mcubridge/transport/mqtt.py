@@ -62,12 +62,6 @@ class MqttTransport:
         self.machine.add_transition("subscribed", self.STATE_SUBSCRIBING, self.STATE_READY)
         self.machine.add_transition("disconnect", "*", self.STATE_DISCONNECTED)
 
-    if TYPE_CHECKING:
-
-        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
-            """FSM trigger placeholder."""
-            ...
-
     async def run(self) -> None:
         """Main run loop with reconnection logic."""
         if not self.config.mqtt_enabled:
@@ -102,31 +96,20 @@ class MqttTransport:
                         raise
                     finally:
                         if self.fsm_state != self.STATE_DISCONNECTED:
-                            self.trigger("disconnect")
+                            self.disconnect()  # type: ignore
         except asyncio.CancelledError:
             logger.info("MQTT transport stopping.")
-            self.trigger("disconnect")
+            self.disconnect()  # type: ignore
             raise
 
     async def _connect_session(self, tls_context: Any) -> None:
         connect_props = build_mqtt_connect_properties()
 
-        # Create an on_log callback to hook into Paho's internal logging
+        # [SIL-2] Precise level mapping via dict for performance
+        log_map = {1: logging.DEBUG, 5: logging.INFO, 4: logging.WARNING, 8: logging.ERROR, 16: logging.DEBUG}
+
         def on_log(client: Any, userdata: Any, level: int, buf: str) -> None:
-            # Map Paho's log levels to Python's logging module
-            # Paho uses: INFO=1, NOTICE=5, WARNING=4, ERR=8, DEBUG=16
-            if level == 1:
-                logger.debug("[PAHO] %s", buf)
-            elif level == 5:
-                logger.info("[PAHO] %s", buf)
-            elif level == 4:
-                logger.warning("[PAHO] %s", buf)
-            elif level == 8:
-                logger.error("[PAHO] %s", buf)
-            elif level == 16:
-                logger.debug("[PAHO] %s", buf)
-            else:
-                logger.debug("[PAHO %s] %s", level, buf)
+            logger.log(log_map.get(level, logging.DEBUG), "[PAHO] %s", buf)
 
         # [SIL-2] Warn if connecting without authentication
         if not self.config.mqtt_user:
@@ -135,7 +118,7 @@ class MqttTransport:
                 "consider setting mqtt_user/mqtt_pass for production"
             )
 
-        self.trigger("connect")
+        self.connect()  # type: ignore
 
         client = aiomqtt.Client(
             hostname=self.config.mqtt_host,
@@ -149,36 +132,26 @@ class MqttTransport:
             properties=connect_props,
         )
 
-        # [SIL-2] Safety: Wrap Paho's on_message to prevent internal exceptions (e.g. Invalid Topic)
-        # from escaping to Paho's core, which causes log flooding in some environments.
+        # [SIL-2] Direct Paho configuration to avoid aiomqtt internal wrappers
         paho_client = getattr(client, "_client", None)
-        if paho_client is None:
-            logger.error("Could not access internal Paho client in aiomqtt. Callbacks not injected.")
-            return
+        if paho_client is not None:
+            paho_client.on_log = on_log
+            # [SIL-2] Tighten on_message by delegating directly while suppressing Paho internals
+            original_on_message = paho_client.on_message
 
-        original_on_message = paho_client.on_message
+            def safe_on_message(c: Any, userdata: Any, msg: Any) -> None:
+                if msg and msg.topic and original_on_message:
+                    with contextlib.suppress(OSError, RuntimeError, TypeError, ValueError):
+                        original_on_message(c, userdata, msg)
 
-        def safe_on_message(c: Any, userdata: Any, msg: Any) -> None:
-            if not msg or not msg.topic:
-                return
-            try:
-                if original_on_message:
-                    original_on_message(c, userdata, msg)
-            except (OSError, RuntimeError, TypeError, ValueError) as e:
-                # Silence the specific aiomqtt "Invalid topic" error to avoid log flood
-                if "Invalid topic" not in str(e):
-                    logger.error("Exception in MQTT on_message for topic %s: %s", msg.topic, e)
-
-        # Inject callbacks directly into the underlying Paho client
-        paho_client.on_log = on_log
-        paho_client.on_message = safe_on_message
+            paho_client.on_message = safe_on_message
 
         async with client as connected_client:
             logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
-            self.trigger("connected")
+            self.connected()  # type: ignore
             self._mqtt_client = connected_client
             await self._subscribe_topics(client)
-            self.trigger("subscribed")
+            self.subscribed()  # type: ignore
 
             async with asyncio.TaskGroup() as task_group:
                 task_group.create_task(self._publisher_loop(client))

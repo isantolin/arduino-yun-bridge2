@@ -591,18 +591,12 @@ class SerialHandshakeManager:
         if streak < threshold:
             return None
 
-        wait_strategy = tenacity.wait_exponential(
-            multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-            max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+        # [SIL-2] Direct exponential backoff calculation to avoid library overhead
+        attempt = streak - threshold
+        delay = min(
+            SERIAL_HANDSHAKE_BACKOFF_BASE * (2**attempt),
+            SERIAL_HANDSHAKE_BACKOFF_MAX,
         )
-        retry_state = tenacity.RetryCallState(
-            retry_object=tenacity.AsyncRetrying(),
-            fn=None,
-            args=(),
-            kwargs={},
-        )
-        retry_state.attempt_number = streak - threshold + 1
-        delay = wait_strategy(retry_state)
 
         self._state.handshake_backoff_until = time.monotonic() + delay
         return delay
@@ -618,15 +612,8 @@ class SerialHandshakeManager:
         auth_key = derive_handshake_key(secret)
         h = hmac.HMAC(auth_key, hashes.SHA256())
         h.update(nonce)
-        digest = h.finalize()
-
-        from construct import Bytes  # type: ignore
-
-        # [SIL-2] Declarative extraction of the authentication tag
-        try:
-            return Bytes(protocol.HANDSHAKE_TAG_LENGTH).parse(digest[: protocol.HANDSHAKE_TAG_LENGTH])  # type: ignore
-        except Exception:
-            return digest[: protocol.HANDSHAKE_TAG_LENGTH]
+        # [SIL-2] Direct slice instead of construct wrapper
+        return h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:
         secret = self._config.serial_shared_secret

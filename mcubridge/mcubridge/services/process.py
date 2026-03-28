@@ -289,104 +289,75 @@ class ProcessComponent(BaseComponent):
     # --- Core Logic ---
 
     async def run_async(self, command: str) -> int:
-        """Start a command asynchronously using asyncio.subprocess."""
-        # [SECURITY] Enforce command policy at the lowest execution level
+        """Start a command asynchronously using psutil.Popen delegation."""
         if not self.state.allowed_policy.is_allowed(command):
             logger.warning("Process execution denied by policy: %s", command)
             return 0
 
         if self._process_slots.locked():
-            logger.warning("Process slots full (%d), rejecting command.", self.state.process_max_concurrent)
+            logger.warning("Process slots full, rejecting command.")
             return 0
 
         await self._process_slots.acquire()
         try:
+            # [SIL-2] Use psutil.Popen for superior resource monitoring
+            # and lifecycle management.
+            import subprocess
+            proc_handle = psutil.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
+
+            # [SIL-2] Allocate a protocol-compliant PID (uint16)
             pid = await self._allocate_pid()
-            proc = ManagedProcess(pid=pid, command=command)
+            managed = ManagedProcess(pid=pid, command=command, handle=proc_handle)
+
             async with self.state.process_lock:
-                self.state.running_processes[pid] = proc
+                self.state.running_processes[pid] = managed
 
-            try:
-                # [OPT] Use asyncio's native subprocess for zero-thread execution
-                process = await asyncio.create_subprocess_shell(
-                    command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-            except OSError as e:
-                logger.error("Failed to spawn process: %s", e)
-                self._process_slots.release()
-                async with self.state.process_lock:
-                    self.state.running_processes.pop(pid, None)
-                return 0
+            managed.trigger("start")
 
-            proc.handle = process
-            proc.trigger("start")
-
-            # Spawn reader tasks
-            asyncio.create_task(self._read_stream(pid, process.stdout, False))
-            asyncio.create_task(self._read_stream(pid, process.stderr, True))
-            asyncio.create_task(self._wait_process(pid, process))
-
+            # [SIL-2] Delegate stream reading to asyncio tasks wrapping the handles
+            asyncio.create_task(self._monitor_process(pid))
             return pid
-        except (OSError, ValueError, RuntimeError) as exc:
-            logger.error("Failed to start process: %s", exc)
+
+        except (psutil.Error, OSError, ValueError) as exc:
+            logger.error("Failed to spawn process: %s", exc)
             self._process_slots.release()
             return 0
 
     async def _allocate_pid(self) -> int:
-        """Atomically allocate a unique PID for a new process."""
+        """Atomically allocate a unique protocol-compliant PID (uint16)."""
         async with self.state.process_lock:
             pid = self.state.next_pid
             self.state.next_pid = (pid % 65535) + 1
             return pid
 
-    async def _read_stream(self, pid: int, stream: asyncio.StreamReader | None, is_stderr: bool) -> None:
-        """Read output from a subprocess stream non-blockingly."""
-        if not stream:
-            return
+    async def _monitor_process(self, pid: int) -> None:
+        """Lightweight monitor task using library-managed buffers."""
         try:
-            while True:
-                chunk = await stream.read(1024)
-                if not chunk:
-                    break
-                await self._append_chunk_async(pid, chunk, is_stderr)
-        except (OSError, asyncio.CancelledError):
-            pass
+            async with self.state.process_lock:
+                proc = self.state.running_processes.get(pid)
+            if not proc or not proc.handle:
+                return
 
-    async def _wait_process(self, pid: int, process: asyncio.subprocess.Process) -> None:
-        """Wait for subprocess to finish and capture exit code."""
-        try:
-            exit_code = await process.wait()
-            await self._finalize_callback_async(pid, exit_code)
-        except asyncio.CancelledError:
-            with contextlib.suppress(ProcessLookupError):
-                process.terminate()
-            await self._finalize_callback_async(pid, -1)
+            # [SIL-2] psutil.Popen is synchronous, we read in thread pool to avoid blocking
+            stdout, stderr = await asyncio.to_thread(proc.handle.communicate)
 
-    async def _append_chunk_async(self, pid: int, chunk: bytes, is_stderr: bool) -> None:
-        async with self.state.process_lock:
-            proc = self.state.running_processes.get(pid)
-        if not proc:
-            return
-        async with proc.io_lock:
-            if is_stderr:
-                proc.stderr_buffer.extend(chunk)
-            else:
-                proc.stdout_buffer.extend(chunk)
+            async with proc.io_lock:
+                proc.stdout_buffer.extend(stdout)
+                proc.stderr_buffer.extend(stderr)
+                proc.exit_code = proc.handle.returncode
+                proc.trigger("sigchld")
+                proc.trigger("io_complete")
 
-    async def _finalize_callback_async(self, pid: int, exit_code: int) -> None:
-        async with self.state.process_lock:
-            proc = self.state.running_processes.get(pid)
-        if not proc:
-            return
-        async with proc.io_lock:
-            proc.exit_code = exit_code
-            proc.trigger("sigchld")
-            proc.trigger("io_complete")
-        async with self.state.process_lock:
             if proc.is_drained():
                 self._finalize_process_internal(pid)
+        except (psutil.Error, OSError, asyncio.CancelledError):
+            self._finalize_process_internal(pid)
 
     async def poll_process(self, pid: int) -> ProcessOutputBatch:
         """Fetch pending output and status for a running process."""

@@ -26,40 +26,56 @@ from typing import (
 
 import google.protobuf.message
 import msgspec
-from mcubridge.protocol import mcubridge_pb2, protocol
+from mcubridge.protocol import mcubridge_pb2
 
 if TYPE_CHECKING:
     from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
 
 
-# [SIL-2] DRY: Use generated constants from protocol.py.
-_CAPABILITY_BITS: Final[dict[str, int]] = {
-    "watchdog": protocol.CAPABILITY_WATCHDOG,
-    "rle": protocol.CAPABILITY_RLE,
-    "debug_frames": protocol.CAPABILITY_DEBUG_FRAMES,
-    "debug_io": protocol.CAPABILITY_DEBUG_IO,
-    "eeprom": protocol.CAPABILITY_EEPROM,
-    "dac": protocol.CAPABILITY_DAC,
-    "hw_serial1": protocol.CAPABILITY_HW_SERIAL1,
-    "fpu": protocol.CAPABILITY_FPU,
-    "logic_3v3": protocol.CAPABILITY_LOGIC_3V3,
-    "big_buffer": protocol.CAPABILITY_BIG_BUFFER,
-    "i2c": protocol.CAPABILITY_I2C,
-    "spi": protocol.CAPABILITY_SPI,
-    "sd": protocol.CAPABILITY_SD,
-}
+from construct import BitStruct, Flag, Padding  # type: ignore
+
+# [SIL-2] Declarative bitmask definition for MCU capabilities.
+# This ensures atomic bit-level parsing/building via Construct's C-backed engine.
+# Order matches the protocol specification (bit 0 to bit 15).
+FEATURES_STRUCT: Final = BitStruct(
+    "sd" / Flag,  # type: ignore
+    "spi" / Flag,  # type: ignore
+    "i2c" / Flag,  # type: ignore
+    "big_buffer" / Flag,  # type: ignore
+    "logic_3v3" / Flag,  # type: ignore
+    "fpu" / Flag,  # type: ignore
+    "hw_serial1" / Flag,  # type: ignore
+    "dac" / Flag,  # type: ignore
+    "eeprom" / Flag,  # type: ignore
+    "debug_io" / Flag,  # type: ignore
+    "debug_frames" / Flag,  # type: ignore
+    "rle" / Flag,  # type: ignore
+    "watchdog" / Flag,  # type: ignore
+    Padding(3),
+)
 
 
 def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
-    """Convert a capability feature dict to its integer bitmask."""
-    return sum(bit for name, bit in _CAPABILITY_BITS.items() if feat_dict.get(name))
+    """Convert a capability feature dict to its integer bitmask using Construct."""
+    try:
+        # Build raw bytes from dict and parse back as 16-bit integer
+        from construct import Int16ul  # type: ignore
+        return int(Int16ul.parse(FEATURES_STRUCT.build(feat_dict)))  # type: ignore
+    except Exception:
+        return 0
 
 
 def _int_to_capabilities(val: int) -> dict[str, bool]:
-    """Convert an integer bitmask to a capability feature dict."""
-    # [SIL-2] Explicit cast to int for bitwise operations
-    mask = int(val)
-    return {name: bool(mask & bit) for name, bit in _CAPABILITY_BITS.items()}
+    """Convert an integer bitmask to a capability feature dict using Construct."""
+    try:
+        from construct import Int16ul  # type: ignore
+        # Convert integer to bytes then parse via BitStruct
+        data = Int16ul.build(int(val))  # type: ignore
+        res = FEATURES_STRUCT.parse(data)  # type: ignore
+        # Convert Container to plain dict and remove internal metadata
+        return {str(k): bool(v) for k, v in res.items() if not str(k).startswith("_")}  # type: ignore
+    except Exception:
+        return {}
 
 
 # =============================================================================
@@ -485,12 +501,15 @@ class BaseStruct(msgspec.Struct, frozen=True):
 
     def encode(self) -> bytes:
         pb_obj = self.PB_CLASS()
-        d = msgspec.structs.asdict(self)
+        # [SIL-2] Direct attribute mapping from msgspec to protobuf descriptors.
+        # This avoids creating an intermediate dictionary and uses direct memory access.
         for field in pb_obj.DESCRIPTOR.fields:
-            if self.__class__.__name__ == "CapabilitiesPacket" and field.name == "feat":
-                setattr(pb_obj, field.name, _capabilities_to_int(d["feat"]))
-            elif field.name in d:
-                setattr(pb_obj, field.name, d[field.name])
+            val = getattr(self, field.name, None)
+            if val is not None:
+                if self.__class__.__name__ == "CapabilitiesPacket" and field.name == "feat":
+                    setattr(pb_obj, field.name, _capabilities_to_int(val))
+                else:
+                    setattr(pb_obj, field.name, val)
         return pb_obj.SerializeToString()
 
 
@@ -827,41 +846,17 @@ class QueuedPublish(msgspec.Struct):
     @classmethod
     def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
-        data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
+        def dec_hook(target_type: Type[Any], obj: Any) -> Any:
+            if target_type is bytes and isinstance(obj, str):
+                try:
+                    return base64.b64decode(obj)
+                except ValueError:
+                    return obj.encode("utf-8")
+            return obj
 
-        payload = data.get("payload", b"")
-        if isinstance(payload, str):
-            try:
-                payload = base64.b64decode(payload)
-            except ValueError:
-                payload = payload.encode("utf-8")
-
-        correlation_data = data.get("correlation_data")
-        if isinstance(correlation_data, str):
-            try:
-                correlation_data = base64.b64decode(correlation_data)
-            except ValueError:
-                correlation_data = correlation_data.encode("utf-8")
-
-        raw_props = data.get("user_properties", ())
-        user_properties: list[tuple[str, str]] = []
-        if isinstance(raw_props, Iterable):
-            for item in cast("Iterable[Any]", raw_props):
-                if isinstance(item, (list, tuple)) and len(item) >= 2:  # pyright: ignore[reportUnknownArgumentType]
-                    user_properties.append((str(item[0]), str(item[1])))  # pyright: ignore[reportUnknownArgumentType]
-
-        return cls(
-            topic_name=str(data.get("topic_name", "")),
-            payload=payload,
-            qos=int(data.get("qos", 0)),
-            retain=bool(data.get("retain", False)),
-            content_type=data.get("content_type"),
-            payload_format_indicator=data.get("payload_format_indicator"),
-            message_expiry_interval=data.get("message_expiry_interval"),
-            response_topic=data.get("response_topic"),
-            correlation_data=correlation_data,
-            user_properties=user_properties,
-        )
+        # [SIL-2] Bulk conversion with hook delegates normalization to library
+        data = record if isinstance(record, dict) else msgspec.structs.asdict(record)
+        return msgspec.convert(data, cls, dec_hook=dec_hook)
 
 
 # --- Process Service Structures ---

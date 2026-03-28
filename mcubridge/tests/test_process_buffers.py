@@ -98,7 +98,9 @@ async def test_monitor_process_releases_slot(
     # Acquire one slot manually
     await process_component._process_slots.acquire()
 
-    await process_component._finalize_callback_async(77, 5)
+    async with slot.io_lock:
+        slot.exit_code = 5
+    process_component._finalize_process_internal(77)
 
     assert slot.exit_code == 5
 

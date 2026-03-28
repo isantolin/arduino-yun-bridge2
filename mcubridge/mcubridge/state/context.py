@@ -103,30 +103,13 @@ def resolve_command_id(command_id: int) -> str:
 
 
 def _status_label(code: int | None) -> str:
-    """Resolve status code to human-readable label."""
-    return "unknown" if code is None else next((s.name for s in Status if s.value == code), f"0x{code:02X}")
-
-
-def _coerce_snapshot_int(snapshot: dict[str, Any], key: str, default: int) -> int:
-    """Coerce a snapshot value to integer with a default fallback."""
-    val = snapshot.get(key)
-    if val is None:
-        return default
+    """Resolve status code to human-readable label using optimized Enum lookup."""
+    if code is None:
+        return "unknown"
     try:
-        return int(float(val))
-    except (ValueError, TypeError):
-        return default
-
-
-def _coerce_snapshot_float(snapshot: dict[str, Any], key: str, default: float) -> float:
-    """Coerce a snapshot value to float with a default fallback."""
-    val = snapshot.get(key)
-    if val is None:
-        return default
-    try:
-        return float(val)
-    except (ValueError, TypeError):
-        return default
+        return Status(code).name
+    except ValueError:
+        return f"0x{code:02X}"
 
 
 class PendingPinRequest(msgspec.Struct):
@@ -218,61 +201,35 @@ class ManagedProcess:
 
 def collect_system_metrics() -> dict[str, Any]:
     """Collect system-level metrics using native library conversions."""
-    result: dict[str, Any] = {}
-
-    # Initialize all keys with None as default fallback
-    keys = (
-        "cpu_percent",
-        "cpu_count",
-        "memory_total_bytes",
-        "memory_available_bytes",
-        "memory_percent",
-        "load_avg_1m",
-        "load_avg_5m",
-        "load_avg_15m",
-        "temperature_celsius",
-    )
-    for k in keys:
-        result.setdefault(k, None)
-
     try:
         proc = psutil.Process()
         with proc.oneshot():
-            result["cpu_percent"] = psutil.cpu_percent(interval=None)
-            result["cpu_count"] = psutil.cpu_count() or 1
-
             mem = psutil.virtual_memory()
-            result.update({
-                "memory_total_bytes": getattr(mem, "total", None),
-                "memory_available_bytes": getattr(mem, "available", None),
-                "memory_percent": getattr(mem, "percent", None),
-            })
+            load = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0.0, 0.0, 0.0)
 
-            try:
-                load = psutil.getloadavg()
-                result.update({
-                    "load_avg_1m": load[0],
-                    "load_avg_5m": load[1],
-                    "load_avg_15m": load[2]
-                })
-            except (OSError, AttributeError):
-                pass
-
-            try:
-                temps = psutil.sensors_temperatures()
-                names = ("cpu_thermal", "coretemp", "soc_thermal")
-                cpu_temp = next(
-                    (temps[n][0].current for n in names if n in temps and temps[n]),
-                    next((t[0].current for t in temps.values() if t), None) if temps else None,
+            # [SIL-2] Direct mapping from native library structures
+            return {
+                "cpu_percent": psutil.cpu_percent(interval=None),
+                "cpu_count": psutil.cpu_count() or 1,
+                "memory_total_bytes": mem.total,
+                "memory_available_bytes": mem.available,
+                "memory_percent": mem.percent,
+                "load_avg_1m": load[0],
+                "load_avg_5m": load[1],
+                "load_avg_15m": load[2],
+                "temperature_celsius": next(
+                    (
+                        t[0].current
+                        for n, t in psutil.sensors_temperatures().items()
+                        if n in ("cpu_thermal", "coretemp", "soc_thermal") and t
+                    ),
+                    None,
                 )
-                result["temperature_celsius"] = cpu_temp
-            except (OSError, AttributeError):
-                pass
-
+                if hasattr(psutil, "sensors_temperatures")
+                else None,
+            }
     except (psutil.Error, RuntimeError, OSError):
-        pass
-
-    return result
+        return {}
 
 
 class RuntimeState(msgspec.Struct):
@@ -804,30 +761,29 @@ class RuntimeState(msgspec.Struct):
 
     def apply_handshake_stats(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from external handshake statistics."""
-        obs = cast(dict[str, Any], observation)
-        self.handshake_attempts = _coerce_snapshot_int(obs, "attempts", self.handshake_attempts)
-        self.handshake_successes = _coerce_snapshot_int(obs, "successes", self.handshake_successes)
-        self.handshake_failure_streak = _coerce_snapshot_int(obs, "failure_streak", self.handshake_failure_streak)
-        self.handshake_last_duration = _coerce_snapshot_float(obs, "last_duration", self.handshake_last_duration)
-        self.last_handshake_unix = _coerce_snapshot_float(obs, "last_unix", self.last_handshake_unix)
-        self.handshake_backoff_until = _coerce_snapshot_float(obs, "backoff_until", self.handshake_backoff_until)
-        self.handshake_rate_until = _coerce_snapshot_float(obs, "rate_limit_until", self.handshake_rate_until)
+        # [SIL-2] Bulk conversion using msgspec to eliminate manual coercion
+        try:
+            snap = msgspec.convert(observation, HandshakeSnapshot, strict=False)
+            self.handshake_attempts = snap.attempts
+            self.handshake_successes = snap.successes
+            self.handshake_failure_streak = snap.failure_streak
+            self.handshake_last_duration = snap.last_duration
+            self.last_handshake_unix = snap.last_unix
+            self.handshake_backoff_until = snap.backoff_until
+            self.handshake_rate_until = snap.rate_limit_until
+        except (msgspec.MsgspecError, ValueError, TypeError):
+            pass
 
     def _apply_spool_observation(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from spool statistics."""
-        obs = cast(dict[str, Any], observation)
-        self.mqtt_spool_corrupt_dropped = _coerce_snapshot_int(
-            obs, "corrupt_dropped", self.mqtt_spool_corrupt_dropped
-        )
-        self.mqtt_spool_last_trim_unix = _coerce_snapshot_float(
-            obs, "last_trim_unix", self.mqtt_spool_last_trim_unix
-        )
-        self.mqtt_spool_dropped_limit = _coerce_snapshot_int(
-            obs, "dropped_due_to_limit", self.mqtt_spool_dropped_limit
-        )
-        self.mqtt_spool_trim_events = _coerce_snapshot_int(
-            obs, "trim_events", self.mqtt_spool_trim_events
-        )
+        # [SIL-2] Direct extraction via msgspec.convert
+        for field_name in ("corrupt_dropped", "dropped_due_to_limit", "trim_events"):
+            if field_name in observation:
+                val = msgspec.convert(observation[field_name], int)
+                setattr(self, f"mqtt_spool_{field_name.replace('due_to_', '')}", val)
+
+        if "last_trim_unix" in observation:
+            self.mqtt_spool_last_trim_unix = msgspec.convert(observation["last_trim_unix"], float)
 
     def configure_spool(self, directory: str, limit: int) -> None:
         self.mqtt_spool_dir = directory

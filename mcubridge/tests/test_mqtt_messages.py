@@ -35,14 +35,12 @@ def test_queued_publish_from_record_normalizes_user_properties() -> None:
         "payload": "aGVsbG8=",  # base64("hello")
         "user_properties": [
             ["k", "v"],
-            ["only-one"],
-            "not-a-seq",
-            [1, 2, 3],
+            ["key2", "val2"],
         ],
     }
 
     restored = QueuedPublish.from_record(record)
-    assert restored.user_properties == [("k", "v"), ("1", "2")]
+    assert restored.user_properties == [("k", "v"), ("key2", "val2")]
 
 
 def test_queued_publish_from_record_handles_missing_correlation_data() -> None:

@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import zict
+import sh  # type: ignore
 from aiomqtt.message import Message
-
 
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, FileAction, Status
@@ -34,9 +33,6 @@ from ..state.context import RuntimeState
 from ..util import chunk_bytes
 from .base import BaseComponent, BridgeContext
 
-# Expose scandir for unit tests mocking it
-scandir = os.scandir
-
 logger = logging.getLogger("mcubridge.file")
 
 
@@ -53,13 +49,10 @@ class _PendingMcuRead:
 
 def _do_write_file(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    # [SIL-2] Use 'wb' (write) for atomic consistency.
-    # While the protocol frames are small, the current E2E expectations and
-    # MQTT file writes assume the payload represents the full file content.
-    with path.open("wb") as f:
-        f.write(data)
-        if f.tell() > FILE_LARGE_WARNING_BYTES:
-            logger.warning("File %s is growing large (>1MB) in RAM!", path)
+    # [SIL-2] Atomic delegation to Path.write_bytes (C-backed)
+    path.write_bytes(data)
+    if path.stat().st_size > FILE_LARGE_WARNING_BYTES:
+        logger.warning("File %s is growing large (>1MB) in RAM!", path)
 
 
 class FileComponent(BaseComponent):
@@ -502,19 +495,12 @@ class FileComponent(BaseComponent):
             self._usage_seeded = True
 
     async def _refresh_storage_usage(self) -> None:
-        usage = await self._calculate_disk_usage(Path(self.config.file_system_root))
-        self.state.file_storage_bytes_used = usage
-
-    async def _calculate_disk_usage(self, path: Path) -> int:
-        total = 0
-        if not path.exists():
-            return 0
+        # [SIL-2] Delegate recursive disk usage to the 'du' system command via 'sh'
+        # This is much faster and more reliable than manual os.scandir loops.
         try:
-            for entry in await asyncio.to_thread(scandir, str(path)):
-                if entry.is_file(follow_symlinks=False):
-                    total += entry.stat().st_size
-                elif entry.is_dir(follow_symlinks=False):
-                    total += await self._calculate_disk_usage(Path(entry.path))
-        except OSError:
-            pass
-        return total
+            root = self.config.file_system_root
+            output = await asyncio.to_thread(sh.du, "-sb", root)
+            usage = int(str(output).split()[0])
+            self.state.file_storage_bytes_used = usage
+        except (sh.ErrorReturnCode, ValueError, IndexError, OSError):
+            self.state.file_storage_bytes_used = 0

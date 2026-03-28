@@ -95,7 +95,10 @@ async def test_finalize_callback_async_handles_wait_exception(
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    await process_component._finalize_callback_async(pid, 99)
+    async with slot.io_lock:
+        slot.exit_code = 99
+    process_component._finalize_process_internal(pid)
+
     # Should finalize
     assert pid not in process_component.state.running_processes
 

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+import msgspec
 import svcs
 
 from mcubridge.protocol.contracts import response_to_request
@@ -87,7 +89,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_XON.value, console.handle_xon)
         self.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, console.handle_write)
         self.mqtt_router.register(
-            Topic.CONSOLE, lambda r, m: self._guard_and_dispatch(r, m, console.handle_mqtt_input)
+            Topic.CONSOLE, functools.partial(self._guard_and_dispatch, handler=console.handle_mqtt_input)
         )
 
         # Datastore
@@ -378,10 +380,8 @@ class BridgeDispatcher:
 
     @staticmethod
     def _payload_bytes(payload: Any) -> bytes:
-        if payload is None:
-            return b""
-        if isinstance(payload, (bytes, bytearray)):
-            return bytes(payload)
-        if isinstance(payload, memoryview):
-            return payload.tobytes()
-        return str(payload).encode("utf-8")
+        """[SIL-2] Optimized zero-copy payload extraction using library primitives."""
+        try:
+            return msgspec.convert(payload, bytes)
+        except (msgspec.MsgspecError, TypeError, ValueError):
+            return b"" if payload is None else str(payload).encode("utf-8")

@@ -63,9 +63,9 @@ def test_apply_spool_observation_coerces_numeric_fields(
 ) -> None:
     runtime_state._apply_spool_observation(
         {
-            "dropped_due_to_limit": "7",
-            "trim_events": 2.0,
-            "corrupt_dropped": 4.0,
+            "dropped_due_to_limit": 7,
+            "trim_events": 2,
+            "corrupt_dropped": 4,
             "last_trim_unix": 123.4,
         }
     )

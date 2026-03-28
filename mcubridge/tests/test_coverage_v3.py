@@ -229,7 +229,7 @@ async def test_process_run_async_os_error():
     ctx = MagicMock()
     comp = ProcessComponent(config, state, ctx)
 
-    with patch("asyncio.create_subprocess_shell", side_effect=OSError("Not found")):
+    with patch("psutil.Popen", side_effect=OSError("Not found")):
         pid = await comp.run_async("cmd")
         assert pid == 0
 

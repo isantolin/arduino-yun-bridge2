@@ -97,36 +97,15 @@ async def test_start_async_subprocess_unexpected_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cover unexpected exception branch in run_async."""
-    with patch("asyncio.create_subprocess_shell", side_effect=OSError("boom")):
+    with patch("psutil.Popen", side_effect=OSError("boom")):
         pid = await process_component.run_async("echo hello")
         assert pid == 0
 # ============================================================================
 # CONTEXT - EDGE CASES
-# ============================================================================
-
-
-def test_context_coerce_snapshot_invalid_string() -> None:
-    """Cover _coerce_snapshot_int with invalid string."""
-    from mcubridge.state.context import _coerce_snapshot_int
-
-    result = _coerce_snapshot_int({"key": "invalid"}, "key", 42)
-    assert result == 42
-
-
-def test_context_coerce_snapshot_missing_key() -> None:
-    """Cover _coerce_snapshot_int with missing key."""
-    from mcubridge.state.context import _coerce_snapshot_int
-
-    result = _coerce_snapshot_int({}, "missing", 42)
-    assert result == 42
-
-
-def test_context_coerce_snapshot_none_value() -> None:
-    """Cover _coerce_snapshot_int with None value."""
-    from mcubridge.state.context import _coerce_snapshot_int
-
-    result = _coerce_snapshot_int({"key": None}, "key", 42)
-    assert result == 42
+def test_context_resolve_command_id_invalid() -> None:
+    """Cover resolve_command_id with invalid value."""
+    from mcubridge.state.context import resolve_command_id
+    assert resolve_command_id(0xFFFF) == "0xFFFF"
 
 
 # ============================================================================

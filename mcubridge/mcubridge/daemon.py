@@ -27,6 +27,7 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 from collections.abc import Awaitable, Callable
@@ -79,28 +80,23 @@ SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
 
 
 def _cleanup_child_processes() -> None:
-    """Terminates all child processes spawned by this daemon."""
+    """Terminates all child processes spawned by this daemon using direct psutil delegation."""
     try:
-        current_process = psutil.Process()
-        children = current_process.children(recursive=True)
+        children = psutil.Process().children(recursive=True)
         if not children:
             return
 
         logger.info("Cleaning up %d child processes...", len(children))
         for child in children:
-            try:
+            with contextlib.suppress(psutil.NoSuchProcess):
                 child.terminate()
-            except psutil.NoSuchProcess:
-                logger.debug("Child process already gone during cleanup")
 
-        # Wait for processes to exit gracefully, then force kill survivors
+        # [SIL-2] Direct library delegation for process waiting and signal mapping
         _, alive = psutil.wait_procs(children, timeout=3.0)
         for child in alive:
-            try:
+            with contextlib.suppress(psutil.NoSuchProcess):
                 logger.warning("Force killing zombie process %d", child.pid)
                 child.kill()
-            except psutil.NoSuchProcess:
-                logger.debug("Child process already gone during cleanup")
     except psutil.Error as e:
         logger.error("Error during process cleanup: %s", e)
 
@@ -357,7 +353,12 @@ def main(
         if uvloop is None:
             raise RuntimeError("python3-uvloop is required")
         daemon = BridgeDaemon(config)
-        asyncio.run(daemon.run(), loop_factory=uvloop.new_event_loop)
+
+        # [SIL-2] Unified entry point via asyncio.Runner (Python 3.11+)
+        # This handles signal registration and loop lifecycle deterministically.
+        with asyncio.Runner(loop_factory=uvloop.new_event_loop) as runner:
+            runner.run(daemon.run())
+
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user.")
     except (

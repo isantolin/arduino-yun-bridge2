@@ -45,22 +45,6 @@ _RAW_FRAME_MIN_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.CR
 _RAW_FRAME_MAX_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE
 
 
-def _is_raw_binary_frame(packet: bytes) -> bool:
-    """Validate a decoded raw frame matches the protocol envelope using declarative Construct."""
-    if not packet or len(packet) < protocol.MIN_FRAME_SIZE:
-        return False
-
-    from mcubridge.protocol.frame import RPC_FRAME_HEADER  # type: ignore
-
-    # [SIL-2] Use the actual header definition to validate the envelope
-    # instead of just checking lengths. This ensures the version is correct.
-    try:
-        RPC_FRAME_HEADER.parse(packet)  # type: ignore
-        return True
-    except Exception:
-        return False
-
-
 class SerialTransport:
     """High-performance asyncio serial transport."""
 
@@ -119,18 +103,9 @@ class SerialTransport:
             dest=self.STATE_DISCONNECTED,
         )
 
-    def _trigger_transition(self, transition_name: str) -> None:
-        transition = getattr(self, transition_name, None)
-        if not callable(transition):
-            raise RuntimeError(f"Missing serial FSM transition: {transition_name}")
-        cast(Any, transition)()
-
     def _decode_frame(self, encoded_packet: bytes | memoryview) -> Frame:
-        packet_bytes = encoded_packet if isinstance(encoded_packet, bytes) else encoded_packet.tobytes()
-        raw_frame = cobs_decode(packet_bytes)
-        if not _is_raw_binary_frame(raw_frame):
-            raise ValueError("Decoded serial frame does not match the binary protocol envelope")
-        return Frame.from_bytes(raw_frame)
+        # [SIL-2] Direct COBS decode and Frame mapping from bytes/memoryview
+        return Frame.from_bytes(cobs_decode(encoded_packet))  # type: ignore
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         writer = self.writer
@@ -202,13 +177,13 @@ class SerialTransport:
 
             try:
                 # 1. Negotiate baudrate if needed
-                self._trigger_transition("begin_negotiate")
+                self.begin_negotiate()  # type: ignore
                 if self.config.serial_baud != connect_baud:
                     if not await self._negotiate_baudrate(self.config.serial_baud):
                         raise ConnectionError("Baudrate negotiation failed")
 
                 # 2. Complete handshake via service
-                self._trigger_transition("mark_connected")
+                self.mark_connected()  # type: ignore
                 await self.service.on_serial_connected()
 
                 # 3. Wait for reader to finish or stop event
@@ -231,7 +206,7 @@ class SerialTransport:
                 read_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await read_task
-                self._trigger_transition("mark_disconnected")
+                self.mark_disconnected()  # type: ignore
                 await self.service.on_serial_disconnected()
 
         except (OSError, serial.SerialException) as exc:

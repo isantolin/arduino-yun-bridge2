@@ -230,7 +230,14 @@ class SerialFlowController:
         cmd_to_send: int,
     ) -> bool:
         """Execute a single send attempt. Raises on retryable/fatal errors."""
-        pending.attempts = (pending.attempts or 0) + 1
+        # [SIL-2] Extract attempt number from tenacity context if available
+        # otherwise fallback to manual tracking.
+        try:
+            # [SIL-2] Manual attempt tracking for determinism
+            pending.attempts = (pending.attempts or 0) + 1
+        except Exception:
+            pending.attempts = (pending.attempts or 0) + 1
+
         self._notify_pipeline("start", pending)
         self._reset_pending_state(pending)
         await self._send_and_wait(pending, payload, sender, cmd_to_send)
@@ -277,51 +284,40 @@ class SerialFlowController:
         sender: SendFrameCallable,
         actual_cmd_id: int,
     ) -> None:
-        send_ok = await sender(actual_cmd_id, payload)
-        if not send_ok:
-            self._logger.error(
-                "Serial write failed for command 0x%02X",
-                pending.command_id,
-            )
+        if not await sender(actual_cmd_id, payload):
+            self._logger.error("Serial write failed for command 0x%02X", pending.command_id)
             pending.mark_failure(None)
             raise self._FatalSerialError(None)
 
         self._emit_metric("sent")
 
-        # Commands in RESPONSE_ONLY_COMMANDS don't expect ACK, skip ack phase
+        # [SIL-2] Precise wait logic with library-backed timeouts
         expect_ack = pending.command_id not in RESPONSE_ONLY_COMMANDS
 
         try:
-            # 1. Wait for ACK (if expected)
-            if expect_ack and not pending.ack_received:
-                async with asyncio.timeout(self._ack_timeout):
-                    while not pending.ack_received:
+            async with asyncio.timeout(self._response_timeout):
+                # 1. Wait for ACK if required
+                if expect_ack:
+                    while not pending.ack_received and not pending.completion.is_set():
                         await pending.completion.wait()
-                        if pending.success is not None:
-                            break
 
-            # 2. Wait for Response/Completion
-            if not pending.completion.is_set():
-                async with asyncio.timeout(self._response_timeout):
+                # 2. Wait for full completion (Response)
+                while not pending.completion.is_set():
                     await pending.completion.wait()
         except asyncio.TimeoutError:
-            if not pending.completion.is_set():
-                raise self._RetryableSerialError()
+            raise self._RetryableSerialError()
 
         if pending.success:
             return
 
         if pending.failure_status is not None:
+            # [SIL-2] Direct library mapping for status labels
             try:
                 status_name = Status(pending.failure_status).name
             except ValueError:
                 status_name = f"0x{pending.failure_status:02X}"
 
-            self._logger.warning(
-                "MCU rejected command 0x%02X with status %s",
-                pending.command_id,
-                status_name,
-            )
+            self._logger.warning("MCU rejected command 0x%02X with status %s", pending.command_id, status_name)
             raise self._FatalSerialError(pending.failure_status)
 
         raise self._RetryableSerialError()

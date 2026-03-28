@@ -183,92 +183,93 @@ bool hasSD() {
 #endif
 }
 
-bool writeFile(etl::string_view path, etl::span<const uint8_t> data) {
+etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;
   if (!resolve_host_path(path.data(), full_path) ||
       !ensure_host_parent_directories(full_path)) {
-    return false;
+    return etl::unexpected<HalError>(HalError::IO_ERROR);
   }
 
   FILE* file = fopen(full_path.c_str(), "wb");
   if (file == nullptr) {
-    return false;
+    return etl::unexpected<HalError>(HalError::IO_ERROR);
   }
 
   const size_t bytes_written = fwrite(data.data(), 1U, data.size(), file);
   const int flush_status = fflush(file);
   const int close_status = fclose(file);
-  return (bytes_written == data.size()) && (flush_status == 0) && (close_status == 0);
+  if ((bytes_written == data.size()) && (flush_status == 0) && (close_status == 0)) {
+    return {};
+  }
+  return etl::unexpected<HalError>(HalError::IO_ERROR);
 #else
   // [SIL-2] Real hardware SD implementation would go here.
-  // Returning false ensures the Service emits STATUS_ERROR to Linux.
   (void)path; (void)data;
-  return false;
+  return etl::unexpected<HalError>(HalError::NOT_FOUND);
 #endif
 }
 
-bool readFileChunk(
+etl::expected<ChunkResult, HalError> readFileChunk(
     etl::string_view path,
     size_t offset,
-    etl::span<uint8_t> buffer,
-    size_t& bytes_read,
-    bool& has_more) {
-  bytes_read = 0U;
-  has_more = false;
-
+    etl::span<uint8_t> buffer) {
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;
   if (!resolve_host_path(path.data(), full_path)) {
-    return false;
+    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   }
 
   struct stat stat_buffer = {};
   if ((::stat(full_path.c_str(), &stat_buffer) != 0) || !S_ISREG(stat_buffer.st_mode)) {
-    return false;
+    return etl::unexpected<HalError>(HalError::NOT_FOUND);
   }
 
   const size_t file_size = static_cast<size_t>(stat_buffer.st_size);
   if (offset > file_size) {
-    return false;
+    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   }
 
   FILE* file = fopen(full_path.c_str(), "rb");
   if (file == nullptr) {
-    return false;
+    return etl::unexpected<HalError>(HalError::IO_ERROR);
   }
 
   if ((offset > 0U) && (fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) {
     fclose(file);
-    return false;
+    return etl::unexpected<HalError>(HalError::IO_ERROR);
   }
 
-  bytes_read = fread(buffer.data(), 1U, buffer.size(), file);
+  ChunkResult result = {};
+  result.bytes_read = fread(buffer.data(), 1U, buffer.size(), file);
   const bool read_failed = ferror(file) != 0;
   const int close_status = fclose(file);
   if (read_failed || (close_status != 0)) {
-    return false;
+    return etl::unexpected<HalError>(HalError::IO_ERROR);
   }
 
-  has_more = (offset + bytes_read) < file_size;
-  return true;
+  result.has_more = (offset + result.bytes_read) < file_size;
+  return result;
 #else
   // [SIL-2] Real hardware SD implementation would go here.
   (void)path; (void)offset; (void)buffer;
-  return false;
+  return etl::unexpected<HalError>(HalError::NOT_FOUND);
 #endif
 }
 
-bool removeFile(etl::string_view path) {
+etl::expected<void, HalError> removeFile(etl::string_view path) {
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;
   if (!resolve_host_path(path.data(), full_path)) {
-    return false;
+    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   }
-  return ::unlink(full_path.c_str()) == 0;
+  if (::unlink(full_path.c_str()) == 0) {
+    return {};
+  }
+  return etl::unexpected<HalError>(HalError::IO_ERROR);
 #else
   (void)path;
-  return false;
+  return etl::unexpected<HalError>(HalError::NOT_FOUND);
 #endif
 }
 

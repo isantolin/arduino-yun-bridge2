@@ -15,11 +15,11 @@
 
 namespace rpc {
 
-constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
+inline constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 
 // --- Protocol Offset Constants [SIL-2] ---
-constexpr size_t FRAME_HEADER_SIZE = 7;
-constexpr size_t MIN_FRAME_SIZE = FRAME_HEADER_SIZE + CRC_TRAILER_SIZE;
+inline constexpr size_t FRAME_HEADER_SIZE = 7;
+inline constexpr size_t MIN_FRAME_SIZE = FRAME_HEADER_SIZE + CRC_TRAILER_SIZE;
 
 // Define FrameHeader struct before it is used in sizeof()
 #pragma pack(push, 1)
@@ -34,7 +34,7 @@ struct FrameHeader {
 static_assert(sizeof(FrameHeader) == 7, "FrameHeader must be exactly 7 bytes");
 
 // Maximum size of a raw frame (Header + Payload + CRC)
-constexpr size_t MAX_RAW_FRAME_SIZE =
+inline constexpr size_t MAX_RAW_FRAME_SIZE =
     sizeof(FrameHeader) + MAX_PAYLOAD_SIZE + CRC_TRAILER_SIZE;
 
 struct Frame {

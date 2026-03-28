@@ -42,7 +42,8 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<con
   // [SIL-2] Check hardware availability via HAL. Filesystem operations are 
   // only implemented if an SD card or external flash is present.
   if (bridge::hal::hasSD()) {
-    if (bridge::hal::writeFile(msg.path, data)) {
+    auto res = bridge::hal::writeFile(msg.path, data);
+    if (res.has_value()) {
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
     } else {
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
@@ -67,29 +68,27 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   uint16_t chunk_count = 0U;
 
   while (chunk_count++ < bridge::config::FILE_MAX_READ_CHUNKS) {
-    size_t bytes_read = 0U;
-    bool has_more = false;
-    const bool read_ok = bridge::hal::readFileChunk(
+    auto res = bridge::hal::readFileChunk(
         msg.path,
         offset,
-        etl::span<uint8_t>(read_buffer.data(), read_buffer.size()),
-        bytes_read,
-        has_more);
-    if (!read_ok) {
+        etl::span<uint8_t>(read_buffer.data(), read_buffer.size()));
+
+    if (!res.has_value()) {
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
       return;
     }
 
-    if (bytes_read > 0U) {
-      send_read_response(etl::span<const uint8_t>(read_buffer.data(), bytes_read));
+    const auto& result = res.value();
+    if (result.bytes_read > 0U) {
+      send_read_response(etl::span<const uint8_t>(read_buffer.data(), result.bytes_read));
       sent_payload = true;
-      offset += bytes_read;
+      offset += result.bytes_read;
     } else if (!sent_payload) {
       send_read_response(etl::span<const uint8_t>());
       sent_payload = true;
     }
 
-    if (!has_more) {
+    if (!result.has_more) {
       break;
     }
   }
@@ -105,7 +104,8 @@ void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
     return;
   }
 
-  if (bridge::hal::removeFile(msg.path)) {
+  auto res = bridge::hal::removeFile(msg.path);
+  if (res.has_value()) {
     (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
   } else {
     (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);

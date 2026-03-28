@@ -29,10 +29,10 @@
 #include "security/security.h"
 
 namespace {
-constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
-constexpr uint8_t kRpcCommandStride = 2;  // Pair: CMD + RESP
+inline constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+inline constexpr uint8_t kRpcCommandStride = 2;  // Pair: CMD + RESP
 
-constexpr uint8_t bit_index_from_mask(uint32_t mask) {
+inline constexpr uint8_t bit_index_from_mask(uint32_t mask) {
   uint8_t bit_index = 0;
   while (mask > 1U) {
     mask /= 2U;

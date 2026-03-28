@@ -11,9 +11,27 @@
 #include <stdint.h>
 #include <etl/span.h>
 
+#include <etl/expected.h>
 #include <etl/string_view.h>
 
 namespace bridge::hal {
+
+/**
+ * @brief Error codes for HAL operations.
+ */
+enum class HalError {
+  NONE = 0,
+  IO_ERROR,
+  NOT_FOUND,
+  TIMEOUT,
+  PERMISSION_DENIED,
+  INVALID_ARGUMENT
+};
+
+struct ChunkResult {
+  size_t bytes_read;
+  bool has_more;
+};
 
 /**
  * @brief Force all safety-critical pins to a safe state (e.g. LOW/Input).
@@ -46,22 +64,20 @@ bool hasSD();
 /**
  * @brief Write data to a file on the SD card.
  */
-bool writeFile(etl::string_view path, etl::span<const uint8_t> data);
+etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data);
 
 /**
  * @brief Read a chunk from a file on the SD card.
  */
-bool readFileChunk(
+etl::expected<ChunkResult, HalError> readFileChunk(
     etl::string_view path,
     size_t offset,
-    etl::span<uint8_t> buffer,
-    size_t& bytes_read,
-    bool& has_more);
+    etl::span<uint8_t> buffer);
 
 /**
  * @brief Remove a file from the SD card.
  */
-bool removeFile(etl::string_view path);
+etl::expected<void, HalError> removeFile(etl::string_view path);
 
 /**
  * @brief Get MCU capabilities bitmask.

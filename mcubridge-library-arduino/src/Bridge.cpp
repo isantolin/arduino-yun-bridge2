@@ -765,7 +765,7 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::string_view messa
 
 void BridgeClass::emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
   if (message == nullptr) { emitStatus(status_code, etl::span<const uint8_t>()); return; }
-  const size_t max_len = _transient_buffer.size() - 1U;
+  constexpr size_t max_len = rpc::MAX_PAYLOAD_SIZE - 1U;
 #if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
   strncpy_P(reinterpret_cast<char*>(_transient_buffer.data()), (PGM_P)message, max_len);
 #else

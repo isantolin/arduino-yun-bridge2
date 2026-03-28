@@ -1,33 +1,45 @@
-#ifndef BRIDGE_PROGMEM_COMPAT_H
-#define BRIDGE_PROGMEM_COMPAT_H
+#pragma once
 
-/**
- * @file progmem_compat.h
- * @brief Centralized PROGMEM portability shim.
- *
- * Include this header instead of duplicating #ifndef PROGMEM blocks.
- * Does NOT pull in <Arduino.h> to avoid macro conflicts (e.g. min/max).
- */
+#include <stdint.h>
+#include <stddef.h>
+#include "config/bridge_config.h"
 
-#ifdef ARDUINO_ARCH_AVR
+#if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
 #include <avr/pgmspace.h>
 #else
+#ifndef PGM_P
+#define PGM_P const char*
+#endif
 #ifndef PROGMEM
 #define PROGMEM
 #endif
-#ifndef pgm_read_byte
-#define pgm_read_byte(addr) (*(const unsigned char*)(addr))
+#ifndef PSTR
+#define PSTR(s) (s)
 #endif
-#ifndef pgm_read_dword
-#define pgm_read_dword(addr) \
-  (*reinterpret_cast<const uint32_t*>(addr))  // NOLINT
+#ifndef pgm_read_byte
+#define pgm_read_byte(addr) (*(const uint8_t*)(addr))
 #endif
 #ifndef memcpy_P
-#define memcpy_P memcpy
+#define memcpy_P(dest, src, n) memcpy((dest), (src), (n))
 #endif
 #ifndef memcmp_P
-#define memcmp_P memcmp
+#define memcmp_P(s1, s2, n) memcmp((s1), (s2), (n))
 #endif
 #endif
 
-#endif  // BRIDGE_PROGMEM_COMPAT_H
+namespace bridge::hal {
+
+/**
+ * @brief Zero-cost abstraction for reading from Flash (PROGMEM) or RAM.
+ * 
+ * On AVR, it uses pgm_read_byte. On other architectures, it's a direct read.
+ */
+inline uint8_t read_byte(const uint8_t* addr) {
+  if constexpr (bridge::config::IS_AVR) {
+    return pgm_read_byte(addr);
+  } else {
+    return *addr;
+  }
+}
+
+} // namespace bridge::hal

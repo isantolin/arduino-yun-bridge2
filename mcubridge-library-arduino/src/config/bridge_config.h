@@ -47,6 +47,12 @@
 
 namespace bridge::config {
 
+#ifdef ARDUINO_ARCH_AVR
+inline constexpr bool IS_AVR = true;
+#else
+inline constexpr bool IS_AVR = false;
+#endif
+
 inline constexpr bool ENABLE_DATASTORE = (BRIDGE_ENABLE_DATASTORE != 0);
 inline constexpr bool ENABLE_FILESYSTEM = (BRIDGE_ENABLE_FILESYSTEM != 0);
 inline constexpr bool ENABLE_MAILBOX = (BRIDGE_ENABLE_MAILBOX != 0);

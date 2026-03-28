@@ -14,7 +14,8 @@ void ConsoleClass::begin() {
 void ConsoleClass::_push(etl::span<const uint8_t> data) {
   if (!_flags.test(BEGUN)) return;
   BRIDGE_ATOMIC_BLOCK {
-    const size_t space = _rx_buffer.capacity() - _rx_buffer.size();
+    constexpr size_t capacity = rpc::MAX_PAYLOAD_SIZE;
+    const size_t space = capacity - _rx_buffer.size();
     const size_t to_copy = etl::min(data.size(), space);
     _rx_buffer.push(data.begin(), data.begin() + to_copy);
   }

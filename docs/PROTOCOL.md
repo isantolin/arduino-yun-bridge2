@@ -54,8 +54,15 @@ El MCU utiliza un despacho basado en **tablas de salto (jump tables)** de punter
 Qué **sí** se centraliza en `spec.toml` (y se genera a Python/C++):
 
 - **Contrato wire MCU↔Linux**: enums/IDs (`Command`, `Status`), límites, sentinels/máscaras y cualquier valor validado por ambos lados.
-- **Handshake autenticado**: formato serializado y rangos (`HANDSHAKE_CONFIG_*`, `*_MIN/MAX`) y defaults que formen parte del intercambio/validación.
+- **Handshake HMAC-auth**: formato serializado y rangos (`HANDSHAKE_CONFIG_*`, `*_MIN/MAX`) y defaults que formen parte del intercambio/validación.
+- **Bootloader Safety**: uso de `RPC_BOOTLOADER_MAGIC` (0xDEADC0DE) para prevenir activaciones accidentales del WDT-bootloader.
 - **Contrato MQTT público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`MQTT_DEFAULT_TOPIC_PREFIX`, `MQTT_SUFFIX_*`, `STATUS_REASON_*`).
+
+### Determinismo C++17 y Zero-Cost Abstractions
+La librería C++ utiliza intensivamente `constexpr` e `if constexpr` para:
+- Resolución de capacidades de hardware en tiempo de compilación.
+- Eliminación de ramas de código inalcanzables según la arquitectura.
+- Reducción del uso de RAM al mover constantes a la sección de solo lectura del binario.
 
 Qué se centraliza en `mcubridge.proto` (y se genera a Python/C++ vía protoc/nanopb):
 

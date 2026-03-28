@@ -103,14 +103,17 @@ def main(
     if os.path.exists(SOCAT_PORT0):
         try:
             os.unlink(SOCAT_PORT0)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.warning("Could not unlink existing PTY %s: %s", SOCAT_PORT0, exc)
 
     # [FIX] Ensure emulator filesystem root exists and is clean
     emulator_fs_root = Path("/tmp/mcubridge-host-fs")
     if emulator_fs_root.exists():
         import shutil
-        shutil.rmtree(emulator_fs_root)
+        try:
+            shutil.rmtree(emulator_fs_root)
+        except OSError as exc:
+            logger.error("Failed to clean emulator FS root %s: %s", emulator_fs_root, exc)
     emulator_fs_root.mkdir(parents=True, exist_ok=True)
 
     logger.info("Starting Unified MCU Emulator via socat EXEC...")

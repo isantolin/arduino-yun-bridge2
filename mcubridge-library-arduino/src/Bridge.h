@@ -85,16 +85,6 @@ enum FlagId : uint8_t {
 
 }  // namespace bridge
 
-namespace bridge::config {
-
-#if defined(ARDUINO_ARCH_AVR)
-inline constexpr bool IS_AVR = true;
-#else
-inline constexpr bool IS_AVR = false;
-#endif
-
-}  // namespace bridge::config
-
 // [SIL-2] Serial Port Selection logic
 #if defined(BRIDGE_FORCE_SERIAL0) || defined(BRIDGE_EMULATION)
 #define BRIDGE_DEFAULT_SERIAL_PORT Serial
@@ -177,7 +167,7 @@ class BridgeClass
 
   template <typename T>
   void emitStatus(rpc::StatusCode status_code, const T& msg) {
-    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), _transient_buffer.size());
+    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
     if (pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
       emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
     }
@@ -186,8 +176,8 @@ class BridgeClass
   [[nodiscard]] bool sendFrame(rpc::StatusCode status_code, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
   [[nodiscard]] bool sendFrame(rpc::CommandId command_id, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
   [[nodiscard]] bool sendChunkyFrame(rpc::CommandId command_id, uint16_t sequence_id, etl::span<const uint8_t> header, etl::span<const uint8_t> data) {
-    const size_t h_len = etl::min(header.size(), _transient_buffer.size());
-    const size_t d_len = etl::min(data.size(), _transient_buffer.size() - h_len);
+    const size_t h_len = etl::min(header.size(), rpc::MAX_PAYLOAD_SIZE);
+    const size_t d_len = etl::min(data.size(), rpc::MAX_PAYLOAD_SIZE - h_len);
     
     if (h_len > 0) etl::copy_n(header.data(), h_len, etl::begin(_transient_buffer));
     if (d_len > 0) {
@@ -198,7 +188,7 @@ class BridgeClass
 
   template <typename T>
   bool sendPbCommand(rpc::CommandId command_id, uint16_t sequence_id, const T& msg) {
-    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), _transient_buffer.size());
+    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
     if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
       return false;
     }
@@ -208,7 +198,7 @@ class BridgeClass
 
   template <typename T>
   bool sendPbFrame(rpc::StatusCode status_code, uint16_t sequence_id, const T& msg) {
-    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), _transient_buffer.size());
+    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
     if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
       return false;
     }
@@ -348,7 +338,7 @@ class BridgeClass
 
   template <typename TPacket, typename F, typename TField>
   void _dispatchWithBytes(const bridge::router::CommandContext& ctx, TField TPacket::*field, F handler, bool ack = false) {
-    etl::span<uint8_t> span(_transient_buffer.data(), _transient_buffer.size());
+    etl::span<uint8_t> span(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
     TPacket msg = {};
     rpc::util::pb_setup_decode_span(msg.*field, span);
 

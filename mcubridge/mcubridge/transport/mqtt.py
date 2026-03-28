@@ -167,27 +167,6 @@ class MqttTransport:
     async def _publisher_loop(self, client: aiomqtt.Client) -> None:
         """Publishes messages from the internal queue to the MQTT broker."""
 
-        @tenacity.retry(
-            wait=tenacity.wait_exponential(multiplier=0.1, max=10),
-            retry=tenacity.retry_if_exception_type(aiomqtt.MqttError),
-            before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
-        )
-        async def _reliable_publish(message: Any) -> None:
-            """Internal helper for a single reliable publish attempt."""
-            topic_name = message.topic_name
-            props = build_mqtt_properties(message)
-
-            if logger.isEnabledFor(logging.DEBUG):
-                log_hexdump(logger, logging.DEBUG, f"MQTT PUB > {topic_name}", message.payload)
-
-            await client.publish(
-                topic_name,
-                message.payload,
-                qos=int(message.qos),
-                retain=message.retain,
-                properties=props,
-            )
-
         try:
             while True:
                 # [OPTIMIZATION] Flush spool before processing new messages
@@ -195,14 +174,39 @@ class MqttTransport:
 
                 # Wait for next message
                 message = await self.state.mqtt_publish_queue.get()
+
+                # [SIL-2] Pre-calculate properties ONCE before the retry block
+                # to avoid redundant introspection logic.
+                topic_name = message.topic_name
+                props = build_mqtt_properties(message)
+                payload = message.payload
+                qos = int(message.qos)
+                retain = message.retain
+
+                if logger.isEnabledFor(logging.DEBUG):
+                    log_hexdump(logger, logging.DEBUG, f"MQTT PUB > {topic_name}", payload)
+
+                @tenacity.retry(
+                    wait=tenacity.wait_exponential(multiplier=0.1, max=10),
+                    retry=tenacity.retry_if_exception_type(aiomqtt.MqttError),
+                    before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
+                )
+                async def _reliable_publish() -> None:
+                    await client.publish(
+                        topic_name,
+                        payload,
+                        qos=qos,
+                        retain=retain,
+                        properties=props,
+                    )
+
                 published = False
                 try:
-                    await _reliable_publish(message)
+                    await _reliable_publish()
                     self.state.record_mqtt_publish()
                     published = True
                 except aiomqtt.MqttError as exc:
                     logger.warning("MQTT persistent publish failure: %s", exc)
-                    # Spool if tenacity stops or fatal
                     await self.state.stash_mqtt_message(message)
                 except asyncio.CancelledError:
                     raise

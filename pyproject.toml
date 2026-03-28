@@ -40,7 +40,7 @@ package-dir = {"" = "mcubridge"}
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q"
+addopts = "-ra -q --timeout=10 --timeout_method=thread"
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]

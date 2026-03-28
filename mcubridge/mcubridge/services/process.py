@@ -289,42 +289,38 @@ class ProcessComponent(BaseComponent):
     # --- Core Logic ---
 
     async def run_async(self, command: str) -> int:
-        """Start a command asynchronously using psutil.Popen delegation."""
+        """Start a command asynchronously using native asyncio subprocess."""
         if not self.state.allowed_policy.is_allowed(command):
             logger.warning("Process execution denied by policy: %s", command)
             return 0
 
-        if self._process_slots.locked():
-            logger.warning("Process slots full, rejecting command.")
-            return 0
-
+        # [SIL-2] Wait for an available process slot
         await self._process_slots.acquire()
+
+        pid = 0
         try:
-            # [SIL-2] Use psutil.Popen for superior resource monitoring
-            # and lifecycle management.
-            import subprocess
-            proc_handle = psutil.Popen(
+            # [SIL-2] Use native asyncio subprocess for zero-thread execution
+            # and deterministic lifecycle.
+            process = await asyncio.create_subprocess_shell(
                 command,
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
             )
 
-            # [SIL-2] Allocate a protocol-compliant PID (uint16)
             pid = await self._allocate_pid()
-            managed = ManagedProcess(pid=pid, command=command, handle=proc_handle)
+            managed = ManagedProcess(pid=pid, command=command, handle=process)
 
             async with self.state.process_lock:
                 self.state.running_processes[pid] = managed
 
             managed.trigger("start")
-
-            # [SIL-2] Delegate stream reading to asyncio tasks wrapping the handles
+            
+            # Spawn lightweight reader tasks
             asyncio.create_task(self._monitor_process(pid))
             return pid
 
-        except (psutil.Error, OSError, ValueError) as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             logger.error("Failed to spawn process: %s", exc)
             self._process_slots.release()
             return 0
@@ -337,26 +333,39 @@ class ProcessComponent(BaseComponent):
             return pid
 
     async def _monitor_process(self, pid: int) -> None:
-        """Lightweight monitor task using library-managed buffers."""
+        """Monitor process lifecycle with safety timeouts to prevent slot deadlocks."""
         try:
             async with self.state.process_lock:
                 proc = self.state.running_processes.get(pid)
-            if not proc or not proc.handle:
-                return
 
-            # [SIL-2] psutil.Popen is synchronous, we read in thread pool to avoid blocking
-            stdout, stderr = await asyncio.to_thread(proc.handle.communicate)
+            if proc and proc.handle:
+                # [SIL-2] Delegate stream reading with global safety timeout
+                async def _read(reader: asyncio.StreamReader | None, buffer: collections.deque[int]) -> None:
+                    if not reader: return
+                    try:
+                        # Timeout per chunk to avoid infinite waiting on broken pipes
+                        while True:
+                            chunk = await asyncio.wait_for(reader.read(4096), timeout=2.0)
+                            if not chunk: break
+                            buffer.extend(chunk)
+                    except (OSError, asyncio.CancelledError, asyncio.TimeoutError):
+                        pass
 
-            async with proc.io_lock:
-                proc.stdout_buffer.extend(stdout)
-                proc.stderr_buffer.extend(stderr)
-                proc.exit_code = proc.handle.returncode
-                proc.trigger("sigchld")
-                proc.trigger("io_complete")
+                # [SIL-2] Non-blocking wait for process exit and I/O completion
+                try:
+                    async with asyncio.timeout(5.0):
+                        await asyncio.gather(
+                            _read(proc.handle.stdout, proc.stdout_buffer),
+                            _read(proc.handle.stderr, proc.stderr_buffer),
+                        )
+                        proc.exit_code = await proc.handle.wait()
+                except asyncio.TimeoutError:
+                    logger.warning("Process %d monitor timed out; forcing finalization", pid)
 
-            if proc.is_drained():
-                self._finalize_process_internal(pid)
-        except (psutil.Error, OSError, asyncio.CancelledError):
+                async with proc.io_lock:
+                    proc.trigger("sigchld")
+                    proc.trigger("io_complete")
+        finally:
             self._finalize_process_internal(pid)
 
     async def poll_process(self, pid: int) -> ProcessOutputBatch:
@@ -391,29 +400,24 @@ class ProcessComponent(BaseComponent):
                 return False
 
             try:
-                # [SIL-2] Use psutil to kill the entire process tree
+                # [SIL-2] Use psutil to kill the entire process tree reliably
                 parent = psutil.Process(proc_entry.handle.pid)
-                children = parent.children(recursive=True)
-                for child in children:
+                procs = parent.children(recursive=True) + [parent]
+                
+                for p in procs:
                     with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
-                        child.terminate()
+                        p.terminate()
 
-                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
-                    parent.terminate()
-
-                # Brief wait for graceful termination before force-killing
-                if children or parent:
-                    try:
-                        _, alive = psutil.wait_procs(children + [parent], timeout=0.2)
-                        for proc in alive:
-                            with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
-                                proc.kill()
-                    except (psutil.NoSuchProcess, ProcessLookupError):
-                        pass
+                # [SIL-2] Unified wait and force-kill delegation
+                _, alive = psutil.wait_procs(procs, timeout=0.5)
+                for p in alive:
+                    with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                        logger.warning("Force killing zombie child process %d", p.pid)
+                        p.kill()
 
                 return True
             except (psutil.NoSuchProcess, ProcessLookupError):
-                return True  # Process already gone is a success for us
+                return True
             except (psutil.AccessDenied, OSError, RuntimeError, ValueError) as e:
                 logger.error("Error stopping process %d: %s", pid, e)
                 return False

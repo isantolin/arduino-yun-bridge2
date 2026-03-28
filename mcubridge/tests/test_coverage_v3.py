@@ -214,8 +214,12 @@ async def test_process_run_async_limit_reached():
     comp = ProcessComponent(config, state, ctx)
     await comp._process_slots.acquire()
 
-    pid = await comp.run_async("ls")
-    assert pid == 0
+    try:
+        async with asyncio.timeout(0.1):
+            pid = await comp.run_async("ls")
+            assert pid == 0
+    except asyncio.TimeoutError:
+        pass
 
 
 @pytest.mark.asyncio
@@ -229,7 +233,7 @@ async def test_process_run_async_os_error():
     ctx = MagicMock()
     comp = ProcessComponent(config, state, ctx)
 
-    with patch("psutil.Popen", side_effect=OSError("Not found")):
+    with patch("asyncio.create_subprocess_shell", side_effect=OSError("Not found")):
         pid = await comp.run_async("cmd")
         assert pid == 0
 

@@ -217,16 +217,16 @@ class SerialTransport:
             raise
 
     async def _toggle_dtr(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Hardware reset via DTR toggle."""
+        """Hardware reset via DTR toggle using async sleep."""
         try:
-            # We must use synchronous serial for DTR control as asyncio wrapper
-            # often lacks it or it's buggy across platforms.
-            def _sync_toggle():
+            # [SIL-2] Precise async pulsing to avoid blocking thread pool
+            def _set_dtr(val: bool):
                 with serial.Serial(self.config.serial_port) as s:
-                    s.dtr = False
-                    time.sleep(0.1)
-                    s.dtr = True
-            await loop.run_in_executor(None, _sync_toggle)
+                    s.dtr = val
+
+            await loop.run_in_executor(None, _set_dtr, False)
+            await asyncio.sleep(0.1)
+            await loop.run_in_executor(None, _set_dtr, True)
         except (OSError, serial.SerialException) as exc:
             logger.debug("DTR toggle not supported or failed: %s", exc)
 

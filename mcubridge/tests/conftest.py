@@ -44,10 +44,10 @@ if "serial_asyncio_fast" not in sys.modules:
     mock_saf = MagicMock()
     # Mock open_serial_connection to return (StreamReader, StreamWriter)
     mock_saf.open_serial_connection = AsyncMock(
-        return_value=(MagicMock(spec=asyncio.StreamReader), MagicMock(spec=asyncio.StreamWriter))
+        return_value=(AsyncMock(spec=asyncio.StreamReader), AsyncMock(spec=asyncio.StreamWriter))
     )
     # Maintain create_serial_connection for older tests that haven't been migrated yet
-    mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
+    mock_saf.create_serial_connection = AsyncMock(return_value=(AsyncMock(), AsyncMock()))
     sys.modules["serial_asyncio_fast"] = mock_saf
 
 import pytest

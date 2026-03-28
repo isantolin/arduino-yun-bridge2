@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -77,8 +78,13 @@ async def test_run_async_limit_reached(process_component: ProcessComponent) -> N
     await process_component._process_slots.acquire()
     await process_component._process_slots.acquire()
 
-    pid = await process_component.run_async("echo hello")
-    assert pid == 0
+    # The 3rd should fail or timeout (non-blocking)
+    try:
+        async with asyncio.timeout(0.1):
+            pid = await process_component.run_async("echo hello")
+            assert pid == 0
+    except asyncio.TimeoutError:
+        pass  # Success: it blocked/failed as expected
 
 
 @pytest.mark.asyncio

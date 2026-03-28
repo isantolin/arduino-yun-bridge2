@@ -149,7 +149,7 @@ async def test_mqtt_task_requeues_on_publish_failure(
 
     # Wait for ready state or a bit of time
     start_time = asyncio.get_running_loop().time()
-    while transport.state != "ready" and (asyncio.get_running_loop().time() - start_time < 1.0):
+    while transport.fsm_state != "ready" and (asyncio.get_running_loop().time() - start_time < 1.0):
         await asyncio.sleep(0.05)
 
     # Trigger cancellation
@@ -212,6 +212,7 @@ async def test_mqtt_subscriber_loop_handles_mqtt_error(
         await transport._subscriber_loop(client)  # type: ignore[arg-type]
 
 
+@pytest.mark.timeout(5)
 @pytest.mark.asyncio
 async def test_mqtt_publisher_debug_logging() -> None:
     config = _make_config(tls=False, cafile=None)

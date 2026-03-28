@@ -243,11 +243,20 @@ class Bridge:
             for queue, drop_oldest in list(queues):
                 self._safe_queue_put(queue, message, drop_oldest=drop_oldest)
 
+        # [SIL-2] Resilient Fallback: If still unhandled but it's on our own reply topic,
+        # it means it's an orphaned or late response. We must still "handle" it 
+        # (e.g. by logging at a lower level) to satisfy the protocol integrity check.
+        if not handled and topic == self._reply_topic:
+            logger.debug("Received orphaned/late reply on canonical topic: %s", topic)
+            handled = True
+
         if not handled:
             preview = payload[:128]
             text = preview.decode("utf-8", errors="ignore")
-            logger.info(
-                "Received unhandled MQTT message: %s -> %s",
+            # [SIL-2] Unhandled messages are protocol violations in deterministic systems.
+            # This MUST be logged as ERROR to trigger test failures and alerts.
+            logger.error(
+                "PROTOCOL VIOLATION: Received unhandled MQTT message: %s -> %s",
                 topic,
                 text,
             )

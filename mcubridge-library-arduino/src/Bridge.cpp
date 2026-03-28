@@ -485,7 +485,7 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
 
 void BridgeClass::_handleEnterBootloader(const bridge::router::CommandContext& ctx) {
   _withPayloadAck<rpc::payload::EnterBootloader>(ctx, [this](const rpc::payload::EnterBootloader& msg) {
-    if (msg.magic == 0xDEADC0DE) {
+    if (msg.magic == rpc::RPC_BOOTLOADER_MAGIC) {
       this->flushStream();
       delay(bridge::config::BOOTLOADER_DELAY_MS);
 #if defined(ARDUINO_ARCH_AVR)

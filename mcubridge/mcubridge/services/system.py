@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from typing import cast
 
 from aiomqtt.message import Message
+from ..protocol import protocol
 from mcubridge.protocol.protocol import Command, SystemAction
 from mcubridge.protocol.structures import (
     EnterBootloaderPacket,
@@ -104,7 +105,7 @@ class SystemComponent(BaseComponent):
     ) -> bool:
         match identifier:
             case SystemAction.BOOTLOADER:
-                packet = EnterBootloaderPacket(magic=0xDEADC0DE)
+                packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
                 logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
                 return await self.ctx.send_frame(Command.CMD_ENTER_BOOTLOADER.value, packet.encode())
 

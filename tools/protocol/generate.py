@@ -115,6 +115,7 @@ class JinjaGenerator:
             {"name": "RPC_CMD_FLAG_COMPRESSED", "type": "uint16_t", "value": c["cmd_flag_compressed"]},
             {"name": "RPC_UINT8_MASK", "type": "uint8_t", "value": c["uint8_mask"]},
             {"name": "RPC_UINT16_MAX", "type": "uint16_t", "value": c["uint16_max"]},
+            {"name": "RPC_BOOTLOADER_MAGIC", "type": "uint32_t", "value": c["bootloader_magic"]},
             {
                 "name": "RPC_PROCESS_DEFAULT_EXIT_CODE",
                 "type": "uint8_t",
@@ -256,6 +257,7 @@ class JinjaGenerator:
             {"name": "CMD_FLAG_COMPRESSED", "type": "int", "value": c["cmd_flag_compressed"]},
             {"name": "UINT8_MASK", "type": "int", "value": c["uint8_mask"]},
             {"name": "UINT16_MAX", "type": "int", "value": c["uint16_max"]},
+            {"name": "BOOTLOADER_MAGIC", "type": "int", "value": c["bootloader_magic"]},
             {"name": "PROCESS_DEFAULT_EXIT_CODE", "type": "int", "value": c["process_default_exit_code"]},
             {"name": "CRC32_MASK", "type": "int", "value": c["crc32_mask"]},
             {"name": "CRC_INITIAL", "type": "int", "value": c["crc_initial"]},

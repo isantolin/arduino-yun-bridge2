@@ -141,7 +141,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
             }))
         except Exception:
             val = raw_id.value if isinstance(raw_id, (protocol.Command, protocol.Status)) else raw_id
-            return val | (0x8000 if is_compressed else 0)
+            return val | (protocol.CMD_FLAG_COMPRESSED if is_compressed else 0)
 
     @staticmethod
     def build(

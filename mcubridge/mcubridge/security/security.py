@@ -54,14 +54,14 @@ def derive_handshake_key(shared_secret: bytes) -> bytes:
         shared_secret,
         protocol.HANDSHAKE_HKDF_SALT,
         protocol.HANDSHAKE_HKDF_INFO_AUTH,
-        32,
+        protocol.HANDSHAKE_HKDF_OUTPUT_LENGTH,
     )
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
     """Securely zero memory, resistant to interpreter optimization."""
     # [SIL-2] Bulk zeroing for performance
-    data[:] = b"\x00" * len(data)
+    data[:] = protocol.FRAME_DELIMITER * len(data)
     # MIL-SPEC: Use ctypes to bypass high-level optimizations
     try:
         buf = (ctypes.c_char * len(data)).from_buffer(data)

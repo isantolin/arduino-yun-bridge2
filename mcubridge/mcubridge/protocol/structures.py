@@ -7,7 +7,6 @@ Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 from __future__ import annotations
 
 import asyncio
-import logging
 import base64
 import time
 from collections.abc import Iterable

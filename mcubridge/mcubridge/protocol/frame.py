@@ -107,7 +107,10 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         # [SIL-2] Declarative flag extraction
         try:
             # Handle both Enum and int
-            val = self.command_id.value if isinstance(self.command_id, (protocol.Command, protocol.Status)) else self.command_id
+            if isinstance(self.command_id, (protocol.Command, protocol.Status)):
+                val = self.command_id.value
+            else:
+                val = self.command_id
             return COMMAND_ID_CODEC.parse(Int16ub.build(val)).is_compressed  # type: ignore
         except Exception:
             return False
@@ -117,11 +120,15 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """Return the command ID without the compression flag."""
         # [SIL-2] Declarative ID extraction
         try:
-            val = self.command_id.value if isinstance(self.command_id, (protocol.Command, protocol.Status)) else self.command_id
+            if isinstance(self.command_id, (protocol.Command, protocol.Status)):
+                val = self.command_id.value
+            else:
+                val = self.command_id
             return COMMAND_ID_CODEC.parse(Int16ub.build(val)).raw_id  # type: ignore
         except Exception:
-            val = self.command_id.value if isinstance(self.command_id, (protocol.Command, protocol.Status)) else self.command_id
-            return val
+            if isinstance(self.command_id, (protocol.Command, protocol.Status)):
+                return self.command_id.value
+            return self.command_id
 
     @staticmethod
     def build_command_id(raw_id: int | protocol.Command | protocol.Status, is_compressed: bool = False) -> int:
@@ -137,14 +144,22 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
             return val | (0x8000 if is_compressed else 0)
 
     @staticmethod
-    def build(command_id: int | protocol.Command | protocol.Status, sequence_id: int = 0, payload: bytes = b"") -> bytes:
+    def build(
+        command_id: int | protocol.Command | protocol.Status,
+        sequence_id: int = 0,
+        payload: bytes = b"",
+    ) -> bytes:
         """Build a raw frame (header + payload + CRC) using Construct (Sustitución Drástica)."""
         payload_len = len(payload)
         if payload_len > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload too large ({payload_len} bytes); max is {protocol.MAX_PAYLOAD_SIZE}")
-        
+
         # Validate integer range if it's not an Enum
-        cmd_val = command_id.value if isinstance(command_id, (protocol.Command, protocol.Status)) else command_id
+        if isinstance(command_id, (protocol.Command, protocol.Status)):
+            cmd_val = command_id.value
+        else:
+            cmd_val = command_id
+
         if not 0 <= cmd_val <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {cmd_val} outside 16-bit range")
         if not 0 <= sequence_id <= protocol.UINT16_MAX:

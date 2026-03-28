@@ -7,6 +7,7 @@ Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 from __future__ import annotations
 
 import asyncio
+import logging
 import base64
 import time
 from collections.abc import Iterable
@@ -57,7 +58,9 @@ def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
 
 def _int_to_capabilities(val: int) -> dict[str, bool]:
     """Convert an integer bitmask to a capability feature dict."""
-    return {name: bool(val & bit) for name, bit in _CAPABILITY_BITS.items()}
+    # [SIL-2] Explicit cast to int for bitwise operations
+    mask = int(val)
+    return {name: bool(mask & bit) for name, bit in _CAPABILITY_BITS.items()}
 
 
 # =============================================================================

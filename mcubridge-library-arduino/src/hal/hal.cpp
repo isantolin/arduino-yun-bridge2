@@ -295,6 +295,7 @@ uint32_t getCapabilities() {
   if (hasSD()) {
     caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_SD));
   }
+
   return static_cast<uint32_t>(caps.to_ulong());
 }
 

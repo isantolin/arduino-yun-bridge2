@@ -20,7 +20,7 @@ mcubridge.Capabilities.ver              int_size:IS_8
 mcubridge.Capabilities.arch             int_size:IS_8
 mcubridge.Capabilities.dig              int_size:IS_8
 mcubridge.Capabilities.ana              int_size:IS_8
-mcubridge.Capabilities.feat             int_size:IS_8
+mcubridge.Capabilities.feat             int_size:IS_32
 
 # --- Version ---
 mcubridge.VersionResponse.major         int_size:IS_8

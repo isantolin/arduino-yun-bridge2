@@ -586,6 +586,12 @@ echo "[BUILD] Building libraries: $LIBS..."
 
 # Build all libraries in parallel with as many jobs as cores.
 for lib in $LIBS; do
+    # Only compile if the package exists in our feeds overlay
+    if [ ! -d "$REPO_ROOT/feeds/$lib" ]; then
+        echo "[SKIP] $lib is a system package (not in feeds overlay)."
+        continue
+    fi
+
     echo "[BUILD] Building library $lib (.apk)..."
     if [ "$VERBOSE" -eq 1 ]; then
         make "package/feeds/mcubridge/$lib/compile" -j$(nproc) V=s || exit 1

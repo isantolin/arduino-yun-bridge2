@@ -244,7 +244,7 @@ class Bridge:
                 self._safe_queue_put(queue, message, drop_oldest=drop_oldest)
 
         # [SIL-2] Resilient Fallback: If still unhandled but it's on our own reply topic,
-        # it means it's an orphaned or late response. We must still "handle" it 
+        # it means it's an orphaned or late response. We must still "handle" it
         # (e.g. by logging at a lower level) to satisfy the protocol integrity check.
         if not handled and topic == self._reply_topic:
             logger.debug("Received orphaned/late reply on canonical topic: %s", topic)

@@ -92,21 +92,24 @@ class RLEPayload(msgspec.Struct, frozen=True):
 
 
 def encode(data: bytes | bytearray | memoryview) -> bytes:
-    """Encode data using RLE with construct for sequences."""
+    """Encode data using RLE with zero-copy memoryview and Construct delegation."""
     if not data:
         return b""
 
+    # [SIL-2] Use memoryview for zero-copy scanning
+    view = memoryview(data)
     result = bytearray()
     last_end = 0
 
     # Pattern matches runs of 4-256 same bytes OR any sequence of RLE_ESCAPE_BYTE
-    # We use a compiled pattern for performance.
-    escape_pattern = re.escape(bytes([protocol.RLE_ESCAPE_BYTE]))
+    escape_byte = bytes([protocol.RLE_ESCAPE_BYTE])
+    escape_pattern = re.escape(escape_byte)
     pattern = re.compile(b"(.)\\1{3,255}|" + escape_pattern + b"+")
 
-    for m in pattern.finditer(bytes(data)):
+    # [SIL-2] finditer on memoryview avoids data duplication
+    for m in pattern.finditer(view):
         start, end = m.span()
-        result.extend(data[last_end:start])  # Literal gap
+        result.extend(view[last_end:start])  # Literal gap
 
         chunk = m.group(0)
         char = chunk[0]
@@ -116,25 +119,30 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
             # All 0xFF must be escaped. Split into chunks of 256 if needed.
             for i in range(0, length, protocol.RLE_MAX_RUN_LENGTH):
                 chunk_len = min(length - i, protocol.RLE_MAX_RUN_LENGTH)
+                # [SIL-2] Direct library delegation for token building
                 result.extend(
-                    RLE_ESCAPE.build({  # type: ignore
-                        "escape": protocol.RLE_ESCAPE_BYTE,
-                        "count_m2": 255 if chunk_len == 1 else chunk_len - 2,
-                        "value": protocol.RLE_ESCAPE_BYTE,
-                    })
+                    RLE_ESCAPE.build(  # type: ignore
+                        dict(
+                            escape=protocol.RLE_ESCAPE_BYTE,
+                            count_m2=255 if chunk_len == 1 else chunk_len - 2,
+                            value=protocol.RLE_ESCAPE_BYTE,
+                        )
+                    )
                 )
         else:
             # Non-ESCAPE_BYTE run of 4+ bytes
             result.extend(
-                RLE_ESCAPE.build({  # type: ignore
-                    "escape": protocol.RLE_ESCAPE_BYTE,
-                    "count_m2": length - 2,
-                    "value": char,
-                })
+                RLE_ESCAPE.build(  # type: ignore
+                    dict(
+                        escape=protocol.RLE_ESCAPE_BYTE,
+                        count_m2=length - 2,
+                        value=char,
+                    )
+                )
             )
         last_end = end
 
-    result.extend(data[last_end:])
+    result.extend(view[last_end:])
     return bytes(result)
 
 

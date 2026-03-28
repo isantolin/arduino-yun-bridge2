@@ -185,8 +185,12 @@ bool hasSD() {
 
 etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
 #if defined(BRIDGE_HOST_TEST)
+  // [SIL-2] Ensure null-termination for POSIX functions
+  PathString rel_path;
+  rel_path.assign(path.begin(), path.end());
+
   PathString full_path;
-  if (!resolve_host_path(path.data(), full_path) ||
+  if (!resolve_host_path(rel_path.c_str(), full_path) ||
       !ensure_host_parent_directories(full_path)) {
     return etl::unexpected<HalError>(HalError::IO_ERROR);
   }
@@ -206,7 +210,7 @@ etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const u
 #else
   // [SIL-2] Real hardware SD implementation would go here.
   (void)path; (void)data;
-  return etl::unexpected<HalError>(HalError::NOT_FOUND);
+  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 #endif
 }
 
@@ -215,8 +219,12 @@ etl::expected<ChunkResult, HalError> readFileChunk(
     size_t offset,
     etl::span<uint8_t> buffer) {
 #if defined(BRIDGE_HOST_TEST)
+  // [SIL-2] Ensure null-termination
+  PathString rel_path;
+  rel_path.assign(path.begin(), path.end());
+
   PathString full_path;
-  if (!resolve_host_path(path.data(), full_path)) {
+  if (!resolve_host_path(rel_path.c_str(), full_path)) {
     return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   }
 
@@ -253,14 +261,18 @@ etl::expected<ChunkResult, HalError> readFileChunk(
 #else
   // [SIL-2] Real hardware SD implementation would go here.
   (void)path; (void)offset; (void)buffer;
-  return etl::unexpected<HalError>(HalError::NOT_FOUND);
+  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 #endif
 }
 
 etl::expected<void, HalError> removeFile(etl::string_view path) {
 #if defined(BRIDGE_HOST_TEST)
+  // [SIL-2] Ensure null-termination
+  PathString rel_path;
+  rel_path.assign(path.begin(), path.end());
+
   PathString full_path;
-  if (!resolve_host_path(path.data(), full_path)) {
+  if (!resolve_host_path(rel_path.c_str(), full_path)) {
     return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   }
   if (::unlink(full_path.c_str()) == 0) {
@@ -269,7 +281,7 @@ etl::expected<void, HalError> removeFile(etl::string_view path) {
   return etl::unexpected<HalError>(HalError::IO_ERROR);
 #else
   (void)path;
-  return etl::unexpected<HalError>(HalError::NOT_FOUND);
+  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 #endif
 }
 

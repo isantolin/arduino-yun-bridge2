@@ -27,20 +27,20 @@ def _load_raw_config() -> tuple[dict[str, Any], str]:
     """Load configuration from defaults and UCI (SIL 2).
 
     Precedence (highest first): UCI -> Defaults.
-
-    Returns:
-        Tuple of (config_dict, source) where source is 'uci' or 'defaults'.
+    Fallback: Defaults are used if UCI is missing, locked, or corrupt.
     """
     source = "defaults"
     config = get_default_config()
 
     try:
+        # [SIL-2] Resilient load: fail-safe to defaults on any system error
         uci_values = get_uci_config()
         if uci_values:
             config.update(uci_values)
             source = "uci"
-    except (OSError, ValueError) as err:
-        logger.error("Failed to load UCI configuration (Operational Error): %s", err)
+    except (OSError, ValueError, RuntimeError, ImportError) as err:
+        # [SIL-2] UCI is optional for system survival. Log error and continue with defaults.
+        logger.warning("UCI configuration unavailable or locked (using safe defaults): %s", err)
 
     return config, source
 

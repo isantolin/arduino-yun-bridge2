@@ -145,12 +145,16 @@ def cleanup_status_file() -> None:
 
 
 def _write_status_file(payload: BridgeStatus) -> None:
+    """[SIL-2] Atomic status persistence using zero-copy library primitives."""
     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(
-        "wb",
-        dir=STATUS_FILE.parent,
-        delete=False,
-    ) as handle:
-        handle.write(msgspec.json.encode(payload))
-        temp_name = handle.name
-    Path(temp_name).replace(STATUS_FILE)
+
+    try:
+        # [SIL-2] Use library encoder for atomic generation
+        data = msgspec.json.encode(payload)
+
+        with NamedTemporaryFile("wb", dir=STATUS_FILE.parent, delete=False) as tf:
+            tf.write(data)
+            temp_name = tf.name
+        Path(temp_name).replace(STATUS_FILE)
+    except (msgspec.MsgspecError, OSError) as e:
+        logger.error("Failed to write atomic status file: %s", e)

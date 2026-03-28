@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import logging
 from collections.abc import Awaitable, Callable
@@ -315,7 +316,7 @@ class ProcessComponent(BaseComponent):
                 self.state.running_processes[pid] = managed
 
             managed.trigger("start")
-            
+
             # Spawn lightweight reader tasks
             asyncio.create_task(self._monitor_process(pid))
             return pid
@@ -341,12 +342,14 @@ class ProcessComponent(BaseComponent):
             if proc and proc.handle:
                 # [SIL-2] Delegate stream reading with global safety timeout
                 async def _read(reader: asyncio.StreamReader | None, buffer: collections.deque[int]) -> None:
-                    if not reader: return
+                    if not reader:
+                        return
                     try:
                         # Timeout per chunk to avoid infinite waiting on broken pipes
                         while True:
                             chunk = await asyncio.wait_for(reader.read(4096), timeout=2.0)
-                            if not chunk: break
+                            if not chunk:
+                                break
                             buffer.extend(chunk)
                     except (OSError, asyncio.CancelledError, asyncio.TimeoutError):
                         pass
@@ -403,7 +406,7 @@ class ProcessComponent(BaseComponent):
                 # [SIL-2] Use psutil to kill the entire process tree reliably
                 parent = psutil.Process(proc_entry.handle.pid)
                 procs = parent.children(recursive=True) + [parent]
-                
+
                 for p in procs:
                     with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
                         p.terminate()

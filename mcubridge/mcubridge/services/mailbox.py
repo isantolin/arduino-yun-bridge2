@@ -66,10 +66,7 @@ class MailboxComponent(BaseComponent):
 
         stored = self.state.enqueue_mailbox_incoming(data, logger)
         if not stored:
-            logger.error(
-                "Dropping incoming mailbox message (%d bytes) due to " "queue limits.",
-                len(data),
-            )
+            logger.error("Dropping incoming mailbox message (%d bytes) due to queue limits.", len(data))
             await self.ctx.send_frame(
                 Status.ERROR.value,
                 encode_status_reason(protocol.STATUS_REASON_MAILBOX_INCOMING_OVERFLOW),
@@ -83,6 +80,7 @@ class MailboxComponent(BaseComponent):
         )
         await self.ctx.publish(topic=topic, payload=data)
 
+        # [SIL-2] Direct library delegation for availability metrics
         await self.ctx.publish(
             topic=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"),
             payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
@@ -91,8 +89,6 @@ class MailboxComponent(BaseComponent):
 
     async def handle_available(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_MAILBOX_AVAILABLE."""
-        # Strict contract: request MUST have an empty payload.
-        # Any payload is rejected to avoid ambiguous "request vs notify" semantics.
         if payload:
             await self.ctx.send_frame(
                 Status.MALFORMED.value,
@@ -100,9 +96,8 @@ class MailboxComponent(BaseComponent):
             )
             return False
 
-        # Return the count of messages in queue
+        # [SIL-2] Delegate queue length to library container
         queue_len = len(self.state.mailbox_queue)
-        # [SIL-2] Use structured packet
         response = MailboxAvailableResponsePacket(count=queue_len).encode()
 
         await self.ctx.send_frame(
@@ -115,23 +110,12 @@ class MailboxComponent(BaseComponent):
         original_payload = self.state.pop_mailbox_message()
         message_payload: bytes = original_payload if original_payload is not None else b""
 
-        from construct import Bytes  # type: ignore
-
+        # [SIL-2] Direct slicing delegates truncation to Python C core
         max_allowed = protocol.MAX_PAYLOAD_SIZE - 2
-        msg_len = len(message_payload)
-        if msg_len > max_allowed:
-            logger.warning(
-                "Mailbox message too long (%d bytes), truncating.",
-                msg_len,
-            )
-            # [SIL-2] Declarative truncation via Construct
-            try:
-                message_payload = Bytes(max_allowed).parse(message_payload)  # type: ignore
-            except Exception:
-                message_payload = message_payload[:max_allowed]
-            msg_len = len(message_payload)
+        if len(message_payload) > max_allowed:
+            logger.warning("Mailbox message too long (%d bytes), truncating.", len(message_payload))
+            message_payload = message_payload[:max_allowed]
 
-        # [SIL-2] Use structured packet
         response_payload = MailboxReadResponsePacket(content=message_payload).encode()
 
         send_ok = await self.ctx.send_frame(
@@ -144,10 +128,8 @@ class MailboxComponent(BaseComponent):
                 self.state.requeue_mailbox_message_front(original_payload)
             return False
 
-        await self.ctx.publish(
-            topic=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"),
-            payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
-        )
+        # [SIL-2] Inform availability using direct length from library deque/queue
+        await self._publish_available("outgoing_available", len(self.state.mailbox_queue))
         return True
 
     async def handle_mqtt(

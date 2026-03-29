@@ -7,6 +7,7 @@ Format:
 - Escape Byte (0xFD)
 - Count-2 (1 byte): How many times the value is repeated (beyond the first 2).
 - Value (1 byte): The byte value being repeated.
+- Special: If Count-2 == 255, it's a single literal escape byte.
 """
 
 from __future__ import annotations
@@ -71,8 +72,8 @@ def should_compress(payload: bytes) -> bool:
     """Check if a payload should be RLE compressed."""
     if len(payload) < protocol.RLE_MIN_COMPRESS_INPUT_SIZE:
         return False
-    # Simple heuristic: at least one sequence of 3+ bytes or many escape bytes
-    pattern = re.compile(rb"(.)\1{2,}")
+    # Simple heuristic: at least one sequence of MIN_RUN_LENGTH+ bytes or many escape bytes
+    pattern = re.compile(rb"(.)\1{" + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode() + rb",}")
     return bool(pattern.search(payload))
 
 
@@ -81,10 +82,11 @@ def encode(uncompressed: bytes) -> bytes:
     if not uncompressed:
         return b""
 
-    # [SIL-2] Pattern: Any byte repeated 3+ times, or the escape byte itself
-    # We cap at 257 repetitions per chunk (Count-2 = 255)
+    # [SIL-2] Pattern: Any byte repeated MIN_RUN_LENGTH+ times, or the escape byte itself
+    # We cap at 256 repetitions total (Count-2 = 254) because 255 is the SINGLE_ESCAPE_MARKER.
     pattern = re.compile(
-        rb"(.)\1{2,256}|" + re.escape(bytes([protocol.RLE_ESCAPE_BYTE]))
+        rb"(.)\1{" + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode() + rb",255}|" 
+        + re.escape(bytes([protocol.RLE_ESCAPE_BYTE]))
     )
     compressed = bytearray()
     last_pos = 0
@@ -96,7 +98,7 @@ def encode(uncompressed: bytes) -> bytes:
         # 2. Append RLE chunk
         chunk = match.group(0)
         if len(chunk) == 1:
-            # Single escape byte literal
+            # Single escape byte literal (or any single byte that matched the escape part of the regex)
             compressed.extend(
                 RLE_ESCAPE.build({
                     "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,

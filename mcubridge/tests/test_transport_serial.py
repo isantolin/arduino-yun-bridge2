@@ -69,7 +69,7 @@ async def test_process_packet_success_dispatches(
 
     service.handle_mcu_frame = AsyncMock()
 
-    frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
+    frame_bytes = Frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi").build()
     encoded = cobs_encode(frame_bytes)
 
     transport = serial_fast.SerialTransport(config, state, service)
@@ -101,7 +101,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
     transport._negotiating = True
     transport._negotiation_future = transport.loop.create_future()
 
-    encoded = cobs_encode(Frame.build(Command.CMD_SET_BAUDRATE_RESP.value, 0, b""))
+    encoded = cobs_encode(Frame(command_id=Command.CMD_SET_BAUDRATE_RESP.value, sequence_id=0, payload=b"").build())
     transport._process_packet(encoded)
 
     assert await transport._negotiation_future is True

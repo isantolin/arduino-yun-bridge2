@@ -5,8 +5,7 @@ from __future__ import annotations
 import pytest
 from mcubridge.protocol.protocol import RLE_ESCAPE_BYTE as ESCAPE_BYTE
 from mcubridge.protocol.rle import (
-    compression_ratio,
-    decode,
+    RLEPayload,
     encode,
     should_compress,
 )
@@ -50,8 +49,8 @@ class TestRLEEncode:
         assert encode(data) == expected
 
     def test_escape_byte_handling(self) -> None:
-        """Escape byte (0xFF) in input is properly escaped."""
-        # Single 0xFF becomes: ESCAPE, 255 (special marker), 0xFF
+        """Escape byte (0xFD) in input is properly escaped."""
+        # Single 0xFD becomes: ESCAPE, 255 (special marker), 0xFD
         data = bytes([ESCAPE_BYTE])
         expected = bytes([ESCAPE_BYTE, 255, ESCAPE_BYTE])
         assert encode(data) == expected
@@ -76,46 +75,38 @@ class TestRLEEncode:
         expected = bytes([ESCAPE_BYTE, 2, 0])
         assert encode(data) == expected
 
-    def test_max_run_length(self) -> None:
-        """Very long runs are split at MAX_RUN_LENGTH."""
-        # Run of 300 bytes should be split
-        data = b"A" * 300
-        encoded = encode(data)
-        decoded = decode(encoded)
-        assert decoded == data
-
 
 class TestRLEDecode:
     """Tests for RLE decoding."""
 
     def test_empty_input(self) -> None:
         """Empty input returns empty output."""
-        assert decode(b"") == b""
+        assert RLEPayload(b"").decode() == b""
 
     def test_literal_only(self) -> None:
         """Literals pass through unchanged."""
         data = b"ABCDEF"
-        assert decode(data) == data
+        assert RLEPayload(data).decode() == data
 
     def test_encoded_run(self) -> None:
         """Encoded runs are properly expanded."""
         # ESCAPE, count-2=3, 'A' = AAAAA (5 A's)
         encoded = bytes([ESCAPE_BYTE, 3, ord("A")])
-        assert decode(encoded) == b"AAAAA"
+        assert RLEPayload(encoded).decode() == b"AAAAA"
 
     def test_escaped_escape(self) -> None:
-        """Escaped escape byte decodes to single 0xFF."""
-        # ESCAPE, 255, 0xFF = single 0xFF (special marker)
+        """Escaped escape byte decodes to single 0xFD."""
+        # ESCAPE, 255, 0xFD = single 0xFD (special marker)
         encoded = bytes([ESCAPE_BYTE, 255, ESCAPE_BYTE])
-        assert decode(encoded) == bytes([ESCAPE_BYTE])
+        assert RLEPayload(encoded).decode() == bytes([ESCAPE_BYTE])
 
     def test_malformed_truncated(self) -> None:
         """Malformed data (truncated escape sequence) raises ValueError."""
         # ESCAPE without enough following bytes
-        with pytest.raises(ValueError, match="Malformed RLE"):
-            decode(bytes([ESCAPE_BYTE]))
-        with pytest.raises(ValueError, match="Malformed RLE"):
-            decode(bytes([ESCAPE_BYTE, 5]))
+        with pytest.raises(ValueError, match="RLE decompression failed"):
+            RLEPayload(bytes([ESCAPE_BYTE])).decode()
+        with pytest.raises(ValueError, match="RLE decompression failed"):
+            RLEPayload(bytes([ESCAPE_BYTE, 5])).decode()
 
 
 class TestRLERoundtrip:
@@ -133,24 +124,24 @@ class TestRLERoundtrip:
             b"Hello, World!",
             bytes(range(256)),
             b"\x00" * 100,
-            b"\xff" * 100,
+            b"\xfd" * 100,
             b"A" * 257,  # Exactly at max run boundary
             b"A" * 258,  # Just over max run boundary
             b"A" * 1000,
             # Mixed content
-            b"Start" + b"\x00" * 50 + b"Middle" + b"\xff" * 30 + b"End",
+            b"Start" + b"\x00" * 50 + b"Middle" + b"\xfd" * 30 + b"End",
         ],
     )
     def test_roundtrip(self, data: bytes) -> None:
         """Encode then decode returns original data."""
         encoded = encode(data)
-        decoded = decode(encoded)
+        decoded = RLEPayload(encoded).decode()
         assert decoded == data
 
     def test_all_byte_values(self) -> None:
         """All possible byte values survive roundtrip."""
         data = bytes(range(256)) * 2
-        assert decode(encode(data)) == data
+        assert RLEPayload(encode(data)).decode() == data
 
 
 class TestShouldCompress:
@@ -177,28 +168,6 @@ class TestShouldCompress:
         assert should_compress(data) is False
 
 
-class TestCompressionRatio:
-    """Tests for compression ratio calculation."""
-
-    def test_no_compression(self) -> None:
-        """Incompressible data has ratio ~1.0."""
-        data = b"ABCDEFGH"
-        encoded = encode(data)
-        ratio = compression_ratio(data, encoded)
-        assert ratio == pytest.approx(1.0)
-
-    def test_good_compression(self) -> None:
-        """Highly compressible data has ratio > 1."""
-        data = b"A" * 100
-        encoded = encode(data)
-        ratio = compression_ratio(data, encoded)
-        assert ratio > 10  # 100 bytes -> 3 bytes = ratio of ~33
-
-    def test_empty(self) -> None:
-        """Empty input returns 0."""
-        assert compression_ratio(b"", b"") == 0.0
-
-
 class TestRealWorldScenarios:
     """Tests with realistic protocol payloads."""
 
@@ -208,14 +177,14 @@ class TestRealWorldScenarios:
         data = b"    if (x > 0) {\n        return true;\n    }\n"
         encoded = encode(data)
         assert len(encoded) < len(data)
-        assert decode(encoded) == data
+        assert RLEPayload(encoded).decode() == data
 
     def test_binary_sensor_data(self) -> None:
         """Binary sensor data with repeated values."""
         # Simulated ADC readings with some stuck values
         data = bytes([100, 100, 100, 100, 100, 102, 103, 101, 100, 100, 100, 100])
         encoded = encode(data)
-        assert decode(encoded) == data
+        assert RLEPayload(encoded).decode() == data
 
     def test_file_with_nulls(self) -> None:
         """Binary file with null padding."""
@@ -223,4 +192,4 @@ class TestRealWorldScenarios:
         data = b"Header" + b"\x00" * 50 + b"Data" + b"\x00" * 30
         encoded = encode(data)
         assert len(encoded) < len(data)
-        assert decode(encoded) == data
+        assert RLEPayload(encoded).decode() == data

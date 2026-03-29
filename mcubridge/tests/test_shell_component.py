@@ -59,7 +59,7 @@ class RecordingBridgeContext:
     async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
         self.enqueued.append((message, reply_context))
 
-    async def _acknowledge_mcu_frame(self, cmd: int, status: Any) -> None:
+    async def acknowledge_mcu_frame(self, cmd: int, status: Any) -> None:
         pass
 
     def is_command_allowed(self, command: str) -> bool:

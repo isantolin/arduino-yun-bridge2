@@ -66,7 +66,7 @@ async def test_runtime_acknowledge_frame_no_sender() -> None:
     service = BridgeService(config, state)
     service._serial_sender = None
 
-    await service._acknowledge_mcu_frame(Command.CMD_GET_VERSION.value, 0)
+    await service.acknowledge_mcu_frame(Command.CMD_GET_VERSION.value, 0)
     # Should log error and return
 
 

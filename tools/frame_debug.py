@@ -1,27 +1,21 @@
-"""Frame inspection utility for MCU Bridge developers."""
+"""Command line tool to debug and generate MCU Bridge frames."""
 
 from __future__ import annotations
 
+import binascii
 import sys
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 import serial
 import typer
-from cobs import cobs
-from mcubridge.protocol import protocol
+from mcubridge.protocol import cobs, protocol
 from mcubridge.protocol.frame import Frame
-from mcubridge.protocol.protocol import (
-    DEFAULT_BAUDRATE,
-    FRAME_DELIMITER,
-    Command,
-    Status,
-)
+from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 
-
-@dataclass(slots=True)
+@dataclass(frozen=True)
 class FrameDebugSnapshot:
     command_id: int
     command_name: str
@@ -36,59 +30,53 @@ class FrameDebugSnapshot:
 
     def render(self) -> str:
         return (
-            "[FrameDebug] --- Snapshot ---\n"
-            f"cmd_id=0x{self.command_id:02X} ({self.command_name})\n"
-            f"payload_len={self.payload_length}\n"
-            f"crc=0x{self.crc:08X}\n"
-            f"raw_len={self.raw_length}\n"
-            f"cobs_len={self.cobs_length}\n"
-            f"expected_serial_bytes={self.expected_serial_bytes}\n"
-            f"raw_frame={self.raw_frame_hex}\n"
-            f"encoded={self.encoded_hex}"
+            f"--- Frame Debug Snapshot ---\n"
+            f"Command: {self.command_name} (0x{self.command_id:02X})\n"
+            f"Payload Length: {self.payload_length} bytes\n"
+            f"CRC32: 0x{self.crc:08X}\n"
+            f"Raw Frame Size: {self.raw_length} bytes\n"
+            f"COBS Encoded Size: {self.cobs_length} bytes\n"
+            f"Total Serial Bytes: {self.expected_serial_bytes} (inc delimiter)\n"
+            f"Raw Hex: [{self.raw_frame_hex}]\n"
+            f"Encoded Hex: [{self.encoded_hex}]"
         )
 
 
-def _resolve_command(candidate: str) -> int:
-    if not candidate:
-        raise ValueError("command may not be empty")
-    normalized = str(candidate).strip()
+def _resolve_command(cmd_str: str) -> int:
     try:
-        return int(normalized, 0)
-    except ValueError:
-        pass
-    normalized_upper = normalized.upper()
-    try:
-        return Command[normalized_upper].value
-    except KeyError:
-        pass
-    try:
-        return Status[normalized_upper].value
-    except KeyError as exc:
-        raise ValueError(f"Unknown command '{candidate}'.") from exc
+        if cmd_str.startswith("0x"):
+            return int(cmd_str, 16)
+        # Try Command enum
+        return int(getattr(protocol.Command, cmd_str.upper()))
+    except (AttributeError, ValueError):
+        try:
+            # Try Status enum
+            return int(getattr(protocol.Status, cmd_str.upper()))
+        except (AttributeError, ValueError):
+            try:
+                return int(cmd_str)
+            except ValueError:
+                raise ValueError(f"Invalid command/status identifier: {cmd_str}")
 
 
-def _parse_payload(hex_string: str | None) -> bytes:
-    if not hex_string:
+def _parse_payload(payload_str: str | None) -> bytes:
+    if not payload_str:
         return b""
-    compact = "".join(str(hex_string).split())
-    if compact.startswith("0x") or compact.startswith("0X"):
-        compact = compact[2:]
-    if len(compact) % 2:
-        raise ValueError("payload hex must contain an even number of digits")
     try:
-        return bytes.fromhex(compact)
-    except ValueError as exc:
-        raise ValueError(f"Invalid payload hex '{hex_string}': {exc}") from exc
+        # Clean spacing/brackets if any
+        clean = payload_str.replace(" ", "").replace("[", "").replace("]", "")
+        return binascii.unhexlify(clean)
+    except binascii.Error as exc:
+        raise ValueError(f"Invalid hex payload: {exc}")
 
 
 def _name_for_command(command_id: int) -> str:
-    try:
-        return Command(command_id).name
-    except ValueError:
+    for enum_cls in (protocol.Command, protocol.Status):
         try:
-            return Status(command_id).name
+            return enum_cls(command_id).name
         except ValueError:
-            return f"UNKNOWN(0x{command_id:02X})"
+            continue
+    return f"UNKNOWN(0x{command_id:02X})"
 
 
 def _hex_with_spacing(data: bytes) -> str:
@@ -96,7 +84,9 @@ def _hex_with_spacing(data: bytes) -> str:
 
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
-    raw_frame = Frame(command_id=command_id, payload=payload).to_bytes()
+    # Use sequence_id=0 for debug snapshots
+    frame_obj = Frame(command_id=command_id, sequence_id=0, payload=payload)
+    raw_frame = frame_obj.build()
     crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
     encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
@@ -144,13 +134,14 @@ def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
 
 
 def _decode_frame(encoded_packet: bytes) -> Frame:
-    return Frame.from_bytes(cobs.decode(encoded_packet))
+    return Frame.parse(cobs.decode(encoded_packet))
 
 
 def _print_response(frame: Frame) -> None:
     sys.stdout.write(
         f"[FrameDebug] --- MCU Response ---\n"
-        f"cmd_id=0x{frame.command_id:02X}\n"
+        f"cmd_id=0x{int(frame.command_id):02X}\n"
+        f"seq_id={frame.sequence_id}\n"
         f"payload_len={len(frame.payload)}\n"
     )
 

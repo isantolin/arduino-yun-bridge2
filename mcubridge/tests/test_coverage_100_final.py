@@ -748,7 +748,7 @@ class TestProtocolFrame:
     def test_frame_encode_decode(self):
         from mcubridge.protocol.frame import Frame
 
-        raw = Frame.build(Command.CMD_DIGITAL_READ.value, 0, b"\x01\x02")
+        raw = Frame(command_id=Command.CMD_DIGITAL_READ.value, sequence_id=0, payload=b"\x01\x02").build()
         cmd_id, seq_id, payload = Frame.parse(raw)
         assert cmd_id == Command.CMD_DIGITAL_READ.value
         assert payload == b"\x01\x02"
@@ -762,7 +762,7 @@ class TestProtocolFrame:
     def test_decode_rpc_frame_bad_crc(self):
         from mcubridge.protocol.frame import Frame
 
-        frame = bytearray(Frame.build(0x01, 0, b"test"))
+        frame = bytearray(Frame(command_id=0x01, sequence_id=0, payload=b"test").build())
         frame[-1] ^= 0xFF  # Corrupt CRC
         with pytest.raises(ValueError):
             Frame.parse(bytes(frame))
@@ -851,7 +851,7 @@ class TestProcessComponent:
         config = _make_config(process_max_concurrent=4)
         state = create_runtime_state(config)
         service = MagicMock()
-        service._acknowledge_mcu_frame = AsyncMock()
+        service.acknowledge_mcu_frame = AsyncMock()
         service.send_frame = AsyncMock(return_value=True)
         service.enqueue_mqtt = AsyncMock()
         service.publish = AsyncMock()
@@ -862,12 +862,13 @@ class TestProcessComponent:
     async def test_handle_run_async_empty_command(self, process_comp):
         # Empty command encodes to b""
         await process_comp.handle_run_async(0, b"")
-        process_comp.service._acknowledge_mcu_frame.assert_called()
+        process_comp.service.acknowledge_mcu_frame.assert_called()
 
     @pytest.mark.asyncio
     async def test_handle_run_async_malformed(self, process_comp):
         await process_comp.handle_run_async(0, b"\xff\xff\xff")
-        process_comp.service._acknowledge_mcu_frame.assert_called_with(
+        process_comp.service.acknowledge_mcu_frame.assert_called_with(
+            0,
             Command.CMD_PROCESS_RUN_ASYNC.value,
             status=Status.MALFORMED,
         )
@@ -875,7 +876,8 @@ class TestProcessComponent:
     @pytest.mark.asyncio
     async def test_handle_poll_malformed(self, process_comp):
         await process_comp.handle_poll(0, b"\xff\xff\xff")
-        process_comp.service._acknowledge_mcu_frame.assert_called_with(
+        process_comp.service.acknowledge_mcu_frame.assert_called_with(
+            0,
             Command.CMD_PROCESS_POLL.value,
             status=Status.MALFORMED,
         )
@@ -883,7 +885,8 @@ class TestProcessComponent:
     @pytest.mark.asyncio
     async def test_handle_kill_malformed(self, process_comp):
         await process_comp.handle_kill(0, b"\xff\xff\xff")
-        process_comp.service._acknowledge_mcu_frame.assert_called_with(
+        process_comp.service.acknowledge_mcu_frame.assert_called_with(
+            0,
             Command.CMD_PROCESS_KILL.value,
             status=Status.MALFORMED,
         )

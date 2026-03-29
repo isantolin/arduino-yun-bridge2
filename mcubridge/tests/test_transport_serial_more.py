@@ -211,7 +211,7 @@ async def test_async_process_packet_os_error(
     from mcubridge.protocol.frame import Frame
     from mcubridge.protocol.protocol import Command
 
-    frame = Frame(command_id=Command.CMD_GET_VERSION.value, payload=b"\x00").to_bytes()
+    frame = Frame(command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00").build()
     encoded = cobs_encode(frame)
 
     caplog.set_level("ERROR")

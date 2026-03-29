@@ -13,7 +13,7 @@ The frame format is strictly defined using the 'construct' library to ensure:
 from __future__ import annotations
 
 from binascii import crc32
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 import msgspec
 from construct import (
     BitStruct,
@@ -59,16 +59,19 @@ RPC_FRAME_HEADER: Construct = Struct(
 )
 
 
+# [SIL-2] Inner container for CRC calculation
+RPC_PAYLOAD_CONTAINER: Construct = Struct(
+    "header" / RPC_FRAME_HEADER,
+    "payload" / Bytes(this.header.payload_len),
+)
+
 # [SIL-2] Full Frame with Checksum (Sustitución Drástica)
 # Uses RawCopy to capture the bytes for CRC calculation without manual slicing.
 RPC_FRAME: Construct = Struct(
-    "header_payload" / RawCopy(Struct(
-        "header" / RPC_FRAME_HEADER,
-        "payload" / Bytes(this.header.payload_len),
-    )),
+    "header_payload" / RawCopy(RPC_PAYLOAD_CONTAINER),
     "crc" / Checksum(
         Int32ub,
-        lambda data: crc32(data) & 0xFFFFFFFF, # type: ignore
+        lambda data: crc32(data) & 0xFFFFFFFF,
         this.header_payload.data
     ),
 )
@@ -90,6 +93,12 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
     sequence_id: int
     payload: bytes = b""
 
+    def __iter__(self):
+        """Allow unpacking: cmd, seq, payload = frame."""
+        yield self.command_id
+        yield self.sequence_id
+        yield self.payload
+
     @property
     def is_compressed(self) -> bool:
         """Check if the frame payload is compressed."""
@@ -104,15 +113,18 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
     def build(self) -> bytes:
         """Build the binary frame representation."""
+        # Use simple dictionary for building
         return RPC_FRAME.build({
             "header_payload": {
-                "header": {
-                    "version": protocol.PROTOCOL_VERSION,
-                    "payload_len": len(self.payload),
-                    "command_id": int(self.command_id),
-                    "sequence_id": self.sequence_id,
-                },
-                "payload": self.payload,
+                "value": {
+                    "header": {
+                        "version": protocol.PROTOCOL_VERSION,
+                        "payload_len": len(self.payload),
+                        "command_id": int(self.command_id),
+                        "sequence_id": self.sequence_id,
+                    },
+                    "payload": self.payload,
+                }
             }
         })
 
@@ -121,9 +133,9 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
         obj: Any = RPC_FRAME.parse(raw_frame_buffer)
         return cls(
-            command_id=int(obj.header_payload.header.command_id),
-            sequence_id=int(obj.header_payload.header.sequence_id),
-            payload=obj.header_payload.payload,
+            command_id=int(obj.header_payload.value.header.command_id),
+            sequence_id=int(obj.header_payload.value.header.sequence_id),
+            payload=obj.header_payload.value.payload,
         )
 
     @classmethod
@@ -134,7 +146,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
     @classmethod
     def build_command_id(cls, command_id: int, is_compressed: bool) -> int:
         """Build a 16-bit command ID with the compression flag."""
-        return Int16ub.parse(COMMAND_ID_CODEC.build({
+        return int(cast(int, Int16ub.parse(COMMAND_ID_CODEC.build({
             "is_compressed": is_compressed,
             "raw_id": command_id & 0x7FFF,
-        }))
+        }))))

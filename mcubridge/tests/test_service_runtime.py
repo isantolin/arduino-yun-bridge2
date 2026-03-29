@@ -81,16 +81,16 @@ async def test_schedule_background_requires_context() -> None:
 
 
 @pytest.mark.asyncio
-async def test_acknowledge_mcu_frame_no_sender_is_noop() -> None:
+async def testacknowledge_mcu_frame_no_sender_is_noop() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    await service._acknowledge_mcu_frame(protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK)
+    await service.acknowledge_mcu_frame(protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK)
 
 
 @pytest.mark.asyncio
-async def test_acknowledge_mcu_frame_sends_ack_packet() -> None:
+async def testacknowledge_mcu_frame_sends_ack_packet() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     service = BridgeService(config, state)
@@ -103,7 +103,7 @@ async def test_acknowledge_mcu_frame_sends_ack_packet() -> None:
 
     service.register_serial_sender(_sender)
 
-    await service._acknowledge_mcu_frame(
+    await service.acknowledge_mcu_frame(
         protocol.Command.CMD_GET_FREE_MEMORY.value, 0, status=Status.MALFORMED,
     )
 

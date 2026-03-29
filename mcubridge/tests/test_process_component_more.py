@@ -15,7 +15,7 @@ def process_component(runtime_state, runtime_config) -> ProcessComponent:
     from mcubridge.services.runtime import BridgeService
 
     service = MagicMock(spec=BridgeService)
-    service._acknowledge_mcu_frame = AsyncMock()
+    service.acknowledge_mcu_frame = AsyncMock()
     service.state = runtime_state
 
     # Create component
@@ -40,7 +40,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
         from mcubridge.protocol.structures import ProcessPollPacket
         payload = ProcessPollPacket(pid=100).encode()
         await process_component.handle_poll(0, payload)
-        process_component.service._acknowledge_mcu_frame.assert_awaited()
+        process_component.service.acknowledge_mcu_frame.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -170,6 +170,6 @@ async def test_handle_run_async_validation_error_sends_error_frame(
     await process_component.handle_run_async(0, b"")
 
     # Verify it called with correct named parameter
-    process_component.service._acknowledge_mcu_frame.assert_awaited()
-    args, kwargs = process_component.service._acknowledge_mcu_frame.call_args
+    process_component.service.acknowledge_mcu_frame.assert_awaited()
+    args, kwargs = process_component.service.acknowledge_mcu_frame.call_args
     assert kwargs.get("status") == Status.MALFORMED

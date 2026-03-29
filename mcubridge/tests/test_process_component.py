@@ -56,7 +56,7 @@ async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:
     state = create_runtime_state(config)
     # Correct initialization with mock service
     service = MagicMock()
-    service._acknowledge_mcu_frame = AsyncMock()
+    service.acknowledge_mcu_frame = AsyncMock()
     component = ProcessComponent(config, state, service)
     try:
         yield component

@@ -30,7 +30,12 @@ from mcubridge.transport import mqtt
 from mcubridge.util import mqtt_helper
 
 
-def _make_config(*, tls: bool, cafile: str | None, spool_dir: str = "/tmp/mcubridge-test-transport-spool") -> RuntimeConfig:
+def _make_config(
+    *,
+    tls: bool,
+    cafile: str | None,
+    spool_dir: str = "/tmp/mcubridge-test-transport-spool",
+) -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=protocol.DEFAULT_BAUDRATE,

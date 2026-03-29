@@ -619,7 +619,10 @@ class TestShellMqttLogic:
         comp.poll_process = AsyncMock()
         comp.stop_process = AsyncMock(return_value=True)
         comp.publish_poll_result = AsyncMock()
-        return comp
+        try:
+            yield comp
+        finally:
+            state.cleanup()
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_poll(self, shell_comp):
@@ -663,12 +666,15 @@ class TestStatusWriter:
         config = _make_config()
         state = create_runtime_state(config)
 
-        # Run one iteration then cancel
-        task = asyncio.create_task(status_writer(state, 1))
-        await asyncio.sleep(0.2)
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        try:
+            # Run one iteration then cancel
+            task = asyncio.create_task(status_writer(state, 1))
+            await asyncio.sleep(0.2)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
 
     @pytest.mark.asyncio
     async def test_cleanup_status_file(self, tmp_path):
@@ -812,11 +818,14 @@ class TestBaseComponent:
 
         config = _make_config()
         state = create_runtime_state(config)
-        ctx = MagicMock()
-        ctx.publish = AsyncMock()
-        comp = BaseComponent(config, state, ctx)
-        assert comp.config is config
-        assert comp.state is state
+        try:
+            ctx = MagicMock()
+            ctx.publish = AsyncMock()
+            comp = BaseComponent(config, state, ctx)
+            assert comp.config is config
+            assert comp.state is state
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -856,7 +865,10 @@ class TestProcessComponent:
         service.enqueue_mqtt = AsyncMock()
         service.publish = AsyncMock()
         comp = ProcessComponent(config, state, service)
-        return comp
+        try:
+            yield comp
+        finally:
+            state.cleanup()
 
     @pytest.mark.asyncio
     async def test_handle_run_async_empty_command(self, process_comp):
@@ -912,11 +924,14 @@ class TestConsoleComponent:
 
         config = _make_config()
         state = create_runtime_state(config)
-        ctx = MagicMock()
-        ctx.send_frame = AsyncMock(return_value=True)
-        comp = ConsoleComponent(config, state, ctx)
-        # Flush when empty should be fine
-        await comp.flush_queue()
+        try:
+            ctx = MagicMock()
+            ctx.send_frame = AsyncMock(return_value=True)
+            comp = ConsoleComponent(config, state, ctx)
+            # Flush when empty should be fine
+            await comp.flush_queue()
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -931,11 +946,14 @@ class TestMailboxComponent:
 
         config = _make_config(mailbox_queue_limit=5, mailbox_queue_bytes_limit=1024)
         state = create_runtime_state(config)
-        ctx = MagicMock()
-        ctx.publish = AsyncMock()
+        try:
+            ctx = MagicMock()
+            ctx.publish = AsyncMock()
 
-        comp = MailboxComponent(config, state, ctx)
-        await comp.handle_mqtt("write", b"hello")
+            comp = MailboxComponent(config, state, ctx)
+            await comp.handle_mqtt("write", b"hello")
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -950,15 +968,18 @@ class TestPinComponent:
 
         config = _make_config()
         state = create_runtime_state(config)
-        ctx = MagicMock()
-        ctx.send_frame = AsyncMock(return_value=True)
-        ctx.publish = AsyncMock()
-        comp = PinComponent(config, state, ctx)
-        # Test without pending requests
-        from mcubridge.protocol.structures import DigitalReadResponsePacket
+        try:
+            ctx = MagicMock()
+            ctx.send_frame = AsyncMock(return_value=True)
+            ctx.publish = AsyncMock()
+            comp = PinComponent(config, state, ctx)
+            # Test without pending requests
+            from mcubridge.protocol.structures import DigitalReadResponsePacket
 
-        payload = DigitalReadResponsePacket(value=1).encode()
-        await comp.handle_digital_read_resp(0, payload)
+            payload = DigitalReadResponsePacket(value=1).encode()
+            await comp.handle_digital_read_resp(0, payload)
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -973,11 +994,14 @@ class TestDatastoreComponent:
 
         config = _make_config()
         state = create_runtime_state(config)
-        ctx = MagicMock()
-        ctx.publish = AsyncMock()
-        ctx.send_frame = AsyncMock(return_value=True)
-        comp = DatastoreComponent(config, state, ctx)
-        await comp._publish_value("key", b"", expiry=60)
+        try:
+            ctx = MagicMock()
+            ctx.publish = AsyncMock()
+            ctx.send_frame = AsyncMock(return_value=True)
+            comp = DatastoreComponent(config, state, ctx)
+            await comp._publish_value("key", b"", expiry=60)
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -995,31 +1019,34 @@ class TestDispatcherEdgeCases:
 
         config = _make_config()
         state = create_runtime_state(config)
-        d = BridgeDispatcher(
-            mcu_registry=MagicMock(),
-            mqtt_router=MagicMock(),
-            state=state,
-            send_frame=AsyncMock(),
-            acknowledge_frame=AsyncMock(),
-            is_topic_action_allowed=lambda t, a: True,
-            reject_topic_action=AsyncMock(),
-            publish_bridge_snapshot=AsyncMock(),
-        )
-        d.register_components(
-            make_component_container(
-                console=MagicMock(),
-                datastore=MagicMock(),
-                file=MagicMock(),
-                mailbox=MagicMock(),
-                pin=MagicMock(),
-                process=MagicMock(),
-                spi=MagicMock(),
-                system=MagicMock(),
+        try:
+            d = BridgeDispatcher(
+                mcu_registry=MagicMock(),
+                mqtt_router=MagicMock(),
+                state=state,
+                send_frame=AsyncMock(),
+                acknowledge_frame=AsyncMock(),
+                is_topic_action_allowed=lambda t, a: True,
+                reject_topic_action=AsyncMock(),
+                publish_bridge_snapshot=AsyncMock(),
             )
-        )
-        route = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
-        result = d._should_reject_topic_action(route)
-        assert result is None
+            d.register_components(
+                make_component_container(
+                    console=MagicMock(),
+                    datastore=MagicMock(),
+                    file=MagicMock(),
+                    mailbox=MagicMock(),
+                    pin=MagicMock(),
+                    process=MagicMock(),
+                    spi=MagicMock(),
+                    system=MagicMock(),
+                )
+            )
+            route = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
+            result = d._should_reject_topic_action(route)
+            assert result is None
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -1068,17 +1095,20 @@ class TestFileComponent:
 
         config = _make_config(file_system_root="/tmp")
         state = create_runtime_state(config)
-        ctx = MagicMock()
-        ctx.publish = AsyncMock()
-        ctx.send_frame = AsyncMock(return_value=True)
-        comp = FileComponent(config, state, ctx)
-        # This tests the error path when file is not found
-        from mcubridge.protocol.structures import FileReadPacket
+        try:
+            ctx = MagicMock()
+            ctx.publish = AsyncMock()
+            ctx.send_frame = AsyncMock(return_value=True)
+            comp = FileComponent(config, state, ctx)
+            # This tests the error path when file is not found
+            from mcubridge.protocol.structures import FileReadPacket
 
-        payload = FileReadPacket(
-            path="/nonexistent_file_12345.txt",
-        ).encode()
-        await comp.handle_read(0, payload)
+            payload = FileReadPacket(
+                path="/nonexistent_file_12345.txt",
+            ).encode()
+            await comp.handle_read(0, payload)
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -1093,13 +1123,16 @@ class TestWatchdog:
 
         config = _make_config()
         state = create_runtime_state(config)
-        wd = WatchdogKeepalive(state=state, interval=0.1)
-        wd.start()
-        task = asyncio.create_task(wd.run())
-        await asyncio.sleep(0.15)
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        try:
+            wd = WatchdogKeepalive(state=state, interval=0.1)
+            wd.start()
+            task = asyncio.create_task(wd.run())
+            await asyncio.sleep(0.15)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -1114,12 +1147,15 @@ class TestSystemComponent:
 
         config = _make_config()
         state = create_runtime_state(config)
-        ctx = MagicMock()
-        ctx.publish = AsyncMock()
-        ctx.send_frame = AsyncMock(return_value=True)
-        ctx.enqueue_mqtt = AsyncMock()
-        comp = SystemComponent(config, state, ctx)
-        await comp.handle_get_version_resp(0, b"\x01\x02\x03")
+        try:
+            ctx = MagicMock()
+            ctx.publish = AsyncMock()
+            ctx.send_frame = AsyncMock(return_value=True)
+            ctx.enqueue_mqtt = AsyncMock()
+            comp = SystemComponent(config, state, ctx)
+            await comp.handle_get_version_resp(0, b"\x01\x02\x03")
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -1168,7 +1204,10 @@ class TestHandshakeEdgeCases:
             enqueue_mqtt=AsyncMock(),
             acknowledge_frame=AsyncMock(),
         )
-        return mgr
+        try:
+            yield mgr
+        finally:
+            state.cleanup()
 
     def test_derive_serial_timing(self):
         from mcubridge.services.handshake import derive_serial_timing
@@ -1193,7 +1232,10 @@ class TestRuntimeStateEdges:
     def state(self):
         config = _make_config()
         s = create_runtime_state(config)
-        return s
+        try:
+            yield s
+        finally:
+            s.cleanup()
 
     def test_mark_transport_connected(self, state):
         state.mark_transport_connected()
@@ -1244,11 +1286,10 @@ class TestRuntimeStateEdges:
     @pytest.mark.asyncio
     async def test_stash_mqtt_message_no_spool(self, state):
         from mcubridge.protocol.structures import QueuedPublish
-        from mcubridge.state.context import RuntimeState
 
         state.mqtt_spool = None
         msg = QueuedPublish(topic_name="t", payload=b"p")
-        with patch.object(RuntimeState, "ensure_spool", AsyncMock(return_value=True)):
+        with patch.object(state, "ensure_spool", AsyncMock(return_value=True)):
             # We also need to mock mqtt_spool since it's used after ensure_spool
             state.mqtt_spool = MagicMock()
             result = await state.stash_mqtt_message(msg)
@@ -1289,7 +1330,11 @@ class TestBridgeServiceEdges:
 
         config = _make_config()
         state = create_runtime_state(config)
-        return BridgeService(config, state)
+        svc = BridgeService(config, state)
+        try:
+            yield svc
+        finally:
+            state.cleanup()
 
     @pytest.mark.asyncio
     async def test_schedule_background_not_entered(self, service):
@@ -1315,29 +1360,35 @@ class TestMqttTransport:
 
         config = _make_config()
         state = create_runtime_state(config)
-        service = MagicMock()
-        transport = MqttTransport(config, state, service)
-        assert transport.fsm_state == MqttTransport.STATE_DISCONNECTED
+        try:
+            service = MagicMock()
+            transport = MqttTransport(config, state, service)
+            assert transport.fsm_state == MqttTransport.STATE_DISCONNECTED
+        finally:
+            state.cleanup()
 
     def test_mqtt_transport_fsm_transitions(self):
         from mcubridge.transport.mqtt import MqttTransport
 
         config = _make_config()
         state = create_runtime_state(config)
-        service = MagicMock()
-        transport = MqttTransport(config, state, service)
+        try:
+            service = MagicMock()
+            transport = MqttTransport(config, state, service)
 
-        transport.trigger("connect")
-        assert transport.fsm_state == MqttTransport.STATE_CONNECTING
+            transport.trigger("connect")
+            assert transport.fsm_state == MqttTransport.STATE_CONNECTING
 
-        transport.trigger("connected")
-        assert transport.fsm_state == MqttTransport.STATE_SUBSCRIBING
+            transport.trigger("connected")
+            assert transport.fsm_state == MqttTransport.STATE_SUBSCRIBING
 
-        transport.trigger("subscribed")
-        assert transport.fsm_state == MqttTransport.STATE_READY
+            transport.trigger("subscribed")
+            assert transport.fsm_state == MqttTransport.STATE_READY
 
-        transport.trigger("disconnect")
-        assert transport.fsm_state == MqttTransport.STATE_DISCONNECTED
+            transport.trigger("disconnect")
+            assert transport.fsm_state == MqttTransport.STATE_DISCONNECTED
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -1352,13 +1403,16 @@ class TestMetrics:
 
         config = _make_config()
         state = create_runtime_state(config)
-        enqueue = AsyncMock(side_effect=OSError("boom"))
+        try:
+            enqueue = AsyncMock(side_effect=OSError("boom"))
 
-        task = asyncio.create_task(publish_metrics(state, enqueue, 0.05))
-        await asyncio.sleep(0.15)
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+            task = asyncio.create_task(publish_metrics(state, enqueue, 0.05))
+            await asyncio.sleep(0.15)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
 
     @pytest.mark.asyncio
     async def test_publish_bridge_snapshots_both_disabled(self):
@@ -1366,15 +1420,18 @@ class TestMetrics:
 
         config = _make_config()
         state = create_runtime_state(config)
-        enqueue = AsyncMock()
+        try:
+            enqueue = AsyncMock()
 
-        task = asyncio.create_task(
-            publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0)
-        )
-        await asyncio.sleep(0.1)
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+            task = asyncio.create_task(
+                publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0)
+            )
+            await asyncio.sleep(0.1)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
 
     @pytest.mark.asyncio
     async def test_publish_bridge_snapshots_summary_error(self):
@@ -1382,15 +1439,18 @@ class TestMetrics:
 
         config = _make_config()
         state = create_runtime_state(config)
-        enqueue = AsyncMock(side_effect=OSError("summary fail"))
+        try:
+            enqueue = AsyncMock(side_effect=OSError("summary fail"))
 
-        task = asyncio.create_task(
-            publish_bridge_snapshots(state, enqueue, summary_interval=0.05, handshake_interval=0)
-        )
-        await asyncio.sleep(0.15)
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+            task = asyncio.create_task(
+                publish_bridge_snapshots(state, enqueue, summary_interval=0.05, handshake_interval=0)
+            )
+            await asyncio.sleep(0.15)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
 
     @pytest.mark.asyncio
     async def test_publish_bridge_snapshots_handshake_error(self):
@@ -1398,15 +1458,18 @@ class TestMetrics:
 
         config = _make_config()
         state = create_runtime_state(config)
-        enqueue = AsyncMock(side_effect=OSError("handshake fail"))
+        try:
+            enqueue = AsyncMock(side_effect=OSError("handshake fail"))
 
-        task = asyncio.create_task(
-            publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0.05)
-        )
-        await asyncio.sleep(0.15)
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+            task = asyncio.create_task(
+                publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0.05)
+            )
+            await asyncio.sleep(0.15)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -1421,9 +1484,12 @@ class TestSerialTransport:
 
         config = _make_config()
         state = create_runtime_state(config)
-        service = MagicMock()
-        transport = SerialTransport(config, state, service)
-        assert transport is not None
+        try:
+            service = MagicMock()
+            transport = SerialTransport(config, state, service)
+            assert transport is not None
+        finally:
+            state.cleanup()
 
 
 # ============================================================================

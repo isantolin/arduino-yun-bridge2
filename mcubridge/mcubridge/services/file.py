@@ -492,13 +492,25 @@ class FileComponent(BaseComponent):
             self._usage_seeded = True
 
     async def _refresh_storage_usage(self) -> None:
-        # [SIL-2] Delegate recursive disk usage to the 'du' system command via 'sh'
-        # This is much faster and more reliable than manual os.scandir loops.
-        import sh
+        # [SIL-2] Use native Python scanning to calculate directory size.
+        # This avoids multi-threading issues with os.fork() in libraries like 'sh'.
+        import os
         try:
             root = self.config.file_system_root
-            output = await asyncio.to_thread(cast(Any, sh).du, "-sb", root)
-            usage = int(str(output).split()[0])
+            total = 0
+            # [SIL-2] Non-recursive or depth-limited walk could be considered if performance is an issue,
+            # but for embedded storage limits, os.walk is sufficiently fast and safe.
+            def _get_size():
+                size = 0
+                for dirpath, _, filenames in os.walk(root):
+                    for f in filenames:
+                        fp = os.path.join(dirpath, f)
+                        # skip if it is a symbolic link
+                        if not os.path.islink(fp):
+                            size += os.path.getsize(fp)
+                return size
+
+            usage = await asyncio.to_thread(_get_size)
             self.state.file_storage_bytes_used = usage
         except (Exception, ValueError, IndexError, OSError):
             self.state.file_storage_bytes_used = 0

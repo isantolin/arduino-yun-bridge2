@@ -48,6 +48,7 @@ def test_spool_roundtrip(tmp_path: Path) -> None:
     assert restored.payload == message.payload
     assert restored.user_properties == message.user_properties
     assert spool.pending == 0
+    spool.close()
 
 
 def test_spool_trim_limit(tmp_path: Path) -> None:
@@ -62,6 +63,7 @@ def test_spool_trim_limit(tmp_path: Path) -> None:
     snapshot = spool.snapshot()
     assert snapshot["dropped_due_to_limit"] == 3
     assert snapshot["trim_events"] >= 1
+    spool.close()
 
 
 def test_spool_snapshot_reports_pending(tmp_path: Path) -> None:
@@ -77,6 +79,7 @@ def test_spool_snapshot_reports_pending(tmp_path: Path) -> None:
     assert snapshot["pending"] == 2
     assert snapshot["limit"] == 3
     assert snapshot["corrupt_dropped"] == 0
+    spool.close()
 
 
 def test_spool_skips_corrupt_rows(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -107,6 +110,7 @@ def test_spool_skips_corrupt_rows(tmp_path: Path, caplog: pytest.LogCaptureFixtu
     assert restored_one.topic_name == "topic/first"
     assert restored_two is None
     assert spool.snapshot()["corrupt_dropped"] == 1
+    spool.close()
 
 
 def test_spool_fallback_on_init_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -124,6 +128,7 @@ def test_spool_fallback_on_init_failure(monkeypatch: pytest.MonkeyPatch) -> None
     popped = spool.pop_next()
     assert popped is not None
     assert popped.topic_name == "topic/fallback"
+    spool.close()
 
 
 def test_spool_requeue_success(tmp_path: Path) -> None:
@@ -144,6 +149,7 @@ def test_spool_requeue_success(tmp_path: Path) -> None:
     popped_again = spool.pop_next()
     assert popped_again is not None
     assert popped_again.topic_name == "topic/requeue"
+    spool.close()
 
 
 def test_spool_persists_across_reopen(tmp_path: Path) -> None:
@@ -162,3 +168,5 @@ def test_spool_persists_across_reopen(tmp_path: Path) -> None:
     assert msg2 is not None
     assert msg1.topic_name == "topic/1"
     assert msg2.topic_name == "topic/2"
+    spool.close()
+    reopened.close()

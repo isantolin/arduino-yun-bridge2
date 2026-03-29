@@ -38,7 +38,11 @@ def runtime_config() -> RuntimeConfig:
 
 @pytest.fixture
 def runtime_state(runtime_config: RuntimeConfig):
-    return create_runtime_state(runtime_config)
+    state = create_runtime_state(runtime_config)
+    try:
+        yield state
+    finally:
+        state.cleanup()
 
 @pytest.fixture
 def dispatcher(runtime_config: RuntimeConfig, runtime_state):

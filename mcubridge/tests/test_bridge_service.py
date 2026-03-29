@@ -44,114 +44,117 @@ def _encode_link_sync(nonce: bytes, tag: bytes) -> bytes:
 async def test_on_serial_connected_flushes_console_queue() -> None:
     runtime_config = RuntimeConfig(serial_shared_secret=b"test_secret_1234")
     runtime_state = create_runtime_state(runtime_config)
-    service = BridgeService(runtime_config, runtime_state)
+    try:
+        service = BridgeService(runtime_config, runtime_state)
 
-    sent_frames: list[tuple[int, bytes]] = []
+        sent_frames: list[tuple[int, bytes]] = []
 
-    flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
+        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
-        sent_frames.append((command_id, payload))
-        raw_cmd = command_id & 0xFF  # Strip high-order flags like COMPRESSED (0x8000)
-        if raw_cmd == Command.CMD_LINK_RESET.value:
-            # Use create_task to avoid deadlock with write_lock held by sender
-            asyncio.create_task(
-                service.handle_mcu_frame(
-                    Command.CMD_LINK_RESET_RESP.value, 0, b"",
-                )
-            )
-        elif raw_cmd == Command.CMD_LINK_SYNC.value:
-            nonce = service.state.link_handshake_nonce or b""
-            tag = service._handshake.compute_handshake_tag(nonce)
-            response = _encode_link_sync(nonce, tag)
-
-            async def _respond():
-                await asyncio.sleep(0.1)
-                await service.handle_mcu_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    0,
-                    response,
-                )
-                # Priming capabilities AFTER sync resp is handled
-                await service._handshake.handle_capabilities_resp(
-                    0,
-                    cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
-                        {
-                            "ver": 2,
-                            "arch": 1,
-                            "dig": 20,
-                            "ana": 6,
-                            "feat": {
-                                "i2c": False,
-                                "spi": False,
-                                "big_buffer": False,
-                                "logic_3v3": False,
-                                "fpu": False,
-                                "hw_serial1": False,
-                                "dac": False,
-                                "eeprom": False,
-                                "debug_io": False,
-                                "debug_frames": False,
-                                "rle": False,
-                                "watchdog": False,
-                            },
-                        }
+        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+            sent_frames.append((command_id, payload))
+            raw_cmd = command_id & 0xFF  # Strip high-order flags like COMPRESSED (0x8000)
+            if raw_cmd == Command.CMD_LINK_RESET.value:
+                # Use create_task to avoid deadlock with write_lock held by sender
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_RESET_RESP.value, 0, b"",
                     )
                 )
+            elif raw_cmd == Command.CMD_LINK_SYNC.value:
+                nonce = service.state.link_handshake_nonce or b""
+                tag = service._handshake.compute_handshake_tag(nonce)
+                response = _encode_link_sync(nonce, tag)
 
-            asyncio.create_task(_respond())
-        elif raw_cmd == Command.CMD_GET_VERSION.value:
-            # Direct flow injection bypasses lock issues
-            flow.on_frame_received(
-                Command.CMD_GET_VERSION_RESP.value, 0, b"\x01\x02",
-            )
-        elif raw_cmd == Command.CMD_CONSOLE_WRITE.value:
-            flow.on_frame_received(
-                Status.ACK.value,
-                0,
-                structures.AckPacket(command_id=Command.CMD_CONSOLE_WRITE.value).encode(),
-            )
-        return True
+                async def _respond():
+                    await asyncio.sleep(0.1)
+                    await service.handle_mcu_frame(
+                        Command.CMD_LINK_SYNC_RESP.value,
+                        0,
+                        response,
+                    )
+                    # Priming capabilities AFTER sync resp is handled
+                    await service._handshake.handle_capabilities_resp(
+                        0,
+                        cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
+                            {
+                                "ver": 2,
+                                "arch": 1,
+                                "dig": 20,
+                                "ana": 6,
+                                "feat": {
+                                    "i2c": False,
+                                    "spi": False,
+                                    "big_buffer": False,
+                                    "logic_3v3": False,
+                                    "fpu": False,
+                                    "hw_serial1": False,
+                                    "dac": False,
+                                    "eeprom": False,
+                                    "debug_io": False,
+                                    "debug_frames": False,
+                                    "rle": False,
+                                    "watchdog": False,
+                                },
+                            }
+                        )
+                    )
 
-    service.register_serial_sender(fake_sender)
+                asyncio.create_task(_respond())
+            elif raw_cmd == Command.CMD_GET_VERSION.value:
+                # Direct flow injection bypasses lock issues
+                flow.on_frame_received(
+                    Command.CMD_GET_VERSION_RESP.value, 0, b"\x01\x02",
+                )
+            elif raw_cmd == Command.CMD_CONSOLE_WRITE.value:
+                flow.on_frame_received(
+                    Status.ACK.value,
+                    0,
+                    structures.AckPacket(command_id=Command.CMD_CONSOLE_WRITE.value).encode(),
+                )
+            return True
 
-    runtime_state.enqueue_console_chunk(b"hello", logging.getLogger())
-    runtime_state.mcu_is_paused = False
-    runtime_state.mcu_version = (1, 2)
-    runtime_state.mark_transport_connected()
+        service.register_serial_sender(fake_sender)
 
-    await service.on_serial_connected()
+        runtime_state.enqueue_console_chunk(b"hello", logging.getLogger())
+        runtime_state.mcu_is_paused = False
+        runtime_state.mcu_version = (1, 2)
+        runtime_state.mark_transport_connected()
 
-    assert sent_frames
-    reset_payloads = [payload for frame_id, payload in sent_frames if frame_id in {Command.CMD_LINK_RESET.value, 64}]
-    assert reset_payloads
-    reset_payload = reset_payloads[0]
-    # [SIL-2] Payload must be 7 bytes (new struct: 2+1+4 bytes)
-    assert len(reset_payload) > 0
-    frame_ids = [frame_id for frame_id, _ in sent_frames]
-    handshake_ids = [
-        frame_id & 0xFF
-        for frame_id in frame_ids
-        if (frame_id & 0xFF)
-        in {
+        await service.on_serial_connected()
+
+        assert sent_frames
+        reset_payloads = [payload for frame_id, payload in sent_frames if frame_id in {Command.CMD_LINK_RESET.value, 64}]
+        assert reset_payloads
+        reset_payload = reset_payloads[0]
+        # [SIL-2] Payload must be 7 bytes (new struct: 2+1+4 bytes)
+        assert len(reset_payload) > 0
+        frame_ids = [frame_id for frame_id, _ in sent_frames]
+        handshake_ids = [
+            frame_id & 0xFF
+            for frame_id in frame_ids
+            if (frame_id & 0xFF)
+            in {
+                Command.CMD_LINK_RESET.value,
+                Command.CMD_LINK_SYNC.value,
+            }
+        ]
+        assert handshake_ids[:2] == [
             Command.CMD_LINK_RESET.value,
             Command.CMD_LINK_SYNC.value,
-        }
-    ]
-    assert handshake_ids[:2] == [
-        Command.CMD_LINK_RESET.value,
-        Command.CMD_LINK_SYNC.value,
-    ]
-    assert any((frame_id & 0xFF) == Command.CMD_GET_VERSION.value for frame_id in frame_ids)
-    assert any((frame_id & 0xFF) == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames)
-    assert runtime_state.console_queue_bytes == 0
-    assert runtime_state.mcu_version is None
-    assert runtime_state.handshake_attempts == 1
-    assert runtime_state.handshake_successes == 1
-    assert runtime_state.handshake_failures == 0
-    assert runtime_state.is_connected is True
-    # timing checks are less important with defaults, but we can check state sync
-    assert runtime_state.serial_ack_timeout_ms > 0
+        ]
+        assert any((frame_id & 0xFF) == Command.CMD_GET_VERSION.value for frame_id in frame_ids)
+        assert any((frame_id & 0xFF) == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames)
+        assert runtime_state.console_queue_bytes == 0
+        assert runtime_state.mcu_version is None
+        assert runtime_state.handshake_attempts == 1
+        assert runtime_state.handshake_successes == 1
+        assert runtime_state.handshake_failures == 0
+        assert runtime_state.is_connected is True
+        # timing checks are less important with defaults, but we can check state sync
+        assert runtime_state.serial_ack_timeout_ms > 0
+    finally:
+        runtime_state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -403,35 +406,35 @@ async def test_mailbox_available_flow(tmp_path: Path) -> None:
         mqtt_spool_dir=(tmp_path / "spool").as_posix(),
     )
     runtime_state = create_runtime_state(runtime_config)
-    service = BridgeService(runtime_config, runtime_state)
-    runtime_state.mark_transport_connected()
-    runtime_state.mark_synchronized()
-
-    sent_frames: list[tuple[int, bytes]] = []
-
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
-        sent_frames.append((command_id, payload))
-        return True
-
-    service.register_serial_sender(fake_sender)
-
-    # Enqueue something in mailbox
-    runtime_state.enqueue_mailbox_message(b"msg1", 100)
-
-    # MCU checks if mailbox is available
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, 0, b"")
-
-    # Bridge should respond with RESP and 1 message pending
-    def _check_mailbox_ack(frame_id: int, payload: bytes) -> bool:
-        if frame_id != Command.CMD_MAILBOX_AVAILABLE_RESP.value:
-            return False
-        if len(payload) < 2:
-            return False
-        # payload is just the count (uint16)
-        resp = structures.MailboxAvailableResponsePacket.decode(payload)
-        return resp.count == 1
-
     try:
+        service = BridgeService(runtime_config, runtime_state)
+        runtime_state.mark_transport_connected()
+        runtime_state.mark_synchronized()
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        # Enqueue something in mailbox
+        runtime_state.enqueue_mailbox_message(b"msg1", 100)
+
+        # MCU checks if mailbox is available
+        await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, 0, b"")
+
+        # Bridge should respond with RESP and 1 message pending
+        def _check_mailbox_ack(frame_id: int, payload: bytes) -> bool:
+            if frame_id != Command.CMD_MAILBOX_AVAILABLE_RESP.value:
+                return False
+            if len(payload) < 2:
+                return False
+            # payload is just the count (uint16)
+            resp = structures.MailboxAvailableResponsePacket.decode(payload)
+            return resp.count == 1
+
         assert any(_check_mailbox_ack(f, p) for f, p in sent_frames)
     finally:
         runtime_state.cleanup()
@@ -516,27 +519,30 @@ async def test_mailbox_read_requeues_on_send_failure(
 async def test_datastore_get_from_mcu_returns_cached_value() -> None:
     runtime_config = RuntimeConfig(serial_shared_secret=b"12345678")
     runtime_state = create_runtime_state(runtime_config)
-    service = BridgeService(runtime_config, runtime_state)
-    runtime_state.mark_transport_connected()
-    runtime_state.mark_synchronized()
-    runtime_state.datastore["key1"] = "value1"
+    try:
+        service = BridgeService(runtime_config, runtime_state)
+        runtime_state.mark_transport_connected()
+        runtime_state.mark_synchronized()
+        runtime_state.datastore["key1"] = "value1"
 
-    sent_frames: list[tuple[int, bytes]] = []
+        sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
-        sent_frames.append((command_id, payload))
-        return True
+        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
 
-    service.register_serial_sender(fake_sender)
+        service.register_serial_sender(fake_sender)
 
-    payload = structures.DatastoreGetPacket(key='key1').encode()
-    await service.handle_mcu_frame(protocol.Command.CMD_DATASTORE_GET.value, 0, payload)
+        payload = structures.DatastoreGetPacket(key='key1').encode()
+        await service.handle_mcu_frame(protocol.Command.CMD_DATASTORE_GET.value, 0, payload)
 
-    # Should respond with RESP containing "value1" (or ACK with payload)
-    assert any(
-        frame_id in {Command.CMD_DATASTORE_GET_RESP.value, Status.ACK.value} and b"value1" in payload
-        for frame_id, payload in sent_frames
-    )
+        # Should respond with RESP containing "value1" (or ACK with payload)
+        assert any(
+            frame_id in {Command.CMD_DATASTORE_GET_RESP.value, Status.ACK.value} and b"value1" in payload
+            for frame_id, payload in sent_frames
+        )
+    finally:
+        runtime_state.cleanup()
 
 
 @pytest.mark.asyncio

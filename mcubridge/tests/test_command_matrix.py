@@ -222,41 +222,43 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
     from mcubridge.state.context import create_runtime_state
 
     state = create_runtime_state(get_default_config())
-
-    dispatcher = BridgeDispatcher(
-        mcu_registry=mcu_registry,
-        mqtt_router=mqtt_router,
-        state=state,
-        send_frame=_noop_send_frame,
-        acknowledge_frame=_noop_acknowledge_frame,
-        is_topic_action_allowed=_always_allowed,
-        reject_topic_action=_noop_reject_topic_action,
-        publish_bridge_snapshot=_noop_publish_bridge_snapshot,
-    )
-
-    dispatcher.register_components(
-        make_component_container(
-            console=cast(Any, _Console()),
-            datastore=cast(Any, _Datastore()),
-            file=cast(Any, _File()),
-            mailbox=cast(Any, _Mailbox()),
-            pin=cast(Any, _Pin()),
-            process=cast(Any, _Process()),
-            spi=cast(Any, _Spi()),
-            system=cast(Any, _System()),
+    try:
+        dispatcher = BridgeDispatcher(
+            mcu_registry=mcu_registry,
+            mqtt_router=mqtt_router,
+            state=state,
+            send_frame=_noop_send_frame,
+            acknowledge_frame=_noop_acknowledge_frame,
+            is_topic_action_allowed=_always_allowed,
+            reject_topic_action=_noop_reject_topic_action,
+            publish_bridge_snapshot=_noop_publish_bridge_snapshot,
         )
-    )
 
-    for topic_enum, pattern, _qos in MQTT_COMMAND_SUBSCRIPTIONS:
-        concrete = _materialize_subscription_segments(pattern)
-        topic = topic_path(_MQTT_PREFIX, topic_enum, *concrete)
-        route = _parse_inbound_topic(topic)
-        assert route is not None, f"Failed to parse subscribed topic: {topic}"
+        dispatcher.register_components(
+            make_component_container(
+                console=cast(Any, _Console()),
+                datastore=cast(Any, _Datastore()),
+                file=cast(Any, _File()),
+                mailbox=cast(Any, _Mailbox()),
+                pin=cast(Any, _Pin()),
+                process=cast(Any, _Process()),
+                spi=cast(Any, _Spi()),
+                system=cast(Any, _System()),
+            )
+        )
 
-        inbound: Any = _DummyMessage(topic=topic, payload=b"hello")
+        for topic_enum, pattern, _qos in MQTT_COMMAND_SUBSCRIPTIONS:
+            concrete = _materialize_subscription_segments(pattern)
+            topic = topic_path(_MQTT_PREFIX, topic_enum, *concrete)
+            route = _parse_inbound_topic(topic)
+            assert route is not None, f"Failed to parse subscribed topic: {topic}"
 
-        handled = await mqtt_router.dispatch(route, inbound)
-        assert handled, f"No handler registered for subscribed topic: {topic}"
+            inbound: Any = _DummyMessage(topic=topic, payload=b"hello")
+
+            handled = await mqtt_router.dispatch(route, inbound)
+            assert handled, f"No handler registered for subscribed topic: {topic}"
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -274,96 +276,98 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     from mcubridge.state.context import create_runtime_state
 
     state = create_runtime_state(get_default_config())
-
-    dispatcher = BridgeDispatcher(
-        mcu_registry=mcu_registry,
-        mqtt_router=mqtt_router,
-        state=state,
-        send_frame=_noop_send_frame,
-        acknowledge_frame=_noop_acknowledge_frame,
-        is_topic_action_allowed=_always_allowed,
-        reject_topic_action=_noop_reject_topic_action,
-        publish_bridge_snapshot=_noop_publish_bridge_snapshot,
-    )
-
-    dispatcher.register_components(
-        make_component_container(
-            console=cast(Any, _Console()),
-            datastore=cast(Any, _Datastore()),
-            file=cast(Any, _File()),
-            mailbox=cast(Any, _Mailbox()),
-            pin=cast(Any, _Pin()),
-            process=cast(Any, _Process()),
-            spi=cast(Any, _Spi()),
-            system=cast(Any, _System()),
+    try:
+        dispatcher = BridgeDispatcher(
+            mcu_registry=mcu_registry,
+            mqtt_router=mqtt_router,
+            state=state,
+            send_frame=_noop_send_frame,
+            acknowledge_frame=_noop_acknowledge_frame,
+            is_topic_action_allowed=_always_allowed,
+            reject_topic_action=_noop_reject_topic_action,
+            publish_bridge_snapshot=_noop_publish_bridge_snapshot,
         )
-    )
-    dispatcher.register_system_handlers(
-        handle_link_sync_resp=_noop_link_handler,
-        handle_link_reset_resp=_noop_link_handler,
-        handle_get_capabilities_resp=_noop_link_handler,
-        handle_ack=_noop_ack_handler,
-        status_handler_factory=_noop_status_handler_factory,
-        handle_process_kill=_noop_process_kill,
-    )
 
-    # Commands initiated by Linux (to the MCU). These requests should not be
-    # required as inbound handlers (though some may have "unexpected" handlers).
-    linux_to_mcu_requests: frozenset[int] = frozenset(
-        {
-            Command.CMD_GET_VERSION.value,
-            Command.CMD_GET_FREE_MEMORY.value,
-            Command.CMD_GET_CAPABILITIES.value,
-            Command.CMD_LINK_SYNC.value,
-            Command.CMD_LINK_RESET.value,
-            Command.CMD_SET_BAUDRATE.value,
-            Command.CMD_SET_PIN_MODE.value,
-            Command.CMD_DIGITAL_WRITE.value,
-            Command.CMD_ANALOG_WRITE.value,
-            Command.CMD_DIGITAL_READ.value,
-            Command.CMD_ANALOG_READ.value,
-            Command.CMD_ENTER_BOOTLOADER.value,
-            Command.CMD_SPI_BEGIN.value,
-            Command.CMD_SPI_TRANSFER.value,
-            Command.CMD_SPI_END.value,
-            Command.CMD_SPI_SET_CONFIG.value,
-            }
+        dispatcher.register_components(
+            make_component_container(
+                console=cast(Any, _Console()),
+                datastore=cast(Any, _Datastore()),
+                file=cast(Any, _File()),
+                mailbox=cast(Any, _Mailbox()),
+                pin=cast(Any, _Pin()),
+                process=cast(Any, _Process()),
+                spi=cast(Any, _Spi()),
+                system=cast(Any, _System()),
             )
-    mcu_to_linux_requests: set[int] = set()
-    for cmd in Command:
-        if cmd.name.endswith("_RESP"):
-            continue
-        if cmd.value in linux_to_mcu_requests:
-            continue
-        mcu_to_linux_requests.add(cmd.value)
+        )
+        dispatcher.register_system_handlers(
+            handle_link_sync_resp=_noop_link_handler,
+            handle_link_reset_resp=_noop_link_handler,
+            handle_get_capabilities_resp=_noop_link_handler,
+            handle_ack=_noop_ack_handler,
+            status_handler_factory=_noop_status_handler_factory,
+            handle_process_kill=_noop_process_kill,
+        )
 
-    outbound_only_responses: set[int] = set()
-    for request_id in mcu_to_linux_requests:
-        outbound_only_responses.update(expected_responses(request_id))
+        # Commands initiated by Linux (to the MCU). These requests should not be
+        # required as inbound handlers (though some may have "unexpected" handlers).
+        linux_to_mcu_requests: frozenset[int] = frozenset(
+            {
+                Command.CMD_GET_VERSION.value,
+                Command.CMD_GET_FREE_MEMORY.value,
+                Command.CMD_GET_CAPABILITIES.value,
+                Command.CMD_LINK_SYNC.value,
+                Command.CMD_LINK_RESET.value,
+                Command.CMD_SET_BAUDRATE.value,
+                Command.CMD_SET_PIN_MODE.value,
+                Command.CMD_DIGITAL_WRITE.value,
+                Command.CMD_ANALOG_WRITE.value,
+                Command.CMD_DIGITAL_READ.value,
+                Command.CMD_ANALOG_READ.value,
+                Command.CMD_ENTER_BOOTLOADER.value,
+                Command.CMD_SPI_BEGIN.value,
+                Command.CMD_SPI_TRANSFER.value,
+                Command.CMD_SPI_END.value,
+                Command.CMD_SPI_SET_CONFIG.value,
+                }
+                )
+        mcu_to_linux_requests: set[int] = set()
+        for cmd in Command:
+            if cmd.name.endswith("_RESP"):
+                continue
+            if cmd.value in linux_to_mcu_requests:
+                continue
+            mcu_to_linux_requests.add(cmd.value)
 
-    required_commands: set[int] = set()
-    for cmd in Command:
-        if cmd.value in linux_to_mcu_requests:
-            continue
-        if cmd.value in outbound_only_responses:
-            continue
-        required_commands.add(cmd.value)
+        outbound_only_responses: set[int] = set()
+        for request_id in mcu_to_linux_requests:
+            outbound_only_responses.update(expected_responses(request_id))
 
-    missing: list[str] = []
-    for cmd in sorted(required_commands):
-        if mcu_registry.get(cmd) is None:
-            try:
-                name = Command(cmd).name
-            except ValueError:
-                name = f"0x{cmd:02X}"
-            missing.append(name)
+        required_commands: set[int] = set()
+        for cmd in Command:
+            if cmd.value in linux_to_mcu_requests:
+                continue
+            if cmd.value in outbound_only_responses:
+                continue
+            required_commands.add(cmd.value)
 
-    assert not missing, f"Missing MCU handler registrations: {missing}"
+        missing: list[str] = []
+        for cmd in sorted(required_commands):
+            if mcu_registry.get(cmd) is None:
+                try:
+                    name = Command(cmd).name
+                except ValueError:
+                    name = f"0x{cmd:02X}"
+                missing.append(name)
 
-    # Status frames are also inbound and must always be registered.
-    missing_status: list[str] = []
-    for status in Status:
-        if mcu_registry.get(status.value) is None:
-            missing_status.append(status.name)
+        assert not missing, f"Missing MCU handler registrations: {missing}"
 
-    assert not missing_status, f"Missing status handler registrations: {missing_status}"
+        # Status frames are also inbound and must always be registered.
+        missing_status: list[str] = []
+        for status in Status:
+            if mcu_registry.get(status.value) is None:
+                missing_status.append(status.name)
+
+        assert not missing_status, f"Missing status handler registrations: {missing_status}"
+    finally:
+        state.cleanup()

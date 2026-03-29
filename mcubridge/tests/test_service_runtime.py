@@ -57,88 +57,103 @@ def _make_config() -> RuntimeConfig:
 async def test_send_frame_without_serial_sender_returns_false() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    ok = await service.send_frame(protocol.Command.CMD_GET_VERSION.value, b"x")
-    assert ok is False
+        ok = await service.send_frame(protocol.Command.CMD_GET_VERSION.value, b"x")
+        assert ok is False
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_schedule_background_requires_context() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
-
-    async def _coro() -> None:
-        return None
-
-    pending = _coro()
     try:
-        with pytest.raises(RuntimeError):
-            await service.schedule_background(pending)
+        service = BridgeService(config, state)
+
+        async def _coro() -> None:
+            return None
+
+        pending = _coro()
+        try:
+            with pytest.raises(RuntimeError):
+                await service.schedule_background(pending)
+        finally:
+            pending.close()
     finally:
-        pending.close()
+        state.cleanup()
 
 
 @pytest.mark.asyncio
 async def testacknowledge_mcu_frame_no_sender_is_noop() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    await service.acknowledge_mcu_frame(protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK)
+        await service.acknowledge_mcu_frame(protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK)
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
 async def testacknowledge_mcu_frame_sends_ack_packet() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    sent: list[tuple[int, bytes]] = []
+        sent: list[tuple[int, bytes]] = []
 
-    async def _sender(cmd: int, payload: bytes, seq_id: int | None = None) -> bool:
-        sent.append((cmd, payload))
-        return True
+        async def _sender(cmd: int, payload: bytes, seq_id: int | None = None) -> bool:
+            sent.append((cmd, payload))
+            return True
 
-    service.register_serial_sender(_sender)
+        service.register_serial_sender(_sender)
 
-    await service.acknowledge_mcu_frame(
-        protocol.Command.CMD_GET_FREE_MEMORY.value, 0, status=Status.MALFORMED,
-    )
+        await service.acknowledge_mcu_frame(
+            protocol.Command.CMD_GET_FREE_MEMORY.value, 0, status=Status.MALFORMED,
+        )
 
-    assert sent
-    status_cmd, payload = sent[0]
-    assert status_cmd == Status.MALFORMED.value
-    assert payload == structures.AckPacket(command_id=protocol.Command.CMD_GET_FREE_MEMORY.value).encode()
+        assert sent
+        status_cmd, payload = sent[0]
+        assert status_cmd == Status.MALFORMED.value
+        assert payload == structures.AckPacket(command_id=protocol.Command.CMD_GET_FREE_MEMORY.value).encode()
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    msg = QueuedPublish(topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello")
+        msg = QueuedPublish(topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello")
 
-    props = SimpleNamespace(
-        ResponseTopic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp",
-        CorrelationData=b"cid",
-    )
-    inbound = SimpleNamespace(
-        topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/origin",
-        properties=props,
-    )
+        props = SimpleNamespace(
+            ResponseTopic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp",
+            CorrelationData=b"cid",
+        )
+        inbound = SimpleNamespace(
+            topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/origin",
+            properties=props,
+        )
 
-    await service.enqueue_mqtt(msg, reply_context=inbound)
+        await service.enqueue_mqtt(msg, reply_context=inbound)
 
-    queued = state.mqtt_publish_queue.get_nowait()
-    assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
-    assert queued.correlation_data == b"cid"
-    assert (
-        "bridge-request-topic",
-        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/origin",
-    ) in queued.user_properties
+        queued = state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
+        assert queued.correlation_data == b"cid"
+        assert (
+            "bridge-request-topic",
+            f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/origin",
+        ) in queued.user_properties
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -147,105 +162,122 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
 ) -> None:
     config = _make_config()
     state = create_runtime_state(config)
+    try:
+        # Create a tiny queue and fill it.
+        state.mqtt_queue_limit = 1
+        state.mqtt_publish_queue = asyncio.Queue(maxsize=1)
 
-    # Create a tiny queue and fill it.
-    state.mqtt_queue_limit = 1
-    state.mqtt_publish_queue = asyncio.Queue(maxsize=1)
+        # Avoid touching the real spool implementation (RuntimeState is slots=True,
+        # so patch the class method rather than the instance attribute).
+        async def _stash_ok(_self: RuntimeState, _message: QueuedPublish) -> bool:
+            return True
 
-    # Avoid touching the real spool implementation (RuntimeState is slots=True,
-    # so patch the class method rather than the instance attribute).
-    async def _stash_ok(_self: RuntimeState, _message: QueuedPublish) -> bool:
-        return True
+        monkeypatch.setattr(RuntimeState, "stash_mqtt_message", _stash_ok)
+        state.mqtt_spool = SimpleNamespace(pending=3)
 
-    monkeypatch.setattr(RuntimeState, "stash_mqtt_message", _stash_ok)
-    state.mqtt_spool = SimpleNamespace(pending=3)
+        service = BridgeService(config, state)
 
-    service = BridgeService(config, state)
+        first = QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/old",
+            payload=b"1",
+        )
+        state.mqtt_publish_queue.put_nowait(first)
 
-    first = QueuedPublish(
-        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/old",
-        payload=b"1",
-    )
-    state.mqtt_publish_queue.put_nowait(first)
+        second = QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new",
+            payload=b"2",
+        )
+        await service.enqueue_mqtt(second)
 
-    second = QueuedPublish(
-        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new",
-        payload=b"2",
-    )
-    await service.enqueue_mqtt(second)
+        # Queue now contains the new message.
+        queued = state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new"
 
-    # Queue now contains the new message.
-    queued = state.mqtt_publish_queue.get_nowait()
-    assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new"
-
-    # Drop counters updated.
-    assert state.mqtt_dropped_messages == 1
+        # Drop counters updated.
+        assert state.mqtt_dropped_messages == 1
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_handle_get_free_memory_resp_malformed_no_publish() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    await service._system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)
-    assert state.mqtt_publish_queue.qsize() == 0
+        await service._system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)
+        assert state.mqtt_publish_queue.qsize() == 0
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    await service._system.handle_get_version_resp(0, structures.VersionResponsePacket(major=1, minor=2).encode())
+        await service._system.handle_get_version_resp(0, structures.VersionResponsePacket(major=1, minor=2).encode())
 
-    assert state.mcu_version == (1, 2)
-    queued = state.mqtt_publish_queue.get_nowait()
-    assert queued.payload == b"1.2"
+        assert state.mcu_version == (1, 2)
+        queued = state.mqtt_publish_queue.get_nowait()
+        assert queued.payload == b"1.2"
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_reject_topic_action_enqueues_status() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    inbound = SimpleNamespace(
-        topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret",
-        properties=None,
-    )
-    await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")
+        inbound = SimpleNamespace(
+            topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret",
+            properties=None,
+        )
+        await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")
 
-    queued = state.mqtt_publish_queue.get_nowait()
-    status_topic = topic_path(state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS)
-    assert queued.topic_name == status_topic
-    body = msgspec.msgpack.decode(queued.payload)
-    assert body["status"] == "forbidden"
+        queued = state.mqtt_publish_queue.get_nowait()
+        status_topic = topic_path(state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS)
+        assert queued.topic_name == status_topic
+        body = msgspec.msgpack.decode(queued.payload)
+        assert body["status"] == "forbidden"
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_publish_bridge_snapshot_handshake_flavor() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    inbound = SimpleNamespace(
-        topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get",
-        properties=None,
-    )
-    await service._publish_bridge_snapshot("handshake", inbound)
+        inbound = SimpleNamespace(
+            topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get",
+            properties=None,
+        )
+        await service._publish_bridge_snapshot("handshake", inbound)
 
-    queued = state.mqtt_publish_queue.get_nowait()
-    assert "bridge/handshake/value" in queued.topic_name
+        queued = state.mqtt_publish_queue.get_nowait()
+        assert "bridge/handshake/value" in queued.topic_name
+    finally:
+        state.cleanup()
 
 
 def test_is_topic_action_allowed_empty_action_true() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    assert service._is_topic_action_allowed(Topic.SYSTEM, "") is True
+        assert service._is_topic_action_allowed(Topic.SYSTEM, "") is True
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -254,30 +286,33 @@ async def test_enqueue_mqtt_spool_unavailable_logs(
 ) -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    state.mqtt_queue_limit = 1
-    state.mqtt_publish_queue = asyncio.Queue(maxsize=1)
+    try:
+        state.mqtt_queue_limit = 1
+        state.mqtt_publish_queue = asyncio.Queue(maxsize=1)
 
-    async def _stash_fail(_self: RuntimeState, _message: QueuedPublish) -> bool:
-        return False
+        async def _stash_fail(_self: RuntimeState, _message: QueuedPublish) -> bool:
+            return False
 
-    monkeypatch.setattr(RuntimeState, "stash_mqtt_message", _stash_fail)
-    state.mqtt_spool_failure_reason = "disabled"
-    state.mqtt_spool_backoff_until = time.monotonic() + 5
+        monkeypatch.setattr(RuntimeState, "stash_mqtt_message", _stash_fail)
+        state.mqtt_spool_failure_reason = "disabled"
+        state.mqtt_spool_backoff_until = time.monotonic() + 5
 
-    service = BridgeService(config, state)
-    state.mqtt_publish_queue.put_nowait(
-        QueuedPublish(
-            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/old",
-            payload=b"1",
+        service = BridgeService(config, state)
+        state.mqtt_publish_queue.put_nowait(
+            QueuedPublish(
+                topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/old",
+                payload=b"1",
+            )
         )
-    )
 
-    await service.enqueue_mqtt(
-        QueuedPublish(
-            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new",
-            payload=b"2",
+        await service.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new",
+                payload=b"2",
+            )
         )
-    )
 
-    queued = state.mqtt_publish_queue.get_nowait()
-    assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new"
+        queued = state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new"
+    finally:
+        state.cleanup()

@@ -109,16 +109,18 @@ async def test_supervise_task_retry_error():
         max_backoff=0.02,
     )
     d = daemon.BridgeDaemon(create_real_config())
-
-    with pytest.raises(RuntimeError):
-        await d._supervise(
-            spec.name,
-            spec.factory,
-            spec.fatal_exceptions,
-            max_restarts=spec.max_restarts,
-            min_backoff=spec.min_backoff,
-            max_backoff=spec.max_backoff,
-        )
+    try:
+        with pytest.raises(RuntimeError):
+            await d._supervise(
+                spec.name,
+                spec.factory,
+                spec.fatal_exceptions,
+                max_restarts=spec.max_restarts,
+                min_backoff=spec.min_backoff,
+                max_backoff=spec.max_backoff,
+            )
+    finally:
+        d.state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -144,18 +146,21 @@ async def test_supervise_task_telemetry_error_path():
 
     mock_retryer.__aiter__ = fake_iter
 
-    with (
-        patch("tenacity.AsyncRetrying", return_value=mock_retryer),
-        pytest.raises(RuntimeError),
-    ):
-        await d._supervise(
-            spec.name,
-            spec.factory,
-            spec.fatal_exceptions,
-            max_restarts=spec.max_restarts,
-            min_backoff=spec.min_backoff,
-            max_backoff=spec.max_backoff,
-        )
+    try:
+        with (
+            patch("tenacity.AsyncRetrying", return_value=mock_retryer),
+            pytest.raises(RuntimeError),
+        ):
+            await d._supervise(
+                spec.name,
+                spec.factory,
+                spec.fatal_exceptions,
+                max_restarts=spec.max_restarts,
+                min_backoff=spec.min_backoff,
+                max_backoff=spec.max_backoff,
+            )
+    finally:
+        d.state.cleanup()
 
 
 @pytest.mark.asyncio

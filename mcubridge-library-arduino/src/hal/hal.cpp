@@ -4,6 +4,7 @@
 #include <etl/bitset.h>
 #include <etl/string.h>
 #include <etl/to_string.h>
+#include <etl/binary.h>
 
 #if defined(BRIDGE_HOST_TEST)
 #include <errno.h>
@@ -49,15 +50,6 @@ constexpr uint8_t DIGITAL_PINS = bridge::config::FALLBACK_MAX_PIN;
 constexpr uint8_t ANALOG_PINS = 0;
 #endif
 
-constexpr uint8_t bit_index_from_mask(uint32_t mask) {
-  uint8_t bit_index = 0;
-  while (mask > 1U) {
-    mask /= 2U;
-    ++bit_index;
-  }
-  return bit_index;
-}
-
 #if defined(BRIDGE_HOST_TEST)
 constexpr char kHostFilesystemRoot[] = "/tmp/mcubridge-host-fs";
 constexpr size_t kHostFilesystemRootLength = sizeof(kHostFilesystemRoot) - 1U;
@@ -74,17 +66,16 @@ bool ensure_host_directory(const char* path) {
 }
 
 bool is_host_path_safe(const char* path) {
-  if ((path == nullptr) || (path[0] == '\0') || (path[0] == '/')) {
+  if (path == nullptr || path[0] == rpc::RPC_NULL_TERMINATOR || path[0] == '/') {
     return false;
   }
 
-  for (size_t index = 0; path[index] != '\0'; ++index) {
-    if (path[index] == '\\') {
-      return false;
-    }
-    if ((path[index] == '.') && (path[index + 1] == '.')) {
-      return false;
-    }
+  etl::string_view p(path);
+  if (p.find('\\') != etl::string_view::npos) {
+    return false;
+  }
+  if (p.find("..") != etl::string_view::npos) {
+    return false;
   }
   return true;
 }
@@ -115,7 +106,7 @@ bool ensure_host_parent_directories(const PathString& full_path) {
       continue;
     }
     char original = path_buffer[index];
-    path_buffer[index] = '\0';
+    path_buffer[index] = rpc::RPC_NULL_TERMINATOR;
     if (!ensure_host_directory(path_buffer.c_str())) {
       return false;
     }
@@ -135,11 +126,7 @@ void forceSafeState() {
   // [SIL-2] Ensure all potential actuator pins are in a safe state before any logic starts.
   // This prevents spikes or unintended activations during MCU boot/reset.
   // Using INPUT_PULLUP ensures pins are in a well-defined high-impedance state.
-  uint8_t digital_pins = 0;
-  uint8_t analog_pins = 0;
-  getPinCounts(digital_pins, analog_pins);
-
-  for (uint8_t pin = 0; pin < digital_pins; ++pin) {
+  for (uint8_t pin = 0; pin < DIGITAL_PINS; ++pin) {
     pinMode(pin, INPUT_PULLUP);
   }
 }
@@ -158,9 +145,7 @@ uint16_t getFreeMemory() {
 void init() {
   // [SIL-2] Force all digital pins to a safe state (Input with Pullups) on boot
   // to avoid floating states or accidental actuator activation.
-  for (uint8_t pin = 0; pin < DIGITAL_PINS; ++pin) {
-    pinMode(pin, INPUT_PULLUP);
-  }
+  forceSafeState();
 
   if constexpr (bridge::config::ENABLE_WATCHDOG) {
 #if defined(ARDUINO_ARCH_AVR)
@@ -289,25 +274,25 @@ etl::expected<void, HalError> removeFile(etl::string_view path) {
 uint32_t getCapabilities() {
   etl::bitset<32> caps;
 #if BRIDGE_ENABLE_WATCHDOG
-  caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_WATCHDOG));
+  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_WATCHDOG));
 #endif
 #if BRIDGE_ENABLE_RLE
-  caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_RLE));
+  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_RLE));
 #endif
 #if defined(ARDUINO_ARCH_AVR) && defined(SERIAL_PORT_HARDWARE1)
-  caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_HW_SERIAL1));
+  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_HW_SERIAL1));
 #endif
 #if defined(BRIDGE_ENABLE_DAC)
-  caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_DAC));
+  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_DAC));
 #endif
 #if BRIDGE_ENABLE_I2C
-  caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_I2C));
+  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_I2C));
 #endif
 #if BRIDGE_ENABLE_SPI
-  caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_SPI));
+  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_SPI));
 #endif
   if (hasSD()) {
-    caps.set(bit_index_from_mask(rpc::RPC_CAPABILITY_SD));
+    caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_SD));
   }
 
   return static_cast<uint32_t>(caps.to_ulong());

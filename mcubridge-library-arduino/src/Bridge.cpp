@@ -29,20 +29,7 @@
 #include "security/security.h"
 
 namespace {
-inline constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
-inline constexpr uint8_t kRpcCommandStride = 2;  // Pair: CMD + RESP
-
-inline constexpr uint8_t bit_index_from_mask(uint32_t mask) {
-  uint8_t bit_index = 0;
-  while (mask > 1U) {
-    mask /= 2U;
-    ++bit_index;
-  }
-  return bit_index;
-}
-
-constexpr uint8_t kCompressedCommandBit =
-    bit_index_from_mask(rpc::RPC_CMD_FLAG_COMPRESSED);
+constexpr uint8_t kCompressedCommandBit = rpc::RPC_CMD_FLAG_COMPRESSED_BIT;
 }
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
@@ -58,7 +45,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _last_parse_error(rpc::FrameError::NONE),
       _flags(),
       _rx_frame{},
-      _rng(millis()),
+      _rng(bridge::now_ms()),
       _last_command_id(0),
       _tx_sequence_id(0),
       _retry_count(0),
@@ -270,7 +257,7 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
   };
 
   const uint8_t group_idx = (raw_cmd >> 4) - 3;
-  if (group_idx < (sizeof(kGroupHandlers) / sizeof(kGroupHandlers[0]))) {
+  if (group_idx < ETL_ARRAY_SIZE(kGroupHandlers)) {
     CmdHandler handler;
     if constexpr (bridge::config::IS_AVR) {
         memcpy_P(&handler, &kGroupHandlers[group_idx], sizeof(handler));
@@ -302,7 +289,7 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_unusedCommandSlot,     // 55
       &BridgeClass::_handleStatusAck        // 56: ACK
   };
-  _dispatchJumpTable(ctx, rpc::RPC_STATUS_CODE_MIN, kStatusHandlers, sizeof(kStatusHandlers) / sizeof(kStatusHandlers[0]));
+  _dispatchJumpTable(ctx, rpc::RPC_STATUS_CODE_MIN, kStatusHandlers, ETL_ARRAY_SIZE(kStatusHandlers));
 
   if (_status_handler.is_valid()) {
     _status_handler(static_cast<rpc::StatusCode>(ctx.raw_command), ctx.frame->payload);
@@ -325,7 +312,7 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_unusedCommandSlot,     // 11: 75
       &BridgeClass::_handleEnterBootloader  // 12: 76
   };
-  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, sizeof(kSystemHandlers) / sizeof(kSystemHandlers[0]));
+  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, ETL_ARRAY_SIZE(kSystemHandlers));
 }
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
@@ -334,14 +321,14 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
       &BridgeClass::_handleAnalogWrite, &BridgeClass::_handleDigitalRead,
       &BridgeClass::_handleAnalogRead
   };
-  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers, sizeof(kGpioHandlers) / sizeof(kGpioHandlers[0]));
+  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers, ETL_ARRAY_SIZE(kGpioHandlers));
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
   static const CmdHandler kConsoleHandlers[] PROGMEM = {
       &BridgeClass::_handleConsoleWrite
   };
-  _dispatchJumpTable(ctx, rpc::RPC_CONSOLE_COMMAND_MIN, kConsoleHandlers, sizeof(kConsoleHandlers) / sizeof(kConsoleHandlers[0]));
+  _dispatchJumpTable(ctx, rpc::RPC_CONSOLE_COMMAND_MIN, kConsoleHandlers, ETL_ARRAY_SIZE(kConsoleHandlers));
 }
 
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
@@ -351,7 +338,7 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
         &BridgeClass::_unusedCommandSlot, // 113
         &BridgeClass::_handleDatastoreGetResp // 114
     };
-    _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers, sizeof(kDataStoreHandlers) / sizeof(kDataStoreHandlers[0]));
+    _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers, ETL_ARRAY_SIZE(kDataStoreHandlers));
   } else {
     onUnknownCommand(ctx);
   }
@@ -367,7 +354,7 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
         &BridgeClass::_handleMailboxReadResp, // 132
         &BridgeClass::_handleMailboxAvailableResp // 133
     };
-    _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, sizeof(kMailboxHandlers) / sizeof(kMailboxHandlers[0]));
+    _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, ETL_ARRAY_SIZE(kMailboxHandlers));
   } else {
     onUnknownCommand(ctx);
   }
@@ -381,7 +368,7 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
         &BridgeClass::_handleFileRemove, // 146
         &BridgeClass::_handleFileReadResp // 147
     };
-    _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers, sizeof(kFsHandlers) / sizeof(kFsHandlers[0]));
+    _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers, ETL_ARRAY_SIZE(kFsHandlers));
   } else {
     onUnknownCommand(ctx);
   }
@@ -398,7 +385,7 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
         &BridgeClass::_handleProcessRunAsyncResp, // 165
         &BridgeClass::_handleProcessPollResp // 166
     };
-    _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers, sizeof(kProcessHandlers) / sizeof(kProcessHandlers[0]));
+    _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers, ETL_ARRAY_SIZE(kProcessHandlers));
   } else {
     onUnknownCommand(ctx);
   }
@@ -413,7 +400,7 @@ void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {
         &BridgeClass::_handleSpiEnd,
         &BridgeClass::_handleSpiSetConfig,
     };
-    _dispatchJumpTable(ctx, rpc::RPC_SPI_COMMAND_MIN, kSpiHandlers, sizeof(kSpiHandlers) / sizeof(CmdHandler));
+    _dispatchJumpTable(ctx, rpc::RPC_SPI_COMMAND_MIN, kSpiHandlers, ETL_ARRAY_SIZE(kSpiHandlers));
 #else
     onUnknownCommand(ctx);
 #endif
@@ -747,7 +734,16 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::span<const uint8_
   notify_observers(MsgBridgeError{status_code});
 }
 
-void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::string_view message) { emitStatus(status_code, etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(message.data()), message.length())); }
+void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::string_view message) {
+  if (message.empty()) {
+    emitStatus(status_code, etl::span<const uint8_t>());
+    return;
+  }
+  const size_t max_len = etl::min(message.length(), rpc::MAX_PAYLOAD_SIZE - 1U);
+  etl::copy_n(message.data(), max_len, _transient_buffer.data());
+  _transient_buffer[max_len] = rpc::RPC_NULL_TERMINATOR;
+  emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer.data(), max_len));
+}
 
 void BridgeClass::emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
   if (message == nullptr) { emitStatus(status_code, etl::span<const uint8_t>()); return; }
@@ -759,12 +755,9 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, const __FlashStringHel
   const size_t copy_len = etl::min(msg_view.size(), max_len);
   etl::copy_n(msg_view.data(), copy_len, _transient_buffer.data());
 #endif
-  _transient_buffer[max_len] = '\0';
+  _transient_buffer[max_len] = rpc::RPC_NULL_TERMINATOR;
   
-  size_t actual_len = 0;
-  while (actual_len < max_len && _transient_buffer[actual_len] != '\0') {
-    actual_len++;
-  }
+  const size_t actual_len = etl::string_view(reinterpret_cast<const char*>(_transient_buffer.data())).length();
   emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer.data(), actual_len));
 }
 
@@ -793,7 +786,7 @@ void BridgeClass::_flushPendingTxQueue() {
   }
 }
 
-void BridgeClass::_clearPendingTxQueue() { BRIDGE_ATOMIC_BLOCK { while (!_pending_tx_queue.empty()) _pending_tx_queue.pop(); _tx_pool_head = 0; } }
+void BridgeClass::_clearPendingTxQueue() { BRIDGE_ATOMIC_BLOCK { _pending_tx_queue.clear(); _tx_pool_head = 0; } }
 void BridgeClass::_clearAckState() {
   BRIDGE_ATOMIC_BLOCK { if (_fsm.isAwaitingAck()) { _fsm.ackReceived(); if (!_pending_tx_queue.empty()) { _pending_tx_queue.pop(); if (_pending_tx_queue.empty()) _tx_pool_head = 0; } } }
   _retry_count = 0;

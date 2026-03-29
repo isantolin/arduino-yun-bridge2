@@ -5,6 +5,7 @@
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include "nanopb/pb.h"
+#include "hal/hal.h"
 
 namespace rpc {
 namespace util {
@@ -81,14 +82,14 @@ inline void pb_copy_join(etl::string_view base, etl::span<const etl::string_view
   if (dst_size == 0) return;
   size_t offset = etl::min(base.length(), dst_size - 1);
   etl::copy_n(base.data(), offset, dst);
-  dst[offset] = '\0';
+  dst[offset] = rpc::RPC_NULL_TERMINATOR;
 
   for (const auto& part : parts) {
     if (offset + 1 >= dst_size) break;
     dst[offset++] = ' ';
     const size_t to_copy = etl::min(part.length(), dst_size - offset - 1);
     etl::copy_n(part.data(), to_copy, dst + offset);
-    dst[offset += to_copy] = '\0';
+    dst[offset += to_copy] = rpc::RPC_NULL_TERMINATOR;
   }
 }
 

@@ -6,7 +6,7 @@ Reason strings are kept for debug purposes but are secondary.
 
 from __future__ import annotations
 
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol as protocol
 
 
 def encode_status_reason(reason: str | None) -> bytes:

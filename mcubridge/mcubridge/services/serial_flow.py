@@ -17,7 +17,7 @@ from mcubridge.config.const import (
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
-from mcubridge.protocol import rle
+from mcubridge.protocol import rle as rle
 from mcubridge.protocol.contracts import (
     expected_responses,
     response_to_request,

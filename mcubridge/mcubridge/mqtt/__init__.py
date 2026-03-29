@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol as protocol
 
 if TYPE_CHECKING:
     from mcubridge.protocol.structures import QueuedPublish

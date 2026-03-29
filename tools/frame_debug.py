@@ -11,7 +11,8 @@ from typing import Annotated, Any
 
 import serial
 import typer
-from mcubridge.protocol import cobs, protocol
+from mcubridge.protocol import cobs as cobs
+from mcubridge.protocol import protocol as protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 

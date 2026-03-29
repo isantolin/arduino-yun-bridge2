@@ -113,30 +113,38 @@ class Frame(msgspec.Struct, frozen=True):
 
     def build(self) -> bytes:
         """Build the binary frame representation."""
-        # Use simple dictionary for building
-        return RPC_FRAME.build({
-            "header_payload": {
-                "value": {
-                    "header": {
-                        "version": protocol.PROTOCOL_VERSION,
-                        "payload_len": len(self.payload),
-                        "command_id": int(self.command_id),
-                        "sequence_id": self.sequence_id,
-                    },
-                    "payload": self.payload,
+        if len(self.payload) > protocol.MAX_PAYLOAD_SIZE:
+            raise ValueError(f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}")
+        try:
+            # Use simple dictionary for building
+            return RPC_FRAME.build({
+                "header_payload": {
+                    "value": {
+                        "header": {
+                            "version": protocol.PROTOCOL_VERSION,
+                            "payload_len": len(self.payload),
+                            "command_id": int(self.command_id),
+                            "sequence_id": self.sequence_id,
+                        },
+                        "payload": self.payload,
+                    }
                 }
-            }
-        })
+            })
+        except Exception as e:
+            raise ValueError(f"Failed to build frame: {e}") from e
 
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
-        obj: Any = RPC_FRAME.parse(raw_frame_buffer)
-        return cls(
-            command_id=int(obj.header_payload.value.header.command_id),
-            sequence_id=int(obj.header_payload.value.header.sequence_id),
-            payload=obj.header_payload.value.payload,
-        )
+        try:
+            obj: Any = RPC_FRAME.parse(raw_frame_buffer)
+            return cls(
+                command_id=int(obj.header_payload.value.header.command_id),
+                sequence_id=int(obj.header_payload.value.header.sequence_id),
+                payload=obj.header_payload.value.payload,
+            )
+        except Exception as e:
+            raise ValueError(f"Incomplete frame: {e}") from e
 
     @classmethod
     def from_bytes(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":

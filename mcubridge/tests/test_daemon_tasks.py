@@ -108,7 +108,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
     ).build()
     corrupted = bytearray(cobs.encode(frame))
     corrupted[0] = protocol.UINT8_MASK  # Invalid COBS code
-    encoded = cobs.encode(bytes(corrupted)) + FRAME_DELIMITER
+    encoded = bytes(corrupted) + FRAME_DELIMITER
 
     # Mock Streams API
     mock_reader = AsyncMock(spec=asyncio.StreamReader)

@@ -101,4 +101,5 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
     config = common.get_uci_config()
 
     assert fallback_called is True
-    assert config == {"serial_port": "default"}
+    assert config["serial_port"] == "default"
+    assert config["serial_baud"] == 115200

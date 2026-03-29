@@ -1244,11 +1244,16 @@ class TestRuntimeStateEdges:
     @pytest.mark.asyncio
     async def test_stash_mqtt_message_no_spool(self, state):
         from mcubridge.protocol.structures import QueuedPublish
+        from mcubridge.state.context import RuntimeState
 
         state.mqtt_spool = None
         msg = QueuedPublish(topic_name="t", payload=b"p")
-        result = await state.stash_mqtt_message(msg)
-        assert result is True
+        with patch.object(RuntimeState, "ensure_spool", AsyncMock(return_value=True)):
+            # We also need to mock mqtt_spool since it's used after ensure_spool
+            state.mqtt_spool = MagicMock()
+            result = await state.stash_mqtt_message(msg)
+            assert result is True
+            state.mqtt_spool.append.assert_called_with(msg)
 
     @pytest.mark.asyncio
     async def test_flush_mqtt_spool_no_spool(self, state):

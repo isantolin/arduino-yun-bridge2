@@ -6,6 +6,7 @@ import asyncio
 import importlib.util
 import inspect
 import logging
+import os
 import shutil
 import sys
 from collections.abc import Iterator
@@ -272,7 +273,7 @@ def runtime_config() -> RuntimeConfig:
         serial_response_timeout=0.1,
         serial_retry_attempts=1,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
-        mqtt_spool_dir="/tmp/mcubridge-tests-spool",
+        mqtt_spool_dir=f"/tmp/mcubridge-tests-spool-{os.getpid()}",
     )
 
 

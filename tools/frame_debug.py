@@ -13,8 +13,8 @@ import serial
 import typer
 
 # [SIL-2] Use robust absolute submodule imports to avoid package attribute issues
-import mcubridge.protocol.cobs as cobs
-import mcubridge.protocol.protocol as protocol
+import cobs.cobs as cobs_mod
+from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 
@@ -46,8 +46,10 @@ class FrameDebugSnapshot:
 
 
 def _resolve_command(cmd_str: str) -> int:
+    if not cmd_str:
+        raise ValueError("command may not be empty")
     try:
-        if cmd_str.startswith("0x"):
+        if cmd_str.upper().startswith("0X"):
             return int(cmd_str, 16)
         # Try Command enum
         return int(getattr(protocol.Command, cmd_str.upper()))
@@ -59,7 +61,7 @@ def _resolve_command(cmd_str: str) -> int:
             try:
                 return int(cmd_str)
             except ValueError:
-                raise ValueError(f"Invalid command/status identifier: {cmd_str}")
+                raise ValueError(f"Unknown command identifier: {cmd_str}")
 
 
 def _parse_payload(payload_str: str | None) -> bytes:
@@ -68,6 +70,8 @@ def _parse_payload(payload_str: str | None) -> bytes:
     try:
         # Clean spacing/brackets if any
         clean = payload_str.replace(" ", "").replace("[", "").replace("]", "")
+        if clean.upper().startswith("0X"):
+            clean = clean[2:]
         return binascii.unhexlify(clean)
     except binascii.Error as exc:
         raise ValueError(f"Invalid hex payload: {exc}")
@@ -91,7 +95,7 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     frame_obj = Frame(command_id=command_id, sequence_id=0, payload=payload)
     raw_frame = frame_obj.build()
     crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
-    encoded_body = cobs.encode(raw_frame)
+    encoded_body = cobs_mod.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(
         command_id=command_id,
@@ -137,7 +141,7 @@ def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
 
 
 def _decode_frame(encoded_packet: bytes) -> Frame:
-    return Frame.parse(cobs.decode(encoded_packet))
+    return Frame.parse(cobs_mod.decode(encoded_packet))
 
 
 def _print_response(frame: Frame) -> None:

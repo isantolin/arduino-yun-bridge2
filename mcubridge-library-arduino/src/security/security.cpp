@@ -39,9 +39,9 @@ void McuBridgeSha256::update(const void* data, size_t len) {
 }
 
 void McuBridgeSha256::finalize(void* digest, size_t len) {
-  uint8_t full_digest[32];
+  uint8_t full_digest[rpc::RPC_SHA256_DIGEST_SIZE];
   wc_Sha256Final(&sha_, full_digest);
-  etl::copy(full_digest, full_digest + etl::min(len, (size_t)32), static_cast<uint8_t*>(digest));
+  etl::copy(full_digest, full_digest + etl::min(len, static_cast<size_t>(rpc::RPC_SHA256_DIGEST_SIZE)), static_cast<uint8_t*>(digest));
 }
 
 void McuBridgeSha256::resetHMAC(const void* key, size_t key_len) {
@@ -52,9 +52,9 @@ void McuBridgeSha256::resetHMAC(const void* key, size_t key_len) {
 void McuBridgeSha256::finalizeHMAC(const void* key, size_t key_len, void* digest, size_t len) {
   (void)key;
   (void)key_len;
-  uint8_t full_digest[32];
+  uint8_t full_digest[rpc::RPC_SHA256_DIGEST_SIZE];
   wc_HmacFinal(&hmac_, full_digest);
-  etl::copy(full_digest, full_digest + etl::min(len, (size_t)32), static_cast<uint8_t*>(digest));
+  etl::copy(full_digest, full_digest + etl::min(len, static_cast<size_t>(rpc::RPC_SHA256_DIGEST_SIZE)), static_cast<uint8_t*>(digest));
   is_hmac_active_ = false;
 }
 
@@ -91,21 +91,21 @@ static constexpr uint8_t kat_hmac_expected[] PROGMEM = {
 
 bool run_cryptographic_self_tests() {
   McuBridgeSha256 sha256;
-  etl::array<uint8_t, bridge::config::SHA256_DIGEST_SIZE> actual;
-  etl::array<uint8_t, bridge::config::SHA256_KAT_BUFFER_SIZE> buffer;
+  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> actual;
+  etl::array<uint8_t, rpc::RPC_SHA256_KAT_BUFFER_SIZE> buffer;
 
   // 1. SHA256 KAT
   sha256.reset();
   size_t msg_len = sizeof(kat_sha256_msg);
   etl::copy_n(kat_sha256_msg, msg_len, buffer.begin());
   sha256.update(buffer.data(), msg_len);
-  sha256.finalize(actual.data(), bridge::config::SHA256_DIGEST_SIZE);
+  sha256.finalize(actual.data(), rpc::RPC_SHA256_DIGEST_SIZE);
 
-  if (memcmp_P(actual.data(), kat_sha256_expected, bridge::config::SHA256_DIGEST_SIZE) != 0)
+  if (memcmp_P(actual.data(), kat_sha256_expected, rpc::RPC_SHA256_DIGEST_SIZE) != 0)
     return false;
 
   // 2. HMAC-SHA256 KAT
-  etl::array<uint8_t, 32> key_buf;
+  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> key_buf;
   size_t key_len = sizeof(kat_hmac_key);
   etl::copy_n(kat_hmac_key, key_len, key_buf.begin());
 
@@ -114,9 +114,9 @@ bool run_cryptographic_self_tests() {
   size_t data_len = sizeof(kat_hmac_data);
   etl::copy_n(kat_hmac_data, data_len, buffer.begin());
   sha256.update(buffer.data(), data_len);
-  sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(), bridge::config::SHA256_DIGEST_SIZE);
+  sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(), rpc::RPC_SHA256_DIGEST_SIZE);
 
-  if (memcmp_P(actual.data(), kat_hmac_expected, bridge::config::SHA256_DIGEST_SIZE) != 0)
+  if (memcmp_P(actual.data(), kat_hmac_expected, rpc::RPC_SHA256_DIGEST_SIZE) != 0)
     return false;
 
   return true;

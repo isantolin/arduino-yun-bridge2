@@ -235,7 +235,7 @@ struct SimpleTimer {
     return (id < N) && active.test(id);
   }
 
-  static constexpr uint32_t TIMER_OVERFLOW_THRESHOLD = 0x80000000UL;
+  static constexpr uint32_t TIMER_OVERFLOW_THRESHOLD = rpc::RPC_TIMER_OVERFLOW_THRESHOLD;
 
   etl::bitset<N> check_expired(uint32_t now) {
     etl::bitset<N> expired;

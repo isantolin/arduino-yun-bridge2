@@ -256,14 +256,10 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
       &BridgeClass::onSpiCommand        // 0xB0
   };
 
-  const uint8_t group_idx = (raw_cmd >> 4) - 3;
+  const uint8_t group_idx = (raw_cmd >> rpc::RPC_COMMAND_GROUP_SHIFT) - rpc::RPC_COMMAND_GROUP_OFFSET;
   if (group_idx < ETL_ARRAY_SIZE(kGroupHandlers)) {
     CmdHandler handler;
-    if constexpr (bridge::config::IS_AVR) {
-        memcpy_P(&handler, &kGroupHandlers[group_idx], sizeof(handler));
-    } else {
-        handler = kGroupHandlers[group_idx];
-    }
+    bridge::hal::copy_from_progmem(&handler, &kGroupHandlers[group_idx]);
     (this->*handler)(ctx);
   } else {
     onUnknownCommand(ctx);
@@ -392,7 +388,7 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {
-#if BRIDGE_ENABLE_SPI
+  if constexpr (bridge::config::ENABLE_SPI) {
     static const CmdHandler kSpiHandlers[] PROGMEM = {
         &BridgeClass::_handleSpiBegin,
         &BridgeClass::_handleSpiTransfer,
@@ -401,9 +397,9 @@ void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {
         &BridgeClass::_handleSpiSetConfig,
     };
     _dispatchJumpTable(ctx, rpc::RPC_SPI_COMMAND_MIN, kSpiHandlers, ETL_ARRAY_SIZE(kSpiHandlers));
-#else
+  } else {
     onUnknownCommand(ctx);
-#endif
+  }
 }
 
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
@@ -667,13 +663,9 @@ void BridgeClass::_dispatchJumpTable(const bridge::router::CommandContext& ctx, 
   if (ctx.raw_command < min_id) return;
   const uint8_t index = static_cast<uint8_t>((ctx.raw_command - min_id) / stride);
   if (index < count) {
-    if constexpr (bridge::config::IS_AVR) {
-        CmdHandler handler;
-        memcpy_P(&handler, &handlers[index], sizeof(handler));
-        if (handler) (this->*handler)(ctx);
-    } else {
-        if (handlers[index]) (this->*handlers[index])(ctx);
-    }
+    CmdHandler handler;
+    bridge::hal::copy_from_progmem(&handler, &handlers[index]);
+    if (handler) (this->*handler)(ctx);
   }
 }
 
@@ -748,13 +740,7 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::string_view messa
 void BridgeClass::emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
   if (message == nullptr) { emitStatus(status_code, etl::span<const uint8_t>()); return; }
   constexpr size_t max_len = rpc::MAX_PAYLOAD_SIZE - 1U;
-#if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
-  strncpy_P(reinterpret_cast<char*>(_transient_buffer.data()), (PGM_P)message, max_len);
-#else
-  etl::string_view msg_view(reinterpret_cast<const char*>(message));
-  const size_t copy_len = etl::min(msg_view.size(), max_len);
-  etl::copy_n(msg_view.data(), copy_len, _transient_buffer.data());
-#endif
+  bridge::hal::copy_string(reinterpret_cast<char*>(_transient_buffer.data()), reinterpret_cast<const char*>(message), max_len);
   _transient_buffer[max_len] = rpc::RPC_NULL_TERMINATOR;
   
   const size_t actual_len = etl::string_view(reinterpret_cast<const char*>(_transient_buffer.data())).length();

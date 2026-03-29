@@ -17,7 +17,10 @@ namespace util {
  * terminator already present in the zero-initialised nanopb struct.
  */
 inline void pb_copy_string(etl::string_view src, char* dst, size_t dst_size) {
-  etl::copy_n(src.data(), etl::min(src.length(), dst_size - 1), dst);
+  if (dst_size == 0) return;
+  const size_t to_copy = etl::min(src.length(), dst_size - 1);
+  etl::copy_n(src.data(), to_copy, dst);
+  dst[to_copy] = rpc::RPC_NULL_TERMINATOR;
 }
 
 /**
@@ -80,17 +83,26 @@ inline void pb_setup_decode_span(PbCallbackField& field, etl::span<uint8_t>& dst
  */
 inline void pb_copy_join(etl::string_view base, etl::span<const etl::string_view> parts, char* dst, size_t dst_size) {
   if (dst_size == 0) return;
-  size_t offset = etl::min(base.length(), dst_size - 1);
-  etl::copy_n(base.data(), offset, dst);
-  dst[offset] = rpc::RPC_NULL_TERMINATOR;
 
+  char* current = dst;
+  char* const end = dst + dst_size - 1; // Reserve room for null terminator
+
+  // Copy base string
+  const size_t base_len = etl::min(base.length(), static_cast<size_t>(end - current));
+  current = etl::copy_n(base.data(), base_len, current);
+
+  // Join parts with space separator
   for (const auto& part : parts) {
-    if (offset + 1 >= dst_size) break;
-    dst[offset++] = ' ';
-    const size_t to_copy = etl::min(part.length(), dst_size - offset - 1);
-    etl::copy_n(part.data(), to_copy, dst + offset);
-    dst[offset += to_copy] = rpc::RPC_NULL_TERMINATOR;
+    if (current >= end) break;
+    
+    // Add separator if there is room for it and at least one character of the part
+    *current++ = ' ';
+    
+    const size_t part_len = etl::min(part.length(), static_cast<size_t>(end - current));
+    current = etl::copy_n(part.data(), part_len, current);
   }
+
+  *current = rpc::RPC_NULL_TERMINATOR;
 }
 
 } // namespace util

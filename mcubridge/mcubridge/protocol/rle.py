@@ -54,7 +54,8 @@ RLE_DECODER: Final = Struct(
             # Escape sequence: [0xFF, count_m2, value]
             ExprAdapter(
                 RLE_ESCAPE,
-                decoder=lambda obj, ctx: bytes([obj.value]) * (1 if obj.count_m2 == 255 else obj.count_m2 + 2),  # type: ignore
+                decoder=lambda obj, ctx: bytes([obj.value])
+                * (1 if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER else obj.count_m2 + protocol.RLE_OFFSET),
                 encoder=lambda obj, ctx: None,  # type: ignore
             ),
             # Literal byte (MUST NOT be the escape byte)
@@ -104,7 +105,15 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
     # Pattern matches runs of 4-256 same bytes OR any sequence of RLE_ESCAPE_BYTE
     escape_byte = bytes([protocol.RLE_ESCAPE_BYTE])
     escape_pattern = re.escape(escape_byte)
-    pattern = re.compile(b"(.)\\1{3,255}|" + escape_pattern + b"+")
+    pattern = re.compile(
+        b"(.)\\1{"
+        + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode()
+        + b","
+        + str(protocol.RLE_MAX_RUN_LENGTH - 1).encode()
+        + b"}|"
+        + escape_pattern
+        + b"+"
+    )
 
     # [SIL-2] finditer on memoryview avoids data duplication
     for m in pattern.finditer(view):
@@ -124,7 +133,11 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
                     RLE_ESCAPE.build(  # type: ignore
                         dict(
                             escape=protocol.RLE_ESCAPE_BYTE,
-                            count_m2=255 if chunk_len == 1 else chunk_len - 2,
+                            count_m2=(
+                                protocol.RLE_SINGLE_ESCAPE_MARKER
+                                if chunk_len == 1
+                                else chunk_len - protocol.RLE_OFFSET
+                            ),
                             value=protocol.RLE_ESCAPE_BYTE,
                         )
                     )
@@ -135,7 +148,7 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
                 RLE_ESCAPE.build(  # type: ignore
                     dict(
                         escape=protocol.RLE_ESCAPE_BYTE,
-                        count_m2=length - 2,
+                        count_m2=length - protocol.RLE_OFFSET,
                         value=char,
                     )
                 )
@@ -162,19 +175,24 @@ def decode(data: bytes | bytearray | memoryview) -> bytes:
 
 def should_compress(data: bytes | bytearray | memoryview) -> bool:
     """Heuristic to decide if compression is beneficial using regex."""
-    if len(data) < 8:
+    if len(data) < protocol.RLE_MIN_COMPRESS_INPUT_SIZE:
         return False
 
     data_bytes = bytes(data)
-    # Savings from runs of non-ESCAPE_BYTE bytes (N bytes become 3)
-    # Use f-string or concat to avoid literal \xff in code where possible
-    pattern = re.compile(b"([^" + re.escape(bytes([protocol.RLE_ESCAPE_BYTE])) + b"])\\1{3,}")
-    savings = sum(len(m.group(0)) - 3 for m in pattern.finditer(data_bytes))
+    # Savings from runs of non-ESCAPE_BYTE bytes (N bytes become EXPANSION_FACTOR)
+    pattern = re.compile(
+        b"([^"
+        + re.escape(bytes([protocol.RLE_ESCAPE_BYTE]))
+        + b"])\\1{"
+        + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode()
+        + b",}"
+    )
+    savings = sum(len(m.group(0)) - protocol.RLE_EXPANSION_FACTOR for m in pattern.finditer(data_bytes))
 
-    # Penalty for ESCAPE_BYTE (each ESCAPE_BYTE costs 2 extra bytes)
-    penalty = data_bytes.count(protocol.RLE_ESCAPE_BYTE) * 2
+    # Penalty for ESCAPE_BYTE (each ESCAPE_BYTE costs RLE_OFFSET extra bytes)
+    penalty = data_bytes.count(protocol.RLE_ESCAPE_BYTE) * protocol.RLE_OFFSET
 
-    return savings > penalty + 4
+    return savings > penalty + protocol.RLE_MIN_COMPRESS_SAVINGS
 
 
 def compression_ratio(original: bytes, compressed: bytes) -> float:

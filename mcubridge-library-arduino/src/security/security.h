@@ -99,7 +99,7 @@ inline void generate_nonce_with_counter(etl::span<uint8_t> out_nonce,
 
   etl::generate(out_nonce.begin(),
                 out_nonce.begin() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                [&]() { return static_cast<uint8_t>(random_func() & 0xFF); });
+                [&]() { return static_cast<uint8_t>(random_func() & rpc::RPC_UINT8_MASK); });
 
   counter++;
   rpc::write_u64_be(out_nonce.subspan(RPC_HANDSHAKE_NONCE_RANDOM_BYTES), counter);

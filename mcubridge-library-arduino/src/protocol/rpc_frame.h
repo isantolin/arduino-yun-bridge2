@@ -160,7 +160,7 @@ class FrameBuilder {
     writer.write<uint16_t>(sequence_id);
 
     if (payload_len > 0) {
-        for (auto b : payload) writer.write<uint8_t>(b);
+        writer.write(payload);
     }
 
     etl::crc32 crc_calc;

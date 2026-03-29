@@ -17,15 +17,15 @@ size_t encode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
     size_t run_len = etl::distance(src_it, run_end);
 
     if (run_len >= MIN_RUN_LENGTH) {
-      if (etl::distance(dst_it, dst.end()) < 3) return 0;
+      if (etl::distance(dst_it, dst.end()) < static_cast<int>(rpc::RPC_RLE_EXPANSION_FACTOR)) return 0;
       *dst_it++ = ESCAPE_BYTE;
-      *dst_it++ = static_cast<uint8_t>(run_len - 2);
+      *dst_it++ = static_cast<uint8_t>(run_len - rpc::RPC_RLE_OFFSET);
       *dst_it++ = current;
       src_it = run_end;
     } else if (current == ESCAPE_BYTE) {
-      if (etl::distance(dst_it, dst.end()) < 3) return 0;
+      if (etl::distance(dst_it, dst.end()) < static_cast<int>(rpc::RPC_RLE_EXPANSION_FACTOR)) return 0;
       *dst_it++ = ESCAPE_BYTE;
-      *dst_it++ = (run_len == 1) ? SINGLE_ESCAPE_MARKER : static_cast<uint8_t>(run_len - 2);
+      *dst_it++ = (run_len == 1) ? SINGLE_ESCAPE_MARKER : static_cast<uint8_t>(run_len - rpc::RPC_RLE_OFFSET);
       *dst_it++ = ESCAPE_BYTE;
       src_it = run_end;
     } else {
@@ -57,11 +57,11 @@ size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
     if (src_it != src.end()) {
       // Process Escape block
       src_it++;  // Skip ESCAPE_BYTE
-      if (etl::distance(src_it, src.end()) < 2) return 0;
+      if (etl::distance(src_it, src.end()) < static_cast<int>(rpc::RPC_RLE_EXPANSION_FACTOR - 1)) return 0;
 
       uint8_t count_m2 = *src_it++;
       uint8_t val = *src_it++;
-      size_t run_len = (count_m2 == SINGLE_ESCAPE_MARKER) ? 1 : static_cast<size_t>(count_m2) + 2;
+      size_t run_len = (count_m2 == SINGLE_ESCAPE_MARKER) ? 1 : static_cast<size_t>(count_m2) + rpc::RPC_RLE_OFFSET;
 
       if (static_cast<size_t>(etl::distance(dst_it, dst.end())) < run_len) {
         return 0;
@@ -87,10 +87,10 @@ bool should_compress(etl::span<const uint8_t> src) {
     }
     auto run_end = etl::find_if_not(it + 1, src.end(), [current](uint8_t b) { return b == current; });
     size_t len = etl::distance(it, run_end);
-    if (len >= MIN_RUN_LENGTH) savings += (len - 3);
+    if (len >= MIN_RUN_LENGTH) savings += (len - rpc::RPC_RLE_EXPANSION_FACTOR);
     it = run_end;
   }
-  return savings > (escapes * 2 + MIN_COMPRESS_SAVINGS);
+  return savings > (escapes * rpc::RPC_RLE_OFFSET + MIN_COMPRESS_SAVINGS);
 }
 
 } // namespace rle

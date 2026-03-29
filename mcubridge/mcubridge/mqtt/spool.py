@@ -1,17 +1,16 @@
-"""Durable spool for MQTT publish messages using msgspec and zict."""
+"""Durable spool for MQTT publish messages using msgspec and PersistentQueue."""
 
 from __future__ import annotations
 
 import logging
-import threading
 import time
 from pathlib import Path
-from collections.abc import Callable, MutableMapping
+from typing import Any
 
 import msgspec
-import zict
 
 from ..protocol.structures import QueuedPublish, SpoolRecord
+from ..state.queues import PersistentQueue
 
 logger = logging.getLogger("mcubridge.mqtt.spool")
 
@@ -32,143 +31,76 @@ class MQTTSpoolError(RuntimeError):
 
 
 class MQTTPublishSpool:
-    """Hybrid spool that automates RAM/Disk management using zict."""
+    """Hybrid spool that automates RAM/Disk management using PersistentQueue."""
 
     def __init__(
         self,
         directory: str,
         limit: int,
         *,
-        on_fallback: Callable[[str, BaseException | None], None] | None = None,
+        on_fallback: Any | None = None,
     ) -> None:
         self.directory = Path(directory)
-        self.limit = max(1, limit)
-        self._lock = threading.RLock()
-
-        # [SIL-2] Flash Protection Check
-        directory_str = str(self.directory)
-        is_tmp = directory_str == "/tmp" or directory_str.startswith("/tmp/")
-
-        self._slow: MutableMapping[str, SpoolRecord]
-        if not is_tmp:
-            logger.warning("MQTT spool directory %s is not under /tmp; persistence disabled", self.directory)
-            self._slow = {}
-            self._fallback_active = True
-        else:
-            try:
-                self.directory.mkdir(parents=True, exist_ok=True)
-                # [SIL-2] Use msgpack for efficient binary storage on disk
-                self._slow = zict.Func(
-                    msgspec.msgpack.encode,
-                    lambda b: msgspec.msgpack.decode(b, type=SpoolRecord),
-                    zict.File(str(self.directory)),
-                )
-                self._fallback_active = False
-            except (OSError, ImportError, ValueError, msgspec.DecodeError) as exc:
-                logger.warning("Failed to initialize disk spool: %s. Falling back to RAM-only.", exc)
-                self._slow = {}
-                self._fallback_active = True
-                if on_fallback:
-                    on_fallback("initialization_failed", exc)
 
         # Fast storage (RAM) limit: 20% of total limit or 50 messages
-        ram_limit = min(50, max(1, self.limit // 5))
+        ram_limit = min(50, max(1, limit // 5))
 
-        # Combined Buffer: RAM (fast) + Disk (slow)
-        self._buffer = zict.Buffer(fast={}, slow=self._slow, n=ram_limit)
-
-        # Ensure total limit via LRU piece
-        self._spool = zict.LRU(n=self.limit, d=self._buffer)
-
-        self._head = 0  # For pop_next
-        self._tail = 0  # For append
-        self._find_indices()
+        self._base = PersistentQueue[SpoolRecord](
+            directory=self.directory,
+            max_items=max(1, limit),
+            ram_limit=ram_limit,
+            encoder=msgspec.msgpack.encode,
+            decoder=lambda b: msgspec.msgpack.decode(b, type=SpoolRecord),
+        )
 
         self._dropped_due_to_limit = 0
         self._trim_events = 0
         self._last_trim_unix = 0.0
         self._corrupt_dropped = 0
-        self._fallback_hook = on_fallback
-
-    def _find_indices(self) -> None:
-        """Recover head/tail indices from existing keys."""
-        keys = [int(k) for k in self._spool.keys() if str(k).isdigit()]
-        if keys:
-            self._head = min(keys)
-            self._tail = max(keys) + 1
-        else:
-            self._head = 0
-            self._tail = 0
 
     def close(self) -> None:
-        with self._lock:
-            # zict.File handles closing its internal handles
-            self._spool.clear()
+        self._base.clear()
 
     def append(self, message: QueuedPublish) -> None:
         record: SpoolRecord = message.to_record()
-        with self._lock:
-            key = str(self._tail)
+        # [SIL-2] The PersistentQueue base handles LRU-style dropping if limit is reached.
+        # We wrap it to track our specific metrics.
+        pre_len = len(self._base)
+        if self.limit and pre_len >= self.limit:
+            self._dropped_due_to_limit += 1
+            self._trim_events += 1
+            self._last_trim_unix = time.time()
 
-            # Check if we are about to drop the oldest due to LRU limit
-            if len(self._spool) >= self.limit and str(self._head) in self._spool:
-                self._dropped_due_to_limit += 1
-                self._trim_events += 1
-                self._last_trim_unix = time.time()
-                self._head += 1
-
-            try:
-                self._spool[key] = record
-                self._tail += 1
-            except (OSError, ValueError, TypeError) as exc:
-                # [SIL-2] Fail-Operational: If disk fails during append, switch to memory mode
-                if not self._fallback_active:
-                    logger.error("MQTT spool disk error during append: %s. Switching to memory-only.", exc)
-                    self._fallback_active = True
-                    # Re-route _buffer to fast-only by setting _slow to empty dict
-                    # Note: zict.Buffer handles slow being a dict
-                    self._buffer.slow = {}
-                    if self._fallback_hook:
-                        self._fallback_hook("disk_full_during_append", exc)
-
-                # Try to at least store it in the RAM part of the buffer (which is now slow too)
-                try:
-                    self._spool[key] = record
-                    self._tail += 1
-                except (OSError, ValueError, TypeError, AttributeError, RuntimeError, msgspec.EncodeError) as e:
-                    logger.error("Spool corruption or write failure: %s. Message lost.", e)
+        if not self._base.append(record):
+            logger.error("Failed to append to MQTT spool")
 
     def pop_next(self) -> QueuedPublish | None:
-        with self._lock:
-            while self._head < self._tail:
-                key = str(self._head)
-                try:
-                    record = self._spool.pop(key)
-                    self._head += 1
-                    return QueuedPublish.from_record(record)
-                except KeyError:
-                    self._head += 1  # Skip gaps
-                except (OSError, ValueError, TypeError, AttributeError, msgspec.DecodeError) as exc:
-                    logger.warning("Dropping corrupt spool entry %s: %s", key, exc)
-                    self._corrupt_dropped += 1
-                    self._head += 1
-            return None
+        record = self._base.popleft()
+        if record:
+            return QueuedPublish.from_record(record)
+        return None
 
     def requeue(self, message: QueuedPublish) -> None:
         """Push message back to the front of the queue."""
         record: SpoolRecord = message.to_record()
-        with self._lock:
-            self._head -= 1
-            key = str(self._head)
-            self._spool[key] = record
+        self._base.appendleft(record)
 
     @property
     def pending(self) -> int:
-        return len(self._spool)
+        return len(self._base)
 
     @property
     def is_degraded(self) -> bool:
-        return self._fallback_active
+        # Degradation is now implicit if directory setup failed (Base uses RAM only)
+        return self._base.directory is None
+
+    @property
+    def limit(self) -> int:
+        return self._base.max_items or 0
+
+    @limit.setter
+    def limit(self, value: int) -> None:
+        self._base.max_items = value
 
     def snapshot(self) -> dict[str, int | float]:
         return {
@@ -178,7 +110,7 @@ class MQTTPublishSpool:
             "trim_events": self._trim_events,
             "last_trim_unix": self._last_trim_unix,
             "corrupt_dropped": self._corrupt_dropped,
-            "fallback_active": 1 if self._fallback_active else 0,
+            "fallback_active": 1 if self.is_degraded else 0,
         }
 
 

@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
 import psutil
-import zict
 from aiomqtt.message import Message
 from transitions import Machine
 
@@ -61,7 +60,7 @@ from ..protocol.structures import (
     SupervisorStats,
 )
 from .metrics import DaemonMetrics
-from .queues import BoundedByteDeque
+from .queues import BoundedByteDeque, PersistentQueue
 
 logger = logging.getLogger("mcubridge.state")
 
@@ -303,11 +302,9 @@ class RuntimeState(msgspec.Struct):
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=lambda: {})
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})
 
-    # [SIL-2] Improved Mailbox: Uses Buffer for overflow to disk
-    mailbox_queue: Any = msgspec.field(default_factory=lambda: cast("dict[str, bytes]", {}))
-    mailbox_incoming_queue: Any = msgspec.field(default_factory=lambda: cast("dict[str, bytes]", {}))
-    _mailbox_requeue_idx: int = 1000000
-    _mailbox_incoming_requeue_idx: int = 1000000
+    # [SIL-2] Improved Mailbox: Uses PersistentQueue for O(1) hybrid RAM/Disk storage
+    mailbox_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())
+    mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
@@ -532,15 +529,16 @@ class RuntimeState(msgspec.Struct):
         # We use a 20% RAM / 80% Disk split for safety.
         ram_n = max(1, self.mailbox_queue_limit // 5)
 
-        def _create_spool(subdir: str) -> zict.Buffer[str, bytes]:
-            slow: Mapping[str, bytes]
+        def _create_spool(subdir: str) -> PersistentQueue[bytes]:
+            directory = None
             if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
-                path = Path(self.file_system_root) / subdir
-                path.mkdir(parents=True, exist_ok=True)
-                slow = zict.File(str(path))
-            else:
-                slow = {}
-            return zict.Buffer(fast={}, slow=slow, n=ram_n)
+                directory = Path(self.file_system_root) / subdir
+
+            return PersistentQueue[bytes](
+                directory=directory,
+                max_items=self.mailbox_queue_limit,
+                ram_limit=ram_n,
+            )
 
         self.mailbox_queue = _create_spool("mailbox_out")
         self.mailbox_incoming_queue = _create_spool("mailbox_in")
@@ -573,7 +571,7 @@ class RuntimeState(msgspec.Struct):
         self.sync_console_queue_limits()
         chunk = self.console_to_mcu_queue.popleft()
         self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
-        return chunk
+        return chunk or b""
 
     def requeue_console_chunk_front(self, chunk: bytes) -> None:
         if not chunk:
@@ -600,54 +598,37 @@ class RuntimeState(msgspec.Struct):
         return True
 
     def enqueue_mailbox_message(self, payload: bytes, logger: logging.Logger) -> bool:
-        # Simplified with zict: keys are timestamps
-        key = str(time.time_ns())
         if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
             return False
-        self.mailbox_queue[key] = payload
-        self.mailbox_queue_bytes += len(payload)
-        return True
+        if self.mailbox_queue.append(payload):
+            self.mailbox_queue_bytes += len(payload)
+            return True
+        return False
 
     def pop_mailbox_message(self) -> bytes | None:
-        if not self.mailbox_queue:
-            return None
-        # [SIL-2] Use FIFO: pop the oldest entry (smallest timestamp key)
-        # zict.Buffer doesn't guarantee order on items(), so we find the min key.
-        keys = sorted(self.mailbox_queue.keys())
-        if not keys:
-            return None
-        key = keys[0]
-        msg = self.mailbox_queue.pop(key)
-        self.mailbox_queue_bytes = max(0, self.mailbox_queue_bytes - len(msg))
+        msg = self.mailbox_queue.popleft()
+        if msg is not None:
+            self.mailbox_queue_bytes = max(0, self.mailbox_queue_bytes - len(msg))
         return msg
 
     def requeue_mailbox_message_front(self, payload: bytes) -> None:
         if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
             return
-        # [SIL-2] Requeue at front by using a decremental index to stay before time.time_ns()
-        self._mailbox_requeue_idx -= 1
-        key = f"0_{self._mailbox_requeue_idx:010d}"
-        self.mailbox_queue[key] = payload
-        self.mailbox_queue_bytes += len(payload)
+        if self.mailbox_queue.appendleft(payload):
+            self.mailbox_queue_bytes += len(payload)
 
     def enqueue_mailbox_incoming(self, payload: bytes, logger: logging.Logger) -> bool:
-        key = str(time.time_ns())
         if self._mailbox_overflow(len(self.mailbox_incoming_queue), len(payload), incoming=True):
             return False
-        self.mailbox_incoming_queue[key] = payload
-        self.mailbox_incoming_queue_bytes += len(payload)
-        return True
+        if self.mailbox_incoming_queue.append(payload):
+            self.mailbox_incoming_queue_bytes += len(payload)
+            return True
+        return False
 
     def pop_mailbox_incoming(self) -> bytes | None:
-        if not self.mailbox_incoming_queue:
-            return None
-        # [SIL-2] Use FIFO for incoming queue
-        keys = sorted(self.mailbox_incoming_queue.keys())
-        if not keys:
-            return None
-        key = keys[0]
-        msg = self.mailbox_incoming_queue.pop(key)
-        self.mailbox_incoming_queue_bytes = max(0, self.mailbox_incoming_queue_bytes - len(msg))
+        msg = self.mailbox_incoming_queue.popleft()
+        if msg is not None:
+            self.mailbox_incoming_queue_bytes = max(0, self.mailbox_incoming_queue_bytes - len(msg))
         return msg
 
     def sync_console_queue_limits(self) -> None:

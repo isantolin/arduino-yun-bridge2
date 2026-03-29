@@ -87,4 +87,6 @@ mcubridge-library-arduino/tests/Unity
 nohup.out
 mcubridge-library-arduino/src/wolfcrypt/
 mcubridge-library-arduino/src/wolfssl/
+.dummy_libs/typings/
 .dummy_libs/
+typings/

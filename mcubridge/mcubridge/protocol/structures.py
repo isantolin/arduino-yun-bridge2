@@ -32,27 +32,27 @@ if TYPE_CHECKING:
     from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
 
 
-from construct import BitStruct, Flag, Padding
+from construct import BitStruct, Flag, Padding, Construct
 
 # [SIL-2] Declarative bitmask definition for MCU capabilities.
 # This ensures atomic bit-level parsing/building via Construct's C-backed engine.
 # Order matches the protocol specification (bit 0 to bit 15).
-FEATURES_STRUCT: Final = BitStruct(
-    "sd" / Flag,
-    "spi" / Flag,
-    "i2c" / Flag,
-    "big_buffer" / Flag,
-    "logic_3v3" / Flag,
-    "fpu" / Flag,
-    "hw_serial1" / Flag,
-    "dac" / Flag,
-    "eeprom" / Flag,
-    "debug_io" / Flag,
-    "debug_frames" / Flag,
-    "rle" / Flag,
-    "watchdog" / Flag,
-    Padding(3),
-)
+FEATURES_STRUCT: Final = cast(Construct, BitStruct(
+    cast(Construct, "sd" / Flag),
+    cast(Construct, "spi" / Flag),
+    cast(Construct, "i2c" / Flag),
+    cast(Construct, "big_buffer" / Flag),
+    cast(Construct, "logic_3v3" / Flag),
+    cast(Construct, "fpu" / Flag),
+    cast(Construct, "hw_serial1" / Flag),
+    cast(Construct, "dac" / Flag),
+    cast(Construct, "eeprom" / Flag),
+    cast(Construct, "debug_io" / Flag),
+    cast(Construct, "debug_frames" / Flag),
+    cast(Construct, "rle" / Flag),
+    cast(Construct, "watchdog" / Flag),
+    cast(Construct, Padding(3)),
+))
 
 
 def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
@@ -71,9 +71,13 @@ def _int_to_capabilities(val: int) -> dict[str, bool]:
         from construct import Int16ul
         # Convert integer to bytes then parse via BitStruct
         data = Int16ul.build(int(val))
-        res = FEATURES_STRUCT.parse(data)
+        res: Any = FEATURES_STRUCT.parse(data)
         # Convert Container to plain dict and remove internal metadata
-        return {str(k): bool(v) for k, v in res.items() if not str(k).startswith("_")}
+        return {
+            str(k): bool(v)
+            for k, v in dict(res).items()
+            if not str(k).startswith("_")
+        }
     except Exception:
         return {}
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any
+from typing import Any, cast
 from wsgiref.handlers import CGIHandler
 
 import msgspec
@@ -74,11 +74,10 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
     )
     try:
         if config.tls_enabled:
-            # Re-use the shared TLS context builder
             from mcubridge.util.mqtt_helper import configure_tls_context
 
-            ctx = configure_tls_context(config)
-            client.tls_set_context(ctx)
+            ctx: Any = configure_tls_context(config)
+            cast(Any, client).tls_set_context(ctx)
             if config.mqtt_tls_insecure:
                 client.tls_insecure_set(True)
 

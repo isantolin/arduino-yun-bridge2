@@ -4,30 +4,16 @@ This module implements the binary frame format used over the serial link
 between the Linux daemon and the Arduino MCU.
 
 [SIL-2 COMPLIANCE]
-The frame format is designed for reliable communication:
-- CRC32 integrity check on every frame (calculated via standard binascii)
-- Explicit length fields prevent buffer overruns
-- Version field ensures protocol compatibility
-- Big-endian byte order for cross-platform consistency
-- Sequence ID for deduplication and reliable delivery
-
-Frame Structure (on wire after COBS encoding):
-    [Header (7 bytes)] [Payload (0-64 bytes)] [CRC32 (4 bytes)]
-
-Header Format (big-endian):
-    - version (1 byte): Protocol version, must match PROTOCOL_VERSION
-    - payload_length (2 bytes): Number of payload bytes
-    - command_id (2 bytes): Command or status code from protocol.py
-    - sequence_id (2 bytes): Incremental counter for deduplication
-
-The raw frame is then COBS-encoded and terminated with 0x00 delimiter
-before transmission.
+The frame format is strictly defined using the 'construct' library to ensure:
+- Deterministic memory layout.
+- Automatic CRC32 validation.
+- Zero manual bit-shifting or pointer arithmetic.
 """
 
 from __future__ import annotations
 
 from binascii import crc32
-from typing import Final
+from typing import Any, TypeVar
 import msgspec
 from construct import (
     BitStruct,
@@ -35,6 +21,7 @@ from construct import (
     Bytes,
     Check,
     Checksum,
+    Construct,
     Enum,
     ExprAdapter,
     Flag,
@@ -48,8 +35,10 @@ from construct import (
 
 from . import protocol
 
+T = TypeVar("T")
+
 # [SIL-2] Declarative Command ID Codec: Handles Bit 15 (Compression Flag)
-COMMAND_ID_CODEC: Final = BitStruct(
+COMMAND_ID_CODEC: Construct = BitStruct(
     "is_compressed" / Flag,
     "raw_id" / BitsInteger(15),
 )
@@ -57,29 +46,29 @@ COMMAND_ID_CODEC: Final = BitStruct(
 # [SIL-2] Declarative Frame Structure using Construct
 # This ensures big-endian encoding and automatic length/CRC validation.
 # We use ExprAdapter to cast EnumIntegerString to int for standard logging compatibility.
-RPC_FRAME_HEADER = Struct(
+RPC_FRAME_HEADER: Construct = Struct(
     "version" / Int8ub,
     "payload_len" / Int16ub,
     "command_id" / ExprAdapter(
         Enum(Int16ub, protocol.Command, protocol.Status),
-        decoder=lambda obj, ctx: int(obj),
-        encoder=lambda obj, ctx: obj
+        decoder=lambda obj, ctx: int(obj), # type: ignore
+        encoder=lambda obj, ctx: obj # type: ignore
     ),
     "sequence_id" / Int16ub,
-    Check(this.version == protocol.PROTOCOL_VERSION),
+    "version_check" / Check(lambda ctx: getattr(ctx, "version", 0) == protocol.PROTOCOL_VERSION), # type: ignore
 )
 
 
 # [SIL-2] Full Frame with Checksum (Sustitución Drástica)
 # Uses RawCopy to capture the bytes for CRC calculation without manual slicing.
-RPC_FRAME = Struct(
+RPC_FRAME: Construct = Struct(
     "header_payload" / RawCopy(Struct(
         "header" / RPC_FRAME_HEADER,
         "payload" / Bytes(this.header.payload_len),
     )),
     "crc" / Checksum(
         Int32ub,
-        lambda data: crc32(data) & 0xFFFFFFFF,
+        lambda data: crc32(data) & 0xFFFFFFFF, # type: ignore
         this.header_payload.data
     ),
 )
@@ -98,122 +87,54 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
     """
 
     command_id: int | protocol.Command | protocol.Status
-    sequence_id: int = 0
+    sequence_id: int
     payload: bytes = b""
 
     @property
     def is_compressed(self) -> bool:
-        """Return True if the frame command ID indicates RLE compression."""
-        # [SIL-2] Declarative flag extraction
-        try:
-            # Handle both Enum and int
-            if isinstance(self.command_id, (protocol.Command, protocol.Status)):
-                val = self.command_id.value
-            else:
-                val = self.command_id
-            return COMMAND_ID_CODEC.parse(Int16ub.build(val)).is_compressed
-        except Exception:
-            return False
+        """Check if the frame payload is compressed."""
+        res: Any = COMMAND_ID_CODEC.parse(Int16ub.build(int(self.command_id)))
+        return bool(res.is_compressed)
 
     @property
     def raw_command_id(self) -> int:
-        """Return the command ID without the compression flag."""
-        # [SIL-2] Declarative ID extraction
-        try:
-            if isinstance(self.command_id, (protocol.Command, protocol.Status)):
-                val = self.command_id.value
-            else:
-                val = self.command_id
-            return COMMAND_ID_CODEC.parse(Int16ub.build(val)).raw_id
-        except Exception:
-            if isinstance(self.command_id, (protocol.Command, protocol.Status)):
-                return self.command_id.value
-            return self.command_id
+        """Get the raw 15-bit command ID without the compression flag."""
+        res: Any = COMMAND_ID_CODEC.parse(Int16ub.build(int(self.command_id)))
+        return int(res.raw_id)
 
-    @staticmethod
-    def build_command_id(raw_id: int | protocol.Command | protocol.Status, is_compressed: bool = False) -> int:
-        """Declaratively build a command ID with flags."""
-        try:
-            val = raw_id.value if isinstance(raw_id, (protocol.Command, protocol.Status)) else raw_id
-            return Int16ub.parse(COMMAND_ID_CODEC.build({
-                "is_compressed": is_compressed,
-                "raw_id": val
-            }))
-        except Exception:
-            val = raw_id.value if isinstance(raw_id, (protocol.Command, protocol.Status)) else raw_id
-            return val | (protocol.CMD_FLAG_COMPRESSED if is_compressed else 0)
+    def build(self) -> bytes:
+        """Build the binary frame representation."""
+        return RPC_FRAME.build({
+            "header_payload": {
+                "header": {
+                    "version": protocol.PROTOCOL_VERSION,
+                    "payload_len": len(self.payload),
+                    "command_id": int(self.command_id),
+                    "sequence_id": self.sequence_id,
+                },
+                "payload": self.payload,
+            }
+        })
 
-    @staticmethod
-    def build(
-        command_id: int | protocol.Command | protocol.Status,
-        sequence_id: int = 0,
-        payload: bytes = b"",
-    ) -> bytes:
-        """Build a raw frame (header + payload + CRC) using Construct (Sustitución Drástica)."""
-        payload_len = len(payload)
-        if payload_len > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(f"Payload too large ({payload_len} bytes); max is {protocol.MAX_PAYLOAD_SIZE}")
-
-        # Validate integer range if it's not an Enum
-        if isinstance(command_id, (protocol.Command, protocol.Status)):
-            cmd_val = command_id.value
-        else:
-            cmd_val = command_id
-
-        if not 0 <= cmd_val <= protocol.UINT16_MAX:
-            raise ValueError(f"Command id {cmd_val} outside 16-bit range")
-        if not 0 <= sequence_id <= protocol.UINT16_MAX:
-            raise ValueError(f"Sequence id {sequence_id} outside 16-bit range")
-
-        try:
-            # Entire frame is built via Construct, including Checksum
-            # RawCopy requires the subconstruct value to be passed under the 'value' key during build.
-            return RPC_FRAME.build({
-                "header_payload": {
-                    "value": {
-                        "header": {
-                            "version": protocol.PROTOCOL_VERSION,
-                            "payload_len": payload_len,
-                            "command_id": command_id,
-                            "sequence_id": sequence_id
-                        },
-                        "payload": payload
-                    }
-                }
-            })
-        except Exception as e:
-            raise ValueError(f"Frame build failed: {e}") from e
-
-    @staticmethod
-    def parse(raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, int, bytes]:
-        """Parse a decoded frame and validate header, payload, and CRC using Construct."""
-        if len(raw_frame_buffer) < protocol.MIN_FRAME_SIZE:
-            raise ValueError(f"Incomplete frame: size {len(raw_frame_buffer)} < {protocol.MIN_FRAME_SIZE}")
-
-        try:
-            # Construct handles length validation, header parsing, AND CRC Checksum validation
-            obj = RPC_FRAME.parse(raw_frame_buffer)
-        except Exception as e:
-            # Maintain compatibility with tests expecting specific error messages
-            err_msg = str(e)
-            if "checksum mismatch" in err_msg.lower():
-                # Extract components for the legacy-style error message if possible
-                # Otherwise provide a generic CRC error
-                raise ValueError("CRC mismatch: verification failed via Construct Checksum") from e
-            if "stream read less than specified amount" in err_msg:
-                raise ValueError(f"Frame length mismatch: {err_msg}") from e
-            raise ValueError(f"Malformed frame: {e}") from e
-
-        # Access fields within the RawCopy 'value' container
-        res = obj.header_payload.value
-        return res.header.command_id, res.header.sequence_id, res.payload
-
-    def to_bytes(self) -> bytes:
-        """Serialize the instance using :meth:`build`."""
-        return self.build(self.command_id, self.sequence_id, self.payload)
+    @classmethod
+    def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
+        """Parse *raw_frame_buffer* and create a :class:`Frame`."""
+        obj: Any = RPC_FRAME.parse(raw_frame_buffer)
+        return cls(
+            command_id=int(obj.header_payload.header.command_id),
+            sequence_id=int(obj.header_payload.header.sequence_id),
+            payload=obj.header_payload.payload,
+        )
 
     @classmethod
     def from_bytes(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
-        """Parse *raw_frame_buffer* and create a :class:`Frame`."""
-        command_id, sequence_id, payload = cls.parse(raw_frame_buffer)
-        return cls(command_id=command_id, sequence_id=sequence_id, payload=payload)
+        """Compatibility alias for parse()."""
+        return cls.parse(raw_frame_buffer)
+
+    @classmethod
+    def build_command_id(cls, command_id: int, is_compressed: bool) -> int:
+        """Build a 16-bit command ID with the compression flag."""
+        return Int16ub.parse(COMMAND_ID_CODEC.build({
+            "is_compressed": is_compressed,
+            "raw_id": command_id & 0x7FFF,
+        }))

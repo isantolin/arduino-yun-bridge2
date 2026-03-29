@@ -51,6 +51,11 @@ class SerialTransport:
     STATE_NEGOTIATING: Final[str] = "negotiating"
     STATE_CONNECTED: Final[str] = "connected"
 
+    # FSM Method Stubs for static analysis (provided by transitions.Machine)
+    def begin_negotiate(self) -> None: ...
+    def mark_connected(self) -> None: ...
+    def mark_disconnected(self) -> None: ...
+
     def __init__(
         self,
         config: RuntimeConfig,
@@ -168,9 +173,10 @@ class SerialTransport:
                 baudrate=connect_baud,
                 xonxoff=False,
             )
-            self.state.serial_writer = self.writer
+            # Use cast to satisfy pyright that StreamWriter is a BaseTransport (it is in asyncio)
+            self.state.serial_writer = cast(asyncio.BaseTransport, self.writer)
 
-            reader = cast(asyncio.StreamReader, self.reader)
+            reader = self.reader
             # Start reader loop
             read_task = loop.create_task(self._read_loop(reader))
 
@@ -280,7 +286,8 @@ class SerialTransport:
         packet_bytes = encoded_packet if isinstance(encoded_packet, bytes) else encoded_packet.tobytes()
 
         try:
-            cmd_id, seq_id, payload = Frame.parse(cobs_decode(packet_bytes))
+            frame = Frame.parse(cobs_decode(packet_bytes))
+            cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
             if logger.isEnabledFor(logging.DEBUG):
                 log_binary_traffic(logger, logging.DEBUG, "MCU -> SERIAL", "RAW", packet_bytes, sequence_id=seq_id)
@@ -322,8 +329,8 @@ class SerialTransport:
                 self._tx_sequence_id = (self._tx_sequence_id + 1) & 0xFFFF
                 seq = self._tx_sequence_id
 
-            raw_frame = Frame.build(cmd, seq, pl)
-            encoded = cobs_encode(raw_frame) + protocol.FRAME_DELIMITER
+            frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)
+            encoded = cobs_encode(frame.build()) + protocol.FRAME_DELIMITER
 
             if logger.isEnabledFor(logging.DEBUG):
                 log_binary_traffic(logger, logging.DEBUG, "SERIAL -> MCU", "RAW", encoded, sequence_id=seq)

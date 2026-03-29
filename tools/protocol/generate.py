@@ -640,6 +640,18 @@ def main(
         gen.generate_python_client(spec, py_client)
         sys.stderr.write(f"Generated {py_client}\n")
 
+    # Step 3: Generate type stubs for untyped libraries using pyright
+    untyped_libs = ["transitions", "persistqueue"]
+    sys.stderr.write(f"Generating type stubs for {', '.join(untyped_libs)}...\n")
+    for lib in untyped_libs:
+        stub_cmd = [sys.executable, "-m", "pyright", "--createstub", lib]
+        try:
+            # We use subprocess.run to allow failure if pyright is not available, 
+            # but log a warning.
+            subprocess.run(stub_cmd, check=False, capture_output=True)
+        except Exception as e:
+            sys.stderr.write(f"Warning: Failed to generate stubs for {lib}: {e}\n")
+
 
 if __name__ == "__main__":
     app()

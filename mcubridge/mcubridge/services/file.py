@@ -7,9 +7,8 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 
-import sh
 from aiomqtt.message import Message
 
 from mcubridge.protocol import protocol
@@ -495,10 +494,11 @@ class FileComponent(BaseComponent):
     async def _refresh_storage_usage(self) -> None:
         # [SIL-2] Delegate recursive disk usage to the 'du' system command via 'sh'
         # This is much faster and more reliable than manual os.scandir loops.
+        import sh
         try:
             root = self.config.file_system_root
-            output = await asyncio.to_thread(sh.du, "-sb", root)
+            output = await asyncio.to_thread(cast(Any, sh).du, "-sb", root)
             usage = int(str(output).split()[0])
             self.state.file_storage_bytes_used = usage
-        except (sh.ErrorReturnCode, ValueError, IndexError, OSError):
+        except (Exception, ValueError, IndexError, OSError):
             self.state.file_storage_bytes_used = 0

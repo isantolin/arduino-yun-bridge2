@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcubridge"
-version = "2.8.4"
+version = "2.8.5"
 description = "Arduino MCU Bridge Protocol for OpenWrt (Python 3.13)"
 requires-python = ">=3.13"
 dependencies = [
@@ -45,26 +45,24 @@ asyncio_default_fixture_loop_scope = "function"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["mcubridge/tests"]
-pythonpath = ["stubs", ".", "mcubridge"]
+pythonpath = ["typings", ".", "mcubridge"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*"]
 markers = ["fuzz: mark a test as a fuzz test"]
 
 [tool.pyright]
 typeCheckingMode = "strict"
 pythonVersion = "3.13"
-stubPath = "stubs"
-extraPaths = ["mcubridge"]
+stubPath = "typings"
+extraPaths = ["mcubridge", "mcubridge/stubs"]
 include = [
     "mcubridge/mcubridge",
     "mcubridge-client-examples/mcubridge_client",
-    "mcubridge/scripts",
-    "stubs"
+    "mcubridge/scripts"
 ]
 strict = [
     "mcubridge/mcubridge",
     "mcubridge-client-examples/mcubridge_client",
-    "mcubridge/scripts",
-    "stubs"
+    "mcubridge/scripts"
 ]
 exclude = [
     "openwrt-sdk",
@@ -82,7 +80,7 @@ reportMissingTypeStubs = true
 [tool.ruff]
 target-version = "py313"
 line-length = 120
-exclude = ["*_pb2.py", "*_pb2.pyi"]
+exclude = ["*_pb2.py", "*_pb2.pyi", "typings"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "A", "PLW"]

@@ -1,32 +1,23 @@
-"""
-RLE (Run-Length Encoding) implementation for MCU Bridge protocol.
+"""Run-Length Encoding (RLE) logic for MCU Bridge RPC communication.
 
-Simple compression optimized for embedded systems with minimal RAM.
-Uses escape-based encoding compatible with the C++ implementation.
+This module implements a simple but efficient RLE compression/decompression
+algorithm designed for low-memory microcontrollers (SIL-2).
 
 Format:
-  - Literal byte (not 0xFF): output as-is
-  - Escape sequence (0xFF): followed by count byte, then repeated byte
-    - count 0-254: run length = count + 2 (so 2-256 bytes)
-    - count 255: special marker meaning exactly 1 byte (for single 0xFF)
-
-Examples:
-  0xFF 0x03 0x41 = 'A' repeated 5 times (3+2)
-  0xFF 0xFF 0xFF = single 0xFF byte (special case)
-  0xFF 0x00 0xFF = two 0xFF bytes
-
-Only encodes runs of 4+ identical bytes (break-even at 3).
+- Escape Byte (0xFD)
+- Count-2 (1 byte): How many times the value is repeated (beyond the first 2).
+- Value (1 byte): The byte value being repeated.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Final, Any, cast
-
+from typing import Any
 import msgspec
 from construct import (
     Check,
     Const,
+    Construct,
     ExprAdapter,
     FocusedSeq,
     GreedyRange,
@@ -34,13 +25,12 @@ from construct import (
     Select,
     Struct,
     Terminated,
-    this,
 )
 
 from . import protocol
 
 # [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
-RLE_ESCAPE: Final = Struct(
+RLE_ESCAPE: Construct = Struct(
     "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),
     "count_m2" / Int8ub,
     "value" / Int8ub,
@@ -48,33 +38,84 @@ RLE_ESCAPE: Final = Struct(
 
 # [SIL-2] Declarative RLE Decoder: Greedy selection between escape sequences and literals
 # It is wrapped in a Struct with Terminated to guarantee complete consumption or raise an error.
-RLE_DECODER: Final = Struct(
+RLE_DECODER: Construct = Struct(
     "chunks" / GreedyRange(
         Select(
             ExprAdapter(
                 RLE_ESCAPE,
-                decoder=lambda obj, ctx: bytes([cast(Any, obj).value])
+                decoder=lambda obj, ctx: bytes([obj.value]) # type: ignore
                 * (
                     1
-                    if cast(Any, obj).count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER
-                    else cast(Any, obj).count_m2 + protocol.RLE_OFFSET
+                    if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER # type: ignore
+                    else int(obj.count_m2) + protocol.RLE_OFFSET # type: ignore
                 ),
-                encoder=lambda obj, ctx: None,
+                encoder=lambda obj, ctx: None, # type: ignore
             ),
             # Literal byte (MUST NOT be the escape byte)
             ExprAdapter(
                 FocusedSeq(
                     "value",
                     "value" / Int8ub,
-                    "_" / Check(this.value != protocol.RLE_ESCAPE_BYTE)
+                    "_" / Check(lambda ctx: ctx.value != protocol.RLE_ESCAPE_BYTE) # type: ignore
                 ),
-                decoder=lambda obj, ctx: bytes([obj]),
-                encoder=lambda obj, ctx: obj[0],
+                decoder=lambda obj, ctx: bytes([obj]), # type: ignore
+                encoder=lambda obj, ctx: obj[0], # type: ignore
             ),
         )
     ),
     Terminated,
 )
+
+
+def should_compress(payload: bytes) -> bool:
+    """Check if a payload should be RLE compressed."""
+    if len(payload) < protocol.RLE_MIN_COMPRESS_INPUT_SIZE:
+        return False
+    # Simple heuristic: at least one sequence of 3+ bytes or many escape bytes
+    pattern = re.compile(rb"(.)\1{2,}")
+    return bool(pattern.search(payload))
+
+
+def encode(uncompressed: bytes) -> bytes:
+    """Compress data using optimized regex pattern matching (SIL-2)."""
+    if not uncompressed:
+        return b""
+
+    # [SIL-2] Pattern: Any byte repeated 3+ times, or the escape byte itself
+    # We cap at 257 repetitions per chunk (Count-2 = 255)
+    pattern = re.compile(
+        rb"(.)\1{2,256}|" + re.escape(bytes([protocol.RLE_ESCAPE_BYTE]))
+    )
+    compressed = bytearray()
+    last_pos = 0
+
+    for match in pattern.finditer(uncompressed):
+        # 1. Append literal segment before the match
+        compressed.extend(uncompressed[last_pos : match.start()])
+
+        # 2. Append RLE chunk
+        chunk = match.group(0)
+        if len(chunk) == 1:
+            # Single escape byte literal
+            compressed.extend(
+                RLE_ESCAPE.build({
+                    "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,
+                    "value": protocol.RLE_ESCAPE_BYTE,
+                })
+            )
+        else:
+            # Repeated sequence
+            compressed.extend(
+                RLE_ESCAPE.build({
+                    "count_m2": len(chunk) - protocol.RLE_OFFSET,
+                    "value": chunk[0],
+                })
+            )
+        last_pos = match.end()
+
+    # 3. Append remaining literal tail
+    compressed.extend(uncompressed[last_pos:])
+    return bytes(compressed)
 
 
 class RLEPayload(msgspec.Struct, frozen=True):
@@ -83,121 +124,17 @@ class RLEPayload(msgspec.Struct, frozen=True):
     data: bytes
 
     @classmethod
-    def from_uncompressed(cls, data: bytes | bytearray | memoryview) -> "RLEPayload":
-        """Create an RLEPayload by compressing the input data."""
-        return cls(data=encode(data))
+    def from_uncompressed(cls, uncompressed: bytes) -> "RLEPayload":
+        """Factory to create RLEPayload from raw bytes."""
+        return cls(data=encode(uncompressed))
 
-    def decompress(self) -> bytes:
-        """Decompress the encapsulated data."""
-        return decode(self.data)
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-
-def encode(data: bytes | bytearray | memoryview) -> bytes:
-    """Encode data using RLE with zero-copy memoryview and Construct delegation."""
-    if not data:
-        return b""
-
-    # [SIL-2] Use memoryview for zero-copy scanning
-    view = memoryview(data)
-    result = bytearray()
-    last_end = 0
-
-    # Pattern matches runs of 4-256 same bytes OR any sequence of RLE_ESCAPE_BYTE
-    escape_byte = bytes([protocol.RLE_ESCAPE_BYTE])
-    escape_pattern = re.escape(escape_byte)
-    pattern = re.compile(
-        b"(.)\\1{"
-        + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode()
-        + b","
-        + str(protocol.RLE_MAX_RUN_LENGTH - 1).encode()
-        + b"}|"
-        + escape_pattern
-        + b"+"
-    )
-
-    # [SIL-2] finditer on memoryview avoids data duplication
-    for m in pattern.finditer(view):
-        start, end = m.span()
-        result.extend(view[last_end:start])  # Literal gap
-
-        chunk = m.group(0)
-        char = chunk[0]
-        length = len(chunk)
-
-        if char == protocol.RLE_ESCAPE_BYTE:
-            # All 0xFF must be escaped. Split into chunks of 256 if needed.
-            for i in range(0, length, protocol.RLE_MAX_RUN_LENGTH):
-                chunk_len = min(length - i, protocol.RLE_MAX_RUN_LENGTH)
-                # [SIL-2] Direct library delegation for token building
-                result.extend(
-                    RLE_ESCAPE.build(
-                        dict(
-                            escape=protocol.RLE_ESCAPE_BYTE,
-                            count_m2=(
-                                protocol.RLE_SINGLE_ESCAPE_MARKER
-                                if chunk_len == 1
-                                else chunk_len - protocol.RLE_OFFSET
-                            ),
-                            value=protocol.RLE_ESCAPE_BYTE,
-                        )
-                    )
-                )
-        else:
-            # Non-ESCAPE_BYTE run of 4+ bytes
-            result.extend(
-                RLE_ESCAPE.build(
-                    dict(
-                        escape=protocol.RLE_ESCAPE_BYTE,
-                        count_m2=length - protocol.RLE_OFFSET,
-                        value=char,
-                    )
-                )
-            )
-        last_end = end
-
-    result.extend(view[last_end:])
-    return bytes(result)
-
-
-def decode(data: bytes | bytearray | memoryview) -> bytes:
-    """Decode RLE data using a fully declarative Construct decoder (Sustitución Drástica)."""
-    if not data:
-        return b""
-
-    try:
-        # Construct returns a Container with a 'chunks' list of byte chunks
-        parsed: Any = RLE_DECODER.parse(data)
-        return b"".join(parsed.chunks)
-    except Exception as e:
-        # SIL-2: Deterministic error reporting for malformed streams
-        raise ValueError(f"Malformed RLE stream: {e}") from e
-
-
-def should_compress(data: bytes | bytearray | memoryview) -> bool:
-    """Heuristic to decide if compression is beneficial using regex."""
-    if len(data) < protocol.RLE_MIN_COMPRESS_INPUT_SIZE:
-        return False
-
-    data_bytes = bytes(data)
-    # Savings from runs of non-ESCAPE_BYTE bytes (N bytes become EXPANSION_FACTOR)
-    pattern = re.compile(
-        b"([^"
-        + re.escape(bytes([protocol.RLE_ESCAPE_BYTE]))
-        + b"])\\1{"
-        + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode()
-        + b",}"
-    )
-    savings = sum(len(m.group(0)) - protocol.RLE_EXPANSION_FACTOR for m in pattern.finditer(data_bytes))
-
-    # Penalty for ESCAPE_BYTE (each ESCAPE_BYTE costs RLE_OFFSET extra bytes)
-    penalty = data_bytes.count(protocol.RLE_ESCAPE_BYTE) * protocol.RLE_OFFSET
-
-    return savings > penalty + protocol.RLE_MIN_COMPRESS_SAVINGS
-
-
-def compression_ratio(original: bytes, compressed: bytes) -> float:
-    """Calculate compression ratio. Ratio > 1 indicates compression."""
-    return len(original) / len(compressed) if compressed else 0.0
+    def decode(self) -> bytes:
+        """Decompress data using declarative Construct decoder."""
+        if not self.data:
+            return b""
+        try:
+            parsed: Any = RLE_DECODER.parse(self.data)
+            return b"".join(parsed.chunks)
+        except Exception as e:
+            # Fallback or raise for protocol integrity
+            raise ValueError(f"RLE decompression failed: {e}") from e

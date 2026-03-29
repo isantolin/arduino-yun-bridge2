@@ -797,7 +797,6 @@ bool BridgeClass::_sendFrame(uint16_t command_id, uint16_t sequence_id, etl::spa
 }
 
 bool BridgeClass::_isHandshakeCommand(uint16_t cmd) const { return (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_STATUS_CODE_MAX) || (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN && cmd <= rpc::RPC_SYSTEM_COMMAND_MAX); }
-bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const { return _rx_history.contains(frame.header.sequence_id); }
 void BridgeClass::_markRxProcessed(const rpc::Frame& frame) { _rx_history.push(frame.header.sequence_id); }
 
 etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Frame& org, rpc::Frame& eff) {
@@ -818,15 +817,6 @@ void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce, etl::span
   sha256.finalizeHMAC(handshake_key.data(), handshake_key.size(), full_tag.data(), full_tag.size());
   etl::copy_n(full_tag.begin(), etl::min(full_tag.size(), out_tag.size()), out_tag.begin());
   rpc::security::secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size())); rpc::security::secure_zero(etl::span<uint8_t>(full_tag.data(), full_tag.size()));
-}
-
-void BridgeClass::_applyTimingConfig(etl::span<const uint8_t> payload) {
-  rpc::payload::HandshakeConfig msg = {}; pb_istream_t stream = pb_istream_from_buffer(payload.data(), payload.size());
-  if (pb_decode(&stream, rpc::Payload::Descriptor<rpc::payload::HandshakeConfig>::fields(), &msg)) {
-    if (msg.ack_timeout_ms > 0) { _ack_timeout_ms = msg.ack_timeout_ms; _timers.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms); }
-    if (msg.ack_retry_limit > 0) _ack_retry_limit = msg.ack_retry_limit;
-    if (msg.response_timeout_ms > 0) _response_timeout_ms = msg.response_timeout_ms;
-  }
 }
 
 #ifndef BRIDGE_TEST_NO_GLOBALS

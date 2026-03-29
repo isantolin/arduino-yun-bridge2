@@ -16,8 +16,8 @@ import ctypes
 import hashlib
 import hmac
 import secrets
-from typing import Final
-from construct import Bytes, Int64ub, Struct
+from typing import Final, cast
+from construct import Bytes, Int64ub, Struct, Construct
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.constant_time import bytes_eq
@@ -31,10 +31,10 @@ NONCE_COUNTER_BYTES: Final[int] = protocol.HANDSHAKE_NONCE_COUNTER_BYTES
 NONCE_TOTAL_BYTES: Final[int] = NONCE_RANDOM_BYTES + NONCE_COUNTER_BYTES
 
 # [SIL-2] Declarative Nonce Structure
-NONCE_STRUCT: Final = Struct(
-    "random" / Bytes(NONCE_RANDOM_BYTES),
-    "counter" / Int64ub,
-)
+NONCE_STRUCT: Final = cast(Construct, Struct(
+    cast(Construct, "random" / Bytes(NONCE_RANDOM_BYTES)),
+    cast(Construct, "counter" / Int64ub),
+))
 
 
 def hkdf_sha256(ikm: bytes, salt: bytes, info: bytes, length: int) -> bytes:

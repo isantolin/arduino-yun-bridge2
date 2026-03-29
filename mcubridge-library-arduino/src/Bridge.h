@@ -155,9 +155,6 @@ class BridgeClass
   bool isIdle() const { return _fsm.isIdle(); }
   bool isFault() const { return _fsm.isFault(); }
 
-  void sendXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF, 0); }
-  void sendXon() { (void)sendFrame(rpc::CommandId::CMD_XON, 0); }
-
   void enterSafeState();
   void forceSafeState();
   void emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
@@ -175,16 +172,6 @@ class BridgeClass
 
   [[nodiscard]] bool sendFrame(rpc::StatusCode status_code, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
   [[nodiscard]] bool sendFrame(rpc::CommandId command_id, uint16_t sequence_id = 0, etl::span<const uint8_t> payload = {});
-  [[nodiscard]] bool sendChunkyFrame(rpc::CommandId command_id, uint16_t sequence_id, etl::span<const uint8_t> header, etl::span<const uint8_t> data) {
-    const size_t h_len = etl::min(header.size(), rpc::MAX_PAYLOAD_SIZE);
-    const size_t d_len = etl::min(data.size(), rpc::MAX_PAYLOAD_SIZE - h_len);
-    
-    if (h_len > 0) etl::copy_n(header.data(), h_len, etl::begin(_transient_buffer));
-    if (d_len > 0) {
-        etl::copy_n(data.data(), d_len, etl::begin(_transient_buffer) + h_len);
-    }
-    return sendFrame(command_id, sequence_id, etl::span<const uint8_t>(_transient_buffer.data(), h_len + d_len));
-  }
 
   template <typename T>
   bool sendPbCommand(rpc::CommandId command_id, uint16_t sequence_id, const T& msg) {
@@ -289,7 +276,6 @@ class BridgeClass
   void _handleProcessPollResp(const bridge::router::CommandContext& ctx);
 
   void _markRxProcessed(const rpc::Frame& frame);
-  bool _isRecentDuplicateRx(const rpc::Frame& frame) const;
   void _dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id);
   void _sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);
   void _handleReceivedFrame(etl::span<const uint8_t> decoded_payload);
@@ -372,7 +358,6 @@ class BridgeClass
   void _sendAckAndFlush(uint16_t command_id, uint16_t sequence_id);
   void _sendError(rpc::StatusCode status, uint16_t command_id = 0, uint16_t sequence_id = 0);
   void _computeHandshakeTag(etl::span<const uint8_t> nonce, etl::span<uint8_t> out_tag);
-  void _applyTimingConfig(etl::span<const uint8_t> payload);
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
   void _clearAckState();

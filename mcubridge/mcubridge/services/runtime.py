@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Coroutine
-from typing import Any
+from typing import Any, cast
 
 import msgspec
 import svcs
@@ -100,14 +100,15 @@ class BridgeService:
         self._system = SystemComponent(config, state, self)
 
         self._registry = svcs.Registry()
-        self._registry.register_value(_console_mod.ConsoleComponent, self._console)
-        self._registry.register_value(_datastore_mod.DatastoreComponent, self._datastore)
-        self._registry.register_value(_file_mod.FileComponent, self._file)
-        self._registry.register_value(_mailbox_mod.MailboxComponent, self._mailbox)
-        self._registry.register_value(_pin_mod.PinComponent, self._pin)
-        self._registry.register_value(_process_mod.ProcessComponent, self._process)
-        self._registry.register_value(_spi_mod.SpiComponent, self._spi)
-        self._registry.register_value(_system_mod.SystemComponent, self._system)
+        reg = cast(Any, self._registry)
+        reg.register_value(_console_mod.ConsoleComponent, self._console)
+        reg.register_value(_datastore_mod.DatastoreComponent, self._datastore)
+        reg.register_value(_file_mod.FileComponent, self._file)
+        reg.register_value(_mailbox_mod.MailboxComponent, self._mailbox)
+        reg.register_value(_pin_mod.PinComponent, self._pin)
+        reg.register_value(_process_mod.ProcessComponent, self._process)
+        reg.register_value(_spi_mod.SpiComponent, self._spi)
+        reg.register_value(_system_mod.SystemComponent, self._system)
         self._container = svcs.Container(self._registry)
 
         self._handshake = SerialHandshakeManager(
@@ -116,7 +117,7 @@ class BridgeService:
             serial_timing=self._serial_timing,
             send_frame=self.send_frame,
             enqueue_mqtt=self.enqueue_mqtt,
-            acknowledge_frame=self._acknowledge_mcu_frame,
+            acknowledge_frame=self.acknowledge_mcu_frame,
             logger_=logger,
         )
 
@@ -138,7 +139,7 @@ class BridgeService:
             mqtt_router=MQTTRouter(),
             state=state,
             send_frame=self.send_frame,
-            acknowledge_frame=self._acknowledge_mcu_frame,
+            acknowledge_frame=self.acknowledge_mcu_frame,
             is_topic_action_allowed=self._is_topic_action_allowed,
             reject_topic_action=self._reject_topic_action,
             publish_bridge_snapshot=self._publish_bridge_snapshot,
@@ -382,7 +383,7 @@ class BridgeService:
             detail=detail,
         )
 
-    async def _acknowledge_mcu_frame(
+    async def acknowledge_mcu_frame(
         self,
         command_id: int,
         seq_id: int,

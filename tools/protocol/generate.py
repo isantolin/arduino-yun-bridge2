@@ -646,7 +646,7 @@ def main(
     for lib in untyped_libs:
         stub_cmd = [sys.executable, "-m", "pyright", "--createstub", lib]
         try:
-            # We use subprocess.run to allow failure if pyright is not available, 
+            # We use subprocess.run to allow failure if pyright is not available,
             # but log a warning.
             subprocess.run(stub_cmd, check=False, capture_output=True)
         except Exception as e:

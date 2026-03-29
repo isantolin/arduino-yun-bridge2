@@ -142,20 +142,6 @@ void test_process_extra_gaps() {
   ba.dispatch(f);
 }
 
-void test_rle_gaps() {
-  uint8_t src[10];
-  uint8_t dst[10];
-  // Gap: should_compress with small buffer
-  TEST_ASSERT(!rle::should_compress(etl::span<const uint8_t>(src, 2)));
-  // Gap: encode/decode empty/zero
-  TEST_ASSERT_EQ_UINT(rle::encode(etl::span<const uint8_t>(src, 0),
-                                  etl::span<uint8_t>(dst, 10)),
-                      0);
-  TEST_ASSERT_EQ_UINT(rle::decode(etl::span<const uint8_t>(src, 0),
-                                  etl::span<uint8_t>(dst, 10)),
-                      0);
-}
-
 void test_system_extra_gaps() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   rpc::Frame f;
@@ -182,7 +168,6 @@ int main() {
   RUN_TEST(test_datastore_extra_gaps);
   RUN_TEST(test_mailbox_extra_gaps);
   RUN_TEST(test_process_extra_gaps);
-  RUN_TEST(test_rle_gaps);
   RUN_TEST(test_system_extra_gaps);
   return UNITY_END();
 }

@@ -1,6 +1,6 @@
 """High-level manual stub for Construct."""
 from __future__ import annotations
-from typing import Any, Optional, Union, Callable
+from typing import Any
 
 class Construct:
     def parse(self, data: bytes | bytearray | memoryview, **contextkw: Any) -> Any: ...
@@ -10,7 +10,7 @@ class Construct:
     def __rtruediv__(self, other: str) -> Construct: ...
     def __getattr__(self, name: str) -> Any: ...
 
-# We define these as Any to allow both callability and operator support 
+# We define these as Any to allow both callability and operator support
 # (which Pyright sometimes struggles with in complex overloads)
 Struct: Any
 BitStruct: Any

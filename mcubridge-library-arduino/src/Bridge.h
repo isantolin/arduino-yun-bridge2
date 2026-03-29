@@ -155,6 +155,9 @@ class BridgeClass
   bool isIdle() const { return _fsm.isIdle(); }
   bool isFault() const { return _fsm.isFault(); }
 
+  void sendXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF, 0); }
+  void sendXon() { (void)sendFrame(rpc::CommandId::CMD_XON, 0); }
+
   void enterSafeState();
   void forceSafeState();
   void emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
@@ -235,6 +238,7 @@ class BridgeClass
   void _handleEnterBootloader(const bridge::router::CommandContext& ctx);
   void _handleLinkSync(const bridge::router::CommandContext& ctx);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);
+  void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
   void _handleSetPinMode(const bridge::router::CommandContext& ctx);
   void _handleDigitalWrite(const bridge::router::CommandContext& ctx);
   void _handleAnalogWrite(const bridge::router::CommandContext& ctx);

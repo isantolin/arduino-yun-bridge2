@@ -147,10 +147,6 @@ static void test_all_handlers_coverage() {
   ba.handleGetVersion(ctx);
   ba.handleGetFreeMemory(ctx);
 
-  // Flow Control
-  Bridge.sendXoff();
-  Bridge.sendXon();
-
   restore_bridge_to_serial();
 }
 

@@ -1,6 +1,6 @@
 """Manual stub for OpenWrt UCI."""
 from __future__ import annotations
-from typing import Any, dict, Optional
+from typing import Any, Optional
 from types import TracebackType
 
 class Uci:

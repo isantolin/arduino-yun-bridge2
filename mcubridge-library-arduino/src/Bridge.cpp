@@ -507,10 +507,20 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
-  _withAck(ctx, [this, &ctx]() {
+  _withPayload<rpc::payload::HandshakeConfig>(ctx, [this, &ctx](const rpc::payload::HandshakeConfig& msg) {
+    _applyTimingConfig(msg);
     enterSafeState();
     (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
   });
+}
+
+void BridgeClass::_applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
+  if (msg.ack_timeout_ms > 0) {
+    _ack_timeout_ms = msg.ack_timeout_ms;
+    _timers.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
+  }
+  if (msg.ack_retry_limit > 0) _ack_retry_limit = msg.ack_retry_limit;
+  if (msg.response_timeout_ms > 0) _response_timeout_ms = msg.response_timeout_ms;
 }
 
 void BridgeClass::_handleGetCapabilities(const bridge::router::CommandContext& ctx) {

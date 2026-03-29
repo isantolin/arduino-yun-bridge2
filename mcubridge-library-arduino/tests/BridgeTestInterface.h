@@ -41,7 +41,7 @@ class TestAccessor {
   void setAckTimeoutMs(uint16_t ms) { _bridge._ack_timeout_ms = ms; }
   uint8_t getAckRetryLimit() const { return _bridge._ack_retry_limit; }
   void markRxProcessed(const rpc::Frame& f) { _bridge._markRxProcessed(f); }
-  bool isRecentDuplicateRx(const rpc::Frame& f) const { return _bridge._isRecentDuplicateRx(f); }
+  bool isRecentDuplicateRx(const rpc::Frame& f) const { return _bridge._rx_history.contains(f.header.sequence_id); }
   void clearSharedSecret() { _bridge._shared_secret.clear(); }
   void fsmHandshakeComplete() { _bridge._fsm.handshakeComplete(); }
   void fsmSendCritical() { _bridge._fsm.sendCritical(); }
@@ -73,7 +73,11 @@ class TestAccessor {
   void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
 
   void applyTimingConfig(const uint8_t* data, size_t len) {
-    _bridge._applyTimingConfig(etl::span<const uint8_t>(data, len));
+    rpc::payload::HandshakeConfig msg = {};
+    pb_istream_t stream = pb_istream_from_buffer(data, len);
+    if (pb_decode(&stream, rpc::Payload::Descriptor<rpc::payload::HandshakeConfig>::fields(), &msg)) {
+      _bridge._applyTimingConfig(msg);
+    }
   }
 
   void setLastParseError(rpc::FrameError err) { _bridge._last_parse_error = err; }

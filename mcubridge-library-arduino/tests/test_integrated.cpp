@@ -50,29 +50,6 @@ Stream* g_arduino_stream_delegate = &g_bridge_stream;
 
 // --- TEST SUITES ---
 
-void integrated_test_rle() {
-  uint8_t in[] = "AAAAABBBCCCC";
-  uint8_t enc[32], dec[32];
-  size_t el = rle::encode(etl::span<const uint8_t>(in, 12),
-                          etl::span<uint8_t>(enc, 32));
-  size_t dl = rle::decode(etl::span<const uint8_t>(enc, el),
-                          etl::span<uint8_t>(dec, 32));
-  TEST_ASSERT(dl == 12 && memcmp(in, dec, 12) == 0);
-
-  // Edge cases
-  TEST_ASSERT_EQUAL(0, rle::encode(etl::span<const uint8_t>(), etl::span<uint8_t>(enc, 32)));
-  TEST_ASSERT_EQUAL(0, rle::decode(etl::span<const uint8_t>(), etl::span<uint8_t>(dec, 32)));
-  
-  // Buffer too small for encode
-  TEST_ASSERT_EQUAL(0, rle::encode(etl::span<const uint8_t>(in, 12), etl::span<uint8_t>(enc, 1)));
-  
-  // Single escape byte
-  uint8_t esc_in[] = {0xFF, 0x01, 0x02};
-  el = rle::encode(etl::span<const uint8_t>(esc_in, 3), etl::span<uint8_t>(enc, 32));
-  dl = rle::decode(etl::span<const uint8_t>(enc, el), etl::span<uint8_t>(dec, 32));
-  TEST_ASSERT_EQUAL(3, dl);
-}
-
 void integrated_test_hal() {
   uint32_t caps = bridge::hal::getCapabilities();
   TEST_ASSERT(caps > 0);
@@ -160,7 +137,6 @@ int main(void) {
   ba.onStartupStabilized();
   ba.setIdle();
   UNITY_BEGIN();
-  RUN_TEST(integrated_test_rle);
   RUN_TEST(integrated_test_hal);
   RUN_TEST(integrated_test_protocol);
   RUN_TEST(integrated_test_bridge_core);

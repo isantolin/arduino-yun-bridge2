@@ -208,7 +208,7 @@ def test_handle_set_baudrate_resp_calls_callback(runtime_config, runtime_state):
         component = SystemComponent(runtime_config, runtime_state, ctx)
 
         cb = AsyncMock()
-        ctx.on_baudrate_change_ack = cb  # type: ignore
+        ctx.on_baudrate_change_ack = cb
 
         await component.handle_set_baudrate_resp(0, b"")
 

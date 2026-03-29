@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
+import inspect
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -54,7 +55,7 @@ class ProcessComponent(BaseComponent):
         state: RuntimeState,
         service: BridgeService,
     ) -> None:
-        super().__init__(config, state, service)  # type: ignore
+        super().__init__(config, state, service)
         self.service = service
 
         # [SIL-2] Ensure numeric limit for semaphore
@@ -203,7 +204,7 @@ class ProcessComponent(BaseComponent):
             command = packet.command
 
             if not command:
-                await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
+                await self.service._acknowledge_mcu_frame(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     status=Status.MALFORMED,
                 )
@@ -212,7 +213,7 @@ class ProcessComponent(BaseComponent):
             # 2. Policy check
             if not self.state.allowed_policy.is_allowed(command):
                 logger.warning("Process execution denied by policy: %s", command)
-                await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
+                await self.service._acknowledge_mcu_frame(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     status=Status.ERROR,
                 )
@@ -221,7 +222,7 @@ class ProcessComponent(BaseComponent):
             # 3. Execution
             pid = await self.run_async(command)
             if pid > 0:
-                await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
+                await self.service._acknowledge_mcu_frame(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     status=Status.OK,
                 )
@@ -230,12 +231,12 @@ class ProcessComponent(BaseComponent):
                     protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value, resp,
                 )
             else:
-                await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
+                await self.service._acknowledge_mcu_frame(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     status=Status.ERROR,
                 )
         except (msgspec.ValidationError, ValueError, AttributeError):
-            await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
+            await self.service._acknowledge_mcu_frame(
                 protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                 status=Status.MALFORMED,
             )
@@ -247,7 +248,7 @@ class ProcessComponent(BaseComponent):
             pid = packet.pid
 
             batch = await self.poll_process(pid)
-            await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
+            await self.service._acknowledge_mcu_frame(
                 protocol.Command.CMD_PROCESS_POLL.value,
                 status=Status.OK,
             )
@@ -261,7 +262,7 @@ class ProcessComponent(BaseComponent):
                 protocol.Command.CMD_PROCESS_POLL_RESP.value, resp,
             )
         except (msgspec.ValidationError, ValueError, AttributeError):
-            await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
+            await self.service._acknowledge_mcu_frame(
                 protocol.Command.CMD_PROCESS_POLL.value,
                 status=Status.MALFORMED,
             )
@@ -274,14 +275,14 @@ class ProcessComponent(BaseComponent):
 
             success = await self.stop_process(pid)
             if send_ack:
-                await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
+                await self.service._acknowledge_mcu_frame(
                     protocol.Command.CMD_PROCESS_KILL.value,
                     status=Status.OK if success else Status.ERROR,
                 )
             return success
         except (msgspec.ValidationError, ValueError, AttributeError):
             if send_ack:
-                await self.service._acknowledge_mcu_frame(  # type: ignore[reportPrivateUsage]
+                await self.service._acknowledge_mcu_frame(
                     protocol.Command.CMD_PROCESS_KILL.value,
                     status=Status.MALFORMED,
                 )
@@ -401,29 +402,57 @@ class ProcessComponent(BaseComponent):
             proc_entry = self.state.running_processes.get(pid)
             if not proc_entry or not proc_entry.handle:
                 return False
+            handle = proc_entry.handle
 
+        try:
+            # [SIL-2] Use psutil to kill the entire process tree reliably
+            parent = psutil.Process(handle.pid)
+            procs = parent.children(recursive=True) + [parent]
+
+            for p in procs:
+                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                    p.terminate()
+
+            # [SIL-2] Unified wait and force-kill delegation
+            _, alive = psutil.wait_procs(procs, timeout=0.5)
+            for p in alive:
+                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                    logger.warning("Force killing zombie child process %d", p.pid)
+                    p.kill()
+
+            with contextlib.suppress(ProcessLookupError, OSError, RuntimeError, AttributeError):
+                handle.terminate()
+        except (psutil.NoSuchProcess, ProcessLookupError):
+            pass
+        except (psutil.AccessDenied, OSError, RuntimeError, ValueError) as e:
+            logger.error("Error stopping process %d: %s", pid, e)
+            return False
+
+        wait_fn = getattr(handle, "wait", None)
+        if callable(wait_fn):
             try:
-                # [SIL-2] Use psutil to kill the entire process tree reliably
-                parent = psutil.Process(proc_entry.handle.pid)
-                procs = parent.children(recursive=True) + [parent]
+                wait_result = wait_fn()
+                if inspect.isawaitable(wait_result):
+                    await asyncio.wait_for(wait_result, timeout=1.0)
+            except asyncio.TimeoutError:
+                with contextlib.suppress(ProcessLookupError, OSError, RuntimeError, AttributeError):
+                    handle.kill()
+                try:
+                    wait_result = wait_fn()
+                    if inspect.isawaitable(wait_result):
+                        await asyncio.wait_for(wait_result, timeout=1.0)
+                except (asyncio.TimeoutError, ProcessLookupError, OSError, RuntimeError, ValueError):
+                    logger.warning("Timed out waiting for process %d to exit cleanly", pid)
+            except (ProcessLookupError, OSError, RuntimeError, ValueError):
+                pass
 
-                for p in procs:
-                    with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
-                        p.terminate()
+        async with self.state.process_lock:
+            current = self.state.running_processes.get(pid)
+            if current is not None and current is proc_entry:
+                current.exit_code = getattr(handle, "returncode", None)
 
-                # [SIL-2] Unified wait and force-kill delegation
-                _, alive = psutil.wait_procs(procs, timeout=0.5)
-                for p in alive:
-                    with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
-                        logger.warning("Force killing zombie child process %d", p.pid)
-                        p.kill()
-
-                return True
-            except (psutil.NoSuchProcess, ProcessLookupError):
-                return True
-            except (psutil.AccessDenied, OSError, RuntimeError, ValueError) as e:
-                logger.error("Error stopping process %d: %s", pid, e)
-                return False
+        await self._finalize_process(pid)
+        return True
 
 
     async def publish_poll_result(

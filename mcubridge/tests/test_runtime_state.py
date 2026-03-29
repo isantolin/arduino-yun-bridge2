@@ -366,7 +366,6 @@ async def test_spool_fallback_updates_state(
 
 
 @pytest.mark.asyncio
-@pytest.mark.filterwarnings("ignore:unclosed:ResourceWarning")
 async def test_ensure_spool_recovers_after_disable(
     runtime_state: RuntimeState,
 ) -> None:

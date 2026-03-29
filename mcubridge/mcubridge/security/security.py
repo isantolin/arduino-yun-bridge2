@@ -17,7 +17,7 @@ import hashlib
 import hmac
 import secrets
 from typing import Final
-from construct import Bytes, Int64ub, Struct  # type: ignore
+from construct import Bytes, Int64ub, Struct
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.constant_time import bytes_eq
@@ -32,9 +32,9 @@ NONCE_TOTAL_BYTES: Final[int] = NONCE_RANDOM_BYTES + NONCE_COUNTER_BYTES
 
 # [SIL-2] Declarative Nonce Structure
 NONCE_STRUCT: Final = Struct(
-    "random" / Bytes(NONCE_RANDOM_BYTES),  # type: ignore
-    "counter" / Int64ub,  # type: ignore
-)  # type: ignore
+    "random" / Bytes(NONCE_RANDOM_BYTES),
+    "counter" / Int64ub,
+)
 
 
 def hkdf_sha256(ikm: bytes, salt: bytes, info: bytes, length: int) -> bytes:
@@ -85,7 +85,7 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     new_counter = counter + 1
     random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
     # [SIL-2] Declarative building
-    nonce = NONCE_STRUCT.build({  # type: ignore
+    nonce = NONCE_STRUCT.build({
         "random": random_part,
         "counter": new_counter
     })
@@ -97,7 +97,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
     if len(nonce) != NONCE_TOTAL_BYTES:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
     try:
-        return NONCE_STRUCT.parse(nonce).counter  # type: ignore
+        return NONCE_STRUCT.parse(nonce).counter
     except Exception as e:
         raise ValueError(f"Malformed nonce format: {e}") from e
 

@@ -205,7 +205,7 @@ async def test_async_process_packet_os_error(
     async def _raise_os_error(cmd: int, payload: bytes) -> None:
         raise OSError("Device error")
 
-    service.handle_mcu_frame = _raise_os_error  # type: ignore
+    service.handle_mcu_frame = _raise_os_error
 
     from cobs.cobs import encode as cobs_encode
     from mcubridge.protocol.frame import Frame

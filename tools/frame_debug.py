@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated
 
-import serial  # type: ignore
+import serial
 import typer
 from cobs import cobs
 from mcubridge.protocol import protocol

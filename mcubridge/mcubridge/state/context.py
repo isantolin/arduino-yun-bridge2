@@ -280,10 +280,10 @@ class RuntimeState(msgspec.Struct):
             self.link_sync_event.set()
 
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=lambda: asyncio.Queue[QueuedPublish](),
+        default_factory=lambda: asyncio.Queue[QueuedPublish](),  # noqa: PLW0108
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})
+    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_replayed: int = 0
     mqtt_spool_degraded: bool = False
@@ -299,12 +299,12 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_dropped_limit: int = 0
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
-    _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=lambda: {})
-    datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})
+    _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
+    datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
 
     # [SIL-2] Mailbox queues persist to /tmp through persist-queue when enabled.
-    mailbox_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())
-    mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())
+    mailbox_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())  # noqa: PLW0108
+    mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())  # noqa: PLW0108
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
@@ -315,10 +315,10 @@ class RuntimeState(msgspec.Struct):
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=lambda: {})
+    running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
-    allowed_policy: AllowedCommandPolicy = msgspec.field(default_factory=lambda: AllowedCommandPolicy.from_iterable(()))
+    allowed_policy: AllowedCommandPolicy = msgspec.field(default_factory=lambda: AllowedCommandPolicy.create_empty())  # noqa: PLW0108
     topic_authorization: TopicAuthorization | None = None
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
@@ -332,10 +332,10 @@ class RuntimeState(msgspec.Struct):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: collections.deque[PendingPinRequest](),
+        default_factory=lambda: collections.deque[PendingPinRequest](),  # noqa: PLW0108
     )
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: collections.deque[PendingPinRequest](),
+        default_factory=lambda: collections.deque[PendingPinRequest](),  # noqa: PLW0108
     )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
@@ -949,12 +949,16 @@ class RuntimeState(msgspec.Struct):
         with contextlib.suppress(OSError, RuntimeError, AttributeError):
             if self.mqtt_spool:
                 self.mqtt_spool.close()
+                self.mqtt_spool = None
             if self.mailbox_queue:
                 self.mailbox_queue.clear()
+                self.mailbox_queue.close()
             if self.mailbox_incoming_queue:
                 self.mailbox_incoming_queue.clear()
+                self.mailbox_incoming_queue.close()
             if self.console_to_mcu_queue:
                 self.console_to_mcu_queue.clear()
+                self.console_to_mcu_queue.close()
 
             # Drain the MQTT queue instead of nullifying
             while not self.mqtt_publish_queue.empty():

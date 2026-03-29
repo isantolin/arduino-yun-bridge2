@@ -130,7 +130,7 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
         properties=props,
     )
 
-    await service.enqueue_mqtt(msg, reply_context=inbound)  # type: ignore[arg-type]
+    await service.enqueue_mqtt(msg, reply_context=inbound)
 
     queued = state.mqtt_publish_queue.get_nowait()
     assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
@@ -215,7 +215,7 @@ async def test_reject_topic_action_enqueues_status() -> None:
         topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret",
         properties=None,
     )
-    await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")  # type: ignore[arg-type]
+    await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")
 
     queued = state.mqtt_publish_queue.get_nowait()
     status_topic = topic_path(state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS)
@@ -234,7 +234,7 @@ async def test_publish_bridge_snapshot_handshake_flavor() -> None:
         topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get",
         properties=None,
     )
-    await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[arg-type]
+    await service._publish_bridge_snapshot("handshake", inbound)
 
     queued = state.mqtt_publish_queue.get_nowait()
     assert "bridge/handshake/value" in queued.topic_name

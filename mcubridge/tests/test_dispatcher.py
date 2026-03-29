@@ -424,7 +424,7 @@ async def test_dispatch_mqtt_message_router_error_is_caught() -> None:
         raise RuntimeError("boom")
 
     dispatcher.mqtt_router.register(Topic.CONSOLE, exploding)
-    dispatcher.mqtt_router._handlers[Topic.CONSOLE] = [exploding]  # type: ignore[attr-defined]
+    dispatcher.mqtt_router._handlers[Topic.CONSOLE] = [exploding]
     inbound = make_inbound_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/console/in",
         payload=b"hi",

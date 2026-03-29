@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-import sh  # type: ignore
+import sh
 from aiomqtt.message import Message
 
 from mcubridge.protocol import protocol

@@ -277,7 +277,7 @@ class TestInit:
 
         # When paho.mqtt.client can't be imported at all, should pass silently
         orig = sys.modules.get("paho.mqtt.client")
-        sys.modules["paho.mqtt.client"] = None  # type: ignore[assignment]
+        sys.modules["paho.mqtt.client"] = None
         try:
             mcubridge._check_dependencies()
         finally:

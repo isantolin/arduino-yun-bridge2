@@ -57,7 +57,13 @@ async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:
     # Correct initialization with mock service
     service = MagicMock()
     service._acknowledge_mcu_frame = AsyncMock()
-    return ProcessComponent(config, state, service)
+    component = ProcessComponent(config, state, service)
+    try:
+        yield component
+    finally:
+        for pid in list(component.state.running_processes):
+            await component.stop_process(pid)
+        component.state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -166,4 +172,3 @@ async def test_finalize_process(process_component: ProcessComponent) -> None:
 
     assert pid not in process_component.state.running_processes
     assert process_component._process_slots._value == 2 # Released
-

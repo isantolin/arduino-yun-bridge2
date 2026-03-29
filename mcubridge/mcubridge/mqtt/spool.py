@@ -71,7 +71,7 @@ class MQTTPublishSpool:
         self._notify_fallback()
 
     def close(self) -> None:
-        self._records.clear()
+        self._records.close()
 
     def append(self, message: QueuedPublish) -> None:
         if self.pending >= self._limit:

@@ -24,7 +24,7 @@ import re
 from typing import Final, Any, cast
 
 import msgspec
-from construct import (  # type: ignore
+from construct import (
     Check,
     Const,
     ExprAdapter,
@@ -41,9 +41,9 @@ from . import protocol
 
 # [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
 RLE_ESCAPE: Final = Struct(
-    "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),  # type: ignore
-    "count_m2" / Int8ub,  # type: ignore
-    "value" / Int8ub,  # type: ignore
+    "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),
+    "count_m2" / Int8ub,
+    "value" / Int8ub,
 )
 
 # [SIL-2] Declarative RLE Decoder: Greedy selection between escape sequences and literals
@@ -53,28 +53,28 @@ RLE_DECODER: Final = Struct(
         Select(
             ExprAdapter(
                 RLE_ESCAPE,
-                decoder=lambda obj, ctx: bytes([cast(Any, obj).value])  # type: ignore
+                decoder=lambda obj, ctx: bytes([cast(Any, obj).value])
                 * (
                     1
                     if cast(Any, obj).count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER
                     else cast(Any, obj).count_m2 + protocol.RLE_OFFSET
                 ),
-                encoder=lambda obj, ctx: None,  # type: ignore
+                encoder=lambda obj, ctx: None,
             ),
             # Literal byte (MUST NOT be the escape byte)
             ExprAdapter(
                 FocusedSeq(
                     "value",
-                    "value" / Int8ub,  # type: ignore
-                    "_" / Check(this.value != protocol.RLE_ESCAPE_BYTE)  # type: ignore
+                    "value" / Int8ub,
+                    "_" / Check(this.value != protocol.RLE_ESCAPE_BYTE)
                 ),
-                decoder=lambda obj, ctx: bytes([obj]),  # type: ignore
-                encoder=lambda obj, ctx: obj[0],  # type: ignore
+                decoder=lambda obj, ctx: bytes([obj]),
+                encoder=lambda obj, ctx: obj[0],
             ),
         )
     ),
     Terminated,
-)  # type: ignore
+)
 
 
 class RLEPayload(msgspec.Struct, frozen=True):
@@ -133,7 +133,7 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
                 chunk_len = min(length - i, protocol.RLE_MAX_RUN_LENGTH)
                 # [SIL-2] Direct library delegation for token building
                 result.extend(
-                    RLE_ESCAPE.build(  # type: ignore
+                    RLE_ESCAPE.build(
                         dict(
                             escape=protocol.RLE_ESCAPE_BYTE,
                             count_m2=(
@@ -148,7 +148,7 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
         else:
             # Non-ESCAPE_BYTE run of 4+ bytes
             result.extend(
-                RLE_ESCAPE.build(  # type: ignore
+                RLE_ESCAPE.build(
                     dict(
                         escape=protocol.RLE_ESCAPE_BYTE,
                         count_m2=length - protocol.RLE_OFFSET,
@@ -169,8 +169,8 @@ def decode(data: bytes | bytearray | memoryview) -> bytes:
 
     try:
         # Construct returns a Container with a 'chunks' list of byte chunks
-        parsed: Any = RLE_DECODER.parse(data)  # type: ignore
-        return b"".join(parsed.chunks)  # type: ignore
+        parsed: Any = RLE_DECODER.parse(data)
+        return b"".join(parsed.chunks)
     except Exception as e:
         # SIL-2: Deterministic error reporting for malformed streams
         raise ValueError(f"Malformed RLE stream: {e}") from e

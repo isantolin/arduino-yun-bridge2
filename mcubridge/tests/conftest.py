@@ -1,16 +1,13 @@
 """Pytest configuration for MCU Bridge tests."""
-# ruff: noqa: E402
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import importlib.util
 import inspect
 import logging
 import shutil
 import sys
-import warnings
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -18,13 +15,6 @@ from unittest.mock import MagicMock
 import svcs
 
 import pytest
-
-# [TEST FIX] Global warning suppression for Python 3.13 strictness
-warnings.simplefilter("ignore", ResourceWarning)
-try:
-    warnings.filterwarnings("ignore", category=pytest.PytestUnraisableExceptionWarning)
-except AttributeError:
-    pass  # pytest < 7.x lacks PytestUnraisableExceptionWarning
 
 # [TEST FIX] Mock 'uci' module strictly before importing mcubridge.common.
 # This simulates the OpenWrt environment where 'uci' is available.
@@ -52,7 +42,6 @@ if "serial_asyncio_fast" not in sys.modules:
     mock_saf.create_serial_connection = AsyncMock(return_value=(AsyncMock(), AsyncMock()))
     sys.modules["serial_asyncio_fast"] = mock_saf
 
-import pytest
 
 # [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
 # and interference with Python 3.13 representation during cleanup.
@@ -80,8 +69,6 @@ _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "asyncio: mark test to run on asyncio loop")
-    config.addinivalue_line("filterwarnings", "ignore::ResourceWarning")
-    config.addinivalue_line("filterwarnings", "ignore::pytest.PytestUnraisableExceptionWarning")
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -123,25 +110,6 @@ def force_gc_cleanup():
     gc.collect()
 
 
-@pytest.fixture(scope="session")
-def event_loop_policy():
-    """Provide uvloop event loop policy for pytest-asyncio."""
-    import warnings
-
-    import uvloop
-
-    # Suppress deprecation warnings from uvloop internals (Python 3.16 preparation)
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message=".*AbstractEventLoopPolicy.*",
-            category=DeprecationWarning,
-        )
-        policy = uvloop.EventLoopPolicy()
-    logging.info("NOTICE: uvloop event loop policy enabled for tests.")
-    return policy
-
-
 @pytest.fixture(autouse=True)
 def reset_logging_handlers():
     """Close and remove all logging handlers after each test to prevent ResourceWarnings."""
@@ -158,9 +126,14 @@ def reset_logging_handlers():
 def _remove_persistent_test_path(path: Path) -> None:
     if path.is_dir():
         shutil.rmtree(path, ignore_errors=True)
-    else:
-        with contextlib.suppress(FileNotFoundError):
-            path.unlink()
+        return
+
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except IsADirectoryError:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

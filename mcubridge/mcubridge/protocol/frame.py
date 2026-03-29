@@ -29,8 +29,8 @@ from __future__ import annotations
 from binascii import crc32
 from typing import Final
 import msgspec
-from construct import (  # type: ignore
-    BitStruct,  # type: ignore
+from construct import (
+    BitStruct,
     BitsInteger,
     Bytes,
     Check,
@@ -49,37 +49,37 @@ from construct import (  # type: ignore
 from . import protocol
 
 # [SIL-2] Declarative Command ID Codec: Handles Bit 15 (Compression Flag)
-COMMAND_ID_CODEC: Final = BitStruct(  # type: ignore
-    "is_compressed" / Flag,  # type: ignore
-    "raw_id" / BitsInteger(15),  # type: ignore
-)  # type: ignore
+COMMAND_ID_CODEC: Final = BitStruct(
+    "is_compressed" / Flag,
+    "raw_id" / BitsInteger(15),
+)
 
 # [SIL-2] Declarative Frame Structure using Construct
 # This ensures big-endian encoding and automatic length/CRC validation.
 # We use ExprAdapter to cast EnumIntegerString to int for standard logging compatibility.
 RPC_FRAME_HEADER = Struct(
-    "version" / Int8ub,  # type: ignore
-    "payload_len" / Int16ub,  # type: ignore
-    "command_id" / ExprAdapter(  # type: ignore
-        Enum(Int16ub, protocol.Command, protocol.Status),  # type: ignore
-        decoder=lambda obj, ctx: int(obj),  # type: ignore
-        encoder=lambda obj, ctx: obj  # type: ignore
+    "version" / Int8ub,
+    "payload_len" / Int16ub,
+    "command_id" / ExprAdapter(
+        Enum(Int16ub, protocol.Command, protocol.Status),
+        decoder=lambda obj, ctx: int(obj),
+        encoder=lambda obj, ctx: obj
     ),
-    "sequence_id" / Int16ub,  # type: ignore
-    Check(this.version == protocol.PROTOCOL_VERSION),  # type: ignore
+    "sequence_id" / Int16ub,
+    Check(this.version == protocol.PROTOCOL_VERSION),
 )
 
 
 # [SIL-2] Full Frame with Checksum (Sustitución Drástica)
 # Uses RawCopy to capture the bytes for CRC calculation without manual slicing.
 RPC_FRAME = Struct(
-    "header_payload" / RawCopy(Struct(  # type: ignore
-        "header" / RPC_FRAME_HEADER,  # type: ignore
-        "payload" / Bytes(this.header.payload_len),  # type: ignore
+    "header_payload" / RawCopy(Struct(
+        "header" / RPC_FRAME_HEADER,
+        "payload" / Bytes(this.header.payload_len),
     )),
-    "crc" / Checksum(  # type: ignore
+    "crc" / Checksum(
         Int32ub,
-        lambda data: crc32(data) & 0xFFFFFFFF,  # type: ignore
+        lambda data: crc32(data) & 0xFFFFFFFF,
         this.header_payload.data
     ),
 )
@@ -111,7 +111,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
                 val = self.command_id.value
             else:
                 val = self.command_id
-            return COMMAND_ID_CODEC.parse(Int16ub.build(val)).is_compressed  # type: ignore
+            return COMMAND_ID_CODEC.parse(Int16ub.build(val)).is_compressed
         except Exception:
             return False
 
@@ -124,7 +124,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
                 val = self.command_id.value
             else:
                 val = self.command_id
-            return COMMAND_ID_CODEC.parse(Int16ub.build(val)).raw_id  # type: ignore
+            return COMMAND_ID_CODEC.parse(Int16ub.build(val)).raw_id
         except Exception:
             if isinstance(self.command_id, (protocol.Command, protocol.Status)):
                 return self.command_id.value
@@ -135,7 +135,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """Declaratively build a command ID with flags."""
         try:
             val = raw_id.value if isinstance(raw_id, (protocol.Command, protocol.Status)) else raw_id
-            return Int16ub.parse(COMMAND_ID_CODEC.build({  # type: ignore
+            return Int16ub.parse(COMMAND_ID_CODEC.build({
                 "is_compressed": is_compressed,
                 "raw_id": val
             }))
@@ -168,7 +168,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         try:
             # Entire frame is built via Construct, including Checksum
             # RawCopy requires the subconstruct value to be passed under the 'value' key during build.
-            return RPC_FRAME.build({  # type: ignore
+            return RPC_FRAME.build({
                 "header_payload": {
                     "value": {
                         "header": {
@@ -192,7 +192,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
         try:
             # Construct handles length validation, header parsing, AND CRC Checksum validation
-            obj = RPC_FRAME.parse(raw_frame_buffer)  # type: ignore
+            obj = RPC_FRAME.parse(raw_frame_buffer)
         except Exception as e:
             # Maintain compatibility with tests expecting specific error messages
             err_msg = str(e)
@@ -205,8 +205,8 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
             raise ValueError(f"Malformed frame: {e}") from e
 
         # Access fields within the RawCopy 'value' container
-        res = obj.header_payload.value  # type: ignore
-        return res.header.command_id, res.header.sequence_id, res.payload  # type: ignore
+        res = obj.header_payload.value
+        return res.header.command_id, res.header.sequence_id, res.payload
 
     def to_bytes(self) -> bytes:
         """Serialize the instance using :meth:`build`."""

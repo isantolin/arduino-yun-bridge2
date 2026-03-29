@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
@@ -59,13 +60,19 @@ def mock_enqueue() -> AsyncMock:
     return AsyncMock()
 
 
-@pytest.fixture
-def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:
+@pytest_asyncio.fixture
+async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:
     config = _make_config(process_max_concurrent=4)
     state = create_runtime_state(config)
     service = MagicMock()
     service._acknowledge_mcu_frame = AsyncMock()
-    return ProcessComponent(config, state, service)
+    component = ProcessComponent(config, state, service)
+    try:
+        yield component
+    finally:
+        for pid in list(component.state.running_processes):
+            await component.stop_process(pid)
+        component.state.cleanup()
 
 
 # ============================================================================

@@ -213,6 +213,7 @@ class BridgeDaemon:
                 log.critical("Fatal task error: %s", exc, exc_info=exc)
             raise
         finally:
+            self.state.cleanup()
             _cleanup_child_processes()
             cleanup_status_file()
             log.info("MCU Bridge daemon stopped.")

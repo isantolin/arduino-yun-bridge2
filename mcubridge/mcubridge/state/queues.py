@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 import sqlite3
+from contextlib import suppress
 from collections import deque
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -47,6 +48,7 @@ class PersistentQueue(Generic[T]):
             self._store = FIFOSQLiteQueue(
                 str(self.directory),
                 auto_commit=True,
+                multithreading=True,
             )
             self._fallback_active = False
             self._fallback_reason = None
@@ -58,6 +60,7 @@ class PersistentQueue(Generic[T]):
             self._activate_fallback("initialization_failed", exc)
 
     def _activate_fallback(self, reason: str, exc: BaseException | None = None) -> None:
+        self.close()
         self._store = None
         self._fallback_active = True
         self._fallback_reason = reason
@@ -69,11 +72,13 @@ class PersistentQueue(Generic[T]):
         if self.directory is None or self._store is None:
             return
         try:
+            self._store.close()
             shutil.rmtree(self.directory, ignore_errors=True)
             self.directory.mkdir(parents=True, exist_ok=True)
             self._store = FIFOSQLiteQueue(
                 str(self.directory),
                 auto_commit=True,
+                multithreading=True,
             )
             for item in self._items:
                 self._store.put(item)
@@ -161,6 +166,12 @@ class PersistentQueue(Generic[T]):
         if self._store is not None:
             self._rewrite_store()
 
+    def close(self) -> None:
+        if self._store is not None:
+            with suppress(OSError, RuntimeError, ValueError, sqlite3.Error):
+                self._store.close()
+            self._store = None
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "pending": len(self._items),
@@ -187,6 +198,7 @@ class BoundedByteDeque:
     def setup_persistence(self, directory: str | Path, ram_limit: int = 100) -> None:
         del ram_limit
         previous = tuple(self._base.values())
+        self._base.close()
         self._base = PersistentQueue[bytes](directory=directory)
         if self._base.fallback_active:
             self._queue = {}
@@ -284,6 +296,9 @@ class BoundedByteDeque:
     def clear(self) -> None:
         self._base.clear()
         self._bytes = 0
+
+    def close(self) -> None:
+        self._base.close()
 
     def update_limits(self, *, max_items: int | None = None, max_bytes: int | None = None) -> None:
         if max_items is not None:

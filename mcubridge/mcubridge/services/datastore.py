@@ -70,10 +70,10 @@ class DatastoreComponent(BaseComponent):
                 len(value_bytes),
             )
             # [SIL-2] Declarative truncation via Construct
-            from construct import Bytes  # type: ignore
+            from construct import Bytes
             try:
                 # Cast to bytes to satisfy type checker as Bytes(n).parse returns bytes
-                value_bytes = cast(bytes, Bytes(255).parse(value_bytes))  # type: ignore
+                value_bytes = cast(bytes, Bytes(255).parse(value_bytes))
             except Exception:
                 value_bytes = value_bytes[:255]
 

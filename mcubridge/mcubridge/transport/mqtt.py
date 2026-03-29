@@ -96,10 +96,10 @@ class MqttTransport:
                         raise
                     finally:
                         if self.fsm_state != self.STATE_DISCONNECTED:
-                            self.disconnect()  # type: ignore
+                            self.disconnect()
         except asyncio.CancelledError:
             logger.info("MQTT transport stopping.")
-            self.disconnect()  # type: ignore
+            self.disconnect()
             raise
 
     async def _connect_session(self, tls_context: Any) -> None:
@@ -118,7 +118,7 @@ class MqttTransport:
                 "consider setting mqtt_user/mqtt_pass for production"
             )
 
-        self.connect()  # type: ignore
+        self.connect()
 
         client = aiomqtt.Client(
             hostname=self.config.mqtt_host,
@@ -148,10 +148,10 @@ class MqttTransport:
 
         async with client as connected_client:
             logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
-            self.connected()  # type: ignore
+            self.connected()
             self._mqtt_client = connected_client
             await self._subscribe_topics(client)
-            self.subscribed()  # type: ignore
+            self.subscribed()
 
             async with asyncio.TaskGroup() as task_group:
                 task_group.create_task(self._publisher_loop(client))

@@ -28,7 +28,7 @@ async def bridge_session(
     """Connect a Bridge and guarantee disconnect on exit."""
     dump_client_env(logging.getLogger(__name__))
     bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
-    bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
+    bridge = Bridge(**bridge_args)
     await bridge.connect()
     try:
         yield bridge

@@ -162,7 +162,7 @@ async def test_mqtt_task_requeues_on_publish_failure(
     monkeypatch.setattr(type(state), "flush_mqtt_spool", AsyncMock(return_value=None))
 
     transport = mqtt.MqttTransport(config, state, MagicMock())
-    task = asyncio.create_task(transport._publisher_loop(FakeClient()))  # type: ignore[arg-type]
+    task = asyncio.create_task(transport._publisher_loop(FakeClient()))
 
     await asyncio.wait_for(stashed.wait(), timeout=1.0)
     task.cancel()
@@ -223,7 +223,7 @@ async def test_mqtt_subscriber_loop_handles_mqtt_error(
     client = FakeClient()
 
     with pytest.raises(aiomqtt.MqttError, match="boom"):
-        await transport._subscriber_loop(client)  # type: ignore[arg-type]
+        await transport._subscriber_loop(client)
 
 
 @pytest.mark.timeout(5)
@@ -252,7 +252,7 @@ async def test_mqtt_publisher_debug_logging() -> None:
 
         async def run_loop():
             try:
-                await transport._publisher_loop(client)  # type: ignore[arg-type]
+                await transport._publisher_loop(client)
             except asyncio.CancelledError:
                 pass
 
@@ -293,7 +293,7 @@ async def test_mqtt_subscriber_processes_message() -> None:
             yield FakeMsg()
 
     client = FakeClient()
-    task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[arg-type]
+    task = asyncio.create_task(transport._subscriber_loop(client))
     await asyncio.sleep(0.05)
     task.cancel()
     assert msg_count == 1
@@ -326,7 +326,7 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
             yield FakeMsg()
 
     client = FakeClient()
-    task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[arg-type]
+    task = asyncio.create_task(transport._subscriber_loop(client))
     await asyncio.sleep(0.05)
     task.cancel()
     assert msg_count == 0

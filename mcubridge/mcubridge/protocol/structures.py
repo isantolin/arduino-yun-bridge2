@@ -32,25 +32,25 @@ if TYPE_CHECKING:
     from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
 
 
-from construct import BitStruct, Flag, Padding  # type: ignore
+from construct import BitStruct, Flag, Padding
 
 # [SIL-2] Declarative bitmask definition for MCU capabilities.
 # This ensures atomic bit-level parsing/building via Construct's C-backed engine.
 # Order matches the protocol specification (bit 0 to bit 15).
 FEATURES_STRUCT: Final = BitStruct(
-    "sd" / Flag,  # type: ignore
-    "spi" / Flag,  # type: ignore
-    "i2c" / Flag,  # type: ignore
-    "big_buffer" / Flag,  # type: ignore
-    "logic_3v3" / Flag,  # type: ignore
-    "fpu" / Flag,  # type: ignore
-    "hw_serial1" / Flag,  # type: ignore
-    "dac" / Flag,  # type: ignore
-    "eeprom" / Flag,  # type: ignore
-    "debug_io" / Flag,  # type: ignore
-    "debug_frames" / Flag,  # type: ignore
-    "rle" / Flag,  # type: ignore
-    "watchdog" / Flag,  # type: ignore
+    "sd" / Flag,
+    "spi" / Flag,
+    "i2c" / Flag,
+    "big_buffer" / Flag,
+    "logic_3v3" / Flag,
+    "fpu" / Flag,
+    "hw_serial1" / Flag,
+    "dac" / Flag,
+    "eeprom" / Flag,
+    "debug_io" / Flag,
+    "debug_frames" / Flag,
+    "rle" / Flag,
+    "watchdog" / Flag,
     Padding(3),
 )
 
@@ -59,8 +59,8 @@ def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
     """Convert a capability feature dict to its integer bitmask using Construct."""
     try:
         # Build raw bytes from dict and parse back as 16-bit integer
-        from construct import Int16ul  # type: ignore
-        return int(Int16ul.parse(FEATURES_STRUCT.build(feat_dict)))  # type: ignore
+        from construct import Int16ul
+        return int(Int16ul.parse(FEATURES_STRUCT.build(feat_dict)))
     except Exception:
         return 0
 
@@ -68,12 +68,12 @@ def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
 def _int_to_capabilities(val: int) -> dict[str, bool]:
     """Convert an integer bitmask to a capability feature dict using Construct."""
     try:
-        from construct import Int16ul  # type: ignore
+        from construct import Int16ul
         # Convert integer to bytes then parse via BitStruct
-        data = Int16ul.build(int(val))  # type: ignore
-        res = FEATURES_STRUCT.parse(data)  # type: ignore
+        data = Int16ul.build(int(val))
+        res = FEATURES_STRUCT.parse(data)
         # Convert Container to plain dict and remove internal metadata
-        return {str(k): bool(v) for k, v in res.items() if not str(k).startswith("_")}  # type: ignore
+        return {str(k): bool(v) for k, v in res.items() if not str(k).startswith("_")}
     except Exception:
         return {}
 
@@ -129,6 +129,11 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
 
         normalised = normalise_allowed_commands(entries)
         return cls(entries=normalised)
+
+    @classmethod
+    def create_empty(cls) -> AllowedCommandPolicy:
+        """Create an empty policy with no allowed commands."""
+        return cls(entries=())
 
 
 class TopicAuthorization(msgspec.Struct, frozen=True):
@@ -893,7 +898,7 @@ class PendingCommand(msgspec.Struct):
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: set[int]())
+    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: set[int]())  # noqa: PLW0108
     completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     attempts: int = 0
     success: bool | None = None

@@ -95,7 +95,7 @@ void sync_bridge(BiStream& stream) {
   memcpy(sync_msg.nonce, nonce, 16);
   ba.computeHandshakeTag(nonce, 16, sync_msg.tag);
 
-  rpc::Frame frame;
+  rpc::Frame frame = {};
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
   frame.payload = etl::span<const uint8_t>(payload_buffer.data(), payload_buffer.size());
   bridge::test::set_pb_payload(frame, sync_msg);

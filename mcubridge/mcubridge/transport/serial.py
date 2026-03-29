@@ -104,7 +104,7 @@ class SerialTransport:
 
     def _decode_frame(self, encoded_packet: bytes | memoryview) -> Frame:
         # [SIL-2] Direct COBS decode and Frame mapping from bytes/memoryview
-        return Frame.from_bytes(cobs_decode(encoded_packet))  # type: ignore
+        return Frame.from_bytes(cobs_decode(encoded_packet))
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         writer = self.writer
@@ -163,26 +163,26 @@ class SerialTransport:
             if connect_baud <= 0:
                 connect_baud = protocol.DEFAULT_SAFE_BAUDRATE
 
-            self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(  # type: ignore
+            self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
                 url=self.config.serial_port,
                 baudrate=connect_baud,
                 xonxoff=False,
             )
-            self.state.serial_writer = self.writer  # type: ignore
+            self.state.serial_writer = self.writer
 
-            reader = cast(asyncio.StreamReader, self.reader)  # type: ignore
+            reader = cast(asyncio.StreamReader, self.reader)
             # Start reader loop
             read_task = loop.create_task(self._read_loop(reader))
 
             try:
                 # 1. Negotiate baudrate if needed
-                self.begin_negotiate()  # type: ignore
+                self.begin_negotiate()
                 if self.config.serial_baud != connect_baud:
                     if not await self._negotiate_baudrate(self.config.serial_baud):
                         raise ConnectionError("Baudrate negotiation failed")
 
                 # 2. Complete handshake via service
-                self.mark_connected()  # type: ignore
+                self.mark_connected()
                 await self.service.on_serial_connected()
 
                 # 3. Wait for reader to finish or stop event
@@ -205,7 +205,7 @@ class SerialTransport:
                 read_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await read_task
-                self.mark_disconnected()  # type: ignore
+                self.mark_disconnected()
                 await self.service.on_serial_disconnected()
 
         except (OSError, serial.SerialException) as exc:

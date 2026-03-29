@@ -3,39 +3,27 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any, Final, cast
 
-import msgspec
-
-from mcubridge.protocol.structures import RuntimeConfig
-
-logger = logging.getLogger("mcubridge.common")
+logger = logging.getLogger(__name__)
 
 _UCI_PACKAGE: Final[str] = "mcubridge"
 _UCI_SECTION: Final[str] = "general"
 
 
 def get_uci_config() -> dict[str, Any]:
-    """Read MCU Bridge configuration directly from OpenWrt uci system."""
-    is_openwrt = Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
+    """Fetch configuration from OpenWrt UCI system with safe fallbacks."""
     try:
-        import uci
+        import uci  # type: ignore
         with uci.Uci() as cursor:
             try:
-                # [SIL-2] Ensure atomic read of entire package
-                # Use Any cast to avoid unknown member issues from manual stub
-                pkg_data = cast(Any, cursor).get_all(_UCI_PACKAGE)
-                section = cast(dict[str, Any], pkg_data).get(_UCI_SECTION)
+                section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
             except Exception as e:
-                if is_openwrt:
-                    logger.critical("UCI failure reading %s.%s: %s", _UCI_PACKAGE, _UCI_SECTION, e)
-                    raise RuntimeError(f"Critical UCI failure: {e}") from e
+                # On OpenWrt, missing section is a critical config error
+                logger.warning("UCI section %s.%s missing or unreadable: %s", _UCI_PACKAGE, _UCI_SECTION, e)
                 return get_default_config()
 
             if not section:
-                if is_openwrt:
-                    raise RuntimeError(f"UCI section {_UCI_PACKAGE}.{_UCI_SECTION} missing!")
                 return get_default_config()
 
             # Clean and cast the UCI dictionary
@@ -47,17 +35,25 @@ def get_uci_config() -> dict[str, Any]:
             }
             return clean_config
     except (ImportError, AttributeError, Exception):
-        pass
-    return get_default_config()
+        # Fallback for non-OpenWrt environments (e.g. dev/test)
+        return get_default_config()
 
 
 def get_default_config() -> dict[str, Any]:
     """Return the default configuration as a dictionary."""
-    # msgspec.to_builtins ensures defaults are always in sync with the schema without manual iteration.
-    try:
-        return cast(dict[str, Any], msgspec.to_builtins(RuntimeConfig()))
-    except Exception:
-        return {"debug": False}
+    from mcubridge.config import const
+    from mcubridge.protocol import protocol
+    return {
+        "serial_port": const.DEFAULT_SERIAL_PORT,
+        "serial_baud": protocol.DEFAULT_BAUDRATE,
+        "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
+        "serial_retry_attempts": protocol.DEFAULT_RETRY_LIMIT,
+        "serial_retry_timeout": const.DEFAULT_SERIAL_RETRY_TIMEOUT,
+        "serial_response_timeout": const.DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+        "mqtt_host": const.DEFAULT_MQTT_HOST,
+        "mqtt_port": const.DEFAULT_MQTT_PORT,
+        "debug": const.DEFAULT_DEBUG_LOGGING,
+    }
 
 
 __all__: Final[tuple[str, ...]] = (

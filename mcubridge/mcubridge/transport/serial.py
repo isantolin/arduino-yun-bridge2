@@ -30,7 +30,7 @@ from mcubridge.config.const import (
     DEFAULT_RECONNECT_DELAY,
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
 )
-from mcubridge.protocol import protocol as protocol, structures as structures
+from mcubridge.protocol import protocol, structures as structures
 from mcubridge.protocol.frame import Frame
 from mcubridge.util.hex import log_binary_traffic
 

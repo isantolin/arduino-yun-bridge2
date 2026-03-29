@@ -26,7 +26,7 @@ from typing import (
 
 import google.protobuf.message
 import msgspec
-from mcubridge.protocol import mcubridge_pb2 as mcubridge_pb2
+from mcubridge.protocol import mcubridge_pb2
 
 if TYPE_CHECKING:
     from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization

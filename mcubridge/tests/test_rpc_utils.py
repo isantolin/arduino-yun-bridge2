@@ -1,7 +1,7 @@
 import importlib
 import sys
 import types
-from typing import Self
+from typing import Self, Any
 
 import pytest
 from mcubridge.config import common, const
@@ -22,7 +22,7 @@ def test_get_default_config_matches_constants():
 
 def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
     class FakeCursor:
-        def __init__(self, payload: dict[str, object]) -> None:
+        def __init__(self, payload: dict[str, Any]) -> None:
             self._payload = payload
 
         def __enter__(self) -> Self:
@@ -31,7 +31,7 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
         def __exit__(self, exc_type, exc, _tb) -> bool:
             return False
 
-        def get_all(self, package: str, section: str) -> dict[str, object]:
+        def get_all(self, package: str, section: str) -> dict[str, Any]:
             assert package == "mcubridge"
             assert section == "general"
             return self._payload
@@ -40,6 +40,8 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
         ".name": "general",
         ".type": "mcubridge",
         "serial_port": "uci-port",
+        "mqtt_host": "127.0.0.1",
+        "mqtt_port": 1883,
         "allowed_commands": ("ls", "echo"),
         "mqtt_queue_limit": 42,
     }
@@ -67,7 +69,7 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
         def __exit__(self, exc_type, exc, _tb) -> bool:
             return False
 
-        def get_all(self, package: str, section: str) -> dict[str, object]:
+        def get_all(self, package: str, section: str) -> dict[str, Any]:
             raise OSError("boom")
 
     module = types.SimpleNamespace(
@@ -79,10 +81,20 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
 
     fallback_called = False
 
-    def fake_default() -> dict[str, str]:
+    def fake_default() -> dict[str, Any]:
         nonlocal fallback_called
         fallback_called = True
-        return {"serial_port": "default"}
+        return {
+            "serial_port": "default",
+            "serial_baud": 115200,
+            "serial_safe_baud": 115200,
+            "serial_retry_attempts": 5,
+            "serial_retry_timeout": 10.0,
+            "serial_response_timeout": 20.0,
+            "mqtt_host": "127.0.0.1",
+            "mqtt_port": 1883,
+            "debug": False,
+        }
 
     monkeypatch.setattr(common, "get_default_config", fake_default)
 

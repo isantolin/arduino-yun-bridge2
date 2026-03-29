@@ -77,7 +77,7 @@ RPC_FRAME: Construct = Struct(
 )
 
 
-class Frame(msgspec.Struct, frozen=True, kw_only=True):
+class Frame(msgspec.Struct, frozen=True):
     """Represents an RPC frame for MCU-Linux communication.
 
     This class provides both object-oriented and static methods for

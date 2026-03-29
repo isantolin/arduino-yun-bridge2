@@ -7,7 +7,7 @@ import logging
 import msgspec
 from aiomqtt.message import Message
 
-from mcubridge.protocol import protocol as protocol
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     Command,
     MailboxAction,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from aiomqtt.message import Message
-from mcubridge.protocol import protocol as protocol
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, ConsoleAction
 from mcubridge.protocol.structures import ConsoleWritePacket
 

@@ -11,8 +11,10 @@ from typing import Annotated, Any
 
 import serial
 import typer
-from mcubridge.protocol import cobs as cobs
-from mcubridge.protocol import protocol as protocol
+
+# [SIL-2] Use robust absolute submodule imports to avoid package attribute issues
+import mcubridge.protocol.cobs as cobs
+import mcubridge.protocol.protocol as protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 

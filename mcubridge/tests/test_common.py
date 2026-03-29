@@ -46,12 +46,15 @@ def test_get_uci_config_success():
     # Mock context manager: with uci.Uci() as cursor
     mock_module.Uci.return_value.__enter__.return_value = mock_cursor
 
-    # Simulate standard UCI dict return
+    # Simulate standard UCI dict return with minimum required fields
     mock_cursor.get_all.return_value = {
         ".type": "general",
         "mqtt_host": "127.0.0.1",
         "debug": "1",
+        "serial_port": "/dev/ttyATH0",
+        "mqtt_port": "1883",
     }
+
     with patch.dict("sys.modules", {"uci": mock_module}):
         importlib.reload(common)
         config = common.get_uci_config()
@@ -90,12 +93,13 @@ def test_get_uci_config_flattens_list_values_and_skips_internal_keys() -> None:
         "_meta": "ignore",
         "mqtt_host": ["example.com", 1883],
         "mqtt_tls": 0,
+        "serial_port": "/dev/ttyATH0",
+        "mqtt_port": "1883",
     }
-
     with patch.dict("sys.modules", {"uci": mock_module}):
         importlib.reload(common)
         config = common.get_uci_config()
-        assert config["mqtt_host"] == "127.0.0.1"
+        assert config["mqtt_host"] == "example.com 1883"
         assert config["mqtt_tls"] == 0
         assert ".type" not in config
         assert "_meta" not in config

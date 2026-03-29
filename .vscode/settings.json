@@ -13,6 +13,7 @@
   "python.envFile": "${workspaceFolder}/.env",
   "C_Cpp.default.includePath": [
     "${workspaceFolder}/mcubridge-library-arduino/src/**",
+    "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include/**",
     "${workspaceFolder}/mcubridge-library-arduino/tests/**",
     "${workspaceFolder}/tools/arduino_stub/include/**"
   ],

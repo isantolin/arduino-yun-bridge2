@@ -21,7 +21,7 @@ Only encodes runs of 4+ identical bytes (break-even at 3).
 from __future__ import annotations
 
 import re
-from typing import Final, Any
+from typing import Final, Any, cast
 
 import msgspec
 from construct import (  # type: ignore
@@ -51,11 +51,14 @@ RLE_ESCAPE: Final = Struct(
 RLE_DECODER: Final = Struct(
     "chunks" / GreedyRange(
         Select(
-            # Escape sequence: [0xFF, count_m2, value]
             ExprAdapter(
                 RLE_ESCAPE,
-                decoder=lambda obj, ctx: bytes([obj.value])
-                * (1 if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER else obj.count_m2 + protocol.RLE_OFFSET),
+                decoder=lambda obj, ctx: bytes([cast(Any, obj).value])  # type: ignore
+                * (
+                    1
+                    if cast(Any, obj).count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER
+                    else cast(Any, obj).count_m2 + protocol.RLE_OFFSET
+                ),
                 encoder=lambda obj, ctx: None,  # type: ignore
             ),
             # Literal byte (MUST NOT be the escape byte)

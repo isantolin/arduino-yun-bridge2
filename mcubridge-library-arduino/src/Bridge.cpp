@@ -89,22 +89,8 @@ BridgeClass::BridgeClass(Stream& arg_stream)
 
 void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
                         size_t arg_secret_len) {
+  // [SIL-2] Initialize Hardware (Watchdog, Safe Pin States) via HAL
   bridge::hal::init();
-
-  // [SIL-2] Initialize Watchdog as early as possible to prevent hang during boot
-  if constexpr (bridge::config::ENABLE_WATCHDOG) {
-#if defined(ARDUINO_ARCH_AVR)
-    wdt_enable(WDTO_4S);
-#elif defined(ARDUINO_ARCH_ESP32)
-    esp_task_wdt_init(4, true);
-    esp_task_wdt_add(NULL);
-#endif
-  }
-
-  // [SIL-2] Force actuators to safe state before any protocol negotiation
-  if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-    bridge::hal::forceSafeState();
-  }
 
   _fsm.begin();
   _timers.clear();

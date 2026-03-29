@@ -121,6 +121,7 @@ bool ensure_host_parent_directories(const PathString& full_path) {
     }
     path_buffer[index] = original;
   }
+
   return true;
 }
 #endif
@@ -163,12 +164,12 @@ void init() {
 
   if constexpr (bridge::config::ENABLE_WATCHDOG) {
 #if defined(ARDUINO_ARCH_AVR)
-    wdt_enable(WDTO_2S);
+    wdt_enable(WDTO_4S);
 #elif defined(ARDUINO_ARCH_ESP32)
-    esp_task_wdt_init(2, true);
+    esp_task_wdt_init(4, true);
     esp_task_wdt_add(nullptr);
 #elif defined(ARDUINO_ARCH_ESP8266)
-    ESP.wdtEnable(2000);
+    ESP.wdtEnable(4000);
 #elif defined(ARDUINO_ARCH_SAMD)
     // SAMD WDT initialization is usually board-specific; ensure generic safety.
 #endif

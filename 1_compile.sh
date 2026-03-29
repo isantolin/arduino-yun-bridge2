@@ -119,6 +119,14 @@ inject_rust_into_sdk() {
 
     local can_inject=0
     if command -v rustc >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
+        # [FIX] Si rustup está presente, intentamos instalar el target faltante automáticamente
+        if command -v rustup >/dev/null 2>&1; then
+            if ! rustup target list --installed 2>/dev/null | grep -q "^$target$"; then
+                echo "[INFO] Attempting to install missing Rust target $target via rustup..."
+                rustup target add "$target" || echo "[WARN] Failed to install Rust target $target via rustup."
+            fi
+        fi
+
         # Verificar si el target está instalado y es funcional (tiene std)
         if rustup target list --installed 2>/dev/null | grep -q "^$target$"; then
             echo "[INFO] Host Rust fully supports $target. Injecting into SDK..."

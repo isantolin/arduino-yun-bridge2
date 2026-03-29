@@ -3,10 +3,22 @@
         {
             "name": "Linux",
             "includePath": [
-                "${default}"
+                "${default}",
+                "${workspaceFolder}/mcubridge-library-arduino/src/**",
+                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include/**",
+                "${workspaceFolder}/.dummy_libs/wolfssl/**",
+                "${workspaceFolder}/.dummy_libs/PacketSerial/src/**"
             ],
-            "defines": [],
-            "intelliSenseMode": "linux-clang-x64"
+            "defines": [
+                "BRIDGE_HOST_TEST",
+                "BRIDGE_ENABLE_FILESYSTEM",
+                "BRIDGE_ENABLE_WATCHDOG",
+                "BRIDGE_ENABLE_RLE"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "intelliSenseMode": "linux-gcc-x64",
+            "cppStandard": "c++17",
+            "cStandard": "c17"
         }
     ],
     "version": 4

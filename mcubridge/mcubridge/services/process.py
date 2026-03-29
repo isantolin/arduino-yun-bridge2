@@ -156,10 +156,10 @@ class ProcessComponent(BaseComponent):
             reply_to=inbound,
         )
 
-    async def _handle_mqtt_poll(self, pid_model: ShellPidPayload) -> None:
+    async def _handle_mqtt_poll(self, pid_model: ShellPidPayload, inbound: Message | None = None) -> None:
         pid = pid_model.pid
         batch = await self.poll_process(pid)
-        await self.publish_poll_result(pid, batch)
+        await self.publish_poll_result(pid, batch, inbound)
 
     async def _handle_mqtt_kill(self, pid_model: ShellPidPayload) -> None:
         await self.stop_process(pid_model.pid)
@@ -426,7 +426,12 @@ class ProcessComponent(BaseComponent):
                 return False
 
 
-    async def publish_poll_result(self, pid: int, batch: ProcessOutputBatch) -> None:
+    async def publish_poll_result(
+        self,
+        pid: int,
+        batch: ProcessOutputBatch,
+        inbound: Message | None = None,
+    ) -> None:
         """Publish process output batch to MQTT."""
         response_topic = topic_path(
             self.state.mqtt_topic_prefix,
@@ -435,14 +440,22 @@ class ProcessComponent(BaseComponent):
             str(pid),
             protocol.MQTT_SUFFIX_RESPONSE,
         )
+
+        reply_topic = None
+        correlation_data = None
+        if inbound and hasattr(inbound, "properties") and inbound.properties:
+            reply_topic = getattr(inbound.properties, "ResponseTopic", None)
+            correlation_data = getattr(inbound.properties, "CorrelationData", None)
+
         await self.service.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
                 payload=msgspec.msgpack.encode(batch),
                 content_type="application/msgpack",
+                response_topic=reply_topic,
+                correlation_data=correlation_data,
             )
         )
-
     async def _finalize_process(self, pid: int) -> None:
         async with self.state.process_lock:
             self._finalize_process_internal(pid)

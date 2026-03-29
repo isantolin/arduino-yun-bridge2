@@ -28,28 +28,22 @@ async def _stream_poll_updates(
     logger = logging.getLogger(__name__)
     while True:
         poll_payload: dict[str, Any] = await bridge.poll_shell_process(pid)
-        stdout_chunk = (poll_payload.get("stdout") or "").rstrip()
-        stderr_chunk = (poll_payload.get("stderr") or "").rstrip()
+
+        # msgspec msgpack decoding yields bytes for stdout_chunk/stderr_chunk
+        raw_stdout = poll_payload.get("stdout_chunk") or b""
+        raw_stderr = poll_payload.get("stderr_chunk") or b""
+
+        stdout_chunk = raw_stdout.decode("utf-8", errors="replace").rstrip()
+        stderr_chunk = raw_stderr.decode("utf-8", errors="replace").rstrip()
+
         exit_code = poll_payload.get("exit_code")
         finished = bool(poll_payload.get("finished"))
 
         if stdout_chunk:
             logger.info("[PID %d] STDOUT: %s", pid, stdout_chunk)
-        elif poll_payload.get("stdout_base64"):
-            logger.info(
-                "[PID %d] STDOUT (base64, %d bytes)",
-                pid,
-                len(poll_payload["stdout_base64"]),
-            )
 
         if stderr_chunk:
             logger.info("[PID %d] STDERR: %s", pid, stderr_chunk)
-        elif poll_payload.get("stderr_base64"):
-            logger.info(
-                "[PID %d] STDERR (base64, %d bytes)",
-                pid,
-                len(poll_payload["stderr_base64"]),
-            )
 
         if finished and not poll_payload.get("stdout_truncated") and not poll_payload.get("stderr_truncated"):
             if not stdout_chunk and not stderr_chunk:

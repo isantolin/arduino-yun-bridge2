@@ -25,7 +25,8 @@ enum class HalError {
   NOT_FOUND,
   TIMEOUT,
   PERMISSION_DENIED,
-  INVALID_ARGUMENT
+  INVALID_ARGUMENT,
+  NOT_IMPLEMENTED
 };
 
 struct ChunkResult {

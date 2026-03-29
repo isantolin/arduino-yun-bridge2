@@ -83,14 +83,13 @@ logger = logging.getLogger(__name__)
 
 
 class ShellPollResponse(TypedDict, total=False):
-    stdout: str
-    stderr: str
-    stdout_base64: str
-    stderr_base64: str
+    status_byte: int
+    exit_code: int
+    stdout_chunk: bytes
+    stderr_chunk: bytes
+    finished: bool
     stdout_truncated: bool
     stderr_truncated: bool
-    finished: bool
-    exit_code: int
 
 
 def _format_shell_command(parts: Sequence[str]) -> str:
@@ -255,11 +254,10 @@ class Bridge:
             text = preview.decode("utf-8", errors="ignore")
             # [SIL-2] Unhandled messages are protocol violations in deterministic systems.
             # This MUST be logged as ERROR to trigger test failures and alerts.
-            logger.error(
-                "PROTOCOL VIOLATION: Received unhandled MQTT message: %s -> %s",
-                topic,
-                text,
-            )
+            error_msg = f"PROTOCOL VIOLATION: Received unhandled MQTT message: {topic} -> {text}"
+            logger.error(error_msg)
+            import os
+            os._exit(1)
 
     def _safe_queue_put(
         self,

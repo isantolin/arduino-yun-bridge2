@@ -365,7 +365,13 @@ bootstrap_python_module_into_prefix() {
     "$python_bin" -m pip install --no-cache-dir --prefix "$prefix_dir" "$pip_spec" || {
         echo "[WARN] Could not bootstrap $module_name via pip, attempting symlink from host..."
         # Fallback: find host's version and symlink it (Aero-resilient fallback)
-        local host_path=$(python3 -c "import $module_name; print($module_name.__file__)" 2>/dev/null | sed 's/__init__.py//')
+        local host_path
+        host_path=$(python3 - <<PY 2>/dev/null
+import importlib
+spec = importlib.import_module("$module_name")
+print(getattr(spec, "__file__", ""))
+PY
+)
         if [ -n "$host_path" ]; then
             mkdir -p "$prefix_dir/lib/python3.13/site-packages"
             ln -sf "$host_path" "$prefix_dir/lib/python3.13/site-packages/"
@@ -375,6 +381,7 @@ bootstrap_python_module_into_prefix() {
 
 # Bootstrap critical build tools
 bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "hatchling" "hatchling>=1.18.0"
+bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "pdm.backend" "pdm-backend>=2.4.0"
 bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "maturin" "maturin>=1.4.0"
 bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "Cython" "Cython>=3.0.0"
 

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
+
+from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool
-from mcubridge.protocol import protocol
 
 
 def _make_message(
@@ -28,7 +29,6 @@ def _make_message(
 
 
 def test_spool_roundtrip(tmp_path: Path) -> None:
-    # Emulate /tmp path for persistence
     spool_dir = tmp_path / "tmp" / "spool"
     spool_dir.mkdir(parents=True)
 
@@ -58,7 +58,6 @@ def test_spool_trim_limit(tmp_path: Path) -> None:
     for idx in range(5):
         spool.append(_make_message(f"topic/{idx}", str(idx)))
 
-    # zict.LRU should maintain exactly 'limit' items
     assert spool.pending == 2
     snapshot = spool.snapshot()
     assert snapshot["dropped_due_to_limit"] == 3
@@ -85,49 +84,41 @@ def test_spool_skips_corrupt_rows(tmp_path: Path, caplog: pytest.LogCaptureFixtu
     spool_dir.mkdir(parents=True)
 
     spool = MQTTPublishSpool(spool_dir.as_posix(), limit=4)
-    spool.append(_make_message("topic/first"))
+    first = _make_message("topic/first")
+    second = _make_message("topic/second")
+    spool.append(first)
+    spool.append(second)
 
-    # We simulate corruption by mocking the LRU cache to fail on a specific key
-    original_spool = spool._spool
-    mock_lru = MagicMock(spec=dict)
-    # Forward keys() and len() to original to maintain state
-    mock_lru.keys.side_effect = original_spool.keys
-    mock_lru.__len__.side_effect = original_spool.__len__
+    original = QueuedPublish.from_record
 
-    # Mock pop to fail for key "1"
-    def mock_pop(key, default=None):
-        if key == "1":
+    def _decode(record: object) -> QueuedPublish:
+        msg = original(record)
+        if msg.topic_name == "topic/second":
             raise ValueError("Corrupt msgpack")
-        return original_spool.pop(key, default)
+        return msg
 
-    mock_lru.pop.side_effect = mock_pop
+    caplog.set_level(logging.WARNING, "mcubridge.mqtt.spool")
 
-    with patch.object(spool, "_spool", mock_lru):
-        spool.append(_make_message("topic/first")) # key "0"
-        spool._tail = 2 # Force key "1" existence
+    with patch("mcubridge.mqtt.spool.QueuedPublish.from_record", side_effect=_decode):
+        restored_one = spool.pop_next()
+        restored_two = spool.pop_next()
 
-        caplog.set_level(logging.WARNING, "mcubridge.mqtt.spool")
-
-        restored_one = spool.pop_next() # key "0" (success)
-        restored_two = spool.pop_next() # key "1" (failure)
-
-        assert restored_one is not None
-        assert restored_one.topic_name == "topic/first"
-        assert restored_two is None
-        assert spool.snapshot()["corrupt_dropped"] == 1
+    assert restored_one is not None
+    assert restored_one.topic_name == "topic/first"
+    assert restored_two is None
+    assert spool.snapshot()["corrupt_dropped"] == 1
 
 
-def test_spool_fallback_on_init_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Spool degrades if directory creation fails."""
+def test_spool_fallback_on_init_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fail_mkdir(self: Path, parents: bool = False, exist_ok: bool = False) -> None:
+        del self, parents, exist_ok
+        raise PermissionError("No access")
 
-    # Force Path.mkdir to fail
-    monkeypatch.setattr(Path, "mkdir", MagicMock(side_effect=PermissionError("No access")))
+    monkeypatch.setattr(Path, "mkdir", _fail_mkdir)
 
-    # Path must look like /tmp to attempt disk init
     spool = MQTTPublishSpool("/tmp/protected", limit=5)
 
     assert spool.is_degraded
-    # Should still work in memory (via empty dict fallback)
     spool.append(_make_message("topic/fallback"))
     assert spool.pending == 1
     popped = spool.pop_next()
@@ -155,21 +146,19 @@ def test_spool_requeue_success(tmp_path: Path) -> None:
     assert popped_again.topic_name == "topic/requeue"
 
 
-def test_spool_pop_skips_gaps(tmp_path: Path) -> None:
-    """Test that pop_next skips missing keys gracefully."""
+def test_spool_persists_across_reopen(tmp_path: Path) -> None:
     spool_dir = tmp_path / "tmp" / "spool"
     spool_dir.mkdir(parents=True)
 
     spool = MQTTPublishSpool(spool_dir.as_posix(), limit=10)
     spool.append(_make_message("topic/1"))
-    spool._tail = 5 # Create a gap between 0 and 5
     spool.append(_make_message("topic/2"))
 
-    msg1 = spool.pop_next()
-    assert msg1 is not None
-    assert msg1.topic_name == "topic/1"
+    reopened = MQTTPublishSpool(spool_dir.as_posix(), limit=10)
+    msg1 = reopened.pop_next()
+    msg2 = reopened.pop_next()
 
-    msg2 = spool.pop_next()
+    assert msg1 is not None
     assert msg2 is not None
+    assert msg1.topic_name == "topic/1"
     assert msg2.topic_name == "topic/2"
-    assert spool._head == 6

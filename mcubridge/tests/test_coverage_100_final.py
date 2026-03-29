@@ -691,7 +691,7 @@ class TestMqttSpool:
         from mcubridge.mqtt.spool import MQTTPublishSpool
 
         spool = MQTTPublishSpool("/var/not_tmp/spool", limit=10)
-        assert spool._fallback_active is True
+        assert spool.is_degraded is True
 
     def test_spool_append_and_pop(self, tmp_path):
         from mcubridge.mqtt.spool import MQTTPublishSpool
@@ -1449,5 +1449,4 @@ class TestMqttHelpers:
 
         msg = make_inbound_message("test/topic", b"payload")
         assert msg.properties is None
-
 

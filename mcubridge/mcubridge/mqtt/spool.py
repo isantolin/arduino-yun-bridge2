@@ -1,4 +1,4 @@
-"""Durable spool for MQTT publish messages using msgspec and PersistentQueue."""
+"""Durable MQTT publish spool backed by persist-queue."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 import msgspec
 
-from ..protocol.structures import QueuedPublish, SpoolRecord
+from ..protocol.structures import QueuedPublish
 from ..state.queues import PersistentQueue
 
 logger = logging.getLogger("mcubridge.mqtt.spool")
@@ -31,7 +31,7 @@ class MQTTSpoolError(RuntimeError):
 
 
 class MQTTPublishSpool:
-    """Hybrid spool that automates RAM/Disk management using PersistentQueue."""
+    """MQTT spool with durable FIFO persistence under /tmp."""
 
     def __init__(
         self,
@@ -41,66 +41,91 @@ class MQTTPublishSpool:
         on_fallback: Any | None = None,
     ) -> None:
         self.directory = Path(directory)
-
-        # Fast storage (RAM) limit: 20% of total limit or 50 messages
-        ram_limit = min(50, max(1, limit // 5))
-
-        self._base = PersistentQueue[SpoolRecord](
+        self._on_fallback = on_fallback
+        self._limit = max(1, limit)
+        self._records = PersistentQueue[dict[str, Any]](
             directory=self.directory,
-            max_items=max(1, limit),
-            ram_limit=ram_limit,
-            encoder=msgspec.msgpack.encode,
-            decoder=lambda b: msgspec.msgpack.decode(b, type=SpoolRecord),
+            max_items=self._limit,
         )
-
         self._dropped_due_to_limit = 0
         self._trim_events = 0
         self._last_trim_unix = 0.0
         self._corrupt_dropped = 0
+        self._fallback_active = self._records.fallback_active
+        self._failure_reason = self._records.fallback_reason
+        self._last_error = self._records.last_error
+        self._notify_fallback()
+
+    def _notify_fallback(self) -> None:
+        if not self._records.fallback_active or self._on_fallback is None:
+            return
+        reason = self._records.fallback_reason or "initialization_failed"
+        error_text = self._records.last_error
+        original = RuntimeError(error_text) if error_text else None
+        self._on_fallback(reason, original)
+
+    def _refresh_fallback_state(self) -> None:
+        self._fallback_active = self._records.fallback_active
+        self._failure_reason = self._records.fallback_reason
+        self._last_error = self._records.last_error
+        self._notify_fallback()
 
     def close(self) -> None:
-        self._base.clear()
+        self._records.clear()
 
     def append(self, message: QueuedPublish) -> None:
-        record: SpoolRecord = message.to_record()
-        # [SIL-2] The PersistentQueue base handles LRU-style dropping if limit is reached.
-        # We wrap it to track our specific metrics.
-        pre_len = len(self._base)
-        if self.limit and pre_len >= self.limit:
+        if self.pending >= self._limit:
             self._dropped_due_to_limit += 1
             self._trim_events += 1
             self._last_trim_unix = time.time()
-
-        if not self._base.append(record):
-            logger.error("Failed to append to MQTT spool")
+        record = msgspec.structs.asdict(message.to_record())
+        if not self._records.append(record):
+            raise MQTTSpoolError("append_failed")
+        self._refresh_fallback_state()
 
     def pop_next(self) -> QueuedPublish | None:
-        record = self._base.popleft()
-        if record:
-            return QueuedPublish.from_record(record)
+        while self.pending > 0:
+            record = self._records.popleft()
+            self._refresh_fallback_state()
+            if record is None:
+                return None
+            try:
+                return QueuedPublish.from_record(record)
+            except (msgspec.MsgspecError, TypeError, ValueError) as exc:
+                self._corrupt_dropped += 1
+                logger.warning("Dropping corrupt MQTT spool entry: %s", exc)
         return None
 
     def requeue(self, message: QueuedPublish) -> None:
-        """Push message back to the front of the queue."""
-        record: SpoolRecord = message.to_record()
-        self._base.appendleft(record)
+        record = msgspec.structs.asdict(message.to_record())
+        if not self._records.appendleft(record):
+            raise MQTTSpoolError("requeue_failed")
+        self._refresh_fallback_state()
 
     @property
     def pending(self) -> int:
-        return len(self._base)
+        return len(self._records)
 
     @property
     def is_degraded(self) -> bool:
-        # Degradation is now implicit if directory setup failed (Base uses RAM only)
-        return self._base.directory is None
+        return self._fallback_active
+
+    @property
+    def failure_reason(self) -> str | None:
+        return self._failure_reason
+
+    @property
+    def last_error(self) -> str | None:
+        return self._last_error
 
     @property
     def limit(self) -> int:
-        return self._base.max_items or 0
+        return self._limit
 
     @limit.setter
     def limit(self, value: int) -> None:
-        self._base.max_items = value
+        self._limit = max(1, value)
+        self._records.max_items = self._limit
 
     def snapshot(self) -> dict[str, int | float]:
         return {

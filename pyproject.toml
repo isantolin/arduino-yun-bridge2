@@ -13,11 +13,11 @@ dependencies = [
     "cobs==1.2.2",
     "construct==2.10.70",
     "cryptography==46.0.5",
-    "heapdict==1.0.1",
     "markdown-it-py==4.0.0",
     "mdurl==0.1.2",
     "msgspec==0.20.0",
     "paho-mqtt==2.1.0",
+    "persist-queue==1.1.0",
     "prometheus-client==0.24.1",
     "psutil==7.2.2",
     "pygments==2.19.1",
@@ -31,7 +31,6 @@ dependencies = [
     "transitions==0.9.3",
     "typer[all]==0.24.1",
     "uvloop==0.22.1",
-    "zict==3.0.0",
 ]
 
 [tool.setuptools]

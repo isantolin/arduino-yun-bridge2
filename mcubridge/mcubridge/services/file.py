@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-import zict
 import sh  # type: ignore
 from aiomqtt.message import Message
 
@@ -67,8 +66,7 @@ class FileComponent(BaseComponent):
         super().__init__(config, state, ctx)
         self._storage_lock = asyncio.Lock()
         self._usage_seeded = False
-        # [SIL-2] Metadata caching delegation to zict
-        self._metadata_cache: zict.LRU[str, dict[str, Any]] = zict.LRU(100, {})
+        self._metadata_cache: dict[str, dict[str, Any]] = {}
         self._mcu_read_lock = asyncio.Lock()
         self._pending_mcu_read: _PendingMcuRead | None = None
         self._mcu_backend_enabled = True

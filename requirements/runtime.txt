@@ -5,13 +5,13 @@ cobs==1.2.2
 construct==2.10.70
 cryptography==46.0.5
 grpcio-tools==1.78.0
-heapdict==1.0.1
 jinja2==3.1.6
 markdown-it-py==4.0.0
 mdurl==0.1.2
 msgspec==0.20.0
 nanopb==0.4.9.1
 paho-mqtt==2.1.0
+persist-queue==1.1.0
 prometheus-client==0.24.1
 psutil==7.2.2
 pygments==2.19.1
@@ -25,4 +25,3 @@ tenacity==9.1.4
 transitions==0.9.3
 typer[all]==0.24.1
 uvloop==0.22.1
-zict==3.0.0

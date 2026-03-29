@@ -302,7 +302,7 @@ class RuntimeState(msgspec.Struct):
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=lambda: {})
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})
 
-    # [SIL-2] Improved Mailbox: Uses PersistentQueue for O(1) hybrid RAM/Disk storage
+    # [SIL-2] Mailbox queues persist to /tmp through persist-queue when enabled.
     mailbox_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())
     mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())
 
@@ -525,10 +525,6 @@ class RuntimeState(msgspec.Struct):
         if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
             self.console_to_mcu_queue.setup_persistence(Path(self.file_system_root) / "console")
 
-        # [SIL-2] Initialize Mailbox Queues with zict for automatic RAM/Disk management
-        # We use a 20% RAM / 80% Disk split for safety.
-        ram_n = max(1, self.mailbox_queue_limit // 5)
-
         def _create_spool(subdir: str) -> PersistentQueue[bytes]:
             directory = None
             if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
@@ -537,7 +533,6 @@ class RuntimeState(msgspec.Struct):
             return PersistentQueue[bytes](
                 directory=directory,
                 max_items=self.mailbox_queue_limit,
-                ram_limit=ram_n,
             )
 
         self.mailbox_queue = _create_spool("mailbox_out")
@@ -636,7 +631,7 @@ class RuntimeState(msgspec.Struct):
         self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
     def sync_mailbox_limits(self, queue: Any) -> None:
-        # zict doesn't need manual sync, we set it in configure()
+        # Limits are enforced on enqueue and update_limits handles console trimming.
         pass
 
     def update_mailbox_bytes(self) -> None:
@@ -781,8 +776,11 @@ class RuntimeState(msgspec.Struct):
                 on_fallback=self._on_spool_fallback,
             )
             self.mqtt_spool = spool_obj
-            # Only reset degradation if the spooler itself reports it's healthy
-            if not spool_obj.is_degraded:
+            if spool_obj.is_degraded:
+                self.mqtt_spool_degraded = True
+                self.mqtt_spool_failure_reason = spool_obj.failure_reason or "initialization_failed"
+                self.mqtt_spool_last_error = spool_obj.last_error
+            else:
                 self.mqtt_spool_degraded = False
                 self.mqtt_spool_failure_reason = None
         except (OSError, MQTTSpoolError) as exc:
@@ -800,6 +798,11 @@ class RuntimeState(msgspec.Struct):
                 self.mqtt_spool_limit,
                 on_fallback=self._on_spool_fallback,
             )
+            if self.mqtt_spool.is_degraded:
+                self.mqtt_spool_degraded = True
+                self.mqtt_spool_failure_reason = self.mqtt_spool.failure_reason or "reactivation_failed"
+                self.mqtt_spool_last_error = self.mqtt_spool.last_error
+                return False
             self.mqtt_spool_degraded = False
             self.mqtt_spool_failure_reason = None
             self.mqtt_spool_recoveries += 1

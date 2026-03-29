@@ -61,8 +61,7 @@ define Package/$(PKG_NAME)
 		+python3-structlog \
 		+python3-rich \
 		+python3-sh \
-		+python3-zict \
-		+python3-heapdict \
+		+python3-persist-queue \
 		+mosquitto-client \
 		+python3-svcs \
 		+python3-click \

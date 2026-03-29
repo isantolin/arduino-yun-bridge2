@@ -354,11 +354,11 @@ async def test_spool_fallback_updates_state(
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Force a disk full error during zict initialization or subsequent use
-    with patch("zict.File", side_effect=OSError(errno.ENOSPC, "disk full")):
+    # Force a disk full error during persist-queue initialization.
+    with patch("mcubridge.state.queues.FIFOSQLiteQueue", side_effect=OSError(errno.ENOSPC, "disk full")):
         state = create_runtime_state(runtime_config)
 
-        # In new impl, spool is created but degraded
+        # The spool now degrades to RAM if durable initialization fails.
         assert state.mqtt_spool is not None
         assert state.mqtt_spool_degraded is True
         assert state.mqtt_spool_failure_reason == "initialization_failed"

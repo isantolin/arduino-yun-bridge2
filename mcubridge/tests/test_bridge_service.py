@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -395,8 +396,12 @@ async def test_mcu_frame_before_sync_is_rejected(
 
 
 @pytest.mark.asyncio
-async def test_mailbox_available_flow() -> None:
-    runtime_config = RuntimeConfig(serial_shared_secret=b"12345678")
+async def test_mailbox_available_flow(tmp_path: Path) -> None:
+    runtime_config = RuntimeConfig(
+        serial_shared_secret=b"12345678",
+        file_system_root=tmp_path.as_posix(),
+        mqtt_spool_dir=(tmp_path / "spool").as_posix(),
+    )
     runtime_state = create_runtime_state(runtime_config)
     service = BridgeService(runtime_config, runtime_state)
     runtime_state.mark_transport_connected()
@@ -426,7 +431,10 @@ async def test_mailbox_available_flow() -> None:
         resp = structures.MailboxAvailableResponsePacket.decode(payload)
         return resp.count == 1
 
-    assert any(_check_mailbox_ack(f, p) for f, p in sent_frames)
+    try:
+        assert any(_check_mailbox_ack(f, p) for f, p in sent_frames)
+    finally:
+        runtime_state.cleanup()
 
 
 @pytest.mark.asyncio

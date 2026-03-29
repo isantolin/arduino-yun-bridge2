@@ -40,8 +40,12 @@ async def test_mailbox_handle_read_truncation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mailbox_handle_read_send_fail() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+async def test_mailbox_handle_read_send_fail(tmp_path) -> None:
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=tmp_path.as_posix(),
+        mqtt_spool_dir=(tmp_path / "spool").as_posix(),
+    )
     state = create_runtime_state(config)
     ctx = MagicMock()
     ctx.send_frame = AsyncMock(return_value=False)
@@ -49,10 +53,13 @@ async def test_mailbox_handle_read_send_fail() -> None:
     mb = MailboxComponent(config, state, ctx)
 
     msg = b"persistent"
-    state.enqueue_mailbox_message(msg, MagicMock())
-    await mb.handle_read(0, b"")
-    # Message should be requeued at front
-    assert state.pop_mailbox_message() == msg
+    try:
+        state.enqueue_mailbox_message(msg, MagicMock())
+        await mb.handle_read(0, b"")
+        # Message should be requeued at front
+        assert state.pop_mailbox_message() == msg
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio

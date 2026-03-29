@@ -112,6 +112,7 @@ inject_rust_into_sdk() {
     local sdk_host_bin="$SDK_DIR/staging_dir/host/bin"
     local sdk_hostpkg_bin="$SDK_DIR/staging_dir/hostpkg/bin"
     local target="mips-unknown-linux-musl"
+    local rustup_std_available=1
     
     # Limpiar inyecciones previas para evitar estados inconsistentes
     rm -f "$sdk_host_bin/rustc" "$sdk_host_bin/cargo" "$sdk_host_bin/rustdoc"
@@ -119,11 +120,21 @@ inject_rust_into_sdk() {
 
     local can_inject=0
     if command -v rustc >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
+        # rustup stable does not ship prebuilt std for this Tier-3 target.
+        # Skip the futile download attempt and keep the SDK-hosted fallback path.
+        case "$target" in
+            mips-unknown-linux-musl)
+                rustup_std_available=0
+                ;;
+        esac
+
         # [FIX] Si rustup está presente, intentamos instalar el target faltante automáticamente
         if command -v rustup >/dev/null 2>&1; then
-            if ! rustup target list --installed 2>/dev/null | grep -q "^$target$"; then
+            if [ "$rustup_std_available" -eq 1 ] && ! rustup target list --installed 2>/dev/null | grep -q "^$target$"; then
                 echo "[INFO] Attempting to install missing Rust target $target via rustup..."
                 rustup target add "$target" || echo "[WARN] Failed to install Rust target $target via rustup."
+            elif [ "$rustup_std_available" -eq 0 ]; then
+                echo "[INFO] Skipping rustup target add for $target: stable does not provide prebuilt rust-std."
             fi
         fi
 

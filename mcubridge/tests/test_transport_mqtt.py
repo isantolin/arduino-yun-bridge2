@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ssl
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,7 +30,7 @@ from mcubridge.transport import mqtt
 from mcubridge.util import mqtt_helper
 
 
-def _make_config(*, tls: bool, cafile: str | None) -> RuntimeConfig:
+def _make_config(*, tls: bool, cafile: str | None, spool_dir: str = "/tmp/mcubridge-test-transport-spool") -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=protocol.DEFAULT_BAUDRATE,
@@ -53,6 +54,7 @@ def _make_config(*, tls: bool, cafile: str | None) -> RuntimeConfig:
         console_queue_limit_bytes=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
         mailbox_queue_limit=DEFAULT_MAILBOX_QUEUE_LIMIT,
         mailbox_queue_bytes_limit=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+        mqtt_spool_dir=spool_dir,
     )
 
 
@@ -109,7 +111,6 @@ async def test_mqtt_task_requeues_on_publish_failure(
 ) -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
     await state.mqtt_publish_queue.put(
         QueuedPublish(
             topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic",
@@ -142,23 +143,31 @@ async def test_mqtt_task_requeues_on_publish_failure(
             return _iter()
 
     monkeypatch.setattr(aiomqtt, "Client", FakeClient)
+    monkeypatch.setattr(mqtt.tenacity, "retry", lambda *args, **kwargs: (lambda fn: fn))
+    stash_calls: list[QueuedPublish] = []
+    stashed = asyncio.Event()
 
-    transport = mqtt.MqttTransport(config, state, service)
-    # We use a real task so we can control lifecycle
-    task = asyncio.create_task(transport.run())
+    async def _stash(self, message: QueuedPublish) -> bool:
+        del self
+        stash_calls.append(message)
+        stashed.set()
+        return True
 
-    # Wait for ready state or a bit of time
-    start_time = asyncio.get_running_loop().time()
-    while transport.fsm_state != "ready" and (asyncio.get_running_loop().time() - start_time < 1.0):
-        await asyncio.sleep(0.05)
+    monkeypatch.setattr(type(state), "stash_mqtt_message", _stash)
+    monkeypatch.setattr(type(state), "flush_mqtt_spool", AsyncMock(return_value=None))
 
-    # Trigger cancellation
+    transport = mqtt.MqttTransport(config, state, MagicMock())
+    task = asyncio.create_task(transport._publisher_loop(FakeClient()))  # type: ignore[arg-type]
+
+    await asyncio.wait_for(stashed.wait(), timeout=1.0)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    # Check if message was requeued
-    assert state.mqtt_publish_queue.qsize() == 1
+    assert len(stash_calls) == 1
+    assert stash_calls[0].topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic"
+    assert state.mqtt_publish_queue.qsize() == 0
+    state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -245,7 +254,10 @@ async def test_mqtt_publisher_debug_logging() -> None:
         loop_task = asyncio.create_task(run_loop())
         await stop_task
         loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
     assert len(published) == 1
+    state.cleanup()
 
 
 @pytest.mark.asyncio

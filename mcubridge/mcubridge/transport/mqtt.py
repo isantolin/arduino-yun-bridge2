@@ -201,20 +201,22 @@ class MqttTransport:
                     )
 
                 published = False
+                should_requeue = False
                 try:
                     await _reliable_publish()
                     self.state.record_mqtt_publish()
                     published = True
                 except aiomqtt.MqttError as exc:
                     logger.warning("MQTT persistent publish failure: %s", exc)
-                    await self.state.stash_mqtt_message(message)
+                    should_requeue = not await self.state.stash_mqtt_message(message)
                 except asyncio.CancelledError:
+                    should_requeue = True
                     raise
                 except (OSError, RuntimeError, ValueError, TypeError) as exc:
                     logger.error("Unexpected error in MQTT publisher: %s", exc)
-                    await self.state.stash_mqtt_message(message)
+                    should_requeue = not await self.state.stash_mqtt_message(message)
                 finally:
-                    if not published:
+                    if not published and should_requeue:
                         # [SIL-2] Fail-Safe: Re-enqueue if not sent (e.g. on cancellation)
                         try:
                             self.state.mqtt_publish_queue.put_nowait(message)

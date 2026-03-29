@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
 import inspect
 import logging
+import shutil
 import sys
 import warnings
 from collections.abc import Iterator
@@ -151,6 +153,32 @@ def reset_logging_handlers():
         except (OSError, RuntimeError):
             pass
         root.removeHandler(handler)
+
+
+def _remove_persistent_test_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+
+
+@pytest.fixture(autouse=True)
+def isolate_persistent_runtime_paths() -> Iterator[None]:
+    shared_paths = (
+        Path("/tmp/yun_files/console"),
+        Path("/tmp/yun_files/mailbox_out"),
+        Path("/tmp/yun_files/mailbox_in"),
+        Path("/tmp/yun_files"),
+        Path("/tmp/mcubridge"),
+        Path("/tmp/mcubridge-tests-spool"),
+        Path("/tmp/spool_v3"),
+    )
+    for path in shared_paths:
+        _remove_persistent_test_path(path)
+    yield
+    for path in shared_paths:
+        _remove_persistent_test_path(path)
 
 
 @pytest.fixture(autouse=True)

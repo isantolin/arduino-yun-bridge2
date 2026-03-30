@@ -990,7 +990,7 @@ class RuntimeState(msgspec.Struct):
             self.running_processes.clear()
 
 
-def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:
+def create_runtime_state(config: RuntimeConfig | dict[str, Any], initialize_spool: bool = False) -> RuntimeState:
     from ..config.settings import RuntimeConfig as RC
 
     cfg = msgspec.convert(config, RC) if isinstance(config, dict) else config
@@ -1003,5 +1003,6 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState
     state.serial_tx_allowed.set()
     state.configure(cfg)
     state.configure_spool(cfg.mqtt_spool_dir, cfg.mqtt_queue_limit * 4)
-    state.initialize_spool()
+    if initialize_spool:
+        state.initialize_spool()
     return state

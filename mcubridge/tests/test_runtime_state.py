@@ -277,7 +277,7 @@ def test_create_runtime_state_marks_spool_degraded(
         _BoomSpool,
     )
 
-    state = create_runtime_state(runtime_config)
+    state = create_runtime_state(runtime_config, initialize_spool=True)
     try:
         assert state.mqtt_spool is None
         assert state.mqtt_spool_degraded is True
@@ -292,7 +292,7 @@ def test_create_runtime_state_marks_spool_degraded(
 async def test_stash_mqtt_message_disables_spool_on_failure(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = create_runtime_state(runtime_config)
+    state = create_runtime_state(runtime_config, initialize_spool=True)
     try:
         if state.mqtt_spool is not None:
             state.mqtt_spool.close()
@@ -326,7 +326,7 @@ async def test_stash_mqtt_message_disables_spool_on_failure(
 async def test_flush_mqtt_spool_handles_pop_failure(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = create_runtime_state(runtime_config)
+    state = create_runtime_state(runtime_config, initialize_spool=True)
     try:
         if state.mqtt_spool is not None:
             state.mqtt_spool.close()
@@ -360,7 +360,7 @@ async def test_spool_fallback_updates_state(
 ) -> None:
     # Force a disk full error during persist-queue initialization.
     with patch("mcubridge.state.queues.FIFOSQLiteQueue", side_effect=OSError(errno.ENOSPC, "disk full")):
-        state = create_runtime_state(runtime_config)
+        state = create_runtime_state(runtime_config, initialize_spool=True)
         try:
             # The spool now degrades to RAM if durable initialization fails.
             assert state.mqtt_spool is not None

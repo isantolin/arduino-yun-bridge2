@@ -290,7 +290,7 @@ def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
         loop_to_close = asyncio.new_event_loop()
         asyncio.set_event_loop(loop_to_close)
 
-    state = create_runtime_state(runtime_config)
+    state = create_runtime_state(runtime_config, initialize_spool=True)
     state.mark_transport_connected()
     state.mark_synchronized()
     try:

@@ -123,7 +123,7 @@ class BridgeDaemon:
             config: Validated RuntimeConfig from UCI/defaults.
         """
         self.config = config
-        self.state = create_runtime_state(config)
+        self.state = create_runtime_state(config, initialize_spool=True)
         self.state.config_source = get_config_source()
         self.service = BridgeService(config, self.state)
         # Initialize dependencies

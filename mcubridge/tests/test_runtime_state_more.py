@@ -19,7 +19,7 @@ def test_create_runtime_state_disables_spool_without_scheduling_retry(
 ) -> None:
     runtime_config.mqtt_spool_dir = ""
 
-    state = create_runtime_state(runtime_config)
+    state = create_runtime_state(runtime_config, initialize_spool=True)
     try:
         assert state.mqtt_spool is None
         assert state.mqtt_spool_degraded is True
@@ -84,7 +84,7 @@ def test_ensure_spool_returns_false_while_backoff_active(
 ) -> None:
     async def _run() -> None:
         runtime_config.mqtt_spool_dir = str(tmp_path_factory.mktemp("spool"))
-        state = create_runtime_state(runtime_config)
+        state = create_runtime_state(runtime_config, initialize_spool=True)
         try:
             assert state.mqtt_spool is not None
             state.mqtt_spool.close()
@@ -106,7 +106,7 @@ def test_stash_mqtt_message_returns_false_when_spool_disabled(
 ) -> None:
     async def _run() -> None:
         runtime_config.mqtt_spool_dir = ""
-        state = create_runtime_state(runtime_config)
+        state = create_runtime_state(runtime_config, initialize_spool=True)
         try:
             stored = await state.stash_mqtt_message(
                 QueuedPublish(
@@ -127,7 +127,7 @@ def test_flush_mqtt_spool_queue_full_requeue_failure_disables_spool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _run() -> None:
-        state = create_runtime_state(runtime_config)
+        state = create_runtime_state(runtime_config, initialize_spool=True)
         try:
             if state.mqtt_spool is not None:
                 state.mqtt_spool.close()

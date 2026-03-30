@@ -52,7 +52,10 @@ async def datastore_component() -> DatastoreComponent:
     ctx.schedule_background.side_effect = _schedule
 
     component = DatastoreComponent(config, state, ctx)
-    return component
+    try:
+        yield component
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio

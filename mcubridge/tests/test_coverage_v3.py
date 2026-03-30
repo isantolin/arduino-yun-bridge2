@@ -167,27 +167,29 @@ async def test_supervise_task_telemetry_error_path():
 async def test_daemon_run_exception_group_coverage():
     config = create_real_config()
     d = daemon.BridgeDaemon(config)
+    try:
+        class FakeTaskGroup:
+            async def __aenter__(self):
+                return self
 
-    class FakeTaskGroup:
-        async def __aenter__(self):
-            return self
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                raise ExceptionGroup("Main Group", [RuntimeError("Sub-error")])
 
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
-            raise ExceptionGroup("Main Group", [RuntimeError("Sub-error")])
+            def create_task(self, coro):
+                coro.close()
+                return MagicMock(spec=asyncio.Task)
 
-        def create_task(self, coro):
-            coro.close()
-            return MagicMock(spec=asyncio.Task)
-
-    with (
-        patch("asyncio.TaskGroup", return_value=FakeTaskGroup()),
-        patch.object(d.service, "__aenter__", new_callable=AsyncMock),
-        patch.object(d.service, "__aexit__", new_callable=AsyncMock),
-        patch("mcubridge.daemon._cleanup_child_processes"),
-        patch("mcubridge.daemon.cleanup_status_file"),
-        pytest.raises(ExceptionGroup),
-    ):
-        await d.run()
+        with (
+            patch("asyncio.TaskGroup", return_value=FakeTaskGroup()),
+            patch.object(d.service, "__aenter__", new_callable=AsyncMock),
+            patch.object(d.service, "__aexit__", new_callable=AsyncMock),
+            patch("mcubridge.daemon._cleanup_child_processes"),
+            patch("mcubridge.daemon.cleanup_status_file"),
+            pytest.raises(ExceptionGroup),
+        ):
+            await d.run()
+    finally:
+        d.state.cleanup()
 
 
 @pytest.mark.asyncio

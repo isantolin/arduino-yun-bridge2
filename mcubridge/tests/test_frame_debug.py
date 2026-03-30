@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import binascii
 import pytest
-from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status, UINT8_MASK
 from tests.test_constants import TEST_BROKEN_CRC  # noqa: E402
 

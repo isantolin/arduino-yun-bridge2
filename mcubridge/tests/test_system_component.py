@@ -30,7 +30,11 @@ def runtime_config():
 
 @pytest.fixture
 def runtime_state(runtime_config):
-    return create_runtime_state(runtime_config)
+    state = create_runtime_state(runtime_config)
+    try:
+        yield state
+    finally:
+        state.cleanup()
 
 
 class DummyContext(BridgeContext):

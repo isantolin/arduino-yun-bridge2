@@ -16,27 +16,25 @@ def get_uci_config() -> dict[str, Any]:
     try:
         import uci  # type: ignore
         with uci.Uci() as cursor:
-            try:
-                section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
-            except Exception as e:
-                # On OpenWrt, missing section is a critical config error
-                logger.warning("UCI section %s.%s missing or unreadable: %s", _UCI_PACKAGE, _UCI_SECTION, e)
-                return get_default_config()
-
+            # cursor.get_all returns dict[str, Any] or similar
+            section: Any = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
             if not section:
                 return get_default_config()
 
             # Clean and cast the UCI dictionary
             from collections.abc import Iterable
-            clean_config: dict[str, Any] = {
+            config_dict: dict[str, Any] = {
                 str(k): (" ".join(map(str, cast(Iterable[Any], v))) if isinstance(v, (list, tuple)) else v)
                 for k, v in cast(dict[Any, Any], section).items()
                 if not str(k).startswith((".", "_"))
             }
-            return clean_config
+            return config_dict
     except (ImportError, AttributeError, Exception):
         # Fallback for non-OpenWrt environments (e.g. dev/test)
         return get_default_config()
+
+    # Extra fallback to satisfy static analysis on all paths
+    return get_default_config()
 
 
 def get_default_config() -> dict[str, Any]:

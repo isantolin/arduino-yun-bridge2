@@ -7,7 +7,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any
 
 from aiomqtt.message import Message
 
@@ -497,7 +497,6 @@ class FileComponent(BaseComponent):
         import os
         try:
             root = self.config.file_system_root
-            total = 0
             # [SIL-2] Non-recursive or depth-limited walk could be considered if performance is an issue,
             # but for embedded storage limits, os.walk is sufficiently fast and safe.
             def _get_size():

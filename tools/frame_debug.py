@@ -7,7 +7,7 @@ import sys
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated
 
 import serial
 import typer

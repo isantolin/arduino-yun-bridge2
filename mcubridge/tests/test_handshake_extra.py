@@ -19,7 +19,7 @@ from mcubridge.state.context import create_runtime_state
 @pytest.mark.asyncio
 async def test_handshake_sync_resp_rate_limit() -> None:
     """Test rate limiting in handle_link_sync_resp."""
-    import os, time
+    import os
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         serial_handshake_min_interval=10.0,
@@ -47,7 +47,7 @@ async def test_handshake_sync_resp_rate_limit() -> None:
 @pytest.mark.asyncio
 async def test_handshake_sync_resp_replay_detected() -> None:
     """Test replay detection in handle_link_sync_resp."""
-    import os, time
+    import os
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",
@@ -77,7 +77,7 @@ async def test_handshake_sync_resp_replay_detected() -> None:
 @pytest.mark.asyncio
 async def test_handshake_fetch_capabilities_timeout_and_retry() -> None:
     """Test _fetch_capabilities retry logic on timeout."""
-    import os, time
+    import os
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",
@@ -112,7 +112,7 @@ async def test_handshake_fetch_capabilities_timeout_and_retry() -> None:
 @pytest.mark.asyncio
 async def test_handshake_handle_capabilities_resp() -> None:
     """Test handle_capabilities_resp completes the future."""
-    import os, time
+    import os
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",
@@ -140,7 +140,7 @@ async def test_handshake_handle_capabilities_resp() -> None:
 @pytest.mark.asyncio
 async def test_handshake_failure_detail_non_immediate() -> None:
     """Test handle_handshake_failure with streak-based fatal reason."""
-    import os, time
+    import os
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         serial_handshake_fatal_failures=2,
@@ -172,7 +172,7 @@ async def test_handshake_failure_detail_non_immediate() -> None:
 @pytest.mark.asyncio
 async def test_handshake_clear_expectations_with_data() -> None:
     """Test clear_handshake_expectations zeroizes buffers."""
-    import os, time
+    import os
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",

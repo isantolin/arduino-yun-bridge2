@@ -85,7 +85,7 @@ def encode(uncompressed: bytes) -> bytes:
     # [SIL-2] Pattern: Any byte repeated MIN_RUN_LENGTH+ times, or the escape byte itself
     # We cap at 256 repetitions total (Count-2 = 254) because 255 is the SINGLE_ESCAPE_MARKER.
     pattern = re.compile(
-        rb"(.)\1{" + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode() + rb",255}|" 
+        rb"(.)\1{" + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode() + rb",255}|"
         + re.escape(bytes([protocol.RLE_ESCAPE_BYTE]))
     )
     compressed = bytearray()

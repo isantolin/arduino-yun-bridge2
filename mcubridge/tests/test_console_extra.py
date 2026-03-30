@@ -10,7 +10,8 @@ from mcubridge.state.context import create_runtime_state
 
 @pytest.mark.asyncio
 async def test_console_handle_write_edge_cases() -> None:
-    import os, time
+    import os
+    import time
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",
@@ -37,7 +38,8 @@ async def test_console_handle_write_edge_cases() -> None:
 
 @pytest.mark.asyncio
 async def test_console_mqtt_input_send_fail() -> None:
-    import os, time
+    import os
+    import time
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",
@@ -57,7 +59,8 @@ async def test_console_mqtt_input_send_fail() -> None:
 
 @pytest.mark.asyncio
 async def test_console_flush_queue_send_fail() -> None:
-    import os, time
+    import os
+    import time
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",

@@ -124,7 +124,8 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
         await service.on_serial_connected()
 
         assert sent_frames
-        reset_payloads = [payload for frame_id, payload in sent_frames if frame_id in {Command.CMD_LINK_RESET.value, 64}]
+        reset_ids = {Command.CMD_LINK_RESET.value, 64}
+        reset_payloads = [payload for frame_id, payload in sent_frames if frame_id in reset_ids]
         assert reset_payloads
         reset_payload = reset_payloads[0]
         # [SIL-2] Payload must be 7 bytes (new struct: 2+1+4 bytes)

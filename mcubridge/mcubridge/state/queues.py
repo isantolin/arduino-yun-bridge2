@@ -59,6 +59,10 @@ class PersistentQueue(Generic[T]):
         if self.directory is None or self._closed:
             return
         with self._lock:
+            if self._store is not None:
+                with suppress(Exception):
+                    self._store.close()
+                self._store = None
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
                 self._store = FIFOSQLiteQueue(
@@ -81,7 +85,7 @@ class PersistentQueue(Generic[T]):
 
     def _activate_fallback_locked(self, reason: str, exc: BaseException | None = None) -> None:
         if self._store is not None:
-            with suppress(OSError, RuntimeError, ValueError, sqlite3.Error):
+            with suppress(Exception):
                 self._store.close()
             self._store = None
         self._fallback_active = True
@@ -99,7 +103,7 @@ class PersistentQueue(Generic[T]):
             return
         try:
             if self._store is not None:
-                with suppress(OSError, RuntimeError, ValueError, sqlite3.Error):
+                with suppress(Exception):
                     self._store.close()
                 self._store = None
 
@@ -117,13 +121,12 @@ class PersistentQueue(Generic[T]):
 
     def __del__(self) -> None:
         # [SIL-2] Final safety check to avoid resource leaks during garbage collection.
-        # We avoid the lock here to prevent deadlocks during GC.
         if not getattr(self, "_closed", True):
-            store = getattr(self, "_store", None)
-            if store is not None:
-                with suppress(Exception):
-                    store.close()
-            # Set attributes to None to help GC
+            try:
+                if self._store is not None:
+                    self._store.close()
+            except Exception:
+                pass
             self._store = None
             self._closed = True
 
@@ -131,7 +134,7 @@ class PersistentQueue(Generic[T]):
         with self._lock:
             self._closed = True
             if self._store is not None:
-                with suppress(OSError, RuntimeError, ValueError, sqlite3.Error):
+                with suppress(Exception):
                     self._store.close()
                 self._store = None
 
@@ -179,9 +182,7 @@ class PersistentQueue(Generic[T]):
 
     def popleft(self) -> T | None:
         with self._lock:
-            if self._closed:
-                raise RuntimeError("popleft from a closed queue")
-            if not self._items:
+            if self._closed or not self._items:
                 return None
             item = self._items.popleft()
             if self._store is not None:
@@ -246,24 +247,20 @@ class BoundedByteDeque:
         dropped_bytes = 0
         truncated_bytes = 0
         
-        # [SIL-2] Individual chunk truncation if larger than total limit
         if self.max_bytes is not None and self.max_bytes > 0 and len(data) > self.max_bytes:
             truncated_bytes = len(data) - self.max_bytes
             data = data[:self.max_bytes]
 
-        # Room management for existing chunks
         while self.max_bytes is not None and self.max_bytes > 0 and self._bytes + len(data) > self.max_bytes:
-            try:
-                old = self.popleft()
-                dropped_chunks += 1
-                dropped_bytes += len(old)
-            except IndexError:
+            old = self.popleft()
+            if old is None:
                 break
+            dropped_chunks += 1
+            dropped_bytes += len(old)
 
         evt = self._base.append(data)
         if evt.success:
             self._bytes += len(data)
-            # Combine events
             return QueueEvent(
                 success=True,
                 dropped_chunks=dropped_chunks + evt.dropped_chunks,
@@ -274,7 +271,6 @@ class BoundedByteDeque:
         return QueueEvent(success=False)
 
     def appendleft(self, data: bytes) -> QueueEvent:
-        # Usually used for requeue, might ignore limits or handle similarly
         evt = self._base.appendleft(data)
         if evt.success:
             self._bytes += len(data)
@@ -308,24 +304,16 @@ class BoundedByteDeque:
         self.max_bytes = max_bytes
         self._base.max_items = max_items
         
-        # [SIL-2] Enforce new limits immediately
         while self.max_items is not None and self.max_items > 0 and len(self) > self.max_items:
-            try:
-                self.popleft()
-            except IndexError:
-                break
+            if self.popleft() is None: break
         while self.max_bytes is not None and self.max_bytes > 0 and self.bytes > self.max_bytes:
-            try:
-                self.popleft()
-            except IndexError:
-                break
+            if self.popleft() is None: break
 
     def setup_persistence(self, directory: str | Path, ram_limit: int = 100) -> None:
         del ram_limit
         previous = self._base.values()
         self._base.close()
         self._base = PersistentQueue[bytes](directory=directory, max_items=self.max_items)
-        # Re-populate with previous items
         self._bytes = 0
         for item in previous:
             self.append(item)
@@ -348,7 +336,6 @@ class BoundedByteDeque:
 
     @property
     def bytes_used(self) -> int:
-        """Alias for bytes used in some tests."""
         return self._bytes
 
     @property
@@ -357,7 +344,6 @@ class BoundedByteDeque:
 
     @property
     def _queue(self) -> PersistentQueue[bytes]:
-        """Alias for internal base used in some tests."""
         return self._base
 
 

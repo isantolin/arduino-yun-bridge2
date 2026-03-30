@@ -55,7 +55,7 @@ RPC_FRAME_HEADER: Construct = Struct(
         encoder=lambda obj, ctx: obj # type: ignore
     ),
     "sequence_id" / Int16ub,
-    "version_check" / Check(lambda ctx: getattr(ctx, "version", 0) == protocol.PROTOCOL_VERSION), # type: ignore
+    "version_check" / Check(lambda ctx: getattr(cast(Any, ctx), "version", 0) == protocol.PROTOCOL_VERSION), # type: ignore
 )
 
 
@@ -71,10 +71,11 @@ RPC_FRAME: Construct = Struct(
     "header_payload" / RawCopy(RPC_PAYLOAD_CONTAINER),
     "crc" / Checksum(
         Int32ub,
-        lambda data: crc32(data) & 0xFFFFFFFF,
+        lambda data: crc32(cast(bytes, data)) & 0xFFFFFFFF, # type: ignore
         this.header_payload.data
     ),
 )
+
 
 
 class Frame(msgspec.Struct, frozen=True):

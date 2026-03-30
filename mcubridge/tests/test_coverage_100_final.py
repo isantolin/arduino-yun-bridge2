@@ -356,11 +356,12 @@ class TestQueues:
         assert len(q) == 1
 
     def test_setup_persistence_failure(self, tmp_path):
-        from mcubridge.state.queues import BoundedByteDeque
+        from mcubridge.state.queues import BoundedByteDeque, PersistentQueue
 
         q = BoundedByteDeque(max_items=10)
         q.setup_persistence("/dev/null/impossible/path", ram_limit=5)
-        assert isinstance(q._queue, dict)
+        assert isinstance(q._queue, PersistentQueue)
+        assert q._queue.fallback_active is True
 
     def test_bool(self):
         from mcubridge.state.queues import BoundedByteDeque
@@ -1284,17 +1285,23 @@ class TestRuntimeStateEdges:
         state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_stash_mqtt_message_no_spool(self, state):
+    async def test_stash_mqtt_message_no_spool(self, state, monkeypatch):
         from mcubridge.protocol.structures import QueuedPublish
+        from mcubridge.state.context import RuntimeState
 
         state.mqtt_spool = None
         msg = QueuedPublish(topic_name="t", payload=b"p")
-        with patch.object(state, "ensure_spool", AsyncMock(return_value=True)):
-            # We also need to mock mqtt_spool since it's used after ensure_spool
-            state.mqtt_spool = MagicMock()
-            result = await state.stash_mqtt_message(msg)
-            assert result is True
-            state.mqtt_spool.append.assert_called_with(msg)
+
+        async def mock_ensure_spool(instance):
+            return True
+
+        monkeypatch.setattr(RuntimeState, "ensure_spool", mock_ensure_spool)
+
+        # We also need to mock mqtt_spool since it's used after ensure_spool
+        state.mqtt_spool = MagicMock()
+        result = await state.stash_mqtt_message(msg)
+        assert result is True
+        state.mqtt_spool.append.assert_called_with(msg)
 
     @pytest.mark.asyncio
     async def test_flush_mqtt_spool_no_spool(self, state):

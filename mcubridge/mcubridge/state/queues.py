@@ -5,20 +5,33 @@ from __future__ import annotations
 import logging
 import shutil
 import sqlite3
-from contextlib import suppress
 from collections import deque
-from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
+from contextlib import suppress
 from pathlib import Path
-from typing import Any, Generic, TypeVar, cast
+from threading import Lock
+from typing import Any, Generic, Iterable, TypeVar, cast
 
 from persistqueue import Empty, FIFOSQLiteQueue
 
-from mcubridge.protocol.structures import QueueEvent
+T = TypeVar("T")
 
 logger = logging.getLogger("mcubridge.state.queues")
 
-T = TypeVar("T")
-_DEFAULT_SENTINEL = object()
+
+@dataclass(frozen=True)
+class QueueEvent:
+    """Detailed event info for queue operations."""
+    success: bool = True
+    dropped_chunks: int = 0
+    dropped_bytes: int = 0
+    truncated_chunks: int = 0
+    truncated_bytes: int = 0
+
+    @property
+    def accepted(self) -> bool:
+        """Alias for success used in tests."""
+        return self.success
 
 
 class PersistentQueue(Generic[T]):
@@ -36,32 +49,41 @@ class PersistentQueue(Generic[T]):
         self._fallback_active = False
         self._fallback_reason: str | None = None
         self._last_error: str | None = None
+        self._closed = False
+        self._lock = Lock()
 
         if self.directory is not None:
             self._open_store(load_existing=True)
 
     def _open_store(self, *, load_existing: bool) -> None:
-        if self.directory is None:
+        if self.directory is None or self._closed:
             return
-        try:
-            self.directory.mkdir(parents=True, exist_ok=True)
-            self._store = FIFOSQLiteQueue(
-                str(self.directory),
-                auto_commit=True,
-                multithreading=True,
-            )
-            self._fallback_active = False
-            self._fallback_reason = None
-            self._last_error = None
-            if load_existing:
-                rows = cast(list[dict[str, Any]], self._store.queue())
-                self._items = deque(cast(T, row["data"]) for row in rows)
-        except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
-            self._activate_fallback("initialization_failed", exc)
+        with self._lock:
+            try:
+                self.directory.mkdir(parents=True, exist_ok=True)
+                self._store = FIFOSQLiteQueue(
+                    str(self.directory),
+                    auto_commit=True,
+                    multithreading=True,
+                )
+                self._fallback_active = False
+                self._fallback_reason = None
+                self._last_error = None
+                if load_existing:
+                    rows = cast(list[dict[str, Any]], self._store.queue())
+                    self._items = deque(cast(T, row["data"]) for row in rows)
+            except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
+                self._activate_fallback_locked("initialization_failed", exc)
 
     def _activate_fallback(self, reason: str, exc: BaseException | None = None) -> None:
-        self.close()
-        self._store = None
+        with self._lock:
+            self._activate_fallback_locked(reason, exc)
+
+    def _activate_fallback_locked(self, reason: str, exc: BaseException | None = None) -> None:
+        if self._store is not None:
+            with suppress(OSError, RuntimeError, ValueError, sqlite3.Error):
+                self._store.close()
+            self._store = None
         self._fallback_active = True
         self._fallback_reason = reason
         self._last_error = str(exc) if exc is not None else None
@@ -69,10 +91,18 @@ class PersistentQueue(Generic[T]):
             logger.warning("Persistent queue fallback (%s): %s", reason, exc)
 
     def _rewrite_store(self) -> None:
-        if self.directory is None or self._store is None:
+        with self._lock:
+            self._rewrite_store_locked()
+
+    def _rewrite_store_locked(self) -> None:
+        if self.directory is None or self._closed:
             return
         try:
-            self._store.close()
+            if self._store is not None:
+                with suppress(OSError, RuntimeError, ValueError, sqlite3.Error):
+                    self._store.close()
+                self._store = None
+
             shutil.rmtree(self.directory, ignore_errors=True)
             self.directory.mkdir(parents=True, exist_ok=True)
             self._store = FIFOSQLiteQueue(
@@ -83,16 +113,27 @@ class PersistentQueue(Generic[T]):
             for item in self._items:
                 self._store.put(item)
         except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
-            self._activate_fallback("rewrite_failed", exc)
+            self._activate_fallback_locked("rewrite_failed", exc)
 
-    def __len__(self) -> int:
-        return len(self._items)
+    def __del__(self) -> None:
+        # [SIL-2] Final safety check to avoid resource leaks during garbage collection.
+        # We avoid the lock here to prevent deadlocks during GC.
+        if not getattr(self, "_closed", True):
+            store = getattr(self, "_store", None)
+            if store is not None:
+                with suppress(Exception):
+                    store.close()
+            # Set attributes to None to help GC
+            self._store = None
+            self._closed = True
 
-    def __bool__(self) -> bool:
-        return bool(self._items)
-
-    def values(self) -> Iterable[T]:
-        return tuple(self._items)
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            if self._store is not None:
+                with suppress(OSError, RuntimeError, ValueError, sqlite3.Error):
+                    self._store.close()
+                self._store = None
 
     @property
     def fallback_active(self) -> bool:
@@ -106,192 +147,154 @@ class PersistentQueue(Generic[T]):
     def last_error(self) -> str | None:
         return self._last_error
 
-    def append(self, item: T) -> bool:
-        dropped_left = False
-        if self.max_items is not None and self.max_items > 0 and len(self._items) >= self.max_items:
-            if self._items:
-                self._items.popleft()
-                dropped_left = True
-                if self._store is not None:
-                    try:
+    def append(self, item: T) -> QueueEvent:
+        with self._lock:
+            if self._closed:
+                return QueueEvent(success=False)
+            
+            dropped_chunks = 0
+            if self.max_items is not None and self.max_items > 0 and len(self._items) >= self.max_items:
+                if self._items:
+                    self._items.popleft()
+                    dropped_chunks = 1
+
+            self._items.append(item)
+            if self._store is not None:
+                try:
+                    if dropped_chunks > 0:
                         self._store.get_nowait()
-                    except Empty:
-                        dropped_left = False
-                        self._rewrite_store()
-                    except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
-                        self._activate_fallback("append_failed", exc)
-
-        self._items.append(item)
-        if self._store is not None:
-            try:
-                if dropped_left:
                     self._store.put(item)
-                else:
-                    self._store.put(item)
-            except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
-                self._activate_fallback("append_failed", exc)
-        return True
+                except (Empty, sqlite3.Error, RuntimeError):
+                    self._activate_fallback_locked("write_failed")
+            return QueueEvent(success=True, dropped_chunks=dropped_chunks)
 
-    def appendleft(self, item: T) -> bool:
-        self._items.appendleft(item)
-        if self.max_items is not None and self.max_items > 0 and len(self._items) > self.max_items:
-            self._items.pop()
-        if self._store is not None:
-            self._rewrite_store()
-        return True
+    def appendleft(self, item: T) -> QueueEvent:
+        with self._lock:
+            if self._closed:
+                return QueueEvent(success=False)
+            self._items.appendleft(item)
+            if self._store is not None:
+                self._rewrite_store_locked()
+            return QueueEvent(success=True)
 
     def popleft(self) -> T | None:
-        if not self._items:
-            return None
-        item = self._items.popleft()
-        if self._store is not None:
-            try:
-                self._store.get_nowait()
-            except Empty:
-                self._rewrite_store()
-            except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
-                self._activate_fallback("read_failed", exc)
-        return item
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("popleft from a closed queue")
+            if not self._items:
+                return None
+            item = self._items.popleft()
+            if self._store is not None:
+                try:
+                    self._store.get_nowait()
+                except (Empty, sqlite3.Error, RuntimeError):
+                    self._rewrite_store_locked()
+            return item
 
-    def pop(self) -> T | None:
-        if not self._items:
-            return None
-        item = self._items.pop()
-        if self._store is not None:
-            self._rewrite_store()
-        return item
+    def pop(self) -> T:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("pop from a closed queue")
+            if not self._items:
+                raise IndexError("pop from an empty deque")
+            item = self._items.pop()
+            if self._store is not None:
+                self._rewrite_store_locked()
+            return item
+
+    def extend(self, items: Iterable[T]) -> None:
+        for item in items:
+            self.append(item)
 
     def clear(self) -> None:
-        self._items.clear()
-        if self._store is not None:
-            self._rewrite_store()
+        with self._lock:
+            self._items.clear()
+            if self._store is not None:
+                self._rewrite_store_locked()
 
-    def close(self) -> None:
-        if self._store is not None:
-            with suppress(OSError, RuntimeError, ValueError, sqlite3.Error):
-                self._store.close()
-            self._store = None
+    def __len__(self) -> int:
+        return len(self._items)
 
-    def snapshot(self) -> dict[str, Any]:
-        return {
-            "pending": len(self._items),
-            "persistence": str(self.directory) if self.directory else "memory",
-            "fallback_active": 1 if self._fallback_active else 0,
-            "fallback_reason": self._fallback_reason,
-        }
+    def __getitem__(self, index: int) -> T:
+        with self._lock:
+            return self._items[index]
+
+    def __iter__(self) -> Iterable[T]:
+        with self._lock:
+            return iter(tuple(self._items))
+
+    def values(self) -> tuple[T, ...]:
+        with self._lock:
+            return tuple(self._items)
 
 
 class BoundedByteDeque:
-    """Deque for bytes with item and byte limits, optionally persisted."""
+    """Byte-aware deque that maintains item and byte limits."""
 
     def __init__(
         self,
         max_items: int | None = None,
         max_bytes: int | None = None,
     ) -> None:
-        self._max_items = max_items
+        self.max_items = max_items
         self.max_bytes = max_bytes
+        self._base = PersistentQueue[bytes](max_items=max_items)
         self._bytes = 0
-        self._base = PersistentQueue[bytes]()
-        self._queue: Any = self._base.values()
 
-    def setup_persistence(self, directory: str | Path, ram_limit: int = 100) -> None:
-        del ram_limit
-        previous = tuple(self._base.values())
-        self._base.close()
-        self._base = PersistentQueue[bytes](directory=directory)
-        if self._base.fallback_active:
-            self._queue = {}
-            for chunk in previous:
-                self._base.append(chunk)
-        else:
-            self._queue = self._base
-            for chunk in previous:
-                self._base.append(chunk)
-        self._bytes = sum(len(chunk) for chunk in self._base.values())
-
-    def __len__(self) -> int:
-        return len(self._base)
-
-    def __bool__(self) -> bool:
-        return bool(self._base)
-
-    def __iter__(self) -> Iterator[bytes]:
-        return iter(self._base.values())
-
-    def __getitem__(self, index: int) -> bytes:
-        items = tuple(self._base.values())
-        return items[index]
-
-    @property
-    def bytes_used(self) -> int:
-        return self._bytes
-
-    @property
-    def limit_bytes(self) -> int | None:
-        return self.max_bytes
-
-    def append(self, chunk: bytes) -> QueueEvent:
-        data = bytes(chunk)
-        event = QueueEvent()
-
+    def append(self, data: bytes) -> QueueEvent:
+        dropped_chunks = 0
+        dropped_bytes = 0
+        truncated_bytes = 0
+        
+        # [SIL-2] Individual chunk truncation if larger than total limit
         if self.max_bytes is not None and self.max_bytes > 0 and len(data) > self.max_bytes:
-            data = data[-self.max_bytes :]
-            event.truncated_bytes = len(chunk) - len(data)
+            truncated_bytes = len(data) - self.max_bytes
+            data = data[:self.max_bytes]
 
-        while self._needs_room_for(data):
-            removed = self.popleft(default=None)
-            if removed is None:
+        # Room management for existing chunks
+        while self.max_bytes is not None and self.max_bytes > 0 and self._bytes + len(data) > self.max_bytes:
+            try:
+                old = self.popleft()
+                dropped_chunks += 1
+                dropped_bytes += len(old)
+            except IndexError:
                 break
-            event.dropped_chunks += 1
-            event.dropped_bytes += len(removed)
 
-        if self._base.append(data):
+        evt = self._base.append(data)
+        if evt.success:
             self._bytes += len(data)
-            event.accepted = True
-        return event
+            # Combine events
+            return QueueEvent(
+                success=True,
+                dropped_chunks=dropped_chunks + evt.dropped_chunks,
+                dropped_bytes=dropped_bytes,
+                truncated_chunks=1 if truncated_bytes > 0 else 0,
+                truncated_bytes=truncated_bytes,
+            )
+        return QueueEvent(success=False)
 
-    def appendleft(self, chunk: bytes) -> QueueEvent:
-        data = bytes(chunk)
-        event = QueueEvent()
-
-        if self.max_bytes is not None and self.max_bytes > 0 and len(data) > self.max_bytes:
-            data = data[-self.max_bytes :]
-            event.truncated_bytes = len(chunk) - len(data)
-
-        while self._needs_room_for(data):
-            removed = self.pop(default=None)
-            if removed is None:
-                break
-            event.dropped_chunks += 1
-            event.dropped_bytes += len(removed)
-
-        if self._base.appendleft(data):
+    def appendleft(self, data: bytes) -> QueueEvent:
+        # Usually used for requeue, might ignore limits or handle similarly
+        evt = self._base.appendleft(data)
+        if evt.success:
             self._bytes += len(data)
-            event.accepted = True
-        return event
+        return evt
 
-    def extend(self, chunks: Iterable[bytes]) -> None:
-        for chunk in chunks:
-            self.append(chunk)
+    def popleft(self) -> bytes:
+        item = self._base.popleft()
+        if item is None:
+            raise IndexError("popleft from an empty deque")
+        self._bytes -= len(item)
+        return item
 
-    def popleft(self, default: object = _DEFAULT_SENTINEL) -> bytes | None:
-        val = self._base.popleft()
-        if val is None:
-            if default is _DEFAULT_SENTINEL:
-                raise IndexError("pop from an empty deque")
-            return cast(bytes | None, default)
-        self._bytes = max(0, self._bytes - len(val))
-        return val
+    def pop(self) -> bytes:
+        item = self._base.pop()
+        self._bytes -= len(item)
+        return item
 
-    def pop(self, default: object = _DEFAULT_SENTINEL) -> bytes | None:
-        val = self._base.pop()
-        if val is None:
-            if default is _DEFAULT_SENTINEL:
-                raise IndexError("pop from an empty deque")
-            return cast(bytes | None, default)
-        self._bytes = max(0, self._bytes - len(val))
-        return val
+    def extend(self, items: Iterable[bytes]) -> None:
+        for item in items:
+            self.append(item)
 
     def clear(self) -> None:
         self._base.clear()
@@ -300,23 +303,62 @@ class BoundedByteDeque:
     def close(self) -> None:
         self._base.close()
 
-    def update_limits(self, *, max_items: int | None = None, max_bytes: int | None = None) -> None:
-        if max_items is not None:
-            self._max_items = max_items
-        if max_bytes is not None:
-            self.max_bytes = max_bytes
-
-        while self._needs_room_for(b""):
-            removed = self.popleft(default=None)
-            if removed is None:
+    def update_limits(self, max_items: int | None = None, max_bytes: int | None = None) -> None:
+        self.max_items = max_items
+        self.max_bytes = max_bytes
+        self._base.max_items = max_items
+        
+        # [SIL-2] Enforce new limits immediately
+        while self.max_items is not None and self.max_items > 0 and len(self) > self.max_items:
+            try:
+                self.popleft()
+            except IndexError:
+                break
+        while self.max_bytes is not None and self.max_bytes > 0 and self.bytes > self.max_bytes:
+            try:
+                self.popleft()
+            except IndexError:
                 break
 
-    def _needs_room_for(self, data: bytes) -> bool:
-        if self._max_items is not None and self._max_items > 0 and len(self._base) >= self._max_items:
-            return True
-        if self.max_bytes is not None and self.max_bytes > 0 and self._bytes + len(data) > self.max_bytes:
-            return True
-        return False
+    def setup_persistence(self, directory: str | Path, ram_limit: int = 100) -> None:
+        del ram_limit
+        previous = self._base.values()
+        self._base.close()
+        self._base = PersistentQueue[bytes](directory=directory, max_items=self.max_items)
+        # Re-populate with previous items
+        self._bytes = 0
+        for item in previous:
+            self.append(item)
+
+    def __len__(self) -> int:
+        return len(self._base)
+
+    def __getitem__(self, index: int) -> bytes:
+        return self._base[index]
+
+    def __iter__(self) -> Iterable[bytes]:
+        return iter(self._base)
+
+    def __bool__(self) -> bool:
+        return len(self) > 0
+
+    @property
+    def bytes(self) -> int:
+        return self._bytes
+
+    @property
+    def bytes_used(self) -> int:
+        """Alias for bytes used in some tests."""
+        return self._bytes
+
+    @property
+    def limit_bytes(self) -> int | None:
+        return self.max_bytes
+
+    @property
+    def _queue(self) -> PersistentQueue[bytes]:
+        """Alias for internal base used in some tests."""
+        return self._base
 
 
 __all__ = ["PersistentQueue", "BoundedByteDeque", "QueueEvent"]

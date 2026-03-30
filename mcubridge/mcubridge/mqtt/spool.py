@@ -54,10 +54,11 @@ class MQTTPublishSpool:
         self._fallback_active = self._records.fallback_active
         self._failure_reason = self._records.fallback_reason
         self._last_error = self._records.last_error
+        self._closed = False
         self._notify_fallback()
 
     def _notify_fallback(self) -> None:
-        if not self._records.fallback_active or self._on_fallback is None:
+        if not self._records.fallback_active or self._on_fallback is None or self._closed:
             return
         reason = self._records.fallback_reason or "initialization_failed"
         error_text = self._records.last_error
@@ -68,12 +69,21 @@ class MQTTPublishSpool:
         self._fallback_active = self._records.fallback_active
         self._failure_reason = self._records.fallback_reason
         self._last_error = self._records.last_error
+        self._closed = False
         self._notify_fallback()
 
+    def __del__(self) -> None:
+        # [SIL-2] Final safety check
+        if not getattr(self, "_closed", True):
+            self.close()
+
     def close(self) -> None:
+        self._closed = True
         self._records.close()
 
     def append(self, message: QueuedPublish) -> None:
+        if self._closed:
+            return
         if self.pending >= self._limit:
             self._dropped_due_to_limit += 1
             self._trim_events += 1
@@ -84,7 +94,7 @@ class MQTTPublishSpool:
         self._refresh_fallback_state()
 
     def pop_next(self) -> QueuedPublish | None:
-        while self.pending > 0:
+        while self.pending > 0 and not self._closed:
             record = self._records.popleft()
             self._refresh_fallback_state()
             if record is None:
@@ -97,6 +107,8 @@ class MQTTPublishSpool:
         return None
 
     def requeue(self, message: QueuedPublish) -> None:
+        if self._closed:
+            return
         record = msgspec.structs.asdict(message.to_record())
         if not self._records.appendleft(record):
             raise MQTTSpoolError("requeue_failed")

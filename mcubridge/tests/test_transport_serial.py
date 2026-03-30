@@ -42,22 +42,25 @@ async def test_process_packet_crc_mismatch_reports_crc(
 ) -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    state.mark_transport_connected()
-    state.mark_synchronized()
-    service = BridgeService(config, state)
+    try:
+        state.mark_transport_connected()
+        state.mark_synchronized()
+        service = BridgeService(config, state)
 
-    # Use SerialTransport to test async process packet logic
-    transport = serial_fast.SerialTransport(config, state, service)
-    transport.loop = asyncio.get_running_loop()
+        # Use SerialTransport to test async process packet logic
+        transport = serial_fast.SerialTransport(config, state, service)
+        transport.loop = asyncio.get_running_loop()
 
-    # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
-    raw = b"\xff" + b"x" * 20
-    monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)
+        # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
+        raw = b"\xff" + b"x" * 20
+        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)
 
-    # Manual call to async method
-    await transport._async_process_packet(b"\x02encoded")
+        # Manual call to async method
+        await transport._async_process_packet(b"\x02encoded")
 
-    assert state.serial_decode_errors == 1
+        assert state.serial_decode_errors == 1
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -65,19 +68,22 @@ async def test_process_packet_success_dispatches(
 ) -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    service.handle_mcu_frame = AsyncMock()
+        service.handle_mcu_frame = AsyncMock()
 
-    frame_bytes = Frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi").build()
-    encoded = cobs_encode(frame_bytes)
+        frame_bytes = Frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi").build()
+        encoded = cobs_encode(frame_bytes)
 
-    transport = serial_fast.SerialTransport(config, state, service)
-    transport.loop = asyncio.get_running_loop()
+        transport = serial_fast.SerialTransport(config, state, service)
+        transport.loop = asyncio.get_running_loop()
 
-    await transport._async_process_packet(encoded)
+        await transport._async_process_packet(encoded)
 
-    service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
+        service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -86,26 +92,29 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
     config.serial_baud = 230400
     config.serial_safe_baud = 115200
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    transport = serial_fast.SerialTransport(config, state, service)
-    transport.loop = asyncio.get_running_loop()
+        transport = serial_fast.SerialTransport(config, state, service)
+        transport.loop = asyncio.get_running_loop()
 
-    mock_writer = MagicMock(spec=asyncio.StreamWriter)
-    mock_writer.is_closing.return_value = False
-    serial_port = MagicMock()
-    serial_port.baudrate = config.serial_safe_baud
-    mock_writer.transport = MagicMock(serial=serial_port)
-    transport.writer = mock_writer
+        mock_writer = MagicMock(spec=asyncio.StreamWriter)
+        mock_writer.is_closing.return_value = False
+        serial_port = MagicMock()
+        serial_port.baudrate = config.serial_safe_baud
+        mock_writer.transport = MagicMock(serial=serial_port)
+        transport.writer = mock_writer
 
-    transport._negotiating = True
-    transport._negotiation_future = transport.loop.create_future()
+        transport._negotiating = True
+        transport._negotiation_future = transport.loop.create_future()
 
-    encoded = cobs_encode(Frame(command_id=Command.CMD_SET_BAUDRATE_RESP.value, sequence_id=0, payload=b"").build())
-    transport._process_packet(encoded)
+        encoded = cobs_encode(Frame(command_id=Command.CMD_SET_BAUDRATE_RESP.value, sequence_id=0, payload=b"").build())
+        transport._process_packet(encoded)
 
-    assert await transport._negotiation_future is True
-    assert serial_port.baudrate == config.serial_baud
+        assert await transport._negotiation_future is True
+        assert serial_port.baudrate == config.serial_baud
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -114,46 +123,52 @@ async def test_write_frame_debug_logs_unknown_command(
 ) -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    transport = serial_fast.SerialTransport(config, state, service)
-    mock_writer = MagicMock(spec=asyncio.StreamWriter)
-    mock_writer.is_closing.return_value = False
-    transport.writer = mock_writer
+        transport = serial_fast.SerialTransport(config, state, service)
+        mock_writer = MagicMock(spec=asyncio.StreamWriter)
+        mock_writer.is_closing.return_value = False
+        transport.writer = mock_writer
 
-    monkeypatch.setattr(serial_fast.logger, "isEnabledFor", lambda _lvl: True)
-    seen: dict[str, str] = {}
-    monkeypatch.setattr(
-        serial_fast.logger,
-        "debug",
-        lambda msg, *args: seen.setdefault("msg", msg % args),
-    )
-    monkeypatch.setattr(
-        serial_fast.logger,
-        "log",
-        lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),
-    )
+        monkeypatch.setattr(serial_fast.logger, "isEnabledFor", lambda _lvl: True)
+        seen: dict[str, str] = {}
+        monkeypatch.setattr(
+            serial_fast.logger,
+            "debug",
+            lambda msg, *args: seen.setdefault("msg", msg % args),
+        )
+        monkeypatch.setattr(
+            serial_fast.logger,
+            "log",
+            lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),
+        )
 
-    ok = await transport._serial_sender(0xFE, b"payload")
-    assert ok is True
-    assert mock_writer.write.called
-    # Check that the command 0xFE is present in the encoded hex string
-    assert "fe" in seen.get("msg", "").lower()
+        ok = await transport._serial_sender(0xFE, b"payload")
+        assert ok is True
+        assert mock_writer.write.called
+        # Check that the command 0xFE is present in the encoded hex string
+        assert "fe" in seen.get("msg", "").lower()
+    finally:
+        state.cleanup()
 
 @pytest.mark.asyncio
 async def test_write_frame_returns_false_on_write_error() -> None:
     config = _make_config()
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
+    try:
+        service = BridgeService(config, state)
 
-    transport = serial_fast.SerialTransport(config, state, service)
-    mock_writer = MagicMock(spec=asyncio.StreamWriter)
-    mock_writer.is_closing.return_value = False
-    mock_writer.write.side_effect = OSError("boom")
-    transport.writer = mock_writer
+        transport = serial_fast.SerialTransport(config, state, service)
+        mock_writer = MagicMock(spec=asyncio.StreamWriter)
+        mock_writer.is_closing.return_value = False
+        mock_writer.write.side_effect = OSError("boom")
+        transport.writer = mock_writer
 
-    ok = await transport._serial_sender(Command.CMD_CONSOLE_WRITE.value, b"hi")
-    assert ok is False
+        ok = await transport._serial_sender(Command.CMD_CONSOLE_WRITE.value, b"hi")
+        assert ok is False
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -165,26 +180,29 @@ async def test_process_packet_fallback_triggers_negotiation(
     config.serial_safe_baud = 57600
     config.serial_fallback_threshold = 2
     state = create_runtime_state(config)
-    state.mark_transport_connected()
-    state.mark_synchronized()
-    service = BridgeService(config, state)
+    try:
+        state.mark_transport_connected()
+        state.mark_synchronized()
+        service = BridgeService(config, state)
 
-    transport = serial_fast.SerialTransport(config, state, service)
-    transport.loop = asyncio.get_running_loop()
+        transport = serial_fast.SerialTransport(config, state, service)
+        transport.loop = asyncio.get_running_loop()
 
-    # Mock negotiation method
-    transport._negotiate_baudrate = AsyncMock(return_value=True)
+        # Mock negotiation method
+        transport._negotiate_baudrate = AsyncMock(return_value=True)
 
-    # Create an invalid frame manually
-    raw = b"\xff" + b"x" * 20
-    monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)
+        # Create an invalid frame manually
+        raw = b"\xff" + b"x" * 20
+        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)
 
-    # First error
-    await transport._async_process_packet(b"\x02encoded")
-    assert transport._consecutive_crc_errors == 1
-    transport._negotiate_baudrate.assert_not_called()
+        # First error
+        await transport._async_process_packet(b"\x02encoded")
+        assert transport._consecutive_crc_errors == 1
+        transport._negotiate_baudrate.assert_not_called()
 
-    # Second error (threshold reached)
-    await transport._async_process_packet(b"\x02encoded")
-    assert transport._consecutive_crc_errors == 0  # Reset after trigger
-    transport._negotiate_baudrate.assert_awaited_once_with(57600)
+        # Second error (threshold reached)
+        await transport._async_process_packet(b"\x02encoded")
+        assert transport._consecutive_crc_errors == 0  # Reset after trigger
+        transport._negotiate_baudrate.assert_awaited_once_with(57600)
+    finally:
+        state.cleanup()

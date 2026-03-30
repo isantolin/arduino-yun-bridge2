@@ -278,12 +278,14 @@ def test_create_runtime_state_marks_spool_degraded(
     )
 
     state = create_runtime_state(runtime_config)
-
-    assert state.mqtt_spool is None
-    assert state.mqtt_spool_degraded is True
-    assert state.mqtt_spool_failure_reason == "initialization_failed"
-    assert state.mqtt_spool_last_error
-    assert "boom" in state.mqtt_spool_last_error
+    try:
+        assert state.mqtt_spool is None
+        assert state.mqtt_spool_degraded is True
+        assert state.mqtt_spool_failure_reason == "initialization_failed"
+        assert state.mqtt_spool_last_error
+        assert "boom" in state.mqtt_spool_last_error
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -291,32 +293,33 @@ async def test_stash_mqtt_message_disables_spool_on_failure(
     runtime_config: RuntimeConfig,
 ) -> None:
     state = create_runtime_state(runtime_config)
-    if state.mqtt_spool is not None:
-        state.mqtt_spool.close()
+    try:
+        if state.mqtt_spool is not None:
+            state.mqtt_spool.close()
 
-    class _BrokenSpool:
-        def append(self, _message: QueuedPublish) -> None:
-            raise OSError("disk-full")
+        class _BrokenSpool:
+            def append(self, _message: QueuedPublish) -> None:
+                raise OSError("disk-full")
 
-        def close(self) -> None:
-            return None
+            def close(self) -> None:
+                return None
 
-    state.mqtt_spool = cast(MQTTPublishSpool, _BrokenSpool())
-    message = QueuedPublish(
-        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
-        payload=b"{}",
-    )
-    stored = await state.stash_mqtt_message(message)
+        state.mqtt_spool = cast(MQTTPublishSpool, _BrokenSpool())
+        message = QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+            payload=b"{}",
+        )
+        stored = await state.stash_mqtt_message(message)
 
-    assert stored is False
-    assert state.mqtt_spool is None
-    assert state.mqtt_spool_degraded is True
-    assert state.mqtt_spool_errors == 1
-    assert state.mqtt_dropped_messages == 0
-    assert state.mqtt_spool_failure_reason == "append_failed"
-    assert state.mqtt_spool_last_error == "disk-full"
-
-    state.cleanup()
+        assert stored is False
+        assert state.mqtt_spool is None
+        assert state.mqtt_spool_degraded is True
+        assert state.mqtt_spool_errors == 1
+        assert state.mqtt_dropped_messages == 0
+        assert state.mqtt_spool_failure_reason == "append_failed"
+        assert state.mqtt_spool_last_error == "disk-full"
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -324,29 +327,30 @@ async def test_flush_mqtt_spool_handles_pop_failure(
     runtime_config: RuntimeConfig,
 ) -> None:
     state = create_runtime_state(runtime_config)
-    if state.mqtt_spool is not None:
-        state.mqtt_spool.close()
+    try:
+        if state.mqtt_spool is not None:
+            state.mqtt_spool.close()
 
-    class _FailingSpool:
-        def pop_next(self) -> QueuedPublish | None:
-            raise OSError("read-error")
+        class _FailingSpool:
+            def pop_next(self) -> QueuedPublish | None:
+                raise OSError("read-error")
 
-        def requeue(self, _message: QueuedPublish) -> None:
-            return None
+            def requeue(self, _message: QueuedPublish) -> None:
+                return None
 
-        def close(self) -> None:
-            return None
+            def close(self) -> None:
+                return None
 
-    state.mqtt_spool = cast(MQTTPublishSpool, _FailingSpool())
-    await state.flush_mqtt_spool()
+        state.mqtt_spool = cast(MQTTPublishSpool, _FailingSpool())
+        await state.flush_mqtt_spool()
 
-    assert state.mqtt_spool is None
-    assert state.mqtt_spool_degraded is True
-    assert state.mqtt_spool_errors == 1
-    assert state.mqtt_spool_failure_reason == "pop_failed"
-    assert state.mqtt_spool_last_error == "read-error"
-
-    state.cleanup()
+        assert state.mqtt_spool is None
+        assert state.mqtt_spool_degraded is True
+        assert state.mqtt_spool_errors == 1
+        assert state.mqtt_spool_failure_reason == "pop_failed"
+        assert state.mqtt_spool_last_error == "read-error"
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -357,12 +361,14 @@ async def test_spool_fallback_updates_state(
     # Force a disk full error during persist-queue initialization.
     with patch("mcubridge.state.queues.FIFOSQLiteQueue", side_effect=OSError(errno.ENOSPC, "disk full")):
         state = create_runtime_state(runtime_config)
-
-        # The spool now degrades to RAM if durable initialization fails.
-        assert state.mqtt_spool is not None
-        assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_failure_reason == "initialization_failed"
-        assert "disk full" in state.mqtt_spool_last_error
+        try:
+            # The spool now degrades to RAM if durable initialization fails.
+            assert state.mqtt_spool is not None
+            assert state.mqtt_spool_degraded is True
+            assert state.mqtt_spool_failure_reason == "initialization_failed"
+            assert "disk full" in state.mqtt_spool_last_error
+        finally:
+            state.cleanup()
 
 
 @pytest.mark.asyncio

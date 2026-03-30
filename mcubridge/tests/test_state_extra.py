@@ -42,10 +42,13 @@ def test_managed_process_is_drained() -> None:
 
 def test_serial_stats_recording() -> None:
     state = RuntimeState()
-    state.record_serial_tx(10)
-    assert state.serial_throughput_stats.bytes_sent == 10
-    state.record_serial_rx(20)
-    assert state.serial_throughput_stats.bytes_received == 20
+    try:
+        state.record_serial_tx(10)
+        assert state.serial_throughput_stats.bytes_sent == 10
+        state.record_serial_rx(20)
+        assert state.serial_throughput_stats.bytes_received == 20
+    finally:
+        state.cleanup()
 
 
 def test_serial_latency_histogram() -> None:
@@ -85,20 +88,23 @@ def testcollect_system_metrics_fail_paths() -> None:
 
 def test_runtime_state_mailbox_requeue_front() -> None:
     state = RuntimeState()
-    state.record_supervisor_failure("svc", backoff=1.0, exc=ValueError("fail"))
-    assert state.supervisor_stats["svc"].restarts == 1
-    assert state.supervisor_stats["svc"].last_exception
+    try:
+        state.record_supervisor_failure("svc", backoff=1.0, exc=ValueError("fail"))
+        assert state.supervisor_stats["svc"].restarts == 1
+        assert state.supervisor_stats["svc"].last_exception
 
-    state.mark_supervisor_healthy("svc")
-    assert state.supervisor_stats["svc"].backoff_seconds == 0.0
+        state.mark_supervisor_healthy("svc")
+        assert state.supervisor_stats["svc"].backoff_seconds == 0.0
 
-    state.mark_supervisor_healthy("unknown")  # Should not crash
+        state.mark_supervisor_healthy("unknown")  # Should not crash
 
-    # Spool retry logic
-    state.mqtt_spool_retry_attempts = 0
-    state._schedule_spool_retry()
-    assert state.mqtt_spool_retry_attempts == 1
-    assert state.mqtt_spool_backoff_until > 0
+        # Spool retry logic
+        state.mqtt_spool_retry_attempts = 0
+        state._schedule_spool_retry()
+        assert state.mqtt_spool_retry_attempts == 1
+        assert state.mqtt_spool_backoff_until > 0
+    finally:
+        state.cleanup()
 
 
 def test_runtime_state_mailbox_requeue_front_full() -> None:
@@ -124,24 +130,30 @@ def test_runtime_state_mailbox_requeue_front_full() -> None:
 
 def test_record_serial_flow_event_unknown() -> None:
     state = RuntimeState()
-    # Should ignore unknown event
-    state.record_serial_flow_event("unknown")
-    assert state.serial_flow_stats.commands_sent == 0
+    try:
+        # Should ignore unknown event
+        state.record_serial_flow_event("unknown")
+        assert state.serial_flow_stats.commands_sent == 0
+    finally:
+        state.cleanup()
 
 
 def test_record_serial_pipeline_event_edge_cases() -> None:
     state = RuntimeState()
-    # Event without inflight
-    state.record_serial_pipeline_event({"event": "ack"})
-    assert state.serial_pipeline_inflight is None
+    try:
+        # Event without inflight
+        state.record_serial_pipeline_event({"event": "ack"})
+        assert state.serial_pipeline_inflight is None
 
-    # Start event
-    state.record_serial_pipeline_event({"event": "start", "command_id": 1})
-    assert state.serial_pipeline_inflight["command_id"] == 1
+        # Start event
+        state.record_serial_pipeline_event({"event": "start", "command_id": 1})
+        assert state.serial_pipeline_inflight["command_id"] == 1
 
-    # Success event with existing inflight
-    state.record_serial_pipeline_event({"event": "success", "command_id": 1})
-    assert state.serial_pipeline_last["status_name"] == "unknown"
+        # Success event with existing inflight
+        state.record_serial_pipeline_event({"event": "success", "command_id": 1})
+        assert state.serial_pipeline_last["status_name"] == "unknown"
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -157,10 +169,13 @@ async def test_status_writer_with_version() -> None:
                 return_value={"test": 1},
             ):
                 state = RuntimeState()
-                state.mcu_version = (1, 2)
-                state.mcu_capabilities = McuCapabilities()
-                _write_status_file(state.build_metrics_snapshot())
-                assert mock_tf.called
+                try:
+                    state.mcu_version = (1, 2)
+                    state.mcu_capabilities = McuCapabilities()
+                    _write_status_file(state.build_metrics_snapshot())
+                    assert mock_tf.called
+                finally:
+                    state.cleanup()
 
 
 def test_cleanup_status_file_error() -> None:

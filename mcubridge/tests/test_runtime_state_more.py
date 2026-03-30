@@ -20,12 +20,14 @@ def test_create_runtime_state_disables_spool_without_scheduling_retry(
     runtime_config.mqtt_spool_dir = ""
 
     state = create_runtime_state(runtime_config)
-
-    assert state.mqtt_spool is None
-    assert state.mqtt_spool_degraded is True
-    assert state.mqtt_spool_failure_reason == "disabled"
-    assert state.mqtt_spool_retry_attempts == 0
-    assert state.mqtt_spool_backoff_until == 0.0
+    try:
+        assert state.mqtt_spool is None
+        assert state.mqtt_spool_degraded is True
+        assert state.mqtt_spool_failure_reason == "disabled"
+        assert state.mqtt_spool_retry_attempts == 0
+        assert state.mqtt_spool_backoff_until == 0.0
+    finally:
+        state.cleanup()
 
 
 def test_disable_mqtt_spool_handles_close_error_and_schedules_retry(
@@ -83,15 +85,18 @@ def test_ensure_spool_returns_false_while_backoff_active(
     async def _run() -> None:
         runtime_config.mqtt_spool_dir = str(tmp_path_factory.mktemp("spool"))
         state = create_runtime_state(runtime_config)
-        assert state.mqtt_spool is not None
-        state.mqtt_spool.close()
-        state.mqtt_spool = None
+        try:
+            assert state.mqtt_spool is not None
+            state.mqtt_spool.close()
+            state.mqtt_spool = None
 
-        state.mqtt_spool_backoff_until = time.monotonic() + 60.0
-        recovered = await state.ensure_spool()
+            state.mqtt_spool_backoff_until = time.monotonic() + 60.0
+            recovered = await state.ensure_spool()
 
-        assert recovered is False
-        assert state.mqtt_spool is None
+            assert recovered is False
+            assert state.mqtt_spool is None
+        finally:
+            state.cleanup()
 
     asyncio.run(_run())
 
@@ -102,15 +107,17 @@ def test_stash_mqtt_message_returns_false_when_spool_disabled(
     async def _run() -> None:
         runtime_config.mqtt_spool_dir = ""
         state = create_runtime_state(runtime_config)
-
-        stored = await state.stash_mqtt_message(
-            QueuedPublish(
-                topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
-                payload=b"{}",
+        try:
+            stored = await state.stash_mqtt_message(
+                QueuedPublish(
+                    topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+                    payload=b"{}",
+                )
             )
-        )
 
-        assert stored is False
+            assert stored is False
+        finally:
+            state.cleanup()
 
     asyncio.run(_run())
 
@@ -121,45 +128,48 @@ def test_flush_mqtt_spool_queue_full_requeue_failure_disables_spool(
 ) -> None:
     async def _run() -> None:
         state = create_runtime_state(runtime_config)
-        if state.mqtt_spool is not None:
-            state.mqtt_spool.close()
+        try:
+            if state.mqtt_spool is not None:
+                state.mqtt_spool.close()
 
-        state.mqtt_queue_limit = 10
-        state.mqtt_publish_queue = asyncio.Queue(maxsize=1)
-        state.mqtt_publish_queue.put_nowait(
-            QueuedPublish(
-                topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/full",
-                payload=b"1",
+            state.mqtt_queue_limit = 10
+            state.mqtt_publish_queue = asyncio.Queue(maxsize=1)
+            state.mqtt_publish_queue.put_nowait(
+                QueuedPublish(
+                    topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/full",
+                    payload=b"1",
+                )
             )
-        )
 
-        message = QueuedPublish(
-            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
-            payload=b"2",
-        )
+            message = QueuedPublish(
+                topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+                payload=b"2",
+            )
 
-        class _StubSpool:
-            def pop_next(self) -> QueuedPublish | None:
-                return message
+            class _StubSpool:
+                def pop_next(self) -> QueuedPublish | None:
+                    return message
 
-            def requeue(self, _message: QueuedPublish) -> None:
-                raise MQTTSpoolError("requeue_failed")
+                def requeue(self, _message: QueuedPublish) -> None:
+                    raise MQTTSpoolError("requeue_failed")
 
-            def close(self) -> None:
-                return None
+                def close(self) -> None:
+                    return None
 
-        state.mqtt_spool = cast(MQTTPublishSpool, _StubSpool())
+            state.mqtt_spool = cast(MQTTPublishSpool, _StubSpool())
 
-        async def _inline_to_thread(fn, /, *args, **kwargs):
-            return fn(*args, **kwargs)
+            async def _inline_to_thread(fn, /, *args, **kwargs):
+                return fn(*args, **kwargs)
 
-        monkeypatch.setattr(asyncio, "to_thread", _inline_to_thread)
+            monkeypatch.setattr(asyncio, "to_thread", _inline_to_thread)
 
-        await state.flush_mqtt_spool()
+            await state.flush_mqtt_spool()
 
-        assert state.mqtt_spool is None
-        assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_failure_reason == "pop_failed"
-        assert state.mqtt_spool_errors >= 1
+            assert state.mqtt_spool is None
+            assert state.mqtt_spool_degraded is True
+            assert state.mqtt_spool_failure_reason == "pop_failed"
+            assert state.mqtt_spool_errors >= 1
+        finally:
+            state.cleanup()
 
     asyncio.run(_run())

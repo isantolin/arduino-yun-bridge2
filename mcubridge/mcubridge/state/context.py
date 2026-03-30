@@ -499,6 +499,15 @@ class RuntimeState(msgspec.Struct):
         stats.backoff_seconds = backoff
 
     def configure(self, config: RuntimeConfig) -> None:
+        # [SIL-2] Close existing persistent queues if they are being replaced
+        # to ensure that sqlite connections are not leaked.
+        if self.mailbox_queue:
+            self.mailbox_queue.close()
+        if self.mailbox_incoming_queue:
+            self.mailbox_incoming_queue.close()
+        if self.console_to_mcu_queue:
+            self.console_to_mcu_queue.close()
+
         if config.allowed_policy is not None:
             self.allowed_policy = config.allowed_policy
         self.process_timeout = config.process_timeout
@@ -762,6 +771,9 @@ class RuntimeState(msgspec.Struct):
             self.mqtt_spool_last_trim_unix = msgspec.convert(observation["last_trim_unix"], float)
 
     def configure_spool(self, directory: str, limit: int) -> None:
+        if self.mqtt_spool:
+            self.mqtt_spool.close()
+            self.mqtt_spool = None
         self.mqtt_spool_dir = directory
         self.mqtt_spool_limit = max(0, limit)
 
@@ -951,13 +963,10 @@ class RuntimeState(msgspec.Struct):
                 self.mqtt_spool.close()
                 self.mqtt_spool = None
             if self.mailbox_queue:
-                self.mailbox_queue.clear()
                 self.mailbox_queue.close()
             if self.mailbox_incoming_queue:
-                self.mailbox_incoming_queue.clear()
                 self.mailbox_incoming_queue.close()
             if self.console_to_mcu_queue:
-                self.console_to_mcu_queue.clear()
                 self.console_to_mcu_queue.close()
 
             # Drain the MQTT queue instead of nullifying

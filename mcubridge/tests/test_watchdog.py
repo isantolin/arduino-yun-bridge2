@@ -17,30 +17,32 @@ def test_watchdog_keepalive_emits_pulses(
     runtime_config.watchdog_enabled = True
     runtime_config.watchdog_interval = 0.05
     state = create_runtime_state(runtime_config)
+    try:
+        pulses: list[bytes] = []
 
-    pulses: list[bytes] = []
+        def capture(data: bytes) -> None:
+            pulses.append(data)
 
-    def capture(data: bytes) -> None:
-        pulses.append(data)
+        async def _runner() -> None:
+            keepalive = WatchdogKeepalive(
+                interval=runtime_config.watchdog_interval,
+                state=state,
+                write=capture,
+            )
 
-    async def _runner() -> None:
-        keepalive = WatchdogKeepalive(
-            interval=runtime_config.watchdog_interval,
-            state=state,
-            write=capture,
-        )
+            task = asyncio.create_task(keepalive.run())
+            await asyncio.sleep(0.12)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
 
-        task = asyncio.create_task(keepalive.run())
-        await asyncio.sleep(0.12)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        asyncio.run(_runner())
 
-    asyncio.run(_runner())
-
-    assert len(pulses) >= 1
-    assert state.watchdog_beats == len(pulses)
-    assert state.last_watchdog_beat > 0
+        assert len(pulses) >= 1
+        assert state.watchdog_beats == len(pulses)
+        assert state.last_watchdog_beat > 0
+    finally:
+        state.cleanup()
 
 
 def test_watchdog_interval_updates(runtime_state: RuntimeState) -> None:

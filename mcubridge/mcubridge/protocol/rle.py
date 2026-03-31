@@ -12,7 +12,7 @@ Format:
 
 from __future__ import annotations
 
-import re
+from itertools import groupby
 from construct import (
     Check,
     Const,
@@ -70,49 +70,51 @@ def should_compress(payload: bytes) -> bool:
     """Check if a payload should be RLE compressed."""
     if len(payload) < protocol.RLE_MIN_COMPRESS_INPUT_SIZE:
         return False
-    # Simple heuristic: at least one sequence of MIN_RUN_LENGTH+ bytes or many escape bytes
-    pattern = re.compile(rb"(.)\1{" + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode() + rb",}")
-    return bool(pattern.search(payload))
+    # C-Native check using itertools.groupby
+    for _, group in groupby(payload):
+        # Check if length of group iterator is >= MIN_RUN_LENGTH.
+        if sum(1 for _ in group) >= protocol.RLE_MIN_RUN_LENGTH:
+            return True
+    return False
 
 
 def encode(uncompressed: bytes) -> bytes:
-    """Compress data using optimized regex pattern matching (SIL-2)."""
+    """Compress data using optimized itertools grouping (SIL-2 Native)."""
     if not uncompressed:
         return b""
 
-    # [SIL-2] Pattern: Any byte repeated MIN_RUN_LENGTH+ times, or the escape byte itself
-    # We cap at 256 repetitions total (Count-2 = 254) because 255 is the SINGLE_ESCAPE_MARKER.
-    pattern = re.compile(
-        rb"(.)\1{" + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode() + rb",255}|"
-        + re.escape(bytes([protocol.RLE_ESCAPE_BYTE]))
-    )
     compressed = bytearray()
-    last_pos = 0
 
-    for match in pattern.finditer(uncompressed):
-        # 1. Append literal segment before the match
-        compressed.extend(uncompressed[last_pos : match.start()])
+    # [SIL-2] Delegate iteration to Python's C core via groupby
+    for byte_val, group in groupby(uncompressed):
+        # Convert group to list to get length (iterator is consumed)
+        run_length = sum(1 for _ in group)
 
-        # 2. Append RLE chunk
-        chunk = match.group(0)
-        if len(chunk) == 1:
-            # Single escape byte literal (or any single byte that matched the escape part of the regex)
-            compressed.extend(
-                RLE_ESCAPE.build({
-                    "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,
-                    "value": protocol.RLE_ESCAPE_BYTE,
-                })
-            )
-        else:
-            # Repeated sequence
-            compressed.extend(
-                RLE_ESCAPE.build({
-                    "count_m2": len(chunk) - protocol.RLE_OFFSET,
-                    "value": chunk[0],
-                })
-            )
-        last_pos = match.end()
+        # Max RLE chunk size is 256
+        while run_length > 0:
+            chunk_len = min(run_length, 256)
 
-    # 3. Append remaining literal tail
-    compressed.extend(uncompressed[last_pos:])
+            if byte_val == protocol.RLE_ESCAPE_BYTE:
+                # Escape byte literal
+                for _ in range(chunk_len):
+                    compressed.extend(
+                        RLE_ESCAPE.build({
+                            "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,
+                            "value": protocol.RLE_ESCAPE_BYTE,
+                        })
+                    )
+            elif chunk_len >= protocol.RLE_MIN_RUN_LENGTH:
+                # Repeated sequence
+                compressed.extend(
+                    RLE_ESCAPE.build({
+                        "count_m2": chunk_len - protocol.RLE_OFFSET,
+                        "value": byte_val,
+                    })
+                )
+            else:
+                # Literal bytes
+                compressed.extend(bytes([byte_val]) * chunk_len)
+
+            run_length -= chunk_len
+
     return bytes(compressed)

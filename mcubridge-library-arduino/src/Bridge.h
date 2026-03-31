@@ -147,7 +147,7 @@ class BridgeClass
 #endif
              ,
              etl::string_view secret = {}, size_t secret_len = 0);
-  void process();
+  [[maybe_unused]] void process();
   bool isSynchronized() const { return _fsm.isSynchronized(); }
   bool isUnsynchronized() const { return _fsm.isUnsynchronized(); }
   bool isSyncing() const { return _fsm.isSyncing(); }
@@ -162,7 +162,7 @@ class BridgeClass
    * @brief Manually signal the Linux side to stop sending data.
    * [SIL-2] Only permitted if the bridge is initialized.
    */
-  void sendXoff() {
+  [[maybe_unused]] void sendXoff() {
     if (isSynchronized()) (void)sendFrame(rpc::CommandId::CMD_XOFF, 0);
   }
 
@@ -170,7 +170,7 @@ class BridgeClass
    * @brief Manually signal the Linux side to resume sending data.
    * [SIL-2] Only permitted if the bridge is initialized.
    */
-  void sendXon() {
+  [[maybe_unused]] void sendXon() {
     if (isSynchronized()) (void)sendFrame(rpc::CommandId::CMD_XON, 0);
   }
   void emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
@@ -210,17 +210,17 @@ class BridgeClass
     return true;
   }
 
-  inline void onCommand(CommandHandler handler) { _command_handler = handler; }
-  inline void onDigitalReadResponse(DigitalReadHandler handler) {
+  [[maybe_unused]] inline void onCommand(CommandHandler handler) { _command_handler = handler; }
+  [[maybe_unused]] inline void onDigitalReadResponse(DigitalReadHandler handler) {
     _digital_read_handler = handler;
   }
-  inline void onAnalogReadResponse(AnalogReadHandler handler) {
+  [[maybe_unused]] inline void onAnalogReadResponse(AnalogReadHandler handler) {
     _analog_read_handler = handler;
   }
-  inline void onGetFreeMemoryResponse(GetFreeMemoryHandler handler) {
+  [[maybe_unused]] inline void onGetFreeMemoryResponse(GetFreeMemoryHandler handler) {
     _get_free_memory_handler = handler;
   }
-  inline void onStatus(StatusHandler handler) { _status_handler = handler; }
+  [[maybe_unused]] inline void onStatus(StatusHandler handler) { _status_handler = handler; }
 
   // Stream helpers
   inline void flushStream() { _stream.flush(); }

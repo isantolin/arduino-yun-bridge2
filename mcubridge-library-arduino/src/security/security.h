@@ -92,7 +92,7 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
  * @brief Generate nonce with monotonic counter (anti-replay).
  */
 template <typename RandomFunc>
-inline void generate_nonce_with_counter(etl::span<uint8_t> out_nonce,
+[[maybe_unused]] inline void generate_nonce_with_counter(etl::span<uint8_t> out_nonce,
                                         uint64_t& counter,
                                         RandomFunc random_func) {
   if (out_nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return;
@@ -116,7 +116,7 @@ inline uint64_t extract_nonce_counter(etl::span<const uint8_t> nonce) {
 /**
  * @brief Validate nonce counter is strictly greater than last seen.
  */
-inline bool validate_nonce_counter(etl::span<const uint8_t> nonce,
+[[maybe_unused]] inline bool validate_nonce_counter(etl::span<const uint8_t> nonce,
                                    uint64_t& last_counter) {
   uint64_t current = extract_nonce_counter(nonce);
   if (current <= last_counter) {

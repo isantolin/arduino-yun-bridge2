@@ -138,7 +138,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 #endif
 }
 
-void BridgeClass::process() {
+[[maybe_unused]] void BridgeClass::process() {
   if constexpr (bridge::config::ENABLE_WATCHDOG) {
     #if defined(ARDUINO_ARCH_AVR)
       wdt_reset();
@@ -838,4 +838,4 @@ SPIServiceClass SPIService;
 #endif
 #endif
 
-namespace etl { void __attribute__((weak)) handle_error(const etl::exception& e) { (void)e; Bridge.enterSafeState(); } }
+namespace etl { void __attribute__((weak)) __attribute__((unused)) handle_error(const etl::exception& e) { (void)e; Bridge.enterSafeState(); } }

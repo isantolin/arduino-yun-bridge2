@@ -12,11 +12,11 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
   Bridge.sendPbCommand(rpc::CommandId::CMD_MAILBOX_PUSH, 0, msg);
 }
 
-void MailboxClass::requestRead() {
+[[maybe_unused]] void MailboxClass::requestRead() {
   (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
-void MailboxClass::requestAvailable() {
+[[maybe_unused]] void MailboxClass::requestAvailable() {
   (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 

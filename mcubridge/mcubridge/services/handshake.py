@@ -13,7 +13,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Any
 
 import google.protobuf.message
 import msgspec
@@ -27,10 +27,14 @@ from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from ..config.settings import RuntimeConfig
-from ..protocol.structures import QueuedPublish
 from ..protocol import mcubridge_pb2, protocol
 from ..protocol.protocol import Command, Status
-from ..protocol.structures import CapabilitiesPacket, HandshakeConfigPacket
+from ..protocol.structures import (
+    CapabilitiesPacket,
+    HandshakeConfigPacket,
+    QueuedPublish,
+    SerialTimingWindow,
+)
 from ..protocol.topics import Topic, topic_path
 from ..security.security import (
     derive_handshake_key,
@@ -51,37 +55,6 @@ EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
 AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 
 logger = logging.getLogger("mcubridge.service.handshake")
-
-
-class SerialTimingWindow(msgspec.Struct, frozen=True):
-    """Derived serial retry/response windows used by both MCU and MPU."""
-
-    ack_timeout_ms: Annotated[
-        int,
-        msgspec.Meta(
-            ge=protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS,
-            le=protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS,
-        ),
-    ]
-    response_timeout_ms: Annotated[
-        int,
-        msgspec.Meta(
-            ge=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
-            le=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS,
-        ),
-    ]
-    retry_limit: Annotated[
-        int,
-        msgspec.Meta(ge=protocol.HANDSHAKE_RETRY_LIMIT_MIN, le=protocol.HANDSHAKE_RETRY_LIMIT_MAX),
-    ]
-
-    @property
-    def ack_timeout_seconds(self) -> float:
-        return self.ack_timeout_ms / 1000.0
-
-    @property
-    def response_timeout_seconds(self) -> float:
-        return self.response_timeout_ms / 1000.0
 
 
 def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:

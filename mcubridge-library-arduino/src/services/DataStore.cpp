@@ -13,7 +13,7 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   Bridge.sendPbCommand(rpc::CommandId::CMD_DATASTORE_PUT, 0, msg);
 }
 
-void DataStoreClass::get(etl::string_view key, DataStoreGetHandler handler) {
+[[maybe_unused]] void DataStoreClass::get(etl::string_view key, DataStoreGetHandler handler) {
   if (_pending_gets.full()) return;
   rpc::payload::DatastoreGet msg = {};
   rpc::util::pb_copy_string(key, msg.key, sizeof(msg.key));

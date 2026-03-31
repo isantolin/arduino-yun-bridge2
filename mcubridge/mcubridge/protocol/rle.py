@@ -13,8 +13,6 @@ Format:
 from __future__ import annotations
 
 import re
-from typing import Any
-import msgspec
 from construct import (
     Check,
     Const,
@@ -29,6 +27,7 @@ from construct import (
 )
 
 from . import protocol
+from .structures import RLEPayload
 
 # [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
 RLE_ESCAPE: Construct = Struct(
@@ -118,25 +117,3 @@ def encode(uncompressed: bytes) -> bytes:
     # 3. Append remaining literal tail
     compressed.extend(uncompressed[last_pos:])
     return bytes(compressed)
-
-
-class RLEPayload(msgspec.Struct, frozen=True):
-    """Encapsulates RLE-compressed data with a msgspec-compatible interface (Refactor)."""
-
-    data: bytes
-
-    @classmethod
-    def from_uncompressed(cls, uncompressed: bytes) -> "RLEPayload":
-        """Factory to create RLEPayload from raw bytes."""
-        return cls(data=encode(uncompressed))
-
-    def decode(self) -> bytes:
-        """Decompress data using declarative Construct decoder."""
-        if not self.data:
-            return b""
-        try:
-            parsed: Any = RLE_DECODER.parse(self.data)
-            return b"".join(parsed.chunks)
-        except Exception as e:
-            # Fallback or raise for protocol integrity
-            raise ValueError(f"RLE decompression failed: {e}") from e

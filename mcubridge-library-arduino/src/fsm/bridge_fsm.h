@@ -64,11 +64,11 @@ class StateStabilizing
     : public etl::fsm_state<BridgeFsm, StateStabilizing, STATE_STABILIZING,
                             EvStabilized, EvReset, EvCryptoFault> {
  public:
-  etl::fsm_state_id_t on_enter_state() { return STATE_STABILIZING; }
-  etl::fsm_state_id_t on_event(const EvStabilized&) { return STATE_UNSYNCHRONIZED; }
-  etl::fsm_state_id_t on_event(const EvReset&) { return No_State_Change; }
-  etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_enter_state() { return STATE_STABILIZING; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvStabilized&) { return STATE_UNSYNCHRONIZED; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
 };
 
 class StateUnsynchronized
@@ -76,12 +76,12 @@ class StateUnsynchronized
                             STATE_UNSYNCHRONIZED, EvHandshakeStart,
                             EvHandshakeFailed, EvReset, EvCryptoFault> {
  public:
-  etl::fsm_state_id_t on_enter_state() { return STATE_UNSYNCHRONIZED; }
-  etl::fsm_state_id_t on_event(const EvHandshakeStart&) { return STATE_SYNCING; }
-  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event(const EvReset&) { return No_State_Change; }
-  etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_enter_state() { return STATE_UNSYNCHRONIZED; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeStart&) { return STATE_SYNCING; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) { return STATE_FAULT; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
 };
 
 class StateSyncing
@@ -89,53 +89,53 @@ class StateSyncing
                             EvHandshakeComplete, EvHandshakeFailed, EvReset,
                             EvCryptoFault> {
  public:
-  etl::fsm_state_id_t on_enter_state() { return STATE_SYNCING; }
-  etl::fsm_state_id_t on_event(const EvHandshakeComplete&) { return STATE_IDLE; }
-  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
-  etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_enter_state() { return STATE_SYNCING; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeComplete&) { return STATE_IDLE; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) { return STATE_FAULT; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
 };
 
 class StateReady : public etl::fsm_state<BridgeFsm, StateReady, STATE_READY,
                                          EvReset, EvCryptoFault> {
  public:
-  etl::fsm_state_id_t on_enter_state() { return STATE_READY; }
-  etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
-  etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_enter_state() { return STATE_READY; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
 };
 
 class StateIdle
     : public etl::fsm_state<BridgeFsm, StateIdle, STATE_IDLE, EvSendCritical,
                             EvReset, EvCryptoFault> {
  public:
-  etl::fsm_state_id_t on_enter_state() { return STATE_IDLE; }
-  etl::fsm_state_id_t on_event(const EvSendCritical&) { return STATE_AWAITING_ACK; }
-  etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
-  etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_enter_state() { return STATE_IDLE; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvSendCritical&) { return STATE_AWAITING_ACK; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
 };
 
 class StateAwaitingAck
     : public etl::fsm_state<BridgeFsm, StateAwaitingAck, STATE_AWAITING_ACK,
                             EvAckReceived, EvTimeout, EvReset, EvCryptoFault> {
  public:
-  etl::fsm_state_id_t on_enter_state() { return STATE_AWAITING_ACK; }
-  etl::fsm_state_id_t on_event(const EvAckReceived&) { return STATE_IDLE; }
-  etl::fsm_state_id_t on_event(const EvTimeout&) { return STATE_UNSYNCHRONIZED; }
-  etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
-  etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_enter_state() { return STATE_AWAITING_ACK; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvAckReceived&) { return STATE_IDLE; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvTimeout&) { return STATE_UNSYNCHRONIZED; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
 };
 
 class StateFault : public etl::fsm_state<BridgeFsm, StateFault, STATE_FAULT,
                                          EvReset, EvCryptoFault> {
  public:
-  etl::fsm_state_id_t on_enter_state() { return STATE_FAULT; }
-  etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
-  etl::fsm_state_id_t on_event(const EvCryptoFault&) { return No_State_Change; }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_enter_state() { return STATE_FAULT; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvCryptoFault&) { return No_State_Change; }
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
 };
 
 class BridgeFsm : public etl::fsm {
@@ -219,7 +219,7 @@ struct SimpleTimer {
     }
   }
 
-  void start_with_period(uint8_t id, uint32_t ms, uint32_t now) {
+  [[maybe_unused]] void start_with_period(uint8_t id, uint32_t ms, uint32_t now) {
     if (id < N) {
       period[id] = ms;
       deadline[id] = now + ms;
@@ -231,7 +231,7 @@ struct SimpleTimer {
     if (id < N) active.reset(id);
   }
 
-  bool is_active(uint8_t id) const {
+  [[maybe_unused]] bool is_active(uint8_t id) const {
     return (id < N) && active.test(id);
   }
 

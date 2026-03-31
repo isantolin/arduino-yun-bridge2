@@ -30,7 +30,7 @@ class ConsoleClass : public Stream, public BridgeObserver {
 
   ConsoleClass();
   void begin();
-  bool isReady() const { return _flags.test(BEGUN); }
+  [[maybe_unused]] bool isReady() const { return _flags.test(BEGUN); }
 
   // [SIL-2] Observer Interface
   void notification(MsgBridgeSynchronized) override { begin(); }

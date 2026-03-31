@@ -37,7 +37,7 @@ inline void log_hex(Print& stream, etl::span<const uint8_t> data) {
  * @brief Logs a directional traffic event.
  * [SIL-2] Standardized directional labels for automated log parsing.
  */
-inline void log_traffic(Print& stream, const char* direction, const char* label,
+[[maybe_unused]] inline void log_traffic(Print& stream, const char* direction, const char* label,
                         etl::span<const uint8_t> data) {
   // Avoid recursion if stream is Console and we are logging Console traffic
   // However, Bridge typically logs to Serial, and Console sends via Bridge.

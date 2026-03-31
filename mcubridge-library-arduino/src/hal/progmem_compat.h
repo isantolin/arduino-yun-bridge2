@@ -34,7 +34,7 @@ namespace bridge::hal {
  * 
  * On AVR, it uses pgm_read_byte. On other architectures, it's a direct read.
  */
-inline uint8_t read_byte(const uint8_t* addr) {
+[[maybe_unused]] inline uint8_t read_byte(const uint8_t* addr) {
   if constexpr (bridge::config::IS_AVR) {
     return pgm_read_byte(addr);
   } else {

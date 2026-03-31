@@ -25,14 +25,14 @@ class FileSystemClass : public BridgeObserver {
   FileSystemClass();
 
   // [SIL-2] Observer Interface
-  void notification(MsgBridgeSynchronized) override { /* ready */ }
-  void notification(MsgBridgeLost) override { _read_handler.clear(); }
-  void notification(MsgBridgeError) override {}
-  void notification(MsgBridgeCommand) override {}
+  [[maybe_unused]] void notification(MsgBridgeSynchronized) override { /* ready */ }
+  [[maybe_unused]] void notification(MsgBridgeLost) override { _read_handler.clear(); }
+  [[maybe_unused]] void notification(MsgBridgeError) override {}
+  [[maybe_unused]] void notification(MsgBridgeCommand) override {}
 
   void write(etl::string_view path, etl::span<const uint8_t> data);
   void read(etl::string_view path, FileSystemReadHandler handler);
-  void remove(etl::string_view path);
+  [[maybe_unused]] void remove(etl::string_view path);
 
   void _onWrite(const rpc::payload::FileWrite& msg, etl::span<const uint8_t> data);
   void _onRead(const rpc::payload::FileRead& msg);

@@ -109,22 +109,22 @@ class FrameParser {
 /**
  * @brief Big-Endian Read/Write Helpers [SIL-2]
  */
-inline uint16_t read_u16_be(etl::span<const uint8_t> buffer) {
+[[maybe_unused]] inline uint16_t read_u16_be(etl::span<const uint8_t> buffer) {
   etl::byte_stream_reader reader(buffer.begin(), buffer.end(), etl::endian::big);
   return reader.read<uint16_t>().value_or(0);
 }
 
-inline void write_u16_be(etl::span<uint8_t> buffer, uint16_t value) {
+[[maybe_unused]] inline void write_u16_be(etl::span<uint8_t> buffer, uint16_t value) {
   etl::byte_stream_writer writer(buffer.begin(), buffer.end(), etl::endian::big);
   writer.write<uint16_t>(value);
 }
 
-inline uint32_t read_u32_be(etl::span<const uint8_t> buffer) {
+[[maybe_unused]] inline uint32_t read_u32_be(etl::span<const uint8_t> buffer) {
   etl::byte_stream_reader reader(buffer.begin(), buffer.end(), etl::endian::big);
   return reader.read<uint32_t>().value_or(0);
 }
 
-inline void write_u32_be(etl::span<uint8_t> buffer, uint32_t value) {
+[[maybe_unused]] inline void write_u32_be(etl::span<uint8_t> buffer, uint32_t value) {
   etl::byte_stream_writer writer(buffer.begin(), buffer.end(), etl::endian::big);
   writer.write<uint32_t>(value);
 }

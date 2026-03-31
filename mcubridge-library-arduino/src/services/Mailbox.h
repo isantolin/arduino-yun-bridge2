@@ -26,18 +26,18 @@ class MailboxClass : public BridgeObserver {
   MailboxClass();
 
   // [SIL-2] Observer Interface
-  void notification(MsgBridgeSynchronized) override { /* ready */ }
-  void notification(MsgBridgeLost) override { _rx_buffer.clear(); }
-  void notification(MsgBridgeError) override {}
-  void notification(MsgBridgeCommand) override {}
+  [[maybe_unused]] void notification(MsgBridgeSynchronized) override { /* ready */ }
+  [[maybe_unused]] void notification(MsgBridgeLost) override { _rx_buffer.clear(); }
+  [[maybe_unused]] void notification(MsgBridgeError) override {}
+  [[maybe_unused]] void notification(MsgBridgeCommand) override {}
 
   void push(etl::span<const uint8_t> data);
   void send(etl::span<const uint8_t> data) { push(data); }
-  void requestRead();
-  void requestAvailable();
+  [[maybe_unused]] void requestRead();
+  [[maybe_unused]] void requestAvailable();
 
-  void onMailboxMessage(MailboxHandler handler) { _mailbox_handler = handler; }
-  void onMailboxAvailable(MailboxAvailableHandler handler) { _available_handler = handler; }
+  [[maybe_unused]] void onMailboxMessage(MailboxHandler handler) { _mailbox_handler = handler; }
+  [[maybe_unused]] void onMailboxAvailable(MailboxAvailableHandler handler) { _available_handler = handler; }
 
   void _onIncomingData(etl::span<const uint8_t> data);
   void _onResponse(etl::span<const uint8_t> content);

@@ -26,17 +26,17 @@ class DataStoreClass : public BridgeObserver {
   DataStoreClass();
 
   // [SIL-2] Observer Interface
-  void notification(MsgBridgeSynchronized) override { /* ready */ }
-  void notification(MsgBridgeLost) override { _pending_gets.clear(); }
-  void notification(MsgBridgeError) override {}
-  void notification(MsgBridgeCommand) override {}
+  [[maybe_unused]] void notification(MsgBridgeSynchronized) override { /* ready */ }
+  [[maybe_unused]] void notification(MsgBridgeLost) override { _pending_gets.clear(); }
+  [[maybe_unused]] void notification(MsgBridgeError) override {}
+  [[maybe_unused]] void notification(MsgBridgeCommand) override {}
 
   void set(etl::string_view key, etl::span<const uint8_t> value);
-  void put(etl::string_view key, etl::span<const uint8_t> value) { set(key, value); }
-  void put(etl::string_view key, etl::string_view value) {
+  [[maybe_unused]] void put(etl::string_view key, etl::span<const uint8_t> value) { set(key, value); }
+  [[maybe_unused]] void put(etl::string_view key, etl::string_view value) {
     set(key, etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(value.data()), value.size()));
   }
-  void get(etl::string_view key, DataStoreGetHandler handler);
+  [[maybe_unused]] void get(etl::string_view key, DataStoreGetHandler handler);
   void reset() { _pending_gets.clear(); }
 
   void _onResponse(etl::span<const uint8_t> value);

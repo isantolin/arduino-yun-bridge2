@@ -92,6 +92,68 @@ from .spec_model import (  # noqa: E402, F401
     RawProtocolData as RawProtocolData,
     StatusDef as StatusDef,
 )
+from .frame import Frame as Frame  # noqa: E402, F401
+
+
+class TopicRoute(msgspec.Struct, frozen=True):
+    """Parsed representation of an MQTT topic targeting the daemon."""
+
+    raw: str
+    prefix: str
+    topic: Any  # Avoid circular import with .protocol.Topic
+    segments: tuple[str, ...]
+
+    @property
+    def identifier(self) -> str:
+        return self.segments[0] if self.segments else ""
+
+    @property
+    def action(self) -> Any:
+        """Infer the service action from the first segment if applicable.
+        Ignore segments that indicate a response flavor.
+        """
+        from .protocol import FileAction, ShellAction, SystemAction
+
+        if not self.segments or "response" in self.segments or "value" in self.segments:
+            return None
+        val = self.segments[0]
+        # Attempt to map to known action enums
+        for enum_cls in (FileAction, ShellAction, SystemAction):
+            try:
+                return enum_cls(val)
+            except ValueError:
+                continue
+        return val
+
+    @property
+    def remainder(self) -> tuple[str, ...]:
+        return self.segments[1:] if len(self.segments) > 1 else ()
+
+
+class RLEPayload(msgspec.Struct, frozen=True):
+    """Encapsulates RLE-compressed data with a msgspec-compatible interface (Refactor)."""
+
+    data: bytes
+
+    @classmethod
+    def from_uncompressed(cls, uncompressed: bytes) -> RLEPayload:
+        """Factory to create RLEPayload from raw bytes."""
+        from .rle import encode
+
+        return cls(data=encode(uncompressed))
+
+    def decode(self) -> bytes:
+        """Decompress data using declarative Construct decoder."""
+        from .rle import RLE_DECODER
+
+        if not self.data:
+            return b""
+        try:
+            parsed: Any = RLE_DECODER.parse(self.data)
+            return b"".join(parsed.chunks)
+        except Exception as e:
+            # Fallback or raise for protocol integrity
+            raise ValueError(f"RLE decompression failed: {e}") from e
 
 
 # =============================================================================
@@ -761,7 +823,85 @@ class SpiConfigPacket(BaseStruct, frozen=True):
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.
 # This eliminates manual if/elif dispatching across components.
 
+# --- Operational Constants ---
+
+MAX_COMMAND_LEN: Final[int] = 512
+
+
+class PayloadValidationError(ValueError):
+    """Raised when an inbound MQTT payload cannot be validated."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 # --- High-Level Structure (Msgspec Only) ---
+
+
+class ShellCommandPayload(msgspec.Struct, frozen=True):
+    """Represents a shell command request coming from MQTT.
+
+    Accepts either plain text or MsgPack: {"command": "..."}.
+    """
+
+    command: Annotated[str, msgspec.Meta(min_length=1, max_length=MAX_COMMAND_LEN)]
+
+    @classmethod
+    def from_mqtt(cls, payload: bytes) -> ShellCommandPayload:
+        """Parse MQTT payload into a validated ShellCommandPayload."""
+        if not payload:
+            raise PayloadValidationError("Shell command payload is empty")
+
+        # Try msgpack format first
+        try:
+            result = msgspec.msgpack.decode(payload, type=cls)
+            normalized = result.command.strip()
+            if not normalized:
+                raise PayloadValidationError("Shell command payload is empty")
+            return cls(command=normalized)
+        except (msgspec.ValidationError, msgspec.DecodeError):
+            pass
+
+        # Fallback to plain text command
+        text = payload.decode("utf-8", errors="ignore").strip()
+        if not text:
+            raise PayloadValidationError("Shell command payload is empty")
+
+        if len(text) > MAX_COMMAND_LEN:
+            raise PayloadValidationError("Command cannot exceed 512 characters")
+        return cls(command=text)
+
+
+class ShellPidPayload(msgspec.Struct, frozen=True):
+    """MQTT payload specifying an async shell PID to operate on."""
+
+    pid: Annotated[int, msgspec.Meta(gt=0, le=65535)]  # UINT16_MAX
+
+    @classmethod
+    def from_topic_segment(cls, segment: str) -> ShellPidPayload:
+        """Parse a topic segment into a validated ShellPidPayload."""
+        try:
+            value = int(segment, 10)
+            return msgspec.convert({"pid": value}, cls, strict=True)
+        except (ValueError, msgspec.ValidationError) as exc:
+            raise PayloadValidationError(f"Invalid PID segment: {exc}") from exc
+
+
+class SerialTimingWindow(msgspec.Struct, frozen=True):
+    """Derived serial retry/response windows used by both MCU and MPU."""
+
+    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=10, le=50000)]
+    response_timeout_ms: Annotated[int, msgspec.Meta(ge=100, le=50000)]
+    retry_limit: Annotated[int, msgspec.Meta(ge=1, le=100)]
+
+    @property
+    def ack_timeout_seconds(self) -> float:
+        return self.ack_timeout_ms / 1000.0
+
+    @property
+    def response_timeout_seconds(self) -> float:
+        return self.response_timeout_ms / 1000.0
 
 
 class MqttPayload(msgspec.Struct, frozen=True):
@@ -775,6 +915,13 @@ class MqttPayload(msgspec.Struct, frozen=True):
 class PinRequest(msgspec.Struct, frozen=True):
     pin: int
     state: str
+
+
+class PendingPinRequest(msgspec.Struct):
+    """Pending pin read request."""
+
+    pin: int
+    reply_context: Any | None = None  # Message | None
 
 
 class ServiceHealth(msgspec.Struct, frozen=True):

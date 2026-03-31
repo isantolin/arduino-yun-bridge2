@@ -29,7 +29,7 @@ inline void pb_copy_string(etl::string_view src, char* dst, size_t dst_size) {
  * Copies at most sizeof(field.bytes) bytes and sets field.size accordingly.
  */
 template <typename PbBytesField>
-inline void pb_copy_bytes(etl::span<const uint8_t> src, PbBytesField& field) {
+[[maybe_unused]] inline void pb_copy_bytes(etl::span<const uint8_t> src, PbBytesField& field) {
   field.size = static_cast<pb_size_t>(etl::min(src.size(), sizeof(field.bytes)));
   etl::copy_n(src.data(), field.size, field.bytes);
 }

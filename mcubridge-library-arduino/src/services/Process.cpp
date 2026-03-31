@@ -6,7 +6,7 @@
 
 ProcessClass::ProcessClass() {}
 
-void ProcessClass::runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler) {
+[[maybe_unused]] void ProcessClass::runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler) {
   if (_pending_async_runs.full()) return;
   rpc::payload::ProcessRunAsync msg = {};
   rpc::util::pb_copy_join(command, args, msg.command, sizeof(msg.command));
@@ -16,7 +16,7 @@ void ProcessClass::runAsync(etl::string_view command, etl::span<const etl::strin
   }
 }
 
-void ProcessClass::poll(int16_t pid, ProcessPollHandler handler) {
+[[maybe_unused]] void ProcessClass::poll(int16_t pid, ProcessPollHandler handler) {
   if (_pending_polls.full()) return;
   rpc::payload::ProcessPoll msg = {};
   msg.pid = pid;
@@ -25,7 +25,7 @@ void ProcessClass::poll(int16_t pid, ProcessPollHandler handler) {
   }
 }
 
-void ProcessClass::kill(int16_t pid, ProcessKillHandler handler) {
+[[maybe_unused]] void ProcessClass::kill(int16_t pid, ProcessKillHandler handler) {
   rpc::payload::ProcessKill msg = {};
   msg.pid = pid;
   if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_KILL, 0, msg)) {

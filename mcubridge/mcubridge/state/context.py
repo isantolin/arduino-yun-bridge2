@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
 import psutil
-from aiomqtt.message import Message
 from transitions import Machine
 
 from ..config.const import (
@@ -52,6 +51,7 @@ from ..protocol.structures import (
     HandshakeSnapshot,
     McuCapabilities,
     McuVersion,
+    PendingPinRequest,
     SerialFlowStats,
     SerialLatencyStats,
     SerialLinkSnapshot,
@@ -109,13 +109,6 @@ def _status_label(code: int | None) -> str:
         return Status(code).name
     except ValueError:
         return f"0x{code:02X}"
-
-
-class PendingPinRequest(msgspec.Struct):
-    """Pending pin read request."""
-
-    pin: int
-    reply_context: Message | None = None
 
 
 @dataclass

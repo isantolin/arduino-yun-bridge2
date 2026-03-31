@@ -261,6 +261,8 @@ class MqttTransport:
                     await self.service.handle_mqtt_message(message)
                 except (AttributeError, IndexError, KeyError, OSError, RuntimeError, TypeError, ValueError) as e:
                     logger.error("Error processing MQTT message on topic %s: %s", topic_str, e)
+                    payload_bytes = bytes(message.payload) if message.payload else b""
+                    log_hexdump(logger, logging.ERROR, f"FAILED MQTT MSG < {topic_str}", payload_bytes)
         except asyncio.CancelledError:
             with contextlib.suppress(asyncio.CancelledError):
                 raise

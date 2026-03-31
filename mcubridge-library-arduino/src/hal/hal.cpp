@@ -125,9 +125,14 @@ bool isValidPin(const uint8_t pin) {
 void forceSafeState() {
   // [SIL-2] Ensure all potential actuator pins are in a safe state before any logic starts.
   // This prevents spikes or unintended activations during MCU boot/reset.
-  // Using INPUT_PULLUP ensures pins are in a well-defined high-impedance state.
   for (uint8_t pin = 0; pin < DIGITAL_PINS; ++pin) {
-    pinMode(pin, INPUT_PULLUP);
+    if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
+      pinMode(pin, OUTPUT);
+      digitalWrite(pin, LOW);
+    } else {
+      // Default: Using INPUT_PULLUP ensures pins are in a well-defined high-impedance state.
+      pinMode(pin, INPUT_PULLUP);
+    }
   }
 }
 

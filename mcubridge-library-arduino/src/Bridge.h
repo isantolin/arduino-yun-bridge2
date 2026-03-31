@@ -339,6 +339,15 @@ class BridgeClass
     if (ctx.requires_ack) _sendAckAndFlush(ctx.raw_command, ctx.sequence_id);
   }
 
+  // [SIL-2] Custom type trait to detect if F is invocable with (const TPacket&, etl::span<const uint8_t>)
+  // Uses ETL traits for maximum compatibility and to comply with No-STL policy gates.
+  template <typename F, typename TP, typename S, typename = void>
+  struct is_two_arg_invocable : etl::false_type {};
+
+  template <typename F, typename TP, typename S>
+  struct is_two_arg_invocable<F, TP, S, etl::void_t<decltype(etl::declval<F>()(etl::declval<const TP&>(), etl::declval<S>()))>> : etl::true_type {};
+
+
   template <typename TPacket, typename F, typename TField>
   void _dispatchWithBytes(const bridge::router::CommandContext& ctx, TField TPacket::*field, F handler, bool ack = false) {
     etl::span<uint8_t> span(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
@@ -346,7 +355,7 @@ class BridgeClass
     rpc::util::pb_setup_decode_span(msg.*field, span);
 
     auto logic = [&handler, &span](const TPacket& m) {
-      if constexpr (std::is_invocable_v<F, const TPacket&, etl::span<const uint8_t>>) {
+      if constexpr (is_two_arg_invocable<F, TPacket, etl::span<const uint8_t>>::value) {
         handler(m, etl::span<const uint8_t>(span.data(), span.size()));
       } else {
         handler(etl::span<const uint8_t>(span.data(), span.size()));

@@ -76,7 +76,7 @@ SPOOL_BACKOFF_MAX_SECONDS: float = 60.0
 # -- File System Defaults --
 DEFAULT_FILE_SYSTEM_ROOT: str = "/tmp/yun_files"
 DEFAULT_FILE_WRITE_MAX_BYTES: int = 262144
-DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 4194304
+DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 8388608
 # Warning threshold for files growing large in RAM (1MB)
 FILE_LARGE_WARNING_BYTES: int = 1048576
 # Paths considered safe (volatile/RAM) for writing to avoid flash wear

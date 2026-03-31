@@ -17,6 +17,9 @@ from ..protocol.protocol import ShellAction, Status
 from ..protocol.structures import (
     ProcessOutputBatch,
     QueuedPublish,
+    PayloadValidationError,
+    ShellCommandPayload,
+    ShellPidPayload,
 )
 from ..protocol.topics import Topic, topic_path
 from ..state.context import (
@@ -25,11 +28,6 @@ from ..state.context import (
     RuntimeState,
 )
 from .base import BaseComponent
-from .payloads import (
-    PayloadValidationError,
-    ShellCommandPayload,
-    ShellPidPayload,
-)
 
 if TYPE_CHECKING:
     from .runtime import BridgeService

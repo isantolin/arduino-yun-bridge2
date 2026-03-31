@@ -1063,7 +1063,7 @@ class TestDispatcherEdgeCases:
 
 class TestPayloads:
     def test_shell_pid_from_topic_segment_invalid(self):
-        from mcubridge.services.payloads import PayloadValidationError, ShellPidPayload
+        from mcubridge.protocol.structures import PayloadValidationError, ShellPidPayload
 
         with pytest.raises(PayloadValidationError):
             ShellPidPayload.from_topic_segment("abc")

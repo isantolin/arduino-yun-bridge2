@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 from mcubridge.protocol.protocol import RLE_ESCAPE_BYTE as ESCAPE_BYTE
 from mcubridge.protocol.rle import (
-    RLEPayload,
     encode,
     should_compress,
 )
+from mcubridge.protocol.structures import RLEPayload
 
 
 class TestRLEEncode:

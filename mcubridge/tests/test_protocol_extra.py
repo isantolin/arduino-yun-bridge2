@@ -40,11 +40,11 @@ def test_frame_parse_payload_length_mismatch() -> None:
 
 def test_rle_encode_decode_edge_cases() -> None:
     from mcubridge.protocol import rle
+    from mcubridge.protocol.structures import RLEPayload
 
     # Empty
     assert rle.encode(b"") == b""
-    assert rle.RLEPayload(b"").decode() == b""
-
+    assert RLEPayload(b"").decode() == b""
     # No compression benefit
     assert rle.encode(b"ABC") == b"ABC"  # Wait, literals are as-is if not 0xFF
 
@@ -62,8 +62,7 @@ def test_rle_encode_decode_edge_cases() -> None:
     # Run 1: 0xFF, 254 (256-2), 'A'
     # Run 2: 'A' repeated 44 times -> 0xFF, 42 (44-2), 'A'
     assert len(encoded) == 6
-    assert rle.RLEPayload(encoded).decode() == data
-
+    assert RLEPayload(encoded).decode() == data
 
 def test_topics_handshake_topic() -> None:
     from mcubridge.protocol.topics import (

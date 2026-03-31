@@ -1,6 +1,5 @@
 """Service layer for MCU Bridge daemon operations."""
 
-from . import payloads
 from .base import BridgeContext
 from .console import ConsoleComponent
 from .datastore import DatastoreComponent
@@ -14,18 +13,18 @@ from .spi import SpiComponent
 from .system import SystemComponent
 
 __all__ = [
-    "BridgeContext",
-    "BridgeDispatcher",
-    "ConsoleComponent",
-    "DatastoreComponent",
-    "FileComponent",
-    "MailboxComponent",
-    "PinComponent",
-    "ProcessComponent",
-    "SpiComponent",
-    "SerialHandshakeFatal",
-    "SerialHandshakeManager",
-    "SerialTimingWindow",
-    "SystemComponent",
-    "payloads",
+"BridgeContext",
+"BridgeDispatcher",
+"ConsoleComponent",
+"DatastoreComponent",
+"FileComponent",
+"MailboxComponent",
+"PinComponent",
+"ProcessComponent",
+"SpiComponent",
+"SerialHandshakeFatal",
+"SerialHandshakeManager",
+"SerialTimingWindow",
+"SystemComponent",
+
 ]

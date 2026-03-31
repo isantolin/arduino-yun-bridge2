@@ -27,7 +27,6 @@ from construct import (
 )
 
 from . import protocol
-from .structures import RLEPayload
 
 # [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
 RLE_ESCAPE: Construct = Struct(

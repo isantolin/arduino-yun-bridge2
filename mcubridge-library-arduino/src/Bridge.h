@@ -155,11 +155,24 @@ class BridgeClass
   bool isIdle() const { return _fsm.isIdle(); }
   bool isFault() const { return _fsm.isFault(); }
 
-  void sendXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF, 0); }
-  void sendXon() { (void)sendFrame(rpc::CommandId::CMD_XON, 0); }
-
   void enterSafeState();
   void forceSafeState();
+
+  /**
+   * @brief Manually signal the Linux side to stop sending data.
+   * [SIL-2] Only permitted if the bridge is initialized.
+   */
+  void sendXoff() {
+    if (isSynchronized()) (void)sendFrame(rpc::CommandId::CMD_XOFF, 0);
+  }
+
+  /**
+   * @brief Manually signal the Linux side to resume sending data.
+   * [SIL-2] Only permitted if the bridge is initialized.
+   */
+  void sendXon() {
+    if (isSynchronized()) (void)sendFrame(rpc::CommandId::CMD_XON, 0);
+  }
   void emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
   void emitStatus(rpc::StatusCode status_code,
                   etl::span<const uint8_t> payload);

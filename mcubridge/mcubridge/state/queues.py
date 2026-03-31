@@ -147,7 +147,7 @@ class PersistentQueue(Generic[T]):
                 except Exception as e:
                     logger.error("Error closing PersistentQueue in close(): %s", e)
                 finally:
-                    # [SIL-2] Finalize destruction to close SQLite handle
+                    # [SIL-2] Finalize destruction to close SQLite handle immediately
                     del self._store
                     self._store = None
 

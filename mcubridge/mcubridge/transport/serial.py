@@ -320,9 +320,23 @@ class SerialTransport:
                 logger.error("Already at safe baudrate; cannot fallback further.")
 
     async def _serial_sender(self, cmd: int, pl: bytes, seq: int | None = None) -> bool:
-        """Low-level serial frame sender."""
+        """Low-level serial frame sender with flow control integration."""
         if not self.writer or self.writer.is_closing():
             return False
+
+        # [SIL-2] Flow Control: Wait if MCU requested a pause (XOFF)
+        # Toggled by CMD_XOFF/CMD_XON in ConsoleComponent.
+        # We use a safety timeout to avoid permanent deadlocks if MCU fails to send XON.
+        if not self.state.serial_tx_allowed.is_set():
+            try:
+                logger.debug("Serial TX paused by MCU; waiting for XON (timeout=30s)...")
+                async with asyncio.timeout(30.0):
+                    await self.state.serial_tx_allowed.wait()
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.error("Flow control deadlock detected: MCU stayed in XOFF for >30s. Forcing re-sync.")
+                raise ConnectionError("Flow control timeout (MCU XOFF deadlock)")
+            except (asyncio.CancelledError, RuntimeError):
+                return False
 
         try:
             if seq is None:

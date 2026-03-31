@@ -38,7 +38,7 @@ def get_uci_config() -> dict[str, Any]:
 
 
 def get_default_config() -> dict[str, Any]:
-    """Return the default configuration as a dictionary."""
+    """Return the default configuration as a dictionary (SIL 2)."""
     from mcubridge.config import const
     from mcubridge.protocol import protocol
     return {
@@ -50,7 +50,14 @@ def get_default_config() -> dict[str, Any]:
         "serial_response_timeout": const.DEFAULT_SERIAL_RESPONSE_TIMEOUT,
         "mqtt_host": const.DEFAULT_MQTT_HOST,
         "mqtt_port": const.DEFAULT_MQTT_PORT,
+        "mqtt_tls": True,
+        "mqtt_topic": protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+        "mqtt_spool_dir": "/tmp/mcubridge-spool",
+        "mqtt_spool_limit": 1000,
+        "file_system_root": "/tmp",
         "debug": const.DEFAULT_DEBUG_LOGGING,
+        "status_interval": const.DEFAULT_STATUS_INTERVAL,
+        "process_timeout": const.DEFAULT_PROCESS_TIMEOUT,
     }
 
 

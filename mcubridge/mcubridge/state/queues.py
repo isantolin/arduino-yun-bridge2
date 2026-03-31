@@ -7,7 +7,6 @@ import shutil
 import sqlite3
 from collections import deque
 from dataclasses import dataclass
-from contextlib import suppress
 from pathlib import Path
 from threading import Lock
 from typing import Any, Generic, Iterable, TypeVar, cast
@@ -35,7 +34,7 @@ class QueueEvent:
 
 
 class PersistentQueue(Generic[T]):
-    """Persistent FIFO queue backed directly by persist-queue."""
+    """Persistent FIFO queue with RAM mirror for full 'deque' API compatibility."""
 
     def __init__(
         self,
@@ -53,9 +52,9 @@ class PersistentQueue(Generic[T]):
         self._lock = Lock()
 
         if self.directory is not None:
-            self._open_store(load_existing=True)
+            self._open_store()
 
-    def _open_store(self, *, load_existing: bool) -> None:
+    def _open_store(self) -> None:
         if self.directory is None or self._closed:
             return
         with self._lock:
@@ -77,20 +76,19 @@ class PersistentQueue(Generic[T]):
                 self._fallback_active = False
                 self._fallback_reason = None
                 self._last_error = None
-                if load_existing:
-                    rows = cast(list[dict[str, Any]], self._store.queue())
-                    self._items = deque(cast(T, row["data"]) for row in rows)
+
+                # [SIL-2] Rebuild RAM mirror from Disk on startup
+                rows = cast(list[dict[str, Any]], self._store.queue())
+                self._items = deque(cast(T, row["data"]) for row in rows)
             except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
                 self._activate_fallback_locked("initialization_failed", exc)
 
-    def _activate_fallback(self, reason: str, exc: BaseException | None = None) -> None:
-        with self._lock:
-            self._activate_fallback_locked(reason, exc)
-
     def _activate_fallback_locked(self, reason: str, exc: BaseException | None = None) -> None:
         if self._store is not None:
-            with suppress(Exception):
+            try:
                 self._store.close()
+            except Exception:
+                pass
             self._store = None
         self._fallback_active = True
         self._fallback_reason = reason
@@ -98,19 +96,16 @@ class PersistentQueue(Generic[T]):
         if exc is not None:
             logger.warning("Persistent queue fallback (%s): %s", reason, exc)
 
-    def _rewrite_store(self) -> None:
-        with self._lock:
-            self._rewrite_store_locked()
-
     def _rewrite_store_locked(self) -> None:
+        """Helper to synchronize SQLite when non-FIFO operations occur."""
         if self.directory is None or self._closed:
             return
         try:
             if self._store is not None:
                 try:
                     self._store.close()
-                except Exception as e:
-                    logger.error("Error closing store: %s", e)
+                except Exception:
+                    pass
                 finally:
                     del self._store
                     self._store = None
@@ -128,15 +123,8 @@ class PersistentQueue(Generic[T]):
             self._activate_fallback_locked("rewrite_failed", exc)
 
     def __del__(self) -> None:
-        # [SIL-2] Final safety check to avoid resource leaks during garbage collection.
         if not getattr(self, "_closed", True):
-            try:
-                if self._store is not None:
-                    self._store.close()
-            except Exception as e:
-                logger.error("Error closing PersistentQueue in __del__: %s", e)
-            self._store = None
-            self._closed = True
+            self.close()
 
     def close(self) -> None:
         with self._lock:
@@ -145,9 +133,8 @@ class PersistentQueue(Generic[T]):
                 try:
                     self._store.close()
                 except Exception as e:
-                    logger.error("Error closing PersistentQueue in close(): %s", e)
+                    logger.error("Error closing PersistentQueue: %s", e)
                 finally:
-                    # [SIL-2] Finalize destruction to close SQLite handle immediately
                     del self._store
                     self._store = None
 
@@ -170,18 +157,20 @@ class PersistentQueue(Generic[T]):
 
             dropped_chunks = 0
             if self.max_items is not None and self.max_items > 0 and len(self._items) >= self.max_items:
-                if self._items:
-                    self._items.popleft()
-                    dropped_chunks = 1
+                self._items.popleft()
+                dropped_chunks = 1
+                if self._store is not None:
+                    try:
+                        self._store.get_nowait()
+                    except Empty:
+                        pass
 
             self._items.append(item)
             if self._store is not None:
                 try:
-                    if dropped_chunks > 0:
-                        self._store.get_nowait()
                     self._store.put(item)
-                except (Empty, sqlite3.Error, RuntimeError):
-                    self._activate_fallback_locked("write_failed")
+                except (sqlite3.Error, RuntimeError) as e:
+                    self._activate_fallback_locked("write_failed", e)
             return QueueEvent(success=True, dropped_chunks=dropped_chunks)
 
     def appendleft(self, item: T) -> QueueEvent:
@@ -215,10 +204,6 @@ class PersistentQueue(Generic[T]):
             if self._store is not None:
                 self._rewrite_store_locked()
             return item
-
-    def extend(self, items: Iterable[T]) -> None:
-        for item in items:
-            self.append(item)
 
     def clear(self) -> None:
         with self._lock:

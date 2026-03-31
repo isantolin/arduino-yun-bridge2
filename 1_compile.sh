@@ -583,27 +583,6 @@ if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
     done
     
     ./scripts/feeds install -f -p mcubridge -a
-
-    # [FIX CRITICO] Patch python3-structlog para Build Dependencies (Hatch)
-    # structlog requiere hatch-fancy-pypi-readme para procesar metadatos del README,
-    # lo cual falla en el SDK si la dependencia host no está presente.
-    STRUCTLOG_MAKEFILE="package/feeds/mcubridge/python3-structlog/Makefile"
-    if [ -f "$STRUCTLOG_MAKEFILE" ]; then
-        echo "[FIX] Patching python3-structlog build process in $STRUCTLOG_MAKEFILE..."
-        if ! grep -q "Build/Prepare" "$STRUCTLOG_MAKEFILE"; then
-            sed -i '/include .*python3-package.mk/a \
-\
-define Build/Prepare\
-	$(call Build/Prepare/Default)\
-	# Remove hatch-fancy-pypi-readme from requires list without deleting the property\
-	sed -i "s/, \\"hatch-fancy-pypi-readme\\"//g" $(PKG_BUILD_DIR)/pyproject.toml\
-	sed -i "s/\\"hatch-fancy-pypi-readme\\", //g" $(PKG_BUILD_DIR)/pyproject.toml\
-	sed -i "s/\\"hatch-fancy-pypi-readme\\"//g" $(PKG_BUILD_DIR)/pyproject.toml\
-	# Remove the dynamic metadata hook configuration block\
-	sed -i "/\\[tool.hatch.metadata.hooks.fancy-pypi-readme\\]/,/\\]/d" $(PKG_BUILD_DIR)/pyproject.toml\
-endef' "$STRUCTLOG_MAKEFILE"
-        fi
-    fi
 fi
 
 # ==============================================================================

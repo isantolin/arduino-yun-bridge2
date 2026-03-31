@@ -367,12 +367,21 @@ inject_rust_into_sdk
 
 # [FIX] Leverage host system build tools to avoid slow SDK-internal host-builds
 bootstrap_python_module_into_prefix() {
-    local python_bin="$1"
+    local target_python="$1"
     local prefix_dir="$2"
     local module_name="$3"
     local pip_spec="$4"
 
-    echo "[INFO] Bootstrapping $pip_spec in SDK..."
+    # [SIL-2] Resilient selection: Use SDK Python if available, fallback to Host Python
+    local python_bin
+    if [ -x "$target_python" ]; then
+        python_bin="$target_python"
+    else
+        python_bin=$(which python3)
+        echo "[INFO] SDK internal Python missing at $target_python, falling back to host Python: $python_bin"
+    fi
+
+    echo "[INFO] Bootstrapping $pip_spec in SDK using $python_bin..."
     "$python_bin" -m pip install --no-cache-dir --prefix "$prefix_dir" "$pip_spec" || {
         echo "[WARN] Could not bootstrap $module_name via pip, attempting symlink from host..."
         # Fallback: find host's version and symlink it (Aero-resilient fallback)

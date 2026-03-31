@@ -426,29 +426,21 @@ void BridgeClass::_handleSpiSetConfig(const bridge::router::CommandContext& ctx)
 
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_SPI
-    if (ctx.is_duplicate) return;
-    rpc::payload::SpiTransfer req = {};
-    static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
-    etl::span<uint8_t> decode_span(buffer.data(), buffer.size());
-    rpc::util::pb_setup_decode_span(req.data, decode_span);
-    auto res = rpc::Payload::parse<rpc::payload::SpiTransfer>(*ctx.frame, req);
-    if (res.has_value()) {
+    _dispatchWithBytes<rpc::payload::SpiTransfer>(ctx, &rpc::payload::SpiTransfer::data, [this, &ctx](etl::span<const uint8_t> data) {
       if (SPIService.isInitialized()) {
-        size_t len = decode_span.size();
-        if (len > 0) {
-          size_t xferred = SPIService.transfer(buffer.data(), len);
-          if (xferred < len) {
+        if (!data.empty()) {
+          size_t xferred = SPIService.transfer(const_cast<uint8_t*>(data.data()), data.size());
+          if (xferred < data.size()) {
             enterSafeState();
             _sendError(rpc::StatusCode::STATUS_ERROR, ctx.raw_command, ctx.sequence_id);
             return;
           }
         }
         rpc::payload::SpiTransferResponse resp = {};
-        etl::span<const uint8_t> out_span(buffer.data(), len);
-        rpc::util::pb_setup_encode_span(resp.data, out_span);
+        rpc::util::pb_setup_encode_span(resp.data, data);
         _sendPbResponse(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
       }
-    }
+    });
 #endif
 }
 
@@ -591,12 +583,13 @@ void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandConte
 
 void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_FILESYSTEM
-  rpc::payload::FileWrite msg = {};
-  etl::span<uint8_t> data_span(_transient_buffer.data(), _transient_buffer.size());
-  rpc::util::pb_setup_decode_span(msg.data, data_span);
-  _withPayload<rpc::payload::FileWrite>(ctx, [&data_span](const rpc::payload::FileWrite& parsed_msg) {
-    FileSystem._onWrite(parsed_msg, etl::span<const uint8_t>(data_span.data(), data_span.size()));
-  }, msg);
+  _dispatchWithBytes<rpc::payload::FileWrite>(ctx, &rpc::payload::FileWrite::data, [&ctx](etl::span<const uint8_t> data) {
+    rpc::payload::FileWrite msg = {};
+    auto res = rpc::Payload::parse<rpc::payload::FileWrite>(*ctx.frame, msg);
+    if (res.has_value()) {
+      FileSystem._onWrite(msg, data);
+    }
+  });
 #endif
 }
 

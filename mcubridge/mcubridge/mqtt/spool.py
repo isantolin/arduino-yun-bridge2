@@ -147,15 +147,16 @@ class MQTTPublishSpool:
         self._records.max_items = self._limit
 
     def snapshot(self) -> dict[str, int | float]:
-        return {
+        stats = {
             "pending": self.pending,
             "limit": self.limit,
             "dropped_due_to_limit": self._dropped_due_to_limit,
             "trim_events": self._trim_events,
             "last_trim_unix": self._last_trim_unix,
             "corrupt_dropped": self._corrupt_dropped,
-            "fallback_active": 1 if self.is_degraded else 0,
+            "fallback_active": int(self.is_degraded),
         }
+        return stats
 
 
 __all__ = ["QueuedPublish", "MQTTPublishSpool", "MQTTSpoolError"]

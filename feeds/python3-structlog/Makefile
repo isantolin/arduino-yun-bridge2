@@ -18,6 +18,12 @@ include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	sed -i "/hatch-fancy-pypi-readme/d" $(PKG_BUILD_DIR)/pyproject.toml
+	sed -i "/\[tool.hatch.metadata.hooks.fancy-pypi-readme\]/,/\]/d" $(PKG_BUILD_DIR)/pyproject.toml
+endef
+
 define Package/python3-structlog
   SECTION:=lang
   CATEGORY:=Languages

@@ -426,7 +426,7 @@ void BridgeClass::_handleSpiSetConfig(const bridge::router::CommandContext& ctx)
 
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_SPI
-    _dispatchWithBytes<rpc::payload::SpiTransfer>(ctx, &rpc::payload::SpiTransfer::data, [this, &ctx](etl::span<const uint8_t> data) {
+    _dispatchWithBytes<rpc::payload::SpiTransfer>(ctx, &rpc::payload::SpiTransfer::data, [this, &ctx](const auto&, etl::span<const uint8_t> data) {
       if (SPIService.isInitialized()) {
         if (!data.empty()) {
           size_t xferred = SPIService.transfer(const_cast<uint8_t*>(data.data()), data.size());
@@ -583,12 +583,8 @@ void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandConte
 
 void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_FILESYSTEM
-  _dispatchWithBytes<rpc::payload::FileWrite>(ctx, &rpc::payload::FileWrite::data, [&ctx](etl::span<const uint8_t> data) {
-    rpc::payload::FileWrite msg = {};
-    auto res = rpc::Payload::parse<rpc::payload::FileWrite>(*ctx.frame, msg);
-    if (res.has_value()) {
-      FileSystem._onWrite(msg, data);
-    }
+  _dispatchWithBytes<rpc::payload::FileWrite>(ctx, &rpc::payload::FileWrite::data, [](const auto& msg, etl::span<const uint8_t> data) {
+    FileSystem._onWrite(msg, data);
   });
 #endif
 }
@@ -607,7 +603,7 @@ void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_FILESYSTEM
-  _dispatchWithBytes<rpc::payload::FileReadResponse>(ctx, &rpc::payload::FileReadResponse::content, [](const auto& s) { FileSystem._onResponse(s); });
+  _dispatchWithBytes<rpc::payload::FileReadResponse>(ctx, &rpc::payload::FileReadResponse::content, [](const auto&, const auto& s) { FileSystem._onResponse(s); });
 #endif
 }
 

@@ -156,14 +156,16 @@ class PersistentQueue(Generic[T]):
                 return QueueEvent(success=False)
 
             dropped_chunks = 0
-            if self.max_items is not None and self.max_items > 0 and len(self._items) >= self.max_items:
-                self._items.popleft()
-                dropped_chunks = 1
-                if self._store is not None:
-                    try:
-                        self._store.get_nowait()
-                    except Empty:
-                        pass
+            # [SIL-2] Circular buffer: only drop if we actually have a store and limits
+            if self.max_items is not None and self.max_items > 0:
+                while len(self._items) >= self.max_items:
+                    self._items.popleft()
+                    dropped_chunks += 1
+                    if self._store is not None:
+                        try:
+                            self._store.get_nowait()
+                        except Empty:
+                            break
 
             self._items.append(item)
             if self._store is not None:

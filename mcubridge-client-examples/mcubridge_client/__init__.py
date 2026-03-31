@@ -314,7 +314,7 @@ class Bridge:
         pub_payload: bytes,
         *,
         resp_topic: str | Sequence[str] | Iterable[str],
-        timeout: float = 10,
+        timeout: float = 15,
     ) -> bytes:
         client = self._ensure_client()
         reply_topic = self._reply_topic
@@ -402,7 +402,7 @@ class Bridge:
         await self._publish_simple(topic, str(value))
         logger.info("digital_write(%d, %d) -> %s", pin, value, topic)
 
-    async def digital_read(self, pin: int, timeout: float = 10) -> int:
+    async def digital_read(self, pin: int, timeout: float = 15) -> int:
         response = await self._publish_and_wait(
             str(Topic.build(Topic.DIGITAL, pin, "read")),
             b"",
@@ -414,7 +414,7 @@ class Bridge:
         )
         return int(response.decode("utf-8"))
 
-    async def analog_read(self, pin: int, timeout: float = 10) -> int:
+    async def analog_read(self, pin: int, timeout: float = 15) -> int:
         response = await self._publish_and_wait(
             str(Topic.build(Topic.ANALOG, pin, "read")),
             b"",
@@ -457,7 +457,7 @@ class Bridge:
         self._digital_modes[pin] = mode_value
         logger.info("set_digital_mode(%d, %d)", pin, mode_value)
 
-    async def put(self, key: str, value: str, timeout: float = 10) -> None:
+    async def put(self, key: str, value: str, timeout: float = 15) -> None:
         await self._publish_and_wait(
             str(Topic.build(Topic.DATASTORE, "put", key)),
             value.encode("utf-8"),
@@ -466,7 +466,7 @@ class Bridge:
         )
         logger.info("datastore put('%s', '%s')", key, value)
 
-    async def get(self, key: str, timeout: float = 10) -> str:
+    async def get(self, key: str, timeout: float = 15) -> str:
         response = await self._publish_and_wait(
             str(Topic.build(Topic.DATASTORE, "get", key, "request")),
             b"",
@@ -475,7 +475,7 @@ class Bridge:
         )
         return response.decode("utf-8")
 
-    async def get_free_memory(self, timeout: float = 10) -> int:
+    async def get_free_memory(self, timeout: float = 15) -> int:
         response = await self._publish_and_wait(
             str(Topic.build(Topic.SYSTEM, "free_memory", "get")),
             b"",
@@ -484,7 +484,7 @@ class Bridge:
         )
         return int(response.decode("utf-8"))
 
-    async def run_sketch_command(self, command_parts: list[str], timeout: float = 10) -> bytes:
+    async def run_sketch_command(self, command_parts: list[str], timeout: float = 15) -> bytes:
         command_str = _format_shell_command(command_parts)
         logger.warning("run_sketch_command falls back to a synchronous shell " "command via MQTT.")
         response = await self._publish_and_wait(
@@ -495,7 +495,7 @@ class Bridge:
         )
         return response
 
-    async def run_shell_command_async(self, command_parts: list[str], timeout: float = 10) -> int:
+    async def run_shell_command_async(self, command_parts: list[str], timeout: float = 15) -> int:
         command_str = _format_shell_command(command_parts)
         response = await self._publish_and_wait(
             str(Topic.build(Topic.SHELL, "run_async")),
@@ -512,7 +512,7 @@ class Bridge:
         self,
         pid: int,
         *,
-        timeout: float = 10,
+        timeout: float = 15,
     ) -> ShellPollResponse:
         if pid <= 0:
             raise ValueError("pid must be a positive integer")
@@ -544,7 +544,7 @@ class Bridge:
         await self._publish_simple(str(Topic.build(Topic.SPI, "config")), msgspec.json.encode(config))
         logger.info("spi_config(%s)", config)
 
-    async def spi_transfer(self, data: bytes, timeout: float = 10) -> bytes:
+    async def spi_transfer(self, data: bytes, timeout: float = 15) -> bytes:
         response = await self._publish_and_wait(
             str(Topic.build(Topic.SPI, "transfer")),
             data,
@@ -628,7 +628,7 @@ class Bridge:
         await self._publish_simple(topic, content)
         logger.info("file_write('%s', %d bytes)", filename, len(content))
 
-    async def file_read(self, filename: str, timeout: float = 10) -> bytes:
+    async def file_read(self, filename: str, timeout: float = 15) -> bytes:
         fn = filename.lstrip("/")
         return await self._publish_and_wait(
             str(Topic.build(Topic.FILE, "read", fn)),

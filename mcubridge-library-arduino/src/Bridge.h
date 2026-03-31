@@ -345,8 +345,12 @@ class BridgeClass
     TPacket msg = {};
     rpc::util::pb_setup_decode_span(msg.*field, span);
 
-    auto logic = [&handler, &span](const TPacket&) {
-      handler(etl::span<const uint8_t>(span.data(), span.size()));
+    auto logic = [&handler, &span](const TPacket& m) {
+      if constexpr (std::is_invocable_v<F, const TPacket&, etl::span<const uint8_t>>) {
+        handler(m, etl::span<const uint8_t>(span.data(), span.size()));
+      } else {
+        handler(etl::span<const uint8_t>(span.data(), span.size()));
+      }
     };
 
     if (ack) _withPayloadAck<TPacket>(ctx, logic, msg);

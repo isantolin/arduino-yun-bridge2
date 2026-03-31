@@ -595,7 +595,11 @@ if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
 \
 define Build/Prepare\
 	$(call Build/Prepare/Default)\
-	sed -i "/hatch-fancy-pypi-readme/d" $(PKG_BUILD_DIR)/pyproject.toml\
+	# Remove hatch-fancy-pypi-readme from requires list without deleting the property\
+	sed -i "s/, \\"hatch-fancy-pypi-readme\\"//g" $(PKG_BUILD_DIR)/pyproject.toml\
+	sed -i "s/\\"hatch-fancy-pypi-readme\\", //g" $(PKG_BUILD_DIR)/pyproject.toml\
+	sed -i "s/\\"hatch-fancy-pypi-readme\\"//g" $(PKG_BUILD_DIR)/pyproject.toml\
+	# Remove the dynamic metadata hook configuration block\
 	sed -i "/\\[tool.hatch.metadata.hooks.fancy-pypi-readme\\]/,/\\]/d" $(PKG_BUILD_DIR)/pyproject.toml\
 endef' "$STRUCTLOG_MAKEFILE"
         fi

@@ -102,12 +102,11 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
     return True
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(autouse=True)
 def force_gc_cleanup():
-    """Force garbage collection at the end of the session to help clean up resources."""
-    yield
+    """Ensure all resources are released after each test to reach zero warnings."""
     import gc
-
+    yield
     gc.collect()
 
 

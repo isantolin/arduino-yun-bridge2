@@ -60,9 +60,13 @@ class PersistentQueue(Generic[T]):
             return
         with self._lock:
             if self._store is not None:
-                with suppress(Exception):
+                try:
                     self._store.close()
-                self._store = None
+                except Exception as e:
+                    logger.error("Error closing store: %s", e)
+                finally:
+                    del self._store
+                    self._store = None
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
                 self._store = FIFOSQLiteQueue(
@@ -103,9 +107,13 @@ class PersistentQueue(Generic[T]):
             return
         try:
             if self._store is not None:
-                with suppress(Exception):
+                try:
                     self._store.close()
-                self._store = None
+                except Exception as e:
+                    logger.error("Error closing store: %s", e)
+                finally:
+                    del self._store
+                    self._store = None
 
             shutil.rmtree(self.directory, ignore_errors=True)
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -125,8 +133,8 @@ class PersistentQueue(Generic[T]):
             try:
                 if self._store is not None:
                     self._store.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("Error closing PersistentQueue in __del__: %s", e)
             self._store = None
             self._closed = True
 
@@ -134,9 +142,14 @@ class PersistentQueue(Generic[T]):
         with self._lock:
             self._closed = True
             if self._store is not None:
-                with suppress(Exception):
+                try:
                     self._store.close()
-                self._store = None
+                except Exception as e:
+                    logger.error("Error closing PersistentQueue in close(): %s", e)
+                finally:
+                    # [SIL-2] Finalize destruction to close SQLite handle
+                    del self._store
+                    self._store = None
 
     @property
     def fallback_active(self) -> bool:
@@ -154,7 +167,7 @@ class PersistentQueue(Generic[T]):
         with self._lock:
             if self._closed:
                 return QueueEvent(success=False)
-            
+
             dropped_chunks = 0
             if self.max_items is not None and self.max_items > 0 and len(self._items) >= self.max_items:
                 if self._items:
@@ -246,17 +259,18 @@ class BoundedByteDeque:
         dropped_chunks = 0
         dropped_bytes = 0
         truncated_bytes = 0
-        
+
         if self.max_bytes is not None and self.max_bytes > 0 and len(data) > self.max_bytes:
             truncated_bytes = len(data) - self.max_bytes
             data = data[:self.max_bytes]
 
         while self.max_bytes is not None and self.max_bytes > 0 and self._bytes + len(data) > self.max_bytes:
-            old = self.popleft()
-            if old is None:
+            try:
+                old = self.popleft()
+                dropped_chunks += 1
+                dropped_bytes += len(old)
+            except IndexError:
                 break
-            dropped_chunks += 1
-            dropped_bytes += len(old)
 
         evt = self._base.append(data)
         if evt.success:
@@ -269,7 +283,6 @@ class BoundedByteDeque:
                 truncated_bytes=truncated_bytes,
             )
         return QueueEvent(success=False)
-
     def appendleft(self, data: bytes) -> QueueEvent:
         evt = self._base.appendleft(data)
         if evt.success:
@@ -303,12 +316,17 @@ class BoundedByteDeque:
         self.max_items = max_items
         self.max_bytes = max_bytes
         self._base.max_items = max_items
-        
-        while self.max_items is not None and self.max_items > 0 and len(self) > self.max_items:
-            if self.popleft() is None: break
-        while self.max_bytes is not None and self.max_bytes > 0 and self.bytes > self.max_bytes:
-            if self.popleft() is None: break
 
+        while self.max_items is not None and self.max_items > 0 and len(self) > self.max_items:
+            try:
+                self.popleft()
+            except IndexError:
+                break
+        while self.max_bytes is not None and self.max_bytes > 0 and self.bytes > self.max_bytes:
+            try:
+                self.popleft()
+            except IndexError:
+                break
     def setup_persistence(self, directory: str | Path, ram_limit: int = 100) -> None:
         del ram_limit
         previous = self._base.values()

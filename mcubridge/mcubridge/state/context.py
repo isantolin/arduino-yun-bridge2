@@ -782,6 +782,9 @@ class RuntimeState(msgspec.Struct):
             self._disable_mqtt_spool("disabled", schedule_retry=False)
             return
         try:
+            if self.mqtt_spool:
+                self.mqtt_spool.close()
+                self.mqtt_spool = None
             spool_obj = MQTTPublishSpool(
                 self.mqtt_spool_dir,
                 self.mqtt_spool_limit,
@@ -959,15 +962,14 @@ class RuntimeState(msgspec.Struct):
 
     def cleanup(self) -> None:
         with contextlib.suppress(OSError, RuntimeError, AttributeError):
-            if self.mqtt_spool:
+            if self.mqtt_spool is not None:
                 self.mqtt_spool.close()
                 self.mqtt_spool = None
-            if self.mailbox_queue:
-                self.mailbox_queue.close()
-            if self.mailbox_incoming_queue:
-                self.mailbox_incoming_queue.close()
-            if self.console_to_mcu_queue:
-                self.console_to_mcu_queue.close()
+
+            # Non-optional persistent queues
+            self.mailbox_queue.close()
+            self.mailbox_incoming_queue.close()
+            self.console_to_mcu_queue.close()
 
             # Drain the MQTT queue instead of nullifying
             while not self.mqtt_publish_queue.empty():

@@ -351,17 +351,23 @@ class TestQueues:
         from mcubridge.state.queues import BoundedByteDeque
 
         q = BoundedByteDeque(max_items=10)
-        q.setup_persistence(tmp_path / "test_persist", ram_limit=5)
-        q.append(b"hello")
-        assert len(q) == 1
+        try:
+            q.setup_persistence(tmp_path / "test_persist", ram_limit=5)
+            q.append(b"hello")
+            assert len(q) == 1
+        finally:
+            q.close()
 
     def test_setup_persistence_failure(self, tmp_path):
         from mcubridge.state.queues import BoundedByteDeque, PersistentQueue
 
         q = BoundedByteDeque(max_items=10)
-        q.setup_persistence("/dev/null/impossible/path", ram_limit=5)
-        assert isinstance(q._queue, PersistentQueue)
-        assert q._queue.fallback_active is True
+        try:
+            q.setup_persistence("/dev/null/impossible/path", ram_limit=5)
+            assert isinstance(q._queue, PersistentQueue)
+            assert q._queue.fallback_active is True
+        finally:
+            q.close()
 
     def test_bool(self):
         from mcubridge.state.queues import BoundedByteDeque

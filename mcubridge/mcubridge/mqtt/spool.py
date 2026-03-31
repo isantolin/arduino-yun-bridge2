@@ -78,8 +78,15 @@ class MQTTPublishSpool:
             self.close()
 
     def close(self) -> None:
+        if getattr(self, "_closed", False):
+            return
         self._closed = True
-        self._records.close()
+        try:
+            if hasattr(self, "_records") and self._records:
+                self._records.close()
+        finally:
+            if hasattr(self, "_records"):
+                del self._records
 
     def append(self, message: QueuedPublish) -> None:
         if self._closed:

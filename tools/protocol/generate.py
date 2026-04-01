@@ -10,6 +10,7 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import re
 import shutil
@@ -57,6 +58,60 @@ app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PROTO PARSER — extract message definitions from .proto files
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Messages that do NOT get a Packet class (used directly or handled specially)
+PACKET_EXCLUDE: frozenset[str] = frozenset({"RpcContainer", "LinkSync", "Capabilities"})
+
+# Proto3 scalar → Python type annotation string
+PROTO_PYTHON_TYPE_MAP: dict[str, str] = {
+    "uint32": "Annotated[int, msgspec.Meta(ge=0)]",
+    "int32": "int",
+    "string": "str",
+    "bytes": "bytes",
+    "bool": "bool",
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class ProtoField:
+    name: str
+    proto_type: str
+
+
+@dataclasses.dataclass(frozen=True)
+class ProtoMessage:
+    name: str
+    fields: tuple[ProtoField, ...]
+
+
+def parse_proto_messages(proto_path: Path) -> list[ProtoMessage]:
+    """Parse message definitions from a .proto file."""
+    content = proto_path.read_text(encoding="utf-8")
+    messages: list[ProtoMessage] = []
+
+    for match in re.finditer(r"message\s+(\w+)\s*\{([^}]*)}", content):
+        name = match.group(1)
+        body = match.group(2)
+        fields: list[ProtoField] = []
+        for field_match in re.finditer(r"^\s*(\w+)\s+(\w+)\s*=\s*\d+", body, re.MULTILINE):
+            fields.append(ProtoField(
+                proto_type=field_match.group(1),
+                name=field_match.group(2),
+            ))
+        messages.append(ProtoMessage(name=name, fields=tuple(fields)))
+
+    return messages
+
+
+def packet_class_name(proto_name: str) -> str:
+    """Convert proto message name to Python Packet class name."""
+    if proto_name.endswith("Packet"):
+        return proto_name
+    return f"{proto_name}Packet"
 
 
 class JinjaGenerator:
@@ -457,6 +512,52 @@ class JinjaGenerator:
         )
         out_path.write_text(render, encoding="utf-8")
 
+    def generate_structures_packets(self, proto_path: Path, structures_path: Path) -> None:
+        """Generate Packet classes from proto and splice into structures.py."""
+        messages = parse_proto_messages(proto_path)
+        packet_messages = [m for m in messages if m.name not in PACKET_EXCLUDE]
+
+        packets: list[dict[str, object]] = []
+        for msg in packet_messages:
+            fields: list[dict[str, str]] = []
+            for f in msg.fields:
+                py_type = PROTO_PYTHON_TYPE_MAP.get(f.proto_type)
+                if py_type is None:
+                    sys.stderr.write(
+                        f"Warning: unknown proto type '{f.proto_type}' "
+                        f"in {msg.name}.{f.name}, skipping field\n"
+                    )
+                    continue
+                fields.append({"name": f.name, "python_type": py_type})
+            packets.append({
+                "class_name": packet_class_name(msg.name),
+                "proto_name": msg.name,
+                "fields": fields,
+            })
+
+        template = self.env.get_template("structures_packets.py.j2")
+        generated = template.render(packets=packets)
+        # Normalize to exactly 2 blank lines between top-level defs (PEP 8)
+        generated = re.sub(r"\n{4,}", "\n\n\n", generated)
+
+        # Splice into structures.py between markers
+        content = structures_path.read_text(encoding="utf-8")
+        begin_marker = "# --- BEGIN GENERATED PACKETS ---"
+        end_marker = "# --- END GENERATED PACKETS ---"
+
+        begin_idx = content.find(begin_marker)
+        end_idx = content.find(end_marker)
+        if begin_idx == -1 or end_idx == -1:
+            sys.stderr.write(
+                f"Error: markers not found in {structures_path}. "
+                f"Expected '{begin_marker}' and '{end_marker}'\n"
+            )
+            sys.exit(1)
+
+        end_idx += len(end_marker)
+        new_content = content[:begin_idx] + generated + content[end_idx:]
+        structures_path.write_text(new_content, encoding="utf-8")
+
     def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("protocol_client.py.j2")
 
@@ -521,6 +622,9 @@ def main(
     ] = None,
     py: Annotated[Optional[Path], typer.Option("--py", help="Python output")] = None,
     py_client: Annotated[Optional[Path], typer.Option("--py-client", help="Python client output")] = None,
+    structures: Annotated[
+        Optional[Path], typer.Option("--structures", help="Splice generated Packets into structures.py")
+    ] = None,
 ) -> None:
     spec = ProtocolSpec.load(spec_path)
     gen = JinjaGenerator()
@@ -640,7 +744,13 @@ def main(
         gen.generate_python_client(spec, py_client)
         sys.stderr.write(f"Generated {py_client}\n")
 
-    # Step 3: Generate type stubs for untyped libraries using pyright
+    # Step 3: Generate Packet classes from proto into structures.py
+    if structures:
+        proto_path = spec_path.parent / "mcubridge.proto"
+        gen.generate_structures_packets(proto_path, structures)
+        sys.stderr.write(f"Generated Packet classes in {structures}\n")
+
+    # Step 4: Generate type stubs for untyped libraries using pyright
     untyped_libs = ["transitions", "persistqueue"]
     sys.stderr.write(f"Generating type stubs for {', '.join(untyped_libs)}...\n")
     for lib in untyped_libs:

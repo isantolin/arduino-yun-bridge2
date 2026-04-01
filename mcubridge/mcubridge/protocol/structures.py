@@ -587,35 +587,13 @@ class BaseStruct(msgspec.Struct, frozen=True):
 
 # --- Binary Protocol Packets ---
 
-
-class FileWritePacket(BaseStruct, frozen=True):
-    path: str
-    data: bytes
-
-    PB_CLASS = mcubridge_pb2.FileWrite
-
-
-class FileReadPacket(BaseStruct, frozen=True):
-    path: str
-
-    PB_CLASS = mcubridge_pb2.FileRead
-
-
-class FileReadResponsePacket(BaseStruct, frozen=True):
-    content: bytes
-
-    PB_CLASS = mcubridge_pb2.FileReadResponse
-
-
-class FileRemovePacket(BaseStruct, frozen=True):
-    path: str
-
-    PB_CLASS = mcubridge_pb2.FileRemove
+# --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from mcubridge.proto)
 
 
 class VersionResponsePacket(BaseStruct, frozen=True):
     major: Annotated[int, msgspec.Meta(ge=0)]
     minor: Annotated[int, msgspec.Meta(ge=0)]
+    patch: Annotated[int, msgspec.Meta(ge=0)]
 
     PB_CLASS = mcubridge_pb2.VersionResponse
 
@@ -624,61 +602,6 @@ class FreeMemoryResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
     PB_CLASS = mcubridge_pb2.FreeMemoryResponse
-
-
-class DigitalReadResponsePacket(BaseStruct, frozen=True):
-    value: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.DigitalReadResponse
-
-
-class AnalogReadResponsePacket(BaseStruct, frozen=True):
-    value: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.AnalogReadResponse
-
-
-class DatastoreGetPacket(BaseStruct, frozen=True):
-    key: str
-
-    PB_CLASS = mcubridge_pb2.DatastoreGet
-
-
-class DatastoreGetResponsePacket(BaseStruct, frozen=True):
-    value: bytes
-
-    PB_CLASS = mcubridge_pb2.DatastoreGetResponse
-
-
-class DatastorePutPacket(BaseStruct, frozen=True):
-    key: str
-    value: bytes
-
-    PB_CLASS = mcubridge_pb2.DatastorePut
-
-
-class MailboxPushPacket(BaseStruct, frozen=True):
-    data: bytes
-
-    PB_CLASS = mcubridge_pb2.MailboxPush
-
-
-class MailboxProcessedPacket(BaseStruct, frozen=True):
-    message_id: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.MailboxProcessed
-
-
-class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
-    count: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.MailboxAvailableResponse
-
-
-class MailboxReadResponsePacket(BaseStruct, frozen=True):
-    content: bytes
-
-    PB_CLASS = mcubridge_pb2.MailboxReadResponse
 
 
 class PinModePacket(BaseStruct, frozen=True):
@@ -708,10 +631,16 @@ class PinReadPacket(BaseStruct, frozen=True):
     PB_CLASS = mcubridge_pb2.PinRead
 
 
-class AckPacket(BaseStruct, frozen=True):
-    command_id: Annotated[int, msgspec.Meta(ge=0)]
+class DigitalReadResponsePacket(BaseStruct, frozen=True):
+    value: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.AckPacket
+    PB_CLASS = mcubridge_pb2.DigitalReadResponse
+
+
+class AnalogReadResponsePacket(BaseStruct, frozen=True):
+    value: Annotated[int, msgspec.Meta(ge=0)]
+
+    PB_CLASS = mcubridge_pb2.AnalogReadResponse
 
 
 class ConsoleWritePacket(BaseStruct, frozen=True):
@@ -720,28 +649,90 @@ class ConsoleWritePacket(BaseStruct, frozen=True):
     PB_CLASS = mcubridge_pb2.ConsoleWrite
 
 
+class DatastorePutPacket(BaseStruct, frozen=True):
+    key: str
+    value: bytes
+
+    PB_CLASS = mcubridge_pb2.DatastorePut
+
+
+class DatastoreGetPacket(BaseStruct, frozen=True):
+    key: str
+
+    PB_CLASS = mcubridge_pb2.DatastoreGet
+
+
+class DatastoreGetResponsePacket(BaseStruct, frozen=True):
+    value: bytes
+
+    PB_CLASS = mcubridge_pb2.DatastoreGetResponse
+
+
+class MailboxPushPacket(BaseStruct, frozen=True):
+    data: bytes
+
+    PB_CLASS = mcubridge_pb2.MailboxPush
+
+
+class MailboxProcessedPacket(BaseStruct, frozen=True):
+    message_id: Annotated[int, msgspec.Meta(ge=0)]
+
+    PB_CLASS = mcubridge_pb2.MailboxProcessed
+
+
+class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
+    count: Annotated[int, msgspec.Meta(ge=0)]
+
+    PB_CLASS = mcubridge_pb2.MailboxAvailableResponse
+
+
+class MailboxReadResponsePacket(BaseStruct, frozen=True):
+    content: bytes
+
+    PB_CLASS = mcubridge_pb2.MailboxReadResponse
+
+
+class FileWritePacket(BaseStruct, frozen=True):
+    path: str
+    data: bytes
+
+    PB_CLASS = mcubridge_pb2.FileWrite
+
+
+class FileReadPacket(BaseStruct, frozen=True):
+    path: str
+
+    PB_CLASS = mcubridge_pb2.FileRead
+
+
+class FileRemovePacket(BaseStruct, frozen=True):
+    path: str
+
+    PB_CLASS = mcubridge_pb2.FileRemove
+
+
+class FileReadResponsePacket(BaseStruct, frozen=True):
+    content: bytes
+
+    PB_CLASS = mcubridge_pb2.FileReadResponse
+
+
 class ProcessRunAsyncPacket(BaseStruct, frozen=True):
     command: str
 
     PB_CLASS = mcubridge_pb2.ProcessRunAsync
 
 
-class ProcessKillPacket(BaseStruct, frozen=True):
+class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.ProcessKill
+    PB_CLASS = mcubridge_pb2.ProcessRunAsyncResponse
 
 
 class ProcessPollPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
     PB_CLASS = mcubridge_pb2.ProcessPoll
-
-
-class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
-    pid: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.ProcessRunAsyncResponse
 
 
 class ProcessPollResponsePacket(BaseStruct, frozen=True):
@@ -753,40 +744,24 @@ class ProcessPollResponsePacket(BaseStruct, frozen=True):
     PB_CLASS = mcubridge_pb2.ProcessPollResponse
 
 
+class ProcessKillPacket(BaseStruct, frozen=True):
+    pid: Annotated[int, msgspec.Meta(ge=0)]
+
+    PB_CLASS = mcubridge_pb2.ProcessKill
+
+
+class AckPacket(BaseStruct, frozen=True):
+    command_id: Annotated[int, msgspec.Meta(ge=0)]
+
+    PB_CLASS = mcubridge_pb2.AckPacket
+
+
 class HandshakeConfigPacket(BaseStruct, frozen=True):
     ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
     ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
     response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
 
     PB_CLASS = mcubridge_pb2.HandshakeConfig
-
-
-class CapabilitiesFeatures(msgspec.Struct, frozen=True):
-    """Features bitmask parsed via BitStruct."""
-
-    watchdog: bool
-    rle: bool
-    debug_frames: bool
-    debug_io: bool
-    eeprom: bool
-    dac: bool
-    hw_serial1: bool
-    fpu: bool
-    logic_3v3: bool
-    big_buffer: bool
-    i2c: bool
-    spi: bool
-    sd: bool
-
-
-class CapabilitiesPacket(BaseStruct, frozen=True):
-    ver: Annotated[int, msgspec.Meta(ge=0)]
-    arch: Annotated[int, msgspec.Meta(ge=0)]
-    dig: Annotated[int, msgspec.Meta(ge=0)]
-    ana: Annotated[int, msgspec.Meta(ge=0)]
-    feat: CapabilitiesFeatures
-
-    PB_CLASS = mcubridge_pb2.Capabilities
 
 
 class SetBaudratePacket(BaseStruct, frozen=True):
@@ -819,6 +794,43 @@ class SpiConfigPacket(BaseStruct, frozen=True):
     frequency: Annotated[int, msgspec.Meta(ge=0)]
 
     PB_CLASS = mcubridge_pb2.SpiConfig
+
+
+# --- END GENERATED PACKETS ---
+
+
+
+
+
+# --- Manual Packet Classes (require special handling) ---
+
+
+class CapabilitiesFeatures(msgspec.Struct, frozen=True):
+    """Features bitmask parsed via BitStruct."""
+
+    watchdog: bool
+    rle: bool
+    debug_frames: bool
+    debug_io: bool
+    eeprom: bool
+    dac: bool
+    hw_serial1: bool
+    fpu: bool
+    logic_3v3: bool
+    big_buffer: bool
+    i2c: bool
+    spi: bool
+    sd: bool
+
+
+class CapabilitiesPacket(BaseStruct, frozen=True):
+    ver: Annotated[int, msgspec.Meta(ge=0)]
+    arch: Annotated[int, msgspec.Meta(ge=0)]
+    dig: Annotated[int, msgspec.Meta(ge=0)]
+    ana: Annotated[int, msgspec.Meta(ge=0)]
+    feat: CapabilitiesFeatures
+
+    PB_CLASS = mcubridge_pb2.Capabilities
 
 
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.

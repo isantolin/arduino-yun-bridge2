@@ -1,0 +1,12 @@
+# --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from mcubridge.proto)
+{% for packet in packets %}
+
+class {{ packet.class_name }}(BaseStruct, frozen=True):
+{%- for field in packet.fields %}
+    {{ field.name }}: {{ field.python_type }}
+{%- endfor %}
+
+    PB_CLASS = mcubridge_pb2.{{ packet.proto_name }}
+
+{% endfor %}
+# --- END GENERATED PACKETS ---

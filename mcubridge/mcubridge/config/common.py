@@ -14,10 +14,9 @@ _UCI_SECTION: Final[str] = "general"
 def get_uci_config() -> dict[str, Any]:
     """Fetch configuration from OpenWrt UCI system with safe fallbacks."""
     try:
-        import uci  # type: ignore
+        import uci
         with uci.Uci() as cursor:
-            # cursor.get_all returns dict[str, Any] or similar
-            section: Any = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
+            section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
             if not section:
                 return get_default_config()
 
@@ -25,15 +24,13 @@ def get_uci_config() -> dict[str, Any]:
             from collections.abc import Iterable
             config_dict: dict[str, Any] = {
                 str(k): (" ".join(map(str, cast(Iterable[Any], v))) if isinstance(v, (list, tuple)) else v)
-                for k, v in cast(dict[Any, Any], section).items()
+                for k, v in section.items()
                 if not str(k).startswith((".", "_"))
             }
             return config_dict
     except (ImportError, AttributeError, Exception):
         # Fallback for non-OpenWrt environments (e.g. dev/test)
-        return get_default_config()
-
-    # Extra fallback to satisfy static analysis on all paths
+        pass
     return get_default_config()
 
 

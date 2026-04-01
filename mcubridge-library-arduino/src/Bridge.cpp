@@ -79,6 +79,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   // [SIL-2] Initialize Hardware (Watchdog, Safe Pin States) via HAL
   bridge::hal::init();
 
+  _fsm.setTimers(&_timers);
   _fsm.begin();
   _timers.clear();
   _rx_history.clear();

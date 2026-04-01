@@ -42,23 +42,23 @@ RLE_DECODER: Construct = Struct(
         Select(
             ExprAdapter(
                 RLE_ESCAPE,
-                decoder=lambda obj, ctx: bytes([obj.value]) # type: ignore
+                decoder=lambda obj, ctx: bytes([obj.value])  # type: ignore[reportUnknownLambdaType]
                 * (
                     1
-                    if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER # type: ignore
-                    else int(obj.count_m2) + protocol.RLE_OFFSET # type: ignore
+                    if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER  # type: ignore[reportUnknownMemberType]
+                    else int(obj.count_m2) + protocol.RLE_OFFSET  # type: ignore[reportUnknownMemberType,reportUnknownArgumentType]
                 ),
-                encoder=lambda obj, ctx: None, # type: ignore
+                encoder=lambda obj, ctx: None,  # type: ignore[reportUnknownLambdaType]
             ),
             # Literal byte (MUST NOT be the escape byte)
             ExprAdapter(
                 FocusedSeq(
                     "value",
                     "value" / Int8ub,
-                    "_" / Check(lambda ctx: ctx.value != protocol.RLE_ESCAPE_BYTE) # type: ignore
+                    "_" / Check(lambda ctx: ctx.value != protocol.RLE_ESCAPE_BYTE),  # type: ignore[reportUnknownLambdaType]
                 ),
-                decoder=lambda obj, ctx: bytes([obj]), # type: ignore
-                encoder=lambda obj, ctx: obj[0], # type: ignore
+                decoder=lambda obj, ctx: bytes([obj]),  # type: ignore[reportUnknownLambdaType]
+                encoder=lambda obj, ctx: obj[0],  # type: ignore[reportUnknownLambdaType]
             ),
         )
     ),

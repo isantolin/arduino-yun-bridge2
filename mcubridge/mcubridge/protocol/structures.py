@@ -537,13 +537,14 @@ class ProtobufCompatSchema:
 class BaseStruct(msgspec.Struct, frozen=True):
     """Base class for hybrid Msgspec/Nanopb structures."""
 
+    SCHEMA: ClassVar[ProtobufCompatSchema]
     PB_CLASS: ClassVar[type]
 
     # Re-implementing SCHEMA as a class property for Python 3.13 compatibility
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         if hasattr(cls, "PB_CLASS"):
-            cls.SCHEMA = ProtobufCompatSchema(cls.PB_CLASS, cls) # type: ignore
+            cls.SCHEMA = ProtobufCompatSchema(cls.PB_CLASS, cls)
 
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview, command_id: int | None = None) -> T:

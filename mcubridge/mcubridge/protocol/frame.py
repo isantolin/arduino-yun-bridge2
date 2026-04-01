@@ -51,11 +51,11 @@ RPC_FRAME_HEADER: Construct = Struct(
     "payload_len" / Int16ub,
     "command_id" / ExprAdapter(
         Enum(Int16ub, protocol.Command, protocol.Status),
-        decoder=lambda obj, ctx: int(obj), # type: ignore
-        encoder=lambda obj, ctx: obj # type: ignore
+        decoder=lambda obj, ctx: int(obj),  # type: ignore[reportUnknownLambdaType]
+        encoder=lambda obj, ctx: obj,  # type: ignore[reportUnknownLambdaType]
     ),
     "sequence_id" / Int16ub,
-    "version_check" / Check(lambda ctx: getattr(cast(Any, ctx), "version", 0) == protocol.PROTOCOL_VERSION), # type: ignore
+    "version_check" / Check(lambda ctx: getattr(cast(Any, ctx), "version", 0) == protocol.PROTOCOL_VERSION),  # type: ignore[reportUnknownLambdaType]
 )
 
 
@@ -71,8 +71,8 @@ RPC_FRAME: Construct = Struct(
     "header_payload" / RawCopy(RPC_PAYLOAD_CONTAINER),
     "crc" / Checksum(
         Int32ub,
-        lambda data: crc32(cast(bytes, data)) & 0xFFFFFFFF, # type: ignore
-        this.header_payload.data
+        lambda data: crc32(cast(bytes, data)) & 0xFFFFFFFF,  # type: ignore[reportUnknownLambdaType]
+        this.header_payload.data,
     ),
 )
 

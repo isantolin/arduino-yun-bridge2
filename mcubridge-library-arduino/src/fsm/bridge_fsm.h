@@ -6,14 +6,21 @@
  * This module implements a deterministic state machine using ETL's FSM
  * framework. All state transitions are explicit and bounded.
  *
+ * Timer management:
+ *   BridgeFsm wraps event dispatch with automatic exit/entry actions.
+ *   Exit actions guarantee timers are stopped when leaving a state,
+ *   regardless of the trigger (ack, timeout, reset, crypto fault).
+ *   Entry actions kill all timers on FAULT entry as a safety net.
+ *   Timer starts remain explicit in Bridge.cpp for context-dependent logic.
+ *
  * States:
  *   - Stabilizing (0): Hardware startup. Draining serial lines.
  *   - Unsynchronized (1): Waiting for link synchronization.
  *   - Syncing (2): Negotiating parameters with Linux.
  *   - Ready (Parent): Super-state for operational domain.
- *     - Idle (3): Operational and ready for commands.
- *     - AwaitingAck (4): Waiting for frame acknowledgement.
- *   - Fault (5): Safety-triggered halt.
+ *     - Idle (4): Operational and ready for commands.
+ *     - AwaitingAck (5): Waiting for frame acknowledgement.
+ *   - Fault (6): Safety-triggered halt.
  */
 #ifndef BRIDGE_FSM_H
 #define BRIDGE_FSM_H
@@ -23,6 +30,78 @@
 #include <etl/array.h>
 #include <etl/bitset.h>
 
+// ============================================================================
+// Timer Scheduler
+// [SIL-2] Defined before FSM so BridgeFsm can manage timers on transitions.
+// ============================================================================
+namespace bridge::scheduler {
+enum TimerId : uint8_t {
+  TIMER_ACK_TIMEOUT = 0,
+  TIMER_RX_DEDUPE = 1,
+  TIMER_BAUDRATE_CHANGE = 2,
+  TIMER_STARTUP_STABILIZATION = 3,
+  NUMBER_OF_TIMERS = 4
+};
+
+// [RAM-OPT] Lightweight timer replacing etl::callback_timer<N>.
+template <size_t N>
+struct SimpleTimer {
+  etl::array<uint32_t, N> deadline;
+  etl::array<uint32_t, N> period;
+  etl::bitset<N> active;
+
+  void clear() {
+    deadline.fill(0);
+    period.fill(0);
+    active.reset();
+  }
+
+  void set_period(uint8_t id, uint32_t ms) {
+    if (id < N) period[id] = ms;
+  }
+
+  void start(uint8_t id, uint32_t now) {
+    if (id < N) {
+      deadline[id] = now + period[id];
+      active.set(id);
+    }
+  }
+
+  [[maybe_unused]] void start_with_period(uint8_t id, uint32_t ms, uint32_t now) {
+    if (id < N) {
+      period[id] = ms;
+      deadline[id] = now + ms;
+      active.set(id);
+    }
+  }
+
+  void stop(uint8_t id) {
+    if (id < N) active.reset(id);
+  }
+
+  [[maybe_unused]] bool is_active(uint8_t id) const {
+    return (id < N) && active.test(id);
+  }
+
+  static constexpr uint32_t TIMER_OVERFLOW_THRESHOLD = rpc::RPC_TIMER_OVERFLOW_THRESHOLD;
+
+  etl::bitset<N> check_expired(uint32_t now) {
+    etl::bitset<N> expired;
+    for (uint8_t i = 0; i < N; ++i) {
+      if (active.test(i) && (now - deadline[i]) < TIMER_OVERFLOW_THRESHOLD) {
+        expired.set(i);
+        active.reset(i);
+      }
+    }
+    return expired;
+  }
+};
+
+}  // namespace bridge::scheduler
+
+// ============================================================================
+// Finite State Machine
+// ============================================================================
 namespace bridge::fsm {
 
 class BridgeFsm;
@@ -138,9 +217,33 @@ class StateFault : public etl::fsm_state<BridgeFsm, StateFault, STATE_FAULT,
   [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
 };
 
+// ============================================================================
+// BridgeFsm — deterministic FSM with automatic timer management
+//
+// [SIL-2] Event dispatch is wrapped via dispatchEvent() which:
+//   1. Records the pre-transition state
+//   2. Delegates to etl::fsm::receive()
+//   3. On state change: fires onExitState() then onEnterState()
+//   4. Tracks previous_state_ for diagnostic reporting
+//
+// Exit actions (defense-in-depth):
+//   STATE_STABILIZING  → stop TIMER_STARTUP_STABILIZATION
+//   STATE_AWAITING_ACK → stop TIMER_ACK_TIMEOUT
+//
+// Entry actions:
+//   STATE_FAULT → stop all active timers (safety net)
+// ============================================================================
 class BridgeFsm : public etl::fsm {
  public:
-  BridgeFsm() : etl::fsm(NUMBER_OF_STATES), state_list_{} {}
+  BridgeFsm()
+      : etl::fsm(NUMBER_OF_STATES),
+        state_list_{},
+        timers_(nullptr),
+        previous_state_(STATE_STABILIZING) {}
+
+  void setTimers(bridge::scheduler::SimpleTimer<bridge::scheduler::NUMBER_OF_TIMERS>* timers) {
+    timers_ = timers;
+  }
 
   void begin() {
     state_list_[STATE_STABILIZING] = &state_stabilizing;
@@ -152,6 +255,7 @@ class BridgeFsm : public etl::fsm {
     state_list_[STATE_FAULT] = &state_fault;
 
     set_states(state_list_, NUMBER_OF_STATES);
+    previous_state_ = STATE_STABILIZING;
     start();
   }
 
@@ -163,18 +267,59 @@ class BridgeFsm : public etl::fsm {
   bool isFault() const { return get_state_id() == STATE_FAULT; }
   bool isSynchronized() const { return isIdle() || isAwaitingAck(); }
 
-  void stabilized() { receive(EvStabilized()); }
-  void handshakeStart() { receive(EvHandshakeStart()); }
-  void handshakeComplete() { receive(EvHandshakeComplete()); }
-  void handshakeFailed() { receive(EvHandshakeFailed()); }
-  void sendCritical() { receive(EvSendCritical()); }
-  void ackReceived() { receive(EvAckReceived()); }
-  void timeout() { receive(EvTimeout()); }
-  void cryptoFault() { receive(EvCryptoFault()); }
-  void resetFsm() { receive(EvReset()); }
+  StateId previousState() const { return previous_state_; }
+
+  void stabilized() { dispatchEvent(EvStabilized()); }
+  void handshakeStart() { dispatchEvent(EvHandshakeStart()); }
+  void handshakeComplete() { dispatchEvent(EvHandshakeComplete()); }
+  void handshakeFailed() { dispatchEvent(EvHandshakeFailed()); }
+  void sendCritical() { dispatchEvent(EvSendCritical()); }
+  void ackReceived() { dispatchEvent(EvAckReceived()); }
+  void timeout() { dispatchEvent(EvTimeout()); }
+  void cryptoFault() { dispatchEvent(EvCryptoFault()); }
+  void resetFsm() { dispatchEvent(EvReset()); }
 
  private:
+  template <typename TEvent>
+  void dispatchEvent(const TEvent& evt) {
+    const auto before = static_cast<StateId>(get_state_id());
+    receive(evt);
+    const auto after = static_cast<StateId>(get_state_id());
+    if (before != after) {
+      onExitState(before);
+      onEnterState(after);
+      previous_state_ = before;
+    }
+  }
+
+  // [SIL-2] Exit actions — guarantee timers are stopped on any exit path
+  void onExitState(StateId state) {
+    if (timers_ == nullptr) return;
+    switch (state) {
+      case STATE_AWAITING_ACK:
+        timers_->stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
+        break;
+      case STATE_STABILIZING:
+        timers_->stop(bridge::scheduler::TIMER_STARTUP_STABILIZATION);
+        break;
+      default:
+        break;
+    }
+  }
+
+  // [SIL-2] Entry actions — enforce safety invariants
+  void onEnterState(StateId state) {
+    if (timers_ == nullptr) return;
+    if (state == STATE_FAULT) {
+      for (uint8_t i = 0; i < bridge::scheduler::NUMBER_OF_TIMERS; ++i) {
+        timers_->stop(i);
+      }
+    }
+  }
+
   etl::ifsm_state* state_list_[NUMBER_OF_STATES];
+  bridge::scheduler::SimpleTimer<bridge::scheduler::NUMBER_OF_TIMERS>* timers_;
+  StateId previous_state_;
   StateStabilizing state_stabilizing;
   StateUnsynchronized state_unsynchronized;
   StateSyncing state_syncing;
@@ -185,70 +330,5 @@ class BridgeFsm : public etl::fsm {
 };
 
 }  // namespace bridge::fsm
-
-namespace bridge::scheduler {
-enum TimerId : uint8_t {
-  TIMER_ACK_TIMEOUT = 0,
-  TIMER_RX_DEDUPE = 1,
-  TIMER_BAUDRATE_CHANGE = 2,
-  TIMER_STARTUP_STABILIZATION = 3,
-  NUMBER_OF_TIMERS = 4
-};
-
-// [RAM-OPT] Lightweight timer replacing etl::callback_timer<N>.
-template <size_t N>
-struct SimpleTimer {
-  etl::array<uint32_t, N> deadline;
-  etl::array<uint32_t, N> period;
-  etl::bitset<N> active;
-
-  void clear() {
-    deadline.fill(0);
-    period.fill(0);
-    active.reset();
-  }
-
-  void set_period(uint8_t id, uint32_t ms) {
-    if (id < N) period[id] = ms;
-  }
-
-  void start(uint8_t id, uint32_t now) {
-    if (id < N) {
-      deadline[id] = now + period[id];
-      active.set(id);
-    }
-  }
-
-  [[maybe_unused]] void start_with_period(uint8_t id, uint32_t ms, uint32_t now) {
-    if (id < N) {
-      period[id] = ms;
-      deadline[id] = now + ms;
-      active.set(id);
-    }
-  }
-
-  void stop(uint8_t id) {
-    if (id < N) active.reset(id);
-  }
-
-  [[maybe_unused]] bool is_active(uint8_t id) const {
-    return (id < N) && active.test(id);
-  }
-
-  static constexpr uint32_t TIMER_OVERFLOW_THRESHOLD = rpc::RPC_TIMER_OVERFLOW_THRESHOLD;
-
-  etl::bitset<N> check_expired(uint32_t now) {
-    etl::bitset<N> expired;
-    for (uint8_t i = 0; i < N; ++i) {
-      if (active.test(i) && (now - deadline[i]) < TIMER_OVERFLOW_THRESHOLD) {
-        expired.set(i);
-        active.reset(i);
-      }
-    }
-    return expired;
-  }
-};
-
-}  // namespace bridge::scheduler
 
 #endif  // BRIDGE_FSM_H

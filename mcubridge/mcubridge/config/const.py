@@ -141,19 +141,27 @@ DEFAULT_ALLOW_NON_TMP_PATHS: bool = False
 # STATUS CODES (Application Logic) — loaded after defaults to avoid circular
 # imports with mcubridge.protocol.structures.RuntimeConfig.
 # ==============================================================================
-from ..protocol import protocol  # noqa: E402  # pylint: disable=wrong-import-position
 
-SERIAL_FAILURE_STATUS_CODES: frozenset[int] = frozenset(
-    {
-        protocol.Status.ERROR.value,
-        protocol.Status.CMD_UNKNOWN.value,
-        protocol.Status.MALFORMED.value,
-        protocol.Status.CRC_MISMATCH.value,
-        protocol.Status.TIMEOUT.value,
-        protocol.Status.NOT_IMPLEMENTED.value,
-    }
-)
-SERIAL_SUCCESS_STATUS_CODES: frozenset[int] = frozenset({protocol.Status.OK.value})
+
+def _load_status_codes() -> tuple[frozenset[int], frozenset[int]]:
+    """Lazy-load protocol status codes to break circular import chain."""
+    from ..protocol import protocol
+
+    failure = frozenset(
+        {
+            protocol.Status.ERROR.value,
+            protocol.Status.CMD_UNKNOWN.value,
+            protocol.Status.MALFORMED.value,
+            protocol.Status.CRC_MISMATCH.value,
+            protocol.Status.TIMEOUT.value,
+            protocol.Status.NOT_IMPLEMENTED.value,
+        }
+    )
+    success = frozenset({protocol.Status.OK.value})
+    return failure, success
+
+
+SERIAL_FAILURE_STATUS_CODES, SERIAL_SUCCESS_STATUS_CODES = _load_status_codes()
 
 
 __all__ = [

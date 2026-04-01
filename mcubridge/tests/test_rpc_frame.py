@@ -36,7 +36,7 @@ def test_max_payload_round_trip() -> None:
 def test_frame_object_round_trip() -> None:
     frame = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=b"hello")
     raw = frame.build()
-    new_frame = Frame.from_bytes(raw)
+    new_frame = Frame.parse(raw)
     assert new_frame.command_id == frame.command_id
     assert new_frame.payload == frame.payload
 

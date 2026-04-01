@@ -1075,11 +1075,24 @@ class PendingCommand(msgspec.Struct):
 
 
 class BaseStats(msgspec.Struct):
-    """Base for statistics containers providing standard dict conversion."""
+    """Base for statistics containers providing standard dict conversion.
+
+    Subclasses that define ``SNAPSHOT_TYPE`` get a generic ``as_snapshot()``
+    that converts all fields into the frozen snapshot class via msgspec.
+    """
+
+    SNAPSHOT_TYPE: ClassVar[type | None] = None
 
     def as_dict(self) -> dict[str, Any]:
         """Export internal state as a dictionary."""
         return msgspec.structs.asdict(self)
+
+    def as_snapshot(self) -> msgspec.Struct:
+        """Convert mutable stats to a frozen snapshot struct."""
+        snap_cls = self.__class__.SNAPSHOT_TYPE
+        if snap_cls is None:
+            raise NotImplementedError(f"{self.__class__.__name__} has no SNAPSHOT_TYPE")
+        return cast(msgspec.Struct, msgspec.convert(msgspec.structs.asdict(self), snap_cls))
 
 
 class SupervisorSnapshot(msgspec.Struct):
@@ -1093,20 +1106,13 @@ class SupervisorSnapshot(msgspec.Struct):
 class SupervisorStats(BaseStats):
     """Task supervisor statistics."""
 
+    SNAPSHOT_TYPE: ClassVar[type | None] = SupervisorSnapshot
+
     restarts: int = 0
     last_failure_unix: float = 0.0
     last_exception: str | None = None
     backoff_seconds: float = 0.0
     fatal: bool = False
-
-    def as_snapshot(self) -> SupervisorSnapshot:
-        return SupervisorSnapshot(
-            restarts=self.restarts,
-            last_failure_unix=self.last_failure_unix,
-            last_exception=self.last_exception,
-            backoff_seconds=self.backoff_seconds,
-            fatal=self.fatal,
-        )
 
 
 _ARCH_MAPPING: Final[dict[int, str]] = {
@@ -1352,20 +1358,13 @@ class SerialFlowSnapshot(msgspec.Struct):
 class SerialFlowStats(BaseStats):
     """Serial flow control statistics (Mutable)."""
 
+    SNAPSHOT_TYPE: ClassVar[type | None] = SerialFlowSnapshot
+
     commands_sent: int = 0
     commands_acked: int = 0
     retries: int = 0
     failures: int = 0
     last_event_unix: float = 0.0
-
-    def as_snapshot(self) -> SerialFlowSnapshot:
-        return SerialFlowSnapshot(
-            commands_sent=self.commands_sent,
-            commands_acked=self.commands_acked,
-            retries=self.retries,
-            failures=self.failures,
-            last_event_unix=self.last_event_unix,
-        )
 
 
 class ProcessStats(msgspec.Struct):

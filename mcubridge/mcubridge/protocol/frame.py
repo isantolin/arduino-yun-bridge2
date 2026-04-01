@@ -148,14 +148,28 @@ class Frame(msgspec.Struct, frozen=True):
             raise ValueError(f"Incomplete frame: {e}") from e
 
     @classmethod
-    def from_bytes(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
-        """Compatibility alias for parse()."""
-        return cls.parse(raw_frame_buffer)
-
-    @classmethod
     def build_command_id(cls, command_id: int, is_compressed: bool) -> int:
         """Build a 16-bit command ID with the compression flag."""
         return int(cast(int, Int16ub.parse(COMMAND_ID_CODEC.build({
             "is_compressed": is_compressed,
             "raw_id": command_id & 0x7FFF,
         }))))
+
+    @staticmethod
+    def maybe_compress(command_id: int, payload: bytes) -> tuple[int, bytes]:
+        """Apply RLE compression to *payload* if beneficial.
+
+        Returns (possibly-modified command_id, possibly-compressed payload).
+        The compression flag in the command ID is set automatically.
+        """
+        from . import rle
+
+        if not payload or not rle.should_compress(payload):
+            return command_id, payload
+        try:
+            compressed = rle.encode(payload)
+            if len(compressed) < len(payload):
+                return Frame.build_command_id(command_id, is_compressed=True), compressed
+        except (ValueError, TypeError, OverflowError):
+            pass
+        return command_id, payload

@@ -12,7 +12,7 @@ FUZZ_ITERATIONS = 5000
 
 @pytest.mark.fuzz
 def test_frame_parsing_resilience_to_fuzzing():
-    """Fuzzing test to ensure Frame.from_bytes never crashes with unhandled exceptions."""
+    """Fuzzing test to ensure Frame.parse never crashes with unhandled exceptions."""
     random.seed(TEST_RANDOM_SEED)
 
     valid_exceptions = (ValueError, cobs.DecodeError)
@@ -26,13 +26,13 @@ def test_frame_parsing_resilience_to_fuzzing():
         try:
             # We attempt to parse raw data directly as if it was decoded from COBS
             # (Testing the internal Frame structure parser)
-            _ = Frame.from_bytes(raw_data)
+            _ = Frame.parse(raw_data)
         except valid_exceptions:
             # This is expected behavior for garbage data
             pass
         except Exception as exc:
             message = (
-                f"Frame.from_bytes crashed on iteration {i} with unhandled exception: "
+                f"Frame.parse crashed on iteration {i} with unhandled exception: "
                 f"{type(exc).__name__}: {exc}. Data hex: {raw_data.hex()}"
             )
             pytest.fail(message)
@@ -67,7 +67,7 @@ def test_frame_header_parsing_resilience():
         raw_data = random.randbytes(length)
 
         try:
-            _ = Frame.from_bytes(raw_data)
+            _ = Frame.parse(raw_data)
         except ValueError:
             pass
         except Exception as exc:

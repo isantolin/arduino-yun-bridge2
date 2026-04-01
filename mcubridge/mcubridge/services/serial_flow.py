@@ -12,16 +12,14 @@ import tenacity
 
 from mcubridge.config.const import (
     SERIAL_FAILURE_STATUS_CODES,
-    SERIAL_HANDSHAKE_BACKOFF_BASE,
-    SERIAL_HANDSHAKE_BACKOFF_MAX,
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
-from mcubridge.protocol import rle as rle
 from mcubridge.protocol.contracts import (
     expected_responses,
     response_to_request,
 )
+from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
     RESPONSE_ONLY_COMMANDS,
@@ -101,20 +99,7 @@ class SerialFlowController:
             )
             return False
 
-        final_cmd = command_id
-        final_payload = payload
-
-        # RLE Compression
-        if payload and rle.should_compress(payload):
-            try:
-                compressed = rle.encode(payload)
-                if len(compressed) < len(payload):
-                    # [SIL-2] Declarative command ID reconstruction with flags
-                    from mcubridge.protocol.frame import Frame
-                    final_cmd = Frame.build_command_id(command_id, is_compressed=True)
-                    final_payload = compressed
-            except (ValueError, TypeError, OverflowError) as e:
-                self._logger.warning("Compression failed for command 0x%02X: %s", command_id, e)
+        final_cmd, final_payload = Frame.maybe_compress(command_id, payload)
 
         if not self._should_track(command_id):
             return await sender(final_cmd, final_payload)
@@ -211,13 +196,12 @@ class SerialFlowController:
 
     def _build_retryer(self) -> tenacity.AsyncRetrying:
         """Build tenacity retryer with configured limits."""
-        return tenacity.AsyncRetrying(
-            stop=tenacity.stop_after_attempt(self._max_attempts),
-            wait=tenacity.wait_exponential(
-                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
-            ),
+        from mcubridge.util.retry import serial_exponential_retryer
+
+        return serial_exponential_retryer(
+            max_attempts=self._max_attempts,
             retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
+            logger=self._logger,
             before_sleep=self._on_retry_sleep,
             reraise=True,
         )

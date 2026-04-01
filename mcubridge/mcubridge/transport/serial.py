@@ -25,14 +25,13 @@ from transitions import Machine
 
 from mcubridge.config.const import (
     MAX_SERIAL_FRAME_BYTES,
-    SERIAL_HANDSHAKE_BACKOFF_BASE,
-    SERIAL_HANDSHAKE_BACKOFF_MAX,
     DEFAULT_RECONNECT_DELAY,
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
 )
 from mcubridge.protocol import protocol, structures as structures
 from mcubridge.protocol.frame import Frame
 from mcubridge.util.hex import log_binary_traffic
+from mcubridge.util.retry import serial_exponential_retryer
 
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
@@ -106,10 +105,6 @@ class SerialTransport:
             source="*",
             dest=self.STATE_DISCONNECTED,
         )
-
-    def _decode_frame(self, encoded_packet: bytes | memoryview) -> Frame:
-        # [SIL-2] Direct COBS decode and Frame mapping from bytes/memoryview
-        return Frame.from_bytes(cobs_decode(encoded_packet))
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         writer = self.writer
@@ -267,7 +262,7 @@ class SerialTransport:
         """Dispatcher for decoded packets."""
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
             try:
-                frame = self._decode_frame(encoded_packet)
+                frame = Frame.parse(cobs_decode(encoded_packet))
                 if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
                     self._switch_local_baudrate(self.config.serial_baud)
                     self._negotiation_future.set_result(True)
@@ -363,11 +358,11 @@ class SerialTransport:
         logger.info("Negotiating baudrate switch to %d...", target_baud)
 
         payload = structures.SetBaudratePacket(baudrate=target_baud).encode()
-        retryer = tenacity.AsyncRetrying(
-            stop=tenacity.stop_after_attempt(3),
-            wait=tenacity.wait_exponential(multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX),
-            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-            reraise=True
+        retryer = serial_exponential_retryer(
+            max_attempts=3,
+            retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
+            logger=logger,
+            reraise=True,
         )
 
         if self.loop is None:

@@ -44,6 +44,7 @@ from ..security.security import (
     validate_nonce_counter,
 )
 from ..state.context import McuCapabilities, RuntimeState
+from ..util.retry import handshake_sync_retryer, serial_exponential_retryer
 
 from typing import Protocol
 
@@ -178,17 +179,9 @@ class SerialHandshakeManager:
 
     async def synchronize(self) -> bool:
         # [SIL-2] Unified Retry Strategy for Link Synchronisation
-        retryer = tenacity.AsyncRetrying(
-            stop=tenacity.stop_after_attempt(self._fatal_threshold),
-            # [OPTIMIZATION] Use jitter to prevent resonance in retry loops
-            wait=tenacity.wait_exponential_jitter(
-                initial=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
-                jitter=1.0,
-            ),
-            retry=tenacity.retry_if_result(lambda res: res is False),
-            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-            reraise=False,
+        retryer = handshake_sync_retryer(
+            max_attempts=self._fatal_threshold,
+            logger=logger,
         )
 
         async def _attempt() -> bool:
@@ -376,10 +369,10 @@ class SerialHandshakeManager:
         cmd_id = Command.CMD_GET_CAPABILITIES.value
         self._logger.debug("Starting capabilities discovery using Command ID 0x%02X", cmd_id)
 
-        retryer = tenacity.AsyncRetrying(
-            stop=tenacity.stop_after_attempt(5),
-            wait=tenacity.wait_incrementing(start=0.5, increment=0.5),
+        retryer = serial_exponential_retryer(
+            max_attempts=5,
             retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
+            logger=self._logger,
             before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
             reraise=False,
         )

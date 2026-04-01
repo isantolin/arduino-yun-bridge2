@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
 import msgspec
@@ -17,14 +16,12 @@ SPEC_PATH = REPO_ROOT / "tools/protocol/spec.toml"
 CPP_HEADER_PATH = REPO_ROOT / "mcubridge-library-arduino/src/protocol/rpc_protocol.h"
 
 
-@dataclass(frozen=True)
-class _StatusSpec:
+class _StatusSpec(msgspec.Struct, frozen=True):
     name: str
     value: int
 
 
-@dataclass(frozen=True)
-class _CommandSpec:
+class _CommandSpec(msgspec.Struct, frozen=True):
     name: str
     value: int
 

@@ -7,8 +7,9 @@ matches what the Python dispatcher actually handles.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, cast
+
+import msgspec
 
 import pytest
 from mcubridge.protocol.contracts import expected_responses
@@ -25,8 +26,7 @@ from mcubridge.services.dispatcher import BridgeDispatcher
 from .conftest import make_component_container
 
 
-@dataclass(slots=True)
-class _DummyMessage:
+class _DummyMessage(msgspec.Struct):
     topic: str
     payload: bytes = b""
     properties: Any = None

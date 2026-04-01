@@ -6,11 +6,11 @@ import logging
 import shutil
 import sqlite3
 from collections import deque
-from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 from typing import Any, Generic, Iterable, TypeVar, cast
 
+import msgspec
 from persistqueue import Empty, FIFOSQLiteQueue
 
 T = TypeVar("T")
@@ -18,8 +18,7 @@ T = TypeVar("T")
 logger = logging.getLogger("mcubridge.state.queues")
 
 
-@dataclass(frozen=True)
-class QueueEvent:
+class QueueEvent(msgspec.Struct, frozen=True):
     """Detailed event info for queue operations."""
     success: bool = True
     dropped_chunks: int = 0

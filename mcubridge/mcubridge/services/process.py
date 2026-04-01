@@ -356,10 +356,9 @@ class ProcessComponent(BaseComponent):
                 # [SIL-2] Non-blocking wait for process exit and I/O completion
                 try:
                     async with asyncio.timeout(5.0):
-                        await asyncio.gather(
-                            _read(proc.handle.stdout, proc.stdout_buffer),
-                            _read(proc.handle.stderr, proc.stderr_buffer),
-                        )
+                        async with asyncio.TaskGroup() as tg:
+                            tg.create_task(_read(proc.handle.stdout, proc.stdout_buffer))
+                            tg.create_task(_read(proc.handle.stderr, proc.stderr_buffer))
                         proc.exit_code = await proc.handle.wait()
                 except asyncio.TimeoutError:
                     logger.warning("Process %d monitor timed out; forcing finalization", pid)

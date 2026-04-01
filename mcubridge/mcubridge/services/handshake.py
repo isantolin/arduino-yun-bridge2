@@ -191,22 +191,18 @@ class SerialHandshakeManager:
             reraise=False,
         )
 
+        async def _attempt() -> bool:
+            self._state.record_handshake_attempt()
+            self.reset_fsm()  # Ensure clean slate
+            return await self._synchronize_attempt()
+
         try:
-            async for attempt in retryer:
-                with attempt:
-                    self._state.record_handshake_attempt()
-                    self.reset_fsm()  # Ensure clean slate
-                    ok = await self._synchronize_attempt()
-                    if not ok:
-                        self.fail_handshake()
-                        return False
-            return True
+            ok: bool = await retryer(_attempt)
+            self._logger.debug("Handshake stats: %s", retryer.statistics)
+            return ok
         except tenacity.RetryError:
             self.fail_handshake()
             return False
-        finally:
-            # [SIL-2] Log handshake statistics
-            self._logger.debug("Handshake stats: %s", retryer.statistics)
 
     async def _synchronize_attempt(self) -> bool:
         nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
@@ -388,28 +384,27 @@ class SerialHandshakeManager:
             reraise=False,
         )
 
+        async def _attempt() -> bool:
+            self._capabilities_future = loop.create_future()
+            ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
+            if not ok:
+                self._capabilities_future = None
+                raise asyncio.TimeoutError("Send failed")
+
+            try:
+                timeout = max(5.0, self._timing.response_timeout_seconds)
+                payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
+                self._parse_capabilities(payload)
+                return True
+            except asyncio.TimeoutError:
+                raise
+            finally:
+                self._capabilities_future = None
+
         try:
-            async for attempt in retryer:
-                with attempt:
-                    self._capabilities_future = loop.create_future()
-                    ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
-                    if not ok:
-                        self._capabilities_future = None
-                        raise asyncio.TimeoutError("Send failed")
-
-                    try:
-                        timeout = max(5.0, self._timing.response_timeout_seconds)
-                        payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
-                        self._parse_capabilities(payload)
-                        return True
-                    except asyncio.TimeoutError:
-                        raise
-                    finally:
-                        self._capabilities_future = None
+            return await retryer(_attempt)
         except tenacity.RetryError:
-            pass
-
-        return False
+            return False
 
     async def handle_capabilities_resp(self, seq_id: int, payload: bytes) -> bool:
         if self._capabilities_future and not self._capabilities_future.done():

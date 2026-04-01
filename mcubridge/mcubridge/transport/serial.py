@@ -373,28 +373,26 @@ class SerialTransport:
         if self.loop is None:
             raise RuntimeError("Serial event loop is not initialized")
 
+        async def _attempt() -> bool:
+            assert self.loop is not None
+            self._negotiation_future = self.loop.create_future()
+            if not await self._serial_sender(protocol.Command.CMD_SET_BAUDRATE.value, payload):
+                raise asyncio.TimeoutError("Write failed")
+
+            try:
+                await asyncio.wait_for(
+                    self._negotiation_future,
+                    timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+                )
+                return True
+            except asyncio.TimeoutError:
+                raise
+
         self._negotiating = True
         try:
-            async for attempt in retryer:
-                with attempt:
-                    self._negotiation_future = self.loop.create_future()
-
-                    if not await self._serial_sender(protocol.Command.CMD_SET_BAUDRATE.value, payload):
-                        raise asyncio.TimeoutError("Write failed")
-
-                    try:
-                        assert self._negotiation_future is not None
-                        await asyncio.wait_for(
-                            self._negotiation_future,
-                            timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
-                        )
-                        return True
-                    except asyncio.TimeoutError:
-                        raise
+            return await retryer(_attempt)
         except (tenacity.RetryError, asyncio.TimeoutError):
-            pass
+            return False
         finally:
             self._negotiating = False
             self._negotiation_future = None
-
-        return False

@@ -494,19 +494,15 @@ class FileComponent(BaseComponent):
     async def _refresh_storage_usage(self) -> None:
         # [SIL-2] Use native Python scanning to calculate directory size.
         # This avoids multi-threading issues with os.fork() in libraries like 'sh'.
-        import os
         try:
-            root = self.config.file_system_root
-            # [SIL-2] Non-recursive or depth-limited walk could be considered if performance is an issue,
-            # but for embedded storage limits, os.walk is sufficiently fast and safe.
+            root_path = Path(self.config.file_system_root)
+
             def _get_size():
                 size = 0
-                for dirpath, _, filenames in os.walk(root):
-                    for f in filenames:
-                        fp = os.path.join(dirpath, f)
-                        # skip if it is a symbolic link
-                        if not os.path.islink(fp):
-                            size += os.path.getsize(fp)
+                if root_path.exists():
+                    for fp in root_path.rglob("*"):
+                        if fp.is_file() and not fp.is_symlink():
+                            size += fp.stat().st_size
                 return size
 
             usage = await asyncio.to_thread(_get_size)

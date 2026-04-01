@@ -297,12 +297,15 @@ class SerialFlowController:
         try:
             async with asyncio.timeout(self._response_timeout):
                 # 1. Wait for ACK if required
-                if expect_ack:
-                    while not pending.ack_received and not pending.completion.is_set():
-                        await pending.completion.wait()
+                if expect_ack and not pending.ack_received:
+                    await pending.completion.wait()
+                    # If it was a success mark (direct response), we're done.
+                    # Otherwise, it might just be the ACK.
+                    if pending.success:
+                        return
 
-                # 2. Wait for full completion (Response)
-                while not pending.completion.is_set():
+                # 2. Wait for full completion (Response) if not already success
+                if not pending.success:
                     await pending.completion.wait()
         except asyncio.TimeoutError:
             raise self._RetryableSerialError()

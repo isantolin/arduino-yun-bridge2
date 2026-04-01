@@ -799,9 +799,6 @@ class SpiConfigPacket(BaseStruct, frozen=True):
 # --- END GENERATED PACKETS ---
 
 
-
-
-
 # --- Manual Packet Classes (require special handling) ---
 
 

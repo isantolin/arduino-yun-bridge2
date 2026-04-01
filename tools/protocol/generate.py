@@ -556,6 +556,8 @@ class JinjaGenerator:
 
         end_idx += len(end_marker)
         new_content = content[:begin_idx] + generated + content[end_idx:]
+        # Normalize excessive blank lines at splice boundaries (PEP 8: max 2 between top-level defs)
+        new_content = re.sub(r"\n{4,}", "\n\n\n", new_content)
         structures_path.write_text(new_content, encoding="utf-8")
 
     def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:

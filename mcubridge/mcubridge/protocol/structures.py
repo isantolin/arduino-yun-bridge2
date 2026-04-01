@@ -1071,6 +1071,9 @@ class PendingCommand(msgspec.Struct):
 # --- Status Structures ---
 
 
+_SnapshotT = TypeVar("_SnapshotT", bound=msgspec.Struct)
+
+
 class BaseStats(msgspec.Struct):
     """Base for statistics containers providing standard dict conversion.
 
@@ -1110,6 +1113,9 @@ class SupervisorStats(BaseStats):
     last_exception: str | None = None
     backoff_seconds: float = 0.0
     fatal: bool = False
+
+    def as_snapshot(self) -> SupervisorSnapshot:
+        return cast(SupervisorSnapshot, super().as_snapshot())
 
 
 _ARCH_MAPPING: Final[dict[int, str]] = {
@@ -1362,6 +1368,9 @@ class SerialFlowStats(BaseStats):
     retries: int = 0
     failures: int = 0
     last_event_unix: float = 0.0
+
+    def as_snapshot(self) -> SerialFlowSnapshot:
+        return cast(SerialFlowSnapshot, super().as_snapshot())
 
 
 class ProcessStats(msgspec.Struct):

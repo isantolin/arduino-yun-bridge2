@@ -38,7 +38,8 @@ if ! ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
     --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h" \
-    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"; then
+    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py" \
+    --structures "${ROOT_DIR}/mcubridge/mcubridge/protocol/structures.py"; then
     echo "ERROR: Protocol generation failed. See above for missing dependencies."
     exit 1
 fi

@@ -46,7 +46,8 @@ python3 ./tools/protocol/generate.py \
     --py ./mcubridge/mcubridge/protocol/protocol.py \
     --cpp ./mcubridge-library-arduino/src/protocol/rpc_protocol.h \
     --cpp-structs ./mcubridge-library-arduino/src/protocol/rpc_structs.h \
-    --py-client mcubridge-client-examples/mcubridge_client/protocol.py
+    --py-client mcubridge-client-examples/mcubridge_client/protocol.py \
+    --structures ./mcubridge/mcubridge/protocol/structures.py
 
 echo "Installing libraries..."
 # We pass USER_LIB_DIR to install.sh to ensure it installs there

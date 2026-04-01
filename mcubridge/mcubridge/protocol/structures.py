@@ -1043,18 +1043,6 @@ class ProcessOutputBatch(msgspec.Struct):
     stderr_truncated: bool
 
 
-# --- Queue Structures ---
-
-
-class QueueEvent(msgspec.Struct):
-    """Outcome of a bounded queue mutation."""
-
-    truncated_bytes: int = 0
-    dropped_chunks: int = 0
-    dropped_bytes: int = 0
-    accepted: bool = False
-
-
 # --- Serial Flow Structures ---
 
 

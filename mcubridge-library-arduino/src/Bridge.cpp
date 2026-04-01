@@ -683,7 +683,12 @@ void BridgeClass::_handleMalformed(uint16_t command_id) { if (command_id == _las
 void BridgeClass::_retransmitLastFrame() {
   PendingTxFrame f; bool has_frame = false;
   BRIDGE_ATOMIC_BLOCK { if (!_pending_tx_queue.empty()) { f = _pending_tx_queue.front(); has_frame = true; } }
-  if (has_frame) { _sendRawFrame(f.command_id, 0, etl::span<const uint8_t>(_tx_payload_pool.data() + f.buffer_offset, f.payload_length)); _retry_count++; }
+  if (has_frame) {
+    // [SIL-2] Defensive bounds check: offset+length must stay within pool
+    if (static_cast<size_t>(f.buffer_offset) + f.payload_length <= _tx_payload_pool.size()) {
+      _sendRawFrame(f.command_id, 0, etl::span<const uint8_t>(_tx_payload_pool.data() + f.buffer_offset, f.payload_length)); _retry_count++;
+    }
+  }
 }
 
 void BridgeClass::_onAckTimeout() {
@@ -766,7 +771,10 @@ void BridgeClass::_flushPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK { if (!_fsm.isAwaitingAck() && !_pending_tx_queue.empty()) { f = _pending_tx_queue.front(); has_frame = true; } }
   if (has_frame) {
     uint16_t seq = ++_tx_sequence_id;
-    _sendRawFrame(f.command_id, seq, etl::span<const uint8_t>(_tx_payload_pool.data() + f.buffer_offset, f.payload_length));
+    // [SIL-2] Defensive bounds check: offset+length must stay within pool
+    if (static_cast<size_t>(f.buffer_offset) + f.payload_length <= _tx_payload_pool.size()) {
+      _sendRawFrame(f.command_id, seq, etl::span<const uint8_t>(_tx_payload_pool.data() + f.buffer_offset, f.payload_length));
+    }
     BRIDGE_ATOMIC_BLOCK { _fsm.sendCritical(); } _retry_count = 0;
     _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT, bridge::now_ms()); _last_command_id = f.command_id;
   }

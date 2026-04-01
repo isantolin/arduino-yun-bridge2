@@ -136,6 +136,8 @@ class BiStream : public Stream {
 
 // ---------------------------------------------------------------------------
 // COBS encoder/decoder for building test frames.
+// [SIL-2] Mirrors the PacketSerial2::COBS codec used in production.
+// Validated by roundtrip tests in test_protocol.cpp and test_bridge_core.cpp.
 // ---------------------------------------------------------------------------
 
 struct TestCOBS {
@@ -214,10 +216,7 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
       calc.reset();
       calc.add(decoded_buf, decoded_buf + (decoded_len - 4));
       uint32_t cv = calc.value();
-      decoded_buf[decoded_len - 4] = static_cast<uint8_t>((cv >> 24) & 0xFF);
-      decoded_buf[decoded_len - 3] = static_cast<uint8_t>((cv >> 16) & 0xFF);
-      decoded_buf[decoded_len - 2] = static_cast<uint8_t>((cv >> 8) & 0xFF);
-      decoded_buf[decoded_len - 1] = static_cast<uint8_t>(cv & 0xFF);
+      rpc::write_u32_be(etl::span<uint8_t>(decoded_buf + decoded_len - 4, 4), cv);
 
       auto result =
           parser.parse(etl::span<const uint8_t>(decoded_buf, decoded_len));

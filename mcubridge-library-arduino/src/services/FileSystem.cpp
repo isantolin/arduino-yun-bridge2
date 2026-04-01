@@ -82,6 +82,8 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
     if (result.bytes_read > 0U) {
       send_read_response(etl::span<const uint8_t>(read_buffer.data(), result.bytes_read));
       sent_payload = true;
+      // [SIL-2] Guard against offset overflow on large files
+      if (result.bytes_read > SIZE_MAX - offset) break;
       offset += result.bytes_read;
     } else if (!sent_payload) {
       send_read_response(etl::span<const uint8_t>());

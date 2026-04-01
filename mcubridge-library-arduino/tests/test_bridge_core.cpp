@@ -51,29 +51,15 @@ class TestFrameBuilder {
  public:
   static size_t build(uint8_t* out, size_t out_cap, uint16_t cmd_id,
                       const uint8_t* payload, size_t payload_len, uint16_t seq_id = 0) {
+    // [SIL-2] Delegate to production FrameBuilder for header+CRC serialization
     uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
-    size_t cursor = 0;
-    raw[cursor++] = 0x02;
-    raw[cursor++] = (payload_len >> 8) & 0xFF;
-    raw[cursor++] = payload_len & 0xFF;
-    raw[cursor++] = (cmd_id >> 8) & 0xFF;
-    raw[cursor++] = cmd_id & 0xFF;
-    raw[cursor++] = (seq_id >> 8) & 0xFF;
-    raw[cursor++] = seq_id & 0xFF;
-    if (payload_len > 0) {
-      memcpy(&raw[cursor], payload, payload_len);
-      cursor += payload_len;
-    }
-    etl::crc32 crc_calculator;
-    crc_calculator.add(raw, raw + cursor);
-    uint32_t crc = crc_calculator.value();
-    raw[cursor++] = (crc >> 24) & 0xFF;
-    raw[cursor++] = (crc >> 16) & 0xFF;
-    raw[cursor++] = (crc >> 8) & 0xFF;
-    raw[cursor++] = crc & 0xFF;
-    
+    const size_t raw_len = rpc::FrameBuilder::build(
+        etl::span<uint8_t>(raw, sizeof(raw)), cmd_id, seq_id,
+        etl::span<const uint8_t>(payload, payload_len));
+    if (raw_len == 0 || raw_len + 2 > out_cap) return 0;
+
     out[0] = 0; // Prepend delimiter
-    size_t encoded_len = TestCOBS::encode(raw, cursor, out + 1);
+    size_t encoded_len = TestCOBS::encode(raw, raw_len, out + 1);
     out[encoded_len + 1] = 0; // Append delimiter
     return encoded_len + 2;
   }

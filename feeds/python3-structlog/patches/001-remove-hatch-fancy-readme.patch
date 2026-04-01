@@ -1,6 +1,6 @@
 --- a/pyproject.toml
 +++ b/pyproject.toml
-@@ -1,13 +1,13 @@
+@@ -1,12 +1,13 @@
  # SPDX-License-Identifier: MIT OR Apache-2.0
  
  [build-system]

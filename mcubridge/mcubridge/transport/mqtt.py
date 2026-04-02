@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import structlog
 from typing import TYPE_CHECKING, Any
 
 import aiomqtt
@@ -18,10 +19,12 @@ from mcubridge.util import log_hexdump
 from mcubridge.util.mqtt_helper import configure_tls_context
 from transitions import Machine
 
+from ..util.retry import before_sleep_with_metric
+
 if TYPE_CHECKING:
     from mcubridge.services.runtime import BridgeService
 
-logger = logging.getLogger("mcubridge")
+logger = structlog.get_logger("mcubridge")
 
 
 class MqttTransport:
@@ -60,6 +63,7 @@ class MqttTransport:
             ],
             initial=self.STATE_DISCONNECTED,
             model_attribute="fsm_state",
+            queued=True,
             ignore_invalid_triggers=True,
         )
 
@@ -80,7 +84,9 @@ class MqttTransport:
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
             retry=tenacity.retry_if_exception_type((aiomqtt.MqttError, OSError, asyncio.TimeoutError)),
-            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            before_sleep=before_sleep_with_metric(
+                logger, logging.WARNING, self.state.metrics.retries, "mqtt_connect",
+            ),
             reraise=True,
         )
 

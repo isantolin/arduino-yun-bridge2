@@ -4,7 +4,6 @@ import asyncio
 import collections
 import contextlib
 import inspect
-import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -31,8 +30,10 @@ from .base import BaseComponent
 
 if TYPE_CHECKING:
     from .runtime import BridgeService
+import structlog
 
-logger = logging.getLogger("mcubridge.services.process")
+logger = structlog.get_logger("mcubridge.services.process")
+_msgpack_enc = msgspec.msgpack.Encoder()
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
@@ -476,7 +477,7 @@ class ProcessComponent(BaseComponent):
         await self.service.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
-                payload=msgspec.msgpack.encode(batch),
+                payload=_msgpack_enc.encode(batch),
                 content_type="application/msgpack",
                 response_topic=reply_topic,
                 correlation_data=correlation_data,

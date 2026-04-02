@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import structlog
 from typing import TYPE_CHECKING, Any, Final, cast
 
 from cobs.cobs import encode as cobs_encode, decode as cobs_decode, DecodeError as CobsDecodeError
@@ -37,7 +38,7 @@ if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
     from mcubridge.state.context import RuntimeState
 
-logger = logging.getLogger("mcubridge.serial")
+logger = structlog.get_logger("mcubridge.serial")
 
 _RAW_FRAME_MIN_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.CRC_SIZE
 _RAW_FRAME_MAX_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE
@@ -88,6 +89,7 @@ class SerialTransport:
             ],
             initial=self.STATE_DISCONNECTED,
             after_state_change=self._on_state_change,
+            queued=True,
             model_attribute="fsm_state",
         )
         self._machine.add_transition(

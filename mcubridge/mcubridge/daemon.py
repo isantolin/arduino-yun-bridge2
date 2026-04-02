@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 import sys
 from collections.abc import Awaitable, Callable
 from typing import Any, Annotated
@@ -39,6 +38,7 @@ import tenacity
 import typer
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
+import structlog
 import uvloop
 
 from mcubridge.config.const import (
@@ -68,7 +68,7 @@ from mcubridge.transport import (
 )
 from mcubridge.watchdog import WatchdogKeepalive
 
-logger = logging.getLogger("mcubridge")
+logger = structlog.get_logger("mcubridge")
 SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
     ConnectionError,
     OSError,
@@ -140,7 +140,7 @@ class BridgeDaemon:
 
     async def run(self) -> None:
         """Main entry point for daemon execution using native TaskGroup orchestration."""
-        log = logging.getLogger("mcubridge.daemon")
+        log = structlog.get_logger("mcubridge.daemon")
 
         try:
             async with self.service:

@@ -18,6 +18,7 @@ from .config.const import (
 )
 from .state.context import RuntimeState
 from .util.periodic import periodic_task
+import structlog
 
 WatchdogWrite = Callable[[bytes], None]
 
@@ -53,7 +54,7 @@ class WatchdogKeepalive:
         self._state = state
         self._token = token
         self._write = write or _default_write
-        self._logger = logger or logging.getLogger("mcubridge.watchdog")
+        self._logger = logger or structlog.get_logger("mcubridge.watchdog")
 
         # FSM Initialization
         self.state_machine = Machine(
@@ -65,6 +66,7 @@ class WatchdogKeepalive:
             ],
             initial=self.STATE_INIT,
             ignore_invalid_triggers=True,
+            queued=True,
             model_attribute="fsm_state",
         )
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -30,8 +29,9 @@ from ..protocol.topics import Topic, TopicRoute, topic_path
 from ..state.context import RuntimeState
 from ..util import chunk_bytes
 from .base import BaseComponent, BridgeContext
+import structlog
 
-logger = logging.getLogger("mcubridge.file")
+logger = structlog.get_logger("mcubridge.file")
 
 
 def _new_chunk_list() -> list[bytes]:

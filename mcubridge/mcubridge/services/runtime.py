@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 import time
 from collections.abc import Coroutine
 from typing import Any, cast
@@ -47,7 +47,8 @@ from .handshake import (
 )
 from .serial_flow import SerialFlowController
 
-logger = logging.getLogger("mcubridge.service")
+logger = structlog.get_logger("mcubridge.service")
+_msgpack_enc = msgspec.msgpack.Encoder()
 
 
 STATUS_VALUES = {status.value for status in Status}
@@ -439,7 +440,7 @@ class BridgeService:
         else:
             log_method("MCU > %s (seq=%d): %s", status.name, seq_id, desc)
 
-        report = msgspec.msgpack.encode(
+        report = _msgpack_enc.encode(
             {
                 "status": status.value,
                 "name": status.name,
@@ -488,7 +489,7 @@ class BridgeService:
         )
         await self.publish(
             topic=topic,
-            payload=msgspec.msgpack.encode(snapshot),
+            payload=_msgpack_enc.encode(snapshot),
             content_type="application/msgpack",
             expiry=MQTT_EXPIRY_SHELL,
             properties=(("bridge-snapshot", flavor),),
@@ -520,7 +521,7 @@ class BridgeService:
             action or "<missing>",
             str(inbound.topic),
         )
-        payload = msgspec.msgpack.encode(
+        payload = _msgpack_enc.encode(
             {
                 "status": "forbidden",
                 "topic": topic_value,

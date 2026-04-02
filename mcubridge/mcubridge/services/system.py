@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import collections
-import logging
+import structlog
 from collections.abc import Awaitable, Callable
 from typing import cast
 
@@ -22,7 +22,7 @@ from ..protocol.topics import Topic, topic_path
 from ..state.context import RuntimeState
 from .base import BaseComponent, BridgeContext
 
-logger = logging.getLogger("mcubridge.system")
+logger = structlog.get_logger("mcubridge.system")
 
 
 class SystemComponent(BaseComponent):

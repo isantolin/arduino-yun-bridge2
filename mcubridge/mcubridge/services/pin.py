@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import collections
-import logging
+import structlog
 from typing import Any
 
 from aiomqtt.message import Message
@@ -23,7 +23,7 @@ from ..protocol.topics import Topic, topic_path
 from ..state.context import PendingPinRequest
 from .base import BaseComponent
 
-logger = logging.getLogger("mcubridge.pin")
+logger = structlog.get_logger("mcubridge.pin")
 
 
 class PinComponent(BaseComponent):

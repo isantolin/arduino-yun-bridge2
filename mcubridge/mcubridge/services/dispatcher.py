@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -20,11 +19,12 @@ from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.state.context import RuntimeState, resolve_command_id
 
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
+import structlog
 
 if TYPE_CHECKING:
     from aiomqtt import Message
 
-logger = logging.getLogger("mcubridge.dispatcher")
+logger = structlog.get_logger("mcubridge.dispatcher")
 
 STATUS_VALUES = {status.value for status in Status}
 _PRE_SYNC_ALLOWED_COMMANDS = {

@@ -6,7 +6,7 @@ import asyncio
 import collections
 import contextlib
 import functools
-import logging
+import structlog
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -62,7 +62,7 @@ from ..protocol.structures import (
 from .metrics import DaemonMetrics
 from .queues import BoundedByteDeque, PersistentQueue
 
-logger = logging.getLogger("mcubridge.state")
+logger = structlog.get_logger("mcubridge.state")
 
 SpoolSnapshot = dict[str, int | float]
 
@@ -138,6 +138,7 @@ class ManagedProcess:
             initial=PROCESS_STATE_STARTING,
             model_attribute="fsm_state",
             auto_transitions=False,
+            queued=True,
             ignore_invalid_triggers=True,
         )
         self._machine.add_transition("start", PROCESS_STATE_STARTING, PROCESS_STATE_RUNNING)
@@ -237,6 +238,7 @@ class RuntimeState(msgspec.Struct):
             states=["disconnected", "connected", "synchronized"],
             initial="disconnected",
             ignore_invalid_triggers=True,
+            queued=True,
             transitions=[
                 {"trigger": "connect", "source": ["disconnected", "connected", "synchronized"], "dest": "connected"},
                 {"trigger": "synchronize", "source": ["connected", "synchronized"], "dest": "synchronized"},
@@ -259,16 +261,19 @@ class RuntimeState(msgspec.Struct):
     def mark_transport_connected(self) -> None:
         """Signal that serial connection is open but unsynchronized."""
         self._machine.trigger("connect")
+        self.metrics.link_state.state("connected")
 
     def mark_transport_disconnected(self) -> None:
         """Signal that serial connection is lost."""
         self._machine.trigger("disconnect")
+        self.metrics.link_state.state("disconnected")
         if self.link_sync_event:
             self.link_sync_event.clear()
 
     def mark_synchronized(self) -> None:
         """Signal that protocol handshake is successfully completed."""
         self._machine.trigger("synchronize")
+        self.metrics.link_state.state("synchronized")
         if self.link_sync_event:
             self.link_sync_event.set()
 

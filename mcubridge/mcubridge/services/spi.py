@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 from typing import TYPE_CHECKING
 
 import msgspec
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from ..state.context import RuntimeState
     from .base import BridgeContext
 
-logger = logging.getLogger("mcubridge.service.spi")
+logger = structlog.get_logger("mcubridge.service.spi")
 
 
 class SpiComponent(BaseComponent):

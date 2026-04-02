@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 from typing import Any, Final, cast
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _UCI_PACKAGE: Final[str] = "mcubridge"
 _UCI_SECTION: Final[str] = "general"

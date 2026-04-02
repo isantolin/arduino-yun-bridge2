@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import structlog
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -55,7 +56,8 @@ class SendFrameCallable(Protocol):
 EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
 AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 
-logger = logging.getLogger("mcubridge.service.handshake")
+logger = structlog.get_logger("mcubridge.service.handshake")
+_msgpack_enc = msgspec.msgpack.Encoder()
 
 
 def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
@@ -150,7 +152,9 @@ class SerialHandshakeManager:
             ],
             initial=self.STATE_UNSYNCHRONIZED,
             ignore_invalid_triggers=True,
+            queued=True,
             model_attribute="fsm_state",
+            after_state_change="_on_fsm_state_change",
         )
 
         # FSM Transitions
@@ -168,6 +172,10 @@ class SerialHandshakeManager:
         )
         self.state_machine.add_transition(trigger="fail_handshake", source="*", dest=self.STATE_FAULT)
         self.state_machine.add_transition(trigger="reset_fsm", source="*", dest=self.STATE_UNSYNCHRONIZED)
+
+    def _on_fsm_state_change(self) -> None:
+        """Update Prometheus Enum metric on every FSM transition."""
+        self._state.metrics.handshake_state.state(self.fsm_state)
 
     def _on_fsm_synchronized(self) -> None:
         """Callback when entering synchronized state."""
@@ -531,7 +539,7 @@ class SerialHandshakeManager:
             payload |= extra
         message = QueuedPublish(
             topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
-            payload=msgspec.msgpack.encode(payload),
+            payload=_msgpack_enc.encode(payload),
             content_type="application/msgpack",
             user_properties=[("bridge-event", "handshake")],
         )

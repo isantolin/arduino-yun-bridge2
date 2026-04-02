@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 from typing import Any, cast
 
 from aiomqtt.message import Message
@@ -22,7 +22,7 @@ from ..config.const import MQTT_EXPIRY_DATASTORE
 from ..protocol.topics import Topic, split_topic_segments, topic_path
 from .base import BaseComponent
 
-logger = logging.getLogger("mcubridge.datastore")
+logger = structlog.get_logger("mcubridge.datastore")
 
 
 class DatastoreComponent(BaseComponent):

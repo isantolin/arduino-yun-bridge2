@@ -5,6 +5,7 @@ from __future__ import annotations
 from prometheus_client import (
     CollectorRegistry,
     Counter,
+    Enum,
     Histogram,
     Info,
 )
@@ -115,6 +116,29 @@ class DaemonMetrics:
             "Build and version information",
             registry=self.registry,
         )
+
+        # FSM State Metrics (Enum — one gauge per state, only active state = 1.0)
+        self.link_state = Enum(
+            "mcubridge_link_state",
+            "Serial link lifecycle state",
+            states=["disconnected", "connected", "synchronized"],
+            registry=self.registry,
+        )
+        self.handshake_state = Enum(
+            "mcubridge_handshake_state",
+            "Serial handshake FSM state",
+            states=["unsynchronized", "resetting", "syncing", "confirming", "synchronized", "fault"],
+            registry=self.registry,
+        )
+
+        # Connection/Operation Retry Metrics (labeled counter for all retry-equipped components)
+        self.retries = Counter(
+            "mcubridge_retries_total",
+            "Total retry attempts by component",
+            labelnames=["component"],
+            registry=self.registry,
+        )
+
         self._set_build_info()
 
     def _set_build_info(self) -> None:

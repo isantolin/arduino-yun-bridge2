@@ -6,14 +6,14 @@ between the daemon and external scripts (like CGI).
 
 from __future__ import annotations
 
-import logging
 import ssl
 from pathlib import Path
 
 from mcubridge.config.const import MQTT_TLS_MIN_VERSION
+import structlog
 from mcubridge.config.settings import RuntimeConfig
 
-logger = logging.getLogger("mcubridge.util.mqtt")
+logger = structlog.get_logger("mcubridge.util.mqtt")
 
 
 def configure_tls_context(config: RuntimeConfig) -> ssl.SSLContext | None:

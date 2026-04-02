@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import svcs
+import structlog
 
 import pytest
 
@@ -64,6 +65,19 @@ from mcubridge.protocol.protocol import (
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 mcubridge_logging.SYSLOG_SOCKET = Path("/dev/null/no-syslog-in-tests")
+
+# [TEST FIX] Configure structlog to use stdlib backend so pytest's caplog works.
+structlog.configure(
+    processors=[
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=False,
+)
 
 _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
 

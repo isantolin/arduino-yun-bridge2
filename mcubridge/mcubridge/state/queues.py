@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 import shutil
 import sqlite3
 from collections import deque
@@ -15,7 +15,7 @@ from persistqueue import Empty, FIFOSQLiteQueue
 
 T = TypeVar("T")
 
-logger = logging.getLogger("mcubridge.state.queues")
+logger = structlog.get_logger("mcubridge.state.queues")
 
 
 class QueueEvent(msgspec.Struct, frozen=True):

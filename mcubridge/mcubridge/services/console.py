@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 
 from aiomqtt.message import Message
 from mcubridge.protocol import protocol
@@ -14,7 +14,7 @@ from ..protocol.topics import Topic, topic_path
 from ..util import chunk_bytes
 from .base import BaseComponent
 
-logger = logging.getLogger("mcubridge.console")
+logger = structlog.get_logger("mcubridge.console")
 
 
 class ConsoleComponent(BaseComponent):

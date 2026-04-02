@@ -9,7 +9,7 @@ not used.
 
 from __future__ import annotations
 
-import logging
+import structlog
 from typing import Any
 
 import msgspec
@@ -20,7 +20,7 @@ from ..config.common import (
 )
 from mcubridge.protocol.structures import RuntimeConfig
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:

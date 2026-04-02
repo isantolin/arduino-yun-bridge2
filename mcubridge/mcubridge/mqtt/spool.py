@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 import time
 from pathlib import Path
 from typing import Any
@@ -12,7 +12,7 @@ import msgspec
 from ..protocol.structures import QueuedPublish
 from ..state.queues import PersistentQueue
 
-logger = logging.getLogger("mcubridge.mqtt.spool")
+logger = structlog.get_logger("mcubridge.mqtt.spool")
 
 
 class MQTTSpoolError(RuntimeError):

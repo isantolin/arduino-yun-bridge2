@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 
 import msgspec
 from aiomqtt.message import Message
@@ -28,7 +28,8 @@ from ..protocol.topics import (
 )
 from .base import BaseComponent
 
-logger = logging.getLogger("mcubridge.mailbox")
+logger = structlog.get_logger("mcubridge.mailbox")
+_msgpack_enc = msgspec.msgpack.Encoder()
 
 
 class MailboxComponent(BaseComponent):
@@ -49,7 +50,7 @@ class MailboxComponent(BaseComponent):
                 logger.warning("MCU > Malformed Mailbox processed payload: %s", exc)
 
         if message_id is not None:
-            body = msgspec.msgpack.encode({"message_id": message_id})
+            body = _msgpack_enc.encode({"message_id": message_id})
         else:
             # Fallback to raw payload if no valid ID found (strict enforcement might reject this later)
             body = payload
@@ -158,11 +159,9 @@ class MailboxComponent(BaseComponent):
         logger.info(
             "Added message to mailbox queue. Size=%d",
             queue_len,
-            extra={
-                "queue_len": queue_len,
-                "queue_limit": self.state.mailbox_queue_limit,
-                "queue_bytes_used": self.state.mailbox_queue_bytes,
-            },
+            queue_len=queue_len,
+            queue_limit=self.state.mailbox_queue_limit,
+            queue_bytes_used=self.state.mailbox_queue_bytes,
         )
         await self._publish_available("outgoing_available", queue_len)
 
@@ -214,13 +213,11 @@ class MailboxComponent(BaseComponent):
         logger.error(
             "Mailbox outgoing queue full; rejecting MQTT payload (%d bytes)",
             payload_size,
-            extra={
-                "queue_len": queue_len,
-                "queue_limit": self.state.mailbox_queue_limit,
-                "queue_bytes_limit": self.state.mailbox_queue_bytes_limit,
-                "queue_bytes_used": self.state.mailbox_queue_bytes,
-                "payload_bytes": payload_size,
-            },
+            queue_len=queue_len,
+            queue_limit=self.state.mailbox_queue_limit,
+            queue_bytes_limit=self.state.mailbox_queue_bytes_limit,
+            queue_bytes_used=self.state.mailbox_queue_bytes,
+            payload_bytes=payload_size,
         )
         await self.ctx.send_frame(
             Status.ERROR.value,
@@ -233,7 +230,7 @@ class MailboxComponent(BaseComponent):
             MailboxAction.ERRORS,
         )
 
-        body = msgspec.msgpack.encode(
+        body = _msgpack_enc.encode(
             {
                 "event": "write_overflow",
                 "reason": protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
+import structlog
 from collections.abc import Callable, Coroutine
 from typing import Any, Deque, Protocol, TypeVar
 
@@ -17,7 +17,7 @@ from ..state.context import RuntimeState
 
 TReq = TypeVar("TReq")
 
-logger = logging.getLogger("mcubridge.services")
+logger = structlog.get_logger("mcubridge.services")
 
 
 class BridgeContext(Protocol):

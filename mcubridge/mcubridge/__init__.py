@@ -4,10 +4,10 @@ __version__ = "2.8.1"
 
 import importlib
 import importlib.util
-import logging
+import structlog
 import sys
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _check_dependencies():

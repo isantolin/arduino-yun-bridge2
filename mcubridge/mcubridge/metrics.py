@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import math
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import (
@@ -15,14 +14,16 @@ import msgspec
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
+import structlog
 
 from .protocol.structures import QueuedPublish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
 from .util.periodic import periodic_task
 
-logger = logging.getLogger("mcubridge.metrics")
+logger = structlog.get_logger("mcubridge.metrics")
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
+_msgpack_enc = msgspec.msgpack.Encoder()
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
@@ -41,7 +42,7 @@ def _build_metrics_message(
     message = QueuedPublish(
         topic_name=topic,
         # [SIL-2] Fast serialization using msgspec.msgpack.encode handles Structs directly
-        payload=msgspec.msgpack.encode(snapshot),
+        payload=_msgpack_enc.encode(snapshot),
         content_type="application/msgpack",
         message_expiry_interval=int(expiry_seconds),
     )
@@ -144,14 +145,14 @@ async def _emit_bridge_snapshot(
         logger.error(
             "Failed to publish bridge snapshot (serialization/IO): %s",
             e,
-            extra={"flavor": flavor},
+            flavor=flavor,
         )
     except AttributeError as e:
         logger.critical(
             "Unexpected error in bridge snapshot builder: %s",
             e,
             exc_info=True,
-            extra={"flavor": flavor},
+            flavor=flavor,
         )
 
 
@@ -343,7 +344,7 @@ class PrometheusExporter:
                         self._resolved_port = port_candidate
         logger.info(
             "Prometheus exporter listening",
-            extra={"host": self._host, "port": self.port},
+            host=self._host, port=self.port,
         )
 
     async def stop(self) -> None:
@@ -448,7 +449,7 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=msgspec.msgpack.encode(snapshot),
+        payload=_msgpack_enc.encode(snapshot),
         content_type="application/msgpack",
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=[("bridge-snapshot", flavor)],

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import tenacity
 
@@ -17,6 +18,25 @@ from mcubridge.config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
+
+if TYPE_CHECKING:
+    from prometheus_client import Counter
+
+
+def before_sleep_with_metric(
+    logger: logging.Logger,
+    log_level: int,
+    counter: Counter,
+    label: str,
+) -> Callable[[tenacity.RetryCallState], None]:
+    """Compose a before_sleep callback that logs AND increments a labeled counter."""
+    log_cb = tenacity.before_sleep_log(logger, log_level)
+
+    def _callback(retry_state: tenacity.RetryCallState) -> None:
+        log_cb(retry_state)
+        counter.labels(component=label).inc()
+
+    return _callback
 
 
 def serial_exponential_retryer(

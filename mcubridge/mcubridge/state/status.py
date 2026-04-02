@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -20,7 +20,8 @@ from ..protocol.structures import (
 from ..util.periodic import periodic_task
 from .context import RuntimeState
 
-logger = logging.getLogger("mcubridge.status")
+logger = structlog.get_logger("mcubridge.status")
+_json_enc = msgspec.json.Encoder()
 STATUS_FILE = Path(STATUS_FILE_PATH)
 
 
@@ -150,7 +151,7 @@ def _write_status_file(payload: BridgeStatus) -> None:
 
     try:
         # [SIL-2] Use library encoder for atomic generation
-        data = msgspec.json.encode(payload)
+        data = _json_enc.encode(payload)
 
         with NamedTemporaryFile("wb", dir=STATUS_FILE.parent, delete=False) as tf:
             tf.write(data)

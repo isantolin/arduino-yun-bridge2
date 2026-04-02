@@ -48,8 +48,8 @@ class MQTTRouter:
             except (OSError, ValueError, TypeError, AttributeError, KeyError, IndexError, RuntimeError):
                 # [SIL-2] Fault Isolation: Don't let one handler crash the whole router.
                 # We log it and continue with the next one.
-                import logging
-                logging.getLogger("mcubridge.router").exception(
+                import structlog
+                structlog.get_logger("mcubridge.router").exception(
                     "Fault Isolation: Handler failed for topic %s", route.topic
                 )
         return dispatched

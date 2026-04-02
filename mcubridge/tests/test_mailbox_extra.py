@@ -35,7 +35,7 @@ async def test_mailbox_handle_read_truncation() -> None:
         ctx.publish = AsyncMock()
         mb = MailboxComponent(config, state, ctx)
 
-        state.enqueue_mailbox_message(b"A" * 100, MagicMock())
+        state.enqueue_mailbox_message(b"A" * 100)
         await mb.handle_read(0, b"")
 
         # Verify sent payload is truncated to MAX_PAYLOAD_SIZE - 2 (62)
@@ -60,7 +60,7 @@ async def test_mailbox_handle_read_send_fail(tmp_path) -> None:
         mb = MailboxComponent(config, state, ctx)
 
         msg = b"persistent"
-        state.enqueue_mailbox_message(msg, MagicMock())
+        state.enqueue_mailbox_message(msg)
         await mb.handle_read(0, b"")
         # Message should be requeued at front
         assert state.pop_mailbox_message() == msg
@@ -81,7 +81,7 @@ async def test_mailbox_handle_mqtt_edge_cases() -> None:
         await mb.handle_mqtt("unknown", b"payload")
 
         # Read from incoming queue
-        state.enqueue_mailbox_incoming(b"inbound", MagicMock())
+        state.enqueue_mailbox_incoming(b"inbound")
         await mb._handle_mqtt_read(None)
         ctx.publish.assert_called()
     finally:

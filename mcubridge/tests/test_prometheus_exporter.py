@@ -30,4 +30,5 @@ async def test_prometheus_exporter_serves_metrics(runtime_state, socket_enabled:
     assert b'mcubridge_queue_depth{queue="mqtt_publish"}' in payload
     assert b"mcubridge_file_storage_bytes_used" in payload
     assert b'mcubridge_supervisor_worker_restarts{worker="worker"} 2.0' in payload
+    assert b"mcubridge_build_info" in payload
     assert CONTENT_TYPE_LATEST.encode("ascii") in payload

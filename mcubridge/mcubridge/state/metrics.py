@@ -6,6 +6,7 @@ from prometheus_client import (
     CollectorRegistry,
     Counter,
     Histogram,
+    Info,
 )
 
 
@@ -107,3 +108,20 @@ class DaemonMetrics:
             "Total daemon uptime in seconds",
             registry=self.registry,
         )
+
+        # Info Metric (build metadata — set once at startup)
+        self.build_info = Info(
+            "mcubridge_build",
+            "Build and version information",
+            registry=self.registry,
+        )
+        self._set_build_info()
+
+    def _set_build_info(self) -> None:
+        """Populate build info from package metadata."""
+        import importlib.metadata
+        try:
+            version = importlib.metadata.version("mcubridge")
+        except importlib.metadata.PackageNotFoundError:
+            version = "dev"
+        self.build_info.info({"version": version, "python": "3.13"})

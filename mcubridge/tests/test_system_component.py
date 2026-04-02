@@ -115,7 +115,7 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(runtime_con
         component._pending_version.append(msg)
 
         # Payload: major=1, minor=2
-        payload = structures.VersionResponsePacket(major=1, minor=2).encode()
+        payload = structures.VersionResponsePacket(major=1, minor=2, patch=0).encode()
 
         await component.handle_get_version_resp(0, payload)
 

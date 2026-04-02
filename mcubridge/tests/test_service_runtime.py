@@ -219,7 +219,8 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
     try:
         service = BridgeService(config, state)
 
-        await service._system.handle_get_version_resp(0, structures.VersionResponsePacket(major=1, minor=2).encode())
+        pkt = structures.VersionResponsePacket(major=1, minor=2, patch=0)
+        await service._system.handle_get_version_resp(0, pkt.encode())
 
         assert state.mcu_version == (1, 2)
         queued = state.mqtt_publish_queue.get_nowait()

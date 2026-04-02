@@ -372,15 +372,17 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
     pending_pin_request_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PENDING_PIN_REQUESTS
-    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01)] = DEFAULT_SERIAL_RETRY_TIMEOUT
-    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02)] = DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01, le=30.0)] = DEFAULT_SERIAL_RETRY_TIMEOUT
+    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02, le=120.0)] = DEFAULT_SERIAL_RESPONSE_TIMEOUT
     serial_retry_attempts: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_RETRY_LIMIT
     serial_fallback_threshold: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_FALLBACK_THRESHOLD
-    serial_handshake_min_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
+    serial_handshake_min_interval: Annotated[
+        float, msgspec.Meta(ge=0.0, le=30.0)
+    ] = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
     serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
     mqtt_enabled: bool = True
     watchdog_enabled: bool = True
-    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1)] = DEFAULT_WATCHDOG_INTERVAL
+    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1, le=60.0)] = DEFAULT_WATCHDOG_INTERVAL
     topic_authorization: TopicAuthorization | None = None
 
     # [SIL-2] Security: Accept Any to allow raw strings from UCI/Tests,
@@ -969,7 +971,7 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
 
     topic_name: str
     payload: bytes
-    qos: int = 0
+    qos: Annotated[int, msgspec.Meta(ge=0, le=2)] = 0
     retain: bool = False
     content_type: str | None = None
     payload_format_indicator: int | None = None
@@ -985,7 +987,7 @@ class QueuedPublish(msgspec.Struct):
 
     topic_name: str
     payload: bytes
-    qos: int = 0
+    qos: Annotated[int, msgspec.Meta(ge=0, le=2)] = 0
     retain: bool = False
     content_type: str | None = None
     payload_format_indicator: int | None = None
@@ -1031,8 +1033,8 @@ class QueuedPublish(msgspec.Struct):
 class ProcessOutputBatch(msgspec.Struct):
     """Structured payload describing PROCESS_POLL results."""
 
-    status_byte: int
-    exit_code: int
+    status_byte: Annotated[int, msgspec.Meta(ge=0, le=255)]
+    exit_code: Annotated[int, msgspec.Meta(ge=0, le=255)]
     stdout_chunk: bytes
     stderr_chunk: bytes
     finished: bool
@@ -1327,14 +1329,14 @@ class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     failures: Annotated[int, msgspec.Meta(ge=0)] = 0
     failure_streak: Annotated[int, msgspec.Meta(ge=0)] = 0
     last_error: str | None = None
-    last_unix: float = 0.0
+    last_unix: Annotated[float, msgspec.Meta(ge=0.0)] = 0.0
     last_duration: float = 0.0
-    backoff_until: float = 0.0
-    rate_limit_until: float = 0.0
+    backoff_until: Annotated[float, msgspec.Meta(ge=0.0)] = 0.0
+    rate_limit_until: Annotated[float, msgspec.Meta(ge=0.0)] = 0.0
     fatal_count: Annotated[int, msgspec.Meta(ge=0)] = 0
     fatal_reason: str | None = None
     fatal_detail: str | None = None
-    fatal_unix: float = 0.0
+    fatal_unix: Annotated[float, msgspec.Meta(ge=0.0)] = 0.0
     pending_nonce: bool = False
     nonce_length: Annotated[int, msgspec.Meta(ge=0)] = 0
 
@@ -1377,8 +1379,8 @@ class ProcessStats(msgspec.Struct):
     """Resource usage statistics for a single process."""
 
     name: str
-    cpu_percent: float
-    memory_rss_bytes: int
+    cpu_percent: Annotated[float, msgspec.Meta(ge=0.0)]
+    memory_rss_bytes: Annotated[int, msgspec.Meta(ge=0)]
 
 
 class BridgeStatus(msgspec.Struct, kw_only=True):

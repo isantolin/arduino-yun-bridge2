@@ -126,6 +126,11 @@ class MqttTransport:
 
         self.connect()
 
+        # [SIL-2] Last Will and Testament: auto-publish offline status on unexpected disconnect
+        will_topic = topic_path(self.state.mqtt_topic_prefix, "system", "status")
+        will_payload = b'{"status": "offline", "reason": "unexpected_disconnect"}'
+        will = aiomqtt.Will(topic=will_topic, payload=will_payload, qos=1, retain=True)
+
         client = aiomqtt.Client(
             hostname=self.config.mqtt_host,
             port=self.config.mqtt_port,
@@ -135,6 +140,7 @@ class MqttTransport:
             logger=logging.getLogger("mcubridge.mqtt.client"),
             protocol=aiomqtt.ProtocolVersion.V5,
             clean_session=None,
+            will=will,
             properties=connect_props,
         )
 
@@ -158,6 +164,9 @@ class MqttTransport:
             self._mqtt_client = connected_client
             await self._subscribe_topics(client)
             self.subscribed()
+
+            # [SIL-2] Publish online status (retained) to complement the will message
+            await client.publish(will_topic, b'{"status": "online"}', qos=1, retain=True)
 
             async with asyncio.TaskGroup() as task_group:
                 task_group.create_task(self._publisher_loop(client))

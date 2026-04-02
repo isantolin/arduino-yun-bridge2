@@ -547,7 +547,7 @@ class RuntimeState(msgspec.Struct):
             stats.backoff_seconds = 0.0
             stats.fatal = False
 
-    def enqueue_console_chunk(self, chunk: bytes, logger: logging.Logger) -> None:
+    def enqueue_console_chunk(self, chunk: bytes) -> None:
         if not chunk:
             return
         self.sync_console_queue_limits()
@@ -594,7 +594,7 @@ class RuntimeState(msgspec.Struct):
             self.mailbox_outgoing_overflow_events += 1
         return True
 
-    def enqueue_mailbox_message(self, payload: bytes, logger: logging.Logger) -> bool:
+    def enqueue_mailbox_message(self, payload: bytes) -> bool:
         if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
             return False
         if self.mailbox_queue.append(payload):
@@ -614,7 +614,7 @@ class RuntimeState(msgspec.Struct):
         if self.mailbox_queue.appendleft(payload):
             self.mailbox_queue_bytes += len(payload)
 
-    def enqueue_mailbox_incoming(self, payload: bytes, logger: logging.Logger) -> bool:
+    def enqueue_mailbox_incoming(self, payload: bytes) -> bool:
         if self._mailbox_overflow(len(self.mailbox_incoming_queue), len(payload), incoming=True):
             return False
         if self.mailbox_incoming_queue.append(payload):

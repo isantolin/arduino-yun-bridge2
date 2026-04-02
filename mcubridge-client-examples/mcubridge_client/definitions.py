@@ -3,7 +3,7 @@ from __future__ import annotations
 import ssl
 import time
 from enum import IntEnum
-from typing import Final, TypedDict
+from typing import Annotated, Final, TypedDict
 
 import msgspec
 from paho.mqtt.packettypes import PacketTypes
@@ -62,7 +62,7 @@ class QueuedPublish(msgspec.Struct, frozen=True):
 
     topic_name: str
     payload: bytes
-    qos: int = 0
+    qos: Annotated[int, msgspec.Meta(ge=0, le=2)] = 0
     retain: bool = False
     content_type: str | None = None
     message_expiry_interval: int | None = None

@@ -64,7 +64,7 @@ class MailboxComponent(BaseComponent):
 
         data = packet.data
 
-        stored = self.state.enqueue_mailbox_incoming(data, logger)
+        stored = self.state.enqueue_mailbox_incoming(data)
         if not stored:
             logger.error("Dropping incoming mailbox message (%d bytes) due to queue limits.", len(data))
             await self.ctx.send_frame(
@@ -151,7 +151,7 @@ class MailboxComponent(BaseComponent):
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        if not self.state.enqueue_mailbox_message(payload, logger):
+        if not self.state.enqueue_mailbox_message(payload):
             await self._handle_outgoing_overflow(len(payload), inbound)
             return
         queue_len = len(self.state.mailbox_queue)

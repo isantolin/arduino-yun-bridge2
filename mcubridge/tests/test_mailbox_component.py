@@ -167,10 +167,9 @@ def test_handle_push_overflow_sends_error(
 def test_handle_read_success_publishes_available(
     mailbox_component: tuple[MailboxComponent, DummyBridge],
     runtime_state: RuntimeState,
-    mailbox_logger: logging.Logger,
 ) -> None:
     component, bridge = mailbox_component
-    runtime_state.enqueue_mailbox_message(b"payload", mailbox_logger)
+    runtime_state.enqueue_mailbox_message(b"payload")
 
     result = asyncio.run(component.handle_read(0, b""))
     assert result is True
@@ -188,10 +187,9 @@ def test_handle_read_success_publishes_available(
 def test_handle_read_requeues_when_send_fails(
     mailbox_component: tuple[MailboxComponent, DummyBridge],
     runtime_state: RuntimeState,
-    mailbox_logger: logging.Logger,
 ) -> None:
     component, bridge = mailbox_component
-    runtime_state.enqueue_mailbox_message(b"fail", mailbox_logger)
+    runtime_state.enqueue_mailbox_message(b"fail")
     bridge.send_frame_result = False
 
     result = asyncio.run(component.handle_read(0, b""))
@@ -243,10 +241,9 @@ def test_handle_mqtt_write_overflow_signals_error(
 def test_handle_mqtt_read_prefers_incoming_queue(
     mailbox_component: tuple[MailboxComponent, DummyBridge],
     runtime_state: RuntimeState,
-    mailbox_logger: logging.Logger,
 ) -> None:
     component, bridge = mailbox_component
-    runtime_state.enqueue_mailbox_incoming(b"alpha", mailbox_logger)
+    runtime_state.enqueue_mailbox_incoming(b"alpha")
 
     asyncio.run(component.handle_mqtt(MailboxAction.READ, b""))
 
@@ -263,10 +260,9 @@ def test_handle_mqtt_read_prefers_incoming_queue(
 def test_handle_mqtt_read_drains_mailbox_queue(
     mailbox_component: tuple[MailboxComponent, DummyBridge],
     runtime_state: RuntimeState,
-    mailbox_logger: logging.Logger,
 ) -> None:
     component, bridge = mailbox_component
-    runtime_state.enqueue_mailbox_message(b"beta", mailbox_logger)
+    runtime_state.enqueue_mailbox_message(b"beta")
 
     asyncio.run(component.handle_mqtt(MailboxAction.READ, b""))
 
@@ -283,10 +279,9 @@ def test_handle_mqtt_read_drains_mailbox_queue(
 def test_handle_mqtt_read_incoming_still_notifies_on_failure(
     mailbox_component: tuple[MailboxComponent, DummyBridge],
     runtime_state: RuntimeState,
-    mailbox_logger: logging.Logger,
 ) -> None:
     component, bridge = mailbox_component
-    runtime_state.enqueue_mailbox_incoming(b"gamma", mailbox_logger)
+    runtime_state.enqueue_mailbox_incoming(b"gamma")
 
     async def flaky_enqueue(
         message: QueuedPublish,
@@ -310,10 +305,9 @@ def test_handle_mqtt_read_incoming_still_notifies_on_failure(
 def test_handle_mqtt_read_outgoing_still_notifies_on_failure(
     mailbox_component: tuple[MailboxComponent, DummyBridge],
     runtime_state: RuntimeState,
-    mailbox_logger: logging.Logger,
 ) -> None:
     component, bridge = mailbox_component
-    runtime_state.enqueue_mailbox_message(b"delta", mailbox_logger)
+    runtime_state.enqueue_mailbox_message(b"delta")
 
     async def flaky_enqueue(
         message: QueuedPublish,

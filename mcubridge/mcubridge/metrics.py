@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from collections.abc import Awaitable, Callable, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import (
     Any,
     cast,
@@ -14,6 +14,7 @@ from typing import (
 import msgspec
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from prometheus_client.core import Metric
+from prometheus_client.registry import Collector
 
 from .protocol.structures import QueuedPublish
 from .protocol.topics import Topic, topic_path
@@ -228,7 +229,7 @@ async def publish_bridge_snapshots(
             tg.create_task(periodic_task(_handshake_tick, handshake_seconds, logger))
 
 
-class RuntimeStateCollector:
+class RuntimeStateCollector(Collector):
     """[SIL-2] Dynamic collector for Prometheus dimensional metrics.
 
     Provides on-demand mapping of RuntimeState attributes to Prometheus Gauge
@@ -238,7 +239,7 @@ class RuntimeStateCollector:
     def __init__(self, state: RuntimeState) -> None:
         self._state = state
 
-    def collect(self) -> Iterator[Metric]:
+    def collect(self) -> Iterable[Metric]:
         """Collect dimensional metrics from the current daemon state."""
         from prometheus_client.core import GaugeMetricFamily
 

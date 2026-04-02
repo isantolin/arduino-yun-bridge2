@@ -1254,12 +1254,10 @@ class TestRuntimeStateEdges:
         assert not state.is_connected
 
     def test_enqueue_console_chunk_overflow(self, state):
-        logger = logging.getLogger("test.console")
-        state.enqueue_console_chunk(b"x" * 100, logger)
+        state.enqueue_console_chunk(b"x" * 100)
 
     def test_requeue_console_chunk_front(self, state):
-        logger = logging.getLogger("test.console")
-        state.enqueue_console_chunk(b"hi", logger)
+        state.enqueue_console_chunk(b"hi")
         state.requeue_console_chunk_front(b"x" * 1000)
 
     def test_record_handshake_fatal(self, state):
@@ -1315,14 +1313,12 @@ class TestRuntimeStateEdges:
         await state.flush_mqtt_spool()
 
     def test_enqueue_mailbox_overflow(self, state):
-        logger = logging.getLogger("test.mailbox")
         # Fill up to limit
         for i in range(state.mailbox_queue_limit + 1):
-            state.enqueue_mailbox_message(f"msg{i}".encode(), logger)
+            state.enqueue_mailbox_message(f"msg{i}".encode())
 
     def test_pop_mailbox_message(self, state):
-        logger = logging.getLogger("test.mailbox")
-        state.enqueue_mailbox_message(b"message1", logger)
+        state.enqueue_mailbox_message(b"message1")
         result = state.pop_mailbox_message()
         assert result == b"message1"
 

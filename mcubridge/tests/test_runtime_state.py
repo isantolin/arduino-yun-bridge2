@@ -42,17 +42,14 @@ def logger_spy() -> Iterator[tuple[logging.Logger, _ListHandler]]:
 
 def test_enqueue_console_chunk_trims_and_drops(
     runtime_state: RuntimeState,
-    logger_spy: tuple[logging.Logger, _ListHandler],
 ) -> None:
-    logger, handler = logger_spy
-
-    runtime_state.enqueue_console_chunk(b"a" * 128, logger)
+    runtime_state.enqueue_console_chunk(b"a" * 128)
     assert runtime_state.console_queue_bytes == 64
     assert runtime_state.console_to_mcu_queue[-1] == b"a" * 64
     assert runtime_state.console_truncated_chunks == 1
     assert runtime_state.console_truncated_bytes == 64
 
-    runtime_state.enqueue_console_chunk(b"b" * 64, logger)
+    runtime_state.enqueue_console_chunk(b"b" * 64)
     assert runtime_state.console_queue_bytes == 64
     assert runtime_state.console_to_mcu_queue[-1] == b"b" * 64
     assert runtime_state.console_dropped_chunks == 1
@@ -61,16 +58,13 @@ def test_enqueue_console_chunk_trims_and_drops(
 
 def test_enqueue_mailbox_message_respects_limits(
     runtime_state: RuntimeState,
-    logger_spy: tuple[logging.Logger, _ListHandler],
 ) -> None:
-    logger, handler = logger_spy
-
-    assert runtime_state.enqueue_mailbox_message(b"a" * 16, logger) is True
-    assert runtime_state.enqueue_mailbox_message(b"b" * 16, logger) is True
+    assert runtime_state.enqueue_mailbox_message(b"a" * 16) is True
+    assert runtime_state.enqueue_mailbox_message(b"b" * 16) is True
     assert runtime_state.mailbox_queue_bytes == 32
 
     # Next message should trigger rejection based on limit
-    assert runtime_state.enqueue_mailbox_message(b"c" * 40, logger) is False
+    assert runtime_state.enqueue_mailbox_message(b"c" * 40) is False
     assert runtime_state.mailbox_queue_bytes == 32
     assert len(runtime_state.mailbox_queue) == 2
 
@@ -81,15 +75,12 @@ def test_enqueue_mailbox_message_respects_limits(
 
 def test_enqueue_mailbox_incoming_respects_limits(
     runtime_state: RuntimeState,
-    logger_spy: tuple[logging.Logger, _ListHandler],
 ) -> None:
-    logger, handler = logger_spy
-
-    assert runtime_state.enqueue_mailbox_incoming(b"x" * 16, logger) is True
-    assert runtime_state.enqueue_mailbox_incoming(b"y" * 16, logger) is True
+    assert runtime_state.enqueue_mailbox_incoming(b"x" * 16) is True
+    assert runtime_state.enqueue_mailbox_incoming(b"y" * 16) is True
     assert runtime_state.mailbox_incoming_queue_bytes == 32
 
-    assert runtime_state.enqueue_mailbox_incoming(b"z" * 40, logger) is False
+    assert runtime_state.enqueue_mailbox_incoming(b"z" * 40) is False
     assert runtime_state.mailbox_incoming_queue_bytes == 32
     assert len(runtime_state.mailbox_incoming_queue) == 2
 
@@ -101,7 +92,7 @@ def test_enqueue_mailbox_incoming_respects_limits(
 def test_requeue_console_chunk_front_restores_bytes(
     runtime_state: RuntimeState,
 ) -> None:
-    runtime_state.enqueue_console_chunk(b"hello", logging.getLogger())
+    runtime_state.enqueue_console_chunk(b"hello")
     queued = runtime_state.pop_console_chunk()
     assert runtime_state.console_queue_bytes == 0
 

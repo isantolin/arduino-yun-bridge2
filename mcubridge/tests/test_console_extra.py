@@ -71,7 +71,7 @@ async def test_console_flush_queue_send_fail() -> None:
         ctx.send_frame = AsyncMock(return_value=False)
         cc = ConsoleComponent(config, state, ctx)
 
-        state.enqueue_console_chunk(b"hello", MagicMock())
+        state.enqueue_console_chunk(b"hello")
         await cc.flush_queue()
         assert len(state.console_to_mcu_queue) > 0
     finally:

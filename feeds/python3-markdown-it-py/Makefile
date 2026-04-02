@@ -5,7 +5,8 @@ PKG_VERSION:=4.0.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=markdown-it-py
-PKG_HASH:=87327c59b172c5011896038353a81343b6754500a08cd7a4973bb48c6d578147
+PYPI_SOURCE_NAME:=markdown_it_py
+PKG_HASH:=cb0a2b4aa34f932c007117b194e945bd74e0ec24133ceb5bac59009cda1cb9f3
 
 PKG_BUILD_DEPENDS:=python-setuptools/host python-build/host python-installer/host python-wheel/host
 

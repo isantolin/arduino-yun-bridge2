@@ -122,8 +122,11 @@ class PersistentQueue(Generic[T]):
             self._activate_fallback_locked("rewrite_failed", exc)
 
     def __del__(self) -> None:
-        if not getattr(self, "_closed", True):
-            self.close()
+        try:
+            if not getattr(self, "_closed", True):
+                self.close()
+        except Exception:
+            pass
 
     def close(self) -> None:
         with self._lock:

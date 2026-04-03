@@ -1,10 +1,9 @@
 *:*etl*
 *:*arduino_stub*
+*:*nanopb*
 # False positive: cppcheck stub millis() returns 0 but real hardware increments
-knownConditionTrueFalse:*Bridge.cppfunctionStatic:*mcubridge-library-arduino/src/protocol/rpc_frame.h
-functionStatic:*mcubridge-library-arduino/src/services/FileSystem.cpp
-functionStatic:*mcubridge-library-arduino/src/services/Mailbox.cpp
-functionStatic:*mcubridge-library-arduino/src/services/Process.cpp
+knownConditionTrueFalse:*Bridge.cpp
+functionStatic:*mcubridge-library-arduino/src/protocol/rpc_frame.h
 unknownMacro:*mcubridge-library-arduino/src/security/sha256.cpp
 
 invalidLifetime:*mcubridge-library-arduino/src/security/sha256.h

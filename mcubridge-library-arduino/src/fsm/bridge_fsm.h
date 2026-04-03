@@ -224,7 +224,7 @@ class StateFault : public etl::fsm_state<BridgeFsm, StateFault, STATE_FAULT,
 //   1. Records the pre-transition state
 //   2. Delegates to etl::fsm::receive()
 //   3. On state change: fires onExitState() then onEnterState()
-//   4. Tracks previous_state_ for diagnostic reporting
+//   4. Fires exit/entry actions for timer safety
 //
 // Exit actions (defense-in-depth):
 //   STATE_STABILIZING  → stop TIMER_STARTUP_STABILIZATION
@@ -238,8 +238,7 @@ class BridgeFsm : public etl::fsm {
   BridgeFsm()
       : etl::fsm(NUMBER_OF_STATES),
         state_list_{},
-        timers_(nullptr),
-        previous_state_(STATE_STABILIZING) {}
+        timers_(nullptr) {}
 
   void setTimers(bridge::scheduler::SimpleTimer<bridge::scheduler::NUMBER_OF_TIMERS>* timers) {
     timers_ = timers;
@@ -255,7 +254,6 @@ class BridgeFsm : public etl::fsm {
     state_list_[STATE_FAULT] = &state_fault;
 
     set_states(state_list_, NUMBER_OF_STATES);
-    previous_state_ = STATE_STABILIZING;
     start();
   }
 
@@ -266,8 +264,6 @@ class BridgeFsm : public etl::fsm {
   bool isAwaitingAck() const { return get_state_id() == STATE_AWAITING_ACK; }
   bool isFault() const { return get_state_id() == STATE_FAULT; }
   bool isSynchronized() const { return isIdle() || isAwaitingAck(); }
-
-  StateId previousState() const { return previous_state_; }
 
   void stabilized() { dispatchEvent(EvStabilized()); }
   void handshakeStart() { dispatchEvent(EvHandshakeStart()); }
@@ -288,7 +284,6 @@ class BridgeFsm : public etl::fsm {
     if (before != after) {
       onExitState(before);
       onEnterState(after);
-      previous_state_ = before;
     }
   }
 
@@ -319,7 +314,6 @@ class BridgeFsm : public etl::fsm {
 
   etl::ifsm_state* state_list_[NUMBER_OF_STATES];
   bridge::scheduler::SimpleTimer<bridge::scheduler::NUMBER_OF_TIMERS>* timers_;
-  StateId previous_state_;
   StateStabilizing state_stabilizing;
   StateUnsynchronized state_unsynchronized;
   StateSyncing state_syncing;

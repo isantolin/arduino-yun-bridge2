@@ -95,7 +95,7 @@ class MQTTPublishSpool:
             self._dropped_due_to_limit += 1
             self._trim_events += 1
             self._last_trim_unix = time.time()
-        record = msgspec.structs.asdict(message.to_record())
+        record = msgspec.structs.asdict(message)
         if not self._records.append(record):
             raise MQTTSpoolError("append_failed")
         self._refresh_fallback_state()
@@ -116,7 +116,7 @@ class MQTTPublishSpool:
     def requeue(self, message: QueuedPublish) -> None:
         if self._closed:
             return
-        record = msgspec.structs.asdict(message.to_record())
+        record = msgspec.structs.asdict(message)
         if not self._records.appendleft(record):
             raise MQTTSpoolError("requeue_failed")
         self._refresh_fallback_state()

@@ -381,6 +381,10 @@ class BridgeDispatcher:
     @staticmethod
     def _payload_bytes(payload: Any) -> bytes:
         """[SIL-2] Optimized zero-copy payload extraction using library primitives."""
+        if isinstance(payload, bytes):
+            return payload
+        if isinstance(payload, (bytearray, memoryview)):
+            return bytes(payload)
         try:
             return msgspec.convert(payload, bytes)
         except (msgspec.MsgspecError, TypeError, ValueError):

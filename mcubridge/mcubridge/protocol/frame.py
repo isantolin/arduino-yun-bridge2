@@ -102,15 +102,13 @@ class Frame(msgspec.Struct, frozen=True):
 
     @property
     def is_compressed(self) -> bool:
-        """Check if the frame payload is compressed."""
-        res: Any = COMMAND_ID_CODEC.parse(Int16ub.build(int(self.command_id)))
-        return bool(res.is_compressed)
+        """Check if the frame payload is compressed (bit 15)."""
+        return bool(int(self.command_id) & 0x8000)
 
     @property
     def raw_command_id(self) -> int:
         """Get the raw 15-bit command ID without the compression flag."""
-        res: Any = COMMAND_ID_CODEC.parse(Int16ub.build(int(self.command_id)))
-        return int(res.raw_id)
+        return int(self.command_id) & 0x7FFF
 
     def build(self) -> bytes:
         """Build the binary frame representation."""

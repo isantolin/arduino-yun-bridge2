@@ -5,7 +5,7 @@ PKG_VERSION:=14.3.3
 PKG_RELEASE:=1
 
 PYPI_NAME:=rich
-PKG_HASH:=439594978a49a09530cff7ebc4b5c7103ef57baf48d5ea3184f21d9a2befa098
+PKG_HASH:=b8daa0b9e4eef54dd8cf7c86c03713f53241884e814f4e2f5fb342fe520f639b
 
 PKG_BUILD_DEPENDS:=python-setuptools/host python-build/host python-installer/host python-wheel/host
 

@@ -552,17 +552,14 @@ class BaseStruct(msgspec.Struct, frozen=True):
     def decode(cls: Type[T], data: bytes | bytearray | memoryview, command_id: int | None = None) -> T:
         try:
             pb_obj = cls.PB_CLASS()
-            pb_obj.ParseFromString(bytes(data))
-            from google.protobuf.json_format import MessageToDict
-            d = MessageToDict(
-                pb_obj,
-                preserving_proto_field_name=True,
-                use_integers_for_enums=True,
-                always_print_fields_with_no_presence=True,
-            )
-            if cls.__name__ == "CapabilitiesPacket" and "feat" in d:
-                d["feat"] = _int_to_capabilities(int(d["feat"]))
-            return msgspec.convert(d, cls)
+            pb_obj.ParseFromString(data if isinstance(data, bytes) else bytes(data))
+            kwargs: dict[str, Any] = {
+                field.name: getattr(pb_obj, field.name)
+                for field in pb_obj.DESCRIPTOR.fields
+            }
+            if cls.__name__ == "CapabilitiesPacket" and "feat" in kwargs:
+                kwargs["feat"] = _int_to_capabilities(int(kwargs["feat"]))
+            return msgspec.convert(kwargs, cls)
         except (
             msgspec.MsgspecError,
             google.protobuf.message.Error,

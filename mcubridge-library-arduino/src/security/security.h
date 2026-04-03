@@ -10,8 +10,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
-#include <time.h>
 
 #include <etl/algorithm.h>
 #include <etl/span.h>

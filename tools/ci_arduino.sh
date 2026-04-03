@@ -83,69 +83,88 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 
-for FQBN in "${TARGET_BOARDS[@]}"; do
-    echo "=================================================="
-    echo "Targeting Board: $FQBN"
-    echo "=================================================="
+# Maximum parallel compilation jobs
+MAX_JOBS=${MAX_JOBS:-4}
 
-    find "$EXAMPLES_DIR" -name "*.ino" | while read -r sketch; do
-        sketch_dir=$(dirname "$sketch")
-        sketch_name=$(basename "$sketch_dir")
-        
-        echo "Building $sketch_name for $FQBN..."
-        
-        # We rely on arduino-cli to find libraries in USER_LIB_DIR
-        # WOLFSSL_USER_SETTINGS is defined to use our config.
-        # -fno-strict-aliasing and -Wno-lto-type-mismatch are added to resolve wolfSSL LTO warnings.
-        COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS"
-        BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--libraries" "$PWD/.dummy_libs" "--warnings" "default"
-                     "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
-                     "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
-                     "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-                     "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-                     "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch")
-        
-        # Add extra properties
-        BUILD_FLAGS+=("${EXTRA_PROPS[@]}")
+# Compile a single sketch for a given board.
+# Runs as a subshell so it can be backgrounded.
+compile_sketch() {
+    local FQBN="$1"
+    local sketch="$2"
+    local sketch_dir sketch_name BOARD_NAME LOG_FILE
 
-        if [ -n "$BUILD_OUTPUT_DIR" ]; then
-            SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/${FQBN//:/-}/$sketch_name"
-            mkdir -p "$SKETCH_BUILD_DIR"
-            BUILD_FLAGS+=("--build-path" "$SKETCH_BUILD_DIR")
-        fi
+    sketch_dir=$(dirname "$sketch")
+    sketch_name=$(basename "$sketch_dir")
+    BOARD_NAME="${FQBN//:/-}"
+    LOG_FILE=$(mktemp "/tmp/arduino_build_${BOARD_NAME}_${sketch_name}.XXXXXX.log")
 
+    COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS"
+    local BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--libraries" "$PWD/.dummy_libs" "--warnings" "default"
+                 "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
+                 "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
+                 "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+                 "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+                 "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch")
+
+    BUILD_FLAGS+=("${EXTRA_PROPS[@]}")
+
+    if [ -n "$BUILD_OUTPUT_DIR" ]; then
+        local SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/${BOARD_NAME}/$sketch_name"
+        mkdir -p "$SKETCH_BUILD_DIR"
+        BUILD_FLAGS+=("--build-path" "$SKETCH_BUILD_DIR")
+    fi
+
+    if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
+        echo "✓ $sketch_name ($FQBN)"
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"
-            BOARD_NAME="${FQBN//:/-}"
-            LOG_FILE="$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
-            
-            if ! arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
-                echo "✗ $sketch_name failed to compile for $FQBN!"
-                cat "$LOG_FILE"
-                if [ "$FQBN" == "arduino:avr:mega" ]; then
-                    echo "Critical failure for target $FQBN. Aborting."
-                    exit 1
-                else
-                    echo "Failure for $FQBN is not critical. Continuing..."
-                fi
-            else
-                echo "✓ $sketch_name compiled successfully"
-            fi
-        else
-            if ! arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch"; then
-                echo "✗ $sketch_name failed to compile for $FQBN!"
-                if [ "$FQBN" == "arduino:avr:mega" ]; then
-                    echo "Critical failure for target $FQBN. Aborting."
-                    exit 1
-                else
-                    echo "Failure for $FQBN is not critical. Continuing..."
-                fi
-            else
-                echo "✓ $sketch_name compiled successfully"
-            fi
+            cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
         fi
-    done
+        rm -f "$LOG_FILE"
+        return 0
+    else
+        echo "✗ $sketch_name failed for $FQBN!"
+        cat "$LOG_FILE"
+        if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
+            mkdir -p "$ARDUINO_METRICS_DIR"
+            cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
+        fi
+        rm -f "$LOG_FILE"
+        # Critical failure only for mega
+        if [ "$FQBN" == "arduino:avr:mega" ]; then
+            return 1
+        fi
+        return 0
+    fi
+}
+
+# Collect all board×sketch combinations, then run in parallel
+echo "Compiling examples in parallel (max $MAX_JOBS jobs)..."
+pids=()
+CRITICAL_FAIL=0
+
+for FQBN in "${TARGET_BOARDS[@]}"; do
+    while IFS= read -r sketch; do
+        compile_sketch "$FQBN" "$sketch" &
+        pids+=($!)
+
+        # Throttle to MAX_JOBS
+        if [[ ${#pids[@]} -ge $MAX_JOBS ]]; then
+            wait "${pids[0]}" || CRITICAL_FAIL=1
+            pids=("${pids[@]:1}")
+        fi
+    done < <(find "$EXAMPLES_DIR" -name "*.ino")
 done
+
+# Wait for remaining jobs
+for pid in "${pids[@]}"; do
+    wait "$pid" || CRITICAL_FAIL=1
+done
+
+if [[ $CRITICAL_FAIL -ne 0 ]]; then
+    echo "Critical compilation failure detected. Aborting."
+    exit 1
+fi
 
 echo "--------------------------------------------------"
 echo "All examples compiled successfully for ALL targets!"

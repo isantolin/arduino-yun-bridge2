@@ -165,7 +165,7 @@ rationale = "Sub-dependency for markdown-it-py"
 [[dependency]]
 name = "pygments"
 openwrt = "python3-pygments"
-pip = "pygments==2.19.2"
+pip = "pygments==2.20.0"
 rationale = "Sub-dependency for rich"
 
 [[dependency]]

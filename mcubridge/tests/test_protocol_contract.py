@@ -111,3 +111,34 @@ def test_handshake_tag_reference_vector_matches_spec() -> None:
     expected = hmac.new(auth_key, nonce, hashlib.sha256).digest()[: protocol.HANDSHAKE_TAG_LENGTH]
     computed = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
     assert computed == expected
+
+
+def _command_to_handler(name: str) -> str:
+    """Convert CMD_FOO_BAR → _handleFooBar."""
+    raw = name.removeprefix("CMD_")
+    return "_handle" + "".join(p.capitalize() for p in raw.split("_"))
+
+
+def test_mcu_inbound_commands_have_cpp_jump_table_handlers() -> None:
+    """Every linux_to_mcu command in spec.toml must have a C++ handler in Bridge.cpp."""
+    bridge_cpp = REPO_ROOT / "mcubridge-library-arduino/src/Bridge.cpp"
+    cpp_content = bridge_cpp.read_text(encoding="utf-8")
+
+    handler_re = re.compile(r"&BridgeClass::(_handle\w+)")
+    cpp_handlers = set(handler_re.findall(cpp_content))
+
+    raw = msgspec.toml.decode(SPEC_PATH.read_text(encoding="utf-8"))
+    mcu_inbound = [
+        cmd for cmd in raw.get("commands", [])
+        if "linux_to_mcu" in cmd.get("directions", [])
+    ]
+
+    missing = [
+        f"{cmd['name']} (0x{cmd['value']:02X}) → {_command_to_handler(cmd['name'])}"
+        for cmd in mcu_inbound
+        if _command_to_handler(cmd["name"]) not in cpp_handlers
+    ]
+    assert not missing, (
+        f"{len(missing)} MCU-inbound command(s) without C++ jump-table handler:\n"
+        + "\n".join(f"  {m}" for m in missing)
+    )

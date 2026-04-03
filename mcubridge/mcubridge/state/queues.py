@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import structlog
-import shutil
 import sqlite3
 from collections import deque
 from pathlib import Path
 from threading import Lock
-from typing import Any, Generic, Iterable, TypeVar, cast
+from typing import Generic, Iterable, TypeVar, cast
 
 import msgspec
-from persistqueue import Empty, FIFOSQLiteQueue
+from diskcache import Deque as DiskDeque
 
 T = TypeVar("T")
 
@@ -43,7 +42,7 @@ class PersistentQueue(Generic[T]):
         self.directory = Path(directory) if directory else None
         self.max_items = max_items
         self._items: deque[T] = deque()
-        self._store: FIFOSQLiteQueue | None = None
+        self._store: DiskDeque | None = None
         self._fallback_active = False
         self._fallback_reason: str | None = None
         self._last_error: str | None = None
@@ -59,7 +58,7 @@ class PersistentQueue(Generic[T]):
         with self._lock:
             if self._store is not None:
                 try:
-                    self._store.close()
+                    self._store.cache.close()  # type: ignore[reportUnknownMemberType]
                 except Exception as e:
                     logger.error("Error closing store: %s", e)
                 finally:
@@ -67,25 +66,23 @@ class PersistentQueue(Generic[T]):
                     self._store = None
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
-                self._store = FIFOSQLiteQueue(
-                    str(self.directory),
-                    auto_commit=True,
-                    multithreading=True,
-                )
+                self._store = DiskDeque(directory=str(self.directory))
                 self._fallback_active = False
                 self._fallback_reason = None
                 self._last_error = None
 
                 # [SIL-2] Rebuild RAM mirror from Disk on startup
-                rows = cast(list[dict[str, Any]], self._store.queue())
-                self._items = deque(cast(T, row["data"]) for row in rows)
+                self._items = deque(
+                    cast(T, item)
+                    for item in list(self._store)  # type: ignore[reportUnknownArgumentType]
+                )
             except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
                 self._activate_fallback_locked("initialization_failed", exc)
 
     def _activate_fallback_locked(self, reason: str, exc: BaseException | None = None) -> None:
         if self._store is not None:
             try:
-                self._store.close()
+                self._store.cache.close()  # type: ignore[reportUnknownMemberType]
             except Exception:
                 pass
             self._store = None
@@ -94,32 +91,6 @@ class PersistentQueue(Generic[T]):
         self._last_error = str(exc) if exc is not None else None
         if exc is not None:
             logger.warning("Persistent queue fallback (%s): %s", reason, exc)
-
-    def _rewrite_store_locked(self) -> None:
-        """Helper to synchronize SQLite when non-FIFO operations occur."""
-        if self.directory is None or self._closed:
-            return
-        try:
-            if self._store is not None:
-                try:
-                    self._store.close()
-                except Exception:
-                    pass
-                finally:
-                    del self._store
-                    self._store = None
-
-            shutil.rmtree(self.directory, ignore_errors=True)
-            self.directory.mkdir(parents=True, exist_ok=True)
-            self._store = FIFOSQLiteQueue(
-                str(self.directory),
-                auto_commit=True,
-                multithreading=True,
-            )
-            for item in self._items:
-                self._store.put(item)
-        except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
-            self._activate_fallback_locked("rewrite_failed", exc)
 
     def __del__(self) -> None:
         try:
@@ -133,7 +104,7 @@ class PersistentQueue(Generic[T]):
             self._closed = True
             if self._store is not None:
                 try:
-                    self._store.close()
+                    self._store.cache.close()  # type: ignore[reportUnknownMemberType]
                 except Exception as e:
                     logger.error("Error closing PersistentQueue: %s", e)
                 finally:
@@ -165,14 +136,14 @@ class PersistentQueue(Generic[T]):
                     dropped_chunks += 1
                     if self._store is not None:
                         try:
-                            self._store.get_nowait()
-                        except Empty:
-                            break
+                            self._store.popleft()  # type: ignore[reportUnknownMemberType]
+                        except (IndexError, sqlite3.Error):
+                            pass
 
             self._items.append(item)
             if self._store is not None:
                 try:
-                    self._store.put(item)
+                    self._store.append(item)  # type: ignore[reportUnknownMemberType]
                 except (sqlite3.Error, RuntimeError) as e:
                     self._activate_fallback_locked("write_failed", e)
             return QueueEvent(success=True, dropped_chunks=dropped_chunks)
@@ -183,7 +154,10 @@ class PersistentQueue(Generic[T]):
                 return QueueEvent(success=False)
             self._items.appendleft(item)
             if self._store is not None:
-                self._rewrite_store_locked()
+                try:
+                    self._store.appendleft(item)  # type: ignore[reportUnknownMemberType]
+                except (sqlite3.Error, RuntimeError) as e:
+                    self._activate_fallback_locked("write_failed", e)
             return QueueEvent(success=True)
 
     def popleft(self) -> T | None:
@@ -193,9 +167,9 @@ class PersistentQueue(Generic[T]):
             item = self._items.popleft()
             if self._store is not None:
                 try:
-                    self._store.get_nowait()
-                except (Empty, sqlite3.Error, RuntimeError):
-                    self._rewrite_store_locked()
+                    self._store.popleft()  # type: ignore[reportUnknownMemberType]
+                except (IndexError, sqlite3.Error, RuntimeError):
+                    pass
             return item
 
     def pop(self) -> T:
@@ -206,14 +180,20 @@ class PersistentQueue(Generic[T]):
                 raise IndexError("pop from an empty deque")
             item = self._items.pop()
             if self._store is not None:
-                self._rewrite_store_locked()
+                try:
+                    self._store.pop()  # type: ignore[reportUnknownMemberType]
+                except (IndexError, sqlite3.Error, RuntimeError):
+                    pass
             return item
 
     def clear(self) -> None:
         with self._lock:
             self._items.clear()
             if self._store is not None:
-                self._rewrite_store_locked()
+                try:
+                    self._store.clear()  # type: ignore[reportUnknownMemberType]
+                except (sqlite3.Error, RuntimeError) as e:
+                    self._activate_fallback_locked("clear_failed", e)
 
     def __len__(self) -> int:
         return len(self._items)

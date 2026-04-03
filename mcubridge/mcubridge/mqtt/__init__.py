@@ -6,23 +6,40 @@ transport layer and by external test fixtures.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import Protocol
 
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from mcubridge.protocol import protocol
 
-if TYPE_CHECKING:
-    from mcubridge.protocol.structures import QueuedPublish
+
+class MQTTPublishable(Protocol):
+    """Structural type for objects that carry MQTT v5 publish properties."""
+
+    @property
+    def content_type(self) -> str | None: ...
+    @property
+    def payload_format_indicator(self) -> int | None: ...
+    @property
+    def message_expiry_interval(self) -> int | None: ...
+    @property
+    def response_topic(self) -> str | None: ...
+    @property
+    def correlation_data(self) -> bytes | None: ...
+    @property
+    def user_properties(self) -> Sequence[tuple[str, str]]: ...
+
 
 __all__ = [
     "build_mqtt_connect_properties",
     "build_mqtt_properties",
+    "MQTTPublishable",
 ]
 
 
-def build_mqtt_properties(message: QueuedPublish) -> Properties | None:
+def build_mqtt_properties(message: MQTTPublishable) -> Properties | None:
     """Construct Paho MQTT v5 properties from a message object."""
     if not any(
         (

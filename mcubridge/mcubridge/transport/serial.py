@@ -22,7 +22,6 @@ from cobs.cobs import encode as cobs_encode, decode as cobs_decode, DecodeError 
 import serial
 import serial_asyncio_fast
 import tenacity
-from transitions import Machine
 
 from mcubridge.config.const import (
     MAX_SERIAL_FRAME_BYTES,
@@ -33,6 +32,7 @@ from mcubridge.protocol import protocol, structures as structures
 from mcubridge.protocol.frame import Frame
 from mcubridge.util.hex import log_binary_traffic
 from mcubridge.util.retry import serial_exponential_retryer
+from mcubridge.util.fsm import create_fsm
 
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
@@ -51,10 +51,11 @@ class SerialTransport:
     STATE_NEGOTIATING: Final[str] = "negotiating"
     STATE_CONNECTED: Final[str] = "connected"
 
-    # FSM Method Stubs for static analysis (provided by transitions.Machine)
-    def begin_negotiate(self) -> None: ...
-    def mark_connected(self) -> None: ...
-    def mark_disconnected(self) -> None: ...
+    if TYPE_CHECKING:
+        # FSM trigger stubs for static analysis (bound at runtime by transitions.Machine)
+        def begin_negotiate(self) -> None: ...
+        def mark_connected(self) -> None: ...
+        def mark_disconnected(self) -> None: ...
 
     def __init__(
         self,
@@ -80,32 +81,20 @@ class SerialTransport:
 
         # State Machine
         self.fsm_state: str = self.STATE_DISCONNECTED
-        self._machine = Machine(
-            model=self,
+        self._machine = create_fsm(
+            self,
             states=[
                 self.STATE_DISCONNECTED,
                 self.STATE_NEGOTIATING,
                 self.STATE_CONNECTED,
             ],
+            transitions=[
+                {"trigger": "begin_negotiate", "source": self.STATE_DISCONNECTED, "dest": self.STATE_NEGOTIATING},
+                {"trigger": "mark_connected", "source": self.STATE_NEGOTIATING, "dest": self.STATE_CONNECTED},
+                {"trigger": "mark_disconnected", "source": "*", "dest": self.STATE_DISCONNECTED},
+            ],
             initial=self.STATE_DISCONNECTED,
-            after_state_change=self._on_state_change,
-            queued=True,
-            model_attribute="fsm_state",
-        )
-        self._machine.add_transition(
-            trigger="begin_negotiate",
-            source=self.STATE_DISCONNECTED,
-            dest=self.STATE_NEGOTIATING,
-        )
-        self._machine.add_transition(
-            trigger="mark_connected",
-            source=self.STATE_NEGOTIATING,
-            dest=self.STATE_CONNECTED,
-        )
-        self._machine.add_transition(
-            trigger="mark_disconnected",
-            source="*",
-            dest=self.STATE_DISCONNECTED,
+            after_state_change="_on_state_change",
         )
 
     def _switch_local_baudrate(self, target_baud: int) -> None:

@@ -753,7 +753,7 @@ def main(
         sys.stderr.write(f"Generated Packet classes in {structures}\n")
 
     # Step 4: Generate type stubs for untyped libraries using pyright
-    untyped_libs = ["transitions", "persistqueue"]
+    untyped_libs = ["transitions", "diskcache"]
     sys.stderr.write(f"Generating type stubs for {', '.join(untyped_libs)}...\n")
     for lib in untyped_libs:
         stub_cmd = [sys.executable, "-m", "pyright", "--createstub", lib]

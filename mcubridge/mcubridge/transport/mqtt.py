@@ -17,7 +17,7 @@ from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS
 from mcubridge.state.context import RuntimeState
 from mcubridge.util import log_hexdump
 from mcubridge.util.mqtt_helper import configure_tls_context
-from transitions import Machine
+from mcubridge.util.fsm import create_fsm
 
 from ..util.retry import before_sleep_with_metric
 
@@ -36,11 +36,12 @@ class MqttTransport:
     STATE_SUBSCRIBING = "subscribing"
     STATE_READY = "ready"
 
-    # FSM Method Stubs for static analysis (provided by transitions.Machine)
-    def connect(self) -> None: ...
-    def connected(self) -> None: ...
-    def subscribed(self) -> None: ...
-    def disconnect(self) -> None: ...
+    if TYPE_CHECKING:
+        # FSM trigger stubs for static analysis (bound at runtime by transitions.Machine)
+        def connect(self) -> None: ...
+        def connected(self) -> None: ...
+        def subscribed(self) -> None: ...
+        def disconnect(self) -> None: ...
 
     def __init__(
         self,
@@ -53,24 +54,22 @@ class MqttTransport:
         self.service = service
         self.fsm_state = self.STATE_DISCONNECTED
 
-        self.machine = Machine(
-            model=self,
+        self.machine = create_fsm(
+            self,
             states=[
                 self.STATE_DISCONNECTED,
                 self.STATE_CONNECTING,
                 self.STATE_SUBSCRIBING,
                 self.STATE_READY,
             ],
+            transitions=[
+                {"trigger": "connect", "source": "*", "dest": self.STATE_CONNECTING},
+                {"trigger": "connected", "source": self.STATE_CONNECTING, "dest": self.STATE_SUBSCRIBING},
+                {"trigger": "subscribed", "source": self.STATE_SUBSCRIBING, "dest": self.STATE_READY},
+                {"trigger": "disconnect", "source": "*", "dest": self.STATE_DISCONNECTED},
+            ],
             initial=self.STATE_DISCONNECTED,
-            model_attribute="fsm_state",
-            queued=True,
-            ignore_invalid_triggers=True,
         )
-
-        self.machine.add_transition("connect", "*", self.STATE_CONNECTING)
-        self.machine.add_transition("connected", self.STATE_CONNECTING, self.STATE_SUBSCRIBING)
-        self.machine.add_transition("subscribed", self.STATE_SUBSCRIBING, self.STATE_READY)
-        self.machine.add_transition("disconnect", "*", self.STATE_DISCONNECTED)
 
     async def run(self) -> None:
         """Main run loop with reconnection logic."""

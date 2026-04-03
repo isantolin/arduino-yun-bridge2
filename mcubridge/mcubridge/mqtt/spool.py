@@ -1,4 +1,4 @@
-"""Durable MQTT publish spool backed by persist-queue."""
+"""Durable MQTT publish spool backed by diskcache."""
 
 from __future__ import annotations
 

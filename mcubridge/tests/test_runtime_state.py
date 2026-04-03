@@ -349,8 +349,8 @@ async def test_spool_fallback_updates_state(
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Force a disk full error during persist-queue initialization.
-    with patch("mcubridge.state.queues.FIFOSQLiteQueue", side_effect=OSError(errno.ENOSPC, "disk full")):
+    # Force a disk full error during diskcache initialization.
+    with patch("mcubridge.state.queues.DiskDeque", side_effect=OSError(errno.ENOSPC, "disk full")):
         state = create_runtime_state(runtime_config, initialize_spool=True)
         try:
             # The spool now degrades to RAM if durable initialization fails.

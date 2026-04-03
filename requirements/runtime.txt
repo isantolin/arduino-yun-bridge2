@@ -11,7 +11,7 @@ mdurl==0.1.2
 msgspec==0.20.0
 nanopb==0.4.9.1
 paho-mqtt==2.1.0
-persist-queue==1.1.0
+diskcache==5.6.3
 prometheus-client==0.24.1
 psutil==7.2.2
 pygments==2.20.0

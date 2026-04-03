@@ -9,8 +9,6 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from transitions import Machine
-
 from .config.const import (
     DEFAULT_WATCHDOG_INTERVAL,
     WATCHDOG_MIN_INTERVAL,
@@ -18,6 +16,7 @@ from .config.const import (
 )
 from .state.context import RuntimeState
 from .util.periodic import periodic_task
+from .util.fsm import create_fsm
 import structlog
 
 WatchdogWrite = Callable[[bytes], None]
@@ -57,26 +56,19 @@ class WatchdogKeepalive:
         self._logger = logger or structlog.get_logger("mcubridge.watchdog")
 
         # FSM Initialization
-        self.state_machine = Machine(
-            model=self,
+        self.state_machine = create_fsm(
+            self,
             states=[
                 self.STATE_INIT,
                 {"name": self.STATE_RUNNING, "on_enter": "_on_fsm_start"},
                 {"name": self.STATE_STOPPED, "on_enter": "_on_fsm_stop"},
             ],
+            transitions=[
+                {"trigger": "start", "source": [self.STATE_INIT, self.STATE_STOPPED], "dest": self.STATE_RUNNING},
+                {"trigger": "stop", "source": self.STATE_RUNNING, "dest": self.STATE_STOPPED},
+            ],
             initial=self.STATE_INIT,
-            ignore_invalid_triggers=True,
-            queued=True,
-            model_attribute="fsm_state",
         )
-
-        # FSM Transitions
-        self.state_machine.add_transition(
-            trigger="start",
-            source=[self.STATE_INIT, self.STATE_STOPPED],
-            dest=self.STATE_RUNNING,
-        )
-        self.state_machine.add_transition(trigger="stop", source=self.STATE_RUNNING, dest=self.STATE_STOPPED)
 
     def _on_fsm_start(self) -> None:
         """Callback when watchdog starts."""

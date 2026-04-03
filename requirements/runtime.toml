@@ -109,10 +109,10 @@ pip = "sh==2.2.2"
 rationale = "Python subprocess interface for clean command execution"
 
 [[dependency]]
-name = "persist-queue"
-openwrt = "python3-persist-queue"
-pip = "persist-queue==1.1.0"
-rationale = "Thread-safe, multi-process safe, disk-based persistent queue"
+name = "diskcache"
+openwrt = "python3-diskcache"
+pip = "diskcache==5.6.3"
+rationale = "SQLite-backed disk cache with native deque support"
 
 [[dependency]]
 name = "mosquitto-client"

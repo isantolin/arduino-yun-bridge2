@@ -434,7 +434,7 @@ class BridgeService:
         desc = _STATUS_DESCRIPTIONS.get(status, "Unknown status code")
         text = payload.decode("utf-8", errors="ignore") if payload else ""
 
-        log_method = logger.warning if status != Status.ACK else logger.debug
+        log_method = logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
         if text:
             log_method("MCU > %s (seq=%d): %s (%s)", status.name, seq_id, desc, text)
         else:

@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
 import psutil
-from transitions import Machine
 
 from ..config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -61,6 +60,7 @@ from ..protocol.structures import (
 )
 from .metrics import DaemonMetrics
 from .queues import BoundedByteDeque, PersistentQueue
+from ..util.fsm import create_fsm
 
 logger = structlog.get_logger("mcubridge.state")
 
@@ -126,8 +126,8 @@ class ManagedProcess:
     _machine: Any = None
 
     def __post_init__(self) -> None:
-        self._machine = Machine(
-            model=self,
+        self._machine = create_fsm(
+            self,
             states=[
                 PROCESS_STATE_STARTING,
                 PROCESS_STATE_RUNNING,
@@ -135,18 +135,16 @@ class ManagedProcess:
                 PROCESS_STATE_FINISHED,
                 PROCESS_STATE_ZOMBIE,
             ],
+            transitions=[
+                {"trigger": "start", "source": PROCESS_STATE_STARTING, "dest": PROCESS_STATE_RUNNING},
+                {"trigger": "sigchld", "source": PROCESS_STATE_RUNNING, "dest": PROCESS_STATE_DRAINING},
+                {"trigger": "io_complete", "source": PROCESS_STATE_DRAINING, "dest": PROCESS_STATE_FINISHED},
+                {"trigger": "finalize", "source": PROCESS_STATE_FINISHED, "dest": PROCESS_STATE_ZOMBIE},
+                {"trigger": "force_kill", "source": "*", "dest": PROCESS_STATE_ZOMBIE},
+            ],
             initial=PROCESS_STATE_STARTING,
-            model_attribute="fsm_state",
             auto_transitions=False,
-            queued=True,
-            ignore_invalid_triggers=True,
         )
-        self._machine.add_transition("start", PROCESS_STATE_STARTING, PROCESS_STATE_RUNNING)
-        self._machine.add_transition("sigchld", PROCESS_STATE_RUNNING, PROCESS_STATE_DRAINING)
-        self._machine.add_transition("io_complete", PROCESS_STATE_DRAINING, PROCESS_STATE_FINISHED)
-        self._machine.add_transition("finalize", PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
-        # Allow force cleanup from any state
-        self._machine.add_transition("force_kill", "*", PROCESS_STATE_ZOMBIE)
 
     if TYPE_CHECKING:
 
@@ -232,18 +230,17 @@ class RuntimeState(msgspec.Struct):
     serial_writer: asyncio.BaseTransport | None = None
 
     # [SIL-2] Lifecycle FSM (Single Source of Truth)
-    _machine: Machine = msgspec.field(
-        default_factory=lambda: Machine(
-            model="self",
+    _machine: Any = msgspec.field(
+        default_factory=lambda: create_fsm(
+            "self",
             states=["disconnected", "connected", "synchronized"],
-            initial="disconnected",
-            ignore_invalid_triggers=True,
-            queued=True,
             transitions=[
                 {"trigger": "connect", "source": ["disconnected", "connected", "synchronized"], "dest": "connected"},
                 {"trigger": "synchronize", "source": ["connected", "synchronized"], "dest": "synchronized"},
                 {"trigger": "disconnect", "source": "*", "dest": "disconnected"},
             ],
+            initial="disconnected",
+            model_attribute="state",
         )
     )
 
@@ -300,7 +297,7 @@ class RuntimeState(msgspec.Struct):
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
 
-    # [SIL-2] Mailbox queues persist to /tmp through persist-queue when enabled.
+    # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
     mailbox_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())  # noqa: PLW0108
     mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())  # noqa: PLW0108
 

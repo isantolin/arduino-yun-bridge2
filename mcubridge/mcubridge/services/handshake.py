@@ -21,8 +21,6 @@ import msgspec
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
 
-from transitions import Machine
-
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
@@ -46,6 +44,7 @@ from ..security.security import (
 )
 from ..state.context import McuCapabilities, RuntimeState
 from ..util.retry import handshake_sync_retryer, serial_exponential_retryer
+from ..util.fsm import create_fsm
 
 from typing import Protocol
 
@@ -136,8 +135,8 @@ class SerialHandshakeManager:
         self._capabilities_future: asyncio.Future[bytes] | None = None
 
         # FSM Initialization
-        self.state_machine = Machine(
-            model=self,
+        self.state_machine = create_fsm(
+            self,
             states=[
                 self.STATE_UNSYNCHRONIZED,
                 self.STATE_RESETTING,
@@ -150,28 +149,21 @@ class SerialHandshakeManager:
                 },
                 self.STATE_FAULT,
             ],
+            transitions=[
+                {"trigger": "start_reset", "source": "*", "dest": self.STATE_RESETTING},
+                {"trigger": "start_sync", "source": self.STATE_RESETTING, "dest": self.STATE_SYNCING},
+                {"trigger": "start_confirm", "source": self.STATE_SYNCING, "dest": self.STATE_CONFIRMING},
+                {
+                    "trigger": "complete_handshake",
+                    "source": [self.STATE_SYNCING, self.STATE_CONFIRMING],
+                    "dest": self.STATE_SYNCHRONIZED,
+                },
+                {"trigger": "fail_handshake", "source": "*", "dest": self.STATE_FAULT},
+                {"trigger": "reset_fsm", "source": "*", "dest": self.STATE_UNSYNCHRONIZED},
+            ],
             initial=self.STATE_UNSYNCHRONIZED,
-            ignore_invalid_triggers=True,
-            queued=True,
-            model_attribute="fsm_state",
             after_state_change="_on_fsm_state_change",
         )
-
-        # FSM Transitions
-        self.state_machine.add_transition(trigger="start_reset", source="*", dest=self.STATE_RESETTING)
-        self.state_machine.add_transition(trigger="start_sync", source=self.STATE_RESETTING, dest=self.STATE_SYNCING)
-        self.state_machine.add_transition(
-            trigger="start_confirm",
-            source=self.STATE_SYNCING,
-            dest=self.STATE_CONFIRMING,
-        )
-        self.state_machine.add_transition(
-            trigger="complete_handshake",
-            source=[self.STATE_SYNCING, self.STATE_CONFIRMING],
-            dest=self.STATE_SYNCHRONIZED,
-        )
-        self.state_machine.add_transition(trigger="fail_handshake", source="*", dest=self.STATE_FAULT)
-        self.state_machine.add_transition(trigger="reset_fsm", source="*", dest=self.STATE_UNSYNCHRONIZED)
 
     def _on_fsm_state_change(self) -> None:
         """Update Prometheus Enum metric on every FSM transition."""

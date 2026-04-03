@@ -9,20 +9,14 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from mcubridge.config.const import DEFAULT_MQTT_PORT
+from mcubridge.protocol.structures import QOSLevel, UserProperty
+from mcubridge.mqtt import build_mqtt_properties as _daemon_build_props
 from .protocol import MAX_PAYLOAD_SIZE as PROTOCOL_MAX_PAYLOAD_SIZE
 
 # Client-specific default (remote board IP, NOT localhost)
 DEFAULT_MQTT_HOST: str = "192.168.15.36"
 MAX_PAYLOAD_SIZE: Final[int] = PROTOCOL_MAX_PAYLOAD_SIZE
 DEFAULT_MQTT_TOPIC: str = "br"
-
-
-class QOSLevel(IntEnum):
-    """MQTT Quality of Service levels."""
-
-    QOS_0 = 0
-    QOS_1 = 1
-    QOS_2 = 2
 
 
 class SpiBitOrder(IntEnum):
@@ -39,9 +33,6 @@ class SpiMode(IntEnum):
     MODE1 = 1
     MODE2 = 2
     MODE3 = 3
-
-
-UserProperty = tuple[str, str]
 
 
 class QueuedPublish(msgspec.Struct, frozen=True):
@@ -62,32 +53,21 @@ class QueuedPublish(msgspec.Struct, frozen=True):
 
 
 def build_mqtt_properties(message: QueuedPublish) -> Properties:
-    """Construct MQTT 5.0 properties object for aiomqtt/paho."""
-    props = Properties(PacketTypes.PUBLISH)
+    """Construct MQTT 5.0 properties object for aiomqtt/paho.
 
-    if message.content_type is not None:
-        props.ContentType = message.content_type
+    Reuses the daemon's core property builder and extends it with
+    client-specific fields (topic_alias, subscription_identifier).
+    """
+    # The daemon helper returns None when no standard fields are set;
+    # the client always needs a Properties object for the extra fields.
+    props = _daemon_build_props(message) or Properties(PacketTypes.PUBLISH)
 
-    if message.message_expiry_interval is not None:
-        props.MessageExpiryInterval = int(message.message_expiry_interval)
-
+    # Client-specific MQTT v5 properties not used by the daemon
     if message.topic_alias is not None:
         props.TopicAlias = message.topic_alias
 
-    if message.response_topic is not None:
-        props.ResponseTopic = message.response_topic
-
-    if message.correlation_data is not None:
-        props.CorrelationData = message.correlation_data
-
-    if message.user_properties:
-        props.UserProperty = list(message.user_properties)
-
     if message.subscription_identifier is not None:
         props.SubscriptionIdentifier = list(message.subscription_identifier)
-
-    if message.payload_format_indicator is not None:
-        props.PayloadFormatIndicator = message.payload_format_indicator
 
     return props
 

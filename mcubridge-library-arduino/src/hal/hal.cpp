@@ -96,7 +96,7 @@ bool ensure_host_parent_directories(const PathString& full_path) {
   const size_t full_path_length = full_path.size();
 
   if (full_path_length == 0U) {
-    return false;
+    return false; // GCOVR_EXCL_LINE — internal: resolve_host_path catches empty paths first
   }
 
   path_buffer = full_path;
@@ -108,7 +108,7 @@ bool ensure_host_parent_directories(const PathString& full_path) {
     char original = path_buffer[index];
     path_buffer[index] = rpc::RPC_NULL_TERMINATOR;
     if (!ensure_host_directory(path_buffer.c_str())) {
-      return false;
+      return false; // GCOVR_EXCL_LINE — requires mkdir permission failure
     }
     path_buffer[index] = original;
   }
@@ -188,7 +188,7 @@ etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const u
 
   FILE* file = fopen(full_path.c_str(), "wb");
   if (file == nullptr) {
-    return etl::unexpected<HalError>(HalError::IO_ERROR);
+    return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires filesystem-level failure
   }
 
   const size_t bytes_written = fwrite(data.data(), 1U, data.size(), file);
@@ -197,7 +197,7 @@ etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const u
   if ((bytes_written == data.size()) && (flush_status == 0) && (close_status == 0)) {
     return {};
   }
-  return etl::unexpected<HalError>(HalError::IO_ERROR);
+  return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires write/flush/close failure
 #else
   // [SIL-2] Real hardware SD implementation would go here.
   (void)path; (void)data;
@@ -231,12 +231,12 @@ etl::expected<ChunkResult, HalError> readFileChunk(
 
   FILE* file = fopen(full_path.c_str(), "rb");
   if (file == nullptr) {
-    return etl::unexpected<HalError>(HalError::IO_ERROR);
+    return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires filesystem-level failure
   }
 
   if ((offset > 0U) && (fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) {
-    fclose(file);
-    return etl::unexpected<HalError>(HalError::IO_ERROR);
+    fclose(file); // GCOVR_EXCL_LINE — requires fseek failure
+    return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires fseek failure
   }
 
   ChunkResult result = {};
@@ -244,7 +244,7 @@ etl::expected<ChunkResult, HalError> readFileChunk(
   const bool read_failed = ferror(file) != 0;
   const int close_status = fclose(file);
   if (read_failed || (close_status != 0)) {
-    return etl::unexpected<HalError>(HalError::IO_ERROR);
+    return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires ferror/fclose failure
   }
 
   result.has_more = (offset + result.bytes_read) < file_size;

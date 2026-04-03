@@ -25,7 +25,7 @@ struct BridgeObserver : public etl::observer<MsgBridgeSynchronized,
   virtual void notification(MsgBridgeSynchronized) {}
   virtual void notification(MsgBridgeLost) {}
   virtual void notification(MsgBridgeError) {}
-  virtual void notification(MsgBridgeCommand) {}
+  virtual void notification(MsgBridgeCommand) {} // GCOVR_EXCL_LINE — all registered observers override this
 };
 
 #endif

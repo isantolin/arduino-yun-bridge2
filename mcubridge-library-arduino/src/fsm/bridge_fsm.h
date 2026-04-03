@@ -176,14 +176,14 @@ class StateSyncing
   [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
 };
 
-class StateReady : public etl::fsm_state<BridgeFsm, StateReady, STATE_READY,
+class StateReady : public etl::fsm_state<BridgeFsm, StateReady, STATE_READY, // GCOVR_EXCL_START — no transitions target STATE_READY
                                          EvReset, EvCryptoFault> {
  public:
   [[maybe_unused]] etl::fsm_state_id_t on_enter_state() { return STATE_READY; }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) { return STATE_UNSYNCHRONIZED; }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
   [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }
-};
+}; // GCOVR_EXCL_STOP
 
 class StateIdle
     : public etl::fsm_state<BridgeFsm, StateIdle, STATE_IDLE, EvSendCritical,

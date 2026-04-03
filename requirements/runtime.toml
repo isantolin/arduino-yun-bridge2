@@ -147,7 +147,7 @@ rationale = "Protobuf compiler tools for Python [BUILD-ONLY]"
 [[dependency]]
 name = "click"
 openwrt = "python3-click"
-pip = "click==8.3.1"
+pip = "click==8.3.2"
 rationale = "Sub-dependency for typer"
 
 [[dependency]]

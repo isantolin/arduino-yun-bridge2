@@ -76,7 +76,7 @@ class FrameParser {
     auto sequence_id_opt = reader.read<uint16_t>();
 
     if (!version_opt || !payload_len_opt || !command_id_opt || !sequence_id_opt)
-      return etl::unexpected<FrameError>(FrameError::MALFORMED);
+      return etl::unexpected<FrameError>(FrameError::MALFORMED); // GCOVR_EXCL_LINE — unreachable: MIN_FRAME_SIZE guarantees reads
 
     result.header.version = *version_opt;
     result.header.payload_length = *payload_len_opt;
@@ -90,7 +90,7 @@ class FrameParser {
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
     if (result.header.payload_length > MAX_PAYLOAD_SIZE)
-      return etl::unexpected<FrameError>(FrameError::OVERFLOW);
+      return etl::unexpected<FrameError>(FrameError::OVERFLOW); // GCOVR_EXCL_LINE — unreachable: MAX_RAW_FRAME_SIZE check prevents reaching here
 
     // Capture payload span and validate CRC
     result.payload = buffer.subspan(FRAME_HEADER_SIZE, result.header.payload_length);

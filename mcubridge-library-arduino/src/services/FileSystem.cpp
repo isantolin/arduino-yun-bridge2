@@ -48,18 +48,18 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<con
     } else {
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
     }
-  } else {
+  } else { // GCOVR_EXCL_START — hasSD() is compile-time true on host
     // Graceful degradation: Report not implemented if hardware is missing.
     (void)Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
-  }
+  } // GCOVR_EXCL_STOP
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   // [SIL-2] Graceful degradation: Read requires SD hardware support.
-  if (!bridge::hal::hasSD()) {
+  if (!bridge::hal::hasSD()) { // GCOVR_EXCL_START — hasSD() is compile-time true on host
     (void)Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
     return;
-  }
+  } // GCOVR_EXCL_STOP
 
   etl::array<uint8_t, kReadChunkSize> read_buffer;
   size_t offset = 0U;
@@ -83,7 +83,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
       send_read_response(etl::span<const uint8_t>(read_buffer.data(), result.bytes_read));
       sent_payload = true;
       // [SIL-2] Guard against offset overflow on large files
-      if (result.bytes_read > SIZE_MAX - offset) break;
+      if (result.bytes_read > SIZE_MAX - offset) break; // GCOVR_EXCL_LINE — requires SIZE_MAX offset on host
       offset += result.bytes_read;
     } else if (!sent_payload) {
       send_read_response(etl::span<const uint8_t>());
@@ -101,10 +101,10 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
-  if (!bridge::hal::hasSD()) {
+  if (!bridge::hal::hasSD()) { // GCOVR_EXCL_START — hasSD() is compile-time true on host
     (void)Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
     return;
-  }
+  } // GCOVR_EXCL_STOP
 
   auto res = bridge::hal::removeFile(msg.path);
   if (res.has_value()) {

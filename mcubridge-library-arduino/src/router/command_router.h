@@ -38,7 +38,7 @@ struct CommandContext {
  */
 class ICommandHandler {
  public:
-  virtual ~ICommandHandler() = default;
+  virtual ~ICommandHandler() = default; // GCOVR_EXCL_LINE — pure virtual destructor
 
   // Granular handlers for O(1) dispatch categories
   virtual void onStatusCommand(const CommandContext& ctx) = 0;

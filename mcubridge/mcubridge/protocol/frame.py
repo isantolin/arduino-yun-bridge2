@@ -74,7 +74,7 @@ RPC_FRAME: Construct = Struct(
         lambda data: crc32(cast(bytes, data)) & 0xFFFFFFFF,  # type: ignore[reportUnknownLambdaType]
         this.header_payload.data,
     ),
-)
+).compile()
 
 
 
@@ -103,12 +103,12 @@ class Frame(msgspec.Struct, frozen=True):
     @property
     def is_compressed(self) -> bool:
         """Check if the frame payload is compressed (bit 15)."""
-        return bool(int(self.command_id) & 0x8000)
+        return bool(int(self.command_id) & protocol.CMD_FLAG_COMPRESSED)
 
     @property
     def raw_command_id(self) -> int:
         """Get the raw 15-bit command ID without the compression flag."""
-        return int(self.command_id) & 0x7FFF
+        return int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
 
     def build(self) -> bytes:
         """Build the binary frame representation."""

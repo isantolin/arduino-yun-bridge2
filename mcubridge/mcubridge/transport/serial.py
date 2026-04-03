@@ -326,7 +326,7 @@ class SerialTransport:
 
         try:
             if seq is None:
-                self._tx_sequence_id = (self._tx_sequence_id + 1) & 0xFFFF
+                self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
                 seq = self._tx_sequence_id
 
             frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)

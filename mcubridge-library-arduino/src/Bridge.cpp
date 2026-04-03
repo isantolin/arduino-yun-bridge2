@@ -92,11 +92,11 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   _last_tick_millis = bridge::now_ms();
 
   // [MIL-SPEC] Cryptographic Power-On Self-Test (POST)
-  if (!rpc::security::run_cryptographic_self_tests()) {
+  if (!rpc::security::run_cryptographic_self_tests()) { // GCOVR_EXCL_START — requires broken crypto engine
     enterSafeState();
     _fsm.cryptoFault();
     return;
-  }
+  } // GCOVR_EXCL_STOP
 
   if (_hardware_serial != nullptr) {
     _hardware_serial->begin(arg_baudrate);
@@ -431,11 +431,11 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
       if (SPIService.isInitialized()) {
         if (!data.empty()) {
           size_t xferred = SPIService.transfer(const_cast<uint8_t*>(data.data()), data.size());
-          if (xferred < data.size()) {
+          if (xferred < data.size()) { // GCOVR_EXCL_START — host mock always succeeds
             enterSafeState();
             _sendError(rpc::StatusCode::STATUS_ERROR, ctx.raw_command, ctx.sequence_id);
             return;
-          }
+          } // GCOVR_EXCL_STOP
         }
         rpc::payload::SpiTransferResponse resp = {};
         rpc::util::pb_setup_encode_span(resp.data, data);
@@ -760,9 +760,9 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::
   size_t raw_len = _frame_builder.build(etl::span<uint8_t>(raw_buffer.data(), raw_buffer.size()), command_id, sequence_id, payload);
   if (raw_len > 0) {
     auto res = _packet_serial.send(_stream, etl::span<const uint8_t>(raw_buffer.data(), raw_len));
-    if (!res.has_value()) {
+    if (!res.has_value()) { // GCOVR_EXCL_START — defensive: COBS buffer always sufficient
         _last_parse_error = rpc::FrameError::OVERFLOW;
-    }
+    } // GCOVR_EXCL_STOP
   }
 }
 

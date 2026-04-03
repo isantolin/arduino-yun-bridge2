@@ -142,6 +142,7 @@ TEST_FILES=(
     "${TEST_DIR}/test_protocol.cpp"
     "${TEST_DIR}/test_fsm_mutual_auth.cpp"
     "${TEST_DIR}/test_arduino_100_coverage.cpp"
+    "${TEST_DIR}/test_coverage_full.cpp"
 )
 
 # Compile and run test suites in parallel

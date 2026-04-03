@@ -143,6 +143,7 @@ TEST_SUITES=(
     "test_protocol"
     "test_fsm_mutual_auth"
     "test_arduino_100_coverage"
+    "test_coverage_full"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites en paralelo..."

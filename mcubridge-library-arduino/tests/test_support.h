@@ -152,7 +152,7 @@ struct TestCOBS {
         code = 1;
       } else {
         *dst++ = src[i];
-        if (++code == 0xFF) {
+        if (++code == rpc::RPC_UINT8_MASK) {
           *code_ptr = code;
           code_ptr = dst++;
           code = 1;

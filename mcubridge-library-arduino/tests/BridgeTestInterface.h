@@ -118,7 +118,14 @@ class TestAccessor {
   void routeMailboxCommand(const bridge::router::CommandContext& ctx) { _bridge.onMailboxCommand(ctx); }
   void routeFileSystemCommand(const bridge::router::CommandContext& ctx) { _bridge.onFileSystemCommand(ctx); }
   void routeProcessCommand(const bridge::router::CommandContext& ctx) { _bridge.onProcessCommand(ctx); }
+  void routeSpiCommand(const bridge::router::CommandContext& ctx) { _bridge.onSpiCommand(ctx); }
   void routeUnknownCommand(const bridge::router::CommandContext& ctx) { _bridge.onUnknownCommand(ctx); }
+
+  void handleReceivedFrame(etl::span<const uint8_t> data) { _bridge._handleReceivedFrame(data); }
+  void handleEnterBootloader(const bridge::router::CommandContext& ctx) { _bridge._handleEnterBootloader(ctx); }
+  void emitStatusStringView(rpc::StatusCode code, const char* msg) { _bridge.emitStatus(code, etl::string_view(msg)); }
+  void emitStatusFlash(rpc::StatusCode code, const __FlashStringHelper* msg) { _bridge.emitStatus(code, msg); }
+  void fsmTimeout() { _bridge._fsm.timeout(); }
 
   void handleGetVersion(const bridge::router::CommandContext& ctx) { _bridge._handleGetVersion(ctx); }
   void handleGetFreeMemory(const bridge::router::CommandContext& ctx) { _bridge._handleGetFreeMemory(ctx); }

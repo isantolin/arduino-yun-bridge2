@@ -383,8 +383,10 @@ class BridgeDispatcher:
         """[SIL-2] Optimized zero-copy payload extraction using library primitives."""
         if isinstance(payload, bytes):
             return payload
-        if isinstance(payload, (bytearray, memoryview)):
+        if isinstance(payload, bytearray):
             return bytes(payload)
+        if isinstance(payload, memoryview):
+            return payload.tobytes()
         try:
             return msgspec.convert(payload, bytes)
         except (msgspec.MsgspecError, TypeError, ValueError):

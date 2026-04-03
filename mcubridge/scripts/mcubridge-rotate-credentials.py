@@ -99,7 +99,10 @@ def main() -> None:
         sys.stderr.write("[mcubridge-rotate-credentials] Updated UCI credentials and restarted McuBridge.\n")
 
     except (sh.ErrorReturnCode, uci.UciException, RuntimeError) as exc:
-        msg = str(exc.stderr.decode()) if hasattr(exc, "stderr") else str(exc)
+        if isinstance(exc, sh.ErrorReturnCode):
+            msg = exc.stderr.decode()
+        else:
+            msg = str(exc)
         sys.stderr.write(f"[mcubridge-rotate-credentials] ERROR: UCI or Service operation failed: {msg}\n")
         if backup_config.exists():
             shutil.copy2(backup_config, uci_config)

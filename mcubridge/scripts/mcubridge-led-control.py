@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
-import uci
 import sys
-import ssl
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated
+
+import paho.mqtt.publish as publish
 import tenacity
 import typer
-import paho.mqtt.publish as publish
-from pathlib import Path
-from typing import Annotated
+import uci
+
+if TYPE_CHECKING:
+    from paho.mqtt.publish import AuthParameter, TLSParameter
 
 app = typer.Typer(add_completion=False)
 
@@ -54,25 +57,25 @@ def main(
     user = uci_get("mqtt_user") or None
     pw = uci_get("mqtt_pass") or None
 
-    auth = None
+    auth: AuthParameter | None = None
     if user:
-        auth = {"username": user, "password": pw}
+        auth = {"username": user}
+        if pw:
+            auth["password"] = pw
 
-    tls_config = None
+    tls_config: TLSParameter | None = None
     if uci_get("mqtt_tls", "1") == "1":
         cafile = uci_get("mqtt_cafile")
         if not cafile or not Path(cafile).exists():
             fallback_ca = Path("/etc/ssl/certs/ca-certificates.crt")
-            cafile = str(fallback_ca) if fallback_ca.exists() else None
+            cafile = str(fallback_ca) if fallback_ca.exists() else ""
 
         insecure = uci_get("mqtt_tls_insecure", "0") == "1"
 
-        ctx = ssl.create_default_context(cafile=cafile)
-        if insecure:
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-
-        tls_config = {"context": ctx, "insecure": insecure}
+        if cafile:
+            tls_config = {"ca_certs": cafile, "insecure": insecure}
+        else:
+            tls_config = {"insecure": insecure}  # type: ignore[typeddict-item]
 
     @tenacity.retry(
         stop=tenacity.stop_after_attempt(3),

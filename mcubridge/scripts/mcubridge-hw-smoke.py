@@ -11,7 +11,7 @@ import sys
 import ssl
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import aiomqtt
 import tenacity
@@ -44,23 +44,22 @@ async def perform_round_trip(
         retry=tenacity.retry_if_exception_type((asyncio.TimeoutError, aiomqtt.MqttError)),
         reraise=True
     )
-    async def _round_trip():
+    async def _round_trip() -> str:
         async with aiomqtt.Client(
             hostname=host,
             port=port,
-            username=auth_params["username"] if auth_params else None,
-            password=auth_params["password"] if auth_params else None,
-            tls_context=tls_params["context"] if tls_params else None,
-            tls_insecure=tls_params["insecure"] if tls_params else False
+            username=cast(str, auth_params["username"]) if auth_params else None,
+            password=cast(str, auth_params["password"]) if auth_params else None,
+            tls_context=cast(ssl.SSLContext, tls_params["context"]) if tls_params else None,
+            tls_insecure=cast(bool, tls_params["insecure"]) if tls_params else False
         ) as client:
-            async with client.messages() as messages:
-                await client.subscribe(status_topic)
-                await client.publish(request_topic, payload='{"request":"ping"}')
+            await client.subscribe(status_topic)
+            await client.publish(request_topic, payload='{"request":"ping"}')
 
-                # Wait for response with timeout
-                async with asyncio.timeout(5.0):
-                    async for message in messages:
-                        return message.payload.decode()
+            # Wait for response with timeout
+            async with asyncio.timeout(5.0):
+                async for message in client.messages:
+                    return message.payload.decode()
         raise TimeoutError("No response received from daemon")
 
     return await _round_trip()

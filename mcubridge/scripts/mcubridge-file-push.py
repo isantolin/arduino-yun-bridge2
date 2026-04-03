@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """CLI utility to push files to the MCU Bridge (Linux or MCU storage)."""
 
+from __future__ import annotations
+
 import asyncio
 import sys
 from pathlib import Path
@@ -16,22 +18,28 @@ from mcubridge.config.settings import get_uci_config
 @click.option("--mcu", is_flag=True, help="Target MCU storage (e.g. SD card)")
 @click.option("--host", default=None, help="MQTT host")
 @click.option("--port", default=None, type=int, help="MQTT port")
-def main(source_file, target_path, mcu, host, port):
+def main(
+    source_file: str,
+    target_path: str,
+    mcu: bool,
+    host: str | None,
+    port: int | None,
+) -> None:
     """Push SOURCE_FILE to TARGET_PATH on the bridge."""
 
     config = get_uci_config()
-    host = host or config.get("mqtt_host") or DEFAULT_MQTT_HOST
-    port = port or int(config.get("mqtt_port") or DEFAULT_MQTT_PORT)
-    prefix = config.get("mqtt_topic") or "br"
+    resolved_host: str = host or str(config.get("mqtt_host") or DEFAULT_MQTT_HOST)
+    resolved_port: int = port or int(config.get("mqtt_port") or DEFAULT_MQTT_PORT)
+    prefix: str = str(config.get("mqtt_topic") or "br")
 
     if mcu:
         topic = f"{prefix}/file/write/mcu/{target_path.lstrip('/')}"
     else:
         topic = f"{prefix}/file/write/{target_path.lstrip('/')}"
 
-    async def push():
+    async def push() -> None:
         try:
-            async with aiomqtt.Client(host, port) as client:
+            async with aiomqtt.Client(resolved_host, resolved_port) as client:
                 data = Path(source_file).read_bytes()
                 click.echo(f"Pushing {len(data)} bytes to {topic}...")
                 await client.publish(topic, payload=data, qos=1)

@@ -253,7 +253,7 @@ class BridgeFsm : public etl::fsm {
     state_list_[STATE_AWAITING_ACK] = &state_awaiting_ack;
     state_list_[STATE_FAULT] = &state_fault;
 
-    set_states(state_list_, NUMBER_OF_STATES);
+    set_states(state_list_.data(), NUMBER_OF_STATES);
     start();
   }
 
@@ -312,7 +312,7 @@ class BridgeFsm : public etl::fsm {
     }
   }
 
-  etl::ifsm_state* state_list_[NUMBER_OF_STATES];
+  etl::array<etl::ifsm_state*, NUMBER_OF_STATES> state_list_;
   bridge::scheduler::SimpleTimer<bridge::scheduler::NUMBER_OF_TIMERS>* timers_;
   StateStabilizing state_stabilizing;
   StateUnsynchronized state_unsynchronized;

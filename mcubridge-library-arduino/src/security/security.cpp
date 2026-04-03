@@ -39,9 +39,9 @@ void McuBridgeSha256::update(const void* data, size_t len) {
 }
 
 void McuBridgeSha256::finalize(void* digest, size_t len) {
-  uint8_t full_digest[rpc::RPC_SHA256_DIGEST_SIZE];
-  wc_Sha256Final(&sha_, full_digest);
-  etl::copy(full_digest, full_digest + etl::min(len, static_cast<size_t>(rpc::RPC_SHA256_DIGEST_SIZE)), static_cast<uint8_t*>(digest));
+  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> full_digest;
+  wc_Sha256Final(&sha_, full_digest.data());
+  etl::copy(full_digest.begin(), full_digest.begin() + etl::min(len, static_cast<size_t>(rpc::RPC_SHA256_DIGEST_SIZE)), static_cast<uint8_t*>(digest));
 }
 
 void McuBridgeSha256::resetHMAC(const void* key, size_t key_len) {
@@ -52,9 +52,9 @@ void McuBridgeSha256::resetHMAC(const void* key, size_t key_len) {
 void McuBridgeSha256::finalizeHMAC(const void* key, size_t key_len, void* digest, size_t len) {
   (void)key;
   (void)key_len;
-  uint8_t full_digest[rpc::RPC_SHA256_DIGEST_SIZE];
-  wc_HmacFinal(&hmac_, full_digest);
-  etl::copy(full_digest, full_digest + etl::min(len, static_cast<size_t>(rpc::RPC_SHA256_DIGEST_SIZE)), static_cast<uint8_t*>(digest));
+  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> full_digest;
+  wc_HmacFinal(&hmac_, full_digest.data());
+  etl::copy(full_digest.begin(), full_digest.begin() + etl::min(len, static_cast<size_t>(rpc::RPC_SHA256_DIGEST_SIZE)), static_cast<uint8_t*>(digest));
   is_hmac_active_ = false;
 }
 

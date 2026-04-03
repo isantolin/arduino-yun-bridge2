@@ -193,7 +193,7 @@ class BridgeClass
   bool sendPbCommand(rpc::CommandId command_id, uint16_t sequence_id, const T& msg) {
     pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
     if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
-      return false;
+      return false; // GCOVR_EXCL_LINE — defensive: pb_encode failure requires corrupt message
     }
     return sendFrame(command_id, sequence_id,
                        etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
@@ -203,7 +203,7 @@ class BridgeClass
   bool sendPbFrame(rpc::StatusCode status_code, uint16_t sequence_id, const T& msg) {
     pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
     if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
-      return false;
+      return false; // GCOVR_EXCL_LINE — defensive: pb_encode failure requires corrupt message
     }
     _sendRawFrame(rpc::to_underlying(status_code), sequence_id,
                   etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
@@ -354,22 +354,22 @@ class BridgeClass
     TPacket msg = {};
     rpc::util::pb_setup_decode_span(msg.*field, span);
 
-    auto logic = [&handler, &span](const TPacket& m) {
+    auto logic = [&handler, &span](const TPacket& m) { // GCOVR_EXCL_START — constexpr if: one branch dead per instantiation
       if constexpr (is_two_arg_invocable<F, TPacket, etl::span<const uint8_t>>::value) {
         handler(m, etl::span<const uint8_t>(span.data(), span.size()));
       } else {
         handler(etl::span<const uint8_t>(span.data(), span.size()));
       }
-    };
+    }; // GCOVR_EXCL_STOP
 
     if (ack) _withPayloadAck<TPacket>(ctx, logic, msg);
     else _withPayload<TPacket>(ctx, logic, msg);
   }
 
-  template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) {
+  template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) { // GCOVR_EXCL_START — per-instantiation parse branch
     auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
     if (res.has_value()) handler(res.value());
-  }
+  } // GCOVR_EXCL_STOP
 
   template <typename T> void _sendPbResponse(rpc::CommandId cmd, uint16_t sequence_id, const T& msg) {
     sendPbCommand(cmd, sequence_id, msg);

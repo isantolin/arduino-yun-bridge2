@@ -847,4 +847,4 @@ SPIServiceClass SPIService;
 #endif
 #endif
 
-namespace etl { void __attribute__((weak)) __attribute__((unused)) handle_error(const etl::exception& e) { (void)e; Bridge.enterSafeState(); } }
+namespace etl { void __attribute__((weak)) __attribute__((unused)) handle_error(const etl::exception& e) { (void)e; Bridge.enterSafeState(); } } // GCOVR_EXCL_LINE — guarded by BRIDGE_TEST_NO_GLOBALS

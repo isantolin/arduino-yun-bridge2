@@ -121,8 +121,11 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/98-mcubridge-default-serial $(1)/etc/uci-defaults/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-mcubridge-disable-askconsole $(1)/etc/uci-defaults/
 	
-	# Core scripts
-	[ -d $(PKG_BUILD_DIR)/scripts ] && find $(PKG_BUILD_DIR)/scripts -type f -print0 | xargs -0 -I {} $(INSTALL_BIN) "{}" $(1)/usr/bin/ || true
+	# Core scripts (install stripping .py extension so command names are unchanged)
+	[ -d $(PKG_BUILD_DIR)/scripts ] && \
+		for f in $$(find $(PKG_BUILD_DIR)/scripts -type f -name '*.py'); do \
+			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$(basename $$f .py)"; \
+		done || true
 endef
 
 define Package/$(PKG_NAME)/clean

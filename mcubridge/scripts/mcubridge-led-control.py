@@ -44,16 +44,16 @@ def main(
         raise typer.Exit(code=2)
 
     payload = "1" if state_arg == "on" else "0"
-    
+
     topic_prefix = uci_get("mqtt_topic", "br")
     mqtt_topic = f"{topic_prefix}/d/{pin}"
-    
+
     # MQTT Config
     host = uci_get("mqtt_host", "127.0.0.1")
     port = int(uci_get("mqtt_port", "1883"))
     user = uci_get("mqtt_user") or None
     pw = uci_get("mqtt_pass") or None
-    
+
     auth = None
     if user:
         auth = {"username": user, "password": pw}
@@ -64,14 +64,14 @@ def main(
         if not cafile or not Path(cafile).exists():
             fallback_ca = Path("/etc/ssl/certs/ca-certificates.crt")
             cafile = str(fallback_ca) if fallback_ca.exists() else None
-        
+
         insecure = uci_get("mqtt_tls_insecure", "0") == "1"
-        
+
         ctx = ssl.create_default_context(cafile=cafile)
         if insecure:
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
-        
+
         tls_config = {"context": ctx, "insecure": insecure}
 
     @tenacity.retry(

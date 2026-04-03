@@ -2,7 +2,6 @@
 """CLI utility to push files to the MCU Bridge (Linux or MCU storage)."""
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 
@@ -19,17 +18,17 @@ from mcubridge.config.settings import get_uci_config
 @click.option("--port", default=None, type=int, help="MQTT port")
 def main(source_file, target_path, mcu, host, port):
     """Push SOURCE_FILE to TARGET_PATH on the bridge."""
-    
+
     config = get_uci_config()
     host = host or config.get("mqtt_host") or DEFAULT_MQTT_HOST
     port = port or int(config.get("mqtt_port") or DEFAULT_MQTT_PORT)
     prefix = config.get("mqtt_topic") or "br"
-    
+
     if mcu:
         topic = f"{prefix}/file/write/mcu/{target_path.lstrip('/')}"
     else:
         topic = f"{prefix}/file/write/{target_path.lstrip('/')}"
-        
+
     async def push():
         try:
             async with aiomqtt.Client(host, port) as client:

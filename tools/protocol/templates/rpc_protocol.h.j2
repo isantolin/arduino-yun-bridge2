@@ -9,6 +9,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <etl/array.h>
 
 namespace rpc {
 
@@ -21,13 +22,11 @@ inline constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits
 inline constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7U;
 
 {% if handshake.hkdf_salt -%}
-inline constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = { {{ handshake.hkdf_salt_bytes }} };
-inline constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {{ handshake.hkdf_salt_len }}U;
+inline constexpr etl::array<uint8_t, {{ handshake.hkdf_salt_len }}U> RPC_HANDSHAKE_HKDF_SALT = { {{ handshake.hkdf_salt_bytes }} };
 {%- endif %}
 
 {% if handshake.hkdf_info_auth -%}
-inline constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = { {{ handshake.hkdf_info_auth_bytes }} };
-inline constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {{ handshake.hkdf_info_auth_len }}U;
+inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_auth_len }}U> RPC_HANDSHAKE_HKDF_INFO_AUTH = { {{ handshake.hkdf_info_auth_bytes }} };
 {%- endif %}
 
 {% for cap, val in capabilities.items() -%}

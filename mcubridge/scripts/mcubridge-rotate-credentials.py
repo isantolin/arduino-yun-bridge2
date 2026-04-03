@@ -101,11 +101,13 @@ def main() -> None:
     except (sh.ErrorReturnCode, uci.UciException, RuntimeError) as exc:
         msg = str(exc.stderr.decode()) if hasattr(exc, "stderr") else str(exc)
         sys.stderr.write(f"[mcubridge-rotate-credentials] ERROR: UCI or Service operation failed: {msg}\n")
-        if backup_config.exists(): shutil.copy2(backup_config, uci_config)
+        if backup_config.exists():
+            shutil.copy2(backup_config, uci_config)
         raise typer.Exit(code=1)
     except (OSError, ValueError) as exc:
         sys.stderr.write(f"[mcubridge-rotate-credentials] FATAL ERROR: {exc}\n")
-        if backup_config.exists(): shutil.copy2(backup_config, uci_config)
+        if backup_config.exists():
+            shutil.copy2(backup_config, uci_config)
         raise typer.Exit(code=1)
     finally:
         if backup_config.exists():

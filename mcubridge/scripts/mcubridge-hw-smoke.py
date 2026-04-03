@@ -7,13 +7,11 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-import os
 import sys
 import ssl
 import subprocess
 from pathlib import Path
-from typing import Any, Annotated
+from typing import Any
 
 import aiomqtt
 import tenacity
@@ -58,7 +56,7 @@ async def perform_round_trip(
             async with client.messages() as messages:
                 await client.subscribe(status_topic)
                 await client.publish(request_topic, payload='{"request":"ping"}')
-                
+
                 # Wait for response with timeout
                 async with asyncio.timeout(5.0):
                     async for message in messages:
@@ -87,7 +85,7 @@ def main() -> None:
     # 2. Environment Check
     init_script = Path("/etc/init.d/mcubridge")
     if init_script.exists():
-        res = subprocess.run([str(init_script), "status"], capture_output=True)
+        res = subprocess.run([str(init_script), "status"], capture_output=True, check=False)
         if res.returncode != 0:
             sys.stderr.write("[mcubridge-hw-smoke] ERROR: McuBridge service is not running.\n")
             raise typer.Exit(code=1)
@@ -98,18 +96,18 @@ def main() -> None:
 
     # 3. Prepare MQTT Parameters
     auth_params = {"username": user, "password": pw} if user else None
-    
+
     tls_params = None
     if tls_enabled:
         if not cafile or not Path(cafile).exists():
             fallback_ca = Path("/etc/ssl/certs/ca-certificates.crt")
             cafile = str(fallback_ca) if fallback_ca.exists() else None
-        
+
         ctx = ssl.create_default_context(cafile=cafile)
         ctx.check_hostname = not insecure
         if insecure:
             ctx.verify_mode = ssl.CERT_NONE
-            
+
         tls_params = {
             "context": ctx,
             "insecure": insecure
@@ -117,7 +115,7 @@ def main() -> None:
 
     # 4. Run Smoke Test
     sys.stderr.write(f"[mcubridge-hw-smoke] Checking MQTT round trip via {host}:{port}...\n")
-    
+
     try:
         response = asyncio.run(perform_round_trip(host, port, topic_prefix, tls_params, auth_params))
         sys.stdout.write("[mcubridge-hw-smoke] Received response:\n")

@@ -1,5 +1,7 @@
 #!/bin/bash
-set -eo pipefail
+# NOTE: set -e is intentionally omitted; parallel background jobs + wait
+# require manual exit-code handling. pipefail is still active.
+set -o pipefail
 
 # Ensure we are in the repo root
 cd "$(dirname "$0")/.."
@@ -26,15 +28,15 @@ WOLF_INC="$USER_LIB_DIR/wolfssl/src"
 
 # Update core index
 echo "Updating core index..."
-arduino-cli core update-index
+arduino-cli core update-index || { echo "Failed to update core index"; exit 1; }
 
 # Install AVR core (for MCU)
 echo "Installing arduino:avr core..."
-arduino-cli core install arduino:avr
+arduino-cli core install arduino:avr || { echo "Failed to install arduino:avr core"; exit 1; }
 
 # Install official dependencies
 echo "Installing official wolfSSL library..."
-arduino-cli lib install wolfSSL
+arduino-cli lib install wolfSSL || { echo "Failed to install wolfSSL"; exit 1; }
 
 # echo "Installing official Embedded Template Library..."
 # arduino-cli lib install "Embedded Template Library ETL"
@@ -86,6 +88,10 @@ done
 # Maximum parallel compilation jobs
 MAX_JOBS=${MAX_JOBS:-4}
 
+# Temp dir for build logs
+_LOG_DIR=$(mktemp -d)
+trap 'rm -rf "$_LOG_DIR"' EXIT
+
 # Compile a single sketch for a given board.
 # Runs as a subshell so it can be backgrounded.
 compile_sketch() {
@@ -96,7 +102,7 @@ compile_sketch() {
     sketch_dir=$(dirname "$sketch")
     sketch_name=$(basename "$sketch_dir")
     BOARD_NAME="${FQBN//:/-}"
-    LOG_FILE=$(mktemp "/tmp/arduino_build_${BOARD_NAME}_${sketch_name}.XXXXXX.log")
+    LOG_FILE="${_LOG_DIR}/${BOARD_NAME}_${sketch_name}.log"
 
     COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS"
     local BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--libraries" "$PWD/.dummy_libs" "--warnings" "default"
@@ -112,6 +118,12 @@ compile_sketch() {
         local SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/${BOARD_NAME}/$sketch_name"
         mkdir -p "$SKETCH_BUILD_DIR"
         BUILD_FLAGS+=("--build-path" "$SKETCH_BUILD_DIR")
+    else
+        # Use a unique build path per board×sketch to avoid cache races
+        # when multiple arduino-cli instances run in parallel.
+        local ISOLATED_BUILD_DIR="${_LOG_DIR}/build/${BOARD_NAME}/${sketch_name}"
+        mkdir -p "$ISOLATED_BUILD_DIR"
+        BUILD_FLAGS+=("--build-path" "$ISOLATED_BUILD_DIR")
     fi
 
     if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
@@ -120,16 +132,14 @@ compile_sketch() {
             mkdir -p "$ARDUINO_METRICS_DIR"
             cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
         fi
-        rm -f "$LOG_FILE"
         return 0
     else
         echo "✗ $sketch_name failed for $FQBN!"
-        cat "$LOG_FILE"
+        cat "$LOG_FILE" >&2
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"
             cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
         fi
-        rm -f "$LOG_FILE"
         # Critical failure only for mega
         if [ "$FQBN" == "arduino:avr:mega" ]; then
             return 1

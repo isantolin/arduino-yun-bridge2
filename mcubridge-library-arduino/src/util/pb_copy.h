@@ -24,17 +24,6 @@ inline void pb_copy_string(etl::string_view src, char* dst, size_t dst_size) {
 }
 
 /**
- * @brief Copy a byte span into a nanopb bytes field (has .bytes + .size).
- *
- * Copies at most sizeof(field.bytes) bytes and sets field.size accordingly.
- */
-template <typename PbBytesField>
-[[maybe_unused]] inline void pb_copy_bytes(etl::span<const uint8_t> src, PbBytesField& field) {
-  field.size = static_cast<pb_size_t>(etl::min(src.size(), sizeof(field.bytes)));
-  etl::copy_n(src.data(), field.size, field.bytes);
-}
-
-/**
  * @brief Setup a nanopb field to use a simple byte-span encoding callback.
  *
  * This enables streaming without copying data into the message structure.

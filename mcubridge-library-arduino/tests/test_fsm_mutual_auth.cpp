@@ -164,6 +164,28 @@ void test_fsm_transitions_running() {
   printf("  -> FSM Transitions (Idle -> AwaitingAck -> Idle): OK\n");
 }
 
+void test_fsm_syncing_state() {
+  BridgeClass localBridge(g_test_stream);
+  localBridge.begin(115200);
+  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
+
+  TEST_ASSERT(localBridge.isUnsynchronized());
+  TEST_ASSERT(!localBridge.isSyncing());
+
+  // Trigger handshake start → FSM enters STATE_SYNCING
+  accessor.fsmHandshakeStart();
+  TEST_ASSERT(localBridge.isSyncing());
+  TEST_ASSERT(!localBridge.isSynchronized());
+  TEST_ASSERT(!localBridge.isUnsynchronized());
+
+  // Complete handshake → FSM leaves STATE_SYNCING
+  accessor.fsmHandshakeComplete();
+  TEST_ASSERT(!localBridge.isSyncing());
+  TEST_ASSERT(localBridge.isSynchronized());
+  printf("  -> FSM Syncing State: OK\n");
+}
+
 void test_fsm_timeout_to_unsynchronized() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200);
@@ -205,6 +227,7 @@ int main(void) {
   RUN_TEST(test_mutual_auth_failure_wrong_tag);
   RUN_TEST(test_mutual_auth_failure_malformed_length);
   RUN_TEST(test_fsm_transitions_running);
+  RUN_TEST(test_fsm_syncing_state);
   RUN_TEST(test_fsm_timeout_to_unsynchronized);
   return UNITY_END();
 }

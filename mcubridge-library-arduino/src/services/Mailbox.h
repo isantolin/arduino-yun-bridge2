@@ -32,7 +32,6 @@ class MailboxClass : public BridgeObserver {
   [[maybe_unused]] void notification(MsgBridgeCommand) override {}
 
   void push(etl::span<const uint8_t> data);
-  void send(etl::span<const uint8_t> data) { push(data); }
   [[maybe_unused]] void requestRead();
   [[maybe_unused]] void requestAvailable();
 

@@ -32,10 +32,6 @@ class DataStoreClass : public BridgeObserver {
   [[maybe_unused]] void notification(MsgBridgeCommand) override {}
 
   void set(etl::string_view key, etl::span<const uint8_t> value);
-  [[maybe_unused]] void put(etl::string_view key, etl::span<const uint8_t> value) { set(key, value); }
-  [[maybe_unused]] void put(etl::string_view key, etl::string_view value) {
-    set(key, etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(value.data()), value.size()));
-  }
   [[maybe_unused]] void get(etl::string_view key, DataStoreGetHandler handler);
   void reset() { _pending_gets.clear(); }
 

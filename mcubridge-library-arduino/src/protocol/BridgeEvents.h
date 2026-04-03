@@ -21,7 +21,7 @@ struct MsgBridgeCommand {
 // [SIL-2] Observer Interface for System Events
 struct BridgeObserver : public etl::observer<MsgBridgeSynchronized,
                                              MsgBridgeLost, MsgBridgeError, MsgBridgeCommand> {
-  virtual ~BridgeObserver() = default;
+  virtual ~BridgeObserver() = default; // GCOVR_EXCL_LINE — compiler-generated destructor
   virtual void notification(MsgBridgeSynchronized) {}
   virtual void notification(MsgBridgeLost) {}
   virtual void notification(MsgBridgeError) {}

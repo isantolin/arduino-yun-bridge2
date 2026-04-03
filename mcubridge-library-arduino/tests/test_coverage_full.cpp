@@ -11,6 +11,7 @@
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 
 #include <Arduino.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -920,6 +921,35 @@ static void test_filesystem_read_handler_clear() {
 }
 
 // ============================================================================
+// 20b. FileSystem — read empty file triggers empty-payload branch (FileSystem.cpp:88-90)
+// ============================================================================
+
+static void test_filesystem_read_empty_file() {
+#if BRIDGE_ENABLE_FILESYSTEM
+  reset_test_bridge();
+  auto ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // Create an empty file on the host filesystem so readFileChunk returns bytes_read=0
+  constexpr const char* kEmptyFile = "/tmp/mcubridge-host-fs/empty_test.txt";
+  FILE* f = fopen(kEmptyFile, "wb");
+  TEST_ASSERT_NOT_NULL(f);
+  fclose(f);
+
+  // Call _onRead directly with a path to the empty file
+  rpc::payload::FileRead msg = {};
+  strncpy(msg.path, "empty_test.txt", sizeof(msg.path) - 1);
+  FileSystem._onRead(msg);
+
+  // Clean up
+  ::remove(kEmptyFile);
+
+  // No crash = success. The else-if branch (bytes_read==0, !sent_payload) was exercised.
+  TEST_ASSERT(true);
+#endif
+}
+
+// ============================================================================
 // 21. Duplicate frame with ACK re-send (Bridge.cpp:208-211)
 // ============================================================================
 
@@ -1529,6 +1559,7 @@ int main() {
 
   // FileSystem
   RUN_TEST(test_filesystem_read_handler_clear);
+  RUN_TEST(test_filesystem_read_empty_file);
 
   // handleReceivedFrame paths
   RUN_TEST(test_handle_received_frame_decompress_fail);

@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-pygments
-PKG_VERSION:=2.19.1
+PKG_VERSION:=2.19.2
 PKG_RELEASE:=1
 
 PYPI_NAME:=pygments
-PKG_HASH:=61c16d2a8576dc0649d9f39e089b5f02bcd27fba10d8fb4dcc28173f7a45151f
+PKG_HASH:=636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887
 
 PKG_BUILD_DEPENDS:=python-setuptools/host python-build/host python-installer/host python-wheel/host
 

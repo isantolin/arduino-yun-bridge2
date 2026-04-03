@@ -6,22 +6,17 @@ quick unit test can reach without real hardware or broker connectivity.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 import os
 import sqlite3
 import ssl
 import time
 from collections import deque
-from pathlib import Path
-from threading import Lock
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
-import structlog
 import tenacity
 
 from mcubridge.config.common import get_default_config
@@ -486,7 +481,7 @@ def test_before_sleep_with_metric():
     counter.labels.return_value.inc = MagicMock()
     logger = logging.getLogger("test")
 
-    cb = before_sleep_with_metric(logger, logging.WARNING, counter, "serial")
+    before_sleep_with_metric(logger, logging.WARNING, counter, "serial")
     retry_state = MagicMock(spec=tenacity.RetryCallState)
     retry_state.attempt_number = 2
     retry_state.outcome = MagicMock()
@@ -787,7 +782,6 @@ class TestProcessComponent:
     @pytest.mark.asyncio
     async def test_process_run_empty_command(self, process_comp):
         """Empty command should be rejected."""
-        from mcubridge.protocol.structures import ProcessRunAsyncPacket
         # Just instantiate to cover imports
         assert process_comp is not None
 
@@ -928,7 +922,7 @@ def test_structures_encode_decode_roundtrip():
 def test_load_runtime_config_cli_overrides():
     from mcubridge.config.settings import load_runtime_config, get_config_source
 
-    cfg = load_runtime_config(overrides={
+    load_runtime_config(overrides={
         "serial_shared_secret": b"test_secret_1234",
     })
     assert get_config_source() == "cli"
@@ -1441,15 +1435,11 @@ def test_spool_append_failure(tmp_path):
 
 @pytest.mark.asyncio
 async def test_status_writer_child_processes():
-    from mcubridge.state.status import _write_status_file
-    from mcubridge.state.status import BridgeStatus
-
-    # Just verify _write_status_file doesn't crash with a valid payload
+    # Just verify build_bridge_snapshot doesn't crash with a valid state
     state = _make_state()
     state.configure(_make_config())
-    payload = state.build_bridge_snapshot()
-    # The function writes to /tmp which is fine in tests
-    # We just test it doesn't raise
+    snapshot = state.build_bridge_snapshot()
+    assert snapshot is not None
 
 
 # ===================================================================

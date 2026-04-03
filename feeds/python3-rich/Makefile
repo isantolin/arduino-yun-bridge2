@@ -7,7 +7,7 @@ PKG_RELEASE:=1
 PYPI_NAME:=rich
 PKG_HASH:=b8daa0b9e4eef54dd8cf7c86c03713f53241884e814f4e2f5fb342fe520f639b
 
-PKG_BUILD_DEPENDS:=python-setuptools/host python-build/host python-installer/host python-wheel/host
+PKG_BUILD_DEPENDS:=python-poetry-core/host python-build/host python-installer/host python-wheel/host
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

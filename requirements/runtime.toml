@@ -141,7 +141,7 @@ rationale = "Structured service locator for component lifecycle management"
 [[dependency]]
 name = "grpcio-tools"
 openwrt = "python3-grpcio-tools"
-pip = "grpcio-tools==1.78.0"
+pip = "grpcio-tools==1.80.0"
 rationale = "Protobuf compiler tools for Python [BUILD-ONLY]"
 
 [[dependency]]

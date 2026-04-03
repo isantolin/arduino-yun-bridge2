@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
@@ -177,11 +178,50 @@ def update_makefile(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
     return True
 
 
+def _parse_pip_spec(spec: str) -> tuple[str, str]:
+    """Extract (package_name, pinned_version) from a pip spec like 'foo==1.2.3'."""
+    if "==" not in spec:
+        return spec, ""
+    # Handle extras: 'typer[all]==0.24.1' -> 'typer', '0.24.1'
+    name_part, version = spec.split("==", 1)
+    name = name_part.split("[")[0].strip()
+    return name, version.strip()
+
+
+def _fetch_latest_version(package_name: str) -> str | None:
+    """Query PyPI JSON API for the latest release version."""
+    url = f"https://pypi.org/pypi/{package_name}/json"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:  # noqa: S310
+            data = msgspec.json.decode(resp.read())
+            return data["info"]["version"]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def check_latest_versions(deps: Sequence[dict]) -> list[tuple[str, str, str]]:
+    """Return list of (package, pinned, latest) for outdated packages."""
+    outdated: list[tuple[str, str, str]] = []
+    pip_specs = [dep["pip"] for dep in deps if dep.get("pip")]
+    for spec in pip_specs:
+        name, pinned = _parse_pip_spec(spec)
+        if not pinned:
+            continue
+        latest = _fetch_latest_version(name)
+        if latest and latest != pinned:
+            outdated.append((name, pinned, latest))
+    return outdated
+
+
 @app.command()
 def main(
     check: Annotated[
         bool,
         typer.Option("--check", help="Exit with status 1 if running would change any files"),
+    ] = False,
+    check_latest: Annotated[
+        bool,
+        typer.Option("--check-latest", help="Query PyPI and warn about outdated pinned versions"),
     ] = False,
     print_openwrt: Annotated[
         bool, typer.Option("--print-openwrt", help="Print OpenWrt package names and exit")
@@ -200,7 +240,21 @@ def main(
     updated_makefile = update_makefile(deps, dry_run=check)
     updated_pyproject = update_pyproject(deps, dry_run=check)
 
+    fail = False
     if check and (updated_requirements or updated_makefile or updated_pyproject):
+        fail = True
+
+    if check_latest:
+        outdated = check_latest_versions(deps)
+        if outdated:
+            typer.echo("Outdated dependencies:")
+            for name, pinned, latest in outdated:
+                typer.echo(f"  {name}: {pinned} -> {latest}")
+            fail = True
+        else:
+            typer.echo("All dependencies are up to date.")
+
+    if fail:
         raise typer.Exit(code=1)
 
 

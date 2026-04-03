@@ -12,6 +12,12 @@ concurrency:
   group: '${{ github.workflow }}-review-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}'
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+  pull-requests: write
+
 defaults:
   run:
     shell: 'bash'

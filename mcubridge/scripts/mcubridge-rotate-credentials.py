@@ -94,8 +94,11 @@ def main() -> None:
                     shutil.copy2(backup_config, uci_config)
                     raise typer.Exit(code=1)
 
-        # 5. Output results
-        sys.stdout.write(f"SERIAL_SECRET={serial_secret}\n")
+        # 5. Output results to a restricted-permission file (not stdout/logs)
+        secret_file = Path("/tmp/mcubridge_rotated_secret")
+        secret_file.write_text(f"SERIAL_SECRET={serial_secret}\n", encoding="utf-8")
+        os.chmod(secret_file, 0o600)
+        sys.stdout.write(f"SECRET_FILE={secret_file}\n")
         sys.stderr.write("[mcubridge-rotate-credentials] Updated UCI credentials and restarted McuBridge.\n")
 
     except (sh.ErrorReturnCode, uci.UciException, RuntimeError) as exc:

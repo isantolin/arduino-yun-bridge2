@@ -27,7 +27,14 @@ LOCAL_UCI_DIR=""
 SNIPPET_PATH=""
 
 extract_serial_secret() {
-  awk -F'=' '/^SERIAL_SECRET=/{print $2; exit}'
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    awk -F'=' '/^SERIAL_SECRET=/{print $2; exit}' "$file"
+  fi
+}
+
+extract_secret_file_path() {
+  awk -F'=' '/^SECRET_FILE=/{print $2; exit}'
 }
 
 write_sketch_snippet_file() {
@@ -98,10 +105,10 @@ if [[ -n "$LOCAL_UCI_DIR" ]]; then
   if ! OUTPUT=$(sudo env UCI_CONFIG_DIR="$LOCAL_UCI_DIR" "$LOCAL_ROTATE_HELPER"); then
     exit 1
   fi
-  if [[ -n "$OUTPUT" ]]; then
-    printf '%s\n' "$OUTPUT"
-  fi
-  SECRET=$(printf '%s\n' "$OUTPUT" | extract_serial_secret)
+  SECRET_FILE=$(printf '%s\n' "$OUTPUT" | extract_secret_file_path)
+  SECRET=$(extract_serial_secret "$SECRET_FILE")
+  # Clean up secret file after reading
+  [[ -n "$SECRET_FILE" ]] && rm -f "$SECRET_FILE"
   if [[ -n "$SNIPPET_PATH" ]]; then
     write_sketch_snippet_file "$SECRET" "$SNIPPET_PATH"
   fi
@@ -119,11 +126,17 @@ if ! OUTPUT=$("${SSH_CMD[@]}"); then
   exit 1
 fi
 
-if [[ -n "$OUTPUT" ]]; then
-  printf '%s\n' "$OUTPUT"
+REMOTE_SECRET_FILE=$(printf '%s\n' "$OUTPUT" | extract_secret_file_path)
+if [[ -n "$REMOTE_SECRET_FILE" ]]; then
+  # Copy secret file from remote, read locally, then clean up
+  LOCAL_TMP=$(mktemp)
+  scp "${SSH_EXTRA[@]}" "$USER@$HOST:$REMOTE_SECRET_FILE" "$LOCAL_TMP" 2>/dev/null
+  ssh "${SSH_EXTRA[@]}" "$USER@$HOST" -- rm -f "$REMOTE_SECRET_FILE" 2>/dev/null
+  SECRET=$(extract_serial_secret "$LOCAL_TMP")
+  rm -f "$LOCAL_TMP"
+else
+  SECRET=""
 fi
-
-SECRET=$(printf '%s\n' "$OUTPUT" | extract_serial_secret)
 if [[ -n "$SNIPPET_PATH" ]]; then
   write_sketch_snippet_file "$SECRET" "$SNIPPET_PATH"
 fi

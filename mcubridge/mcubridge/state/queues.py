@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import structlog
+import os
 import sqlite3
 from collections import deque
 from pathlib import Path
@@ -66,6 +67,9 @@ class PersistentQueue(Generic[T]):
                     self._store = None
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
+                # [SIL-2] CVE mitigation: restrict directory to owner-only
+                # to prevent pickle deserialization attacks via diskcache.
+                os.chmod(self.directory, 0o700)
                 self._store = DiskDeque(directory=str(self.directory))
                 self._fallback_active = False
                 self._fallback_reason = None

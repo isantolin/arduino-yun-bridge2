@@ -40,6 +40,7 @@ def _is_excluded_path(path: Path) -> bool:
         Path("mcubridge-library-arduino/build-coverage"),
         Path("mcubridge-library-arduino/build-host"),
         Path("mcubridge-library-arduino/build-host-local"),
+        Path("mcubridge-library-arduino/tests/Unity"),
     }
     rel_str = rel.as_posix()
     for prefix in excluded_prefixes:

@@ -18,14 +18,20 @@ rm -rf "${BUILD_DIR}"
 mkdir -p "${OUTPUT_ROOT}" "${OBJ_DIR}"
 
 # [SIL-2] Library Installation (Dependencies)
-echo "[coverage_arduino] Generating protocol bindings..."
-${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
-    --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
-    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
-    --cpp "${SRC_ROOT}/protocol/rpc_protocol.h" \
-    --cpp-structs "${SRC_ROOT}/protocol/rpc_structs.h" \
-    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py" \
-    --structures "${ROOT_DIR}/mcubridge/mcubridge/protocol/structures.py"
+# When run from tox, commands_pre already generates protocol bindings.
+# Re-running here would race with parallel coverage_python.sh (nanopb_pb2 import error).
+if [ -z "${TOX_ENV_NAME:-}" ]; then
+    echo "[coverage_arduino] Generating protocol bindings..."
+    ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
+        --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
+        --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
+        --cpp "${SRC_ROOT}/protocol/rpc_protocol.h" \
+        --cpp-structs "${SRC_ROOT}/protocol/rpc_structs.h" \
+        --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py" \
+        --structures "${ROOT_DIR}/mcubridge/mcubridge/protocol/structures.py"
+else
+    echo "[coverage_arduino] Skipping protocol generation (already done by tox commands_pre)"
+fi
 
 # Ensure DUMMY_ARDUINO_LIBS is set for CI
 export DUMMY_ARDUINO_LIBS="${ROOT_DIR}/.dummy_libs"

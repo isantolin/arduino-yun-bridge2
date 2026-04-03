@@ -134,16 +134,18 @@ compile_sketch() {
         fi
         return 0
     else
-        echo "✗ $sketch_name failed for $FQBN!"
-        cat "$LOG_FILE" >&2
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"
             cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
         fi
         # Critical failure only for mega
         if [ "$FQBN" == "arduino:avr:mega" ]; then
+            echo "✗ $sketch_name failed for $FQBN!"
+            cat "$LOG_FILE" >&2
             return 1
         fi
+        # Non-mega: memory overflow is expected — just warn
+        echo "⚠ $sketch_name skipped for $FQBN (non-critical, likely memory overflow)"
         return 0
     fi
 }

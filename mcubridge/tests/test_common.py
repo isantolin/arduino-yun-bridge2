@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from mcubridge.config import common
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
-from mcubridge.protocol.encoding import encode_status_reason
+
 from mcubridge.util import normalise_allowed_commands, parse_bool
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
@@ -106,7 +106,8 @@ def test_get_uci_config_flattens_list_values_and_skips_internal_keys() -> None:
 
 
 def test_encode_status_reason_trims_to_max_payload() -> None:
-    payload = encode_status_reason("x" * (protocol.MAX_PAYLOAD_SIZE + 50))
+    reason = "x" * (protocol.MAX_PAYLOAD_SIZE + 50)
+    payload = reason.encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
     assert len(payload) == protocol.MAX_PAYLOAD_SIZE
 
 

@@ -32,6 +32,10 @@ class _TrackedDiskDeque:
 
     def __init__(self, directory: str) -> None:
         self._deque = DiskDeque(directory=directory)
+        # Close the sqlite3 connection that Cache.__init__ leaves open in
+        # _local.con so it cannot leak if the object is later GC'd without
+        # an explicit close().
+        self._release_thread_con()
 
     def _release_thread_con(self) -> None:
         """Close and remove the current thread's diskcache sqlite3 connection."""
@@ -138,12 +142,14 @@ class PersistentQueue(Generic[T]):
             return
         with self._lock:
             self._close_store()
+            store: _TrackedDiskDeque | None = None
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
                 # [SIL-2] CVE mitigation: restrict directory to owner-only
                 # to prevent pickle deserialization attacks via diskcache.
                 os.chmod(self.directory, 0o700)
-                self._store = _TrackedDiskDeque(directory=str(self.directory))
+                store = _TrackedDiskDeque(directory=str(self.directory))
+                self._store = store
                 self._fallback_active = False
                 self._fallback_reason = None
                 self._last_error = None
@@ -154,7 +160,18 @@ class PersistentQueue(Generic[T]):
                     for item in list(self._store)  # type: ignore[reportUnknownArgumentType]
                 )
             except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
+                # If the store was created but not yet assigned, close it
+                # to release the sqlite3 connection before falling back.
+                if store is not None and self._store is None:
+                    try:
+                        store.close()
+                    except Exception:
+                        pass
                 self._activate_fallback_locked("initialization_failed", exc)
+                # Break the traceback reference cycle so that any sqlite3
+                # connections captured in Cache.__init__ frames are released
+                # immediately instead of waiting for the garbage collector.
+                exc.__traceback__ = None
 
     def _activate_fallback_locked(self, reason: str, exc: BaseException | None = None) -> None:
         self._close_store()

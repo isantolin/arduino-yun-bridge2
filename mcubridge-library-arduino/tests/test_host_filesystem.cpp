@@ -175,8 +175,6 @@ void test_filesystem_on_remove() {
 void test_filesystem_observer() {
   FileSystem.notification(MsgBridgeSynchronized{});
   FileSystem.notification(MsgBridgeLost{});
-  FileSystem.notification(MsgBridgeError{rpc::StatusCode::STATUS_ERROR});
-  FileSystem.notification(MsgBridgeCommand{});
 }
 
 }  // namespace

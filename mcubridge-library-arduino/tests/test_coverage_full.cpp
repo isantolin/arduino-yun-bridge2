@@ -230,8 +230,6 @@ static void test_observer_default_notifications() {
   // Call all default notification methods
   obs.notification(MsgBridgeSynchronized{});
   obs.notification(MsgBridgeLost{});
-  obs.notification(MsgBridgeError{rpc::StatusCode::STATUS_OK});
-  obs.notification(MsgBridgeCommand{0, 0, etl::span<const uint8_t>()});
   TEST_ASSERT(true);  // No crash = success
 }
 
@@ -1294,40 +1292,6 @@ static void test_fsm_unknown_event_awaiting_ack() {
 }
 
 // ============================================================================
-// 37. BridgeObserver default notification(MsgBridgeCommand) (BridgeEvents.h:24)
-// ============================================================================
-
-struct TestCommandObserver : public BridgeObserver {
-  uint16_t last_cmd = 0;
-  // Override everything EXCEPT notification(MsgBridgeCommand)
-  void notification(MsgBridgeSynchronized) override {}
-  void notification(MsgBridgeLost) override {}
-  void notification(MsgBridgeError) override {}
-  // notification(MsgBridgeCommand) uses default from BridgeObserver
-};
-
-static void test_bridge_command_notification_default() {
-  reset_test_bridge();
-  auto ba = TestAccessor::create(Bridge);
-  ba.setSynchronized();
-
-  TestCommandObserver obs;
-  Bridge.add_observer(obs);
-
-  // Dispatch a command — the observer will receive MsgBridgeCommand
-  // Since it doesn't override notification(MsgBridgeCommand), the base default fires
-  rpc::Frame f = {};
-  f.header.version = rpc::PROTOCOL_VERSION;
-  f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
-  f.header.payload_length = 0;
-  f.payload = etl::span<const uint8_t>();
-  ba.dispatch(f);
-
-  Bridge.remove_observer(obs);
-  TEST_ASSERT(true);
-}
-
-// ============================================================================
 // 38. _onRxDedupe (Bridge.cpp:701)
 // ============================================================================
 
@@ -1585,9 +1549,6 @@ int main() {
   RUN_TEST(test_fsm_unknown_event_syncing);
   RUN_TEST(test_fsm_unknown_event_idle);
   RUN_TEST(test_fsm_unknown_event_awaiting_ack);
-
-  // Observer default notification
-  RUN_TEST(test_bridge_command_notification_default);
 
   // Extra coverage: RxDedupe, Fault unknown event, HAL mkdir
   RUN_TEST(test_rx_dedupe);

@@ -19,7 +19,7 @@ from mcubridge.protocol.structures import (
 )
 
 from ..config.const import MQTT_EXPIRY_DATASTORE
-from ..protocol.topics import Topic, split_topic_segments, topic_path
+from ..protocol.topics import Topic, topic_path
 from .base import BaseComponent
 
 logger = structlog.get_logger("mcubridge.datastore")
@@ -182,7 +182,7 @@ class DatastoreComponent(BaseComponent):
         reply_context: Message | None = None,
         error_reason: str | None = None,
     ) -> None:
-        key_segments = split_topic_segments(key)
+        key_segments = tuple(filter(None, key.split("/")))
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.DATASTORE,

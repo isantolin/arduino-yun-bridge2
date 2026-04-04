@@ -13,13 +13,10 @@ import tenacity
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
 from mcubridge.protocol.topics import topic_path
-from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS
+from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Topic
 from mcubridge.state.context import RuntimeState
-from mcubridge.util import log_hexdump
 from mcubridge.util.mqtt_helper import configure_tls_context
-from mcubridge.util.fsm import create_fsm
-
-from ..util.retry import before_sleep_with_metric
+from transitions import Machine
 
 if TYPE_CHECKING:
     from mcubridge.services.runtime import BridgeService
@@ -54,8 +51,8 @@ class MqttTransport:
         self.service = service
         self.fsm_state = self.STATE_DISCONNECTED
 
-        self.machine = create_fsm(
-            self,
+        self.machine = Machine(
+            model=self,
             states=[
                 self.STATE_DISCONNECTED,
                 self.STATE_CONNECTING,
@@ -69,6 +66,9 @@ class MqttTransport:
                 {"trigger": "disconnect", "source": "*", "dest": self.STATE_DISCONNECTED},
             ],
             initial=self.STATE_DISCONNECTED,
+            queued=True,
+            model_attribute="fsm_state",
+            ignore_invalid_triggers=True,
         )
 
     async def run(self) -> None:
@@ -80,12 +80,16 @@ class MqttTransport:
         tls_context = configure_tls_context(self.config)
         reconnect_delay = max(1, self.config.reconnect_delay)
 
+        _log_cb = tenacity.before_sleep_log(logger, logging.WARNING)
+
+        def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
+            _log_cb(retry_state)
+            self.state.metrics.retries.labels(component="mqtt_connect").inc()
+
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
             retry=tenacity.retry_if_exception_type((aiomqtt.MqttError, OSError, asyncio.TimeoutError)),
-            before_sleep=before_sleep_with_metric(
-                logger, logging.WARNING, self.state.metrics.retries, "mqtt_connect",
-            ),
+            before_sleep=_before_sleep,
             reraise=True,
         )
 
@@ -132,7 +136,7 @@ class MqttTransport:
         self.connect()
 
         # [SIL-2] Last Will and Testament: auto-publish offline status on unexpected disconnect
-        will_topic = topic_path(self.state.mqtt_topic_prefix, "system", "status")
+        will_topic = topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "status")
         will_payload = b'{"status": "offline", "reason": "unexpected_disconnect"}'
         will = aiomqtt.Will(topic=will_topic, payload=will_payload, qos=1, retain=True)
 
@@ -204,7 +208,7 @@ class MqttTransport:
                 retain = message.retain
 
                 if logger.isEnabledFor(logging.DEBUG):
-                    log_hexdump(logger, logging.DEBUG, f"MQTT PUB > {topic_name}", payload)
+                    logger.log(logging.DEBUG, "[HEXDUMP] MQTT PUB > %s: %s", topic_name, payload.hex(" ").upper())
 
                 @tenacity.retry(
                     wait=tenacity.wait_exponential(multiplier=0.1, max=10),
@@ -263,11 +267,11 @@ class MqttTransport:
 
                 if logger.isEnabledFor(logging.DEBUG):
                     payload_bytes = bytes(message.payload) if message.payload else b""
-                    log_hexdump(
-                        logger,
+                    logger.log(
                         logging.DEBUG,
-                        f"MQTT SUB < {topic_str}",
-                        payload_bytes,
+                        "MQTT SUB < %s: [%s]",
+                        topic_str,
+                        payload_bytes.hex(" ").upper() if payload_bytes else "",
                     )
 
                 try:
@@ -276,7 +280,8 @@ class MqttTransport:
                 except (AttributeError, IndexError, KeyError, OSError, RuntimeError, TypeError, ValueError) as e:
                     logger.error("Error processing MQTT message on topic %s: %s", topic_str, e)
                     payload_bytes = bytes(message.payload) if message.payload else b""
-                    log_hexdump(logger, logging.ERROR, f"FAILED MQTT MSG < {topic_str}", payload_bytes)
+                    hexdump = payload_bytes.hex(" ").upper()
+                    logger.error("[HEXDUMP] FAILED MQTT MSG < %s: %s", topic_str, hexdump)
         except asyncio.CancelledError:
             with contextlib.suppress(asyncio.CancelledError):
                 raise

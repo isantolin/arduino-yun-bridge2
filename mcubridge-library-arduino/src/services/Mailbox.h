@@ -28,8 +28,6 @@ class MailboxClass : public BridgeObserver {
   // [SIL-2] Observer Interface
   [[maybe_unused]] void notification(MsgBridgeSynchronized) override { /* ready */ }
   [[maybe_unused]] void notification(MsgBridgeLost) override { _rx_buffer.clear(); }
-  [[maybe_unused]] void notification(MsgBridgeError) override {}
-  [[maybe_unused]] void notification(MsgBridgeCommand) override {}
 
   void push(etl::span<const uint8_t> data);
   [[maybe_unused]] void requestRead();

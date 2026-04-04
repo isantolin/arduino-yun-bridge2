@@ -21,77 +21,27 @@ module("luci.controller.mcubridge", package.seeall)
 local fs = require "nixio.fs"
 local uci = require "luci.model.uci".cursor()
 local sys = require "luci.sys"
-local posix = require "posix"
-local unistd = require "posix.unistd"
-local sys_wait = require "posix.sys.wait"
-local errno = require "posix.errno"
 
-local function nanosleep(seconds)
-    if seconds <= 0 then
-        return
-    end
-    local whole = math.floor(seconds)
-    local fraction = seconds - whole
-    if whole > 0 then
-        unistd.sleep(whole)
-    end
-    if fraction > 0 then
-        unistd.usleep(math.floor(fraction * 1e6))
-    end
+local function shellquote(s)
+    return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
 end
 
-local function spawn_mosquitto(argv)
-    local pid, fork_err = unistd.fork()
-    if pid == 0 then
-        posix.setenv("PATH", os.getenv("PATH") or "")
-        local _, _, exec_errno = unistd.execp("mosquitto_pub", argv)
-        unistd._exit(exec_errno or 127)
-    elseif not pid then
-        return nil, {
-            fork_error = fork_err,
-            errno = errno.errno() or 0,
-        }
-    end
-
-    while true do
-        local wait_pid, reason, status = sys_wait.wait(pid)
-        if wait_pid == pid then
-            return {
-                reason = reason,
-                status = status,
-            }
-        end
-        local err = errno.errno() or 0
-        if err ~= errno.EINTR then
-            return {
-                reason = reason,
-                status = status,
-                errno = err,
-            }
-        end
-    end
-end
-
-local function mosquitto_publish_with_retries(argv, attempts, base_delay)
+local function mosquitto_publish(argv, attempts)
     attempts = attempts or 3
-    base_delay = base_delay or 0.5
-    local delay = base_delay
-    local last_error
-
+    local parts = {}
+    for i = 2, #argv do
+        parts[#parts + 1] = shellquote(argv[i])
+    end
+    local cmd = "mosquitto_pub " .. table.concat(parts, " ")
     for attempt = 1, attempts do
-        local result, err = spawn_mosquitto(argv)
-        if result and result.reason == "exited" and result.status == 0 then
+        if sys.call(cmd) == 0 then
             return true
         end
-
-        last_error = result or err
         if attempt < attempts then
-            nanosleep(delay)
-            delay = math.min(delay * 2, 4.0)
+            sys.call("sleep 1")
         end
     end
-
-    return false, last_error
+    return false
 end
 
 function index()
@@ -206,7 +156,7 @@ function action_api(...)
         pub_args[#pub_args + 1] = "tlsv1.2"
     end
 
-    local ok, last_error = mosquitto_publish_with_retries(pub_args, 3, 0.5)
+    local ok = mosquitto_publish(pub_args, 3)
 
     if ok then
         send_json(200, {
@@ -219,7 +169,6 @@ function action_api(...)
         send_json(500, {
             status = "error",
             message = "Failed to execute mosquitto_pub. Is mosquitto-client installed?",
-            detail = last_error,
             argv = pub_args
         })
     end
@@ -256,23 +205,13 @@ end
 
 -- Deleted: action_log_daemon, action_log_mqtt, action_log_script and helper functions
 
-local function run_and_capture(cmd)
-    -- Prefer /tmp explicitly (tmpfs) to avoid accidental flash writes.
-    local tmp = (sys.exec("mktemp -p /tmp mcubridge-luci.XXXXXX 2>/dev/null") or "")
-        :gsub("%s+$", "")
-    if tmp == "" then
-        tmp = os.tmpname()
-    end
-    local wrapped = string.format("%s >%q 2>&1", cmd, tmp)
-    local rc = sys.call(wrapped)
-    local output = fs.readfile(tmp) or ""
-    fs.remove(tmp)
-    return rc, output
-end
-
 function action_rotate_credentials()
     local cmd = "/usr/bin/mcubridge-rotate-credentials"
-    local rc, output = run_and_capture(cmd)
+    local tmp = (sys.exec("mktemp -p /tmp mcubridge-luci.XXXXXX 2>/dev/null") or ""):gsub("%s+$", "")
+    if tmp == "" then tmp = os.tmpname() end
+    local rc = sys.call(string.format("%s >%q 2>&1", cmd, tmp))
+    local output = fs.readfile(tmp) or ""
+    fs.remove(tmp)
     local status = rc == 0 and 200 or 500
     local serial_secret
     if output then
@@ -296,7 +235,11 @@ end
 
 function action_hw_smoke()
     local cmd = "/usr/bin/mcubridge-hw-smoke"
-    local rc, output = run_and_capture(cmd)
+    local tmp = (sys.exec("mktemp -p /tmp mcubridge-luci.XXXXXX 2>/dev/null") or ""):gsub("%s+$", "")
+    if tmp == "" then tmp = os.tmpname() end
+    local rc = sys.call(string.format("%s >%q 2>&1", cmd, tmp))
+    local output = fs.readfile(tmp) or ""
+    fs.remove(tmp)
     local status = rc == 0 and 200 or 500
     send_json(status, {
         status = (rc == 0) and "ok" or "error",

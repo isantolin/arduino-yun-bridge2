@@ -22,7 +22,6 @@
 
 #include <string.h>
 #include <etl/algorithm.h>
-#include "hal/logging.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
@@ -241,8 +240,6 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
                                      false,
                                      rpc::requires_ack(raw_cmd),
                                      sequence_id);
-
-  notify_observers(MsgBridgeCommand{raw_cmd, sequence_id, effective_frame.payload});
 
   // [SIL-2] O(1) Jump Table for Command Categories
   static const CmdHandler kGroupHandlers[] PROGMEM = {
@@ -728,7 +725,6 @@ void BridgeClass::enterSafeState() {
 void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
   (void)sendFrame(status_code, 0, payload);
   if (_status_handler.is_valid()) _status_handler(status_code, payload);
-  notify_observers(MsgBridgeError{status_code});
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::string_view message) {

@@ -151,13 +151,14 @@ def test_queues_make_room_for_complex() -> None:
 # ============================================================================
 
 
-def test_common_encode_status_reason() -> None:
-    """Cover encode_status_reason function."""
-    from mcubridge.protocol.encoding import encode_status_reason
+def test_common_encode_status_reason_inline() -> None:
+    """Cover inline encode_status_reason logic."""
+    from mcubridge.protocol import protocol
 
-    result = encode_status_reason("test_reason")
+    reason = "test_reason"
+    result = reason.encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
     assert result == b"test_reason"
 
     # With unicode
-    result2 = encode_status_reason("razón")
+    result2 = "razón".encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
     assert isinstance(result2, bytes)

@@ -15,8 +15,9 @@ from .config.const import (
     WATCHDOG_TRIGGER_TOKEN,
 )
 from .state.context import RuntimeState
+from transitions import Machine
+
 from .util.periodic import periodic_task
-from .util.fsm import create_fsm
 import structlog
 
 WatchdogWrite = Callable[[bytes], None]
@@ -56,8 +57,8 @@ class WatchdogKeepalive:
         self._logger = logger or structlog.get_logger("mcubridge.watchdog")
 
         # FSM Initialization
-        self.state_machine = create_fsm(
-            self,
+        self.state_machine = Machine(
+            model=self,
             states=[
                 self.STATE_INIT,
                 {"name": self.STATE_RUNNING, "on_enter": "_on_fsm_start"},
@@ -68,6 +69,9 @@ class WatchdogKeepalive:
                 {"trigger": "stop", "source": self.STATE_RUNNING, "dest": self.STATE_STOPPED},
             ],
             initial=self.STATE_INIT,
+            queued=True,
+            model_attribute="fsm_state",
+            ignore_invalid_triggers=True,
         )
 
     def _on_fsm_start(self) -> None:

@@ -60,7 +60,7 @@ from ..protocol.structures import (
 )
 from .metrics import DaemonMetrics
 from .queues import BoundedByteDeque, PersistentQueue
-from ..util.fsm import create_fsm
+from transitions import Machine
 
 logger = structlog.get_logger("mcubridge.state")
 
@@ -126,8 +126,8 @@ class ManagedProcess:
     _machine: Any = None
 
     def __post_init__(self) -> None:
-        self._machine = create_fsm(
-            self,
+        self._machine = Machine(
+            model=self,
             states=[
                 PROCESS_STATE_STARTING,
                 PROCESS_STATE_RUNNING,
@@ -143,6 +143,9 @@ class ManagedProcess:
                 {"trigger": "force_kill", "source": "*", "dest": PROCESS_STATE_ZOMBIE},
             ],
             initial=PROCESS_STATE_STARTING,
+            queued=True,
+            model_attribute="fsm_state",
+            ignore_invalid_triggers=True,
             auto_transitions=False,
         )
 
@@ -231,8 +234,8 @@ class RuntimeState(msgspec.Struct):
 
     # [SIL-2] Lifecycle FSM (Single Source of Truth)
     _machine: Any = msgspec.field(
-        default_factory=lambda: create_fsm(
-            "self",
+        default_factory=lambda: Machine(
+            model="self",
             states=["disconnected", "connected", "synchronized"],
             transitions=[
                 {"trigger": "connect", "source": ["disconnected", "connected", "synchronized"], "dest": "connected"},
@@ -240,7 +243,9 @@ class RuntimeState(msgspec.Struct):
                 {"trigger": "disconnect", "source": "*", "dest": "disconnected"},
             ],
             initial="disconnected",
+            queued=True,
             model_attribute="state",
+            ignore_invalid_triggers=True,
         )
     )
 

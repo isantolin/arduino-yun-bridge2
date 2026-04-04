@@ -52,53 +52,6 @@ def _make_config(**overrides) -> RuntimeConfig:
 
 
 # ============================================================================
-# mcubridge/util/hex.py — lines 14, 28, 39
-# ============================================================================
-
-
-class TestHexUtilities:
-    def test_format_hex_empty_data(self):
-        from mcubridge.util.hex import format_hex
-
-        assert format_hex(b"") == "[]"
-
-    def test_format_hex_nonempty(self):
-        from mcubridge.util.hex import format_hex
-
-        assert format_hex(b"\xde\xad") == "[DE AD]"
-
-    def test_log_binary_traffic_enabled(self):
-        from mcubridge.util.hex import log_binary_traffic
-
-        test_logger = logging.getLogger("test.hex.traffic")
-        test_logger.setLevel(logging.DEBUG)
-        handler = logging.handlers.MemoryHandler(capacity=10)
-        test_logger.addHandler(handler)
-        log_binary_traffic(test_logger, logging.DEBUG, "TX", "frame", b"\x01\x02")
-        test_logger.removeHandler(handler)
-
-    def test_log_binary_traffic_disabled(self):
-        from mcubridge.util.hex import log_binary_traffic
-
-        test_logger = logging.getLogger("test.hex.traffic.disabled")
-        test_logger.setLevel(logging.CRITICAL)
-        log_binary_traffic(test_logger, logging.DEBUG, "TX", "frame", b"\x01\x02")
-
-    def test_log_hexdump_enabled(self):
-        from mcubridge.util.hex import log_hexdump
-
-        test_logger = logging.getLogger("test.hex.dump")
-        test_logger.setLevel(logging.DEBUG)
-        log_hexdump(test_logger, logging.DEBUG, "test-label", b"\xfe\xed")
-
-    def test_log_hexdump_disabled(self):
-        from mcubridge.util.hex import log_hexdump
-
-        test_logger = logging.getLogger("test.hex.dump.disabled")
-        test_logger.setLevel(logging.CRITICAL)
-        log_hexdump(test_logger, logging.DEBUG, "test-label", b"\xfe\xed")
-
-
 # ============================================================================
 # mcubridge/util/__init__.py — lines 22, 24, 50
 # ============================================================================

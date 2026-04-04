@@ -7,20 +7,13 @@ Avoid hardcoding topic strings elsewhere.
 from __future__ import annotations
 
 
-from .protocol import Topic, TopicBuilder
+from .protocol import Topic
 from .structures import TopicRoute
 
 
-def split_topic_segments(path: str) -> tuple[str, ...]:
-    """Public helper for service-level topic segment normalization."""
-    return tuple(filter(None, path.split("/")))
-
-
-def topic_path(prefix: str, topic: Topic | str, *segments: str | int) -> str:
+def topic_path(prefix: str, topic: Topic, *segments: str | int) -> str:
     """Join prefix, topic and optional sub-segments into a topic path."""
-    if isinstance(topic, Topic):
-        return str(topic.build(prefix, *segments))
-    return str(TopicBuilder(prefix, topic).add(*segments))
+    return str(topic.build(prefix, *segments))
 
 
 # --- Service Specific Topics ---
@@ -33,8 +26,8 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
     if not topic_name or not prefix:
         return None
 
-    prefix_segments = split_topic_segments(prefix)
-    topic_segments = split_topic_segments(topic_name)
+    prefix_segments = tuple(filter(None, prefix.split("/")))
+    topic_segments = tuple(filter(None, topic_name.split("/")))
 
     # Topic must have at least all prefix segments plus one for the service topic
     if len(topic_segments) < len(prefix_segments) + 1:

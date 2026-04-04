@@ -82,30 +82,21 @@
         container.innerHTML = html;
     }
 
-    function fetchCapabilities() {
-        XHR.get(STATUS_URL, null, function(x, data) {
-            if (!data) return;
-            
-            // Handle raw text vs object response from LuCI
-            var statusObj = data;
-            if (typeof data === 'string') {
-                try { statusObj = JSON.parse(data); } catch(e) { return; }
-            }
-
-            // Extract capabilities from deep structure: bridge -> capabilities
-            var caps = null;
-            if (statusObj && statusObj.bridge && statusObj.bridge.capabilities) {
-                caps = statusObj.bridge.capabilities;
-            }
+    async function fetchCapabilities() {
+        try {
+            var resp = await fetch(STATUS_URL);
+            var statusObj = await resp.json();
+            var caps = (statusObj && statusObj.bridge && statusObj.bridge.capabilities) || null;
             updateTable(caps);
-        });
+        } catch (e) {
+            // Silently ignore fetch errors — next poll will retry
+        }
     }
 
     // Init
     window.addEventListener('load', function() {
         fetchCapabilities();
-        // Refresh every 5s in case handshake completes late
-        setInterval(fetchCapabilities, 5000); 
+        setInterval(fetchCapabilities, 5000);
     });
 //]]></script>
 

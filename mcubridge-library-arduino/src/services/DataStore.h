@@ -28,8 +28,6 @@ class DataStoreClass : public BridgeObserver {
   // [SIL-2] Observer Interface
   [[maybe_unused]] void notification(MsgBridgeSynchronized) override { /* ready */ }
   [[maybe_unused]] void notification(MsgBridgeLost) override { _pending_gets.clear(); }
-  [[maybe_unused]] void notification(MsgBridgeError) override {}
-  [[maybe_unused]] void notification(MsgBridgeCommand) override {}
 
   void set(etl::string_view key, etl::span<const uint8_t> value);
   [[maybe_unused]] void get(etl::string_view key, DataStoreGetHandler handler);

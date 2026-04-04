@@ -21,7 +21,6 @@ from mcubridge.protocol.structures import (
     MailboxReadResponsePacket,
 )
 
-from ..protocol.encoding import encode_status_reason
 from ..protocol.topics import (
     Topic,
     topic_path,
@@ -68,9 +67,10 @@ class MailboxComponent(BaseComponent):
         stored = self.state.enqueue_mailbox_incoming(data)
         if not stored:
             logger.error("Dropping incoming mailbox message (%d bytes) due to queue limits.", len(data))
+            reason = protocol.STATUS_REASON_MAILBOX_INCOMING_OVERFLOW
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason(protocol.STATUS_REASON_MAILBOX_INCOMING_OVERFLOW),
+                reason.encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE],
             )
             return False
 
@@ -219,9 +219,10 @@ class MailboxComponent(BaseComponent):
             queue_bytes_used=self.state.mailbox_queue_bytes,
             payload_bytes=payload_size,
         )
+        reason = protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW
         await self.ctx.send_frame(
             Status.ERROR.value,
-            encode_status_reason(protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW),
+            reason.encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE],
         )
         await self._publish_available("outgoing_available", queue_len)
         overflow_topic = topic_path(

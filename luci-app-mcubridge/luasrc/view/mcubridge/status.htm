@@ -22,57 +22,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
     const T_NO_STATUS_AVAILABLE = '<%=translate("No status available")%>';
     const T_ERROR_PROCESSING_DATA = '<%=translate("Error processing data.")%>';
-    
-    // Función de utilidad para generar la URL del controlador
-    function buildControllerUrl(action) {
-        return '<%=luci.dispatcher.build_url("admin", "services", "mcubridge")%>/' + action;
+    const STATUS_URL = '<%=luci.dispatcher.build_url("admin", "services", "mcubridge", "status_raw")%>';
+
+    async function fetchStatus() {
+        var el = document.getElementById('status-content');
+        try {
+            var resp = await fetch(STATUS_URL);
+            var data = await resp.json();
+            el.textContent = JSON.stringify(data, null, 2);
+        } catch (e) {
+            el.textContent = T_ERROR_PROCESSING_DATA;
+        }
     }
 
-    function fetchStatus() {
-        var status_url = buildControllerUrl('status_raw');
-        XHR.get(status_url, null, function(x, data) {
-            var status_content_element = document.getElementById('status-content');
-            
-            // Variable para almacenar el contenido final a mostrar
-            var display_content = T_NO_STATUS_AVAILABLE;
-
-            // --- MANEJO DE JSON DE ESTADO ---
-            try {
-                if (typeof data === 'object' && data !== null) {
-                    // Caso 1: LuCI/XHR ya devolvió el objeto parseado (Tu caso actual)
-                    display_content = JSON.stringify(data, null, 2);
-                
-                } else if (typeof data === 'string' && data.trim().startsWith('{')) {
-                    // Caso 2: Es una cadena de texto, pero parece JSON (Intentamos parsear)
-                    var obj = JSON.parse(data);
-                    display_content = JSON.stringify(obj, null, 2);
-                    
-                } else {
-                    // Caso 3: Es una cadena de texto simple (ej: "No status file found.")
-                    display_content = data || T_NO_STATUS_AVAILABLE;
-                }
-
-            } catch (e) {
-                // Si el parseo o stringify falla por cualquier motivo, mostramos el dato crudo.
-                console.error("Error parsing or stringifying status data:", e);
-                display_content = String(data) || T_ERROR_PROCESSING_DATA;
-            }
-
-            // Asignamos el contenido final al elemento <pre>
-            status_content_element.textContent = display_content;
-        });
-    }
-    
-    // Función para iniciar todas las llamadas
-    function startFetching() {
+    window.addEventListener('load', function() {
         fetchStatus();
-        
-        // Configurar los intervalos de actualización (5 segundos)
         setInterval(fetchStatus, 5000);
-    }
-
-    // Iniciar cuando la ventana esté completamente cargada
-    window.addEventListener('load', startFetching);
+    });
 //]]></script>
 
 <h2><%:McuBridge Daemon Status%></h2>

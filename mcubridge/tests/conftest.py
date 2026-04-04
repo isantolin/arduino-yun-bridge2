@@ -121,7 +121,27 @@ def force_gc_cleanup():
     """Ensure all resources are released after each test to reach zero warnings."""
     import gc
     yield
+    # Close any stale event loop left by asyncio.run() or explicit set_event_loop
+    # to prevent ResourceWarning from leaked self-pipe sockets across tests.
+    try:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+        if loop is not None and not loop.is_closed():
+            loop.close()
+    except RuntimeError:
+        pass
+    asyncio.set_event_loop(None)
     gc.collect()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_file_system_root(tmp_path: Path) -> Iterator[None]:
+    """Give each test a unique file_system_root to prevent cross-test interference."""
+    import mcubridge.config.const as _const
+
+    original = _const.DEFAULT_FILE_SYSTEM_ROOT
+    _const.DEFAULT_FILE_SYSTEM_ROOT = str(tmp_path / "yun_files")
+    yield
+    _const.DEFAULT_FILE_SYSTEM_ROOT = original
 
 
 @pytest.fixture(autouse=True)
@@ -292,17 +312,7 @@ def runtime_config() -> RuntimeConfig:
 
 @pytest.fixture()
 def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
-    """Provide a RuntimeState instance with proper loop cleanup."""
-    # [TEST FIX] Ensure asyncio resources are bound to a loop that we control
-    # or the one provided by the test runner.
-    loop_to_close: asyncio.AbstractEventLoop | None = None
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        # No loop running, create one for the state objects (common in sync tests)
-        loop_to_close = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop_to_close)
-
+    """Provide a RuntimeState instance with proper cleanup."""
     state = create_runtime_state(runtime_config, initialize_spool=True)
     state.mark_transport_connected()
     state.mark_synchronized()
@@ -310,9 +320,6 @@ def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
         yield state
     finally:
         state.cleanup()
-        if loop_to_close:
-            loop_to_close.close()
-            asyncio.set_event_loop(None)
 
 
 @pytest.fixture()

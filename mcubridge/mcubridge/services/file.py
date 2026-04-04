@@ -18,7 +18,6 @@ from ..config.const import (
     VOLATILE_STORAGE_PATHS,
 )
 from ..config.settings import RuntimeConfig
-from ..protocol.encoding import encode_status_reason
 from ..protocol.structures import (
     FileReadPacket,
     FileReadResponsePacket,
@@ -315,11 +314,11 @@ class FileComponent(BaseComponent):
                 packet = FileWritePacket.decode(payload)
                 path = self._get_safe_path(packet.path)
                 if not path:
-                    await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("Invalid path"))
+                    await self.ctx.send_frame(Status.ERROR.value, b"Invalid path")
                     return False, None, "invalid_path"
 
                 if not await self._write_with_quota(path, packet.data):
-                    await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("Quota exceeded"))
+                    await self.ctx.send_frame(Status.ERROR.value, b"Quota exceeded")
                     return False, None, "quota_exceeded"
 
                 self._metadata_cache.pop(str(path), None)
@@ -329,7 +328,7 @@ class FileComponent(BaseComponent):
                 packet = FileReadPacket.decode(payload)
                 path = self._get_safe_path(packet.path)
                 if not path or not path.is_file():
-                    await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("File not found"))
+                    await self.ctx.send_frame(Status.ERROR.value, b"File not found")
                     return False, None, "file_not_found"
                 data = await asyncio.to_thread(path.read_bytes)
                 self._metadata_cache[str(path)] = {"size": len(data), "mtime": path.stat().st_mtime}
@@ -351,11 +350,12 @@ class FileComponent(BaseComponent):
                     await self.ctx.send_frame(Status.OK.value)
                     return True, b"OK", None
 
-                await self.ctx.send_frame(Status.ERROR.value, encode_status_reason("File not found"))
+                await self.ctx.send_frame(Status.ERROR.value, b"File not found")
                 return False, None, "file_not_found"
         except (ValueError, OSError) as e:
             logger.error("File operation %s failed: %s", operation, e)
-            await self.ctx.send_frame(Status.ERROR.value, encode_status_reason(str(e)))
+            err_payload = str(e).encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
+            await self.ctx.send_frame(Status.ERROR.value, err_payload)
             return False, None, str(e)
 
         return False, None, "unknown_operation"
@@ -438,7 +438,7 @@ class FileComponent(BaseComponent):
     ) -> None:
         await self.ctx.publish(
             topic=self._mqtt_response_topic(action, identifier),
-            payload=encode_status_reason(reason),
+            payload=reason.encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE],
             reply_to=inbound,
         )
 

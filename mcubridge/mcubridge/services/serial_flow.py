@@ -196,12 +196,18 @@ class SerialFlowController:
 
     def _build_retryer(self) -> tenacity.AsyncRetrying:
         """Build tenacity retryer with configured limits."""
-        from mcubridge.util.retry import serial_exponential_retryer
+        from mcubridge.config.const import (
+            SERIAL_HANDSHAKE_BACKOFF_BASE,
+            SERIAL_HANDSHAKE_BACKOFF_MAX,
+        )
 
-        return serial_exponential_retryer(
-            max_attempts=self._max_attempts,
+        return tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(self._max_attempts),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
             retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
-            logger=self._logger,
             before_sleep=self._on_retry_sleep,
             reraise=True,
         )

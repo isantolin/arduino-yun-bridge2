@@ -35,8 +35,6 @@ class ConsoleClass : public Stream, public BridgeObserver {
   // [SIL-2] Observer Interface
   void notification(MsgBridgeSynchronized) override { begin(); }
   void notification(MsgBridgeLost) override { _flags.reset(BEGUN); }
-  void notification(MsgBridgeError) override {}
-  void notification(MsgBridgeCommand) override {}
 
   size_t write(uint8_t c) override;
   size_t write(const uint8_t* buffer, size_t size) override;

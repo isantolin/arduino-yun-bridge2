@@ -27,12 +27,12 @@ from mcubridge.config.const import (
     MAX_SERIAL_FRAME_BYTES,
     DEFAULT_RECONNECT_DELAY,
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from mcubridge.protocol import protocol, structures as structures
 from mcubridge.protocol.frame import Frame
-from mcubridge.util.hex import log_binary_traffic
-from mcubridge.util.retry import serial_exponential_retryer
-from mcubridge.util.fsm import create_fsm
+from transitions import Machine
 
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
@@ -81,8 +81,8 @@ class SerialTransport:
 
         # State Machine
         self.fsm_state: str = self.STATE_DISCONNECTED
-        self._machine = create_fsm(
-            self,
+        self._machine = Machine(
+            model=self,
             states=[
                 self.STATE_DISCONNECTED,
                 self.STATE_NEGOTIATING,
@@ -94,6 +94,9 @@ class SerialTransport:
                 {"trigger": "mark_disconnected", "source": "*", "dest": self.STATE_DISCONNECTED},
             ],
             initial=self.STATE_DISCONNECTED,
+            queued=True,
+            model_attribute="fsm_state",
+            ignore_invalid_triggers=True,
             after_state_change="_on_state_change",
         )
 
@@ -276,17 +279,19 @@ class SerialTransport:
             cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
             if logger.isEnabledFor(logging.DEBUG):
-                log_binary_traffic(logger, logging.DEBUG, "MCU -> SERIAL", "RAW", packet_bytes, sequence_id=seq_id)
+                raw_hex = packet_bytes.hex(' ').upper()
+                logger.debug("[MCU -> SERIAL] [SEQ:%04X] [RAW]: [%s]", seq_id, raw_hex)
 
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
             self.state.record_serial_rx(len(encoded_packet))
 
         except (CobsDecodeError, ValueError) as exc:
-            log_binary_traffic(logger, logging.WARNING, "[SERIAL <- MCU]", f"Malformed (Err: {exc})", packet_bytes)
+            raw_hex = packet_bytes.hex(' ').upper()
+            logger.warning("[SERIAL <- MCU] [MALFORMED (ERR: %s)]: [%s]", exc, raw_hex)
             self.state.record_serial_decode_error()
             await self._check_baudrate_fallback()
         except (OSError, RuntimeError, KeyError, IndexError, TypeError) as exc:
-            log_binary_traffic(logger, logging.ERROR, "[SERIAL <- MCU]", f"Dispatch (Err: {exc})", packet_bytes)
+            logger.log(logging.ERROR, "[SERIAL <- MCU] [DISPATCH (ERR: %s)]: [%s]", exc, packet_bytes.hex(' ').upper())
             self.state.record_serial_decode_error()
             await self._check_baudrate_fallback()
 
@@ -333,7 +338,7 @@ class SerialTransport:
             encoded = cobs_encode(frame.build()) + protocol.FRAME_DELIMITER
 
             if logger.isEnabledFor(logging.DEBUG):
-                log_binary_traffic(logger, logging.DEBUG, "SERIAL -> MCU", "RAW", encoded, sequence_id=seq)
+                logger.log(logging.DEBUG, "[SERIAL -> MCU] [SEQ:%04X] [RAW]: [%s]", seq, encoded.hex(' ').upper())
 
             self.writer.write(encoded)
             await self.writer.drain()
@@ -349,10 +354,14 @@ class SerialTransport:
         logger.info("Negotiating baudrate switch to %d...", target_baud)
 
         payload = structures.SetBaudratePacket(baudrate=target_baud).encode()
-        retryer = serial_exponential_retryer(
-            max_attempts=3,
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(3),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
             retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
-            logger=logger,
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
 

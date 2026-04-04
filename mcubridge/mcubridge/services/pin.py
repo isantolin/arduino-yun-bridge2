@@ -7,6 +7,7 @@ import structlog
 from typing import Any
 
 from aiomqtt.message import Message
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, PinAction, Status
 from mcubridge.protocol.structures import (
     AnalogReadResponsePacket,
@@ -18,7 +19,6 @@ from mcubridge.protocol.structures import (
 )
 
 from ..config.const import MQTT_EXPIRY_PIN
-from ..protocol.encoding import encode_status_reason
 from ..protocol.topics import Topic, topic_path
 from ..state.context import PendingPinRequest
 from .base import BaseComponent
@@ -53,7 +53,7 @@ class PinComponent(BaseComponent):
         )
         await self.ctx.send_frame(
             Status.NOT_IMPLEMENTED.value,
-            encode_status_reason(reason),
+            reason.encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE],
         )
         return False
 

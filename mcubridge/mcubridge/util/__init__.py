@@ -4,15 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .hex import format_hex, log_binary_traffic, log_hexdump
-
 __all__ = [
     "parse_bool",
     "normalise_allowed_commands",
     "chunk_bytes",
-    "log_hexdump",
-    "format_hex",
-    "log_binary_traffic",
 ]
 
 

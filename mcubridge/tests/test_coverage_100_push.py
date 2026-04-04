@@ -17,7 +17,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
-import tenacity
 
 from mcubridge.config.common import get_default_config
 from mcubridge.config.settings import RuntimeConfig
@@ -421,12 +420,13 @@ class TestTopicParsing:
 
         assert parse_topic("br", "") is None
 
-    def test_topic_path_with_string(self):
+    def test_topic_path_with_topic_enum(self):
+        from mcubridge.protocol.protocol import Topic
         from mcubridge.protocol.topics import topic_path
 
-        result = topic_path("br", "console", "in")
+        result = topic_path("br", Topic.CONSOLE, "in")
         assert "br" in result
-        assert "console" in result
+        assert "in" in result
 
 
 # ===================================================================
@@ -473,31 +473,6 @@ class TestMqttTlsContext:
 # ===================================================================
 # 9. util/retry.py  (69% → 100%)
 # ===================================================================
-
-def test_before_sleep_with_metric():
-    from mcubridge.util.retry import before_sleep_with_metric
-
-    counter = MagicMock()
-    counter.labels.return_value.inc = MagicMock()
-    logger = logging.getLogger("test")
-
-    before_sleep_with_metric(logger, logging.WARNING, counter, "serial")
-    retry_state = MagicMock(spec=tenacity.RetryCallState)
-    retry_state.attempt_number = 2
-    retry_state.outcome = MagicMock()
-    retry_state.outcome.failed = True
-    retry_state.outcome.exception.return_value = RuntimeError("err")
-    retry_state.next_action = None
-    retry_state.idle_for = 0
-    retry_state.retry_object = MagicMock()
-    retry_state.retry_object.iter.return_value = iter([])
-
-    with patch("tenacity.before_sleep_log") as mock_log:
-        mock_log.return_value = MagicMock()
-        cb2 = before_sleep_with_metric(logger, logging.WARNING, counter, "serial")
-        cb2(retry_state)
-    counter.labels.assert_called_with(component="serial")
-
 
 # ===================================================================
 # 10. config/logging.py  memoryview path  (91% → 100%)

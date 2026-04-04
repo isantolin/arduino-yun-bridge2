@@ -27,8 +27,6 @@ class FileSystemClass : public BridgeObserver {
   // [SIL-2] Observer Interface
   [[maybe_unused]] void notification(MsgBridgeSynchronized) override { /* ready */ }
   [[maybe_unused]] void notification(MsgBridgeLost) override { _read_handler.clear(); }
-  [[maybe_unused]] void notification(MsgBridgeError) override {}
-  [[maybe_unused]] void notification(MsgBridgeCommand) override {}
 
   void write(etl::string_view path, etl::span<const uint8_t> data);
   void read(etl::string_view path, FileSystemReadHandler handler);

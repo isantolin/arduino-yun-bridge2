@@ -43,8 +43,7 @@ from ..security.security import (
     validate_nonce_counter,
 )
 from ..state.context import McuCapabilities, RuntimeState
-from ..util.retry import handshake_sync_retryer, serial_exponential_retryer
-from ..util.fsm import create_fsm
+from transitions import Machine
 
 from typing import Protocol
 
@@ -136,8 +135,8 @@ class SerialHandshakeManager:
         self._capabilities_future: asyncio.Future[bytes] | None = None
 
         # FSM Initialization
-        self.state_machine = create_fsm(
-            self,
+        self.state_machine = Machine(
+            model=self,
             states=[
                 self.STATE_UNSYNCHRONIZED,
                 self.STATE_RESETTING,
@@ -163,6 +162,9 @@ class SerialHandshakeManager:
                 {"trigger": "reset_fsm", "source": "*", "dest": self.STATE_UNSYNCHRONIZED},
             ],
             initial=self.STATE_UNSYNCHRONIZED,
+            queued=True,
+            model_attribute="fsm_state",
+            ignore_invalid_triggers=True,
             after_state_change="_on_fsm_state_change",
         )
 
@@ -180,9 +182,16 @@ class SerialHandshakeManager:
 
     async def synchronize(self) -> bool:
         # [SIL-2] Unified Retry Strategy for Link Synchronisation
-        retryer = handshake_sync_retryer(
-            max_attempts=self._fatal_threshold,
-            logger=logger,
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(self._fatal_threshold),
+            wait=tenacity.wait_exponential_jitter(
+                initial=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+                jitter=1.0,
+            ),
+            retry=tenacity.retry_if_result(lambda res: res is False),
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            reraise=False,
         )
 
         async def _attempt() -> bool:
@@ -370,10 +379,13 @@ class SerialHandshakeManager:
         cmd_id = Command.CMD_GET_CAPABILITIES.value
         self._logger.debug("Starting capabilities discovery using Command ID 0x%02X", cmd_id)
 
-        retryer = serial_exponential_retryer(
-            max_attempts=5,
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(5),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
             retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
-            logger=self._logger,
             before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
             reraise=False,
         )

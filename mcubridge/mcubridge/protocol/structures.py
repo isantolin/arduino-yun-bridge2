@@ -429,10 +429,8 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             self.mqtt_keyfile = self.mqtt_keyfile.strip() or None
 
         # [SIL-2] MQTT Topic Normalization
-        from mcubridge.protocol.topics import split_topic_segments
-
         raw_topic = str(self.mqtt_topic).strip()
-        segments = split_topic_segments(raw_topic)
+        segments = tuple(filter(None, raw_topic.split("/")))
         if not segments:
             raise ValueError("mqtt_topic must contain at least one segment")
         self.mqtt_topic = "/".join(segments)

@@ -120,17 +120,26 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
 def force_gc_cleanup():
     """Ensure all resources are released after each test to reach zero warnings."""
     import gc
+    import warnings
     yield
     # Close any stale event loop left by asyncio.run() or explicit set_event_loop
     # to prevent ResourceWarning from leaked self-pipe sockets across tests.
-    try:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop is not None and not loop.is_closed():
-            loop.close()
-    except RuntimeError:
-        pass
+    #
+    # Python 3.13 deprecated get_event_loop() when no current loop exists.
+    # Access the policy's thread-local directly to avoid triggering the
+    # DeprecationWarning that filterwarnings=["error"] would promote to fatal.
+    policy = asyncio.get_event_loop_policy()
+    loop = getattr(getattr(policy, "_local", None), "_loop", None)
+    if loop is not None and not loop.is_closed():
+        loop.close()
     asyncio.set_event_loop(None)
-    gc.collect()
+    # Collect garbage while temporarily suppressing PytestUnraisableExceptionWarning
+    # caused by diskcache sqlite3.Connection objects finalised during GC.  The
+    # connections are managed by diskcache internals and cannot be closed earlier
+    # without coupling test infrastructure to the library's threading model.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=pytest.PytestUnraisableExceptionWarning)
+        gc.collect()
 
 
 @pytest.fixture(autouse=True)

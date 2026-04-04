@@ -48,7 +48,10 @@ testpaths = ["mcubridge/tests"]
 pythonpath = ["typings", ".", "mcubridge"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*"]
 markers = ["fuzz: mark a test as a fuzz test"]
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    "ignore:Exception ignored in.*sqlite3\\.Connection:pytest.PytestUnraisableExceptionWarning",
+]
 
 [tool.pyright]
 typeCheckingMode = "strict"

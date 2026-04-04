@@ -13,8 +13,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import psutil
+import msgspec
 import pytest
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import (
     Command,
     Status,
@@ -22,33 +22,7 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.state.context import create_runtime_state
 
-
-def _make_config(**overrides) -> RuntimeConfig:
-    from mcubridge.config.const import (
-        DEFAULT_MQTT_PORT,
-        DEFAULT_PROCESS_TIMEOUT,
-        DEFAULT_RECONNECT_DELAY,
-        DEFAULT_STATUS_INTERVAL,
-    )
-
-    defaults = dict(
-        serial_port="/dev/null",
-        serial_baud=115200,
-        serial_safe_baud=115200,
-        mqtt_host="localhost",
-        mqtt_port=DEFAULT_MQTT_PORT,
-        mqtt_topic="bridge",
-        allowed_commands=("echo", "ls", "cat", "true"),
-        file_system_root="/tmp",
-        process_timeout=DEFAULT_PROCESS_TIMEOUT,
-        reconnect_delay=DEFAULT_RECONNECT_DELAY,
-        status_interval=DEFAULT_STATUS_INTERVAL,
-        debug_logging=False,
-        process_max_concurrent=2,
-        serial_shared_secret=b"s_e_c_r_e_t_mock",
-    )
-    defaults.update(overrides)
-    return RuntimeConfig(**defaults)
+from tests._helpers import make_test_config as _make_config
 
 
 # ============================================================================
@@ -799,11 +773,11 @@ class TestConfigSettings:
         assert config.serial_port == "/dev/null"
 
     def test_runtime_config_shared_secret_too_short(self):
-        with pytest.raises(ValueError, match="serial_shared_secret"):
+        with pytest.raises((ValueError, msgspec.ValidationError), match="serial_shared_secret"):
             _make_config(serial_shared_secret=b"abc")
 
     def test_runtime_config_changeme_secret(self):
-        with pytest.raises(ValueError, match="insecure"):
+        with pytest.raises((ValueError, msgspec.ValidationError), match="insecure"):
             _make_config(serial_shared_secret=b"changeme123")
 
 

@@ -8,17 +8,14 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import serial as serial_fast
 
+from tests._helpers import make_test_config
+
 
 def _make_config() -> RuntimeConfig:
-    return RuntimeConfig(
+    return make_test_config(
         serial_port="/dev/test0",
-        serial_baud=115200,
-        serial_safe_baud=115200,
-        mqtt_host="localhost",
-        mqtt_port=1883,
         mqtt_topic="br",
         allowed_commands=(),
-        file_system_root="/tmp",
         process_timeout=5,
         reconnect_delay=1,
         serial_shared_secret=b"valid_secret_1234",

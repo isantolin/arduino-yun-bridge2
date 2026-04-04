@@ -11,48 +11,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from mcubridge.config.const import (
-    DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_STATUS_INTERVAL,
-)
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD
-from mcubridge.protocol.protocol import (
-    DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUDRATE,
-)
 from mcubridge.protocol.protocol import (
     Status,
 )
 from mcubridge.services.process import ProcessComponent
 from mcubridge.state.context import create_runtime_state
 
-
-def _make_config(*, process_max_concurrent: int = 2) -> RuntimeConfig:
-    return RuntimeConfig(
-        serial_port="/dev/null",
-        serial_baud=DEFAULT_SERIAL_BAUD,
-        serial_safe_baud=DEFAULT_SERIAL_SAFE_BAUDRATE,
-        mqtt_host="localhost",
-        mqtt_port=DEFAULT_MQTT_PORT,
-        mqtt_user=None,
-        mqtt_pass=None,
-        mqtt_tls=False,
-        mqtt_cafile=None,
-        mqtt_certfile=None,
-        mqtt_keyfile=None,
-        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
-        allowed_commands=("echo", "ls", "cat", "true"),
-        file_system_root="/tmp",
-        process_timeout=DEFAULT_PROCESS_TIMEOUT,
-        reconnect_delay=DEFAULT_RECONNECT_DELAY,
-        status_interval=DEFAULT_STATUS_INTERVAL,
-        debug_logging=False,
-        process_max_concurrent=process_max_concurrent,
-        serial_shared_secret=b"s_e_c_r_e_t_mock",
-    )
+from tests._helpers import make_test_config
 
 
 @pytest.fixture
@@ -62,7 +27,7 @@ def mock_enqueue() -> AsyncMock:
 
 @pytest_asyncio.fixture
 async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:
-    config = _make_config(process_max_concurrent=4)
+    config = make_test_config(process_max_concurrent=4)
     state = create_runtime_state(config)
     service = MagicMock()
     service.acknowledge_mcu_frame = AsyncMock()

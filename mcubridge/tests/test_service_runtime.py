@@ -8,15 +8,6 @@ from types import SimpleNamespace
 
 import msgspec
 import pytest
-from mcubridge.config.const import (
-    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-    DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_STATUS_INTERVAL,
-)
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
@@ -25,30 +16,12 @@ from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
+from tests._helpers import make_test_config
+
 
 def _make_config() -> RuntimeConfig:
-    return RuntimeConfig(
-        serial_port="/dev/null",
-        serial_baud=protocol.DEFAULT_BAUDRATE,
-        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
-        mqtt_host="localhost",
-        mqtt_port=DEFAULT_MQTT_PORT,
-        mqtt_user=None,
-        mqtt_pass=None,
-        mqtt_tls=False,
-        mqtt_cafile=None,
-        mqtt_certfile=None,
-        mqtt_keyfile=None,
-        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+    return make_test_config(
         allowed_commands=("echo", "ls"),
-        file_system_root="/tmp",
-        process_timeout=DEFAULT_PROCESS_TIMEOUT,
-        reconnect_delay=DEFAULT_RECONNECT_DELAY,
-        status_interval=DEFAULT_STATUS_INTERVAL,
-        debug_logging=False,
-        console_queue_limit_bytes=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-        mailbox_queue_limit=DEFAULT_MAILBOX_QUEUE_LIMIT,
-        mailbox_queue_bytes_limit=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
         serial_shared_secret=b"testshared",
     )
 

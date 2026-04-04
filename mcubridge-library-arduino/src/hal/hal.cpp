@@ -115,6 +115,13 @@ bool ensure_host_parent_directories(const PathString& full_path) {
 
   return true;
 }
+
+/// Convert a string_view path to a resolved host filesystem path.
+bool resolve_to_full_path(etl::string_view path, PathString& full_path_out) {
+  PathString rel_path;
+  rel_path.assign(path.begin(), path.end());
+  return resolve_host_path(rel_path.c_str(), full_path_out);
+}
 #endif
 }
 
@@ -176,12 +183,8 @@ bool hasSD() {
 
 etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
 #if defined(BRIDGE_HOST_TEST)
-  // [SIL-2] Ensure null-termination for POSIX functions
-  PathString rel_path;
-  rel_path.assign(path.begin(), path.end());
-
   PathString full_path;
-  if (!resolve_host_path(rel_path.c_str(), full_path) ||
+  if (!resolve_to_full_path(path, full_path) ||
       !ensure_host_parent_directories(full_path)) {
     return etl::unexpected<HalError>(HalError::IO_ERROR);
   }
@@ -210,12 +213,8 @@ etl::expected<ChunkResult, HalError> readFileChunk(
     size_t offset,
     etl::span<uint8_t> buffer) {
 #if defined(BRIDGE_HOST_TEST)
-  // [SIL-2] Ensure null-termination
-  PathString rel_path;
-  rel_path.assign(path.begin(), path.end());
-
   PathString full_path;
-  if (!resolve_host_path(rel_path.c_str(), full_path)) {
+  if (!resolve_to_full_path(path, full_path)) {
     return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   }
 
@@ -258,12 +257,8 @@ etl::expected<ChunkResult, HalError> readFileChunk(
 
 etl::expected<void, HalError> removeFile(etl::string_view path) {
 #if defined(BRIDGE_HOST_TEST)
-  // [SIL-2] Ensure null-termination
-  PathString rel_path;
-  rel_path.assign(path.begin(), path.end());
-
   PathString full_path;
-  if (!resolve_host_path(rel_path.c_str(), full_path)) {
+  if (!resolve_to_full_path(path, full_path)) {
     return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   }
   if (::unlink(full_path.c_str()) == 0) {

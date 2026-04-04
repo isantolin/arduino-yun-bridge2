@@ -90,10 +90,8 @@ class DatastoreComponent(BaseComponent):
         payload_str: str,
         inbound: Message | None = None,
     ) -> None:
-        parts = remainder.copy()
-        is_request = identifier == DatastoreAction.GET and bool(parts) and parts[-1] == "request"
-        if is_request:
-            parts.pop()
+        is_request = identifier == DatastoreAction.GET and bool(remainder) and remainder[-1] == "request"
+        parts = remainder[:-1] if is_request else remainder
 
         key = "/".join(parts)
         if not key:

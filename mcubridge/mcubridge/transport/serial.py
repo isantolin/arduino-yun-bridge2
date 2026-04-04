@@ -78,6 +78,7 @@ class SerialTransport:
         self._negotiation_future: asyncio.Future[bool] | None = None
         self._consecutive_crc_errors = 0
         self._tx_sequence_id = 0
+        self._packet_semaphore = asyncio.Semaphore(16)
 
         # State Machine
         self.fsm_state: str = self.STATE_DISCONNECTED
@@ -265,13 +266,15 @@ class SerialTransport:
                 logger.debug("Discarding malformed frame during read: %s", e)
 
         if self.loop:
-            self.loop.create_task(self._async_process_packet(encoded_packet))
+            self.loop.create_task(self._bounded_process_packet(encoded_packet))
+
+    async def _bounded_process_packet(self, encoded_packet: bytes | memoryview) -> None:
+        """Backpressure wrapper: limits concurrent packet processing tasks."""
+        async with self._packet_semaphore:
+            await self._async_process_packet(encoded_packet)
 
     async def _async_process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Async packet processing logic."""
-        # [DEBUG] Trace packet intake
-        logger.debug("[SERIAL <- MCU] Processing Packet: %s", encoded_packet.hex(" "))
-
         packet_bytes = encoded_packet if isinstance(encoded_packet, bytes) else encoded_packet.tobytes()
 
         try:

@@ -7,7 +7,6 @@ quick unit test can reach without real hardware or broker connectivity.
 from __future__ import annotations
 
 import logging
-import os
 import sqlite3
 import ssl
 import time
@@ -23,21 +22,12 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
+from tests._helpers import make_test_config as _make_config
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _make_config(**overrides: Any) -> RuntimeConfig:
-    raw = get_default_config()
-    raw.update(
-        serial_port="/dev/null",
-        serial_shared_secret=b"test_secret_1234",
-        mqtt_spool_dir=f"/tmp/mcubridge-test-push-{os.getpid()}",
-    )
-    raw.update(overrides)
-    return msgspec.convert(raw, RuntimeConfig, strict=False)
-
 
 def _make_state(cfg: RuntimeConfig | None = None) -> RuntimeState:
     cfg = cfg or _make_config()
@@ -65,12 +55,18 @@ class TestSpiComponent:
         state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_begin(self, spi):
-        assert await spi.handle_mqtt("begin", [], b"", MagicMock()) is True
-
-    @pytest.mark.asyncio
-    async def test_end(self, spi):
-        assert await spi.handle_mqtt("end", [], b"", MagicMock()) is True
+    @pytest.mark.parametrize(
+        ("action", "payload", "expected"),
+        [
+            ("begin", b"", True),
+            ("end", b"", True),
+            ("transfer", b"\x01\x02", True),
+            ("nope", b"", False),
+        ],
+        ids=["begin", "end", "transfer", "unknown_action"],
+    )
+    async def test_simple_action(self, spi, action, payload, expected):
+        assert await spi.handle_mqtt(action, [], payload, MagicMock()) is expected
 
     @pytest.mark.asyncio
     async def test_config_valid(self, spi):
@@ -80,14 +76,6 @@ class TestSpiComponent:
     @pytest.mark.asyncio
     async def test_config_malformed_json(self, spi):
         assert await spi.handle_mqtt("config", [], b"not-json", MagicMock()) is False
-
-    @pytest.mark.asyncio
-    async def test_transfer(self, spi):
-        assert await spi.handle_mqtt("transfer", [], b"\x01\x02", MagicMock()) is True
-
-    @pytest.mark.asyncio
-    async def test_unknown_action(self, spi):
-        assert await spi.handle_mqtt("nope", [], b"", MagicMock()) is False
 
     @pytest.mark.asyncio
     async def test_exception_path(self, spi):

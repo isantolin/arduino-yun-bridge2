@@ -406,6 +406,20 @@ bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "
 bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "maturin" "maturin>=1.4.0"
 bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "Cython" "Cython>=3.0.0"
 
+# [FIX] Cross-version site-packages compatibility.
+# When the SDK Python 3.13 is not yet built, the bootstrap above uses the host
+# Python (e.g. 3.10/3.12) which installs to lib/python3.X/site-packages/.
+# The SDK's Python 3.13 won't find them.  Copy everything to python3.13/.
+_hostpkg_lib="$SDK_DIR/staging_dir/hostpkg/lib"
+_sdk_sp="$_hostpkg_lib/python3.13/site-packages"
+mkdir -p "$_sdk_sp"
+for _sp_dir in "$_hostpkg_lib"/python3.*/site-packages; do
+    [ -d "$_sp_dir" ] || continue
+    [ "$(cd "$_sp_dir" && pwd)" = "$(cd "$_sdk_sp" && pwd)" ] 2>/dev/null && continue
+    echo "[INFO] Copying packages from $_sp_dir -> $_sdk_sp"
+    cp -a "$_sp_dir"/. "$_sdk_sp"/ 2>/dev/null || true
+done
+
 # [FIX] Force bootstrap maturin for cryptography
 if [ -x "$SDK_DIR/staging_dir/hostpkg/bin/python3" ]; then
     echo "[INFO] Bootstrapping maturin>=1.4 in SDK..."

@@ -82,7 +82,7 @@ class MQTTPublishSpool:
             return
         self._closed = True
         try:
-            if hasattr(self, "_records") and self._records is not None:
+            if hasattr(self, "_records"):
                 self._records.close()
         finally:
             if hasattr(self, "_records"):

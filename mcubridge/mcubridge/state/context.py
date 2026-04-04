@@ -496,12 +496,9 @@ class RuntimeState(msgspec.Struct):
     def configure(self, config: RuntimeConfig) -> None:
         # [SIL-2] Close existing persistent queues if they are being replaced
         # to ensure that sqlite connections are not leaked.
-        if self.mailbox_queue is not None:
-            self.mailbox_queue.close()
-        if self.mailbox_incoming_queue is not None:
-            self.mailbox_incoming_queue.close()
-        if self.console_to_mcu_queue is not None:
-            self.console_to_mcu_queue.close()
+        self.mailbox_queue.close()
+        self.mailbox_incoming_queue.close()
+        self.console_to_mcu_queue.close()
 
         if config.allowed_policy is not None:
             self.allowed_policy = config.allowed_policy

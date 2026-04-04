@@ -8,7 +8,7 @@ import sqlite3
 from collections import deque
 from pathlib import Path
 from threading import Lock
-from typing import Generic, Iterable, TypeVar, cast
+from typing import Generic, Iterable, Iterator, TypeVar, cast
 
 import msgspec
 from diskcache import Deque as DiskDeque
@@ -77,8 +77,8 @@ class _TrackedDiskDeque:
         self._deque.clear()  # type: ignore[reportUnknownMemberType]
         self._release_thread_con()
 
-    def __iter__(self) -> Iterable[object]:
-        result = list(self._deque)  # type: ignore[reportReturnType]
+    def __iter__(self) -> Iterator[object]:
+        result: list[object] = list(self._deque)  # type: ignore[reportReturnType]
         self._release_thread_con()
         return iter(result)
 

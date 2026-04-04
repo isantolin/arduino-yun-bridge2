@@ -7,7 +7,8 @@ PKG_RELEASE:=1
 PYPI_NAME:=typer
 PKG_HASH:=e39b4732d65fbdcde189ae76cf7cd48aeae72919dea1fdfc16593be016256b45
 
-# typer 0.24.1 declares pdm.backend; the backend is bootstrapped into hostpkg by 1_compile.sh.
+# typer 0.24.1 needs pdm.backend which is injected into the SDK's host Python
+# by 1_compile.sh after the host Python is built (before package compilation).
 PKG_BUILD_DEPENDS:=python-build/host python-installer/host python-wheel/host
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk

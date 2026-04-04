@@ -281,24 +281,6 @@ check_python_module() {
 
 check_python_module "setuptools"
 
-# ... (Funciones bootstrap auxiliares simplificadas para ejecución) ...
-# Para asegurar éxito, incluimos lógica básica de bootstrap aquí si falla el entorno
-bootstrap_python_module_into_prefix() {
-    local python_bin="$1"
-    local prefix_dir="$2"
-    local module="$3"
-    local package_spec="${4:-$module}"
-    if [ -x "$python_bin" ]; then
-        if ! "$python_bin" -c "import ${module}" >/dev/null 2>&1; then
-            echo "[INFO] Bootstrapping $module in SDK..."
-            if ! "$python_bin" -m pip install --upgrade --prefix "$prefix_dir" "$package_spec"; then
-                echo "[ERROR] Failed to bootstrap $module"
-                exit 1
-            fi
-        fi
-    fi
-}
-
 # --- PREPARE SDK ---
 if command -v unzstd >/dev/null 2>&1; then ZSTD_DECOMPRESSOR="unzstd"; 
 elif command -v zstd >/dev/null 2>&1; then ZSTD_DECOMPRESSOR="zstd -d"; 
@@ -366,71 +348,11 @@ fi
 # [FIX] Asegurar que Rust/Maturin estén inyectados incluso si el SDK ya existía
 inject_rust_into_sdk
 
-# [FIX] Leverage host system build tools to avoid slow SDK-internal host-builds
-bootstrap_python_module_into_prefix() {
-    local target_python="$1"
-    local prefix_dir="$2"
-    local module_name="$3"
-    local pip_spec="$4"
-
-    # [SIL-2] Resilient selection: Use SDK Python if available, fallback to Host Python
-    local python_bin
-    if [ -x "$target_python" ]; then
-        python_bin="$target_python"
-    else
-        python_bin=$(which python3)
-        echo "[INFO] SDK internal Python missing at $target_python, falling back to host Python: $python_bin"
-    fi
-
-    echo "[INFO] Bootstrapping $pip_spec in SDK using $python_bin..."
-    "$python_bin" -m pip install --no-cache-dir --prefix "$prefix_dir" "$pip_spec" || {
-        echo "[WARN] Could not bootstrap $module_name via pip, attempting symlink from host..."
-        # Fallback: find host's version and symlink it (Aero-resilient fallback)
-        local host_path
-        host_path=$(python3 - <<PY 2>/dev/null
-import importlib
-spec = importlib.import_module("$module_name")
-print(getattr(spec, "__file__", ""))
-PY
-)
-        if [ -n "$host_path" ]; then
-            mkdir -p "$prefix_dir/lib/python3.13/site-packages"
-            ln -sf "$host_path" "$prefix_dir/lib/python3.13/site-packages/"
-        fi
-    }
-}
-
-# Bootstrap critical build tools
-bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "hatchling" "hatchling>=1.18.0"
-bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "pdm.backend" "pdm-backend>=2.4.0"
-bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "maturin" "maturin>=1.4.0"
-bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "Cython" "Cython>=3.0.0"
-
-# [FIX] Cross-version site-packages compatibility.
-# When the SDK Python 3.13 is not yet built, the bootstrap above uses the host
-# Python (e.g. 3.10/3.12) which installs to lib/python3.X/site-packages/.
-# The SDK's Python 3.13 won't find them.  Copy everything to python3.13/.
-_hostpkg_lib="$SDK_DIR/staging_dir/hostpkg/lib"
-_sdk_sp="$_hostpkg_lib/python3.13/site-packages"
-mkdir -p "$_sdk_sp"
-for _sp_dir in "$_hostpkg_lib"/python3.*/site-packages; do
-    [ -d "$_sp_dir" ] || continue
-    [ "$(cd "$_sp_dir" && pwd)" = "$(cd "$_sdk_sp" && pwd)" ] 2>/dev/null && continue
-    echo "[INFO] Copying packages from $_sp_dir -> $_sdk_sp"
-    cp -a "$_sp_dir"/. "$_sdk_sp"/ 2>/dev/null || true
-done
-
-# [FIX] Force bootstrap maturin for cryptography
-if [ -x "$SDK_DIR/staging_dir/hostpkg/bin/python3" ]; then
-    echo "[INFO] Bootstrapping maturin>=1.4 in SDK..."
-    "$SDK_DIR/staging_dir/hostpkg/bin/python3" -m pip install --upgrade --prefix "$SDK_DIR/staging_dir/hostpkg" "maturin>=1.4" || exit 1
-fi
-
-# [FIX] Force bootstrap Cython 3.x for uvloop
-if [ -x "$SDK_DIR/staging_dir/hostpkg/bin/python3" ]; then
-    echo "[INFO] Bootstrapping Cython>=3.1 in SDK..."
-    "$SDK_DIR/staging_dir/hostpkg/bin/python3" -m pip install --upgrade --prefix "$SDK_DIR/staging_dir/hostpkg" "Cython>=3.1" || exit 1
-fi
+# NOTE: Build backends (pdm-backend, maturin, Cython) are installed into the
+# SDK's own Python 3.13 after it is built — see the inject step before the
+# package compile loop.  Previous attempts to bootstrap here failed because
+# the SDK Python does not exist yet and host-Python pip sees the packages as
+# "already satisfied" in the runner's ~/.local path.
 
 # 2. Package Sources
 # Prefer using the local feed (src-link) to avoid duplicated/copies drifting.
@@ -654,6 +576,20 @@ find "$BIN_DIR" -type f -name '*.apk' -delete
 
 # [FIX] Asegurar que estamos en el SDK antes de compilar
 cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
+
+# Build the SDK's host Python first so we can install build backends into it.
+# python3-typer needs pdm.backend, python3-cryptography needs maturin, python3-uvloop needs Cython.
+echo "[BUILD] Pre-building SDK host Python3..."
+make package/feeds/packages/python3/host/compile -j$(nproc) 2>&1 | tail -5 || true
+
+_SDK_PY="$SDK_DIR/staging_dir/hostpkg/bin/python3"
+if [ -x "$_SDK_PY" ]; then
+    echo "[INFO] Injecting build backends into SDK Python ($($_SDK_PY --version))..."
+    "$_SDK_PY" -m pip install --no-cache-dir --ignore-installed --prefix "$SDK_DIR/staging_dir/hostpkg" \
+        "pdm-backend>=2.4.0" "maturin>=1.4" "Cython>=3.1" 2>&1 | tail -5
+else
+    echo "[WARN] SDK Python not found at $_SDK_PY after host build; build backends may be missing."
+fi
 
 # [FIX] Orden de compilación: Primero librerías críticas (extraídas dinámicamente)
 LIBS=$(python3 "$REPO_ROOT/tools/sync_runtime_deps.py" --print-openwrt | grep -vE "^(python3|python3-uci|mosquitto-client|xxd)$" | xargs)

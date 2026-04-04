@@ -14,6 +14,7 @@ from aiomqtt.message import Message
 
 from .conftest import make_component_container
 
+
 @pytest.fixture
 def runtime_config() -> RuntimeConfig:
     from mcubridge.config.const import (
@@ -36,6 +37,7 @@ def runtime_config() -> RuntimeConfig:
         serial_shared_secret=b"secret",
     )
 
+
 @pytest.fixture
 def runtime_state(runtime_config: RuntimeConfig):
     state = create_runtime_state(runtime_config)
@@ -43,6 +45,7 @@ def runtime_state(runtime_config: RuntimeConfig):
         yield state
     finally:
         state.cleanup()
+
 
 @pytest.fixture
 def dispatcher(runtime_config: RuntimeConfig, runtime_state):
@@ -75,6 +78,7 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state):
 
 # --- Dispatcher Gaps ---
 
+
 @pytest.mark.asyncio
 async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
     """Cover line 165-166 in dispatcher.py (Pin component not registered)."""
@@ -91,6 +95,7 @@ async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
     result = await handler(0, b"\x01")
     assert result is False
 
+
 @pytest.mark.asyncio
 async def test_dispatcher_mcu_handler_exception(dispatcher: BridgeDispatcher):
     """Cover lines 258-272 in dispatcher.py (Exception in MCU handler)."""
@@ -102,6 +107,7 @@ async def test_dispatcher_mcu_handler_exception(dispatcher: BridgeDispatcher):
     with patch.object(type(dispatcher.state), "is_synchronized", True):
         await dispatcher.dispatch_mcu_frame(0x99, 0, b"")
         dispatcher.send_frame.assert_called()
+
 
 @pytest.mark.asyncio
 async def test_dispatcher_mqtt_no_segments(dispatcher: BridgeDispatcher):
@@ -115,6 +121,7 @@ async def test_dispatcher_mqtt_no_segments(dispatcher: BridgeDispatcher):
 
     await dispatcher.dispatch_mqtt_message(msg, parse_mock)
 
+
 @pytest.mark.asyncio
 async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
     """Cover lines 288-292 in dispatcher.py."""
@@ -127,6 +134,7 @@ async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
     with patch.object(dispatcher.mqtt_router, "dispatch", side_effect=RuntimeError("mqtt bug")):
         await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
 
+
 @pytest.mark.asyncio
 async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDispatcher):
     """Cover lines 316, 319 in dispatcher.py."""
@@ -138,6 +146,7 @@ async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDisp
     route2 = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("1", ""))
     assert dispatcher._should_reject_topic_action(route2) is None
 
+
 @pytest.mark.asyncio
 async def test_dispatcher_handle_system_topic_no_component(dispatcher: BridgeDispatcher):
     """Cover line 347 in dispatcher.py."""
@@ -145,6 +154,7 @@ async def test_dispatcher_handle_system_topic_no_component(dispatcher: BridgeDis
     route = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",))
     result = await dispatcher._handle_system_topic(route, MagicMock())
     assert result is False
+
 
 @pytest.mark.asyncio
 async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDispatcher):
@@ -154,6 +164,7 @@ async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDisp
     assert result is False
 
 # --- Datastore Gaps ---
+
 
 @pytest.mark.asyncio
 async def test_datastore_publish_value_error_reason(runtime_config, runtime_state):
@@ -165,6 +176,7 @@ async def test_datastore_publish_value_error_reason(runtime_config, runtime_stat
     args, kwargs = ctx.publish.call_args
     props = kwargs.get("properties", ())
     assert any(k == "bridge-error" and v == "testing" for k, v in props)
+
 
 @pytest.mark.asyncio
 async def test_datastore_handle_get_request_fail_send(runtime_config, runtime_state):

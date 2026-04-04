@@ -48,6 +48,7 @@ from ..util.fsm import create_fsm
 
 from typing import Protocol
 
+
 class SendFrameCallable(Protocol):
     async def __call__(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         ...

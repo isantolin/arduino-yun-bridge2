@@ -139,6 +139,7 @@ async def test_handle_kill_timeout_releases_slot(
     assert ok is True
     mock_psutil_instance.terminate.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_handle_kill_process_lookup_error_is_handled(
     process_component: ProcessComponent,

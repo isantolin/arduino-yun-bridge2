@@ -18,6 +18,76 @@ T = TypeVar("T")
 logger = structlog.get_logger("mcubridge.state.queues")
 
 
+class _TrackedDiskDeque:
+    """Wrapper around DiskDeque that closes thread-local sqlite3 connections.
+
+    diskcache.Cache uses threading.local() to lazily create per-thread sqlite3
+    connections.  Cache.close() only closes the *calling* thread's connection.
+    When spool operations run via asyncio.to_thread the worker thread's
+    connection leaks.  This wrapper closes the current thread's connection
+    after every mutating operation so it can never leak.
+    """
+
+    __slots__ = ("__dict__", "_deque")
+
+    def __init__(self, directory: str) -> None:
+        self._deque = DiskDeque(directory=directory)
+
+    def _release_thread_con(self) -> None:
+        """Close and remove the current thread's diskcache sqlite3 connection."""
+        _local = getattr(self._deque._cache, "_local", None)  # type: ignore[reportUnknownMemberType]
+        if _local is None:
+            return
+        con = getattr(_local, "con", None)
+        if con is not None:
+            try:
+                con.close()
+            except Exception:
+                pass
+            try:
+                delattr(_local, "con")
+            except AttributeError:
+                pass
+
+    def close(self) -> None:
+        try:
+            self._deque._cache.close()  # type: ignore[reportUnknownMemberType]
+        except Exception:
+            pass
+
+    def append(self, item: object) -> None:
+        self._deque.append(item)  # type: ignore[reportUnknownMemberType]
+        self._release_thread_con()
+
+    def appendleft(self, item: object) -> None:
+        self._deque.appendleft(item)  # type: ignore[reportUnknownMemberType]
+        self._release_thread_con()
+
+    def popleft(self) -> object:
+        result = self._deque.popleft()  # type: ignore[reportUnknownMemberType]
+        self._release_thread_con()
+        return result  # type: ignore[reportReturnType]
+
+    def pop(self) -> object:
+        result = self._deque.pop()  # type: ignore[reportUnknownMemberType]
+        self._release_thread_con()
+        return result  # type: ignore[reportReturnType]
+
+    def clear(self) -> None:
+        self._deque.clear()  # type: ignore[reportUnknownMemberType]
+        self._release_thread_con()
+
+    def __iter__(self) -> Iterable[object]:
+        result = list(self._deque)  # type: ignore[reportReturnType]
+        self._release_thread_con()
+        return iter(result)
+
+    def __len__(self) -> int:
+        result = len(self._deque)
+        self._release_thread_con()
+        return result
+
+
 class QueueEvent(msgspec.Struct, frozen=True):
     """Detailed event info for queue operations."""
     success: bool = True
@@ -43,7 +113,7 @@ class PersistentQueue(Generic[T]):
         self.directory = Path(directory) if directory else None
         self.max_items = max_items
         self._items: deque[T] = deque()
-        self._store: DiskDeque | None = None
+        self._store: _TrackedDiskDeque | None = None
         self._fallback_active = False
         self._fallback_reason: str | None = None
         self._last_error: str | None = None
@@ -53,24 +123,27 @@ class PersistentQueue(Generic[T]):
         if self.directory is not None:
             self._open_store()
 
+    def _close_store(self) -> None:
+        """Close the diskcache store and all tracked sqlite3 connections."""
+        if self._store is None:
+            return
+        try:
+            self._store.close()
+        except Exception as e:
+            logger.error("Error closing store: %s", e)
+        self._store = None
+
     def _open_store(self) -> None:
         if self.directory is None or self._closed:
             return
         with self._lock:
-            if self._store is not None:
-                try:
-                    self._store.cache.close()  # type: ignore[reportUnknownMemberType]
-                except Exception as e:
-                    logger.error("Error closing store: %s", e)
-                finally:
-                    del self._store
-                    self._store = None
+            self._close_store()
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
                 # [SIL-2] CVE mitigation: restrict directory to owner-only
                 # to prevent pickle deserialization attacks via diskcache.
                 os.chmod(self.directory, 0o700)
-                self._store = DiskDeque(directory=str(self.directory))
+                self._store = _TrackedDiskDeque(directory=str(self.directory))
                 self._fallback_active = False
                 self._fallback_reason = None
                 self._last_error = None
@@ -84,12 +157,7 @@ class PersistentQueue(Generic[T]):
                 self._activate_fallback_locked("initialization_failed", exc)
 
     def _activate_fallback_locked(self, reason: str, exc: BaseException | None = None) -> None:
-        if self._store is not None:
-            try:
-                self._store.cache.close()  # type: ignore[reportUnknownMemberType]
-            except Exception:
-                pass
-            self._store = None
+        self._close_store()
         self._fallback_active = True
         self._fallback_reason = reason
         self._last_error = str(exc) if exc is not None else None
@@ -106,14 +174,7 @@ class PersistentQueue(Generic[T]):
     def close(self) -> None:
         with self._lock:
             self._closed = True
-            if self._store is not None:
-                try:
-                    self._store.cache.close()  # type: ignore[reportUnknownMemberType]
-                except Exception as e:
-                    logger.error("Error closing PersistentQueue: %s", e)
-                finally:
-                    del self._store
-                    self._store = None
+            self._close_store()
 
     @property
     def fallback_active(self) -> bool:
@@ -256,6 +317,7 @@ class BoundedByteDeque:
                 truncated_bytes=truncated_bytes,
             )
         return QueueEvent(success=False)
+
     def appendleft(self, data: bytes) -> QueueEvent:
         evt = self._base.appendleft(data)
         if evt.success:
@@ -300,6 +362,7 @@ class BoundedByteDeque:
                 self.popleft()
             except IndexError:
                 break
+
     def setup_persistence(self, directory: str | Path, ram_limit: int = 100) -> None:
         del ram_limit
         previous = self._base.values()

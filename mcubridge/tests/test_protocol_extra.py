@@ -64,6 +64,7 @@ def test_rle_encode_decode_edge_cases() -> None:
     assert len(encoded) == 6
     assert RLEPayload(encoded).decode() == data
 
+
 def test_topics_handshake_topic() -> None:
     from mcubridge.protocol.topics import (
         Topic,

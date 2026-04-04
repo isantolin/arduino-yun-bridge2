@@ -18,6 +18,7 @@ from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 
+
 @dataclass(frozen=True)
 class FrameDebugSnapshot:
     command_id: int

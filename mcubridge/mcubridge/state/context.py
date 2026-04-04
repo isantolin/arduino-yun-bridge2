@@ -496,11 +496,11 @@ class RuntimeState(msgspec.Struct):
     def configure(self, config: RuntimeConfig) -> None:
         # [SIL-2] Close existing persistent queues if they are being replaced
         # to ensure that sqlite connections are not leaked.
-        if self.mailbox_queue:
+        if self.mailbox_queue is not None:
             self.mailbox_queue.close()
-        if self.mailbox_incoming_queue:
+        if self.mailbox_incoming_queue is not None:
             self.mailbox_incoming_queue.close()
-        if self.console_to_mcu_queue:
+        if self.console_to_mcu_queue is not None:
             self.console_to_mcu_queue.close()
 
         if config.allowed_policy is not None:
@@ -956,16 +956,19 @@ class RuntimeState(msgspec.Struct):
         return max(0.0, time.monotonic() - self._handshake_last_started)
 
     def cleanup(self) -> None:
-        with contextlib.suppress(OSError, RuntimeError, AttributeError):
+        _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
+
+        with _sup:
             if self.mqtt_spool is not None:
                 self.mqtt_spool.close()
                 self.mqtt_spool = None
 
-            # Non-optional persistent queues
-            self.mailbox_queue.close()
-            self.mailbox_incoming_queue.close()
-            self.console_to_mcu_queue.close()
+        # Non-optional persistent queues — each in its own guard
+        for q in (self.mailbox_queue, self.mailbox_incoming_queue, self.console_to_mcu_queue):
+            with _sup:
+                q.close()
 
+        with _sup:
             # Drain the MQTT queue instead of nullifying
             while not self.mqtt_publish_queue.empty():
                 try:
@@ -973,15 +976,16 @@ class RuntimeState(msgspec.Struct):
                 except (asyncio.QueueEmpty, ValueError, RuntimeError):
                     break
 
-            # [SIL-2] Terminate all running processes to release pipes/sockets
+        # [SIL-2] Terminate all running processes to release pipes/sockets
+        with _sup:
             if self.running_processes:
                 for slot in list(self.running_processes.values()):
-                    # Avoid creating mocks during cleanup if running_processes was mocked
                     handle = getattr(slot, "handle", None)
                     if handle:
                         with contextlib.suppress(OSError, ProcessLookupError):
                             handle.terminate()
 
+        with _sup:
             self.serial_tx_allowed.clear()
             self.link_sync_event.clear()
             self.running_processes.clear()

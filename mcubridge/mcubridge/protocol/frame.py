@@ -77,7 +77,6 @@ RPC_FRAME: Construct = Struct(
 ).compile()
 
 
-
 class Frame(msgspec.Struct, frozen=True):
     """Represents an RPC frame for MCU-Linux communication.
 

@@ -48,6 +48,7 @@ testpaths = ["mcubridge/tests"]
 pythonpath = ["typings", ".", "mcubridge"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*"]
 markers = ["fuzz: mark a test as a fuzz test"]
+filterwarnings = ["error"]
 
 [tool.pyright]
 typeCheckingMode = "strict"

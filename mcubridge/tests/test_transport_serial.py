@@ -152,6 +152,7 @@ async def test_write_frame_debug_logs_unknown_command(
     finally:
         state.cleanup()
 
+
 @pytest.mark.asyncio
 async def test_write_frame_returns_false_on_write_error() -> None:
     config = _make_config()

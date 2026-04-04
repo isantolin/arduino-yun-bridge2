@@ -141,6 +141,8 @@ async def test_stop_process_success(process_component: ProcessComponent) -> None
 
     assert success is True
     assert mock_psutil_instance.terminate.call_count >= 1
+
+
 @pytest.mark.asyncio
 async def test_monitor_process_finishes(process_component: ProcessComponent) -> None:
     # _monitor_process was removed. We only test creation.
@@ -159,9 +161,17 @@ async def test_monitor_process_finishes(process_component: ProcessComponent) -> 
 
 @pytest.mark.asyncio
 async def test_finalize_process(process_component: ProcessComponent) -> None:
-    mock_handle = MagicMock()
-    mock_sh = MagicMock(return_value=mock_handle)
-    with patch("sh.Command", return_value=mock_sh):
+    mock_process = AsyncMock()
+    mock_process.pid = 42
+    mock_process.stdout = AsyncMock()
+    mock_process.stdout.read = AsyncMock(return_value=b"")
+    mock_process.stderr = AsyncMock()
+    mock_process.stderr.read = AsyncMock(return_value=b"")
+    mock_process.wait = AsyncMock(return_value=0)
+    mock_process.returncode = 0
+    mock_process.kill = MagicMock()
+
+    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
         pid = await process_component.run_async("echo hello")
 
     assert pid in process_component.state.running_processes
@@ -171,4 +181,4 @@ async def test_finalize_process(process_component: ProcessComponent) -> None:
     await process_component._finalize_process(pid)
 
     assert pid not in process_component.state.running_processes
-    assert process_component._process_slots._value == 2 # Released
+    assert process_component._process_slots._value == 2  # Released

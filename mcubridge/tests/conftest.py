@@ -84,10 +84,6 @@ _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "asyncio: mark test to run on asyncio loop")
-    config.addinivalue_line(
-        "filterwarnings",
-        "ignore::ResourceWarning",
-    )
 
 
 @pytest.hookimpl(tryfirst=True)

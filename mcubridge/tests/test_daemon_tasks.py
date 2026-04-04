@@ -74,7 +74,6 @@ async def test_serial_reader_task_processes_frame(
 
                     await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
-
                     # Wait for frames to be processed (actual event loop yielding)
                     for _ in range(50):
                         if service.received_frames:
@@ -143,12 +142,10 @@ async def test_serial_reader_task_emits_crc_mismatch(
                     pass
                 raise RuntimeError("Break Loop")
 
-
             with patch.object(transport, "_retryable_run", _limited_run):
                 task = asyncio.create_task(transport.run())
 
                 await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
-
 
                 # Wait for state to update
                 for _ in range(50):
@@ -210,12 +207,10 @@ async def test_serial_reader_task_limits_packet_size(
                     pass
                 raise RuntimeError("Break Loop")
 
-
             with patch.object(transport, "_retryable_run", _limited_run):
                 task = asyncio.create_task(transport.run())
 
                 await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
-
 
                 for _ in range(50):
                     if state.serial_decode_errors >= 1:

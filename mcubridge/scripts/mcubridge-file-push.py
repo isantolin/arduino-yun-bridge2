@@ -12,6 +12,7 @@ import click
 from mcubridge.config.const import DEFAULT_MQTT_HOST, DEFAULT_MQTT_PORT
 from mcubridge.config.settings import get_uci_config
 
+
 @click.command()
 @click.argument("source_file", type=click.Path(exists=True, dir_okay=False))
 @click.argument("target_path")

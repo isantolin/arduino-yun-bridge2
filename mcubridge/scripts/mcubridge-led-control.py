@@ -29,12 +29,14 @@ syslog_handler = logging.handlers.SysLogHandler(address="/dev/log")
 syslog_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
 logger.addHandler(syslog_handler)
 
+
 def uci_get(key: str, default: str = "") -> str:
     try:
         u = uci.Uci()
         return u.get("mcubridge", "general", key)
     except (uci.UciException, RuntimeError):
         return default
+
 
 @app.command()
 def main(

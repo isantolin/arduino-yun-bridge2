@@ -197,9 +197,6 @@ async def test_handle_mqtt_write_and_read(
     await component.handle_mqtt(route, msg)
     assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
 
-
-
-
     msg_read = type("MockMsg", (), {"topic": "br/file/read/dir/file.txt", "payload": b""})()
     route_read = TopicRoute(
         raw="br/file/read/dir/file.txt", prefix="br",
@@ -268,13 +265,13 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
         bridge.sent_frames.append((command_id, payload))
         if command_id == Command.CMD_FILE_READ.value:
             await component.handle_read_response(0,
-                structures.FileReadResponsePacket(content=b"mcu-").encode()
+                                                 structures.FileReadResponsePacket(content=b"mcu-").encode()
             )
             await component.handle_read_response(0,
-                structures.FileReadResponsePacket(content=b"data").encode()
+                                                 structures.FileReadResponsePacket(content=b"data").encode()
             )
             await component.handle_read_response(0,
-                structures.FileReadResponsePacket(content=b"").encode()
+                                                 structures.FileReadResponsePacket(content=b"").encode()
             )
         return True
 
@@ -459,6 +456,7 @@ async def test_handle_write_rejects_absolute_path(
     assert bridge.sent_frames
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
     assert bridge.sent_frames[-1][1].decode() == "Invalid path"
+
 
 @pytest.mark.asyncio
 async def test_handle_write_rejects_truncated_data(

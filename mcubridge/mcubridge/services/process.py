@@ -204,8 +204,8 @@ class ProcessComponent(BaseComponent):
 
             if not command:
                 await self.service.acknowledge_mcu_frame(seq_id,
-                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
-                    status=Status.MALFORMED,
+                                                         protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                                                         status=Status.MALFORMED,
                 )
                 return
 
@@ -213,8 +213,8 @@ class ProcessComponent(BaseComponent):
             if not self.state.allowed_policy.is_allowed(command):
                 logger.warning("Process execution denied by policy: %s", command)
                 await self.service.acknowledge_mcu_frame(seq_id,
-                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
-                    status=Status.ERROR,
+                                                         protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                                                         status=Status.ERROR,
                 )
                 return
 
@@ -222,8 +222,8 @@ class ProcessComponent(BaseComponent):
             pid = await self.run_async(command)
             if pid > 0:
                 await self.service.acknowledge_mcu_frame(seq_id,
-                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
-                    status=Status.OK,
+                                                         protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                                                         status=Status.OK,
                 )
                 resp = structures.ProcessRunAsyncResponsePacket(pid=pid).encode()
                 await self.service.send_frame(
@@ -231,13 +231,13 @@ class ProcessComponent(BaseComponent):
                 )
             else:
                 await self.service.acknowledge_mcu_frame(seq_id,
-                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
-                    status=Status.ERROR,
+                                                         protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                                                         status=Status.ERROR,
                 )
         except (msgspec.ValidationError, ValueError, AttributeError):
             await self.service.acknowledge_mcu_frame(seq_id,
-                protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
-                status=Status.MALFORMED,
+                                                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                                                     status=Status.MALFORMED,
             )
 
     async def handle_poll(self, seq_id: int, payload: bytes) -> None:
@@ -248,8 +248,8 @@ class ProcessComponent(BaseComponent):
 
             batch = await self.poll_process(pid)
             await self.service.acknowledge_mcu_frame(seq_id,
-                protocol.Command.CMD_PROCESS_POLL.value,
-                status=Status.OK,
+                                                     protocol.Command.CMD_PROCESS_POLL.value,
+                                                     status=Status.OK,
             )
             resp = structures.ProcessPollResponsePacket(
                 status=batch.status_byte,
@@ -262,8 +262,8 @@ class ProcessComponent(BaseComponent):
             )
         except (msgspec.ValidationError, ValueError, AttributeError):
             await self.service.acknowledge_mcu_frame(seq_id,
-                protocol.Command.CMD_PROCESS_POLL.value,
-                status=Status.MALFORMED,
+                                                     protocol.Command.CMD_PROCESS_POLL.value,
+                                                     status=Status.MALFORMED,
             )
 
     async def handle_kill(self, seq_id: int, payload: bytes, *, send_ack: bool = True) -> bool:
@@ -275,15 +275,15 @@ class ProcessComponent(BaseComponent):
             success = await self.stop_process(pid)
             if send_ack:
                 await self.service.acknowledge_mcu_frame(seq_id,
-                    protocol.Command.CMD_PROCESS_KILL.value,
-                    status=Status.OK if success else Status.ERROR,
+                                                         protocol.Command.CMD_PROCESS_KILL.value,
+                                                         status=Status.OK if success else Status.ERROR,
                 )
             return success
         except (msgspec.ValidationError, ValueError, AttributeError):
             if send_ack:
                 await self.service.acknowledge_mcu_frame(seq_id,
-                    protocol.Command.CMD_PROCESS_KILL.value,
-                    status=Status.MALFORMED,
+                                                         protocol.Command.CMD_PROCESS_KILL.value,
+                                                         status=Status.MALFORMED,
                 )
             return False
 
@@ -451,7 +451,6 @@ class ProcessComponent(BaseComponent):
 
         await self._finalize_process(pid)
         return True
-
 
     async def publish_poll_result(
         self,

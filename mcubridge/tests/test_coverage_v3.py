@@ -307,7 +307,6 @@ async def test_serial_transport_on_disconnected_hook_error():
     service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("Hook fail"))
     transport = SerialTransport(config, state, service)
 
-
     orig_run = SerialTransport._retryable_run.__wrapped__
     with (
         patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -318,7 +317,6 @@ async def test_serial_transport_on_disconnected_hook_error():
     ):
         with pytest.raises(OSError):
             await orig_run(transport, asyncio.get_running_loop())
-
 
 
 # --- mcubridge.config.settings ---

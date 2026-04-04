@@ -69,6 +69,7 @@ def test_serial_latency_histogram() -> None:
     assert d["min_ms"] == 4.0
     assert d["max_ms"] == 3000.0
 
+
 def testcollect_system_metrics_fail_paths() -> None:
     # Mock psutil functions individually
     with (

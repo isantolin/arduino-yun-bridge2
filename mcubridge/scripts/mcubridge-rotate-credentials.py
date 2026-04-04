@@ -35,12 +35,15 @@ def set_uci_value(u: uci.Uci, section: str, option: str, value: str) -> None:
         sys.stderr.write(f"[mcubridge-rotate-credentials] ERROR: Failed to set {section}.{option}: {e}\n")
         raise
 
+
 def random_hex(length: int) -> str:
     return binascii.hexlify(os.urandom(length)).decode()
+
 
 def random_b64(length: int) -> str:
     import base64
     return base64.b64encode(os.urandom(length)).decode().rstrip("=")
+
 
 @app.command()
 def main() -> None:

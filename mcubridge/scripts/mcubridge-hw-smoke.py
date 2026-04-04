@@ -21,12 +21,14 @@ import uci
 app = typer.Typer(add_completion=False)
 STATUS_FILE = Path("/tmp/mcubridge_status.json")
 
+
 def uci_get(key: str, default: str = "") -> str:
     try:
         u = uci.Uci()
         return u.get("mcubridge", "general", key)
     except (uci.UciException, RuntimeError):
         return default
+
 
 async def perform_round_trip(
     host: str,
@@ -63,6 +65,7 @@ async def perform_round_trip(
         raise TimeoutError("No response received from daemon")
 
     return await _round_trip()
+
 
 @app.command()
 def main() -> None:

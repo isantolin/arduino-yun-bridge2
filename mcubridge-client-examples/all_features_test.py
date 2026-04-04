@@ -9,6 +9,7 @@ from mcubridge_client import Bridge
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("all-features-test")
 
+
 async def run_test(host, port, user, password):
     client = Bridge(host=host, port=port, username=user, password=password)
     logger.info("--- Starting UNIFIED ALL-FEATURES E2E Test ---")
@@ -74,6 +75,7 @@ async def run_test(host, port, user, password):
 
     logger.info("--- ALL FEATURES VERIFICATION PASSED ---")
     logger.info("ALL FEATURES PASSED.")
+
 
 def main(
     host: str = "127.0.0.1",

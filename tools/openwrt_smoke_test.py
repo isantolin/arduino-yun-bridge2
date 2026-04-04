@@ -9,9 +9,11 @@ import subprocess
 import shutil
 from pathlib import Path
 
+
 def log_info(msg: str) -> None:
     sys.stdout.write(f"{msg}\n")
     sys.stdout.flush()
+
 
 def log_error(msg: str) -> None:
     sys.stderr.write(f"{msg}\n")
@@ -25,9 +27,11 @@ KERNEL_FILE = f"openwrt-{OPENWRT_VERSION}-malta-be-vmlinux.elf"
 ROOTFS_GZ = f"openwrt-{OPENWRT_VERSION}-malta-be-rootfs-ext4.img.gz"
 ROOTFS_IMG = "openwrt-rootfs.img"
 
+
 def run(cmd, check=True):
     log_info(f"[EXEC] {' '.join(cmd)}")
     return subprocess.run(cmd, check=check)
+
 
 def download_images():
     log_info("[INFO] Downloading OpenWrt images...")
@@ -38,6 +42,7 @@ def download_images():
         run(["wget", "-q", "-O", f"{ROOTFS_GZ}", f"{BASE_URL}/{ROOTFS_GZ}"])
         run(["gunzip", "-f", ROOTFS_GZ])
         shutil.move(f"openwrt-{OPENWRT_VERSION}-malta-be-rootfs-ext4.img", ROOTFS_IMG)
+
 
 def create_apk_disk(apk_dir):
     log_info("[INFO] Creating APK data disk...")
@@ -62,6 +67,7 @@ def create_apk_disk(apk_dir):
         run(["sudo", "umount", str(mnt)])
 
     return apk_disk
+
 
 def run_test(apk_disk):
     log_info("[INFO] Starting QEMU Emulation...")

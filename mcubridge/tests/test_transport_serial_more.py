@@ -8,6 +8,7 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import serial as serial_fast
 
+
 def _make_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/test0",
@@ -22,6 +23,7 @@ def _make_config() -> RuntimeConfig:
         reconnect_delay=1,
         serial_shared_secret=b"valid_secret_1234",
     )
+
 
 @pytest.mark.asyncio
 async def test_negotiate_baudrate_success() -> None:
@@ -52,6 +54,7 @@ async def test_negotiate_baudrate_success() -> None:
             assert ok is True
         finally:
             state.cleanup()
+
 
 @pytest.mark.asyncio
 async def test_negotiate_baudrate_timeout() -> None:

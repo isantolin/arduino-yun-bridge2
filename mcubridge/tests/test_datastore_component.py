@@ -78,6 +78,7 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
             properties=(('bridge-datastore-key', 'key1'),)
         )
 
+
 @pytest.mark.asyncio
 async def test_handle_put_malformed(datastore_component: DatastoreComponent) -> None:
     # Truncated varint — invalid protobuf

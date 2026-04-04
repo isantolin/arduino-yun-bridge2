@@ -19,5 +19,8 @@
   "makefile.configureAfterCommand": false,
   "makefile.loggingLevel": "Normal",
   "makefile.dryrunSwitches": [],
-  "python.analysis.autoImportCompletions": true
+  "python.analysis.autoImportCompletions": true,
+  "flake8.interpreter": [
+    "${workspaceFolder}/.tox/py313/bin/python"
+  ]
 }

@@ -1,0 +1,15 @@
+[flake8]
+# Match ruff configuration from pyproject.toml
+max-line-length = 120
+max-complexity = 25
+exclude =
+    *_pb2.py,
+    *_pb2.pyi,
+    typings,
+    .tox,
+    build,
+    dist,
+    openwrt-sdk,
+    mcubridge-library-arduino,
+    mcubridge/mcubridge.egg-info
+select = E,F,W,C90

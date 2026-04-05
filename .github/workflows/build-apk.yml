@@ -71,7 +71,7 @@ jobs:
     name: Verify APK Installation (QEMU MIPS)
     needs: build-apk
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -89,8 +89,7 @@ jobs:
 
       - name: Run OpenWrt Smoke Test
         run: |
-          # The APKs might be deep in the directory structure depending on how they were uploaded
-          # We search for them and put them in a flat directory for the script
+          # Flatten APKs into a single directory for the test script
           mkdir -p apks-flat
           find bin-download/ -name "*.apk" -exec cp {} apks-flat/ \;
           python3 tools/openwrt_smoke_test.py apks-flat/

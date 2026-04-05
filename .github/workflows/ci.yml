@@ -268,7 +268,7 @@ jobs:
 
       - name: Generate Coverage Summary
         run: |
-          pip install msgspec typer rich construct protobuf cryptography
+          pip install -r requirements/runtime.txt
           python tools/coverage_report.py \
             --output-markdown coverage/coverage-summary.md \
             --output-json coverage/coverage-summary.json \

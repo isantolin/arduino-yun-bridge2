@@ -1101,13 +1101,13 @@ class TestSystemComponent:
 class TestSerialFlow:
     @pytest.mark.asyncio
     async def test_serial_flow_send_frame(self):
-        from mcubridge.services._serial_flow import SerialFlowController
+        from mcubridge.services.serial_flow import SerialFlowController
 
         controller = SerialFlowController(
             ack_timeout=1.0,
             response_timeout=2.0,
             max_attempts=3,
-            logger=logging.getLogger("test._serial_flow"),
+            logger=logging.getLogger("test.serial_flow"),
         )
         sender = AsyncMock(return_value=True)
         controller.set_sender(sender)

@@ -627,7 +627,7 @@ class TestMqttSpool:
 class TestSerialFlow:
     @pytest.fixture()
     def flow(self):
-        from mcubridge.services._serial_flow import SerialFlowController
+        from mcubridge.services.serial_flow import SerialFlowController
 
         flow = SerialFlowController(
             ack_timeout=1.0,

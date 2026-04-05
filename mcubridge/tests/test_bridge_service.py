@@ -48,7 +48,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # type: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        flow = service.serial_flow  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # type: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
         async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
@@ -192,7 +192,7 @@ def test_link_sync_resp_respects_rate_limit(
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent _serial_flow from blocking
             ack_payload = structures.AckPacket(command_id=command_id).encode()
-            await service._serial_flow.on_frame_received(Status.ACK.value, seq_id or 0, ack_payload)  # type: ignore[reportUnknownMemberType]
+            await service.serial_flow.on_frame_received(Status.ACK.value, seq_id or 0, ack_payload)  # type: ignore[reportUnknownMemberType]
             if command_id == Command.CMD_GET_CAPABILITIES.value:
                 await service.handshake_manager.handle_capabilities_resp(0, b"\x02\x00\x14\x06\x00\x00\x00\x00")
             return True

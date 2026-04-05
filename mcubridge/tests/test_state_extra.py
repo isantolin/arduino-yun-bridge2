@@ -134,7 +134,7 @@ def test_record_serial_flow_event_unknown() -> None:
     try:
         # Should ignore unknown event
         state.record_serial_flow_event("unknown")
-        assert state._serial_flow_stats.commands_sent == 0
+        assert state.serial_flow_stats.commands_sent == 0
     finally:
         state.cleanup()
 

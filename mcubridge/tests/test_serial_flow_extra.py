@@ -1,4 +1,4 @@
-"""Extra coverage for mcubridge.services._serial_flow."""
+"""Extra coverage for mcubridge.services.serial_flow."""
 
 import logging
 from unittest.mock import AsyncMock, patch
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import AckPacket, PendingCommand
-from mcubridge.services._serial_flow import SerialFlowController
+from mcubridge.services.serial_flow import SerialFlowController
 
 
 @pytest.mark.asyncio

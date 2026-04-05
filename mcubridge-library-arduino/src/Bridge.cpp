@@ -223,20 +223,14 @@ void BridgeClass::forceSafeState() {
 }
 
 void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id) {
-  rpc::Frame effective_frame;
-  auto decomp_res = _decompressFrame(frame, effective_frame);
-  if (!decomp_res.has_value()) {
-    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-    return;
-  }
-
-  const uint16_t raw_cmd = effective_frame.header.command_id;
+  // Frame is already decompressed by _handleReceivedFrame.
+  const uint16_t raw_cmd = frame.header.command_id;
   if (!_isSecurityCheckPassed(raw_cmd)) {
     (void)sendFrame(rpc::StatusCode::STATUS_ERROR, sequence_id);
     return;
   }
 
-  bridge::router::CommandContext ctx(&effective_frame, raw_cmd,
+  bridge::router::CommandContext ctx(&frame, raw_cmd,
                                      false,
                                      rpc::requires_ack(raw_cmd),
                                      sequence_id);
@@ -263,7 +257,7 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
     onUnknownCommand(ctx);
   }
 
-  _markRxProcessed(effective_frame);
+  _markRxProcessed(frame);
 }
 
 bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
@@ -479,9 +473,9 @@ void BridgeClass::_handleGetFreeMemory(const bridge::router::CommandContext& ctx
 void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::LinkSync>(ctx, [this, &ctx](const rpc::payload::LinkSync& msg) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> tag;
-    _computeHandshakeTag(etl::span<const uint8_t>(msg.nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH), etl::span<uint8_t>(tag.data(), tag.size()));
+    _computeHandshakeTag(etl::span<const uint8_t>(msg.nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH), etl::span<uint8_t>(tag));
     if (!_shared_secret.empty()) {
-      etl::span<const uint8_t> expected(tag.data(), tag.size());
+      etl::span<const uint8_t> expected(tag);
       etl::span<const uint8_t> received(msg.tag, rpc::RPC_HANDSHAKE_TAG_LENGTH);
       if (!rpc::security::timing_safe_equal(expected, received)) {
         _fsm.handshakeStart(); _fsm.handshakeFailed(); return;
@@ -818,12 +812,12 @@ etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Fr
 
 void BridgeClass::_computeHandshakeTag(etl::span<const uint8_t> nonce, etl::span<uint8_t> out_tag) {
   etl::array<uint8_t, bridge::config::HKDF_KEY_LENGTH> handshake_key;
-  rpc::security::hkdf_sha256(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()), etl::span<const uint8_t>(_shared_secret.data(), _shared_secret.size()), etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT.data(), rpc::RPC_HANDSHAKE_HKDF_SALT.size()), etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.data(), rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.size()));
+  rpc::security::hkdf_sha256(etl::span<uint8_t>(handshake_key), etl::span<const uint8_t>(_shared_secret.data(), _shared_secret.size()), etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT), etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
   rpc::security::McuBridgeSha256 sha256; sha256.resetHMAC(handshake_key.data(), handshake_key.size()); sha256.update(nonce.data(), nonce.size());
   etl::array<uint8_t, rpc::security::McuBridgeSha256::HASH_SIZE> full_tag;
   sha256.finalizeHMAC(handshake_key.data(), handshake_key.size(), full_tag.data(), full_tag.size());
   etl::copy_n(full_tag.begin(), etl::min(full_tag.size(), out_tag.size()), out_tag.begin());
-  rpc::security::secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size())); rpc::security::secure_zero(etl::span<uint8_t>(full_tag.data(), full_tag.size()));
+  rpc::security::secure_zero(etl::span<uint8_t>(handshake_key)); rpc::security::secure_zero(etl::span<uint8_t>(full_tag));
 }
 
 #ifndef BRIDGE_TEST_NO_GLOBALS

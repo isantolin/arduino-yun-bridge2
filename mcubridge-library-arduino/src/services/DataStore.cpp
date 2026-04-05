@@ -24,10 +24,10 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
 
 void DataStoreClass::_onResponse(etl::span<const uint8_t> value) {
   if (_pending_gets.empty()) return;
-  PendingGet pending = _pending_gets.front();
-  _pending_gets.pop();
+  const auto& pending = _pending_gets.front();
   if (pending.handler.is_valid()) {
     pending.handler(pending.key, value);
   }
+  _pending_gets.pop();
 }
 #endif

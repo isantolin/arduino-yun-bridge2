@@ -44,23 +44,23 @@ bool ProcessClass::_kill(uint32_t pid) {
 
 void ProcessClass::_onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg) {
   if (_pending_async_runs.empty()) return;
-  PendingAsyncRun pending = _pending_async_runs.front();
-  _pending_async_runs.pop();
+  const auto& pending = _pending_async_runs.front();
   if (pending.handler.is_valid()) {
     pending.handler(static_cast<int16_t>(msg.pid));
   }
+  _pending_async_runs.pop();
 }
 
 void ProcessClass::_onPollResponse(const rpc::payload::ProcessPollResponse& msg, etl::span<const uint8_t> stdout_data, etl::span<const uint8_t> stderr_data) {
   if (_pending_polls.empty()) return;
-  PendingPoll pending = _pending_polls.front();
-  _pending_polls.pop();
+  const auto& pending = _pending_polls.front();
   if (pending.handler.is_valid()) {
     pending.handler(static_cast<rpc::StatusCode>(msg.status), 
                     static_cast<uint8_t>(msg.exit_code),
                     stdout_data,
                     stderr_data);
   }
+  _pending_polls.pop();
 }
 
 void ProcessClass::reset() {

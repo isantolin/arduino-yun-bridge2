@@ -283,6 +283,9 @@ jobs:
         env:
           PYTHONPATH: typings:mcubridge:mcubridge-client-examples
         run: |
+          python tools/protocol/generate.py \
+            --spec tools/protocol/spec.toml \
+            --py mcubridge/mcubridge/protocol/protocol.py
           python tools/daemon_profile_report.py \
             --iterations 2000 \
             --json coverage/daemon-profile.json \

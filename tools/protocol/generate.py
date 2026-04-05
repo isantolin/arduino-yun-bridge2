@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Optional
+from typing import TYPE_CHECKING, Annotated, Any, Optional
 
 import typer
 from jinja2 import Environment, FileSystemLoader
@@ -426,13 +426,13 @@ class JinjaGenerator:
         }
 
         # Group actions
-        grouped_actions = []
-        action_map = {}
+        grouped_actions: list[dict[str, Any]] = []
+        action_map: dict[str, list[dict[str, Any]]] = {}
         for act in spec.actions:
             if "_" not in act["name"]:
                 continue
             prefix, suffix = act["name"].split("_", 1)
-            action_map.setdefault(prefix, []).append(  # type: ignore[reportUnknownMemberType]
+            action_map.setdefault(prefix, []).append(
                 {
                     "name": suffix,
                     "value": act["value"],
@@ -440,24 +440,24 @@ class JinjaGenerator:
                 }
             )
 
-        for prefix, items in action_map.items():  # type: ignore[reportUnknownVariableType]
+        for prefix, items in action_map.items():
             cls_name = (
                 "DatastoreAction"
                 if prefix == "DATASTORE"
-                else f"{prefix.lower().title()}Action"  # type: ignore[reportUnknownMemberType]
+                else f"{prefix.lower().title()}Action"
             )
-            grouped_actions.append({"class_name": cls_name, "action_items": items})  # type: ignore[reportUnknownMemberType]
+            grouped_actions.append({"class_name": cls_name, "action_items": items})
 
         # Process subscriptions
-        subscriptions = []
+        subscriptions: list[dict[str, Any]] = []
         for sub in spec.mqtt_subscriptions:
-            segments = []
+            segments: list[str] = []
             topic_str = sub["topic"]
             for s in sub.get("segments", []):
                 if s == "+":
-                    segments.append("MQTT_WILDCARD_SINGLE")  # type: ignore[reportUnknownMemberType]
+                    segments.append("MQTT_WILDCARD_SINGLE")
                 elif s == "#":
-                    segments.append("MQTT_WILDCARD_MULTI")  # type: ignore[reportUnknownMemberType]
+                    segments.append("MQTT_WILDCARD_MULTI")
                 else:
                     mapped = False
                     if topic_str in [
@@ -478,17 +478,17 @@ class JinjaGenerator:
                         for act in spec.actions:
                             if act["name"].startswith(f"{topic_str}_") and act["value"] == s:
                                 sfx = act["name"].split("_", 1)[1]
-                                segments.append(f"{c_name}.{sfx}.value")  # type: ignore[reportUnknownMemberType]
+                                segments.append(f"{c_name}.{sfx}.value")
                                 mapped = True
                                 break
                     if not mapped:
-                        segments.append(f'"{s}"')  # type: ignore[reportUnknownMemberType]
+                        segments.append(f'"{s}"')
 
-            subscriptions.append(  # type: ignore[reportUnknownMemberType]
+            subscriptions.append(
                 {
                     "topic": topic_str,
                     "qos": sub["qos"],
-                    "segments_tuple": f"({', '.join(segments)},)" if segments else "()",  # type: ignore[reportUnknownArgumentType]
+                    "segments_tuple": f"({', '.join(segments)},)" if segments else "()",
                 }
             )
 

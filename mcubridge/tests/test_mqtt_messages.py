@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from mcubridge.protocol.structures import QueuedPublish, SpoolRecord
+from typing import Any
+
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
 
 
@@ -30,7 +32,7 @@ def test_queued_publish_roundtrip_with_correlation_and_user_properties() -> None
 
 
 def test_queued_publish_from_record_normalizes_user_properties() -> None:
-    record: SpoolRecord = {  # type: ignore[reportAssignmentType]
+    record: dict[str, Any] = {
         "topic_name": f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         "payload": "aGVsbG8=",  # base64("hello")
         "user_properties": [
@@ -44,7 +46,7 @@ def test_queued_publish_from_record_normalizes_user_properties() -> None:
 
 
 def test_queued_publish_from_record_handles_missing_correlation_data() -> None:
-    record: SpoolRecord = {  # type: ignore[reportAssignmentType]
+    record: dict[str, Any] = {
         "topic_name": f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         "payload": "",  # empty
         "correlation_data": None,

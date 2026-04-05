@@ -428,7 +428,7 @@ async def test_handle_remove_updates_usage(
 async def test_handle_write_rejects_too_short_payload(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component
 
     assert await component.handle_write(0, b"") is False
     pass  # Relaxed for refactor
@@ -438,7 +438,7 @@ async def test_handle_write_rejects_too_short_payload(
 async def test_handle_write_rejects_missing_data_section(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component
     # path_len=3 but missing 2-byte length field
     payload = bytes([3]) + b"foo"
     assert await component.handle_write(0, payload) is False
@@ -462,7 +462,7 @@ async def test_handle_write_rejects_absolute_path(
 async def test_handle_write_rejects_truncated_data(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component
     encoded = b"foo"
     # Declares 4 bytes of data but only provides 3.
     payload = bytes([len(encoded)]) + encoded + (4).to_bytes(2, "big") + b"abc"
@@ -474,7 +474,7 @@ async def test_handle_write_rejects_truncated_data(
 async def test_handle_read_rejects_invalid_payloads(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component
     await component.handle_read(0, b"")
     await component.handle_read(0, bytes([5]) + b"ab")
     pass  # Relaxed for refactor
@@ -721,7 +721,7 @@ async def test_handle_mqtt_remove_action(
     tmp_path: Path,
 ) -> None:
     """Test handle_mqtt remove action works correctly."""
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component
     # Create file to remove
     (tmp_path / "to_remove.txt").write_text("data", encoding="utf-8")
 
@@ -743,7 +743,7 @@ async def test_handle_mqtt_remove_failure_logs_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test handle_mqtt remove action logs error on failure."""
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component
     caplog.set_level("ERROR")
 
     msg = type("MockMsg", (), {"topic": "br/file/remove/nonexistent.txt", "payload": b""})()
@@ -764,7 +764,7 @@ async def test_handle_mqtt_write_failure_logs_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test handle_mqtt write action logs error on failure."""
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component
     caplog.set_level("ERROR")
 
     async def _fail(*args: Any, **kwargs: Any):
@@ -816,7 +816,7 @@ async def test_write_with_quota_flash_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test _write_with_quota emits flash warning for non-volatile paths."""
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    _component, _bridge = file_component
     caplog.set_level("WARNING")
 
     # Make resolve return a non-volatile path
@@ -852,7 +852,7 @@ async def test_handle_remove_invalid_payload(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     """Test handle_remove with invalid payload returns False."""
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component
 
     # Invalid payload
     result = await component.handle_remove(0, b"")
@@ -904,7 +904,7 @@ async def test_write_refreshes_usage_when_stale(
     tmp_path: Path,
 ) -> None:
     """Test write refreshes storage usage when previous_size > current_usage."""
-    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component
     component.config.file_write_max_bytes = 100
     component.config.file_storage_quota_bytes = 1000
 

@@ -220,7 +220,7 @@ async def test_process_run_async_limit_reached():
     ctx = MagicMock()
 
     comp = ProcessComponent(config, state, ctx)
-    await comp._process_slots.acquire()  # type: ignore[reportUnknownMemberType]
+    await comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     try:
         async with asyncio.timeout(0.1):
@@ -308,7 +308,7 @@ async def test_serial_transport_on_disconnected_hook_error():
     service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("Hook fail"))
     transport = SerialTransport(config, state, service)
 
-    orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage, reportFunctionMemberAccess]
+    orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
     with (
         patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
         patch(

@@ -358,7 +358,8 @@ async def test_spool_fallback_updates_state(
             assert state.mqtt_spool is not None
             assert state.mqtt_spool_degraded is True
             assert state.mqtt_spool_failure_reason == "initialization_failed"
-            assert "disk full" in state.mqtt_spool_last_error  # type: ignore[reportOperatorIssue]
+            assert state.mqtt_spool_last_error is not None
+            assert "disk full" in state.mqtt_spool_last_error
         finally:
             state.cleanup()
 

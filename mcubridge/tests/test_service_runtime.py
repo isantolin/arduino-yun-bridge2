@@ -179,7 +179,7 @@ async def test_handle_get_free_memory_resp_malformed_no_publish() -> None:
     try:
         service = BridgeService(config, state)
 
-        await service._system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)  # type: ignore[reportUnknownMemberType]
+        await service._system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)  # type: ignore[reportPrivateUsage]
         assert state.mqtt_publish_queue.qsize() == 0
     finally:
         state.cleanup()
@@ -193,7 +193,7 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
         service = BridgeService(config, state)
 
         pkt = structures.VersionResponsePacket(major=1, minor=2, patch=0)
-        await service._system.handle_get_version_resp(0, pkt.encode())  # type: ignore[reportUnknownMemberType]
+        await service._system.handle_get_version_resp(0, pkt.encode())  # type: ignore[reportPrivateUsage]
 
         assert state.mcu_version == (1, 2)
         queued = state.mqtt_publish_queue.get_nowait()
@@ -213,7 +213,7 @@ async def test_reject_topic_action_enqueues_status() -> None:
             topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret",
             properties=None,
         )
-        await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")  # type: ignore[reportArgumentType]
+        await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")  # type: ignore[reportArgumentType, reportPrivateUsage]
 
         queued = state.mqtt_publish_queue.get_nowait()
         status_topic = topic_path(state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS)
@@ -235,7 +235,7 @@ async def test_publish_bridge_snapshot_handshake_flavor() -> None:
             topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get",
             properties=None,
         )
-        await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[reportArgumentType]
+        await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[reportArgumentType, reportPrivateUsage]
 
         queued = state.mqtt_publish_queue.get_nowait()
         assert "bridge/handshake/value" in queued.topic_name

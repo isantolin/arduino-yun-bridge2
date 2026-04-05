@@ -7,6 +7,7 @@ harder to reach in normal testing.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -26,14 +27,14 @@ def mock_enqueue() -> AsyncMock:
 
 
 @pytest_asyncio.fixture
-async def _processonent(mock_enqueue: AsyncMock) -> ProcessComponent:  # type: ignore[reportInvalidTypeForm]
+async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponent]:
     config = make_test_config(process_max_concurrent=4)
     state = create_runtime_state(config)
     service = MagicMock()
     service.acknowledge_mcu_frame = AsyncMock()
     component = ProcessComponent(config, state, service)
     try:
-        yield component  # type: ignore[reportReturnType]
+        yield component
     finally:
         for pid in list(component.state.running_processes):
             await component.stop_process(pid)
@@ -47,30 +48,30 @@ async def _processonent(mock_enqueue: AsyncMock) -> ProcessComponent:  # type: i
 
 @pytest.mark.asyncio
 async def test_poll_process_not_found_explicit(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
     """Cover branch where slot is not found."""
-    batch = await _processonent.poll_process(999)
+    batch = await process_comp.poll_process(999)
     assert batch.status_byte == Status.ERROR.value
 
 
 @pytest.mark.asyncio
 async def test_finalize_process_slot_gone(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
     """Cover branch where slot is gone in _finalize_process."""
     pid = 77
-    await _processonent._finalize_process(pid)  # type: ignore[reportPrivateUsage]
+    await process_comp._finalize_process(pid)  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
 async def test_start_async_subprocess_unexpected_exception(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cover unexpected exception branch in run_async."""
     with patch("asyncio.create_subprocess_shell", side_effect=OSError("boom")):
-        pid = await _processonent.run_async("echo hello")
+        pid = await process_comp.run_async("echo hello")
         assert pid == 0
 # ============================================================================
 # CONTEXT - EDGE CASES

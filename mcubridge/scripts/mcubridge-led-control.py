@@ -10,7 +10,7 @@ import logging
 import logging.handlers
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, cast
 
 import paho.mqtt.publish as publish
 import tenacity
@@ -74,10 +74,10 @@ def main(
 
         insecure = uci_get("mqtt_tls_insecure", "0") == "1"
 
+        tls_dict: dict[str, str | bool] = {"insecure": insecure}
         if cafile:
-            tls_config = {"ca_certs": cafile, "insecure": insecure}
-        else:
-            tls_config = {"insecure": insecure}  # type: ignore[typeddict-item]
+            tls_dict["ca_certs"] = cafile
+        tls_config = cast(TLSParameter, tls_dict)
 
     @tenacity.retry(
         stop=tenacity.stop_after_attempt(3),

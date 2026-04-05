@@ -9,12 +9,12 @@ import pytest
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import AckPacket
-from mcubridge.services._serial_flow import SerialFlowController
+from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 
 
 @pytest.fixture()
-def _serial_flow_logger() -> logging.Logger:
+def serial_flow_logger() -> logging.Logger:
     return logging.getLogger("test._serial_flow")
 
 
@@ -34,14 +34,14 @@ async def _send_ack(
 
 def test_serial_flow_records_success_metrics(
     runtime_state: RuntimeState,
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
             metrics_callback=runtime_state.record_serial_flow_event,
         )
 
@@ -56,24 +56,24 @@ def test_serial_flow_records_success_metrics(
 
     asyncio.run(_run())
 
-    payload = runtime_state.build_bridge_snapshot()._serial_flow
-    assert payload.commands_sent == 1
-    assert payload.commands_acked == 1
-    assert payload.retries == 0
-    assert payload.failures == 0
-    assert payload.last_event_unix > 0
+    snapshot = runtime_state.build_bridge_snapshot().serial_flow
+    assert snapshot.commands_sent == 1
+    assert snapshot.commands_acked == 1
+    assert snapshot.retries == 0
+    assert snapshot.failures == 0
+    assert snapshot.last_event_unix > 0
 
 
 def test_serial_flow_records_retry_metrics(
     runtime_state: RuntimeState,
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=3,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
             metrics_callback=runtime_state.record_serial_flow_event,
         )
 
@@ -94,23 +94,23 @@ def test_serial_flow_records_retry_metrics(
 
     asyncio.run(_run())
 
-    payload = runtime_state.build_bridge_snapshot()._serial_flow
-    assert payload.commands_sent == 2
-    assert payload.commands_acked == 1
-    assert payload.retries == 1
-    assert payload.failures == 0
+    snapshot = runtime_state.build_bridge_snapshot().serial_flow
+    assert snapshot.commands_sent == 2
+    assert snapshot.commands_acked == 1
+    assert snapshot.retries == 1
+    assert snapshot.failures == 0
 
 
 def test_serial_flow_records_failure_metrics(
     runtime_state: RuntimeState,
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
             metrics_callback=runtime_state.record_serial_flow_event,
         )
 
@@ -124,22 +124,22 @@ def test_serial_flow_records_failure_metrics(
 
     asyncio.run(_run())
 
-    payload = runtime_state.build_bridge_snapshot()._serial_flow
-    assert payload.commands_sent == 0
-    assert payload.commands_acked == 0
-    assert payload.retries == 0
-    assert payload.failures == 1
+    snapshot = runtime_state.build_bridge_snapshot().serial_flow
+    assert snapshot.commands_sent == 0
+    assert snapshot.commands_acked == 0
+    assert snapshot.retries == 0
+    assert snapshot.failures == 1
 
 
 def test_serial_flow_rejects_without_sender(
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
         )
         result = await controller.send(Command.CMD_DIGITAL_WRITE.value, b"")
         assert result is False
@@ -148,14 +148,14 @@ def test_serial_flow_rejects_without_sender(
 
 
 def test_serial_flow_reset_abandons_pending(
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
         )
 
         sender_called = asyncio.Event()
@@ -175,14 +175,14 @@ def test_serial_flow_reset_abandons_pending(
 
 
 def test_serial_flow_handles_failure_status(
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
         )
 
         loop = asyncio.get_running_loop()
@@ -204,14 +204,14 @@ def test_serial_flow_handles_failure_status(
 
 
 def test_serial_flow_acknowledges_ack_only_command(
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
         )
 
         loop = asyncio.get_running_loop()
@@ -233,14 +233,14 @@ def test_serial_flow_acknowledges_ack_only_command(
 
 
 def test_serial_flow_handles_response_after_ack(
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
         )
 
         loop = asyncio.get_running_loop()
@@ -269,14 +269,14 @@ def test_serial_flow_handles_response_after_ack(
 
 
 def test_serial_flow_retries_on_mismatched_ack(
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.01,
             response_timeout=0.05,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
         )
 
         loop = asyncio.get_running_loop()
@@ -302,7 +302,7 @@ def test_serial_flow_retries_on_mismatched_ack(
 
 
 def test_serial_flow_emits_pipeline_events(
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     events: list[dict[str, object]] = []
 
@@ -311,7 +311,7 @@ def test_serial_flow_emits_pipeline_events(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
         )
         controller.set_pipeline_observer(events.append)
 
@@ -331,7 +331,7 @@ def test_serial_flow_emits_pipeline_events(
 
 
 def test_serial_flow_pipeline_failure_event(
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     events: list[dict[str, object]] = []
 
@@ -340,7 +340,7 @@ def test_serial_flow_pipeline_failure_event(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
         )
         controller.set_pipeline_observer(events.append)
 
@@ -357,7 +357,7 @@ def test_serial_flow_pipeline_failure_event(
 
 
 def test_serial_flow_pipeline_abandoned_on_reset(
-    _serial_flow_logger: logging.Logger,
+    serial_flow_logger: logging.Logger,
 ) -> None:
     events: list[dict[str, object]] = []
 
@@ -366,7 +366,7 @@ def test_serial_flow_pipeline_abandoned_on_reset(
             ack_timeout=0.05,
             response_timeout=0.1,
             max_attempts=1,
-            logger=_serial_flow_logger,
+            logger=serial_flow_logger,
         )
         controller.set_pipeline_observer(events.append)
 

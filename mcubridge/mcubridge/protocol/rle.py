@@ -46,7 +46,7 @@ RLE_DECODER: Construct = Struct(
                 * (
                     1
                     if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER  # type: ignore[reportUnknownMemberType]
-                    else int(obj.count_m2) + protocol.RLE_OFFSET  # type: ignore[reportUnknownMemberType,reportUnknownArgumentType]
+                    else int(obj.count_m2) + protocol.RLE_OFFSET  # type: ignore[reportUnknownMemberType]
                 ),
                 encoder=lambda obj, ctx: None,  # type: ignore[reportUnknownLambdaType]
             ),

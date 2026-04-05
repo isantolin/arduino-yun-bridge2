@@ -34,7 +34,7 @@ logger = logging.getLogger("emulation-runner")
 
 @dataclass
 class EmulationState:
-    output_lines: list[tuple[str, str]] = field(default_factory=list)  # type: ignore[reportUnknownVariableType]
+    output_lines: list[tuple[str, str]] = field(default_factory=lambda: [])
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def on_line(self, line: str, source: str) -> None:
@@ -70,27 +70,27 @@ def _start_worker_thread(target: Any, name: str, *args: Any) -> threading.Thread
     return thread
 
 
-def _mcu_stderr_worker(mcu_proc: subprocess.Popen, state: EmulationState) -> None:  # type: ignore[reportUnknownParameterType]
-    if mcu_proc.stderr:  # type: ignore[reportUnknownMemberType]
-        for line in iter(mcu_proc.stderr.readline, b""):  # type: ignore[reportUnknownVariableType]
+def _mcu_stderr_worker(mcu_proc: subprocess.Popen[bytes], state: EmulationState) -> None:
+    if mcu_proc.stderr:
+        for line in iter(mcu_proc.stderr.readline, b""):
             if not line:
                 break
-            decoded = line.decode("utf-8", errors="ignore")  # type: ignore[reportUnknownVariableType]
-            state.on_line(decoded, "mcu")  # type: ignore[reportUnknownArgumentType]
+            decoded = line.decode("utf-8", errors="ignore")
+            state.on_line(decoded, "mcu")
 
 
-def _daemon_worker(daemon_proc: subprocess.Popen, state: EmulationState) -> None:  # type: ignore[reportUnknownParameterType]
-    if daemon_proc.stdout:  # type: ignore[reportUnknownMemberType]
-        for line in iter(daemon_proc.stdout.readline, ""):  # type: ignore[reportUnknownVariableType]
+def _daemon_worker(daemon_proc: subprocess.Popen[str], state: EmulationState) -> None:
+    if daemon_proc.stdout:
+        for line in iter(daemon_proc.stdout.readline, ""):
             if not line:
                 break
-            state.on_line(line, "daemon")  # type: ignore[reportUnknownArgumentType]
+            state.on_line(line, "daemon")
 
 
 def main(
     firmware_path: Annotated[Path, typer.Option("--firmware", help="Path to MCU firmware binary")],
     package_root: Annotated[Path, typer.Option("--package-root", help="Root of mcubridge package")] = Path("."),
-    run_scripts: Annotated[list[str], typer.Argument(help="Client scripts to run")] = None,  # type: ignore[reportArgumentType]
+    run_scripts: Annotated[list[str] | None, typer.Argument(help="Client scripts to run")] = None,
 ):
     state = EmulationState()
     mqtt = MqttVerifier(MQTT_HOST, MQTT_PORT)

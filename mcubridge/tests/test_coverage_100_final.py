@@ -311,7 +311,7 @@ class TestQueues:
         q = BoundedByteDeque(max_items=10)
         q.append(b"a")
         q.append(b"b")
-        items = list(q)  # type: ignore[reportUnknownVariableType]
+        items = list(q)  # type: ignore[reportArgumentType, reportUnknownVariableType]
         assert items == [b"a", b"b"]
 
     def test_getitem(self):
@@ -690,7 +690,7 @@ class TestProtocolFrame:
         from mcubridge.protocol.frame import Frame
 
         raw = Frame(command_id=Command.CMD_DIGITAL_READ.value, sequence_id=0, payload=b"\x01\x02").build()
-        cmd_id, seq_id, payload = Frame.parse(raw)  # type: ignore[reportUnusedVariable]
+        cmd_id, _seq_id, payload = Frame.parse(raw)
         assert cmd_id == Command.CMD_DIGITAL_READ.value
         assert payload == b"\x01\x02"
 

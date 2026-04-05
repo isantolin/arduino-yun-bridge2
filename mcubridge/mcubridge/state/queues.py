@@ -68,21 +68,21 @@ class _TrackedDiskDeque:
         self._release_thread_con()
 
     def popleft(self) -> object:
-        result = self._deque.popleft()  # type: ignore[reportUnknownMemberType]
+        result: object = self._deque.popleft()  # type: ignore[reportUnknownVariableType]
         self._release_thread_con()
-        return result  # type: ignore[reportReturnType]
+        return result  # type: ignore[reportUnknownVariableType]
 
     def pop(self) -> object:
-        result = self._deque.pop()  # type: ignore[reportUnknownMemberType]
+        result: object = self._deque.pop()  # type: ignore[reportUnknownVariableType]
         self._release_thread_con()
-        return result  # type: ignore[reportReturnType]
+        return result  # type: ignore[reportUnknownVariableType]
 
     def clear(self) -> None:
         self._deque.clear()  # type: ignore[reportUnknownMemberType]
         self._release_thread_con()
 
     def __iter__(self) -> Iterator[object]:
-        result: list[object] = list(self._deque)  # type: ignore[reportReturnType]
+        result: list[object] = list(self._deque)
         self._release_thread_con()
         return iter(result)
 
@@ -157,7 +157,7 @@ class PersistentQueue(Generic[T]):
                 # [SIL-2] Rebuild RAM mirror from Disk on startup
                 self._items = deque(
                     cast(T, item)
-                    for item in list(self._store)  # type: ignore[reportUnknownArgumentType]
+                    for item in list(self._store)
                 )
             except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
                 # If the store was created but not yet assigned, close it
@@ -218,14 +218,14 @@ class PersistentQueue(Generic[T]):
                     dropped_chunks += 1
                     if self._store is not None:
                         try:
-                            self._store.popleft()  # type: ignore[reportUnknownMemberType]
+                            self._store.popleft()
                         except (IndexError, sqlite3.Error):
                             pass
 
             self._items.append(item)
             if self._store is not None:
                 try:
-                    self._store.append(item)  # type: ignore[reportUnknownMemberType]
+                    self._store.append(item)
                 except (sqlite3.Error, RuntimeError) as e:
                     self._activate_fallback_locked("write_failed", e)
             return QueueEvent(success=True, dropped_chunks=dropped_chunks)
@@ -237,7 +237,7 @@ class PersistentQueue(Generic[T]):
             self._items.appendleft(item)
             if self._store is not None:
                 try:
-                    self._store.appendleft(item)  # type: ignore[reportUnknownMemberType]
+                    self._store.appendleft(item)
                 except (sqlite3.Error, RuntimeError) as e:
                     self._activate_fallback_locked("write_failed", e)
             return QueueEvent(success=True)
@@ -249,7 +249,7 @@ class PersistentQueue(Generic[T]):
             item = self._items.popleft()
             if self._store is not None:
                 try:
-                    self._store.popleft()  # type: ignore[reportUnknownMemberType]
+                    self._store.popleft()
                 except (IndexError, sqlite3.Error, RuntimeError):
                     pass
             return item
@@ -263,7 +263,7 @@ class PersistentQueue(Generic[T]):
             item = self._items.pop()
             if self._store is not None:
                 try:
-                    self._store.pop()  # type: ignore[reportUnknownMemberType]
+                    self._store.pop()
                 except (IndexError, sqlite3.Error, RuntimeError):
                     pass
             return item
@@ -273,7 +273,7 @@ class PersistentQueue(Generic[T]):
             self._items.clear()
             if self._store is not None:
                 try:
-                    self._store.clear()  # type: ignore[reportUnknownMemberType]
+                    self._store.clear()
                 except (sqlite3.Error, RuntimeError) as e:
                     self._activate_fallback_locked("clear_failed", e)
 

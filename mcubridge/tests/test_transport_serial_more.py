@@ -106,7 +106,7 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
             transport = serial_fast.SerialTransport(config, state, service)
             # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
             # This prevents infinite loops when the mock reader fails.
-            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage, reportFunctionMemberAccess]
+            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -119,7 +119,8 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
                     # Global timeout to prevent test hanging CI
                     await asyncio.wait_for(orig_run(transport, asyncio.get_running_loop()), timeout=2.0)
 
-            assert mock_open.await_args.kwargs["baudrate"] == config.serial_safe_baud  # type: ignore[reportOptionalMemberAccess]
+            assert mock_open.await_args is not None
+            assert mock_open.await_args.kwargs["baudrate"] == config.serial_safe_baud
         finally:
             state.cleanup()
 
@@ -181,7 +182,7 @@ async def test_serial_disconnected_hook_error(
 
             transport = serial_fast.SerialTransport(config, state, service)
             # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
-            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage, reportFunctionMemberAccess]
+            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),

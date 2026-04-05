@@ -12,7 +12,7 @@ from mcubridge.state.context import PROCESS_STATE_FINISHED, ManagedProcess
 
 
 @pytest.fixture
-def _processonent(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
+def process_comp(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
     from mcubridge.services.runtime import BridgeService
 
     service = MagicMock(spec=BridgeService)
@@ -27,64 +27,64 @@ def _processonent(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
 def test_post_init_disables_slots_when_limit_zero(runtime_config: Any, runtime_state: Any):
     runtime_config.process_max_concurrent = 0
     comp = ProcessComponent(runtime_config, runtime_state, MagicMock())
-    assert comp._process_slots is not None  # type: ignore[reportUnknownMemberType]
+    assert comp._process_slots is not None  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
 async def test_handle_poll_finished_path_executes_debug_branch(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
     # Setup batch with positional args
     batch = ProcessOutputBatch(Status.OK.value, 0, b"out", b"err", True, False, False)
 
-    with patch.object(_processonent, "poll_process", return_value=batch):
+    with patch.object(process_comp, "poll_process", return_value=batch):
         from mcubridge.protocol.structures import ProcessPollPacket
         payload = ProcessPollPacket(pid=100).encode()
-        await _processonent.handle_poll(0, payload)
-        _processonent.service.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
+        await process_comp.handle_poll(0, payload)
+        process_comp.service.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
 
 
 @pytest.mark.asyncio
 async def test_run_async_rejects_when_slot_limit_reached(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
-    limit = _processonent.state.process_max_concurrent
+    limit = process_comp.state.process_max_concurrent
     # Acquire all permits
     for _ in range(limit):
-        await _processonent._process_slots.acquire()  # type: ignore[reportUnknownMemberType]
+        await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
-    pid = await _processonent.run_async("cmd")
+    pid = await process_comp.run_async("cmd")
     assert pid == 0
 
 
 @pytest.mark.asyncio
 async def test_poll_process_finishing_process_releases_slot(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
     pid = 10
     slot = ManagedProcess(pid=pid, command="echo hi")
     slot.fsm_state = PROCESS_STATE_FINISHED
     slot.exit_code = 7
 
-    async with _processonent.state.process_lock:
-        _processonent.state.running_processes[pid] = slot
+    async with process_comp.state.process_lock:
+        process_comp.state.running_processes[pid] = slot
 
     # Save initial available value
-    initial_value = _processonent._process_slots._value  # type: ignore[reportUnknownVariableType, reportUnknownMemberType, reportUnknownMemberType]
+    initial_value = process_comp._process_slots._value  # type: ignore[reportPrivateUsage]
 
     # Acquire one
-    await _processonent._process_slots.acquire()  # type: ignore[reportUnknownMemberType]
+    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
-    batch = await _processonent.poll_process(pid)
+    batch = await process_comp.poll_process(pid)
     assert batch.exit_code == 7
 
     # Slot should be released (back to initial)
-    assert _processonent._process_slots._value == initial_value  # type: ignore[reportUnknownMemberType]
+    assert process_comp._process_slots._value == initial_value  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
 async def test_finalize_callback_async_handles_wait_exception(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
     # Test finalizing with a fake exit code
     pid = 1
@@ -93,32 +93,32 @@ async def test_finalize_callback_async_handles_wait_exception(
     # [FSM] Transition to RUNNING
     slot.trigger("start")
 
-    async with _processonent.state.process_lock:
-        _processonent.state.running_processes[pid] = slot
+    async with process_comp.state.process_lock:
+        process_comp.state.running_processes[pid] = slot
 
     async with slot.io_lock:
         slot.exit_code = 99
-    _processonent._finalize_process_internal(pid)  # type: ignore[reportPrivateUsage]
+    process_comp._finalize_process_internal(pid)  # type: ignore[reportPrivateUsage]
 
     # Should finalize
-    assert pid not in _processonent.state.running_processes
+    assert pid not in process_comp.state.running_processes
 
 
 @pytest.mark.asyncio
 async def test_finalize_process_slot_missing_releases(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
     # If missing, it currently DOES NOT release by design (safety).
     # Update test to expect current value.
-    await _processonent._process_slots.acquire()  # type: ignore[reportUnknownMemberType]
-    val_after_acquire = _processonent._process_slots._value  # type: ignore[reportUnknownVariableType, reportUnknownMemberType, reportUnknownMemberType]
-    await _processonent._finalize_process(999)  # type: ignore[reportPrivateUsage]
-    assert _processonent._process_slots._value == val_after_acquire  # type: ignore[reportUnknownMemberType]
+    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
+    val_after_acquire = process_comp._process_slots._value  # type: ignore[reportPrivateUsage]
+    await process_comp._finalize_process(999)  # type: ignore[reportPrivateUsage]
+    assert process_comp._process_slots._value == val_after_acquire  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
 async def test_handle_kill_timeout_releases_slot(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
     pid = 11
     mock_handle = MagicMock()
@@ -126,24 +126,24 @@ async def test_handle_kill_timeout_releases_slot(
     slot = ManagedProcess(pid=pid, command="hi")
     slot.handle = mock_handle
 
-    async with _processonent.state.process_lock:
-        _processonent.state.running_processes[pid] = slot
+    async with process_comp.state.process_lock:
+        process_comp.state.running_processes[pid] = slot
 
-    await _processonent._process_slots.acquire()  # type: ignore[reportUnknownMemberType]
+    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     with patch("psutil.Process") as mock_psutil_cls, \
          patch("psutil.wait_procs", return_value=([], [])):
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
         mock_psutil_instance.terminate = MagicMock()
-        ok = await _processonent.handle_kill(0, structures.ProcessKillPacket(pid=pid).encode())
+        ok = await process_comp.handle_kill(0, structures.ProcessKillPacket(pid=pid).encode())
     assert ok is True
     mock_psutil_instance.terminate.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_handle_kill_process_lookup_error_is_handled(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
     pid = 12
     mock_handle = MagicMock()
@@ -152,26 +152,26 @@ async def test_handle_kill_process_lookup_error_is_handled(
 
     slot = ManagedProcess(pid=pid, command="hi")
     slot.handle = mock_handle
-    async with _processonent.state.process_lock:
-        _processonent.state.running_processes[pid] = slot
+    async with process_comp.state.process_lock:
+        process_comp.state.running_processes[pid] = slot
 
     with patch("psutil.Process") as mock_psutil_cls, \
          patch("psutil.wait_procs", return_value=([], [])):
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
-        ok = await _processonent.handle_kill(0, structures.ProcessKillPacket(pid=pid).encode())
+        ok = await process_comp.handle_kill(0, structures.ProcessKillPacket(pid=pid).encode())
     # Should return True as we attempted termination
     assert ok is True
 
 
 @pytest.mark.asyncio
 async def test_handle_run_async_validation_error_sends_error_frame(
-    _processonent: ProcessComponent,
+    process_comp: ProcessComponent,
 ) -> None:
     # Trigger malformed via empty payload
-    await _processonent.handle_run_async(0, b"")
+    await process_comp.handle_run_async(0, b"")
 
     # Verify it called with correct named parameter
-    _processonent.service.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
-    args, kwargs = _processonent.service.acknowledge_mcu_frame.call_args  # type: ignore[reportUnknownVariableType]
+    process_comp.service.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
+    args, kwargs = process_comp.service.acknowledge_mcu_frame.call_args  # type: ignore[reportUnknownVariableType]
     assert kwargs.get("status") == Status.MALFORMED  # type: ignore[reportUnknownMemberType]

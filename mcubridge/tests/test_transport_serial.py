@@ -43,7 +43,7 @@ async def test_process_packet_crc_mismatch_reports_crc(
 
         # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
         raw = b"\xff" + b"x" * 20
-        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownArgumentType]
+        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
 
         # Manual call to async method
         await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
@@ -99,7 +99,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport._negotiation_future = transport.loop.create_future()  # type: ignore[reportPrivateUsage]
 
         encoded = cobs_encode(Frame(command_id=Command.CMD_SET_BAUDRATE_RESP.value, sequence_id=0, payload=b"").build())
-        transport._process_packet(encoded)  # type: ignore[reportUnknownMemberType]
+        transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
         assert await transport._negotiation_future is True  # type: ignore[reportPrivateUsage]
         assert serial_port.baudrate == config.serial_baud
@@ -121,17 +121,17 @@ async def test_write_frame_debug_logs_unknown_command(
         mock_writer.is_closing.return_value = False
         transport.writer = mock_writer
 
-        monkeypatch.setattr(serial_fast.logger, "isEnabledFor", lambda _lvl: True)  # type: ignore[reportUnknownArgumentType]
+        monkeypatch.setattr(serial_fast.logger, "isEnabledFor", lambda _lvl: True)  # type: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
         seen: dict[str, str] = {}
         monkeypatch.setattr(
             serial_fast.logger,
             "debug",
-            lambda msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownArgumentType]
+            lambda msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
         )
         monkeypatch.setattr(
             serial_fast.logger,
             "log",
-            lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownArgumentType]
+            lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
         )
 
         ok = await transport._serial_sender(0xFE, b"payload")  # type: ignore[reportPrivateUsage]
@@ -184,7 +184,7 @@ async def test_process_packet_fallback_triggers_negotiation(
 
         # Create an invalid frame manually
         raw = b"\xff" + b"x" * 20
-        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownArgumentType]
+        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
 
         # First error
         await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]

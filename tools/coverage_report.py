@@ -7,7 +7,7 @@ import sys
 import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import msgspec
 from rich.console import Console as RichConsole
@@ -93,32 +93,36 @@ def _safe_percent(hit: int, total: int) -> float | None:
 def _read_arduino_metrics(path: Path) -> CoverageMetrics | None:
     if not path.exists():
         return None
-    data = msgspec.json.decode(path.read_bytes())
+    raw = msgspec.json.decode(path.read_bytes())
+    data = cast(dict[str, Any], raw)
     summaries = data.get("summaries")
-    summary = None
+    summary: dict[str, Any] | None = None
     if isinstance(summaries, dict):
-        summary = summaries.get("all")  # type: ignore[reportUnknownVariableType]
-        if summary is None and summaries:
-            summary = next(iter(summaries.values()))  # type: ignore[reportUnknownVariableType]
+        sums = cast(dict[str, Any], summaries)
+        _all: object = sums.get("all")
+        if _all is not None:
+            summary = cast(dict[str, Any], _all)
+        elif sums:
+            summary = cast(dict[str, Any], next(iter(sums.values())))
 
-    line_counts: dict  # type: ignore[reportMissingTypeArgument]
-    branch_counts: dict  # type: ignore[reportMissingTypeArgument]
-    percent: dict  # type: ignore[reportMissingTypeArgument]
+    line_counts: dict[str, Any]
+    branch_counts: dict[str, Any]
+    percent: dict[str, Any]
 
     if summary is not None:
-        count = summary.get("count", {})  # type: ignore[reportUnknownVariableType]
-        percent = summary.get("percent", {})  # type: ignore[reportUnknownVariableType]
-        line_counts = count.get("lines", {})  # type: ignore[reportUnknownVariableType]
-        branch_counts = count.get("branches", {})  # type: ignore[reportUnknownVariableType]
-        lines_total = int(line_counts.get("found") or line_counts.get("total") or 0)  # type: ignore[reportUnknownMemberType]
-        lines_covered = int(line_counts.get("hit") or line_counts.get("covered") or 0)  # type: ignore[reportUnknownMemberType]
-        line_percent = percent.get("lines")  # type: ignore[reportUnknownVariableType]
+        count = cast(dict[str, Any], summary.get("count", {}))
+        percent = cast(dict[str, Any], summary.get("percent", {}))
+        line_counts = cast(dict[str, Any], count.get("lines", {}))
+        branch_counts = cast(dict[str, Any], count.get("branches", {}))
+        lines_total = int(line_counts.get("found") or line_counts.get("total") or 0)
+        lines_covered = int(line_counts.get("hit") or line_counts.get("covered") or 0)
+        line_percent: float | None = percent.get("lines")
         if line_percent is None:
             line_percent = _safe_percent(lines_covered, lines_total)
 
-        branches_total = int(branch_counts.get("found") or branch_counts.get("total") or 0)  # type: ignore[reportUnknownMemberType]
-        branches_covered = int(branch_counts.get("hit") or branch_counts.get("covered") or 0)  # type: ignore[reportUnknownMemberType]
-        branch_percent = percent.get("branches")  # type: ignore[reportUnknownVariableType]
+        branches_total = int(branch_counts.get("found") or branch_counts.get("total") or 0)
+        branches_covered = int(branch_counts.get("hit") or branch_counts.get("covered") or 0)
+        branch_percent: float | None = percent.get("branches")
         if branch_percent is None:
             branch_percent = _safe_percent(branches_covered, branches_total)
     else:
@@ -138,10 +142,10 @@ def _read_arduino_metrics(path: Path) -> CoverageMetrics | None:
         suite="Arduino",
         lines_total=lines_total,
         lines_covered=lines_covered,
-        line_percent=line_percent,  # type: ignore[reportUnknownArgumentType]
+        line_percent=line_percent,
         branches_total=branches_total,
         branches_covered=branches_covered,
-        branch_percent=branch_percent,  # type: ignore[reportUnknownArgumentType]
+        branch_percent=branch_percent,
         artifact_hint=str(path),
     )
 
@@ -149,7 +153,7 @@ def _read_arduino_metrics(path: Path) -> CoverageMetrics | None:
 def _build_combined_metrics(
     metrics: list[CoverageMetrics],
 ) -> CoverageMetrics | None:
-    include = [m for m in metrics if m is not None]  # type: ignore[reportUnnecessaryComparison]
+    include = metrics
     if not include:
         return None
     lines_total = sum(m.lines_total for m in include)
@@ -196,7 +200,7 @@ def _render_rich_table(rows: list[CoverageMetrics]) -> None:
 def _render_markdown(rows: list[CoverageMetrics]) -> str:
     header = "| Suite | Lines (hit/total) | Line % | " "Branches (hit/total) | Branch % |"
     separator = "| --- | --- | --- | --- | --- |"
-    body = []
+    body: list[str] = []
     for row in rows:
         line = ("| {suite} | {lines} | {line_pct} | {branches} | {branch_pct} |").format(
             suite=row.suite,
@@ -205,9 +209,9 @@ def _render_markdown(rows: list[CoverageMetrics]) -> str:
             branches=row.branches_display,
             branch_pct=CoverageMetrics.format_percent(row.branch_percent),
         )
-        body.append(line)  # type: ignore[reportUnknownMemberType]
+        body.append(line)
     artifact_list = "\n".join(f"- `{row.suite}` artifacts: {row.artifact_hint}" for row in rows)
-    return "\n".join([header, separator, *body, "", artifact_list])  # type: ignore[reportUnknownArgumentType]
+    return "\n".join([header, separator, *body, "", artifact_list])
 
 
 def _write_optional(path: str | None, content: str) -> None:

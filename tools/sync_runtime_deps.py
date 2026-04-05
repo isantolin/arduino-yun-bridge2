@@ -7,7 +7,7 @@ import sys
 import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TypedDict
 
 import msgspec
 import typer
@@ -35,7 +35,13 @@ class ManifestError(RuntimeError):
     """Raised when the manifest file is missing or malformed."""
 
 
-def load_manifest() -> list[dict]:  # type: ignore[reportUnknownParameterType]
+class _DepEntry(TypedDict):
+    name: str
+    openwrt: str
+    pip: str
+
+
+def load_manifest() -> list[_DepEntry]:
     if not MANIFEST_PATH.exists():
         raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
 
@@ -43,39 +49,39 @@ def load_manifest() -> list[dict]:  # type: ignore[reportUnknownParameterType]
     entries = data.get("dependency")
     if not entries:
         raise ManifestError("Manifest must declare at least one dependency")
-    normalized: list[dict] = []  # type: ignore[reportUnknownVariableType]
+    normalized: list[_DepEntry] = []
     for entry in entries:
         openwrt = entry.get("openwrt", "").strip()
         pip_spec = entry.get("pip", "").strip()
         name = entry.get("name") or openwrt or "(unnamed)"
-        normalized.append(  # type: ignore[reportUnknownMemberType]
-            {
-                "name": name,
-                "openwrt": openwrt,
-                "pip": pip_spec,
-            }
+        normalized.append(
+            _DepEntry(
+                name=name,
+                openwrt=openwrt,
+                pip=pip_spec,
+            )
         )
-    return normalized  # type: ignore[reportUnknownVariableType]
+    return normalized
 
 
-def collect_pip_specs(deps: Sequence[dict]) -> list[str]:  # type: ignore[reportUnknownParameterType]
+def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:  
     # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci)
-    specs = {dep["pip"] for dep in deps if dep.get("pip")}  # type: ignore[reportUnknownVariableType]
-    filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}  # type: ignore[reportUnknownVariableType]
-    return sorted(filtered)  # type: ignore[reportUnknownArgumentType]
+    specs = {dep["pip"] for dep in deps if dep.get("pip")}
+    filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
+    return sorted(filtered)
 
 
-def collect_openwrt_packages(deps: Sequence[dict]) -> list[str]:  # type: ignore[reportUnknownParameterType]
+def collect_openwrt_packages(deps: Sequence[_DepEntry]) -> list[str]:  
     # Mantiene todo EXCEPTO los paquetes exclusivos de construcción (jinja2, etc)
     # Esto asegura que el APK sea ultra-lean.
     return [
         dep["openwrt"]
-        for dep in deps  # type: ignore[reportUnknownVariableType]
-        if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES  # type: ignore[reportUnknownMemberType]
+        for dep in deps
+        if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES
     ]
 
 
-def write_requirements(deps: Sequence[dict], *, dry_run: bool = False) -> bool:  # type: ignore[reportUnknownParameterType]
+def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:  
     pip_specs = collect_pip_specs(deps)
     content = ["# Generated via tools/sync_runtime_deps.py; do not edit."]
     content.extend(pip_specs)
@@ -89,31 +95,31 @@ def write_requirements(deps: Sequence[dict], *, dry_run: bool = False) -> bool: 
     return True
 
 
-def update_pyproject(deps: Sequence[dict], *, dry_run: bool = False) -> bool:  # type: ignore[reportUnknownParameterType]
+def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:  
     if not PYPROJECT_PATH.exists():
         return False
 
     # Collect only runtime dependencies for project.dependencies
-    runtime_pip_specs = sorted([  # type: ignore[reportUnknownVariableType]
-        dep["pip"] for dep in deps  # type: ignore[reportUnknownVariableType]
-        if dep.get("pip") and dep["name"] not in BUILD_ONLY_PACKAGES  # type: ignore[reportUnknownMemberType]
-        and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES)  # type: ignore[reportUnknownMemberType]
+    runtime_pip_specs = sorted([
+        dep["pip"] for dep in deps
+        if dep.get("pip") and dep["name"] not in BUILD_ONLY_PACKAGES
+        and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES)
     ])
 
     content = PYPROJECT_PATH.read_text(encoding="utf-8")
 
     # Robust replacement of dependencies block
     lines = content.splitlines()
-    new_lines = []
+    new_lines: list[str] = []
     in_dependencies = False
     replaced = False
 
     for line in lines:
         if not replaced and line.strip() == "dependencies = [":
             in_dependencies = True
-            new_lines.append(line)  # type: ignore[reportUnknownMemberType]
-            for spec in runtime_pip_specs:  # type: ignore[reportUnknownVariableType]
-                new_lines.append(f'    "{spec}",')  # type: ignore[reportUnknownMemberType]
+            new_lines.append(line)
+            for spec in runtime_pip_specs:
+                new_lines.append(f'    "{spec}",')
             # Remove trailing comma from last dependency for strictly valid TOML if preferred,
             # though most parsers handle it. Ruff likes it.
             replaced = True
@@ -122,12 +128,12 @@ def update_pyproject(deps: Sequence[dict], *, dry_run: bool = False) -> bool:  #
         if in_dependencies:
             if line.strip() == "]":
                 in_dependencies = False
-                new_lines.append(line)  # type: ignore[reportUnknownMemberType]
+                new_lines.append(line)
             continue
 
-        new_lines.append(line)  # type: ignore[reportUnknownMemberType]
+        new_lines.append(line)
 
-    new_content = "\n".join(new_lines) + "\n"  # type: ignore[reportUnknownArgumentType]
+    new_content = "\n".join(new_lines) + "\n"
 
     if new_content == content:
         return False
@@ -145,7 +151,7 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
     return lines
 
 
-def update_makefile(deps: Sequence[dict], *, dry_run: bool = False) -> bool:  # type: ignore[reportUnknownParameterType]
+def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:  
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
         raise ManifestError("Makefile is missing dependency markers; cannot inject dependencies")
@@ -156,21 +162,21 @@ def update_makefile(deps: Sequence[dict], *, dry_run: bool = False) -> bool:  # 
     else:
         block_lines = ["\tDEPENDS+="]
     rendered_block = "\n".join(block_lines)
-    new_text = []
+    new_text: list[str] = []
     in_block = False
     for line in makefile_text.splitlines():
         if BLOCK_START in line:
             in_block = True
-            new_text.append(line)  # type: ignore[reportUnknownMemberType]
-            new_text.append(rendered_block)  # type: ignore[reportUnknownMemberType]
+            new_text.append(line)
+            new_text.append(rendered_block)
             continue
         if BLOCK_END in line:
             in_block = False
-            new_text.append(line)  # type: ignore[reportUnknownMemberType]
+            new_text.append(line)
             continue
         if not in_block:
-            new_text.append(line)  # type: ignore[reportUnknownMemberType]
-    updated = "\n".join(new_text) + "\n"  # type: ignore[reportUnknownArgumentType]
+            new_text.append(line)
+    updated = "\n".join(new_text) + "\n"
     if updated == makefile_text:
         return False
     if not dry_run:
@@ -199,12 +205,12 @@ def _fetch_latest_version(package_name: str) -> str | None:
         return None
 
 
-def check_latest_versions(deps: Sequence[dict]) -> list[tuple[str, str, str]]:  # type: ignore[reportUnknownParameterType]
+def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:  
     """Return list of (package, pinned, latest) for outdated packages."""
     outdated: list[tuple[str, str, str]] = []
-    pip_specs = [dep["pip"] for dep in deps if dep.get("pip")]  # type: ignore[reportUnknownVariableType]
-    for spec in pip_specs:  # type: ignore[reportUnknownVariableType]
-        name, pinned = _parse_pip_spec(spec)  # type: ignore[reportUnknownArgumentType]
+    pip_specs = [dep["pip"] for dep in deps if dep.get("pip")]
+    for spec in pip_specs:
+        name, pinned = _parse_pip_spec(spec)
         if not pinned:
             continue
         latest = _fetch_latest_version(name)
@@ -228,7 +234,7 @@ def main(
     ] = False,
     print_pip: Annotated[bool, typer.Option("--print-pip", help="Print pip requirement specifiers and exit")] = False,
 ) -> None:
-    deps = load_manifest()  # type: ignore[reportUnknownVariableType]
+    deps = load_manifest()
     if print_openwrt:
         sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
         raise typer.Exit()

@@ -441,7 +441,8 @@ class TestMqttTlsContext:
 
         cfg = _make_config(mqtt_tls=True, mqtt_cafile=None, mqtt_tls_insecure=True)
         ctx = configure_tls_context(cfg)
-        assert ctx.check_hostname is False  # type: ignore[reportOptionalMemberAccess]
+        assert ctx is not None
+        assert ctx.check_hostname is False
 
     def test_tls_context_missing_cafile(self):
         from mcubridge.util.mqtt_helper import configure_tls_context
@@ -557,7 +558,7 @@ class TestSecurityModule:
     def test_validate_nonce_counter(self):
         from mcubridge.security.security import generate_nonce_with_counter, validate_nonce_counter
 
-        nonce, counter = generate_nonce_with_counter(5)  # type: ignore[reportUnusedVariable]
+        nonce, _counter = generate_nonce_with_counter(5)
         valid, new_counter = validate_nonce_counter(nonce, 5)
         assert valid is True
         assert new_counter == 6
@@ -959,7 +960,7 @@ def test_secure_zero_readonly_fallback():
 def test_extract_nonce_counter_happy():
     from mcubridge.security.security import extract_nonce_counter, generate_nonce_with_counter
 
-    nonce, counter = generate_nonce_with_counter(42)  # type: ignore[reportUnusedVariable]
+    nonce, _counter = generate_nonce_with_counter(42)
     extracted = extract_nonce_counter(nonce)
     assert extracted == 43
 

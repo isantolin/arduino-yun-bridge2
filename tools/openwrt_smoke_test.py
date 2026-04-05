@@ -87,7 +87,7 @@ def run_test(apk_disk: str):
     import pexpect
 
     # Increase timeout for slow MIPS emulation
-    child = pexpect.spawn(qemu_cmd[0], qemu_cmd[1:], encoding='utf-8', timeout=300)  # type: ignore[reportUnknownVariableType]
+    child: pexpect.spawn[str] = pexpect.spawn(qemu_cmd[0], qemu_cmd[1:], encoding='utf-8', timeout=300)
     child.logfile = sys.stdout
 
     try:
@@ -140,6 +140,6 @@ if __name__ == "__main__":
 
     apk_dir = sys.argv[1]
     download_images()
-    apk_disk = create_apk_disk(apk_dir)  # type: ignore[reportArgumentType]
+    apk_disk = create_apk_disk(Path(apk_dir))
     run_test(apk_disk)
 

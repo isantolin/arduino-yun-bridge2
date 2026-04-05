@@ -26,7 +26,7 @@ class _CommandSpec(msgspec.Struct, frozen=True):
     value: int
 
 
-def _load_spec() -> tuple[dict[str, int], list[_StatusSpec], list[_CommandSpec], dict[str, object]]:
+def _load_spec() -> tuple[dict[str, int], list[_StatusSpec], list[_CommandSpec], dict[str, int | str]]:
     raw = msgspec.toml.decode(SPEC_PATH.read_text(encoding="utf-8"))
     constants = {
         "PROTOCOL_VERSION": int(raw["constants"]["protocol_version"]),
@@ -49,7 +49,7 @@ def _load_spec() -> tuple[dict[str, int], list[_StatusSpec], list[_CommandSpec],
         "retry_limit_min": int(handshake_data.get("retry_limit_min", 0)),
         "retry_limit_max": int(handshake_data.get("retry_limit_max", 0)),
     }
-    return constants, statuses, commands, handshake  # type: ignore[reportReturnType]
+    return constants, statuses, commands, handshake
 
 
 def test_protocol_spec_matches_generated_bindings() -> None:

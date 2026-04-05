@@ -148,11 +148,13 @@ def test_record_serial_pipeline_event_edge_cases() -> None:
 
         # Start event
         state.record_serial_pipeline_event({"event": "start", "command_id": 1})
-        assert state.serial_pipeline_inflight["command_id"] == 1  # type: ignore[reportOptionalSubscript]
+        assert state.serial_pipeline_inflight is not None
+        assert state.serial_pipeline_inflight["command_id"] == 1
 
         # Success event with existing inflight
         state.record_serial_pipeline_event({"event": "success", "command_id": 1})
-        assert state.serial_pipeline_last["status_name"] == "unknown"  # type: ignore[reportOptionalSubscript]
+        assert state.serial_pipeline_last is not None
+        assert state.serial_pipeline_last["status_name"] == "unknown"
     finally:
         state.cleanup()
 

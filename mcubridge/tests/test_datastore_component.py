@@ -1,6 +1,7 @@
 """Tests for the DatastoreComponent."""
 
 from __future__ import annotations
+from collections.abc import AsyncIterator
 from typing import Any
 
 from unittest.mock import AsyncMock, patch
@@ -22,7 +23,7 @@ from mcubridge.state.context import create_runtime_state
 
 
 @pytest_asyncio.fixture
-async def datastore_component() -> DatastoreComponent:  # type: ignore[reportInvalidTypeForm]
+async def datastore_component() -> AsyncIterator[DatastoreComponent]:
     config = RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=protocol.DEFAULT_BAUDRATE,
@@ -54,7 +55,7 @@ async def datastore_component() -> DatastoreComponent:  # type: ignore[reportInv
 
     component = DatastoreComponent(config, state, ctx)
     try:
-        yield component  # type: ignore[reportReturnType]
+        yield component
     finally:
         state.cleanup()
 

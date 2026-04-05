@@ -81,14 +81,14 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
 
     sorted_metrics = sorted(metrics, key=lambda m: (m.board, m.sketch))
 
-    rows = []
+    rows: list[str] = []
     for m in sorted_metrics:
         row = (
             f"| {m.board} | `{m.sketch}` | "
             f"{m.flash_used:,} / {m.flash_max:,} B | {m.flash_percent:.1f}% | "
             f"{m.ram_used:,} / {m.ram_max:,} B | {m.ram_percent:.1f}% |"
         )
-        rows.append(row)  # type: ignore[reportUnknownMemberType]
+        rows.append(row)
 
     return "\n".join(header + rows)
 
@@ -105,17 +105,17 @@ def main(
         typer.secho(f"Warning: Directory {log_dir} does not exist. Skipping memory report.", fg=typer.colors.YELLOW)
         return
 
-    all_metrics = []
+    all_metrics: list[MemoryMetrics] = []
     for log_file in log_dir.glob("*.log"):
         m = parse_log_file(log_file)
         if m:
-            all_metrics.append(m)  # type: ignore[reportUnknownMemberType]
+            all_metrics.append(m)
 
     if not all_metrics:
         typer.secho("No memory metrics found in logs.", fg=typer.colors.YELLOW)
         return
 
-    md_report = render_markdown(all_metrics)  # type: ignore[reportUnknownArgumentType]
+    md_report = render_markdown(all_metrics)
     typer.echo(md_report)
 
     if github_step_summary:

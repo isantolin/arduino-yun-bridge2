@@ -16,7 +16,7 @@ The project also includes a LuCI web interface for configuration and monitoring,
 *   **C++:** The library for the Arduino MCU is written in C++11, strictly adhering to **SIL-2** safety standards (no STL, no dynamic memory) and **MIL-SPEC** (FIPS 140-3) for cryptographic integrity.
 *   **Cryptography:** Implements **HKDF-SHA256** (RFC 5869) for key derivation and mandatory **Power-On Self-Tests (POST/KAT)** at startup.
 *   **Lua:** The LuCI web interface is written in Lua.
-*   **OpenWrt:** The target operating system is **OpenWrt 25.12.0** (APK based).
+*   **OpenWrt:** The target operating system is **OpenWrt 25.12.2** (APK based).
 *   **MQTT:** The bridge uses MQTT v5 for communication with other devices.
 *   **TOML:** The communication protocol is defined in a TOML file.
 
@@ -26,9 +26,9 @@ The project provides a set of shell scripts to automate the build, deployment, a
 
 ### Building
 
-To build the project for OpenWrt 25.12.0, run the `1_compile.sh` script. This script will:
+To build the project for OpenWrt 25.12.2, run the `1_compile.sh` script. This script will:
 
-1.  Download and configure the OpenWrt SDK (25.12.0).
+1.  Download and configure the OpenWrt SDK (25.12.2).
 2.  Copy the project's packages into the SDK.
 3.  Compile the packages to create `.apk` files (modern package format).
 4.  Place the resulting `.apk` files in the `bin/` directory.

@@ -20,7 +20,7 @@ def log_error(msg: str) -> None:
     sys.stderr.flush()
 
 # Configuration based on tools/qemu-mcubridge.xml and 1_compile.sh
-OPENWRT_VERSION = "25.12.0"
+OPENWRT_VERSION = "25.12.2"
 TARGET = "malta/be"
 BASE_URL = f"https://downloads.openwrt.org/releases/{OPENWRT_VERSION}/targets/{TARGET}"
 KERNEL_FILE = f"openwrt-{OPENWRT_VERSION}-malta-be-vmlinux.elf"

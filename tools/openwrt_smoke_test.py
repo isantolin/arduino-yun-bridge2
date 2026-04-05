@@ -84,7 +84,7 @@ def run_test(apk_disk: str):
         "-m", "256"
     ]
 
-    import pexpect
+    import pexpect  # pyright: ignore[reportMissingModuleSource] — installed via apt, not pip
 
     # Increase timeout for slow MIPS emulation
     child: pexpect.spawn[str] = pexpect.spawn(qemu_cmd[0], qemu_cmd[1:], encoding='utf-8', timeout=300)

@@ -75,12 +75,9 @@ SOURCES=(
 
 
 # Unity test framework
-UNITY_DIR="${TEST_ROOT}/Unity"
+UNITY_DIR="${TEST_ROOT}/Unity/src"
 UNITY_OBJ="${OBJ_DIR}/unity.o"
 if [ -f "${UNITY_DIR}/unity.c" ]; then
-    gcc -c -O0 -g -fprofile-arcs -ftest-coverage -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
-elif [ -f "${UNITY_DIR}/src/unity.c" ]; then
-    UNITY_DIR="${TEST_ROOT}/Unity/src"
     gcc -c -O0 -g -fprofile-arcs -ftest-coverage -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
 else
     echo "ERROR: Unity not found at ${UNITY_DIR}; run install.sh first."
@@ -120,7 +117,6 @@ BASE_FLAGS=(
     "-I$PACKETSERIAL_PATH"
     "-I$PACKETSERIAL_PATH/src"
     "-I${TEST_ROOT}/mocks"
-    "-I${TEST_ROOT}/Unity"
     "-I${TEST_ROOT}/Unity/src"
 )
 

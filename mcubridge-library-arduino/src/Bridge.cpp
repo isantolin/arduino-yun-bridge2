@@ -230,7 +230,7 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
     return;
   }
 
-  uint16_t raw_cmd = effective_frame.header.command_id;
+  const uint16_t raw_cmd = effective_frame.header.command_id;
   if (!_isSecurityCheckPassed(raw_cmd)) {
     (void)sendFrame(rpc::StatusCode::STATUS_ERROR, sequence_id);
     return;

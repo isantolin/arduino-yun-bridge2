@@ -81,7 +81,7 @@ SOURCES=(
 )
 
 # Unity test framework
-UNITY_DIR="${TEST_DIR}/Unity"
+UNITY_DIR="${TEST_DIR}/Unity/src"
 UNITY_OBJ="${OBJ_DIR}/unity.o"
 if [ -f "${UNITY_DIR}/unity.c" ]; then
     gcc -c -O2 -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
@@ -107,7 +107,7 @@ BASE_FLAGS=(
     -I"${SRC_DIR}/config"
     -I"${SRC_DIR}/nanopb"
     -I"${SRC_DIR}/protocol"
-    -I"${TEST_DIR}/Unity"
+    -I"${TEST_DIR}/Unity/src"
     -I"${STUB_DIR}"
     -I"$ETL_PATH"
     -I"$ETL_PATH/include"

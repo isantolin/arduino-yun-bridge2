@@ -211,12 +211,12 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
     size_t decoded_len =
         TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf);
 
-    if (decoded_len >= 11) {
+    if (decoded_len >= rpc::MIN_FRAME_SIZE) {
       etl::crc32 calc;
       calc.reset();
-      calc.add(decoded_buf, decoded_buf + (decoded_len - 4));
+      calc.add(decoded_buf, decoded_buf + (decoded_len - rpc::CRC_TRAILER_SIZE));
       uint32_t cv = calc.value();
-      rpc::write_u32_be(etl::span<uint8_t>(decoded_buf + decoded_len - 4, 4), cv);
+      rpc::write_u32_be(etl::span<uint8_t>(decoded_buf + decoded_len - rpc::CRC_TRAILER_SIZE, rpc::CRC_TRAILER_SIZE), cv);
 
       auto result =
           parser.parse(etl::span<const uint8_t>(decoded_buf, decoded_len));

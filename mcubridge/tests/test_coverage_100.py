@@ -26,7 +26,7 @@ def mock_enqueue() -> AsyncMock:
 
 
 @pytest_asyncio.fixture
-async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:  # type: ignore[reportInvalidTypeForm]
+async def _processonent(mock_enqueue: AsyncMock) -> ProcessComponent:  # type: ignore[reportInvalidTypeForm]
     config = make_test_config(process_max_concurrent=4)
     state = create_runtime_state(config)
     service = MagicMock()
@@ -47,30 +47,30 @@ async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:  # typ
 
 @pytest.mark.asyncio
 async def test_poll_process_not_found_explicit(
-    process_component: ProcessComponent,
+    _processonent: ProcessComponent,
 ) -> None:
     """Cover branch where slot is not found."""
-    batch = await process_component.poll_process(999)
+    batch = await _processonent.poll_process(999)
     assert batch.status_byte == Status.ERROR.value
 
 
 @pytest.mark.asyncio
 async def test_finalize_process_slot_gone(
-    process_component: ProcessComponent,
+    _processonent: ProcessComponent,
 ) -> None:
     """Cover branch where slot is gone in _finalize_process."""
     pid = 77
-    await process_component._finalize_process(pid)  # type: ignore[reportPrivateUsage]
+    await _processonent._finalize_process(pid)  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
 async def test_start_async_subprocess_unexpected_exception(
-    process_component: ProcessComponent,
+    _processonent: ProcessComponent,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cover unexpected exception branch in run_async."""
     with patch("asyncio.create_subprocess_shell", side_effect=OSError("boom")):
-        pid = await process_component.run_async("echo hello")
+        pid = await _processonent.run_async("echo hello")
         assert pid == 0
 # ============================================================================
 # CONTEXT - EDGE CASES

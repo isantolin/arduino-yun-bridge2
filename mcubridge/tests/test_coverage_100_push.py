@@ -621,13 +621,13 @@ class TestMqttSpool:
 
 
 # ===================================================================
-# 15. services/serial_flow.py  (90% → ~95%)
+# 15. services/_serial_flow.py  (90% → ~95%)
 # ===================================================================
 
 class TestSerialFlow:
     @pytest.fixture()
     def flow(self):
-        from mcubridge.services.serial_flow import SerialFlowController
+        from mcubridge.services._serial_flow import SerialFlowController
 
         flow = SerialFlowController(
             ack_timeout=1.0,
@@ -730,7 +730,7 @@ class TestSerialTransport:
 
 class TestProcessComponent:
     @pytest.fixture()
-    def process_comp(self):
+    def _process(self):
         from mcubridge.services.process import ProcessComponent
 
         cfg = _make_config()
@@ -743,10 +743,10 @@ class TestProcessComponent:
         state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_process_run_empty_command(self: Any, process_comp: Any):
+    async def test_process_run_empty_command(self: Any, _process: Any):
         """Empty command should be rejected."""
         # Just instantiate to cover imports
-        assert process_comp is not None
+        assert _process is not None
 
 
 # ===================================================================

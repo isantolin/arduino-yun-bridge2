@@ -37,8 +37,8 @@ async def test_poll_process_flushes_stored_buffers(
     async with state.process_lock:
         state.running_processes[pid] = slot
 
-    process_component = cast(ProcessComponent, runtime_service.process_comp)  # type: ignore[reportUnknownMemberType]
-    batch = await process_component.poll_process(pid)
+    _processonent = cast(ProcessComponent, runtime_service._process)  # type: ignore[reportUnknownMemberType]
+    batch = await _processonent.poll_process(pid)
 
     # ProcessOutputBatch fields: status_byte, exit_code, stdout_chunk, stderr_chunk, finished, ...
     assert batch.status_byte == Status.OK.value
@@ -55,27 +55,27 @@ async def test_poll_process_flushes_stored_buffers(
 async def test_run_async_respects_concurrency_limit(
     runtime_service: BridgeService,
 ) -> None:
-    process_component = cast(ProcessComponent, runtime_service.process_comp)  # type: ignore[reportUnknownMemberType]
+    _processonent = cast(ProcessComponent, runtime_service._process)  # type: ignore[reportUnknownMemberType]
 
     # Consume all available slots
-    limit = process_component.state.process_max_concurrent
+    limit = _processonent.state.process_max_concurrent
     for _ in range(limit):
-        await process_component.process_comp_slots.acquire()  # type: ignore[reportUnknownMemberType]
+        await _processonent._process_slots.acquire()  # type: ignore[reportUnknownMemberType]
 
     # Try to start another
-    pid = await process_component.run_async("ls")
+    pid = await _processonent.run_async("ls")
     assert pid == 0
 
     # Release all
     for _ in range(limit):
-        process_component.process_comp_slots.release()  # type: ignore[reportUnknownMemberType]
+        _processonent._process_slots.release()  # type: ignore[reportUnknownMemberType]
 
 
 @pytest.mark.asyncio
 async def test_monitor_process_releases_slot(
     runtime_service: BridgeService,
 ) -> None:
-    process_component = cast(ProcessComponent, runtime_service.process_comp)  # type: ignore[reportUnknownMemberType]
+    _processonent = cast(ProcessComponent, runtime_service._process)  # type: ignore[reportUnknownMemberType]
     state = runtime_service.state
 
     mock_handle = MagicMock()
@@ -94,16 +94,16 @@ async def test_monitor_process_releases_slot(
         state.running_processes[77] = slot
 
     # Save initial value
-    initial_value = process_component.process_comp_slots._value  # type: ignore[reportUnknownVariableType, reportUnknownMemberType, reportUnknownMemberType]
+    initial_value = _processonent._process_slots._value  # type: ignore[reportUnknownVariableType, reportUnknownMemberType, reportUnknownMemberType]
 
     # Acquire one slot manually
-    await process_component.process_comp_slots.acquire()  # type: ignore[reportUnknownMemberType]
+    await _processonent._process_slots.acquire()  # type: ignore[reportUnknownMemberType]
 
     async with slot.io_lock:
         slot.exit_code = 5
-    process_component._finalize_process_internal(77)  # type: ignore[reportPrivateUsage]
+    _processonent._finalize_process_internal(77)  # type: ignore[reportPrivateUsage]
 
     assert slot.exit_code == 5
 
     # Should be back to initial value (because it finalized and released the slot)
-    assert process_component.process_comp_slots._value == initial_value  # type: ignore[reportUnknownMemberType]
+    assert _processonent._process_slots._value == initial_value  # type: ignore[reportUnknownMemberType]

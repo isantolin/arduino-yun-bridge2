@@ -48,7 +48,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        flow = service.serial_flow  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # type: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # type: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
         async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
@@ -190,9 +190,9 @@ def test_link_sync_resp_respects_rate_limit(
 
         async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
-            # Auto-ACK to prevent serial_flow from blocking
+            # Auto-ACK to prevent _serial_flow from blocking
             ack_payload = structures.AckPacket(command_id=command_id).encode()
-            await service.serial_flow.on_frame_received(Status.ACK.value, seq_id or 0, ack_payload)  # type: ignore[reportUnknownMemberType]
+            await service._serial_flow.on_frame_received(Status.ACK.value, seq_id or 0, ack_payload)  # type: ignore[reportUnknownMemberType]
             if command_id == Command.CMD_GET_CAPABILITIES.value:
                 await service.handshake_manager.handle_capabilities_resp(0, b"\x02\x00\x14\x06\x00\x00\x00\x00")
             return True
@@ -851,8 +851,8 @@ async def test_run_command_respects_allow_list(
     service = BridgeService(runtime_config, runtime_state)
 
     # Mock the entire process component since its API changed
-    service.process_comp = MagicMock(spec=ProcessComponent)  # type: ignore[reportAttributeAccessIssue]
-    service.process_comp.run_async = AsyncMock(return_value=0)  # type: ignore[reportAttributeAccessIssue]
+    service._process = MagicMock(spec=ProcessComponent)  # type: ignore[reportAttributeAccessIssue]
+    service._process.run_async = AsyncMock(return_value=0)  # type: ignore[reportAttributeAccessIssue]
 
     # Simulate forbidden command logic
     status = Status.ERROR.value
@@ -871,8 +871,8 @@ async def test_run_command_accepts_shell_metacharacters_as_literals(
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
     service = BridgeService(runtime_config, runtime_state)
-    service.process_comp = MagicMock(spec=ProcessComponent)  # type: ignore[reportAttributeAccessIssue]
-    service.process_comp.run_async = AsyncMock(return_value=123)  # type: ignore[reportAttributeAccessIssue]
+    service._process = MagicMock(spec=ProcessComponent)  # type: ignore[reportAttributeAccessIssue]
+    service._process.run_async = AsyncMock(return_value=123)  # type: ignore[reportAttributeAccessIssue]
 
     # Logic is now handled inside ProcessComponent and asyncio
     pass

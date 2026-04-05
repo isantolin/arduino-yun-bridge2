@@ -99,7 +99,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport._negotiation_future = transport.loop.create_future()  # type: ignore[reportPrivateUsage]
 
         encoded = cobs_encode(Frame(command_id=Command.CMD_SET_BAUDRATE_RESP.value, sequence_id=0, payload=b"").build())
-        transport.process_comp_packet(encoded)  # type: ignore[reportUnknownMemberType]
+        transport._process_packet(encoded)  # type: ignore[reportUnknownMemberType]
 
         assert await transport._negotiation_future is True  # type: ignore[reportPrivateUsage]
         assert serial_port.baudrate == config.serial_baud

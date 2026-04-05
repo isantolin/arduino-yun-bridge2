@@ -19,7 +19,7 @@ async def test_runtime_on_serial_connected_errors() -> None:
         # Mock failures
         with (
             patch.object(service, "sync_link", side_effect=RuntimeError("sync fail")),
-            patch.object(service.system_comp, "request_mcu_version", side_effect=RuntimeError("ver fail")),  # type: ignore[reportUnknownMemberType]
+            patch.object(service._system, "request_mcu_version", side_effect=RuntimeError("ver fail")),  # type: ignore[reportUnknownMemberType]
             patch.object(service.console_comp, "flush_queue", side_effect=RuntimeError("flush fail")),
         ):
             await service.on_serial_connected()

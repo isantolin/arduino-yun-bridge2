@@ -220,7 +220,7 @@ async def test_process_run_async_limit_reached():
     ctx = MagicMock()
 
     comp = ProcessComponent(config, state, ctx)
-    await comp.process_comp_slots.acquire()  # type: ignore[reportUnknownMemberType]
+    await comp._process_slots.acquire()  # type: ignore[reportUnknownMemberType]
 
     try:
         async with asyncio.timeout(0.1):

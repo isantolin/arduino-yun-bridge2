@@ -789,7 +789,7 @@ class TestConfigSettings:
 
 class TestProcessComponent:
     @pytest.fixture
-    def process_comp(self):
+    def _process(self):
         from mcubridge.services.process import ProcessComponent
 
         config = _make_config(process_max_concurrent=4)
@@ -806,44 +806,44 @@ class TestProcessComponent:
             state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_handle_run_async_empty_command(self: Any, process_comp: Any):
+    async def test_handle_run_async_empty_command(self: Any, _process: Any):
         # Empty command encodes to b""
-        await process_comp.handle_run_async(0, b"")
-        process_comp.service.acknowledge_mcu_frame.assert_called()
+        await _process.handle_run_async(0, b"")
+        _process.service.acknowledge_mcu_frame.assert_called()
 
     @pytest.mark.asyncio
-    async def test_handle_run_async_malformed(self: Any, process_comp: Any):
-        await process_comp.handle_run_async(0, b"\xff\xff\xff")
-        process_comp.service.acknowledge_mcu_frame.assert_called_with(
+    async def test_handle_run_async_malformed(self: Any, _process: Any):
+        await _process.handle_run_async(0, b"\xff\xff\xff")
+        _process.service.acknowledge_mcu_frame.assert_called_with(
             0,
             Command.CMD_PROCESS_RUN_ASYNC.value,
             status=Status.MALFORMED,
         )
 
     @pytest.mark.asyncio
-    async def test_handle_poll_malformed(self: Any, process_comp: Any):
-        await process_comp.handle_poll(0, b"\xff\xff\xff")
-        process_comp.service.acknowledge_mcu_frame.assert_called_with(
+    async def test_handle_poll_malformed(self: Any, _process: Any):
+        await _process.handle_poll(0, b"\xff\xff\xff")
+        _process.service.acknowledge_mcu_frame.assert_called_with(
             0,
             Command.CMD_PROCESS_POLL.value,
             status=Status.MALFORMED,
         )
 
     @pytest.mark.asyncio
-    async def test_handle_kill_malformed(self: Any, process_comp: Any):
-        await process_comp.handle_kill(0, b"\xff\xff\xff")
-        process_comp.service.acknowledge_mcu_frame.assert_called_with(
+    async def test_handle_kill_malformed(self: Any, _process: Any):
+        await _process.handle_kill(0, b"\xff\xff\xff")
+        _process.service.acknowledge_mcu_frame.assert_called_with(
             0,
             Command.CMD_PROCESS_KILL.value,
             status=Status.MALFORMED,
         )
 
     @pytest.mark.asyncio
-    async def test_handle_kill_no_ack(self: Any, process_comp: Any):
+    async def test_handle_kill_no_ack(self: Any, _process: Any):
         from mcubridge.protocol.structures import ProcessKillPacket
 
         payload = ProcessKillPacket(pid=999).encode()
-        result = await process_comp.handle_kill(0, payload, send_ack=False)
+        result = await _process.handle_kill(0, payload, send_ack=False)
         assert result is False
 
 
@@ -1094,20 +1094,20 @@ class TestSystemComponent:
 
 
 # ============================================================================
-# mcubridge/services/serial_flow.py — lines 110-112, 170-171, etc.
+# mcubridge/services/_serial_flow.py — lines 110-112, 170-171, etc.
 # ============================================================================
 
 
 class TestSerialFlow:
     @pytest.mark.asyncio
     async def test_serial_flow_send_frame(self):
-        from mcubridge.services.serial_flow import SerialFlowController
+        from mcubridge.services._serial_flow import SerialFlowController
 
         controller = SerialFlowController(
             ack_timeout=1.0,
             response_timeout=2.0,
             max_attempts=3,
-            logger=logging.getLogger("test.serial_flow"),
+            logger=logging.getLogger("test._serial_flow"),
         )
         sender = AsyncMock(return_value=True)
         controller.set_sender(sender)

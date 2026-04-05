@@ -66,11 +66,12 @@ class MQTTPublishSpool:
         self._on_fallback(reason, original)
 
     def _refresh_fallback_state(self) -> None:
+        prev = self._fallback_active
         self._fallback_active = self._records.fallback_active
         self._failure_reason = self._records.fallback_reason
         self._last_error = self._records.last_error
-        self._closed = False
-        self._notify_fallback()
+        if self._fallback_active and not prev:
+            self._notify_fallback()
 
     def __del__(self) -> None:
         # [SIL-2] Final safety check

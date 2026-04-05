@@ -58,11 +58,8 @@ class ProcessComponent(BaseComponent):
         self.service = service
 
         # [SIL-2] Ensure numeric limit for semaphore
-        limit = 1
-        raw_limit = getattr(state, "process_max_concurrent", 1)
         try:
-            if hasattr(raw_limit, "__int__") or isinstance(raw_limit, (int, float, str)):
-                limit = int(raw_limit)
+            limit = int(getattr(state, "process_max_concurrent", 1))
         except (ValueError, TypeError):
             limit = 1
 

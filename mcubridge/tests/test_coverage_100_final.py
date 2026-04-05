@@ -190,13 +190,13 @@ class TestInit:
         import mcubridge
 
         # Temporarily remove CallbackAPIVersion from the real module
-        orig = pmc.CallbackAPIVersion  # type: ignore[reportPrivateImportUsage]
+        orig = pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
         try:
-            del pmc.CallbackAPIVersion  # type: ignore[reportPrivateImportUsage]
+            del pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
             with pytest.raises(SystemExit):
                 mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
         finally:
-            pmc.CallbackAPIVersion = orig  # type: ignore[reportPrivateImportUsage]
+            pmc.CallbackAPIVersion = orig  # type: ignore[reportAttributeAccessIssue]
 
     def test_check_dependencies_import_error(self):
         import sys
@@ -472,11 +472,11 @@ class TestMqttBuildProperties:
         )
         props = build_mqtt_properties(msg)
         assert props is not None
-        assert props.ContentType == "application/json"  # type: ignore[reportUnknownMemberType]
-        assert props.PayloadFormatIndicator == 1  # type: ignore[reportUnknownMemberType]
-        assert props.MessageExpiryInterval == 60  # type: ignore[reportUnknownMemberType]
-        assert props.ResponseTopic == "resp"  # type: ignore[reportUnknownMemberType]
-        assert props.CorrelationData == b"\x01"  # type: ignore[reportUnknownMemberType]
+        assert props.ContentType == "application/json"
+        assert props.PayloadFormatIndicator == 1
+        assert props.MessageExpiryInterval == 60
+        assert props.ResponseTopic == "resp"
+        assert props.CorrelationData == b"\x01"
 
     def test_build_mqtt_properties_none_when_empty(self):
         from mcubridge.mqtt import build_mqtt_properties

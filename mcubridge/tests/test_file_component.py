@@ -560,7 +560,7 @@ async def test_refresh_storage_usage_handles_subprocess_failures(
 
     # Mock sh.du to raise an error
     def mock_du(*args: Any, **kwargs: Any):
-        raise sh.ErrorReturnCode_1(b"du", b"", b"error")  # type: ignore[reportGeneralTypeIssues]
+        raise sh.ErrorReturnCode_1(b"du", b"", b"error")
 
     monkeypatch.setattr(sh, "du", mock_du)
 

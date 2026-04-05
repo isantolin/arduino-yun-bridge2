@@ -304,7 +304,7 @@ async def test_mqtt_task_handles_incoming_message(
 
         monkeypatch.setattr(
             "mcubridge.transport.mqtt.aiomqtt.Client",
-            lambda **_kw: mock_client,  # type: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+            lambda **_kw: mock_client,  # type: ignore[reportUnknownLambdaType]
         )
 
         runtime_config.mqtt_tls = False

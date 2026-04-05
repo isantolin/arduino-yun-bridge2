@@ -132,16 +132,16 @@ def test_build_mqtt_properties_populates_fields() -> None:
     )
     props = build_mqtt_properties(message)
     assert props is not None
-    assert props.ContentType == "text/plain"  # type: ignore[reportUnknownMemberType]
-    assert props.PayloadFormatIndicator == 1  # type: ignore[reportUnknownMemberType]
-    assert props.MessageExpiryInterval == 10  # type: ignore[reportUnknownMemberType]
-    assert props.ResponseTopic == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response"  # type: ignore[reportUnknownMemberType]
-    assert props.CorrelationData == b"cid"  # type: ignore[reportUnknownMemberType]
-    assert ("k", "v") in list(props.UserProperty)  # type: ignore[reportUnknownMemberType]
+    assert props.ContentType == "text/plain"
+    assert props.PayloadFormatIndicator == 1
+    assert props.MessageExpiryInterval == 10
+    assert props.ResponseTopic == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response"
+    assert props.CorrelationData == b"cid"
+    assert ("k", "v") in list(props.UserProperty)
 
 
 def test_build_mqtt_connect_properties_sets_request_response_flags() -> None:
     props = build_mqtt_connect_properties()
-    assert props.SessionExpiryInterval == 0  # type: ignore[reportUnknownMemberType]
-    assert props.RequestResponseInformation == 1  # type: ignore[reportUnknownMemberType]
-    assert props.RequestProblemInformation == 1  # type: ignore[reportUnknownMemberType]
+    assert props.SessionExpiryInterval == 0
+    assert props.RequestResponseInformation == 1
+    assert props.RequestProblemInformation == 1

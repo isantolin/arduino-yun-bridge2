@@ -61,11 +61,11 @@ def test_configure_tls_loads_cert_chain_when_provided(
 
     fake_context = SimpleNamespace(
         minimum_version=None,
-        load_cert_chain=lambda certfile, keyfile: calls.append((certfile, keyfile)),  # type: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+        load_cert_chain=lambda certfile, keyfile: calls.append((certfile, keyfile)),  # type: ignore[reportUnknownLambdaType]
         check_hostname=True,
     )
 
-    monkeypatch.setattr(ssl, "create_default_context", lambda *_args, **_kwargs: fake_context)  # type: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+    monkeypatch.setattr(ssl, "create_default_context", lambda *_args, **_kwargs: fake_context)  # type: ignore[reportUnknownLambdaType]
     config = _make_config(tls=True, cafile=str(cafile))
     config.mqtt_certfile = str(tmp_path / "client.crt")
     config.mqtt_keyfile = str(tmp_path / "client.key")
@@ -127,7 +127,7 @@ async def test_mqtt_task_requeues_on_publish_failure(
                 return _iter()
 
         monkeypatch.setattr(aiomqtt, "Client", FakeClient)
-        monkeypatch.setattr(mqtt.tenacity, "retry", lambda *args, **kwargs: (lambda fn: fn))  # type: ignore[reportUnknownArgumentType, reportUnknownLambdaType]
+        monkeypatch.setattr(mqtt.tenacity, "retry", lambda *args, **kwargs: (lambda fn: fn))  # type: ignore[reportUnknownLambdaType]
         stash_calls: list[QueuedPublish] = []
         stashed = asyncio.Event()
 
@@ -141,7 +141,7 @@ async def test_mqtt_task_requeues_on_publish_failure(
         monkeypatch.setattr(type(state), "flush_mqtt_spool", AsyncMock(return_value=None))
 
         transport = mqtt.MqttTransport(config, state, MagicMock())
-        task = asyncio.create_task(transport._publisher_loop(FakeClient()))  # type: ignore[reportArgumentType, reportPrivateUsage]
+        task = asyncio.create_task(transport._publisher_loop(FakeClient()))  # type: ignore[reportPrivateUsage]
 
         await asyncio.wait_for(stashed.wait(), timeout=1.0)
         task.cancel()
@@ -207,7 +207,7 @@ async def test_mqtt_subscriber_loop_handles_mqtt_error(
         client = FakeClient()
 
         with pytest.raises(aiomqtt.MqttError, match="boom"):
-            await transport._subscriber_loop(client)  # type: ignore[reportArgumentType, reportPrivateUsage]
+            await transport._subscriber_loop(client)  # type: ignore[reportPrivateUsage]
     finally:
         state.cleanup()
 
@@ -239,7 +239,7 @@ async def test_mqtt_publisher_debug_logging() -> None:
 
             async def run_loop():
                 try:
-                    await transport._publisher_loop(client)  # type: ignore[reportArgumentType, reportPrivateUsage]
+                    await transport._publisher_loop(client)  # type: ignore[reportPrivateUsage]
                 except asyncio.CancelledError:
                     pass
 
@@ -282,7 +282,7 @@ async def test_mqtt_subscriber_processes_message() -> None:
                 yield FakeMsg()
 
         client = FakeClient()
-        task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[reportArgumentType, reportPrivateUsage]
+        task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[reportPrivateUsage]
         await asyncio.sleep(0.05)
         task.cancel()
         assert msg_count == 1
@@ -318,7 +318,7 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
                 yield FakeMsg()
 
         client = FakeClient()
-        task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[reportArgumentType, reportPrivateUsage]
+        task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[reportPrivateUsage]
         await asyncio.sleep(0.05)
         task.cancel()
         assert msg_count == 0

@@ -22,5 +22,8 @@
   "python.analysis.autoImportCompletions": true,
   "flake8.interpreter": [
     "${workspaceFolder}/.tox/py313/bin/python"
+  ],
+  "flake8.path": [
+    "${workspaceFolder}/.tox/py313/bin/flake8"
   ]
 }

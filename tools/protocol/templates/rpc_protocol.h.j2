@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <etl/array.h>
+#include <etl/type_traits.h>
 
 namespace rpc {
 
@@ -52,12 +53,9 @@ enum class CommandId : uint16_t {
 {%- endfor %}
 };
 
-constexpr uint8_t to_underlying(StatusCode value) {
-    return static_cast<uint8_t>(value);
-}
-
-constexpr uint16_t to_underlying(CommandId value) {
-    return static_cast<uint16_t>(value);
+template <typename E>
+constexpr etl::underlying_type_t<E> to_underlying(E value) {
+    return static_cast<etl::underlying_type_t<E>>(value);
 }
 
 constexpr bool requires_ack(CommandId command_id) {

@@ -306,9 +306,7 @@ class BridgeFsm : public etl::fsm {
   void onEnterState(StateId state) {
     if (timers_ == nullptr) return;
     if (state == STATE_FAULT) {
-      for (uint8_t i = 0; i < bridge::scheduler::NUMBER_OF_TIMERS; ++i) {
-        timers_->stop(i);
-      }
+      timers_->active.reset();
     }
   }
 

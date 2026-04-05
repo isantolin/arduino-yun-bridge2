@@ -61,7 +61,7 @@ def create_apk_disk(apk_dir: Path):
     try:
         apk_files = list(Path(apk_dir).glob("*.apk"))
         for apk in apk_files:
-            shutil.copy(apk, mnt)
+            run(["sudo", "cp", str(apk), str(mnt / apk.name)])
         log_info(f"[INFO] Copied {len(apk_files)} APKs to disk.")
     finally:
         run(["sudo", "umount", str(mnt)])

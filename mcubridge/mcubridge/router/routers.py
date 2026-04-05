@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
+import structlog
 from aiomqtt.message import Message
 from mcubridge.protocol.topics import Topic, TopicRoute
 
@@ -48,7 +49,6 @@ class MQTTRouter:
             except (OSError, ValueError, TypeError, AttributeError, KeyError, IndexError, RuntimeError):
                 # [SIL-2] Fault Isolation: Don't let one handler crash the whole router.
                 # We log it and continue with the next one.
-                import structlog
                 structlog.get_logger("mcubridge.router").exception(
                     "Fault Isolation: Handler failed for topic %s", route.topic
                 )

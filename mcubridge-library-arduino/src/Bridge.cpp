@@ -792,6 +792,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, uint16_t sequence_id, etl::spa
   bool fault, operational; BRIDGE_ATOMIC_BLOCK { fault = _fsm.isFault(); operational = _fsm.isSynchronized(); }
   if (fault) return false;
   if (!operational && !_isHandshakeCommand(command_id)) return false;
+  static_assert(rpc::MAX_PAYLOAD_SIZE <= UINT16_MAX, "MAX_PAYLOAD_SIZE must fit in uint16_t");
   if (rpc::requires_ack(command_id)) {
     if (_isQueueFull() || (_tx_pool_head + payload.size() > _tx_payload_pool.size())) return false;
     PendingTxFrame f; f.command_id = command_id; f.payload_length = static_cast<uint16_t>(payload.size()); f.buffer_offset = _tx_pool_head;
@@ -808,6 +809,7 @@ etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Fr
   eff.header = org.header; eff.crc = org.crc;
   if (!bitRead(org.header.command_id, kCompressedCommandBit)) { eff.payload = org.payload; return {}; }
   bitWrite(eff.header.command_id, kCompressedCommandBit, 0);
+  static_assert(sizeof(_decompression_buffer) <= UINT16_MAX, "decompression buffer must fit in uint16_t");
   size_t decoded_len = rle::decode(org.payload, etl::span<uint8_t>(_decompression_buffer.data(), _decompression_buffer.size()));
   if (decoded_len == 0 && org.header.payload_length > 0) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
   eff.header.payload_length = static_cast<uint16_t>(decoded_len); eff.payload = etl::span<const uint8_t>(_decompression_buffer.data(), decoded_len);

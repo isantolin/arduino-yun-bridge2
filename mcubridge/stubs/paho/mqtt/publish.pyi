@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal, NotRequired, Required, TypedDict
 
 from paho.mqtt.enums import MQTTProtocolVersion
-from paho.mqtt.properties import Properties
+from paho.mqtt.properties import Properties as Properties
 
 PayloadType = str | bytes | bytearray | int | float | None
 

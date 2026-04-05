@@ -92,6 +92,9 @@ exclude = ["*_pb2.py", "*_pb2.pyi", "typings"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "A", "PLW"]
+extend-select = ["E226"]
+preview = true
+explicit-preview-rules = true
 
 [tool.ruff.lint.per-file-ignores]
 

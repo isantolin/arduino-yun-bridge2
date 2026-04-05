@@ -107,7 +107,9 @@ def test_request_mcu_version_resets_cached_version(runtime_config: RuntimeConfig
     _run(_coro())
 
 
-def test_handle_get_free_memory_resp_publishes_with_pending_reply(runtime_config: RuntimeConfig, runtime_state: RuntimeState):
+def test_handle_get_free_memory_resp_publishes_with_pending_reply(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+):
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
@@ -140,7 +142,9 @@ def test_handle_get_free_memory_resp_ignores_malformed(runtime_config: RuntimeCo
     _run(_coro())
 
 
-def test_handle_get_version_resp_publishes_pending_and_updates_state(runtime_config: RuntimeConfig, runtime_state: RuntimeState):
+def test_handle_get_version_resp_publishes_pending_and_updates_state(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+):
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)

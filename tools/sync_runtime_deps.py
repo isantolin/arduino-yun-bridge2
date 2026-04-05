@@ -64,14 +64,14 @@ def load_manifest() -> list[_DepEntry]:
     return normalized
 
 
-def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:  
+def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:
     # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci)
     specs = {dep["pip"] for dep in deps if dep.get("pip")}
     filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
     return sorted(filtered)
 
 
-def collect_openwrt_packages(deps: Sequence[_DepEntry]) -> list[str]:  
+def collect_openwrt_packages(deps: Sequence[_DepEntry]) -> list[str]:
     # Mantiene todo EXCEPTO los paquetes exclusivos de construcción (jinja2, etc)
     # Esto asegura que el APK sea ultra-lean.
     return [
@@ -81,7 +81,7 @@ def collect_openwrt_packages(deps: Sequence[_DepEntry]) -> list[str]:
     ]
 
 
-def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:  
+def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     pip_specs = collect_pip_specs(deps)
     content = ["# Generated via tools/sync_runtime_deps.py; do not edit."]
     content.extend(pip_specs)
@@ -95,7 +95,7 @@ def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> b
     return True
 
 
-def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:  
+def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     if not PYPROJECT_PATH.exists():
         return False
 
@@ -151,7 +151,7 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
     return lines
 
 
-def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:  
+def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
         raise ManifestError("Makefile is missing dependency markers; cannot inject dependencies")
@@ -205,7 +205,7 @@ def _fetch_latest_version(package_name: str) -> str | None:
         return None
 
 
-def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:  
+def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:
     """Return list of (package, pinned, latest) for outdated packages."""
     outdated: list[tuple[str, str, str]] = []
     pip_specs = [dep["pip"] for dep in deps if dep.get("pip")]

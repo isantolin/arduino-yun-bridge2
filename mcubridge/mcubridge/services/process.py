@@ -5,7 +5,7 @@ import collections
 import contextlib
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import msgspec
 import psutil
@@ -26,10 +26,8 @@ from ..state.context import (
     ManagedProcess,
     RuntimeState,
 )
-from .base import BaseComponent
+from .base import BaseComponent, BridgeContext
 
-if TYPE_CHECKING:
-    from .runtime import BridgeService
 import structlog
 
 logger = structlog.get_logger("mcubridge.services.process")
@@ -52,10 +50,9 @@ class ProcessComponent(BaseComponent):
         self,
         config: Any,
         state: RuntimeState,
-        service: BridgeService,
+        ctx: BridgeContext,
     ) -> None:
-        super().__init__(config, state, service)
-        self.service = service
+        super().__init__(config, state, ctx)
 
         # [SIL-2] Ensure numeric limit for semaphore
         try:
@@ -125,7 +122,7 @@ class ProcessComponent(BaseComponent):
                 ShellAction.RUN_ASYNC,
                 "error",
             )
-            await self.service.publish(
+            await self.ctx.publish(
                 topic=response_topic,
                 payload=b"error:internal",
                 reply_to=inbound,
@@ -140,14 +137,14 @@ class ProcessComponent(BaseComponent):
         )
 
         if pid == 0:
-            await self.service.publish(
+            await self.ctx.publish(
                 topic=response_topic,
                 payload=b"error:not_allowed_or_limit_reached",
                 reply_to=inbound,
             )
             return
 
-        await self.service.publish(
+        await self.ctx.publish(
             topic=response_topic,
             payload=str(pid).encode("utf-8"),
             reply_to=inbound,
@@ -200,7 +197,7 @@ class ProcessComponent(BaseComponent):
             command = packet.command
 
             if not command:
-                await self.service.acknowledge_mcu_frame(seq_id,
+                await self.ctx.acknowledge_mcu_frame(seq_id,
                                                          protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                                                          status=Status.MALFORMED,
                 )
@@ -209,7 +206,7 @@ class ProcessComponent(BaseComponent):
             # 2. Policy check
             if not self.state.allowed_policy.is_allowed(command):
                 logger.warning("Process execution denied by policy: %s", command)
-                await self.service.acknowledge_mcu_frame(seq_id,
+                await self.ctx.acknowledge_mcu_frame(seq_id,
                                                          protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                                                          status=Status.ERROR,
                 )
@@ -218,21 +215,21 @@ class ProcessComponent(BaseComponent):
             # 3. Execution
             pid = await self.run_async(command)
             if pid > 0:
-                await self.service.acknowledge_mcu_frame(seq_id,
+                await self.ctx.acknowledge_mcu_frame(seq_id,
                                                          protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                                                          status=Status.OK,
                 )
                 resp = structures.ProcessRunAsyncResponsePacket(pid=pid).encode()
-                await self.service.send_frame(
+                await self.ctx.send_frame(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value, resp,
                 )
             else:
-                await self.service.acknowledge_mcu_frame(seq_id,
+                await self.ctx.acknowledge_mcu_frame(seq_id,
                                                          protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                                                          status=Status.ERROR,
                 )
         except (msgspec.ValidationError, ValueError, AttributeError):
-            await self.service.acknowledge_mcu_frame(seq_id,
+            await self.ctx.acknowledge_mcu_frame(seq_id,
                                                      protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                                                      status=Status.MALFORMED,
             )
@@ -244,7 +241,7 @@ class ProcessComponent(BaseComponent):
             pid = packet.pid
 
             batch = await self.poll_process(pid)
-            await self.service.acknowledge_mcu_frame(seq_id,
+            await self.ctx.acknowledge_mcu_frame(seq_id,
                                                      protocol.Command.CMD_PROCESS_POLL.value,
                                                      status=Status.OK,
             )
@@ -254,11 +251,11 @@ class ProcessComponent(BaseComponent):
                 stdout_data=batch.stdout_chunk,
                 stderr_data=batch.stderr_chunk,
             ).encode()
-            await self.service.send_frame(
+            await self.ctx.send_frame(
                 protocol.Command.CMD_PROCESS_POLL_RESP.value, resp,
             )
         except (msgspec.ValidationError, ValueError, AttributeError):
-            await self.service.acknowledge_mcu_frame(seq_id,
+            await self.ctx.acknowledge_mcu_frame(seq_id,
                                                      protocol.Command.CMD_PROCESS_POLL.value,
                                                      status=Status.MALFORMED,
             )
@@ -271,14 +268,14 @@ class ProcessComponent(BaseComponent):
 
             success = await self.stop_process(pid)
             if send_ack:
-                await self.service.acknowledge_mcu_frame(seq_id,
+                await self.ctx.acknowledge_mcu_frame(seq_id,
                                                          protocol.Command.CMD_PROCESS_KILL.value,
                                                          status=Status.OK if success else Status.ERROR,
                 )
             return success
         except (msgspec.ValidationError, ValueError, AttributeError):
             if send_ack:
-                await self.service.acknowledge_mcu_frame(seq_id,
+                await self.ctx.acknowledge_mcu_frame(seq_id,
                                                          protocol.Command.CMD_PROCESS_KILL.value,
                                                          status=Status.MALFORMED,
                 )
@@ -470,7 +467,7 @@ class ProcessComponent(BaseComponent):
             reply_topic = getattr(inbound.properties, "ResponseTopic", None)
             correlation_data = getattr(inbound.properties, "CorrelationData", None)
 
-        await self.service.enqueue_mqtt(
+        await self.ctx.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
                 payload=_msgpack_enc.encode(batch),

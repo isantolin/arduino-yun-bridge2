@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command
+from mcubridge.services import ConsoleComponent, SystemComponent
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 
@@ -15,12 +16,14 @@ async def test_runtime_on_serial_connected_errors() -> None:
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state)
+        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
+        console = service._container.get(ConsoleComponent)  # type: ignore[reportPrivateUsage]
 
         # Mock failures
         with (
             patch.object(service, "sync_link", side_effect=RuntimeError("sync fail")),
-            patch.object(service._system, "request_mcu_version", side_effect=RuntimeError("ver fail")),  # type: ignore[reportPrivateUsage]
-            patch.object(service.console_comp, "flush_queue", side_effect=RuntimeError("flush fail")),
+            patch.object(system, "request_mcu_version", side_effect=RuntimeError("ver fail")),
+            patch.object(console, "flush_queue", side_effect=RuntimeError("flush fail")),
         ):
             await service.on_serial_connected()
             # Should not raise

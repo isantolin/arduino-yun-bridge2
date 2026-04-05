@@ -80,6 +80,9 @@ class DummyContext:
     ) -> None:
         self.published.append((topic, payload, qos, retain))
 
+    async def acknowledge_mcu_frame(self, command_id: int, seq_id: int, *, status: Any = None) -> None:
+        pass
+
     async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],

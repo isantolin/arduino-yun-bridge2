@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from aiomqtt.message import Message
@@ -297,12 +297,10 @@ async def test_mqtt_shell_kill_invokes_processonent(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    mock_comp = MagicMock(spec=ProcessComponent)
-    mock_comp.stop_process = AsyncMock(return_value=True)
+    service = BridgeService(runtime_config, runtime_state)
+    process = service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
 
-    with patch("mcubridge.services.runtime.ProcessComponent", return_value=mock_comp):
-        service = BridgeService(runtime_config, runtime_state)
-
+    with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:
         pid = 21
         await service.handle_mqtt_message(
             _make_inbound(
@@ -316,8 +314,8 @@ async def test_mqtt_shell_kill_invokes_processonent(
             )
         )
         # ProcessComponent handles shell topics
-        mock_comp.handle_mqtt.assert_called()
-        args = mock_comp.handle_mqtt.call_args[0]
+        mock_mqtt.assert_called()
+        args = mock_mqtt.call_args[0]
         # args[0] is segments, args[1] is payload
         assert args[0] == ["kill", str(pid)]
 

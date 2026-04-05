@@ -809,12 +809,12 @@ class TestProcessComponent:
     async def test_handle_run_async_empty_command(self: Any, _process: Any):
         # Empty command encodes to b""
         await _process.handle_run_async(0, b"")
-        _process.service.acknowledge_mcu_frame.assert_called()
+        _process.ctx.acknowledge_mcu_frame.assert_called()
 
     @pytest.mark.asyncio
     async def test_handle_run_async_malformed(self: Any, _process: Any):
         await _process.handle_run_async(0, b"\xff\xff\xff")
-        _process.service.acknowledge_mcu_frame.assert_called_with(
+        _process.ctx.acknowledge_mcu_frame.assert_called_with(
             0,
             Command.CMD_PROCESS_RUN_ASYNC.value,
             status=Status.MALFORMED,
@@ -823,7 +823,7 @@ class TestProcessComponent:
     @pytest.mark.asyncio
     async def test_handle_poll_malformed(self: Any, _process: Any):
         await _process.handle_poll(0, b"\xff\xff\xff")
-        _process.service.acknowledge_mcu_frame.assert_called_with(
+        _process.ctx.acknowledge_mcu_frame.assert_called_with(
             0,
             Command.CMD_PROCESS_POLL.value,
             status=Status.MALFORMED,
@@ -832,7 +832,7 @@ class TestProcessComponent:
     @pytest.mark.asyncio
     async def test_handle_kill_malformed(self: Any, _process: Any):
         await _process.handle_kill(0, b"\xff\xff\xff")
-        _process.service.acknowledge_mcu_frame.assert_called_with(
+        _process.ctx.acknowledge_mcu_frame.assert_called_with(
             0,
             Command.CMD_PROCESS_KILL.value,
             status=Status.MALFORMED,

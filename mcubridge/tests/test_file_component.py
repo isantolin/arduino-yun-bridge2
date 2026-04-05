@@ -64,6 +64,9 @@ class DummyBridge(BridgeContext):
         )
         await self.enqueue_mqtt(message, reply_context=reply_to)
 
+    async def acknowledge_mcu_frame(self, command_id: int, seq_id: int, *, status: Any = None) -> None:
+        pass
+
     def is_command_allowed(self, command: str) -> bool:
         return True
 

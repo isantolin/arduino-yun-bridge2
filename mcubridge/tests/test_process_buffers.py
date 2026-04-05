@@ -1,5 +1,4 @@
 from typing import Any
-from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -37,7 +36,7 @@ async def test_poll_process_flushes_stored_buffers(
     async with state.process_lock:
         state.running_processes[pid] = slot
 
-    _processonent = cast(ProcessComponent, runtime_service._process)  # type: ignore[reportUnnecessaryCast]  # type: ignore[reportPrivateUsage]
+    _processonent = runtime_service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
     batch = await _processonent.poll_process(pid)
 
     # ProcessOutputBatch fields: status_byte, exit_code, stdout_chunk, stderr_chunk, finished, ...
@@ -55,7 +54,7 @@ async def test_poll_process_flushes_stored_buffers(
 async def test_run_async_respects_concurrency_limit(
     runtime_service: BridgeService,
 ) -> None:
-    _processonent = cast(ProcessComponent, runtime_service._process)  # type: ignore[reportUnnecessaryCast]  # type: ignore[reportPrivateUsage]
+    _processonent = runtime_service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
 
     # Consume all available slots
     limit = _processonent.state.process_max_concurrent
@@ -75,7 +74,7 @@ async def test_run_async_respects_concurrency_limit(
 async def test_monitor_process_releases_slot(
     runtime_service: BridgeService,
 ) -> None:
-    _processonent = cast(ProcessComponent, runtime_service._process)  # type: ignore[reportUnnecessaryCast]  # type: ignore[reportPrivateUsage]
+    _processonent = runtime_service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
     state = runtime_service.state
 
     mock_handle = MagicMock()

@@ -41,7 +41,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
         from mcubridge.protocol.structures import ProcessPollPacket
         payload = ProcessPollPacket(pid=100).encode()
         await process_comp.handle_poll(0, payload)
-        process_comp.service.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
+        process_comp.ctx.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
 
 
 @pytest.mark.asyncio
@@ -172,6 +172,6 @@ async def test_handle_run_async_validation_error_sends_error_frame(
     await process_comp.handle_run_async(0, b"")
 
     # Verify it called with correct named parameter
-    process_comp.service.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
-    args, kwargs = process_comp.service.acknowledge_mcu_frame.call_args  # type: ignore[reportUnknownVariableType]
+    process_comp.ctx.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
+    args, kwargs = process_comp.ctx.acknowledge_mcu_frame.call_args  # type: ignore[reportUnknownVariableType]
     assert kwargs.get("status") == Status.MALFORMED  # type: ignore[reportUnknownMemberType]

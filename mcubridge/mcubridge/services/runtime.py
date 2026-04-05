@@ -4,7 +4,7 @@ import asyncio
 import structlog
 import time
 from collections.abc import Coroutine
-from typing import Any, cast
+from typing import Any
 
 import msgspec
 import svcs
@@ -27,16 +27,6 @@ from . import (
     ProcessComponent,
     SpiComponent,
     SystemComponent,
-)
-from . import (
-    console as _console_mod,
-    datastore as _datastore_mod,
-    file as _file_mod,
-    mailbox as _mailbox_mod,
-    pin as _pin_mod,
-    process as _process_mod,
-    spi as _spi_mod,
-    system as _system_mod,
 )
 from .dispatcher import BridgeDispatcher
 from .handshake import (
@@ -91,25 +81,16 @@ class BridgeService:
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_group: asyncio.TaskGroup | None = None
 
-        self.console_comp = ConsoleComponent(config, state, self)
-        self._datastore = DatastoreComponent(config, state, self)
-        self._file = FileComponent(config, state, self)
-        self._mailbox = MailboxComponent(config, state, self)
-        self._pin = PinComponent(config, state, self)
-        self._process = ProcessComponent(config, state, self)
-        self._spi = SpiComponent(config, state, self)
-        self._system = SystemComponent(config, state, self)
-
         self._registry = svcs.Registry()
-        reg = cast(Any, self._registry)
-        reg.register_value(_console_mod.ConsoleComponent, self.console_comp)
-        reg.register_value(_datastore_mod.DatastoreComponent, self._datastore)
-        reg.register_value(_file_mod.FileComponent, self._file)
-        reg.register_value(_mailbox_mod.MailboxComponent, self._mailbox)
-        reg.register_value(_pin_mod.PinComponent, self._pin)
-        reg.register_value(_process_mod.ProcessComponent, self._process)
-        reg.register_value(_spi_mod.SpiComponent, self._spi)
-        reg.register_value(_system_mod.SystemComponent, self._system)
+        _COMPONENTS: tuple[type, ...] = (
+            ConsoleComponent, DatastoreComponent, FileComponent,
+            MailboxComponent, PinComponent, ProcessComponent,
+            SpiComponent, SystemComponent,
+        )
+        for comp_cls in _COMPONENTS:
+            self._registry.register_factory(  # type: ignore[reportUnknownMemberType]
+                comp_cls, lambda c=comp_cls: c(config, state, self),  # type: ignore[reportUnknownLambdaType]
+            )
         self._container = svcs.Container(self._registry)
 
         self.handshake_manager = SerialHandshakeManager(
@@ -153,7 +134,7 @@ class BridgeService:
             handle_get_capabilities_resp=self.handshake_manager.handle_capabilities_resp,
             handle_ack=self._handle_ack,
             status_handler_factory=lambda status: lambda s, p: self.handle_status(s, status, p),
-            handle_process_kill=self._process.handle_kill,
+            handle_process_kill=self._container.get(ProcessComponent).handle_kill,
         )
 
     async def __aenter__(self) -> BridgeService:
@@ -214,14 +195,14 @@ class BridgeService:
             return
 
         try:
-            version_ok = await self._system.request_mcu_version()
+            version_ok = await self._container.get(SystemComponent).request_mcu_version()
             if not version_ok:
                 logger.warning("Failed to dispatch MCU version request after reconnect")
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to request MCU version after reconnect: %s", e)
 
         try:
-            await self.console_comp.flush_queue()
+            await self._container.get(ConsoleComponent).flush_queue()
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to flush console backlog after reconnect: %s", e)
 
@@ -246,7 +227,7 @@ class BridgeService:
         self.state.pending_analog_reads.clear()
 
         # Ensure we do not keep the console in a paused state between links.
-        self.console_comp.on_serial_disconnected()
+        self._container.get(ConsoleComponent).on_serial_disconnected()
         await self._serial_flow.reset()
         self.handshake_manager.clear_handshake_expectations()
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
@@ -14,7 +14,6 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol import mcubridge_pb2
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.services.process import ProcessComponent
 from mcubridge.services.handshake import SerialHandshakeFatal, derive_serial_timing
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
@@ -848,11 +847,7 @@ async def test_run_command_respects_allow_list(
     from mcubridge.policy import AllowedCommandPolicy
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["/usr/bin/id"])
-    service = BridgeService(runtime_config, runtime_state)
-
-    # Mock the entire process component since its API changed
-    service._process = MagicMock(spec=ProcessComponent)  # type: ignore[reportPrivateUsage]
-    service._process.run_async = AsyncMock(return_value=0)  # type: ignore[reportPrivateUsage]
+    _service = BridgeService(runtime_config, runtime_state)  # noqa: F841 — validates init
 
     # Simulate forbidden command logic
     status = Status.ERROR.value
@@ -870,9 +865,7 @@ async def test_run_command_accepts_shell_metacharacters_as_literals(
     from mcubridge.policy import AllowedCommandPolicy
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
-    service = BridgeService(runtime_config, runtime_state)
-    service._process = MagicMock(spec=ProcessComponent)  # type: ignore[reportPrivateUsage]
-    service._process.run_async = AsyncMock(return_value=123)  # type: ignore[reportPrivateUsage]
+    _service = BridgeService(runtime_config, runtime_state)  # noqa: F841 — validates init
 
     # Logic is now handled inside ProcessComponent and asyncio
     pass
@@ -887,17 +880,18 @@ async def test_process_run_async_accepts_complex_arguments(
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
 
-    # We must ensure the service uses our mock component from start
-    mock_comp = MagicMock(spec=ProcessComponent)
-    mock_comp.handle_run_async = AsyncMock()
+    service = BridgeService(runtime_config, runtime_state)
+    # Mark state as synchronized so MCU frames are not rejected pre-sync
+    runtime_state.mark_transport_connected()
+    runtime_state.mark_synchronized()
 
-    with patch("mcubridge.services.runtime.ProcessComponent", return_value=mock_comp):
-        service = BridgeService(runtime_config, runtime_state)
-        # Components now share the same mock_comp reference from init
+    # Override the handler in the MCU registry (bound method was captured at init)
+    mock_run = AsyncMock()
+    service._dispatcher.mcu_registry.register(  # type: ignore[reportPrivateUsage]
+        Command.CMD_PROCESS_RUN_ASYNC.value, mock_run,
+    )
 
-        # Payload: Command
-        cmd_bytes = b"ls -l /tmp"
-        await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, 0, cmd_bytes)
+    cmd_bytes = b"ls -l /tmp"
+    await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, 0, cmd_bytes)
 
-        # Should have called handle_run_async with command bytes
-        mock_comp.handle_run_async.assert_called_with(0, cmd_bytes)
+    mock_run.assert_called_with(0, cmd_bytes)

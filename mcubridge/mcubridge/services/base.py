@@ -48,6 +48,14 @@ class BridgeContext(Protocol):
         reply_to: Message | None = None,
     ) -> None: ...
 
+    async def acknowledge_mcu_frame(
+        self,
+        command_id: int,
+        seq_id: int,
+        *,
+        status: Any = None,
+    ) -> None: ...
+
     async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],

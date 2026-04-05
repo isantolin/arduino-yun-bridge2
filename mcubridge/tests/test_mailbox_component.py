@@ -88,6 +88,9 @@ class DummyBridge(BridgeContext):
     def set_enqueue_hook(self, hook: EnqueueHook | None) -> None:
         self._enqueue_hook = hook
 
+    async def acknowledge_mcu_frame(self, command_id: int, seq_id: int, *, status: Any = None) -> None:
+        pass
+
     def is_command_allowed(self, command: str) -> bool:
         return True
 

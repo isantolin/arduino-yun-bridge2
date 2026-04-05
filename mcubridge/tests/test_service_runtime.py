@@ -14,6 +14,7 @@ from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Status
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
+from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 from tests._helpers import make_test_config
@@ -179,7 +180,8 @@ async def test_handle_get_free_memory_resp_malformed_no_publish() -> None:
     try:
         service = BridgeService(config, state)
 
-        await service._system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)  # type: ignore[reportPrivateUsage]
+        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
+        await system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)
         assert state.mqtt_publish_queue.qsize() == 0
     finally:
         state.cleanup()
@@ -193,7 +195,8 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
         service = BridgeService(config, state)
 
         pkt = structures.VersionResponsePacket(major=1, minor=2, patch=0)
-        await service._system.handle_get_version_resp(0, pkt.encode())  # type: ignore[reportPrivateUsage]
+        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
+        await system.handle_get_version_resp(0, pkt.encode())
 
         assert state.mcu_version == (1, 2)
         queued = state.mqtt_publish_queue.get_nowait()

@@ -15,17 +15,36 @@ jobs:
   build-apk:
     name: Compile APKs for OpenWrt 25.12.0
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 330
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Cache OpenWrt SDK
+      # Cache layer 1: Downloaded source tarballs (very stable, survives build script changes)
+      - name: Cache Downloads
+        uses: actions/cache@v4
+        with:
+          path: dl
+          key: ${{ runner.os }}-openwrt-dl-25.12.0
+          restore-keys: |
+            ${{ runner.os }}-openwrt-dl-
+
+      # Cache layer 2: Host toolchain (SDK Python, host tools — expensive to rebuild, rarely changes)
+      - name: Cache Host Toolchain
         uses: actions/cache@v4
         with:
           path: |
-            openwrt-sdk
-            dl
+            openwrt-sdk/staging_dir/hostpkg
+            openwrt-sdk/staging_dir/host
+          key: ${{ runner.os }}-openwrt-host-25.12.0-${{ hashFiles('1_compile.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-host-25.12.0-
+
+      # Cache layer 3: Full SDK (staging_dir/target, build_dir, feeds)
+      - name: Cache OpenWrt SDK
+        uses: actions/cache@v4
+        with:
+          path: openwrt-sdk
           key: ${{ runner.os }}-openwrt-sdk-25.12.0-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-sdk-25.12.0-

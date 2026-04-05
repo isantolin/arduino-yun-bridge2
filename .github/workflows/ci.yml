@@ -268,7 +268,7 @@ jobs:
 
       - name: Generate Coverage Summary
         run: |
-          pip install msgspec typer rich
+          pip install msgspec typer rich construct protobuf cryptography
           python tools/coverage_report.py \
             --output-markdown coverage/coverage-summary.md \
             --output-json coverage/coverage-summary.json \
@@ -277,6 +277,15 @@ jobs:
       - name: Generate Memory Summary
         run: |
           python tools/arduino_memory_report.py arduino-logs \
+            --github-step-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate Daemon Profile
+        env:
+          PYTHONPATH: typings:mcubridge:mcubridge-client-examples
+        run: |
+          python tools/daemon_profile_report.py \
+            --iterations 2000 \
+            --json coverage/daemon-profile.json \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Combined Coverage

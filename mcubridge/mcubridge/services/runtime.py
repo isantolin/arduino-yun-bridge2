@@ -91,7 +91,7 @@ class BridgeService:
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_group: asyncio.TaskGroup | None = None
 
-        self._console = ConsoleComponent(config, state, self)
+        self.console_comp = ConsoleComponent(config, state, self)
         self._datastore = DatastoreComponent(config, state, self)
         self._file = FileComponent(config, state, self)
         self._mailbox = MailboxComponent(config, state, self)
@@ -102,7 +102,7 @@ class BridgeService:
 
         self._registry = svcs.Registry()
         reg = cast(Any, self._registry)
-        reg.register_value(_console_mod.ConsoleComponent, self._console)
+        reg.register_value(_console_mod.ConsoleComponent, self.console_comp)
         reg.register_value(_datastore_mod.DatastoreComponent, self._datastore)
         reg.register_value(_file_mod.FileComponent, self._file)
         reg.register_value(_mailbox_mod.MailboxComponent, self._mailbox)
@@ -112,7 +112,7 @@ class BridgeService:
         reg.register_value(_system_mod.SystemComponent, self._system)
         self._container = svcs.Container(self._registry)
 
-        self._handshake = SerialHandshakeManager(
+        self.handshake_manager = SerialHandshakeManager(
             config=config,
             state=state,
             serial_timing=self._serial_timing,
@@ -148,9 +148,9 @@ class BridgeService:
         )
         self._dispatcher.register_components(self._container)
         self._dispatcher.register_system_handlers(
-            handle_link_sync_resp=self._handshake.handle_link_sync_resp,
-            handle_link_reset_resp=self._handshake.handle_link_reset_resp,
-            handle_get_capabilities_resp=self._handshake.handle_capabilities_resp,
+            handle_link_sync_resp=self.handshake_manager.handle_link_sync_resp,
+            handle_link_reset_resp=self.handshake_manager.handle_link_reset_resp,
+            handle_get_capabilities_resp=self.handshake_manager.handle_capabilities_resp,
             handle_ack=self._handle_ack,
             status_handler_factory=lambda status: lambda s, p: self.handle_status(s, status, p),
             handle_process_kill=self._process.handle_kill,
@@ -210,7 +210,7 @@ class BridgeService:
         # [SIL-2] Boundary Guard: Do not proceed if synchronization failed.
         if not self.state.is_synchronized:
             logger.warning("Link synchronization failed; aborting post-connection initialization")
-            self._handshake.raise_if_handshake_fatal()
+            self.handshake_manager.raise_if_handshake_fatal()
             return
 
         try:
@@ -221,7 +221,7 @@ class BridgeService:
             logger.exception("Failed to request MCU version after reconnect: %s", e)
 
         try:
-            await self._console.flush_queue()
+            await self.console_comp.flush_queue()
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to flush console backlog after reconnect: %s", e)
 
@@ -246,9 +246,9 @@ class BridgeService:
         self.state.pending_analog_reads.clear()
 
         # Ensure we do not keep the console in a paused state between links.
-        self._console.on_serial_disconnected()
+        self.console_comp.on_serial_disconnected()
         await self._serial_flow.reset()
-        self._handshake.clear_handshake_expectations()
+        self.handshake_manager.clear_handshake_expectations()
 
     async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
@@ -371,7 +371,7 @@ class BridgeService:
         await self.enqueue_mqtt(message, reply_context=reply_to)
 
     async def sync_link(self) -> bool:
-        return await self._handshake.synchronize()
+        return await self.handshake_manager.synchronize()
 
     async def _handle_handshake_failure(
         self,
@@ -379,7 +379,7 @@ class BridgeService:
         *,
         detail: str | None = None,
     ) -> None:
-        await self._handshake.handle_handshake_failure(
+        await self.handshake_manager.handle_handshake_failure(
             reason,
             detail=detail,
         )

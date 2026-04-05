@@ -296,7 +296,7 @@ def _make_dispatcher(
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_rejects_pre_sync_without_reply_frames(runtime_state) -> None:
+async def test_dispatch_mcu_frame_rejects_pre_sync_without_reply_frames(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state, is_link_synchronized=False)
 
@@ -307,7 +307,7 @@ async def test_dispatch_mcu_frame_rejects_pre_sync_without_reply_frames(runtime_
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_allows_status_frames_pre_sync(runtime_state) -> None:
+async def test_dispatch_mcu_frame_allows_status_frames_pre_sync(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state, is_link_synchronized=False)
 
@@ -318,7 +318,7 @@ async def test_dispatch_mcu_frame_allows_status_frames_pre_sync(runtime_state) -
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_handler_success_auto_acks(runtime_state) -> None:
+async def test_dispatch_mcu_frame_handler_success_auto_acks(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
 
@@ -334,7 +334,7 @@ async def test_dispatch_mcu_frame_handler_success_auto_acks(runtime_state) -> No
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_handler_returns_false_no_ack(runtime_state) -> None:
+async def test_dispatch_mcu_frame_handler_returns_false_no_ack(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
 
@@ -348,7 +348,7 @@ async def test_dispatch_mcu_frame_handler_returns_false_no_ack(runtime_state) ->
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_handler_exception_sends_error_for_request(runtime_state) -> None:
+async def test_dispatch_mcu_frame_handler_exception_sends_error_for_request(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
 
@@ -362,7 +362,7 @@ async def test_dispatch_mcu_frame_handler_exception_sends_error_for_request(runt
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_unhandled_request_sends_not_implemented(runtime_state) -> None:
+async def test_dispatch_mcu_frame_unhandled_request_sends_not_implemented(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
 
@@ -372,7 +372,7 @@ async def test_dispatch_mcu_frame_unhandled_request_sends_not_implemented(runtim
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_orphaned_response_is_ignored(runtime_state) -> None:
+async def test_dispatch_mcu_frame_orphaned_response_is_ignored(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
 
@@ -392,7 +392,7 @@ def test_resolve_command_id_handles_command_status_unknown() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mqtt_message_ignored_for_bad_prefix_or_missing_segments(runtime_state) -> None:
+async def test_dispatch_mqtt_message_ignored_for_bad_prefix_or_missing_segments(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
     inbound = make_inbound_message("other/prefix/console/in", payload=b"hi")
@@ -414,7 +414,7 @@ async def test_dispatch_mqtt_message_ignored_for_bad_prefix_or_missing_segments(
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mqtt_message_router_error_is_caught(runtime_state) -> None:
+async def test_dispatch_mqtt_message_router_error_is_caught(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
 
@@ -422,7 +422,7 @@ async def test_dispatch_mqtt_message_router_error_is_caught(runtime_state) -> No
         raise RuntimeError("boom")
 
     dispatcher.mqtt_router.register(Topic.CONSOLE, exploding)
-    dispatcher.mqtt_router._handlers[Topic.CONSOLE] = [exploding]
+    dispatcher.mqtt_router._handlers[Topic.CONSOLE] = [exploding]  # type: ignore[reportPrivateUsage]
     inbound = make_inbound_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/console/in",
         payload=b"hi",
@@ -435,7 +435,7 @@ async def test_dispatch_mqtt_message_router_error_is_caught(runtime_state) -> No
 
 
 @pytest.mark.asyncio
-async def test_console_topic_rejects_by_policy_and_accepts_payload_types(runtime_state) -> None:
+async def test_console_topic_rejects_by_policy_and_accepts_payload_types(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(
         calls,
@@ -466,7 +466,7 @@ async def test_console_topic_rejects_by_policy_and_accepts_payload_types(runtime
 
 
 @pytest.mark.asyncio
-async def test_file_topic_requires_two_segments_and_calls_component(runtime_state) -> None:
+async def test_file_topic_requires_two_segments_and_calls_component(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
 
@@ -484,7 +484,7 @@ async def test_file_topic_requires_two_segments_and_calls_component(runtime_stat
 
     inbound2 = make_inbound_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/file/read/path",
-        payload=bytearray(b"abc"),
+        payload=bytearray(b"abc"),  # type: ignore[reportArgumentType]
     )
     await dispatcher.dispatch_mqtt_message(
         inbound2,
@@ -494,7 +494,7 @@ async def test_file_topic_requires_two_segments_and_calls_component(runtime_stat
 
 
 @pytest.mark.asyncio
-async def test_datastore_topic_rejects_missing_identifier_and_calls_component(runtime_state) -> None:
+async def test_datastore_topic_rejects_missing_identifier_and_calls_component(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
 
@@ -510,7 +510,7 @@ async def test_datastore_topic_rejects_missing_identifier_and_calls_component(ru
 
     inbound2 = make_inbound_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/datastore/put/key",
-        payload=memoryview(b"hi"),
+        payload=memoryview(b"hi"),  # type: ignore[reportArgumentType]
     )
     await dispatcher.dispatch_mqtt_message(
         inbound2,
@@ -520,7 +520,7 @@ async def test_datastore_topic_rejects_missing_identifier_and_calls_component(ru
 
 
 @pytest.mark.asyncio
-async def test_pin_topic_action_deduction_and_policy(runtime_state) -> None:
+async def test_pin_topic_action_deduction_and_policy(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(
         calls,
@@ -551,7 +551,7 @@ async def test_pin_topic_action_deduction_and_policy(runtime_state) -> None:
 
 
 @pytest.mark.asyncio
-async def test_system_topic_bridge_get_handlers_and_fallback_to_component(runtime_state) -> None:
+async def test_system_topic_bridge_get_handlers_and_fallback_to_component(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
 
@@ -578,22 +578,22 @@ async def test_system_topic_bridge_get_handlers_and_fallback_to_component(runtim
 
 
 def test_payload_bytes_converts_supported_types_and_rejects_others() -> None:
-    assert BridgeDispatcher._payload_bytes(b"a") == b"a"
-    assert BridgeDispatcher._payload_bytes(bytearray(b"a")) == b"a"
-    assert BridgeDispatcher._payload_bytes(memoryview(b"a")) == b"a"
-    assert BridgeDispatcher._payload_bytes(None) == b""
-    assert BridgeDispatcher._payload_bytes("hi") == b"hi"
-    assert BridgeDispatcher._payload_bytes(12) == b"12"
-    assert BridgeDispatcher._payload_bytes(1.5) == b"1.5"
+    assert BridgeDispatcher._payload_bytes(b"a") == b"a"  # type: ignore[reportPrivateUsage]
+    assert BridgeDispatcher._payload_bytes(bytearray(b"a")) == b"a"  # type: ignore[reportPrivateUsage]
+    assert BridgeDispatcher._payload_bytes(memoryview(b"a")) == b"a"  # type: ignore[reportPrivateUsage]
+    assert BridgeDispatcher._payload_bytes(None) == b""  # type: ignore[reportPrivateUsage]
+    assert BridgeDispatcher._payload_bytes("hi") == b"hi"  # type: ignore[reportPrivateUsage]
+    assert BridgeDispatcher._payload_bytes(12) == b"12"  # type: ignore[reportPrivateUsage]
+    assert BridgeDispatcher._payload_bytes(1.5) == b"1.5"  # type: ignore[reportPrivateUsage]
     # Dictionaries/objects are now coerced to string then bytes
-    assert BridgeDispatcher._payload_bytes({}) == b"{}"
+    assert BridgeDispatcher._payload_bytes({}) == b"{}"  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
-async def test_unexpected_mcu_gpio_requests_drop_if_pin_missing(runtime_state) -> None:
+async def test_unexpected_mcu_gpio_requests_drop_if_pin_missing(runtime_state: Any) -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, runtime_state)
-    dispatcher._container = None
+    dispatcher._container = None  # type: ignore[reportPrivateUsage]
     # Use dispatch_mcu_frame which uses the registered lambda
     await dispatcher.dispatch_mcu_frame(Command.CMD_DIGITAL_READ.value, 0, b"")
     assert not any(name == "pin.handle_unexpected_mcu_request" for name, _ in calls.items)

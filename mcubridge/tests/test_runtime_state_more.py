@@ -1,6 +1,7 @@
 """Additional unit tests for RuntimeState coverage gaps."""
 
 from __future__ import annotations
+from typing import Any
 
 import asyncio
 import time
@@ -40,7 +41,7 @@ def test_disable_mqtt_spool_handles_close_error_and_schedules_retry(
     runtime_state.mqtt_spool = cast(MQTTPublishSpool, _BrokenCloseSpool())
 
     before = time.monotonic()
-    runtime_state._disable_mqtt_spool("test")
+    runtime_state._disable_mqtt_spool("test")  # type: ignore[reportPrivateUsage]
 
     assert runtime_state.mqtt_spool is None
     assert runtime_state.mqtt_spool_degraded is True
@@ -53,9 +54,9 @@ def test_current_spool_snapshot_returns_last_snapshot_when_missing_spool(
     runtime_state: RuntimeState,
 ) -> None:
     runtime_state.mqtt_spool = None
-    runtime_state._last_spool_snapshot = {"pending": 3, "limit": 9}
+    runtime_state._last_spool_snapshot = {"pending": 3, "limit": 9}  # type: ignore[reportPrivateUsage]
 
-    snapshot = runtime_state._current_spool_snapshot()
+    snapshot = runtime_state._current_spool_snapshot()  # type: ignore[reportPrivateUsage]
 
     assert snapshot == {"pending": 3, "limit": 9}
 
@@ -63,7 +64,7 @@ def test_current_spool_snapshot_returns_last_snapshot_when_missing_spool(
 def test_apply_spool_observation_coerces_numeric_fields(
     runtime_state: RuntimeState,
 ) -> None:
-    runtime_state._apply_spool_observation(
+    runtime_state._apply_spool_observation(  # type: ignore[reportPrivateUsage]
         {
             "dropped_due_to_limit": 7,
             "trim_events": 2,
@@ -158,7 +159,7 @@ def test_flush_mqtt_spool_queue_full_requeue_failure_disables_spool(
 
             state.mqtt_spool = cast(MQTTPublishSpool, _StubSpool())
 
-            async def _inline_to_thread(fn, /, *args, **kwargs):
+            async def _inline_to_thread(fn: Any, /, *args: Any, **kwargs: Any):
                 return fn(*args, **kwargs)
 
             monkeypatch.setattr(asyncio, "to_thread", _inline_to_thread)

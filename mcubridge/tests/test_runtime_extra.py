@@ -19,8 +19,8 @@ async def test_runtime_on_serial_connected_errors() -> None:
         # Mock failures
         with (
             patch.object(service, "sync_link", side_effect=RuntimeError("sync fail")),
-            patch.object(service._system, "request_mcu_version", side_effect=RuntimeError("ver fail")),
-            patch.object(service._console, "flush_queue", side_effect=RuntimeError("flush fail")),
+            patch.object(service.system_comp, "request_mcu_version", side_effect=RuntimeError("ver fail")),  # type: ignore[reportUnknownMemberType]
+            patch.object(service.console_comp, "flush_queue", side_effect=RuntimeError("flush fail")),
         ):
             await service.on_serial_connected()
             # Should not raise
@@ -74,7 +74,7 @@ async def test_runtime_acknowledge_frame_no_sender() -> None:
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state)
-        service._serial_sender = None
+        service._serial_sender = None  # type: ignore[reportPrivateUsage]
 
         await service.acknowledge_mcu_frame(Command.CMD_GET_VERSION.value, 0)
         # Should log error and return
@@ -93,7 +93,7 @@ async def test_runtime_handle_ack_fallback() -> None:
         # AckPacket is a protobuf message with a single uint32 field.
         # Let's try to trigger a failure in AckPacket.decode.
         with patch("mcubridge.protocol.structures.AckPacket.decode", side_effect=ValueError):
-            await service._handle_ack(0, b"\x00\x40")
+            await service._handle_ack(0, b"\x00\x40")  # type: ignore[reportPrivateUsage]
             # Should handle the decode failure gracefully
     finally:
         state.cleanup()

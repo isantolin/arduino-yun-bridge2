@@ -31,10 +31,10 @@ async def test_handle_write(console_component: ConsoleComponent) -> None:
     from mcubridge.protocol import structures
     await console_component.handle_write(0, structures.ConsoleWritePacket(data=payload).encode())
 
-    console_component.ctx.publish.assert_awaited_once()
-    call_args = console_component.ctx.publish.call_args
-    assert call_args.kwargs["topic"].endswith("console/out")
-    assert call_args.kwargs["payload"] == payload
+    console_component.ctx.publish.assert_awaited_once()  # type: ignore[reportUnknownMemberType]
+    call_args = console_component.ctx.publish.call_args  # type: ignore[reportUnknownVariableType]
+    assert call_args.kwargs["topic"].endswith("console/out")  # type: ignore[reportUnknownMemberType]
+    assert call_args.kwargs["payload"] == payload  # type: ignore[reportUnknownMemberType]
 
 
 @pytest.mark.asyncio
@@ -59,13 +59,13 @@ async def test_flow_control(console_component: ConsoleComponent) -> None:
 @pytest.mark.asyncio
 async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> None:
     payload = b"input"
-    console_component.ctx.send_frame.return_value = True
+    console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
     await console_component.handle_mqtt_input(payload)
 
     from mcubridge.protocol import structures
     expected = structures.ConsoleWritePacket(data=payload).encode()
-    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, expected)
+    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, expected)  # type: ignore[reportUnknownMemberType]
 
 
 @pytest.mark.asyncio
@@ -75,13 +75,13 @@ async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> 
 
     await console_component.handle_mqtt_input(payload)
 
-    console_component.ctx.send_frame.assert_not_awaited()
+    console_component.ctx.send_frame.assert_not_awaited()  # type: ignore[reportUnknownMemberType]
     # verify enqueue was called since state is a mock
     # The actual queue won't change because enqueue_console_chunk is a mock
     # We can't easily match the logger instance exactly without patching,
     # but we can check the payload.
-    console_component.state.enqueue_console_chunk.assert_called_once()
-    args = console_component.state.enqueue_console_chunk.call_args
+    console_component.state.enqueue_console_chunk.assert_called_once()  # type: ignore[reportUnknownMemberType]
+    args = console_component.state.enqueue_console_chunk.call_args  # type: ignore[reportUnknownVariableType]
     assert args[0][0] == payload
 
 
@@ -89,25 +89,25 @@ async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> 
 async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -> None:
     # Payload larger than MAX_PAYLOAD_SIZE
     large_payload = b"a" * (MAX_PAYLOAD_SIZE + 10)
-    console_component.ctx.send_frame.return_value = True
+    console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
     await console_component.handle_mqtt_input(large_payload)
 
-    assert console_component.ctx.send_frame.await_count >= 2
+    assert console_component.ctx.send_frame.await_count >= 2  # type: ignore[reportUnknownMemberType]
 
 
 @pytest.mark.asyncio
 async def test_flush_queue(console_component: ConsoleComponent) -> None:
     # Setup mock state behavior
     queue = deque([b"queued"])
-    console_component.state.console_to_mcu_queue = queue
-    console_component.state.pop_console_chunk.side_effect = lambda: (queue.popleft() if queue else None)
+    console_component.state.console_to_mcu_queue = queue  # type: ignore[reportAttributeAccessIssue]
+    console_component.state.pop_console_chunk.side_effect = lambda: (queue.popleft() if queue else None)  # type: ignore[reportAttributeAccessIssue]
 
-    console_component.ctx.send_frame.return_value = True
+    console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
     await console_component.flush_queue()
 
     from mcubridge.protocol import structures
     expected = structures.ConsoleWritePacket(data=b'queued').encode()
-    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, expected)
+    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, expected)  # type: ignore[reportUnknownMemberType]
     assert len(queue) == 0

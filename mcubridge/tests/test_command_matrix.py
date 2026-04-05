@@ -62,7 +62,7 @@ async def _noop_publish_bridge_snapshot(
     return None
 
 
-async def _noop_link_handler(_payload: bytes) -> bool:
+async def _noop_link_handler(_seq_id: int, _payload: bytes) -> bool:
     return True
 
 
@@ -86,7 +86,7 @@ def _always_allowed(_topic: Topic | str, _action: str) -> bool:
     return True
 
 
-def _link_synchronized() -> bool:
+def _link_synchronized() -> bool:  # type: ignore[reportUnusedFunction]
     return True
 
 
@@ -304,9 +304,9 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             handle_link_sync_resp=_noop_link_handler,
             handle_link_reset_resp=_noop_link_handler,
             handle_get_capabilities_resp=_noop_link_handler,
-            handle_ack=_noop_ack_handler,
-            status_handler_factory=_noop_status_handler_factory,
-            handle_process_kill=_noop_process_kill,
+            handle_ack=_noop_ack_handler,  # type: ignore[reportArgumentType]
+            status_handler_factory=_noop_status_handler_factory,  # type: ignore[reportArgumentType]
+            handle_process_kill=_noop_process_kill,  # type: ignore[reportArgumentType]
         )
 
         # Commands initiated by Linux (to the MCU). These requests should not be

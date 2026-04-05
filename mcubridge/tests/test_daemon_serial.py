@@ -1,4 +1,5 @@
 """Tests for serial transport resiliency."""
+from typing import Any
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -57,7 +58,7 @@ async def test_serial_reader_task_reconnects():
 
     # Mock sleep to fast-forward loops and eventually break the run loop
     sleep_count = 0
-    async def mock_sleep_fn(duration):
+    async def mock_sleep_fn(duration: Any):
         nonlocal sleep_count
         sleep_count += 1
         if sleep_count > 100:

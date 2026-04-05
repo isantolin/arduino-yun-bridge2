@@ -30,7 +30,7 @@ def mock_enqueue() -> AsyncMock:
 
 
 @pytest_asyncio.fixture
-async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:
+async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:  # type: ignore[reportInvalidTypeForm]
     config = RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_BAUDRATE,
@@ -59,7 +59,7 @@ async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:
     service.acknowledge_mcu_frame = AsyncMock()
     component = ProcessComponent(config, state, service)
     try:
-        yield component
+        yield component  # type: ignore[reportReturnType]
     finally:
         for pid in list(component.state.running_processes):
             await component.stop_process(pid)
@@ -81,8 +81,8 @@ async def test_run_async_success(process_component: ProcessComponent) -> None:
 @pytest.mark.asyncio
 async def test_run_async_limit_reached(process_component: ProcessComponent) -> None:
     # Acquire all slots
-    await process_component._process_slots.acquire()
-    await process_component._process_slots.acquire()
+    await process_component.process_comp_slots.acquire()  # type: ignore[reportUnknownMemberType]
+    await process_component.process_comp_slots.acquire()  # type: ignore[reportUnknownMemberType]
 
     # The 3rd should fail or timeout (non-blocking)
     try:
@@ -176,9 +176,9 @@ async def test_finalize_process(process_component: ProcessComponent) -> None:
 
     assert pid in process_component.state.running_processes
     # 2 - 1 = 1
-    assert process_component._process_slots._value == 1
+    assert process_component.process_comp_slots._value == 1  # type: ignore[reportUnknownMemberType]
 
-    await process_component._finalize_process(pid)
+    await process_component._finalize_process(pid)  # type: ignore[reportPrivateUsage]
 
     assert pid not in process_component.state.running_processes
-    assert process_component._process_slots._value == 2  # Released
+    assert process_component.process_comp_slots._value == 2  # Released  # type: ignore[reportUnknownMemberType]

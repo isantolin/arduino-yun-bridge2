@@ -98,13 +98,13 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
         return None
 
     policy = pyfuncitem.funcargs.get("event_loop_policy")
-    if policy is not None:
+    if policy is not None and isinstance(policy, asyncio.AbstractEventLoopPolicy):  # type: ignore[reportGeneralTypeIssues]
         asyncio.set_event_loop_policy(policy)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
+        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}  # type: ignore[reportPrivateUsage]
         loop.run_until_complete(test_function(**kwargs))
     finally:
         try:
@@ -143,7 +143,7 @@ def force_gc_cleanup():
 
 
 @pytest.fixture(autouse=True)
-def _isolate_file_system_root(tmp_path: Path) -> Iterator[None]:
+def _isolate_file_system_root(tmp_path: Path) -> Iterator[None]:  # type: ignore[reportUnusedFunction]
     """Give each test a unique file_system_root to prevent cross-test interference."""
     import mcubridge.config.const as _const
 
@@ -208,18 +208,18 @@ def logging_mock_level_fix():
     for logger in loggers:
         for handler in logger.handlers:
             if isinstance(handler.level, MagicMock):
-                original_handlers.append((handler, handler.level))
+                original_handlers.append((handler, handler.level))  # type: ignore[reportUnknownMemberType]
                 handler.level = logging.NOTSET
 
     yield
 
     # Restore (though usually not necessary for tests)
-    for handler, level in original_handlers:
+    for handler, level in original_handlers:  # type: ignore[reportUnknownVariableType]
         handler.level = level
 
 
 @pytest.fixture(autouse=True)
-def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[reportUnusedFunction]
     """Ensure load_runtime_config() sees a secure serial secret by default.
 
     Settings are UCI-only, so we inject a deterministic UCI payload for tests.
@@ -282,7 +282,7 @@ def make_component_container(
                         delattr(inst, attr)
                     except AttributeError:
                         pass
-            registry.register_value(svc_type, inst)
+            registry.register_value(svc_type, inst)  # type: ignore[reportUnknownMemberType]
     return svcs.Container(registry)
 
 

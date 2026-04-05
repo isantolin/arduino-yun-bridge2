@@ -49,7 +49,7 @@ def _load_spec() -> tuple[dict[str, int], list[_StatusSpec], list[_CommandSpec],
         "retry_limit_min": int(handshake_data.get("retry_limit_min", 0)),
         "retry_limit_max": int(handshake_data.get("retry_limit_max", 0)),
     }
-    return constants, statuses, commands, handshake
+    return constants, statuses, commands, handshake  # type: ignore[reportReturnType]
 
 
 def test_protocol_spec_matches_generated_bindings() -> None:

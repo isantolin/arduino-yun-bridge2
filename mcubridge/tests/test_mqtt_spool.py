@@ -95,7 +95,7 @@ def test_spool_skips_corrupt_rows(tmp_path: Path, caplog: pytest.LogCaptureFixtu
     original = QueuedPublish.from_record
 
     def _decode(record: object) -> QueuedPublish:
-        msg = original(record)
+        msg = original(record)  # type: ignore[reportArgumentType]
         if msg.topic_name == "topic/second":
             raise ValueError("Corrupt msgpack")
         return msg

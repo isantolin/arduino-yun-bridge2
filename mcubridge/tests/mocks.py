@@ -18,7 +18,7 @@ from mcubridge.state.context import RuntimeState
 class MockSerialService:
     config: RuntimeConfig
     state: RuntimeState
-    received_frames: deque[tuple[int, bytes]] = field(default_factory=deque)
+    received_frames: deque[tuple[int, int, bytes]] = field(default_factory=deque)  # type: ignore[reportUnknownVariableType]
     serial_connected: asyncio.Event = field(default_factory=asyncio.Event)
     serial_disconnected: asyncio.Event = field(default_factory=asyncio.Event)
     _serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = None

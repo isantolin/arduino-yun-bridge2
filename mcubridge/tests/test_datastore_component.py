@@ -1,6 +1,7 @@
 """Tests for the DatastoreComponent."""
 
 from __future__ import annotations
+from typing import Any
 
 from unittest.mock import AsyncMock, patch
 
@@ -21,7 +22,7 @@ from mcubridge.state.context import create_runtime_state
 
 
 @pytest_asyncio.fixture
-async def datastore_component() -> DatastoreComponent:
+async def datastore_component() -> DatastoreComponent:  # type: ignore[reportInvalidTypeForm]
     config = RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=protocol.DEFAULT_BAUDRATE,
@@ -46,14 +47,14 @@ async def datastore_component() -> DatastoreComponent:
     ctx = AsyncMock(spec=BridgeContext)
 
     # Mock schedule_background to just await the coroutine immediately for testing
-    async def _schedule(coro):
+    async def _schedule(coro: Any):
         await coro
 
     ctx.schedule_background.side_effect = _schedule
 
     component = DatastoreComponent(config, state, ctx)
     try:
-        yield component
+        yield component  # type: ignore[reportReturnType]
     finally:
         state.cleanup()
 
@@ -97,12 +98,12 @@ async def test_handle_get_request_success(
 
     await datastore_component.handle_get_request(0, payload)
 
-    datastore_component.ctx.send_frame.assert_awaited_once()
-    args = datastore_component.ctx.send_frame.call_args[0]
+    datastore_component.ctx.send_frame.assert_awaited_once()  # type: ignore[reportUnknownMemberType]
+    args = datastore_component.ctx.send_frame.call_args[0]  # type: ignore[reportUnknownVariableType]
     assert args[0] == Command.CMD_DATASTORE_GET_RESP.value
 
     # Should return empty bytes
-    resp = args[1]
-    decoded = structures.DatastoreGetResponsePacket.decode(resp)
+    resp = args[1]  # type: ignore[reportUnknownVariableType]
+    decoded = structures.DatastoreGetResponsePacket.decode(resp)  # type: ignore[reportUnknownArgumentType]
     assert decoded.value == b'value1'
-    assert len(resp) > 0
+    assert len(resp) > 0  # type: ignore[reportUnknownArgumentType]

@@ -66,8 +66,9 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   bool sent_payload = false;
 
   uint16_t chunk_count = 0U;
+  uint32_t start_ms = bridge::now_ms();
 
-  while (chunk_count++ < bridge::config::FILE_MAX_READ_CHUNKS) {
+  while (chunk_count++ < bridge::config::FILE_MAX_READ_CHUNKS && (bridge::now_ms() - start_ms < bridge::config::SERIAL_TIMEOUT_MS)) {
     auto res = bridge::hal::readFileChunk(
         msg.path,
         offset,

@@ -55,12 +55,12 @@ async def test_serial_reader_task_processes_frame(
             patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
         ):
             # Patch tenacity retry to fail after first attempt to avoid infinite loops
-            orig_run = SerialTransport._retryable_run.__wrapped__
+            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage, reportFunctionMemberAccess]
             with patch.object(SerialTransport, "_retryable_run"):
                 transport = SerialTransport(runtime_config, state, cast(Any, service))
 
                 # We want to break the loop after one failure
-                async def _limited_run(loop):
+                async def _limited_run(loop: Any):
                     try:
                         # Use the captured original function
                         await orig_run(transport, loop)
@@ -85,7 +85,7 @@ async def test_serial_reader_task_processes_frame(
                     assert command_id == Command.CMD_DIGITAL_READ_RESP.value
                     assert seq_id == 0
                     assert received_payload == payload
-                    transport._stop_event.set()
+                    transport._stop_event.set()  # type: ignore[reportPrivateUsage]
                     try:
                         await asyncio.wait_for(task, timeout=0.5)
                     except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -134,8 +134,8 @@ async def test_serial_reader_task_emits_crc_mismatch(
         ):
             transport = SerialTransport(runtime_config, state, cast(Any, service))
 
-            orig_run = SerialTransport._retryable_run.__wrapped__
-            async def _limited_run(loop):
+            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage, reportFunctionMemberAccess]
+            async def _limited_run(loop: Any):
                 try:
                     await orig_run(transport, loop)
                 except (ConnectionError, asyncio.IncompleteReadError):
@@ -156,7 +156,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
                 assert not service.received_frames
                 assert state.serial_decode_errors > 0
 
-                transport._stop_event.set()
+                transport._stop_event.set()  # type: ignore[reportPrivateUsage]
                 try:
                     await asyncio.wait_for(task, timeout=0.5)
                 except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -199,8 +199,8 @@ async def test_serial_reader_task_limits_packet_size(
         ):
             transport = SerialTransport(runtime_config, state, cast(Any, service))
 
-            orig_run = SerialTransport._retryable_run.__wrapped__
-            async def _limited_run(loop):
+            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage, reportFunctionMemberAccess]
+            async def _limited_run(loop: Any):
                 try:
                     await orig_run(transport, loop)
                 except (ConnectionError, asyncio.IncompleteReadError):
@@ -220,7 +220,7 @@ async def test_serial_reader_task_limits_packet_size(
                 assert not service.received_frames
                 assert state.serial_decode_errors >= 1
 
-                transport._stop_event.set()
+                transport._stop_event.set()  # type: ignore[reportPrivateUsage]
                 try:
                     await asyncio.wait_for(task, timeout=0.5)
                 except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -304,7 +304,7 @@ async def test_mqtt_task_handles_incoming_message(
 
         monkeypatch.setattr(
             "mcubridge.transport.mqtt.aiomqtt.Client",
-            lambda **_kw: mock_client,
+            lambda **_kw: mock_client,  # type: ignore[reportUnknownArgumentType]
         )
 
         runtime_config.mqtt_tls = False

@@ -30,7 +30,7 @@ def test_queued_publish_roundtrip_with_correlation_and_user_properties() -> None
 
 
 def test_queued_publish_from_record_normalizes_user_properties() -> None:
-    record: SpoolRecord = {
+    record: SpoolRecord = {  # type: ignore[reportAssignmentType]
         "topic_name": f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         "payload": "aGVsbG8=",  # base64("hello")
         "user_properties": [
@@ -44,7 +44,7 @@ def test_queued_publish_from_record_normalizes_user_properties() -> None:
 
 
 def test_queued_publish_from_record_handles_missing_correlation_data() -> None:
-    record: SpoolRecord = {
+    record: SpoolRecord = {  # type: ignore[reportAssignmentType]
         "topic_name": f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         "payload": "",  # empty
         "correlation_data": None,

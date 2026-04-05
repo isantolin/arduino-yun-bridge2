@@ -1,6 +1,7 @@
 """Unit tests for RuntimeState helpers."""
 
 from __future__ import annotations
+from typing import Any
 
 import errno
 import logging
@@ -260,7 +261,7 @@ def test_create_runtime_state_marks_spool_degraded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _BoomSpool:
-        def __init__(self, *_args, **_kwargs) -> None:
+        def __init__(self: Any, *_args: Any, **_kwargs: Any) -> None:
             raise OSError("boom")
 
     monkeypatch.setattr(
@@ -357,7 +358,7 @@ async def test_spool_fallback_updates_state(
             assert state.mqtt_spool is not None
             assert state.mqtt_spool_degraded is True
             assert state.mqtt_spool_failure_reason == "initialization_failed"
-            assert "disk full" in state.mqtt_spool_last_error
+            assert "disk full" in state.mqtt_spool_last_error  # type: ignore[reportOperatorIssue]
         finally:
             state.cleanup()
 

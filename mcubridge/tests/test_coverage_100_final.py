@@ -5,6 +5,7 @@ all mcubridge modules.
 """
 
 from __future__ import annotations
+from typing import Any
 
 import asyncio
 import contextlib
@@ -62,7 +63,7 @@ class TestMqttHelper:
         config = _make_config(mqtt_tls=False)
         assert configure_tls_context(config) is None
 
-    def test_configure_tls_context_with_cafile(self, tmp_path):
+    def test_configure_tls_context_with_cafile(self: Any, tmp_path: Any):
         from mcubridge.util.mqtt_helper import configure_tls_context
 
         ca = tmp_path / "ca.pem"
@@ -189,13 +190,13 @@ class TestInit:
         import mcubridge
 
         # Temporarily remove CallbackAPIVersion from the real module
-        orig = pmc.CallbackAPIVersion
+        orig = pmc.CallbackAPIVersion  # type: ignore[reportPrivateImportUsage]
         try:
-            del pmc.CallbackAPIVersion
+            del pmc.CallbackAPIVersion  # type: ignore[reportPrivateImportUsage]
             with pytest.raises(SystemExit):
-                mcubridge._check_dependencies()
+                mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
         finally:
-            pmc.CallbackAPIVersion = orig
+            pmc.CallbackAPIVersion = orig  # type: ignore[reportPrivateImportUsage]
 
     def test_check_dependencies_import_error(self):
         import sys
@@ -204,9 +205,9 @@ class TestInit:
 
         # When paho.mqtt.client can't be imported at all, should pass silently
         orig = sys.modules.get("paho.mqtt.client")
-        sys.modules["paho.mqtt.client"] = None
+        sys.modules["paho.mqtt.client"] = None  # type: ignore[reportArgumentType]
         try:
-            mcubridge._check_dependencies()
+            mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
         finally:
             if orig is not None:
                 sys.modules["paho.mqtt.client"] = orig
@@ -214,7 +215,7 @@ class TestInit:
     def test_check_dependencies_ok(self):
         import mcubridge
 
-        mcubridge._check_dependencies()
+        mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
 
 
 # ============================================================================
@@ -274,7 +275,7 @@ class TestConfigCommon:
 
 
 class TestQueues:
-    def test_setup_persistence(self, tmp_path):
+    def test_setup_persistence(self: Any, tmp_path: Any):
         from mcubridge.state.queues import BoundedByteDeque
 
         q = BoundedByteDeque(max_items=10)
@@ -285,14 +286,14 @@ class TestQueues:
         finally:
             q.close()
 
-    def test_setup_persistence_failure(self, tmp_path):
+    def test_setup_persistence_failure(self: Any, tmp_path: Any):
         from mcubridge.state.queues import BoundedByteDeque, PersistentQueue
 
         q = BoundedByteDeque(max_items=10)
         try:
             q.setup_persistence("/dev/null/impossible/path", ram_limit=5)
-            assert isinstance(q._queue, PersistentQueue)
-            assert q._queue.fallback_active is True
+            assert isinstance(q._queue, PersistentQueue)  # type: ignore[reportPrivateUsage]
+            assert q._queue.fallback_active is True  # type: ignore[reportPrivateUsage]
         finally:
             q.close()
 
@@ -310,7 +311,7 @@ class TestQueues:
         q = BoundedByteDeque(max_items=10)
         q.append(b"a")
         q.append(b"b")
-        items = list(q)
+        items = list(q)  # type: ignore[reportUnknownVariableType]
         assert items == [b"a", b"b"]
 
     def test_getitem(self):
@@ -471,11 +472,11 @@ class TestMqttBuildProperties:
         )
         props = build_mqtt_properties(msg)
         assert props is not None
-        assert props.ContentType == "application/json"
-        assert props.PayloadFormatIndicator == 1
-        assert props.MessageExpiryInterval == 60
-        assert props.ResponseTopic == "resp"
-        assert props.CorrelationData == b"\x01"
+        assert props.ContentType == "application/json"  # type: ignore[reportUnknownMemberType]
+        assert props.PayloadFormatIndicator == 1  # type: ignore[reportUnknownMemberType]
+        assert props.MessageExpiryInterval == 60  # type: ignore[reportUnknownMemberType]
+        assert props.ResponseTopic == "resp"  # type: ignore[reportUnknownMemberType]
+        assert props.CorrelationData == b"\x01"  # type: ignore[reportUnknownMemberType]
 
     def test_build_mqtt_properties_none_when_empty(self):
         from mcubridge.mqtt import build_mqtt_properties
@@ -559,30 +560,30 @@ class TestShellMqttLogic:
             state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_handle_mqtt_poll(self, shell_comp):
+    async def test_handle_mqtt_poll(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(["poll", "42"], b"", None)
         shell_comp.poll_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
-    async def test_handle_mqtt_kill(self, shell_comp):
+    async def test_handle_mqtt_kill(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(["kill", "42"], b"", None)
         shell_comp.stop_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
-    async def test_handle_mqtt_unknown_action(self, shell_comp):
+    async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(["unknown_action"], b"", None)
 
     @pytest.mark.asyncio
-    async def test_handle_mqtt_empty_segments(self, shell_comp):
+    async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt([], b"", None)
 
     @pytest.mark.asyncio
-    async def test_parse_shell_command_invalid(self, shell_comp):
+    async def test_parse_shell_command_invalid(self: Any, shell_comp: Any):
         result = shell_comp._parse_shell_command(b"", "run")
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_parse_shell_pid_invalid(self, shell_comp):
+    async def test_parse_shell_pid_invalid(self: Any, shell_comp: Any):
         result = shell_comp._parse_shell_pid("notanumber", "poll")
         assert result is None
 
@@ -611,7 +612,7 @@ class TestStatusWriter:
             state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_cleanup_status_file(self, tmp_path):
+    async def test_cleanup_status_file(self: Any, tmp_path: Any):
         from mcubridge.state.status import cleanup_status_file
 
         fake_status = tmp_path / "status.json"
@@ -633,7 +634,7 @@ class TestMqttSpool:
         spool = MQTTPublishSpool("/var/not_tmp/spool", limit=10)
         assert spool.is_degraded is True
 
-    def test_spool_append_and_pop(self, tmp_path):
+    def test_spool_append_and_pop(self: Any, tmp_path: Any):
         from mcubridge.mqtt.spool import MQTTPublishSpool
         from mcubridge.protocol.structures import QueuedPublish
 
@@ -644,7 +645,7 @@ class TestMqttSpool:
         assert popped is not None
         assert popped.topic_name == "t"
 
-    def test_spool_limit_drops_oldest(self, tmp_path):
+    def test_spool_limit_drops_oldest(self: Any, tmp_path: Any):
         from mcubridge.mqtt.spool import MQTTPublishSpool
         from mcubridge.protocol.structures import QueuedPublish
 
@@ -656,19 +657,19 @@ class TestMqttSpool:
         assert first is not None
         assert first.topic_name != "t1"
 
-    def test_spool_pop_empty(self, tmp_path):
+    def test_spool_pop_empty(self: Any, tmp_path: Any):
         from mcubridge.mqtt.spool import MQTTPublishSpool
 
         spool = MQTTPublishSpool(str(tmp_path / "spool_empty"), limit=5)
         assert spool.pop_next() is None
 
-    def test_spool_close(self, tmp_path):
+    def test_spool_close(self: Any, tmp_path: Any):
         from mcubridge.mqtt.spool import MQTTPublishSpool
 
         spool = MQTTPublishSpool(str(tmp_path / "spool_close"), limit=5)
         spool.close()
 
-    def test_spool_requeue(self, tmp_path):
+    def test_spool_requeue(self: Any, tmp_path: Any):
         from mcubridge.mqtt.spool import MQTTPublishSpool
         from mcubridge.protocol.structures import QueuedPublish
 
@@ -689,7 +690,7 @@ class TestProtocolFrame:
         from mcubridge.protocol.frame import Frame
 
         raw = Frame(command_id=Command.CMD_DIGITAL_READ.value, sequence_id=0, payload=b"\x01\x02").build()
-        cmd_id, seq_id, payload = Frame.parse(raw)
+        cmd_id, seq_id, payload = Frame.parse(raw)  # type: ignore[reportUnusedVariable]
         assert cmd_id == Command.CMD_DIGITAL_READ.value
         assert payload == b"\x01\x02"
 
@@ -805,13 +806,13 @@ class TestProcessComponent:
             state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_handle_run_async_empty_command(self, process_comp):
+    async def test_handle_run_async_empty_command(self: Any, process_comp: Any):
         # Empty command encodes to b""
         await process_comp.handle_run_async(0, b"")
         process_comp.service.acknowledge_mcu_frame.assert_called()
 
     @pytest.mark.asyncio
-    async def test_handle_run_async_malformed(self, process_comp):
+    async def test_handle_run_async_malformed(self: Any, process_comp: Any):
         await process_comp.handle_run_async(0, b"\xff\xff\xff")
         process_comp.service.acknowledge_mcu_frame.assert_called_with(
             0,
@@ -820,7 +821,7 @@ class TestProcessComponent:
         )
 
     @pytest.mark.asyncio
-    async def test_handle_poll_malformed(self, process_comp):
+    async def test_handle_poll_malformed(self: Any, process_comp: Any):
         await process_comp.handle_poll(0, b"\xff\xff\xff")
         process_comp.service.acknowledge_mcu_frame.assert_called_with(
             0,
@@ -829,7 +830,7 @@ class TestProcessComponent:
         )
 
     @pytest.mark.asyncio
-    async def test_handle_kill_malformed(self, process_comp):
+    async def test_handle_kill_malformed(self: Any, process_comp: Any):
         await process_comp.handle_kill(0, b"\xff\xff\xff")
         process_comp.service.acknowledge_mcu_frame.assert_called_with(
             0,
@@ -838,7 +839,7 @@ class TestProcessComponent:
         )
 
     @pytest.mark.asyncio
-    async def test_handle_kill_no_ack(self, process_comp):
+    async def test_handle_kill_no_ack(self: Any, process_comp: Any):
         from mcubridge.protocol.structures import ProcessKillPacket
 
         payload = ProcessKillPacket(pid=999).encode()
@@ -933,7 +934,7 @@ class TestDatastoreComponent:
             ctx.publish = AsyncMock()
             ctx.send_frame = AsyncMock(return_value=True)
             comp = DatastoreComponent(config, state, ctx)
-            await comp._publish_value("key", b"", expiry=60)
+            await comp._publish_value("key", b"", expiry=60)  # type: ignore[reportPrivateUsage]
         finally:
             state.cleanup()
 
@@ -977,7 +978,7 @@ class TestDispatcherEdgeCases:
                 )
             )
             route = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
-            result = d._should_reject_topic_action(route)
+            result = d._should_reject_topic_action(route)  # type: ignore[reportPrivateUsage]
             assert result is None
         finally:
             state.cleanup()
@@ -1007,7 +1008,7 @@ class TestDaemon:
         from mcubridge import daemon
 
         with patch("psutil.Process", side_effect=psutil.NoSuchProcess(1)):
-            daemon._cleanup_child_processes()
+            daemon._cleanup_child_processes()  # type: ignore[reportPrivateUsage]
 
     @pytest.mark.asyncio
     async def test_cleanup_status_file_missing(self):
@@ -1152,7 +1153,7 @@ class TestHandshakeEdgeCases:
         assert timing.response_timeout_ms > 0
         assert timing.retry_limit > 0
 
-    def test_handshake_fsm_initial_state(self, handshake_mgr):
+    def test_handshake_fsm_initial_state(self: Any, handshake_mgr: Any):
         assert handshake_mgr.fsm_state is not None
 
 
@@ -1171,39 +1172,39 @@ class TestRuntimeStateEdges:
         finally:
             s.cleanup()
 
-    def test_mark_transport_connected(self, state):
+    def test_mark_transport_connected(self: Any, state: Any):
         state.mark_transport_connected()
         assert state.is_connected
 
-    def test_mark_transport_disconnected(self, state):
+    def test_mark_transport_disconnected(self: Any, state: Any):
         state.mark_transport_connected()
         state.mark_transport_disconnected()
         assert not state.is_connected
 
-    def test_enqueue_console_chunk_overflow(self, state):
+    def test_enqueue_console_chunk_overflow(self: Any, state: Any):
         state.enqueue_console_chunk(b"x" * 100)
 
-    def test_requeue_console_chunk_front(self, state):
+    def test_requeue_console_chunk_front(self: Any, state: Any):
         state.enqueue_console_chunk(b"hi")
         state.requeue_console_chunk_front(b"x" * 1000)
 
-    def test_record_handshake_fatal(self, state):
+    def test_record_handshake_fatal(self: Any, state: Any):
         state.record_handshake_fatal("test reason")
         assert state.handshake_fatal_reason == "test reason"
 
-    def test_record_serial_flow_event(self, state):
+    def test_record_serial_flow_event(self: Any, state: Any):
         state.record_serial_flow_event("sent")
         state.record_serial_flow_event("ack")
         state.record_serial_flow_event("retry")
         state.record_serial_flow_event("failure")
 
-    def test_record_unknown_command_id(self, state):
+    def test_record_unknown_command_id(self: Any, state: Any):
         state.record_unknown_command_id(0xFF)
 
-    def test_record_mcu_status(self, state):
+    def test_record_mcu_status(self: Any, state: Any):
         state.record_mcu_status(Status.OK)
 
-    def test_apply_handshake_stats(self, state):
+    def test_apply_handshake_stats(self: Any, state: Any):
         state.apply_handshake_stats({"attempts": 3, "last_duration": 150.0})
 
     def test_collect_system_metrics(self):
@@ -1212,18 +1213,18 @@ class TestRuntimeStateEdges:
         metrics = collect_system_metrics()
         assert isinstance(metrics, dict)
 
-    def test_cleanup(self, state):
+    def test_cleanup(self: Any, state: Any):
         state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_stash_mqtt_message_no_spool(self, state, monkeypatch):
+    async def test_stash_mqtt_message_no_spool(self: Any, state: Any, monkeypatch: Any):
         from mcubridge.protocol.structures import QueuedPublish
         from mcubridge.state.context import RuntimeState
 
         state.mqtt_spool = None
         msg = QueuedPublish(topic_name="t", payload=b"p")
 
-        async def mock_ensure_spool(instance):
+        async def mock_ensure_spool(instance: Any):
             return True
 
         monkeypatch.setattr(RuntimeState, "ensure_spool", mock_ensure_spool)
@@ -1235,21 +1236,21 @@ class TestRuntimeStateEdges:
         state.mqtt_spool.append.assert_called_with(msg)
 
     @pytest.mark.asyncio
-    async def test_flush_mqtt_spool_no_spool(self, state):
+    async def test_flush_mqtt_spool_no_spool(self: Any, state: Any):
         state.mqtt_spool = None
         await state.flush_mqtt_spool()
 
-    def test_enqueue_mailbox_overflow(self, state):
+    def test_enqueue_mailbox_overflow(self: Any, state: Any):
         # Fill up to limit
         for i in range(state.mailbox_queue_limit + 1):
             state.enqueue_mailbox_message(f"msg{i}".encode())
 
-    def test_pop_mailbox_message(self, state):
+    def test_pop_mailbox_message(self: Any, state: Any):
         state.enqueue_mailbox_message(b"message1")
         result = state.pop_mailbox_message()
         assert result == b"message1"
 
-    def test_pop_mailbox_message_empty(self, state):
+    def test_pop_mailbox_message_empty(self: Any, state: Any):
         result = state.pop_mailbox_message()
         assert result is None
 
@@ -1273,14 +1274,14 @@ class TestBridgeServiceEdges:
             state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_schedule_background_not_entered(self, service):
+    async def test_schedule_background_not_entered(self: Any, service: Any):
         coro = asyncio.sleep(0)
         with pytest.raises(RuntimeError):
             await service.schedule_background(coro)
         coro.close()
 
     @pytest.mark.asyncio
-    async def test_send_frame_no_sender(self, service):
+    async def test_send_frame_no_sender(self: Any, service: Any):
         result = await service.send_frame(0x01, b"")
         assert result is False
 
@@ -1312,16 +1313,16 @@ class TestMqttTransport:
             service = MagicMock()
             transport = MqttTransport(config, state, service)
 
-            transport.trigger("connect")
+            transport.trigger("connect")  # type: ignore[reportUnknownMemberType]
             assert transport.fsm_state == MqttTransport.STATE_CONNECTING
 
-            transport.trigger("connected")
+            transport.trigger("connected")  # type: ignore[reportUnknownMemberType]
             assert transport.fsm_state == MqttTransport.STATE_SUBSCRIBING
 
-            transport.trigger("subscribed")
+            transport.trigger("subscribed")  # type: ignore[reportUnknownMemberType]
             assert transport.fsm_state == MqttTransport.STATE_READY
 
-            transport.trigger("disconnect")
+            transport.trigger("disconnect")  # type: ignore[reportUnknownMemberType]
             assert transport.fsm_state == MqttTransport.STATE_DISCONNECTED
         finally:
             state.cleanup()

@@ -35,7 +35,8 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (!_flags.test(BEGUN) || !buffer || size == 0) return 0;
 
   size_t sent = 0;
-  while (sent < size) {
+  uint32_t start_ms = bridge::now_ms();
+  while (sent < size && (bridge::now_ms() - start_ms < bridge::config::SERIAL_TIMEOUT_MS)) {
     size_t space;
     BRIDGE_ATOMIC_BLOCK { space = _tx_buffer.capacity() - _tx_buffer.size(); }
 

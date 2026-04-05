@@ -48,7 +48,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
+        flow = service.serial_flow  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # type: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
         async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
@@ -62,7 +62,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                 )
             elif raw_cmd == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
-                tag = service._handshake.compute_handshake_tag(nonce)
+                tag = service.handshake_manager.compute_handshake_tag(nonce)
                 response = _encode_link_sync(nonce, tag)
 
                 async def _respond():
@@ -73,7 +73,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                         response,
                     )
                     # Priming capabilities AFTER sync resp is handled
-                    await service._handshake.handle_capabilities_resp(
+                    await service.handshake_manager.handle_capabilities_resp(
                         0,
                         cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
                             {
@@ -102,11 +102,11 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                 asyncio.create_task(_respond())
             elif raw_cmd == Command.CMD_GET_VERSION.value:
                 # Direct flow injection bypasses lock issues
-                flow.on_frame_received(
+                flow.on_frame_received(  # type: ignore[reportUnknownMemberType]
                     Command.CMD_GET_VERSION_RESP.value, 0, b"\x01\x02",
                 )
             elif raw_cmd == Command.CMD_CONSOLE_WRITE.value:
-                flow.on_frame_received(
+                flow.on_frame_received(  # type: ignore[reportUnknownMemberType]
                     Status.ACK.value,
                     0,
                     structures.AckPacket(command_id=Command.CMD_CONSOLE_WRITE.value).encode(),
@@ -167,10 +167,10 @@ async def test_repeated_sync_timeouts_become_fatal(
     runtime_config.serial_handshake_fatal_failures = 2
     service = BridgeService(runtime_config, runtime_state)
 
-    await service._handshake.handle_handshake_failure("link_sync_timeout")
+    await service.handshake_manager.handle_handshake_failure("link_sync_timeout")
     assert runtime_state.handshake_failure_streak == 1
 
-    await service._handshake.handle_handshake_failure("link_sync_timeout")
+    await service.handshake_manager.handle_handshake_failure("link_sync_timeout")
     assert runtime_state.handshake_fatal_count == 1
     assert runtime_state.handshake_fatal_reason == "link_sync_timeout"
 
@@ -192,9 +192,9 @@ def test_link_sync_resp_respects_rate_limit(
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent serial_flow from blocking
             ack_payload = structures.AckPacket(command_id=command_id).encode()
-            service._serial_flow.on_frame_received(Status.ACK.value, ack_payload)
+            await service.serial_flow.on_frame_received(Status.ACK.value, seq_id or 0, ack_payload)  # type: ignore[reportUnknownMemberType]
             if command_id == Command.CMD_GET_CAPABILITIES.value:
-                service._handshake.handle_capabilities_resp(0, b"\x02\x00\x14\x06\x00\x00\x00\x00")
+                await service.handshake_manager.handle_capabilities_resp(0, b"\x02\x00\x14\x06\x00\x00\x00\x00")
             return True
 
         service.register_serial_sender(fake_sender)
@@ -209,7 +209,7 @@ def test_link_sync_resp_respects_rate_limit(
 
         def _prime_handshake(seed: int) -> bytes:
             nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
-            tag = service._handshake.compute_handshake_tag(nonce)
+            tag = service.handshake_manager.compute_handshake_tag(nonce)
             runtime_state.mark_transport_connected()
             runtime_state.link_handshake_nonce = nonce
             runtime_state.link_nonce_length = len(nonce)
@@ -220,7 +220,7 @@ def test_link_sync_resp_respects_rate_limit(
         payload_ok = _prime_handshake(1)
         # Force last sync time to ensure we start from a known state
         runtime_state.last_handshake_unix = fake_clock.monotonic()
-        result_ok = await service._handshake.handle_link_sync_resp(0, payload_ok)
+        result_ok = await service.handshake_manager.handle_link_sync_resp(0, payload_ok)
         assert result_ok is True
 
         # Advance by only 0.1s (less than 5.0s rate limit)
@@ -228,7 +228,7 @@ def test_link_sync_resp_respects_rate_limit(
 
         # Second handshake should be rate limited
         payload_blocked = _prime_handshake(2)
-        rate_limited = await service._handshake.handle_link_sync_resp(0, payload_blocked)
+        rate_limited = await service.handshake_manager.handle_link_sync_resp(0, payload_blocked)
         assert rate_limited is False
         assert runtime_state.last_handshake_error == "sync_rate_limited"
         assert runtime_state.handshake_failure_streak >= 1
@@ -259,7 +259,7 @@ async def test_sync_auth_failure_schedules_backoff(
 
     def _prime_handshake(seed: int) -> tuple[bytes, bytes]:
         nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
-        tag = service._handshake.compute_handshake_tag(nonce)
+        tag = service.handshake_manager.compute_handshake_tag(nonce)
         runtime_state.mark_transport_connected()
         runtime_state.link_handshake_nonce = nonce
         runtime_state.link_nonce_length = len(nonce)
@@ -269,7 +269,7 @@ async def test_sync_auth_failure_schedules_backoff(
     nonce_one, tag_one = _prime_handshake(3)
     broken_tag_one = bytearray(tag_one)
     broken_tag_one[0] ^= protocol.UINT8_MASK
-    await service._handshake.handle_link_sync_resp(0, _encode_link_sync(nonce_one, bytes(broken_tag_one)))
+    await service.handshake_manager.handle_link_sync_resp(0, _encode_link_sync(nonce_one, bytes(broken_tag_one)))
     first_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
     assert first_delay > 0
     assert runtime_state.last_handshake_error == "sync_auth_mismatch"
@@ -282,7 +282,7 @@ async def test_sync_auth_failure_schedules_backoff(
     nonce_two, tag_two = _prime_handshake(4)
     broken_tag_two = bytearray(tag_two)
     broken_tag_two[-1] ^= protocol.UINT8_MASK
-    await service._handshake.handle_link_sync_resp(0, _encode_link_sync(nonce_two, bytes(broken_tag_two)))
+    await service.handshake_manager.handle_link_sync_resp(0, _encode_link_sync(nonce_two, bytes(broken_tag_two)))
     second_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
     assert second_delay > first_delay
     assert runtime_state.handshake_failure_streak >= 2
@@ -305,11 +305,11 @@ async def test_transient_handshake_failures_eventually_backoff(
 
     # First few failures don't backoff (streak < threshold)
     for _ in range(2):
-        await service._handshake.handle_handshake_failure("test_fail")
+        await service.handshake_manager.handle_handshake_failure("test_fail")
         assert runtime_state.handshake_backoff_until <= fake_clock.monotonic()
 
     # Next failure triggers exponential backoff
-    await service._handshake.handle_handshake_failure("test_fail")
+    await service.handshake_manager.handle_handshake_failure("test_fail")
     assert runtime_state.handshake_backoff_until > fake_clock.monotonic()
 
 
@@ -350,7 +350,7 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
             )
         elif raw_cmd == Command.CMD_LINK_SYNC.value:
             nonce = service.state.link_handshake_nonce or b""
-            tag = bytearray(service._handshake.compute_handshake_tag(nonce))
+            tag = bytearray(service.handshake_manager.compute_handshake_tag(nonce))
             if tag:
                 tag[0] ^= 0xFF
             # Corruption happened, now send it back
@@ -502,10 +502,10 @@ async def test_mailbox_read_requeues_on_send_failure(
     runtime_state.mark_synchronized()
     runtime_state.enqueue_mailbox_message(b"lost-message")
 
-    async def fail_sender(command_id: int, payload: bytes) -> bool:
+    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         return False
 
-    service.register_serial_sender(fail_sender)
+    service.register_serial_sender(fake_sender)
 
     # MCU tries to read
     await service.handle_mcu_frame(Command.CMD_MAILBOX_READ.value, 0, b"")
@@ -598,8 +598,8 @@ async def test_on_serial_disconnected_clears_pending(
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
     runtime_state.mark_transport_connected()
-    runtime_state.pending_digital_reads.append(b"1")
-    runtime_state.pending_analog_reads.append(b"2")
+    runtime_state.pending_digital_reads.append(b"1")  # type: ignore[reportArgumentType]
+    runtime_state.pending_analog_reads.append(b"2")  # type: ignore[reportArgumentType]
 
     await service.on_serial_disconnected()
 
@@ -740,7 +740,7 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
         ResponseTopic = "reply/here"
         CorrelationData = b"corr123"
 
-    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)
+    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)  # type: ignore[reportArgumentType]
 
     await service.handle_mqtt_message(msg)
 
@@ -771,7 +771,7 @@ async def test_mqtt_datastore_get_request_miss_responds_with_error(
     class Props:
         ResponseTopic = "err/topic"
 
-    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)
+    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)  # type: ignore[reportArgumentType]
 
     await service.handle_mqtt_message(msg)
 
@@ -851,8 +851,8 @@ async def test_run_command_respects_allow_list(
     service = BridgeService(runtime_config, runtime_state)
 
     # Mock the entire process component since its API changed
-    service._process = MagicMock(spec=ProcessComponent)
-    service._process.run_async = AsyncMock(return_value=0)
+    service.process_comp = MagicMock(spec=ProcessComponent)  # type: ignore[reportAttributeAccessIssue]
+    service.process_comp.run_async = AsyncMock(return_value=0)  # type: ignore[reportAttributeAccessIssue]
 
     # Simulate forbidden command logic
     status = Status.ERROR.value
@@ -871,8 +871,8 @@ async def test_run_command_accepts_shell_metacharacters_as_literals(
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
     service = BridgeService(runtime_config, runtime_state)
-    service._process = MagicMock(spec=ProcessComponent)
-    service._process.run_async = AsyncMock(return_value=123)
+    service.process_comp = MagicMock(spec=ProcessComponent)  # type: ignore[reportAttributeAccessIssue]
+    service.process_comp.run_async = AsyncMock(return_value=123)  # type: ignore[reportAttributeAccessIssue]
 
     # Logic is now handled inside ProcessComponent and asyncio
     pass

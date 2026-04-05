@@ -1,3 +1,4 @@
+from typing import Any
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -40,14 +41,14 @@ async def test_negotiate_baudrate_success() -> None:
             transport.loop = asyncio.get_running_loop()
 
             # Mock _serial_sender to avoid real I/O and return True
-            async def mock_sender(cmd, payload):
-                if transport._negotiation_future and not transport._negotiation_future.done():
-                    transport._negotiation_future.set_result(True)
+            async def mock_sender(cmd: Any, payload: Any):
+                if transport._negotiation_future and not transport._negotiation_future.done():  # type: ignore[reportPrivateUsage]
+                    transport._negotiation_future.set_result(True)  # type: ignore[reportPrivateUsage]
                 return True
 
-            transport._serial_sender = mock_sender
+            transport._serial_sender = mock_sender  # type: ignore[reportPrivateUsage]
 
-            ok = await transport._negotiate_baudrate(115200)
+            ok = await transport._negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
             assert ok is True
         finally:
             state.cleanup()
@@ -71,11 +72,11 @@ async def test_negotiate_baudrate_timeout() -> None:
             transport.loop = asyncio.get_running_loop()
 
             # Mock sender to succeed but don't resolve future
-            transport._serial_sender = AsyncMock(return_value=True)
+            transport._serial_sender = AsyncMock(return_value=True)  # type: ignore[reportPrivateUsage]
 
             # Mock sleep to avoid waiting
             with patch("asyncio.sleep", AsyncMock()):
-                ok = await transport._negotiate_baudrate(115200)
+                ok = await transport._negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
                 assert ok is False
         finally:
             state.cleanup()
@@ -105,7 +106,7 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
             transport = serial_fast.SerialTransport(config, state, service)
             # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
             # This prevents infinite loops when the mock reader fails.
-            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__
+            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage, reportFunctionMemberAccess]
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -118,7 +119,7 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
                     # Global timeout to prevent test hanging CI
                     await asyncio.wait_for(orig_run(transport, asyncio.get_running_loop()), timeout=2.0)
 
-            assert mock_open.await_args.kwargs["baudrate"] == config.serial_safe_baud
+            assert mock_open.await_args.kwargs["baudrate"] == config.serial_safe_baud  # type: ignore[reportOptionalMemberAccess]
         finally:
             state.cleanup()
 
@@ -180,7 +181,7 @@ async def test_serial_disconnected_hook_error(
 
             transport = serial_fast.SerialTransport(config, state, service)
             # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
-            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__
+            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage, reportFunctionMemberAccess]
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -221,7 +222,7 @@ async def test_async_process_packet_os_error(
         async def _raise_os_error(cmd: int, payload: bytes) -> None:
             raise OSError("Device error")
 
-        service.handle_mcu_frame = _raise_os_error
+        service.handle_mcu_frame = _raise_os_error  # type: ignore[reportAttributeAccessIssue]
 
         from cobs.cobs import encode as cobs_encode
         from mcubridge.protocol.frame import Frame
@@ -231,7 +232,7 @@ async def test_async_process_packet_os_error(
         encoded = cobs_encode(frame)
 
         caplog.set_level("ERROR")
-        await transport._async_process_packet(encoded)
+        await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
         assert any("error" in r.getMessage().lower() for r in caplog.records)
         assert any("dispatch" in r.getMessage().lower() for r in caplog.records)

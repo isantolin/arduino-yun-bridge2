@@ -6,7 +6,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Status
-from mcubridge.services.file import FileComponent, _do_write_file
+from mcubridge.services.file import FileComponent, _do_write_file  # type: ignore[reportPrivateUsage]
 from mcubridge.state.context import create_runtime_state
 
 
@@ -96,7 +96,7 @@ async def test_file_handle_mqtt_unknown() -> None:
         fc = FileComponent(config, state, MagicMock())
         route = TopicRoute(raw="br/file/unknown/path", prefix="br", topic=Topic.FILE, segments=("unknown", "path"))
         msg = type("MockMsg", (), {"topic": "br/file/unknown/path", "payload": b""})()
-        await fc.handle_mqtt(route, msg)
+        await fc.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
     finally:
         state.cleanup()
 
@@ -109,7 +109,7 @@ async def test_file_perform_operation_unknown() -> None:
         fc = FileComponent(config, state, MagicMock())
         # bypass safe path check by mocking it to return something
         with patch.object(fc, "_get_safe_path", return_value=Path("/tmp/foo")):
-            success, content, reason = await fc._perform_file_operation("unknown", "foo")
+            success, content, reason = await fc._perform_file_operation("unknown", "foo")  # type: ignore[reportArgumentType]
             assert success is False
             assert reason == "unknown_operation"
     finally:

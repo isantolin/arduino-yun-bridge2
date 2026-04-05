@@ -188,7 +188,7 @@ def test_serial_flow_handles_failure_status(
         loop = asyncio.get_running_loop()
 
         async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
-            loop.call_soon(
+            loop.call_soon(  # type: ignore[reportArgumentType]
                 controller.on_frame_received,
                 Status.ERROR.value,
                 b"",

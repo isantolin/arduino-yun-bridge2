@@ -65,25 +65,25 @@ class TestSpiComponent:
         ],
         ids=["begin", "end", "transfer", "unknown_action"],
     )
-    async def test_simple_action(self, spi, action, payload, expected):
+    async def test_simple_action(self: Any, spi: Any, action: Any, payload: Any, expected: Any):
         assert await spi.handle_mqtt(action, [], payload, MagicMock()) is expected
 
     @pytest.mark.asyncio
-    async def test_config_valid(self, spi):
+    async def test_config_valid(self: Any, spi: Any):
         payload = msgspec.json.encode({"bit_order": 1, "data_mode": 0, "frequency": 8_000_000})
         assert await spi.handle_mqtt("config", [], payload, MagicMock()) is True
 
     @pytest.mark.asyncio
-    async def test_config_malformed_json(self, spi):
+    async def test_config_malformed_json(self: Any, spi: Any):
         assert await spi.handle_mqtt("config", [], b"not-json", MagicMock()) is False
 
     @pytest.mark.asyncio
-    async def test_exception_path(self, spi):
+    async def test_exception_path(self: Any, spi: Any):
         spi.ctx.send_frame.side_effect = RuntimeError("boom")
         assert await spi.handle_mqtt("begin", [], b"", MagicMock()) is False
 
     @pytest.mark.asyncio
-    async def test_transfer_resp_valid(self, spi):
+    async def test_transfer_resp_valid(self: Any, spi: Any):
         from mcubridge.protocol.structures import SpiTransferResponsePacket
 
         raw = SpiTransferResponsePacket(data=b"\xAB\xCD").encode()
@@ -91,7 +91,7 @@ class TestSpiComponent:
         spi.ctx.publish.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_transfer_resp_malformed(self, spi):
+    async def test_transfer_resp_malformed(self: Any, spi: Any):
         assert await spi.handle_transfer_resp(1, b"\xff") is False
 
 
@@ -103,82 +103,82 @@ class TestPersistentQueue:
     """Cover close, fallback, popleft, pop, clear, __iter__, __getitem__."""
 
     @pytest.fixture()
-    def pq(self, tmp_path):
+    def pq(self: Any, tmp_path: Any):
         from mcubridge.state.queues import PersistentQueue
 
         q: PersistentQueue[bytes] = PersistentQueue(directory=tmp_path / "pq", max_items=4)
         yield q
         q.close()
 
-    def test_append_and_len(self, pq):
+    def test_append_and_len(self: Any, pq: Any):
         pq.append(b"a")
         assert len(pq) == 1
 
-    def test_popleft(self, pq):
+    def test_popleft(self: Any, pq: Any):
         pq.append(b"x")
         assert pq.popleft() == b"x"
         assert pq.popleft() is None
 
-    def test_pop(self, pq):
+    def test_pop(self: Any, pq: Any):
         pq.append(b"y")
         assert pq.pop() == b"y"
 
-    def test_pop_empty_raises(self, pq):
+    def test_pop_empty_raises(self: Any, pq: Any):
         with pytest.raises(IndexError):
             pq.pop()
 
-    def test_clear(self, pq):
+    def test_clear(self: Any, pq: Any):
         pq.append(b"1")
         pq.append(b"2")
         pq.clear()
         assert len(pq) == 0
 
-    def test_getitem(self, pq):
+    def test_getitem(self: Any, pq: Any):
         pq.append(b"a")
         pq.append(b"b")
         assert pq[0] == b"a"
         assert pq[1] == b"b"
 
-    def test_iter(self, pq):
+    def test_iter(self: Any, pq: Any):
         pq.append(b"a")
         pq.append(b"b")
         assert list(pq) == [b"a", b"b"]
 
-    def test_close_then_append(self, pq):
+    def test_close_then_append(self: Any, pq: Any):
         pq.close()
         evt = pq.append(b"x")
         assert not evt.success
 
-    def test_close_then_popleft(self, pq):
+    def test_close_then_popleft(self: Any, pq: Any):
         pq.close()
         assert pq.popleft() is None
 
-    def test_close_then_pop_raises(self, pq):
+    def test_close_then_pop_raises(self: Any, pq: Any):
         pq.close()
         with pytest.raises(RuntimeError):
             pq.pop()
 
-    def test_appendleft(self, pq):
+    def test_appendleft(self: Any, pq: Any):
         pq.append(b"a")
         pq.appendleft(b"z")
         assert pq[0] == b"z"
 
-    def test_appendleft_closed(self, pq):
+    def test_appendleft_closed(self: Any, pq: Any):
         pq.close()
         evt = pq.appendleft(b"x")
         assert not evt.success
 
-    def test_fallback_properties(self, pq):
+    def test_fallback_properties(self: Any, pq: Any):
         assert pq.fallback_active is False
         assert pq.fallback_reason is None
         assert pq.last_error is None
 
-    def test_max_items_circular(self, pq):
+    def test_max_items_circular(self: Any, pq: Any):
         for i in range(6):
             pq.append(bytes([i]))
         assert len(pq) == 4
 
-    def test_store_write_error_activates_fallback(self, pq):
+    def test_store_write_error_activates_fallback(self: Any, pq: Any):
         pq.append(b"ok")
         # Simulate store write failure
         if pq._store is not None:
@@ -187,14 +187,14 @@ class TestPersistentQueue:
         assert pq.fallback_active is True
         assert pq.fallback_reason == "write_failed"
 
-    def test_del_calls_close(self, tmp_path):
+    def test_del_calls_close(self: Any, tmp_path: Any):
         from mcubridge.state.queues import PersistentQueue
 
         q: PersistentQueue[bytes] = PersistentQueue(directory=tmp_path / "pq_del", max_items=2)
         q.append(b"x")
         q.__del__()
         # After __del__, queue should be closed
-        assert q._closed is True
+        assert q._closed is True  # type: ignore[reportPrivateUsage]
 
 
 # ===================================================================
@@ -208,112 +208,112 @@ class TestRuntimeStateOps:
         yield s
         s.cleanup()
 
-    def test_configure_closes_queues(self, state):
+    def test_configure_closes_queues(self: Any, state: Any):
         """configure() should close + recreate persistent queues."""
         cfg = _make_config()
         state.configure(cfg)
         assert state.file_system_root == cfg.file_system_root
 
-    def test_enqueue_console_chunk_empty(self, state):
+    def test_enqueue_console_chunk_empty(self: Any, state: Any):
         state.enqueue_console_chunk(b"")
         assert len(state.console_to_mcu_queue) == 0
 
-    def test_enqueue_and_pop_console_chunk(self, state):
+    def test_enqueue_and_pop_console_chunk(self: Any, state: Any):
         state.enqueue_console_chunk(b"hello")
         assert state.pop_console_chunk() == b"hello"
 
-    def test_pop_console_chunk_empty(self, state):
+    def test_pop_console_chunk_empty(self: Any, state: Any):
         with pytest.raises(IndexError):
             state.pop_console_chunk()
 
-    def test_requeue_console_chunk_front(self, state):
+    def test_requeue_console_chunk_front(self: Any, state: Any):
         state.enqueue_console_chunk(b"aaa")
         state.requeue_console_chunk_front(b"front")
         assert state.pop_console_chunk() == b"front"
 
-    def test_requeue_console_chunk_front_empty(self, state):
+    def test_requeue_console_chunk_front_empty(self: Any, state: Any):
         state.requeue_console_chunk_front(b"")
         assert len(state.console_to_mcu_queue) == 0
 
-    def test_enqueue_mailbox(self, state):
+    def test_enqueue_mailbox(self: Any, state: Any):
         assert state.enqueue_mailbox_message(b"msg1") is True
         assert state.pop_mailbox_message() == b"msg1"
 
-    def test_pop_mailbox_empty(self, state):
+    def test_pop_mailbox_empty(self: Any, state: Any):
         assert state.pop_mailbox_message() is None
 
-    def test_requeue_mailbox_front(self, state):
+    def test_requeue_mailbox_front(self: Any, state: Any):
         state.enqueue_mailbox_message(b"a")
         state.requeue_mailbox_message_front(b"front")
         assert state.pop_mailbox_message() == b"front"
 
-    def test_enqueue_mailbox_incoming(self, state):
+    def test_enqueue_mailbox_incoming(self: Any, state: Any):
         assert state.enqueue_mailbox_incoming(b"in") is True
         assert state.pop_mailbox_incoming() == b"in"
 
-    def test_pop_mailbox_incoming_empty(self, state):
+    def test_pop_mailbox_incoming_empty(self: Any, state: Any):
         assert state.pop_mailbox_incoming() is None
 
-    def test_record_unknown_command_id(self, state):
+    def test_record_unknown_command_id(self: Any, state: Any):
         state.record_unknown_command_id(0xFF)
         assert state.unknown_command_ids == 1
 
-    def test_record_rpc_latency(self, state):
+    def test_record_rpc_latency(self: Any, state: Any):
         state.record_rpc_latency_ms(12.5)
         assert state.serial_latency_stats.total_observations >= 1
 
-    def test_build_serial_pipeline_snapshot(self, state):
+    def test_build_serial_pipeline_snapshot(self: Any, state: Any):
         snap = state.build_serial_pipeline_snapshot()
         assert snap.inflight is None
         assert snap.last_completion is None
 
-    def test_record_mcu_status(self, state):
+    def test_record_mcu_status(self: Any, state: Any):
         from mcubridge.protocol.protocol import Status
 
         state.record_mcu_status(Status.OK)
         assert state.mcu_status_counters["OK"] >= 1
 
-    def test_record_handshake_fatal(self, state):
+    def test_record_handshake_fatal(self: Any, state: Any):
         state.record_handshake_fatal("timeout", "3 attempts exhausted")
         assert state.handshake_fatal_count == 1
         assert state.handshake_fatal_reason == "timeout"
 
-    def test_apply_handshake_stats(self, state):
+    def test_apply_handshake_stats(self: Any, state: Any):
         state.apply_handshake_stats({"attempts": 5, "successes": 3, "failure_streak": 0})
         assert state.handshake_attempts == 5
 
-    def test_apply_handshake_stats_invalid(self, state):
+    def test_apply_handshake_stats_invalid(self: Any, state: Any):
         # Should silently ignore bad data
         state.apply_handshake_stats({"attempts": "bad"})
 
-    def test_sync_console_queue_limits(self, state):
+    def test_sync_console_queue_limits(self: Any, state: Any):
         state.sync_console_queue_limits()
         # Should not crash
 
-    def test_sync_mailbox_limits(self, state):
+    def test_sync_mailbox_limits(self: Any, state: Any):
         state.sync_mailbox_limits(state.mailbox_queue)
 
-    def test_update_mailbox_bytes(self, state):
+    def test_update_mailbox_bytes(self: Any, state: Any):
         state.update_mailbox_bytes()
 
-    def test_cleanup(self, state):
+    def test_cleanup(self: Any, state: Any):
         state.enqueue_console_chunk(b"x")
         state.enqueue_mailbox_message(b"y")
         state.cleanup()
         # After cleanup, queues should be closed
         assert state.mailbox_queue._closed
 
-    def test_on_spool_fallback(self, state):
+    def test_on_spool_fallback(self: Any, state: Any):
         state._on_spool_fallback("test_reason", RuntimeError("err"))
         assert state.mqtt_spool_degraded is True
         assert state.mqtt_spool_failure_reason == "test_reason"
 
-    def test_handle_mqtt_spool_failure(self, state):
+    def test_handle_mqtt_spool_failure(self: Any, state: Any):
         state._handle_mqtt_spool_failure("write_err", RuntimeError("disk full"))
         assert state.mqtt_spool_last_error == "disk full"
 
     @pytest.mark.asyncio
-    async def test_stash_mqtt_message_no_spool(self, state):
+    async def test_stash_mqtt_message_no_spool(self: Any, state: Any):
         from mcubridge.protocol.structures import QueuedPublish
 
         # Disable spool by clearing directory so ensure_spool returns False
@@ -323,12 +323,12 @@ class TestRuntimeStateOps:
         result = await state.stash_mqtt_message(msg)
         assert result is False
 
-    def test_configure_spool(self, state):
+    def test_configure_spool(self: Any, state: Any):
         state.configure_spool("/tmp/test-spool", 100)
         assert state.mqtt_spool_dir == "/tmp/test-spool"
         assert state.mqtt_spool_limit == 100
 
-    def test_spool_backoff_remaining_zero(self, state):
+    def test_spool_backoff_remaining_zero(self: Any, state: Any):
         assert state._spool_backoff_remaining() == 0.0
 
 
@@ -363,7 +363,7 @@ async def test_base_track_transaction_overflow():
         nonlocal overflow_called
         overflow_called = True
 
-    async with comp._track_transaction(queue, "c", 2, on_overflow=on_overflow) as allowed:
+    async with comp._track_transaction(queue, "c", 2, on_overflow=on_overflow) as allowed:  # type: ignore[reportPrivateUsage]
         assert allowed is False
     assert overflow_called is True
     state.cleanup()
@@ -441,7 +441,7 @@ class TestMqttTlsContext:
 
         cfg = _make_config(mqtt_tls=True, mqtt_cafile=None, mqtt_tls_insecure=True)
         ctx = configure_tls_context(cfg)
-        assert ctx.check_hostname is False
+        assert ctx.check_hostname is False  # type: ignore[reportOptionalMemberAccess]
 
     def test_tls_context_missing_cafile(self):
         from mcubridge.util.mqtt_helper import configure_tls_context
@@ -557,7 +557,7 @@ class TestSecurityModule:
     def test_validate_nonce_counter(self):
         from mcubridge.security.security import generate_nonce_with_counter, validate_nonce_counter
 
-        nonce, counter = generate_nonce_with_counter(5)
+        nonce, counter = generate_nonce_with_counter(5)  # type: ignore[reportUnusedVariable]
         valid, new_counter = validate_nonce_counter(nonce, 5)
         assert valid is True
         assert new_counter == 6
@@ -589,21 +589,21 @@ class TestSecurityModule:
 
 class TestMqttSpool:
     @pytest.fixture()
-    def spool(self, tmp_path):
+    def spool(self: Any, tmp_path: Any):
         from mcubridge.mqtt.spool import MQTTPublishSpool
 
         s = MQTTPublishSpool(str(tmp_path / "spool"), limit=10)
         yield s
         s.close()
 
-    def test_append_and_pending(self, spool):
+    def test_append_and_pending(self: Any, spool: Any):
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(topic_name="t/1", payload=b"hello")
         spool.append(msg)
         assert spool.pending >= 1
 
-    def test_pop_next(self, spool):
+    def test_pop_next(self: Any, spool: Any):
         from mcubridge.protocol.structures import QueuedPublish
 
         spool.append(QueuedPublish(topic_name="t/1", payload=b"a"))
@@ -611,11 +611,11 @@ class TestMqttSpool:
         assert item is not None
         assert item.topic_name == "t/1"
 
-    def test_snapshot(self, spool):
+    def test_snapshot(self: Any, spool: Any):
         snap = spool.snapshot()
         assert snap is not None
 
-    def test_close_idempotent(self, spool):
+    def test_close_idempotent(self: Any, spool: Any):
         spool.close()
         spool.close()  # Should not raise
 
@@ -637,7 +637,7 @@ class TestSerialFlow:
         )
         yield flow
 
-    def test_initial_state(self, flow):
+    def test_initial_state(self: Any, flow: Any):
         assert flow is not None
 
 
@@ -743,7 +743,7 @@ class TestProcessComponent:
         state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_process_run_empty_command(self, process_comp):
+    async def test_process_run_empty_command(self: Any, process_comp: Any):
         """Empty command should be rejected."""
         # Just instantiate to cover imports
         assert process_comp is not None
@@ -768,7 +768,7 @@ class TestFileComponent:
         state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_file_component_exists(self, file_comp):
+    async def test_file_component_exists(self: Any, file_comp: Any):
         assert file_comp is not None
 
 
@@ -814,18 +814,18 @@ async def test_console_enqueue_empty():
 
 class TestContextSpoolOps:
     @pytest.fixture()
-    def state(self, tmp_path):
+    def state(self: Any, tmp_path: Any):
         cfg = _make_config(mqtt_spool_dir=str(tmp_path / "spool"))
         s = create_runtime_state(cfg, initialize_spool=True)
         yield s
         s.cleanup()
 
-    def test_initialize_spool(self, state):
+    def test_initialize_spool(self: Any, state: Any):
         # Spool should be initialized or degraded
         assert state.mqtt_spool is not None or state.mqtt_spool_degraded
 
     @pytest.mark.asyncio
-    async def test_stash_and_flush(self, state):
+    async def test_stash_and_flush(self: Any, state: Any):
         from mcubridge.protocol.structures import QueuedPublish
 
         if state.mqtt_spool is None:
@@ -834,12 +834,12 @@ class TestContextSpoolOps:
         result = await state.stash_mqtt_message(msg)
         assert result is True
 
-    def test_spool_backoff_remaining(self, state):
+    def test_spool_backoff_remaining(self: Any, state: Any):
         state.mqtt_spool_backoff_until = time.monotonic() + 100
         assert state._spool_backoff_remaining() > 0
 
     @pytest.mark.asyncio
-    async def test_ensure_spool_with_backoff(self, state):
+    async def test_ensure_spool_with_backoff(self: Any, state: Any):
         state.mqtt_spool_backoff_until = time.monotonic() + 1000
         state.mqtt_spool = None
         result = await state.ensure_spool()
@@ -959,7 +959,7 @@ def test_secure_zero_readonly_fallback():
 def test_extract_nonce_counter_happy():
     from mcubridge.security.security import extract_nonce_counter, generate_nonce_with_counter
 
-    nonce, counter = generate_nonce_with_counter(42)
+    nonce, counter = generate_nonce_with_counter(42)  # type: ignore[reportUnusedVariable]
     extracted = extract_nonce_counter(nonce)
     assert extracted == 43
 
@@ -1165,7 +1165,7 @@ def test_current_spool_snapshot_no_spool():
     state.configure(_make_config())
     state.mqtt_spool = None
 
-    snap = state._current_spool_snapshot()
+    snap = state._current_spool_snapshot()  # type: ignore[reportPrivateUsage]
     assert isinstance(snap, dict)
 
 
@@ -1173,7 +1173,7 @@ def test_current_spool_snapshot_no_spool():
 # 41. state/context.py – configure_spool closes existing (L781-782)
 # ===================================================================
 
-def test_configure_spool_closes_existing(tmp_path):
+def test_configure_spool_closes_existing(tmp_path: Any):
     state = _make_state()
     state.configure(_make_config(mqtt_spool_dir=str(tmp_path / "spool1")))
 
@@ -1192,7 +1192,7 @@ def test_configure_spool_closes_existing(tmp_path):
 # ===================================================================
 
 @pytest.mark.asyncio
-async def test_ensure_spool_degraded(tmp_path):
+async def test_ensure_spool_degraded(tmp_path: Any):
     state = _make_state()
     state.configure(_make_config(mqtt_spool_dir=str(tmp_path / "spool")))
     state.mqtt_spool = None  # Force re-creation
@@ -1216,7 +1216,7 @@ async def test_ensure_spool_degraded(tmp_path):
 # ===================================================================
 
 @pytest.mark.asyncio
-async def test_ensure_spool_recovery(tmp_path):
+async def test_ensure_spool_recovery(tmp_path: Any):
     state = _make_state()
     state.configure(_make_config(mqtt_spool_dir=str(tmp_path / "spool")))
     state.mqtt_spool = None
@@ -1238,7 +1238,7 @@ async def test_ensure_spool_recovery(tmp_path):
 # ===================================================================
 
 @pytest.mark.asyncio
-async def test_stash_mqtt_message_success(tmp_path):
+async def test_stash_mqtt_message_success(tmp_path: Any):
     from mcubridge.protocol.structures import QueuedPublish
 
     state = _make_state()
@@ -1272,7 +1272,7 @@ async def test_stash_mqtt_message_no_spool():
 
 
 @pytest.mark.asyncio
-async def test_stash_mqtt_message_spool_error(tmp_path):
+async def test_stash_mqtt_message_spool_error(tmp_path: Any):
     from mcubridge.protocol.structures import QueuedPublish
     from mcubridge.mqtt.spool import MQTTSpoolError
 
@@ -1335,7 +1335,7 @@ def test_cleanup_with_running_processes():
 # 47. mqtt/spool.py – close then append, limit setter (L93, L146-147)
 # ===================================================================
 
-def test_spool_append_after_close(tmp_path):
+def test_spool_append_after_close(tmp_path: Any):
     from mcubridge.mqtt.spool import MQTTPublishSpool
     from mcubridge.protocol.structures import QueuedPublish
 
@@ -1346,7 +1346,7 @@ def test_spool_append_after_close(tmp_path):
     spool.append(msg)
 
 
-def test_spool_limit_setter(tmp_path):
+def test_spool_limit_setter(tmp_path: Any):
     from mcubridge.mqtt.spool import MQTTPublishSpool
 
     spool = MQTTPublishSpool(str(tmp_path / "spool"), 100)
@@ -1359,7 +1359,7 @@ def test_spool_limit_setter(tmp_path):
 # 48. mqtt/spool.py – pop_next with corrupt entry (L121)
 # ===================================================================
 
-def test_spool_pop_corrupt_entry(tmp_path):
+def test_spool_pop_corrupt_entry(tmp_path: Any):
     from mcubridge.mqtt.spool import MQTTPublishSpool
     from mcubridge.protocol.structures import QueuedPublish
 
@@ -1371,7 +1371,7 @@ def test_spool_pop_corrupt_entry(tmp_path):
     with patch("mcubridge.protocol.structures.QueuedPublish.from_record", side_effect=ValueError("corrupt")):
         result = spool.pop_next()
     assert result is None
-    assert spool._corrupt_dropped >= 1
+    assert spool._corrupt_dropped >= 1  # type: ignore[reportPrivateUsage]
     spool.close()
 
 
@@ -1379,14 +1379,14 @@ def test_spool_pop_corrupt_entry(tmp_path):
 # 49. mqtt/spool.py – append failure (L100-101)
 # ===================================================================
 
-def test_spool_append_failure(tmp_path):
+def test_spool_append_failure(tmp_path: Any):
     from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
     from mcubridge.protocol.structures import QueuedPublish
 
     spool = MQTTPublishSpool(str(tmp_path / "spool"), 100)
     msg = QueuedPublish(topic_name="t", payload=b"x")
 
-    spool._records.append = MagicMock(return_value=False)
+    spool._records.append = MagicMock(return_value=False)  # type: ignore[reportPrivateUsage]
     with pytest.raises(MQTTSpoolError, match="append_failed"):
         spool.append(msg)
     spool.close()
@@ -1410,7 +1410,7 @@ async def test_status_writer_child_processes():
 # ===================================================================
 
 def test_write_status_file_oserror():
-    from mcubridge.state.status import _write_status_file
+    from mcubridge.state.status import _write_status_file  # type: ignore[reportPrivateUsage]
 
     mock_payload = MagicMock()
     with patch("mcubridge.state.status._json_enc") as mock_enc:
@@ -1434,12 +1434,12 @@ async def test_base_component_queue_cleanup_on_error():
     ctx = MagicMock()
     comp = BaseComponent(cfg, state, ctx)
 
-    queue = deque()
+    queue = deque()  # type: ignore[reportUnknownVariableType]
     request = "test_request"
 
     with pytest.raises(RuntimeError):
-        async with comp._track_transaction(
-            queue, request=request, limit=10,
+        async with comp._track_transaction(  # type: ignore[reportPrivateUsage]
+            queue, request=request, limit=10,  # type: ignore[reportUnknownArgumentType]
         ) as ok:
             assert ok is True
             assert request in queue
@@ -1472,7 +1472,7 @@ def test_apply_spool_observation():
     state = _make_state()
     state.configure(_make_config())
 
-    state._apply_spool_observation({
+    state._apply_spool_observation({  # type: ignore[reportPrivateUsage]
         "pending": 5,
         "limit": 100,
         "dropped_due_to_limit": 2,

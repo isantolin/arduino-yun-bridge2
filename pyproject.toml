@@ -60,13 +60,17 @@ stubPath = "typings"
 extraPaths = ["mcubridge", "mcubridge/stubs"]
 include = [
     "mcubridge/mcubridge",
+    "mcubridge/tests",
     "mcubridge-client-examples/mcubridge_client",
-    "mcubridge/scripts"
+    "mcubridge/scripts",
+    "tools"
 ]
 strict = [
     "mcubridge/mcubridge",
+    "mcubridge/tests",
     "mcubridge-client-examples/mcubridge_client",
-    "mcubridge/scripts"
+    "mcubridge/scripts",
+    "tools"
 ]
 exclude = [
     "openwrt-sdk",

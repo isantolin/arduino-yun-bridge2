@@ -432,7 +432,7 @@ class JinjaGenerator:
             if "_" not in act["name"]:
                 continue
             prefix, suffix = act["name"].split("_", 1)
-            action_map.setdefault(prefix, []).append(
+            action_map.setdefault(prefix, []).append(  # type: ignore[reportUnknownMemberType]
                 {
                     "name": suffix,
                     "value": act["value"],
@@ -440,13 +440,13 @@ class JinjaGenerator:
                 }
             )
 
-        for prefix, items in action_map.items():
+        for prefix, items in action_map.items():  # type: ignore[reportUnknownVariableType]
             cls_name = (
                 "DatastoreAction"
                 if prefix == "DATASTORE"
-                else f"{prefix.lower().title()}Action"
+                else f"{prefix.lower().title()}Action"  # type: ignore[reportUnknownMemberType]
             )
-            grouped_actions.append({"class_name": cls_name, "action_items": items})
+            grouped_actions.append({"class_name": cls_name, "action_items": items})  # type: ignore[reportUnknownMemberType]
 
         # Process subscriptions
         subscriptions = []
@@ -455,9 +455,9 @@ class JinjaGenerator:
             topic_str = sub["topic"]
             for s in sub.get("segments", []):
                 if s == "+":
-                    segments.append("MQTT_WILDCARD_SINGLE")
+                    segments.append("MQTT_WILDCARD_SINGLE")  # type: ignore[reportUnknownMemberType]
                 elif s == "#":
-                    segments.append("MQTT_WILDCARD_MULTI")
+                    segments.append("MQTT_WILDCARD_MULTI")  # type: ignore[reportUnknownMemberType]
                 else:
                     mapped = False
                     if topic_str in [
@@ -478,17 +478,17 @@ class JinjaGenerator:
                         for act in spec.actions:
                             if act["name"].startswith(f"{topic_str}_") and act["value"] == s:
                                 sfx = act["name"].split("_", 1)[1]
-                                segments.append(f"{c_name}.{sfx}.value")
+                                segments.append(f"{c_name}.{sfx}.value")  # type: ignore[reportUnknownMemberType]
                                 mapped = True
                                 break
                     if not mapped:
-                        segments.append(f'"{s}"')
+                        segments.append(f'"{s}"')  # type: ignore[reportUnknownMemberType]
 
-            subscriptions.append(
+            subscriptions.append(  # type: ignore[reportUnknownMemberType]
                 {
                     "topic": topic_str,
                     "qos": sub["qos"],
-                    "segments_tuple": f"({', '.join(segments)},)" if segments else "()",
+                    "segments_tuple": f"({', '.join(segments)},)" if segments else "()",  # type: ignore[reportUnknownArgumentType]
                 }
             )
 

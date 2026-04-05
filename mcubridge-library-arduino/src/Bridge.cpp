@@ -701,7 +701,8 @@ void BridgeClass::_onBaudrateChange() { if (_pending_baudrate > 0) { if (_hardwa
 
 void BridgeClass::_onStartupStabilized() {
   uint16_t drain_limit = bridge::config::STARTUP_DRAIN_FINAL;
-  while (_stream.available() > 0 && drain_limit-- > 0) _stream.read();
+  uint32_t start_ms = bridge::now_ms();
+  while (_stream.available() > 0 && drain_limit-- > 0 && (bridge::now_ms() - start_ms < bridge::config::SERIAL_TIMEOUT_MS)) _stream.read();
   BRIDGE_ATOMIC_BLOCK { _fsm.stabilized(); }
 }
 

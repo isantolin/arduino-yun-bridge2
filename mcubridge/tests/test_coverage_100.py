@@ -26,14 +26,14 @@ def mock_enqueue() -> AsyncMock:
 
 
 @pytest_asyncio.fixture
-async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:
+async def process_component(mock_enqueue: AsyncMock) -> ProcessComponent:  # type: ignore[reportInvalidTypeForm]
     config = make_test_config(process_max_concurrent=4)
     state = create_runtime_state(config)
     service = MagicMock()
     service.acknowledge_mcu_frame = AsyncMock()
     component = ProcessComponent(config, state, service)
     try:
-        yield component
+        yield component  # type: ignore[reportReturnType]
     finally:
         for pid in list(component.state.running_processes):
             await component.stop_process(pid)
@@ -60,7 +60,7 @@ async def test_finalize_process_slot_gone(
 ) -> None:
     """Cover branch where slot is gone in _finalize_process."""
     pid = 77
-    await process_component._finalize_process(pid)
+    await process_component._finalize_process(pid)  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio

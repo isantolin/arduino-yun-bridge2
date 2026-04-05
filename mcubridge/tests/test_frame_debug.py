@@ -10,49 +10,49 @@ from tools import frame_debug  # noqa: E402
 
 
 def test_resolve_command_hex() -> None:
-    assert frame_debug._resolve_command(f"0x{Command.CMD_LINK_RESET.value:02X}") == Command.CMD_LINK_RESET.value
+    assert frame_debug._resolve_command(f"0x{Command.CMD_LINK_RESET.value:02X}") == Command.CMD_LINK_RESET.value  # type: ignore[reportPrivateUsage]
     # Use lowercase 0x to match frame_debug.py startswith if upper() was missing
-    assert frame_debug._resolve_command(f"0x{UINT8_MASK:02X}") == UINT8_MASK
-    assert frame_debug._resolve_command("10") == 10  # Just an integer
+    assert frame_debug._resolve_command(f"0x{UINT8_MASK:02X}") == UINT8_MASK  # type: ignore[reportPrivateUsage]
+    assert frame_debug._resolve_command("10") == 10  # Just an integer  # type: ignore[reportPrivateUsage]
 
 
 def test_resolve_command_name() -> None:
-    assert frame_debug._resolve_command("CMD_GET_VERSION") == Command.CMD_GET_VERSION.value
-    assert frame_debug._resolve_command("CMD_GET_FREE_MEMORY") == Command.CMD_GET_FREE_MEMORY.value
+    assert frame_debug._resolve_command("CMD_GET_VERSION") == Command.CMD_GET_VERSION.value  # type: ignore[reportPrivateUsage]
+    assert frame_debug._resolve_command("CMD_GET_FREE_MEMORY") == Command.CMD_GET_FREE_MEMORY.value  # type: ignore[reportPrivateUsage]
     # Case insensitive
-    assert frame_debug._resolve_command("cmd_get_version") == Command.CMD_GET_VERSION.value
+    assert frame_debug._resolve_command("cmd_get_version") == Command.CMD_GET_VERSION.value  # type: ignore[reportPrivateUsage]
 
 
 def test_resolve_command_invalid() -> None:
     with pytest.raises(ValueError, match="command may not be empty"):
-        frame_debug._resolve_command("")
+        frame_debug._resolve_command("")  # type: ignore[reportPrivateUsage]
 
     with pytest.raises(ValueError, match="Unknown command"):
-        frame_debug._resolve_command("INVALID_CMD")
+        frame_debug._resolve_command("INVALID_CMD")  # type: ignore[reportPrivateUsage]
 
 
 def test_parse_payload() -> None:
-    assert frame_debug._parse_payload(None) == b""
-    assert frame_debug._parse_payload("") == b""
-    assert frame_debug._parse_payload("010203") == bytes([1, 2, 3])
-    assert frame_debug._parse_payload(f"0x{1:02X}{2:02X}") == bytes([1, 2])
-    assert frame_debug._parse_payload("01 02 03") == bytes([1, 2, 3])
+    assert frame_debug._parse_payload(None) == b""  # type: ignore[reportPrivateUsage]
+    assert frame_debug._parse_payload("") == b""  # type: ignore[reportPrivateUsage]
+    assert frame_debug._parse_payload("010203") == bytes([1, 2, 3])  # type: ignore[reportPrivateUsage]
+    assert frame_debug._parse_payload(f"0x{1:02X}{2:02X}") == bytes([1, 2])  # type: ignore[reportPrivateUsage]
+    assert frame_debug._parse_payload("01 02 03") == bytes([1, 2, 3])  # type: ignore[reportPrivateUsage]
 
 
 def test_parse_payload_invalid() -> None:
     # binascii.unhexlify raises binascii.Error: Odd-length string
     with pytest.raises(ValueError, match="Odd-length string"):
-        frame_debug._parse_payload("123")
+        frame_debug._parse_payload("123")  # type: ignore[reportPrivateUsage]
 
     with pytest.raises(ValueError, match="Invalid hex payload"):
-        frame_debug._parse_payload("ZZ")
+        frame_debug._parse_payload("ZZ")  # type: ignore[reportPrivateUsage]
 
 
 def test_name_for_command() -> None:
-    assert frame_debug._name_for_command(Command.CMD_GET_VERSION.value) == "CMD_GET_VERSION"
+    assert frame_debug._name_for_command(Command.CMD_GET_VERSION.value) == "CMD_GET_VERSION"  # type: ignore[reportPrivateUsage]
     # Keep testing Status resolution
-    assert frame_debug._name_for_command(Status.ACK.value) == "ACK"
-    assert frame_debug._name_for_command(UINT8_MASK) == f"UNKNOWN(0x{UINT8_MASK:02X})"
+    assert frame_debug._name_for_command(Status.ACK.value) == "ACK"  # type: ignore[reportPrivateUsage]
+    assert frame_debug._name_for_command(UINT8_MASK) == f"UNKNOWN(0x{UINT8_MASK:02X})"  # type: ignore[reportPrivateUsage]
 
 
 def test_snapshot_render() -> None:

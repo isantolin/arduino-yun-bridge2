@@ -66,7 +66,7 @@ def _coerce_list(value: Any) -> list[str]:
     if value is None:
         return []
     if isinstance(value, list):
-        return [str(item) for item in value]
+        return [str(item) for item in value]  # type: ignore[reportUnknownArgumentType]
     return [str(value)]
 
 
@@ -92,55 +92,55 @@ def load_manifest(path: Path) -> list[Target]:
         )
 
     data = msgspec.toml.decode(path.read_text())
-    defaults = data.get("defaults", {}) if isinstance(data, dict) else {}
+    defaults = data.get("defaults", {}) if isinstance(data, dict) else {}  # type: ignore[reportUnknownVariableType]
 
-    targets_raw = data.get("targets") if isinstance(data, dict) else None
+    targets_raw = data.get("targets") if isinstance(data, dict) else None  # type: ignore[reportUnknownVariableType]
     if not targets_raw:
         raise ValueError("Manifest must define at least one [[targets]] entry")
 
-    default_user = defaults.get("user")
-    default_timeout = defaults.get("timeout")
-    default_retries = int(defaults.get("retries", 0))
-    default_ssh = _coerce_list(defaults.get("ssh"))
-    default_tags = _coerce_tags(defaults.get("tags"))
+    default_user = defaults.get("user")  # type: ignore[reportUnknownVariableType]
+    default_timeout = defaults.get("timeout")  # type: ignore[reportUnknownVariableType]
+    default_retries = int(defaults.get("retries", 0))  # type: ignore[reportUnknownMemberType]
+    default_ssh = _coerce_list(defaults.get("ssh"))  # type: ignore[reportUnknownMemberType]
+    default_tags = _coerce_tags(defaults.get("tags"))  # type: ignore[reportUnknownMemberType]
 
     parsed: list[Target] = []
     seen_names: set[str] = set()
-    for entry in targets_raw:
+    for entry in targets_raw:  # type: ignore[reportUnknownVariableType]
         if not isinstance(entry, dict):
             raise ValueError("Each [[targets]] entry must be a table")
-        name = str(entry.get("name")) if entry.get("name") else None
+        name = str(entry.get("name")) if entry.get("name") else None  # type: ignore[reportUnknownMemberType]
         if not name:
             raise ValueError("Found target without a name")
         if name in seen_names:
             raise ValueError(f"Duplicated target name: {name}")
         seen_names.add(name)
 
-        local = bool(entry.get("local", False))
-        host = entry.get("host")
+        local = bool(entry.get("local", False))  # type: ignore[reportUnknownMemberType]
+        host = entry.get("host")  # type: ignore[reportUnknownVariableType]
         if not local and not host:
             raise ValueError(f"Target {name} must define 'host' or set local=true")
 
-        user = entry.get("user", default_user)
-        ssh_value = entry.get("ssh")
+        user = entry.get("user", default_user)  # type: ignore[reportUnknownVariableType]
+        ssh_value = entry.get("ssh")  # type: ignore[reportUnknownVariableType]
         ssh_args = _coerce_list(ssh_value) if ssh_value is not None else list(default_ssh)
-        tags = default_tags | _coerce_tags(entry.get("tags"))
-        extra_value = entry.get("extra_args")
+        tags = default_tags | _coerce_tags(entry.get("tags"))  # type: ignore[reportUnknownMemberType]
+        extra_value = entry.get("extra_args")  # type: ignore[reportUnknownVariableType]
         extra_args = _coerce_list(extra_value) if extra_value is not None else []
-        timeout_value = entry.get("timeout")
+        timeout_value = entry.get("timeout")  # type: ignore[reportUnknownVariableType]
         if timeout_value is None:
-            timeout_val = float(default_timeout) if default_timeout is not None else None
+            timeout_val = float(default_timeout) if default_timeout is not None else None  # type: ignore[reportUnknownArgumentType]
         else:
-            timeout_val = float(timeout_value)
-        retries = int(entry.get("retries", default_retries))
-        env = {str(k): str(v) for k, v in entry.get("env", {}).items()}
-        notes = entry.get("notes")
+            timeout_val = float(timeout_value)  # type: ignore[reportUnknownArgumentType]
+        retries = int(entry.get("retries", default_retries))  # type: ignore[reportUnknownMemberType]
+        env = {str(k): str(v) for k, v in entry.get("env", {}).items()}  # type: ignore[reportUnknownArgumentType]
+        notes = entry.get("notes")  # type: ignore[reportUnknownVariableType]
 
         parsed.append(
             Target(
                 name=name,
-                host=str(host) if host else None,
-                user=str(user) if user else None,
+                host=str(host) if host else None,  # type: ignore[reportUnknownArgumentType]
+                user=str(user) if user else None,  # type: ignore[reportUnknownArgumentType]
                 ssh_args=ssh_args,
                 extra_args=extra_args,
                 tags=tags,
@@ -148,7 +148,7 @@ def load_manifest(path: Path) -> list[Target]:
                 timeout=timeout_val,
                 retries=retries,
                 env=env,
-                notes=str(notes) if notes else None,
+                notes=str(notes) if notes else None,  # type: ignore[reportUnknownArgumentType]
             )
         )
     return parsed
@@ -343,8 +343,8 @@ def filter_targets(
             continue
         if tag_set and not (target.tags & tag_set):
             continue
-        filtered.append(target)
-    return filtered
+        filtered.append(target)  # type: ignore[reportUnknownMemberType]
+    return filtered  # type: ignore[reportUnknownVariableType]
 
 
 async def main_async(

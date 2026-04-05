@@ -156,7 +156,7 @@ def test_get_uci_config_flattens_nested_structures(monkeypatch: pytest.MonkeyPat
             "mqtt_topic": "br",
         },
     )
-    raw, _ = settings._load_raw_config()
+    raw, _ = settings._load_raw_config()  # type: ignore[reportPrivateUsage]
     assert raw["allowed_commands"] == ["ls", "uptime"]
 
 

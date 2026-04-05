@@ -215,7 +215,7 @@ def main_cmd(
             ser.close()
 
 
-def main(argv=None):
+def main(argv: list[str] | None =None):
     if argv:
         from typer.testing import CliRunner
 

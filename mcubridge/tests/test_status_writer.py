@@ -15,7 +15,7 @@ from mcubridge.state import status
 from mcubridge.state.context import RuntimeState, SupervisorStats
 
 
-def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
+def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
     async def run() -> None:
         status_path = tmp_path / "status.json"
         writes: list[dict[str, object]] = []
@@ -111,7 +111,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
             payload = writes[0]
 
             assert payload["mqtt_queue_limit"] == 42
-            assert payload["mqtt_messages_dropped"] >= 3
+            assert payload["mqtt_messages_dropped"] >= 3  # type: ignore[reportOperatorIssue]
             assert payload["mqtt_drop_counts"] == {f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test": 3}
             assert payload["datastore_keys"] == ["foo"]
             assert payload["mailbox_size"] == 1
@@ -142,11 +142,11 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
             assert payload["file_storage_limit_rejections"] == 2
             assert "bridge" in payload
             bridge_snapshot = payload["bridge"]
-            handshake_snapshot = bridge_snapshot["handshake"]
+            handshake_snapshot = bridge_snapshot["handshake"]  # type: ignore[reportUnknownVariableType]
             assert handshake_snapshot["attempts"] >= 2
-            assert payload["mqtt_spooled_messages"] >= 10
+            assert payload["mqtt_spooled_messages"] >= 10  # type: ignore[reportOperatorIssue]
             assert payload["mqtt_spooled_replayed"] == 4
-            assert payload["mqtt_spool_errors"] >= 2
+            assert payload["mqtt_spool_errors"] >= 2  # type: ignore[reportOperatorIssue]
             assert payload["mqtt_spool_degraded"] is True
             assert payload["mqtt_spool_failure_reason"] == "disk-full"
             assert payload["mqtt_spool_retry_attempts"] == 3
@@ -156,7 +156,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
             assert payload["mqtt_spool_pending"] == 7
             assert payload["watchdog_enabled"] is True
             assert payload["watchdog_interval"] == 7.5
-            assert payload["watchdog_beats"] >= 11
+            assert payload["watchdog_beats"] >= 11  # type: ignore[reportOperatorIssue]
             assert payload["watchdog_last_beat"] == 101.0
 
             assert status_path.exists()

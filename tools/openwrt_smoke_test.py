@@ -28,7 +28,7 @@ ROOTFS_GZ = f"openwrt-{OPENWRT_VERSION}-malta-be-rootfs-ext4.img.gz"
 ROOTFS_IMG = "openwrt-rootfs.img"
 
 
-def run(cmd, check=True):
+def run(cmd: list[str], check: bool =True):
     log_info(f"[EXEC] {' '.join(cmd)}")
     return subprocess.run(cmd, check=check)
 
@@ -44,7 +44,7 @@ def download_images():
         shutil.move(f"openwrt-{OPENWRT_VERSION}-malta-be-rootfs-ext4.img", ROOTFS_IMG)
 
 
-def create_apk_disk(apk_dir):
+def create_apk_disk(apk_dir: Path):
     log_info("[INFO] Creating APK data disk...")
     apk_disk = "apks.img"
     # Create a 20MB ext4 disk
@@ -69,7 +69,7 @@ def create_apk_disk(apk_dir):
     return apk_disk
 
 
-def run_test(apk_disk):
+def run_test(apk_disk: str):
     log_info("[INFO] Starting QEMU Emulation...")
     # Based on the XML but adapted for CLI/CI
     qemu_cmd = [
@@ -87,7 +87,7 @@ def run_test(apk_disk):
     import pexpect
 
     # Increase timeout for slow MIPS emulation
-    child = pexpect.spawn(qemu_cmd[0], qemu_cmd[1:], encoding='utf-8', timeout=300)
+    child = pexpect.spawn(qemu_cmd[0], qemu_cmd[1:], encoding='utf-8', timeout=300)  # type: ignore[reportUnknownVariableType]
     child.logfile = sys.stdout
 
     try:
@@ -140,6 +140,6 @@ if __name__ == "__main__":
 
     apk_dir = sys.argv[1]
     download_images()
-    apk_disk = create_apk_disk(apk_dir)
+    apk_disk = create_apk_disk(apk_dir)  # type: ignore[reportArgumentType]
     run_test(apk_disk)
 

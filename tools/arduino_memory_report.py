@@ -88,7 +88,7 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
             f"{m.flash_used:,} / {m.flash_max:,} B | {m.flash_percent:.1f}% | "
             f"{m.ram_used:,} / {m.ram_max:,} B | {m.ram_percent:.1f}% |"
         )
-        rows.append(row)
+        rows.append(row)  # type: ignore[reportUnknownMemberType]
 
     return "\n".join(header + rows)
 
@@ -109,13 +109,13 @@ def main(
     for log_file in log_dir.glob("*.log"):
         m = parse_log_file(log_file)
         if m:
-            all_metrics.append(m)
+            all_metrics.append(m)  # type: ignore[reportUnknownMemberType]
 
     if not all_metrics:
         typer.secho("No memory metrics found in logs.", fg=typer.colors.YELLOW)
         return
 
-    md_report = render_markdown(all_metrics)
+    md_report = render_markdown(all_metrics)  # type: ignore[reportUnknownArgumentType]
     typer.echo(md_report)
 
     if github_step_summary:

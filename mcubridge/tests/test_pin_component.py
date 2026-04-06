@@ -16,6 +16,8 @@ from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.pin import PinComponent
 from mcubridge.state.context import PendingPinRequest, RuntimeState
 
+from tests._helpers import make_route, make_mqtt_msg
+
 
 class RecordingBridgeContext:
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
@@ -218,12 +220,8 @@ async def test_handle_mqtt_mode_command_valid_payload_sends_frame(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_mqtt(
-        Topic.DIGITAL,
-        [
-            "2",
-            PinAction.MODE.value,
-        ],
-        "1",
+        make_route(Topic.DIGITAL, "2", PinAction.MODE.value),
+        make_mqtt_msg("1"),
     )
 
     assert ctx.sent_frames
@@ -241,12 +239,8 @@ async def test_handle_mqtt_mode_command_rejects_invalid_payload(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_mqtt(
-        Topic.DIGITAL,
-        [
-            "2",
-            PinAction.MODE.value,
-        ],
-        "not-an-int",
+        make_route(Topic.DIGITAL, "2", PinAction.MODE.value),
+        make_mqtt_msg("not-an-int"),
     )
 
     assert ctx.sent_frames == []
@@ -260,17 +254,12 @@ async def test_handle_mqtt_read_command_queue_overflow_notifies_mqtt(
     runtime_state.pending_pin_request_limit = 1
     runtime_state.pending_digital_reads.append(PendingPinRequest(pin=1, reply_context=None))
 
-    inbound = _fake_inbound()
+    inbound = make_mqtt_msg("")
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_mqtt(
-        Topic.DIGITAL,
-        [
-            "9",
-            PinAction.READ.value,
-        ],
-        "",
+        make_route(Topic.DIGITAL, "9", PinAction.READ.value),
         inbound,
     )
 
@@ -298,12 +287,8 @@ async def test_handle_mqtt_read_command_send_fails_does_not_enqueue_pending(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_mqtt(
-        Topic.ANALOG,
-        [
-            "3",
-            PinAction.READ.value,
-        ],
-        "",
+        make_route(Topic.ANALOG, "3", PinAction.READ.value),
+        make_mqtt_msg(""),
     )
 
     assert not runtime_state.pending_analog_reads
@@ -314,17 +299,12 @@ async def test_handle_mqtt_read_command_appends_pending_on_success(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    inbound = _fake_inbound()
+    inbound = make_mqtt_msg("")
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_mqtt(
-        Topic.ANALOG,
-        [
-            "3",
-            PinAction.READ.value,
-        ],
-        "",
+        make_route(Topic.ANALOG, "3", PinAction.READ.value),
         inbound,
     )
 
@@ -347,9 +327,8 @@ async def test_handle_mqtt_write_digital_accepts_empty_payload_as_zero(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_mqtt(
-        Topic.DIGITAL,
-        ["5"],
-        "",
+        make_route(Topic.DIGITAL, "5"),
+        make_mqtt_msg(""),
     )
 
     command_id, payload = ctx.sent_frames[-1]
@@ -366,9 +345,8 @@ async def test_handle_mqtt_write_rejects_invalid_payload(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_mqtt(
-        Topic.DIGITAL,
-        ["5"],
-        "999",
+        make_route(Topic.DIGITAL, "5"),
+        make_mqtt_msg("999"),
     )
 
     assert ctx.sent_frames == []
@@ -383,9 +361,8 @@ async def test_handle_mqtt_parses_analog_pin_identifier_prefix_a(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_mqtt(
-        Topic.ANALOG,
-        ["A1"],
-        "10",
+        make_route(Topic.ANALOG, "A1"),
+        make_mqtt_msg("10"),
     )
 
     command_id, payload = ctx.sent_frames[-1]

@@ -16,6 +16,7 @@ from mcubridge.protocol.structures import (
     DigitalWritePacket,
     PinModePacket,
     PinReadPacket,
+    TopicRoute,
 )
 
 from ..config.const import MQTT_EXPIRY_PIN
@@ -114,26 +115,26 @@ class PinComponent(BaseComponent):
 
     async def handle_mqtt(
         self,
-        topic_type: str | Topic,
-        segments: list[str],
-        payload_str: str,
-        inbound: Message | None = None,
-    ) -> None:
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        segments = list(route.segments)
+        payload_str = self._payload_bytes(inbound.payload).decode("utf-8", errors="ignore")
         if not segments:
-            return
+            return True
 
         try:
-            topic_enum = Topic(topic_type)
+            topic_enum = Topic(route.topic)
         except ValueError:
-            return
+            return True
 
         if not segments:
-            return
+            return True
 
         pin_str = segments[0]
         pin = self._parse_pin_identifier(pin_str)
         if pin < 0:
-            return
+            return True
 
         is_analog_read = len(segments) == 2 and segments[1] == PinAction.READ and topic_enum == Topic.ANALOG
         # Note: Analog write usually targets PWM pins which are subset of digital pins in Arduino numbering,
@@ -141,7 +142,7 @@ class PinComponent(BaseComponent):
         # We'll use digital limit for writes and analog limit for analog reads.
 
         if not self._validate_pin_access(pin, is_analog_read):
-            return
+            return True
 
         if len(segments) == 2:
             subtopic = segments[1]
@@ -151,7 +152,7 @@ class PinComponent(BaseComponent):
                 await self._handle_read_command(topic_enum, pin, inbound)
             else:
                 logger.debug("Unknown pin subtopic for %s: %s", pin_str, subtopic)
-            return
+            return True
 
         if len(segments) == 1:
             await self._handle_write_command(
@@ -159,6 +160,7 @@ class PinComponent(BaseComponent):
                 pin,
                 payload_str,
             )
+        return True
 
     async def _handle_mode_command(self, pin: int, pin_str: str, payload_str: str) -> None:
         try:

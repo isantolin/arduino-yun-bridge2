@@ -61,7 +61,7 @@ async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> 
     payload = b"input"
     console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
-    await console_component.handle_mqtt_input(payload)
+    await console_component._handle_mqtt_input(payload)
 
     from mcubridge.protocol import structures
     expected = structures.ConsoleWritePacket(data=payload).encode()
@@ -73,7 +73,7 @@ async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> 
     console_component.state.mcu_is_paused = True
     payload = b"input"
 
-    await console_component.handle_mqtt_input(payload)
+    await console_component._handle_mqtt_input(payload)
 
     console_component.ctx.send_frame.assert_not_awaited()  # type: ignore[reportUnknownMemberType]
     # verify enqueue was called since state is a mock
@@ -91,7 +91,7 @@ async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -
     large_payload = b"a" * (MAX_PAYLOAD_SIZE + 10)
     console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
-    await console_component.handle_mqtt_input(large_payload)
+    await console_component._handle_mqtt_input(large_payload)
 
     assert console_component.ctx.send_frame.await_count >= 2  # type: ignore[reportUnknownMemberType]
 

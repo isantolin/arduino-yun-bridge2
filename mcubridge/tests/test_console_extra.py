@@ -51,7 +51,7 @@ async def test_console_mqtt_input_send_fail() -> None:
         cc = ConsoleComponent(config, state, ctx)
 
         # Send fails, should queue remaining
-        await cc.handle_mqtt_input(b"chunk1chunk2")
+        await cc._handle_mqtt_input(b"chunk1chunk2")
         assert len(state.console_to_mcu_queue) > 0
     finally:
         state.cleanup()

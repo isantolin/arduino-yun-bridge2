@@ -5,8 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, DatastoreAction, Status
+from mcubridge.protocol.topics import Topic
 from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.state.context import create_runtime_state
+
+from tests._helpers import make_route, make_mqtt_msg
 
 
 @pytest.mark.asyncio
@@ -76,16 +79,16 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
         ds = DatastoreComponent(config, state, ctx)
 
         # Unknown action
-        await ds.handle_mqtt("unknown", ["key"], b"val", "val")
+        await ds.handle_mqtt(make_route(Topic.DATASTORE, "unknown", "key"), make_mqtt_msg(b"val"))
 
         # Put without key
-        await ds.handle_mqtt(DatastoreAction.PUT, [], b"val", "val")
+        await ds.handle_mqtt(make_route(Topic.DATASTORE, DatastoreAction.PUT), make_mqtt_msg(b"val"))
 
         # Get without key
-        await ds.handle_mqtt(DatastoreAction.GET, [], b"", "")
+        await ds.handle_mqtt(make_route(Topic.DATASTORE, DatastoreAction.GET), make_mqtt_msg(b""))
 
         # Get request miss
-        await ds.handle_mqtt(DatastoreAction.GET, ["missing", "request"], b"", "")
+        await ds.handle_mqtt(make_route(Topic.DATASTORE, DatastoreAction.GET, "missing", "request"), make_mqtt_msg(b""))
         # Check for datastore-miss error
         found_miss = False
         for call in ctx.publish.call_args_list:

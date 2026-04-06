@@ -23,7 +23,7 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.state.context import create_runtime_state
 
-from tests._helpers import make_test_config as _make_config
+from tests._helpers import make_test_config as _make_config, make_route, make_mqtt_msg
 
 
 # ============================================================================
@@ -561,21 +561,21 @@ class TestShellMqttLogic:
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_poll(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(["poll", "42"], b"", None)
+        await shell_comp.handle_mqtt(make_route(Topic.SHELL, "poll", "42"), make_mqtt_msg(b""))
         shell_comp.poll_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_kill(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(["kill", "42"], b"", None)
+        await shell_comp.handle_mqtt(make_route(Topic.SHELL, "kill", "42"), make_mqtt_msg(b""))
         shell_comp.stop_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(["unknown_action"], b"", None)
+        await shell_comp.handle_mqtt(make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b""))
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt([], b"", None)
+        await shell_comp.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
 
     @pytest.mark.asyncio
     async def test_parse_shell_command_invalid(self: Any, shell_comp: Any):
@@ -886,7 +886,7 @@ class TestMailboxComponent:
             ctx.publish = AsyncMock()
 
             comp = MailboxComponent(config, state, ctx)
-            await comp.handle_mqtt("write", b"hello")
+            await comp.handle_mqtt(make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello"))
         finally:
             state.cleanup()
 

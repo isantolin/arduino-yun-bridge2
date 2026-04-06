@@ -11,10 +11,13 @@ from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import SystemAction
 from mcubridge.protocol import structures
 from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol.topics import Topic
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 from aiomqtt import Message
+
+from tests._helpers import make_route
 
 
 def _run(coro: Coroutine[Any, Any, Any]) -> None:
@@ -201,8 +204,9 @@ def test_handle_mqtt_version_get_with_cached_version(runtime_config: RuntimeConf
 
         msg = MagicMock()
         msg.topic = "br/system/version/get"
+        msg.payload = b""
 
-        await component.handle_mqtt(SystemAction.VERSION, [SystemAction.GET], msg)
+        await component.handle_mqtt(make_route(Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET), msg)
 
         assert len(ctx.published) >= 1
         assert "2.0" in str(ctx.published[0][1])
@@ -219,8 +223,9 @@ def test_handle_mqtt_version_get_without_cached_version(runtime_config: RuntimeC
 
         msg = MagicMock()
         msg.topic = "br/system/version/get"
+        msg.payload = b""
 
-        await component.handle_mqtt(SystemAction.VERSION, [SystemAction.GET], msg)
+        await component.handle_mqtt(make_route(Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET), msg)
 
         assert len(ctx.sent_frames) == 1
         cmd, _pl = ctx.sent_frames[0]
@@ -237,8 +242,9 @@ def test_handle_mqtt_free_memory_get_tracks_pending(runtime_config: RuntimeConfi
 
         msg = MagicMock()
         msg.topic = "br/system/memory/get"
+        msg.payload = b""
 
-        await component.handle_mqtt(SystemAction.FREE_MEMORY, [SystemAction.GET], msg)
+        await component.handle_mqtt(make_route(Topic.SYSTEM, SystemAction.FREE_MEMORY, SystemAction.GET), msg)
 
         assert len(ctx.sent_frames) == 1
         cmd, _pl = ctx.sent_frames[0]

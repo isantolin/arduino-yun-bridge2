@@ -16,6 +16,8 @@ from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.process import ProcessComponent
 from mcubridge.state.context import RuntimeState
 
+from tests._helpers import make_route, make_mqtt_msg
+
 
 class RecordingBridgeContext:
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
@@ -91,10 +93,9 @@ async def test_shell_run_async_success(
     # Mock low-level execution but use real component logic for MQTT
     component.run_async = AsyncMock(return_value=1234)
 
-    inbound = _fake_inbound()
+    inbound = make_mqtt_msg(b"echo hello")
     await component.handle_mqtt(
-        [ShellAction.RUN_ASYNC.value],
-        b"echo hello",
+        make_route(Topic.SHELL, ShellAction.RUN_ASYNC.value),
         inbound,
     )
 
@@ -120,10 +121,9 @@ async def test_shell_run_async_exception_returns_error(
 
     component.run_async = AsyncMock(side_effect=RuntimeError("crash"))
 
-    inbound = _fake_inbound()
+    inbound = make_mqtt_msg(b"echo hi")
     await component.handle_mqtt(
-        [ShellAction.RUN_ASYNC.value],
-        b"echo hi",
+        make_route(Topic.SHELL, ShellAction.RUN_ASYNC.value),
         inbound,
     )
 
@@ -143,9 +143,8 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
     component.run_async = AsyncMock(return_value=0)
 
     await component.handle_mqtt(
-        [ShellAction.RUN_ASYNC.value],
-        b"echo hi",
-        None,
+        make_route(Topic.SHELL, ShellAction.RUN_ASYNC.value),
+        make_mqtt_msg(b"echo hi"),
     )
 
     message = ctx.enqueued[0][0]
@@ -167,13 +166,10 @@ async def test_shell_poll_calls_process_helpers(
     component.poll_process = AsyncMock(return_value=batch)
     component.publish_poll_result = AsyncMock()
 
+    inbound = make_mqtt_msg(b"")
     await component.handle_mqtt(
-        [
-            ShellAction.POLL.value,
-            "123",
-        ],
-        b"",
-        None,
+        make_route(Topic.SHELL, ShellAction.POLL.value, "123"),
+        inbound,
     )
 
     component.poll_process.assert_awaited_once_with(123)
@@ -191,12 +187,8 @@ async def test_shell_kill_invokes_stop_process(
     component.stop_process = AsyncMock(return_value=True)
 
     await component.handle_mqtt(
-        [
-            ShellAction.KILL.value,
-            "42",
-        ],
-        b"",
-        None,
+        make_route(Topic.SHELL, ShellAction.KILL.value, "42"),
+        make_mqtt_msg(b""),
     )
 
     component.stop_process.assert_awaited_once_with(42)
@@ -211,10 +203,10 @@ async def test_shell_ignores_invalid_payloads_and_actions(
     component = ProcessComponent(runtime_config, runtime_state, ctx)  # type: ignore[reportArgumentType]
 
     # Empty segments
-    await component.handle_mqtt([], b"", None)
+    await component.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
 
     # Unknown action
-    await component.handle_mqtt(["unknown"], b"", None)
+    await component.handle_mqtt(make_route(Topic.SHELL, "unknown"), make_mqtt_msg(b""))
 
     assert ctx.enqueued == []
     assert ctx.sent_frames == []

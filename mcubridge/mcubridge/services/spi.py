@@ -10,6 +10,7 @@ from aiomqtt.message import Message
 
 from ..protocol import structures
 from ..protocol.protocol import Command
+from ..protocol.structures import TopicRoute
 from ..protocol.topics import Topic, topic_path
 from .base import BaseComponent
 
@@ -27,8 +28,10 @@ class SpiComponent(BaseComponent):
     def __init__(self, config: RuntimeConfig, state: RuntimeState, ctx: BridgeContext):
         super().__init__(config, state, ctx)
 
-    async def handle_mqtt(self, action: str, segments: list[str], payload: bytes, inbound: Message) -> bool:
+    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
         """Process inbound MQTT requests for SPI operations."""
+        action = route.identifier
+        payload = self._payload_bytes(inbound.payload)
         try:
             match action:
                 case "begin":

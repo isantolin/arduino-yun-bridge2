@@ -103,6 +103,9 @@ class _Console:
     async def handle_mqtt_input(self, _payload: bytes, _inbound: _DummyMessage) -> bool:
         return True
 
+    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
+        return True
+
 
 class _Datastore:
     async def handle_put(self, _payload: bytes) -> bool:

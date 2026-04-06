@@ -7,6 +7,9 @@ import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.state.context import create_runtime_state
+from mcubridge.protocol.topics import Topic
+
+from tests._helpers import make_route, make_mqtt_msg
 
 
 @pytest.mark.asyncio
@@ -79,7 +82,7 @@ async def test_mailbox_handle_mqtt_edge_cases() -> None:
         mb = MailboxComponent(config, state, ctx)
 
         # Unknown action
-        await mb.handle_mqtt("unknown", b"payload")
+        await mb.handle_mqtt(make_route(Topic.MAILBOX, "unknown"), make_mqtt_msg(b"payload"))
 
         # Read from incoming queue
         state.enqueue_mailbox_incoming(b"inbound")

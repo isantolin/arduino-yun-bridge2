@@ -19,6 +19,7 @@ from mcubridge.protocol.structures import (
     MailboxProcessedPacket,
     MailboxPushPacket,
     MailboxReadResponsePacket,
+    TopicRoute,
 )
 
 from ..protocol.topics import (
@@ -136,10 +137,11 @@ class MailboxComponent(BaseComponent):
 
     async def handle_mqtt(
         self,
-        action: str,
-        payload: bytes,
-        inbound: Message | None = None,
-    ) -> None:
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        payload = self._payload_bytes(inbound.payload)
+        action = route.identifier
         match action:
             case MailboxAction.WRITE:
                 await self._handle_mqtt_write(payload, inbound)
@@ -147,6 +149,7 @@ class MailboxComponent(BaseComponent):
                 await self._handle_mqtt_read(inbound)
             case _:
                 logger.debug("Ignoring mailbox action '%s'", action)
+        return True
 
     async def _handle_mqtt_write(
         self,

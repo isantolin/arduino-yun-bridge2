@@ -13,6 +13,7 @@ from mcubridge.protocol.protocol import Command, SystemAction
 from mcubridge.protocol.structures import (
     EnterBootloaderPacket,
     FreeMemoryResponsePacket,
+    TopicRoute,
     VersionResponsePacket,
 )
 
@@ -99,10 +100,11 @@ class SystemComponent(BaseComponent):
 
     async def handle_mqtt(
         self,
-        identifier: str,
-        remainder: list[str],
-        inbound: Message | None = None,
+        route: TopicRoute,
+        inbound: Message,
     ) -> bool:
+        identifier = route.identifier
+        remainder = list(route.remainder)
         match identifier:
             case SystemAction.BOOTLOADER:
                 packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
@@ -124,7 +126,7 @@ class SystemComponent(BaseComponent):
                 if not (remainder and remainder[0] == SystemAction.GET):
                     return False
                 cached_version = self.state.mcu_version
-                if cached_version is not None and inbound is not None:
+                if cached_version is not None:
                     await self._publish_version(cached_version, inbound)
 
                 # Always request fresh version to sync cache

@@ -8,11 +8,12 @@ import structlog
 from collections.abc import Callable, Coroutine
 from typing import Any, Deque, Protocol, TypeVar
 
+import msgspec
 from aiomqtt.message import Message
 
 
 from ..config.settings import RuntimeConfig
-from ..protocol.structures import QueuedPublish
+from ..protocol.structures import QueuedPublish, TopicRoute
 from ..state.context import RuntimeState
 
 TReq = TypeVar("TReq")
@@ -71,6 +72,28 @@ class BaseComponent:
         self.config = config
         self.state = state
         self.ctx = ctx
+
+    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle an inbound MQTT message routed to this service.
+
+        Subclasses override this to implement topic-specific logic.
+        Returns True if the message was handled, False otherwise.
+        """
+        return False
+
+    @staticmethod
+    def _payload_bytes(payload: Any) -> bytes:
+        """Extract bytes from an MQTT message payload."""
+        if isinstance(payload, bytes):
+            return payload
+        if isinstance(payload, bytearray):
+            return bytes(payload)
+        if isinstance(payload, memoryview):
+            return payload.tobytes()
+        try:
+            return msgspec.convert(payload, bytes)
+        except (msgspec.MsgspecError, TypeError, ValueError):
+            return b"" if payload is None else str(payload).encode("utf-8")
 
     @contextlib.asynccontextmanager
     async def _track_transaction(

@@ -111,23 +111,23 @@ class FileComponent(BaseComponent):
     async def handle_mqtt(
         self,
         route: TopicRoute,
-        msg: Message,
+        inbound: Message,
     ) -> bool:
         """Process MQTT filesystem requests."""
         action = route.action
         target = "/".join(route.remainder)
-        pl = bytes(msg.payload)
+        pl = bytes(inbound.payload)
 
         if not action or not target:
             return False
 
         match action:
             case FileAction.WRITE:
-                return await self._handle_mqtt_write(msg, target, pl)
+                return await self._handle_mqtt_write(inbound, target, pl)
             case FileAction.READ:
-                return await self._handle_mqtt_read(msg, target)
+                return await self._handle_mqtt_read(inbound, target)
             case FileAction.REMOVE:
-                return await self._handle_mqtt_remove(msg, target)
+                return await self._handle_mqtt_remove(inbound, target)
             case _:
                 return False
 

@@ -19,6 +19,7 @@ from ..protocol.structures import (
     PayloadValidationError,
     ShellCommandPayload,
     ShellPidPayload,
+    TopicRoute,
 )
 from ..protocol.topics import Topic, topic_path
 from ..state.context import (
@@ -70,13 +71,14 @@ class ProcessComponent(BaseComponent):
 
     async def handle_mqtt(
         self,
-        segments: list[str],
-        payload: bytes,
-        inbound: Message | None = None,
-    ) -> None:
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
         """Handle shell-related MQTT topics."""
+        segments = list(route.segments)
+        payload = self._payload_bytes(inbound.payload)
         if not segments:
-            return
+            return True
 
         action = segments[0]
 
@@ -84,19 +86,19 @@ class ProcessComponent(BaseComponent):
             case ShellAction.RUN_ASYNC:
                 payload_model = self._parse_shell_command(payload, action)
                 if payload_model is None:
-                    return
+                    return True
                 await self._handle_mqtt_run_async(payload_model, inbound)
 
             case ShellAction.POLL if len(segments) == 2:
                 pid_model = self._parse_shell_pid(segments[1], action)
                 if pid_model is None:
-                    return
+                    return True
                 await self._handle_mqtt_poll(pid_model)
 
             case ShellAction.KILL if len(segments) == 2:
                 pid_model = self._parse_shell_pid(segments[1], action)
                 if pid_model is None:
-                    return
+                    return True
                 await self._handle_mqtt_kill(pid_model)
 
             case _:
@@ -104,6 +106,7 @@ class ProcessComponent(BaseComponent):
                     "Ignoring shell topic action: %s",
                     "/".join(segments),
                 )
+        return True
 
     async def _handle_mqtt_run_async(
         self,

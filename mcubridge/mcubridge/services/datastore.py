@@ -16,6 +16,7 @@ from mcubridge.protocol.structures import (
     DatastoreGetPacket,
     DatastoreGetResponsePacket,
     DatastorePutPacket,
+    TopicRoute,
 )
 
 from ..config.const import MQTT_EXPIRY_DATASTORE
@@ -84,19 +85,21 @@ class DatastoreComponent(BaseComponent):
 
     async def handle_mqtt(
         self,
-        identifier: str,
-        remainder: list[str],
-        payload: bytes,
-        payload_str: str,
-        inbound: Message | None = None,
-    ) -> None:
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        identifier = route.identifier
+        remainder = list(route.remainder)
+        payload = self._payload_bytes(inbound.payload)
+        payload_str = payload.decode("utf-8", errors="ignore")
+
         is_request = identifier == DatastoreAction.GET and bool(remainder) and remainder[-1] == "request"
         parts = remainder[:-1] if is_request else remainder
 
         key = "/".join(parts)
         if not key:
             logger.debug("Ignoring datastore action '%s' without key", identifier)
-            return
+            return True
 
         match identifier:
             case DatastoreAction.PUT:
@@ -105,6 +108,8 @@ class DatastoreComponent(BaseComponent):
                 await self._handle_mqtt_get(key, is_request, inbound)
             case _:
                 logger.debug("Unknown datastore action '%s'", identifier)
+        return True
+        return True
 
     async def _handle_mqtt_put(
         self,

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-import msgspec
 import svcs
 
 from mcubridge.protocol.contracts import response_to_request
@@ -89,7 +87,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_XON.value, console.handle_xon)
         self.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, console.handle_write)
         self.mqtt_router.register(
-            Topic.CONSOLE, functools.partial(self._guard_and_dispatch, handler=console.handle_mqtt_input)
+            Topic.CONSOLE, lambda r, m: self._guard_and_dispatch(r, m, handler=console.handle_mqtt)
         )
 
         # Datastore
@@ -97,13 +95,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_DATASTORE_GET.value, datastore.handle_get_request)
         self.mqtt_router.register(
             Topic.DATASTORE,
-            lambda r, m: self._guard_and_dispatch(
-                r,
-                m,
-                lambda p, i: datastore.handle_mqtt(
-                    r.identifier, list(r.remainder), p, p.decode("utf-8", errors="ignore"), i
-                ),
-            ),
+            lambda r, m: self._guard_and_dispatch(r, m, handler=datastore.handle_mqtt),
         )
 
         # Mailbox
@@ -113,7 +105,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_MAILBOX_PROCESSED.value, mailbox.handle_processed)
         self.mqtt_router.register(
             Topic.MAILBOX,
-            lambda r, m: self._guard_and_dispatch(r, m, lambda p, i: mailbox.handle_mqtt(r.identifier, p, i)),
+            lambda r, m: self._guard_and_dispatch(r, m, handler=mailbox.handle_mqtt),
         )
 
         # File
@@ -125,7 +117,7 @@ class BridgeDispatcher:
         async def file_mqtt_handler(r: TopicRoute, m: Message) -> bool:
             if len(r.segments) < 2:
                 return False
-            return await self._guard_and_dispatch(r, m, lambda _p, _i: file.handle_mqtt(r, m))
+            return await self._guard_and_dispatch(r, m, handler=file.handle_mqtt)
 
         self.mqtt_router.register(Topic.FILE, file_mqtt_handler)
 
@@ -139,7 +131,7 @@ class BridgeDispatcher:
         # Shell (MQTT only - now handled by unified ProcessComponent)
         self.mqtt_router.register(
             Topic.SHELL,
-            lambda r, m: self._guard_and_dispatch(r, m, lambda p, i: process.handle_mqtt(list(r.segments), p, i)),
+            lambda r, m: self._guard_and_dispatch(r, m, handler=process.handle_mqtt),
         )
 
         # Pin (GPIO)
@@ -163,23 +155,18 @@ class BridgeDispatcher:
             Command.CMD_ANALOG_READ.value, lambda s, p: _handle_mcu_read(s, Command.CMD_ANALOG_READ, p)
         )
 
-        async def pin_mqtt_handler(r: TopicRoute, m: Message) -> bool:
-            return await self._guard_and_dispatch(
-                r,
-                m,
-                lambda p, i: pin.handle_mqtt(r.topic, list(r.segments), p.decode("utf-8", errors="ignore"), i),
-            )
-
-        self.mqtt_router.register(Topic.DIGITAL, pin_mqtt_handler)
-        self.mqtt_router.register(Topic.ANALOG, pin_mqtt_handler)
+        self.mqtt_router.register(
+            Topic.DIGITAL, lambda r, m: self._guard_and_dispatch(r, m, handler=pin.handle_mqtt)
+        )
+        self.mqtt_router.register(
+            Topic.ANALOG, lambda r, m: self._guard_and_dispatch(r, m, handler=pin.handle_mqtt)
+        )
 
         # SPI
         self.mcu_registry.register(Command.CMD_SPI_TRANSFER_RESP.value, spi.handle_transfer_resp)
         self.mqtt_router.register(
             Topic.SPI,
-            lambda r, m: self._guard_and_dispatch(
-                r, m, lambda p, i: spi.handle_mqtt(r.identifier, list(r.remainder), p, i)
-            ),
+            lambda r, m: self._guard_and_dispatch(r, m, handler=spi.handle_mqtt),
         )
 
         # System
@@ -313,16 +300,14 @@ class BridgeDispatcher:
         self,
         route: TopicRoute,
         inbound: Message,
-        handler: Callable[[bytes, Message], Awaitable[Any]],
+        handler: Callable[[TopicRoute, Message], Awaitable[bool]],
     ) -> bool:
-        """Enforces policy, coerces payload, and executes handler."""
+        """Enforces policy then delegates to the component handler."""
         if action := self._should_reject_topic_action(route):
             await self.reject_topic_action(inbound, route.topic, action)
             return True
 
-        payload = self._payload_bytes(inbound.payload)
-        await handler(payload, inbound)
-        return True
+        return await handler(route, inbound)
 
     def _should_reject_topic_action(self, route: TopicRoute) -> str | None:
         """Deduce if an MQTT route should be rejected based on policy."""
@@ -361,7 +346,7 @@ class BridgeDispatcher:
                     from . import SystemComponent
 
                     system = self._container.get(SystemComponent)
-                    return await system.handle_mqtt(route.identifier, list(route.remainder), inbound)
+                    return await system.handle_mqtt(route, inbound)
         return False
 
     async def _handle_bridge_topic(self, route: TopicRoute, inbound: Message) -> bool:
@@ -377,17 +362,3 @@ class BridgeDispatcher:
                 return True
             case _:
                 return False
-
-    @staticmethod
-    def _payload_bytes(payload: Any) -> bytes:
-        """[SIL-2] Optimized zero-copy payload extraction using library primitives."""
-        if isinstance(payload, bytes):
-            return payload
-        if isinstance(payload, bytearray):
-            return bytes(payload)
-        if isinstance(payload, memoryview):
-            return payload.tobytes()
-        try:
-            return msgspec.convert(payload, bytes)
-        except (msgspec.MsgspecError, TypeError, ValueError):
-            return b"" if payload is None else str(payload).encode("utf-8")

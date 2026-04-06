@@ -46,18 +46,19 @@ class _FileComponent:
 
     async def handle_mqtt(
         self,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        self._calls.add("file.handle_mqtt", args, kwargs)
+        route: Any,
+        inbound: Any,
+    ) -> bool:
+        self._calls.add("file.handle_mqtt", route, inbound)
+        return True
 
 
 class _ConsoleComponent:
     def __init__(self, calls: _Calls) -> None:
         self._calls = calls
 
-    async def handle_mqtt_input(self, payload: bytes, inbound: Any) -> bool:
-        self._calls.add("console.handle_mqtt_input", payload, inbound)
+    async def handle_mqtt(self, route: Any, inbound: Any) -> bool:
+        self._calls.add("console.handle_mqtt", route, inbound)
         return True
 
     async def handle_xoff(self, seq_id: int, payload: bytes) -> bool:
@@ -87,20 +88,15 @@ class _DatastoreComponent:
 
     async def handle_mqtt(
         self,
-        identifier: str,
-        remainder: list[str],
-        payload: bytes,
-        payload_str: str,
+        route: Any,
         inbound: Any,
-    ) -> None:
+    ) -> bool:
         self._calls.add(
             "datastore.handle_mqtt",
-            identifier,
-            tuple(remainder),
-            payload,
-            payload_str,
+            route,
             inbound,
         )
+        return True
 
 
 class _MailboxComponent:
@@ -123,8 +119,9 @@ class _MailboxComponent:
         self._calls.add("mailbox.handle_processed", payload)
         return True
 
-    async def handle_mqtt(self, identifier: str, payload: bytes, inbound: Any) -> None:
-        self._calls.add("mailbox.handle_mqtt", identifier, payload, inbound)
+    async def handle_mqtt(self, route: Any, inbound: Any) -> bool:
+        self._calls.add("mailbox.handle_mqtt", route, inbound)
+        return True
 
 
 class _PinComponent:
@@ -145,12 +142,11 @@ class _PinComponent:
 
     async def handle_mqtt(
         self,
-        topic: Topic,
-        parts: list[str],
-        payload_str: str,
+        route: Any,
         inbound: Any,
-    ) -> None:
-        self._calls.add("pin.handle_mqtt", topic, tuple(parts), payload_str, inbound)
+    ) -> bool:
+        self._calls.add("pin.handle_mqtt", route, inbound)
+        return True
 
 
 class _ProcessComponent:
@@ -159,6 +155,10 @@ class _ProcessComponent:
 
     async def handle_run(self, seq_id: int, payload: bytes) -> bool:
         self._calls.add("process.handle_run", payload)
+        return True
+
+    async def handle_mqtt(self, route: Any, inbound: Any) -> bool:
+        self._calls.add("process.handle_mqtt", route, inbound)
         return True
 
     async def handle_run_async(self, seq_id: int, payload: bytes) -> bool:
@@ -186,17 +186,17 @@ class _SystemComponent:
         self._calls.add("system.handle_set_baudrate_resp", payload)
         return True
 
-    async def handle_mqtt(self, identifier: str, remainder: list[str], inbound: Any) -> bool:
-        self._calls.add("system.handle_mqtt", identifier, tuple(remainder), inbound)
-        return identifier != "nope"
+    async def handle_mqtt(self, route: Any, inbound: Any) -> bool:
+        self._calls.add("system.handle_mqtt", route, inbound)
+        return route.identifier != "nope"
 
 
 class _SpiComponent:
     def __init__(self, calls: _Calls):
         self._calls = calls
 
-    async def handle_mqtt(self, identifier: str, remainder: list[str], inbound: Any) -> bool:
-        self._calls.add("spi.handle_mqtt", identifier, tuple(remainder), inbound)
+    async def handle_mqtt(self, route: Any, inbound: Any) -> bool:
+        self._calls.add("spi.handle_mqtt", route, inbound)
         return True
 
     async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
@@ -462,7 +462,7 @@ async def test_console_topic_rejects_by_policy_and_accepts_payload_types(runtime
         inbound2,
         parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
     )
-    assert any(name == "console.handle_mqtt_input" for name, _ in calls2.items)
+    assert any(name == "console.handle_mqtt" for name, _ in calls2.items)
 
 
 @pytest.mark.asyncio
@@ -574,19 +574,23 @@ async def test_system_topic_bridge_get_handlers_and_fallback_to_component(runtim
         inbound3,
         parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
     )
-    assert ("system.handle_mqtt", ("nope", (), inbound3)) in calls.items
+    assert any(
+        name == "system.handle_mqtt" and args[1] is inbound3
+        for name, args in calls.items
+    )
 
 
 def test_payload_bytes_converts_supported_types_and_rejects_others() -> None:
-    assert BridgeDispatcher._payload_bytes(b"a") == b"a"  # type: ignore[reportPrivateUsage]
-    assert BridgeDispatcher._payload_bytes(bytearray(b"a")) == b"a"  # type: ignore[reportPrivateUsage]
-    assert BridgeDispatcher._payload_bytes(memoryview(b"a")) == b"a"  # type: ignore[reportPrivateUsage]
-    assert BridgeDispatcher._payload_bytes(None) == b""  # type: ignore[reportPrivateUsage]
-    assert BridgeDispatcher._payload_bytes("hi") == b"hi"  # type: ignore[reportPrivateUsage]
-    assert BridgeDispatcher._payload_bytes(12) == b"12"  # type: ignore[reportPrivateUsage]
-    assert BridgeDispatcher._payload_bytes(1.5) == b"1.5"  # type: ignore[reportPrivateUsage]
+    from mcubridge.services.base import BaseComponent
+    assert BaseComponent._payload_bytes(b"a") == b"a"  # type: ignore[reportPrivateUsage]
+    assert BaseComponent._payload_bytes(bytearray(b"a")) == b"a"  # type: ignore[reportPrivateUsage]
+    assert BaseComponent._payload_bytes(memoryview(b"a")) == b"a"  # type: ignore[reportPrivateUsage]
+    assert BaseComponent._payload_bytes(None) == b""  # type: ignore[reportPrivateUsage]
+    assert BaseComponent._payload_bytes("hi") == b"hi"  # type: ignore[reportPrivateUsage]
+    assert BaseComponent._payload_bytes(12) == b"12"  # type: ignore[reportPrivateUsage]
+    assert BaseComponent._payload_bytes(1.5) == b"1.5"  # type: ignore[reportPrivateUsage]
     # Dictionaries/objects are now coerced to string then bytes
-    assert BridgeDispatcher._payload_bytes({}) == b"{}"  # type: ignore[reportPrivateUsage]
+    assert BaseComponent._payload_bytes({}) == b"{}"  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio

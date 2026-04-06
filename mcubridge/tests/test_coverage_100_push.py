@@ -22,7 +22,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
-from tests._helpers import make_test_config as _make_config
+from tests._helpers import make_test_config as _make_config, make_route, make_mqtt_msg
 
 
 # ---------------------------------------------------------------------------
@@ -66,21 +66,25 @@ class TestSpiComponent:
         ids=["begin", "end", "transfer", "unknown_action"],
     )
     async def test_simple_action(self: Any, spi: Any, action: Any, payload: Any, expected: Any):
-        assert await spi.handle_mqtt(action, [], payload, MagicMock()) is expected
+        from mcubridge.protocol.topics import Topic
+        assert await spi.handle_mqtt(make_route(Topic.SPI, action), make_mqtt_msg(payload)) is expected
 
     @pytest.mark.asyncio
     async def test_config_valid(self: Any, spi: Any):
+        from mcubridge.protocol.topics import Topic
         payload = msgspec.json.encode({"bit_order": 1, "data_mode": 0, "frequency": 8_000_000})
-        assert await spi.handle_mqtt("config", [], payload, MagicMock()) is True
+        assert await spi.handle_mqtt(make_route(Topic.SPI, "config"), make_mqtt_msg(payload)) is True
 
     @pytest.mark.asyncio
     async def test_config_malformed_json(self: Any, spi: Any):
-        assert await spi.handle_mqtt("config", [], b"not-json", MagicMock()) is False
+        from mcubridge.protocol.topics import Topic
+        assert await spi.handle_mqtt(make_route(Topic.SPI, "config"), make_mqtt_msg(b"not-json")) is False
 
     @pytest.mark.asyncio
     async def test_exception_path(self: Any, spi: Any):
+        from mcubridge.protocol.topics import Topic
         spi.ctx.send_frame.side_effect = RuntimeError("boom")
-        assert await spi.handle_mqtt("begin", [], b"", MagicMock()) is False
+        assert await spi.handle_mqtt(make_route(Topic.SPI, "begin"), make_mqtt_msg(b"")) is False
 
     @pytest.mark.asyncio
     async def test_transfer_resp_valid(self: Any, spi: Any):

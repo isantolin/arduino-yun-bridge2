@@ -7,7 +7,7 @@ import structlog
 from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, ConsoleAction
-from mcubridge.protocol.structures import ConsoleWritePacket
+from mcubridge.protocol.structures import ConsoleWritePacket, TopicRoute
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..protocol.topics import Topic, topic_path
@@ -54,7 +54,12 @@ class ConsoleComponent(BaseComponent):
         self.state.serial_tx_allowed.set()
         await self.flush_queue()
 
-    async def handle_mqtt_input(
+    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
+        payload = self._payload_bytes(inbound.payload)
+        await self._handle_mqtt_input(payload, inbound)
+        return True
+
+    async def _handle_mqtt_input(
         self,
         payload: bytes,
         inbound: Message | None = None,

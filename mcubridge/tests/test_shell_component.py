@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Coroutine
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -76,10 +76,6 @@ class RecordingBridgeContext:
         task = AsyncMock()
         await coroutine
         return task
-
-
-def _fake_inbound() -> Message:
-    return cast(Message, object())
 
 
 @pytest.mark.asyncio

@@ -29,7 +29,7 @@ def make_route(
     prefix: str = "br",
 ) -> TopicRoute:
     """Build a TopicRoute for tests."""
-    raw = f"{prefix}/{topic if isinstance(topic, str) else topic.value}/{'/'.join(segments)}"
+    raw = f"{prefix}/{topic}/{'/'.join(segments)}"
     return TopicRoute(raw=raw, prefix=prefix, topic=topic, segments=tuple(segments))
 
 

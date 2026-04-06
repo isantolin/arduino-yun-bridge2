@@ -58,6 +58,23 @@ rle_offset = 2
 rle_min_compress_input_size = 8
 rle_min_compress_savings = 4
 
+# MsgPack wire-format constants (RFC 8949 subset)
+msgpack_fixarray_mask = 0x90
+msgpack_fixstr_mask = 0xA0
+msgpack_bin8 = 0xC4
+msgpack_bin16 = 0xC5
+msgpack_uint8_fmt = 0xCC
+msgpack_uint16_fmt = 0xCD
+msgpack_uint32_fmt = 0xCE
+msgpack_str8 = 0xD9
+msgpack_positive_fixint_max = 0x7F
+msgpack_fixarray_type_mask = 0xF0
+msgpack_fixarray_value_mask = 0x0F
+msgpack_fixstr_type_mask = 0xE0
+msgpack_fixstr_value_mask = 0x1F
+msgpack_uint8_max_val = 0xFF
+msgpack_uint16_max_val = 0xFFFF
+
 [compression]
 none = 0x00
 rle = 0x01

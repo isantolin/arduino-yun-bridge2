@@ -356,6 +356,22 @@ class JinjaGenerator:
             {"name": "RPC_PROCESS_COMMAND_MAX", "type": "uint16_t", "value": c["process_command_max"]},
             {"name": "RPC_SPI_COMMAND_MIN", "type": "uint16_t", "value": c["spi_command_min"]},
             {"name": "RPC_SPI_COMMAND_MAX", "type": "uint16_t", "value": c["spi_command_max"]},
+            # MsgPack wire-format constants
+            {"name": "MSGPACK_FIXARRAY_MASK", "type": "uint8_t", "value": c["msgpack_fixarray_mask"]},
+            {"name": "MSGPACK_FIXSTR_MASK", "type": "uint8_t", "value": c["msgpack_fixstr_mask"]},
+            {"name": "MSGPACK_BIN8", "type": "uint8_t", "value": c["msgpack_bin8"]},
+            {"name": "MSGPACK_BIN16", "type": "uint8_t", "value": c["msgpack_bin16"]},
+            {"name": "MSGPACK_UINT8_FMT", "type": "uint8_t", "value": c["msgpack_uint8_fmt"]},
+            {"name": "MSGPACK_UINT16_FMT", "type": "uint8_t", "value": c["msgpack_uint16_fmt"]},
+            {"name": "MSGPACK_UINT32_FMT", "type": "uint8_t", "value": c["msgpack_uint32_fmt"]},
+            {"name": "MSGPACK_STR8", "type": "uint8_t", "value": c["msgpack_str8"]},
+            {"name": "MSGPACK_POSITIVE_FIXINT_MAX", "type": "uint8_t", "value": c["msgpack_positive_fixint_max"]},
+            {"name": "MSGPACK_FIXARRAY_TYPE_MASK", "type": "uint8_t", "value": c["msgpack_fixarray_type_mask"]},
+            {"name": "MSGPACK_FIXARRAY_VALUE_MASK", "type": "uint8_t", "value": c["msgpack_fixarray_value_mask"]},
+            {"name": "MSGPACK_FIXSTR_TYPE_MASK", "type": "uint8_t", "value": c["msgpack_fixstr_type_mask"]},
+            {"name": "MSGPACK_FIXSTR_VALUE_MASK", "type": "uint8_t", "value": c["msgpack_fixstr_value_mask"]},
+            {"name": "MSGPACK_UINT8_MAX_VAL", "type": "uint8_t", "value": c["msgpack_uint8_max_val"]},
+            {"name": "MSGPACK_UINT16_MAX_VAL", "type": "uint16_t", "value": c["msgpack_uint16_max_val"]},
         ]
 
         hs = spec.handshake

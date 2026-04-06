@@ -78,8 +78,8 @@ void sync_bridge(BiStream& stream) {
                              9, 10, 11, 12, 13, 14, 15, 16};
 
   rpc::payload::LinkSync sync_msg = {};
-  memcpy(sync_msg.nonce, nonce, 16);
-  ba.computeHandshakeTag(nonce, 16, sync_msg.tag);
+  memcpy(sync_msg.nonce.data(), nonce, 16);
+  ba.computeHandshakeTag(nonce, 16, sync_msg.tag.data());
 
   rpc::Frame frame = {};
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;

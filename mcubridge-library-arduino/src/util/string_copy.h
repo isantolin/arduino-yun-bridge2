@@ -49,15 +49,6 @@ inline void copy_join(etl::string_view base, etl::span<const etl::string_view> p
   *current = rpc::RPC_NULL_TERMINATOR;
 }
 
-// Legacy aliases during migration
-inline void pb_copy_string(etl::string_view src, char* dst, size_t dst_size) {
-  copy_string(src, dst, dst_size);
-}
-
-inline void pb_copy_join(etl::string_view base, etl::span<const etl::string_view> parts, char* dst, size_t dst_size) {
-  copy_join(base, parts, dst, dst_size);
-}
-
 } // namespace util
 } // namespace rpc
 

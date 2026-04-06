@@ -62,8 +62,8 @@ sync_frame.header.version = rpc::PROTOCOL_VERSION;
 sync_frame.header.command_id =
     rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
 rpc::payload::LinkSync sync_msg = {};
-memcpy(sync_msg.nonce, nonce, 16);
-memcpy(sync_msg.tag, tag, 16);
+memcpy(sync_msg.nonce.data(), nonce, 16);
+memcpy(sync_msg.tag.data(), tag, 16);
 
 etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_success;
 sync_frame.payload = etl::span<const uint8_t>(payload_buffer_success.data(), payload_buffer_success.size());
@@ -91,8 +91,8 @@ sync_frame.header.version = rpc::PROTOCOL_VERSION;
 sync_frame.header.command_id =
     rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
 rpc::payload::LinkSync sync_msg = {};
-memcpy(sync_msg.nonce, nonce, 16);
-memcpy(sync_msg.tag, wrong_tag, 16);
+memcpy(sync_msg.nonce.data(), nonce, 16);
+memcpy(sync_msg.tag.data(), wrong_tag, 16);
 
 etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_failure;
 sync_frame.payload = etl::span<const uint8_t>(payload_buffer_failure.data(), payload_buffer_failure.size());

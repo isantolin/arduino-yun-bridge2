@@ -425,7 +425,7 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
         const size_t len = etl::min(data.size(), _decompression_buffer.size());
         etl::copy_n(data.begin(), len, _decompression_buffer.begin());
         if (len > 0) {
-          size_t xferred = SPIService.transfer(_decompression_buffer.data(), len);
+          size_t xferred = SPIService.transfer(etl::span<uint8_t>(_decompression_buffer.data(), len));
           if (xferred < len) { // GCOVR_EXCL_START — host mock always succeeds
             enterSafeState();
             _sendError(rpc::StatusCode::STATUS_ERROR, ctx.raw_command, ctx.sequence_id);
@@ -477,17 +477,17 @@ void BridgeClass::_handleGetFreeMemory(const bridge::router::CommandContext& ctx
 void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::LinkSync>(ctx, [this, &ctx](const rpc::payload::LinkSync& msg) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> tag;
-    _computeHandshakeTag(etl::span<const uint8_t>(msg.nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH), etl::span<uint8_t>(tag));
+    _computeHandshakeTag(etl::span<const uint8_t>(msg.nonce.data(), msg.nonce.size()), etl::span<uint8_t>(tag));
     if (!_shared_secret.empty()) {
       etl::span<const uint8_t> expected(tag);
-      etl::span<const uint8_t> received(msg.tag, rpc::RPC_HANDSHAKE_TAG_LENGTH);
+      etl::span<const uint8_t> received(msg.tag.data(), msg.tag.size());
       if (!rpc::security::timing_safe_equal(expected, received)) {
         _fsm.handshakeStart(); _fsm.handshakeFailed(); return;
       }
     }
     rpc::payload::LinkSync resp = {};
-    etl::copy_n(msg.nonce, rpc::RPC_HANDSHAKE_NONCE_LENGTH, resp.nonce);
-    etl::copy_n(tag.data(), tag.size(), resp.tag);
+    etl::copy_n(msg.nonce.data(), msg.nonce.size(), resp.nonce.data());
+    etl::copy_n(tag.data(), tag.size(), resp.tag.data());
     _fsm.handshakeStart(); _fsm.handshakeComplete();
     _sendPbResponse(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
     notify_observers(MsgBridgeSynchronized());
@@ -717,6 +717,10 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::span<const uint8_
   (void)sendFrame(status_code, 0, payload);
   if (_status_handler.is_valid()) _status_handler(status_code, payload);
 }
+
+// Compile-time proof that MAX_PAYLOAD_SIZE-1 is a valid index into _transient_buffer.
+static_assert(rpc::MAX_PAYLOAD_SIZE <= rpc::MAX_RAW_FRAME_SIZE + 2,
+              "MAX_PAYLOAD_SIZE must fit within _transient_buffer");
 
 void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::string_view message) {
   if (message.empty()) {

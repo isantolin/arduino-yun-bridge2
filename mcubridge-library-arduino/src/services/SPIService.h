@@ -8,6 +8,7 @@
 #include <SPI.h>
 #undef min
 #undef max
+#include <etl/span.h>
 #include "protocol/rpc_structs.h"
 
 class SPIServiceClass {
@@ -17,7 +18,7 @@ public:
   void begin();
   void end();
   void setConfig(uint32_t frequency, uint8_t bitOrder, uint8_t dataMode);
-  size_t transfer(uint8_t* buffer, size_t len);
+  size_t transfer(etl::span<uint8_t> buffer);
 
   bool isInitialized() const { return _initialized; }
 

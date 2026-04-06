@@ -23,14 +23,14 @@ void SPIServiceClass::setConfig(uint32_t frequency, uint8_t bitOrder, uint8_t da
   _settings = SPISettings(frequency, bitOrder, dataMode);
 }
 
-size_t SPIServiceClass::transfer(uint8_t* buffer, size_t len) {
+size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
   if (!_initialized) return 0;
-  if (len == 0) return 0;
+  if (buffer.empty()) return 0;
 
   SPI.beginTransaction(_settings);
   // [SIL-2] Timeout protection for SPI
   uint32_t start = bridge::now_ms();
-  for (size_t i = 0; i < len; ++i) {
+  for (size_t i = 0; i < buffer.size(); ++i) {
     if (bridge::now_ms() - start > rpc::RPC_SPI_TIMEOUT_MS) {
       // Hardware failure
       SPI.endTransaction();
@@ -39,7 +39,7 @@ size_t SPIServiceClass::transfer(uint8_t* buffer, size_t len) {
     buffer[i] = SPI.transfer(buffer[i]);
   }
   SPI.endTransaction();
-  return len;
+  return buffer.size();
 }
 
 #else
@@ -49,7 +49,7 @@ SPIServiceClass::SPIServiceClass() : _initialized(false) {}
 void SPIServiceClass::begin() { _initialized = true; }
 void SPIServiceClass::end() { _initialized = false; }
 void SPIServiceClass::setConfig(uint32_t, uint8_t, uint8_t) {}
-size_t SPIServiceClass::transfer(uint8_t*, size_t len) { return len; }
+size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) { return buffer.size(); }
 
 #endif /* BRIDGE_HOST_TEST */
 

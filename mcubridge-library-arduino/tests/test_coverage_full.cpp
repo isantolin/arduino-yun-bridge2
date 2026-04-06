@@ -334,7 +334,7 @@ static void test_spi_mock_methods() {
   SPIService.setConfig(1000000, 0, 0);  // Covers line 50
 
   uint8_t buf[] = {0xAA, 0xBB};
-  size_t xferred = SPIService.transfer(buf, 2);  // Covers line 52
+  size_t xferred = SPIService.transfer(etl::span<uint8_t>(buf, 2));  // Covers line 52
   TEST_ASSERT_EQUAL(2U, xferred);
 
   SPIService.end();  // Covers line 49

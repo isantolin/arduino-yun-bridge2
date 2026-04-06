@@ -95,8 +95,8 @@ void integrated_test_bridge_core() {
   accessor.computeHandshakeTag(nonce, 16, tag);
   
   rpc::payload::LinkSync sync_msg = {};
-  memcpy(sync_msg.nonce, nonce, 16);
-  memcpy(sync_msg.tag, tag, 16);
+  memcpy(sync_msg.nonce.data(), nonce, 16);
+  memcpy(sync_msg.tag.data(), tag, 16);
 
   // Create handshake payload using mutable sync object payload
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;

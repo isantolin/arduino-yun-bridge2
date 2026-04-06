@@ -12,6 +12,8 @@
 #include <string.h>
 #include <etl/string_view.h>
 #include <etl/optional.h>
+#include <etl/array.h>
+#include <etl/algorithm.h>
 #include <etl/span.h>
 #include <etl/expected.h>
 #include "rpc_protocol.h"
@@ -32,7 +34,7 @@ struct {{ s.name }} {
 {%- elif f.kind == 'bin_view' %}
     etl::span<const uint8_t> {{ f.name }};
 {%- elif f.kind == 'bin_fixed' %}
-    uint8_t {{ f.name }}[{{ f.size }}] = {};
+    etl::array<uint8_t, {{ f.size }}> {{ f.name }} = {};
 {%- elif f.kind == 'str_fixed' %}
     char {{ f.name }}[{{ f.size }}] = {};
 {%- endif %}
@@ -50,7 +52,7 @@ struct {{ s.name }} {
 {%- elif f.kind == 'bin_view' %}
         enc.write_bin({{ f.name }});
 {%- elif f.kind == 'bin_fixed' %}
-        enc.write_bin(etl::span<const uint8_t>({{ f.name }}, {{ f.size }}));
+        enc.write_bin(etl::span<const uint8_t>({{ f.name }}.data(), {{ f.name }}.size()));
 {%- elif f.kind == 'str_fixed' %}
         enc.write_str({{ f.name }}, strnlen({{ f.name }}, sizeof({{ f.name }}) - 1));
 {%- endif %}
@@ -73,7 +75,7 @@ struct {{ s.name }} {
 {%- elif f.kind == 'bin_fixed' %}
         {
             auto _view_{{ f.name }} = dec.read_bin_view();
-            if (_view_{{ f.name }}.size() == {{ f.size }}) memcpy({{ f.name }}, _view_{{ f.name }}.data(), {{ f.size }});
+            if (_view_{{ f.name }}.size() == {{ f.size }}) etl::copy_n(_view_{{ f.name }}.data(), {{ f.size }}, {{ f.name }}.data());
             else if (dec.ok()) return false;
         }
 {%- elif f.kind == 'str_fixed' %}

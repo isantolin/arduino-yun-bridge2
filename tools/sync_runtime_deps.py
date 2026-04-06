@@ -101,9 +101,10 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
 
     # Collect only runtime dependencies for project.dependencies
     runtime_pip_specs = sorted([
-        dep["pip"] for dep in deps
-        if dep.get("pip") and dep["name"] not in BUILD_ONLY_PACKAGES
-        and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES)
+        dep["pip"]
+        for dep in deps
+        if (dep.get("pip") and dep["name"] not in BUILD_ONLY_PACKAGES
+            and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES))  # noqa: W503
     ])
 
     content = PYPROJECT_PATH.read_text(encoding="utf-8")

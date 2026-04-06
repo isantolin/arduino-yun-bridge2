@@ -284,4 +284,3 @@ if __name__ == "__main__":
     apk_disk = create_apk_disk(Path(apk_dir_arg), repo_root)
     extroot_disk = create_extroot_disk()
     run_test(apk_disk, extroot_disk)
-

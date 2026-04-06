@@ -65,7 +65,9 @@ async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> 
 
     from mcubridge.protocol import structures
     expected = structures.ConsoleWritePacket(data=payload).encode()
-    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, expected)  # type: ignore[reportUnknownMemberType]
+    console_component.ctx.send_frame.assert_awaited_once_with(  # type: ignore[reportUnknownMemberType]
+        Command.CMD_CONSOLE_WRITE.value, expected,
+    )
 
 
 @pytest.mark.asyncio
@@ -101,7 +103,9 @@ async def test_flush_queue(console_component: ConsoleComponent) -> None:
     # Setup mock state behavior
     queue = deque([b"queued"])
     console_component.state.console_to_mcu_queue = queue  # type: ignore[reportAttributeAccessIssue]
-    console_component.state.pop_console_chunk.side_effect = lambda: (queue.popleft() if queue else None)  # type: ignore[reportAttributeAccessIssue]
+    console_component.state.pop_console_chunk.side_effect = (  # type: ignore[reportAttributeAccessIssue]
+        lambda: (queue.popleft() if queue else None)
+    )
 
     console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
@@ -109,5 +113,7 @@ async def test_flush_queue(console_component: ConsoleComponent) -> None:
 
     from mcubridge.protocol import structures
     expected = structures.ConsoleWritePacket(data=b'queued').encode()
-    console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, expected)  # type: ignore[reportUnknownMemberType]
+    console_component.ctx.send_frame.assert_awaited_once_with(  # type: ignore[reportUnknownMemberType]
+        Command.CMD_CONSOLE_WRITE.value, expected,
+    )
     assert len(queue) == 0

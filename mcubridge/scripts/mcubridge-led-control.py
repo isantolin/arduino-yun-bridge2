@@ -103,5 +103,6 @@ def main(
         sys.stderr.write(f"Error: failed to publish MQTT message: {e}\n")
         raise typer.Exit(code=4)
 
+
 if __name__ == "__main__":
     app()

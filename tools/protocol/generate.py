@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 else:
     _SPEC_MODEL_PATH = (
         Path(__file__).resolve().parent.parent.parent
-        / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"
+        / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"  # noqa: W503
     )
     _loader_spec = importlib.util.spec_from_file_location("spec_model", str(_SPEC_MODEL_PATH))
     assert _loader_spec is not None and _loader_spec.loader is not None

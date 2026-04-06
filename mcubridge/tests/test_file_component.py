@@ -267,14 +267,14 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
     async def _send_frame(command_id: int, payload: bytes = b"", seq_id: int | None = None) -> bool:
         bridge.sent_frames.append((command_id, payload))
         if command_id == Command.CMD_FILE_READ.value:
-            await component.handle_read_response(0,
-                                                 structures.FileReadResponsePacket(content=b"mcu-").encode()
+            await component.handle_read_response(
+                0, structures.FileReadResponsePacket(content=b"mcu-").encode(),
             )
-            await component.handle_read_response(0,
-                                                 structures.FileReadResponsePacket(content=b"data").encode()
+            await component.handle_read_response(
+                0, structures.FileReadResponsePacket(content=b"data").encode(),
             )
-            await component.handle_read_response(0,
-                                                 structures.FileReadResponsePacket(content=b"").encode()
+            await component.handle_read_response(
+                0, structures.FileReadResponsePacket(content=b"").encode(),
             )
         return True
 
@@ -539,7 +539,9 @@ async def test_perform_file_operation_oserror_returns_false(
         raise OSError("read_failed")
 
     monkeypatch.setattr(Path, "read_bytes", boom)
-    ok, content, reason = await component._perform_file_operation("read", b"\x08file.txt")  # type: ignore[reportPrivateUsage]
+    ok, content, reason = await component._perform_file_operation(  # type: ignore[reportPrivateUsage]
+        "read", b"\x08file.txt",
+    )
     assert ok is False
     assert content is None
     assert reason is not None

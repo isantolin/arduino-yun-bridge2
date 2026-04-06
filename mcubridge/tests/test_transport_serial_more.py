@@ -42,7 +42,8 @@ async def test_negotiate_baudrate_success() -> None:
 
             # Mock _serial_sender to avoid real I/O and return True
             async def mock_sender(cmd: Any, payload: Any):
-                if transport._negotiation_future and not transport._negotiation_future.done():  # type: ignore[reportPrivateUsage]
+                # type: ignore[reportPrivateUsage]
+                if transport._negotiation_future and not transport._negotiation_future.done():
                     transport._negotiation_future.set_result(True)  # type: ignore[reportPrivateUsage]
                 return True
 

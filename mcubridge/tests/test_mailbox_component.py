@@ -33,7 +33,8 @@ class EnqueueHook(Protocol):
         message: QueuedPublish,
         *,
         reply_context: Message | None = None,
-    ) -> Awaitable[None]: ...
+    ) -> Awaitable[None]:
+        ...
 
 
 class DummyBridge(BridgeContext):

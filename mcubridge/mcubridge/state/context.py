@@ -250,7 +250,8 @@ class RuntimeState(msgspec.Struct):
     )
 
     if TYPE_CHECKING:
-        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool: ...
+        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
+            ...
 
     @property
     def is_connected(self) -> bool:
@@ -303,8 +304,12 @@ class RuntimeState(msgspec.Struct):
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
-    mailbox_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())  # noqa: PLW0108
-    mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(default_factory=lambda: PersistentQueue[bytes]())  # noqa: PLW0108
+    mailbox_queue: PersistentQueue[bytes] = msgspec.field(  # noqa: PLW0108
+        default_factory=lambda: PersistentQueue[bytes](),
+    )
+    mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(  # noqa: PLW0108
+        default_factory=lambda: PersistentQueue[bytes](),
+    )
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
@@ -318,7 +323,9 @@ class RuntimeState(msgspec.Struct):
     running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
-    allowed_policy: AllowedCommandPolicy = msgspec.field(default_factory=lambda: AllowedCommandPolicy.create_empty())  # noqa: PLW0108
+    allowed_policy: AllowedCommandPolicy = msgspec.field(  # noqa: PLW0108
+        default_factory=lambda: AllowedCommandPolicy.create_empty(),
+    )
     topic_authorization: TopicAuthorization | None = None
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
@@ -857,6 +864,7 @@ class RuntimeState(msgspec.Struct):
         if exc:
             self.mqtt_spool_last_error = str(exc)
         self.record_mqtt_spool_error()
+
     async def stash_mqtt_message(self, message: QueuedPublish) -> bool:
         if not await self.ensure_spool():
             return False

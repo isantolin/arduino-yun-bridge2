@@ -114,7 +114,7 @@ async def test_poll_process_running(process_comp: ProcessComponent) -> None:
     batch = await process_comp.poll_process(pid)
     assert batch.status_byte == Status.OK.value
     assert batch.stdout_chunk == b"hello"
-    assert not proc.stdout_buffer # Should be drained
+    assert not proc.stdout_buffer  # Should be drained
 
 
 @pytest.mark.asyncio
@@ -132,8 +132,8 @@ async def test_stop_process_success(process_comp: ProcessComponent) -> None:
     mock_psutil_instance.terminate = MagicMock()
 
     with patch("psutil.Process", return_value=mock_psutil_instance), \
-         patch("psutil.wait_procs", return_value=([mock_psutil_instance], [])), \
-         patch("asyncio.create_subprocess_shell", return_value=mock_process):
+            patch("psutil.wait_procs", return_value=([mock_psutil_instance], [])), \
+            patch("asyncio.create_subprocess_shell", return_value=mock_process):
         mock_process.pid = 123
         pid = await process_comp.run_async("echo hello")
 

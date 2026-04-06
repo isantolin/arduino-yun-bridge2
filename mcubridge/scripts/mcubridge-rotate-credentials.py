@@ -122,5 +122,6 @@ def main() -> None:
         if backup_config.exists():
             backup_config.unlink()
 
+
 if __name__ == "__main__":
     app()

@@ -95,7 +95,10 @@ def test_publish_safe_configures_tls(
 
     import ssl
 
-    monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: MagicMock())  # type: ignore[reportUnknownLambdaType]
+    monkeypatch.setattr(  # type: ignore[reportUnknownLambdaType]
+        ssl, "create_default_context",
+        lambda *args, **kwargs: MagicMock(),
+    )
 
     runtime_config.mqtt_user = "user"
     runtime_config.mqtt_pass = "secret"
@@ -159,9 +162,11 @@ def test_main_invokes_publish(
     monkeypatch.setattr(
         pin_rest_module,
         "publish_safe",
-        lambda topic, payload, config: captured.update({"topic": topic, "payload": payload}),  # type: ignore[reportUnknownLambdaType]
+        lambda topic, payload, config: captured.update(
+            {"topic": topic, "payload": payload}),  # type: ignore[reportUnknownLambdaType]
     )
-    monkeypatch.setattr(pin_rest_module, "configure_logging", lambda config: None)  # type: ignore[reportUnknownLambdaType]
+    # type: ignore[reportUnknownLambdaType]
+    monkeypatch.setattr(pin_rest_module, "configure_logging", lambda config: None)
 
     environ = {
         "REQUEST_METHOD": "POST",
@@ -200,7 +205,8 @@ def test_main_rejects_invalid_state(
     )
 
     monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: fake_config)
-    monkeypatch.setattr(pin_rest_module, "configure_logging", lambda config: None)  # type: ignore[reportUnknownLambdaType]
+    # type: ignore[reportUnknownLambdaType]
+    monkeypatch.setattr(pin_rest_module, "configure_logging", lambda config: None)
 
     environ = {
         "REQUEST_METHOD": "POST",

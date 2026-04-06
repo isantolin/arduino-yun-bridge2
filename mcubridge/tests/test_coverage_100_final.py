@@ -190,7 +190,8 @@ class TestInit:
         import mcubridge
 
         # Temporarily remove CallbackAPIVersion from the real module
-        orig = pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
+        orig = pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
+        # type: ignore[reportUnknownMemberType, reportUnknownVariableType]
         try:
             del pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
             with pytest.raises(SystemExit):
@@ -1460,4 +1461,3 @@ class TestMqttHelpers:
 
         msg = make_inbound_message("test/topic", b"payload")
         assert msg.properties is None
-

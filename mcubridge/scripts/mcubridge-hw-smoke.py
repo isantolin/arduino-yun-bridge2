@@ -131,5 +131,6 @@ def main() -> None:
         sys.stderr.write(f"[mcubridge-hw-smoke] ERROR: System or tool failed: {e}\n")
         raise typer.Exit(code=1)
 
+
 if __name__ == "__main__":
     app()

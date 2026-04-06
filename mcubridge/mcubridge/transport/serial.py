@@ -53,9 +53,14 @@ class SerialTransport:
 
     if TYPE_CHECKING:
         # FSM trigger stubs for static analysis (bound at runtime by transitions.Machine)
-        def begin_negotiate(self) -> None: ...
-        def mark_connected(self) -> None: ...
-        def mark_disconnected(self) -> None: ...
+        def begin_negotiate(self) -> None:
+            ...
+
+        def mark_connected(self) -> None:
+            ...
+
+        def mark_disconnected(self) -> None:
+            ...
 
     def __init__(
         self,
@@ -143,7 +148,7 @@ class SerialTransport:
         wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
         retry=tenacity.retry_if_exception(
             lambda e: not isinstance(e, asyncio.CancelledError)
-            and "SerialHandshakeFatal" not in type(e).__name__
+            and "SerialHandshakeFatal" not in type(e).__name__  # noqa: W503
         ),
         before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
     )

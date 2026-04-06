@@ -189,7 +189,7 @@ def test_handle_get_version_resp_malformed(
         messages = (record.getMessage() for record in caplog.records)
         assert any(
             "Malformed structures.VersionResponsePacket" in msg
-            or "Malformed VersionResponsePacket" in msg
+            or "Malformed VersionResponsePacket" in msg  # noqa: W503
             for msg in messages
         )
 

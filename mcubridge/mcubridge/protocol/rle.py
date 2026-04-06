@@ -28,6 +28,13 @@ from construct import (
 
 from . import protocol
 
+
+def _rle_decode(obj, ctx):  # type: ignore[reportUnknownParameterType, reportMissingParameterType]
+    """Decode an RLE escape sequence into repeated bytes."""
+    count = 1 if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER else int(obj.count_m2) + protocol.RLE_OFFSET
+    return bytes([obj.value]) * count
+
+
 # [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
 RLE_ESCAPE: Construct = Struct(
     "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),
@@ -42,12 +49,7 @@ RLE_DECODER: Construct = Struct(
         Select(
             ExprAdapter(
                 RLE_ESCAPE,
-                decoder=lambda obj, ctx: bytes([obj.value])  # type: ignore[reportUnknownLambdaType]
-                * (
-                    1
-                    if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER  # type: ignore[reportUnknownMemberType]
-                    else int(obj.count_m2) + protocol.RLE_OFFSET  # type: ignore[reportUnknownMemberType]
-                ),
+                decoder=_rle_decode,
                 encoder=lambda obj, ctx: None,  # type: ignore[reportUnknownLambdaType]
             ),
             # Literal byte (MUST NOT be the escape byte)
@@ -55,7 +57,9 @@ RLE_DECODER: Construct = Struct(
                 FocusedSeq(
                     "value",
                     "value" / Int8ub,
-                    "_" / Check(lambda ctx: ctx.value != protocol.RLE_ESCAPE_BYTE),  # type: ignore[reportUnknownLambdaType]
+                    "_" / Check(  # type: ignore[reportUnknownLambdaType]
+                        lambda ctx: ctx.value != protocol.RLE_ESCAPE_BYTE,
+                    ),
                 ),
                 decoder=lambda obj, ctx: bytes([obj]),  # type: ignore[reportUnknownLambdaType]
                 encoder=lambda obj, ctx: obj[0],  # type: ignore[reportUnknownLambdaType]

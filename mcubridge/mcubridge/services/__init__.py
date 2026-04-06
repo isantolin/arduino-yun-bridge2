@@ -13,18 +13,18 @@ from .spi import SpiComponent
 from .system import SystemComponent
 
 __all__ = [
-"BridgeContext",
-"BridgeDispatcher",
-"ConsoleComponent",
-"DatastoreComponent",
-"FileComponent",
-"MailboxComponent",
-"PinComponent",
-"ProcessComponent",
-"SpiComponent",
-"SerialHandshakeFatal",
-"SerialHandshakeManager",
-"SerialTimingWindow",
-"SystemComponent",
+    "BridgeContext",
+    "BridgeDispatcher",
+    "ConsoleComponent",
+    "DatastoreComponent",
+    "FileComponent",
+    "MailboxComponent",
+    "PinComponent",
+    "ProcessComponent",
+    "SpiComponent",
+    "SerialHandshakeFatal",
+    "SerialHandshakeManager",
+    "SerialTimingWindow",
+    "SystemComponent",
 
 ]

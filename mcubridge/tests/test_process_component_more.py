@@ -132,7 +132,7 @@ async def test_handle_kill_timeout_releases_slot(
     await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     with patch("psutil.Process") as mock_psutil_cls, \
-         patch("psutil.wait_procs", return_value=([], [])):
+            patch("psutil.wait_procs", return_value=([], [])):
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
         mock_psutil_instance.terminate = MagicMock()
@@ -156,7 +156,7 @@ async def test_handle_kill_process_lookup_error_is_handled(
         process_comp.state.running_processes[pid] = slot
 
     with patch("psutil.Process") as mock_psutil_cls, \
-         patch("psutil.wait_procs", return_value=([], [])):
+            patch("psutil.wait_procs", return_value=([], [])):
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
         ok = await process_comp.handle_kill(0, structures.ProcessKillPacket(pid=pid).encode())

@@ -135,6 +135,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
             transport = SerialTransport(runtime_config, state, cast(Any, service))
 
             orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+
             async def _limited_run(loop: Any):
                 try:
                     await orig_run(transport, loop)
@@ -200,6 +201,7 @@ async def test_serial_reader_task_limits_packet_size(
             transport = SerialTransport(runtime_config, state, cast(Any, service))
 
             orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+
             async def _limited_run(loop: Any):
                 try:
                     await orig_run(transport, loop)
@@ -321,4 +323,3 @@ async def test_mqtt_task_handles_incoming_message(
                 pass
     finally:
         state.cleanup()
-

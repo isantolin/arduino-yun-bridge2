@@ -15,7 +15,6 @@ from mcubridge.state.context import create_runtime_state
 
 
 @pytest.mark.asyncio
-
 @pytest.mark.asyncio
 async def test_handshake_sync_resp_rate_limit() -> None:
     """Test rate limiting in handle_link_sync_resp."""
@@ -39,7 +38,8 @@ async def test_handshake_sync_resp_rate_limit() -> None:
         state.link_handshake_nonce = b"A" * 16
         state.handshake_rate_until = time.monotonic() + 5.0
         assert await manager.handle_link_sync_resp(0, b"A" * 32) is False
-        manager._acknowledge_frame.assert_called_with(Command.CMD_LINK_SYNC_RESP.value, 0, status=Status.MALFORMED)  # type: ignore[reportPrivateUsage]
+        manager._acknowledge_frame.assert_called_with(
+            Command.CMD_LINK_SYNC_RESP.value, 0, status=Status.MALFORMED)  # type: ignore[reportPrivateUsage]
     finally:
         state.cleanup()
 

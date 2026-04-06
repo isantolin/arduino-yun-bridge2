@@ -317,4 +317,3 @@ async def test_mqtt_shell_kill_invokes_processonent(
         mock_mqtt.assert_called()
         route = mock_mqtt.call_args[0][0]
         assert route.segments == ("kill", str(pid))
-

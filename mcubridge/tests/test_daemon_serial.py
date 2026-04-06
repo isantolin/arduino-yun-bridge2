@@ -44,9 +44,9 @@ async def test_serial_reader_task_reconnects():
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
     # Simulate connection dropping by raising IncompleteReadError in the loop
     mock_reader.readuntil.side_effect = [
-        asyncio.IncompleteReadError(b"", None), # First connection lost
-        asyncio.IncompleteReadError(b"", None), # Second connection lost
-        asyncio.IncompleteReadError(b"", None), # Third connection lost
+        asyncio.IncompleteReadError(b"", None),  # First connection lost
+        asyncio.IncompleteReadError(b"", None),  # Second connection lost
+        asyncio.IncompleteReadError(b"", None),  # Third connection lost
     ]
 
     mock_writer = MagicMock(spec=asyncio.StreamWriter)
@@ -58,6 +58,7 @@ async def test_serial_reader_task_reconnects():
 
     # Mock sleep to fast-forward loops and eventually break the run loop
     sleep_count = 0
+
     async def mock_sleep_fn(duration: Any):
         nonlocal sleep_count
         sleep_count += 1

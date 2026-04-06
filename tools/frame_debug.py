@@ -95,7 +95,7 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     # Use sequence_id=0 for debug snapshots
     frame_obj = Frame(command_id=command_id, sequence_id=0, payload=payload)
     raw_frame = frame_obj.build()
-    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
+    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE:], "big")
     encoded_body = cobs_mod.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(
@@ -215,7 +215,7 @@ def main_cmd(
             ser.close()
 
 
-def main(argv: list[str] | None =None):
+def main(argv: list[str] | None = None):
     if argv:
         from typer.testing import CliRunner
 

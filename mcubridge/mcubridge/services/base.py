@@ -27,14 +27,16 @@ class BridgeContext(Protocol):
     config: RuntimeConfig
     state: RuntimeState
 
-    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool: ...
+    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
+        ...
 
     async def enqueue_mqtt(
         self,
         message: QueuedPublish,
         *,
         reply_context: Message | None = None,
-    ) -> None: ...
+    ) -> None:
+        ...
 
     async def publish(
         self,
@@ -47,7 +49,8 @@ class BridgeContext(Protocol):
         properties: tuple[tuple[str, str], ...] = (),
         content_type: str | None = None,
         reply_to: Message | None = None,
-    ) -> None: ...
+    ) -> None:
+        ...
 
     async def acknowledge_mcu_frame(
         self,
@@ -55,14 +58,16 @@ class BridgeContext(Protocol):
         seq_id: int,
         *,
         status: Any = None,
-    ) -> None: ...
+    ) -> None:
+        ...
 
     async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
         name: str | None = None,
-    ) -> asyncio.Task[Any]: ...
+    ) -> asyncio.Task[Any]:
+        ...
 
 
 class BaseComponent:

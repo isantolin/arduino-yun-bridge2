@@ -98,13 +98,16 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
         return None
 
     policy = pyfuncitem.funcargs.get("event_loop_policy")
-    if policy is not None and isinstance(policy, asyncio.AbstractEventLoopPolicy):  # type: ignore[reportGeneralTypeIssues]
+    if isinstance(policy, asyncio.AbstractEventLoopPolicy):  # type: ignore[reportGeneralTypeIssues]
         asyncio.set_event_loop_policy(policy)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}  # type: ignore[reportPrivateUsage]
+        kwargs = {
+            name: pyfuncitem.funcargs[name]
+            for name in pyfuncitem._fixtureinfo.argnames  # type: ignore[reportPrivateUsage]
+        }
         loop.run_until_complete(test_function(**kwargs))
     finally:
         try:

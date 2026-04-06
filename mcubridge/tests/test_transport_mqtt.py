@@ -61,11 +61,15 @@ def test_configure_tls_loads_cert_chain_when_provided(
 
     fake_context = SimpleNamespace(
         minimum_version=None,
-        load_cert_chain=lambda certfile, keyfile: calls.append((certfile, keyfile)),  # type: ignore[reportUnknownLambdaType]
+        load_cert_chain=lambda certfile, keyfile: calls.append(  # type: ignore[reportUnknownLambdaType]
+            (certfile, keyfile)),
         check_hostname=True,
     )
 
-    monkeypatch.setattr(ssl, "create_default_context", lambda *_args, **_kwargs: fake_context)  # type: ignore[reportUnknownLambdaType]
+    monkeypatch.setattr(  # type: ignore[reportUnknownLambdaType]
+        ssl, "create_default_context",
+        lambda *_args, **_kwargs: fake_context,
+    )
     config = _make_config(tls=True, cafile=str(cafile))
     config.mqtt_certfile = str(tmp_path / "client.crt")
     config.mqtt_keyfile = str(tmp_path / "client.key")
@@ -127,7 +131,8 @@ async def test_mqtt_task_requeues_on_publish_failure(
                 return _iter()
 
         monkeypatch.setattr(aiomqtt, "Client", FakeClient)
-        monkeypatch.setattr(mqtt.tenacity, "retry", lambda *args, **kwargs: (lambda fn: fn))  # type: ignore[reportUnknownLambdaType]
+        monkeypatch.setattr(mqtt.tenacity, "retry", lambda *args, **kwargs: (lambda fn: fn)
+                            )  # type: ignore[reportUnknownLambdaType]
         stash_calls: list[QueuedPublish] = []
         stashed = asyncio.Event()
 
@@ -324,4 +329,3 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
         assert msg_count == 0
     finally:
         state.cleanup()
-

@@ -79,4 +79,3 @@ def test_topics_handshake_topic() -> None:
     assert topic_path("p", Topic.SHELL, "123", "kill") == "p/sh/123/kill"
     assert topic_path("p", Topic.CONSOLE, "write") == "p/console/write"
     assert topic_path("p", Topic.MAILBOX, "push") == "p/mailbox/push"
-

@@ -26,4 +26,6 @@ def _check_dependencies():
             "Update your OpenWrt feeds or install python3-paho-mqtt >= 2.0.0."
         )
         sys.exit(1)
+
+
 _check_dependencies()

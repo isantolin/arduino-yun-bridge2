@@ -132,7 +132,5 @@ def test_mcu_inbound_commands_have_cpp_jump_table_handlers() -> None:
         for cmd in mcu_inbound
         if _command_to_handler(cmd["name"]) not in cpp_handlers
     ]
-    assert not missing, (
-        f"{len(missing)} MCU-inbound command(s) without C++ jump-table handler:\n"
-        + "\n".join(f"  {m}" for m in missing)
-    )
+    header = f"{len(missing)} MCU-inbound command(s) without C++ jump-table handler:\n"
+    assert not missing, header + "\n".join(f"  {m}" for m in missing)

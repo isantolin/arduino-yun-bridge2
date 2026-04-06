@@ -367,7 +367,9 @@ async def test_base_track_transaction_overflow():
         nonlocal overflow_called
         overflow_called = True
 
-    async with comp._track_transaction(queue, "c", 2, on_overflow=on_overflow) as allowed:  # type: ignore[reportPrivateUsage]
+    async with comp._track_transaction(  # type: ignore[reportPrivateUsage]
+        queue, "c", 2, on_overflow=on_overflow,
+    ) as allowed:
         assert allowed is False
     assert overflow_called is True
     state.cleanup()

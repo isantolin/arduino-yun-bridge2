@@ -26,9 +26,11 @@ import typer
 
 app = typer.Typer(help="Profile the MCU Bridge daemon and report resource usage.")
 
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ImportMetrics:
@@ -97,26 +99,28 @@ def measure_import(daemon_pkg: str = "mcubridge") -> ImportMetrics:
     rss_after, vms_after = _get_rss_vms_kb()
 
     # Count third-party dependencies (non-stdlib, non-daemon)
-    stdlib_prefixes: set[str] = {"_", "os", "sys", "io", "re", "abc", "enum", "typing",
-                       "collections", "functools", "itertools", "pathlib",
-                       "dataclasses", "contextlib", "asyncio", "logging",
-                       "json", "struct", "hashlib", "hmac", "time", "math",
-                       "copy", "warnings", "inspect", "importlib", "types",
-                       "textwrap", "string", "base64", "xml", "unittest",
-                       "traceback", "linecache", "token", "tokenize",
-                       "codecs", "locale", "signal", "threading", "queue",
-                       "socket", "ssl", "http", "email", "urllib", "posixpath",
-                       "genericpath", "stat", "nt", "ntpath", "fnmatch",
-                       "shutil", "tempfile", "glob", "errno", "select",
-                       "selectors", "subprocess", "multiprocessing", "concurrent",
-                       "pickle", "shelve", "dbm", "csv", "configparser",
-                       "argparse", "gettext", "builtins", "keyword", "operator",
-                       "numbers", "decimal", "fractions", "random", "secrets",
-                       "bisect", "heapq", "array", "weakref", "pprint",
-                       "reprlib", "dis", "opcode", "marshal", "code",
-                       "codeop", "compileall", "py_compile", "zipimport",
-                       "pkgutil", "modulefinder", "runpy", "platform",
-                       "sysconfig", "site", "atexit", "readline", "rlcompleter"}
+    stdlib_prefixes: set[str] = {
+        "_", "os", "sys", "io", "re", "abc", "enum", "typing",
+        "collections", "functools", "itertools", "pathlib",
+        "dataclasses", "contextlib", "asyncio", "logging",
+        "json", "struct", "hashlib", "hmac", "time", "math",
+        "copy", "warnings", "inspect", "importlib", "types",
+        "textwrap", "string", "base64", "xml", "unittest",
+        "traceback", "linecache", "token", "tokenize",
+        "codecs", "locale", "signal", "threading", "queue",
+        "socket", "ssl", "http", "email", "urllib", "posixpath",
+        "genericpath", "stat", "nt", "ntpath", "fnmatch",
+        "shutil", "tempfile", "glob", "errno", "select",
+        "selectors", "subprocess", "multiprocessing", "concurrent",
+        "pickle", "shelve", "dbm", "csv", "configparser",
+        "argparse", "gettext", "builtins", "keyword", "operator",
+        "numbers", "decimal", "fractions", "random", "secrets",
+        "bisect", "heapq", "array", "weakref", "pprint",
+        "reprlib", "dis", "opcode", "marshal", "code",
+        "codeop", "compileall", "py_compile", "zipimport",
+        "pkgutil", "modulefinder", "runpy", "platform",
+        "sysconfig", "site", "atexit", "readline", "rlcompleter",
+    }
     third_party: set[str] = set()
     for k in sys.modules:
         top = k.split(".")[0]

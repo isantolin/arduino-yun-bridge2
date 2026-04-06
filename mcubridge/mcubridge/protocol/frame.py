@@ -55,7 +55,9 @@ RPC_FRAME_HEADER: Construct = Struct(
         encoder=lambda obj, ctx: obj,  # type: ignore[reportUnknownLambdaType]
     ),
     "sequence_id" / Int16ub,
-    "version_check" / Check(lambda ctx: getattr(cast(Any, ctx), "version", 0) == protocol.PROTOCOL_VERSION),  # type: ignore[reportUnknownLambdaType]
+    "version_check" / Check(  # type: ignore[reportUnknownLambdaType]
+        lambda ctx: getattr(cast(Any, ctx), "version", 0) == protocol.PROTOCOL_VERSION,
+    ),
 )
 
 

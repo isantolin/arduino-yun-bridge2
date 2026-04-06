@@ -13,7 +13,6 @@ from collections.abc import Iterable
 from enum import IntEnum
 from pathlib import Path
 from typing import (
-    TYPE_CHECKING,
     Annotated,
     Any,
     ClassVar,
@@ -26,11 +25,6 @@ from typing import (
 
 import msgspec
 import msgspec.msgpack
-
-if TYPE_CHECKING:
-    from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
-
-
 from construct import BitStruct, Flag, Padding, Construct
 
 # [SIL-2] Declarative bitmask definition for MCU capabilities.

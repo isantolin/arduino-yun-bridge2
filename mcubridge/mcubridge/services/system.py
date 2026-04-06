@@ -78,25 +78,25 @@ class SystemComponent(BaseComponent):
         if packet is None:
             return
 
-        major, minor = packet.major, packet.minor
-        self.state.mcu_version = (major, minor)
+        major, minor, patch = packet.major, packet.minor, packet.patch
+        self.state.mcu_version = (major, minor, patch)
         reply_context = self._pending_version.popleft() if self._pending_version else None
-        await self._publish_version((major, minor), reply_context)
-        logger.info("MCU firmware version reported as %d.%d", major, minor)
+        await self._publish_version((major, minor, patch), reply_context)
+        logger.info("MCU firmware version reported as %d.%d.%d", major, minor, patch)
 
     async def _publish_version(
         self,
-        version: tuple[int, int],
+        version: tuple[int, int, int],
         reply_context: Message | None = None,
     ) -> None:
-        major, minor = version
+        major, minor, patch = version
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SYSTEM,
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
-        await self._publish_value(topic, f"{major}.{minor}", MQTT_EXPIRY_DATASTORE, reply_context)
+        await self._publish_value(topic, f"{major}.{minor}.{patch}", MQTT_EXPIRY_DATASTORE, reply_context)
 
     async def handle_mqtt(
         self,

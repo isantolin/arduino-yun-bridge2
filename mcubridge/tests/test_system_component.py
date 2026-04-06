@@ -100,7 +100,7 @@ def test_request_mcu_version_resets_cached_version(runtime_config: RuntimeConfig
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
-        runtime_state.mcu_version = (1, 0)
+        runtime_state.mcu_version = (1, 0, 0)
 
         await component.request_mcu_version()
 
@@ -164,9 +164,9 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(
 
         await component.handle_get_version_resp(0, payload)
 
-        assert runtime_state.mcu_version == (1, 2)
+        assert runtime_state.mcu_version == (1, 2, 0)
         assert len(ctx.published) >= 1
-        assert "1.2" in str(ctx.published[0][1])
+        assert "1.2.0" in str(ctx.published[0][1])
     _run(_coro())
 
 
@@ -200,7 +200,7 @@ def test_handle_mqtt_version_get_with_cached_version(runtime_config: RuntimeConf
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
-        runtime_state.mcu_version = (2, 0)
+        runtime_state.mcu_version = (2, 0, 0)
 
         msg = MagicMock()
         msg.topic = "br/system/version/get"
@@ -209,7 +209,7 @@ def test_handle_mqtt_version_get_with_cached_version(runtime_config: RuntimeConf
         await component.handle_mqtt(make_route(Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET), msg)
 
         assert len(ctx.published) >= 1
-        assert "2.0" in str(ctx.published[0][1])
+        assert "2.0.0" in str(ctx.published[0][1])
         # It still requests version to refresh cache
         assert len(ctx.sent_frames) == 1
     _run(_coro())

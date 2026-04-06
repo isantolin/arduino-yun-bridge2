@@ -75,16 +75,6 @@ def _int_to_capabilities(val: int) -> dict[str, bool]:
         return {}
 
 
-# =============================================================================
-# 1. Protocol Generation Structures (re-exported from spec_model)
-# =============================================================================
-
-from .spec_model import (  # noqa: E402, F401
-    CommandDef as CommandDef,
-    ProtocolSpec as ProtocolSpec,
-    RawProtocolData as RawProtocolData,
-    StatusDef as StatusDef,
-)
 from .frame import Frame as Frame  # noqa: E402, F401
 
 
@@ -514,7 +504,7 @@ class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
 
 # --- Binary Protocol Packets ---
 
-# --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from mcubridge.proto)
+# --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from spec.toml)
 
 
 class VersionResponsePacket(BaseStruct, frozen=True):
@@ -641,6 +631,11 @@ class SetBaudratePacket(BaseStruct, frozen=True):
     baudrate: Annotated[int, msgspec.Meta(ge=0)]
 
 
+class LinkSyncPacket(BaseStruct, frozen=True):
+    nonce: bytes
+    tag: bytes
+
+
 class EnterBootloaderPacket(BaseStruct, frozen=True):
     magic: Annotated[int, msgspec.Meta(ge=0)]
 
@@ -709,13 +704,6 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
             self.ver, self.arch, self.dig, self.ana,
             _capabilities_to_int(msgspec.structs.asdict(self.feat)),
         ])
-
-
-class LinkSyncPacket(BaseStruct, frozen=True):
-    """HMAC handshake nonce/tag pair (16 bytes each)."""
-
-    nonce: bytes
-    tag: bytes
 
 
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.
@@ -861,7 +849,6 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     retain: bool = False
     content_type: str | None = None
     payload_format_indicator: int | None = None
-    message_expiry_indicator: int | None = None
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
@@ -1006,16 +993,6 @@ class SupervisorStats(BaseStats):
         return cast(SupervisorSnapshot, super().as_snapshot())
 
 
-_ARCH_MAPPING: Final[dict[int, str]] = {
-    1: "Atmel AVR",
-    2: "Espressif ESP32",
-    3: "Espressif ESP8266",
-    4: "Microchip SAMD",
-    5: "Microchip SAM",
-    6: "Raspberry Pi RP2040",
-}
-
-
 class McuCapabilities(msgspec.Struct):
     """Hardware capabilities reported by the MCU."""
 
@@ -1027,7 +1004,8 @@ class McuCapabilities(msgspec.Struct):
 
     @property
     def arch_name(self) -> str:
-        return _ARCH_MAPPING.get(self.board_arch, f"Unknown (0x{self.board_arch:02X})")
+        from .protocol import ARCHITECTURE_DISPLAY_NAMES
+        return ARCHITECTURE_DISPLAY_NAMES.get(self.board_arch, f"Unknown (0x{self.board_arch:02X})")
 
     def _has(self, feat: str) -> bool:
         return bool(self.features and getattr(self.features, feat, False))
@@ -1195,6 +1173,7 @@ class SerialLatencyStats(msgspec.Struct):
 class McuVersion(msgspec.Struct):
     major: Annotated[int, msgspec.Meta(ge=0)]
     minor: Annotated[int, msgspec.Meta(ge=0)]
+    patch: Annotated[int, msgspec.Meta(ge=0)] = 0
 
 
 class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):

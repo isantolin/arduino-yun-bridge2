@@ -36,6 +36,20 @@ class StatusDef(msgspec.Struct, frozen=True):
     description: str
 
 
+class MessageFieldDef(msgspec.Struct, frozen=True):
+    """A single field in a protocol message."""
+    name: str
+    type: str           # uint8, uint16, uint32, int32, bytes, bin_fixed, string, bool
+    size: int = 0       # for bin_fixed
+    max_size: int = 64  # for string
+
+
+class MessageDef(msgspec.Struct, frozen=True):
+    """A protocol message definition (replaces .proto + .options)."""
+    name: str
+    fields: list[MessageFieldDef]
+
+
 class RawProtocolData(msgspec.Struct):
     constants: dict[str, Any]
     hardware: dict[str, Any]
@@ -47,7 +61,13 @@ class RawProtocolData(msgspec.Struct):
     topics: list[dict[str, Any]]
     capabilities: dict[str, int]
     architectures: dict[str, int]
+    compression: dict[str, int]
+    data_formats: dict[str, str]
+    mqtt_suffixes: dict[str, str]
+    mqtt_defaults: dict[str, str]
     status_reasons: dict[str, str]
+    architecture_display_names: dict[str, str] = {}
+    messages: list[dict[str, Any]] = []
 
 
 class ProtocolSpec(msgspec.Struct):
@@ -63,7 +83,13 @@ class ProtocolSpec(msgspec.Struct):
     topics: list[dict[str, Any]]
     capabilities: dict[str, int]
     architectures: dict[str, int]
+    compression: dict[str, int]
+    data_formats: dict[str, str]
+    mqtt_suffixes: dict[str, str]
+    mqtt_defaults: dict[str, str]
     status_reasons: dict[str, str]
+    architecture_display_names: dict[str, str] = {}
+    messages: list[MessageDef] = []
 
     @classmethod
     def load(cls, path: Path) -> "ProtocolSpec":
@@ -75,6 +101,7 @@ class ProtocolSpec(msgspec.Struct):
         # Convert raw dicts to Structs
         cmds = [msgspec.convert(c, CommandDef) for c in raw.commands]
         statuses = [msgspec.convert(s, StatusDef) for s in raw.statuses]
+        msgs = [msgspec.convert(m, MessageDef) for m in raw.messages]
 
         return cls(
             constants=raw.constants,
@@ -87,5 +114,11 @@ class ProtocolSpec(msgspec.Struct):
             topics=raw.topics,
             capabilities=raw.capabilities,
             architectures=raw.architectures,
+            compression=raw.compression,
+            data_formats=raw.data_formats,
+            mqtt_suffixes=raw.mqtt_suffixes,
+            mqtt_defaults=raw.mqtt_defaults,
+            architecture_display_names=raw.architecture_display_names,
             status_reasons=raw.status_reasons,
+            messages=msgs,
         )

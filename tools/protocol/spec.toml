@@ -102,6 +102,14 @@ samd = 4
 sam = 5
 rp2040 = 6
 
+[architecture_display_names]
+avr = "Atmel AVR"
+esp32 = "Espressif ESP32"
+esp8266 = "Espressif ESP8266"
+samd = "Microchip SAMD"
+sam = "Microchip SAM"
+rp2040 = "Raspberry Pi RP2040"
+
 [hardware]
 max_observers_avr = 4
 max_observers_other = 8
@@ -840,3 +848,245 @@ value = 0xB4
 category = "spi"
 directions = ["linux_to_mcu"]
 requires_ack = true
+
+# =============================================================================
+# Payload message definitions (replaces mcubridge.proto + mcubridge.options)
+# =============================================================================
+# Field types:
+#   uint8, uint16, uint32 — integer scalars (narrowed from proto uint32 + nanopb int_size)
+#   int32                  — signed integer
+#   bytes                  — variable-length bytes (was FT_CALLBACK in proto)
+#   bin_fixed              — fixed-length byte array (requires size)
+#   string                 — null-terminated string (uses max_size, default 64)
+#   bool                   — boolean (encoded as uint8 on wire)
+
+[[messages]]
+name = "RpcContainer"
+fields = [
+    {name = "seq_id", type = "uint32"},
+    {name = "checksum", type = "uint32"},
+    {name = "payload", type = "bytes"},
+]
+
+[[messages]]
+name = "VersionResponse"
+fields = [
+    {name = "major", type = "uint8"},
+    {name = "minor", type = "uint8"},
+    {name = "patch", type = "uint32"},
+]
+
+[[messages]]
+name = "FreeMemoryResponse"
+fields = [
+    {name = "value", type = "uint32"},
+]
+
+[[messages]]
+name = "Capabilities"
+fields = [
+    {name = "ver", type = "uint8"},
+    {name = "arch", type = "uint8"},
+    {name = "dig", type = "uint8"},
+    {name = "ana", type = "uint8"},
+    {name = "feat", type = "uint32"},
+]
+
+[[messages]]
+name = "PinMode"
+fields = [
+    {name = "pin", type = "uint8"},
+    {name = "mode", type = "uint8"},
+]
+
+[[messages]]
+name = "DigitalWrite"
+fields = [
+    {name = "pin", type = "uint8"},
+    {name = "value", type = "uint8"},
+]
+
+[[messages]]
+name = "AnalogWrite"
+fields = [
+    {name = "pin", type = "uint8"},
+    {name = "value", type = "uint16"},
+]
+
+[[messages]]
+name = "PinRead"
+fields = [
+    {name = "pin", type = "uint8"},
+]
+
+[[messages]]
+name = "DigitalReadResponse"
+fields = [
+    {name = "value", type = "uint8"},
+]
+
+[[messages]]
+name = "AnalogReadResponse"
+fields = [
+    {name = "value", type = "uint16"},
+]
+
+[[messages]]
+name = "ConsoleWrite"
+fields = [
+    {name = "data", type = "bytes"},
+]
+
+[[messages]]
+name = "DatastorePut"
+fields = [
+    {name = "key", type = "string", max_size = 32},
+    {name = "value", type = "bytes"},
+]
+
+[[messages]]
+name = "DatastoreGet"
+fields = [
+    {name = "key", type = "string", max_size = 32},
+]
+
+[[messages]]
+name = "DatastoreGetResponse"
+fields = [
+    {name = "value", type = "bytes"},
+]
+
+[[messages]]
+name = "MailboxPush"
+fields = [
+    {name = "data", type = "bytes"},
+]
+
+[[messages]]
+name = "MailboxProcessed"
+fields = [
+    {name = "message_id", type = "uint16"},
+]
+
+[[messages]]
+name = "MailboxAvailableResponse"
+fields = [
+    {name = "count", type = "uint16"},
+]
+
+[[messages]]
+name = "MailboxReadResponse"
+fields = [
+    {name = "content", type = "bytes"},
+]
+
+[[messages]]
+name = "FileWrite"
+fields = [
+    {name = "path", type = "string", max_size = 64},
+    {name = "data", type = "bytes"},
+]
+
+[[messages]]
+name = "FileRead"
+fields = [
+    {name = "path", type = "string", max_size = 64},
+]
+
+[[messages]]
+name = "FileRemove"
+fields = [
+    {name = "path", type = "string", max_size = 64},
+]
+
+[[messages]]
+name = "FileReadResponse"
+fields = [
+    {name = "content", type = "bytes"},
+]
+
+[[messages]]
+name = "ProcessRunAsync"
+fields = [
+    {name = "command", type = "string", max_size = 64},
+]
+
+[[messages]]
+name = "ProcessRunAsyncResponse"
+fields = [
+    {name = "pid", type = "uint32"},
+]
+
+[[messages]]
+name = "ProcessPoll"
+fields = [
+    {name = "pid", type = "uint32"},
+]
+
+[[messages]]
+name = "ProcessPollResponse"
+fields = [
+    {name = "status", type = "uint8"},
+    {name = "exit_code", type = "uint16"},
+    {name = "stdout_data", type = "bytes"},
+    {name = "stderr_data", type = "bytes"},
+]
+
+[[messages]]
+name = "ProcessKill"
+fields = [
+    {name = "pid", type = "uint32"},
+]
+
+[[messages]]
+name = "AckPacket"
+fields = [
+    {name = "command_id", type = "uint16"},
+]
+
+[[messages]]
+name = "HandshakeConfig"
+fields = [
+    {name = "ack_timeout_ms", type = "uint16"},
+    {name = "ack_retry_limit", type = "uint8"},
+    {name = "response_timeout_ms", type = "uint16"},
+]
+
+[[messages]]
+name = "SetBaudratePacket"
+fields = [
+    {name = "baudrate", type = "uint32"},
+]
+
+[[messages]]
+name = "LinkSync"
+fields = [
+    {name = "nonce", type = "bin_fixed", size = 16},
+    {name = "tag", type = "bin_fixed", size = 16},
+]
+
+[[messages]]
+name = "EnterBootloader"
+fields = [
+    {name = "magic", type = "uint32"},
+]
+
+[[messages]]
+name = "SpiTransfer"
+fields = [
+    {name = "data", type = "bytes"},
+]
+
+[[messages]]
+name = "SpiTransferResponse"
+fields = [
+    {name = "data", type = "bytes"},
+]
+
+[[messages]]
+name = "SpiConfig"
+fields = [
+    {name = "bit_order", type = "uint32"},
+    {name = "data_mode", type = "uint32"},
+    {name = "frequency", type = "uint32"},
+]

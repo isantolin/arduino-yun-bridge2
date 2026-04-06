@@ -198,9 +198,9 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
         system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
         await system.handle_get_version_resp(0, pkt.encode())
 
-        assert state.mcu_version == (1, 2)
+        assert state.mcu_version == (1, 2, 0)
         queued = state.mqtt_publish_queue.get_nowait()
-        assert queued.payload == b"1.2"
+        assert queued.payload == b"1.2.0"
     finally:
         state.cleanup()
 

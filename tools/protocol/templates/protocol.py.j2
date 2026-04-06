@@ -28,8 +28,9 @@ HANDSHAKE_CONFIG_SIZE: Final[int] = 7
 {%- endfor %}
 
 class CompressionType(IntEnum):
-    NONE = 0
-    RLE = 1
+{%- for name, val in compression.items() %}
+    {{ name|upper }} = {{ val }}
+{%- endfor %}
 
 {% for cap, val in capabilities.items() %}
 CAPABILITY_{{ cap|upper }}: Final[int] = {{ val }}
@@ -38,6 +39,12 @@ CAPABILITY_{{ cap|upper }}: Final[int] = {{ val }}
 {% for arch, val in architectures.items() %}
 ARCH_{{ arch|upper }}: Final[int] = {{ val }}
 {%- endfor %}
+
+ARCHITECTURE_DISPLAY_NAMES: Final[dict[int, str]] = {
+{%- for arch, val in architectures.items() %}
+    {{ val }}: {{ architecture_display_names.get(arch, arch)|tojson }},
+{%- endfor %}
+}
 
 {% for key, val in status_reasons.items() %}
 STATUS_REASON_{{ key|upper }}: Final[str] = {{ val|tojson }}
@@ -125,20 +132,20 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
     {%- endfor %}
 )
 
-CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHHH"
-CRC_FORMAT: Final[str] = ">I"
-UINT8_FORMAT: Final[str] = ">B"
-UINT16_FORMAT: Final[str] = ">H"
-UINT32_FORMAT: Final[str] = ">I"
-NONCE_COUNTER_FORMAT: Final[str] = ">Q"
+CRC_COVERED_HEADER_FORMAT: Final[str] = "{{ data_formats.crc_covered_header_format }}"
+CRC_FORMAT: Final[str] = "{{ data_formats.crc_format }}"
+UINT8_FORMAT: Final[str] = "{{ data_formats.uint8_format }}"
+UINT16_FORMAT: Final[str] = "{{ data_formats.uint16_format }}"
+UINT32_FORMAT: Final[str] = "{{ data_formats.uint32_format }}"
+NONCE_COUNTER_FORMAT: Final[str] = "{{ data_formats.nonce_counter_format }}"
 
 CRC_COVERED_HEADER_SIZE: Final[int] = 7
 CRC_SIZE: Final[int] = 4
 MIN_FRAME_SIZE: Final[int] = 11
 
-MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = "incoming_available"
-MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = "outgoing_available"
-MQTT_SUFFIX_RESPONSE: Final[str] = "response"
-MQTT_SUFFIX_ERROR: Final[str] = "error"
+MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = {{ mqtt_suffixes.incoming_available|tojson }}
+MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = {{ mqtt_suffixes.outgoing_available|tojson }}
+MQTT_SUFFIX_RESPONSE: Final[str] = {{ mqtt_suffixes.response|tojson }}
+MQTT_SUFFIX_ERROR: Final[str] = {{ mqtt_suffixes.error|tojson }}
 
-MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = "br"
+MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = {{ mqtt_defaults.default_topic_prefix|tojson }}

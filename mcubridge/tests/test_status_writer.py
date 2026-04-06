@@ -65,7 +65,7 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             state.record_handshake_attempt()
             state.record_handshake_attempt()
             state.allowed_policy = AllowedCommandPolicy.from_iterable(["ls"])
-            state.mcu_version = (2, 5)
+            state.mcu_version = (2, 5, 0)
             state.file_system_root = "/tmp/bridge"
             state.file_storage_bytes_used = 2048
             state.file_storage_quota_bytes = 4096
@@ -134,7 +134,7 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             assert payload["console_truncated_bytes"] == 4
             assert payload["allowed_commands"] == ["ls"]
             assert payload["link_synchronised"] is False
-            assert payload["mcu_version"] == {"major": 2, "minor": 5}
+            assert payload["mcu_version"] == {"major": 2, "minor": 5, "patch": 0}
             assert payload["file_storage_root"] == "/tmp/bridge"
             assert payload["file_storage_bytes_used"] == 2048
             assert payload["file_storage_quota_bytes"] == 4096

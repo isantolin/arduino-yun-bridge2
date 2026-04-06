@@ -360,7 +360,7 @@ class RuntimeState(msgspec.Struct):
     mailbox_incoming_truncated_bytes: int = 0
     mailbox_incoming_dropped_bytes: int = 0
     mailbox_incoming_overflow_events: int = 0
-    mcu_version: tuple[int, int] | None = None
+    mcu_version: tuple[int, int, int] | None = None
     mcu_capabilities: McuCapabilities | None = None
     link_handshake_nonce: bytes | None = None
     link_sync_event: asyncio.Event = msgspec.field(default_factory=asyncio.Event)

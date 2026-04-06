@@ -59,40 +59,40 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PROTO PARSER — extract message definitions from .proto files
+# MESSAGE PARSER — build C++ / Python models from spec.toml [[messages]]
 # ═════════════════════════════════════════════════════════════════════════════
 
 # Messages that do NOT get a Packet class (used directly or handled specially)
-PACKET_EXCLUDE: frozenset[str] = frozenset({"RpcContainer", "LinkSync", "Capabilities"})
+PACKET_EXCLUDE: frozenset[str] = frozenset({"RpcContainer", "Capabilities"})
 
-# Proto3 scalar → Python type annotation string
-PROTO_PYTHON_TYPE_MAP: dict[str, str] = {
+# spec.toml field type → Python type annotation string
+TOML_PYTHON_TYPE_MAP: dict[str, str] = {
+    "uint8": "Annotated[int, msgspec.Meta(ge=0)]",
+    "uint16": "Annotated[int, msgspec.Meta(ge=0)]",
     "uint32": "Annotated[int, msgspec.Meta(ge=0)]",
     "int32": "int",
     "string": "str",
     "bytes": "bytes",
+    "bin_fixed": "bytes",
     "bool": "bool",
 }
-
-
-@dataclasses.dataclass(frozen=True)
-class ProtoField:
-    name: str
-    proto_type: str
-
-
-@dataclasses.dataclass(frozen=True)
-class ProtoMessage:
-    name: str
-    fields: tuple[ProtoField, ...]
 
 
 # ─── C++ struct model for rpc_structs.h generation ────────────────────────
 # Messages excluded from C++ struct generation (container / internal)
 CPP_STRUCT_EXCLUDE: frozenset[str] = frozenset({"RpcContainer"})
 
-# Field sizes from mcubridge.options: IS_8 / IS_16 / IS_32 (default uint32)
-INT_SIZE_MAP: dict[str, str] = {"IS_8": "uint8_t", "IS_16": "uint16_t", "IS_32": "uint32_t"}
+# spec.toml field type → C++ CppField kind
+TOML_CPP_KIND_MAP: dict[str, str] = {
+    "uint8": "uint8",
+    "uint16": "uint16",
+    "uint32": "uint32",
+    "int32": "uint32",
+    "bytes": "bin_view",
+    "bin_fixed": "bin_fixed",
+    "string": "str_fixed",
+    "bool": "uint8",
+}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -117,93 +117,26 @@ class CppStruct:
     field_count: int           # number of MsgPack array elements
 
 
-def _parse_nanopb_options(options_path: Path) -> dict[str, str]:
-    """Parse mcubridge.options → {"MessageName.field": "IS_8"|"IS_16"|"IS_32"}."""
-    result: dict[str, str] = {}
-    if not options_path.exists():
-        return result
-    for raw_line in options_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split()
-        if len(parts) >= 2 and "int_size:" in parts[1]:
-            # "mcubridge.Foo.bar  int_size:IS_8"
-            qualified = parts[0]  # mcubridge.Foo.bar
-            fq_field = qualified.removeprefix("mcubridge.")  # Foo.bar
-            size_spec = parts[1].split(":")[1]  # IS_8
-            result[fq_field] = size_spec
-    return result
-
-
-def _parse_nanopb_annotations(proto_text: str, msg_name: str, field_name: str) -> dict[str, Any]:
-    """Extract nanopb annotations from a proto field definition."""
-    # Find the message body
-    pattern = rf"message\s+{re.escape(msg_name)}\s*\{{([^}}]*)}}"
-    msg_match = re.search(pattern, proto_text)
-    if not msg_match:
-        return {}
-    body = msg_match.group(1)
-    # Find the specific field with annotation
-    field_pat = rf"\b{re.escape(field_name)}\s*=\s*\d+\s*(\[([^\]]*)\])?"
-    field_match = re.search(field_pat, body)
-    if not field_match or not field_match.group(2):
-        return {}
-    annotation_text = field_match.group(2)
-    result: dict[str, Any] = {}
-    if "FT_CALLBACK" in annotation_text:
-        result["callback"] = True
-    max_size_m = re.search(r"max_size\s*=\s*(\d+)", annotation_text)
-    if max_size_m:
-        result["max_size"] = int(max_size_m.group(1))
-    if "fixed_length" in annotation_text and "true" in annotation_text.lower():
-        result["fixed_length"] = True
-    return result
-
-
-def build_cpp_structs(proto_path: Path, options_path: Path) -> list[CppStruct]:
-    """Build CppStruct models from proto + options for rpc_structs.h template."""
-    messages = parse_proto_messages(proto_path)
-    int_sizes = _parse_nanopb_options(options_path)
-    proto_text = proto_path.read_text(encoding="utf-8")
+def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
+    """Build CppStruct models from spec.toml [[messages]] for rpc_structs.h."""
     structs: list[CppStruct] = []
 
-    for msg in messages:
+    for msg in spec.messages:
         if msg.name in CPP_STRUCT_EXCLUDE:
             continue
         cpp_fields: list[CppField] = []
         for f in msg.fields:
-            annotations = _parse_nanopb_annotations(proto_text, msg.name, f.name)
-            size_key = f"{msg.name}.{f.name}"
+            kind = TOML_CPP_KIND_MAP.get(f.type)
+            if kind is None:
+                sys.stderr.write(f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}\n")
+                kind = "uint32"
 
-            if f.proto_type == "bytes":
-                if annotations.get("callback"):
-                    # Variable-length bytes → zero-copy span on decode
-                    cpp_fields.append(CppField(name=f.name, kind="bin_view"))
-                elif annotations.get("fixed_length") and annotations.get("max_size"):
-                    # Fixed-length bytes → uint8_t[N]
-                    cpp_fields.append(CppField(name=f.name, kind="bin_fixed", size=annotations["max_size"]))
-                elif annotations.get("max_size"):
-                    # Capped bytes without fixed_length — treat as bin_view
-                    cpp_fields.append(CppField(name=f.name, kind="bin_view"))
-                else:
-                    cpp_fields.append(CppField(name=f.name, kind="bin_view"))
-            elif f.proto_type == "string":
-                max_size = annotations.get("max_size", 64)
-                cpp_fields.append(CppField(name=f.name, kind="str_fixed", size=max_size))
-            elif f.proto_type in ("uint32", "int32"):
-                int_size = int_sizes.get(size_key, "IS_32")
-                cpp_type = INT_SIZE_MAP.get(int_size, "uint32_t")
-                if cpp_type == "uint8_t":
-                    cpp_fields.append(CppField(name=f.name, kind="uint8"))
-                elif cpp_type == "uint16_t":
-                    cpp_fields.append(CppField(name=f.name, kind="uint16"))
-                else:
-                    cpp_fields.append(CppField(name=f.name, kind="uint32"))
-            elif f.proto_type == "bool":
-                cpp_fields.append(CppField(name=f.name, kind="uint8"))
+            if kind == "bin_fixed":
+                cpp_fields.append(CppField(name=f.name, kind=kind, size=f.size))
+            elif kind == "str_fixed":
+                cpp_fields.append(CppField(name=f.name, kind=kind, size=f.max_size))
             else:
-                cpp_fields.append(CppField(name=f.name, kind="uint32"))
+                cpp_fields.append(CppField(name=f.name, kind=kind))
 
         structs.append(CppStruct(
             name=msg.name,
@@ -212,25 +145,6 @@ def build_cpp_structs(proto_path: Path, options_path: Path) -> list[CppStruct]:
         ))
 
     return structs
-
-
-def parse_proto_messages(proto_path: Path) -> list[ProtoMessage]:
-    """Parse message definitions from a .proto file."""
-    content = proto_path.read_text(encoding="utf-8")
-    messages: list[ProtoMessage] = []
-
-    for match in re.finditer(r"message\s+(\w+)\s*\{([^}]*)}", content):
-        name = match.group(1)
-        body = match.group(2)
-        fields: list[ProtoField] = []
-        for field_match in re.finditer(r"^\s*(\w+)\s+(\w+)\s*=\s*\d+", body, re.MULTILINE):
-            fields.append(ProtoField(
-                proto_type=field_match.group(1),
-                name=field_match.group(2),
-            ))
-        messages.append(ProtoMessage(name=name, fields=tuple(fields)))
-
-    return messages
 
 
 def packet_class_name(proto_name: str) -> str:
@@ -432,15 +346,16 @@ class JinjaGenerator:
             handshake=handshake_data,
             capabilities=spec.capabilities,
             architectures=spec.architectures,
+            compression=spec.compression,
             statuses=spec.statuses,
             commands=spec.commands,
             ack_commands=[c for c in spec.commands if c.requires_ack],
         )
         out_path.write_text(render, encoding="utf-8")
 
-    def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path, proto_path: Path, options_path: Path) -> None:
+    def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("rpc_structs.h.j2")
-        structs = build_cpp_structs(proto_path, options_path)
+        structs = build_cpp_structs_from_spec(spec)
         render = template.render(structs=structs)
         out_path.write_text(render, encoding="utf-8")
 
@@ -642,6 +557,11 @@ class JinjaGenerator:
             handshake_bytes=handshake_bytes,
             capabilities=spec.capabilities,
             architectures=spec.architectures,
+            architecture_display_names=spec.architecture_display_names,
+            compression=spec.compression,
+            data_formats=spec.data_formats,
+            mqtt_suffixes=spec.mqtt_suffixes,
+            mqtt_defaults=spec.mqtt_defaults,
             status_reasons=spec.status_reasons,
             statuses=spec.statuses,
             commands=spec.commands,
@@ -655,19 +575,18 @@ class JinjaGenerator:
         )
         out_path.write_text(render, encoding="utf-8")
 
-    def generate_structures_packets(self, proto_path: Path, structures_path: Path) -> None:
-        """Generate Packet classes from proto and splice into structures.py."""
-        messages = parse_proto_messages(proto_path)
-        packet_messages = [m for m in messages if m.name not in PACKET_EXCLUDE]
+    def generate_structures_packets(self, spec: ProtocolSpec, structures_path: Path) -> None:
+        """Generate Packet classes from spec.toml messages and splice into structures.py."""
+        packet_messages = [m for m in spec.messages if m.name not in PACKET_EXCLUDE]
 
         packets: list[dict[str, object]] = []
         for msg in packet_messages:
             fields: list[dict[str, str]] = []
             for f in msg.fields:
-                py_type = PROTO_PYTHON_TYPE_MAP.get(f.proto_type)
+                py_type = TOML_PYTHON_TYPE_MAP.get(f.type)
                 if py_type is None:
                     sys.stderr.write(
-                        f"Warning: unknown proto type '{f.proto_type}' "
+                        f"Warning: unknown field type '{f.type}' "
                         f"in {msg.name}.{f.name}, skipping field\n"
                     )
                     continue
@@ -788,10 +707,8 @@ def main(
         sys.stderr.write(f"Generated {hw_config_path}\n")
 
     if cpp_structs:
-        proto_path = spec_path.parent / "mcubridge.proto"
-        options_path = spec_path.parent / "mcubridge.options"
         cpp_structs.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_structs(spec, cpp_structs, proto_path, options_path)
+        gen.generate_cpp_structs(spec, cpp_structs)
         sys.stderr.write(f"Generated {cpp_structs}\n")
 
     if py:
@@ -804,10 +721,9 @@ def main(
         gen.generate_python_client(spec, py_client)
         sys.stderr.write(f"Generated {py_client}\n")
 
-    # Generate Packet classes from proto schema into structures.py
+    # Generate Packet classes from spec.toml messages into structures.py
     if structures:
-        proto_path = spec_path.parent / "mcubridge.proto"
-        gen.generate_structures_packets(proto_path, structures)
+        gen.generate_structures_packets(spec, structures)
         sys.stderr.write(f"Generated Packet classes in {structures}\n")
 
     # Step 4: Generate type stubs for untyped libraries using pyright

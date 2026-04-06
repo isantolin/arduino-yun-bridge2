@@ -111,7 +111,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         runtime_state.enqueue_console_chunk(b"hello")
         runtime_state.mcu_is_paused = False
-        runtime_state.mcu_version = (1, 2)
+        runtime_state.mcu_version = (1, 2, 0)
         runtime_state.mark_transport_connected()
 
         await service.on_serial_connected()

@@ -37,8 +37,9 @@ inline constexpr uint32_t RPC_CAPABILITY_{{ cap|upper }} = {{ val }}U;
 inline constexpr uint8_t RPC_ARCH_{{ arch|upper }} = {{ val }}U;
 {% endfor %}
 enum class CompressionType : uint8_t {
-    COMPRESSION_NONE = 0,
-    COMPRESSION_RLE = 1,
+{%- for name, val in compression.items() %}
+    COMPRESSION_{{ name|upper }} = {{ val }},
+{%- endfor %}
 };
 
 enum class StatusCode : uint8_t {

@@ -250,7 +250,7 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
 
-    runtime_state.mcu_version = (1, 2)
+    runtime_state.mcu_version = (1, 2, 0)
 
     sent_frames: list[tuple[int, bytes]] = []
     flow = service._serial_flow  # type: ignore[reportPrivateUsage]
@@ -288,7 +288,7 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
         "value",
     )
     assert queued.topic_name == expected_topic
-    assert queued.payload == b"1.2"
+    assert queued.payload == b"1.2.0"
     runtime_state.mqtt_publish_queue.task_done()
 
 

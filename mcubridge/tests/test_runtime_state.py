@@ -227,7 +227,7 @@ def test_bridge_snapshot_combines_sections(
     runtime_state.mark_transport_connected()
     runtime_state.record_handshake_attempt()
     runtime_state.record_handshake_attempt()
-    runtime_state.mcu_version = (1, 2)
+    runtime_state.mcu_version = (1, 2, 0)
     runtime_state.record_serial_pipeline_event(
         {
             "event": "start",

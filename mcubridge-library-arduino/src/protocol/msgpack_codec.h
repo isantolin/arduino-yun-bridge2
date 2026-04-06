@@ -31,7 +31,7 @@ class Encoder {
   bool ok() const { return _ok; }
   size_t size() const { return _writer.size_bytes(); }
   etl::span<const uint8_t> result() const {
-    auto d = _writer.data();
+    auto d = _writer.used_data();
     return {reinterpret_cast<const uint8_t*>(d.data()), d.size()};
   }
 

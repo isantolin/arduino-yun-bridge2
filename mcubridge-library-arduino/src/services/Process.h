@@ -21,7 +21,7 @@ class ProcessClass : public BridgeObserver {
   friend class bridge::test::ProcessTestAccessor;
 #endif
  public:
-  using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
+  using ProcessRunAsyncHandler = etl::delegate<void(int32_t)>;
   using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>, etl::span<const uint8_t>)>;
   using ProcessKillHandler = etl::delegate<void(rpc::StatusCode)>;
 
@@ -32,8 +32,8 @@ class ProcessClass : public BridgeObserver {
   [[maybe_unused]] void notification(MsgBridgeLost) override { reset(); }
 
   [[maybe_unused]] void runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler);
-  [[maybe_unused]] void poll(int16_t pid, ProcessPollHandler handler);
-  [[maybe_unused]] void kill(int16_t pid, ProcessKillHandler handler = {});
+  [[maybe_unused]] void poll(int32_t pid, ProcessPollHandler handler);
+  [[maybe_unused]] void kill(int32_t pid, ProcessKillHandler handler = {});
   bool _kill(uint32_t pid);
   void reset();
 
@@ -46,7 +46,7 @@ class ProcessClass : public BridgeObserver {
   };
 
   struct PendingPoll {
-    int16_t pid;
+    int32_t pid;
     ProcessPollHandler handler;
   };
 

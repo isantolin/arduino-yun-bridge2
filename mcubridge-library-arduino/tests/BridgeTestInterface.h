@@ -74,8 +74,8 @@ class TestAccessor {
 
   void applyTimingConfig(const uint8_t* data, size_t len) {
     rpc::payload::HandshakeConfig msg = {};
-    pb_istream_t stream = pb_istream_from_buffer(data, len);
-    if (pb_decode(&stream, rpc::Payload::Descriptor<rpc::payload::HandshakeConfig>::fields(), &msg)) {
+    msgpack::Decoder dec(data, len);
+    if (msg.decode(dec)) {
       _bridge._applyTimingConfig(msg);
     }
   }

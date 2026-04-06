@@ -112,7 +112,8 @@ class MailboxComponent(BaseComponent):
         message_payload: bytes = original_payload if original_payload is not None else b""
 
         # [SIL-2] Direct slicing delegates truncation to Python C core
-        max_allowed = protocol.MAX_PAYLOAD_SIZE - 2
+        # 3 bytes overhead: fixarray(1) + bin8 type + length byte
+        max_allowed = protocol.MAX_PAYLOAD_SIZE - 3
         if len(message_payload) > max_allowed:
             logger.warning("Mailbox message too long (%d bytes), truncating.", len(message_payload))
             message_payload = message_payload[:max_allowed]

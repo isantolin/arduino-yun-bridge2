@@ -23,7 +23,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 ### Novedades (marzo 2026)
 
 - **Unificación de Componentes (Shell + Process):** Eliminación de la capa redundante `ShellComponent`. Toda la lógica de comandos shell/consola vía MQTT ha sido absorbida por el **ProcessComponent**, centralizando la gestión de PIDs, concurrencia y políticas de seguridad en un solo módulo determinista.
-- **Serialización Protobuf (proto3):** Todos los payloads RPC se definen como mensajes Protocol Buffers en `mcubridge.proto` y se codifican con **protobuf** (Python) y **nanopb** (C++, estático, sin heap). Eliminación completa de empaquetado manual de bytes.
+- **Serialización MsgPack:** Todos los payloads RPC se definen en `mcubridge.proto` y se serializan con **MsgPack** (formato array): `msgspec` en Python, codec header-only (`msgpack_codec.h`, estático, sin heap) en C++. Eliminación completa de protobuf/nanopb.
 - **Soporte PWM (Analog Write):** Implementación completa de `analog_write()` en el cliente Python, permitiendo el control de actuadores y regulación de potencia vía MQTT.
 - **Validación E2E Analógica:** Los tests de integración ahora cubren lecturas y escrituras analógicas de forma nativa.
 

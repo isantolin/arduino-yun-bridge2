@@ -5,7 +5,6 @@
 #include "BridgeTestInterface.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/mcubridge.pb.h"
 #include "test_support.h"
 #include "services/FileSystem.h"
 #include "services/Process.h"
@@ -79,12 +78,12 @@ static void test_all_handlers_coverage() {
 
   // 2. Exhaustive valid payload generation using macro
 #define COVER_CMD(CMD_NAME, STRUCT_NAME) do { \
-  mcubridge_##STRUCT_NAME msg = mcubridge_##STRUCT_NAME##_init_default; \
-  pb_ostream_t s = pb_ostream_from_buffer(payload_buffer.data(), payload_buffer.size()); \
-  pb_encode(&s, mcubridge_##STRUCT_NAME##_fields, &msg); \
+  rpc::payload::STRUCT_NAME msg = {}; \
+  msgpack::Encoder enc(payload_buffer.data(), payload_buffer.size()); \
+  msg.encode(enc); \
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_##CMD_NAME); \
-  f.header.payload_length = s.bytes_written; \
-  f.payload = etl::span<const uint8_t>(payload_buffer.data(), s.bytes_written); \
+  f.header.payload_length = static_cast<uint16_t>(enc.size()); \
+  f.payload = etl::span<const uint8_t>(payload_buffer.data(), enc.size()); \
   ctx.raw_command = f.header.command_id; \
   ba.dispatch(f); \
 } while(0)
@@ -151,7 +150,7 @@ static void test_all_handlers_coverage() {
 }
 
 static bool async_called = false;
-static void dummy_async_handler(int16_t) { async_called = true; }
+static void dummy_async_handler(int32_t) { async_called = true; }
 
 static bool poll_called = false;
 static void dummy_poll_handler(rpc::StatusCode, uint8_t, etl::span<const uint8_t>, etl::span<const uint8_t>) { poll_called = true; }
@@ -163,7 +162,7 @@ static void test_process_api() {
   async_called = false;
   poll_called = false;
 
-  Process.runAsync("ls", {}, etl::delegate<void(int16_t)>::create<dummy_async_handler>());
+  Process.runAsync("ls", {}, etl::delegate<void(int32_t)>::create<dummy_async_handler>());
   Process.poll(1, etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>, etl::span<const uint8_t>)>::create<dummy_poll_handler>());
   
   Process.kill(1);

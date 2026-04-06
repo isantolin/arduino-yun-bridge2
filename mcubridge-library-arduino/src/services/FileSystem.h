@@ -32,7 +32,7 @@ class FileSystemClass : public BridgeObserver {
   void read(etl::string_view path, FileSystemReadHandler handler);
   [[maybe_unused]] void remove(etl::string_view path);
 
-  void _onWrite(const rpc::payload::FileWrite& msg, etl::span<const uint8_t> data);
+  void _onWrite(const rpc::payload::FileWrite& msg);
   void _onRead(const rpc::payload::FileRead& msg);
   void _onRemove(const rpc::payload::FileRemove& msg);
   void _onResponse(etl::span<const uint8_t> content);

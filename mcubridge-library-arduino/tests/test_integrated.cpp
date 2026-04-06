@@ -100,9 +100,9 @@ void integrated_test_bridge_core() {
 
   // Create handshake payload using mutable sync object payload
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
-  pb_ostream_t out_stream = pb_ostream_from_buffer(payload_buffer.data(), payload_buffer.size());
-  pb_encode(&out_stream, rpc::Payload::Descriptor<rpc::payload::LinkSync>::fields(), &sync_msg);
-  sync.header.payload_length = static_cast<uint16_t>(out_stream.bytes_written);
+  msgpack::Encoder enc(payload_buffer.data(), payload_buffer.size());
+  sync_msg.encode(enc);
+  sync.header.payload_length = static_cast<uint16_t>(enc.size());
   sync.payload = etl::span<const uint8_t>(payload_buffer.data(), sync.header.payload_length);
 
   accessor.dispatch(sync);

@@ -11,9 +11,9 @@ All files in this directory should be considered **read-only artifacts** of the 
 
 ## Files
 *   `rpc_protocol.h`: Constants, command IDs, and enums generated from the TOML spec.
-*   `rpc_structs.h`: Typed C++ aliases for nanopb payload structs, `REGISTER_DESCRIPTOR` macros, and `Payload::parse<T>()` decoder using `pb_decode`.
+*   `rpc_structs.h`: Native C++ payload structs with MsgPack `encode()`/`decode()` methods and `Payload::parse<T>()` decoder.
 *   `rpc_frame.h`: Frame handling logic (CRC, Header, Payload).
-*   `mcubridge.pb.h` / `mcubridge.pb.c`: Nanopb-generated structs and field descriptors from `mcubridge.proto`. Static allocation, no heap.
+*   `msgpack_codec.h`: Minimal header-only MsgPack encoder/decoder (static, no heap).
 
 ## Generation
 To regenerate these files after modifying `spec.toml` or `mcubridge.proto`:

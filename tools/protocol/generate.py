@@ -13,7 +13,6 @@ from __future__ import annotations
 import dataclasses
 import importlib.util
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -86,6 +85,133 @@ class ProtoField:
 class ProtoMessage:
     name: str
     fields: tuple[ProtoField, ...]
+
+
+# ─── C++ struct model for rpc_structs.h generation ────────────────────────
+# Messages excluded from C++ struct generation (container / internal)
+CPP_STRUCT_EXCLUDE: frozenset[str] = frozenset({"RpcContainer"})
+
+# Field sizes from mcubridge.options: IS_8 / IS_16 / IS_32 (default uint32)
+INT_SIZE_MAP: dict[str, str] = {"IS_8": "uint8_t", "IS_16": "uint16_t", "IS_32": "uint32_t"}
+
+
+@dataclasses.dataclass(frozen=True)
+class CppField:
+    """A single field in a C++ struct for rpc_structs.h."""
+    name: str
+    # Field kind determines encode/decode strategy:
+    #   "uint8" / "uint16" / "uint32" — integer scalar
+    #   "bin_view" — variable-length bytes (etl::span, zero-copy on decode)
+    #   "bin_fixed" — fixed-length byte array (uint8_t[N])
+    #   "str_fixed" — fixed-length null-terminated string (char[N])
+    kind: str
+    # For bin_fixed / str_fixed: the buffer size (e.g. 16, 32, 64)
+    size: int = 0
+
+
+@dataclasses.dataclass(frozen=True)
+class CppStruct:
+    """A C++ struct generated into rpc_structs.h."""
+    name: str                  # e.g. "VersionResponse"
+    fields: tuple[CppField, ...]
+    field_count: int           # number of MsgPack array elements
+
+
+def _parse_nanopb_options(options_path: Path) -> dict[str, str]:
+    """Parse mcubridge.options → {"MessageName.field": "IS_8"|"IS_16"|"IS_32"}."""
+    result: dict[str, str] = {}
+    if not options_path.exists():
+        return result
+    for line in options_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2 and "int_size:" in parts[1]:
+            # "mcubridge.Foo.bar  int_size:IS_8"
+            qualified = parts[0]  # mcubridge.Foo.bar
+            fq_field = qualified.removeprefix("mcubridge.")  # Foo.bar
+            size_spec = parts[1].split(":")[1]  # IS_8
+            result[fq_field] = size_spec
+    return result
+
+
+def _parse_nanopb_annotations(proto_text: str, msg_name: str, field_name: str) -> dict[str, Any]:
+    """Extract nanopb annotations from a proto field definition."""
+    # Find the message body
+    pattern = rf"message\s+{re.escape(msg_name)}\s*\{{([^}}]*)}}"
+    msg_match = re.search(pattern, proto_text)
+    if not msg_match:
+        return {}
+    body = msg_match.group(1)
+    # Find the specific field with annotation
+    field_pat = rf"\b{re.escape(field_name)}\s*=\s*\d+\s*(\[([^\]]*)\])?"
+    field_match = re.search(field_pat, body)
+    if not field_match or not field_match.group(2):
+        return {}
+    annotation_text = field_match.group(2)
+    result: dict[str, Any] = {}
+    if "FT_CALLBACK" in annotation_text:
+        result["callback"] = True
+    max_size_m = re.search(r"max_size\s*=\s*(\d+)", annotation_text)
+    if max_size_m:
+        result["max_size"] = int(max_size_m.group(1))
+    if "fixed_length" in annotation_text and "true" in annotation_text.lower():
+        result["fixed_length"] = True
+    return result
+
+
+def build_cpp_structs(proto_path: Path, options_path: Path) -> list[CppStruct]:
+    """Build CppStruct models from proto + options for rpc_structs.h template."""
+    messages = parse_proto_messages(proto_path)
+    int_sizes = _parse_nanopb_options(options_path)
+    proto_text = proto_path.read_text(encoding="utf-8")
+    structs: list[CppStruct] = []
+
+    for msg in messages:
+        if msg.name in CPP_STRUCT_EXCLUDE:
+            continue
+        cpp_fields: list[CppField] = []
+        for f in msg.fields:
+            annotations = _parse_nanopb_annotations(proto_text, msg.name, f.name)
+            size_key = f"{msg.name}.{f.name}"
+
+            if f.proto_type == "bytes":
+                if annotations.get("callback"):
+                    # Variable-length bytes → zero-copy span on decode
+                    cpp_fields.append(CppField(name=f.name, kind="bin_view"))
+                elif annotations.get("fixed_length") and annotations.get("max_size"):
+                    # Fixed-length bytes → uint8_t[N]
+                    cpp_fields.append(CppField(name=f.name, kind="bin_fixed", size=annotations["max_size"]))
+                elif annotations.get("max_size"):
+                    # Capped bytes without fixed_length — treat as bin_view
+                    cpp_fields.append(CppField(name=f.name, kind="bin_view"))
+                else:
+                    cpp_fields.append(CppField(name=f.name, kind="bin_view"))
+            elif f.proto_type == "string":
+                max_size = annotations.get("max_size", 64)
+                cpp_fields.append(CppField(name=f.name, kind="str_fixed", size=max_size))
+            elif f.proto_type in ("uint32", "int32"):
+                int_size = int_sizes.get(size_key, "IS_32")
+                cpp_type = INT_SIZE_MAP.get(int_size, "uint32_t")
+                if cpp_type == "uint8_t":
+                    cpp_fields.append(CppField(name=f.name, kind="uint8"))
+                elif cpp_type == "uint16_t":
+                    cpp_fields.append(CppField(name=f.name, kind="uint16"))
+                else:
+                    cpp_fields.append(CppField(name=f.name, kind="uint32"))
+            elif f.proto_type == "bool":
+                cpp_fields.append(CppField(name=f.name, kind="uint8"))
+            else:
+                cpp_fields.append(CppField(name=f.name, kind="uint32"))
+
+        structs.append(CppStruct(
+            name=msg.name,
+            fields=tuple(cpp_fields),
+            field_count=len(cpp_fields),
+        ))
+
+    return structs
 
 
 def parse_proto_messages(proto_path: Path) -> list[ProtoMessage]:
@@ -296,9 +422,10 @@ class JinjaGenerator:
         )
         out_path.write_text(render, encoding="utf-8")
 
-    def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path) -> None:
+    def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path, proto_path: Path, options_path: Path) -> None:
         template = self.env.get_template("rpc_structs.h.j2")
-        render = template.render()
+        structs = build_cpp_structs(proto_path, options_path)
+        render = template.render(structs=structs)
         out_path.write_text(render, encoding="utf-8")
 
     def generate_cpp_hw_config(self, spec: ProtocolSpec, out_path: Path) -> None:
@@ -645,8 +772,10 @@ def main(
         sys.stderr.write(f"Generated {hw_config_path}\n")
 
     if cpp_structs:
+        proto_path = spec_path.parent / "mcubridge.proto"
+        options_path = spec_path.parent / "mcubridge.options"
         cpp_structs.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_structs(spec, cpp_structs)
+        gen.generate_cpp_structs(spec, cpp_structs, proto_path, options_path)
         sys.stderr.write(f"Generated {cpp_structs}\n")
 
     if py:
@@ -654,99 +783,12 @@ def main(
         gen.generate_python(spec, py)
         sys.stderr.write(f"Generated {py}\n")
 
-    # [PHASE 3] Protobuf & Nanopb compilation
-    proto_dir = spec_path.parent
-    py_out = py.parent if py else REPO_ROOT / "mcubridge/mcubridge/protocol"
-    cpp_out = cpp.parent if cpp else REPO_ROOT / "mcubridge-library-arduino/src/protocol"
-
-    py_out.mkdir(parents=True, exist_ok=True)
-    cpp_out.mkdir(parents=True, exist_ok=True)
-
-    nanopb_plugin = shutil.which("protoc-gen-nanopb")
-    if nanopb_plugin is None:
-        sys.stderr.write(
-            "Error: protoc-gen-nanopb not found. Install nanopb: pip install nanopb\n"
-        )
-        sys.exit(1)
-
-    # Step 1: Generate Python protobuf bindings + type stubs
-    for proto_file in ("nanopb.proto", "mcubridge.proto"):
-        py_cmd = [
-            sys.executable, "-m", "grpc_tools.protoc",
-            f"--proto_path={proto_dir}",
-            f"--python_out={py_out}",
-            f"--pyi_out={py_out}",
-            proto_file,
-        ]
-        try:
-            subprocess.check_call(py_cmd)
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            sys.stderr.write(f"Error generating Python protobuf for {proto_file}: {e}\n")
-            sys.exit(1)
-
-    # Fix relative imports
-    for suffix in (".py", ".pyi"):
-        pb2_file = py_out / f"mcubridge_pb2{suffix}"
-        if pb2_file.exists():
-            content = pb2_file.read_text(encoding="utf-8")
-            content = content.replace("import nanopb_pb2", "from . import nanopb_pb2")
-            pb2_file.write_text(content, encoding="utf-8")
-
-    # Strip per-class DESCRIPTOR declarations
-    pyi_file = py_out / "mcubridge_pb2.pyi"
-    if pyi_file.exists():
-        pyi_content = pyi_file.read_text(encoding="utf-8")
-        pyi_content = re.sub(
-            r"^    DESCRIPTOR: _ClassVar\[_descriptor\.Descriptor\]\n",
-            "",
-            pyi_content,
-            flags=re.MULTILINE,
-        )
-        pyi_content = re.sub(
-            r"^from \. import nanopb_pb2 as _nanopb_pb2\n",
-            "",
-            pyi_content,
-            flags=re.MULTILINE,
-        )
-        pyi_file.write_text(pyi_content, encoding="utf-8")
-
-    nanopb_pyi = py_out / "nanopb_pb2.pyi"
-    if nanopb_pyi.exists():
-        nanopb_pyi.unlink()
-
-    sys.stderr.write(f"Generated Python protobuf bindings in {py_out}\n")
-
-    # Step 2: Generate C nanopb bindings
-    options_file = proto_dir / "mcubridge.options"
-    nanopb_out_arg = f"-f{options_file}:{cpp_out}" if options_file.exists() else str(cpp_out)
-    c_cmd = [
-        sys.executable, "-m", "grpc_tools.protoc",
-        f"--proto_path={proto_dir}",
-        f"--plugin=protoc-gen-nanopb={nanopb_plugin}",
-        f"--nanopb_out={nanopb_out_arg}",
-        "mcubridge.proto",
-    ]
-    try:
-        subprocess.check_call(c_cmd)
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        sys.stderr.write(f"Error generating nanopb C bindings: {e}\n")
-        sys.exit(1)
-
-    # Post-process: rewrite nanopb includes
-    pb_h = cpp_out / "mcubridge.pb.h"
-    if pb_h.exists():
-        pb_h.write_text(
-            pb_h.read_text(encoding="utf-8").replace('#include <pb.h>', '#include "nanopb/pb.h"'),
-            encoding="utf-8",
-        )
-    sys.stderr.write(f"Generated nanopb C bindings in {cpp_out}\n")
-
     if py_client:
         py_client.parent.mkdir(parents=True, exist_ok=True)
         gen.generate_python_client(spec, py_client)
         sys.stderr.write(f"Generated {py_client}\n")
 
-    # Step 3: Generate Packet classes from proto into structures.py
+    # Generate Packet classes from proto schema into structures.py
     if structures:
         proto_path = spec_path.parent / "mcubridge.proto"
         gen.generate_structures_packets(proto_path, structures)

@@ -74,13 +74,13 @@ The project follows modern, best-practice development conventions:
 *   **Import Sorting:** Python imports are sorted with `isort`.
 *   **Linting:** The code is linted with `ruff` and `flake8`.
 *   **Static Type Checking:** Python code is type-checked with `pyright`.
-*   **Protocol as Code:** The communication protocol is defined in `tools/protocol/spec.toml` (enums, constants) and `tools/protocol/mcubridge.proto` (payload schemas, proto3). The corresponding code is generated using `tools/protocol/generate.py`, which invokes `protoc` + nanopb to produce both Python (`mcubridge_pb2.py`) and C++ (`mcubridge.pb.h`) bindings. This ensures that the protocol is always in sync between the C++ and Python codebases.
-*   **Architecture:** Payload serialization uses **Protocol Buffers (proto3)** on both sides: `protobuf` (Python) and **nanopb** (C++, static allocation, no heap). Frame-level constructs (CRC, header) are handled by `construct` (Python) and internal C++ helpers. The `rpc_structs.h` file provides typed aliases (`rpc::payload::*`) and `Payload::parse<T>()` / `sendPbFrame<T>()` wrappers for type-safe protobuf encode/decode.
+*   **Protocol as Code:** The communication protocol is defined in `tools/protocol/spec.toml` (enums, constants) and `tools/protocol/mcubridge.proto` (payload schemas). The corresponding code is generated using `tools/protocol/generate.py` to produce both Python (`structures.py`) and C++ (`rpc_structs.h`) bindings. This ensures that the protocol is always in sync between the C++ and Python codebases.
+*   **Architecture:** Payload serialization uses **MsgPack** (array format) on both sides: `msgspec` (Python) and a minimal header-only codec `msgpack_codec.h` (C++, static allocation, no heap). Frame-level constructs (CRC, header) are handled by `construct` (Python) and internal C++ helpers. The `rpc_structs.h` file provides native `rpc::payload::*` structs with `encode()`/`decode()` methods and `Payload::parse<T>()` / `sendPbFrame<T>()` wrappers for type-safe MsgPack encode/decode.
     *   **Frame Layer (Sustitución Drástica):** Uses the `construct` library for declarative frame definition. This eliminates manual offset logic and centralizes integrity validation (CRC32) in a single, auditable schema.
     *   **RLE Protocol (Refactor):** Compression uses high-performance regex (`re.finditer`) but is encapsulated under a `msgspec.CustomType` interface for seamless integration with the rest of the Python system.
-    *   **Packet Layer:** Uses **protobuf** (`mcubridge_pb2`) to decode payloads into typed messages.
+    *   **Packet Layer:** Uses **MsgPack** (`msgspec` Packet classes) to decode payloads into typed messages.
     *   **C++ Dispatch:** Uses O(1) jump tables of member function pointers for command dispatch, eliminating `switch/case` overhead and reducing stack depth.
-    *   **C++ Validation:** Implements `rpc::Payload::parse<T>` using nanopb `pb_decode` with automatic field descriptor resolution via `REGISTER_DESCRIPTOR` macros generated from `mcubridge.proto`.
+    *   **C++ Validation:** Implements `rpc::Payload::parse<T>` using `msgpack::Decoder` with struct-level `decode()` methods generated from `mcubridge.proto`.
 *   **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, and SPI.
 *   **Observability:** Built-in Prometheus exporter exposes extensive runtime metrics, including task supervisor health, queue depths, serial latency histograms, CPU temperature, and I/O throughput. Logs use structured hex format `[DE AD BE EF]` with directional labels `[MCU -> SERIAL]` and `[SERIAL -> MCU]`.
 *   **Robustness:**
@@ -88,5 +88,5 @@ The project follows modern, best-practice development conventions:
     *   **Race Condition Guard:** State machine includes guards to prevent invalid transitions during high-speed asynchronous responses.
     *   **Cleanup:** Child processes are robustly terminated using `psutil` traversal on shutdown.
     *   **E2E Testing:** Automated integration testing (`tox -e e2e`) verifies the full stack against a native C++ emulator.
-*   **Status:** The ecosystem is fully modernized and synchronized. All services use **protobuf/nanopb** typed messages for payload serialization. The C++ library strictly adheres to SIL-2 standards with O(1) dispatch and ETL integration.
+*   **Status:** The ecosystem is fully modernized and synchronized. All services use **MsgPack** typed messages for payload serialization. The C++ library strictly adheres to SIL-2 standards with O(1) dispatch and ETL integration.
 *   **Automated CI/CD:** The project uses GitHub Actions to automate the build and test process.

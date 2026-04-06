@@ -5,7 +5,7 @@
  * Covers: RLE decode, frame parser edge cases, FSM transitions, Console I/O,
  * SPI mock methods, service callbacks with handlers, Bridge dispatch paths,
  * CRC error escalation, ACK timeout retry, decompressed frames, observer
- * notifications, pb_copy_join, and handshake tag computation.
+ * notifications, copy_join, and handshake tag computation.
  */
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
@@ -29,7 +29,7 @@
 #include "services/Mailbox.h"
 #include "services/Process.h"
 #include "services/SPIService.h"
-#include "util/pb_copy.h"
+#include "util/string_copy.h"
 #include "test_support.h"
 
 // --- Globals ---
@@ -364,33 +364,30 @@ static void test_spi_handlers_dispatch() {
     ba.dispatch(f);
   }
 
-  // SPI SetConfig with protobuf payload (lines 432-442)
+  // SPI SetConfig with msgpack payload (lines 432-442)
   {
-    mcubridge_SpiConfig msg = mcubridge_SpiConfig_init_default;
+    rpc::payload::SpiConfig msg = {};
     msg.frequency = 2000000;
     msg.bit_order = 1;
     msg.data_mode = 0;
-    pb_ostream_t s = pb_ostream_from_buffer(payload_buf.data(), payload_buf.size());
-    pb_encode(&s, mcubridge_SpiConfig_fields, &msg);
+    msgpack::Encoder enc(payload_buf.data(), payload_buf.size());
+    msg.encode(enc);
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG);
-    f.header.payload_length = static_cast<uint16_t>(s.bytes_written);
-    f.payload = etl::span<const uint8_t>(payload_buf.data(), s.bytes_written);
+    f.header.payload_length = static_cast<uint16_t>(enc.size());
+    f.payload = etl::span<const uint8_t>(payload_buf.data(), enc.size());
     ba.dispatch(f);
   }
 
   // SPI Transfer with data (lines 451-452)
   {
-    mcubridge_SpiTransfer msg = mcubridge_SpiTransfer_init_default;
-    // Set up a small data payload
+    rpc::payload::SpiTransfer msg = {};
     uint8_t spi_data[] = {0x11, 0x22};
-    etl::span<const uint8_t> data_span(spi_data, 2);
-    msg.data.funcs.encode = &rpc::util::pb_encode_span_callback;
-    msg.data.arg = const_cast<etl::span<const uint8_t>*>(&data_span);
-    pb_ostream_t s = pb_ostream_from_buffer(payload_buf.data(), payload_buf.size());
-    pb_encode(&s, mcubridge_SpiTransfer_fields, &msg);
+    msg.data = etl::span<const uint8_t>(spi_data, 2);
+    msgpack::Encoder enc(payload_buf.data(), payload_buf.size());
+    msg.encode(enc);
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER);
-    f.header.payload_length = static_cast<uint16_t>(s.bytes_written);
-    f.payload = etl::span<const uint8_t>(payload_buf.data(), s.bytes_written);
+    f.header.payload_length = static_cast<uint16_t>(enc.size());
+    f.payload = etl::span<const uint8_t>(payload_buf.data(), enc.size());
     ba.dispatch(f);
   }
 
@@ -405,29 +402,29 @@ static void test_spi_handlers_dispatch() {
 }
 
 // ============================================================================
-// 9. pb_copy_join — multi-part (pb_copy.h:85,88,90-91)
+// 9. copy_join — multi-part (string_copy.h)
 // ============================================================================
 
-static void test_pb_copy_join_parts() {
+static void test_copy_join_parts() {
   char dst[64] = {};
   etl::string_view parts[] = {
     etl::string_view("arg1"),
     etl::string_view("arg2"),
     etl::string_view("arg3"),
   };
-  rpc::util::pb_copy_join(
+  rpc::util::copy_join(
     etl::string_view("cmd"),
     etl::span<const etl::string_view>(parts, 3),
     dst, sizeof(dst));
   TEST_ASSERT_EQUAL_STRING("cmd arg1 arg2 arg3", dst);
 }
 
-static void test_pb_copy_join_overflow() {
+static void test_copy_join_overflow() {
   char dst[10] = {};
   etl::string_view parts[] = {
     etl::string_view("very_long_argument"),
   };
-  rpc::util::pb_copy_join(
+  rpc::util::copy_join(
     etl::string_view("cmd"),
     etl::span<const etl::string_view>(parts, 1),
     dst, sizeof(dst));
@@ -436,11 +433,11 @@ static void test_pb_copy_join_overflow() {
   TEST_ASSERT_EQUAL(9U, strlen(dst));
 }
 
-static void test_pb_copy_join_empty_dst() {
+static void test_copy_join_empty_dst() {
   // Zero-size destination
   char dst[1] = {'X'};
   etl::string_view parts[] = { etl::string_view("a") };
-  rpc::util::pb_copy_join(etl::string_view("b"), etl::span<const etl::string_view>(parts, 1), dst, 0);
+  rpc::util::copy_join(etl::string_view("b"), etl::span<const etl::string_view>(parts, 1), dst, 0);
   TEST_ASSERT_EQUAL('X', dst[0]);  // Unchanged
 }
 
@@ -1015,19 +1012,19 @@ static void test_handle_received_frame_dup_with_ack() {
 
   // Build a frame with ACK-requiring command
   uint16_t cmd = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
-  mcubridge_DigitalWrite dw = mcubridge_DigitalWrite_init_default;
+  rpc::payload::DigitalWrite dw = {};
   dw.pin = 5;
   dw.value = 1;
   etl::array<uint8_t, 32> pb_buf = {};
-  pb_ostream_t s = pb_ostream_from_buffer(pb_buf.data(), pb_buf.size());
-  pb_encode(&s, mcubridge_DigitalWrite_fields, &dw);
+  msgpack::Encoder enc_dw(pb_buf.data(), pb_buf.size());
+  dw.encode(enc_dw);
 
   rpc::FrameBuilder builder;
   etl::array<uint8_t, 128> raw_frame = {};
   size_t raw_len = builder.build(
       etl::span<uint8_t>(raw_frame.data(), raw_frame.size()),
       cmd, 77,
-      etl::span<const uint8_t>(pb_buf.data(), s.bytes_written));
+      enc_dw.result());
   TEST_ASSERT_GREATER_THAN(0U, raw_len);
 
   // First reception — goes through normal path and is processed
@@ -1066,16 +1063,16 @@ static void test_enter_bootloader() {
 
   // Build EnterBootloader with correct magic
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buf = {};
-  mcubridge_EnterBootloader msg = mcubridge_EnterBootloader_init_default;
+  rpc::payload::EnterBootloader msg = {};
   msg.magic = rpc::RPC_BOOTLOADER_MAGIC;
-  pb_ostream_t s = pb_ostream_from_buffer(payload_buf.data(), payload_buf.size());
-  pb_encode(&s, mcubridge_EnterBootloader_fields, &msg);
+  msgpack::Encoder enc(payload_buf.data(), payload_buf.size());
+  msg.encode(enc);
 
   rpc::Frame f = {};
   f.header.version = rpc::PROTOCOL_VERSION;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER);
-  f.header.payload_length = static_cast<uint16_t>(s.bytes_written);
-  f.payload = etl::span<const uint8_t>(payload_buf.data(), s.bytes_written);
+  f.header.payload_length = static_cast<uint16_t>(enc.size());
+  f.payload = etl::span<const uint8_t>(payload_buf.data(), enc.size());
   bridge::router::CommandContext ctx(&f, f.header.command_id, false, true, 10);
   ba.routeSystemCommand(ctx);
   TEST_ASSERT(true);
@@ -1091,14 +1088,14 @@ static void test_apply_timing_all_fields() {
 
   // Build HandshakeConfig with all fields set
   etl::array<uint8_t, 32> pb_buf = {};
-  mcubridge_HandshakeConfig msg = mcubridge_HandshakeConfig_init_default;
+  rpc::payload::HandshakeConfig msg = {};
   msg.ack_timeout_ms = 500;
   msg.ack_retry_limit = 7;
   msg.response_timeout_ms = 2000;
-  pb_ostream_t s = pb_ostream_from_buffer(pb_buf.data(), pb_buf.size());
-  pb_encode(&s, mcubridge_HandshakeConfig_fields, &msg);
+  msgpack::Encoder enc(pb_buf.data(), pb_buf.size());
+  msg.encode(enc);
 
-  ba.applyTimingConfig(pb_buf.data(), s.bytes_written);
+  ba.applyTimingConfig(pb_buf.data(), enc.size());
   TEST_ASSERT_EQUAL(500U, ba.getAckTimeoutMs());
   TEST_ASSERT_EQUAL(7U, ba.getAckRetryLimit());
 }
@@ -1189,36 +1186,36 @@ static void test_pin_read_valid() {
 
   // DigitalRead with valid pin — route through GPIO handler
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buf = {};
-  mcubridge_PinRead msg = mcubridge_PinRead_init_default;
+  rpc::payload::PinRead msg = {};
   msg.pin = 5;  // Valid pin
-  pb_ostream_t s = pb_ostream_from_buffer(payload_buf.data(), payload_buf.size());
-  pb_encode(&s, mcubridge_PinRead_fields, &msg);
+  msgpack::Encoder enc(payload_buf.data(), payload_buf.size());
+  msg.encode(enc);
 
   rpc::Frame f = {};
   f.header.version = rpc::PROTOCOL_VERSION;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ);
-  f.header.payload_length = static_cast<uint16_t>(s.bytes_written);
-  f.payload = etl::span<const uint8_t>(payload_buf.data(), s.bytes_written);
+  f.header.payload_length = static_cast<uint16_t>(enc.size());
+  f.payload = etl::span<const uint8_t>(payload_buf.data(), enc.size());
   ba.dispatch(f);
   TEST_ASSERT(true);
 
   // AnalogRead with valid pin
   msg.pin = 0;  // A0
-  s = pb_ostream_from_buffer(payload_buf.data(), payload_buf.size());
-  pb_encode(&s, mcubridge_PinRead_fields, &msg);
+  msgpack::Encoder enc2(payload_buf.data(), payload_buf.size());
+  msg.encode(enc2);
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ);
-  f.header.payload_length = static_cast<uint16_t>(s.bytes_written);
-  f.payload = etl::span<const uint8_t>(payload_buf.data(), s.bytes_written);
+  f.header.payload_length = static_cast<uint16_t>(enc2.size());
+  f.payload = etl::span<const uint8_t>(payload_buf.data(), enc2.size());
   ba.dispatch(f);
   TEST_ASSERT(true);
 
   // DigitalRead with INVALID pin — should emit STATUS_ERROR (Bridge.h:274)
   msg.pin = 254;  // Invalid pin
-  s = pb_ostream_from_buffer(payload_buf.data(), payload_buf.size());
-  pb_encode(&s, mcubridge_PinRead_fields, &msg);
+  msgpack::Encoder enc3(payload_buf.data(), payload_buf.size());
+  msg.encode(enc3);
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ);
-  f.header.payload_length = static_cast<uint16_t>(s.bytes_written);
-  f.payload = etl::span<const uint8_t>(payload_buf.data(), s.bytes_written);
+  f.header.payload_length = static_cast<uint16_t>(enc3.size());
+  f.payload = etl::span<const uint8_t>(payload_buf.data(), enc3.size());
   ba.dispatch(f);
   TEST_ASSERT(true);
 }
@@ -1387,17 +1384,17 @@ static void test_pin_setter_invalid_pin() {
 
   // Send DigitalWrite with invalid pin number
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buf = {};
-  mcubridge_DigitalWrite msg = mcubridge_DigitalWrite_init_default;
+  rpc::payload::DigitalWrite msg = {};
   msg.pin = 255;  // Invalid pin
   msg.value = 1;
-  pb_ostream_t s = pb_ostream_from_buffer(payload_buf.data(), payload_buf.size());
-  pb_encode(&s, mcubridge_DigitalWrite_fields, &msg);
+  msgpack::Encoder enc(payload_buf.data(), payload_buf.size());
+  msg.encode(enc);
 
   rpc::Frame f = {};
   f.header.version = rpc::PROTOCOL_VERSION;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
-  f.header.payload_length = static_cast<uint16_t>(s.bytes_written);
-  f.payload = etl::span<const uint8_t>(payload_buf.data(), s.bytes_written);
+  f.header.payload_length = static_cast<uint16_t>(enc.size());
+  f.payload = etl::span<const uint8_t>(payload_buf.data(), enc.size());
   ba.dispatch(f);
   TEST_ASSERT(true);  // Should emit STATUS_ERROR, not crash
 }
@@ -1479,10 +1476,10 @@ int main() {
   RUN_TEST(test_spi_mock_methods);
   RUN_TEST(test_spi_handlers_dispatch);
 
-  // pb_copy_join
-  RUN_TEST(test_pb_copy_join_parts);
-  RUN_TEST(test_pb_copy_join_overflow);
-  RUN_TEST(test_pb_copy_join_empty_dst);
+  // copy_join
+  RUN_TEST(test_copy_join_parts);
+  RUN_TEST(test_copy_join_overflow);
+  RUN_TEST(test_copy_join_empty_dst);
 
   // Console
   RUN_TEST(test_console_write_buffer_full_break);

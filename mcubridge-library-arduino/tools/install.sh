@@ -132,46 +132,6 @@ else
     ls -R "$LIB_DIR/PacketSerial"
 fi
 
-# 2. Nanopb (Still vendored due to custom static config)
-NANOPB_VERSION="0.4.9.1"
-install_nanopb() {
-    local url="https://codeload.github.com/nanopb/nanopb/zip/refs/tags/${NANOPB_VERSION}"
-    local check_file="pb.h"
-    local target="${LIB_ROOT}/src"
-
-    if [ -f "$target/nanopb/$check_file" ]; then
-        echo "[INFO] nanopb already installed at $target."
-        return 0
-    fi
-
-    echo "[WARN] nanopb missing. Installing..."
-
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
-    local zip_path="$tmp_dir/nanopb.zip"
-
-    if ! download_zip "nanopb" "$url" "$zip_path"; then
-        echo "[ERROR] Failed to download nanopb." >&2
-        rm -rf "$tmp_dir"
-        return 1
-    fi
-
-    unzip -q "$zip_path" -d "$tmp_dir"
-    local extracted_root
-    extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d -name "nanopb-*" | head -n1)
-
-    local nanopb_files="pb.h pb_common.c pb_common.h pb_decode.c pb_decode.h pb_encode.c pb_encode.h"
-
-    mkdir -p "$target/nanopb"
-    for f in $nanopb_files; do
-        cp "$extracted_root/$f" "$target/nanopb/"
-    done
-    echo "[OK] nanopb ${NANOPB_VERSION} installed to $target."
-
-    rm -rf "$tmp_dir"
-}
-install_nanopb
-
 # Unity test framework (host tests only)
 install_dependency "Unity" \
     "https://codeload.github.com/ThrowTheSwitch/Unity/zip/refs/tags/v2.6.1" \

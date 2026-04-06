@@ -1,15 +1,15 @@
 #include "FileSystem.h"
 #include "Bridge.h"
-#include "util/pb_copy.h"
+#include "util/string_copy.h"
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
 namespace {
-constexpr size_t kReadChunkSize = rpc::MAX_PAYLOAD_SIZE - 2U;
+constexpr size_t kReadChunkSize = rpc::MAX_PAYLOAD_SIZE - 3U;
 
 void send_read_response(etl::span<const uint8_t> data) {
   rpc::payload::FileReadResponse msg = {};
-  rpc::util::pb_setup_encode_span(msg.content, data);
+  msg.content = data;
   Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ_RESP, 0, msg);
 }
 }
@@ -18,15 +18,15 @@ FileSystemClass::FileSystemClass() {}
 
 void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data) {
   rpc::payload::FileWrite msg = {};
-  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
-  rpc::util::pb_setup_encode_span(msg.data, data);
+  rpc::util::copy_string(path, msg.path, sizeof(msg.path));
+  msg.data = data;
   Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, 0, msg);
 }
 
 void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler) {
   _read_handler = handler;
   rpc::payload::FileRead msg = {};
-  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
+  rpc::util::copy_string(path, msg.path, sizeof(msg.path));
   if (!Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ, 0, msg)) {
     _read_handler.clear();
   }
@@ -34,15 +34,15 @@ void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler)
 
 [[maybe_unused]] void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove msg = {};
-  rpc::util::pb_copy_string(path, msg.path, sizeof(msg.path));
+  rpc::util::copy_string(path, msg.path, sizeof(msg.path));
   Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, 0, msg);
 }
 
-void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg, etl::span<const uint8_t> data) {
+void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   // [SIL-2] Check hardware availability via HAL. Filesystem operations are 
   // only implemented if an SD card or external flash is present.
   if (bridge::hal::hasSD()) {
-    auto res = bridge::hal::writeFile(msg.path, data);
+    auto res = bridge::hal::writeFile(msg.path, msg.data);
     if (res.has_value()) {
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
     } else {

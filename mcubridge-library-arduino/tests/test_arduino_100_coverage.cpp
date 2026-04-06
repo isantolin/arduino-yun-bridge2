@@ -122,7 +122,7 @@ void test_process_extra_gaps() {
 
   // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP with handler
   Process.runAsync("echo", etl::span<const etl::string_view>{},
-      ProcessClass::ProcessRunAsyncHandler::create([](int16_t p) { (void)p; }));
+      ProcessClass::ProcessRunAsyncHandler::create([](int32_t p) { (void)p; }));
   f.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
   f.header.payload_length = 2;

@@ -14,7 +14,7 @@
 - **Native Flow Control**: Implemented software XON/XOFF support in serial transport.
 - **Strong Type Safety**: Integrated PEP-561 type stubs for third-party OS libraries (`sh`, `uci`).
 - **100% Protocol Sync**: Guaranteed consistency between MPU and MCU via automated code generation.
-- **Protobuf Payload Serialization**: All RPC payloads migrated from raw struct packing to Protocol Buffers (proto3) with nanopb (C++) and protobuf (Python).
+- **MsgPack Payload Serialization**: All RPC payloads migrated from raw struct packing to MsgPack (array format) with a minimal header-only codec on MCU and msgspec on Python.
 - **Race Condition Protection**: Hardened FSM to handle high-speed asynchronous responses.
 
 ### 2. Lifecycle Management & FOTA

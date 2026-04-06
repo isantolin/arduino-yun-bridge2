@@ -87,18 +87,12 @@ def test_protocol_spec_matches_generated_bindings() -> None:
 
 
 def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
-    # Ensure our Python struct matches the C++ expected size
-    schema = structures.HandshakeConfigPacket.SCHEMA
-    packed_size = 7  # Protobuf varies, but original size was 7
-    assert packed_size > 0
-
-    header_text = CPP_HEADER_PATH.read_text(encoding="utf-8")
-    match = re.search(r"RPC_HANDSHAKE_CONFIG_SIZE\s*=\s*(\d+)u?", header_text)
-    assert match, "RPC_HANDSHAKE_CONFIG_SIZE missing in header"
-    assert int(match.group(1)) == packed_size
-
-    sample_payload = schema.build(dict(ack_timeout_ms=750, ack_retry_limit=3, response_timeout_ms=120000))
-    assert len(sample_payload) > 0
+    # Validate encode/decode round-trip for HandshakeConfig payload
+    sample = structures.HandshakeConfigPacket(ack_timeout_ms=750, ack_retry_limit=3, response_timeout_ms=120000)
+    encoded = sample.encode()
+    assert len(encoded) > 0
+    decoded = structures.HandshakeConfigPacket.decode(encoded)
+    assert decoded == sample
 
 
 def test_handshake_tag_reference_vector_matches_spec() -> None:

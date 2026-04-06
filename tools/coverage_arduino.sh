@@ -19,7 +19,7 @@ mkdir -p "${OUTPUT_ROOT}" "${OBJ_DIR}"
 
 # [SIL-2] Library Installation (Dependencies)
 # When run from tox, commands_pre already generates protocol bindings.
-# Re-running here would race with parallel coverage_python.sh (nanopb_pb2 import error).
+# Re-running here would race with parallel coverage_python.sh.
 if [ -z "${TOX_ENV_NAME:-}" ]; then
     echo "[coverage_arduino] Generating protocol bindings..."
     ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
@@ -48,10 +48,6 @@ PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 
 # Sources to track for coverage
 SOURCES=(
-    "${SRC_ROOT}/nanopb/pb_common.c"
-    "${SRC_ROOT}/nanopb/pb_encode.c"
-    "${SRC_ROOT}/nanopb/pb_decode.c"
-    "${SRC_ROOT}/protocol/mcubridge.pb.c"
     "${SRC_ROOT}/security/security.cpp"
     "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
     "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
@@ -106,7 +102,6 @@ BASE_FLAGS=(
     "-DUNITY_INCLUDE_DOUBLE"
     "-I${SRC_ROOT}"
     "-I${SRC_ROOT}/config"
-    "-I${SRC_ROOT}/nanopb"
     "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}"
     "-I$ETL_PATH"
@@ -173,7 +168,7 @@ done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
-gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*nanopb.*" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*mcubridge\.pb\..*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
+gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 # Optional: also output term summary
 cat "${OUTPUT_ROOT}/summary.txt"

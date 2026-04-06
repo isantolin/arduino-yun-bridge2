@@ -144,7 +144,7 @@ async def test_mqtt_digital_write_sends_frame(
     assert sent_frames
     command_id, payload = sent_frames[0]
     assert command_id == Command.CMD_DIGITAL_WRITE.value
-    assert payload == structures.DigitalWritePacket.SCHEMA.build(dict(pin=5, value=protocol.DIGITAL_HIGH))
+    assert payload == structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_HIGH).encode()
 
 
 @pytest.mark.asyncio
@@ -181,7 +181,7 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     assert sent_frames
     command_id, payload = sent_frames[0]
     assert command_id == Command.CMD_ANALOG_READ.value
-    assert payload == structures.PinReadPacket.SCHEMA.build({"pin": 2})
+    assert payload == structures.PinReadPacket(pin=2).encode()
     pending = runtime_state.pending_analog_reads[-1]
     assert pending.pin == 2
 

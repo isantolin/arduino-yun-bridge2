@@ -52,11 +52,7 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
-#include "util/pb_copy.h"
-
-#include "nanopb/pb_common.h"
-#include "nanopb/pb_decode.h"
-#include "nanopb/pb_encode.h"
+#include "util/string_copy.h"
 #include <etl/bitset.h>
 #include <etl/circular_buffer.h>
 #include <etl/delegate.h>
@@ -180,9 +176,9 @@ class BridgeClass
 
   template <typename T>
   void emitStatus(rpc::StatusCode status_code, const T& msg) {
-    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
-      emitStatus(status_code, etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
+    msgpack::Encoder enc(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+    if (msg.encode(enc)) {
+      emitStatus(status_code, enc.result());
     }
   }
 
@@ -191,22 +187,20 @@ class BridgeClass
 
   template <typename T>
   bool sendPbCommand(rpc::CommandId command_id, uint16_t sequence_id, const T& msg) {
-    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
-      return false; // GCOVR_EXCL_LINE — defensive: pb_encode failure requires corrupt message
+    msgpack::Encoder enc(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+    if (!msg.encode(enc)) {
+      return false; // GCOVR_EXCL_LINE — defensive: encode failure requires corrupt message
     }
-    return sendFrame(command_id, sequence_id,
-                       etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
+    return sendFrame(command_id, sequence_id, enc.result());
   }
 
   template <typename T>
   bool sendPbFrame(rpc::StatusCode status_code, uint16_t sequence_id, const T& msg) {
-    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (!pb_encode(&stream, rpc::Payload::Descriptor<T>::fields(), &msg)) {
-      return false; // GCOVR_EXCL_LINE — defensive: pb_encode failure requires corrupt message
+    msgpack::Encoder enc(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+    if (!msg.encode(enc)) {
+      return false; // GCOVR_EXCL_LINE — defensive: encode failure requires corrupt message
     }
-    _sendRawFrame(rpc::to_underlying(status_code), sequence_id,
-                  etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
+    _sendRawFrame(rpc::to_underlying(status_code), sequence_id, enc.result());
     return true;
   }
 
@@ -268,7 +262,7 @@ class BridgeClass
     _withPayload<rpc::payload::PinRead>(ctx, [&](const rpc::payload::PinRead& msg) {
       if (valid_func(msg.pin)) {
         TResponse resp = {};
-        resp.value = static_cast<uint32_t>(read_func(msg.pin));
+        resp.value = read_func(msg.pin);
         _sendPbResponse(resp_cmd, ctx.sequence_id, resp);
       } else {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -331,43 +325,16 @@ class BridgeClass
     if (!ctx.is_duplicate) handler();
   }
 
-  template <typename TPacket, typename F> void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) { // GCOVR_EXCL_START — per-instantiation template: gcovr counts each specialization separately
+  template <typename TPacket, typename F> void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) { // GCOVR_EXCL_START — per-instantiation template: gcovr counts each specialization separately
     if (!ctx.is_duplicate) {
-      auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
+      auto res = rpc::Payload::parse<TPacket>(*ctx.frame);
       if (res.has_value()) handler(res.value());
     }
     if (ctx.requires_ack) _sendAckAndFlush(ctx.raw_command, ctx.sequence_id);
   } // GCOVR_EXCL_STOP // GCOVR_EXCL_LINE
 
-  // [SIL-2] Custom type trait to detect if F is invocable with (const TPacket&, etl::span<const uint8_t>)
-  // Uses ETL traits for maximum compatibility and to comply with No-STL policy gates.
-  template <typename F, typename TP, typename S, typename = void>
-  struct is_two_arg_invocable : etl::false_type {};
-
-  template <typename F, typename TP, typename S>
-  struct is_two_arg_invocable<F, TP, S, etl::void_t<decltype(etl::declval<F>()(etl::declval<const TP&>(), etl::declval<S>()))>> : etl::true_type {};
-
-
-  template <typename TPacket, typename F, typename TField>
-  void _dispatchWithBytes(const bridge::router::CommandContext& ctx, TField TPacket::*field, F handler, bool ack = false) {
-    etl::span<uint8_t> span(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    TPacket msg = {};
-    rpc::util::pb_setup_decode_span(msg.*field, span);
-
-    auto logic = [&handler, &span](const TPacket& m) { // GCOVR_EXCL_START — constexpr if: one branch dead per instantiation
-      if constexpr (is_two_arg_invocable<F, TPacket, etl::span<const uint8_t>>::value) {
-        handler(m, etl::span<const uint8_t>(span.data(), span.size()));
-      } else {
-        handler(etl::span<const uint8_t>(span.data(), span.size()));
-      }
-    }; // GCOVR_EXCL_STOP
-
-    if (ack) _withPayloadAck<TPacket>(ctx, logic, msg); // GCOVR_EXCL_BR_LINE
-    else _withPayload<TPacket>(ctx, logic, msg); // GCOVR_EXCL_LINE — dead in ack=true instantiations
-  }
-
-  template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler, TPacket msg = {}) { // GCOVR_EXCL_START — per-instantiation parse branch
-    auto res = rpc::Payload::parse<TPacket>(*ctx.frame, msg);
+  template <typename TPacket, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler) { // GCOVR_EXCL_START — per-instantiation parse branch
+    auto res = rpc::Payload::parse<TPacket>(*ctx.frame);
     if (res.has_value()) handler(res.value());
   } // GCOVR_EXCL_STOP // GCOVR_EXCL_LINE
 

@@ -27,8 +27,8 @@ if [ ! -d "$PACKETSERIAL_PATH" ]; then
     PACKETSERIAL_PATH="$REPO_ROOT/.dummy_libs/PacketSerial/src"
 fi
 
-CFLAGS="-std=c++17 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_ENABLE_SPI=1  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -Isrc -Isrc/config -Isrc/nanopb -Isrc/protocol -Itests/Unity/src -I../tools/arduino_stub/include -I$ETL_PATH -I$WOLFSSL_PATH -I$PACKETSERIAL_PATH"
-SOURCES="src/nanopb/pb_common.c src/nanopb/pb_encode.c src/nanopb/pb_decode.c src/protocol/mcubridge.pb.c src/security/security.cpp src/hal/hal.cpp src/protocol/rle.cpp src/Bridge.cpp src/services/Console.cpp src/services/DataStore.cpp src/services/Mailbox.cpp src/services/FileSystem.cpp src/services/Process.cpp src/services/SPIService.cpp"
+CFLAGS="-std=c++17 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_ENABLE_SPI=1  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -Isrc -Isrc/config -Isrc/protocol -Itests/Unity/src -I../tools/arduino_stub/include -I$ETL_PATH -I$WOLFSSL_PATH -I$PACKETSERIAL_PATH"
+SOURCES="src/security/security.cpp src/hal/hal.cpp src/protocol/rle.cpp src/Bridge.cpp src/services/Console.cpp src/services/DataStore.cpp src/services/Mailbox.cpp src/services/FileSystem.cpp src/services/Process.cpp src/services/SPIService.cpp"
 WOLF_SOURCES="$WOLFSSL_PATH/wolfcrypt/src/sha256.c $WOLFSSL_PATH/wolfcrypt/src/hmac.c $WOLFSSL_PATH/wolfcrypt/src/hash.c $WOLFSSL_PATH/wolfcrypt/src/kdf.c $WOLFSSL_PATH/wolfcrypt/src/error.c $WOLFSSL_PATH/wolfcrypt/src/logging.c $WOLFSSL_PATH/wolfcrypt/src/wc_port.c $WOLFSSL_PATH/wolfcrypt/src/memory.c"
 UNITY="build-host-local/unity.o"
 

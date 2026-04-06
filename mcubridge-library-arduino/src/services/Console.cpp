@@ -1,6 +1,6 @@
 #include "Console.h"
 #include "Bridge.h"
-#include "util/pb_copy.h"
+#include "util/string_copy.h"
 
 ConsoleClass::ConsoleClass() { _flags.reset(); }
 
@@ -95,7 +95,7 @@ void ConsoleClass::flush() {
     data = etl::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size());
   }
   rpc::payload::ConsoleWrite msg = {};
-  rpc::util::pb_setup_encode_span(msg.data, data);
+  msg.data = data;
   if (Bridge.sendPbCommand(rpc::CommandId::CMD_CONSOLE_WRITE, 0, msg)) {
     BRIDGE_ATOMIC_BLOCK { _tx_buffer.clear(); }
   }

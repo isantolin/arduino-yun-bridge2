@@ -6,7 +6,5 @@ class {{ packet.class_name }}(BaseStruct, frozen=True):
     {{ field.name }}: {{ field.python_type }}
 {%- endfor %}
 
-    PB_CLASS = mcubridge_pb2.{{ packet.proto_name }}
-
 {% endfor %}
 # --- END GENERATED PACKETS ---

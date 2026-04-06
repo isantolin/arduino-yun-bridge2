@@ -3,11 +3,11 @@
 ## Quick Context
 - Modern replacement for the legacy Yun Bridge: Python daemon on the MPU, C++ library on the MCU, MQTT v5 everywhere for async RPC.
 - Mission-critical handshake: MCU and Linux exchange HMAC-authenticated frames before MQTT services come online; never ship with the placeholder `changeme123` secret.
-- Releases must keep protocol artifacts in sync between `mcubridge/mcubridge/protocol/` and `mcubridge-library-arduino/src/protocol/`. This includes both `spec.toml`-derived files and `mcubridge.proto`-derived files (protobuf/nanopb).
+- Releases must keep protocol artifacts in sync between `mcubridge/mcubridge/protocol/` and `mcubridge-library-arduino/src/protocol/`. This includes `spec.toml`-derived files and `mcubridge.proto`-derived struct definitions.
 
 ## Architecture & Source Layout
 - `mcubridge/`: async daemon (`mcubridge/daemon.py`, `BridgeService`, `RuntimeState`, MQTT helpers), init scripts, core system scripts (`scripts/`), UCI defaults (`uci-defaults/`), and Python tests.
-- `mcubridge-library-arduino/`: MCU runtime, sketches under `examples/`, protocol glue under `src/protocol/` (COBS, CRC, RPC enums, nanopb-generated payload structs).
+- `mcubridge-library-arduino/`: MCU runtime, sketches under `examples/`, protocol glue under `src/protocol/` (COBS, CRC, RPC enums, MsgPack-based payload structs).
   - `src/services/`: Arduino service implementations (Bridge, Console, DataStore, FileSystem, Mailbox, Process)
   - `src/security/`: Cryptographic primitives (HKDF, HMAC, secure_zero)
   - `src/config/`: Configuration constants
@@ -17,8 +17,8 @@
 - `feeds/` + `openwrt-sdk/`: local OpenWrt feed populated by `tools/sync_feed_overlay.sh`; SDK builds APKs via the top-level scripts.
 
 ## Protocol, Config, and Secrets
-- Edit `tools/protocol/spec.toml` (enums/constants) and `tools/protocol/mcubridge.proto` (payload schemas) then run `python3 tools/protocol/generate.py` to refresh both Python (`mcubridge/protocol/protocol.py`, `mcubridge_pb2.py`) and C++ (`rpc_protocol.h`, `rpc_structs.h`, `mcubridge.pb.h/.pb.c`). Commit all generated artifacts together.
-- Payload serialization uses **Protocol Buffers (proto3)**: `protobuf` on Python, **nanopb** (static, no heap) on MCU. The `rpc_structs.h` file maps nanopb types to `rpc::payload::*` aliases and provides `Payload::parse<T>()` / `sendPbFrame<T>()` for type-safe encode/decode.
+- Edit `tools/protocol/spec.toml` (enums/constants) and `tools/protocol/mcubridge.proto` (payload schemas) then run `python3 tools/protocol/generate.py` to refresh both Python (`mcubridge/protocol/protocol.py`, `structures.py`) and C++ (`rpc_protocol.h`, `rpc_structs.h`). Commit all generated artifacts together.
+- Payload serialization uses **MsgPack** (array format): `msgspec` on Python, a minimal header-only codec (`msgpack_codec.h`, static, no heap) on MCU. The `rpc_structs.h` file defines `rpc::payload::*` structs with `encode()`/`decode()` methods and provides `Payload::parse<T>()` / `sendPbFrame<T>()` for type-safe encode/decode.
 - Runtime defaults live in `mcubridge/mcubridge/config/const.py`; adjust values there and expose overrides via UCI (`mcubridge.general.*`).
 - Rotate serial + MQTT credentials with `tools/rotate_credentials.sh --host <yun>` or `/usr/bin/mcubridge-rotate-credentials` so sketches can embed `#define BRIDGE_SERIAL_SHARED_SECRET "..."`.
 - Update topic ACLs (`mqtt_allow_*`, `allowed_commands`) in both policy code (`mcubridge/policy.py`) and LuCI defaults whenever permissions change.

@@ -1,6 +1,6 @@
 #include "Mailbox.h"
 #include "Bridge.h"
-#include "util/pb_copy.h"
+#include "util/string_copy.h"
 
 #if BRIDGE_ENABLE_MAILBOX
 
@@ -8,7 +8,7 @@ MailboxClass::MailboxClass() {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush msg = {};
-  rpc::util::pb_setup_encode_span(msg.data, data);
+  msg.data = data;
   Bridge.sendPbCommand(rpc::CommandId::CMD_MAILBOX_PUSH, 0, msg);
 }
 

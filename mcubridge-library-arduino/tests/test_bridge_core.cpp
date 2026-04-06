@@ -158,8 +158,7 @@ void test_bridge_dedup_console_write_retry() {
 
   rpc::payload::ConsoleWrite msg = {};
   uint8_t data[] = "hello";
-  etl::span<const uint8_t> span(data, 5);
-  rpc::util::pb_setup_encode_span(msg.data, span);
+  msg.data = etl::span<const uint8_t>(data, 5);
 
   frame.header.version = rpc::PROTOCOL_VERSION;
   frame.header.command_id =

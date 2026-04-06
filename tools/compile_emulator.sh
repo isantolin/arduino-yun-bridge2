@@ -61,7 +61,6 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
-    -I"${SRC_DIR}/nanopb" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
@@ -71,10 +70,6 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
-    "${SRC_DIR}/nanopb/pb_common.c" \
-    "${SRC_DIR}/nanopb/pb_encode.c" \
-    "${SRC_DIR}/nanopb/pb_decode.c" \
-    "${SRC_DIR}/protocol/mcubridge.pb.c" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/protocol/rle.cpp" \
@@ -94,7 +89,6 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
-    -I"${SRC_DIR}/nanopb" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
     -I"${ETL_PATH}" \
@@ -104,10 +98,6 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
-    "${SRC_DIR}/nanopb/pb_common.c" \
-    "${SRC_DIR}/nanopb/pb_encode.c" \
-    "${SRC_DIR}/nanopb/pb_decode.c" \
-    "${SRC_DIR}/protocol/mcubridge.pb.c" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/protocol/rle.cpp" \

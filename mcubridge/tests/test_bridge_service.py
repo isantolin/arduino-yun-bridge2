@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import msgspec
@@ -12,7 +11,7 @@ import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
-from mcubridge.protocol import mcubridge_pb2
+from mcubridge.protocol.structures import LinkSyncPacket
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.handshake import SerialHandshakeFatal, derive_serial_timing
 from mcubridge.services.runtime import BridgeService
@@ -31,11 +30,8 @@ class _FakeMonotonic:
 
 
 def _encode_link_sync(nonce: bytes, tag: bytes) -> bytes:
-    """Encode nonce and tag as a protobuf LinkSync message."""
-    msg = mcubridge_pb2.LinkSync()
-    msg.nonce = nonce
-    msg.tag = tag
-    return msg.SerializeToString()
+    """Encode nonce and tag as a MsgPack LinkSync payload."""
+    return LinkSyncPacket(nonce=nonce, tag=tag).encode()
 
 
 @pytest.mark.asyncio
@@ -74,28 +70,27 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                     # Priming capabilities AFTER sync resp is handled
                     await service.handshake_manager.handle_capabilities_resp(
                         0,
-                        cast(Any, structures.CapabilitiesPacket.SCHEMA).build(
-                            {
-                                "ver": 2,
-                                "arch": 1,
-                                "dig": 20,
-                                "ana": 6,
-                                "feat": {
-                                    "i2c": False,
-                                    "spi": False,
-                                    "big_buffer": False,
-                                    "logic_3v3": False,
-                                    "fpu": False,
-                                    "hw_serial1": False,
-                                    "dac": False,
-                                    "eeprom": False,
-                                    "debug_io": False,
-                                    "debug_frames": False,
-                                    "rle": False,
-                                    "watchdog": False,
-                                },
-                            }
-                        )
+                        structures.CapabilitiesPacket(
+                            ver=2,
+                            arch=1,
+                            dig=20,
+                            ana=6,
+                            feat=structures.CapabilitiesFeatures(
+                                i2c=False,
+                                spi=False,
+                                sd=False,
+                                big_buffer=False,
+                                logic_3v3=False,
+                                fpu=False,
+                                hw_serial1=False,
+                                dac=False,
+                                eeprom=False,
+                                debug_io=False,
+                                debug_frames=False,
+                                rle=False,
+                                watchdog=False,
+                            ),
+                        ).encode(),
                     )
 
                 asyncio.create_task(_respond())

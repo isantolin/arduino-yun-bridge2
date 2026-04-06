@@ -125,12 +125,14 @@ void test_filesystem_on_write() {
   rpc::payload::FileWrite msg = {};
   strcpy(msg.path, "hostfs/write.bin");
   uint8_t data[] = {0xAA};
-  FileSystem._onWrite(msg, etl::span<const uint8_t>(data, 1));
+  msg.data = etl::span<const uint8_t>(data, 1);
+  FileSystem._onWrite(msg);
   TEST_ASSERT(stream.tx_buf.len > 0);
   
   // Failure case
   strcpy(msg.path, "hostfs/nonexistent_dir/write.bin");
-  FileSystem._onWrite(msg, etl::span<const uint8_t>(data, 1));
+  msg.data = etl::span<const uint8_t>(data, 1);
+  FileSystem._onWrite(msg);
 }
 
 void test_filesystem_on_read() {

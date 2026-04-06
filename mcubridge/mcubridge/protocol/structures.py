@@ -24,9 +24,8 @@ from typing import (
     cast,
 )
 
-import google.protobuf.message
 import msgspec
-from mcubridge.protocol import mcubridge_pb2
+import msgspec.msgpack
 
 if TYPE_CHECKING:
     from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
@@ -493,93 +492,30 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
 T = TypeVar("T", bound="BaseStruct")
 
-
-class ProtobufCompatSchema:
-    def __init__(self, pb_class: type, struct_class: type):
-        self.pb_class = pb_class
-        self.struct_class = struct_class
-
-    def build(self, obj: dict[str, Any] | msgspec.Struct) -> bytes:
-        from google.protobuf.json_format import ParseDict
-        pb_obj = self.pb_class()
-        if isinstance(obj, dict):
-            # Shallow copy to avoid modifying original
-            d: dict[str, Any] = dict(obj)
-            # Special case for Capabilities feat mapping if passed as dict
-            if self.struct_class.__name__ == "CapabilitiesPacket" and "feat" in d:
-                d["feat"] = _capabilities_to_int(d["feat"])
-            ParseDict(d, pb_obj)
-        else:
-            # If it's already a msgspec struct
-            d: dict[str, Any] = msgspec.structs.asdict(obj)
-            # handle nested CapabilitiesFeatures
-            if self.struct_class.__name__ == "CapabilitiesPacket" and "feat" in d:
-                d["feat"] = _capabilities_to_int(d["feat"])
-            ParseDict(d, pb_obj)
-        return pb_obj.SerializeToString()
-
-    def parse(self, data: bytes) -> dict[str, Any]:
-        pb_obj = self.pb_class()
-        pb_obj.ParseFromString(bytes(data))
-        from google.protobuf.json_format import MessageToDict
-        d = MessageToDict(pb_obj, preserving_proto_field_name=True, use_integers_for_enums=True)
-        # Handle CapabilitiesPacket bitset mapping
-        if self.struct_class.__name__ == "CapabilitiesPacket" and "feat" in d:
-            d["feat"] = _int_to_capabilities(d["feat"])
-        return d
-
-    def sizeof(self) -> int:
-        # Protobuf size is variable, but for compatibility we can return a representative size
-        # or the max size if known.
-        return 64 # MAX_PAYLOAD_SIZE fallback
+# [SIL-2] Shared encoder/decoder — reuse avoids per-call allocation overhead.
+_msgpack_encoder = msgspec.msgpack.Encoder()
+_msgpack_decoder = msgspec.msgpack.Decoder()
 
 
-class BaseStruct(msgspec.Struct, frozen=True):
-    """Base class for hybrid Msgspec/Nanopb structures."""
+class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
+    """Base class for all serial payload packets.
 
-    SCHEMA: ClassVar[ProtobufCompatSchema]
-    PB_CLASS: ClassVar[type]
-
-    # Re-implementing SCHEMA as a class property for Python 3.13 compatibility
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        super().__init_subclass__(**kwargs)
-        if hasattr(cls, "PB_CLASS"):
-            cls.SCHEMA = ProtobufCompatSchema(cls.PB_CLASS, cls)
+    Encoded as MsgPack arrays (positional fields) for compact wire format.
+    """
 
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview, command_id: int | None = None) -> T:
         try:
-            pb_obj = cls.PB_CLASS()
-            pb_obj.ParseFromString(data if isinstance(data, bytes) else bytes(data))
-            kwargs: dict[str, Any] = {
-                field.name: getattr(pb_obj, field.name)
-                for field in pb_obj.DESCRIPTOR.fields
-            }
-            if cls.__name__ == "CapabilitiesPacket" and "feat" in kwargs:
-                kwargs["feat"] = _int_to_capabilities(int(kwargs["feat"]))
-            return msgspec.convert(kwargs, cls)
+            return msgspec.msgpack.decode(data if isinstance(data, bytes) else bytes(data), type=cls)
         except (
             msgspec.MsgspecError,
-            google.protobuf.message.Error,
             ValueError,
             TypeError,
-            AttributeError,
-            RuntimeError,
         ) as e:
             raise ValueError(f"Malformed {cls.__name__} payload: {bytes(data).hex()} - Error: {e}") from e
 
     def encode(self) -> bytes:
-        pb_obj = self.PB_CLASS()
-        # [SIL-2] Direct attribute mapping from msgspec to protobuf descriptors.
-        # This avoids creating an intermediate dictionary and uses direct memory access.
-        for field in pb_obj.DESCRIPTOR.fields:
-            val = getattr(self, field.name, None)
-            if val is not None:
-                if self.__class__.__name__ == "CapabilitiesPacket" and field.name == "feat":
-                    setattr(pb_obj, field.name, _capabilities_to_int(val))
-                else:
-                    setattr(pb_obj, field.name, val)
-        return pb_obj.SerializeToString()
+        return msgspec.msgpack.encode(self)
 
 
 # --- Binary Protocol Packets ---
@@ -592,144 +528,98 @@ class VersionResponsePacket(BaseStruct, frozen=True):
     minor: Annotated[int, msgspec.Meta(ge=0)]
     patch: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.VersionResponse
-
 
 class FreeMemoryResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.FreeMemoryResponse
 
 
 class PinModePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     mode: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.PinMode
-
 
 class DigitalWritePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.DigitalWrite
 
 
 class AnalogWritePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.AnalogWrite
-
 
 class PinReadPacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.PinRead
 
 
 class DigitalReadResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.DigitalReadResponse
-
 
 class AnalogReadResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.AnalogReadResponse
-
 
 class ConsoleWritePacket(BaseStruct, frozen=True):
     data: bytes
-
-    PB_CLASS = mcubridge_pb2.ConsoleWrite
 
 
 class DatastorePutPacket(BaseStruct, frozen=True):
     key: str
     value: bytes
 
-    PB_CLASS = mcubridge_pb2.DatastorePut
-
 
 class DatastoreGetPacket(BaseStruct, frozen=True):
     key: str
-
-    PB_CLASS = mcubridge_pb2.DatastoreGet
 
 
 class DatastoreGetResponsePacket(BaseStruct, frozen=True):
     value: bytes
 
-    PB_CLASS = mcubridge_pb2.DatastoreGetResponse
-
 
 class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
-
-    PB_CLASS = mcubridge_pb2.MailboxPush
 
 
 class MailboxProcessedPacket(BaseStruct, frozen=True):
     message_id: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.MailboxProcessed
-
 
 class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
     count: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.MailboxAvailableResponse
-
 
 class MailboxReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
-
-    PB_CLASS = mcubridge_pb2.MailboxReadResponse
 
 
 class FileWritePacket(BaseStruct, frozen=True):
     path: str
     data: bytes
 
-    PB_CLASS = mcubridge_pb2.FileWrite
-
 
 class FileReadPacket(BaseStruct, frozen=True):
     path: str
-
-    PB_CLASS = mcubridge_pb2.FileRead
 
 
 class FileRemovePacket(BaseStruct, frozen=True):
     path: str
 
-    PB_CLASS = mcubridge_pb2.FileRemove
-
 
 class FileReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
-
-    PB_CLASS = mcubridge_pb2.FileReadResponse
 
 
 class ProcessRunAsyncPacket(BaseStruct, frozen=True):
     command: str
 
-    PB_CLASS = mcubridge_pb2.ProcessRunAsync
-
 
 class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.ProcessRunAsyncResponse
-
 
 class ProcessPollPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.ProcessPoll
 
 
 class ProcessPollResponsePacket(BaseStruct, frozen=True):
@@ -738,19 +628,13 @@ class ProcessPollResponsePacket(BaseStruct, frozen=True):
     stdout_data: bytes
     stderr_data: bytes
 
-    PB_CLASS = mcubridge_pb2.ProcessPollResponse
-
 
 class ProcessKillPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.ProcessKill
-
 
 class AckPacket(BaseStruct, frozen=True):
     command_id: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.AckPacket
 
 
 class HandshakeConfigPacket(BaseStruct, frozen=True):
@@ -758,39 +642,27 @@ class HandshakeConfigPacket(BaseStruct, frozen=True):
     ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
     response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.HandshakeConfig
-
 
 class SetBaudratePacket(BaseStruct, frozen=True):
     baudrate: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.SetBaudratePacket
 
 
 class EnterBootloaderPacket(BaseStruct, frozen=True):
     magic: Annotated[int, msgspec.Meta(ge=0)]
 
-    PB_CLASS = mcubridge_pb2.EnterBootloader
-
 
 class SpiTransferPacket(BaseStruct, frozen=True):
     data: bytes
 
-    PB_CLASS = mcubridge_pb2.SpiTransfer
-
 
 class SpiTransferResponsePacket(BaseStruct, frozen=True):
     data: bytes
-
-    PB_CLASS = mcubridge_pb2.SpiTransferResponse
 
 
 class SpiConfigPacket(BaseStruct, frozen=True):
     bit_order: Annotated[int, msgspec.Meta(ge=0)]
     data_mode: Annotated[int, msgspec.Meta(ge=0)]
     frequency: Annotated[int, msgspec.Meta(ge=0)]
-
-    PB_CLASS = mcubridge_pb2.SpiConfig
 
 
 # --- END GENERATED PACKETS ---
@@ -824,7 +696,32 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
     ana: Annotated[int, msgspec.Meta(ge=0)]
     feat: CapabilitiesFeatures
 
-    PB_CLASS = mcubridge_pb2.Capabilities
+    @classmethod
+    def decode(cls, data: bytes | bytearray | memoryview, command_id: int | None = None) -> CapabilitiesPacket:
+        """Decode with bitmask→CapabilitiesFeatures conversion for feat field."""
+        try:
+            raw: list[int] = msgspec.msgpack.decode(data if isinstance(data, bytes) else bytes(data), type=list[int])
+            feat_dict = _int_to_capabilities(raw[4])
+            return cls(
+                ver=raw[0], arch=raw[1], dig=raw[2], ana=raw[3],
+                feat=msgspec.convert(feat_dict, CapabilitiesFeatures),
+            )
+        except (msgspec.MsgspecError, ValueError, TypeError, IndexError) as e:
+            raise ValueError(f"Malformed CapabilitiesPacket payload: {bytes(data).hex()} - Error: {e}") from e
+
+    def encode(self) -> bytes:
+        """Encode with CapabilitiesFeatures→bitmask conversion for feat field."""
+        return msgspec.msgpack.encode([
+            self.ver, self.arch, self.dig, self.ana,
+            _capabilities_to_int(msgspec.structs.asdict(self.feat)),
+        ])
+
+
+class LinkSyncPacket(BaseStruct, frozen=True):
+    """HMAC handshake nonce/tag pair (16 bytes each)."""
+
+    nonce: bytes
+    tag: bytes
 
 
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.

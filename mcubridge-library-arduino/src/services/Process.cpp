@@ -1,6 +1,6 @@
 #include "Process.h"
 #include "Bridge.h"
-#include "util/pb_copy.h"
+#include "util/string_copy.h"
 
 #if BRIDGE_ENABLE_PROCESS
 
@@ -9,14 +9,14 @@ ProcessClass::ProcessClass() {}
 [[maybe_unused]] void ProcessClass::runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler) {
   if (_pending_async_runs.full()) return;
   rpc::payload::ProcessRunAsync msg = {};
-  rpc::util::pb_copy_join(command, args, msg.command, sizeof(msg.command));
+  rpc::util::copy_join(command, args, msg.command, sizeof(msg.command));
 
   if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, msg)) {
     _pending_async_runs.push({handler});
   }
 }
 
-[[maybe_unused]] void ProcessClass::poll(int16_t pid, ProcessPollHandler handler) {
+[[maybe_unused]] void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
   if (_pending_polls.full()) return;
   rpc::payload::ProcessPoll msg = {};
   msg.pid = pid;
@@ -25,7 +25,7 @@ ProcessClass::ProcessClass() {}
   }
 }
 
-[[maybe_unused]] void ProcessClass::kill(int16_t pid, ProcessKillHandler handler) {
+[[maybe_unused]] void ProcessClass::kill(int32_t pid, ProcessKillHandler handler) {
   rpc::payload::ProcessKill msg = {};
   msg.pid = pid;
   if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_KILL, 0, msg)) {
@@ -46,7 +46,7 @@ void ProcessClass::_onRunAsyncResponse(const rpc::payload::ProcessRunAsyncRespon
   if (_pending_async_runs.empty()) return;
   const auto& pending = _pending_async_runs.front();
   if (pending.handler.is_valid()) {
-    pending.handler(static_cast<int16_t>(msg.pid));
+    pending.handler(static_cast<int32_t>(msg.pid));
   }
   _pending_async_runs.pop();
 }

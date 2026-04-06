@@ -338,7 +338,7 @@ class FileComponent(BaseComponent):
                     response_packet = FileReadResponsePacket(content=b"")
                     await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
                 else:
-                    for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE - 2):
+                    for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE - 3):
                         response_packet = FileReadResponsePacket(content=chunk)
                         await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
                 return True, data, None

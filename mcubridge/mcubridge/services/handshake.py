@@ -16,8 +16,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-import google.protobuf.message
 import msgspec
+import msgspec.msgpack
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
 
@@ -26,11 +26,12 @@ from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from ..config.settings import RuntimeConfig
-from ..protocol import mcubridge_pb2, protocol
+from ..protocol import protocol
 from ..protocol.protocol import Command, Status
 from ..protocol.structures import (
     CapabilitiesPacket,
     HandshakeConfigPacket,
+    LinkSyncPacket,
     QueuedPublish,
     SerialTimingWindow,
 )
@@ -241,10 +242,8 @@ class SerialHandshakeManager:
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
         our_tag = self.compute_handshake_tag(nonce)
-        sync_msg = mcubridge_pb2.LinkSync()
-        sync_msg.nonce = nonce
-        sync_msg.tag = our_tag
-        sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_msg.SerializeToString())
+        sync_payload = LinkSyncPacket(nonce=nonce, tag=our_tag).encode()
+        sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("link_sync_send_failed")
@@ -307,13 +306,12 @@ class SerialHandshakeManager:
             self._state.handshake_rate_until = now + rate_limit
 
         try:
-            resp_msg = mcubridge_pb2.LinkSync()
-            resp_msg.ParseFromString(payload)
-            nonce = bytes(resp_msg.nonce)
-            tag_bytes = bytes(resp_msg.tag)
-        except (google.protobuf.message.DecodeError, AttributeError, ValueError, TypeError):
+            sync_pkt = LinkSyncPacket.decode(payload)
+            nonce = bytes(sync_pkt.nonce)
+            tag_bytes = bytes(sync_pkt.tag)
+        except (ValueError, TypeError):
             self._logger.warning(
-                "LINK_SYNC_RESP protobuf decode failed (len=%d)",
+                "LINK_SYNC_RESP msgpack decode failed (len=%d)",
                 len(payload),
             )
             await self._acknowledge_frame(

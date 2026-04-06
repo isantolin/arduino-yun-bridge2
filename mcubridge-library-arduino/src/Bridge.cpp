@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <etl/numeric.h>
 #include <etl/span.h>
-#include "util/pb_copy.h"
+#include "util/string_copy.h"
 
 #if (defined(_GLIBCXX_VECTOR) || defined(_GLIBCXX_STRING) || \
      defined(_GLIBCXX_MAP)) &&                               \
@@ -418,18 +418,22 @@ void BridgeClass::_handleSpiSetConfig(const bridge::router::CommandContext& ctx)
 
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_SPI
-    _dispatchWithBytes<rpc::payload::SpiTransfer>(ctx, &rpc::payload::SpiTransfer::data, [this, &ctx](const auto&, etl::span<const uint8_t> data) {
+    _withPayload<rpc::payload::SpiTransfer>(ctx, [this, &ctx](const rpc::payload::SpiTransfer& msg) {
       if (SPIService.isInitialized()) {
-        if (!data.empty()) {
-          size_t xferred = SPIService.transfer(const_cast<uint8_t*>(data.data()), data.size());
-          if (xferred < data.size()) { // GCOVR_EXCL_START — host mock always succeeds
+        auto data = msg.data;
+        // Copy to mutable buffer for in-place SPI transfer (avoids const_cast UB)
+        const size_t len = etl::min(data.size(), _decompression_buffer.size());
+        etl::copy_n(data.begin(), len, _decompression_buffer.begin());
+        if (len > 0) {
+          size_t xferred = SPIService.transfer(_decompression_buffer.data(), len);
+          if (xferred < len) { // GCOVR_EXCL_START — host mock always succeeds
             enterSafeState();
             _sendError(rpc::StatusCode::STATUS_ERROR, ctx.raw_command, ctx.sequence_id);
             return;
           } // GCOVR_EXCL_STOP
         }
         rpc::payload::SpiTransferResponse resp = {};
-        rpc::util::pb_setup_encode_span(resp.data, data);
+        resp.data = etl::span<const uint8_t>(_decompression_buffer.data(), len);
         _sendPbResponse(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
       }
     });
@@ -546,24 +550,24 @@ void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_handleConsoleWrite(const bridge::router::CommandContext& ctx) {
-  _dispatchWithBytes<rpc::payload::ConsoleWrite>(ctx, &rpc::payload::ConsoleWrite::data, [](auto s) { Console._push(s); }, true);
+  _withPayloadAck<rpc::payload::ConsoleWrite>(ctx, [](const rpc::payload::ConsoleWrite& msg) { Console._push(msg.data); });
 }
 
 void BridgeClass::_handleDatastoreGetResp(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_DATASTORE
-  _dispatchWithBytes<rpc::payload::DatastoreGetResponse>(ctx, &rpc::payload::DatastoreGetResponse::value, [](auto s) { DataStore._onResponse(s); });
+  _withPayload<rpc::payload::DatastoreGetResponse>(ctx, [](const rpc::payload::DatastoreGetResponse& msg) { DataStore._onResponse(msg.value); });
 #endif
 }
 
 void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_MAILBOX
-  _dispatchWithBytes<rpc::payload::MailboxPush>(ctx, &rpc::payload::MailboxPush::data, [](auto s) { Mailbox._onIncomingData(s); }, true);
+  _withPayloadAck<rpc::payload::MailboxPush>(ctx, [](const rpc::payload::MailboxPush& msg) { Mailbox._onIncomingData(msg.data); });
 #endif
 }
 
 void BridgeClass::_handleMailboxReadResp(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_MAILBOX
-  _dispatchWithBytes<rpc::payload::MailboxReadResponse>(ctx, &rpc::payload::MailboxReadResponse::content, [](auto s) { Mailbox._onIncomingData(s); });
+  _withPayload<rpc::payload::MailboxReadResponse>(ctx, [](const rpc::payload::MailboxReadResponse& msg) { Mailbox._onIncomingData(msg.content); });
 #endif
 }
 
@@ -575,8 +579,8 @@ void BridgeClass::_handleMailboxAvailableResp(const bridge::router::CommandConte
 
 void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_FILESYSTEM
-  _dispatchWithBytes<rpc::payload::FileWrite>(ctx, &rpc::payload::FileWrite::data, [](const auto& msg, etl::span<const uint8_t> data) {
-    FileSystem._onWrite(msg, data);
+  _withPayload<rpc::payload::FileWrite>(ctx, [](const rpc::payload::FileWrite& msg) {
+    FileSystem._onWrite(msg);
   });
 #endif
 }
@@ -595,7 +599,7 @@ void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleFileReadResp(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_FILESYSTEM
-  _dispatchWithBytes<rpc::payload::FileReadResponse>(ctx, &rpc::payload::FileReadResponse::content, [](const auto&, const auto& s) { FileSystem._onResponse(s); });
+  _withPayload<rpc::payload::FileReadResponse>(ctx, [](const rpc::payload::FileReadResponse& msg) { FileSystem._onResponse(msg.content); });
 #endif
 }
 
@@ -615,17 +619,9 @@ void BridgeClass::_handleProcessRunAsyncResp(const bridge::router::CommandContex
 
 void BridgeClass::_handleProcessPollResp(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_PROCESS
-  static constexpr size_t HALF_BUF = rpc::MAX_PAYLOAD_SIZE / 2;
-  uint8_t* stdout_ptr = _transient_buffer.data();
-  uint8_t* stderr_ptr = _transient_buffer.data() + HALF_BUF;
-  etl::span<uint8_t> stdout_span(stdout_ptr, HALF_BUF);
-  etl::span<uint8_t> stderr_span(stderr_ptr, HALF_BUF);
-  rpc::payload::ProcessPollResponse msg = {};
-  rpc::util::pb_setup_decode_span(msg.stdout_data, stdout_span);
-  rpc::util::pb_setup_decode_span(msg.stderr_data, stderr_span);
-  _withPayload<rpc::payload::ProcessPollResponse>(ctx, [&](const auto& inner_msg) {
-    Process._onPollResponse(inner_msg, etl::span<const uint8_t>(stdout_span), etl::span<const uint8_t>(stderr_span));
-  }, msg);
+  _withPayload<rpc::payload::ProcessPollResponse>(ctx, [](const rpc::payload::ProcessPollResponse& msg) {
+    Process._onPollResponse(msg, msg.stdout_data, msg.stderr_data);
+  });
 #endif
 }
 

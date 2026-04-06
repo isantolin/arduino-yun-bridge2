@@ -61,7 +61,7 @@ rpc::Frame sync_frame;
 sync_frame.header.version = rpc::PROTOCOL_VERSION;
 sync_frame.header.command_id =
     rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+rpc::payload::LinkSync sync_msg = {};
 memcpy(sync_msg.nonce, nonce, 16);
 memcpy(sync_msg.tag, tag, 16);
 
@@ -90,7 +90,7 @@ rpc::Frame sync_frame;
 sync_frame.header.version = rpc::PROTOCOL_VERSION;
 sync_frame.header.command_id =
     rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+rpc::payload::LinkSync sync_msg = {};
 memcpy(sync_msg.nonce, nonce, 16);
 memcpy(sync_msg.tag, wrong_tag, 16);
 
@@ -136,7 +136,7 @@ void test_fsm_transitions_running() {
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  rpc::payload::LinkSync sync_msg = {};
   
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_sync;
   sync_frame.payload = etl::span<const uint8_t>(payload_buffer_sync.data(), payload_buffer_sync.size());
@@ -152,7 +152,7 @@ void test_fsm_transitions_running() {
   // Receive ACK
   rpc::Frame ack_frame;
   ack_frame.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_ACK);
-  rpc::payload::AckPacket ack_msg = mcubridge_AckPacket_init_default;
+  rpc::payload::AckPacket ack_msg = {};
   ack_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE);
   
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_ack;
@@ -196,7 +196,7 @@ void test_fsm_timeout_to_unsynchronized() {
   rpc::Frame sync_frame;
   sync_frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  rpc::payload::LinkSync sync_msg = mcubridge_LinkSync_init_default;
+  rpc::payload::LinkSync sync_msg = {};
   
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer_sync;
   sync_frame.payload = etl::span<const uint8_t>(payload_buffer_sync.data(), payload_buffer_sync.size());

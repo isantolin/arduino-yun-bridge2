@@ -55,10 +55,6 @@ if [[ "${1:-}" == "--install-only" ]]; then
 fi
 
 SOURCES=(
-    "${SRC_DIR}/nanopb/pb_common.c"
-    "${SRC_DIR}/nanopb/pb_encode.c"
-    "${SRC_DIR}/nanopb/pb_decode.c"
-    "${SRC_DIR}/protocol/mcubridge.pb.c"
     "${SRC_DIR}/security/security.cpp"
     "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
     "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
@@ -105,7 +101,6 @@ BASE_FLAGS=(
     -DUNITY_INCLUDE_DOUBLE
     -I"${SRC_DIR}"
     -I"${SRC_DIR}/config"
-    -I"${SRC_DIR}/nanopb"
     -I"${SRC_DIR}/protocol"
     -I"${TEST_DIR}/Unity/src"
     -I"${STUB_DIR}"

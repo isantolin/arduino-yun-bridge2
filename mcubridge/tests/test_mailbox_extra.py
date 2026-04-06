@@ -39,9 +39,9 @@ async def test_mailbox_handle_read_truncation() -> None:
         state.enqueue_mailbox_message(b"A" * 100)
         await mb.handle_read(0, b"")
 
-        # Verify sent payload is truncated to MAX_PAYLOAD_SIZE - 2 (62)
+        # Verify sent payload is truncated to MAX_PAYLOAD_SIZE - 3 (61)
         args = ctx.send_frame.call_args[0]
-        assert len(args[1]) <= 64  # 2 bytes prefix + 62 data
+        assert len(args[1]) <= 64  # 3 bytes msgpack prefix + 61 data
     finally:
         state.cleanup()
 

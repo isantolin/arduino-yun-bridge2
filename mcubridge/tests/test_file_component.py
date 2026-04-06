@@ -796,9 +796,9 @@ async def test_handle_read_empty_file(
     payload = structures.FileReadPacket(path='empty.txt').encode()
     await component.handle_read(0, payload)
 
-    # Should send a frame with length 0
+    # Should send a frame with empty content
     assert bridge.sent_frames[-1][0] == protocol.Command.CMD_FILE_READ_RESP.value
-    assert bridge.sent_frames[-1][1] == b''
+    assert bridge.sent_frames[-1][1] == structures.FileReadResponsePacket(content=b'').encode()
 
 
 @pytest.mark.asyncio

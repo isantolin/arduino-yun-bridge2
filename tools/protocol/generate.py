@@ -122,8 +122,8 @@ def _parse_nanopb_options(options_path: Path) -> dict[str, str]:
     result: dict[str, str] = {}
     if not options_path.exists():
         return result
-    for line in options_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
+    for raw_line in options_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split()

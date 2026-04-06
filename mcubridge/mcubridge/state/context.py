@@ -304,11 +304,11 @@ class RuntimeState(msgspec.Struct):
     datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
-    mailbox_queue: PersistentQueue[bytes] = msgspec.field(  # noqa: PLW0108
-        default_factory=lambda: PersistentQueue[bytes](),
+    mailbox_queue: PersistentQueue[bytes] = msgspec.field(
+        default_factory=lambda: PersistentQueue[bytes](),  # noqa: PLW0108
     )
-    mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(  # noqa: PLW0108
-        default_factory=lambda: PersistentQueue[bytes](),
+    mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(
+        default_factory=lambda: PersistentQueue[bytes](),  # noqa: PLW0108
     )
 
     mcu_is_paused: bool = False
@@ -323,8 +323,8 @@ class RuntimeState(msgspec.Struct):
     running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
-    allowed_policy: AllowedCommandPolicy = msgspec.field(  # noqa: PLW0108
-        default_factory=lambda: AllowedCommandPolicy.create_empty(),
+    allowed_policy: AllowedCommandPolicy = msgspec.field(
+        default_factory=lambda: AllowedCommandPolicy.create_empty(),  # noqa: PLW0108
     )
     topic_authorization: TopicAuthorization | None = None
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT

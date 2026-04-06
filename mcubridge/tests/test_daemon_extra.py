@@ -19,8 +19,8 @@ async def test_daemon_supervise_fatal_exception() -> None:
             raise SerialHandshakeFatal("fatal")
 
         with pytest.raises(SerialHandshakeFatal):
-            # type: ignore[reportPrivateUsage]
-            await daemon._supervise("test-fatal", fatal_task, fatal_exceptions=(SerialHandshakeFatal,))
+            await daemon._supervise(  # type: ignore[reportPrivateUsage]
+                "test-fatal", fatal_task, fatal_exceptions=(SerialHandshakeFatal,))
     finally:
         daemon.state.cleanup()
 

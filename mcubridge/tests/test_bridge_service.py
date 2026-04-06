@@ -736,8 +736,8 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
 
     msg = Message(
         topic=topic, payload=b"", qos=0, retain=False,
-        properties=Props(), mid=1,
-    )  # type: ignore[reportArgumentType]
+        properties=Props(), mid=1,  # type: ignore[reportArgumentType]
+    )
 
     await service.handle_mqtt_message(msg)
 
@@ -770,8 +770,8 @@ async def test_mqtt_datastore_get_request_miss_responds_with_error(
 
     msg = Message(
         topic=topic, payload=b"", qos=0, retain=False,
-        properties=Props(), mid=1,
-    )  # type: ignore[reportArgumentType]
+        properties=Props(), mid=1,  # type: ignore[reportArgumentType]
+    )
 
     await service.handle_mqtt_message(msg)
 

@@ -13,6 +13,8 @@ Format:
 from __future__ import annotations
 
 from itertools import groupby
+from typing import Any
+
 from construct import (
     Check,
     Const,
@@ -29,7 +31,7 @@ from construct import (
 from . import protocol
 
 
-def _rle_decode(obj, ctx):  # type: ignore[reportUnknownParameterType, reportMissingParameterType]
+def _rle_decode(obj: Any, ctx: Any) -> bytes:
     """Decode an RLE escape sequence into repeated bytes."""
     count = 1 if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER else int(obj.count_m2) + protocol.RLE_OFFSET
     return bytes([obj.value]) * count
@@ -57,8 +59,8 @@ RLE_DECODER: Construct = Struct(
                 FocusedSeq(
                     "value",
                     "value" / Int8ub,
-                    "_" / Check(  # type: ignore[reportUnknownLambdaType]
-                        lambda ctx: ctx.value != protocol.RLE_ESCAPE_BYTE,
+                    "_" / Check(
+                        lambda ctx: ctx.value != protocol.RLE_ESCAPE_BYTE,  # type: ignore[reportUnknownLambdaType]
                     ),
                 ),
                 decoder=lambda obj, ctx: bytes([obj]),  # type: ignore[reportUnknownLambdaType]

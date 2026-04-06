@@ -62,13 +62,13 @@ def test_configure_tls_loads_cert_chain_when_provided(
     fake_context = SimpleNamespace(
         minimum_version=None,
         load_cert_chain=lambda certfile, keyfile: calls.append(  # type: ignore[reportUnknownLambdaType]
-            (certfile, keyfile)),
+            (certfile, keyfile)),  # type: ignore[reportUnknownArgumentType]
         check_hostname=True,
     )
 
-    monkeypatch.setattr(  # type: ignore[reportUnknownLambdaType]
+    monkeypatch.setattr(
         ssl, "create_default_context",
-        lambda *_args, **_kwargs: fake_context,
+        lambda *_args, **_kwargs: fake_context,  # type: ignore[reportUnknownLambdaType]
     )
     config = _make_config(tls=True, cafile=str(cafile))
     config.mqtt_certfile = str(tmp_path / "client.crt")
@@ -131,8 +131,10 @@ async def test_mqtt_task_requeues_on_publish_failure(
                 return _iter()
 
         monkeypatch.setattr(aiomqtt, "Client", FakeClient)
-        monkeypatch.setattr(mqtt.tenacity, "retry", lambda *args, **kwargs: (lambda fn: fn)
-                            )  # type: ignore[reportUnknownLambdaType]
+        monkeypatch.setattr(
+            mqtt.tenacity, "retry",
+            lambda *args, **kwargs: (lambda fn: fn),  # type: ignore[reportUnknownLambdaType]
+        )
         stash_calls: list[QueuedPublish] = []
         stashed = asyncio.Event()
 

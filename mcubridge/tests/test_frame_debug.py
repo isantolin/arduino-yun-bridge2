@@ -10,21 +10,23 @@ from tools import frame_debug  # noqa: E402
 
 
 def test_resolve_command_hex() -> None:
-    # type: ignore[reportPrivateUsage]
-    assert frame_debug._resolve_command(f"0x{Command.CMD_LINK_RESET.value:02X}") == Command.CMD_LINK_RESET.value
+    assert frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
+        f"0x{Command.CMD_LINK_RESET.value:02X}") == Command.CMD_LINK_RESET.value
     # Use lowercase 0x to match frame_debug.py startswith if upper() was missing
-    assert frame_debug._resolve_command(f"0x{UINT8_MASK:02X}") == UINT8_MASK  # type: ignore[reportPrivateUsage]
-    assert frame_debug._resolve_command("10") == 10  # Just an integer  # type: ignore[reportPrivateUsage]
+    assert frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
+        f"0x{UINT8_MASK:02X}") == UINT8_MASK
+    assert frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
+        "10") == 10  # Just an integer
 
 
 def test_resolve_command_name() -> None:
-    # type: ignore[reportPrivateUsage]
-    assert frame_debug._resolve_command("CMD_GET_VERSION") == Command.CMD_GET_VERSION.value
-    # type: ignore[reportPrivateUsage]
-    assert frame_debug._resolve_command("CMD_GET_FREE_MEMORY") == Command.CMD_GET_FREE_MEMORY.value
+    assert frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
+        "CMD_GET_VERSION") == Command.CMD_GET_VERSION.value
+    assert frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
+        "CMD_GET_FREE_MEMORY") == Command.CMD_GET_FREE_MEMORY.value
     # Case insensitive
-    # type: ignore[reportPrivateUsage]
-    assert frame_debug._resolve_command("cmd_get_version") == Command.CMD_GET_VERSION.value
+    assert frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
+        "cmd_get_version") == Command.CMD_GET_VERSION.value
 
 
 def test_resolve_command_invalid() -> None:

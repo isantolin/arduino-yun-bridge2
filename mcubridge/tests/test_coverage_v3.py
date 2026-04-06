@@ -44,8 +44,10 @@ def test_configure_logging_stream_env():
         root = _logging.getLogger()
         assert len(root.handlers) == 1
         assert isinstance(root.handlers[0], _logging.StreamHandler)
-        # type: ignore[reportUnknownMemberType]
-        assert not isinstance(root.handlers[0], _logging.handlers.SysLogHandler)
+        assert not isinstance(
+            root.handlers[0],
+            _logging.handlers.SysLogHandler,  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        )
 
 
 def test_configure_logging_syslog_fallback(tmp_path: Any):

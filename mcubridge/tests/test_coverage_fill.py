@@ -173,8 +173,8 @@ async def test_datastore_publish_value_error_reason(runtime_config: Any, runtime
     ctx = MagicMock()
     ctx.publish = AsyncMock()
     ds = DatastoreComponent(runtime_config, runtime_state, ctx)
-    # type: ignore[reportPrivateUsage]
-    await ds._publish_value(topic="key", payload=b"val", expiry=60, properties=(("bridge-error", "testing"),))
+    await ds._publish_value(  # type: ignore[reportPrivateUsage]
+        topic="key", payload=b"val", expiry=60, properties=(("bridge-error", "testing"),))
     _args, kwargs = ctx.publish.call_args
     props = kwargs.get("properties", ())
     assert any(k == "bridge-error" and v == "testing" for k, v in props)

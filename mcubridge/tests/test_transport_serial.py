@@ -121,8 +121,10 @@ async def test_write_frame_debug_logs_unknown_command(
         mock_writer.is_closing.return_value = False
         transport.writer = mock_writer
 
-        # type: ignore[reportUnknownLambdaType]
-        monkeypatch.setattr(serial_fast.logger, "isEnabledFor", lambda _lvl: True)
+        monkeypatch.setattr(
+            serial_fast.logger, "isEnabledFor",
+            lambda _lvl: True,  # type: ignore[reportUnknownLambdaType]
+        )
         seen: dict[str, str] = {}
         monkeypatch.setattr(
             serial_fast.logger,

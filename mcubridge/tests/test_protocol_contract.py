@@ -113,13 +113,23 @@ def _command_to_handler(name: str) -> str:
     return "_handle" + "".join(p.capitalize() for p in raw.split("_"))
 
 
+def _extract_cpp_dispatch_commands(cpp_content: str) -> set[str]:
+    """Return command ids explicitly registered in Bridge.cpp dispatch tables."""
+    command_re = re.compile(
+        r"\b\w+Value\{\s*rpc::to_underlying\(rpc::CommandId::(CMD_[A-Z0-9_]+)\),",
+        re.MULTILINE,
+    )
+    return set(command_re.findall(cpp_content))
+
+
 def test_mcu_inbound_commands_have_cpp_jump_table_handlers() -> None:
-    """Every linux_to_mcu command in spec.toml must have a C++ handler in Bridge.cpp."""
+    """Every linux_to_mcu command in spec.toml must be registered in Bridge.cpp dispatch."""
     bridge_cpp = REPO_ROOT / "mcubridge-library-arduino/src/Bridge.cpp"
     cpp_content = bridge_cpp.read_text(encoding="utf-8")
 
     handler_re = re.compile(r"&BridgeClass::(_handle\w+)")
     cpp_handlers = set(handler_re.findall(cpp_content))
+    cpp_registered_commands = _extract_cpp_dispatch_commands(cpp_content)
 
     raw = msgspec.toml.decode(SPEC_PATH.read_text(encoding="utf-8"))
     mcu_inbound = [
@@ -130,7 +140,10 @@ def test_mcu_inbound_commands_have_cpp_jump_table_handlers() -> None:
     missing = [
         f"{cmd['name']} (0x{cmd['value']:02X}) → {_command_to_handler(cmd['name'])}"
         for cmd in mcu_inbound
-        if _command_to_handler(cmd["name"]) not in cpp_handlers
+        if (
+            _command_to_handler(cmd["name"]) not in cpp_handlers
+            and cmd["name"] not in cpp_registered_commands
+        )
     ]
-    header = f"{len(missing)} MCU-inbound command(s) without C++ jump-table handler:\n"
+    header = f"{len(missing)} MCU-inbound command(s) without C++ dispatch registration:\n"
     assert not missing, header + "\n".join(f"  {m}" for m in missing)

@@ -54,6 +54,7 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include "protocol/rpc_structs.h"
 #include "util/string_copy.h"
 #include <etl/bitset.h>
+#include <etl/callback_timer.h>
 #include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/expected.h>
@@ -464,7 +465,12 @@ class BridgeClass
   >;
 
   bridge::fsm::BridgeFsm _fsm;
-  bridge::scheduler::SimpleTimer<4> _timers;
+  etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS> _timer_ids;
+  etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
+  etl::icallback_timer::callback_type _on_ack_timeout_delegate;
+  etl::icallback_timer::callback_type _on_rx_dedupe_delegate;
+  etl::icallback_timer::callback_type _on_baudrate_change_delegate;
+  etl::icallback_timer::callback_type _on_startup_stabilized_delegate;
   uint32_t _last_tick_millis;
 
   PacketSerialType _packet_serial;

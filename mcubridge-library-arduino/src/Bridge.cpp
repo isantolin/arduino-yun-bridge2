@@ -63,13 +63,34 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _transient_buffer(),
       _pending_tx_queue(),
       _tx_payload_pool(),
-      _fsm(),
       _timers(),
+      _on_ack_timeout_delegate(etl::icallback_timer::callback_type::create<
+                               BridgeClass, &BridgeClass::_onAckTimeout>(*this)),
+      _on_rx_dedupe_delegate(etl::icallback_timer::callback_type::create<
+                             BridgeClass, &BridgeClass::_onRxDedupe>(*this)),
+      _on_baudrate_change_delegate(etl::icallback_timer::callback_type::create<
+                                   BridgeClass,
+                                   &BridgeClass::_onBaudrateChange>(*this)),
+      _on_startup_stabilized_delegate(
+          etl::icallback_timer::callback_type::create<
+              BridgeClass, &BridgeClass::_onStartupStabilized>(*this)),
       _last_tick_millis(0),
       _packet_serial(etl::span<uint8_t>(_rx_storage.data(), _rx_storage.size()),
-                     etl::span<uint8_t>(_transient_buffer.data(), _transient_buffer.size())) {
+                     etl::span<uint8_t>(_transient_buffer.data(),
+                                        _transient_buffer.size())) {
+  _timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT] =
+      _timers.register_timer(_on_ack_timeout_delegate, 0, etl::timer::mode::SINGLE_SHOT);
+  _timer_ids[bridge::scheduler::TIMER_RX_DEDUPE] =
+      _timers.register_timer(_on_rx_dedupe_delegate, 0, etl::timer::mode::SINGLE_SHOT);
+  _timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE] =
+      _timers.register_timer(_on_baudrate_change_delegate, 0, etl::timer::mode::SINGLE_SHOT);
+  _timer_ids[bridge::scheduler::TIMER_STARTUP_STABILIZATION] =
+      _timers.register_timer(_on_startup_stabilized_delegate, 0, etl::timer::mode::SINGLE_SHOT);
+  _fsm.setTimers(&_timers, _timer_ids);
   _flags.reset();
-  _timers.clear();
+  for (auto id : _timer_ids) {
+    _timers.stop(id);
+  }
 }
 
 void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
@@ -77,16 +98,23 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   // [SIL-2] Initialize Hardware (Watchdog, Safe Pin States) via HAL
   bridge::hal::init();
 
-  _fsm.setTimers(&_timers);
+  _fsm.setTimers(&_timers, _timer_ids);
   _fsm.begin();
-  _timers.clear();
+  _timers.enable(true);
+  for (auto id : _timer_ids) {
+    _timers.stop(id);
+  }
   _rx_history.clear();
-  
+
   // Set deterministic periods based on protocol spec
-  _timers.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
-  _timers.set_period(bridge::scheduler::TIMER_RX_DEDUPE, bridge::config::RX_DEDUPE_INTERVAL_MS);
-  _timers.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE, bridge::config::BAUDRATE_SETTLE_MS);
-  _timers.set_period(bridge::scheduler::TIMER_STARTUP_STABILIZATION, bridge::config::STARTUP_STABILIZATION_MS);
+  _timers.set_period(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT],
+                     _ack_timeout_ms);
+  _timers.set_period(_timer_ids[bridge::scheduler::TIMER_RX_DEDUPE],
+                     bridge::config::RX_DEDUPE_INTERVAL_MS);
+  _timers.set_period(_timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE],
+                     bridge::config::BAUDRATE_SETTLE_MS);
+  _timers.set_period(_timer_ids[bridge::scheduler::TIMER_STARTUP_STABILIZATION],
+                     bridge::config::STARTUP_STABILIZATION_MS);
   _last_tick_millis = bridge::now_ms();
 
   // [MIL-SPEC] Cryptographic Power-On Self-Test (POST)
@@ -105,7 +133,7 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
 
   _packet_serial.setPacketHandler(etl::delegate<void(etl::span<const uint8_t>)>::create<BridgeClass, &BridgeClass::_onPacketReceived>(*this));
 
-  _timers.start(bridge::scheduler::TIMER_STARTUP_STABILIZATION, bridge::now_ms());
+  _timers.start(_timer_ids[bridge::scheduler::TIMER_STARTUP_STABILIZATION], etl::timer::start::DELAYED);
 
   _shared_secret.clear();
   if (!arg_secret.empty()) {
@@ -149,11 +177,8 @@ void BridgeClass::begin(unsigned long arg_baudrate, etl::string_view arg_secret,
   }
 
   const uint32_t now = bridge::now_ms();
-  const auto expired = _timers.check_expired(now);
-  if (expired.test(bridge::scheduler::TIMER_ACK_TIMEOUT)) _onAckTimeout();
-  if (expired.test(bridge::scheduler::TIMER_RX_DEDUPE)) _onRxDedupe();
-  if (expired.test(bridge::scheduler::TIMER_BAUDRATE_CHANGE)) _onBaudrateChange();
-  if (expired.test(bridge::scheduler::TIMER_STARTUP_STABILIZATION)) _onStartupStabilized();
+  _timers.tick(now - _last_tick_millis);
+  _last_tick_millis = now;
 
   if (_fsm.isStabilizing()) {
     uint16_t drain_limit = bridge::config::STARTUP_DRAIN_PER_TICK;
@@ -359,8 +384,8 @@ void BridgeClass::_handleSystemMessage(const bridge::router::CommandContext& ctx
   _withPayloadAck<rpc::payload::SetBaudratePacket>(
       ctx, [this](const rpc::payload::SetBaudratePacket& m) {
         _pending_baudrate = m.baudrate;
-        _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE,
-                      bridge::now_ms());
+        _timers.start(_timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE],
+                      etl::timer::start::DELAYED);
       });
 }
 
@@ -834,7 +859,7 @@ void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext& c
 void BridgeClass::_handleAck(uint16_t command_id) {
   bool awaiting = false; BRIDGE_ATOMIC_BLOCK { awaiting = _fsm.isAwaitingAck(); }
   if (awaiting && (command_id == _last_command_id)) {
-    _clearAckState(); _timers.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
+    _clearAckState(); _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
     _flushPendingTxQueue();
   }
 }
@@ -855,7 +880,9 @@ void BridgeClass::_onAckTimeout() {
   bool awaiting = false; BRIDGE_ATOMIC_BLOCK { awaiting = _fsm.isAwaitingAck(); }
   if (!awaiting) return;
   if (_retry_count >= _ack_retry_limit) { BRIDGE_ATOMIC_BLOCK { _fsm.timeout(); } enterSafeState(); return; }
-  _retransmitLastFrame(); _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT, bridge::now_ms());
+  _retransmitLastFrame();
+  _timers.start(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT],
+                etl::timer::start::DELAYED);
 }
 
 void BridgeClass::_onRxDedupe() { _rx_history.clear(); }
@@ -871,7 +898,7 @@ void BridgeClass::_onStartupStabilized() {
 
 void BridgeClass::enterSafeState() {
   BRIDGE_ATOMIC_BLOCK { _fsm.resetFsm(); }
-  _timers.clear(); _pending_baudrate = 0; _retry_count = 0; _clearPendingTxQueue();
+  for (auto id : _timer_ids) { _timers.stop(id); } _pending_baudrate = 0; _retry_count = 0; _clearPendingTxQueue();
   _rx_history.clear(); _consecutive_crc_errors = 0;
   
   // [MIL-SPEC] Securely zero sensitive data on fault (HKDF/Shared Secret)
@@ -939,7 +966,7 @@ void BridgeClass::_flushPendingTxQueue() {
       _sendRawFrame(f.command_id, seq, etl::span<const uint8_t>(f.buffer->data.data(), f.payload_length));
     }
     BRIDGE_ATOMIC_BLOCK { _fsm.sendCritical(); } _retry_count = 0;
-    _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT, bridge::now_ms()); _last_command_id = f.command_id;
+    _timers.start(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT], etl::timer::start::DELAYED); _last_command_id = f.command_id;
   }
 }
 

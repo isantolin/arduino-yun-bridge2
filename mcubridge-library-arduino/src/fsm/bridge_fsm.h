@@ -29,6 +29,7 @@
 #include <etl/message.h>
 #include <etl/array.h>
 #include <etl/bitset.h>
+#include <etl/callback_timer.h>
 
 // ============================================================================
 // Timer Scheduler
@@ -41,60 +42,6 @@ enum TimerId : uint8_t {
   TIMER_BAUDRATE_CHANGE = 2,
   TIMER_STARTUP_STABILIZATION = 3,
   NUMBER_OF_TIMERS = 4
-};
-
-// [RAM-OPT] Lightweight timer replacing etl::callback_timer<N>.
-template <size_t N>
-struct SimpleTimer {
-  etl::array<uint32_t, N> deadline;
-  etl::array<uint32_t, N> period;
-  etl::bitset<N> active;
-
-  void clear() {
-    deadline.fill(0);
-    period.fill(0);
-    active.reset();
-  }
-
-  void set_period(uint8_t id, uint32_t ms) {
-    if (id < N) period[id] = ms;
-  }
-
-  void start(uint8_t id, uint32_t now) {
-    if (id < N) {
-      deadline[id] = now + period[id];
-      active.set(id);
-    }
-  }
-
-  [[maybe_unused]] void start_with_period(uint8_t id, uint32_t ms, uint32_t now) {
-    if (id < N) {
-      period[id] = ms;
-      deadline[id] = now + ms;
-      active.set(id);
-    }
-  }
-
-  void stop(uint8_t id) {
-    if (id < N) active.reset(id);
-  }
-
-  [[maybe_unused]] bool is_active(uint8_t id) const {
-    return (id < N) && active.test(id);
-  }
-
-  static constexpr uint32_t TIMER_OVERFLOW_THRESHOLD = rpc::RPC_TIMER_OVERFLOW_THRESHOLD;
-
-  etl::bitset<N> check_expired(uint32_t now) {
-    etl::bitset<N> expired;
-    for (uint8_t i = 0; i < N; ++i) {
-      if (active.test(i) && (now - deadline[i]) < TIMER_OVERFLOW_THRESHOLD) {
-        expired.set(i);
-        active.reset(i);
-      }
-    }
-    return expired;
-  }
 };
 
 }  // namespace bridge::scheduler
@@ -240,8 +187,9 @@ class BridgeFsm : public etl::fsm {
         state_list_{},
         timers_(nullptr) {}
 
-  void setTimers(bridge::scheduler::SimpleTimer<bridge::scheduler::NUMBER_OF_TIMERS>* timers) {
+  void setTimers(etl::icallback_timer* timers, const etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>& ids) {
     timers_ = timers;
+    timer_ids_ = ids;
   }
 
   void begin() {
@@ -290,16 +238,10 @@ class BridgeFsm : public etl::fsm {
   // [SIL-2] Exit actions — guarantee timers are stopped on any exit path
   void onExitState(StateId state) {
     if (timers_ == nullptr) return;
-    using ExitValue = etl::pair<StateId, bridge::scheduler::TimerId>;
-    using ExitMap = etl::flat_map<StateId, bridge::scheduler::TimerId, 2>;
-    static const etl::array<ExitValue, 2> exit_data = {
-        ExitValue{STATE_AWAITING_ACK, bridge::scheduler::TIMER_ACK_TIMEOUT},
-        ExitValue{STATE_STABILIZING, bridge::scheduler::TIMER_STARTUP_STABILIZATION}};
-    static const ExitMap exit_timers(exit_data.begin(), exit_data.end());
-
-    auto it = exit_timers.find(state);
-    if (it != exit_timers.end()) {
-      timers_->stop(it->second);
+    if (state == STATE_AWAITING_ACK) {
+      timers_->stop(timer_ids_[bridge::scheduler::TIMER_ACK_TIMEOUT]);
+    } else if (state == STATE_STABILIZING) {
+      timers_->stop(timer_ids_[bridge::scheduler::TIMER_STARTUP_STABILIZATION]);
     }
   }
 
@@ -307,12 +249,15 @@ class BridgeFsm : public etl::fsm {
   void onEnterState(StateId state) {
     if (timers_ == nullptr) return;
     if (state == STATE_FAULT) {
-      timers_->active.reset();
+      for (auto id : timer_ids_) {
+        timers_->stop(id);
+      }
     }
   }
 
   etl::array<etl::ifsm_state*, NUMBER_OF_STATES> state_list_;
-  bridge::scheduler::SimpleTimer<bridge::scheduler::NUMBER_OF_TIMERS>* timers_;
+  etl::icallback_timer* timers_;
+  etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS> timer_ids_;
   StateStabilizing state_stabilizing;
   StateUnsynchronized state_unsynchronized;
   StateSyncing state_syncing;

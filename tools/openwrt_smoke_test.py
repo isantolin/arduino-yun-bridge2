@@ -4,7 +4,7 @@ OpenWrt Smoke Test using QEMU (MIPS Malta).
 
 Runs the full deployment pipeline inside a QEMU VM:
   1. Boot OpenWrt
-  2. Run 2_expand.sh (extroot + swap on /dev/vdc) → reboot
+  2. Run 2_expand.sh (extroot + swap on /dev/sdc) → reboot
   3. Run 3_install.sh (system deps, project APKs, secrets, daemon start)
   4. Verify mcubridge is running
 
@@ -119,16 +119,16 @@ def build_qemu_cmd(apk_disk: str, extroot_disk: str) -> list[str]:
         "qemu-system-mips",
         "-M", "malta",
         "-kernel", KERNEL_FILE,
-        "-drive", f"file={ROOTFS_IMG},format=raw,if=virtio",     # vda — rootfs
-        "-drive", f"file={apk_disk},format=raw,if=virtio",       # vdb — APKs + scripts
-        "-drive", f"file={extroot_disk},format=raw,if=virtio",   # vdc — extroot target
-        "-append", "root=/dev/vda console=ttyS0",
+        "-drive", f"file={ROOTFS_IMG},format=raw,if=ide",     # sda — rootfs
+        "-drive", f"file={apk_disk},format=raw,if=ide",       # sdb — APKs + scripts
+        "-drive", f"file={extroot_disk},format=raw,if=ide",   # sdc — extroot target
+        "-append", "root=/dev/sda console=ttyS0",
         "-nographic",
         "-serial", "mon:stdio",
         "-m", "256",
         # NAT network for apk update
         "-netdev", "user,id=net0",
-        "-device", "virtio-net-pci,netdev=net0",
+        "-device", "e1000,netdev=net0",
     ]
 
 
@@ -155,7 +155,7 @@ def phase_expand(child: Any) -> None:
     """Phase 1: Mount data disk, run 2_expand.sh, handle reboot."""
     log_info("[PHASE 1] Running 2_expand.sh (extroot + swap)...")
 
-    send_and_wait(child, "mount /dev/vdb /mnt", timeout=10)
+    send_and_wait(child, "mount /dev/sdb /mnt", timeout=10)
 
     # Copy script to writable location
     send_and_wait(child, "cp /mnt/2_expand.sh /root/2_expand.sh", timeout=5)
@@ -173,7 +173,7 @@ def phase_expand(child: Any) -> None:
 
     # Run with 512MB swap and target /dev/vdc
     # The script ends with sleep 5 + reboot
-    child.sendline("/root/2_expand.sh 512 /dev/vdc")
+    child.sendline("/root/2_expand.sh 512 /dev/sdc")
 
     log_info("[WAIT] Waiting for reboot after 2_expand.sh...")
     wait_for_boot(child, timeout=180)
@@ -189,7 +189,7 @@ def phase_install(child: Any) -> None:
     log_info("[PHASE 2] Running 3_install.sh (full installation)...")
 
     # Mount APK disk again (post-reboot)
-    send_and_wait(child, "mount /dev/vdb /mnt", timeout=10)
+    send_and_wait(child, "mount /dev/sdb /mnt", timeout=10)
 
     # Set up workspace as 3_install.sh expects
     send_and_wait(child, "mkdir -p /root/deploy/bin", timeout=5)

@@ -57,8 +57,11 @@ inline uint32_t now_ms() { return static_cast<uint32_t>(::millis()); }
 #include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/expected.h>
+#include <etl/flat_map.h>
 #include <etl/optional.h>
 #include <etl/queue.h>
+#include <etl/pool.h>
+#include <etl/variant.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <etl/vector.h>
@@ -229,6 +232,17 @@ class BridgeClass
   void onFileSystemCommand(const bridge::router::CommandContext& ctx) override;
   void onProcessCommand(const bridge::router::CommandContext& ctx) override;
   void onSpiCommand(const bridge::router::CommandContext& ctx) override;
+
+  void _handleGpioMessage(const bridge::router::CommandContext& ctx, etl::monostate);
+  void _handleGpioMessage(const bridge::router::CommandContext& ctx, const rpc::payload::PinMode& msg);
+  void _handleGpioMessage(const bridge::router::CommandContext& ctx, const rpc::payload::DigitalWrite& msg);
+  void _handleGpioMessage(const bridge::router::CommandContext& ctx, const rpc::payload::AnalogWrite& msg);
+  void _handleGpioMessage(const bridge::router::CommandContext& ctx, const rpc::payload::PinRead& msg);
+
+  void _handleSystemMessage(const bridge::router::CommandContext& ctx, etl::monostate);
+  void _handleSystemMessage(const bridge::router::CommandContext& ctx, const rpc::payload::SetBaudratePacket& msg);
+  void _handleSystemMessage(const bridge::router::CommandContext& ctx, const rpc::payload::EnterBootloader& msg);
+
   void onUnknownCommand(const bridge::router::CommandContext& ctx) override;
 
   // PacketSerial2 callback
@@ -294,9 +308,6 @@ class BridgeClass
   bool _isHandshakeCommand(uint16_t command_id) const;
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   bool _sendFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);
-
-  using CmdHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
-  void _dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const CmdHandler* handlers, uint8_t count, uint8_t stride = 1);
 
   template <typename TPacket, typename TFunc>
   void _handlePinSetter(const bridge::router::CommandContext& ctx, TFunc func) {
@@ -421,19 +432,36 @@ class BridgeClass
   etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> _transient_buffer;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _decompression_buffer;
 
+  struct TxPayloadBuffer {
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data;
+  };
+
   struct PendingTxFrame {
     uint16_t command_id;
     uint16_t payload_length;
-    uint16_t buffer_offset;
+    TxPayloadBuffer* buffer;
   };
   etl::queue<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES> _pending_tx_queue;
 
   #if defined(ARDUINO_ARCH_AVR)
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _tx_payload_pool;
+  etl::pool<TxPayloadBuffer, 1> _tx_payload_pool;
   #else
-  etl::array<uint8_t, bridge::config::MAX_PENDING_TX_FRAMES * rpc::MAX_PAYLOAD_SIZE> _tx_payload_pool;
+  etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES> _tx_payload_pool;
   #endif
-  uint16_t _tx_pool_head;
+
+  using GpioCommandVariant = etl::variant<
+      etl::monostate,
+      rpc::payload::PinMode,
+      rpc::payload::DigitalWrite,
+      rpc::payload::AnalogWrite,
+      rpc::payload::PinRead
+  >;
+
+  using SystemCommandVariant = etl::variant<
+      etl::monostate,
+      rpc::payload::SetBaudratePacket,
+      rpc::payload::EnterBootloader
+  >;
 
   bridge::fsm::BridgeFsm _fsm;
   bridge::scheduler::SimpleTimer<4> _timers;

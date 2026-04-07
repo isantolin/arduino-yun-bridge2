@@ -63,7 +63,6 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _transient_buffer(),
       _pending_tx_queue(),
       _tx_payload_pool(),
-      _tx_pool_head(0),
       _fsm(),
       _timers(),
       _last_tick_millis(0),
@@ -235,24 +234,28 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame, uint16_t sequence_id
                                      rpc::requires_ack(raw_cmd),
                                      sequence_id);
 
-  // [SIL-2] O(1) Jump Table for Command Categories
-  static const CmdHandler kGroupHandlers[] PROGMEM = {
-      &BridgeClass::onStatusCommand,    // 0x30
-      &BridgeClass::onSystemCommand,    // 0x40
-      &BridgeClass::onGpioCommand,      // 0x50
-      &BridgeClass::onConsoleCommand,   // 0x60
-      &BridgeClass::onDataStoreCommand, // 0x70
-      &BridgeClass::onMailboxCommand,   // 0x80
-      &BridgeClass::onFileSystemCommand,// 0x90
-      &BridgeClass::onProcessCommand,   // 0xA0
-      &BridgeClass::onSpiCommand        // 0xB0
-  };
+  // [SIL-2] Static Dispatch for Command Categories via ETL Structure
+  const uint8_t group = static_cast<uint8_t>(raw_cmd >> rpc::RPC_COMMAND_GROUP_SHIFT);
+  using CategoryHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+  using CategoryValue = etl::pair<uint8_t, CategoryHandler>;
+  using CategoryMap = etl::flat_map<uint8_t, CategoryHandler, 9>;
 
-  const uint8_t group_idx = (raw_cmd >> rpc::RPC_COMMAND_GROUP_SHIFT) - rpc::RPC_COMMAND_GROUP_OFFSET;
-  if (group_idx < ETL_ARRAY_SIZE(kGroupHandlers)) {
-    CmdHandler handler;
-    bridge::hal::copy_from_progmem(&handler, &kGroupHandlers[group_idx]);
-    (this->*handler)(ctx);
+  static const etl::array<CategoryValue, 9> category_data = {
+      CategoryValue{3, &BridgeClass::onStatusCommand},
+      CategoryValue{4, &BridgeClass::onSystemCommand},
+      CategoryValue{5, &BridgeClass::onGpioCommand},
+      CategoryValue{6, &BridgeClass::onConsoleCommand},
+      CategoryValue{7, &BridgeClass::onDataStoreCommand},
+      CategoryValue{8, &BridgeClass::onMailboxCommand},
+      CategoryValue{9, &BridgeClass::onFileSystemCommand},
+      CategoryValue{10, &BridgeClass::onProcessCommand},
+      CategoryValue{11, &BridgeClass::onSpiCommand}};
+  static const CategoryMap category_handlers(category_data.begin(),
+                                             category_data.end());
+
+  auto it = category_handlers.find(group);
+  if (it != category_handlers.end()) {
+    (this->*(it->second))(ctx);
   } else {
     onUnknownCommand(ctx);
   }
@@ -266,67 +269,236 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
 }
 
 void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
-  static const CmdHandler kStatusHandlers[] PROGMEM = {
-      &BridgeClass::_unusedCommandSlot,     // 48: STATUS_OK
-      &BridgeClass::_unusedCommandSlot,     // 49: STATUS_ERROR
-      &BridgeClass::_unusedCommandSlot,     // 50: STATUS_CMD_UNKNOWN
-      &BridgeClass::_handleStatusMalformed, // 51: MALFORMED
-      &BridgeClass::_unusedCommandSlot,     // 52
-      &BridgeClass::_unusedCommandSlot,     // 53
-      &BridgeClass::_unusedCommandSlot,     // 54
-      &BridgeClass::_unusedCommandSlot,     // 55
-      &BridgeClass::_handleStatusAck        // 56: ACK
-  };
-  _dispatchJumpTable(ctx, rpc::RPC_STATUS_CODE_MIN, kStatusHandlers, ETL_ARRAY_SIZE(kStatusHandlers));
+  using StatusHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+  using StatusValue = etl::pair<rpc::StatusCode, StatusHandler>;
+  using StatusMap = etl::flat_map<rpc::StatusCode, StatusHandler, 2>;
+
+  static const etl::array<StatusValue, 2> status_data = {
+      StatusValue{rpc::StatusCode::STATUS_MALFORMED,
+                  &BridgeClass::_handleStatusMalformed},
+      StatusValue{rpc::StatusCode::STATUS_ACK, &BridgeClass::_handleStatusAck}};
+  static const StatusMap status_handlers(status_data.begin(), status_data.end());
+
+  auto it = status_handlers.find(static_cast<rpc::StatusCode>(ctx.raw_command));
+  if (it != status_handlers.end()) {
+    (this->*(it->second))(ctx);
+  } else if (ctx.raw_command < rpc::RPC_STATUS_CODE_MIN ||
+             ctx.raw_command > rpc::RPC_STATUS_CODE_MAX) {
+    onUnknownCommand(ctx);
+  }
 
   if (_status_handler.is_valid()) {
-    _status_handler(static_cast<rpc::StatusCode>(ctx.raw_command), ctx.frame->payload);
+    _status_handler(static_cast<rpc::StatusCode>(ctx.raw_command),
+                    ctx.frame->payload);
   }
 }
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
-  static const CmdHandler kSystemHandlers[] PROGMEM = {
-      &BridgeClass::_handleGetVersion,      // 0: 64
-      &BridgeClass::_unusedCommandSlot,     // 1: 65
-      &BridgeClass::_handleGetFreeMemory,   // 2: 66
-      &BridgeClass::_unusedCommandSlot,     // 3: 67
-      &BridgeClass::_handleLinkSync,        // 4: 68
-      &BridgeClass::_unusedCommandSlot,     // 5: 69
-      &BridgeClass::_handleLinkReset,       // 6: 70
-      &BridgeClass::_unusedCommandSlot,     // 7: 71
-      &BridgeClass::_handleGetCapabilities, // 8: 72
-      &BridgeClass::_unusedCommandSlot,     // 9: 73
-      &BridgeClass::_handleSetBaudrate,     // 10: 74
-      &BridgeClass::_unusedCommandSlot,     // 11: 75
-      &BridgeClass::_handleEnterBootloader  // 12: 76
-  };
-  _dispatchJumpTable(ctx, rpc::RPC_SYSTEM_COMMAND_MIN, kSystemHandlers, ETL_ARRAY_SIZE(kSystemHandlers));
+  using SystemParser = void (*)(const rpc::Frame&, SystemCommandVariant&);
+  using ParserValue = etl::pair<uint16_t, SystemParser>;
+  using SystemMap = etl::flat_map<uint16_t, SystemParser, 2>;
+
+  static const etl::array<ParserValue, 2> parser_data = {
+      ParserValue{rpc::CommandId::CMD_SET_BAUDRATE,
+                  [](const rpc::Frame& f, SystemCommandVariant& v) {
+                    auto res = rpc::Payload::parse<rpc::payload::SetBaudratePacket>(f);
+                    if (res) v = res.value();
+                  }},
+      ParserValue{rpc::CommandId::CMD_ENTER_BOOTLOADER,
+                  [](const rpc::Frame& f, SystemCommandVariant& v) {
+                    auto res = rpc::Payload::parse<rpc::payload::EnterBootloader>(f);
+                    if (res) v = res.value();
+                  }}};
+  static const SystemMap system_parsers(parser_data.begin(), parser_data.end());
+
+  using SystemNoPayloadHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+  using NoPayloadValue = etl::pair<uint16_t, SystemNoPayloadHandler>;
+  using SystemNoPayloadMap = etl::flat_map<uint16_t, SystemNoPayloadHandler, 5>;
+
+  static const etl::array<NoPayloadValue, 5> no_payload_data = {
+      NoPayloadValue{rpc::CommandId::CMD_GET_VERSION,
+                     &BridgeClass::_handleGetVersion},
+      NoPayloadValue{rpc::CommandId::CMD_GET_FREE_MEMORY,
+                     &BridgeClass::_handleGetFreeMemory},
+      NoPayloadValue{rpc::CommandId::CMD_LINK_SYNC, &BridgeClass::_handleLinkSync},
+      NoPayloadValue{rpc::CommandId::CMD_LINK_RESET,
+                     &BridgeClass::_handleLinkReset},
+      NoPayloadValue{rpc::CommandId::CMD_GET_CAPABILITIES,
+                     &BridgeClass::_handleGetCapabilities}};
+  static const SystemNoPayloadMap system_no_payload_handlers(
+      no_payload_data.begin(), no_payload_data.end());
+
+  auto it_no_payload = system_no_payload_handlers.find(ctx.raw_command);
+  if (it_no_payload != system_no_payload_handlers.end()) {
+    (this->*(it_no_payload->second))(ctx);
+    return;
+  }
+
+  SystemCommandVariant var;
+  auto it = system_parsers.find(ctx.raw_command);
+  if (it != system_parsers.end()) {
+    it->second(*ctx.frame, var);
+  }
+
+  if (!etl::holds_alternative<etl::monostate>(var)) {
+    etl::visit(
+        [this, &ctx](auto&& msg) { this->_handleSystemMessage(ctx, msg); }, var);
+  } else {
+    onUnknownCommand(ctx);
+  }
+}
+
+void BridgeClass::_handleSystemMessage(const bridge::router::CommandContext& ctx,
+                                       etl::monostate) {
+  onUnknownCommand(ctx);
+}
+
+void BridgeClass::_handleSystemMessage(
+    const bridge::router::CommandContext& ctx,
+    const rpc::payload::SetBaudratePacket& msg) {
+  _withPayloadAck<rpc::payload::SetBaudratePacket>(
+      ctx, [this](const rpc::payload::SetBaudratePacket& m) {
+        _pending_baudrate = m.baudrate;
+        _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE,
+                      bridge::now_ms());
+      });
+}
+
+void BridgeClass::_handleSystemMessage(const bridge::router::CommandContext& ctx,
+                                       const rpc::payload::EnterBootloader& msg) {
+  _withPayloadAck<rpc::payload::EnterBootloader>(
+      ctx, [this](const rpc::payload::EnterBootloader& m) {
+        if (m.magic == rpc::RPC_BOOTLOADER_MAGIC) {
+          this->flushStream();
+          delay(bridge::config::BOOTLOADER_DELAY_MS);
+#if defined(ARDUINO_ARCH_AVR)
+          wdt_enable(WDTO_15MS);
+          for (;;) {
+          }
+#elif defined(ARDUINO_ARCH_ESP32)
+          ESP.restart();
+#elif defined(ARDUINO_ARCH_SAMD)
+          NVIC_SystemReset();
+#endif
+        }
+      });
 }
 
 void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
-  static const CmdHandler kGpioHandlers[] PROGMEM = {
-      &BridgeClass::_handleSetPinMode, &BridgeClass::_handleDigitalWrite,
-      &BridgeClass::_handleAnalogWrite, &BridgeClass::_handleDigitalRead,
-      &BridgeClass::_handleAnalogRead
-  };
-  _dispatchJumpTable(ctx, rpc::RPC_GPIO_COMMAND_MIN, kGpioHandlers, ETL_ARRAY_SIZE(kGpioHandlers));
+  using GpioParser = void (*)(const rpc::Frame&, GpioCommandVariant&);
+  using GpioValue = etl::pair<uint16_t, GpioParser>;
+  using GpioMap = etl::flat_map<uint16_t, GpioParser, 5>;
+
+  static const etl::array<GpioValue, 5> gpio_data = {
+      GpioValue{rpc::CommandId::CMD_SET_PIN_MODE,
+                [](const rpc::Frame& f, GpioCommandVariant& v) {
+                  auto res = rpc::Payload::parse<rpc::payload::PinMode>(f);
+                  if (res) v = res.value();
+                }},
+      GpioValue{rpc::CommandId::CMD_DIGITAL_WRITE,
+                [](const rpc::Frame& f, GpioCommandVariant& v) {
+                  auto res = rpc::Payload::parse<rpc::payload::DigitalWrite>(f);
+                  if (res) v = res.value();
+                }},
+      GpioValue{rpc::CommandId::CMD_ANALOG_WRITE,
+                [](const rpc::Frame& f, GpioCommandVariant& v) {
+                  auto res = rpc::Payload::parse<rpc::payload::AnalogWrite>(f);
+                  if (res) v = res.value();
+                }},
+      GpioValue{rpc::CommandId::CMD_DIGITAL_READ,
+                [](const rpc::Frame& f, GpioCommandVariant& v) {
+                  auto res = rpc::Payload::parse<rpc::payload::PinRead>(f);
+                  if (res) v = res.value();
+                }},
+      GpioValue{rpc::CommandId::CMD_ANALOG_READ,
+                [](const rpc::Frame& f, GpioCommandVariant& v) {
+                  auto res = rpc::Payload::parse<rpc::payload::PinRead>(f);
+                  if (res) v = res.value();
+                }}};
+  static const GpioMap gpio_parsers(gpio_data.begin(), gpio_data.end());
+
+  GpioCommandVariant var;
+  auto it = gpio_parsers.find(ctx.raw_command);
+  if (it != gpio_parsers.end()) {
+    it->second(*ctx.frame, var);
+  }
+
+  etl::visit([this, &ctx](auto&& msg) { this->_handleGpioMessage(ctx, msg); },
+             var);
+}
+
+void BridgeClass::_handleGpioMessage(const bridge::router::CommandContext& ctx,
+                                     etl::monostate) {
+  onUnknownCommand(ctx);
+}
+
+void BridgeClass::_handleGpioMessage(const bridge::router::CommandContext& ctx,
+                                     const rpc::payload::PinMode& msg) {
+  _withAck(ctx, [this, &msg]() {
+    if (bridge::hal::isValidPin(msg.pin)) ::pinMode(msg.pin, msg.mode);
+    else emitStatus(rpc::StatusCode::STATUS_ERROR);
+  });
+}
+
+void BridgeClass::_handleGpioMessage(const bridge::router::CommandContext& ctx,
+                                     const rpc::payload::DigitalWrite& msg) {
+  _withAck(ctx, [this, &msg]() {
+    if (bridge::hal::isValidPin(msg.pin)) ::digitalWrite(msg.pin, msg.value);
+    else emitStatus(rpc::StatusCode::STATUS_ERROR);
+  });
+}
+
+void BridgeClass::_handleGpioMessage(const bridge::router::CommandContext& ctx,
+                                     const rpc::payload::AnalogWrite& msg) {
+  _withAck(ctx, [this, &msg]() {
+    if (bridge::hal::isValidPin(msg.pin)) ::analogWrite(msg.pin, msg.value);
+    else emitStatus(rpc::StatusCode::STATUS_ERROR);
+  });
+}
+
+void BridgeClass::_handleGpioMessage(const bridge::router::CommandContext& ctx,
+                                     const rpc::payload::PinRead& msg) {
+  if (ctx.raw_command == rpc::CommandId::CMD_DIGITAL_READ) {
+    _handlePinRead<rpc::payload::DigitalReadResponse>(
+        ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP, bridge::hal::isValidPin,
+        [](uint8_t p) { return ::digitalRead(p); });
+  } else {
+    _handlePinRead<rpc::payload::AnalogReadResponse>(
+        ctx, rpc::CommandId::CMD_ANALOG_READ_RESP, bridge::hal::isValidPin,
+        [](uint8_t p) { return ::analogRead(p); });
+  }
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
-  static const CmdHandler kConsoleHandlers[] PROGMEM = {
-      &BridgeClass::_handleConsoleWrite
-  };
-  _dispatchJumpTable(ctx, rpc::RPC_CONSOLE_COMMAND_MIN, kConsoleHandlers, ETL_ARRAY_SIZE(kConsoleHandlers));
+  using ConsoleHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+  using ConsoleMap = etl::flat_map<uint16_t, ConsoleHandler, 1>;
+
+  static const ConsoleMap console_handlers = {
+      {rpc::CommandId::CMD_CONSOLE_WRITE, &BridgeClass::_handleConsoleWrite}};
+
+  auto it = console_handlers.find(ctx.raw_command);
+  if (it != console_handlers.end()) {
+    (this->*(it->second))(ctx);
+  } else {
+    onUnknownCommand(ctx);
+  }
 }
 
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_DATASTORE) {
-    static const CmdHandler kDataStoreHandlers[] PROGMEM = {
-        &BridgeClass::_unusedCommandSlot, // 112
-        &BridgeClass::_unusedCommandSlot, // 113
-        &BridgeClass::_handleDatastoreGetResp // 114
-    };
-    _dispatchJumpTable(ctx, rpc::RPC_DATASTORE_COMMAND_MIN, kDataStoreHandlers, ETL_ARRAY_SIZE(kDataStoreHandlers));
+    using DataStoreHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using DataStoreMap = etl::flat_map<uint16_t, DataStoreHandler, 1>;
+
+    static const DataStoreMap datastore_handlers = {
+        {rpc::CommandId::CMD_DATASTORE_GET_RESP,
+         &BridgeClass::_handleDatastoreGetResp}};
+
+    auto it = datastore_handlers.find(ctx.raw_command);
+    if (it != datastore_handlers.end()) {
+      (this->*(it->second))(ctx);
+    } else {
+      onUnknownCommand(ctx);
+    }
   } else {
     onUnknownCommand(ctx);
   }
@@ -334,15 +506,22 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_MAILBOX) {
-    static const CmdHandler kMailboxHandlers[] PROGMEM = {
-        &BridgeClass::_unusedCommandSlot, // 128
-        &BridgeClass::_unusedCommandSlot, // 129
-        &BridgeClass::_unusedCommandSlot, // 130
-        &BridgeClass::_handleMailboxPush, // 131
-        &BridgeClass::_handleMailboxReadResp, // 132
-        &BridgeClass::_handleMailboxAvailableResp // 133
-    };
-    _dispatchJumpTable(ctx, rpc::RPC_MAILBOX_COMMAND_MIN, kMailboxHandlers, ETL_ARRAY_SIZE(kMailboxHandlers));
+    using MailboxHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using MailboxMap = etl::flat_map<uint16_t, MailboxHandler, 3>;
+
+    static const MailboxMap mailbox_handlers = {
+        {rpc::CommandId::CMD_MAILBOX_PUSH, &BridgeClass::_handleMailboxPush},
+        {rpc::CommandId::CMD_MAILBOX_READ_RESP,
+         &BridgeClass::_handleMailboxReadResp},
+        {rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP,
+         &BridgeClass::_handleMailboxAvailableResp}};
+
+    auto it = mailbox_handlers.find(ctx.raw_command);
+    if (it != mailbox_handlers.end()) {
+      (this->*(it->second))(ctx);
+    } else {
+      onUnknownCommand(ctx);
+    }
   } else {
     onUnknownCommand(ctx);
   }
@@ -350,13 +529,21 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_FILESYSTEM) {
-    static const CmdHandler kFsHandlers[] PROGMEM = {
-        &BridgeClass::_handleFileWrite, // 144
-        &BridgeClass::_handleFileRead, // 145
-        &BridgeClass::_handleFileRemove, // 146
-        &BridgeClass::_handleFileReadResp // 147
-    };
-    _dispatchJumpTable(ctx, rpc::RPC_FILESYSTEM_COMMAND_MIN, kFsHandlers, ETL_ARRAY_SIZE(kFsHandlers));
+    using FileSystemHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using FileSystemMap = etl::flat_map<uint16_t, FileSystemHandler, 4>;
+
+    static const FileSystemMap file_handlers = {
+        {rpc::CommandId::CMD_FILE_WRITE, &BridgeClass::_handleFileWrite},
+        {rpc::CommandId::CMD_FILE_READ, &BridgeClass::_handleFileRead},
+        {rpc::CommandId::CMD_FILE_REMOVE, &BridgeClass::_handleFileRemove},
+        {rpc::CommandId::CMD_FILE_READ_RESP, &BridgeClass::_handleFileReadResp}};
+
+    auto it = file_handlers.find(ctx.raw_command);
+    if (it != file_handlers.end()) {
+      (this->*(it->second))(ctx);
+    } else {
+      onUnknownCommand(ctx);
+    }
   } else {
     onUnknownCommand(ctx);
   }
@@ -364,16 +551,22 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_PROCESS) {
-    static const CmdHandler kProcessHandlers[] PROGMEM = {
-        &BridgeClass::_unusedCommandSlot, // 160
-        &BridgeClass::_unusedCommandSlot, // 161
-        &BridgeClass::_handleProcessKill, // 162
-        &BridgeClass::_unusedCommandSlot, // 163
-        &BridgeClass::_unusedCommandSlot, // 164
-        &BridgeClass::_handleProcessRunAsyncResp, // 165
-        &BridgeClass::_handleProcessPollResp // 166
-    };
-    _dispatchJumpTable(ctx, rpc::RPC_PROCESS_COMMAND_MIN, kProcessHandlers, ETL_ARRAY_SIZE(kProcessHandlers));
+    using ProcessHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using ProcessMap = etl::flat_map<uint16_t, ProcessHandler, 3>;
+
+    static const ProcessMap process_handlers = {
+        {rpc::CommandId::CMD_PROCESS_KILL, &BridgeClass::_handleProcessKill},
+        {rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP,
+         &BridgeClass::_handleProcessRunAsyncResp},
+        {rpc::CommandId::CMD_PROCESS_POLL_RESP,
+         &BridgeClass::_handleProcessPollResp}};
+
+    auto it = process_handlers.find(ctx.raw_command);
+    if (it != process_handlers.end()) {
+      (this->*(it->second))(ctx);
+    } else {
+      onUnknownCommand(ctx);
+    }
   } else {
     onUnknownCommand(ctx);
   }
@@ -381,14 +574,21 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_SPI) {
-    static const CmdHandler kSpiHandlers[] PROGMEM = {
-        &BridgeClass::_handleSpiBegin,
-        &BridgeClass::_handleSpiTransfer,
-        &BridgeClass::_unusedCommandSlot,
-        &BridgeClass::_handleSpiEnd,
-        &BridgeClass::_handleSpiSetConfig,
-    };
-    _dispatchJumpTable(ctx, rpc::RPC_SPI_COMMAND_MIN, kSpiHandlers, ETL_ARRAY_SIZE(kSpiHandlers));
+    using SpiHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using SpiMap = etl::flat_map<uint16_t, SpiHandler, 4>;
+
+    static const SpiMap spi_handlers = {
+        {rpc::CommandId::CMD_SPI_BEGIN, &BridgeClass::_handleSpiBegin},
+        {rpc::CommandId::CMD_SPI_END, &BridgeClass::_handleSpiEnd},
+        {rpc::CommandId::CMD_SPI_SET_CONFIG, &BridgeClass::_handleSpiSetConfig},
+        {rpc::CommandId::CMD_SPI_TRANSFER, &BridgeClass::_handleSpiTransfer}};
+
+    auto it = spi_handlers.find(ctx.raw_command);
+    if (it != spi_handlers.end()) {
+      (this->*(it->second))(ctx);
+    } else {
+      onUnknownCommand(ctx);
+    }
   } else {
     onUnknownCommand(ctx);
   }
@@ -438,22 +638,6 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
       }
     });
 #endif
-}
-
-void BridgeClass::_handleEnterBootloader(const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::EnterBootloader>(ctx, [this](const rpc::payload::EnterBootloader& msg) {
-    if (msg.magic == rpc::RPC_BOOTLOADER_MAGIC) {
-      this->flushStream();
-      delay(bridge::config::BOOTLOADER_DELAY_MS);
-#if defined(ARDUINO_ARCH_AVR)
-      wdt_enable(WDTO_15MS); for (;;) {}
-#elif defined(ARDUINO_ARCH_ESP32)
-      ESP.restart();
-#elif defined(ARDUINO_ARCH_SAMD)
-      NVIC_SystemReset();
-#endif
-    }
-  });
 }
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
@@ -520,33 +704,6 @@ void BridgeClass::_handleGetCapabilities(const bridge::router::CommandContext& c
     resp.feat = bridge::hal::getCapabilities();
     _sendPbResponse(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id, resp);
   });
-}
-
-void BridgeClass::_handleSetBaudrate(const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::SetBaudratePacket>(ctx, [this](const rpc::payload::SetBaudratePacket& msg) {
-    _pending_baudrate = msg.baudrate;
-    _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE, bridge::now_ms());
-  });
-}
-
-void BridgeClass::_handleSetPinMode(const bridge::router::CommandContext& ctx) {
-  _handlePinSetter<rpc::payload::PinMode>(ctx, [](const auto& msg) { ::pinMode(msg.pin, msg.mode); });
-}
-
-void BridgeClass::_handleDigitalWrite(const bridge::router::CommandContext& ctx) {
-  _handlePinSetter<rpc::payload::DigitalWrite>(ctx, [](const auto& msg) { ::digitalWrite(msg.pin, msg.value); });
-}
-
-void BridgeClass::_handleAnalogWrite(const bridge::router::CommandContext& ctx) {
-  _handlePinSetter<rpc::payload::AnalogWrite>(ctx, [](const auto& msg) { ::analogWrite(msg.pin, msg.value); });
-}
-
-void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx) {
-  _handlePinRead<rpc::payload::DigitalReadResponse>(ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP, bridge::hal::isValidPin, [](uint8_t p) { return ::digitalRead(p); });
-}
-
-void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
-  _handlePinRead<rpc::payload::AnalogReadResponse>(ctx, rpc::CommandId::CMD_ANALOG_READ_RESP, bridge::hal::isValidPin, [](uint8_t p) { return ::analogRead(p); });
 }
 
 void BridgeClass::_handleConsoleWrite(const bridge::router::CommandContext& ctx) {
@@ -644,23 +801,10 @@ void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext& c
   _withPayload<rpc::payload::AckPacket>(ctx, [this](const rpc::payload::AckPacket& msg) { _handleMalformed(static_cast<uint16_t>(msg.command_id)); });
 }
 
-void BridgeClass::_unusedCommandSlot(const bridge::router::CommandContext& ctx) { onUnknownCommand(ctx); }
-
-void BridgeClass::_dispatchJumpTable(const bridge::router::CommandContext& ctx, uint16_t min_id, const CmdHandler* handlers, uint8_t count, uint8_t stride) {
-  if (ctx.raw_command < min_id) return;
-  const uint8_t index = static_cast<uint8_t>((ctx.raw_command - min_id) / stride);
-  if (index < count) {
-    CmdHandler handler;
-    bridge::hal::copy_from_progmem(&handler, &handlers[index]);
-    if (handler) (this->*handler)(ctx);
-  }
-}
-
 void BridgeClass::_handleAck(uint16_t command_id) {
   bool awaiting = false; BRIDGE_ATOMIC_BLOCK { awaiting = _fsm.isAwaitingAck(); }
   if (awaiting && (command_id == _last_command_id)) {
     _clearAckState(); _timers.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
-    BRIDGE_ATOMIC_BLOCK { if (!_pending_tx_queue.empty()) _pending_tx_queue.pop(); }
     _flushPendingTxQueue();
   }
 }
@@ -671,9 +815,8 @@ void BridgeClass::_retransmitLastFrame() {
   PendingTxFrame f; bool has_frame = false;
   BRIDGE_ATOMIC_BLOCK { if (!_pending_tx_queue.empty()) { f = _pending_tx_queue.front(); has_frame = true; } }
   if (has_frame) {
-    // [SIL-2] Defensive bounds check: offset+length must stay within pool
-    if (static_cast<size_t>(f.buffer_offset) + f.payload_length <= _tx_payload_pool.size()) {
-      _sendRawFrame(f.command_id, 0, etl::span<const uint8_t>(_tx_payload_pool.data() + f.buffer_offset, f.payload_length)); _retry_count++;
+    if (f.buffer != nullptr) {
+      _sendRawFrame(f.command_id, 0, etl::span<const uint8_t>(f.buffer->data.data(), f.payload_length)); _retry_count++;
     }
   }
 }
@@ -762,18 +905,34 @@ void BridgeClass::_flushPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK { if (!_fsm.isAwaitingAck() && !_pending_tx_queue.empty()) { f = _pending_tx_queue.front(); has_frame = true; } }
   if (has_frame) {
     uint16_t seq = ++_tx_sequence_id;
-    // [SIL-2] Defensive bounds check: offset+length must stay within pool
-    if (static_cast<size_t>(f.buffer_offset) + f.payload_length <= _tx_payload_pool.size()) {
-      _sendRawFrame(f.command_id, seq, etl::span<const uint8_t>(_tx_payload_pool.data() + f.buffer_offset, f.payload_length));
+    if (f.buffer != nullptr) {
+      _sendRawFrame(f.command_id, seq, etl::span<const uint8_t>(f.buffer->data.data(), f.payload_length));
     }
     BRIDGE_ATOMIC_BLOCK { _fsm.sendCritical(); } _retry_count = 0;
     _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT, bridge::now_ms()); _last_command_id = f.command_id;
   }
 }
 
-void BridgeClass::_clearPendingTxQueue() { BRIDGE_ATOMIC_BLOCK { _pending_tx_queue.clear(); _tx_pool_head = 0; } }
+void BridgeClass::_clearPendingTxQueue() {
+  BRIDGE_ATOMIC_BLOCK {
+    while (!_pending_tx_queue.empty()) {
+      TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
+      if (buf) _tx_payload_pool.release(buf);
+      _pending_tx_queue.pop();
+    }
+  }
+}
 void BridgeClass::_clearAckState() {
-  BRIDGE_ATOMIC_BLOCK { if (_fsm.isAwaitingAck()) { _fsm.ackReceived(); if (!_pending_tx_queue.empty()) { _pending_tx_queue.pop(); if (_pending_tx_queue.empty()) _tx_pool_head = 0; } } }
+  BRIDGE_ATOMIC_BLOCK {
+    if (_fsm.isAwaitingAck()) {
+      _fsm.ackReceived();
+      if (!_pending_tx_queue.empty()) {
+        TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
+        if (buf) _tx_payload_pool.release(buf);
+        _pending_tx_queue.pop();
+      }
+    }
+  }
   _retry_count = 0;
 }
 
@@ -788,9 +947,12 @@ bool BridgeClass::_sendFrame(uint16_t command_id, uint16_t sequence_id, etl::spa
   if (!operational && !_isHandshakeCommand(command_id)) return false;
   static_assert(rpc::MAX_PAYLOAD_SIZE <= UINT16_MAX, "MAX_PAYLOAD_SIZE must fit in uint16_t");
   if (rpc::requires_ack(command_id)) {
-    if (_isQueueFull() || (_tx_pool_head + payload.size() > _tx_payload_pool.size())) return false;
-    PendingTxFrame f; f.command_id = command_id; f.payload_length = static_cast<uint16_t>(payload.size()); f.buffer_offset = _tx_pool_head;
-    etl::copy_n(payload.data(), f.payload_length, _tx_payload_pool.data() + _tx_pool_head); _tx_pool_head += f.payload_length;
+    if (_isQueueFull() || _tx_payload_pool.full()) return false;
+    TxPayloadBuffer* buf = nullptr;
+    BRIDGE_ATOMIC_BLOCK { buf = _tx_payload_pool.allocate(); }
+    if (!buf) return false;
+    PendingTxFrame f; f.command_id = command_id; f.payload_length = static_cast<uint16_t>(payload.size()); f.buffer = buf;
+    if (payload.size() > 0) etl::copy_n(payload.data(), f.payload_length, buf->data.data());
     BRIDGE_ATOMIC_BLOCK { _pending_tx_queue.push(f); } _flushPendingTxQueue(); return true;
   }
   _sendRawFrame(command_id, sequence_id, payload); return true;

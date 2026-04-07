@@ -290,15 +290,16 @@ class BridgeFsm : public etl::fsm {
   // [SIL-2] Exit actions — guarantee timers are stopped on any exit path
   void onExitState(StateId state) {
     if (timers_ == nullptr) return;
-    switch (state) {
-      case STATE_AWAITING_ACK:
-        timers_->stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
-        break;
-      case STATE_STABILIZING:
-        timers_->stop(bridge::scheduler::TIMER_STARTUP_STABILIZATION);
-        break;
-      default:
-        break;
+    using ExitValue = etl::pair<StateId, bridge::scheduler::TimerId>;
+    using ExitMap = etl::flat_map<StateId, bridge::scheduler::TimerId, 2>;
+    static const etl::array<ExitValue, 2> exit_data = {
+        ExitValue{STATE_AWAITING_ACK, bridge::scheduler::TIMER_ACK_TIMEOUT},
+        ExitValue{STATE_STABILIZING, bridge::scheduler::TIMER_STARTUP_STABILIZATION}};
+    static const ExitMap exit_timers(exit_data.begin(), exit_data.end());
+
+    auto it = exit_timers.find(state);
+    if (it != exit_timers.end()) {
+      timers_->stop(it->second);
     }
   }
 

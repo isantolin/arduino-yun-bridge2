@@ -63,6 +63,11 @@ void init();
 bool hasSD();
 
 /**
+ * @brief Check if hardware SPI is available.
+ */
+bool hasSPI();
+
+/**
  * @brief Write data to a file on the SD card.
  */
 etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data);

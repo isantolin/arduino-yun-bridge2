@@ -378,33 +378,36 @@ class BridgeClass
     return full;
   }
 
+  // --- Members ---
   Stream& _stream;
   HardwareSerial* _hardware_serial;
-  etl::vector<uint8_t, 32> _shared_secret;
+
+  // Handlers (Delegates)
+  CommandHandler _command_handler;
+  DigitalReadHandler _digital_read_handler;
+  AnalogReadHandler _analog_read_handler;
+  GetFreeMemoryHandler _get_free_memory_handler;
+  StatusHandler _status_handler;
+
+  etl::icallback_timer::callback_type _on_ack_timeout_delegate;
+  etl::icallback_timer::callback_type _on_rx_dedupe_delegate;
+  etl::icallback_timer::callback_type _on_baudrate_change_delegate;
+  etl::icallback_timer::callback_type _on_startup_stabilized_delegate;
+
+  // Protocol Infrastructure
+  bridge::fsm::BridgeFsm _fsm;
+  etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
+  etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS> _timer_ids;
   
-  // PacketSerial2 integration with SIL-2 policies
   using PacketSerialType = PacketSerial2::PacketSerial<
       PacketSerial2::COBS, 
       PacketSerial2::NoCRC, 
       PacketSerial2::NoLock, 
-      PacketSerial2::NoWatchdog // [SIL-2] BridgeClass centralizes WDT management
+      PacketSerial2::NoWatchdog
   >;
-
+  PacketSerialType _packet_serial;
   rpc::FrameBuilder _frame_builder;
-  rpc::FrameError _last_parse_error;
-
-  etl::bitset<bridge::NUM_FLAGS> _flags;
-
-  rpc::Frame _rx_frame;
-  etl::random_xorshift _rng;
-  uint16_t _last_command_id;
-  uint16_t _tx_sequence_id;
-  uint8_t _retry_count;
-  uint32_t _pending_baudrate;
-
-  // RX raw packet storage (COBS unencoded bytes)
-  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_storage;
-
+  
   struct RxHistory {
     etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> buffer;
     bool contains(uint16_t id) const {
@@ -418,29 +421,23 @@ class BridgeClass
   };
   RxHistory _rx_history;
 
-  uint16_t _consecutive_crc_errors;
-  uint16_t _ack_timeout_ms;
-  uint8_t _ack_retry_limit;
-  uint32_t _response_timeout_ms;
-  CommandHandler _command_handler;
-  DigitalReadHandler _digital_read_handler;
-  AnalogReadHandler _analog_read_handler;
-  GetFreeMemoryHandler _get_free_memory_handler;
-  StatusHandler _status_handler;
+  etl::bitset<bridge::NUM_FLAGS> _flags;
+  rpc::Frame _rx_frame;
+  etl::random_xorshift _rng;
+  etl::vector<uint8_t, 32> _shared_secret;
 
-  // [SIL-2] Dedicated buffers to ensure memory integrity during dispatch.
-  // Using independent arrays avoids aliasing/overlap during decompression and decoding.
+  // Buffers
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_storage;
   etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 2> _transient_buffer;
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _decompression_buffer;
 
   struct TxPayloadBuffer {
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data;
   };
 
   struct PendingTxFrame {
+    TxPayloadBuffer* buffer;
     uint16_t command_id;
     uint16_t payload_length;
-    TxPayloadBuffer* buffer;
   };
   etl::queue<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES> _pending_tx_queue;
 
@@ -464,17 +461,19 @@ class BridgeClass
       rpc::payload::EnterBootloader
   >;
 
-  bridge::fsm::BridgeFsm _fsm;
-  etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS> _timer_ids;
-  etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
-  etl::icallback_timer::callback_type _on_ack_timeout_delegate;
-  etl::icallback_timer::callback_type _on_rx_dedupe_delegate;
-  etl::icallback_timer::callback_type _on_baudrate_change_delegate;
-  etl::icallback_timer::callback_type _on_startup_stabilized_delegate;
+  // Aligned small members
+  uint32_t _pending_baudrate;
+  uint32_t _response_timeout_ms;
   uint32_t _last_tick_millis;
-
-  PacketSerialType _packet_serial;
-  };
+  uint16_t _consecutive_crc_errors;
+  uint16_t _ack_timeout_ms;
+  uint16_t _last_command_id;
+  uint16_t _tx_sequence_id;
+  rpc::FrameError _last_parse_error;
+  uint8_t _retry_count;
+  uint8_t _ack_retry_limit;
+  bool _ok = true;
+};
 extern BridgeClass Bridge;
 
 // Include services at the end to ensure BridgeClass is defined

@@ -181,6 +181,14 @@ bool hasSD() {
 #endif
 }
 
+bool hasSPI() {
+#if defined(BRIDGE_HOST_TEST)
+  return true; // Mock SPI availability for tests
+#else
+  return false;
+#endif
+}
+
 etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;

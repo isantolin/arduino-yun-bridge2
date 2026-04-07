@@ -299,12 +299,12 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
   using SystemMap = etl::flat_map<uint16_t, SystemParser, 2>;
 
   static const etl::array<ParserValue, 2> parser_data = {
-      ParserValue{rpc::CommandId::CMD_SET_BAUDRATE,
+      ParserValue{rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
                   [](const rpc::Frame& f, SystemCommandVariant& v) {
                     auto res = rpc::Payload::parse<rpc::payload::SetBaudratePacket>(f);
                     if (res) v = res.value();
                   }},
-      ParserValue{rpc::CommandId::CMD_ENTER_BOOTLOADER,
+      ParserValue{rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER),
                   [](const rpc::Frame& f, SystemCommandVariant& v) {
                     auto res = rpc::Payload::parse<rpc::payload::EnterBootloader>(f);
                     if (res) v = res.value();
@@ -316,14 +316,15 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
   using SystemNoPayloadMap = etl::flat_map<uint16_t, SystemNoPayloadHandler, 5>;
 
   static const etl::array<NoPayloadValue, 5> no_payload_data = {
-      NoPayloadValue{rpc::CommandId::CMD_GET_VERSION,
+      NoPayloadValue{rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION),
                      &BridgeClass::_handleGetVersion},
-      NoPayloadValue{rpc::CommandId::CMD_GET_FREE_MEMORY,
+      NoPayloadValue{rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY),
                      &BridgeClass::_handleGetFreeMemory},
-      NoPayloadValue{rpc::CommandId::CMD_LINK_SYNC, &BridgeClass::_handleLinkSync},
-      NoPayloadValue{rpc::CommandId::CMD_LINK_RESET,
+      NoPayloadValue{rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC),
+                     &BridgeClass::_handleLinkSync},
+      NoPayloadValue{rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET),
                      &BridgeClass::_handleLinkReset},
-      NoPayloadValue{rpc::CommandId::CMD_GET_CAPABILITIES,
+      NoPayloadValue{rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES),
                      &BridgeClass::_handleGetCapabilities}};
   static const SystemNoPayloadMap system_no_payload_handlers(
       no_payload_data.begin(), no_payload_data.end());
@@ -353,9 +354,8 @@ void BridgeClass::_handleSystemMessage(const bridge::router::CommandContext& ctx
   onUnknownCommand(ctx);
 }
 
-void BridgeClass::_handleSystemMessage(
-    const bridge::router::CommandContext& ctx,
-    const rpc::payload::SetBaudratePacket& msg) {
+void BridgeClass::_handleSystemMessage(const bridge::router::CommandContext& ctx,
+                                       [[maybe_unused]] const rpc::payload::SetBaudratePacket& msg) {
   _withPayloadAck<rpc::payload::SetBaudratePacket>(
       ctx, [this](const rpc::payload::SetBaudratePacket& m) {
         _pending_baudrate = m.baudrate;
@@ -365,7 +365,7 @@ void BridgeClass::_handleSystemMessage(
 }
 
 void BridgeClass::_handleSystemMessage(const bridge::router::CommandContext& ctx,
-                                       const rpc::payload::EnterBootloader& msg) {
+                                       [[maybe_unused]] const rpc::payload::EnterBootloader& msg) {
   _withPayloadAck<rpc::payload::EnterBootloader>(
       ctx, [this](const rpc::payload::EnterBootloader& m) {
         if (m.magic == rpc::RPC_BOOTLOADER_MAGIC) {
@@ -390,27 +390,27 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
   using GpioMap = etl::flat_map<uint16_t, GpioParser, 5>;
 
   static const etl::array<GpioValue, 5> gpio_data = {
-      GpioValue{rpc::CommandId::CMD_SET_PIN_MODE,
+      GpioValue{rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
                 [](const rpc::Frame& f, GpioCommandVariant& v) {
                   auto res = rpc::Payload::parse<rpc::payload::PinMode>(f);
                   if (res) v = res.value();
                 }},
-      GpioValue{rpc::CommandId::CMD_DIGITAL_WRITE,
+      GpioValue{rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE),
                 [](const rpc::Frame& f, GpioCommandVariant& v) {
                   auto res = rpc::Payload::parse<rpc::payload::DigitalWrite>(f);
                   if (res) v = res.value();
                 }},
-      GpioValue{rpc::CommandId::CMD_ANALOG_WRITE,
+      GpioValue{rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),
                 [](const rpc::Frame& f, GpioCommandVariant& v) {
                   auto res = rpc::Payload::parse<rpc::payload::AnalogWrite>(f);
                   if (res) v = res.value();
                 }},
-      GpioValue{rpc::CommandId::CMD_DIGITAL_READ,
+      GpioValue{rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ),
                 [](const rpc::Frame& f, GpioCommandVariant& v) {
                   auto res = rpc::Payload::parse<rpc::payload::PinRead>(f);
                   if (res) v = res.value();
                 }},
-      GpioValue{rpc::CommandId::CMD_ANALOG_READ,
+      GpioValue{rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ),
                 [](const rpc::Frame& f, GpioCommandVariant& v) {
                   auto res = rpc::Payload::parse<rpc::payload::PinRead>(f);
                   if (res) v = res.value();
@@ -458,7 +458,8 @@ void BridgeClass::_handleGpioMessage(const bridge::router::CommandContext& ctx,
 
 void BridgeClass::_handleGpioMessage(const bridge::router::CommandContext& ctx,
                                      const rpc::payload::PinRead& msg) {
-  if (ctx.raw_command == rpc::CommandId::CMD_DIGITAL_READ) {
+  (void)msg;
+  if (ctx.raw_command == rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)) {
     _handlePinRead<rpc::payload::DigitalReadResponse>(
         ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP, bridge::hal::isValidPin,
         [](uint8_t p) { return ::digitalRead(p); });
@@ -471,10 +472,14 @@ void BridgeClass::_handleGpioMessage(const bridge::router::CommandContext& ctx,
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
   using ConsoleHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+  using ConsoleValue = etl::pair<uint16_t, ConsoleHandler>;
   using ConsoleMap = etl::flat_map<uint16_t, ConsoleHandler, 1>;
 
-  static const ConsoleMap console_handlers = {
-      {rpc::CommandId::CMD_CONSOLE_WRITE, &BridgeClass::_handleConsoleWrite}};
+  static const etl::array<ConsoleValue, 1> console_data = {
+      ConsoleValue{rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE),
+                   &BridgeClass::_handleConsoleWrite}};
+  static const ConsoleMap console_handlers(console_data.begin(),
+                                           console_data.end());
 
   auto it = console_handlers.find(ctx.raw_command);
   if (it != console_handlers.end()) {
@@ -487,11 +492,14 @@ void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_DATASTORE) {
     using DataStoreHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using DataStoreValue = etl::pair<uint16_t, DataStoreHandler>;
     using DataStoreMap = etl::flat_map<uint16_t, DataStoreHandler, 1>;
 
-    static const DataStoreMap datastore_handlers = {
-        {rpc::CommandId::CMD_DATASTORE_GET_RESP,
-         &BridgeClass::_handleDatastoreGetResp}};
+    static const etl::array<DataStoreValue, 1> datastore_data = {
+        DataStoreValue{rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP),
+                       &BridgeClass::_handleDatastoreGetResp}};
+    static const DataStoreMap datastore_handlers(datastore_data.begin(),
+                                                 datastore_data.end());
 
     auto it = datastore_handlers.find(ctx.raw_command);
     if (it != datastore_handlers.end()) {
@@ -507,14 +515,19 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_MAILBOX) {
     using MailboxHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using MailboxValue = etl::pair<uint16_t, MailboxHandler>;
     using MailboxMap = etl::flat_map<uint16_t, MailboxHandler, 3>;
 
-    static const MailboxMap mailbox_handlers = {
-        {rpc::CommandId::CMD_MAILBOX_PUSH, &BridgeClass::_handleMailboxPush},
-        {rpc::CommandId::CMD_MAILBOX_READ_RESP,
-         &BridgeClass::_handleMailboxReadResp},
-        {rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP,
-         &BridgeClass::_handleMailboxAvailableResp}};
+    static const etl::array<MailboxValue, 3> mailbox_data = {
+        MailboxValue{rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH),
+                     &BridgeClass::_handleMailboxPush},
+        MailboxValue{rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP),
+                     &BridgeClass::_handleMailboxReadResp},
+        MailboxValue{
+            rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP),
+            &BridgeClass::_handleMailboxAvailableResp}};
+    static const MailboxMap mailbox_handlers(mailbox_data.begin(),
+                                             mailbox_data.end());
 
     auto it = mailbox_handlers.find(ctx.raw_command);
     if (it != mailbox_handlers.end()) {
@@ -530,13 +543,20 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
 void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_FILESYSTEM) {
     using FileSystemHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using FileSystemValue = etl::pair<uint16_t, FileSystemHandler>;
     using FileSystemMap = etl::flat_map<uint16_t, FileSystemHandler, 4>;
 
-    static const FileSystemMap file_handlers = {
-        {rpc::CommandId::CMD_FILE_WRITE, &BridgeClass::_handleFileWrite},
-        {rpc::CommandId::CMD_FILE_READ, &BridgeClass::_handleFileRead},
-        {rpc::CommandId::CMD_FILE_REMOVE, &BridgeClass::_handleFileRemove},
-        {rpc::CommandId::CMD_FILE_READ_RESP, &BridgeClass::_handleFileReadResp}};
+    static const etl::array<FileSystemValue, 4> file_data = {
+        FileSystemValue{rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE),
+                        &BridgeClass::_handleFileWrite},
+        FileSystemValue{rpc::to_underlying(rpc::CommandId::CMD_FILE_READ),
+                        &BridgeClass::_handleFileRead},
+        FileSystemValue{rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE),
+                        &BridgeClass::_handleFileRemove},
+        FileSystemValue{rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP),
+                        &BridgeClass::_handleFileReadResp}};
+    static const FileSystemMap file_handlers(file_data.begin(),
+                                             file_data.end());
 
     auto it = file_handlers.find(ctx.raw_command);
     if (it != file_handlers.end()) {
@@ -552,14 +572,18 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_PROCESS) {
     using ProcessHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using ProcessValue = etl::pair<uint16_t, ProcessHandler>;
     using ProcessMap = etl::flat_map<uint16_t, ProcessHandler, 3>;
 
-    static const ProcessMap process_handlers = {
-        {rpc::CommandId::CMD_PROCESS_KILL, &BridgeClass::_handleProcessKill},
-        {rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP,
-         &BridgeClass::_handleProcessRunAsyncResp},
-        {rpc::CommandId::CMD_PROCESS_POLL_RESP,
-         &BridgeClass::_handleProcessPollResp}};
+    static const etl::array<ProcessValue, 3> process_data = {
+        ProcessValue{rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL),
+                     &BridgeClass::_handleProcessKill},
+        ProcessValue{rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP),
+                     &BridgeClass::_handleProcessRunAsyncResp},
+        ProcessValue{rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP),
+                     &BridgeClass::_handleProcessPollResp}};
+    static const ProcessMap process_handlers(process_data.begin(),
+                                             process_data.end());
 
     auto it = process_handlers.find(ctx.raw_command);
     if (it != process_handlers.end()) {
@@ -575,13 +599,19 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 void BridgeClass::onSpiCommand(const bridge::router::CommandContext& ctx) {
   if constexpr (bridge::config::ENABLE_SPI) {
     using SpiHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+    using SpiValue = etl::pair<uint16_t, SpiHandler>;
     using SpiMap = etl::flat_map<uint16_t, SpiHandler, 4>;
 
-    static const SpiMap spi_handlers = {
-        {rpc::CommandId::CMD_SPI_BEGIN, &BridgeClass::_handleSpiBegin},
-        {rpc::CommandId::CMD_SPI_END, &BridgeClass::_handleSpiEnd},
-        {rpc::CommandId::CMD_SPI_SET_CONFIG, &BridgeClass::_handleSpiSetConfig},
-        {rpc::CommandId::CMD_SPI_TRANSFER, &BridgeClass::_handleSpiTransfer}};
+    static const etl::array<SpiValue, 4> spi_data = {
+        SpiValue{rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN),
+                 &BridgeClass::_handleSpiBegin},
+        SpiValue{rpc::to_underlying(rpc::CommandId::CMD_SPI_END),
+                 &BridgeClass::_handleSpiEnd},
+        SpiValue{rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG),
+                 &BridgeClass::_handleSpiSetConfig},
+        SpiValue{rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER),
+                 &BridgeClass::_handleSpiTransfer}};
+    static const SpiMap spi_handlers(spi_data.begin(), spi_data.end());
 
     auto it = spi_handlers.find(ctx.raw_command);
     if (it != spi_handlers.end()) {

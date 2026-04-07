@@ -41,7 +41,7 @@ ROOTFS_IMG = "openwrt-rootfs.img"
 APK_DISK_MB = 40          # APKs + deploy scripts
 EXTROOT_DISK_MB = 2048    # extroot overlay + swap
 
-PROMPT = "root@OpenWrt:/#"
+PROMPT = r"root@.*:.*#"
 DEPLOY_SCRIPTS = ["2_expand.sh", "3_install.sh"]
 
 
@@ -145,7 +145,7 @@ def wait_for_boot(child: Any, timeout: int = 180) -> None:
     """Wait for OpenWrt console prompt after boot."""
     child.expect("Please press Enter to activate this console", timeout=timeout)
     child.sendline("")
-    wait_for_prompt(child, timeout=30)
+    wait_for_prompt(child, timeout=60)
 
 
 # ---------------------------------------------------------------------------

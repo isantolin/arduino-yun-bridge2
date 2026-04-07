@@ -18,7 +18,7 @@ FileSystemClass::FileSystemClass() {}
 
 void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data) {
   rpc::payload::FileWrite msg = {};
-  rpc::util::copy_string(path, msg.path, sizeof(msg.path));
+  msg.path = {path.data(), path.length()};
   msg.data = data;
   Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, 0, msg);
 }
@@ -26,7 +26,7 @@ void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data
 void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler) {
   _read_handler = handler;
   rpc::payload::FileRead msg = {};
-  rpc::util::copy_string(path, msg.path, sizeof(msg.path));
+  msg.path = {path.data(), path.length()};
   if (!Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ, 0, msg)) {
     _read_handler.clear();
   }
@@ -34,7 +34,7 @@ void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler)
 
 [[maybe_unused]] void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove msg = {};
-  rpc::util::copy_string(path, msg.path, sizeof(msg.path));
+  msg.path = {path.data(), path.length()};
   Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, 0, msg);
 }
 
@@ -42,7 +42,7 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   // [SIL-2] Check hardware availability via HAL. Filesystem operations are 
   // only implemented if an SD card or external flash is present.
   if (bridge::hal::hasSD()) {
-    auto res = bridge::hal::writeFile(msg.path, msg.data);
+    auto res = bridge::hal::writeFile(etl::string_view(msg.path.data(), msg.path.size()), msg.data);
     if (res.has_value()) {
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
     } else {
@@ -70,7 +70,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 
   while (chunk_count++ < bridge::config::FILE_MAX_READ_CHUNKS && (bridge::now_ms() - start_ms < bridge::config::SERIAL_TIMEOUT_MS)) {
     auto res = bridge::hal::readFileChunk(
-        msg.path,
+        etl::string_view(msg.path.data(), msg.path.size()),
         offset,
         etl::span<uint8_t>(read_buffer.data(), read_buffer.size()));
 
@@ -107,7 +107,7 @@ void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
     return;
   } // GCOVR_EXCL_STOP
 
-  auto res = bridge::hal::removeFile(msg.path);
+  auto res = bridge::hal::removeFile(etl::string_view(msg.path.data(), msg.path.size()));
   if (res.has_value()) {
     (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
   } else {

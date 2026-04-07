@@ -9,7 +9,9 @@ ProcessClass::ProcessClass() {}
 [[maybe_unused]] void ProcessClass::runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler) {
   if (_pending_async_runs.full()) return;
   rpc::payload::ProcessRunAsync msg = {};
-  rpc::util::copy_join(command, args, msg.command, sizeof(msg.command));
+  char command_buf[64] = {0};
+  rpc::util::copy_join(command, args, command_buf, sizeof(command_buf));
+  msg.command = {command_buf, strnlen(command_buf, sizeof(command_buf))};
 
   if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, msg)) {
     _pending_async_runs.push({handler});

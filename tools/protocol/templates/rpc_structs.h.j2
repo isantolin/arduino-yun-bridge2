@@ -35,8 +35,8 @@ struct {{ s.name }} {
     etl::span<const uint8_t> {{ f.name }};
 {%- elif f.kind == 'bin_fixed' %}
     etl::array<uint8_t, {{ f.size }}> {{ f.name }} = {};
-{%- elif f.kind == 'str_fixed' %}
-    char {{ f.name }}[{{ f.size }}] = {};
+{%- elif f.kind == 'str_view' %}
+    etl::span<const char> {{ f.name }};
 {%- endif %}
 {%- endfor %}
 
@@ -53,8 +53,8 @@ struct {{ s.name }} {
         enc.write_bin({{ f.name }});
 {%- elif f.kind == 'bin_fixed' %}
         enc.write_bin(etl::span<const uint8_t>({{ f.name }}.data(), {{ f.name }}.size()));
-{%- elif f.kind == 'str_fixed' %}
-        enc.write_str({{ f.name }}, strnlen({{ f.name }}, sizeof({{ f.name }}) - 1));
+{%- elif f.kind == 'str_view' %}
+        enc.write_str({{ f.name }}.data(), {{ f.name }}.size());
 {%- endif %}
 {%- endfor %}
         return enc.ok();
@@ -78,8 +78,8 @@ struct {{ s.name }} {
             if (_view_{{ f.name }}.size() == {{ f.size }}) etl::copy_n(_view_{{ f.name }}.data(), {{ f.size }}, {{ f.name }}.data());
             else if (dec.ok()) return false;
         }
-{%- elif f.kind == 'str_fixed' %}
-        dec.read_str({{ f.name }}, sizeof({{ f.name }}));
+{%- elif f.kind == 'str_view' %}
+        {{ f.name }} = dec.read_str_view();
 {%- endif %}
 {%- endfor %}
         return dec.ok();

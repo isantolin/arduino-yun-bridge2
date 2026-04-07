@@ -933,7 +933,7 @@ static void test_filesystem_read_empty_file() {
 
   // Call _onRead directly with a path to the empty file
   rpc::payload::FileRead msg = {};
-  strncpy(msg.path, "empty_test.txt", sizeof(msg.path) - 1);
+  msg.path = {"empty_test.txt", 14};
   FileSystem._onRead(msg);
 
   // Clean up

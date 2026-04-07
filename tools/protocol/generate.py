@@ -90,7 +90,7 @@ TOML_CPP_KIND_MAP: dict[str, str] = {
     "int32": "uint32",
     "bytes": "bin_view",
     "bin_fixed": "bin_fixed",
-    "string": "str_fixed",
+    "string": "str_view",
     "bool": "uint8",
 }
 
@@ -133,8 +133,8 @@ def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
 
             if kind == "bin_fixed":
                 cpp_fields.append(CppField(name=f.name, kind=kind, size=f.size))
-            elif kind == "str_fixed":
-                cpp_fields.append(CppField(name=f.name, kind=kind, size=f.max_size))
+            elif kind == "str_view":
+                cpp_fields.append(CppField(name=f.name, kind=kind))
             else:
                 cpp_fields.append(CppField(name=f.name, kind=kind))
 

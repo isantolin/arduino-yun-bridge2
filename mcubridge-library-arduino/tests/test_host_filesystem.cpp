@@ -123,14 +123,14 @@ void test_filesystem_on_write() {
   ba.setSynchronized();
 
   rpc::payload::FileWrite msg = {};
-  strcpy(msg.path, "hostfs/write.bin");
+  msg.path = {"hostfs/write.bin", 16};
   uint8_t data[] = {0xAA};
   msg.data = etl::span<const uint8_t>(data, 1);
   FileSystem._onWrite(msg);
   TEST_ASSERT(stream.tx_buf.len > 0);
   
   // Failure case
-  strcpy(msg.path, "hostfs/nonexistent_dir/write.bin");
+  msg.path = {"hostfs/nonexistent_dir/write.bin", 32};
   msg.data = etl::span<const uint8_t>(data, 1);
   FileSystem._onWrite(msg);
 }
@@ -146,12 +146,12 @@ void test_filesystem_on_read() {
   bridge::hal::writeFile("hostfs/read.bin", etl::span<const uint8_t>(payload, sizeof(payload)));
 
   rpc::payload::FileRead msg = {};
-  strcpy(msg.path, "hostfs/read.bin");
+  msg.path = {"hostfs/read.bin", 15};
   FileSystem._onRead(msg);
   TEST_ASSERT(stream.tx_buf.len > 0);
 
   // Failure case
-  strcpy(msg.path, "hostfs/missing.bin");
+  msg.path = {"hostfs/missing.bin", 18};
   FileSystem._onRead(msg);
 }
 
@@ -165,12 +165,12 @@ void test_filesystem_on_remove() {
   bridge::hal::writeFile("hostfs/remove.bin", etl::span<const uint8_t>());
   
   rpc::payload::FileRemove msg = {};
-  strcpy(msg.path, "hostfs/remove.bin");
+  msg.path = {"hostfs/remove.bin", 17};
   FileSystem._onRemove(msg);
   TEST_ASSERT(stream.tx_buf.len > 0);
 
   // Failure case
-  strcpy(msg.path, "hostfs/missing.bin");
+  msg.path = {"hostfs/missing.bin", 18};
   FileSystem._onRemove(msg);
 }
 

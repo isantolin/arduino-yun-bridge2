@@ -11,7 +11,11 @@ from threading import Lock
 from typing import Generic, Iterable, Iterator, TypeVar, cast
 
 import msgspec
-from diskcache import Deque as DiskDeque
+
+try:
+    from diskcache import Deque as DiskDeque
+except ImportError:
+    DiskDeque = None
 
 T = TypeVar("T")
 
@@ -31,6 +35,8 @@ class _TrackedDiskDeque:
     __slots__ = ("__dict__", "_deque")
 
     def __init__(self, directory: str) -> None:
+        if DiskDeque is None:
+            raise ModuleNotFoundError("diskcache is required for persistent queues")
         self._deque = DiskDeque(directory=directory)
         # Close the sqlite3 connection that Cache.__init__ leaves open in
         # _local.con so it cannot leak if the object is later GC'd without
@@ -159,7 +165,7 @@ class PersistentQueue(Generic[T]):
                     cast(T, item)
                     for item in list(self._store)
                 )
-            except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
+            except (OSError, RuntimeError, ValueError, sqlite3.Error, ImportError) as exc:
                 # If the store was created but not yet assigned, close it
                 # to release the sqlite3 connection before falling back.
                 if store is not None and self._store is None:

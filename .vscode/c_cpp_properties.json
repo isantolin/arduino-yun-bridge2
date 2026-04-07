@@ -1,34 +1,43 @@
 {
-    "configurations": [
-        {
-            "name": "Linux",
-            "includePath": [
-                "${default}",
-                "${workspaceFolder}/mcubridge-library-arduino/src/**",
-                "${workspaceFolder}/tools/arduino_stub/include",
-                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library",
-                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
-                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
-                "${workspaceFolder}/.dummy_libs/wolfssl",
-                "${workspaceFolder}/.dummy_libs/PacketSerial/src"
-            ],
-            "defines": [
-                "BRIDGE_HOST_TEST=1",
-                "BRIDGE_TEST_NO_GLOBALS=1",
-                "WOLFSSL_USER_SETTINGS",
-                "ETL_NO_STL",
-                "BRIDGE_ENABLE_CONSOLE=1",
-                "BRIDGE_ENABLE_DATASTORE=1",
-                "BRIDGE_ENABLE_MAILBOX=1",
-                "BRIDGE_ENABLE_FILESYSTEM=1",
-                "BRIDGE_ENABLE_PROCESS=1",
-                "BRIDGE_ENABLE_SPI=1"
-            ],
-            "compilerPath": "/usr/bin/g++",
-            "intelliSenseMode": "linux-gcc-x64",
-            "cppStandard": "c++17",
-            "cStandard": "c17"
-        }
-    ],
-    "version": 4
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Linux Host Tests (Recommended)",
+      "compilerPath": "/usr/bin/g++",
+      "intelliSenseMode": "linux-gcc-x64",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "defines": [
+        "ARDUINO=100",
+        "ARDUINO_STUB_CUSTOM_MILLIS=1",
+        "ARDUINO_STUB_CUSTOM_SERIAL=1",
+        "BRIDGE_HOST_TEST=1",
+        "BRIDGE_TEST_NO_GLOBALS=1",
+        "ETL_NO_STL",
+        "UNITY_INCLUDE_DOUBLE",
+        "WOLFSSL_USER_SETTINGS"
+      ],
+      "includePath": [
+        "${workspaceFolder}/mcubridge-library-arduino/src",
+        "${workspaceFolder}/mcubridge-library-arduino/src/**",
+        "${workspaceFolder}/tools/arduino_stub/include",
+        "${workspaceFolder}/.dummy_libs/Embedded_Template_Library",
+        "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
+        "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
+        "${workspaceFolder}/.dummy_libs/PacketSerial",
+        "${workspaceFolder}/.dummy_libs/PacketSerial/src",
+        "${workspaceFolder}/.dummy_libs/wolfssl/src"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/mcubridge-library-arduino/src",
+          "${workspaceFolder}/tools/arduino_stub/include",
+          "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
+          "${workspaceFolder}/.dummy_libs/PacketSerial/src",
+          "${workspaceFolder}/.dummy_libs/wolfssl/src"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ]
 }

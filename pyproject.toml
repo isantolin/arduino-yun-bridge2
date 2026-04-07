@@ -39,15 +39,18 @@ package-dir = {"" = "mcubridge"}
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --timeout=10 --timeout_method=thread"
+addopts = "-ra --timeout=10 --timeout_method=thread"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 log_cli = true
 log_cli_level = "INFO"
-testpaths = ["mcubridge/tests"]
-pythonpath = ["typings", ".", "mcubridge"]
+testpaths = ["mcubridge/tests", "mcubridge-client-examples/client_tests"]
+pythonpath = [".", "mcubridge"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*"]
-markers = ["fuzz: mark a test as a fuzz test"]
+markers = [
+    "fuzz: mark a test as a fuzz test",
+    "timeout: timeout marker accepted during IDE discovery even when pytest-timeout is absent",
+]
 filterwarnings = [
     "error",
     "ignore:Exception ignored in.*sqlite3\\.Connection:pytest.PytestUnraisableExceptionWarning",

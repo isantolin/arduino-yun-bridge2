@@ -1,12 +1,13 @@
 {
   "python.defaultInterpreterPath": "${workspaceFolder}/.tox/py313/bin/python",
+  "python.testing.cwd": "${workspaceFolder}",
+  "python.testing.pytestPath": "${workspaceFolder}/.tox/py313/bin/pytest",
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestArgs": [
-    "mcubridge/tests",
-    "mcubridge-client-examples/client_tests"
+    "-c",
+    "pytest-vscode.ini"
   ],
-  "python.envFile": "${workspaceFolder}/.env",
   "C_Cpp.default.includePath": [
     "${workspaceFolder}/mcubridge-library-arduino/src/**",
     "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include/**",

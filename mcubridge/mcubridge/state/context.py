@@ -201,8 +201,15 @@ def collect_system_metrics() -> dict[str, Any]:
             mem = psutil.virtual_memory()
             load = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0.0, 0.0, 0.0)
 
+            # Disk usage for root and /tmp (volatile RAM disk on OpenWrt)
+            root_disk = psutil.disk_usage("/")
+            try:
+                tmp_disk = psutil.disk_usage("/tmp")
+            except OSError:
+                tmp_disk = None
+
             # [SIL-2] Direct mapping from native library structures
-            return {
+            result: dict[str, Any] = {
                 "cpu_percent": psutil.cpu_percent(interval=None),
                 "cpu_count": psutil.cpu_count() or 1,
                 "memory_total_bytes": mem.total,
@@ -211,6 +218,10 @@ def collect_system_metrics() -> dict[str, Any]:
                 "load_avg_1m": load[0],
                 "load_avg_5m": load[1],
                 "load_avg_15m": load[2],
+                "disk_root_total_bytes": root_disk.total,
+                "disk_root_used_bytes": root_disk.used,
+                "disk_root_free_bytes": root_disk.free,
+                "disk_root_percent": root_disk.percent,
                 "temperature_celsius": next(
                     (
                         t[0].current
@@ -222,6 +233,12 @@ def collect_system_metrics() -> dict[str, Any]:
                 if hasattr(psutil, "sensors_temperatures")
                 else None,
             }
+            if tmp_disk is not None:
+                result["disk_tmp_total_bytes"] = tmp_disk.total
+                result["disk_tmp_used_bytes"] = tmp_disk.used
+                result["disk_tmp_free_bytes"] = tmp_disk.free
+                result["disk_tmp_percent"] = tmp_disk.percent
+            return result
     except (psutil.Error, RuntimeError, OSError):
         return {}
 

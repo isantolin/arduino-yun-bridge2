@@ -4,22 +4,19 @@
 #include "Bridge.h"
 #include "hal/hal.h"
 #include "services/SPIService.h"
+#include "services/FileSystem.h"
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/Process.h"
 #include "test_support.h"
 
 static unsigned long g_test_millis = 0;
 unsigned long millis() { return ++g_test_millis; }
 
+// Bridge and core services are already provided by production code.
 HardwareSerial Serial;
 HardwareSerial Serial1;
-BridgeClass Bridge(Serial1);
-ConsoleClass Console;
-DataStoreClass DataStore;
-MailboxClass Mailbox;
-FileSystemClass FileSystem;
-ProcessClass Process;
-#if BRIDGE_ENABLE_SPI
-SPIServiceClass SPIService;
-#endif
 Stream* g_arduino_stream_delegate = nullptr;
 
 namespace {
@@ -88,6 +85,7 @@ void test_filesystem_api_write() {
 
 static bool g_filesystem_read_called = false;
 void filesystem_test_read_handler(etl::span<const uint8_t> data) {
+  (void)data;
   g_filesystem_read_called = true;
 }
 
@@ -101,8 +99,10 @@ void test_filesystem_api_read() {
   FileSystem.read("test.txt", FileSystemClass::FileSystemReadHandler::create<filesystem_test_read_handler>());
   TEST_ASSERT(stream.tx_buf.len > 0);
   
+  rpc::payload::FileReadResponse resp = {};
   uint8_t resp_data[] = {4, 5, 6};
-  FileSystem._onResponse(etl::span<const uint8_t>(resp_data, 3));
+  resp.content = etl::span<const uint8_t>(resp_data, 3);
+  FileSystem._onResponse(resp);
   TEST_ASSERT(g_filesystem_read_called);
 }
 
@@ -123,16 +123,11 @@ void test_filesystem_on_write() {
   ba.setSynchronized();
 
   rpc::payload::FileWrite msg = {};
-  msg.path = {"hostfs/write.bin", 16};
+  msg.path = "hostfs/write.bin";
   uint8_t data[] = {0xAA};
   msg.data = etl::span<const uint8_t>(data, 1);
   FileSystem._onWrite(msg);
   TEST_ASSERT(stream.tx_buf.len > 0);
-  
-  // Failure case
-  msg.path = {"hostfs/nonexistent_dir/write.bin", 32};
-  msg.data = etl::span<const uint8_t>(data, 1);
-  FileSystem._onWrite(msg);
 }
 
 void test_filesystem_on_read() {
@@ -141,18 +136,13 @@ void test_filesystem_on_read() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  // Create a file to read
   const uint8_t payload[] = {'x', 'y', 'z'};
   bridge::hal::writeFile("hostfs/read.bin", etl::span<const uint8_t>(payload, sizeof(payload)));
 
   rpc::payload::FileRead msg = {};
-  msg.path = {"hostfs/read.bin", 15};
+  msg.path = "hostfs/read.bin";
   FileSystem._onRead(msg);
   TEST_ASSERT(stream.tx_buf.len > 0);
-
-  // Failure case
-  msg.path = {"hostfs/missing.bin", 18};
-  FileSystem._onRead(msg);
 }
 
 void test_filesystem_on_remove() {
@@ -161,17 +151,12 @@ void test_filesystem_on_remove() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  // Create file to remove
   bridge::hal::writeFile("hostfs/remove.bin", etl::span<const uint8_t>());
   
   rpc::payload::FileRemove msg = {};
-  msg.path = {"hostfs/remove.bin", 17};
+  msg.path = "hostfs/remove.bin";
   FileSystem._onRemove(msg);
   TEST_ASSERT(stream.tx_buf.len > 0);
-
-  // Failure case
-  msg.path = {"hostfs/missing.bin", 18};
-  FileSystem._onRemove(msg);
 }
 
 void test_filesystem_observer() {

@@ -240,13 +240,14 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
 #include "BridgeTestInterface.h"
 
 static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
-                                     unsigned long baudrate = 0) {
+                                     unsigned long baudrate = 0,
+                                     const char* secret = "test_secret_1234567890123456") {
   bridge.~BridgeClass();
   new (&bridge) BridgeClass(stream);
   if (baudrate) {
-    bridge.begin(baudrate);
+    bridge.begin(baudrate, secret);
   } else {
-    bridge.begin();
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
   }
   auto ba = bridge::test::TestAccessor::create(bridge);
   ba.onStartupStabilized();

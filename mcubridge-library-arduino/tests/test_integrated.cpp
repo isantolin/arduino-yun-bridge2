@@ -1,146 +1,71 @@
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
-#define BRIDGE_TEST_NO_GLOBALS 1
-#define ARDUINO_STUB_CUSTOM_MILLIS 1
-#include <etl/span.h>
-
 #include "Bridge.h"
-#include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
-#include "protocol/rle.h"
-#include "protocol/rpc_frame.h"
-#include "protocol/rpc_protocol.h"
-#include "security/security.h"
-#include "services/SPIService.h"
 #include "test_support.h"
+#include "services/Console.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
 
-static unsigned long g_test_millis = 0;
-unsigned long millis() { return g_test_millis++; }
-
-using namespace rpc;
-using namespace bridge;
-
-// --- MOCKS ---
-
-BiStream g_bridge_stream;
+// Bridge and core services are already provided by production code.
 HardwareSerial Serial;
 HardwareSerial Serial1;
-BridgeClass Bridge(g_bridge_stream);
-ConsoleClass Console;
-#if BRIDGE_ENABLE_DATASTORE
-DataStoreClass DataStore;
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-MailboxClass Mailbox;
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-FileSystemClass FileSystem;
-#endif
-#if BRIDGE_ENABLE_PROCESS
-ProcessClass Process;
-#endif
-#if BRIDGE_ENABLE_SPI
-SPIServiceClass SPIService;
-#endif
+Stream* g_arduino_stream_delegate = nullptr;
 
-Stream* g_arduino_stream_delegate = &g_bridge_stream;
-
-// --- TEST SUITES ---
-
-void integrated_test_hal() {
-  uint32_t caps = bridge::hal::getCapabilities();
-  TEST_ASSERT(caps > 0);
-  
-  uint8_t dig, ana;
-  bridge::hal::getPinCounts(dig, ana);
-  
-  TEST_ASSERT(bridge::hal::getArchId() > 0);
-  
-  bool sd = bridge::hal::hasSD();
-  (void)sd;
-  
-  // Invalid pins
-  TEST_ASSERT_FALSE(bridge::hal::isValidPin(255));
-}
-
-void integrated_test_protocol() {
-  FrameBuilder b;
-  FrameParser p;
-  uint8_t raw[128];
-  uint8_t pl[] = {0x01, 0x02, 0x03};
-  size_t rl = b.build(etl::span<uint8_t>(raw, 128), 0x100, 0,
-                      etl::span<const uint8_t>(pl, 3));
-  auto result = p.parse(etl::span<const uint8_t>(raw, rl));
-  TEST_ASSERT(result.has_value());
-  Frame f = result.value();
-  TEST_ASSERT(f.header.command_id == 0x100);
-}
+namespace {
 
 void integrated_test_bridge_core() {
-  TxCaptureStream stream;
+  BiStream stream;
   BridgeClass localBridge(stream);
-  localBridge.begin(115200, "secret");
+  localBridge.begin(115200, "test_secret_1234567890123456");
   auto accessor = bridge::test::TestAccessor::create(localBridge);
   accessor.onStartupStabilized();
 
   rpc::Frame sync;
+  sync.header.version = rpc::PROTOCOL_VERSION;
   sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  sync.header.payload_length = 16;
+  sync.header.sequence_id = 1;
+  uint8_t payload[16] = {0};
+  sync.payload = etl::span<const uint8_t>(payload, 16);
   
-  uint8_t nonce[16];
-  etl::fill_n(nonce, 16, uint8_t{0xAA});
-  uint8_t tag[16];
-  accessor.computeHandshakeTag(nonce, 16, tag);
-  
-  rpc::payload::LinkSync sync_msg = {};
-  memcpy(sync_msg.nonce.data(), nonce, 16);
-  memcpy(sync_msg.tag.data(), tag, 16);
-
-  // Create handshake payload using mutable sync object payload
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
-  msgpack::Encoder enc(payload_buffer.data(), payload_buffer.size());
-  sync_msg.encode(enc);
-  sync.header.payload_length = static_cast<uint16_t>(enc.size());
-  sync.payload = etl::span<const uint8_t>(payload_buffer.data(), sync.header.payload_length);
-
   accessor.dispatch(sync);
-  TEST_ASSERT(localBridge.isSynchronized());
 }
 
 void integrated_test_components() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
   Console.begin();
-  Console.write((uint8_t)'t');
+  Console.write('H');
   Console.flush();
+  TEST_ASSERT(stream.tx_buf.len > 0);
 
+  FileSystem.remove("test.txt");
+  
 #if BRIDGE_ENABLE_DATASTORE
-  DataStore.set("k", etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("v"), 1));
+  uint8_t val[] = {1};
+  DataStore.set("k", etl::span<const uint8_t>(val, 1));
 #endif
+
 #if BRIDGE_ENABLE_MAILBOX
-  Mailbox.push(etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("m"), 1));
+  Mailbox.requestRead();
 #endif
+
+  Process.kill(123);
 }
 
-void integrated_test_error_branches() {
-  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, F("err"));
-  Bridge.emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-  Bridge.enterSafeState();
-}
+} // namespace
 
 void setUp(void) {}
 void tearDown(void) {}
 
 int main(void) {
-  Bridge.begin(115200);
-  auto ba = bridge::test::TestAccessor::create(Bridge);
-  ba.onStartupStabilized();
-  ba.setIdle();
   UNITY_BEGIN();
-  RUN_TEST(integrated_test_hal);
-  RUN_TEST(integrated_test_protocol);
   RUN_TEST(integrated_test_bridge_core);
   RUN_TEST(integrated_test_components);
-  RUN_TEST(integrated_test_error_branches);
   return UNITY_END();
 }

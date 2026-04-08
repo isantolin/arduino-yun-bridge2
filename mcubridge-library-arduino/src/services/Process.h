@@ -1,62 +1,38 @@
 #ifndef SERVICES_PROCESS_H
 #define SERVICES_PROCESS_H
 
-#include <stdint.h>
 #include "config/bridge_config.h"
 #undef min
 #undef max
-#include <etl/delegate.h>
 #include <etl/queue.h>
-#include <etl/span.h>
+#include <etl/delegate.h>
 #include <etl/string_view.h>
+#include <etl/span.h>
 #include "protocol/BridgeEvents.h"
+#include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
-#if defined(BRIDGE_HOST_TEST)
-namespace bridge { namespace test { class ProcessTestAccessor; } }
-#endif
-
 class ProcessClass : public BridgeObserver {
-#if defined(BRIDGE_HOST_TEST)
-  friend class bridge::test::ProcessTestAccessor;
-#endif
  public:
-  using ProcessRunAsyncHandler = etl::delegate<void(int32_t)>;
   using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>, etl::span<const uint8_t>)>;
-  using ProcessKillHandler = etl::delegate<void(rpc::StatusCode)>;
 
   ProcessClass();
+  void runAsync(etl::string_view cmd, etl::span<const etl::string_view> args, etl::delegate<void(int32_t)> handler);
+  void poll(int32_t pid, ProcessPollHandler handler);
+  void kill(int32_t pid);
 
-  // [SIL-2] Observer Interface
-  [[maybe_unused]] void notification(MsgBridgeSynchronized) override { /* ready */ }
-  [[maybe_unused]] void notification(MsgBridgeLost) override { reset(); }
-
-  [[maybe_unused]] void runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler);
-  [[maybe_unused]] void poll(int32_t pid, ProcessPollHandler handler);
-  [[maybe_unused]] void kill(int32_t pid, ProcessKillHandler handler = {});
-  bool _kill(uint32_t pid);
+  void _kill(const rpc::payload::ProcessKill& msg);
+  void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);
+  void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
   void reset();
 
-  void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);
-  void _onPollResponse(const rpc::payload::ProcessPollResponse& msg, etl::span<const uint8_t> stdout_data, etl::span<const uint8_t> stderr_data);
+  void notification(MsgBridgeSynchronized) override { /* ready */ }
+  void notification(MsgBridgeLost) override { reset(); }
 
- private:
-  struct PendingAsyncRun {
-    ProcessRunAsyncHandler handler;
-  };
-
-  struct PendingPoll {
-    int32_t pid;
-    ProcessPollHandler handler;
-  };
-
-  // [SIL-2] Use ETL containers for safe queue management
-  etl::queue<PendingAsyncRun, bridge::config::MAX_PENDING_PROCESS_POLLS> _pending_async_runs;
+  struct PendingPoll { int32_t pid; };
   etl::queue<PendingPoll, bridge::config::MAX_PENDING_PROCESS_POLLS> _pending_polls;
 };
 
-#if BRIDGE_ENABLE_PROCESS
 extern ProcessClass Process;
-#endif
 
 #endif

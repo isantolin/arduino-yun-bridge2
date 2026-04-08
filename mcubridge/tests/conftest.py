@@ -131,7 +131,9 @@ def force_gc_cleanup():
     # Python 3.13 deprecated get_event_loop() when no current loop exists.
     # Access the policy's thread-local directly to avoid triggering the
     # DeprecationWarning that filterwarnings=["error"] would promote to fatal.
-    policy = asyncio.get_event_loop_policy()
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*get_event_loop_policy.*")
+        policy = asyncio.get_event_loop_policy()
     loop = getattr(getattr(policy, "_local", None), "_loop", None)
     if loop is not None and not loop.is_closed():
         loop.close()

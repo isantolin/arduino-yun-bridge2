@@ -95,7 +95,6 @@ BASE_FLAGS=(
     -Werror
     -Wno-unused-parameter
     -DBRIDGE_HOST_TEST=1
-    -DBRIDGE_TEST_NO_GLOBALS=1
     -DWOLFSSL_USER_SETTINGS
     -DETL_NO_STL
     -DUNITY_INCLUDE_DOUBLE

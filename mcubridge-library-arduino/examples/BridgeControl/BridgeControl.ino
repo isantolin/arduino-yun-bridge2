@@ -9,54 +9,28 @@
  * Cambiar los #define BRIDGE_ENABLE_... de 1 a 0 según sea necesario.
  */
 
-// CONFIGURACIÓN DEL SECRETO
-// Este password debe coincidir con el configurado en el lado de Linux
-// (/etc/config/mcubridge o similar)
-#ifndef BRIDGE_SECRET
-#define BRIDGE_SECRET "DEBUG_INSECURE"
-// SECURITY WARNING: Using default BRIDGE_SECRET. Change this before production use!
-#endif
-
 #include <Bridge.h>
+#include <services/Console.h>
+#include <services/Mailbox.h>
+#include <services/FileSystem.h>
+#include <services/Process.h>
 #include <string.h>
+
+// [MIL-SPEC] Shared secret must match the daemon configuration.
+#ifndef BRIDGE_SERIAL_SHARED_SECRET
+#define BRIDGE_SERIAL_SHARED_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+#endif
 
 void setup() {
   // [SIL-2] PROHIBIDO usar Serial.print() si comparte puerto con el Bridge.
   // En emulación, Serial (UART0) es el canal del protocolo. Cualquier texto
   // enviado aquí corromperá el stream COBS y bloqueará la sincronización.
 
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
-
-  Bridge.onDigitalReadResponse(BridgeClass::DigitalReadHandler::create([](uint8_t value) {
-    Console.print(F("Respuesta asíncrona de lectura digital: "));
-    Console.println(value);
-  }));
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
 
   Bridge.onCommand(BridgeClass::CommandHandler::create([](const rpc::Frame& frame) {
     Console.print(F("Comando RPC no manejado: ID=0x"));
     Console.println(frame.header.command_id, HEX);
-  }));
-
-  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create([](etl::span<const uint8_t> buffer) {
-    char msg_buf[80];
-    if (buffer.size() < sizeof(msg_buf)) {
-      memcpy(msg_buf, buffer.data(), buffer.size());
-      msg_buf[buffer.size()] = '\0';
-
-      Console.print(F("Mensaje de Mailbox recibido: "));
-      Console.println(msg_buf);
-
-      if (strcmp(msg_buf, "ON") == 0) {
-        digitalWrite(13, HIGH);
-        Console.println(F("LED 13 encendido por Mailbox"));
-      } else if (strcmp(msg_buf, "OFF") == 0) {
-        digitalWrite(13, LOW);
-        Console.println(F("LED 13 apagado por Mailbox"));
-      } else {
-        Console.print(F("Comando desconocido: "));
-        Console.println(msg_buf);
-      }
-    }
   }));
 
   Bridge.onStatus(BridgeClass::StatusHandler::create([](rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
@@ -85,6 +59,8 @@ void loop() {
   static unsigned long lastMailboxCheck = 0;
   if (millis() - lastMailboxCheck > 500) {
     lastMailboxCheck = millis();
+#if BRIDGE_ENABLE_MAILBOX
     Mailbox.requestRead();
+#endif
   }
 }

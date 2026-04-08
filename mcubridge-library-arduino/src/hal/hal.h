@@ -14,6 +14,10 @@
 #include <etl/expected.h>
 #include <etl/string_view.h>
 
+namespace bridge {
+  inline uint32_t now_ms() { return ::millis(); }
+}
+
 namespace bridge::hal {
 
 /**

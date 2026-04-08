@@ -1,4 +1,4 @@
-#include "FileSystem.h"
+#include "services/FileSystem.h"
 #include "Bridge.h"
 #include "util/string_copy.h"
 
@@ -7,117 +7,77 @@
 namespace {
 constexpr size_t kReadChunkSize = rpc::MAX_PAYLOAD_SIZE - 3U;
 
-void send_read_response(etl::span<const uint8_t> data) {
+void send_read_response(etl::span<const uint8_t> content) {
   rpc::payload::FileReadResponse msg = {};
-  msg.content = data;
-  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ_RESP, 0, msg);
+  msg.content = content;
+  (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, msg);
 }
-}
+}  // namespace
 
 FileSystemClass::FileSystemClass() {}
 
 void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data) {
   rpc::payload::FileWrite msg = {};
-  msg.path = {path.data(), path.length()};
+  msg.path = path;
   msg.data = data;
-  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_WRITE, 0, msg);
+  (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, msg);
 }
 
 void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler) {
   _read_handler = handler;
   rpc::payload::FileRead msg = {};
-  msg.path = {path.data(), path.length()};
-  if (!Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_READ, 0, msg)) {
-    _read_handler.clear();
+  msg.path = path;
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, msg)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 }
 
-[[maybe_unused]] void FileSystemClass::remove(etl::string_view path) {
+void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove msg = {};
-  msg.path = {path.data(), path.length()};
-  Bridge.sendPbCommand(rpc::CommandId::CMD_FILE_REMOVE, 0, msg);
+  msg.path = path;
+  (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, msg);
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
-  // [SIL-2] Check hardware availability via HAL. Filesystem operations are 
-  // only implemented if an SD card or external flash is present.
-  if (bridge::hal::hasSD()) {
-    auto res = bridge::hal::writeFile(etl::string_view(msg.path.data(), msg.path.size()), msg.data);
-    if (res.has_value()) {
-      (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
-    } else {
-      (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
-    }
-  } else { // GCOVR_EXCL_START — hasSD() is compile-time true on host
-    // Graceful degradation: Report not implemented if hardware is missing.
-    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
-  } // GCOVR_EXCL_STOP
+  auto res = bridge::hal::writeFile(etl::string_view(msg.path.data(), msg.path.size()), msg.data);
+  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK : rpc::StatusCode::STATUS_ERROR);
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
-  // [SIL-2] Graceful degradation: Read requires SD hardware support.
-  if (!bridge::hal::hasSD()) { // GCOVR_EXCL_START — hasSD() is compile-time true on host
-    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
-    return;
-  } // GCOVR_EXCL_STOP
-
-  etl::array<uint8_t, kReadChunkSize> read_buffer;
-  size_t offset = 0U;
-  bool sent_payload = false;
-
-  uint16_t chunk_count = 0U;
+  size_t offset = 0;
+  uint8_t buffer[kReadChunkSize];
   uint32_t start_ms = bridge::now_ms();
+  size_t chunk_count = 0;
+  etl::string_view path(msg.path.data(), msg.path.size());
 
   while (chunk_count++ < bridge::config::FILE_MAX_READ_CHUNKS && (bridge::now_ms() - start_ms < bridge::config::SERIAL_TIMEOUT_MS)) {
-    auto res = bridge::hal::readFileChunk(
-        etl::string_view(msg.path.data(), msg.path.size()),
-        offset,
-        etl::span<uint8_t>(read_buffer.data(), read_buffer.size()));
-
-    if (!res.has_value()) {
+    auto res = bridge::hal::readFileChunk(path, offset, etl::span<uint8_t>(buffer, kReadChunkSize));
+    if (!res) {
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
       return;
     }
-
-    const auto& result = res.value();
-    if (result.bytes_read > 0U) {
-      send_read_response(etl::span<const uint8_t>(read_buffer.data(), result.bytes_read));
-      sent_payload = true;
-      // [SIL-2] Guard against offset overflow on large files
-      if (result.bytes_read > SIZE_MAX - offset) break; // GCOVR_EXCL_LINE — requires SIZE_MAX offset on host
-      offset += result.bytes_read;
-    } else if (!sent_payload) {
+    send_read_response(etl::span<const uint8_t>(buffer, res->bytes_read));
+    if (!res->has_more) {
       send_read_response(etl::span<const uint8_t>());
-      sent_payload = true;
+      return;
     }
-
-    if (!result.has_more) {
-      break;
-    }
-  }
-
-  if (sent_payload) {
-    send_read_response(etl::span<const uint8_t>());
+    offset += res->bytes_read;
   }
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
-  if (!bridge::hal::hasSD()) { // GCOVR_EXCL_START — hasSD() is compile-time true on host
-    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_NOT_IMPLEMENTED);
-    return;
-  } // GCOVR_EXCL_STOP
-
   auto res = bridge::hal::removeFile(etl::string_view(msg.path.data(), msg.path.size()));
-  if (res.has_value()) {
-    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK);
-  } else {
-    (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK : rpc::StatusCode::STATUS_ERROR);
+}
+
+void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
+  if (_read_handler.is_valid()) {
+    _read_handler(msg.content);
   }
 }
 
-void FileSystemClass::_onResponse(etl::span<const uint8_t> content) {
-  if (_read_handler.is_valid()) {
-    _read_handler(content);
-  }
-}
+#ifndef BRIDGE_TEST_NO_GLOBALS
+FileSystemClass FileSystem;
+#endif
+
 #endif

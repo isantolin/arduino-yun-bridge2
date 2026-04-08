@@ -10,17 +10,10 @@
 
 using namespace rpc;
 
+// Bridge and core services are already provided by production code.
 HardwareSerial Serial;
 HardwareSerial Serial1;
-BridgeClass Bridge(Serial1);
-ConsoleClass Console;
-DataStoreClass DataStore;
-MailboxClass Mailbox;
-FileSystemClass FileSystem;
-ProcessClass Process;
-#if BRIDGE_ENABLE_SPI
-SPIServiceClass SPIService;
-#endif
+Stream* g_arduino_stream_delegate = nullptr;
 
 // 1. Helpers Básicos (Original)
 static void test_endianness_helpers() {
@@ -64,7 +57,6 @@ static void test_builder_roundtrip() {
   uint32_t crc = read_u32_be(etl::span<const uint8_t>(raw + raw_len - CRC_TRAILER_SIZE, 4));
   TEST_ASSERT(crc == crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE));
 
-  // [SIL-2] New etl::expected API
   auto result = parser.parse(etl::span<const uint8_t>(raw, raw_len));
 
   TEST_ASSERT(result.has_value());
@@ -78,7 +70,7 @@ static void test_builder_roundtrip() {
 // 4. Límite de Payload (Original)
 static void test_builder_payload_limit() {
   FrameBuilder builder;
-  uint8_t payload[MAX_PAYLOAD_SIZE + 1];
+  uint8_t payload[rpc::MAX_PAYLOAD_SIZE + 1];
   test_memfill(payload, sizeof(payload), TEST_BYTE_01);
   uint8_t buffer[rpc::MAX_RAW_FRAME_SIZE] = {0};
   size_t len = builder.build(etl::span<uint8_t>(buffer), TEST_CMD_ID, 0,
@@ -93,7 +85,6 @@ static void test_parser_incomplete_packets() {
   uint8_t raw[10];  // Buffer dummy insuficiente para un frame real
   etl::fill_n(raw, sizeof(raw), uint8_t{0});
 
-  // [SIL-2] etl::expected API - parse returns error for incomplete packets
   auto result1 =
       parser.parse(etl::span<const uint8_t>(raw, 4));  // Menor que header
   TEST_ASSERT(!result1.has_value());
@@ -117,7 +108,6 @@ static void test_parser_crc_failure() {
 
   raw[sizeof(FrameHeader)] ^= rpc::RPC_UINT8_MASK;  // Corromper payload
 
-  // [SIL-2] etl::expected API
   auto result = parser.parse(etl::span<const uint8_t>(raw, raw_len));
   TEST_ASSERT(!result.has_value());
   TEST_ASSERT(result.error() == FrameError::CRC_MISMATCH);
@@ -142,7 +132,6 @@ static void test_parser_header_validation() {
   uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
   write_u32_be(etl::span<uint8_t>(raw + raw_len - CRC_TRAILER_SIZE, 4), new_crc);
 
-  // [SIL-2] etl::expected API
   auto result = parser.parse(etl::span<const uint8_t>(raw, raw_len));
   TEST_ASSERT(!result.has_value());
   TEST_ASSERT(result.error() == FrameError::MALFORMED);
@@ -155,7 +144,6 @@ static void test_parser_overflow_guard() {
   uint8_t huge_buffer[rpc::MAX_RAW_FRAME_SIZE + 50];
   etl::fill_n(huge_buffer, sizeof(huge_buffer), uint8_t{0});
 
-  // [SIL-2] etl::expected API - Intentar parsear un buffer que excede el máximo
   auto result =
       parser.parse(etl::span<const uint8_t>(huge_buffer, sizeof(huge_buffer)));
   TEST_ASSERT(!result.has_value());
@@ -180,8 +168,6 @@ static void test_parser_header_logical_validation_mismatch() {
   uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
   write_u32_be(etl::span<uint8_t>(raw + raw_len - CRC_TRAILER_SIZE, 4), new_crc);
 
-  // [SIL-2] etl::expected API - debe fallar porque header dice length=3 pero
-  // buffer tiene 2
   auto result = parser.parse(etl::span<const uint8_t>(raw, raw_len));
   TEST_ASSERT(!result.has_value());
   TEST_ASSERT(result.error() == FrameError::MALFORMED);
@@ -215,5 +201,3 @@ int main(void) {
   RUN_TEST(test_builder_buffer_too_small);
   return UNITY_END();
 }
-
-Stream* g_arduino_stream_delegate = nullptr;

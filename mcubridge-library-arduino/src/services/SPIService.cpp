@@ -19,8 +19,8 @@ void SPIServiceClass::end() {
   _initialized = false;
 }
 
-void SPIServiceClass::setConfig(uint32_t frequency, uint8_t bitOrder, uint8_t dataMode) {
-  _settings = SPISettings(frequency, bitOrder, dataMode);
+void SPIServiceClass::setConfig(const rpc::payload::SpiConfig& config) {
+  _settings = SPISettings(config.frequency, config.bit_order, config.data_mode);
 }
 
 size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
@@ -48,9 +48,13 @@ size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
 SPIServiceClass::SPIServiceClass() : _initialized(false) {}
 void SPIServiceClass::begin() { _initialized = true; }
 void SPIServiceClass::end() { _initialized = false; }
-void SPIServiceClass::setConfig(uint32_t, uint8_t, uint8_t) {}
+void SPIServiceClass::setConfig(const rpc::payload::SpiConfig&) {}
 size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) { return buffer.size(); }
 
 #endif /* BRIDGE_HOST_TEST */
+
+#ifndef BRIDGE_TEST_NO_GLOBALS
+SPIServiceClass SPIService;
+#endif
 
 #endif // BRIDGE_ENABLE_SPI

@@ -273,9 +273,8 @@ def test_no_print_repo_wide() -> None:
     py_files = [
         path
         for path in py_files
-        if not _is_excluded_path(path) and "nanopb" not in str(path) and ".dummy_libs" not in str(path)
+        if not _is_excluded_path(path) and "nanopb" not in str(path) and ".dummy_libs" not in str(path) and ".local_arduino_libs" not in str(path)
     ]
-
     hits = _find_print_calls(py_files)
 
     assert not hits, "print() is not allowed repo-wide:\n" + "\n".join(

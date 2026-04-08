@@ -17,7 +17,7 @@ public:
 
   void begin();
   void end();
-  void setConfig(uint32_t frequency, uint8_t bitOrder, uint8_t dataMode);
+  void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
   bool isInitialized() const { return _initialized; }

@@ -239,7 +239,8 @@ class SerialTransport:
                 packet_view = memoryview(packet_with_sep)[:-1]  # remove delimiter (Zero-copy)
 
                 if packet_view:
-                    # logger.debug("[SERIAL <- MCU] RAW: [%s]", packet_view.hex())
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug("[SERIAL <- MCU] [RAW]: [%s]", packet_view.hex(' ').upper())
                     self._process_packet(packet_view)
 
             except asyncio.LimitOverrunError:

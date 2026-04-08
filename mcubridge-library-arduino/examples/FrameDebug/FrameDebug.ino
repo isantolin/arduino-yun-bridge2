@@ -62,6 +62,11 @@ void clearSnapshotStats() {
 #endif
 }  // namespace
 
+// [MIL-SPEC] Shared secret must match the daemon configuration.
+#ifndef BRIDGE_SERIAL_SHARED_SECRET
+#define BRIDGE_SERIAL_SHARED_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+#endif
+
 void setup() {
   // [SIL-2] Force safe state for actuators before enabling interrupts or protocol
   pinMode(13, OUTPUT);
@@ -78,9 +83,9 @@ void setup() {
 
   Serial.println(F("[FrameDebug] Starting"));
 
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
   Serial.println(
-      F("[FrameDebug] Bridge initialized with sketch-defined secret"));
+      F("[FrameDebug] Bridge initialized with default settings"));
 
   // Wait for handshake with non-blocking LED blink
   long lastBlink = 0;

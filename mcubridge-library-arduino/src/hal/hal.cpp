@@ -38,8 +38,8 @@ constexpr uint8_t DIGITAL_PINS = bridge::config::SAMD_DIGITAL_PINS;
 constexpr uint8_t ANALOG_PINS = bridge::config::SAMD_ANALOG_PINS;
 #elif defined(ARDUINO_ARCH_AVR)
 constexpr uint8_t CURRENT_ARCH = rpc::RPC_ARCH_AVR;
-constexpr uint8_t DIGITAL_PINS = bridge::config::AVR_DIGITAL_PINS;
-constexpr uint8_t ANALOG_PINS = bridge::config::AVR_ANALOG_PINS;
+constexpr uint8_t DIGITAL_PINS = bridge::config::DIGITAL_PINS;
+constexpr uint8_t ANALOG_PINS = bridge::config::ANALOG_PINS;
 #elif defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM)
 constexpr uint8_t CURRENT_ARCH = rpc::RPC_ARCH_SAMD;
 constexpr uint8_t DIGITAL_PINS = bridge::config::SAMD_DIGITAL_PINS;

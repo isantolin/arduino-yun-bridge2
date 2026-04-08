@@ -115,9 +115,9 @@ def _command_to_handler(name: str) -> str:
 
 def _extract_cpp_dispatch_commands(cpp_content: str) -> set[str]:
     """Return command ids explicitly registered in Bridge.cpp dispatch tables."""
-    # Support both old etl::pair/Value and new PROGMEM array brace syntax
+    # Support pure template dispatch architecture
     command_re = re.compile(
-        r"(?:Value)?\{\s*rpc::to_underlying\(rpc::CommandId::(CMD_[A-Z0-9_]+)\),",
+        r"Behavior(?:Cmd|BridgePayload|ServicePayload|GpioPayload|PinRead)<.*?rpc::CommandId::(CMD_[A-Z0-9_]+)",
         re.MULTILINE,
     )
     return set(command_re.findall(cpp_content))

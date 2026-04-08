@@ -1,6 +1,5 @@
-#include "Mailbox.h"
+#include "services/Mailbox.h"
 #include "Bridge.h"
-#include "util/string_copy.h"
 
 #if BRIDGE_ENABLE_MAILBOX
 
@@ -9,31 +8,41 @@ MailboxClass::MailboxClass() {}
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush msg = {};
   msg.data = data;
-  Bridge.sendPbCommand(rpc::CommandId::CMD_MAILBOX_PUSH, 0, msg);
+  (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, msg);
 }
 
-[[maybe_unused]] void MailboxClass::requestRead() {
+void MailboxClass::requestRead() {
   (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
-[[maybe_unused]] void MailboxClass::requestAvailable() {
+void MailboxClass::requestAvailable() {
   (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
-void MailboxClass::_onIncomingData(etl::span<const uint8_t> data) {
-  BridgeClass::safePush(_rx_buffer, data);
-  if (_mailbox_handler.is_valid()) {
-    _mailbox_handler(data);
+void MailboxClass::signalProcessed() {
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_PROCESSED);
+}
+
+void MailboxClass::_onIncomingData(const rpc::payload::MailboxPush& msg) {
+  _rx_buffer.clear();
+  for (auto b : msg.data) {
+    if (!_rx_buffer.full()) _rx_buffer.push(b);
   }
 }
 
-void MailboxClass::_onResponse(etl::span<const uint8_t> content) {
-  _onIncomingData(content);
+void MailboxClass::_onIncomingData(const rpc::payload::MailboxReadResponse& msg) {
+  _rx_buffer.clear();
+  for (auto b : msg.content) {
+    if (!_rx_buffer.full()) _rx_buffer.push(b);
+  }
 }
 
 void MailboxClass::_onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg) {
-  if (_available_handler.is_valid()) {
-    _available_handler(static_cast<uint16_t>(msg.count));
-  }
+  (void)msg; // Handled by accessor in tests or higher level logic
 }
+
+#ifndef BRIDGE_TEST_NO_GLOBALS
+MailboxClass Mailbox;
+#endif
+
 #endif

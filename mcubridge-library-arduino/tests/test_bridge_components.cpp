@@ -11,6 +11,7 @@
 #include "services/DataStore.h"
 #include "services/Mailbox.h"
 #include "services/SPIService.h"
+#include "services/Console.h"
 
 // --- GLOBALS ---
 unsigned long g_test_millis = 0;
@@ -20,23 +21,7 @@ namespace {
 BiStream g_null_stream;
 }
 
-BridgeClass Bridge(g_null_stream);
-ConsoleClass Console;
-#if BRIDGE_ENABLE_DATASTORE
-DataStoreClass DataStore;
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-MailboxClass Mailbox;
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-FileSystemClass FileSystem;
-#endif
-#if BRIDGE_ENABLE_PROCESS
-ProcessClass Process;
-#endif
-#if BRIDGE_ENABLE_SPI
-SPIServiceClass SPIService;
-#endif
+// Bridge and core services are already provided by production code.
 HardwareSerial Serial;
 HardwareSerial Serial1;
 Stream* g_arduino_stream_delegate = nullptr;
@@ -66,13 +51,11 @@ static void test_all_handlers_coverage() {
 
   rpc::Frame f = {};
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
-  bridge::router::CommandContext ctx{&f, 0, false, false, 0};
 
   // 1. Send all commands with empty payload to trigger MALFORMED / edge cases
   for (uint16_t cmd = 0; cmd < 255; cmd++) {
     f.header.command_id = cmd;
     f.payload = etl::span<const uint8_t>();
-    ctx.raw_command = cmd;
     ba.dispatch(f);
   }
 
@@ -84,7 +67,6 @@ static void test_all_handlers_coverage() {
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_##CMD_NAME); \
   f.header.payload_length = static_cast<uint16_t>(enc.size()); \
   f.payload = etl::span<const uint8_t>(payload_buffer.data(), enc.size()); \
-  ctx.raw_command = f.header.command_id; \
   ba.dispatch(f); \
 } while(0)
 
@@ -142,7 +124,7 @@ static void test_all_handlers_coverage() {
 
 #undef COVER_CMD
 
-  // Specific path testing
+  bridge::router::CommandContext ctx(&f, 0, 0, false, false);
   ba.handleGetVersion(ctx);
   ba.handleGetFreeMemory(ctx);
 
@@ -175,10 +157,10 @@ static void test_process_api() {
   rpc::payload::ProcessPollResponse msg_poll = {};
   msg_poll.status = rpc::to_underlying(rpc::StatusCode::STATUS_OK);
   msg_poll.exit_code = 0;
-  Process._onPollResponse(msg_poll, etl::span<const uint8_t>(), etl::span<const uint8_t>());
+  Process._onPollResponse(msg_poll);
   
-  // Cover internal method
-  Process._kill(1);
+  rpc::payload::ProcessKill msg_kill = {1};
+  Process._kill(msg_kill);
   
   Process.reset();
   
@@ -195,7 +177,10 @@ static void test_console_api() {
   Console.write(buf, 2);
   Console.flush();
   
-  Console._push(etl::span<const uint8_t>(buf, 2));
+  rpc::payload::ConsoleWrite msg = {};
+  uint8_t d[] = {'b', 'c'};
+  msg.data = etl::span<const uint8_t>(d, 2);
+  Console._push(msg);
   TEST_ASSERT_EQUAL(2, Console.available());
   TEST_ASSERT_EQUAL('b', Console.peek());
   TEST_ASSERT_EQUAL('b', Console.read());
@@ -214,7 +199,9 @@ static void test_datastore_api() {
   uint8_t data[] = {1, 2, 3};
   DataStore.set("test_key", etl::span<const uint8_t>(data, 3));
   DataStore.get("test_key", etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>());
-  DataStore._onResponse(etl::span<const uint8_t>(data, 3));
+  rpc::payload::DatastoreGetResponse resp = {};
+  resp.value = etl::span<const uint8_t>(data, 3);
+  DataStore._onResponse(resp);
 #endif
   
   restore_bridge_to_serial();
@@ -229,11 +216,18 @@ static void test_mailbox_api() {
   Mailbox.push(etl::span<const uint8_t>(data, 3));
   Mailbox.requestRead();
   Mailbox.requestAvailable();
-  Mailbox._onIncomingData(etl::span<const uint8_t>(data, 3));
-  Mailbox._onResponse(etl::span<const uint8_t>(data, 3));
-  rpc::payload::MailboxAvailableResponse msg = {};
-  msg.count = 2;
-  Mailbox._onAvailableResponse(msg);
+  
+  rpc::payload::MailboxPush msg_push = {};
+  msg_push.data = etl::span<const uint8_t>(data, 3);
+  Mailbox._onIncomingData(msg_push);
+  
+  rpc::payload::MailboxReadResponse msg_read = {};
+  msg_read.content = etl::span<const uint8_t>(data, 3);
+  Mailbox._onIncomingData(msg_read);
+  
+  rpc::payload::MailboxAvailableResponse msg_avail = {};
+  msg_avail.count = 2;
+  Mailbox._onAvailableResponse(msg_avail);
 #endif
 
   restore_bridge_to_serial();

@@ -91,3 +91,4 @@ mcubridge-library-arduino/src/wolfssl/
 .dummy_libs/
 typings/
 .codex_tmp/
+.local_arduino_libs/

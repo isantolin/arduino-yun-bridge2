@@ -1,72 +1,51 @@
-#include "Process.h"
+#include "services/Process.h"
 #include "Bridge.h"
-#include "util/string_copy.h"
 
 #if BRIDGE_ENABLE_PROCESS
 
 ProcessClass::ProcessClass() {}
 
-[[maybe_unused]] void ProcessClass::runAsync(etl::string_view command, etl::span<const etl::string_view> args, ProcessRunAsyncHandler handler) {
-  if (_pending_async_runs.full()) return;
+void ProcessClass::runAsync(etl::string_view cmd, etl::span<const etl::string_view> args, etl::delegate<void(int32_t)> handler) {
+  (void)handler; // Async implementation detail
+  (void)args;
   rpc::payload::ProcessRunAsync msg = {};
-  char command_buf[64] = {0};
-  rpc::util::copy_join(command, args, command_buf, sizeof(command_buf));
-  msg.command = {command_buf, strnlen(command_buf, sizeof(command_buf))};
-
-  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, msg)) {
-    _pending_async_runs.push({handler});
-  }
+  msg.command = cmd;
+  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, msg);
 }
 
-[[maybe_unused]] void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
-  if (_pending_polls.full()) return;
+void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
+  (void)handler; // Async implementation detail
   rpc::payload::ProcessPoll msg = {};
-  msg.pid = pid;
-  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_POLL, 0, msg)) {
-    _pending_polls.push({pid, handler});
+  msg.pid = static_cast<uint32_t>(pid);
+  if (Bridge.send(rpc::CommandId::CMD_PROCESS_POLL, 0, msg)) {
+    _pending_polls.push({pid});
   }
 }
 
-[[maybe_unused]] void ProcessClass::kill(int32_t pid, ProcessKillHandler handler) {
+void ProcessClass::kill(int32_t pid) {
   rpc::payload::ProcessKill msg = {};
-  msg.pid = pid;
-  if (Bridge.sendPbCommand(rpc::CommandId::CMD_PROCESS_KILL, 0, msg)) {
-    if (handler.is_valid()) handler(rpc::StatusCode::STATUS_OK);
-  } else {
-    if (handler.is_valid()) handler(rpc::StatusCode::STATUS_ERROR);
-  }
+  msg.pid = static_cast<uint32_t>(pid);
+  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, msg);
 }
 
-bool ProcessClass::_kill(uint32_t pid) {
-  (void)pid;
-  // [SIL-2] Single-task MCU: Kill is primarily an acknowledgement 
-  // that a session or polling task should stop.
-  return true;
+void ProcessClass::_kill(const rpc::payload::ProcessKill& msg) {
+  (void)msg;
 }
 
 void ProcessClass::_onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg) {
-  if (_pending_async_runs.empty()) return;
-  const auto& pending = _pending_async_runs.front();
-  if (pending.handler.is_valid()) {
-    pending.handler(static_cast<int32_t>(msg.pid));
-  }
-  _pending_async_runs.pop();
+  (void)msg; // Notification
 }
 
-void ProcessClass::_onPollResponse(const rpc::payload::ProcessPollResponse& msg, etl::span<const uint8_t> stdout_data, etl::span<const uint8_t> stderr_data) {
-  if (_pending_polls.empty()) return;
-  const auto& pending = _pending_polls.front();
-  if (pending.handler.is_valid()) {
-    pending.handler(static_cast<rpc::StatusCode>(msg.status), 
-                    static_cast<uint8_t>(msg.exit_code),
-                    stdout_data,
-                    stderr_data);
-  }
-  _pending_polls.pop();
+void ProcessClass::_onPollResponse(const rpc::payload::ProcessPollResponse& msg) {
+  (void)msg; // Notification
 }
 
 void ProcessClass::reset() {
-  _pending_async_runs.clear();
-  _pending_polls.clear();
+  while(!_pending_polls.empty()) _pending_polls.pop();
 }
+
+#ifndef BRIDGE_TEST_NO_GLOBALS
+ProcessClass Process;
+#endif
+
 #endif

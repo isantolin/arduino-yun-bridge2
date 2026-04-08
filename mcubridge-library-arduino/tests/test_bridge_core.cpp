@@ -8,6 +8,7 @@
 #include "protocol/rpc_protocol.h"
 #include "test_support.h"
 #include "services/SPIService.h"
+#include "services/Console.h"
 
 // --- GLOBALS ---
 unsigned long g_test_millis = 0;
@@ -17,23 +18,7 @@ namespace {
 BiStream g_null_stream;
 }
 
-BridgeClass Bridge(g_null_stream);
-ConsoleClass Console;
-#if BRIDGE_ENABLE_DATASTORE
-DataStoreClass DataStore;
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-MailboxClass Mailbox;
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-FileSystemClass FileSystem;
-#endif
-#if BRIDGE_ENABLE_PROCESS
-ProcessClass Process;
-#endif
-#if BRIDGE_ENABLE_SPI
-SPIServiceClass SPIService;
-#endif
+// Bridge and core services are already provided by production code.
 HardwareSerial Serial;
 Stream* g_arduino_stream_delegate = nullptr;
 
@@ -44,16 +29,16 @@ using bridge::test::TestAccessor;
 void reset_bridge(BiStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "test_secret_1234567890123456");
 }
 
 class TestFrameBuilder {
  public:
   static size_t build(uint8_t* out, size_t out_cap, uint16_t cmd_id,
                       const uint8_t* payload, size_t payload_len, uint16_t seq_id = 0) {
-    // [SIL-2] Delegate to production FrameBuilder for header+CRC serialization
     uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
-    const size_t raw_len = rpc::FrameBuilder::build(
+    rpc::FrameBuilder builder;
+    const size_t raw_len = builder.build(
         etl::span<uint8_t>(raw, sizeof(raw)), cmd_id, seq_id,
         etl::span<const uint8_t>(payload, payload_len));
     if (raw_len == 0 || raw_len + 2 > out_cap) return 0;
@@ -64,16 +49,18 @@ class TestFrameBuilder {
     return encoded_len + 2;
   }
 };
+
 void sync_bridge(BiStream& stream) {
   stream.tx_buf.clear();
   auto ba = TestAccessor::create(Bridge);
   if (ba.isSharedSecretEmpty()) {
     const char* test_secret = "test_secret";
-    ba.assignSharedSecret(
-        reinterpret_cast<const uint8_t*>(test_secret),
-        reinterpret_cast<const uint8_t*>(test_secret) + strlen(test_secret));
+    etl::array<uint8_t, 32> secret_buf;
+    secret_buf.fill(0);
+    memcpy(secret_buf.data(), test_secret, strlen(test_secret));
+    ba.setSharedSecret(etl::span<const uint8_t>(secret_buf.data(), 32));
   }
-  ba.setStartupStabilizing(false);
+  ba.onStartupStabilized();
   const uint8_t nonce[16] = {1, 2,  3,  4,  5,  6,  7,  8,
                              9, 10, 11, 12, 13, 14, 15, 16};
 
@@ -90,10 +77,9 @@ void sync_bridge(BiStream& stream) {
   const size_t encoded_len = TestFrameBuilder::build(
       encoded_frame, sizeof(encoded_frame),
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), payload_buffer.data(),
-      frame.header.payload_length);
+      frame.header.payload_length, 1);
   stream.feed(encoded_frame, encoded_len);
 
-  // Process until all bytes are drained from the mock stream
   int safety_counter = 0;
   while (stream.available() > 0 && safety_counter++ < 100) {
       Bridge.process();
@@ -163,23 +149,21 @@ void test_bridge_dedup_console_write_retry() {
   frame.header.version = rpc::PROTOCOL_VERSION;
   frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+  frame.header.sequence_id = 10;
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
   frame.payload = etl::span<const uint8_t>(payload_buffer.data(), payload_buffer.size());
   bridge::test::set_pb_payload(frame, msg);
 
-  // Calculate CRC for deduplication using etl::crc32
-  uint8_t header_buf[rpc::FRAME_HEADER_SIZE];
-  header_buf[0] = frame.header.version;
-  rpc::write_u16_be(etl::span<uint8_t>(header_buf + 1, 2),
-                    frame.header.payload_length);
-  rpc::write_u16_be(etl::span<uint8_t>(header_buf + 3, 2),
-                    frame.header.command_id);
-
   etl::crc32 crc_calc;
-  crc_calc.add(header_buf, header_buf + rpc::FRAME_HEADER_SIZE);
-  crc_calc.add(frame.payload.data(),
-               frame.payload.data() + frame.header.payload_length);
+  uint8_t h[rpc::FRAME_HEADER_SIZE];
+  h[0] = frame.header.version;
+  rpc::write_u16_be(etl::span<uint8_t>(h + 1, 2), frame.header.payload_length);
+  rpc::write_u16_be(etl::span<uint8_t>(h + 3, 2), frame.header.command_id);
+  rpc::write_u16_be(etl::span<uint8_t>(h + 5, 2), frame.header.sequence_id);
+  
+  crc_calc.add(h, h + rpc::FRAME_HEADER_SIZE);
+  crc_calc.add(frame.payload.data(), frame.payload.data() + frame.header.payload_length);
   frame.crc = crc_calc.value();
 
   auto ba = TestAccessor::create(Bridge);
@@ -188,7 +172,7 @@ void test_bridge_dedup_console_write_retry() {
   g_test_millis = 0;
   ba.dispatch(frame);
   Bridge.process();
-  TEST_ASSERT_EQ_UINT(Console.available(), 5);
+  TEST_ASSERT_EQUAL(5, Console.available());
 }
 
 void test_bridge_ack_malformed_timeout_paths() {

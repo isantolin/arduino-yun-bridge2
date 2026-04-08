@@ -80,7 +80,7 @@ def should_compress(payload: bytes) -> bool:
         return False
 
     # [SIL-2] Efficient grouping check using itertools.groupby (C-backed)
-    for byte_val, group in itertools.groupby(payload):
+    for _, group in itertools.groupby(payload):
         count = sum(1 for _ in group)
         if count >= protocol.RLE_MIN_RUN_LENGTH:
             return True

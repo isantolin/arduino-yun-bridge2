@@ -36,15 +36,16 @@ inline void copy_join(etl::string_view base, etl::span<const etl::string_view> p
   current = etl::copy_n(base.data(), base_len, current);
 
   // Join parts with space separator
-  for (const auto& part : parts) {
-    if (current >= end) break;
+  (void)etl::find_if(parts.begin(), parts.end(), [&](const etl::string_view& part) {
+    if (current >= end) return true;
     
     // Add separator if there is room for it and at least one character of the part
     *current++ = ' ';
     
     const size_t part_len = etl::min(part.length(), static_cast<size_t>(end - current));
     current = etl::copy_n(part.data(), part_len, current);
-  }
+    return false;
+  });
 
   *current = rpc::RPC_NULL_TERMINATOR;
 }

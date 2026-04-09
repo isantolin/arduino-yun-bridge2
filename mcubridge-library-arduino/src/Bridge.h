@@ -68,8 +68,11 @@ namespace bridge::router {
   };
 }
 
+#include "ErrorPolicy.h"
+
 class BridgeClass {
  public:
+  using ErrorPolicy = bridge::SafeStatePolicy;
   explicit BridgeClass(Stream& stream);
 
   void notify_observers(const MsgBridgeSynchronized& msg);

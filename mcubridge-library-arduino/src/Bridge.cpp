@@ -457,7 +457,9 @@ BridgeClass Bridge(Serial);
 #endif
 
 namespace etl {
-void __attribute__((weak)) __attribute__((unused)) handle_error(const etl::exception& e) { (void)e; Bridge.enterSafeState(); }
+void __attribute__((weak)) __attribute__((unused)) handle_error(const etl::exception& e) {
+  BridgeClass::ErrorPolicy::handle(Bridge, e);
+}
 }  // namespace etl
 
 void BridgeClass::notify_observers(const MsgBridgeSynchronized& msg) {

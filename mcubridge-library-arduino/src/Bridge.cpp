@@ -241,7 +241,7 @@ void BridgeClass::_handleEnterBootloader(const rpc::payload::EnterBootloader& ms
   if (msg.magic == rpc::RPC_BOOTLOADER_MAGIC) {
     this->flushStream(); delay(bridge::config::BOOTLOADER_DELAY_MS);
 #if defined(ARDUINO_ARCH_AVR)
-    wdt_enable(WDTO_15MS); for (;;) {}
+    wdt_enable(WDTO_15MS); spin: goto spin;
 #elif defined(ARDUINO_ARCH_ESP32)
     ESP.restart();
 #elif defined(ARDUINO_ARCH_SAMD)

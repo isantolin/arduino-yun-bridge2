@@ -121,9 +121,7 @@ struct BridgeAtomicGuard {
     interrupts();
   }
 };
-#define BRIDGE_ATOMIC_BLOCK                                     \
-  for (int _guard_active = 1; _guard_active; _guard_active = 0) \
-    for (BridgeAtomicGuard _guard; _guard_active; _guard_active = 0)
+#define BRIDGE_ATOMIC_BLOCK if (BridgeAtomicGuard _guard{}; true)
 #endif
 
 // --- PROGMEM portability shim (centralized) ---

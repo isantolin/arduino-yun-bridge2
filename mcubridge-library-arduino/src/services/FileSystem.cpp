@@ -47,22 +47,24 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   size_t offset = 0;
   uint8_t buffer[kReadChunkSize];
   uint32_t start_ms = bridge::now_ms();
-  size_t chunk_count = 0;
   etl::string_view path(msg.path.data(), msg.path.size());
+  etl::array<uint8_t, bridge::config::FILE_MAX_READ_CHUNKS> chunks = {};
+  (void)etl::find_if(chunks.begin(), chunks.end(), [&](uint8_t) {
+    if (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) return true;
 
-  while (chunk_count++ < bridge::config::FILE_MAX_READ_CHUNKS && (bridge::now_ms() - start_ms < bridge::config::SERIAL_TIMEOUT_MS)) {
     auto res = bridge::hal::readFileChunk(path, offset, etl::span<uint8_t>(buffer, kReadChunkSize));
     if (!res) {
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
-      return;
+      return true;
     }
     send_read_response(etl::span<const uint8_t>(buffer, res->bytes_read));
     if (!res->has_more) {
       send_read_response(etl::span<const uint8_t>());
-      return;
+      return true;
     }
     offset += res->bytes_read;
-  }
+    return false;
+  });
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {

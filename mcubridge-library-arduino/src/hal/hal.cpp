@@ -101,19 +101,24 @@ bool ensure_host_parent_directories(const PathString& full_path) {
 
   path_buffer = full_path;
 
-  for (size_t index = kHostFilesystemRootLength + 1U; index < full_path_length; ++index) {
-    if (path_buffer[index] != '/') {
-      continue;
-    }
-    char original = path_buffer[index];
-    path_buffer[index] = rpc::RPC_NULL_TERMINATOR;
-    if (!ensure_host_directory(path_buffer.c_str())) {
-      return false; // GCOVR_EXCL_LINE — requires mkdir permission failure
-    }
-    path_buffer[index] = original;
-  }
+  auto it = path_buffer.begin() + kHostFilesystemRootLength + 1U;
+  auto end = path_buffer.begin() + full_path_length;
+  bool success = true;
 
-  return true;
+  (void)etl::find_if(it, end, [&](char& c) {
+    if (c == '/') {
+      char original = c;
+      c = rpc::RPC_NULL_TERMINATOR;
+      if (!ensure_host_directory(path_buffer.c_str())) {
+        success = false;
+        return true; // Stop iterating
+      }
+      c = original;
+    }
+    return false; // Continue iterating
+  });
+
+  return success;
 }
 
 /// Convert a string_view path to a resolved host filesystem path.

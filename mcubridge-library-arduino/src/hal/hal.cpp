@@ -137,15 +137,18 @@ bool isValidPin(const uint8_t pin) {
 void forceSafeState() {
   // [SIL-2] Ensure all potential actuator pins are in a safe state before any logic starts.
   // This prevents spikes or unintended activations during MCU boot/reset.
-  for (uint8_t pin = 0; pin < DIGITAL_PINS; ++pin) {
+  etl::array<uint8_t, DIGITAL_PINS> dummy = {};
+  uint8_t current_pin = 0;
+  (void)etl::for_each(dummy.begin(), dummy.end(), [&](uint8_t) {
     if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-      pinMode(pin, OUTPUT);
-      digitalWrite(pin, LOW);
+      pinMode(current_pin, OUTPUT);
+      digitalWrite(current_pin, LOW);
     } else {
       // Default: Using INPUT_PULLUP ensures pins are in a well-defined high-impedance state.
-      pinMode(pin, INPUT_PULLUP);
+      pinMode(current_pin, INPUT_PULLUP);
     }
-  }
+    current_pin++;
+  });
 }
 
 uint16_t getFreeMemory() {

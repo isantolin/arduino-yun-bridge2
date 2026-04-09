@@ -97,7 +97,7 @@ bool run_cryptographic_self_tests() {
   // 1. SHA256 KAT
   sha256.reset();
   size_t msg_len = sizeof(kat_sha256_msg);
-  etl::copy_n(kat_sha256_msg, msg_len, buffer.begin());
+  memcpy_P(buffer.data(), kat_sha256_msg, msg_len);
   sha256.update(buffer.data(), msg_len);
   sha256.finalize(actual.data(), rpc::RPC_SHA256_DIGEST_SIZE);
 
@@ -107,12 +107,12 @@ bool run_cryptographic_self_tests() {
   // 2. HMAC-SHA256 KAT
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> key_buf;
   size_t key_len = sizeof(kat_hmac_key);
-  etl::copy_n(kat_hmac_key, key_len, key_buf.begin());
+  memcpy_P(key_buf.data(), kat_hmac_key, key_len);
 
   sha256.resetHMAC(key_buf.data(), key_len);
 
   size_t data_len = sizeof(kat_hmac_data);
-  etl::copy_n(kat_hmac_data, data_len, buffer.begin());
+  memcpy_P(buffer.data(), kat_hmac_data, data_len);
   sha256.update(buffer.data(), data_len);
   sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(), rpc::RPC_SHA256_DIGEST_SIZE);
 

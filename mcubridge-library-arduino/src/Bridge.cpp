@@ -366,7 +366,16 @@ void BridgeClass::_flushPendingTxQueue() {
 }
 
 void BridgeClass::_clearPendingTxQueue() {
-  BRIDGE_ATOMIC_BLOCK { while (!_pending_tx_queue.empty()) { TxPayloadBuffer* buf = _pending_tx_queue.front().buffer; if (buf) _tx_payload_pool.release(buf); _pending_tx_queue.pop(); } }
+  BRIDGE_ATOMIC_BLOCK {
+    etl::array<uint8_t, bridge::config::TX_QUEUE_CAPACITY> dummy = {};
+    (void)etl::find_if(dummy.begin(), dummy.end(), [&](uint8_t) {
+      if (_pending_tx_queue.empty()) return true;
+      TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
+      if (buf) _tx_payload_pool.release(buf);
+      _pending_tx_queue.pop();
+      return false;
+    });
+  }
 }
 
 void BridgeClass::_clearAckState() {

@@ -40,9 +40,9 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (buffer == nullptr || size == 0) return 0;
   etl::span<const uint8_t> data(buffer, size);
   size_t written = 0;
-  for (uint8_t b : data) {
+  etl::for_each(data.begin(), data.end(), [this, &written](uint8_t b) {
     written += write(b);
-  }
+  });
   return written;
 }
 

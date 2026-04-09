@@ -242,7 +242,14 @@ async def test_mqtt_publisher_debug_logging() -> None:
         )
         with patch("mcubridge.transport.mqtt.logger") as mock_logger:
             mock_logger.isEnabledFor.return_value = True
-            stop_task = asyncio.create_task(asyncio.sleep(0.1))
+
+            async def wait_publish():
+                for _ in range(20):
+                    if published:
+                        break
+                    await asyncio.sleep(0.1)
+
+            stop_task = asyncio.create_task(wait_publish())
 
             async def run_loop():
                 try:

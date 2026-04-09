@@ -7,36 +7,38 @@ namespace rle {
 size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
   if (src.empty() || dst.empty()) return 0;
 
-  auto src_it = src.begin();
   auto dst_it = dst.begin();
 
-  while (src_it != src.end()) {
-    // Bulk copy literals until the next escape byte
-    auto next_escape = etl::find(src_it, src.end(), ESCAPE_BYTE);
-    size_t literal_len = etl::distance(src_it, next_escape);
+  enum class State { LITERAL, ESC_MARKER, ESC_VAL };
+  State state = State::LITERAL;
+  uint8_t esc_count = 0;
+  bool error = false;
 
-    if (static_cast<size_t>(etl::distance(dst_it, dst.end())) < literal_len) {
-      return 0;
-    }
-    dst_it = etl::copy(src_it, next_escape, dst_it);
-    src_it = next_escape;
-
-    if (src_it != src.end()) {
-      // Process Escape block
-      src_it++;  // Skip ESCAPE_BYTE
-      if (etl::distance(src_it, src.end()) < static_cast<int>(rpc::RPC_RLE_EXPANSION_FACTOR - 1)) return 0;
-
-      uint8_t count_m2 = *src_it++;
-      uint8_t val = *src_it++;
-      size_t run_len = (count_m2 == SINGLE_ESCAPE_MARKER) ? 1 : static_cast<size_t>(count_m2) + rpc::RPC_RLE_OFFSET;
-
-      if (static_cast<size_t>(etl::distance(dst_it, dst.end())) < run_len) {
-        return 0;
+  (void)etl::find_if(src.begin(), src.end(), [&](uint8_t b) {
+    if (state == State::LITERAL) {
+      if (b == ESCAPE_BYTE) {
+        state = State::ESC_MARKER;
+      } else {
+        if (dst_it == dst.end()) { error = true; return true; }
+        *dst_it++ = b;
       }
-      etl::fill_n(dst_it, run_len, val);
+    } else if (state == State::ESC_MARKER) {
+      esc_count = b;
+      state = State::ESC_VAL;
+    } else if (state == State::ESC_VAL) {
+      size_t run_len = (esc_count == SINGLE_ESCAPE_MARKER) ? 1 : static_cast<size_t>(esc_count) + rpc::RPC_RLE_OFFSET;
+      if (static_cast<size_t>(etl::distance(dst_it, dst.end())) < run_len) {
+        error = true;
+        return true;
+      }
+      etl::fill_n(dst_it, run_len, b);
       dst_it += run_len;
+      state = State::LITERAL;
     }
-  }
+    return false;
+  });
+
+  if (error || state != State::LITERAL) return 0;
   return etl::distance(dst.begin(), dst_it);
 }
 

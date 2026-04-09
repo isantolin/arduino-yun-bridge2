@@ -28,7 +28,7 @@ void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler)
   rpc::payload::FileRead msg = {};
   msg.path = path;
   if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, msg)) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus<rpc::StatusCode::STATUS_ERROR>();
   }
 }
 

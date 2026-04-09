@@ -444,9 +444,9 @@ void BridgeClass::_applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
 
 void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
   auto res = _frame_parser.parse(p);
-  if (!res) { _last_parse_error = res.error(); emitStatus(rpc::StatusCode::STATUS_MALFORMED); return; }
+  if (!res) { _last_parse_error = res.error(); emitStatus<rpc::StatusCode::STATUS_MALFORMED>(); return; }
   rpc::Frame eff; auto dec = _decompressFrame(res.value(), eff);
-  if (!dec) { _last_parse_error = dec.error(); emitStatus(rpc::StatusCode::STATUS_MALFORMED); return; }
+  if (!dec) { _last_parse_error = dec.error(); emitStatus<rpc::StatusCode::STATUS_MALFORMED>(); return; }
   _dispatchCommand(eff);
 }
 

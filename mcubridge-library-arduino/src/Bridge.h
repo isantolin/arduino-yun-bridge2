@@ -87,6 +87,9 @@ class BridgeClass {
   // [MIL-SPEC] Cryptographic Integrity
   bool runPowerOnSelfTests();
 
+  template <rpc::StatusCode S>
+  void emitStatus() { emitStatus(S, etl::span<const uint8_t>()); }
+
   void emitStatus(rpc::StatusCode s, etl::string_view m = {});
   void emitStatus(rpc::StatusCode s, etl::span<const uint8_t> p);
   void emitStatus(rpc::StatusCode s, const __FlashStringHelper* m);
@@ -220,7 +223,7 @@ class BridgeClass {
     _withResponse(ctx, [this, &ctx, resp_id, valid, read]() {
       auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
       if (res && valid(res->pin)) { T resp = {static_cast<decltype(T::value)>(read(res->pin))}; _sendPbResponse(resp_id, ctx.sequence_id, resp); }
-      else emitStatus(rpc::StatusCode::STATUS_ERROR);
+      else emitStatus<rpc::StatusCode::STATUS_ERROR>();
     });
   }
 
@@ -243,9 +246,9 @@ class BridgeClass {
   etl::vector<uint8_t, 32> _shared_secret;
   
   struct GpioAdapter {
-    void setPinMode(const rpc::payload::PinMode& m) { if (bridge::hal::isValidPin(m.pin)) ::pinMode(m.pin, m.mode); else _bridge.emitStatus(rpc::StatusCode::STATUS_ERROR); }
-    void digitalWrite(const rpc::payload::DigitalWrite& m) { if (bridge::hal::isValidPin(m.pin)) ::digitalWrite(m.pin, m.value); else _bridge.emitStatus(rpc::StatusCode::STATUS_ERROR); }
-    void analogWrite(const rpc::payload::AnalogWrite& m) { if (bridge::hal::isValidPin(m.pin)) ::analogWrite(m.pin, m.value); else _bridge.emitStatus(rpc::StatusCode::STATUS_ERROR); }
+    void setPinMode(const rpc::payload::PinMode& m) { if (bridge::hal::isValidPin(m.pin)) ::pinMode(m.pin, m.mode); else _bridge.emitStatus<rpc::StatusCode::STATUS_ERROR>(); }
+    void digitalWrite(const rpc::payload::DigitalWrite& m) { if (bridge::hal::isValidPin(m.pin)) ::digitalWrite(m.pin, m.value); else _bridge.emitStatus<rpc::StatusCode::STATUS_ERROR>(); }
+    void analogWrite(const rpc::payload::AnalogWrite& m) { if (bridge::hal::isValidPin(m.pin)) ::analogWrite(m.pin, m.value); else _bridge.emitStatus<rpc::StatusCode::STATUS_ERROR>(); }
     explicit GpioAdapter(BridgeClass& b) : _bridge(b) {}
     BridgeClass& _bridge;
   } _gpio_adapter;

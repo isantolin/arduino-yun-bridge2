@@ -309,7 +309,7 @@ void BridgeClass::_onStartupStabilized() {
 
 void BridgeClass::enterSafeState() {
   BRIDGE_ATOMIC_BLOCK { _fsm.resetFsm(); }
-  for (auto id : _timer_ids) _timers.stop(id);
+  etl::for_each(_timer_ids.begin(), _timer_ids.end(), [this](etl::timer::id::type id) { _timers.stop(id); });
   _pending_baudrate = 0; _retry_count = 0; _clearPendingTxQueue(); _rx_history.clear(); _tx_enabled = true;
   rpc::security::secure_zero(etl::span<uint8_t>(_shared_secret.data(), _shared_secret.size())); _shared_secret.clear();
 #if BRIDGE_ENABLE_PROCESS

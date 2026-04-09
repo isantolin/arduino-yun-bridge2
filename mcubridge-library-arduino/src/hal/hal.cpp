@@ -18,14 +18,10 @@
 #endif
 
 #if defined(ARDUINO_ARCH_AVR)
-#include <avr/io.h>
-#include <avr/wdt.h>
 extern "C" {
   extern char *__brkval;
   extern char __heap_start;
 }
-#elif defined(ARDUINO_ARCH_ESP32)
-#include <esp_task_wdt.h>
 #endif
 
 namespace bridge::hal {
@@ -33,15 +29,15 @@ namespace bridge::hal {
 namespace {
 using Traits = CurrentArchTraits;
 
-constexpr uint8_t CURRENT_ARCH = (Traits::id == ArchId::AVR) ? rpc::RPC_ARCH_AVR :
-                                 (Traits::id == ArchId::HOST) ? rpc::RPC_ARCH_SAMD : 0;
+constexpr uint8_t CURRENT_ARCH = (Traits::id == ArchId::ARCH_ID_AVR) ? rpc::RPC_ARCH_AVR :
+                                 (Traits::id == ArchId::ARCH_ID_HOST) ? rpc::RPC_ARCH_SAMD : 0;
 
-constexpr uint8_t DIGITAL_PINS = (Traits::id == ArchId::AVR) ? bridge::config::DIGITAL_PINS :
-                                 (Traits::id == ArchId::HOST) ? bridge::config::SAMD_DIGITAL_PINS :
-                                 bridge::config::DIGITAL_PINS;
+constexpr uint8_t DIGITAL_PINS = (Traits::id == ArchId::ARCH_ID_AVR) ? static_cast<uint8_t>(bridge::config::DIGITAL_PINS) :
+                                 (Traits::id == ArchId::ARCH_ID_HOST) ? static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS) :
+                                 static_cast<uint8_t>(bridge::config::DIGITAL_PINS);
 
-constexpr uint8_t ANALOG_PINS = (Traits::id == ArchId::AVR) ? bridge::config::ANALOG_PINS :
-                                (Traits::id == ArchId::HOST) ? bridge::config::SAMD_ANALOG_PINS : 0;
+constexpr uint8_t ANALOG_PINS = (Traits::id == ArchId::ARCH_ID_AVR) ? static_cast<uint8_t>(bridge::config::ANALOG_PINS) :
+                                (Traits::id == ArchId::ARCH_ID_HOST) ? static_cast<uint8_t>(bridge::config::SAMD_ANALOG_PINS) : 0;
 
 #if defined(BRIDGE_HOST_TEST)
 constexpr char kHostFilesystemRoot[] = "/tmp/mcubridge-host-fs";
@@ -93,7 +89,7 @@ bool resolve_to_full_path(etl::string_view path, PathString& full_path_out) {
 bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
 
 void forceSafeState() {
-  etl::array<uint8_t, DIGITAL_PINS> dummy = {};
+  etl::array<uint8_t, static_cast<size_t>((Traits::id == ArchId::ARCH_ID_AVR) ? bridge::config::DIGITAL_PINS : bridge::config::SAMD_DIGITAL_PINS)> dummy = {};
   uint8_t current_pin = 0;
   (void)etl::for_each(dummy.begin(), dummy.end(), [&](uint8_t) {
     if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
@@ -106,14 +102,14 @@ void forceSafeState() {
 }
 
 uint16_t getFreeMemory() {
-  if constexpr (Traits::id == ArchId::AVR) {
+  if constexpr (Traits::id == ArchId::ARCH_ID_AVR) {
 #if defined(ARDUINO_ARCH_AVR)
     int v;
     return static_cast<uint16_t>(reinterpret_cast<uintptr_t>(&v) - (__brkval == 0 ? reinterpret_cast<uintptr_t>(&__heap_start) : reinterpret_cast<uintptr_t>(__brkval)));
 #else
     return Traits::default_free_memory;
 #endif
-  } else if constexpr (Traits::id == ArchId::ESP32) {
+  } else if constexpr (Traits::id == ArchId::ARCH_ID_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
     return static_cast<uint16_t>(ESP.getFreeHeap());
 #else
@@ -126,11 +122,11 @@ uint16_t getFreeMemory() {
 void init() {
   forceSafeState();
   if constexpr (bridge::config::ENABLE_WATCHDOG) {
-    if constexpr (Traits::id == ArchId::AVR) {
+    if constexpr (Traits::id == ArchId::ARCH_ID_AVR) {
 #if defined(ARDUINO_ARCH_AVR)
       wdt_enable(WDTO_4S);
 #endif
-    } else if constexpr (Traits::id == ArchId::ESP32) {
+    } else if constexpr (Traits::id == ArchId::ARCH_ID_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
       esp_task_wdt_init(4, true); esp_task_wdt_add(nullptr);
 #endif
@@ -138,8 +134,8 @@ void init() {
   }
 }
 
-bool hasSD() { return (Traits::id == ArchId::HOST); }
-bool hasSPI() { return (Traits::id == ArchId::HOST); }
+bool hasSD() { return (Traits::id == ArchId::ARCH_ID_HOST); }
+bool hasSPI() { return (Traits::id == ArchId::ARCH_ID_HOST); }
 
 etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
 #if defined(BRIDGE_HOST_TEST)

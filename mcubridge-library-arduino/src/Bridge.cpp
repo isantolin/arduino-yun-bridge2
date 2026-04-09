@@ -1,4 +1,5 @@
 #include "Bridge.h"
+#include "hal/ArchTraits.h"
 #include "hal/progmem_compat.h"
 #include "services/SPIService.h"
 #include "services/Console.h"
@@ -241,13 +242,7 @@ void BridgeClass::_handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg)
 void BridgeClass::_handleEnterBootloader(const rpc::payload::EnterBootloader& msg) {
   if (msg.magic == rpc::RPC_BOOTLOADER_MAGIC) {
     this->flushStream(); delay(bridge::config::BOOTLOADER_DELAY_MS);
-#if defined(ARDUINO_ARCH_AVR)
-    wdt_enable(WDTO_15MS); spin: goto spin;
-#elif defined(ARDUINO_ARCH_ESP32)
-    ESP.restart();
-#elif defined(ARDUINO_ARCH_SAMD)
-    NVIC_SystemReset();
-#endif
+    bridge::hal::CurrentArchTraits::reset();
   }
 }
 

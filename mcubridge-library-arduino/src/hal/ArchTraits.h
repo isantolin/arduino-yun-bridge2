@@ -4,14 +4,20 @@
 #include <stdint.h>
 #include <Arduino.h>
 
+#if defined(ARDUINO_ARCH_AVR)
+#include <avr/wdt.h>
+#elif defined(ARDUINO_ARCH_ESP32)
+#include <esp_task_wdt.h>
+#endif
+
 namespace bridge::hal {
 
 enum class ArchId : uint8_t {
-  UNKNOWN = 0,
-  AVR = 1,
-  ESP32 = 2,
-  SAMD = 3,
-  HOST = 4
+  ARCH_ID_UNKNOWN = 0,
+  ARCH_ID_AVR = 1,
+  ARCH_ID_ESP32 = 2,
+  ARCH_ID_SAMD = 3,
+  ARCH_ID_HOST = 4
 };
 
 template <ArchId Id>
@@ -20,47 +26,47 @@ struct ArchTraits {
   static constexpr bool has_wdt = false;
   static constexpr bool is_harvard = false;
   static constexpr uint16_t default_free_memory = 0;
+  static void reset() {}
 };
 
 #if defined(ARDUINO_ARCH_AVR)
 template <>
-struct ArchTraits<ArchId::AVR> {
-  static constexpr ArchId id = ArchId::AVR;
+struct ArchTraits<ArchId::ARCH_ID_AVR> {
+  static constexpr ArchId id = ArchId::ARCH_ID_AVR;
   static constexpr bool has_wdt = true;
   static constexpr bool is_harvard = true;
   static constexpr uint16_t default_free_memory = 2048;
   static void reset() {
-#include <avr/wdt.h>
     wdt_enable(WDTO_15MS);
-    while(true);
+    while(true) { /* wait for watchdog */ }
   }
 };
-#define BRIDGE_CURRENT_ARCH ArchId::AVR
+#define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ID_AVR
 #elif defined(ARDUINO_ARCH_ESP32)
 template <>
-struct ArchTraits<ArchId::ESP32> {
-  static constexpr ArchId id = ArchId::ESP32;
+struct ArchTraits<ArchId::ARCH_ID_ESP32> {
+  static constexpr ArchId id = ArchId::ARCH_ID_ESP32;
   static constexpr bool has_wdt = true;
   static constexpr bool is_harvard = false;
   static constexpr uint16_t default_free_memory = 320000;
   static void reset() { ESP.restart(); }
 };
-#define BRIDGE_CURRENT_ARCH ArchId::ESP32
+#define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ID_ESP32
 #elif defined(BRIDGE_HOST_TEST)
 template <>
-struct ArchTraits<ArchId::HOST> {
-  static constexpr ArchId id = ArchId::HOST;
+struct ArchTraits<ArchId::ARCH_ID_HOST> {
+  static constexpr ArchId id = ArchId::ARCH_ID_HOST;
   static constexpr bool has_wdt = false;
   static constexpr bool is_harvard = false;
   static constexpr uint16_t default_free_memory = 65535;
   static void reset() {}
 };
-#define BRIDGE_CURRENT_ARCH ArchId::HOST
+#define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ID_HOST
 #else
-#define BRIDGE_CURRENT_ARCH ArchId::UNKNOWN
+#define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ID_UNKNOWN
 #endif
 
-using CurrentArchTraits = ArchTraits<BRIDGE_CURRENT_ARCH>;
+using CurrentArchTraits = ArchTraits<BRIDGE_CURRENT_ARCH_ID>;
 
 } // namespace bridge::hal
 

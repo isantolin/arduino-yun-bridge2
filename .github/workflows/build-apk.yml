@@ -18,11 +18,11 @@ jobs:
     timeout-minutes: 330
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Cache layer 1: Downloaded source tarballs (very stable, survives build script changes)
       - name: Cache Downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dl
           key: ${{ runner.os }}-openwrt-dl-25.12.2
@@ -31,7 +31,7 @@ jobs:
 
       # Cache layer 2: Host toolchain (SDK Python, host tools — expensive to rebuild, rarely changes)
       - name: Cache Host Toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             openwrt-sdk/staging_dir/hostpkg
@@ -42,7 +42,7 @@ jobs:
 
       # Cache layer 3: Full SDK (staging_dir/target, build_dir, feeds)
       - name: Cache OpenWrt SDK
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: openwrt-sdk
           key: ${{ runner.os }}-openwrt-sdk-25.12.2-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
@@ -61,7 +61,7 @@ jobs:
           ./1_compile.sh --skip-host-deps
 
       - name: Upload APK Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openwrt-apk-packages
           path: bin/
@@ -74,7 +74,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Verification Dependencies
         run: |
@@ -82,7 +82,7 @@ jobs:
           sudo apt-get install -y qemu-system-mips python3-pexpect wget e2fsprogs
 
       - name: Download APK Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: openwrt-apk-packages
           path: bin-download/

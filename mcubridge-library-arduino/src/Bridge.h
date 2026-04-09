@@ -250,7 +250,7 @@ class BridgeClass : public etl::observable<BridgeObserver, 4> {
     etl::array<uint16_t, bridge::config::RX_HISTORY_SIZE> buffer;
     uint8_t head = 0;
     void push(uint16_t seq) { buffer[head] = seq; head = (head + 1) % bridge::config::RX_HISTORY_SIZE; }
-    bool exists(uint16_t seq) const { for (auto s : buffer) if (s == seq) return true; return false; }
+    bool exists(uint16_t seq) const { return etl::find(buffer.begin(), buffer.end(), seq) != buffer.end(); }
     void clear() { buffer.fill(0xFFFF); }
   } _rx_history;
   bool _tx_enabled;

@@ -80,9 +80,10 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
                               etl::span<const uint8_t> b) {
   if (a.size() != b.size()) return false;
   volatile uint8_t result = 0;
-  for (size_t i = 0; i < a.size(); i++) {
-    result |= a[i] ^ b[i];
-  }
+  auto it_b = b.begin();
+  (void)etl::for_each(a.begin(), a.end(), [&](uint8_t val_a) {
+    result |= val_a ^ *it_b++;
+  });
   return result == 0;
 }
 

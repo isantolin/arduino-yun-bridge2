@@ -30,13 +30,17 @@ size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
   SPI.beginTransaction(_settings);
   // [SIL-2] Timeout protection for SPI
   uint32_t start = bridge::now_ms();
-  for (size_t i = 0; i < buffer.size(); ++i) {
+  auto timeout_it = etl::find_if(buffer.begin(), buffer.end(), [&](uint8_t& b) {
     if (bridge::now_ms() - start > rpc::RPC_SPI_TIMEOUT_MS) {
-      // Hardware failure
-      SPI.endTransaction();
-      return 0; // The caller should ideally handle this
+      return true; // Hardware failure (timeout)
     }
-    buffer[i] = SPI.transfer(buffer[i]);
+    b = SPI.transfer(b);
+    return false;
+  });
+
+  if (timeout_it != buffer.end()) {
+    SPI.endTransaction();
+    return 0;
   }
   SPI.endTransaction();
   return buffer.size();

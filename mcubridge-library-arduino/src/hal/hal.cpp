@@ -1,8 +1,10 @@
 #include "hal.h"
+#include "ArchTraits.h"
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
 #include <etl/bitset.h>
 #include <etl/string.h>
+#include <etl/algorithm.h>
 #include <etl/to_string.h>
 #include <etl/binary.h>
 
@@ -24,266 +26,164 @@ extern "C" {
 }
 #elif defined(ARDUINO_ARCH_ESP32)
 #include <esp_task_wdt.h>
-#elif defined(ARDUINO_ARCH_ESP8266)
-#include <Arduino.h>
 #endif
 
 namespace bridge::hal {
 
 namespace {
-// [SIL-2] Use constexpr for compile-time architecture identification
-#if defined(BRIDGE_HOST_TEST)
-constexpr uint8_t CURRENT_ARCH = rpc::RPC_ARCH_SAMD;
-constexpr uint8_t DIGITAL_PINS = bridge::config::SAMD_DIGITAL_PINS;
-constexpr uint8_t ANALOG_PINS = bridge::config::SAMD_ANALOG_PINS;
-#elif defined(ARDUINO_ARCH_AVR)
-constexpr uint8_t CURRENT_ARCH = rpc::RPC_ARCH_AVR;
-constexpr uint8_t DIGITAL_PINS = bridge::config::DIGITAL_PINS;
-constexpr uint8_t ANALOG_PINS = bridge::config::ANALOG_PINS;
-#elif defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM)
-constexpr uint8_t CURRENT_ARCH = rpc::RPC_ARCH_SAMD;
-constexpr uint8_t DIGITAL_PINS = bridge::config::SAMD_DIGITAL_PINS;
-constexpr uint8_t ANALOG_PINS = bridge::config::SAMD_ANALOG_PINS;
-#else
-constexpr uint8_t CURRENT_ARCH = 0; // Unknown
-constexpr uint8_t DIGITAL_PINS = bridge::config::FALLBACK_MAX_PIN;
-constexpr uint8_t ANALOG_PINS = 0;
-#endif
+using Traits = CurrentArchTraits;
+
+constexpr uint8_t CURRENT_ARCH = (Traits::id == ArchId::AVR) ? rpc::RPC_ARCH_AVR :
+                                 (Traits::id == ArchId::HOST) ? rpc::RPC_ARCH_SAMD : 0;
+
+constexpr uint8_t DIGITAL_PINS = (Traits::id == ArchId::AVR) ? bridge::config::DIGITAL_PINS :
+                                 (Traits::id == ArchId::HOST) ? bridge::config::SAMD_DIGITAL_PINS :
+                                 bridge::config::DIGITAL_PINS;
+
+constexpr uint8_t ANALOG_PINS = (Traits::id == ArchId::AVR) ? bridge::config::ANALOG_PINS :
+                                (Traits::id == ArchId::HOST) ? bridge::config::SAMD_ANALOG_PINS : 0;
 
 #if defined(BRIDGE_HOST_TEST)
 constexpr char kHostFilesystemRoot[] = "/tmp/mcubridge-host-fs";
 constexpr size_t kHostFilesystemRootLength = sizeof(kHostFilesystemRoot) - 1U;
-constexpr size_t kHostFilesystemPathCapacity =
-    kHostFilesystemRootLength + rpc::RPC_MAX_FILEPATH_LENGTH + 2U;
-
+constexpr size_t kHostFilesystemPathCapacity = kHostFilesystemRootLength + rpc::RPC_MAX_FILEPATH_LENGTH + 2U;
 using PathString = etl::string<kHostFilesystemPathCapacity>;
 
 bool ensure_host_directory(const char* path) {
-  if (::mkdir(path, 0700) == 0) {
-    return true;
-  }
+  if (::mkdir(path, 0700) == 0) return true;
   return errno == EEXIST;
 }
 
 bool is_host_path_safe(const char* path) {
-  if (path == nullptr || path[0] == rpc::RPC_NULL_TERMINATOR || path[0] == '/') {
-    return false;
-  }
-
+  if (path == nullptr || path[0] == rpc::RPC_NULL_TERMINATOR || path[0] == '/') return false;
   etl::string_view p(path);
-  if (p.find('\\') != etl::string_view::npos) {
-    return false;
-  }
-  if (p.find("..") != etl::string_view::npos) {
-    return false;
-  }
-  return true;
+  return (p.find('\\') == etl::string_view::npos) && (p.find("..") == etl::string_view::npos);
 }
 
 bool resolve_host_path(const char* relative_path, PathString& output) {
-  if (!is_host_path_safe(relative_path) || !ensure_host_directory(kHostFilesystemRoot)) {
-    return false;
-  }
-
-  output.assign(kHostFilesystemRoot);
-  output.append("/");
-  output.append(relative_path);
+  if (!is_host_path_safe(relative_path) || !ensure_host_directory(kHostFilesystemRoot)) return false;
+  output.assign(kHostFilesystemRoot); output.append("/"); output.append(relative_path);
   return true;
 }
 
 bool ensure_host_parent_directories(const PathString& full_path) {
-  PathString path_buffer;
-  const size_t full_path_length = full_path.size();
-
-  if (full_path_length == 0U) {
-    return false; // GCOVR_EXCL_LINE — internal: resolve_host_path catches empty paths first
-  }
-
-  path_buffer = full_path;
-
+  if (full_path.empty()) return false;
+  PathString path_buffer = full_path;
   auto it = path_buffer.begin() + kHostFilesystemRootLength + 1U;
-  auto end = path_buffer.begin() + full_path_length;
+  auto end = path_buffer.end();
   bool success = true;
-
   (void)etl::find_if(it, end, [&](char& c) {
     if (c == '/') {
-      char original = c;
-      c = rpc::RPC_NULL_TERMINATOR;
-      if (!ensure_host_directory(path_buffer.c_str())) {
-        success = false;
-        return true; // Stop iterating
-      }
+      char original = c; c = rpc::RPC_NULL_TERMINATOR;
+      if (!ensure_host_directory(path_buffer.c_str())) { success = false; return true; }
       c = original;
     }
-    return false; // Continue iterating
+    return false;
   });
-
   return success;
 }
 
-/// Convert a string_view path to a resolved host filesystem path.
 bool resolve_to_full_path(etl::string_view path, PathString& full_path_out) {
-  PathString rel_path;
-  rel_path.assign(path.begin(), path.end());
+  PathString rel_path; rel_path.assign(path.begin(), path.end());
   return resolve_host_path(rel_path.c_str(), full_path_out);
 }
 #endif
 }
 
-bool isValidPin(const uint8_t pin) {
-  return pin < DIGITAL_PINS;
-}
+bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
 
 void forceSafeState() {
-  // [SIL-2] Ensure all potential actuator pins are in a safe state before any logic starts.
-  // This prevents spikes or unintended activations during MCU boot/reset.
   etl::array<uint8_t, DIGITAL_PINS> dummy = {};
   uint8_t current_pin = 0;
   (void)etl::for_each(dummy.begin(), dummy.end(), [&](uint8_t) {
     if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-      pinMode(current_pin, OUTPUT);
-      digitalWrite(current_pin, LOW);
+      ::pinMode(current_pin, OUTPUT); ::digitalWrite(current_pin, LOW);
     } else {
-      // Default: Using INPUT_PULLUP ensures pins are in a well-defined high-impedance state.
-      pinMode(current_pin, INPUT_PULLUP);
+      ::pinMode(current_pin, INPUT_PULLUP);
     }
     current_pin++;
   });
 }
 
 uint16_t getFreeMemory() {
+  if constexpr (Traits::id == ArchId::AVR) {
 #if defined(ARDUINO_ARCH_AVR)
-  int v;
-  return static_cast<uint16_t>(reinterpret_cast<uintptr_t>(&v) - (__brkval == 0 ? reinterpret_cast<uintptr_t>(&__heap_start) : reinterpret_cast<uintptr_t>(__brkval)));
-#elif defined(ARDUINO_ARCH_ESP32)
-  return static_cast<uint16_t>(ESP.getFreeHeap());
+    int v;
+    return static_cast<uint16_t>(reinterpret_cast<uintptr_t>(&v) - (__brkval == 0 ? reinterpret_cast<uintptr_t>(&__heap_start) : reinterpret_cast<uintptr_t>(__brkval)));
 #else
-  return bridge::config::FALLBACK_FREE_MEMORY;
+    return Traits::default_free_memory;
 #endif
+  } else if constexpr (Traits::id == ArchId::ESP32) {
+#if defined(ARDUINO_ARCH_ESP32)
+    return static_cast<uint16_t>(ESP.getFreeHeap());
+#else
+    return Traits::default_free_memory;
+#endif
+  }
+  return bridge::config::FALLBACK_FREE_MEMORY;
 }
 
 void init() {
-  // [SIL-2] Force all digital pins to a safe state (Input with Pullups) on boot
-  // to avoid floating states or accidental actuator activation.
   forceSafeState();
-
   if constexpr (bridge::config::ENABLE_WATCHDOG) {
+    if constexpr (Traits::id == ArchId::AVR) {
 #if defined(ARDUINO_ARCH_AVR)
-    wdt_enable(WDTO_4S);
-#elif defined(ARDUINO_ARCH_ESP32)
-    esp_task_wdt_init(4, true);
-    esp_task_wdt_add(nullptr);
-#elif defined(ARDUINO_ARCH_ESP8266)
-    ESP.wdtEnable(4000);
-#elif defined(ARDUINO_ARCH_SAMD)
-    // SAMD WDT initialization is usually board-specific; ensure generic safety.
+      wdt_enable(WDTO_4S);
 #endif
+    } else if constexpr (Traits::id == ArchId::ESP32) {
+#if defined(ARDUINO_ARCH_ESP32)
+      esp_task_wdt_init(4, true); esp_task_wdt_add(nullptr);
+#endif
+    }
   }
 }
 
-bool hasSD() {
-#if defined(BRIDGE_HOST_TEST)
-  return true; // Mock SD card availability for tests
-#else
-  return false;
-#endif
-}
-
-bool hasSPI() {
-#if defined(BRIDGE_HOST_TEST)
-  return true; // Mock SPI availability for tests
-#else
-  return false;
-#endif
-}
+bool hasSD() { return (Traits::id == ArchId::HOST); }
+bool hasSPI() { return (Traits::id == ArchId::HOST); }
 
 etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;
-  if (!resolve_to_full_path(path, full_path) ||
-      !ensure_host_parent_directories(full_path)) {
-    return etl::unexpected<HalError>(HalError::IO_ERROR);
-  }
-
+  if (!resolve_to_full_path(path, full_path) || !ensure_host_parent_directories(full_path)) return etl::unexpected<HalError>(HalError::IO_ERROR);
   FILE* file = fopen(full_path.c_str(), "wb");
-  if (file == nullptr) {
-    return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires filesystem-level failure
-  }
-
+  if (file == nullptr) return etl::unexpected<HalError>(HalError::IO_ERROR);
   const size_t bytes_written = fwrite(data.data(), 1U, data.size(), file);
-  const int flush_status = fflush(file);
-  const int close_status = fclose(file);
-  if ((bytes_written == data.size()) && (flush_status == 0) && (close_status == 0)) {
-    return {};
-  }
-  return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires write/flush/close failure
+  fflush(file); fclose(file);
+  return (bytes_written == data.size()) ? etl::expected<void, HalError>{} : etl::unexpected<HalError>(HalError::IO_ERROR);
 #else
-  // [SIL-2] Real hardware SD implementation would go here.
-  (void)path; (void)data;
-  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+  (void)path; (void)data; return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 #endif
 }
 
-etl::expected<ChunkResult, HalError> readFileChunk(
-    etl::string_view path,
-    size_t offset,
-    etl::span<uint8_t> buffer) {
+etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path, size_t offset, etl::span<uint8_t> buffer) {
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;
-  if (!resolve_to_full_path(path, full_path)) {
-    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
-  }
-
-  struct stat stat_buffer = {};
-  if ((::stat(full_path.c_str(), &stat_buffer) != 0) || !S_ISREG(stat_buffer.st_mode)) {
-    return etl::unexpected<HalError>(HalError::NOT_FOUND);
-  }
-
-  const size_t file_size = static_cast<size_t>(stat_buffer.st_size);
-  if (offset > file_size) {
-    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
-  }
-
+  if (!resolve_to_full_path(path, full_path)) return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
+  struct stat st = {};
+  if ((::stat(full_path.c_str(), &st) != 0) || !S_ISREG(st.st_mode)) return etl::unexpected<HalError>(HalError::NOT_FOUND);
+  const size_t file_size = static_cast<size_t>(st.st_size);
+  if (offset > file_size) return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   FILE* file = fopen(full_path.c_str(), "rb");
-  if (file == nullptr) {
-    return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires filesystem-level failure
-  }
-
-  if ((offset > 0U) && (fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) {
-    fclose(file); // GCOVR_EXCL_LINE — requires fseek failure
-    return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires fseek failure
-  }
-
+  if (file == nullptr) return etl::unexpected<HalError>(HalError::IO_ERROR);
+  if ((offset > 0U) && (fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) { fclose(file); return etl::unexpected<HalError>(HalError::IO_ERROR); }
   ChunkResult result = {};
   result.bytes_read = fread(buffer.data(), 1U, buffer.size(), file);
-  const bool read_failed = ferror(file) != 0;
-  const int close_status = fclose(file);
-  if (read_failed || (close_status != 0)) {
-    return etl::unexpected<HalError>(HalError::IO_ERROR); // GCOVR_EXCL_LINE — requires ferror/fclose failure
-  }
-
+  bool failed = ferror(file) != 0; fclose(file);
+  if (failed) return etl::unexpected<HalError>(HalError::IO_ERROR);
   result.has_more = (offset + result.bytes_read) < file_size;
   return result;
 #else
-  // [SIL-2] Real hardware SD implementation would go here.
-  (void)path; (void)offset; (void)buffer;
-  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+  (void)path; (void)offset; (void)buffer; return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 #endif
 }
 
 etl::expected<void, HalError> removeFile(etl::string_view path) {
 #if defined(BRIDGE_HOST_TEST)
   PathString full_path;
-  if (!resolve_to_full_path(path, full_path)) {
-    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
-  }
-  if (::unlink(full_path.c_str()) == 0) {
-    return {};
-  }
-  return etl::unexpected<HalError>(HalError::IO_ERROR);
+  if (!resolve_to_full_path(path, full_path)) return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
+  return (::unlink(full_path.c_str()) == 0) ? etl::expected<void, HalError>{} : etl::unexpected<HalError>(HalError::IO_ERROR);
 #else
-  (void)path;
-  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+  (void)path; return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 #endif
 }
 
@@ -307,21 +207,11 @@ uint32_t getCapabilities() {
 #if BRIDGE_ENABLE_SPI
   caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_SPI));
 #endif
-  if (hasSD()) {
-    caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_SD));
-  }
-
+  if (hasSD()) caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_SD));
   return static_cast<uint32_t>(caps.to_ulong());
 }
 
-void getPinCounts(uint8_t& digital, uint8_t& analog) {
-  digital = DIGITAL_PINS;
-  analog = ANALOG_PINS;
-}
-
-uint8_t getArchId() {
-  return CURRENT_ARCH;
-}
+void getPinCounts(uint8_t& digital, uint8_t& analog) { digital = DIGITAL_PINS; analog = ANALOG_PINS; }
+uint8_t getArchId() { return CURRENT_ARCH; }
 
 }  // namespace bridge::hal
-

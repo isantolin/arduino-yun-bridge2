@@ -9,6 +9,7 @@
 #undef min
 #undef max
 #include <etl/span.h>
+#include "protocol/BridgeEvents.h"
 #include "protocol/rpc_structs.h"
 
 class SPIServiceClass {
@@ -19,6 +20,9 @@ public:
   void end();
   void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
+
+  void notification(const MsgBridgeSynchronized&) {}
+  void notification(const MsgBridgeLost&) {}
 
   bool isInitialized() const { return _initialized; }
 

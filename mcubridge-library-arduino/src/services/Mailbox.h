@@ -9,7 +9,7 @@
 #include "protocol/BridgeEvents.h"
 #include "protocol/rpc_structs.h"
 
-class MailboxClass : public BridgeObserver {
+class MailboxClass {
  public:
   MailboxClass();
   void push(etl::span<const uint8_t> data);
@@ -21,8 +21,8 @@ class MailboxClass : public BridgeObserver {
   void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);
   void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
 
-  void notification(MsgBridgeSynchronized) override { /* ready */ }
-  void notification(MsgBridgeLost) override { _rx_buffer.clear(); }
+  void notification(MsgBridgeSynchronized) { /* ready */ }
+  void notification(MsgBridgeLost) { _rx_buffer.clear(); }
 
  private:
   etl::circular_buffer<uint8_t, bridge::config::MAILBOX_RX_BUFFER_SIZE> _rx_buffer;

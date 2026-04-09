@@ -10,7 +10,7 @@
 #include "protocol/BridgeEvents.h"
 #include "protocol/rpc_structs.h"
 
-class FileSystemClass : public BridgeObserver {
+class FileSystemClass {
  public:
   using FileSystemReadHandler = etl::delegate<void(etl::span<const uint8_t>)>;
 
@@ -24,8 +24,8 @@ class FileSystemClass : public BridgeObserver {
   void _onRemove(const rpc::payload::FileRemove& msg);
   void _onResponse(const rpc::payload::FileReadResponse& msg);
 
-  void notification(MsgBridgeSynchronized) override { /* ready */ }
-  void notification(MsgBridgeLost) override { /* cleanup */ }
+  void notification(MsgBridgeSynchronized) { /* ready */ }
+  void notification(MsgBridgeLost) { /* cleanup */ }
 
  private:
   FileSystemReadHandler _read_handler;

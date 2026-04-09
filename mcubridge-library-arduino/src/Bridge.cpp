@@ -459,3 +459,45 @@ BridgeClass Bridge(Serial);
 namespace etl {
 void __attribute__((weak)) __attribute__((unused)) handle_error(const etl::exception& e) { (void)e; Bridge.enterSafeState(); }
 }  // namespace etl
+
+void BridgeClass::notify_observers(const MsgBridgeSynchronized& msg) {
+#if BRIDGE_ENABLE_CONSOLE
+  Console.notification(msg);
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+  Mailbox.notification(msg);
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  FileSystem.notification(msg);
+#endif
+#if BRIDGE_ENABLE_DATASTORE
+  DataStore.notification(msg);
+#endif
+#if BRIDGE_ENABLE_PROCESS
+  Process.notification(msg);
+#endif
+#if BRIDGE_ENABLE_SPI
+  SPIService.notification(msg);
+#endif
+}
+
+void BridgeClass::notify_observers(const MsgBridgeLost& msg) {
+#if BRIDGE_ENABLE_CONSOLE
+  Console.notification(msg);
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+  Mailbox.notification(msg);
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  FileSystem.notification(msg);
+#endif
+#if BRIDGE_ENABLE_DATASTORE
+  DataStore.notification(msg);
+#endif
+#if BRIDGE_ENABLE_PROCESS
+  Process.notification(msg);
+#endif
+#if BRIDGE_ENABLE_SPI
+  SPIService.notification(msg);
+#endif
+}

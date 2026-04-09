@@ -68,9 +68,12 @@ namespace bridge::router {
   };
 }
 
-class BridgeClass : public etl::observable<BridgeObserver, 4> {
+class BridgeClass {
  public:
   explicit BridgeClass(Stream& stream);
+
+  void notify_observers(const MsgBridgeSynchronized& msg);
+  void notify_observers(const MsgBridgeLost& msg);
 
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();

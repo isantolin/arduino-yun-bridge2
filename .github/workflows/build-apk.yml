@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Compile APKs for OpenWrt 25.12.2
+    name: Compile APKs for OpenWrt 25.12.0
     runs-on: ubuntu-22.04
     timeout-minutes: 330
     steps:
@@ -25,7 +25,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: dl
-          key: ${{ runner.os }}-openwrt-dl-25.12.2
+          key: ${{ runner.os }}-openwrt-dl-25.12.0
           restore-keys: |
             ${{ runner.os }}-openwrt-dl-
 
@@ -36,18 +36,18 @@ jobs:
           path: |
             openwrt-sdk/staging_dir/hostpkg
             openwrt-sdk/staging_dir/host
-          key: ${{ runner.os }}-openwrt-host-25.12.2-${{ hashFiles('1_compile.sh') }}
+          key: ${{ runner.os }}-openwrt-host-25.12.0-${{ hashFiles('1_compile.sh') }}
           restore-keys: |
-            ${{ runner.os }}-openwrt-host-25.12.2-
+            ${{ runner.os }}-openwrt-host-25.12.0-
 
       # Cache layer 3: Full SDK (staging_dir/target, build_dir, feeds)
       - name: Cache OpenWrt SDK
         uses: actions/cache@v5
         with:
           path: openwrt-sdk
-          key: ${{ runner.os }}-openwrt-sdk-25.12.2-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
+          key: ${{ runner.os }}-openwrt-sdk-25.12.0-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-openwrt-sdk-25.12.2-
+            ${{ runner.os }}-openwrt-sdk-25.12.0-
 
       - name: Install Host Dependencies
         run: |

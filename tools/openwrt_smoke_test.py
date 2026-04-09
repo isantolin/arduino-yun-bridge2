@@ -31,7 +31,7 @@ def log_error(msg: str) -> None:
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-OPENWRT_VERSION = "25.12.2"
+OPENWRT_VERSION = "25.12.0"
 TARGET = "malta/be"
 BASE_URL = f"https://downloads.openwrt.org/releases/{OPENWRT_VERSION}/targets/{TARGET}"
 KERNEL_FILE = f"openwrt-{OPENWRT_VERSION}-malta-be-vmlinux.elf"

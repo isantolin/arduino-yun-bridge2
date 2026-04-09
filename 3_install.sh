@@ -3,7 +3,7 @@ set -eu
 
 # This file is part of Arduino MCU Ecosystem v2.
 # Copyright (C) 2025 Ignacio Santolin and contributors
-# Target: OpenWrt 25.12.2 (APK System)
+# Target: OpenWrt 25.12.0 (APK System)
 
 # Always run relative paths from the repository root
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"

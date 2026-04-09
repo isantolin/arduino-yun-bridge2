@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Current Release**: v2.8.0 (OpenWrt 25.12.2 final compatible)
+> **Current Release**: v2.8.0 (OpenWrt 25.12.0 final compatible)
 
 ## Completed (Q1 2026)
 

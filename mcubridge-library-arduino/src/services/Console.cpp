@@ -12,9 +12,9 @@ void ConsoleClass::begin() {
 
 void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
   const auto& data = msg.data;
-  for (auto b : data) {
+  etl::for_each(data.begin(), data.end(), [this](uint8_t b) {
     if (!_rx_buffer.full()) _rx_buffer.push(b);
-  }
+  });
 }
 
 void ConsoleClass::process() {

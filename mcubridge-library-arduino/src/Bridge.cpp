@@ -302,8 +302,13 @@ void BridgeClass::_onBaudrateChange() {
 }
 
 void BridgeClass::_onStartupStabilized() {
-  uint16_t drain_limit = bridge::config::STARTUP_DRAIN_FINAL; uint32_t start_ms = bridge::now_ms();
-  while (_stream.available() > 0 && drain_limit-- > 0 && (bridge::now_ms() - start_ms < bridge::config::SERIAL_TIMEOUT_MS)) _stream.read();
+  uint32_t start_ms = bridge::now_ms();
+  etl::array<uint8_t, bridge::config::STARTUP_DRAIN_FINAL> dummy = {};
+  (void)etl::find_if(dummy.begin(), dummy.end(), [&](uint8_t) {
+    if (_stream.available() <= 0 || (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) return true;
+    _stream.read();
+    return false;
+  });
   BRIDGE_ATOMIC_BLOCK { _fsm.stabilized(); }
 }
 

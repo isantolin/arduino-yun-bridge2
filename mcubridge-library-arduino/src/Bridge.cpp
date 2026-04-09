@@ -61,6 +61,7 @@ BridgeClass::BridgeClass(Stream& stream)
 }
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
+  rpc::security::secure_zero(etl::span<uint8_t>(_shared_secret.data(), _shared_secret.size()));
   _shared_secret.clear();
   if (secret != nullptr) {
     const size_t len = etl::min(strlen(secret), _shared_secret.capacity());

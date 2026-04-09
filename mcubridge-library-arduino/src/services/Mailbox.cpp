@@ -25,16 +25,16 @@ void MailboxClass::signalProcessed() {
 
 void MailboxClass::_onIncomingData(const rpc::payload::MailboxPush& msg) {
   _rx_buffer.clear();
-  for (auto b : msg.data) {
+  etl::for_each(msg.data.begin(), msg.data.end(), [this](uint8_t b) {
     if (!_rx_buffer.full()) _rx_buffer.push(b);
-  }
+  });
 }
 
 void MailboxClass::_onIncomingData(const rpc::payload::MailboxReadResponse& msg) {
   _rx_buffer.clear();
-  for (auto b : msg.content) {
+  etl::for_each(msg.content.begin(), msg.content.end(), [this](uint8_t b) {
     if (!_rx_buffer.full()) _rx_buffer.push(b);
-  }
+  });
 }
 
 void MailboxClass::_onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg) {

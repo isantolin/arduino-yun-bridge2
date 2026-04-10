@@ -162,7 +162,7 @@ def phase_expand(child: Any) -> None:
     send_and_wait(child, "chmod +x /root/2_expand.sh", timeout=5)
     send_and_wait(child, "umount /mnt", timeout=5)
 
-    # Pre-set UCI to skip interactive confirmation
+    # Pre-set UCI to skip interactive confirmation and enable internet
     send_and_wait(
         child,
         "uci set mcubridge.general=settings 2>/dev/null; "
@@ -171,11 +171,18 @@ def phase_expand(child: Any) -> None:
         timeout=10,
     )
 
-    # Bring up network for apk update via DHCP
-    child.sendline("udhcpc -i eth0 -q 2>/dev/null || true")
+    # Bring up network for apk update via proper UCI network config
+    send_and_wait(
+        child,
+        "uci set network.lan.proto=dhcp; "
+        "uci commit network; "
+        "/etc/init.d/network restart",
+        timeout=15,
+    )
+    
+    # Wait for network to establish
+    child.sendline("sleep 10")
     wait_for_prompt(child, timeout=15)
-    child.sendline("sleep 5")
-    wait_for_prompt(child, timeout=10)
 
     # Run with 512MB swap and target /dev/vdc
     # The script ends with sleep 5 + reboot
@@ -204,8 +211,17 @@ def phase_install(child: Any) -> None:
     send_and_wait(child, "cp /mnt/bin/*.apk /root/deploy/bin/", timeout=10)
     send_and_wait(child, "umount /mnt", timeout=5)
 
-    # Bring up network for apk update via DHCP on virtio-net
-    child.sendline("udhcpc -i eth0 -q 2>/dev/null || true")
+    # Bring up network for apk update via proper UCI network config
+    send_and_wait(
+        child,
+        "uci set network.lan.proto=dhcp; "
+        "uci commit network; "
+        "/etc/init.d/network restart",
+        timeout=15,
+    )
+    
+    # Wait for network to establish
+    child.sendline("sleep 10")
     wait_for_prompt(child, timeout=15)
 
     # Run non-interactively: pipe "n" for the PPP removal prompt

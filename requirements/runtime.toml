@@ -51,7 +51,7 @@ rationale = "Process supervision and zombie cleanup"
 [[dependency]]
 name = "prometheus-client"
 openwrt = "python3-prometheus-client"
-pip = "prometheus-client==0.24.1"
+pip = "prometheus-client==0.25.0"
 rationale = "Expose runtime metrics via the Prometheus Python client"
 
 [[dependency]]

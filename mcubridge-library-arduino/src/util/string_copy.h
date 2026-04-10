@@ -22,34 +22,6 @@ inline void copy_string(etl::string_view src, char* dst, size_t dst_size) {
   dst[to_copy] = rpc::RPC_NULL_TERMINATOR;
 }
 
-/**
- * @brief Join parts (command + args) into a single null-terminated string.
- */
-inline void copy_join(etl::string_view base, etl::span<const etl::string_view> parts, char* dst, size_t dst_size) {
-  if (dst_size == 0) return;
-
-  char* current = dst;
-  char* const end = dst + dst_size - 1; // Reserve room for null terminator
-
-  // Copy base string
-  const size_t base_len = etl::min(base.length(), static_cast<size_t>(end - current));
-  current = etl::copy_n(base.data(), base_len, current);
-
-  // Join parts with space separator
-  (void)etl::find_if(parts.begin(), parts.end(), [&](const etl::string_view& part) {
-    if (current >= end) return true;
-    
-    // Add separator if there is room for it and at least one character of the part
-    *current++ = ' ';
-    
-    const size_t part_len = etl::min(part.length(), static_cast<size_t>(end - current));
-    current = etl::copy_n(part.data(), part_len, current);
-    return false;
-  });
-
-  *current = rpc::RPC_NULL_TERMINATOR;
-}
-
 } // namespace util
 } // namespace rpc
 

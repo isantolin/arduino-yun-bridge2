@@ -58,7 +58,7 @@ inline constexpr bool is_reliable(uint16_t id) {
         (id == static_cast<uint16_t>(CommandId::CMD_SPI_SET_CONFIG));
 }
 
-inline constexpr bool is_compressed(uint16_t id) { return (id & RPC_CMD_FLAG_COMPRESSED) != 0; }
+[[maybe_unused]] inline constexpr bool is_compressed(uint16_t id) { return (id & RPC_CMD_FLAG_COMPRESSED) != 0; }
 
 namespace checksum {
 inline uint32_t compute(const Frame& f) {
@@ -128,7 +128,7 @@ class FrameParser {
 
 class FrameBuilder {
  public:
-  static size_t build(etl::span<uint8_t> buffer, uint16_t cmd_id, uint16_t seq_id,
+  [[maybe_unused]] static size_t build(etl::span<uint8_t> buffer, uint16_t cmd_id, uint16_t seq_id,
                       etl::span<const uint8_t> payload) {
     if (buffer.size() < (FRAME_HEADER_SIZE + payload.size() + CRC_TRAILER_SIZE)) return 0;
     Frame f = {};

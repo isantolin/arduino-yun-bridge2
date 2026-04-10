@@ -62,20 +62,4 @@ inline void copy_string(char* dest, const char* src, size_t n) {
   }
 }
 
-/**
- * @brief Safely copy typed data from PROGMEM or RAM.
- */
-template <typename T>
-inline void copy_from_progmem(T* dest, const T* src) {
-  if constexpr (bridge::config::IS_AVR) {
-#if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
-    memcpy_P(dest, src, sizeof(T));
-#else
-    *dest = *src;
-#endif
-  } else {
-    *dest = *src;
-  }
-}
-
 } // namespace bridge::hal

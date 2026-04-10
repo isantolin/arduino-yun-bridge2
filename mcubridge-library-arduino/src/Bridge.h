@@ -77,9 +77,9 @@ class BridgeClass {
   void process();
   bool isSynchronized() const;
   void enterSafeState();
-  void forceSafeState();
+  static void forceSafeState();
 
-  bool runPowerOnSelfTests();
+  static bool runPowerOnSelfTests();
 
   template <rpc::StatusCode S>
   void emitStatus() { emitStatus(S, etl::span<const uint8_t>()); }
@@ -103,8 +103,8 @@ class BridgeClass {
 
   using CommandHandler = etl::delegate<void(const rpc::Frame&)>;
   using StatusHandler = etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
-  void onCommand(CommandHandler h) { _command_handler = h; }
-  void onStatus(StatusHandler h) { _status_handler = h; }
+  [[maybe_unused]] void onCommand(CommandHandler h) { _command_handler = h; }
+  [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
   void _dispatchCommand(const rpc::Frame& frame);
@@ -173,10 +173,9 @@ class BridgeClass {
   [[nodiscard]] bool _sendFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);
   void _sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);
   [[nodiscard]] etl::expected<void, rpc::FrameError> _decompressFrame(const rpc::Frame& in, rpc::Frame& out);
-  void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
-  
-  template <typename T>
-  void _sendPbResponse(rpc::CommandId c, uint16_t seq, const T& packet) {
+  [[maybe_unused]] void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
+
+  template <typename T>  void _sendPbResponse(rpc::CommandId c, uint16_t seq, const T& packet) {
     msgpack::Encoder enc(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
     if (packet.encode(enc)) (void)sendFrame(c, seq, enc.result());
   }
@@ -193,8 +192,8 @@ class BridgeClass {
   void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
   void _handleSetTiming(const rpc::payload::HandshakeConfig& msg);
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
-  void _handleSpiBegin(const bridge::router::CommandContext& ctx);
-  void _handleSpiEnd(const bridge::router::CommandContext& ctx);
+  static void _handleSpiBegin(const bridge::router::CommandContext& ctx);
+  static void _handleSpiEnd(const bridge::router::CommandContext& ctx);
   void _handleSpiTransfer(const bridge::router::CommandContext& ctx);
   void _handleReceivedFrame(etl::span<const uint8_t> p);
   void onUnknownCommand(const bridge::router::CommandContext& ctx);

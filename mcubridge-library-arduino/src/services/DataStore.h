@@ -14,12 +14,12 @@
 class DataStoreClass {
  public:
   DataStoreClass();
-  void set(etl::string_view key, etl::span<const uint8_t> value);
+  static void set(etl::string_view key, etl::span<const uint8_t> value);
   void get(etl::string_view key, etl::delegate<void(etl::string_view, etl::span<const uint8_t>)> handler);
 
-  void _onResponse(const rpc::payload::DatastoreGetResponse& msg);
+  static void _onResponse(const rpc::payload::DatastoreGetResponse& msg);
 
-  void notification(MsgBridgeSynchronized) { /* ready */ }
+  static void notification(MsgBridgeSynchronized) { /* ready */ }
   void notification(MsgBridgeLost) { _pending_gets.clear(); }
 
   struct PendingGet { char key[16]; };

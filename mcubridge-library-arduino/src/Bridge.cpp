@@ -152,6 +152,16 @@ void BridgeClass::process() {
     _last_tick_ms = now;
   }
   _packet_serial.update(_stream);
+
+  static bool xoff_sent = false;
+  int available_bytes = _stream.available();
+  if (!xoff_sent && available_bytes > 48) {
+    signalXoff();
+    xoff_sent = true;
+  } else if (xoff_sent && available_bytes < 16) {
+    signalXon();
+    xoff_sent = false;
+  }
 }
 
 bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
@@ -477,10 +487,6 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
   });
 }
 
-void BridgeClass::_applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
-  _handleSetTiming(msg);
-}
-
 void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
   auto res = _frame_parser.parse(p);
   if (!res) { _last_parse_error = res.error(); emitStatus<rpc::StatusCode::STATUS_MALFORMED>(); return; }
@@ -521,6 +527,10 @@ void BridgeClass::_computeHandshakeTag(const etl::span<const uint8_t> nonce, etl
                              
   etl::copy_n(full_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH, tag.data());
   rpc::security::secure_zero(handshake_key); rpc::security::secure_zero(full_tag);
+}
+
+void BridgeClass::_applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
+  _handleSetTiming(msg);
 }
 
 bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {

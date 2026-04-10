@@ -135,7 +135,6 @@ void init() {
 }
 
 bool hasSD() { return (Traits::id == ArchId::ARCH_ID_HOST); }
-bool hasSPI() { return (Traits::id == ArchId::ARCH_ID_HOST); }
 
 etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
 #if defined(BRIDGE_HOST_TEST)

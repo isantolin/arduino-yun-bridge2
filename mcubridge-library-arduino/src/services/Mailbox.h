@@ -12,16 +12,16 @@
 class MailboxClass {
  public:
   MailboxClass();
-  void push(etl::span<const uint8_t> data);
-  void requestRead();
-  void requestAvailable();
-  void signalProcessed();
+  static void push(etl::span<const uint8_t> data);
+  [[maybe_unused]] static void requestRead();
+  [[maybe_unused]] static void requestAvailable();
+  [[maybe_unused]] static void signalProcessed();
 
   void _onIncomingData(const rpc::payload::MailboxPush& msg);
   void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);
-  void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
+  static void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
 
-  void notification(MsgBridgeSynchronized) { /* ready */ }
+  static void notification(MsgBridgeSynchronized) { /* ready */ }
   void notification(MsgBridgeLost) { _rx_buffer.clear(); }
 
  private:

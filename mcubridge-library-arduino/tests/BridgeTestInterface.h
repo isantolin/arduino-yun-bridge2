@@ -13,8 +13,8 @@ class TestAccessor {
 
   bool isAwaitingAck() const { return _bridge._fsm.isAwaitingAck(); }
   bool isFault() const { return _bridge._fsm.isFault(); }
-  bool isUnsynchronized() const { return _bridge._fsm.get_state_id() == bridge::fsm::StateId::UNSYNCHRONIZED; }
-  bool getStartupStabilizing() const { return _bridge._fsm.get_state_id() == bridge::fsm::StateId::STARTUP; }
+  bool isUnsynchronized() const { return _bridge._fsm.get_bridge_state() == bridge::fsm::StateId::UNSYNCHRONIZED; }
+  bool getStartupStabilizing() const { return _bridge._fsm.get_bridge_state() == bridge::fsm::StateId::STARTUP; }
 
   void onStartupStabilized() { _bridge._onStartupStabilized(); }
   void dispatch(const rpc::Frame& frame) { _bridge._dispatchCommand(frame); }

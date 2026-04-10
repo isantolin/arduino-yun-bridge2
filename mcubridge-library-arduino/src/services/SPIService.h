@@ -21,10 +21,8 @@ public:
   void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
-  void notification(const MsgBridgeSynchronized&) {}
-  void notification(const MsgBridgeLost&) {}
-
-  bool isInitialized() const { return _initialized; }
+  static void notification(const MsgBridgeSynchronized&) {}
+  static void notification(const MsgBridgeLost&) {}
 
 private:
   bool _initialized;

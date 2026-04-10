@@ -241,7 +241,7 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
 
 static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
                                      unsigned long baudrate = 0,
-                                     const char* secret = "test_secret_1234567890123456") {
+                                     const char* secret = "top-secret") {
   bridge.~BridgeClass();
   new (&bridge) BridgeClass(stream);
   if (baudrate) {

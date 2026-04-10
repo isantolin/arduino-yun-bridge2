@@ -29,7 +29,7 @@ void test_bridge_reset_state() {
   TEST_ASSERT(ba.isUnsynchronized());
 
   localBridge.enterSafeState();
-  TEST_ASSERT(ba.isUnsynchronized());
+  TEST_ASSERT(ba.getStartupStabilizing());
 }
 
 void test_bridge_is_recent_duplicate_edge_cases() {

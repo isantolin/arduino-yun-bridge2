@@ -80,7 +80,7 @@ void test_mutual_auth_failure_wrong_tag() {
   sync_frame.header.payload_length = 48;
   
   accessor.dispatch(sync_frame);
-  TEST_ASSERT(accessor.isUnsynchronized());
+  TEST_ASSERT(accessor.getStartupStabilizing());
 }
 
 void test_fsm_timeout_to_unsynchronized() {

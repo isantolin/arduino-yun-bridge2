@@ -20,11 +20,11 @@ struct BridgeFsm : public etl::fsm {
   BridgeFsm() : etl::fsm(0), _state(StateId::STARTUP) {}
 
   void begin() { _state = StateId::STARTUP; }
-  void resetFsm() { _state = StateId::UNSYNCHRONIZED; }
+  void resetFsm() { _state = StateId::STARTUP; }
   void stabilized() { if (_state == StateId::STARTUP) _state = StateId::UNSYNCHRONIZED; }
   void handshakeStart() { if (_state == StateId::UNSYNCHRONIZED) _state = StateId::HANDSHAKE; }
   void handshakeComplete() { if (_state == StateId::HANDSHAKE) _state = StateId::SYNCHRONIZED; }
-  void handshakeFailed() { _state = StateId::UNSYNCHRONIZED; }
+  void handshakeFailed() { _state = StateId::STARTUP; }
   void sendCritical() { if (_state == StateId::SYNCHRONIZED) _state = StateId::AWAITING_ACK; }
   void ackReceived() { if (_state == StateId::AWAITING_ACK) _state = StateId::SYNCHRONIZED; }
   void timeout() { _state = StateId::FAULT; }

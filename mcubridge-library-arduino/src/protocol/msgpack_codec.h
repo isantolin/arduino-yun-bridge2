@@ -4,7 +4,7 @@
  *
  * Minimal MsgPack encoder/decoder for embedded targets.
  * Supports only the subset used by the MCU Bridge protocol:
- *   fixarray, fixint/uint8/uint16/uint32, bin8/bin16, fixstr/str8.
+ *   fixarray, array16/32, fixint/uint8/uint16/uint32, bin8/16/32, fixstr/str8/16/32.
  * Header-only, no heap allocation, ETL byte-stream based.
  */
 #ifndef MSGPACK_CODEC_H
@@ -37,7 +37,10 @@ class Encoder {
 
   void write_array(uint8_t count) {
     if (count <= rpc::MSGPACK_FIXARRAY_VALUE_MASK) { put(static_cast<uint8_t>(rpc::MSGPACK_FIXARRAY_MASK | count)); }
-    else { _ok = false; }
+    else {
+      put(0xDC); // array16
+      put_multi(static_cast<uint16_t>(count));
+    }
   }
 
   template <typename T>
@@ -69,25 +72,31 @@ class Encoder {
 
   void write_bin(etl::span<const uint8_t> data) {
     const size_t len = data.size();
-    if (len <= rpc::MSGPACK_UINT8_MAX_VAL) { 
-      put(rpc::MSGPACK_BIN8); 
+    if (len <= 255) { 
+      put(0xC4); // bin8
       put(static_cast<uint8_t>(len)); 
-    } else { 
-      put(rpc::MSGPACK_BIN16); 
+    } else if (len <= 65535) { 
+      put(0xC5); // bin16
       put_multi(static_cast<uint16_t>(len)); 
+    } else {
+      put(0xC6); // bin32
+      put_multi(static_cast<uint32_t>(len));
     }
     write_bytes(data.data(), len);
   }
 
   void write_str(const char* s, size_t len) {
-    if (len <= rpc::MSGPACK_FIXSTR_VALUE_MASK) { 
-      put(static_cast<uint8_t>(rpc::MSGPACK_FIXSTR_MASK | len)); 
-    } else if (len <= rpc::MSGPACK_UINT8_MAX_VAL) { 
-      put(rpc::MSGPACK_STR8); 
+    if (len <= 31) { 
+      put(static_cast<uint8_t>(0xA0 | len)); 
+    } else if (len <= 255) { 
+      put(0xD9); // str8
       put(static_cast<uint8_t>(len)); 
-    } else { 
-      _ok = false; 
-      return; 
+    } else if (len <= 65535) {
+      put(0xDA); // str16
+      put_multi(static_cast<uint16_t>(len));
+    } else {
+      put(0xDB); // str32
+      put_multi(static_cast<uint32_t>(len));
     }
     write_bytes(reinterpret_cast<const uint8_t*>(s), len);
   }
@@ -120,11 +129,11 @@ class Decoder {
 
   bool ok() const { return _ok; }
 
-  uint8_t read_array() {
+  uint32_t read_array() {
     const uint8_t b = get();
-    if ((b & rpc::MSGPACK_FIXARRAY_TYPE_MASK) == rpc::MSGPACK_FIXARRAY_MASK) { 
-      return static_cast<uint8_t>(b & rpc::MSGPACK_FIXARRAY_VALUE_MASK); 
-    }
+    if ((b & 0xF0) == 0x90) { return b & 0x0F; }
+    if (b == 0xDC) { return get_multi<uint16_t>(); }
+    if (b == 0xDD) { return get_multi<uint32_t>(); }
     _ok = false;
     return 0;
   }
@@ -134,31 +143,24 @@ class Decoder {
 
   uint32_t read_uint32() {
     const uint8_t b = get();
-    if (b <= rpc::MSGPACK_POSITIVE_FIXINT_MAX) { return b; }
-    if (b == rpc::MSGPACK_UINT8_FMT)  { return get(); }
-    if (b == rpc::MSGPACK_UINT16_FMT) { return get_multi<uint16_t>(); }
-    if (b == rpc::MSGPACK_UINT32_FMT) { return get_multi<uint32_t>(); }
+    if (b <= 0x7F) { return b; }
+    if (b == 0xCC) { return get(); }
+    if (b == 0xCD) { return get_multi<uint16_t>(); }
+    if (b == 0xCE) { return get_multi<uint32_t>(); }
     _ok = false;
     return 0;
   }
 
-  /** Read bin field, returning a zero-copy view into the source buffer.
-   *  WARNING: The returned span's lifetime is tied to the source buffer.
-   *  Consume the data before the underlying frame buffer is overwritten. */
   [[nodiscard]] etl::span<const uint8_t> read_bin_view() {
-    const size_t len = read_bin_length();
+    const size_t len = read_data_length();
     if (!_ok || _reader.available_bytes() < len) { _ok = false; return {}; }
     auto view = _reader.read<uint8_t>(len);
     if (!view.has_value()) { _ok = false; return {}; }
     return view.value();
   }
 
-  /** Read str field, returning a zero-copy view into the source buffer.
-   *  WARNING: The returned span's lifetime is tied to the source buffer.
-   *  Consume the data before the underlying frame buffer is overwritten.
-   *  The string is NOT null-terminated. */
   [[nodiscard]] etl::span<const char> read_str_view() {
-    const size_t len = read_str_length();
+    const size_t len = read_data_length();
     if (!_ok || _reader.available_bytes() < len) { _ok = false; return {}; }
     auto view = _reader.read<uint8_t>(len);
     if (!view.has_value()) { _ok = false; return {}; }
@@ -183,32 +185,20 @@ class Decoder {
     return 0;
   }
 
-  size_t read_bin_length() {
+  size_t read_data_length() {
     const uint8_t b = get();
-    if (b == rpc::MSGPACK_BIN8)  { return get(); }
-    if (b == rpc::MSGPACK_BIN16) { return get_multi<uint16_t>(); }
+    if ((b & 0xE0) == 0xA0) { return b & 0x1F; } // fixstr
+    if (b == 0xD9 || b == 0xC4) { return get(); } // str8, bin8
+    if (b == 0xDA || b == 0xC5) { return get_multi<uint16_t>(); } // str16, bin16
+    if (b == 0xDB || b == 0xC6) { return get_multi<uint32_t>(); } // str32, bin32
     _ok = false;
     return 0;
-  }
-
-  size_t read_str_length() {
-    const uint8_t b = get();
-    if ((b & rpc::MSGPACK_FIXSTR_TYPE_MASK) == static_cast<uint8_t>(rpc::MSGPACK_FIXSTR_MASK & rpc::MSGPACK_FIXSTR_TYPE_MASK)) { 
-      return static_cast<uint8_t>(b & rpc::MSGPACK_FIXSTR_VALUE_MASK); 
-    }
-    if (b == rpc::MSGPACK_STR8) { return get(); }
-    _ok = false;
-    return 0;
-  }
-
-  void skip(size_t n) {
-    if (!_ok || !_reader.skip<uint8_t>(n)) { _ok = false; }
   }
 
   etl::byte_stream_reader _reader;
   bool _ok = true;
 };
 
-}  // namespace msgpack
+} // namespace msgpack
 
-#endif  // MSGPACK_CODEC_H
+#endif

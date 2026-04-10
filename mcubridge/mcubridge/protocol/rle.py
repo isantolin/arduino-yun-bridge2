@@ -71,7 +71,7 @@ RLE_DECODER: Construct = Struct(
         )
     ),
     Terminated,
-)
+).compile()
 
 
 def should_compress(payload: bytes) -> bool:
@@ -128,9 +128,11 @@ def encode(uncompressed: bytes) -> bytes:
 
 
 def decode(compressed: bytes) -> bytes:
-    """Decompress RLE data using declarative construct decoder."""
+    """Decompress RLE data using the declarative decoder."""
+    if not compressed:
+        return b""
     try:
         obj = RLE_DECODER.parse(compressed)
         return b"".join(obj.chunks)
     except Exception as e:
-        raise ValueError(f"RLE decompression failed: {e}") from e
+        raise ValueError(f"RLE decode failed: {e}") from e

@@ -31,6 +31,7 @@ static constexpr uint32_t SERIAL_TIMEOUT_MS = 1000;
 static constexpr uint32_t BAUDRATE_CHANGE_DELAY_MS = 50;
 static constexpr uint32_t BOOTLOADER_DELAY_MS = 100;
 static constexpr uint32_t STARTUP_STABILIZATION_MS = 500;
+static constexpr uint32_t HANDSHAKE_RETRY_DELAY_MS = 500;
 static constexpr uint16_t STARTUP_DRAIN_FINAL = 256;
 
 // --- Reliability ---

@@ -26,6 +26,7 @@ void test_fsm_timeout_fault() {
   auto ba = TestAccessor::create(localBridge);
 
   ba.setIdle();
+  ba.onStartupStabilized();
   ba.setSynchronized();
 
   TEST_ASSERT(localBridge.isSynchronized());
@@ -43,6 +44,7 @@ void test_crc_error_escalation() {
   auto ba = TestAccessor::create(localBridge);
 
   ba.setIdle();
+  ba.onStartupStabilized();
   ba.setLastParseError(rpc::FrameError::CRC_MISMATCH);
   TEST_ASSERT(ba.getLastParseError() == rpc::FrameError::CRC_MISMATCH);
 }
@@ -54,6 +56,7 @@ void test_ack_timeout_retry_exceeded() {
   auto ba = TestAccessor::create(localBridge);
 
   ba.setIdle();
+  ba.onStartupStabilized();
   ba.setSynchronized();
 
   uint8_t payload[] = {0x00};
@@ -67,7 +70,7 @@ void test_ack_timeout_retry_exceeded() {
   // Trigger timeout which should fault / reset
   ba.onAckTimeout();
   
-  TEST_ASSERT(ba.isUnsynchronized());
+  TEST_ASSERT(ba.isFault());
 }
 
 }  // namespace

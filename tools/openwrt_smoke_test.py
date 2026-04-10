@@ -171,6 +171,12 @@ def phase_expand(child: Any) -> None:
         timeout=10,
     )
 
+    # Bring up network for apk update via DHCP
+    child.sendline("udhcpc -i eth0 -q 2>/dev/null || true")
+    wait_for_prompt(child, timeout=15)
+    child.sendline("sleep 5")
+    wait_for_prompt(child, timeout=10)
+
     # Run with 512MB swap and target /dev/vdc
     # The script ends with sleep 5 + reboot
     child.sendline("/root/2_expand.sh 512 /dev/sdc")

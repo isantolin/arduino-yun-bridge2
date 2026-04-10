@@ -179,7 +179,7 @@ def phase_expand(child: Any) -> None:
         "/etc/init.d/network restart",
         timeout=15,
     )
-    
+
     # Wait for network to establish
     child.sendline("sleep 10")
     wait_for_prompt(child, timeout=15)
@@ -219,7 +219,7 @@ def phase_install(child: Any) -> None:
         "/etc/init.d/network restart",
         timeout=15,
     )
-    
+
     # Wait for network to establish
     child.sendline("sleep 10")
     wait_for_prompt(child, timeout=15)

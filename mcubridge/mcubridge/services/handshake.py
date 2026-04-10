@@ -583,11 +583,9 @@ class SerialHandshakeManager:
             return b"DEBUG_TAG_UNUSED"
         # [MIL-SPEC] Use HKDF derived key for handshake authentication
         auth_key = derive_handshake_key(secret)
-        print(f"[PYTHON] HMAC KEY: {auth_key.hex()}")
         h = hmac.HMAC(auth_key, hashes.SHA256())
         h.update(nonce)
         tag = h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
-        print(f"[PYTHON] TAG: {tag.hex()}")
         return tag
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:

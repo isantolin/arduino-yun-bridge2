@@ -102,7 +102,7 @@ bool run_cryptographic_self_tests() {
   sha256.finalize(actual.data(), rpc::RPC_SHA256_DIGEST_SIZE);
 
   if (memcmp_P(actual.data(), kat_sha256_expected, rpc::RPC_SHA256_DIGEST_SIZE) != 0)
-    return false; // GCOVR_EXCL_LINE — requires broken crypto engine
+    return false;
 
   // 2. HMAC-SHA256 KAT
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> key_buf;
@@ -117,7 +117,7 @@ bool run_cryptographic_self_tests() {
   sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(), rpc::RPC_SHA256_DIGEST_SIZE);
 
   if (memcmp_P(actual.data(), kat_hmac_expected, rpc::RPC_SHA256_DIGEST_SIZE) != 0)
-    return false; // GCOVR_EXCL_LINE — requires broken crypto engine
+    return false;
 
   return true;
 }

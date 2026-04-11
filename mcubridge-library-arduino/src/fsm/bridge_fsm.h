@@ -31,8 +31,8 @@ struct BridgeFsm : public etl::fsm {
 
   bool isSynchronized() const { return _state == StateId::SYNCHRONIZED || _state == StateId::AWAITING_ACK; }
   bool isAwaitingAck() const { return _state == StateId::AWAITING_ACK; }
-  bool isFault() const { return _state == StateId::FAULT; }
-  StateId get_bridge_state() const { return _state; }
+  [[maybe_unused]] bool isFault() const { return _state == StateId::FAULT; }
+  [[maybe_unused]] StateId get_bridge_state() const { return _state; }
 
  private:
   StateId _state;

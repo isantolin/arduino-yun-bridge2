@@ -107,13 +107,14 @@ class BridgeClass {
   [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
+  [[maybe_unused]] void _computeHandshakeTag(const etl::span<const uint8_t> nonce, etl::span<uint8_t> tag);
+
   void _dispatchCommand(const rpc::Frame& frame);
   void _onStartupStabilized();
   void _onAckTimeout();
   void _onRxDedupe();
   void _onBaudrateChange();
   void _retransmitLastFrame();
-  void _computeHandshakeTag(const etl::span<const uint8_t> nonce, etl::span<uint8_t> tag);
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   void _onPacketReceived(etl::span<const uint8_t> packet);
 
@@ -180,6 +181,37 @@ class BridgeClass {
     if (packet.encode(enc)) (void)sendFrame(c, seq, enc.result());
   }
 
+  void _handleSetBaudrateCommand(const bridge::router::CommandContext& ctx);
+  void _handleEnterBootloaderCommand(const bridge::router::CommandContext& ctx);
+  void _handleSetPinModeCommand(const bridge::router::CommandContext& ctx);
+  void _handleDigitalWriteCommand(const bridge::router::CommandContext& ctx);
+  void _handleAnalogWriteCommand(const bridge::router::CommandContext& ctx);
+  void _handleDigitalReadCommand(const bridge::router::CommandContext& ctx);
+  void _handleAnalogReadCommand(const bridge::router::CommandContext& ctx);
+  void _handleConsoleWriteCommand(const bridge::router::CommandContext& ctx);
+#if BRIDGE_ENABLE_DATASTORE
+  void _handleDataStoreGetResponseCommand(const bridge::router::CommandContext& ctx);
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+  void _handleMailboxPushCommand(const bridge::router::CommandContext& ctx);
+  void _handleMailboxReadResponseCommand(const bridge::router::CommandContext& ctx);
+  void _handleMailboxAvailableResponseCommand(const bridge::router::CommandContext& ctx);
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  void _handleFileWriteCommand(const bridge::router::CommandContext& ctx);
+  void _handleFileReadCommand(const bridge::router::CommandContext& ctx);
+  void _handleFileRemoveCommand(const bridge::router::CommandContext& ctx);
+  void _handleFileReadResponseCommand(const bridge::router::CommandContext& ctx);
+#endif
+#if BRIDGE_ENABLE_PROCESS
+  void _handleProcessKillCommand(const bridge::router::CommandContext& ctx);
+  void _handleProcessRunAsyncResponseCommand(const bridge::router::CommandContext& ctx);
+  void _handleProcessPollResponseCommand(const bridge::router::CommandContext& ctx);
+#endif
+#if BRIDGE_ENABLE_SPI
+  void _handleSpiSetConfigCommand(const bridge::router::CommandContext& ctx);
+#endif
+
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _handleStatusAck(const bridge::router::CommandContext& ctx);
   void _handleGetVersion(const bridge::router::CommandContext& ctx);
@@ -192,8 +224,8 @@ class BridgeClass {
   void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
   void _handleSetTiming(const rpc::payload::HandshakeConfig& msg);
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
-  static void _handleSpiBegin(const bridge::router::CommandContext& ctx);
-  static void _handleSpiEnd(const bridge::router::CommandContext& ctx);
+  void _handleSpiBegin(const bridge::router::CommandContext& ctx);
+  void _handleSpiEnd(const bridge::router::CommandContext& ctx);
   void _handleSpiTransfer(const bridge::router::CommandContext& ctx);
   void _handleReceivedFrame(etl::span<const uint8_t> p);
   void onUnknownCommand(const bridge::router::CommandContext& ctx);

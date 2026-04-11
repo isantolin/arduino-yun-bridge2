@@ -43,19 +43,25 @@ enum class FrameError {
   OVERFLOW
 };
 
+template <typename... Args>
+inline constexpr bool is_any_of(uint16_t id, Args... args) {
+    return ((id == static_cast<uint16_t>(args)) || ...);
+}
+
 inline constexpr bool is_reliable(uint16_t id) {
-    return
-        (id == static_cast<uint16_t>(CommandId::CMD_ENTER_BOOTLOADER)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_SET_PIN_MODE)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_DIGITAL_WRITE)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_ANALOG_WRITE)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_CONSOLE_WRITE)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_DATASTORE_PUT)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_MAILBOX_PUSH)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_FILE_WRITE)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_SPI_BEGIN)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_SPI_END)) ||
-        (id == static_cast<uint16_t>(CommandId::CMD_SPI_SET_CONFIG));
+    return is_any_of(id,
+        CommandId::CMD_ENTER_BOOTLOADER,
+        CommandId::CMD_SET_PIN_MODE,
+        CommandId::CMD_DIGITAL_WRITE,
+        CommandId::CMD_ANALOG_WRITE,
+        CommandId::CMD_CONSOLE_WRITE,
+        CommandId::CMD_DATASTORE_PUT,
+        CommandId::CMD_MAILBOX_PUSH,
+        CommandId::CMD_FILE_WRITE,
+        CommandId::CMD_SPI_BEGIN,
+        CommandId::CMD_SPI_END,
+        CommandId::CMD_SPI_SET_CONFIG
+    );
 }
 
 [[maybe_unused]] inline constexpr bool is_compressed(uint16_t id) { return (id & RPC_CMD_FLAG_COMPRESSED) != 0; }
@@ -63,19 +69,18 @@ inline constexpr bool is_reliable(uint16_t id) {
 namespace checksum {
 inline uint32_t compute(const Frame& f) {
   etl::crc32 crc;
-  uint8_t h[7];
-  etl::byte_stream_writer writer(h, 7, etl::endian::big);
+  etl::array<uint8_t, 7> h;
+  etl::byte_stream_writer writer(h.data(), h.size(), etl::endian::big);
   writer.write<uint8_t>(f.header.version);
   writer.write<uint16_t>(f.header.payload_length);
   writer.write<uint16_t>(f.header.command_id);
   writer.write<uint16_t>(f.header.sequence_id);
-  
-  crc.add(h, h + 7);
+
+  crc.add(h.begin(), h.end());
   crc.add(f.payload.begin(), f.payload.end());
   return crc.value();
 }
 }
-
 class FrameParser {
  public:
   static size_t serialize(const Frame& f, etl::span<uint8_t> buffer) {

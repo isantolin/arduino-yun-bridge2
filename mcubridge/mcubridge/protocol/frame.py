@@ -22,7 +22,6 @@ from construct import (
     Check,
     Checksum,
     Construct,
-    ConstructError,
     Enum,
     ExprAdapter,
     Flag,
@@ -33,6 +32,7 @@ from construct import (
     Struct,
     this,
 )
+from construct.core import ConstructError  # type: ignore[import-untyped]
 
 from . import protocol
 

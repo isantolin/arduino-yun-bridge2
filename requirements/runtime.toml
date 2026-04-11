@@ -99,7 +99,7 @@ rationale = "Structured logging with JSON output for production syslog"
 [[dependency]]
 name = "rich"
 openwrt = "python3-rich"
-pip = "rich==14.3.3"
+pip = "rich==14.3.4"
 rationale = "Beautiful terminal formatting for tools and logs"
 
 [[dependency]]

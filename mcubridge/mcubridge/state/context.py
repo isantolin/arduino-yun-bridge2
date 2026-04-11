@@ -524,7 +524,7 @@ class RuntimeState(msgspec.Struct):
 
     def configure(self, config: RuntimeConfig) -> None:
         # [SIL-2] Close existing persistent queues if they are being replaced
-        # to ensure that sqlite connections are not leaked.
+        # to ensure that resources (like diskcache files) are released.
         self.mailbox_queue.close()
         self.mailbox_incoming_queue.close()
         self.console_to_mcu_queue.close()
@@ -549,11 +549,8 @@ class RuntimeState(msgspec.Struct):
         self.process_max_concurrent = config.process_max_concurrent
 
         self.console_to_mcu_queue = BoundedByteDeque(
-            max_items=None,
             max_bytes=self.console_queue_limit_bytes,
         )
-        if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
-            self.console_to_mcu_queue.setup_persistence(Path(self.file_system_root) / "console")
 
         def _create_spool(subdir: str) -> PersistentQueue[bytes]:
             directory = None
@@ -578,7 +575,6 @@ class RuntimeState(msgspec.Struct):
     def enqueue_console_chunk(self, chunk: bytes) -> None:
         if not chunk:
             return
-        self.sync_console_queue_limits()
         evt = self.console_to_mcu_queue.append(chunk)
         if evt.truncated_bytes:
             self.console_truncated_chunks += 1
@@ -586,27 +582,22 @@ class RuntimeState(msgspec.Struct):
         if evt.dropped_chunks:
             self.console_dropped_chunks += evt.dropped_chunks
             self.console_dropped_bytes += evt.dropped_bytes
-        if not evt.accepted:
+        if not evt.success:
             self.console_dropped_chunks += 1
             self.console_dropped_bytes += len(chunk)
         else:
-            self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
+            self.console_queue_bytes = self.console_to_mcu_queue.bytes
 
     def pop_console_chunk(self) -> bytes:
-        self.sync_console_queue_limits()
         chunk = self.console_to_mcu_queue.popleft()
-        self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
+        self.console_queue_bytes = self.console_to_mcu_queue.bytes
         return chunk or b""
 
     def requeue_console_chunk_front(self, chunk: bytes) -> None:
         if not chunk:
             return
-        limit = self.console_queue_limit_bytes
-        data = bytes(chunk[-limit:]) if len(chunk) > limit else bytes(chunk)
-        self.sync_console_queue_limits()
-        evt = self.console_to_mcu_queue.appendleft(data)
-        if evt.accepted:
-            self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
+        self.console_to_mcu_queue.appendleft(chunk)
+        self.console_queue_bytes = self.console_to_mcu_queue.bytes
 
     def _mailbox_overflow(self, queue_len: int, payload_len: int, *, incoming: bool) -> bool:
         """Return True if the mailbox queue is full. Updates overflow counters."""
@@ -625,7 +616,8 @@ class RuntimeState(msgspec.Struct):
     def enqueue_mailbox_message(self, payload: bytes) -> bool:
         if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
             return False
-        if self.mailbox_queue.append(payload):
+        evt = self.mailbox_queue.append(payload)
+        if evt.success:
             self.mailbox_queue_bytes += len(payload)
             return True
         return False
@@ -637,15 +629,15 @@ class RuntimeState(msgspec.Struct):
         return msg
 
     def requeue_mailbox_message_front(self, payload: bytes) -> None:
-        if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
-            return
-        if self.mailbox_queue.appendleft(payload):
+        evt = self.mailbox_queue.appendleft(payload)
+        if evt.success:
             self.mailbox_queue_bytes += len(payload)
 
     def enqueue_mailbox_incoming(self, payload: bytes) -> bool:
         if self._mailbox_overflow(len(self.mailbox_incoming_queue), len(payload), incoming=True):
             return False
-        if self.mailbox_incoming_queue.append(payload):
+        evt = self.mailbox_incoming_queue.append(payload)
+        if evt.success:
             self.mailbox_incoming_queue_bytes += len(payload)
             return True
         return False
@@ -657,8 +649,8 @@ class RuntimeState(msgspec.Struct):
         return msg
 
     def sync_console_queue_limits(self) -> None:
-        self.console_to_mcu_queue.update_limits(max_items=None, max_bytes=self.console_queue_limit_bytes)
-        self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
+        # Managed automatically by BoundedByteDeque
+        self.console_queue_bytes = self.console_to_mcu_queue.bytes
 
     def sync_mailbox_limits(self, queue: Any) -> None:
         # Limits are enforced on enqueue and update_limits handles console trimming.
@@ -930,7 +922,7 @@ class RuntimeState(msgspec.Struct):
             "mqtt_drop_counts": dict(self.mqtt_drop_counts),
             "queue_depths": {
                 "mqtt": self.mqtt_publish_queue.qsize(),
-                "console": self.console_to_mcu_queue.bytes_used,
+                "console": self.console_to_mcu_queue.bytes,
                 "mailbox_outgoing": len(self.mailbox_queue),
                 "mailbox_incoming": len(self.mailbox_incoming_queue),
                 "running_processes": len(self.running_processes),
@@ -990,10 +982,11 @@ class RuntimeState(msgspec.Struct):
                 self.mqtt_spool.close()
                 self.mqtt_spool = None
 
-        # Non-optional persistent queues — each in its own guard
-        for q in (self.mailbox_queue, self.mailbox_incoming_queue, self.console_to_mcu_queue):
-            with _sup:
-                q.close()
+        # [SIL-2] Close persistent queues to release file handles
+        with _sup:
+            self.mailbox_queue.close()
+        with _sup:
+            self.mailbox_incoming_queue.close()
 
         with _sup:
             # Drain the MQTT queue instead of nullifying

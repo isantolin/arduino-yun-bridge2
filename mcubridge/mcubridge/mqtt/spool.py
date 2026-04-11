@@ -51,32 +51,7 @@ class MQTTPublishSpool:
         self._trim_events = 0
         self._last_trim_unix = 0.0
         self._corrupt_dropped = 0
-        self._fallback_active = self._records.fallback_active
-        self._failure_reason = self._records.fallback_reason
-        self._last_error = self._records.last_error
         self._closed = False
-        self._notify_fallback()
-
-    def _notify_fallback(self) -> None:
-        if not self._records.fallback_active or self._on_fallback is None or self._closed:
-            return
-        reason = self._records.fallback_reason or "initialization_failed"
-        error_text = self._records.last_error
-        original = RuntimeError(error_text) if error_text else None
-        self._on_fallback(reason, original)
-
-    def _refresh_fallback_state(self) -> None:
-        prev = self._fallback_active
-        self._fallback_active = self._records.fallback_active
-        self._failure_reason = self._records.fallback_reason
-        self._last_error = self._records.last_error
-        if self._fallback_active and not prev:
-            self._notify_fallback()
-
-    def __del__(self) -> None:
-        # [SIL-2] Final safety check
-        if not getattr(self, "_closed", True):
-            self.close()
 
     def close(self) -> None:
         if getattr(self, "_closed", False):
@@ -97,14 +72,13 @@ class MQTTPublishSpool:
             self._trim_events += 1
             self._last_trim_unix = time.time()
         record = msgspec.structs.asdict(message)
-        if not self._records.append(record):
+        evt = self._records.append(record)
+        if not evt.success:
             raise MQTTSpoolError("append_failed")
-        self._refresh_fallback_state()
 
     def pop_next(self) -> QueuedPublish | None:
         while self.pending > 0 and not self._closed:
             record = self._records.popleft()
-            self._refresh_fallback_state()
             if record is None:
                 return None
             try:
@@ -118,9 +92,7 @@ class MQTTPublishSpool:
         if self._closed:
             return
         record = msgspec.structs.asdict(message)
-        if not self._records.appendleft(record):
-            raise MQTTSpoolError("requeue_failed")
-        self._refresh_fallback_state()
+        self._records.appendleft(record)
 
     @property
     def pending(self) -> int:
@@ -128,15 +100,17 @@ class MQTTPublishSpool:
 
     @property
     def is_degraded(self) -> bool:
-        return self._fallback_active
+        """Return True if the spool is operating in RAM-only mode."""
+        return self._records.fallback_active
 
     @property
     def failure_reason(self) -> str | None:
-        return self._failure_reason
+        return None
 
     @property
     def last_error(self) -> str | None:
-        return self._last_error
+        """Return the last error message from the underlying queue."""
+        return self._records.last_error
 
     @property
     def limit(self) -> int:

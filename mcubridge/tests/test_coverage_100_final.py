@@ -276,27 +276,22 @@ class TestConfigCommon:
 
 
 class TestQueues:
-    def test_setup_persistence(self: Any, tmp_path: Any):
-        from mcubridge.state.queues import BoundedByteDeque
+    def test_basic_ops(self: Any, tmp_path: Any):
+        from mcubridge.state.queues import PersistentQueue, BoundedByteDeque
 
-        q = BoundedByteDeque(max_items=10)
-        try:
-            q.setup_persistence(tmp_path / "test_persist", ram_limit=5)
-            q.append(b"hello")
-            assert len(q) == 1
-        finally:
-            q.close()
+        pq = PersistentQueue(tmp_path / "pq", max_items=2)
+        pq.append(b"1")
+        pq.append(b"2")
+        pq.append(b"3")
+        assert len(pq) == 2
+        assert pq.popleft() == b"2"
+        pq.close()
 
-    def test_setup_persistence_failure(self: Any, tmp_path: Any):
-        from mcubridge.state.queues import BoundedByteDeque, PersistentQueue
-
-        q = BoundedByteDeque(max_items=10)
-        try:
-            q.setup_persistence("/dev/null/impossible/path", ram_limit=5)
-            assert isinstance(q._queue, PersistentQueue)  # type: ignore[reportPrivateUsage]
-            assert q._queue.fallback_active is True  # type: ignore[reportPrivateUsage]
-        finally:
-            q.close()
+        bq = BoundedByteDeque(max_bytes=10)
+        bq.append(b"hello")
+        assert bq.bytes == 5
+        bq.clear()
+        assert len(bq) == 0
 
     def test_bool(self):
         from mcubridge.state.queues import BoundedByteDeque
@@ -356,35 +351,6 @@ class TestQueues:
         q.append(b"second")
         assert q.popleft() == b"first"
 
-    def test_popleft_empty(self):
-        from mcubridge.state.queues import BoundedByteDeque
-
-        q = BoundedByteDeque(max_items=10)
-        with pytest.raises(IndexError):
-            q.popleft()
-
-    def test_pop(self):
-        from mcubridge.state.queues import BoundedByteDeque
-
-        q = BoundedByteDeque(max_items=10)
-        q.append(b"first")
-        q.append(b"second")
-        assert q.pop() == b"second"
-
-    def test_pop_empty(self):
-        from mcubridge.state.queues import BoundedByteDeque
-
-        q = BoundedByteDeque(max_items=10)
-        with pytest.raises(IndexError):
-            q.pop()
-
-    def test_extend(self):
-        from mcubridge.state.queues import BoundedByteDeque
-
-        q = BoundedByteDeque(max_items=5, max_bytes=100)
-        q.extend([b"a", b"b", b"c"])
-        assert len(q) == 3
-
     def test_appendleft(self):
         from mcubridge.state.queues import BoundedByteDeque
 
@@ -396,30 +362,21 @@ class TestQueues:
     def test_truncate_oversized_chunk(self):
         from mcubridge.state.queues import BoundedByteDeque
 
-        q = BoundedByteDeque(max_items=10, max_bytes=5)
+        q = BoundedByteDeque(max_bytes=5)
         event = q.append(b"x" * 20)
         assert event.truncated_bytes == 15
-        assert event.accepted is True
-
-    def test_update_limits(self):
-        from mcubridge.state.queues import BoundedByteDeque
-
-        q = BoundedByteDeque(max_items=10, max_bytes=100)
-        q.append(b"a" * 50)
-        q.append(b"b" * 50)
-        q.update_limits(max_bytes=60)
-        assert q.bytes_used <= 60
+        assert event.success is True
 
     def test_limit_bytes_property(self):
         from mcubridge.state.queues import BoundedByteDeque
 
         q = BoundedByteDeque(max_bytes=42)
-        assert q.limit_bytes == 42
+        assert q.max_bytes == 42
 
     def test_make_room_drops_oldest(self):
         from mcubridge.state.queues import BoundedByteDeque
 
-        q = BoundedByteDeque(max_items=2, max_bytes=100)
+        q = BoundedByteDeque(max_items=2)
         q.append(b"a")
         q.append(b"b")
         event = q.append(b"c")

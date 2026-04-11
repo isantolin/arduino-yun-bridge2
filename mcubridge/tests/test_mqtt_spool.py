@@ -136,20 +136,22 @@ def test_spool_requeue_success(tmp_path: Path) -> None:
     spool_dir.mkdir(parents=True)
 
     spool = MQTTPublishSpool(spool_dir.as_posix(), limit=4)
-    message = _make_message("topic/requeue")
-    spool.append(message)
+    try:
+        message = _make_message("topic/requeue")
+        spool.append(message)
 
-    popped = spool.pop_next()
-    assert popped is not None
-    assert popped.topic_name == "topic/requeue"
+        popped = spool.pop_next()
+        assert popped is not None
+        assert popped.topic_name == "topic/requeue"
 
-    spool.requeue(popped)
-    assert spool.pending == 1
+        spool.requeue(popped)
+        assert spool.pending == 1
 
-    popped_again = spool.pop_next()
-    assert popped_again is not None
-    assert popped_again.topic_name == "topic/requeue"
-    spool.close()
+        popped_again = spool.pop_next()
+        assert popped_again is not None
+        assert popped_again.topic_name == "topic/requeue"
+    finally:
+        spool.close()
 
 
 def test_spool_persists_across_reopen(tmp_path: Path) -> None:
@@ -159,14 +161,16 @@ def test_spool_persists_across_reopen(tmp_path: Path) -> None:
     spool = MQTTPublishSpool(spool_dir.as_posix(), limit=10)
     spool.append(_make_message("topic/1"))
     spool.append(_make_message("topic/2"))
+    spool.close() # Close before reopening to ensure flush
 
     reopened = MQTTPublishSpool(spool_dir.as_posix(), limit=10)
-    msg1 = reopened.pop_next()
-    msg2 = reopened.pop_next()
+    try:
+        msg1 = reopened.pop_next()
+        msg2 = reopened.pop_next()
 
-    assert msg1 is not None
-    assert msg2 is not None
-    assert msg1.topic_name == "topic/1"
-    assert msg2.topic_name == "topic/2"
-    spool.close()
-    reopened.close()
+        assert msg1 is not None
+        assert msg2 is not None
+        assert msg1.topic_name == "topic/1"
+        assert msg2.topic_name == "topic/2"
+    finally:
+        reopened.close()

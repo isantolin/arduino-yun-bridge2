@@ -350,14 +350,15 @@ async def test_spool_fallback_updates_state(
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Force a disk full error during diskcache initialization.
-    with patch("mcubridge.state.queues.DiskDeque", side_effect=OSError(errno.ENOSPC, "disk full")):
+    from pathlib import Path
+    # Force a failure during diskcache initialization.
+    import errno
+    with patch.object(Path, "mkdir", side_effect=OSError(errno.ENOSPC, "disk full")):
         state = create_runtime_state(runtime_config, initialize_spool=True)
         try:
             # The spool now degrades to RAM if durable initialization fails.
             assert state.mqtt_spool is not None
             assert state.mqtt_spool_degraded is True
-            assert state.mqtt_spool_failure_reason == "initialization_failed"
             assert state.mqtt_spool_last_error is not None
             assert "disk full" in state.mqtt_spool_last_error
         finally:

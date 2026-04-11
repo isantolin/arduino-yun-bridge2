@@ -16,6 +16,7 @@ from binascii import crc32
 from typing import Any, TypeVar, cast
 import msgspec
 from construct import (
+    Adapter,
     BitStruct,
     BitsInteger,
     Bytes,
@@ -63,11 +64,43 @@ RPC_FRAME_HEADER: Construct = Struct(
 )
 
 
-# [SIL-2] Inner container for CRC calculation
-RPC_PAYLOAD_CONTAINER: Construct = Struct(
+class FrameAdapter(Adapter):
+    """Transparently handles RLE compression encoding and decoding within Construct."""
+    def _decode(self, obj: Any, context: Any, path: Any) -> Any:
+        if obj.header.command_id & protocol.CMD_FLAG_COMPRESSED:
+            from . import rle
+            obj.payload = rle.decode(obj.payload)
+            obj.header.command_id &= ~protocol.CMD_FLAG_COMPRESSED
+            obj.header.payload_len = len(obj.payload)
+        return obj
+
+    def _encode(self, obj: Any, context: Any, path: Any) -> Any:
+        from . import rle
+        payload = obj.get("payload", b"")
+        header = obj.get("header", {})
+        command_id = header.get("command_id", 0)
+        
+        if payload and rle.should_compress(payload):
+            try:
+                compressed = rle.encode(payload)
+                if len(compressed) < len(payload):
+                    new_header = dict(header)
+                    new_header["command_id"] = command_id | protocol.CMD_FLAG_COMPRESSED
+                    new_header["payload_len"] = len(compressed)
+                    return {"header": new_header, "payload": compressed}
+            except (ValueError, TypeError, OverflowError):
+                pass
+        
+        new_header = dict(header)
+        new_header["payload_len"] = len(payload)
+        return {"header": new_header, "payload": payload}
+
+
+# [SIL-2] Inner container for CRC calculation with transparent RLE Adapter
+RPC_PAYLOAD_CONTAINER: Construct = FrameAdapter(Struct(
     "header" / RPC_FRAME_HEADER,
     "payload" / Bytes(this.header.payload_len),
-)
+))
 
 # [SIL-2] Full Frame with Checksum (Sustitución Drástica)
 # Uses RawCopy to capture the bytes for CRC calculation without manual slicing.
@@ -147,30 +180,3 @@ class Frame(msgspec.Struct, frozen=True):
             )
         except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:
             raise ValueError(f"Incomplete or malformed frame: {e}") from e
-
-    @classmethod
-    def build_command_id(cls, command_id: int, is_compressed: bool) -> int:
-        """Build a 16-bit command ID with the compression flag."""
-        return int(cast(int, Int16ub.parse(COMMAND_ID_CODEC.build({
-            "is_compressed": is_compressed,
-            "raw_id": command_id & 0x7FFF,
-        }))))
-
-    @staticmethod
-    def maybe_compress(command_id: int, payload: bytes) -> tuple[int, bytes]:
-        """Apply RLE compression to *payload* if beneficial.
-
-        Returns (possibly-modified command_id, possibly-compressed payload).
-        The compression flag in the command ID is set automatically.
-        """
-        from . import rle
-
-        if not payload or not rle.should_compress(payload):
-            return command_id, payload
-        try:
-            compressed = rle.encode(payload)
-            if len(compressed) < len(payload):
-                return Frame.build_command_id(command_id, is_compressed=True), compressed
-        except (ValueError, TypeError, OverflowError):
-            pass
-        return command_id, payload

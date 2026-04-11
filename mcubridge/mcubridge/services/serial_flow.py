@@ -99,10 +99,8 @@ class SerialFlowController:
             )
             return False
 
-        final_cmd, final_payload = Frame.maybe_compress(command_id, payload)
-
         if not self._should_track(command_id):
-            return await sender(final_cmd, final_payload)
+            return await sender(command_id, payload)
 
         pending = PendingCommand(
             command_id=command_id,
@@ -114,7 +112,7 @@ class SerialFlowController:
             self._current = pending
 
         try:
-            return await self._execute_with_retries(pending, final_payload, sender, final_cmd)
+            return await self._execute_with_retries(pending, payload, sender, command_id)
         finally:
             async with self._condition:
                 if self._current is pending:

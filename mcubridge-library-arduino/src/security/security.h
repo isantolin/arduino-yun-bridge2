@@ -37,13 +37,26 @@ class McuBridgeSha256 {
   McuBridgeSha256();
 
   void reset();
-  void update(const void* data, size_t len);
-  void finalize(void* hash, size_t len);
+  void update(etl::span<const uint8_t> data);
 
-  void resetHMAC(const void* key, size_t keyLen);
-  void finalizeHMAC(const void* key, size_t keyLen, void* hash, size_t hashLen);
+  template <size_t N>
+  void finalize(etl::array<uint8_t, N>& hash) {
+    static_assert(N >= HASH_SIZE, "Digest buffer too small");
+    _finalize_impl(hash.data(), N);
+  }
+
+  void resetHMAC(etl::span<const uint8_t> key);
+
+  template <size_t N>
+  void finalizeHMAC(etl::array<uint8_t, N>& hash) {
+    static_assert(N >= HASH_SIZE, "HMAC buffer too small");
+    _finalize_hmac_impl(hash.data(), N);
+  }
 
  private:
+  void _finalize_impl(uint8_t* hash, size_t len);
+  void _finalize_hmac_impl(uint8_t* hash, size_t len);
+
   Sha256 sha_;
   Hmac hmac_;
   bool is_hmac_active_;

@@ -459,9 +459,9 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     etl::array<uint8_t, 32> full_tag;
     full_tag.fill(0);
     rpc::security::McuBridgeSha256 hmac_engine;
-    hmac_engine.resetHMAC(handshake_key.data(), 32);
-    hmac_engine.update(msg.nonce.data(), 16);
-    hmac_engine.finalizeHMAC(handshake_key.data(), 32, full_tag.data(), 32);
+    hmac_engine.resetHMAC(handshake_key);
+    hmac_engine.update(msg.nonce);
+    hmac_engine.finalizeHMAC(full_tag);
 
     const char* DEBUG_SECRET_P = PSTR("DEBUG_INSECURE");
     bridge::hal::copy_string(reinterpret_cast<char*>(_transient_buffer.data()), DEBUG_SECRET_P, 16);
@@ -571,9 +571,9 @@ etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Fr
   etl::array<uint8_t, 32> full_tag;
   full_tag.fill(0);
   rpc::security::McuBridgeSha256 hmac_engine;
-  hmac_engine.resetHMAC(handshake_key.data(), 32);
-  hmac_engine.update(nonce.data(), nonce.size());
-  hmac_engine.finalizeHMAC(handshake_key.data(), 32, full_tag.data(), 32);
+  hmac_engine.resetHMAC(handshake_key);
+  hmac_engine.update(nonce);
+  hmac_engine.finalizeHMAC(full_tag);
                              
   etl::copy_n(full_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH, tag.data());
   rpc::security::secure_zero(handshake_key); rpc::security::secure_zero(full_tag);

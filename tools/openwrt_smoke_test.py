@@ -171,12 +171,10 @@ def phase_expand(child: Any) -> None:
         timeout=10,
     )
 
-    # Bring up network for apk update via proper UCI network config
+    # Bring up network for apk update via udhcpc
     send_and_wait(
         child,
-        "uci set network.lan.proto=dhcp; "
-        "uci commit network; "
-        "/etc/init.d/network restart",
+        "ip link set eth0 up; udhcpc -i eth0 -q 2>/dev/null || true",
         timeout=15,
     )
 
@@ -211,12 +209,10 @@ def phase_install(child: Any) -> None:
     send_and_wait(child, "cp /mnt/bin/*.apk /root/deploy/bin/", timeout=10)
     send_and_wait(child, "umount /mnt", timeout=5)
 
-    # Bring up network for apk update via proper UCI network config
+    # Bring up network for apk update via udhcpc
     send_and_wait(
         child,
-        "uci set network.lan.proto=dhcp; "
-        "uci commit network; "
-        "/etc/init.d/network restart",
+        "ip link set eth0 up; udhcpc -i eth0 -q 2>/dev/null || true",
         timeout=15,
     )
 

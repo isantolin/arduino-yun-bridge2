@@ -113,6 +113,7 @@ BridgeClass::BridgeClass(Stream& stream)
   if constexpr (bridge::hal::CurrentArchTraits::id == bridge::hal::ArchId::ARCH_ID_AVR) {
     _hardware_serial = static_cast<HardwareSerial*>(&stream);
   }
+  forceSafeState();
 }
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
@@ -126,6 +127,10 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _fsm.begin();
   _is_post_passed = runPowerOnSelfTests();
   if (!_is_post_passed) enterSafeState();
+
+#if defined(ARDUINO_ARCH_AVR)
+  wdt_enable(WDTO_4S);
+#endif
 
   if constexpr (bridge::hal::CurrentArchTraits::id == bridge::hal::ArchId::ARCH_ID_AVR) {
     if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
@@ -143,6 +148,9 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 }
 
 void BridgeClass::process() {
+#if defined(ARDUINO_ARCH_AVR)
+  wdt_reset();
+#endif
   uint32_t now = bridge::now_ms();
   static uint32_t _last_tick_ms = 0;
   if (_last_tick_ms == 0) _last_tick_ms = now;
@@ -293,9 +301,9 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::
   rpc::Frame f = {}; f.header.version = rpc::PROTOCOL_VERSION; f.header.command_id = command_id; f.header.sequence_id = sequence_id;
   f.header.payload_length = static_cast<uint16_t>(payload.size());
   f.payload = payload; f.crc = rpc::checksum::compute(f);
-  uint8_t buffer[rpc::MAX_FRAME_SIZE];
-  size_t len = rpc::FrameParser::serialize(f, etl::span<uint8_t>(buffer, rpc::MAX_FRAME_SIZE));
-  if (len > 0) _packet_serial.send(_stream, etl::span<const uint8_t>(buffer, len));
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
+  size_t len = rpc::FrameParser::serialize(f, etl::span<uint8_t>(buffer.data(), buffer.size()));
+  if (len > 0) _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
 }
 
 bool BridgeClass::_sendFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload) {
@@ -441,8 +449,11 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     hmac_engine.update(msg.nonce.data(), 16);
     hmac_engine.finalizeHMAC(handshake_key.data(), 32, full_tag.data(), 32);
 
-    if (_shared_secret.size() == 14 && memcmp(_shared_secret.data(), "DEBUG_INSECURE", 14) == 0) {
-      etl::copy_n(reinterpret_cast<const uint8_t*>("DEBUG_TAG_UNUSED"), 16, resp.tag.begin());
+    const char* DEBUG_SECRET_P = PSTR("DEBUG_INSECURE");
+    bridge::hal::copy_string(reinterpret_cast<char*>(_transient_buffer.data()), DEBUG_SECRET_P, 16);
+    if (etl::string_view(reinterpret_cast<const char*>(_transient_buffer.data())) == etl::string_view(reinterpret_cast<const char*>(_shared_secret.data()), _shared_secret.size())) {
+      const char* DEBUG_TAG_P = PSTR("DEBUG_TAG_UNUSED");
+      memcpy_P(resp.tag.data(), DEBUG_TAG_P, 16);
     } else {
       if (!rpc::security::timing_safe_equal(etl::span<const uint8_t>(full_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH), etl::span<const uint8_t>(msg.tag.data(), 16))) {
         _fsm.handshakeFailed(); 

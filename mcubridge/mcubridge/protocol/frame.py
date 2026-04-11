@@ -22,6 +22,7 @@ from construct import (
     Check,
     Checksum,
     Construct,
+    ConstructError,
     Enum,
     ExprAdapter,
     Flag,
@@ -131,7 +132,7 @@ class Frame(msgspec.Struct, frozen=True):
                     }
                 }
             })
-        except Exception as e:
+        except (ConstructError, ValueError, TypeError) as e:
             raise ValueError(f"Failed to build frame: {e}") from e
 
     @classmethod
@@ -144,8 +145,8 @@ class Frame(msgspec.Struct, frozen=True):
                 sequence_id=int(obj.header_payload.value.header.sequence_id),
                 payload=obj.header_payload.value.payload,
             )
-        except Exception as e:
-            raise ValueError(f"Incomplete frame: {e}") from e
+        except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:
+            raise ValueError(f"Incomplete or malformed frame: {e}") from e
 
     @classmethod
     def build_command_id(cls, command_id: int, is_compressed: bool) -> int:

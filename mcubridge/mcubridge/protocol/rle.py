@@ -27,6 +27,7 @@ from construct import (
     Struct,
     Terminated,
 )
+from construct.core import ConstructError  # type: ignore[import-untyped]
 
 from . import protocol
 
@@ -134,5 +135,5 @@ def decode(compressed: bytes) -> bytes:
     try:
         obj = RLE_DECODER.parse(compressed)
         return b"".join(obj.chunks)
-    except Exception as e:
+    except (ConstructError, ValueError, TypeError) as e:
         raise ValueError(f"RLE decode failed: {e}") from e

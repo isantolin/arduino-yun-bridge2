@@ -42,6 +42,7 @@ def configure_logging(config: RuntimeConfig) -> None:
         structlog.stdlib.add_logger_name,
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="iso", key="ts"),
+        structlog.processors.format_exc_info,
         structlog.stdlib.ExtraAdder(),
         hexdump_processor,
     ]

@@ -146,10 +146,8 @@ class SerialTransport:
 
     @tenacity.retry(
         wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
-        retry=tenacity.retry_if_exception(
-            lambda e: not isinstance(e, asyncio.CancelledError)
-            and "SerialHandshakeFatal" not in type(e).__name__  # noqa: W503
-        ),
+        retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError)
+        & tenacity.retry_if_exception(lambda e: "SerialHandshakeFatal" not in type(e).__name__),
         before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
     )
     async def _retryable_run(self, loop: asyncio.AbstractEventLoop) -> None:

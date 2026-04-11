@@ -3,7 +3,6 @@
 from __future__ import annotations
 from typing import Any
 
-import errno
 import logging
 from collections.abc import Iterator
 from typing import cast

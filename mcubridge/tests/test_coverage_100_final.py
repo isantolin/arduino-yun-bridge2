@@ -279,7 +279,7 @@ class TestQueues:
     def test_basic_ops(self: Any, tmp_path: Any):
         from mcubridge.state.queues import PersistentQueue, BoundedByteDeque
 
-        pq = PersistentQueue(tmp_path / "pq", max_items=2)
+        pq: PersistentQueue[bytes] = PersistentQueue(tmp_path / "pq", max_items=2)
         pq.append(b"1")
         pq.append(b"2")
         pq.append(b"3")

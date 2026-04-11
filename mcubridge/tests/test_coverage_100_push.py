@@ -7,7 +7,6 @@ quick unit test can reach without real hardware or broker connectivity.
 from __future__ import annotations
 
 import logging
-import sqlite3
 import ssl
 import time
 from collections import deque

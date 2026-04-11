@@ -5,8 +5,9 @@ Manual index management to ensure resource cleanup and persistence integrity.
 from __future__ import annotations
 
 import os
+from collections import deque
 from pathlib import Path
-from typing import Generic, Iterator, TypeVar, Iterable, Any
+from typing import Any, Generic, Iterator, TypeVar, cast
 
 import msgspec
 import structlog
@@ -15,48 +16,61 @@ import diskcache
 T = TypeVar("T")
 logger = structlog.get_logger("mcubridge.state.queues")
 
+
 class QueueEvent(msgspec.Struct, frozen=True):
     """Event data for queue operations."""
+
     success: bool = True
     dropped_chunks: int = 0
     dropped_bytes: int = 0
     truncated_bytes: int = 0
 
+
 class PersistentQueue(Generic[T]):
     """FIFO Queue using diskcache.Cache with manual index control for SIL-2 compliance."""
-    def __init__(self, directory: str | Path | None = None, max_items: int | None = None) -> None:
+
+    def __init__(
+        self, directory: str | Path | None = None, max_items: int | None = None
+    ) -> None:
         self.max_items = max_items
         self._closed = False
         self._fallback_active = False
         self._last_err_msg: str | None = None
+        self._cache: diskcache.Cache | None = None
+        self._items: deque[T] | Any = deque()
+
         if directory:
             try:
                 self.directory = Path(directory)
                 self.directory.mkdir(parents=True, exist_ok=True)
                 os.chmod(self.directory, 0o700)
+                # [SIL-2] Use Cache directly to ensure close() releases SQLite immediately
                 self._cache = diskcache.Cache(str(self.directory))
-                if "head" not in self._cache: self._cache["head"] = 0
-                if "tail" not in self._cache: self._cache["tail"] = 0
+                if "head" not in self._cache:
+                    self._cache["head"] = 0
+                if "tail" not in self._cache:
+                    self._cache["tail"] = 0
+                self._items = None
             except (OSError, Exception) as exc:
                 logger.warning("Queue falling back to RAM: %s", exc)
                 self._fallback_active = True
                 self._last_err_msg = str(exc)
-                from collections import deque
                 self._items = deque()
                 self._cache = None
         else:
-            from collections import deque
             self._items = deque()
             self._cache = None
 
     def append(self, item: T) -> QueueEvent:
-        if self._closed: return QueueEvent(success=False)
+        if self._closed:
+            return QueueEvent(success=False)
         dropped = 0
         if self.max_items and len(self) >= self.max_items:
-            self.popleft(); dropped = 1
-        
+            self.popleft()
+            dropped = 1
+
         if self._cache is not None:
-            tail = self._cache["tail"]
+            tail: int = cast(int, self._cache["tail"])
             self._cache[tail] = item
             self._cache["tail"] = tail + 1
         else:
@@ -64,9 +78,10 @@ class PersistentQueue(Generic[T]):
         return QueueEvent(success=True, dropped_chunks=dropped)
 
     def appendleft(self, item: T) -> QueueEvent:
-        if self._closed: return QueueEvent(success=False)
+        if self._closed:
+            return QueueEvent(success=False)
         if self._cache is not None:
-            head = self._cache["head"] - 1
+            head: int = cast(int, self._cache["head"]) - 1
             self._cache[head] = item
             self._cache["head"] = head
         else:
@@ -74,34 +89,41 @@ class PersistentQueue(Generic[T]):
         return QueueEvent(success=True)
 
     def popleft(self) -> T | None:
-        if self._closed or len(self) == 0: return None
+        if self._closed or len(self) == 0:
+            return None
         if self._cache is not None:
-            head = self._cache["head"]
-            val = self._cache.get(head)
-            if val is not None: self._cache.delete(head)
+            head: int = cast(int, self._cache["head"])
+            val: Any = self._cache.get(head)  # type: ignore[reportUnknownMemberType]
+            if val is not None:
+                self._cache.delete(head)  # type: ignore[reportUnknownMemberType]
             self._cache["head"] = head + 1
-            return val
+            return cast(T, val)
         return self._items.popleft()
 
     def clear(self) -> None:
-        if self._closed: return
+        if self._closed:
+            return
         if self._cache is not None:
-            self._cache.clear()
+            cast(Any, self._cache).clear()  # type: ignore[reportUnknownMemberType]
             self._cache["head"] = 0
             self._cache["tail"] = 0
         else:
             self._items.clear()
 
     def close(self) -> None:
+        """Explicitly close the cache to release SQLite file handles immediately."""
         if not getattr(self, "_closed", False):
             self._closed = True
             if hasattr(self, "_cache") and self._cache is not None:
-                try: self._cache.close()
-                except Exception: pass
+                try:
+                    cast(Any, self._cache).close()  # type: ignore[reportUnknownMemberType]
+                except Exception:
+                    pass
                 self._cache = None
 
     def __del__(self) -> None:
-        if not getattr(self, "_closed", True): self.close()
+        if not getattr(self, "_closed", True):
+            self.close()
 
     @property
     def fallback_active(self) -> bool:
@@ -113,17 +135,19 @@ class PersistentQueue(Generic[T]):
 
     def values(self) -> tuple[T, ...]:
         if self._cache is not None:
-            h, t = self._cache["head"], self._cache["tail"]
-            res = []
-            for i in range(h, t):
-                v = self._cache.get(i)
-                if v is not None: res.append(v)
+            head: int = cast(int, self._cache["head"])
+            tail: int = cast(int, self._cache["tail"])
+            res: list[T] = []
+            for i in range(head, tail):
+                v: Any = self._cache.get(i)  # type: ignore[reportUnknownMemberType]
+                if v is not None:
+                    res.append(cast(T, v))
             return tuple(res)
         return tuple(list(self._items))
 
     def __len__(self) -> int:
         if self._cache is not None:
-            return self._cache["tail"] - self._cache["head"]
+            return cast(int, self._cache["tail"]) - cast(int, self._cache["head"])
         return len(self._items)
 
     def __iter__(self) -> Iterator[T]:
@@ -132,9 +156,13 @@ class PersistentQueue(Generic[T]):
     def __getitem__(self, index: int) -> T:
         return self.values()[index]
 
+
 class BoundedByteDeque:
     """Byte-aware queue wrapper with truncation support."""
-    def __init__(self, max_bytes: int | None = None, max_items: int | None = None) -> None:
+
+    def __init__(
+        self, max_bytes: int | None = None, max_items: int | None = None
+    ) -> None:
         self.max_bytes = max_bytes
         self._queue = PersistentQueue[bytes](max_items=max_items)
         self._current_bytes = 0
@@ -143,17 +171,24 @@ class BoundedByteDeque:
         truncated = 0
         if self.max_bytes and len(data) > self.max_bytes:
             truncated = len(data) - self.max_bytes
-            data = data[:self.max_bytes]
-        
+            data = data[: self.max_bytes]
+
         dropped_chunks, dropped_bytes = 0, 0
         while self.max_bytes and self._current_bytes + len(data) > self.max_bytes:
             old = self.popleft()
-            if old is None: break
-            dropped_chunks += 1; dropped_bytes += len(old)
-            
+            if old is None:
+                break
+            dropped_chunks += 1
+            dropped_bytes += len(old)
+
         evt = self._queue.append(data)
         self._current_bytes += len(data)
-        return QueueEvent(success=True, truncated_bytes=truncated, dropped_chunks=dropped_chunks + evt.dropped_chunks, dropped_bytes=dropped_bytes)
+        return QueueEvent(
+            success=True,
+            truncated_bytes=truncated,
+            dropped_chunks=dropped_chunks + evt.dropped_chunks,
+            dropped_bytes=dropped_bytes,
+        )
 
     def appendleft(self, data: bytes) -> QueueEvent:
         self._queue.appendleft(data)
@@ -162,11 +197,13 @@ class BoundedByteDeque:
 
     def popleft(self) -> bytes | None:
         val = self._queue.popleft()
-        if val is not None: self._current_bytes = max(0, self._current_bytes - len(val))
+        if val is not None:
+            self._current_bytes = max(0, self._current_bytes - len(val))
         return val
 
     def clear(self) -> None:
-        self._queue.clear(); self._current_bytes = 0
+        self._queue.clear()
+        self._current_bytes = 0
 
     def close(self) -> None:
         self._queue.close()
@@ -183,5 +220,6 @@ class BoundedByteDeque:
     @property
     def bytes(self) -> int:
         return self._current_bytes
+
 
 __all__ = ["PersistentQueue", "BoundedByteDeque", "QueueEvent"]

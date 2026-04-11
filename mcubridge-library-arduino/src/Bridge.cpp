@@ -112,7 +112,7 @@ BridgeClass::BridgeClass(Stream& stream)
       _rx_history() {
   _shared_secret.clear();
   _rx_storage.fill(0);
-  if constexpr (bridge::hal::CurrentArchTraits::id == bridge::hal::ArchId::ARCH_ID_AVR) {
+  if constexpr (bridge::hal::CurrentArchTraits::id == bridge::hal::ArchId::ARCH_AVR) {
     _hardware_serial = static_cast<HardwareSerial*>(&stream);
   }
   bridge::hal::forceSafeState();
@@ -134,7 +134,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   wdt_enable(WDTO_4S);
 #endif
 
-  if constexpr (bridge::hal::CurrentArchTraits::id == bridge::hal::ArchId::ARCH_ID_AVR) {
+  if constexpr (bridge::hal::CurrentArchTraits::id == bridge::hal::ArchId::ARCH_AVR) {
     if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
   }
   

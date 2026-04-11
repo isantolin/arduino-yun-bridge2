@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import collections
+import contextlib
 import structlog
 from typing import Any
 
+import msgspec
 from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, PinAction, Status
@@ -119,7 +121,8 @@ class PinComponent(BaseComponent):
         inbound: Message,
     ) -> bool:
         segments = list(route.segments)
-        payload_str = self._payload_bytes(inbound.payload).decode("utf-8", errors="ignore")
+        payload_bytes = msgspec.convert(inbound.payload, bytes)
+        payload_str = payload_bytes.decode("utf-8", errors="ignore")
         if not segments:
             return True
 
@@ -128,18 +131,12 @@ class PinComponent(BaseComponent):
         except ValueError:
             return True
 
-        if not segments:
-            return True
-
         pin_str = segments[0]
         pin = self._parse_pin_identifier(pin_str)
         if pin < 0:
             return True
 
         is_analog_read = len(segments) == 2 and segments[1] == PinAction.READ and topic_enum == Topic.ANALOG
-        # Note: Analog write usually targets PWM pins which are subset of digital pins in Arduino numbering,
-        # but capabilities struct reports 'num_analog_inputs' specifically for ADC.
-        # We'll use digital limit for writes and analog limit for analog reads.
 
         if not self._validate_pin_access(pin, is_analog_read):
             return True
@@ -182,7 +179,7 @@ class PinComponent(BaseComponent):
         topic_type: Topic,
         pin: int,
         inbound: Message | None = None,
-    ) -> None:
+    ) -> bool:
         command = Command.CMD_DIGITAL_READ if topic_type == Topic.DIGITAL else Command.CMD_ANALOG_READ
         queue = (
             self.state.pending_digital_reads
@@ -190,17 +187,19 @@ class PinComponent(BaseComponent):
             else self.state.pending_analog_reads
         )
 
-        pending_request = PendingPinRequest(pin=pin, reply_context=inbound)
-        payload = PinReadPacket(pin=pin).encode()
+        if len(queue) >= self.state.pending_pin_request_limit:
+            await self._notify_pin_queue_overflow(topic_type, pin, inbound)
+            return False
 
-        await self._safe_send_request(
-            queue=queue,
-            request=pending_request,
-            limit=self.state.pending_pin_request_limit,
-            command_id=command.value,
-            payload=payload,
-            on_overflow=lambda: self._notify_pin_queue_overflow(topic_type, pin, inbound),
-        )
+        pending_request = PendingPinRequest(pin=pin, reply_context=inbound)
+        queue.append(pending_request)
+
+        payload = PinReadPacket(pin=pin).encode()
+        ok = await self.ctx.send_frame(command.value, payload)
+        if not ok:
+            with contextlib.suppress(ValueError):
+                queue.remove(pending_request)
+        return ok
 
     async def _handle_write_command(self, topic_type: Topic, pin: int, payload_str: str) -> None:
         value = self._parse_pin_value(topic_type, payload_str)

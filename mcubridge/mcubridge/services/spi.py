@@ -31,7 +31,7 @@ class SpiComponent(BaseComponent):
     async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
         """Process inbound MQTT requests for SPI operations."""
         action = route.identifier
-        payload = self._payload_bytes(inbound.payload)
+        payload = msgspec.convert(inbound.payload, bytes)
         try:
             match action:
                 case "begin":

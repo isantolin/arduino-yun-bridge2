@@ -5,6 +5,7 @@ from __future__ import annotations
 import structlog
 from typing import Any
 
+import msgspec
 from aiomqtt.message import Message
 
 from mcubridge.protocol.protocol import (
@@ -90,7 +91,7 @@ class DatastoreComponent(BaseComponent):
     ) -> bool:
         identifier = route.identifier
         remainder = list(route.remainder)
-        payload = self._payload_bytes(inbound.payload)
+        payload = msgspec.convert(inbound.payload, bytes)
         payload_str = payload.decode("utf-8", errors="ignore")
 
         is_request = identifier == DatastoreAction.GET and bool(remainder) and remainder[-1] == "request"
@@ -108,7 +109,6 @@ class DatastoreComponent(BaseComponent):
                 await self._handle_mqtt_get(key, is_request, inbound)
             case _:
                 logger.debug("Unknown datastore action '%s'", identifier)
-        return True
         return True
 
     async def _handle_mqtt_put(

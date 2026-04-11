@@ -1,23 +1,23 @@
-"""Async MQTT helpers for MCU Bridge example scripts."""
+"""Minimalistic Async MQTT Client for MCU Bridge."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import secrets
 import shlex
 import ssl
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import TypedDict, cast
 
 import msgspec
 from aiomqtt import Client, MqttError, ProtocolVersion
 from aiomqtt.message import Message
-from aiomqtt.types import PayloadType
 
 from .definitions import (
     DEFAULT_MQTT_HOST,
@@ -47,7 +47,7 @@ __all__ = [
     "Topic",
 ]
 
-
+logger = logging.getLogger(__name__)
 _UCI_GENERAL = read_uci_general()
 
 MQTT_HOST = os.environ.get("MCUBRIDGE_MQTT_HOST") or _UCI_GENERAL.get("mqtt_host", DEFAULT_MQTT_HOST)
@@ -56,30 +56,6 @@ MQTT_TOPIC_PREFIX = os.environ.get("MCUBRIDGE_MQTT_TOPIC") or _UCI_GENERAL.get("
 MQTT_USER = os.environ.get("MCUBRIDGE_MQTT_USER") or _UCI_GENERAL.get("mqtt_user") or None
 MQTT_PASS = os.environ.get("MCUBRIDGE_MQTT_PASS") or _UCI_GENERAL.get("mqtt_pass") or None
 MQTT_TLS_INSECURE = os.environ.get("MCUBRIDGE_MQTT_TLS_INSECURE") or _UCI_GENERAL.get("mqtt_tls_insecure") or "0"
-
-
-def _default_tls_context() -> ssl.SSLContext | None:
-    mqtt_tls = _UCI_GENERAL.get("mqtt_tls", "0")
-    if str(mqtt_tls).strip() not in {"1", "true", "yes", "on"}:
-        return None
-    try:
-        cafile = (_UCI_GENERAL.get("mqtt_cafile") or "").strip()
-        if not cafile and Path("/etc/ssl/certs/ca-certificates.crt").exists():
-            cafile = "/etc/ssl/certs/ca-certificates.crt"
-
-        if cafile:
-            ctx = ssl.create_default_context(cafile=cafile)
-        else:
-            ctx = ssl.create_default_context()
-
-        if str(MQTT_TLS_INSECURE).strip() in {"1", "true", "yes", "on"}:
-            ctx.check_hostname = False
-        return ctx
-    except (ssl.SSLError, OSError, ValueError):
-        return None
-
-
-logger = logging.getLogger(__name__)
 
 
 class ShellPollResponse(TypedDict, total=False):
@@ -92,26 +68,25 @@ class ShellPollResponse(TypedDict, total=False):
     stderr_truncated: bool
 
 
-def _format_shell_command(parts: Sequence[str]) -> str:
-    if not parts:
-        raise ValueError("command_parts must not be empty")
-    return shlex.join(parts)
+def _default_tls_context() -> ssl.SSLContext | None:
+    mqtt_tls = _UCI_GENERAL.get("mqtt_tls", "0")
+    if str(mqtt_tls).strip() not in {"1", "true", "yes", "on"}:
+        return None
+    try:
+        cafile = (_UCI_GENERAL.get("mqtt_cafile") or "").strip()
+        if not cafile and Path("/etc/ssl/certs/ca-certificates.crt").exists():
+            cafile = "/etc/ssl/certs/ca-certificates.crt"
 
-
-def _payload_bytes(payload: PayloadType) -> bytes:
-    if isinstance(payload, bytes):
-        return payload
-    if isinstance(payload, bytearray):
-        return bytes(payload)
-    if payload is None:
-        return b""
-    if isinstance(payload, str):
-        return payload.encode("utf-8")
-    return str(payload).encode("utf-8")
+        ctx = ssl.create_default_context(cafile=cafile) if cafile else ssl.create_default_context()
+        if str(MQTT_TLS_INSECURE).strip() in {"1", "true", "yes", "on"}:
+            ctx.check_hostname = False
+        return ctx
+    except (ssl.SSLError, OSError, ValueError):
+        return None
 
 
 class Bridge:
-    """High-level helper that mirrors the bridge daemon MQTT contract."""
+    """Zero-Boilerplate high-level client for MCU Bridge."""
 
     def __init__(
         self,
@@ -125,525 +100,218 @@ class Bridge:
         self.host = host
         self.port = port
         self.topic_prefix = topic_prefix
-        # Override prefix in generated Topic helper
         Topic.PREFIX = topic_prefix
         self.username = username
         self.password = password
-        self.tls_context = tls_context if tls_context is not None else _default_tls_context()
+        self.tls_context = tls_context or _default_tls_context()
+
         self._client: Client | None = None
-        self._response_routes: dict[
-            str,
-            list[tuple[asyncio.Queue[Message], bool]],
-        ] = {}
-        self._correlation_routes: dict[
-            bytes,
-            asyncio.Queue[Message],
-        ] = {}
+        self._correlation_routes: dict[bytes, asyncio.Queue[Message]] = {}
         self._reply_topic: str | None = None
         self._listener_task: asyncio.Task[None] | None = None
-        self._digital_modes: dict[int, int] = {}
         self._exit_stack = AsyncExitStack()
 
     async def connect(self) -> None:
-        if self._client is not None:
+        if self._client:
             await self.disconnect()
-
         self._client = Client(
             hostname=self.host,
             port=self.port,
             username=self.username,
             password=self.password,
-            logger=logging.getLogger("mcubridge.examples.bridge"),
+            logger=logging.getLogger("mcubridge.client"),
             protocol=ProtocolVersion.V5,
             tls_context=self.tls_context,
         )
         await self._exit_stack.enter_async_context(self._client)
-
-        logger.info("Connected to MQTT broker at %s:%d", self.host, self.port)
-        self._digital_modes.clear()
-        self._response_routes.clear()
-        self._correlation_routes.clear()
         self._reply_topic = f"{self.topic_prefix}/client/{uuid.uuid4().hex}/reply"
-        try:
-            await self._client.subscribe(
-                self._reply_topic,
-                qos=int(QOSLevel.QOS_0),
-            )
-            logger.info("Subscribed to reply topic %s", self._reply_topic)
-        except MqttError:
-            logger.warning(
-                "Failed to subscribe to reply topic %s",
-                self._reply_topic,
-            )
+        await self._client.subscribe(self._reply_topic, qos=0)
         self._listener_task = asyncio.create_task(self._message_listener())
+        logger.info("Connected to %s:%d. Reply topic: %s", self.host, self.port, self._reply_topic)
 
     async def disconnect(self) -> None:
-        if self._listener_task is not None:
+        if self._listener_task:
             self._listener_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._listener_task
-            except asyncio.CancelledError:
-                pass
-            self._listener_task = None
-
         await self._exit_stack.aclose()
-        self._response_routes.clear()
-        self._correlation_routes.clear()
-        self._reply_topic = None
         self._client = None
-        logger.info("Disconnected from MQTT broker.")
-
-    def _ensure_client(self) -> Client:
-        client = self._client
-        if client is None:
-            raise ConnectionError("MQTT client not connected. Call connect() first.")
-        return client
+        logger.info("Disconnected.")
 
     async def _message_listener(self) -> None:
-        client = self._ensure_client()
-
-        try:
-            async for message in client.messages:
-                await self._handle_inbound_message(message)
-        except asyncio.CancelledError:
-            raise
-        except MqttError as exc:
-            logger.info("MQTT listener stopped: %s", exc)
-        except (OSError, ValueError, RuntimeError) as exc:
-            logger.error("Unexpected error in MQTT listener: %s", exc)
-
-    async def _handle_inbound_message(self, message: Message) -> None:
-        topic = str(message.topic)
-        if not topic:
+        if not self._client:
             return
-
-        payload = _payload_bytes(message.payload)
-
-        logger.info(
-            "MQTT message observed topic=%s size=%d qos=%d",
-            topic,
-            len(payload),
-            int(message.qos),
-        )
-
-        handled = False
-        props = getattr(message, "properties", None)
-        correlation = getattr(props, "CorrelationData", None) if props else None
-        if correlation is not None:
-            queue = self._correlation_routes.pop(correlation, None)
-            if queue is not None:
-                self._safe_queue_put(queue, message, drop_oldest=False)
-                handled = True
-
-        for prefix, queues in list(self._response_routes.items()):
-            if not topic.startswith(prefix):
-                continue
-            handled = True
-            for queue, drop_oldest in list(queues):
-                self._safe_queue_put(queue, message, drop_oldest=drop_oldest)
-
-        # [SIL-2] Resilient Fallback: If still unhandled but it's on our own reply topic,
-        # it means it's an orphaned or late response. We must still "handle" it
-        # (e.g. by logging at a lower level) to satisfy the protocol integrity check.
-        if not handled and topic == self._reply_topic:
-            logger.debug("Received orphaned/late reply on canonical topic: %s", topic)
-            handled = True
-
-        if not handled:
-            preview = payload[:128]
-            text = preview.decode("utf-8", errors="ignore")
-            # [SIL-2] Unhandled messages are protocol violations in deterministic systems.
-            # This MUST be logged as ERROR to trigger test failures and alerts.
-            error_msg = f"PROTOCOL VIOLATION: Received unhandled MQTT message: {topic} -> {text}"
-            logger.error(error_msg)
-            import os
-            os._exit(1)
-
-    def _safe_queue_put(
-        self,
-        queue: asyncio.Queue[Message],
-        message: Message,
-        *,
-        drop_oldest: bool,
-    ) -> None:
-        try:
-            queue.put_nowait(message)
-            return
-        except asyncio.QueueFull:
-            if not drop_oldest:
-                logger.info("Queue full; overwriting oldest entry")
-            try:
-                queue.get_nowait()
-            except asyncio.QueueEmpty:
-                if drop_oldest:
-                    logger.info("Queue empty despite full state; skipping")
-                    return
-            try:
+        async for message in self._client.messages:
+            correlation = getattr(message.properties, "CorrelationData", None)
+            if correlation and (queue := self._correlation_routes.pop(correlation, None)):
                 queue.put_nowait(message)
-            except asyncio.QueueFull:
-                logger.warning("Failed to enqueue MQTT message for consumer")
-
-    def _register_route(
-        self,
-        prefix: str,
-        queue: asyncio.Queue[Message],
-        *,
-        drop_oldest: bool = False,
-    ) -> None:
-        routes = self._response_routes.setdefault(prefix, [])
-        routes.append((queue, drop_oldest))
-
-    def _unregister_route(
-        self,
-        prefix: str,
-        queue: asyncio.Queue[Message],
-    ) -> None:
-        routes = self._response_routes.get(prefix)
-        if not routes:
-            return
-        for entry in list(routes):
-            if entry[0] is queue:
-                routes.remove(entry)
-                break
-        if not routes:
-            self._response_routes.pop(prefix, None)
+            else:
+                logger.debug("Orphaned or broadcast message on %s", message.topic)
 
     async def _publish_and_wait(
         self,
-        pub_topic: str,
-        pub_payload: bytes,
+        topic: str,
+        payload: bytes | str,
         *,
-        resp_topic: str | Sequence[str] | Iterable[str],
+        resp_topic: str | Iterable[str] | None = None,
         timeout: float = 15,
     ) -> bytes:
-        client = self._ensure_client()
-        reply_topic = self._reply_topic
-        if reply_topic is None:
-            raise RuntimeError("Reply topic not initialised; call connect()")
+        if not self._client:
+            raise ConnectionError("Not connected")
 
-        topics: tuple[str, ...]
-        if isinstance(resp_topic, str):
-            topics = (resp_topic,)
-        else:
-            topics = tuple(resp_topic)
-        if not topics:
-            raise ValueError("resp_topic must contain at least one topic")
-
-        response_queue: asyncio.Queue[Message] = asyncio.Queue(maxsize=1)
         correlation = secrets.token_bytes(12)
-        subscribed = False
+        queue: asyncio.Queue[Message] = asyncio.Queue(maxsize=1)
+        self._correlation_routes[correlation] = queue
+
+        resp_topics = [resp_topic] if isinstance(resp_topic, str) else list(resp_topic or [])
+        for t in resp_topics:
+            await self._client.subscribe(t)
+
         try:
-            for topic in topics:
-                self._register_route(topic, response_queue)
-            self._correlation_routes[correlation] = response_queue
-
-            try:
-                # aiomqtt subscribe accepts simple topic string or list
-                for t in topics:
-                    await client.subscribe(t, qos=0)
-                subscribed = True
-            except MqttError:
-                logger.info(
-                    "Subscription to response topics %s failed; " "relying on reply topic",
-                    topics,
-                )
-
-            # Construct message envelope to use our shared builder logic
-            message = QueuedPublish(
-                topic_name=pub_topic,
-                payload=pub_payload,
-                qos=int(QOSLevel.QOS_0),
-                retain=False,
-                response_topic=reply_topic,
+            msg = QueuedPublish(
+                topic_name=topic,
+                payload=payload.encode() if isinstance(payload, str) else payload,
+                response_topic=self._reply_topic,
                 correlation_data=correlation,
             )
-
-            props = build_mqtt_properties(message)
-
-            await client.publish(
-                message.topic_name,
-                message.payload,
-                qos=int(message.qos),
-                retain=message.retain,
-                properties=props,
-            )
-
-            delivered = await asyncio.wait_for(response_queue.get(), timeout=timeout)
-            return _payload_bytes(delivered.payload)
+            await self._client.publish(msg.topic_name, msg.payload, properties=build_mqtt_properties(msg))
+            delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
+            return msgspec.convert(delivered.payload, bytes)
         finally:
             self._correlation_routes.pop(correlation, None)
-            for topic in topics:
-                self._unregister_route(topic, response_queue)
-            try:
-                if subscribed:
-                    for t in topics:
-                        await client.unsubscribe(t)
-            except MqttError:
-                logger.info("Ignoring MQTT unsubscribe error")
-
-    async def _publish_simple(
-        self,
-        topic: str,
-        payload: str | bytes,
-        retain: bool = False,
-    ) -> None:
-        data = payload.encode("utf-8") if isinstance(payload, str) else payload
-        await self._ensure_client().publish(
-            topic,
-            data,
-            qos=0,
-            retain=retain,
-        )
+            for t in resp_topics:
+                await self._client.unsubscribe(t)
 
     async def digital_write(self, pin: int, value: int) -> None:
-        if self._digital_modes.get(pin) != 1:
-            await self.set_digital_mode(pin, 1)
-        topic = str(Topic.build(Topic.DIGITAL, pin))
-        await self._publish_simple(topic, str(value))
-        logger.info("digital_write(%d, %d) -> %s", pin, value, topic)
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(str(Topic.build(Topic.DIGITAL, pin)), str(value))
 
     async def digital_read(self, pin: int, timeout: float = 15) -> int:
-        response = await self._publish_and_wait(
+        res = await self._publish_and_wait(
             str(Topic.build(Topic.DIGITAL, pin, "read")),
             b"",
-            resp_topic=(
-                str(Topic.build(Topic.DIGITAL, pin, "value")),
-                str(Topic.build(Topic.DIGITAL, "value")),
-            ),
+            resp_topic=str(Topic.build(Topic.DIGITAL, pin, "value")),
             timeout=timeout,
         )
-        return int(response.decode("utf-8"))
+        return int(res.decode())
 
     async def analog_read(self, pin: int, timeout: float = 15) -> int:
-        response = await self._publish_and_wait(
+        res = await self._publish_and_wait(
             str(Topic.build(Topic.ANALOG, pin, "read")),
             b"",
-            resp_topic=(
-                str(Topic.build(Topic.ANALOG, pin, "value")),
-                str(Topic.build(Topic.ANALOG, "value")),
-            ),
+            resp_topic=str(Topic.build(Topic.ANALOG, pin, "value")),
             timeout=timeout,
         )
-        return int(response.decode("utf-8"))
+        return int(res.decode())
 
     async def analog_write(self, pin: int, value: int) -> None:
-        """Set PWM/Analog output value (0-255)."""
-        if not (0 <= value <= 255):
-            raise ValueError(f"analog_write value {value} out of range (0-255)")
-        topic = str(Topic.build(Topic.ANALOG, pin))
-        await self._publish_simple(topic, str(value))
-        logger.info("analog_write(%d, %d) -> %s", pin, value, topic)
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(str(Topic.build(Topic.ANALOG, pin)), str(value))
 
-    async def set_digital_mode(self, pin: int, mode: int | str) -> None:
-        if isinstance(mode, str):
-            normalized = mode.strip().lower()
-            mode_map = {
-                "input": 0,
-                "output": 1,
-                "input_pullup": 2,
-                "pullup": 2,
-            }
-            if normalized not in mode_map:
-                raise ValueError(f"Unknown digital mode '{mode}'")
-            mode_value = mode_map[normalized]
-        else:
-            mode_value = int(mode)
-
-        if mode_value not in (0, 1, 2):
-            raise ValueError(f"Invalid digital mode value: {mode}")
-
-        topic = str(Topic.build(Topic.DIGITAL, pin, "mode"))
-        await self._publish_simple(topic, str(mode_value))
-        self._digital_modes[pin] = mode_value
-        logger.info("set_digital_mode(%d, %d)", pin, mode_value)
+    async def set_digital_mode(self, pin: int, mode: int) -> None:
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(str(Topic.build(Topic.DIGITAL, pin, "mode")), str(mode))
 
     async def put(self, key: str, value: str, timeout: float = 15) -> None:
         await self._publish_and_wait(
             str(Topic.build(Topic.DATASTORE, "put", key)),
-            value.encode("utf-8"),
+            value,
             resp_topic=str(Topic.build(Topic.DATASTORE, "get", key)),
             timeout=timeout,
         )
-        logger.info("datastore put('%s', '%s')", key, value)
 
     async def get(self, key: str, timeout: float = 15) -> str:
-        response = await self._publish_and_wait(
+        res = await self._publish_and_wait(
             str(Topic.build(Topic.DATASTORE, "get", key, "request")),
             b"",
             resp_topic=str(Topic.build(Topic.DATASTORE, "get", key)),
             timeout=timeout,
         )
-        return response.decode("utf-8")
+        return res.decode()
 
     async def get_free_memory(self, timeout: float = 15) -> int:
-        response = await self._publish_and_wait(
+        res = await self._publish_and_wait(
             str(Topic.build(Topic.SYSTEM, "free_memory", "get")),
             b"",
             resp_topic=str(Topic.build(Topic.SYSTEM, "free_memory", "value")),
             timeout=timeout,
         )
-        return int(response.decode("utf-8"))
+        return int(res.decode())
 
-    async def run_sketch_command(self, command_parts: list[str], timeout: float = 15) -> bytes:
-        command_str = _format_shell_command(command_parts)
-        logger.warning("run_sketch_command falls back to a synchronous shell " "command via MQTT.")
-        response = await self._publish_and_wait(
-            str(Topic.build(Topic.SHELL, "run")),
-            command_str.encode("utf-8"),
-            resp_topic=str(Topic.build(Topic.SHELL, "response")),
-            timeout=timeout,
-        )
-        return response
-
-    async def run_shell_command_async(self, command_parts: list[str], timeout: float = 15) -> int:
-        command_str = _format_shell_command(command_parts)
-        response = await self._publish_and_wait(
+    async def run_shell_command_async(self, parts: list[str], timeout: float = 15) -> int:
+        res = await self._publish_and_wait(
             str(Topic.build(Topic.SHELL, "run_async")),
-            command_str.encode("utf-8"),
+            shlex.join(parts),
             resp_topic=str(Topic.build(Topic.SHELL, "run_async", "response")),
             timeout=timeout,
         )
-        text = response.decode("utf-8")
-        if text.startswith("error:"):
-            raise RuntimeError(f"Shell command rejected: {text}")
-        return int(text)
+        return int(res.decode())
 
-    async def poll_shell_process(
-        self,
-        pid: int,
-        *,
-        timeout: float = 15,
-    ) -> ShellPollResponse:
-        if pid <= 0:
-            raise ValueError("pid must be a positive integer")
-        response = await self._publish_and_wait(
+    async def poll_shell_process(self, pid: int, timeout: float = 15) -> ShellPollResponse:
+        res = await self._publish_and_wait(
             str(Topic.build(Topic.SHELL, "poll", pid)),
             b"",
             resp_topic=str(Topic.build(Topic.SHELL, "poll", pid, "response")),
             timeout=timeout,
         )
-        try:
-            payload = msgspec.msgpack.decode(response)
-        except msgspec.DecodeError as exc:
-            raise ValueError("Malformed process poll response") from exc
-        if not isinstance(payload, dict):
-            raise ValueError("Process poll response must be an object")
-        payload_dict = cast(dict[str, Any], payload)
-        return cast(ShellPollResponse, payload_dict)
+        return cast(ShellPollResponse, msgspec.msgpack.decode(res))
 
     async def spi_begin(self) -> None:
-        await self._publish_simple(str(Topic.build(Topic.SPI, "begin")), b"")
-        logger.info("spi_begin()")
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(str(Topic.build(Topic.SPI, "begin")), b"")
 
     async def spi_end(self) -> None:
-        await self._publish_simple(str(Topic.build(Topic.SPI, "end")), b"")
-        logger.info("spi_end()")
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(str(Topic.build(Topic.SPI, "end")), b"")
 
     async def spi_config(self, frequency: int = 4000000, bit_order: int = 1, data_mode: int = 0) -> None:
+        if not self._client:
+            raise ConnectionError("Not connected")
         config = {"frequency": frequency, "bit_order": bit_order, "data_mode": data_mode}
-        await self._publish_simple(str(Topic.build(Topic.SPI, "config")), msgspec.json.encode(config))
-        logger.info("spi_config(%s)", config)
+        await self._client.publish(str(Topic.build(Topic.SPI, "config")), msgspec.json.encode(config))
 
     async def spi_transfer(self, data: bytes, timeout: float = 15) -> bytes:
-        response = await self._publish_and_wait(
+        return await self._publish_and_wait(
             str(Topic.build(Topic.SPI, "transfer")),
             data,
             resp_topic=str(Topic.build(Topic.SPI, "transfer", "resp")),
             timeout=timeout,
         )
-        return response
-
-    async def enter_bootloader(self) -> None:
-        await self._publish_simple(str(Topic.build(Topic.SYSTEM, "bootloader")), b"")
-        logger.info("enter_bootloader()")
-
-    async def console_write(self, message: str) -> None:
-        topic = str(Topic.build(Topic.CONSOLE, "in"))
-        await self._publish_simple(topic, message)
-        logger.info("console_write('%s')", message)
-
-    def spi(
-        self,
-        frequency: int = 4000000,
-        bit_order: SpiBitOrder = SpiBitOrder.MSBFIRST,
-        mode: SpiMode = SpiMode.MODE0,
-    ) -> SpiDevice:
-        """Create a high-level SPI device managed by this bridge.
-
-        Args:
-            frequency: SPI clock frequency in Hz.
-            bit_order: MSBFIRST or LSBFIRST.
-            mode: SPI mode (0-3).
-        """
-        return SpiDevice(self, frequency, bit_order, mode)
-
-    async def console_read(self) -> str | None:
-        topic = str(Topic.build(Topic.CONSOLE, "out"))
-        client = self._ensure_client()
-        queue: asyncio.Queue[Message] | None = None
-        routes = self._response_routes.get(topic)
-        if routes:
-            queue = routes[0][0]
-
-        if queue is None:
-            queue = asyncio.Queue(maxsize=100)
-            self._register_route(topic, queue, drop_oldest=True)
-            await client.subscribe(topic, qos=0)
-            logger.info("Subscribed to console output topic: %s", topic)
-
-        try:
-            message = await asyncio.wait_for(queue.get(), timeout=0.1)
-        except (TimeoutError, asyncio.TimeoutError):
-            return None
-        except (asyncio.CancelledError, OSError, RuntimeError) as exc:
-            logger.error("Error reading from console queue: %s", exc)
-            return None
-
-        payload = _payload_bytes(message.payload)
-        return payload.decode("utf-8", errors="ignore")
-
-    async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
-        incoming_topic = str(Topic.build(Topic.MAILBOX, "incoming"))
-        try:
-            payload = await self._publish_and_wait(
-                str(Topic.build(Topic.MAILBOX, "read")),
-                b"",
-                resp_topic=incoming_topic,
-                timeout=timeout,
-            )
-        except TimeoutError:
-            return None
-        except (asyncio.CancelledError, MqttError, OSError) as exc:
-            logger.error("Error waiting for mailbox message: %s", exc)
-            return None
-
-        if not payload:
-            return None
-
-        return payload
 
     async def file_write(self, filename: str, content: str | bytes) -> None:
-        fn = filename.lstrip("/")
-        topic = str(Topic.build(Topic.FILE, "write", fn))
-        await self._publish_simple(topic, content)
-        logger.info("file_write('%s', %d bytes)", filename, len(content))
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(str(Topic.build(Topic.FILE, "write", filename.lstrip("/"))), content)
 
     async def file_read(self, filename: str, timeout: float = 15) -> bytes:
-        fn = filename.lstrip("/")
         return await self._publish_and_wait(
-            str(Topic.build(Topic.FILE, "read", fn)),
+            str(Topic.build(Topic.FILE, "read", filename.lstrip("/"))),
             b"",
-            resp_topic=str(Topic.build(Topic.FILE, "read", "response", fn)),
+            resp_topic=str(Topic.build(Topic.FILE, "read", "response", filename.lstrip("/"))),
             timeout=timeout,
         )
 
     async def file_remove(self, filename: str) -> None:
-        fn = filename.lstrip("/")
-        topic = str(Topic.build(Topic.FILE, "remove", fn))
-        await self._publish_simple(topic, b"")
-        logger.info("file_remove('%s')", filename)
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(str(Topic.build(Topic.FILE, "remove", filename.lstrip("/"))), b"")
 
     async def mailbox_write(self, message: str | bytes) -> None:
-        topic = str(Topic.build(Topic.MAILBOX, "write"))
-        await self._publish_simple(topic, message)
-        logger.info("mailbox_write(%d bytes)", len(message))
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(str(Topic.build(Topic.MAILBOX, "write")), message)
+
+    async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
+        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
+            return await self._publish_and_wait(
+                str(Topic.build(Topic.MAILBOX, "read")),
+                b"",
+                resp_topic=str(Topic.build(Topic.MAILBOX, "incoming")),
+                timeout=timeout,
+            )
+        return None

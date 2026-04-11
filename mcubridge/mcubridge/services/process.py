@@ -76,7 +76,7 @@ class ProcessComponent(BaseComponent):
     ) -> bool:
         """Handle shell-related MQTT topics."""
         segments = list(route.segments)
-        payload = self._payload_bytes(inbound.payload)
+        payload = msgspec.convert(inbound.payload, bytes)
         if not segments:
             return True
 

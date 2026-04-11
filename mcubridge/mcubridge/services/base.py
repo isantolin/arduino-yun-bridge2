@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import structlog
-from collections.abc import Callable, Coroutine
-from typing import Any, Deque, Protocol, TypeVar
+from collections.abc import Coroutine
+from typing import Any, Protocol, TypeVar, TYPE_CHECKING
 
-import msgspec
 from aiomqtt.message import Message
 
-
 from ..config.settings import RuntimeConfig
-from ..protocol.structures import QueuedPublish, TopicRoute
+from ..protocol.structures import QueuedPublish
 from ..state.context import RuntimeState
+
+if TYPE_CHECKING:
+    from ..protocol.structures import TopicRoute
 
 TReq = TypeVar("TReq")
 
@@ -71,7 +71,7 @@ class BridgeContext(Protocol):
 
 
 class BaseComponent:
-    """Base class for services providing shared boilerplate reduction."""
+    """Base class for services providing shared configuration and context."""
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, ctx: BridgeContext) -> None:
         self.config = config
@@ -79,76 +79,8 @@ class BaseComponent:
         self.ctx = ctx
 
     async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle an inbound MQTT message routed to this service.
-
-        Subclasses override this to implement topic-specific logic.
-        Returns True if the message was handled, False otherwise.
-        """
+        """Handle an inbound MQTT message routed to this service."""
         return False
-
-    @staticmethod
-    def _payload_bytes(payload: Any) -> bytes:
-        """Extract bytes from an MQTT message payload."""
-        if isinstance(payload, bytes):
-            return payload
-        if isinstance(payload, bytearray):
-            return bytes(payload)
-        if isinstance(payload, memoryview):
-            return payload.tobytes()
-        try:
-            return msgspec.convert(payload, bytes)
-        except (msgspec.MsgspecError, TypeError, ValueError):
-            return b"" if payload is None else str(payload).encode("utf-8")
-
-    @contextlib.asynccontextmanager
-    async def _track_transaction(
-        self,
-        queue: Deque[TReq],
-        request: TReq | None,
-        limit: int,
-        on_overflow: Callable[[], Coroutine[Any, Any, None]] | None = None,
-    ):
-        """Manages the lifecycle of a pending request transaction.
-
-        If request is None, tracking is skipped but the overflow check still applies.
-        """
-        if len(queue) >= limit:
-            if on_overflow:
-                await on_overflow()
-            yield False
-            return
-
-        if request is not None:
-            queue.append(request)
-
-        try:
-            # yield to allow sending the frame
-            yield True
-        except (asyncio.CancelledError, Exception):
-            if request is not None:
-                with contextlib.suppress(ValueError):
-                    queue.remove(request)
-            raise
-
-    async def _safe_send_request(
-        self,
-        queue: Deque[TReq],
-        request: TReq | None,
-        limit: int,
-        command_id: int,
-        payload: bytes,
-        on_overflow: Callable[[], Coroutine[Any, Any, None]] | None = None,
-    ) -> bool:
-        """Helper to send a frame and track it in a queue with automatic cleanup."""
-        async with self._track_transaction(queue, request, limit, on_overflow) as allowed:
-            if not allowed:
-                return False
-
-            ok = await self.ctx.send_frame(command_id, payload)
-            if not ok and request is not None:
-                with contextlib.suppress(ValueError):
-                    queue.remove(request)
-            return ok
 
     async def _publish_value(
         self,

@@ -52,7 +52,6 @@ class MailboxComponent(BaseComponent):
         if message_id is not None:
             body = _msgpack_enc.encode({"message_id": message_id})
         else:
-            # Fallback to raw payload if no valid ID found (strict enforcement might reject this later)
             body = payload
 
         await self.ctx.publish(topic=topic_name, payload=body)
@@ -82,7 +81,6 @@ class MailboxComponent(BaseComponent):
         )
         await self.ctx.publish(topic=topic, payload=data)
 
-        # [SIL-2] Direct library delegation for availability metrics
         await self.ctx.publish(
             topic=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"),
             payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
@@ -98,7 +96,6 @@ class MailboxComponent(BaseComponent):
             )
             return False
 
-        # [SIL-2] Delegate queue length to library container
         queue_len = len(self.state.mailbox_queue)
         response = MailboxAvailableResponsePacket(count=queue_len).encode()
 
@@ -112,8 +109,6 @@ class MailboxComponent(BaseComponent):
         original_payload = self.state.pop_mailbox_message()
         message_payload: bytes = original_payload if original_payload is not None else b""
 
-        # [SIL-2] Direct slicing delegates truncation to Python C core
-        # 3 bytes overhead: fixarray(1) + bin8 type + length byte
         max_allowed = protocol.MAX_PAYLOAD_SIZE - 3
         if len(message_payload) > max_allowed:
             logger.warning("Mailbox message too long (%d bytes), truncating.", len(message_payload))
@@ -131,7 +126,6 @@ class MailboxComponent(BaseComponent):
                 self.state.requeue_mailbox_message_front(original_payload)
             return False
 
-        # [SIL-2] Inform availability using direct length from library deque/queue
         await self._publish_available("outgoing_available", len(self.state.mailbox_queue))
         return True
 
@@ -140,7 +134,7 @@ class MailboxComponent(BaseComponent):
         route: TopicRoute,
         inbound: Message,
     ) -> bool:
-        payload = self._payload_bytes(inbound.payload)
+        payload = msgspec.convert(inbound.payload, bytes)
         action = route.identifier
         match action:
             case MailboxAction.WRITE:

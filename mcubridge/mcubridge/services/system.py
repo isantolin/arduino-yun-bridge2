@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+import contextlib
 import structlog
 from collections.abc import Awaitable, Callable
 from typing import cast
@@ -40,16 +41,20 @@ class SystemComponent(BaseComponent):
         self._pending_version: collections.deque[Message] = collections.deque()
 
     async def request_mcu_version(self, inbound: Message | None = None) -> bool:
-        send_ok = await self._safe_send_request(
-            queue=self._pending_version,
-            request=inbound,
-            limit=10,
-            command_id=Command.CMD_GET_VERSION.value,
-            payload=b"",
-        )
-        if send_ok:
+        if len(self._pending_version) >= 10:
+            return False
+
+        if inbound is not None:
+            self._pending_version.append(inbound)
+
+        ok = await self.ctx.send_frame(Command.CMD_GET_VERSION.value, b"")
+        if ok:
             self.state.mcu_version = None
-        return send_ok
+        else:
+            if inbound is not None:
+                with contextlib.suppress(ValueError):
+                    self._pending_version.remove(inbound)
+        return ok
 
     async def handle_set_baudrate_resp(self, seq_id: int, payload: bytes) -> None:
         logger.info("MCU acknowledged baudrate change. Switching local UART...")
@@ -114,13 +119,16 @@ class SystemComponent(BaseComponent):
             case SystemAction.FREE_MEMORY:
                 if not (remainder and remainder[0] == SystemAction.GET):
                     return False
-                return await self._safe_send_request(
-                    queue=self._pending_free_memory,
-                    request=inbound,
-                    limit=10,
-                    command_id=Command.CMD_GET_FREE_MEMORY.value,
-                    payload=b"",
-                )
+
+                if len(self._pending_free_memory) >= 10:
+                    return False
+
+                self._pending_free_memory.append(inbound)
+                ok = await self.ctx.send_frame(Command.CMD_GET_FREE_MEMORY.value, b"")
+                if not ok:
+                    with contextlib.suppress(ValueError):
+                        self._pending_free_memory.append(inbound)
+                return ok
 
             case SystemAction.VERSION:
                 if not (remainder and remainder[0] == SystemAction.GET):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import structlog
 
+import msgspec
 from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, ConsoleAction
@@ -55,7 +56,7 @@ class ConsoleComponent(BaseComponent):
         await self.flush_queue()
 
     async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        payload = self._payload_bytes(inbound.payload)
+        payload = msgspec.convert(inbound.payload, bytes)
         await self._handle_mqtt_input(payload, inbound)
         return True
 

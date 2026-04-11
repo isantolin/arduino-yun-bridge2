@@ -147,7 +147,7 @@ def test_handle_push_stores_incoming_queue(
     payload = structures.MailboxPushPacket(data=b"hello").encode()
     result = asyncio.run(component.handle_push(0, payload))
     assert result is True
-    assert list(runtime_state.mailbox_incoming_queue.values()) == [b"hello"]
+    assert runtime_state.pop_mailbox_incoming() == b"hello"
 
     topic_base = runtime_state.mqtt_topic_prefix
     assert [msg.topic_name for msg in bridge.published] == [
@@ -200,7 +200,7 @@ def test_handle_read_requeues_when_send_fails(
 
     result = asyncio.run(component.handle_read(0, b""))
     assert result is False
-    assert list(runtime_state.mailbox_queue.values()) == [b"fail"]
+    assert runtime_state.pop_mailbox_message() == b"fail"
     # No availability topic should be published on failure
     assert not bridge.published
 
@@ -212,7 +212,7 @@ def test_handle_mqtt_write_enqueues_and_notifies(
     component, bridge = mailbox_component
     asyncio.run(component.handle_mqtt(make_route(Topic.MAILBOX, MailboxAction.WRITE), make_mqtt_msg(b"mqtt")))
 
-    assert list(runtime_state.mailbox_queue.values()) == [b"mqtt"]
+    assert runtime_state.pop_mailbox_message() == b"mqtt"
     assert bridge.published[-1].topic_name == (
         topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available")
     )

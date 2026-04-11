@@ -507,7 +507,7 @@ async def test_mailbox_read_requeues_on_send_failure(
 
     # Message should be back in queue
     assert len(runtime_state.mailbox_queue) == 1
-    assert list(runtime_state.mailbox_queue.values())[0] == b"lost-message"
+    assert runtime_state.pop_mailbox_message() == b"lost-message"
 
 
 @pytest.mark.asyncio

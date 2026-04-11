@@ -128,15 +128,8 @@ class TestPersistentQueue:
         pq.clear()
         assert len(pq) == 0
 
-    def test_iter(self: Any, pq: Any):
-        pq.append(b"a")
-        pq.append(b"b")
-        assert list(pq) == [b"a", b"b"]
-
     def test_close_then_popleft(self: Any, pq: Any):
         pq.close()
-        # Even after close, diskcache Deque might still work if not disk-backed or depending on implementation
-        # But for minimalistic API we just care that it doesn't crash if called.
         pq.popleft()
 
     def test_max_items_circular(self: Any, pq: Any):

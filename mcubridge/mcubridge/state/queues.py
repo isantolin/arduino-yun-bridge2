@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from collections import deque
 from pathlib import Path
-from typing import Any, Generic, Iterator, TypeVar, cast
+from typing import Any, Generic, TypeVar, cast
 
 import msgspec
 import structlog
@@ -133,28 +133,10 @@ class PersistentQueue(Generic[T]):
     def last_error(self) -> str | None:
         return self._last_err_msg
 
-    def values(self) -> tuple[T, ...]:
-        if self._cache is not None:
-            head: int = cast(int, self._cache["head"])
-            tail: int = cast(int, self._cache["tail"])
-            res: list[T] = []
-            for i in range(head, tail):
-                v: Any = self._cache.get(i)  # type: ignore[reportUnknownMemberType]
-                if v is not None:
-                    res.append(cast(T, v))
-            return tuple(res)
-        return tuple(list(self._items))
-
     def __len__(self) -> int:
         if self._cache is not None:
             return cast(int, self._cache["tail"]) - cast(int, self._cache["head"])
         return len(self._items)
-
-    def __iter__(self) -> Iterator[T]:
-        return iter(self.values())
-
-    def __getitem__(self, index: int) -> T:
-        return self.values()[index]
 
 
 class BoundedByteDeque:
@@ -208,14 +190,8 @@ class BoundedByteDeque:
     def close(self) -> None:
         self._queue.close()
 
-    def values(self) -> tuple[bytes, ...]:
-        return self._queue.values()
-
     def __len__(self) -> int:
         return len(self._queue)
-
-    def __getitem__(self, index: int) -> bytes:
-        return self._queue[index]
 
     @property
     def bytes(self) -> int:

@@ -43,17 +43,19 @@ def logger_spy() -> Iterator[tuple[logging.Logger, _ListHandler]]:
 def test_enqueue_console_chunk_trims_and_drops(
     runtime_state: RuntimeState,
 ) -> None:
+    # 1. Chunk that requires truncation
     runtime_state.enqueue_console_chunk(b"a" * 128)
     assert runtime_state.console_queue_bytes == 64
-    assert runtime_state.console_to_mcu_queue[-1] == b"a" * 64
     assert runtime_state.console_truncated_chunks == 1
     assert runtime_state.console_truncated_bytes == 64
 
+    # 2. Add another chunk that exceeds total byte limit (64 bytes)
+    # The first 'a'*64 should be dropped to make room for 'b'*64
     runtime_state.enqueue_console_chunk(b"b" * 64)
     assert runtime_state.console_queue_bytes == 64
-    assert runtime_state.console_to_mcu_queue[-1] == b"b" * 64
     assert runtime_state.console_dropped_chunks == 1
     assert runtime_state.console_dropped_bytes == 64
+    assert runtime_state.pop_console_chunk() == b"b" * 64
 
 
 def test_enqueue_mailbox_message_respects_limits(
@@ -99,7 +101,7 @@ def test_requeue_console_chunk_front_restores_bytes(
     runtime_state.requeue_console_chunk_front(queued)
 
     assert runtime_state.console_queue_bytes == len(queued)
-    assert runtime_state.console_to_mcu_queue[0] == queued
+    assert runtime_state.pop_console_chunk() == queued
 
 
 def test_mqtt_queue_respects_config(

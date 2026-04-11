@@ -301,40 +301,6 @@ class TestQueues:
         q.append(b"x")
         assert q
 
-    def test_iter(self):
-        from mcubridge.state.queues import BoundedByteDeque
-
-        q = BoundedByteDeque(max_items=10)
-        q.append(b"a")
-        q.append(b"b")
-        items = list(q)  # type: ignore[reportArgumentType, reportUnknownVariableType]
-        assert items == [b"a", b"b"]
-
-    def test_getitem(self):
-        from mcubridge.state.queues import BoundedByteDeque
-
-        q = BoundedByteDeque(max_items=10)
-        q.append(b"a")
-        q.append(b"b")
-        assert q[0] == b"a"
-        assert q[1] == b"b"
-        assert q[-1] == b"b"
-
-    def test_getitem_out_of_range(self):
-        from mcubridge.state.queues import BoundedByteDeque
-
-        q = BoundedByteDeque(max_items=10)
-        with pytest.raises(IndexError):
-            q[0]
-
-    def test_getitem_negative_out_of_range(self):
-        from mcubridge.state.queues import BoundedByteDeque
-
-        q = BoundedByteDeque(max_items=1)
-        q.append(b"a")
-        with pytest.raises(IndexError):
-            q[-2]
-
     def test_clear(self):
         from mcubridge.state.queues import BoundedByteDeque
 

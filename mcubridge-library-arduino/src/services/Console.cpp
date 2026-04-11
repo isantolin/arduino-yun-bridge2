@@ -60,8 +60,6 @@ int ConsoleClass::peek() {
   return static_cast<int>(_rx_buffer.front());
 }
 
-void ConsoleClass::flush() { process(); }
-
 #ifndef BRIDGE_TEST_NO_GLOBALS
 ConsoleClass Console;
 #endif

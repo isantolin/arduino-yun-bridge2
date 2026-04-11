@@ -20,6 +20,7 @@ import msgspec
 import msgspec.msgpack
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
+from cryptography.hazmat.primitives.constant_time import bytes_eq
 
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -40,7 +41,6 @@ from ..security.security import (
     derive_handshake_key,
     generate_nonce_with_counter,
     secure_zero,
-    timing_safe_equal,
     validate_nonce_counter,
 )
 from ..state.context import McuCapabilities, RuntimeState
@@ -222,7 +222,7 @@ class SerialHandshakeManager:
 
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = nonce_length
-        self._state.link_expected_tag = self.compute_handshake_tag(nonce)
+        self._state.link_expected_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
 
         reset_ok = await self._send_frame(
             Command.CMD_LINK_RESET.value,
@@ -242,7 +242,7 @@ class SerialHandshakeManager:
         await asyncio.sleep(0.05)
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
-        our_tag = self.compute_handshake_tag(nonce)
+        our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
         sync_payload = LinkSyncPacket(nonce=nonce, tag=our_tag).encode()
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
@@ -325,13 +325,13 @@ class SerialHandshakeManager:
             return False
 
         expected_tag = self._state.link_expected_tag
-        recalculated_tag = self.compute_handshake_tag(nonce)
+        recalculated_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
 
-        nonce_mismatch = not timing_safe_equal(nonce, expected)
+        nonce_mismatch = not bytes_eq(nonce, expected)
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
         tag_mismatch = (
-            not timing_safe_equal(tag_bytes, recalculated_tag)
+            not bytes_eq(tag_bytes, recalculated_tag)
             and self._config.serial_shared_secret != b"DEBUG_INSECURE"  # noqa: W503
         )
 
@@ -587,10 +587,6 @@ class SerialHandshakeManager:
         h.update(nonce)
         tag = h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
         return tag
-
-    def compute_handshake_tag(self, nonce: bytes) -> bytes:
-        secret = self._config.serial_shared_secret
-        return self.calculate_handshake_tag(secret, nonce)
 
     def _build_reset_payload(self) -> bytes:
         # [SIL-2] Use structured packet encoding

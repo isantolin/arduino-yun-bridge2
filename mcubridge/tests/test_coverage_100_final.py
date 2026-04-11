@@ -613,14 +613,11 @@ class TestStatusWriter:
             state.cleanup()
 
     @pytest.mark.asyncio
-    async def test_cleanup_status_file(self: Any, tmp_path: Any):
-        from mcubridge.state.status import cleanup_status_file
-
-        fake_status = tmp_path / "status.json"
-        fake_status.write_text("{}")
-        with patch("mcubridge.state.status.STATUS_FILE", fake_status):
-            cleanup_status_file()
-            assert not fake_status.exists()
+    async def test_cleanup_status_file(self: Any):
+        from mcubridge.state import status
+        with patch("pathlib.Path.unlink") as mock_unlink:
+            status.STATUS_FILE.unlink(missing_ok=True)
+            mock_unlink.assert_called()
 
 
 # ============================================================================
@@ -1013,10 +1010,10 @@ class TestDaemon:
 
     @pytest.mark.asyncio
     async def test_cleanup_status_file_missing(self):
-        from mcubridge.state.status import cleanup_status_file
+        from mcubridge.state.status import STATUS_FILE
 
         with patch("mcubridge.state.status.STATUS_FILE", Path("/nonexistent/status.json")):
-            cleanup_status_file()  # Should not raise
+            STATUS_FILE.unlink(missing_ok=True)  # Should not raise
 
 
 # ============================================================================

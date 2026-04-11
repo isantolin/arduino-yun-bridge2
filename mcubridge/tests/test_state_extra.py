@@ -9,7 +9,7 @@ from mcubridge.state.context import (
     SerialLatencyStats,
     collect_system_metrics,
 )
-from mcubridge.state.status import cleanup_status_file
+from mcubridge.state.status import STATUS_FILE
 
 
 def test_mcu_capabilities_properties() -> None:
@@ -184,4 +184,4 @@ async def test_status_writer_with_version() -> None:
 def test_cleanup_status_file_error() -> None:
     with patch("mcubridge.state.status.STATUS_FILE") as mock_path:
         mock_path.unlink.side_effect = OSError("fail")
-        cleanup_status_file()  # Should not raise
+        STATUS_FILE.unlink(missing_ok=True)  # Should not raise

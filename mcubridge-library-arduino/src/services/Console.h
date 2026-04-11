@@ -29,7 +29,7 @@ class ConsoleClass : public Stream {
   int available() override;
   int read() override;
   int peek() override;
-  void flush() override;
+  void flush() override {}
 
  private:
   enum Flags { BEGUN = 0 };

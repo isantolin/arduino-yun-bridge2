@@ -57,7 +57,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                 )
             elif raw_cmd == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
-                tag = service.handshake_manager.compute_handshake_tag(nonce)
+                tag = service.handshake_manager.calculate_handshake_tag(service.config.serial_shared_secret, nonce)
                 response = _encode_link_sync(nonce, tag)
 
                 async def _respond():
@@ -203,7 +203,7 @@ def test_link_sync_resp_respects_rate_limit(
 
         def _prime_handshake(seed: int) -> bytes:
             nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
-            tag = service.handshake_manager.compute_handshake_tag(nonce)
+            tag = service.handshake_manager.calculate_handshake_tag(service.config.serial_shared_secret, nonce)
             runtime_state.mark_transport_connected()
             runtime_state.link_handshake_nonce = nonce
             runtime_state.link_nonce_length = len(nonce)
@@ -253,7 +253,7 @@ async def test_sync_auth_failure_schedules_backoff(
 
     def _prime_handshake(seed: int) -> tuple[bytes, bytes]:
         nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
-        tag = service.handshake_manager.compute_handshake_tag(nonce)
+        tag = service.handshake_manager.calculate_handshake_tag(service.config.serial_shared_secret, nonce)
         runtime_state.mark_transport_connected()
         runtime_state.link_handshake_nonce = nonce
         runtime_state.link_nonce_length = len(nonce)
@@ -344,7 +344,8 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
             )
         elif raw_cmd == Command.CMD_LINK_SYNC.value:
             nonce = service.state.link_handshake_nonce or b""
-            tag = bytearray(service.handshake_manager.compute_handshake_tag(nonce))
+            tag_raw = service.handshake_manager.calculate_handshake_tag(service.config.serial_shared_secret, nonce)
+            tag = bytearray(tag_raw)
             if tag:
                 tag[0] ^= 0xFF
             # Corruption happened, now send it back

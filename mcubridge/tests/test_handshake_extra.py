@@ -65,7 +65,7 @@ async def test_handshake_sync_resp_replay_detected() -> None:
         )
         nonce = b"A" * 16
         state.link_handshake_nonce = nonce
-        state.link_expected_tag = manager.compute_handshake_tag(nonce)
+        state.link_expected_tag = manager.calculate_handshake_tag(config.serial_shared_secret, nonce)
 
         # Mock validate_nonce_counter to fail (replay)
         with patch("mcubridge.services.handshake.validate_nonce_counter", return_value=(False, 0)):

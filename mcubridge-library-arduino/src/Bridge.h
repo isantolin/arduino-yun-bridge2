@@ -77,9 +77,6 @@ class BridgeClass {
   void process();
   bool isSynchronized() const;
   void enterSafeState();
-  static void forceSafeState();
-
-  static bool runPowerOnSelfTests();
 
   template <rpc::StatusCode S>
   void emitStatus() { emitStatus(S, etl::span<const uint8_t>()); }

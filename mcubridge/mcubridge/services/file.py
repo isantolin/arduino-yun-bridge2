@@ -33,15 +33,13 @@ import structlog
 logger = structlog.get_logger("mcubridge.file")
 
 
-def _new_chunk_list() -> list[bytes]:
-    return []
 
 
 @dataclass
 class _PendingMcuRead:
     identifier: str
     future: asyncio.Future[bytes]
-    chunks: list[bytes] = field(default_factory=_new_chunk_list)
+    chunks: list[bytes] = field(default_factory=list)  # type: ignore[reportUnknownVariableType]
 
 
 def _do_write_file(path: Path, data: bytes) -> None:

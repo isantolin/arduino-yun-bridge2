@@ -79,7 +79,7 @@ class FrameAdapter(Adapter):
         payload = obj.get("payload", b"")
         header = obj.get("header", {})
         command_id = header.get("command_id", 0)
-        
+
         if payload and rle.should_compress(payload):
             try:
                 compressed = rle.encode(payload)
@@ -90,7 +90,7 @@ class FrameAdapter(Adapter):
                     return {"header": new_header, "payload": compressed}
             except (ValueError, TypeError, OverflowError):
                 pass
-        
+
         new_header = dict(header)
         new_header["payload_len"] = len(payload)
         return {"header": new_header, "payload": payload}

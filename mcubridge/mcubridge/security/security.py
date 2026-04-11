@@ -143,7 +143,6 @@ __all__ = [
     "generate_nonce_with_counter",
     "secure_zero",
     "secure_zero_bytes_copy",
-    "timing_safe_equal",
     "validate_nonce_counter",
     "verify_crypto_integrity",
     "hkdf_sha256",

@@ -136,15 +136,6 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
         raise
 
 
-def cleanup_status_file() -> None:
-    """Remove the status file if it exists."""
-
-    try:
-        STATUS_FILE.unlink(missing_ok=True)
-    except OSError:
-        logger.debug("Ignoring error while removing status file.")
-
-
 def _write_status_file(payload: BridgeStatus) -> None:
     """[SIL-2] Atomic status persistence using zero-copy library primitives."""
     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)

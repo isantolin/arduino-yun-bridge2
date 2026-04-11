@@ -342,9 +342,9 @@ class TestRuntimeStateOps:
 
 @pytest.mark.asyncio
 async def test_cleanup_status_file():
-    from mcubridge.state.status import cleanup_status_file
+    from mcubridge.state.status import STATUS_FILE
 
-    cleanup_status_file()  # Should not raise even if file doesn't exist
+    STATUS_FILE.unlink(missing_ok=True)  # Should not raise even if file doesn't exist
 
 
 # ===================================================================
@@ -549,10 +549,10 @@ class TestSecurityModule:
         assert len(key) == 32
 
     def test_timing_safe_equal(self):
-        from mcubridge.security.security import timing_safe_equal
+        from cryptography.hazmat.primitives.constant_time import bytes_eq
 
-        assert timing_safe_equal(b"abc", b"abc") is True
-        assert timing_safe_equal(b"abc", b"xyz") is False
+        assert bytes_eq(b"abc", b"abc") is True
+        assert bytes_eq(b"abc", b"xyz") is False
 
     def test_generate_and_extract_nonce(self):
         from mcubridge.security.security import generate_nonce_with_counter, extract_nonce_counter

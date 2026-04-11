@@ -188,7 +188,7 @@ async def test_daemon_run_exception_group_coverage():
             patch.object(d.service, "__aenter__", new_callable=AsyncMock),
             patch.object(d.service, "__aexit__", new_callable=AsyncMock),
             patch("mcubridge.daemon._cleanup_child_processes"),
-            patch("mcubridge.daemon.cleanup_status_file"),
+            patch("pathlib.Path.unlink"),
             pytest.raises(ExceptionGroup),
         ):
             await d.run()

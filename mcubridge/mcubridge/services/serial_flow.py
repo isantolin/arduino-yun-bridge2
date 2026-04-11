@@ -19,7 +19,6 @@ from mcubridge.protocol.contracts import (
     expected_responses,
     response_to_request,
 )
-from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
     RESPONSE_ONLY_COMMANDS,

@@ -113,7 +113,7 @@ BridgeClass::BridgeClass(Stream& stream)
   if constexpr (bridge::hal::CurrentArchTraits::id == bridge::hal::ArchId::ARCH_ID_AVR) {
     _hardware_serial = static_cast<HardwareSerial*>(&stream);
   }
-  forceSafeState();
+  bridge::hal::forceSafeState();
 }
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
@@ -125,7 +125,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 
   bridge::hal::init();
   _fsm.begin();
-  _is_post_passed = runPowerOnSelfTests();
+  _is_post_passed = rpc::security::run_cryptographic_self_tests();
   if (!_is_post_passed) enterSafeState();
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -268,10 +268,8 @@ void BridgeClass::enterSafeState() {
 #if BRIDGE_ENABLE_PROCESS
   Process.reset();
 #endif
-  forceSafeState(); notify_observers(MsgBridgeLost());
+  bridge::hal::forceSafeState(); notify_observers(MsgBridgeLost());
 }
-
-void BridgeClass::forceSafeState() { bridge::hal::forceSafeState(); }
 
 void BridgeClass::emitStatus(rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
   if (_status_handler.is_valid()) _status_handler(status_code, payload);
@@ -534,8 +532,6 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
 }
 
 void BridgeClass::_onPacketReceived(etl::span<const uint8_t> p) { _handleReceivedFrame(p); }
-
-bool BridgeClass::runPowerOnSelfTests() { return rpc::security::run_cryptographic_self_tests(); }
 
 etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(const rpc::Frame& in, rpc::Frame& out) {
   out.header = in.header;

@@ -41,7 +41,7 @@ void integrated_test_components() {
 
   Console.begin();
   Console.write('H');
-  Console.flush();
+  Console.process();
   TEST_ASSERT(stream.tx_buf.len > 0);
 
   FileSystem.remove("test.txt");

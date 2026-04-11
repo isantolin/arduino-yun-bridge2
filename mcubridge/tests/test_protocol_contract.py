@@ -115,15 +115,16 @@ def _command_to_handler(name: str) -> str:
 
 def _extract_cpp_dispatch_commands(cpp_content: str) -> set[str]:
     """Return command ids explicitly registered in Bridge.cpp dispatch tables."""
-    # Support pure template dispatch architecture and new O(1) switch dispatch
+    # Support pure template dispatch architecture, old switch dispatch, and new O(1) jump table
     command_re = re.compile(
         r"(?:Behavior(?:Cmd|BridgePayload|ServicePayload|GpioPayload|PinRead)<.*?rpc::CommandId::(CMD_[A-Z0-9_]+))|"
-        r"(?:case\s+rpc::to_underlying\(rpc::CommandId::(CMD_[A-Z0-9_]+)\):)",
+        r"(?:case\s+rpc::to_underlying\(rpc::CommandId::(CMD_[A-Z0-9_]+)\):)|"
+        r"(?:\{\s*rpc::to_underlying\(rpc::CommandId::(CMD_[A-Z0-9_]+)\))",
         re.MULTILINE,
     )
-    # Extract matches from both groups
+    # Extract matches from all groups
     matches = command_re.findall(cpp_content)
-    return {m[0] or m[1] for m in matches}
+    return {m[0] or m[1] or m[2] for m in matches}
 
 
 def test_mcu_inbound_commands_have_cpp_jump_table_handlers() -> None:

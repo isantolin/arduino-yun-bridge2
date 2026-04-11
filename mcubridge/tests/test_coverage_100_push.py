@@ -527,7 +527,7 @@ class TestFrameProtocol:
     def test_parse_too_short(self):
         from mcubridge.protocol.frame import Frame
 
-        with pytest.raises(ValueError, match="Incomplete frame"):
+        with pytest.raises(ValueError, match="Incomplete or malformed frame"):
             Frame.parse(b"\x00\x01")
 
 

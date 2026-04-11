@@ -698,7 +698,7 @@ class TestProtocolFrame:
     def test_decode_rpc_frame_too_short(self):
         from mcubridge.protocol.frame import Frame
 
-        with pytest.raises(ValueError, match="Incomplete frame"):
+        with pytest.raises(ValueError, match="Incomplete or malformed frame"):
             Frame.parse(b"\x01")
 
     def test_decode_rpc_frame_bad_crc(self):

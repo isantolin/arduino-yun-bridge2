@@ -35,7 +35,7 @@ def test_frame_parse_payload_length_mismatch() -> None:
     # or the length check at line 126 will catch it if Construct somehow returns.
     with pytest.raises(ValueError) as exc:
         Frame.parse(raw_frame)
-    assert "Incomplete frame" in str(exc.value) or "parsing failed" in str(exc.value)
+    assert "Incomplete or malformed frame" in str(exc.value) or "parsing failed" in str(exc.value)
 
 
 def test_rle_encode_decode_edge_cases() -> None:

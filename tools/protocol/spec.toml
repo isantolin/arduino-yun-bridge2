@@ -785,7 +785,7 @@ directions = ["linux_to_mcu", "mcu_to_linux"]
 name = "CMD_FILE_READ_RESP"
 value = 0x93
 category = "filesystem"
-directions = ["linux_to_mcu"]
+directions = ["linux_to_mcu", "mcu_to_linux"]
 
 # --- PROCESS COMMANDS REASSIGNED TO 0xA0 ---
 [[commands]]

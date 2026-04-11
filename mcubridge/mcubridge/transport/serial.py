@@ -298,7 +298,8 @@ class SerialTransport:
             self.state.record_serial_decode_error()
             await self._check_baudrate_fallback()
         except (OSError, RuntimeError, KeyError, IndexError, TypeError) as exc:
-            logger.log(logging.ERROR, "[SERIAL <- MCU] [DISPATCH (ERR: %s)]: [%s]", exc, packet_bytes.hex(' ').upper())
+            raw_hex = packet_bytes.hex(' ').upper()
+            logger.error("[SERIAL <- MCU] [DISPATCH (ERR: %s)]: [%s]", exc, raw_hex)
             self.state.record_serial_decode_error()
             await self._check_baudrate_fallback()
 

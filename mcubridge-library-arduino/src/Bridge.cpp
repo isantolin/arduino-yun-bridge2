@@ -191,9 +191,6 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
   struct CommandRoute {
     uint16_t id;
     void (BridgeClass::*handler)(const bridge::router::CommandContext&);
-    
-    bool operator<(const CommandRoute& other) const { return id < other.id; }
-    bool operator<(uint16_t other_id) const { return id < other_id; }
   };
 
   static constexpr CommandRoute routes[] = {
@@ -204,10 +201,10 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     { rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC),        &BridgeClass::_handleLinkSync },
     { rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET),       &BridgeClass::_handleLinkReset },
     { rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES), &BridgeClass::_handleGetCapabilities },
-    { rpc::to_underlying(rpc::CommandId::CMD_XOFF),             &BridgeClass::_handleXoff },
-    { rpc::to_underlying(rpc::CommandId::CMD_XON),              &BridgeClass::_handleXon },
     { rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),     &BridgeClass::_handleSetBaudrateCommand },
     { rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER), &BridgeClass::_handleEnterBootloaderCommand },
+    { rpc::to_underlying(rpc::CommandId::CMD_XOFF),             &BridgeClass::_handleXoff },
+    { rpc::to_underlying(rpc::CommandId::CMD_XON),              &BridgeClass::_handleXon },
     { rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),     &BridgeClass::_handleSetPinModeCommand },
     { rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE),    &BridgeClass::_handleDigitalWriteCommand },
     { rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),     &BridgeClass::_handleAnalogWriteCommand },
@@ -235,20 +232,19 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
 #endif
 #if BRIDGE_ENABLE_SPI
     { rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN),      &BridgeClass::_handleSpiBegin },
+    { rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER),   &BridgeClass::_handleSpiTransfer },
     { rpc::to_underlying(rpc::CommandId::CMD_SPI_END),        &BridgeClass::_handleSpiEnd },
     { rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG), &BridgeClass::_handleSpiSetConfigCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER),   &BridgeClass::_handleSpiTransfer },
 #endif
   };
 
-  // [SIL-2] Deterministic dispatch using ETL find_if.
-  // Linear search is safe and predictable for small command tables (<32 entries).
-  auto it = etl::find_if(etl::begin(routes), etl::end(routes), 
-                         [&ctx](const CommandRoute& route) {
-                           return route.id == ctx.raw_command;
-                         });
+  // [SIL-2] Deterministic dispatch using binary search (O(log N)).
+  auto it = etl::lower_bound(etl::begin(routes), etl::end(routes), ctx.raw_command,
+                             [](const CommandRoute& route, uint16_t id) {
+                               return route.id < id;
+                             });
   
-  if (it != etl::end(routes)) {
+  if (it != etl::end(routes) && it->id == ctx.raw_command) {
     (this->*(it->handler))(ctx);
   } else {
     onUnknownCommand(ctx);

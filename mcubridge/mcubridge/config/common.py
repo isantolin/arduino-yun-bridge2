@@ -12,9 +12,18 @@ _UCI_SECTION: Final[str] = "general"
 
 
 def get_uci_config() -> dict[str, Any]:
-    """Fetch configuration from OpenWrt UCI system with safe fallbacks."""
+    """Fetch configuration from OpenWrt UCI system with safe fallbacks.
+
+    [SIL-2] Tipado estricto de excepciones y aislamiento de fallos para garantizar
+    la integridad del sistema de configuración.
+    """
     try:
         import uci
+    except ImportError:
+        # Fallback for non-OpenWrt environments (e.g. dev/test)
+        return get_default_config()
+
+    try:
         with uci.Uci() as cursor:
             section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
             if not section:
@@ -28,9 +37,16 @@ def get_uci_config() -> dict[str, Any]:
                 if not str(k).startswith((".", "_"))
             }
             return config_dict
-    except (ImportError, AttributeError, Exception):
-        # Fallback for non-OpenWrt environments (e.g. dev/test)
-        pass
+    except (RuntimeError, ValueError, OSError) as err:
+        # [SIL-2] Log only specific configuration/system errors to syslog.
+        logger.warning("UCI system error, falling back to safe defaults: %s", err)
+    except Exception as err:
+        # [SIL-2] Catch-all for other uci-related errors (like UciError if not mapped to OSError)
+        if "UciError" in str(type(err)):
+            logger.warning("UCI internal error, falling back to safe defaults: %s", err)
+        else:
+            raise
+    
     return get_default_config()
 
 

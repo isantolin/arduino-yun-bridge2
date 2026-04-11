@@ -89,15 +89,20 @@ bool resolve_to_full_path(etl::string_view path, PathString& full_path_out) {
 bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
 
 void forceSafeState() {
-  etl::array<uint8_t, static_cast<size_t>((Traits::id == ArchId::ARCH_ID_AVR) ? bridge::config::DIGITAL_PINS : bridge::config::SAMD_DIGITAL_PINS)> dummy = {};
-  uint8_t current_pin = 0;
-  (void)etl::for_each(dummy.begin(), dummy.end(), [&](uint8_t) {
+  const uint8_t pin_count = (Traits::id == ArchId::ARCH_ID_AVR) ? 
+                            static_cast<uint8_t>(bridge::config::DIGITAL_PINS) : 
+                            static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS);
+
+  // [SIL-2] Pure ETL initialization without dummy array or raw loops.
+  etl::for_each(etl::counting_iterator<uint8_t>(0), 
+                etl::counting_iterator<uint8_t>(pin_count),
+                [](uint8_t pin) {
     if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-      ::pinMode(current_pin, OUTPUT); ::digitalWrite(current_pin, LOW);
+      ::pinMode(pin, OUTPUT); 
+      ::digitalWrite(pin, LOW);
     } else {
-      ::pinMode(current_pin, INPUT_PULLUP);
+      ::pinMode(pin, INPUT_PULLUP);
     }
-    current_pin++;
   });
 }
 

@@ -189,6 +189,9 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
   struct CommandRoute {
     uint16_t id;
     void (BridgeClass::*handler)(const bridge::router::CommandContext&);
+    
+    bool operator<(const CommandRoute& other) const { return id < other.id; }
+    bool operator<(uint16_t other_id) const { return id < other_id; }
   };
 
   static constexpr CommandRoute routes[] = {
@@ -236,8 +239,10 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
 #endif
   };
 
-  auto it = etl::find_if(etl::begin(routes), etl::end(routes), [ctx](const CommandRoute& r) { return r.id == ctx.raw_command; });
-  if (it != etl::end(routes)) {
+  // [SIL-2] Binary search for O(log N) deterministic dispatch.
+  auto it = etl::lower_bound(etl::begin(routes), etl::end(routes), ctx.raw_command);
+  
+  if (it != etl::end(routes) && it->id == ctx.raw_command) {
     (this->*(it->handler))(ctx);
   } else {
     onUnknownCommand(ctx);
@@ -251,10 +256,15 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_onStartupStabilized() {
   uint32_t start_ms = bridge::now_ms();
-  etl::array<uint8_t, bridge::config::STARTUP_DRAIN_FINAL> dummy = {};
-  (void)etl::find_if(dummy.begin(), dummy.end(), [&](uint8_t) {
-    if (_stream.available() <= 0 || (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) return true;
-    _stream.read();
+  // [SIL-2] Pure ETL streaming drain. No raw loops, no dummy arrays.
+  // We iterate up to STARTUP_DRAIN_FINAL times using counting iterators.
+  (void)etl::find_if(etl::counting_iterator<uint16_t>(0), 
+                     etl::counting_iterator<uint16_t>(bridge::config::STARTUP_DRAIN_FINAL),
+                     [&](uint16_t) {
+    if (_stream.available() <= 0 || (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
+      return true; // Stop condition
+    }
+    (void)_stream.read();
     return false;
   });
   BRIDGE_ATOMIC_BLOCK { _fsm.stabilized(); }

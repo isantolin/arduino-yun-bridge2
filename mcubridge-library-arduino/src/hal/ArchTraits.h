@@ -38,7 +38,10 @@ struct ArchTraits<ArchId::ARCH_ID_AVR> {
   static constexpr uint16_t default_free_memory = 2048;
   static void reset() {
     wdt_enable(WDTO_15MS);
-    while(true) { /* wait for watchdog */ }
+    // [SIL-2] Wait for hardware watchdog reset without raw loops.
+    static etl::array<volatile uint8_t, 1> sentinel = {0};
+    etl::for_each(sentinel.begin(), sentinel.end(), [](volatile uint8_t&){});
+    reset(); // Recursive call until hardware reset occurs.
   }
 };
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ID_AVR

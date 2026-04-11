@@ -108,6 +108,7 @@ class BridgeClass {
 
   void _dispatchCommand(const rpc::Frame& frame);
   void _onStartupStabilized();
+  void _drainStartupRecursive(uint32_t start_ms, uint16_t iterations);
   void _onAckTimeout();
   void _onRxDedupe();
   void _onBaudrateChange();

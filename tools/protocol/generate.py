@@ -735,7 +735,7 @@ def main(
             # We use subprocess.run to allow failure if pyright is not available,
             # but log a warning.
             subprocess.run(stub_cmd, check=False, capture_output=True)
-        except Exception as e:
+        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
             sys.stderr.write(f"Warning: Failed to generate stubs for {lib}: {e}\n")
 
 

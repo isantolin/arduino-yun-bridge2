@@ -41,7 +41,7 @@ void ProcessClass::_onPollResponse(const rpc::payload::ProcessPollResponse& msg)
 }
 
 void ProcessClass::reset() {
-  while(!_pending_polls.empty()) _pending_polls.pop();
+  _pending_polls.clear();
 }
 
 #ifndef BRIDGE_TEST_NO_GLOBALS

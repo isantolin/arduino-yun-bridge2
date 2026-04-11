@@ -52,7 +52,7 @@ class _TrackedDiskDeque:
         if con is not None:
             try:
                 con.close()
-            except Exception:
+            except sqlite3.Error:
                 pass
             try:
                 delattr(_local, "con")
@@ -62,7 +62,7 @@ class _TrackedDiskDeque:
     def close(self) -> None:
         try:
             self._deque._cache.close()  # type: ignore[reportUnknownMemberType]
-        except Exception:
+        except (AttributeError, RuntimeError, sqlite3.Error):
             pass
 
     def append(self, item: object) -> None:

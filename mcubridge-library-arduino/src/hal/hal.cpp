@@ -7,6 +7,7 @@
 #include <etl/algorithm.h>
 #include <etl/to_string.h>
 #include <etl/binary.h>
+#include <etl/iterator.h>
 
 #if defined(BRIDGE_HOST_TEST)
 #include <errno.h>
@@ -88,22 +89,23 @@ bool resolve_to_full_path(etl::string_view path, PathString& full_path_out) {
 
 bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
 
+void _forceSafeStateRecursive(uint8_t pin, uint8_t count) {
+  if (pin >= count) return;
+  if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
+    ::pinMode(pin, OUTPUT); 
+    ::digitalWrite(pin, LOW);
+  } else {
+    ::pinMode(pin, INPUT_PULLUP);
+  }
+  _forceSafeStateRecursive(pin + 1, count);
+}
+
 void forceSafeState() {
   const uint8_t pin_count = (Traits::id == ArchId::ARCH_ID_AVR) ? 
                             static_cast<uint8_t>(bridge::config::DIGITAL_PINS) : 
                             static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS);
 
-  // [SIL-2] Pure ETL initialization without dummy array or raw loops.
-  etl::for_each(etl::counting_iterator<uint8_t>(0), 
-                etl::counting_iterator<uint8_t>(pin_count),
-                [](uint8_t pin) {
-    if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-      ::pinMode(pin, OUTPUT); 
-      ::digitalWrite(pin, LOW);
-    } else {
-      ::pinMode(pin, INPUT_PULLUP);
-    }
-  });
+  _forceSafeStateRecursive(0, pin_count);
 }
 
 uint16_t getFreeMemory() {

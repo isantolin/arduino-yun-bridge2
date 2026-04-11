@@ -46,7 +46,7 @@ def get_uci_config() -> dict[str, Any]:
             logger.warning("UCI internal error, falling back to safe defaults: %s", err)
         else:
             raise
-    
+
     return get_default_config()
 
 

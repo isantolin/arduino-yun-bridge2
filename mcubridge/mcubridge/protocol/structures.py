@@ -54,7 +54,7 @@ def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
         # Build raw bytes from dict and parse back as 16-bit integer
         from construct import Int16ul
         return int(Int16ul.parse(FEATURES_STRUCT.build(feat_dict)))
-    except Exception:
+    except (ImportError, AttributeError, msgspec.MsgspecError, ValueError):
         return 0
 
 
@@ -71,7 +71,7 @@ def _int_to_capabilities(val: int) -> dict[str, bool]:
             for k, v in dict(res).items()
             if not str(k).startswith("_")
         }
-    except Exception:
+    except (ImportError, AttributeError, msgspec.MsgspecError, ValueError):
         return {}
 
 

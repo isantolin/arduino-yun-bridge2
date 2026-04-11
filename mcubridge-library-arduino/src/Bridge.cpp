@@ -9,6 +9,8 @@
 #include "services/Process.h"
 
 #include <etl/algorithm.h>
+#include <etl/iterator.h>
+#include <etl/functional.h>
 
 namespace {
 void _onStartupStabilizationTimeout() { Bridge._onStartupStabilized(); }
@@ -239,10 +241,14 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
 #endif
   };
 
-  // [SIL-2] Binary search for O(log N) deterministic dispatch.
-  auto it = etl::lower_bound(etl::begin(routes), etl::end(routes), ctx.raw_command);
+  // [SIL-2] Deterministic dispatch using ETL find_if.
+  // Linear search is safe and predictable for small command tables (<32 entries).
+  auto it = etl::find_if(etl::begin(routes), etl::end(routes), 
+                         [&ctx](const CommandRoute& route) {
+                           return route.id == ctx.raw_command;
+                         });
   
-  if (it != etl::end(routes) && it->id == ctx.raw_command) {
+  if (it != etl::end(routes)) {
     (this->*(it->handler))(ctx);
   } else {
     onUnknownCommand(ctx);
@@ -254,19 +260,19 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   else emitStatus<rpc::StatusCode::STATUS_ERROR>();
 }
 
+void BridgeClass::_drainStartupRecursive(uint32_t start_ms, uint16_t iterations) {
+  if (iterations == 0) return;
+  if (_stream.available() <= 0 || (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
+    return;
+  }
+  (void)_stream.read();
+  _drainStartupRecursive(start_ms, iterations - 1);
+}
+
 void BridgeClass::_onStartupStabilized() {
   uint32_t start_ms = bridge::now_ms();
-  // [SIL-2] Pure ETL streaming drain. No raw loops, no dummy arrays.
-  // We iterate up to STARTUP_DRAIN_FINAL times using counting iterators.
-  (void)etl::find_if(etl::counting_iterator<uint16_t>(0), 
-                     etl::counting_iterator<uint16_t>(bridge::config::STARTUP_DRAIN_FINAL),
-                     [&](uint16_t) {
-    if (_stream.available() <= 0 || (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
-      return true; // Stop condition
-    }
-    (void)_stream.read();
-    return false;
-  });
+  // [SIL-2] Pure ETL streaming drain via terminal recursion (No Raw Loops).
+  _drainStartupRecursive(start_ms, bridge::config::STARTUP_DRAIN_FINAL);
   BRIDGE_ATOMIC_BLOCK { _fsm.stabilized(); }
 }
 

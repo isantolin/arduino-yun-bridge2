@@ -222,7 +222,7 @@ class SerialFlowController:
         try:
             # [SIL-2] Manual attempt tracking for determinism
             pending.attempts = (pending.attempts or 0) + 1
-        except Exception:
+        except AttributeError:
             pending.attempts = (pending.attempts or 0) + 1
 
         self._notify_pipeline("start", pending)

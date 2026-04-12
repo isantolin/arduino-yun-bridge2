@@ -93,13 +93,13 @@ class ProcessComponent(BaseComponent):
                 pid_model = self._parse_shell_pid(segments[1], action)
                 if pid_model is None:
                     return True
-                await self._handle_mqtt_poll(pid_model)
+                await self._handle_mqtt_poll(pid_model, inbound)
 
             case ShellAction.KILL if len(segments) == 2:
                 pid_model = self._parse_shell_pid(segments[1], action)
                 if pid_model is None:
                     return True
-                await self._handle_mqtt_kill(pid_model)
+                await self._handle_mqtt_kill(pid_model, inbound)
 
             case _:
                 logger.debug(
@@ -158,7 +158,7 @@ class ProcessComponent(BaseComponent):
         batch = await self.poll_process(pid)
         await self.publish_poll_result(pid, batch, inbound)
 
-    async def _handle_mqtt_kill(self, pid_model: ShellPidPayload) -> None:
+    async def _handle_mqtt_kill(self, pid_model: ShellPidPayload, inbound: Message | None = None) -> None:
         await self.stop_process(pid_model.pid)
 
     def _parse_shell_command(

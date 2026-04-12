@@ -169,7 +169,7 @@ async def test_shell_poll_calls_process_helpers(
     )
 
     component.poll_process.assert_awaited_once_with(123)
-    component.publish_poll_result.assert_awaited_once_with(123, batch, None)
+    component.publish_poll_result.assert_awaited_once_with(123, batch, inbound)
 
 
 @pytest.mark.asyncio

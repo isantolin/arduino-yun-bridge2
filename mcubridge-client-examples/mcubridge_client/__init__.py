@@ -108,6 +108,7 @@ class Bridge:
         self._client: Client | None = None
         self._correlation_routes: dict[bytes, asyncio.Queue[Message]] = {}
         self._reply_topic: str | None = None
+        self._console_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._listener_task: asyncio.Task[None] | None = None
         self._exit_stack = AsyncExitStack()
 
@@ -126,6 +127,8 @@ class Bridge:
         await self._exit_stack.enter_async_context(self._client)
         self._reply_topic = f"{self.topic_prefix}/client/{uuid.uuid4().hex}/reply"
         await self._client.subscribe(self._reply_topic, qos=0)
+        self._console_topic = str(Topic.build(Topic.CONSOLE, "out"))
+        await self._client.subscribe(self._console_topic, qos=0)
         self._listener_task = asyncio.create_task(self._message_listener())
         logger.info("Connected to %s:%d. Reply topic: %s", self.host, self.port, self._reply_topic)
 
@@ -145,6 +148,8 @@ class Bridge:
             correlation = getattr(message.properties, "CorrelationData", None)
             if correlation and (queue := self._correlation_routes.pop(correlation, None)):
                 queue.put_nowait(message)
+            elif message.topic.matches(self._console_topic):
+                self._console_queue.put_nowait(bytes(message.payload) if message.payload else b"")
             else:
                 logger.debug("Orphaned or broadcast message on %s", message.topic)
 
@@ -181,6 +186,19 @@ class Bridge:
             self._correlation_routes.pop(correlation, None)
             for t in resp_topics:
                 await self._client.unsubscribe(t)
+
+    async def console_write(self, data: str | bytes) -> None:
+        if not self._client:
+            raise ConnectionError("Not connected")
+        payload = data if isinstance(data, bytes) else data.encode()
+        await self._client.publish(str(Topic.build(Topic.CONSOLE, "in")), payload)
+
+    async def console_read_async(self) -> str | None:
+        try:
+            payload = await asyncio.wait_for(self._console_queue.get(), timeout=0.1)
+            return payload.decode("utf-8", errors="replace")
+        except (asyncio.TimeoutError, TimeoutError):
+            return None
 
     async def digital_write(self, pin: int, value: int) -> None:
         if not self._client:

@@ -774,12 +774,13 @@ class RuntimeState(msgspec.Struct):
 
     def _apply_spool_observation(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from spool statistics."""
-        # [SIL-2] Direct extraction via msgspec.convert
-        for field_name in ("corrupt_dropped", "dropped_due_to_limit", "trim_events"):
-            if field_name in observation:
-                val = msgspec.convert(observation[field_name], int)
-                setattr(self, f"mqtt_spool_{field_name.replace('due_to_', '')}", val)
-
+        # [SIL-2] Static assignment to avoid reflection overhead and string manipulation
+        if "corrupt_dropped" in observation:
+            self.mqtt_spool_corrupt_dropped = msgspec.convert(observation["corrupt_dropped"], int)
+        if "dropped_due_to_limit" in observation:
+            self.mqtt_spool_dropped_limit = msgspec.convert(observation["dropped_due_to_limit"], int)
+        if "trim_events" in observation:
+            self.mqtt_spool_trim_events = msgspec.convert(observation["trim_events"], int)
         if "last_trim_unix" in observation:
             self.mqtt_spool_last_trim_unix = msgspec.convert(observation["last_trim_unix"], float)
 

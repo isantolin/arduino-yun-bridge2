@@ -43,10 +43,10 @@ async def test_process_packet_crc_mismatch_reports_crc(
 
         # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
         raw = b"\xff" + b"x" * 20
-        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
+        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)
 
         # Manual call to async method
-        await transport.async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
+        await transport.async_process_packet(b"\x02encoded")
 
         assert state.serial_decode_errors == 1
     finally:
@@ -70,7 +70,7 @@ async def test_process_packet_success_dispatches() -> None:
         transport = serial_fast.SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
 
-        await transport.async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
+        await transport.async_process_packet(encoded)
 
         service.handle_mcu_frame.assert_awaited_once_with(
             Command.CMD_CONSOLE_WRITE.value, 0, b"hi"
@@ -98,8 +98,8 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         mock_writer.transport = MagicMock(serial=serial_port)
         transport.writer = mock_writer
 
-        transport._negotiating = True  # type: ignore[reportPrivateUsage]
-        transport._negotiation_future = transport.loop.create_future()  # type: ignore[reportPrivateUsage]
+        transport._negotiating = True
+        transport._negotiation_future = transport.loop.create_future()
 
         encoded = cobs_encode(
             Frame(
@@ -108,9 +108,9 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
                 payload=b"",
             ).build()
         )
-        transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
+        transport._process_packet(encoded)
 
-        assert await transport._negotiation_future is True  # type: ignore[reportPrivateUsage]
+        assert await transport._negotiation_future is True
         assert serial_port.baudrate == config.serial_baud
     finally:
         state.cleanup()
@@ -133,21 +133,21 @@ async def test_write_frame_debug_logs_unknown_command(
         monkeypatch.setattr(
             serial_fast.logger,
             "isEnabledFor",
-            lambda _lvl: True,  # type: ignore[reportUnknownLambdaType]
+            lambda _lvl: True,
         )
         seen: dict[str, str] = {}
         monkeypatch.setattr(
             serial_fast.logger,
             "debug",
-            lambda msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownLambdaType]
+            lambda msg, *args: seen.setdefault("msg", msg % args),
         )
         monkeypatch.setattr(
             serial_fast.logger,
             "log",
-            lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownLambdaType]
+            lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),
         )
 
-        ok = await transport.serial_sender(0xFE, b"payload")  # type: ignore[reportPrivateUsage]
+        ok = await transport.serial_sender(0xFE, b"payload")
         assert ok is True
         assert mock_writer.write.called
         # Check that the command 0xFE is present in the encoded hex string
@@ -169,7 +169,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         mock_writer.write.side_effect = OSError("boom")
         transport.writer = mock_writer
 
-        ok = await transport.serial_sender(Command.CMD_CONSOLE_WRITE.value, b"hi")  # type: ignore[reportPrivateUsage]
+        ok = await transport.serial_sender(Command.CMD_CONSOLE_WRITE.value, b"hi")
         assert ok is False
     finally:
         state.cleanup()
@@ -193,21 +193,21 @@ async def test_process_packet_fallback_triggers_negotiation(
         transport.loop = asyncio.get_running_loop()
 
         # Mock negotiation method
-        transport.negotiate_baudrate = AsyncMock(return_value=True)  # type: ignore[reportPrivateUsage]
+        transport.negotiate_baudrate = AsyncMock(return_value=True)
 
         # Create an invalid frame manually
         raw = b"\xff" + b"x" * 20
-        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
+        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)
 
-        await transport.async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
-        assert transport._consecutive_crc_errors == 1  # type: ignore[reportPrivateUsage]
+        await transport.async_process_packet(b"\x02encoded")
+        assert transport._consecutive_crc_errors == 1
 
-        transport.negotiate_baudrate.assert_not_called()  # type: ignore[reportPrivateUsage]
+        transport.negotiate_baudrate.assert_not_called()
 
         # Second error (threshold reached)
-        await transport.async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
-        assert transport._consecutive_crc_errors == 0  # type: ignore[reportPrivateUsage]
+        await transport.async_process_packet(b"\x02encoded")
+        assert transport._consecutive_crc_errors == 0
 
-        transport.negotiate_baudrate.assert_awaited_once_with(57600)  # type: ignore[reportPrivateUsage]
+        transport.negotiate_baudrate.assert_awaited_once_with(57600)
     finally:
         state.cleanup()

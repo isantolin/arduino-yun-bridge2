@@ -171,7 +171,9 @@ class Bridge:
         async for message in self._client.messages:
             props = message.properties
             correlation = getattr(props, "CorrelationData", None) if props else None
-            if correlation and (queue := self._correlation_routes.pop(correlation, None)):
+            if correlation and (
+                queue := self._correlation_routes.pop(correlation, None)
+            ):
                 queue.put_nowait(message)
 
             elif message.topic.matches(self._console_topic):

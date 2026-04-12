@@ -127,7 +127,7 @@ def test_build_mqtt_properties_populates_fields() -> None:
         message_expiry_interval=10,
         response_topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response",
         correlation_data=b"cid",
-        user_properties=(("k", "v"),),  # type: ignore[reportArgumentType]
+        user_properties=(("k", "v"),),
     )
     props = build_mqtt_properties(message)
     assert props is not None

@@ -19,7 +19,7 @@ async def test_daemon_supervise_fatal_exception() -> None:
             raise SerialHandshakeFatal("fatal")
 
         with pytest.raises(SerialHandshakeFatal):
-            await daemon._supervise(  # type: ignore[reportPrivateUsage]
+            await daemon._supervise(
                 "test-fatal", fatal_task, fatal_exceptions=(SerialHandshakeFatal,)
             )
     finally:
@@ -41,7 +41,7 @@ async def test_daemon_supervise_restarts() -> None:
 
         with patch("asyncio.sleep", return_value=None):
             # Should restart and eventually return
-            await daemon._supervise("test-restart", failing_task)  # type: ignore[reportPrivateUsage]
+            await daemon._supervise("test-restart", failing_task)
 
         assert state["call_count"] == 3
         assert "test-restart" in daemon.state.supervisor_stats
@@ -58,7 +58,7 @@ async def test_daemon_supervise_cancelled() -> None:
         async def hanging_task():
             await asyncio.Event().wait()
 
-        task = asyncio.create_task(daemon._supervise("cancel", hanging_task))  # type: ignore[reportPrivateUsage]
+        task = asyncio.create_task(daemon._supervise("cancel", hanging_task))
         await asyncio.sleep(0.05)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

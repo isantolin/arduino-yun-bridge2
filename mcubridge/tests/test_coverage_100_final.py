@@ -189,14 +189,14 @@ class TestInit:
         import mcubridge
 
         # Temporarily remove CallbackAPIVersion from the real module
-        orig = pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
-        # type: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        orig = pmc.CallbackAPIVersion
+
         try:
-            del pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
+            del pmc.CallbackAPIVersion
             with pytest.raises(SystemExit):
-                mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
+                mcubridge._check_dependencies()
         finally:
-            pmc.CallbackAPIVersion = orig  # type: ignore[reportAttributeAccessIssue]
+            pmc.CallbackAPIVersion = orig
 
     def test_check_dependencies_import_error(self):
         import sys
@@ -205,9 +205,9 @@ class TestInit:
 
         # When paho.mqtt.client can't be imported at all, should pass silently
         orig = sys.modules.get("paho.mqtt.client")
-        sys.modules["paho.mqtt.client"] = None  # type: ignore[reportArgumentType]
+        sys.modules["paho.mqtt.client"] = None
         try:
-            mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
+            mcubridge._check_dependencies()
         finally:
             if orig is not None:
                 sys.modules["paho.mqtt.client"] = orig
@@ -215,7 +215,7 @@ class TestInit:
     def test_check_dependencies_ok(self):
         import mcubridge
 
-        mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
+        mcubridge._check_dependencies()
 
 
 # ============================================================================
@@ -899,7 +899,7 @@ class TestDatastoreComponent:
             ctx.publish = AsyncMock()
             ctx.send_frame = AsyncMock(return_value=True)
             comp = DatastoreComponent(config, state, ctx)
-            await comp._publish_value("key", b"", expiry=60)  # type: ignore[reportPrivateUsage]
+            await comp._publish_value("key", b"", expiry=60)
         finally:
             state.cleanup()
 
@@ -949,7 +949,7 @@ class TestDispatcherEdgeCases:
             route = TopicRoute(
                 raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
             )
-            result = d._should_reject_topic_action(route)  # type: ignore[reportPrivateUsage]
+            result = d._should_reject_topic_action(route)
             assert result is None
         finally:
             state.cleanup()
@@ -982,7 +982,7 @@ class TestDaemon:
         from mcubridge import daemon
 
         with patch("psutil.Process", side_effect=psutil.NoSuchProcess(1)):
-            daemon._cleanup_child_processes()  # type: ignore[reportPrivateUsage]
+            daemon._cleanup_child_processes()
 
     @pytest.mark.asyncio
     async def test_cleanup_status_file_missing(self):
@@ -1316,16 +1316,16 @@ class TestMqttTransport:
             service = MagicMock()
             transport = MqttTransport(config, state, service)
 
-            transport.trigger("connect")  # type: ignore[reportUnknownMemberType]
+            transport.trigger("connect")
             assert transport.fsm_state == MqttTransport.STATE_CONNECTING
 
-            transport.trigger("connected")  # type: ignore[reportUnknownMemberType]
+            transport.trigger("connected")
             assert transport.fsm_state == MqttTransport.STATE_SUBSCRIBING
 
-            transport.trigger("subscribed")  # type: ignore[reportUnknownMemberType]
+            transport.trigger("subscribed")
             assert transport.fsm_state == MqttTransport.STATE_READY
 
-            transport.trigger("disconnect")  # type: ignore[reportUnknownMemberType]
+            transport.trigger("disconnect")
             assert transport.fsm_state == MqttTransport.STATE_DISCONNECTED
         finally:
             state.cleanup()

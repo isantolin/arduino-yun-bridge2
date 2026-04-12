@@ -151,11 +151,11 @@ async def test_datastore_mqtt_put_too_large() -> None:
         ds = DatastoreComponent(config, state, ctx)
 
         # Large key
-        await ds._handle_mqtt_put("K" * 300, "val", None)  # type: ignore[reportPrivateUsage]
+        await ds._handle_mqtt_put("K" * 300, "val", None)
         assert "K" * 300 not in state.datastore
 
         # Large value
-        await ds._handle_mqtt_put("key", "V" * 300, None)  # type: ignore[reportPrivateUsage]
+        await ds._handle_mqtt_put("key", "V" * 300, None)
         assert state.datastore.get("key") != "V" * 300
     finally:
         state.cleanup()
@@ -176,7 +176,7 @@ async def test_datastore_mqtt_get_too_large() -> None:
         ctx.publish = AsyncMock()
         ds = DatastoreComponent(config, state, ctx)
 
-        await ds._handle_mqtt_get("K" * 300, False, None)  # type: ignore[reportPrivateUsage]
+        await ds._handle_mqtt_get("K" * 300, False, None)
         assert ctx.publish.call_count == 0
     finally:
         state.cleanup()

@@ -89,17 +89,17 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
 @pytest.mark.asyncio
 async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
     """Cover line 165-166 in dispatcher.py (Pin component not registered)."""
-    dispatcher.container = None  # type: ignore[reportPrivateUsage]
+    dispatcher.container = None
     # CMD_DIGITAL_READ = 0x23
     # Find the handler registered for CMD_DIGITAL_READ
     handler = None
-    for call in dispatcher.mcu_registry.register.call_args_list:  # type: ignore[reportUnknownVariableType]
+    for call in dispatcher.mcu_registry.register.call_args_list:
         if call[0][0] == Command.CMD_DIGITAL_READ.value:
-            handler = call[0][1]  # type: ignore[reportUnknownVariableType]
+            handler = call[0][1]
             break
 
     assert handler is not None
-    result = await handler(0, b"\x01")  # type: ignore[reportUnknownVariableType]
+    result = await handler(0, b"\x01")
     assert result is False
 
 
@@ -110,11 +110,11 @@ async def test_dispatcher_mcu_handler_exception(dispatcher: BridgeDispatcher):
     async def buggy_handler(seq_id: Any, payload: Any):
         raise RuntimeError("bug")
 
-    dispatcher.mcu_registry.get.return_value = buggy_handler  # type: ignore[reportAttributeAccessIssue]
+    dispatcher.mcu_registry.get.return_value = buggy_handler
     # Use patch to set is_synchronized
     with patch.object(type(dispatcher.state), "is_synchronized", True):
         await dispatcher.dispatch_mcu_frame(0x99, 0, b"")
-        dispatcher.send_frame.assert_called()  # type: ignore[reportFunctionMemberAccess]
+        dispatcher.send_frame.assert_called()
 
 
 @pytest.mark.asyncio
@@ -152,13 +152,13 @@ async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDisp
     """Cover lines 316, 319 in dispatcher.py."""
     # Line 316: Topic.DIGITAL with no segments
     route1 = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
-    assert dispatcher._should_reject_topic_action(route1) is None  # type: ignore[reportPrivateUsage]
+    assert dispatcher._should_reject_topic_action(route1) is None
 
     # Line 319: len(segments) > 1 but segments[1] is empty
     route2 = TopicRoute(
         raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("1", "")
     )
-    assert dispatcher._should_reject_topic_action(route2) is None  # type: ignore[reportPrivateUsage]
+    assert dispatcher._should_reject_topic_action(route2) is None
 
 
 @pytest.mark.asyncio
@@ -166,11 +166,11 @@ async def test_dispatcher_handle_system_topic_no_component(
     dispatcher: BridgeDispatcher,
 ):
     """Cover line 347 in dispatcher.py."""
-    dispatcher.container = None  # type: ignore[reportPrivateUsage]
+    dispatcher.container = None
     route = TopicRoute(
         raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",)
     )
-    result = await dispatcher._handle_system_topic(route, MagicMock())  # type: ignore[reportPrivateUsage]
+    result = await dispatcher._handle_system_topic(route, MagicMock())
     assert result is False
 
 
@@ -180,7 +180,7 @@ async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDisp
     route = TopicRoute(
         raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("bridge",)
     )
-    result = await dispatcher._handle_bridge_topic(route, MagicMock())  # type: ignore[reportPrivateUsage]
+    result = await dispatcher._handle_bridge_topic(route, MagicMock())
     assert result is False
 
 
@@ -195,7 +195,7 @@ async def test_datastore_publish_value_error_reason(
     ctx = MagicMock()
     ctx.publish = AsyncMock()
     ds = DatastoreComponent(runtime_config, runtime_state, ctx)
-    await ds._publish_value(  # type: ignore[reportPrivateUsage]
+    await ds._publish_value(
         topic="key",
         payload=b"val",
         expiry=60,

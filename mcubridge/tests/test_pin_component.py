@@ -55,7 +55,7 @@ class RecordingBridgeContext:
             retain=retain,
             content_type=content_type,
             message_expiry_interval=expiry,
-            user_properties=properties,  # type: ignore[reportArgumentType]
+            user_properties=properties,
         )
         self.enqueued.append((message, reply_to))
 

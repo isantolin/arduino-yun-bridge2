@@ -191,7 +191,9 @@ class BridgeQueue(Generic[T]):
     def __len__(self) -> int:
         cache = self._cache
         if cache is not None:
-            return cast(int, cast(Any, cache)["tail"]) - cast(int, cast(Any, cache)["head"])
+            return cast(int, cast(Any, cache)["tail"]) - cast(
+                int, cast(Any, cache)["head"]
+            )
         return len(self._items)
 
 

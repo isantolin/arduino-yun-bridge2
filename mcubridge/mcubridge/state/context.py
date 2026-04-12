@@ -121,6 +121,21 @@ class RuntimeState(msgspec.Struct):
     config_source: str = "default"
     handshake_attempts: int = 0
     handshake_last_fail_reason: str | None = None
+    handshake_backoff_until: float = 0.0
+    handshake_successes: int = 0
+    handshake_failures: int = 0
+    handshake_failure_streak: int = 0
+    handshake_last_duration: float = 0.0
+    handshake_fatal_count: int = 0
+    handshake_fatal_unix: float = 0.0
+    handshake_fatal_reason: str | None = None
+    handshake_fatal_detail: str | None = None
+    handshake_rate_until: float = 0.0
+    link_handshake_nonce: bytes | None = None
+    link_nonce_counter: int = 0
+    link_last_nonce_counter: int = 0
+    link_expected_tag: bytes | None = None
+    link_nonce_length: int = 0
     serial_decode_errors: int = 0
     watchdog_beats: int = 0
     mailbox_dropped_messages: int = 0
@@ -163,7 +178,9 @@ class RuntimeState(msgspec.Struct):
         default_factory=BridgeQueue
     )
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    console_to_mcu_queue: BridgeQueue[bytes] = msgspec.field(default_factory=BridgeQueue)
+    console_to_mcu_queue: BridgeQueue[bytes] = msgspec.field(
+        default_factory=BridgeQueue
+    )
     running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=dict)
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     allowed_policy: Any = msgspec.field(default_factory=dict)
@@ -206,7 +223,9 @@ class RuntimeState(msgspec.Struct):
             directory = None
             if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
                 directory = Path(self.file_system_root) / subdir
-            return BridgeQueue[bytes](directory=directory, max_items=self.mailbox_queue_limit)
+            return BridgeQueue[bytes](
+                directory=directory, max_items=self.mailbox_queue_limit
+            )
 
         self.mailbox_queue = _create_spool("mailbox_out")
         self.mailbox_incoming_queue = _create_spool("mailbox_in")
@@ -293,7 +312,9 @@ class RuntimeState(msgspec.Struct):
         from mcubridge.mqtt.spool import MQTTPublishSpool
 
         try:
-            self.mqtt_spool = MQTTPublishSpool(self.mqtt_spool_dir, self.mqtt_spool_limit)
+            self.mqtt_spool = MQTTPublishSpool(
+                self.mqtt_spool_dir, self.mqtt_spool_limit
+            )
             self.mqtt_spool_degraded = False
             self.mqtt_spool_failure_reason = None
         except Exception as exc:
@@ -369,6 +390,36 @@ class RuntimeState(msgspec.Struct):
         self.watchdog_beats += 1
         self.last_watchdog_beat = time.time()
 
+    def record_handshake_success(self) -> None:
+        """Record a successful handshake completion."""
+        self.handshake_successes += 1
+        self.handshake_failure_streak = 0
+        self.mark_synchronized()
+
+    def record_handshake_failure(self, reason: str) -> None:
+        """Record a failed handshake attempt."""
+        self.handshake_failures += 1
+        self.handshake_failure_streak += 1
+        self.handshake_last_fail_reason = reason
+
+    def record_handshake_fatal(self, reason: str, detail: str | None = None) -> None:
+        """Record a fatal handshake failure."""
+        self.handshake_fatal_count += 1
+        self.handshake_fatal_unix = time.time()
+        self.handshake_fatal_reason = reason
+        self.handshake_fatal_detail = detail
+
+    def record_serial_decode_error(self) -> None:
+        """Track malformed serial frames."""
+        self.serial_decode_errors += 1
+
+    def record_serial_latency(self, latency_ms: float) -> None:
+        """Update serial latency statistics."""
+        # Simple moving average placeholder
+        self.serial_flow_stats = msgspec.structs.replace(
+            self.serial_flow_stats, avg_latency_ms=latency_ms
+        )
+
     def cleanup(self) -> None:
         """Finalize and close all persistent resources."""
         if self.mqtt_spool:
@@ -413,11 +464,7 @@ def create_runtime_state(
     """Bootstrap factory for the monolithic RuntimeState."""
     from mcubridge.config.settings import RuntimeConfig
 
-    cfg = (
-        msgspec.convert(config, RuntimeConfig)
-        if isinstance(config, dict)
-        else config
-    )
+    cfg = msgspec.convert(config, RuntimeConfig) if isinstance(config, dict) else config
     state = RuntimeState(
         mqtt_publish_queue=asyncio.Queue(cfg.mqtt_queue_limit),
         serial_tx_allowed=asyncio.Event(),

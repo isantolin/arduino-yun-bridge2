@@ -48,7 +48,9 @@ def get_uci_config() -> dict[str, Any]:
         logger.warning("UCI system error, falling back to safe defaults", exc_info=True)
     except Exception as fatal_err:
         if "UciError" in type(fatal_err).__name__:
-            logger.warning("UCI internal error, falling back to safe defaults", exc_info=True)
+            logger.warning(
+                "UCI internal error, falling back to safe defaults", exc_info=True
+            )
         else:
             raise
 

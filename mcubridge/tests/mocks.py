@@ -1,83 +1,54 @@
-"""Shared mocks for McuBridge tests."""
+"""Mock implementations for McuBridge tests."""
 
 from __future__ import annotations
 
-import asyncio
-from collections import deque
-from dataclasses import dataclass, field
-from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any
+from typing import Any, Coroutine
 
-from aiomqtt.message import Message
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.protocol.spec_model import QueuedPublish
 from mcubridge.state.context import RuntimeState
 
 
-@dataclass
-class MockSerialService:
-    config: RuntimeConfig
-    state: RuntimeState
-    received_frames: deque[tuple[int, int, bytes]] = field(  # type: ignore[reportUnknownVariableType]
-        default_factory=deque
-    )
-    serial_connected: asyncio.Event = field(default_factory=asyncio.Event)
-    serial_disconnected: asyncio.Event = field(default_factory=asyncio.Event)
-    _serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = None
+class DummyBridge:
+    """Mock for the Serial Transport layer."""
 
-    def register_serial_sender(
-        self, sender: Callable[[int, bytes], Awaitable[bool]]
-    ) -> None:
-        self.serial_sender = sender
-
-    async def on_serial_connected(self) -> None:
-        self.serial_connected.set()
-
-    async def on_serial_disconnected(self) -> None:
-        self.serial_disconnected.set()
-
-    async def handle_mcu_frame(
-        self, command_id: int, sequence_id: int, payload: bytes
-    ) -> None:
-        self.received_frames.append((command_id, sequence_id, payload))
+    def __init__(self) -> None:
+        self.sent_frames: list[tuple[int, bytes]] = []
+        self.published: list[tuple[str, bytes | str, int, bool]] = []
+        self.background_tasks: list[Coroutine[Any, Any, None]] = []
+        self.is_connected: bool = True
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
-        if self.serial_sender is None:
-            return False
-        return await self.serial_sender(command_id, payload)
+        self.sent_frames.append((command_id, payload))
+        return True
 
-    async def enqueue_mqtt(self, *_: object, **__: object) -> None:
-        return None
-
-    def is_command_allowed(self, _command: str) -> bool:
-        return False
-
-    async def schedule_background(
+    async def publish(
         self,
-        coroutine: Coroutine[Any, Any, None],
-        *,
-        name: str | None = None,
-    ) -> asyncio.Task[Any]:
-        return asyncio.create_task(coroutine, name=name)
+        topic: str,
+        payload: bytes | str,
+        qos: int = 0,
+        retain: bool = False,
+        reply_to: Any | None = None,
+    ) -> None:
+        self.published.append((topic, payload, qos, retain))
+
+    async def enqueue_mqtt(
+        self, message: QueuedPublish, reply_context: Any | None = None
+    ) -> None:
+        self.published.append(
+            (message.topic_name, message.payload, message.qos, message.retain)
+        )
 
 
-class MockFatalSerialService(MockSerialService):
-    async def on_serial_connected(self) -> None:
-        raise SerialHandshakeFatal("fatal-handshake")
+class DummyContext:
+    """Mock for the BridgeContext container."""
 
-
-class MockMQTTService:
-    def __init__(self, state: RuntimeState) -> None:
+    def __init__(self, config: Any, state: RuntimeState) -> None:
+        self.config = config
         self.state = state
-        self.handled = asyncio.Event()
+        self.bridge = DummyBridge()
+        self.send_frame = self.bridge.send_frame
+        self.publish = self.bridge.publish
+        self.enqueue_mqtt = self.bridge.enqueue_mqtt
 
-    async def handle_mqtt_message(self, inbound: Message) -> None:
-        self.handled.set()
-
-    async def schedule_background(
-        self,
-        coroutine: Coroutine[Any, Any, None],
-        *,
-        name: str | None = None,
-    ) -> asyncio.Task[Any]:
-        return asyncio.create_task(coroutine, name=name)
+    async def acknowledge_mcu_frame(self, cmd: int, seq: int, status: int) -> None:
+        pass

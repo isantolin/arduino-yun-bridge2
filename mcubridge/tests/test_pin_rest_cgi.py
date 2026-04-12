@@ -103,7 +103,7 @@ def test_publish_safe_configures_tls(
     monkeypatch.setattr(
         ssl,
         "create_default_context",
-        lambda *args, **kwargs: MagicMock(),  # type: ignore[reportUnknownLambdaType]
+        lambda *args, **kwargs: MagicMock(),
     )
 
     runtime_config.mqtt_user = "user"
@@ -168,14 +168,14 @@ def test_main_invokes_publish(
     monkeypatch.setattr(
         pin_rest_module,
         "publish_safe",
-        lambda topic, payload, config: captured.update(  # type: ignore[reportUnknownLambdaType]
+        lambda topic, payload, config: captured.update(
             {"topic": topic, "payload": payload}
         ),
     )
     monkeypatch.setattr(
         pin_rest_module,
         "configure_logging",
-        lambda config: None,  # type: ignore[reportUnknownLambdaType]
+        lambda config: None,
     )
 
     environ = {
@@ -218,7 +218,7 @@ def test_main_rejects_invalid_state(
     monkeypatch.setattr(
         pin_rest_module,
         "configure_logging",
-        lambda config: None,  # type: ignore[reportUnknownLambdaType]
+        lambda config: None,
     )
 
     environ = {
@@ -232,7 +232,7 @@ def test_main_rejects_invalid_state(
     captured_status = []
 
     def start_response(status: Any, headers: Any):
-        captured_status.append(status)  # type: ignore[reportUnknownMemberType]
+        captured_status.append(status)
 
     result = pin_rest_module.application(environ, start_response)
     body = msgspec.json.decode(b"".join(result))

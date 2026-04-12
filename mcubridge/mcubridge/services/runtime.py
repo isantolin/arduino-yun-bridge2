@@ -216,9 +216,7 @@ class BridgeService:
             return
 
         try:
-            version_ok = await self.container.get(
-                SystemComponent
-            ).request_mcu_version()
+            version_ok = await self.container.get(SystemComponent).request_mcu_version()
             if not version_ok:
                 logger.warning("Failed to dispatch MCU version request after reconnect")
         except (OSError, ValueError, RuntimeError) as e:
@@ -319,12 +317,13 @@ class BridgeService:
                     message_to_queue, topic_name=target_topic
                 )
 
-            reply_correlation = getattr(props, "CorrelationData", None) if props else None
+            reply_correlation = (
+                getattr(props, "CorrelationData", None) if props else None
+            )
             if reply_correlation is not None:
                 message_to_queue = msgspec.structs.replace(
                     message_to_queue, correlation_data=reply_correlation
                 )
-
 
             origin_topic = str(reply_context.topic)
             user_properties = list(message_to_queue.user_properties)

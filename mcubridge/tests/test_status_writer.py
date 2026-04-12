@@ -136,7 +136,7 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             assert payload["console_truncated_bytes"] == 4
             assert payload["allowed_commands"] == ["ls"]
             assert payload["link_synchronised"] is False
-            assert payload["mcu_version"] == {"major": 2, "minor": 5, "patch": 0}
+            assert payload.mcu_version == {"major": 2, "minor": 5, "patch": 0}
             assert payload["file_storage_root"] == "/tmp/bridge"
             assert payload["file_storage_bytes_used"] == 2048
             assert payload["file_storage_quota_bytes"] == 4096
@@ -145,8 +145,8 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             assert payload["file_storage_limit_rejections"] == 2
             assert "bridge" in payload
             bridge_snapshot = payload["bridge"]
-            handshake_snapshot = bridge_snapshot["handshake"]  # type: ignore[reportUnknownVariableType]
-            assert handshake_snapshot["attempts"] >= 2
+            handshake_snapshot = bridge_snapshot.handshake
+            assert handshake_snapshot.attempts >= 2
             assert isinstance(payload["mqtt_spooled_messages"], int)
             assert payload["mqtt_spooled_messages"] >= 10
             assert payload["mqtt_spooled_replayed"] == 4

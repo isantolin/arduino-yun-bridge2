@@ -36,7 +36,7 @@ async def test_poll_process_flushes_stored_buffers(
     async with state.process_lock:
         state.running_processes[pid] = slot
 
-    _processonent = runtime_service.container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
+    _processonent = runtime_service.container.get(ProcessComponent)
     batch = await _processonent.poll_process(pid)
 
     # ProcessOutputBatch fields: status_byte, exit_code, stdout_chunk, stderr_chunk, finished, ...
@@ -54,12 +54,12 @@ async def test_poll_process_flushes_stored_buffers(
 async def test_run_async_respects_concurrency_limit(
     runtime_service: BridgeService,
 ) -> None:
-    _processonent = runtime_service.container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
+    _processonent = runtime_service.container.get(ProcessComponent)
 
     # Consume all available slots
     limit = _processonent.state.process_max_concurrent
     for _ in range(limit):
-        await _processonent.process_slots.acquire()  # type: ignore[reportPrivateUsage]
+        await _processonent.process_slots.acquire()
 
     # Try to start another
     pid = await _processonent.run_async("ls")
@@ -67,14 +67,14 @@ async def test_run_async_respects_concurrency_limit(
 
     # Release all
     for _ in range(limit):
-        _processonent.process_slots.release()  # type: ignore[reportPrivateUsage]
+        _processonent.process_slots.release()
 
 
 @pytest.mark.asyncio
 async def test_monitor_process_releases_slot(
     runtime_service: BridgeService,
 ) -> None:
-    _processonent = runtime_service.container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
+    _processonent = runtime_service.container.get(ProcessComponent)
     state = runtime_service.state
 
     mock_handle = MagicMock()
@@ -93,16 +93,16 @@ async def test_monitor_process_releases_slot(
         state.running_processes[77] = slot
 
     # Save initial value
-    initial_value = _processonent.process_slots._value  # type: ignore[reportPrivateUsage]
+    initial_value = _processonent.process_slots._value
 
     # Acquire one slot manually
-    await _processonent.process_slots.acquire()  # type: ignore[reportPrivateUsage]
+    await _processonent.process_slots.acquire()
 
     async with slot.io_lock:
         slot.exit_code = 5
-    _processonent.finalize_process_internal(77)  # type: ignore[reportPrivateUsage]
+    _processonent.finalize_process_internal(77)
 
     assert slot.exit_code == 5
 
     # Should be back to initial value (because it finalized and released the slot)
-    assert _processonent.process_slots._value == initial_value  # type: ignore[reportPrivateUsage]
+    assert _processonent.process_slots._value == initial_value

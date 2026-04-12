@@ -101,12 +101,12 @@ async def test_handle_get_request_success(
 
     await datastore_component.handle_get_request(0, payload)
 
-    datastore_component.ctx.send_frame.assert_awaited_once()  # type: ignore[reportUnknownMemberType]
-    args = datastore_component.ctx.send_frame.call_args[0]  # type: ignore[reportUnknownVariableType]
+    datastore_component.ctx.send_frame.assert_awaited_once()
+    args = datastore_component.ctx.send_frame.call_args[0]
     assert args[0] == Command.CMD_DATASTORE_GET_RESP.value
 
     # Should return empty bytes
-    resp = args[1]  # type: ignore[reportUnknownVariableType]
-    decoded = structures.DatastoreGetResponsePacket.decode(resp)  # type: ignore[reportUnknownArgumentType]
+    resp = args[1]
+    decoded = structures.DatastoreGetResponsePacket.decode(resp)
     assert decoded.value == b"value1"
-    assert len(resp) > 0  # type: ignore[reportUnknownArgumentType]
+    assert len(resp) > 0

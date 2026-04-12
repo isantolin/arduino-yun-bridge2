@@ -42,7 +42,6 @@ if MISSING_DEPS:
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-
 class EnumField(msgspec.Struct):
     """A field within an enumeration."""
 

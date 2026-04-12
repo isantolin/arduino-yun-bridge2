@@ -55,7 +55,6 @@ class DummyContext:
         self.sent_frames: list[tuple[int, bytes]] = []
         self.published: list[tuple[str, bytes | str, int, bool]] = []
         self.background_tasks: list[Coroutine[Any, Any, None]] = []
-        self.on_baudrate_change_ack: AsyncMock | None = None
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
         self.sent_frames.append((command_id, payload))
@@ -253,17 +252,3 @@ def test_handle_mqtt_free_memory_get_tracks_pending(runtime_config: RuntimeConfi
 
     _run(_coro())
 
-
-def test_handle_set_baudrate_resp_calls_callback(runtime_config: RuntimeConfig, runtime_state: RuntimeState):
-    async def _coro():
-        ctx = DummyContext(runtime_config, runtime_state)
-        component = SystemComponent(runtime_config, runtime_state, ctx)
-
-        cb = AsyncMock()
-        ctx.on_baudrate_change_ack = cb
-
-        await component.handle_set_baudrate_resp(0, b"")
-
-        cb.assert_awaited_once()
-
-    _run(_coro())

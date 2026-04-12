@@ -56,14 +56,6 @@ class SystemComponent(BaseComponent):
                     self._pending_version.remove(inbound)
         return ok
 
-    async def handle_set_baudrate_resp(self, seq_id: int, payload: bytes) -> None:
-        logger.info("MCU acknowledged baudrate change. Switching local UART...")
-        # We need to signal the transport layer to change baudrate.
-        # This is a bit of a layer violation or needs a callback.
-        ack = getattr(self.ctx, "on_baudrate_change_ack", None)
-        if ack is not None:
-            await cast(Callable[[], Awaitable[None]], ack)()
-
     async def handle_get_free_memory_resp(self, seq_id: int, payload: bytes) -> None:
         packet = self._decode_payload(FreeMemoryResponsePacket, payload, Command.CMD_GET_FREE_MEMORY_RESP)
         if packet is None:

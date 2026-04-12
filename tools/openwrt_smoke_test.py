@@ -128,7 +128,7 @@ def build_qemu_cmd(apk_disk: str, extroot_disk: str) -> list[str]:
         "-m", "256",
         # NAT network for apk update
         "-netdev", "user,id=net0",
-        "-device", "e1000,netdev=net0",
+        "-device", "virtio-net-pci,netdev=net0",
     ]
 
 

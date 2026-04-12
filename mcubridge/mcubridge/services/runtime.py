@@ -303,18 +303,19 @@ class BridgeService:
         if reply_context is not None:
             props = reply_context.properties
             target_topic = (
-                props.ResponseTopic if props else None
+                getattr(props, "ResponseTopic", None) if props else None
             ) or message.topic_name
             if target_topic != message_to_queue.topic_name:
                 message_to_queue = msgspec.structs.replace(
                     message_to_queue, topic_name=target_topic
                 )
 
-            reply_correlation = props.CorrelationData if props else None
+            reply_correlation = getattr(props, "CorrelationData", None) if props else None
             if reply_correlation is not None:
                 message_to_queue = msgspec.structs.replace(
                     message_to_queue, correlation_data=reply_correlation
                 )
+
 
             origin_topic = str(reply_context.topic)
             user_properties = list(message_to_queue.user_properties)

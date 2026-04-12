@@ -506,8 +506,8 @@ class ProcessComponent(BaseComponent):
         reply_topic = None
         correlation_data = None
         if inbound and inbound.properties:
-            reply_topic = inbound.properties.ResponseTopic
-            correlation_data = inbound.properties.CorrelationData
+            reply_topic = getattr(inbound.properties, "ResponseTopic", None)
+            correlation_data = getattr(inbound.properties, "CorrelationData", None)
 
         await self.ctx.enqueue_mqtt(
             QueuedPublish(

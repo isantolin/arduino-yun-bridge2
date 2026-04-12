@@ -170,11 +170,10 @@ class Bridge:
             return
         async for message in self._client.messages:
             props = message.properties
-            correlation = props.CorrelationData if props else None
-            if correlation and (
-                queue := self._correlation_routes.pop(correlation, None)
-            ):
+            correlation = getattr(props, "CorrelationData", None) if props else None
+            if correlation and (queue := self._correlation_routes.pop(correlation, None)):
                 queue.put_nowait(message)
+
             elif message.topic.matches(self._console_topic):
                 self._console_queue.put_nowait(
                     bytes(message.payload) if message.payload else b""

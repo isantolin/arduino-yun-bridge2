@@ -73,24 +73,27 @@ case "$DEVICE" in
         # Check if fdisk is available
         if ! command -v fdisk >/dev/null; then
             echo "Installing partitioning tools..."
-            apk update && apk add fdisk
+            apk update && apk add fdisk || true
         fi
         
-        echo "Creating partition table on $DEVICE..."
-        # Create new DOS label, Primary partition 1, Use all space
-        printf "o\nn\np\n1\n\n\nw\n" | fdisk "$DEVICE"
-        
-        # Refresh device list
-        sync
-        sleep 2
-        
-        # Update DEVICE target to the new partition
-        if [ -e "${DEVICE}1" ]; then
-            DEVICE="${DEVICE}1"
-            log_info "Successfully partitioned. New target: $DEVICE"
+        if command -v fdisk >/dev/null; then
+            echo "Creating partition table on $DEVICE..."
+            # Create new DOS label, Primary partition 1, Use all space
+            printf "o\nn\np\n1\n\n\nw\n" | fdisk "$DEVICE"
+            
+            # Refresh device list
+            sync
+            sleep 2
+            
+            # Update DEVICE target to the new partition
+            if [ -e "${DEVICE}1" ]; then
+                DEVICE="${DEVICE}1"
+                log_info "Successfully partitioned. New target: $DEVICE"
+            else
+                log_warn "Partitioning failed or ${DEVICE}1 not found. Falling back to raw device."
+            fi
         else
-            log_err "Partitioning failed or ${DEVICE}1 not found."
-            exit 1
+            log_warn "fdisk not available. Falling back to raw device."
         fi
         ;;
 esac
@@ -102,8 +105,8 @@ if apk info | grep -q "e2fsprogs"; then
     echo "   [OK] Required packages (e2fsprogs) are already installed."
 else
     echo "   Installing e2fsprogs, block-mount, fdisk..."
-    apk update
-    apk add e2fsprogs block-mount fdisk
+    apk update || true
+    apk add e2fsprogs block-mount fdisk || true
 fi
 
 # --- 2. Extroot Configuration ---

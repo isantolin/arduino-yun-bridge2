@@ -53,7 +53,9 @@ def test_cobs_decoding_resilience():
         except cobs.DecodeError:
             pass
         except Exception as exc:
-            pytest.fail(f"cobs.decode crashed on iteration {i} with unhandled exception: {type(exc).__name__}: {exc}")
+            pytest.fail(
+                f"cobs.decode crashed on iteration {i} with unhandled exception: {type(exc).__name__}: {exc}"
+            )
 
 
 @pytest.mark.fuzz

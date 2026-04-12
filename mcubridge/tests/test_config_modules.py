@@ -105,6 +105,7 @@ def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
 
     # Strict validation should now raise msgspec.ValidationError during load_runtime_config in test mode
     import msgspec
+
     with pytest.raises(msgspec.ValidationError, match="FLASH PROTECTION"):
         settings.load_runtime_config()
 

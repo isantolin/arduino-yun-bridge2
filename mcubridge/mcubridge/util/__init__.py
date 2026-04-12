@@ -20,6 +20,7 @@ def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
 
     # [SIL-2] Delegate chunking to Python's C core for maximum performance
     import itertools
+
     return [bytes(chunk) for chunk in itertools.batched(payload, chunk_size)]
 
 

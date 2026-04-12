@@ -1,4 +1,5 @@
 """Manual stub for sh library."""
+
 from __future__ import annotations
 from typing import Any
 
@@ -9,7 +10,9 @@ class ErrorReturnCode(Exception):
     stderr: bytes
     truncate: bool
 
-    def __init__(self, full_cmd: bytes, stdout: bytes, stderr: bytes, truncate: bool = ...) -> None: ...
+    def __init__(
+        self, full_cmd: bytes, stdout: bytes, stderr: bytes, truncate: bool = ...
+    ) -> None: ...
 
 class ErrorReturnCode_1(ErrorReturnCode): ...
 class ErrorReturnCode_2(ErrorReturnCode): ...

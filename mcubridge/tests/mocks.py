@@ -19,12 +19,15 @@ class MockSerialService:
     config: RuntimeConfig
     state: RuntimeState
     received_frames: deque[tuple[int, int, bytes]] = field(  # type: ignore[reportUnknownVariableType]
-        default_factory=deque)
+        default_factory=deque
+    )
     serial_connected: asyncio.Event = field(default_factory=asyncio.Event)
     serial_disconnected: asyncio.Event = field(default_factory=asyncio.Event)
     _serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = None
 
-    def register_serial_sender(self, sender: Callable[[int, bytes], Awaitable[bool]]) -> None:
+    def register_serial_sender(
+        self, sender: Callable[[int, bytes], Awaitable[bool]]
+    ) -> None:
         self._serial_sender = sender
 
     async def on_serial_connected(self) -> None:
@@ -33,7 +36,9 @@ class MockSerialService:
     async def on_serial_disconnected(self) -> None:
         self.serial_disconnected.set()
 
-    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
+    async def handle_mcu_frame(
+        self, command_id: int, sequence_id: int, payload: bytes
+    ) -> None:
         self.received_frames.append((command_id, sequence_id, payload))
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:

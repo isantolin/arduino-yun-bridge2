@@ -7,7 +7,7 @@ import contextlib
 import ssl
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiomqtt
@@ -62,12 +62,14 @@ def test_configure_tls_loads_cert_chain_when_provided(
     fake_context = SimpleNamespace(
         minimum_version=None,
         load_cert_chain=lambda certfile, keyfile: calls.append(  # type: ignore[reportUnknownLambdaType]
-            (certfile, keyfile)),  # type: ignore[reportUnknownArgumentType]
+            (cast(str, certfile), cast(str, keyfile))
+        ),  # type: ignore[reportUnknownArgumentType]
         check_hostname=True,
     )
 
     monkeypatch.setattr(
-        ssl, "create_default_context",
+        ssl,
+        "create_default_context",
         lambda *_args, **_kwargs: fake_context,  # type: ignore[reportUnknownLambdaType]
     )
     config = _make_config(tls=True, cafile=str(cafile))
@@ -85,7 +87,9 @@ def test_configure_tls_wraps_ssl_errors(
     cafile = tmp_path / "ca.pem"
     cafile.write_text("not-a-real-ca")
 
-    monkeypatch.setattr(ssl, "create_default_context", MagicMock(side_effect=ValueError("bad")))
+    monkeypatch.setattr(
+        ssl, "create_default_context", MagicMock(side_effect=ValueError("bad"))
+    )
     config = _make_config(tls=True, cafile=str(cafile))
     with pytest.raises(RuntimeError, match=r"TLS setup failed"):
         mqtt_helper.configure_tls_context(config)
@@ -132,7 +136,8 @@ async def test_mqtt_task_requeues_on_publish_failure(
 
         monkeypatch.setattr(aiomqtt, "Client", FakeClient)
         monkeypatch.setattr(
-            mqtt.tenacity, "retry",
+            mqtt.tenacity,
+            "retry",
             lambda *args, **kwargs: (lambda fn: fn),  # type: ignore[reportUnknownLambdaType]
         )
         stash_calls: list[QueuedPublish] = []
@@ -145,7 +150,9 @@ async def test_mqtt_task_requeues_on_publish_failure(
             return True
 
         monkeypatch.setattr(type(state), "stash_mqtt_message", _stash)
-        monkeypatch.setattr(type(state), "flush_mqtt_spool", AsyncMock(return_value=None))
+        monkeypatch.setattr(
+            type(state), "flush_mqtt_spool", AsyncMock(return_value=None)
+        )
 
         transport = mqtt.MqttTransport(config, state, MagicMock())
         task = asyncio.create_task(transport._publisher_loop(FakeClient()))  # type: ignore[reportPrivateUsage]
@@ -156,7 +163,10 @@ async def test_mqtt_task_requeues_on_publish_failure(
             await task
 
         assert len(stash_calls) == 1
-        assert stash_calls[0].topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic"
+        assert (
+            stash_calls[0].topic_name
+            == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic"
+        )
         assert state.mqtt_publish_queue.qsize() == 0
     finally:
         state.cleanup()

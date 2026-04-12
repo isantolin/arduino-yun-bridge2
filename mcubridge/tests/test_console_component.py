@@ -29,7 +29,10 @@ def console_component() -> ConsoleComponent:
 async def test_handle_write(console_component: ConsoleComponent) -> None:
     payload = b"console output"
     from mcubridge.protocol import structures
-    await console_component.handle_write(0, structures.ConsoleWritePacket(data=payload).encode())
+
+    await console_component.handle_write(
+        0, structures.ConsoleWritePacket(data=payload).encode()
+    )
 
     console_component.ctx.publish.assert_awaited_once()  # type: ignore[reportUnknownMemberType]
     call_args = console_component.ctx.publish.call_args  # type: ignore[reportUnknownVariableType]
@@ -49,7 +52,9 @@ async def test_flow_control(console_component: ConsoleComponent) -> None:
     assert console_component.state.serial_tx_allowed.is_set() is False
 
     # XON
-    with patch.object(console_component, "flush_queue", new_callable=AsyncMock) as mock_flush:
+    with patch.object(
+        console_component, "flush_queue", new_callable=AsyncMock
+    ) as mock_flush:
         await console_component.handle_xon(0, b"")
         assert console_component.state.mcu_is_paused is False
         assert console_component.state.serial_tx_allowed.is_set() is True
@@ -61,12 +66,16 @@ async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> 
     payload = b"input"
     console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
-    await console_component._handle_mqtt_input(payload)  # pyright: ignore[reportPrivateUsage]
+    await console_component._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
+        payload
+    )  # pyright: ignore[reportPrivateUsage]
 
     from mcubridge.protocol import structures
+
     expected = structures.ConsoleWritePacket(data=payload).encode()
     console_component.ctx.send_frame.assert_awaited_once_with(  # type: ignore[reportUnknownMemberType]
-        Command.CMD_CONSOLE_WRITE.value, expected,
+        Command.CMD_CONSOLE_WRITE.value,
+        expected,
     )
 
 
@@ -75,7 +84,9 @@ async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> 
     console_component.state.mcu_is_paused = True
     payload = b"input"
 
-    await console_component._handle_mqtt_input(payload)  # pyright: ignore[reportPrivateUsage]
+    await console_component._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
+        payload
+    )  # pyright: ignore[reportPrivateUsage]
 
     console_component.ctx.send_frame.assert_not_awaited()  # type: ignore[reportUnknownMemberType]
     # verify enqueue was called since state is a mock
@@ -93,7 +104,9 @@ async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -
     large_payload = b"a" * (MAX_PAYLOAD_SIZE + 10)
     console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
-    await console_component._handle_mqtt_input(large_payload)  # pyright: ignore[reportPrivateUsage]
+    await console_component._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
+        large_payload
+    )  # pyright: ignore[reportPrivateUsage]
 
     assert console_component.ctx.send_frame.await_count >= 2  # type: ignore[reportUnknownMemberType]
 
@@ -112,8 +125,10 @@ async def test_flush_queue(console_component: ConsoleComponent) -> None:
     await console_component.flush_queue()
 
     from mcubridge.protocol import structures
-    expected = structures.ConsoleWritePacket(data=b'queued').encode()
+
+    expected = structures.ConsoleWritePacket(data=b"queued").encode()
     console_component.ctx.send_frame.assert_awaited_once_with(  # type: ignore[reportUnknownMemberType]
-        Command.CMD_CONSOLE_WRITE.value, expected,
+        Command.CMD_CONSOLE_WRITE.value,
+        expected,
     )
     assert len(queue) == 0

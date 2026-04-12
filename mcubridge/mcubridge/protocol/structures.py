@@ -30,22 +30,25 @@ from construct import BitStruct, Flag, Padding, Construct
 # [SIL-2] Declarative bitmask definition for MCU capabilities.
 # This ensures atomic bit-level parsing/building via Construct's C-backed engine.
 # Order matches the protocol specification (bit 0 to bit 15).
-FEATURES_STRUCT: Final = cast(Construct, BitStruct(
-    cast(Construct, "sd" / Flag),
-    cast(Construct, "spi" / Flag),
-    cast(Construct, "i2c" / Flag),
-    cast(Construct, "big_buffer" / Flag),
-    cast(Construct, "logic_3v3" / Flag),
-    cast(Construct, "fpu" / Flag),
-    cast(Construct, "hw_serial1" / Flag),
-    cast(Construct, "dac" / Flag),
-    cast(Construct, "eeprom" / Flag),
-    cast(Construct, "debug_io" / Flag),
-    cast(Construct, "debug_frames" / Flag),
-    cast(Construct, "rle" / Flag),
-    cast(Construct, "watchdog" / Flag),
-    cast(Construct, Padding(3)),
-))
+FEATURES_STRUCT: Final = cast(
+    Construct,
+    BitStruct(
+        cast(Construct, "sd" / Flag),
+        cast(Construct, "spi" / Flag),
+        cast(Construct, "i2c" / Flag),
+        cast(Construct, "big_buffer" / Flag),
+        cast(Construct, "logic_3v3" / Flag),
+        cast(Construct, "fpu" / Flag),
+        cast(Construct, "hw_serial1" / Flag),
+        cast(Construct, "dac" / Flag),
+        cast(Construct, "eeprom" / Flag),
+        cast(Construct, "debug_io" / Flag),
+        cast(Construct, "debug_frames" / Flag),
+        cast(Construct, "rle" / Flag),
+        cast(Construct, "watchdog" / Flag),
+        cast(Construct, Padding(3)),
+    ),
+)
 
 
 def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
@@ -53,6 +56,7 @@ def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
     try:
         # Build raw bytes from dict and parse back as 16-bit integer
         from construct import Int16ul
+
         return int(Int16ul.parse(FEATURES_STRUCT.build(feat_dict)))
     except (ImportError, AttributeError, msgspec.MsgspecError, ValueError):
         return 0
@@ -62,14 +66,13 @@ def _int_to_capabilities(val: int) -> dict[str, bool]:
     """Convert an integer bitmask to a capability feature dict using Construct."""
     try:
         from construct import Int16ul
+
         # Convert integer to bytes then parse via BitStruct
         data = Int16ul.build(int(val))
         res: Any = FEATURES_STRUCT.parse(data)
         # Convert Container to plain dict and remove internal metadata
         return {
-            str(k): bool(v)
-            for k, v in dict(res).items()
-            if not str(k).startswith("_")
+            str(k): bool(v) for k, v in dict(res).items() if not str(k).startswith("_")
         }
     except (ImportError, AttributeError, msgspec.MsgspecError, ValueError):
         return {}
@@ -132,6 +135,7 @@ class RLEPayload(msgspec.Struct, frozen=True):
         if not self.data:
             return b""
         from construct.core import ConstructError  # type: ignore[reportMissingTypeStubs]
+
         try:
             parsed: Any = RLE_DECODER.parse(self.data)
             return b"".join(parsed.chunks)
@@ -162,7 +166,9 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
         pieces = command.strip().split()
         if not pieces:
             return False
-        return self.allow_all or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in self.entries)
+        return self.allow_all or any(
+            fnmatch.fnmatch(pieces[0].lower(), p) for p in self.entries
+        )
 
     def __contains__(self, item: str) -> bool:
         return item.lower() in self.entries
@@ -343,8 +349,12 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     process_timeout: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_TIMEOUT
 
     mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
-    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_WRITE_MAX_BYTES
-    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_STORAGE_QUOTA_BYTES
+    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_FILE_WRITE_MAX_BYTES
+    )
+    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_FILE_STORAGE_QUOTA_BYTES
+    )
 
     allowed_policy: AllowedCommandPolicy | None = None
 
@@ -352,21 +362,39 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
     status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
     debug_logging: bool = msgspec.field(default=DEFAULT_DEBUG_LOGGING, name="debug")
-    console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-    mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
-    mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
-    pending_pin_request_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PENDING_PIN_REQUESTS
-    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01, le=30.0)] = DEFAULT_SERIAL_RETRY_TIMEOUT
-    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02, le=120.0)] = DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+    )
+    mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_MAILBOX_QUEUE_LIMIT
+    )
+    mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+    )
+    pending_pin_request_limit: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_PENDING_PIN_REQUESTS
+    )
+    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01, le=30.0)] = (
+        DEFAULT_SERIAL_RETRY_TIMEOUT
+    )
+    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02, le=120.0)] = (
+        DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    )
     serial_retry_attempts: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_RETRY_LIMIT
-    serial_fallback_threshold: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_FALLBACK_THRESHOLD
-    serial_handshake_min_interval: Annotated[
-        float, msgspec.Meta(ge=0.0, le=30.0)
-    ] = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
-    serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
+    serial_fallback_threshold: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_SERIAL_FALLBACK_THRESHOLD
+    )
+    serial_handshake_min_interval: Annotated[float, msgspec.Meta(ge=0.0, le=30.0)] = (
+        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
+    )
+    serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
+    )
     mqtt_enabled: bool = True
     watchdog_enabled: bool = True
-    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1, le=60.0)] = DEFAULT_WATCHDOG_INTERVAL
+    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1, le=60.0)] = (
+        DEFAULT_WATCHDOG_INTERVAL
+    )
     topic_authorization: TopicAuthorization | None = None
 
     # [SIL-2] Security: Accept Any to allow raw strings from UCI/Tests,
@@ -374,13 +402,21 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_shared_secret: Any = DEFAULT_SERIAL_SHARED_SECRET
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
-    process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
+    process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    )
+    process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = (
+        DEFAULT_PROCESS_MAX_CONCURRENT
+    )
     metrics_enabled: bool = DEFAULT_METRICS_ENABLED
     metrics_host: str = DEFAULT_METRICS_HOST
     metrics_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = DEFAULT_METRICS_PORT
-    bridge_summary_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_SUMMARY_INTERVAL
-    bridge_handshake_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
+    bridge_summary_interval: Annotated[float, msgspec.Meta(ge=0.0)] = (
+        DEFAULT_BRIDGE_SUMMARY_INTERVAL
+    )
+    bridge_handshake_interval: Annotated[float, msgspec.Meta(ge=0.0)] = (
+        DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
+    )
     allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
 
     @property
@@ -388,7 +424,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         return self.mqtt_tls
 
     def __post_init__(self) -> None:
-        from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET, VOLATILE_STORAGE_PATHS
+        from mcubridge.config.const import (
+            DEFAULT_SERIAL_SHARED_SECRET,
+            VOLATILE_STORAGE_PATHS,
+        )
 
         # [SIL-2] Automated Normalization: Strip and clean inputs
         self.serial_port = self.serial_port.strip()
@@ -420,8 +459,12 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.mqtt_topic = "/".join(segments)
 
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
-        self.allowed_commands = self.allowed_policy.entries if self.allowed_policy else ()
-        if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
+        self.allowed_commands = (
+            self.allowed_policy.entries if self.allowed_policy else ()
+        )
+        if self.topic_authorization is None or isinstance(
+            self.topic_authorization, dict
+        ):
             self.topic_authorization = (
                 msgspec.convert(self.topic_authorization, TopicAuthorization)
                 if self.topic_authorization
@@ -430,11 +473,15 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
         # [SIL-2] Coerce secret to bytes
         if isinstance(self.serial_shared_secret, str):
-            self.serial_shared_secret = self.serial_shared_secret.strip().encode("utf-8")
+            self.serial_shared_secret = self.serial_shared_secret.strip().encode(
+                "utf-8"
+            )
 
         # [SIL-2] Strict Semantic Validations
         if self.serial_response_timeout < self.serial_retry_timeout * 2:
-            raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
+            raise ValueError(
+                "serial_response_timeout must be at least 2x serial_retry_timeout"
+            )
 
         if self.watchdog_enabled and self.watchdog_interval < 0.5:
             raise ValueError("watchdog_interval must be >= 0.5s when enabled")
@@ -448,15 +495,24 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         # Unique symbol check for minimum entropy
         if isinstance(self.serial_shared_secret, bytes):
             unique_symbols = {byte for byte in self.serial_shared_secret}
-            if len(unique_symbols) < 4 and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
-                raise ValueError("serial_shared_secret must contain at least four distinct bytes")
+            if (
+                len(unique_symbols) < 4
+                and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET
+            ):
+                raise ValueError(
+                    "serial_shared_secret must contain at least four distinct bytes"
+                )
 
         # Logic-based cross-field validations
         if self.file_storage_quota_bytes < self.file_write_max_bytes:
-            raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
+            raise ValueError(
+                "file_storage_quota_bytes must be greater than or equal to file_write_max_bytes"
+            )
 
         if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
-            raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
+            raise ValueError(
+                "mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit"
+            )
 
         # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
         if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
@@ -465,7 +521,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             )
 
         if not self.allow_non_tmp_paths:
-            if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            if not any(
+                self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS
+            ):
                 raise ValueError(
                     f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
                 )
@@ -489,15 +547,23 @@ class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
     """
 
     @classmethod
-    def decode(cls: Type[T], data: bytes | bytearray | memoryview, command_id: int | None = None) -> T:
+    def decode(
+        cls: Type[T],
+        data: bytes | bytearray | memoryview,
+        command_id: int | None = None,
+    ) -> T:
         try:
-            return msgspec.msgpack.decode(data if isinstance(data, bytes) else bytes(data), type=cls)
+            return msgspec.msgpack.decode(
+                data if isinstance(data, bytes) else bytes(data), type=cls
+            )
         except (
             msgspec.MsgspecError,
             ValueError,
             TypeError,
         ) as e:
-            raise ValueError(f"Malformed {cls.__name__} payload: {bytes(data).hex()} - Error: {e}") from e
+            raise ValueError(
+                f"Malformed {cls.__name__} payload: {bytes(data).hex()} - Error: {e}"
+            ) from e
 
     def encode(self) -> bytes:
         return msgspec.msgpack.encode(self)
@@ -687,24 +753,38 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
     feat: CapabilitiesFeatures
 
     @classmethod
-    def decode(cls, data: bytes | bytearray | memoryview, command_id: int | None = None) -> CapabilitiesPacket:
+    def decode(
+        cls, data: bytes | bytearray | memoryview, command_id: int | None = None
+    ) -> CapabilitiesPacket:
         """Decode with bitmask→CapabilitiesFeatures conversion for feat field."""
         try:
-            raw: list[int] = msgspec.msgpack.decode(data if isinstance(data, bytes) else bytes(data), type=list[int])
+            raw: list[int] = msgspec.msgpack.decode(
+                data if isinstance(data, bytes) else bytes(data), type=list[int]
+            )
             feat_dict = _int_to_capabilities(raw[4])
             return cls(
-                ver=raw[0], arch=raw[1], dig=raw[2], ana=raw[3],
+                ver=raw[0],
+                arch=raw[1],
+                dig=raw[2],
+                ana=raw[3],
                 feat=msgspec.convert(feat_dict, CapabilitiesFeatures),
             )
         except (msgspec.MsgspecError, ValueError, TypeError, IndexError) as e:
-            raise ValueError(f"Malformed CapabilitiesPacket payload: {bytes(data).hex()} - Error: {e}") from e
+            raise ValueError(
+                f"Malformed CapabilitiesPacket payload: {bytes(data).hex()} - Error: {e}"
+            ) from e
 
     def encode(self) -> bytes:
         """Encode with CapabilitiesFeatures→bitmask conversion for feat field."""
-        return msgspec.msgpack.encode([
-            self.ver, self.arch, self.dig, self.ana,
-            _capabilities_to_int(msgspec.structs.asdict(self.feat)),
-        ])
+        return msgspec.msgpack.encode(
+            [
+                self.ver,
+                self.arch,
+                self.dig,
+                self.ana,
+                _capabilities_to_int(msgspec.structs.asdict(self.feat)),
+            ]
+        )
 
 
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.
@@ -853,7 +933,9 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
+    user_properties: list[UserProperty] = msgspec.field(
+        default_factory=list[tuple[str, str]]
+    )
 
 
 class QueuedPublish(msgspec.Struct):
@@ -868,7 +950,9 @@ class QueuedPublish(msgspec.Struct):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(default_factory=list[tuple[str, str]])
+    user_properties: list[UserProperty] = msgspec.field(
+        default_factory=list[tuple[str, str]]
+    )
 
     def to_record(self) -> SpoolRecord:
         """Convert to a QueuedPublish to SpoolRecord for serialization."""
@@ -888,6 +972,7 @@ class QueuedPublish(msgspec.Struct):
     @classmethod
     def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
+
         def dec_hook(target_type: Type[Any], obj: Any) -> Any:
             if target_type is bytes and isinstance(obj, str):
                 try:
@@ -923,7 +1008,9 @@ class PendingCommand(msgspec.Struct):
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: set[int]())  # noqa: PLW0108
+    expected_resp_ids: set[int] = msgspec.field(
+        default_factory=lambda: set[int]()
+    )  # noqa: PLW0108
     completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     attempts: int = 0
     success: bool | None = None
@@ -968,7 +1055,9 @@ class BaseStats(msgspec.Struct):
         snap_cls = self.__class__.SNAPSHOT_TYPE
         if snap_cls is None:
             raise NotImplementedError(f"{self.__class__.__name__} has no SNAPSHOT_TYPE")
-        return cast(msgspec.Struct, msgspec.convert(msgspec.structs.asdict(self), snap_cls))
+        return cast(
+            msgspec.Struct, msgspec.convert(msgspec.structs.asdict(self), snap_cls)
+        )
 
 
 class SupervisorSnapshot(msgspec.Struct):
@@ -1006,7 +1095,10 @@ class McuCapabilities(msgspec.Struct):
     @property
     def arch_name(self) -> str:
         from .protocol import ARCHITECTURE_DISPLAY_NAMES
-        return ARCHITECTURE_DISPLAY_NAMES.get(self.board_arch, f"Unknown (0x{self.board_arch:02X})")
+
+        return ARCHITECTURE_DISPLAY_NAMES.get(
+            self.board_arch, f"Unknown (0x{self.board_arch:02X})"
+        )
 
     def _has(self, feat: str) -> bool:
         return bool(self.features and getattr(self.features, feat, False))
@@ -1124,7 +1216,9 @@ LATENCY_BUCKETS_MS: tuple[float, ...] = (
 class SerialLatencyStats(msgspec.Struct):
     """RPC command latency histogram."""
 
-    bucket_counts: list[int] = msgspec.field(default_factory=lambda: [0] * len(LATENCY_BUCKETS_MS))
+    bucket_counts: list[int] = msgspec.field(
+        default_factory=lambda: [0] * len(LATENCY_BUCKETS_MS)
+    )
     overflow_count: int = 0
     total_observations: int = 0
     total_latency_ms: float = 0.0
@@ -1159,9 +1253,16 @@ class SerialLatencyStats(msgspec.Struct):
             self._summary.observe(latency_ms / 1000.0)
 
     def as_dict(self) -> dict[str, Any]:
-        avg = self.total_latency_ms / self.total_observations if self.total_observations > 0 else 0.0
+        avg = (
+            self.total_latency_ms / self.total_observations
+            if self.total_observations > 0
+            else 0.0
+        )
         return {
-            "buckets": {f"le_{int(b)}ms": self.bucket_counts[i] for i, b in enumerate(LATENCY_BUCKETS_MS)},
+            "buckets": {
+                f"le_{int(b)}ms": self.bucket_counts[i]
+                for i, b in enumerate(LATENCY_BUCKETS_MS)
+            },
             "overflow": self.overflow_count,
             "count": self.total_observations,
             "sum_ms": self.total_latency_ms,

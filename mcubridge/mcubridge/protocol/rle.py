@@ -50,7 +50,8 @@ RLE_ESCAPE: Construct = Struct(
 
 # [SIL-2] Declarative RLE Decoder
 RLE_DECODER: Construct = Struct(
-    "chunks" / GreedyRange(
+    "chunks"
+    / GreedyRange(
         Select(
             ExprAdapter(
                 RLE_ESCAPE,
@@ -62,7 +63,8 @@ RLE_DECODER: Construct = Struct(
                 FocusedSeq(
                     "value",
                     "value" / Int8ub,
-                    "_" / Check(
+                    "_"
+                    / Check(
                         lambda ctx: ctx.value != protocol.RLE_ESCAPE_BYTE,  # type: ignore[reportUnknownLambdaType]
                     ),
                 ),
@@ -104,19 +106,23 @@ def encode(uncompressed: bytes) -> bytes:
                 # Escape bytes are always escaped individually
                 chunk_len = 1
                 compressed.extend(
-                    RLE_ESCAPE.build({
-                        "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,
-                        "value": byte_val,
-                    })
+                    RLE_ESCAPE.build(
+                        {
+                            "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,
+                            "value": byte_val,
+                        }
+                    )
                 )
             elif run_len >= protocol.RLE_MIN_RUN_LENGTH:
                 # Repeated sequence: Encode chunks of up to 256
                 chunk_len = min(run_len, 256)
                 compressed.extend(
-                    RLE_ESCAPE.build({
-                        "count_m2": chunk_len - protocol.RLE_OFFSET,
-                        "value": byte_val,
-                    })
+                    RLE_ESCAPE.build(
+                        {
+                            "count_m2": chunk_len - protocol.RLE_OFFSET,
+                            "value": byte_val,
+                        }
+                    )
                 )
             else:
                 # Literal bytes

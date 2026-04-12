@@ -65,8 +65,16 @@ class WatchdogKeepalive:
                 {"name": self.STATE_STOPPED, "on_enter": "_on_fsm_stop"},
             ],
             transitions=[
-                {"trigger": "start", "source": [self.STATE_INIT, self.STATE_STOPPED], "dest": self.STATE_RUNNING},
-                {"trigger": "stop", "source": self.STATE_RUNNING, "dest": self.STATE_STOPPED},
+                {
+                    "trigger": "start",
+                    "source": [self.STATE_INIT, self.STATE_STOPPED],
+                    "dest": self.STATE_RUNNING,
+                },
+                {
+                    "trigger": "stop",
+                    "source": self.STATE_RUNNING,
+                    "dest": self.STATE_STOPPED,
+                },
             ],
             initial=self.STATE_INIT,
             queued=True,

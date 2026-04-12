@@ -62,22 +62,24 @@ async def datastore_component() -> AsyncIterator[DatastoreComponent]:
 
 @pytest.mark.asyncio
 async def test_handle_put_success(datastore_component: DatastoreComponent) -> None:
-    key = 'key1'
-    val_bytes = b'value1'
+    key = "key1"
+    val_bytes = b"value1"
     payload = structures.DatastorePutPacket(key=key, value=val_bytes).encode()
 
     # Mock _publish_value
-    with patch.object(datastore_component, "_publish_value", new_callable=AsyncMock) as mock_pub:
+    with patch.object(
+        datastore_component, "_publish_value", new_callable=AsyncMock
+    ) as mock_pub:
         result = await datastore_component.handle_put(0, payload)
 
         assert result is True
         assert datastore_component.state.datastore["key1"] == "value1"
         mock_pub.assert_awaited_once_with(
-            topic='br/datastore/get/key1',
+            topic="br/datastore/get/key1",
             payload=val_bytes,
             expiry=60,
             reply_context=None,
-            properties=(('bridge-datastore-key', 'key1'),)
+            properties=(("bridge-datastore-key", "key1"),),
         )
 
 
@@ -94,7 +96,7 @@ async def test_handle_get_request_success(
     # Pre-populate datastore
     datastore_component.state.datastore["key1"] = "value1"
 
-    key = 'key1'
+    key = "key1"
     payload = structures.DatastoreGetPacket(key=key).encode()
 
     await datastore_component.handle_get_request(0, payload)
@@ -106,5 +108,5 @@ async def test_handle_get_request_success(
     # Should return empty bytes
     resp = args[1]  # type: ignore[reportUnknownVariableType]
     decoded = structures.DatastoreGetResponsePacket.decode(resp)  # type: ignore[reportUnknownArgumentType]
-    assert decoded.value == b'value1'
+    assert decoded.value == b"value1"
     assert len(resp) > 0  # type: ignore[reportUnknownArgumentType]

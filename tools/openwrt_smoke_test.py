@@ -38,8 +38,8 @@ KERNEL_FILE = f"openwrt-{OPENWRT_VERSION}-malta-be-vmlinux.elf"
 ROOTFS_GZ = f"openwrt-{OPENWRT_VERSION}-malta-be-rootfs-ext4.img.gz"
 ROOTFS_IMG = "openwrt-rootfs.img"
 
-APK_DISK_MB = 40          # APKs + deploy scripts
-EXTROOT_DISK_MB = 2048    # extroot overlay + swap
+APK_DISK_MB = 40  # APKs + deploy scripts
+EXTROOT_DISK_MB = 2048  # extroot overlay + swap
 
 PROMPT = r"root@.*:.*#"
 DEPLOY_SCRIPTS = ["2_expand.sh", "3_install.sh"]
@@ -107,7 +107,15 @@ def create_extroot_disk() -> str:
     """Create an empty raw disk for extroot + swap."""
     log_info(f"[INFO] Creating {EXTROOT_DISK_MB}MB extroot disk...")
     extroot_disk = "extroot.img"
-    run(["dd", "if=/dev/zero", f"of={extroot_disk}", "bs=1M", f"count={EXTROOT_DISK_MB}"])
+    run(
+        [
+            "dd",
+            "if=/dev/zero",
+            f"of={extroot_disk}",
+            "bs=1M",
+            f"count={EXTROOT_DISK_MB}",
+        ]
+    )
     return extroot_disk
 
 
@@ -117,18 +125,28 @@ def create_extroot_disk() -> str:
 def build_qemu_cmd(apk_disk: str, extroot_disk: str) -> list[str]:
     return [
         "qemu-system-mips",
-        "-M", "malta",
-        "-kernel", KERNEL_FILE,
-        "-drive", f"file={ROOTFS_IMG},format=raw,if=ide",     # sda — rootfs
-        "-drive", f"file={apk_disk},format=raw,if=ide",       # sdb — APKs + scripts
-        "-drive", f"file={extroot_disk},format=raw,if=ide",   # sdc — extroot target
-        "-append", "root=/dev/sda console=ttyS0",
+        "-M",
+        "malta",
+        "-kernel",
+        KERNEL_FILE,
+        "-drive",
+        f"file={ROOTFS_IMG},format=raw,if=ide",  # sda — rootfs
+        "-drive",
+        f"file={apk_disk},format=raw,if=ide",  # sdb — APKs + scripts
+        "-drive",
+        f"file={extroot_disk},format=raw,if=ide",  # sdc — extroot target
+        "-append",
+        "root=/dev/sda console=ttyS0",
         "-nographic",
-        "-serial", "mon:stdio",
-        "-m", "256",
+        "-serial",
+        "mon:stdio",
+        "-m",
+        "256",
         # NAT network for apk update
-        "-netdev", "user,id=net0",
-        "-device", "virtio-net-pci,netdev=net0",
+        "-netdev",
+        "user,id=net0",
+        "-device",
+        "virtio-net-pci,netdev=net0",
     ]
 
 
@@ -177,7 +195,7 @@ def phase_expand(child: Any) -> None:
     send_and_wait(
         child,
         "NET_IF=$(ip -o link show | awk -F': ' '$2 != \"lo\" {print $2; exit}'); "
-        "if [ -n \"$NET_IF\" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true",
+        'if [ -n "$NET_IF" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true',
         timeout=20,
     )
 
@@ -217,7 +235,7 @@ def phase_install(child: Any) -> None:
     send_and_wait(
         child,
         "NET_IF=$(ip -o link show | awk -F': ' '$2 != \"lo\" {print $2; exit}'); "
-        "if [ -n \"$NET_IF\" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true",
+        'if [ -n "$NET_IF" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true',
         timeout=20,
     )
 
@@ -253,7 +271,11 @@ def phase_verify(child: Any) -> None:
     wait_for_prompt(child, timeout=10)
 
     # Service is enabled
-    send_and_wait(child, "ls -l /etc/rc.d/*mcubridge* 2>/dev/null || echo 'SERVICE_NOT_ENABLED'", timeout=10)
+    send_and_wait(
+        child,
+        "ls -l /etc/rc.d/*mcubridge* 2>/dev/null || echo 'SERVICE_NOT_ENABLED'",
+        timeout=10,
+    )
 
     # Show installed mcubridge packages
     send_and_wait(child, "apk info 2>/dev/null | grep -i mcubridge || true", timeout=10)

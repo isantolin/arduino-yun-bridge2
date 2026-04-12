@@ -30,9 +30,7 @@ class Client:
         reconnect_on_failure: bool = True,
         callback_api_version: CallbackAPIVersion | int = ...,
     ) -> None: ...
-    def username_pw_set(
-        self, username: str, password: str | None = None
-    ) -> None: ...
+    def username_pw_set(self, username: str, password: str | None = None) -> None: ...
     def tls_set(
         self,
         ca_certs: str | None = None,

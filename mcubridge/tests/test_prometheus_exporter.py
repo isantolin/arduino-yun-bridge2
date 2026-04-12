@@ -8,7 +8,9 @@ from prometheus_client import CONTENT_TYPE_LATEST
 
 
 @pytest.mark.asyncio
-async def test_prometheus_exporter_serves_metrics(runtime_state: Any, socket_enabled: None):
+async def test_prometheus_exporter_serves_metrics(
+    runtime_state: Any, socket_enabled: None
+):
     assert socket_enabled is None
     runtime_state.file_storage_quota_bytes = 4096
     runtime_state.file_storage_bytes_used = 1024

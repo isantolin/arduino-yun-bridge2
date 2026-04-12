@@ -60,6 +60,7 @@ class BenchmarkResult:
 # Measurement helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_rss_vms_kb() -> tuple[int, int]:
     """Return (RSS, VMS) in KiB from /proc/self/status or resource module."""
     try:
@@ -89,7 +90,9 @@ def _count_source_bytes(pkg_dir: Path) -> tuple[int, int]:
 def measure_import(daemon_pkg: str = "mcubridge") -> ImportMetrics:
     """Import the daemon package and measure time + memory."""
     # Evict cached modules so we measure a cold import
-    to_remove = [k for k in sys.modules if k == daemon_pkg or k.startswith(f"{daemon_pkg}.")]
+    to_remove = [
+        k for k in sys.modules if k == daemon_pkg or k.startswith(f"{daemon_pkg}.")
+    ]
     for k in to_remove:
         del sys.modules[k]
 
@@ -100,26 +103,105 @@ def measure_import(daemon_pkg: str = "mcubridge") -> ImportMetrics:
 
     # Count third-party dependencies (non-stdlib, non-daemon)
     stdlib_prefixes: set[str] = {
-        "_", "os", "sys", "io", "re", "abc", "enum", "typing",
-        "collections", "functools", "itertools", "pathlib",
-        "dataclasses", "contextlib", "asyncio", "logging",
-        "json", "struct", "hashlib", "hmac", "time", "math",
-        "copy", "warnings", "inspect", "importlib", "types",
-        "textwrap", "string", "base64", "xml", "unittest",
-        "traceback", "linecache", "token", "tokenize",
-        "codecs", "locale", "signal", "threading", "queue",
-        "socket", "ssl", "http", "email", "urllib", "posixpath",
-        "genericpath", "stat", "nt", "ntpath", "fnmatch",
-        "shutil", "tempfile", "glob", "errno", "select",
-        "selectors", "subprocess", "multiprocessing", "concurrent",
-        "pickle", "shelve", "dbm", "csv", "configparser",
-        "argparse", "gettext", "builtins", "keyword", "operator",
-        "numbers", "decimal", "fractions", "random", "secrets",
-        "bisect", "heapq", "array", "weakref", "pprint",
-        "reprlib", "dis", "opcode", "marshal", "code",
-        "codeop", "compileall", "py_compile", "zipimport",
-        "pkgutil", "modulefinder", "runpy", "platform",
-        "sysconfig", "site", "atexit", "readline", "rlcompleter",
+        "_",
+        "os",
+        "sys",
+        "io",
+        "re",
+        "abc",
+        "enum",
+        "typing",
+        "collections",
+        "functools",
+        "itertools",
+        "pathlib",
+        "dataclasses",
+        "contextlib",
+        "asyncio",
+        "logging",
+        "json",
+        "struct",
+        "hashlib",
+        "hmac",
+        "time",
+        "math",
+        "copy",
+        "warnings",
+        "inspect",
+        "importlib",
+        "types",
+        "textwrap",
+        "string",
+        "base64",
+        "xml",
+        "unittest",
+        "traceback",
+        "linecache",
+        "token",
+        "tokenize",
+        "codecs",
+        "locale",
+        "signal",
+        "threading",
+        "queue",
+        "socket",
+        "ssl",
+        "http",
+        "email",
+        "urllib",
+        "posixpath",
+        "genericpath",
+        "stat",
+        "nt",
+        "ntpath",
+        "fnmatch",
+        "shutil",
+        "tempfile",
+        "glob",
+        "errno",
+        "select",
+        "selectors",
+        "subprocess",
+        "multiprocessing",
+        "concurrent",
+        "pickle",
+        "shelve",
+        "dbm",
+        "csv",
+        "configparser",
+        "argparse",
+        "gettext",
+        "builtins",
+        "keyword",
+        "operator",
+        "numbers",
+        "decimal",
+        "fractions",
+        "random",
+        "secrets",
+        "bisect",
+        "heapq",
+        "array",
+        "weakref",
+        "pprint",
+        "reprlib",
+        "dis",
+        "opcode",
+        "marshal",
+        "code",
+        "codeop",
+        "compileall",
+        "py_compile",
+        "zipimport",
+        "pkgutil",
+        "modulefinder",
+        "runpy",
+        "platform",
+        "sysconfig",
+        "site",
+        "atexit",
+        "readline",
+        "rlcompleter",
     }
     third_party: set[str] = set()
     for k in sys.modules:
@@ -141,7 +223,9 @@ def measure_import(daemon_pkg: str = "mcubridge") -> ImportMetrics:
     )
 
 
-def _benchmark(name: str, fn: Callable[[], Any], iterations: int = 5000) -> BenchmarkResult:
+def _benchmark(
+    name: str, fn: Callable[[], Any], iterations: int = 5000
+) -> BenchmarkResult:
     """Run *fn* for *iterations* and return a BenchmarkResult."""
     # Warmup
     for _ in range(min(100, iterations)):
@@ -198,7 +282,9 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
     from mcubridge.protocol.topics import parse_topic
 
     sample_topic = "br/gpio/digital/write"
-    results.append(_benchmark("Topic parse", lambda: parse_topic("br", sample_topic), iterations))
+    results.append(
+        _benchmark("Topic parse", lambda: parse_topic("br", sample_topic), iterations)
+    )
 
     return results
 
@@ -206,6 +292,7 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
 # ---------------------------------------------------------------------------
 # Markdown rendering
 # ---------------------------------------------------------------------------
+
 
 def render_markdown(imp: ImportMetrics, benchmarks: list[BenchmarkResult]) -> str:
     """Generate Markdown summary."""
@@ -243,6 +330,7 @@ def render_markdown(imp: ImportMetrics, benchmarks: list[BenchmarkResult]) -> st
 # CLI
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def main(
     github_step_summary: Annotated[
@@ -274,6 +362,7 @@ def main(
 
     if json_output:
         import msgspec
+
         data = {
             "import": {
                 "import_time_ms": round(imp.import_time_ms, 1),

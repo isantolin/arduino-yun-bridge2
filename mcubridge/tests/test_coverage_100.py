@@ -73,6 +73,8 @@ async def test_start_async_subprocess_unexpected_exception(
     with patch("asyncio.create_subprocess_shell", side_effect=OSError("boom")):
         pid = await process_comp.run_async("echo hello")
         assert pid == 0
+
+
 # ============================================================================
 # CONTEXT - EDGE CASES
 
@@ -80,6 +82,7 @@ async def test_start_async_subprocess_unexpected_exception(
 def test_context_resolve_command_id_invalid() -> None:
     """Cover resolve_command_id with invalid value."""
     from mcubridge.state.context import resolve_command_id
+
     assert resolve_command_id(0xFFFF) == "0xFFFF"
 
 
@@ -90,9 +93,9 @@ def test_context_resolve_command_id_invalid() -> None:
 
 def test_queues_append_with_bytes_limit_overflow() -> None:
     """Cover append with bytes limit causing overflow."""
-    from mcubridge.state.queues import BoundedByteDeque
+    from mcubridge.state.queues import BridgeQueue
 
-    q = BoundedByteDeque(max_items=10, max_bytes=5)
+    q = BridgeQueue[bytes](max_items=10, max_bytes=5)
     q.append(b"hello")  # 5 bytes
     event = q.append(b"world")  # Should trigger overflow
     assert event.dropped_bytes > 0
@@ -100,9 +103,9 @@ def test_queues_append_with_bytes_limit_overflow() -> None:
 
 def test_queues_make_room_for_complex() -> None:
     """Cover _make_room_for with complex conditions."""
-    from mcubridge.state.queues import BoundedByteDeque
+    from mcubridge.state.queues import BridgeQueue
 
-    q = BoundedByteDeque(max_items=3, max_bytes=100)
+    q = BridgeQueue[bytes](max_items=3, max_bytes=100)
     q.append(b"a")
     q.append(b"b")
     q.append(b"c")
@@ -122,9 +125,9 @@ def test_common_encode_status_reason_inline() -> None:
     from mcubridge.protocol import protocol
 
     reason = "test_reason"
-    result = reason.encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
+    result = reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]
     assert result == b"test_reason"
 
     # With unicode
-    result2 = "razón".encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
+    result2 = "razón".encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]
     assert isinstance(result2, bytes)

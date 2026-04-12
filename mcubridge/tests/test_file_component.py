@@ -64,7 +64,9 @@ class DummyBridge(BridgeContext):
         )
         await self.enqueue_mqtt(message, reply_context=reply_to)
 
-    async def acknowledge_mcu_frame(self, command_id: int, seq_id: int, *, status: Any = None) -> None:
+    async def acknowledge_mcu_frame(
+        self, command_id: int, seq_id: int, *, status: Any = None
+    ) -> None:
         pass
 
     def is_command_allowed(self, command: str) -> bool:
@@ -94,6 +96,7 @@ def file_component(
 
 def _build_write_payload(filename: str, data: bytes) -> bytes:
     from mcubridge.protocol import structures
+
     return structures.FileWritePacket(path=filename, data=data).encode()
 
 
@@ -102,14 +105,17 @@ async def test_handle_write_and_read_roundtrip(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    payload = structures.FileWritePacket(path='foo', data=b'data').encode()
+    payload = structures.FileWritePacket(path="foo", data=b"data").encode()
     await component.handle_write(0, payload)
 
-    read_payload = structures.FileReadPacket(path='foo').encode()
+    read_payload = structures.FileReadPacket(path="foo").encode()
     await component.handle_read(0, read_payload)
 
     assert bridge.sent_frames[-1][0] == protocol.Command.CMD_FILE_READ_RESP.value
-    assert structures.FileReadResponsePacket.decode(bridge.sent_frames[-1][1]).content == b'data'
+    assert (
+        structures.FileReadResponsePacket.decode(bridge.sent_frames[-1][1]).content
+        == b"data"
+    )
 
 
 @pytest.mark.asyncio
@@ -131,7 +137,7 @@ async def test_handle_remove_sends_ok_on_success(
 ) -> None:
     component, bridge = file_component
     (tmp_path / "rm.txt").write_text("x", encoding="utf-8")
-    payload = structures.FileRemovePacket(path='rm.txt').encode()
+    payload = structures.FileRemovePacket(path="rm.txt").encode()
     assert await component.handle_remove(0, payload) is True
     assert not (tmp_path / "rm.txt").exists()
     assert bridge.sent_frames[-1][0] == Status.OK.value
@@ -153,7 +159,8 @@ async def test_handle_read_large_payload_chunking(
     (tmp_path / "read_large.txt").write_bytes(original_data)
 
     from mcubridge.protocol import structures
-    payload = structures.FileReadPacket(path='read_large.txt').encode()
+
+    payload = structures.FileReadPacket(path="read_large.txt").encode()
     await component.handle_read(0, payload)
 
     # Reconstruct what was sent
@@ -179,7 +186,8 @@ async def test_handle_remove_missing_file(
 ) -> None:
     component, bridge = file_component
     from mcubridge.protocol import structures
-    payload = structures.FileRemovePacket(path='missing').encode()
+
+    payload = structures.FileRemovePacket(path="missing").encode()
     await component.handle_remove(0, payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
@@ -191,19 +199,27 @@ async def test_handle_mqtt_write_and_read(
     tmp_path: Path,
 ) -> None:
     component, bridge = file_component
-    msg = type("MockMsg", (), {"topic": "br/file/write/dir/file.txt", "payload": b"payload"})()
+    msg = type(
+        "MockMsg", (), {"topic": "br/file/write/dir/file.txt", "payload": b"payload"}
+    )()
     route = TopicRoute(
-        raw="br/file/write/dir/file.txt", prefix="br",
-        topic=Topic.FILE, segments=("write", "dir", "file.txt"),
+        raw="br/file/write/dir/file.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("write", "dir", "file.txt"),
     )
 
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
     assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
 
-    msg_read = type("MockMsg", (), {"topic": "br/file/read/dir/file.txt", "payload": b""})()
+    msg_read = type(
+        "MockMsg", (), {"topic": "br/file/read/dir/file.txt", "payload": b""}
+    )()
     route_read = TopicRoute(
-        raw="br/file/read/dir/file.txt", prefix="br",
-        topic=Topic.FILE, segments=("read", "dir", "file.txt"),
+        raw="br/file/read/dir/file.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("read", "dir", "file.txt"),
     )
 
     await component.handle_mqtt(route_read, msg_read)  # type: ignore[reportArgumentType]
@@ -217,7 +233,9 @@ async def test_handle_mqtt_write_to_mcu_storage_enabled(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    msg = type("MockMsg", (), {"topic": "br/file/write/mcu/test.txt", "payload": b"payload"})()
+    msg = type(
+        "MockMsg", (), {"topic": "br/file/write/mcu/test.txt", "payload": b"payload"}
+    )()
     route = TopicRoute(
         raw="br/file/write/mcu/test.txt",
         prefix="br",
@@ -241,7 +259,9 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
 ) -> None:
     component, bridge = file_component
     component._mcu_backend_enabled = False  # type: ignore[reportPrivateUsage]
-    msg = type("MockMsg", (), {"topic": "br/file/write/mcu/test.txt", "payload": b"payload"})()
+    msg = type(
+        "MockMsg", (), {"topic": "br/file/write/mcu/test.txt", "payload": b"payload"}
+    )()
     route = TopicRoute(
         raw="br/file/write/mcu/test.txt",
         prefix="br",
@@ -264,17 +284,22 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
 ) -> None:
     component, bridge = file_component
 
-    async def _send_frame(command_id: int, payload: bytes = b"", seq_id: int | None = None) -> bool:
+    async def _send_frame(
+        command_id: int, payload: bytes = b"", seq_id: int | None = None
+    ) -> bool:
         bridge.sent_frames.append((command_id, payload))
         if command_id == Command.CMD_FILE_READ.value:
             await component.handle_read_response(
-                0, structures.FileReadResponsePacket(content=b"mcu-").encode(),
+                0,
+                structures.FileReadResponsePacket(content=b"mcu-").encode(),
             )
             await component.handle_read_response(
-                0, structures.FileReadResponsePacket(content=b"data").encode(),
+                0,
+                structures.FileReadResponsePacket(content=b"data").encode(),
             )
             await component.handle_read_response(
-                0, structures.FileReadResponsePacket(content=b"").encode(),
+                0,
+                structures.FileReadResponsePacket(content=b"").encode(),
             )
         return True
 
@@ -325,7 +350,9 @@ async def test_handle_mqtt_remove_from_mcu_storage_enabled(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    msg = type("MockMsg", (), {"topic": "br/file/remove/mcu/test.txt", "payload": b""})()
+    msg = type(
+        "MockMsg", (), {"topic": "br/file/remove/mcu/test.txt", "payload": b""}
+    )()
     route = TopicRoute(
         raw="br/file/remove/mcu/test.txt",
         prefix="br",
@@ -420,7 +447,7 @@ async def test_handle_remove_updates_usage(
     assert await component.handle_write(0, payload)
     assert component.state.file_storage_bytes_used == 3
 
-    remove_payload = structures.FileRemovePacket(path='temp.txt').encode()
+    remove_payload = structures.FileRemovePacket(path="temp.txt").encode()
     assert await component.handle_remove(0, remove_payload)
     assert component.state.file_storage_bytes_used == 0
     root = Path(component.config.file_system_root)
@@ -500,7 +527,9 @@ async def test_handle_mqtt_missing_filename_is_ignored(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    route = TopicRoute(raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",))
+    route = TopicRoute(
+        raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",)
+    )
     msg = type("MockMsg", (), {"topic": "br/file/read", "payload": b""})()
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
     assert bridge.published == []
@@ -511,7 +540,12 @@ async def test_handle_mqtt_unknown_action_is_ignored(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
-    route = TopicRoute(raw="br/file/unknown/file.txt", prefix="br", topic=Topic.FILE, segments=("unknown", "file.txt"))
+    route = TopicRoute(
+        raw="br/file/unknown/file.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("unknown", "file.txt"),
+    )
     msg = type("MockMsg", (), {"topic": "br/file/unknown/file.txt", "payload": b""})()
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
     assert bridge.published == []
@@ -529,7 +563,8 @@ async def test_handle_read_oserror_returns_false(
 
     monkeypatch.setattr(Path, "read_bytes", boom)
     await component.handle_read(
-        0, structures.FileReadPacket(path="file.txt").encode(),
+        0,
+        structures.FileReadPacket(path="file.txt").encode(),
     )
     assert any(cmd == Status.ERROR.value for cmd, _ in bridge.sent_frames)
 
@@ -548,6 +583,7 @@ async def test_refresh_storage_usage_handles_subprocess_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import sh
+
     component, _ = file_component
 
     # Mock sh.du to raise an error
@@ -566,6 +602,7 @@ async def test_refresh_storage_usage_handles_subprocess_failures(
     def mock_du_value_error(*args: Any, **kwargs: Any):
         class MockOut:
             stdout = b"not-a-number /tmp/foo"
+
         return MockOut()
 
     monkeypatch.setattr(sh, "du", mock_du_value_error)
@@ -591,10 +628,7 @@ async def test_write_with_quota_emits_flash_warning_for_non_tmp_path(
         component.config.file_write_max_bytes = 32
         component.config.file_storage_quota_bytes = 1024
 
-        ok = await component.handle_write(
-            0,
-            _build_write_payload("alpha.txt", b"abc")
-        )
+        ok = await component.handle_write(0, _build_write_payload("alpha.txt", b"abc"))
         assert ok is True
     finally:
         for child in non_tmp_root.rglob("*"):
@@ -658,7 +692,9 @@ def test_normalise_filename_strips_traversal(filename: str) -> None:
         "file_with_underscores.txt",
     ],
 )
-def test_get_safe_path_confines_to_root(file_component: tuple[FileComponent, DummyBridge], filename: str) -> None:
+def test_get_safe_path_confines_to_root(
+    file_component: tuple[FileComponent, DummyBridge], filename: str
+) -> None:
     component, _ = file_component
     base_dir = Path(component.config.file_system_root).expanduser().resolve()
     safe_path = component._get_safe_path(filename)  # type: ignore[reportPrivateUsage]
@@ -684,7 +720,8 @@ async def test_handle_read_large_payload_truncation_reproduction(
     (tmp_path / "read_large.txt").write_bytes(original_data)
 
     from mcubridge.protocol import structures
-    payload = structures.FileReadPacket(path='read_large.txt').encode()
+
+    payload = structures.FileReadPacket(path="read_large.txt").encode()
     await component.handle_read(0, payload)
 
     # We expect multiple frames or a sequence that delivers all 128 bytes.
@@ -716,10 +753,14 @@ async def test_handle_mqtt_remove_action(
     # Create file to remove
     (tmp_path / "to_remove.txt").write_text("data", encoding="utf-8")
 
-    msg = type("MockMsg", (), {"topic": "br/file/remove/to_remove.txt", "payload": b""})()
+    msg = type(
+        "MockMsg", (), {"topic": "br/file/remove/to_remove.txt", "payload": b""}
+    )()
     route = TopicRoute(
-        raw="br/file/remove/to_remove.txt", prefix="br",
-        topic=Topic.FILE, segments=("remove", "to_remove.txt"),
+        raw="br/file/remove/to_remove.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("remove", "to_remove.txt"),
     )
 
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
@@ -737,10 +778,14 @@ async def test_handle_mqtt_remove_failure_logs_error(
     component, _bridge = file_component
     caplog.set_level("ERROR")
 
-    msg = type("MockMsg", (), {"topic": "br/file/remove/nonexistent.txt", "payload": b""})()
+    msg = type(
+        "MockMsg", (), {"topic": "br/file/remove/nonexistent.txt", "payload": b""}
+    )()
     route = TopicRoute(
-        raw="br/file/remove/nonexistent.txt", prefix="br",
-        topic=Topic.FILE, segments=("remove", "nonexistent.txt"),
+        raw="br/file/remove/nonexistent.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("remove", "nonexistent.txt"),
     )
 
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
@@ -764,7 +809,12 @@ async def test_handle_mqtt_write_failure_logs_error(
     monkeypatch.setattr(component, "_write_with_quota", _fail)
 
     msg = type("MockMsg", (), {"topic": "br/file/write/fail.txt", "payload": b"data"})()
-    route = TopicRoute(raw="br/file/write/fail.txt", prefix="br", topic=Topic.FILE, segments=("write", "fail.txt"))
+    route = TopicRoute(
+        raw="br/file/write/fail.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("write", "fail.txt"),
+    )
 
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
 
@@ -781,12 +831,16 @@ async def test_handle_read_empty_file(
     (tmp_path / "empty.txt").write_bytes(b"")
 
     from mcubridge.protocol import structures
-    payload = structures.FileReadPacket(path='empty.txt').encode()
+
+    payload = structures.FileReadPacket(path="empty.txt").encode()
     await component.handle_read(0, payload)
 
     # Should send a frame with empty content
     assert bridge.sent_frames[-1][0] == protocol.Command.CMD_FILE_READ_RESP.value
-    assert bridge.sent_frames[-1][1] == structures.FileReadResponsePacket(content=b'').encode()
+    assert (
+        bridge.sent_frames[-1][1]
+        == structures.FileReadResponsePacket(content=b"").encode()
+    )
 
 
 @pytest.mark.asyncio
@@ -920,10 +974,14 @@ async def test_handle_mqtt_read_failure(
     """Test handle_mqtt read action handles failure."""
     component, bridge = file_component
 
-    msg = type("MockMsg", (), {"topic": "br/file/read/nonexistent.txt", "payload": b""})()
+    msg = type(
+        "MockMsg", (), {"topic": "br/file/read/nonexistent.txt", "payload": b""}
+    )()
     route = TopicRoute(
-        raw="br/file/read/nonexistent.txt", prefix="br",
-        topic=Topic.FILE, segments=("read", "nonexistent.txt"),
+        raw="br/file/read/nonexistent.txt",
+        prefix="br",
+        topic=Topic.FILE,
+        segments=("read", "nonexistent.txt"),
     )
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
 

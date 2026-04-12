@@ -25,7 +25,6 @@ from mcubridge.state.context import create_runtime_state
 
 from tests._helpers import make_test_config as _make_config, make_route, make_mqtt_msg
 
-
 # ============================================================================
 # ============================================================================
 # mcubridge/util/__init__.py — lines 22, 24, 50
@@ -277,9 +276,9 @@ class TestConfigCommon:
 
 class TestQueues:
     def test_basic_ops(self: Any, tmp_path: Any):
-        from mcubridge.state.queues import PersistentQueue, BoundedByteDeque
+        from mcubridge.state.queues import BridgeQueue
 
-        pq: PersistentQueue[bytes] = PersistentQueue(tmp_path / "pq", max_items=2)
+        pq: BridgeQueue[bytes] = BridgeQueue(tmp_path / "pq", max_items=2)
         pq.append(b"1")
         pq.append(b"2")
         pq.append(b"3")
@@ -287,62 +286,62 @@ class TestQueues:
         assert pq.popleft() == b"2"
         pq.close()
 
-        bq = BoundedByteDeque(max_bytes=10)
+        bq: BridgeQueue[bytes] = BridgeQueue(max_bytes=10)
         bq.append(b"hello")
         assert bq.bytes == 5
         bq.clear()
         assert len(bq) == 0
 
     def test_bool(self):
-        from mcubridge.state.queues import BoundedByteDeque
+        from mcubridge.state.queues import BridgeQueue
 
-        q = BoundedByteDeque(max_items=10)
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
         assert not q
         q.append(b"x")
         assert q
 
     def test_clear(self):
-        from mcubridge.state.queues import BoundedByteDeque
+        from mcubridge.state.queues import BridgeQueue
 
-        q = BoundedByteDeque(max_items=10)
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
         q.append(b"a")
         q.clear()
         assert len(q) == 0
 
     def test_popleft(self):
-        from mcubridge.state.queues import BoundedByteDeque
+        from mcubridge.state.queues import BridgeQueue
 
-        q = BoundedByteDeque(max_items=10)
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
         q.append(b"first")
         q.append(b"second")
         assert q.popleft() == b"first"
 
     def test_appendleft(self):
-        from mcubridge.state.queues import BoundedByteDeque
+        from mcubridge.state.queues import BridgeQueue
 
-        q = BoundedByteDeque(max_items=10)
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
         q.append(b"second")
         q.appendleft(b"first")
         assert q.popleft() == b"first"
 
     def test_truncate_oversized_chunk(self):
-        from mcubridge.state.queues import BoundedByteDeque
+        from mcubridge.state.queues import BridgeQueue
 
-        q = BoundedByteDeque(max_bytes=5)
+        q: BridgeQueue[bytes] = BridgeQueue(max_bytes=5)
         event = q.append(b"x" * 20)
         assert event.truncated_bytes == 15
         assert event.success is True
 
     def test_limit_bytes_property(self):
-        from mcubridge.state.queues import BoundedByteDeque
+        from mcubridge.state.queues import BridgeQueue
 
-        q = BoundedByteDeque(max_bytes=42)
+        q: BridgeQueue[bytes] = BridgeQueue(max_bytes=42)
         assert q.max_bytes == 42
 
     def test_make_room_drops_oldest(self):
-        from mcubridge.state.queues import BoundedByteDeque
+        from mcubridge.state.queues import BridgeQueue
 
-        q = BoundedByteDeque(max_items=2)
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=2)
         q.append(b"a")
         q.append(b"b")
         event = q.append(b"c")
@@ -350,9 +349,9 @@ class TestQueues:
         assert len(q) <= 2
 
     def test_can_fit_no_limits(self):
-        from mcubridge.state.queues import BoundedByteDeque
+        from mcubridge.state.queues import BridgeQueue
 
-        q = BoundedByteDeque()
+        q: BridgeQueue[bytes] = BridgeQueue()
         q.append(b"a")
         q.append(b"b")
         assert len(q) == 2
@@ -367,7 +366,9 @@ class TestSpecModel:
     def test_load_spec(self):
         from mcubridge.protocol.spec_model import ProtocolSpec
 
-        spec_path = Path(__file__).resolve().parents[2] / "tools" / "protocol" / "spec.toml"
+        spec_path = (
+            Path(__file__).resolve().parents[2] / "tools" / "protocol" / "spec.toml"
+        )
         if spec_path.exists():
             spec = ProtocolSpec.load(spec_path)
             assert len(spec.commands) > 0
@@ -438,7 +439,9 @@ class TestMqttBuildProperties:
         from mcubridge.mqtt import build_mqtt_properties
         from mcubridge.protocol.structures import QueuedPublish
 
-        msg = QueuedPublish(topic_name="test", payload=b"", user_properties=[("k", "v")])
+        msg = QueuedPublish(
+            topic_name="test", payload=b"", user_properties=[("k", "v")]
+        )
         props = build_mqtt_properties(msg)
         assert props is not None
 
@@ -469,7 +472,11 @@ class TestShellMqttLogic:
     def shell_comp(self):
         from mcubridge.services.process import ProcessComponent
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         ctx = MagicMock()
         ctx.publish = AsyncMock()
@@ -485,17 +492,23 @@ class TestShellMqttLogic:
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_poll(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(make_route(Topic.SHELL, "poll", "42"), make_mqtt_msg(b""))
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "poll", "42"), make_mqtt_msg(b"")
+        )
         shell_comp.poll_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_kill(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(make_route(Topic.SHELL, "kill", "42"), make_mqtt_msg(b""))
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "kill", "42"), make_mqtt_msg(b"")
+        )
         shell_comp.stop_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b""))
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b"")
+        )
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
@@ -522,7 +535,11 @@ class TestStatusWriter:
     async def test_status_writer_write_tick(self):
         from mcubridge.state.status import status_writer
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
 
         try:
@@ -538,6 +555,7 @@ class TestStatusWriter:
     @pytest.mark.asyncio
     async def test_cleanup_status_file(self: Any):
         from mcubridge.state import status
+
         with patch("pathlib.Path.unlink") as mock_unlink:
             status.STATUS_FILE.unlink(missing_ok=True)
             mock_unlink.assert_called()
@@ -610,7 +628,11 @@ class TestProtocolFrame:
     def test_frame_encode_decode(self):
         from mcubridge.protocol.frame import Frame
 
-        raw = Frame(command_id=Command.CMD_DIGITAL_READ.value, sequence_id=0, payload=b"\x01\x02").build()
+        raw = Frame(
+            command_id=Command.CMD_DIGITAL_READ.value,
+            sequence_id=0,
+            payload=b"\x01\x02",
+        ).build()
         cmd_id, _seq_id, payload = Frame.parse(raw)
         assert cmd_id == Command.CMD_DIGITAL_READ.value
         assert payload == b"\x01\x02"
@@ -624,7 +646,9 @@ class TestProtocolFrame:
     def test_decode_rpc_frame_bad_crc(self):
         from mcubridge.protocol.frame import Frame
 
-        frame = bytearray(Frame(command_id=0x01, sequence_id=0, payload=b"test").build())
+        frame = bytearray(
+            Frame(command_id=0x01, sequence_id=0, payload=b"test").build()
+        )
         frame[-1] ^= 0xFF  # Corrupt CRC
         with pytest.raises(ValueError):
             Frame.parse(bytes(frame))
@@ -672,7 +696,11 @@ class TestBaseComponent:
     def test_base_component_publish(self):
         from mcubridge.services.base import BaseComponent
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -695,7 +723,9 @@ class TestConfigSettings:
         assert config.serial_port == "/dev/null"
 
     def test_runtime_config_shared_secret_too_short(self):
-        with pytest.raises((ValueError, msgspec.ValidationError), match="serial_shared_secret"):
+        with pytest.raises(
+            (ValueError, msgspec.ValidationError), match="serial_shared_secret"
+        ):
             _make_config(serial_shared_secret=b"abc")
 
     def test_runtime_config_changeme_secret(self):
@@ -778,7 +808,11 @@ class TestConsoleComponent:
     async def test_console_queue_flush_empty(self):
         from mcubridge.services.console import ConsoleComponent
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -807,7 +841,9 @@ class TestMailboxComponent:
             ctx.publish = AsyncMock()
 
             comp = MailboxComponent(config, state, ctx)
-            await comp.handle_mqtt(make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello"))
+            await comp.handle_mqtt(
+                make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
+            )
         finally:
             state.cleanup()
 
@@ -822,7 +858,11 @@ class TestPinComponent:
     async def test_pin_handle_digital_read(self):
         from mcubridge.services.pin import PinComponent
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -848,7 +888,11 @@ class TestDatastoreComponent:
     async def test_datastore_get_miss_publishes_empty(self):
         from mcubridge.services.datastore import DatastoreComponent
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -873,7 +917,11 @@ class TestDispatcherEdgeCases:
 
         from .conftest import make_component_container
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             d = BridgeDispatcher(
@@ -898,7 +946,9 @@ class TestDispatcherEdgeCases:
                     system=MagicMock(),
                 )
             )
-            route = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
+            route = TopicRoute(
+                raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
+            )
             result = d._should_reject_topic_action(route)  # type: ignore[reportPrivateUsage]
             assert result is None
         finally:
@@ -912,7 +962,10 @@ class TestDispatcherEdgeCases:
 
 class TestPayloads:
     def test_shell_pid_from_topic_segment_invalid(self):
-        from mcubridge.protocol.structures import PayloadValidationError, ShellPidPayload
+        from mcubridge.protocol.structures import (
+            PayloadValidationError,
+            ShellPidPayload,
+        )
 
         with pytest.raises(PayloadValidationError):
             ShellPidPayload.from_topic_segment("abc")
@@ -935,7 +988,9 @@ class TestDaemon:
     async def test_cleanup_status_file_missing(self):
         from mcubridge.state.status import STATUS_FILE
 
-        with patch("mcubridge.state.status.STATUS_FILE", Path("/nonexistent/status.json")):
+        with patch(
+            "mcubridge.state.status.STATUS_FILE", Path("/nonexistent/status.json")
+        ):
             STATUS_FILE.unlink(missing_ok=True)  # Should not raise
 
 
@@ -977,7 +1032,11 @@ class TestWatchdog:
     async def test_watchdog_run_cancel(self):
         from mcubridge.watchdog import WatchdogKeepalive
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             wd = WatchdogKeepalive(state=state, interval=0.1)
@@ -1001,7 +1060,11 @@ class TestSystemComponent:
     async def test_system_handle_version(self):
         from mcubridge.services.system import SystemComponent
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -1047,9 +1110,16 @@ class TestHandshakeEdgeCases:
 
     @pytest.fixture
     def handshake_mgr(self):
-        from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
+        from mcubridge.services.handshake import (
+            SerialHandshakeManager,
+            derive_serial_timing,
+        )
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         timing = derive_serial_timing(config)
         mgr = SerialHandshakeManager(
@@ -1186,7 +1256,11 @@ class TestBridgeServiceEdges:
     def service(self):
         from mcubridge.services.runtime import BridgeService
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         svc = BridgeService(config, state)
         try:
@@ -1216,7 +1290,11 @@ class TestMqttTransport:
     def test_mqtt_transport_init(self):
         from mcubridge.transport.mqtt import MqttTransport
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             service = MagicMock()
@@ -1228,7 +1306,11 @@ class TestMqttTransport:
     def test_mqtt_transport_fsm_transitions(self):
         from mcubridge.transport.mqtt import MqttTransport
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             service = MagicMock()
@@ -1259,7 +1341,11 @@ class TestMetrics:
     async def test_publish_metrics_error_path(self):
         from mcubridge.metrics import publish_metrics
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock(side_effect=OSError("boom"))
@@ -1276,13 +1362,19 @@ class TestMetrics:
     async def test_publish_bridge_snapshots_both_disabled(self):
         from mcubridge.metrics import publish_bridge_snapshots
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock()
 
             task = asyncio.create_task(
-                publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0)
+                publish_bridge_snapshots(
+                    state, enqueue, summary_interval=0, handshake_interval=0
+                )
             )
             await asyncio.sleep(0.1)
             task.cancel()
@@ -1295,13 +1387,19 @@ class TestMetrics:
     async def test_publish_bridge_snapshots_summary_error(self):
         from mcubridge.metrics import publish_bridge_snapshots
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock(side_effect=OSError("summary fail"))
 
             task = asyncio.create_task(
-                publish_bridge_snapshots(state, enqueue, summary_interval=0.05, handshake_interval=0)
+                publish_bridge_snapshots(
+                    state, enqueue, summary_interval=0.05, handshake_interval=0
+                )
             )
             await asyncio.sleep(0.15)
             task.cancel()
@@ -1314,13 +1412,19 @@ class TestMetrics:
     async def test_publish_bridge_snapshots_handshake_error(self):
         from mcubridge.metrics import publish_bridge_snapshots
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock(side_effect=OSError("handshake fail"))
 
             task = asyncio.create_task(
-                publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0.05)
+                publish_bridge_snapshots(
+                    state, enqueue, summary_interval=0, handshake_interval=0.05
+                )
             )
             await asyncio.sleep(0.15)
             task.cancel()
@@ -1340,7 +1444,11 @@ class TestSerialTransport:
     async def test_serial_transport_init(self):
         from mcubridge.transport.serial import SerialTransport
 
-        config = _make_config()
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             service = MagicMock()
@@ -1359,7 +1467,9 @@ class TestMqttHelpers:
     def test_make_inbound_message_with_response_topic(self):
         from tests.mqtt_helpers import make_inbound_message
 
-        msg = make_inbound_message("test/topic", b"payload", response_topic="reply/topic")
+        msg = make_inbound_message(
+            "test/topic", b"payload", response_topic="reply/topic"
+        )
         assert msg.properties is not None
 
     def test_make_inbound_message_with_correlation_data(self):

@@ -48,10 +48,14 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 pass
 
             serial_writer = state.serial_writer
-            serial_connected = serial_writer is not None and not serial_writer.is_closing()
+            serial_connected = (
+                serial_writer is not None and not serial_writer.is_closing()
+            )
 
             # Helper to convert SupervisorStats -> SupervisorSnapshot
-            supervisors = {n: s.as_snapshot() for n, s in state.supervisor_stats.items()}
+            supervisors = {
+                n: s.as_snapshot() for n, s in state.supervisor_stats.items()
+            }
 
             # Helper to convert SerialFlowStats -> SerialFlowSnapshot
             serial_flow = state.serial_flow_stats.as_snapshot()
@@ -73,7 +77,9 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 mqtt_spool_backoff_until=(state.mqtt_spool_backoff_until),
                 mqtt_spool_last_error=state.mqtt_spool_last_error,
                 mqtt_spool_recoveries=state.mqtt_spool_recoveries,
-                mqtt_spool_pending=(state.mqtt_spool.pending if state.mqtt_spool is not None else 0),
+                mqtt_spool_pending=(
+                    state.mqtt_spool.pending if state.mqtt_spool is not None else 0
+                ),
                 file_storage_root=state.file_system_root,
                 file_storage_bytes_used=state.file_storage_bytes_used,
                 file_storage_quota_bytes=state.file_storage_quota_bytes,
@@ -87,10 +93,16 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 mailbox_dropped_bytes=state.mailbox_dropped_bytes,
                 mailbox_truncated_messages=state.mailbox_truncated_messages,
                 mailbox_truncated_bytes=state.mailbox_truncated_bytes,
-                mailbox_incoming_dropped_messages=(state.mailbox_incoming_dropped_messages),
+                mailbox_incoming_dropped_messages=(
+                    state.mailbox_incoming_dropped_messages
+                ),
                 mailbox_incoming_dropped_bytes=(state.mailbox_incoming_dropped_bytes),
-                mailbox_incoming_truncated_messages=(state.mailbox_incoming_truncated_messages),
-                mailbox_incoming_truncated_bytes=(state.mailbox_incoming_truncated_bytes),
+                mailbox_incoming_truncated_messages=(
+                    state.mailbox_incoming_truncated_messages
+                ),
+                mailbox_incoming_truncated_bytes=(
+                    state.mailbox_incoming_truncated_bytes
+                ),
                 mcu_paused=state.mcu_is_paused,
                 console_queue_size=len(state.console_to_mcu_queue),
                 console_queue_bytes=state.console_queue_bytes,
@@ -118,7 +130,9 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 heartbeat_unix=time.time(),
                 mcu_version=mcu_version,
             )
-            write_task = asyncio.create_task(asyncio.to_thread(_write_status_file, payload))
+            write_task = asyncio.create_task(
+                asyncio.to_thread(_write_status_file, payload)
+            )
             try:
                 await asyncio.shield(write_task)
             except asyncio.CancelledError:

@@ -41,7 +41,7 @@ def uci_get(key: str, default: str = "") -> str:
 @app.command()
 def main(
     state_arg: Annotated[str, typer.Argument(help="State to set the LED to (on/off)")],
-    pin: Annotated[int, typer.Argument(help="Pin number to control")] = 13
+    pin: Annotated[int, typer.Argument(help="Pin number to control")] = 13,
 ) -> None:
     state_arg = state_arg.lower()
     if state_arg not in ("on", "off"):
@@ -83,7 +83,7 @@ def main(
         stop=tenacity.stop_after_attempt(3),
         wait=tenacity.wait_fixed(0.5),
         retry=tenacity.retry_if_exception_type(Exception),
-        reraise=True
+        reraise=True,
     )
     def do_publish():
         publish.single(
@@ -92,7 +92,7 @@ def main(
             hostname=host,
             port=port,
             auth=auth,
-            tls=tls_config
+            tls=tls_config,
         )
         logger.info(f"Published LED{pin}={payload} to {mqtt_topic}")
 

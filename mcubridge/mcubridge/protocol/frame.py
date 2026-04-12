@@ -51,24 +51,30 @@ COMMAND_ID_CODEC: Construct = BitStruct(
 RPC_FRAME_HEADER: Construct = Struct(
     "version" / Int8ub,
     "payload_len" / Int16ub,
-    "command_id" / ExprAdapter(
+    "command_id"
+    / ExprAdapter(
         Enum(Int16ub, protocol.Command, protocol.Status),
         decoder=lambda obj, ctx: int(obj),  # type: ignore[reportUnknownLambdaType]
         encoder=lambda obj, ctx: obj,  # type: ignore[reportUnknownLambdaType]
     ),
     "sequence_id" / Int16ub,
-    "version_check" / Check(
+    "version_check"
+    / Check(
         lambda ctx: getattr(  # type: ignore[reportUnknownLambdaType]
-            cast(Any, ctx), "version", 0) == protocol.PROTOCOL_VERSION,
+            cast(Any, ctx), "version", 0
+        )
+        == protocol.PROTOCOL_VERSION,
     ),
 )
 
 
 class FrameAdapter(Adapter):
     """Transparently handles RLE compression encoding and decoding within Construct."""
+
     def _decode(self, obj: Any, context: Any, path: Any) -> Any:
         if obj.header.command_id & protocol.CMD_FLAG_COMPRESSED:
             from . import rle
+
             obj.payload = rle.decode(obj.payload)
             obj.header.command_id &= ~protocol.CMD_FLAG_COMPRESSED
             obj.header.payload_len = len(obj.payload)
@@ -76,6 +82,7 @@ class FrameAdapter(Adapter):
 
     def _encode(self, obj: Any, context: Any, path: Any) -> Any:
         from . import rle
+
         payload = obj.get("payload", b"")
         header = obj.get("header", {})
         command_id = header.get("command_id", 0)
@@ -97,16 +104,19 @@ class FrameAdapter(Adapter):
 
 
 # [SIL-2] Inner container for CRC calculation with transparent RLE Adapter
-RPC_PAYLOAD_CONTAINER: Construct = FrameAdapter(Struct(
-    "header" / RPC_FRAME_HEADER,
-    "payload" / Bytes(this.header.payload_len),
-))
+RPC_PAYLOAD_CONTAINER: Construct = FrameAdapter(
+    Struct(
+        "header" / RPC_FRAME_HEADER,
+        "payload" / Bytes(this.header.payload_len),
+    )
+)
 
 # [SIL-2] Full Frame with Checksum (Sustitución Drástica)
 # Uses RawCopy to capture the bytes for CRC calculation without manual slicing.
 RPC_FRAME: Construct = Struct(
     "header_payload" / RawCopy(RPC_PAYLOAD_CONTAINER),
-    "crc" / Checksum(
+    "crc"
+    / Checksum(
         Int32ub,
         lambda data: crc32(cast(bytes, data)) & 0xFFFFFFFF,  # type: ignore[reportUnknownLambdaType]
         this.header_payload.data,
@@ -144,27 +154,33 @@ class Frame(msgspec.Struct, frozen=True):
     @property
     def raw_command_id(self) -> int:
         """Get the raw 15-bit command ID without the compression flag."""
-        return int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
+        return (
+            int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
+        )
 
     def build(self) -> bytes:
         """Build the binary frame representation."""
         if len(self.payload) > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}")
+            raise ValueError(
+                f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}"
+            )
         try:
             # Use simple dictionary for building
-            return RPC_FRAME.build({
-                "header_payload": {
-                    "value": {
-                        "header": {
-                            "version": protocol.PROTOCOL_VERSION,
-                            "payload_len": len(self.payload),
-                            "command_id": int(self.command_id),
-                            "sequence_id": self.sequence_id,
-                        },
-                        "payload": self.payload,
+            return RPC_FRAME.build(
+                {
+                    "header_payload": {
+                        "value": {
+                            "header": {
+                                "version": protocol.PROTOCOL_VERSION,
+                                "payload_len": len(self.payload),
+                                "command_id": int(self.command_id),
+                                "sequence_id": self.sequence_id,
+                            },
+                            "payload": self.payload,
+                        }
                     }
                 }
-            })
+            )
         except (ConstructError, ValueError, TypeError) as e:
             raise ValueError(f"Failed to build frame: {e}") from e
 

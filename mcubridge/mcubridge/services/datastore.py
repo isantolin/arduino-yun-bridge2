@@ -32,7 +32,9 @@ class DatastoreComponent(BaseComponent):
 
     async def handle_put(self, seq_id: int, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
-        packet = self._decode_payload(DatastorePutPacket, payload, Command.CMD_DATASTORE_PUT)
+        packet = self._decode_payload(
+            DatastorePutPacket, payload, Command.CMD_DATASTORE_PUT
+        )
         if packet is None:
             return False
 
@@ -48,7 +50,7 @@ class DatastoreComponent(BaseComponent):
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
         try:
             packet = DatastoreGetPacket.decode(payload, Command.CMD_DATASTORE_GET)
-        except (ValueError):
+        except ValueError:
             logger.warning(
                 "Malformed DATASTORE_GET payload: %s",
                 payload.hex() if payload else "(empty)",
@@ -94,7 +96,11 @@ class DatastoreComponent(BaseComponent):
         payload = msgspec.convert(inbound.payload, bytes)
         payload_str = payload.decode("utf-8", errors="ignore")
 
-        is_request = identifier == DatastoreAction.GET and bool(remainder) and remainder[-1] == "request"
+        is_request = (
+            identifier == DatastoreAction.GET
+            and bool(remainder)
+            and remainder[-1] == "request"
+        )
         parts = remainder[:-1] if is_request else remainder
 
         key = "/".join(parts)
@@ -164,7 +170,11 @@ class DatastoreComponent(BaseComponent):
 
         # [SIL-2] Handle potential type drift during testing/injection
         val_to_check: Any = cached_value
-        val_bytes = val_to_check.encode("utf-8") if isinstance(val_to_check, str) else bytes(val_to_check)
+        val_bytes = (
+            val_to_check.encode("utf-8")
+            if isinstance(val_to_check, str)
+            else bytes(val_to_check)
+        )
 
         # Ignore echoes: if it's not an explicit /request and it has a payload,
         # it is an echo of a published value, so we do not republish.

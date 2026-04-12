@@ -26,5 +26,4 @@ __all__ = [
     "SerialHandshakeManager",
     "SerialTimingWindow",
     "SystemComponent",
-
 ]

@@ -62,7 +62,9 @@ class TestTopicAuthorization:
             (Topic.ANALOG.value, "read"),
         ],
     )
-    def test_default_policy_allows_all_tracked_actions(self, topic: str, action: str) -> None:
+    def test_default_policy_allows_all_tracked_actions(
+        self, topic: str, action: str
+    ) -> None:
         """Verify a default policy allows all tracked actions."""
         policy = TopicAuthorization()
         assert policy.allows(topic, action) is True
@@ -75,7 +77,9 @@ class TestTopicAuthorization:
             (Topic.CONSOLE.value, ""),
         ],
     )
-    def test_default_policy_denies_unknown_actions(self, topic: str, action: str) -> None:
+    def test_default_policy_denies_unknown_actions(
+        self, topic: str, action: str
+    ) -> None:
         """Verify topic/action pairs outside the map default to deny."""
         policy = TopicAuthorization()
         assert policy.allows(topic, action) is False
@@ -108,7 +112,9 @@ class TestTopicAuthorization:
             ({"analog_read": False}, Topic.ANALOG.value, "read"),
         ],
     )
-    def test_console_and_pin_toggles_respected(self, kwargs: dict[str, bool], topic: str, action: str) -> None:
+    def test_console_and_pin_toggles_respected(
+        self, kwargs: dict[str, bool], topic: str, action: str
+    ) -> None:
         policy = TopicAuthorization(**kwargs)  # type: ignore[reportArgumentType]
         assert policy.allows(topic, action) is False
 

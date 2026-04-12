@@ -67,7 +67,9 @@ async def testacknowledge_mcu_frame_no_sender_is_noop() -> None:
     try:
         service = BridgeService(config, state)
 
-        await service.acknowledge_mcu_frame(protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK)
+        await service.acknowledge_mcu_frame(
+            protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK
+        )
     finally:
         state.cleanup()
 
@@ -88,13 +90,20 @@ async def testacknowledge_mcu_frame_sends_ack_packet() -> None:
         service.register_serial_sender(_sender)  # type: ignore[reportArgumentType]
 
         await service.acknowledge_mcu_frame(
-            protocol.Command.CMD_GET_FREE_MEMORY.value, 0, status=Status.MALFORMED,
+            protocol.Command.CMD_GET_FREE_MEMORY.value,
+            0,
+            status=Status.MALFORMED,
         )
 
         assert sent
         status_cmd, payload = sent[0]
         assert status_cmd == Status.MALFORMED.value
-        assert payload == structures.AckPacket(command_id=protocol.Command.CMD_GET_FREE_MEMORY.value).encode()
+        assert (
+            payload
+            == structures.AckPacket(
+                command_id=protocol.Command.CMD_GET_FREE_MEMORY.value
+            ).encode()
+        )
     finally:
         state.cleanup()
 
@@ -106,7 +115,9 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
     try:
         service = BridgeService(config, state)
 
-        msg = QueuedPublish(topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello")
+        msg = QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello"
+        )
 
         props = SimpleNamespace(
             ResponseTopic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp",

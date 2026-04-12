@@ -38,10 +38,15 @@ if "serial_asyncio_fast" not in sys.modules:
     mock_saf = MagicMock()
     # Mock open_serial_connection to return (StreamReader, StreamWriter)
     mock_saf.open_serial_connection = AsyncMock(
-        return_value=(AsyncMock(spec=asyncio.StreamReader), AsyncMock(spec=asyncio.StreamWriter))
+        return_value=(
+            AsyncMock(spec=asyncio.StreamReader),
+            AsyncMock(spec=asyncio.StreamWriter),
+        )
     )
     # Maintain create_serial_connection for older tests that haven't been migrated yet
-    mock_saf.create_serial_connection = AsyncMock(return_value=(AsyncMock(), AsyncMock()))
+    mock_saf.create_serial_connection = AsyncMock(
+        return_value=(AsyncMock(), AsyncMock())
+    )
     sys.modules["serial_asyncio_fast"] = mock_saf
 
 
@@ -124,6 +129,7 @@ def force_gc_cleanup():
     """Ensure all resources are released after each test to reach zero warnings."""
     import gc
     import warnings
+
     yield
     # Close any stale event loop left by asyncio.run() or explicit set_event_loop
     # to prevent ResourceWarning from leaked self-pipe sockets across tests.
@@ -132,7 +138,9 @@ def force_gc_cleanup():
     # Access the policy's thread-local directly to avoid triggering the
     # DeprecationWarning that filterwarnings=["error"] would promote to fatal.
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*get_event_loop_policy.*")
+        warnings.filterwarnings(
+            "ignore", category=DeprecationWarning, message=".*get_event_loop_policy.*"
+        )
         policy = asyncio.get_event_loop_policy()
     loop = getattr(getattr(policy, "_local", None), "_loop", None)
     if loop is not None and not loop.is_closed():
@@ -143,7 +151,9 @@ def force_gc_cleanup():
     # connections are managed by diskcache internals and cannot be closed earlier
     # without coupling test infrastructure to the library's threading model.
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=pytest.PytestUnraisableExceptionWarning)
+        warnings.filterwarnings(
+            "ignore", category=pytest.PytestUnraisableExceptionWarning
+        )
         gc.collect()
 
 
@@ -231,7 +241,12 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:  # type: ig
     """
 
     monkeypatch.setattr(
-        settings, "get_uci_config", lambda: {**common.get_default_config(), "serial_shared_secret": "s_e_c_r_e_t_mock"}
+        settings,
+        "get_uci_config",
+        lambda: {
+            **common.get_default_config(),
+            "serial_shared_secret": "s_e_c_r_e_t_mock",
+        },
     )
 
 
@@ -293,6 +308,10 @@ def make_component_container(
 
 @pytest.fixture()
 def runtime_config() -> RuntimeConfig:
+    import time
+
+    # [TEST FIX] Ensure each test worker has its own unique FS root to avoid SQLite locking
+    unique_root = f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}"
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_BAUDRATE,
@@ -307,7 +326,7 @@ def runtime_config() -> RuntimeConfig:
         mqtt_keyfile=None,
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=(),
-        file_system_root="/tmp",
+        file_system_root=unique_root,
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
         mqtt_queue_limit=8,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,

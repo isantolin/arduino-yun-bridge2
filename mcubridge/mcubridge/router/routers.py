@@ -46,7 +46,15 @@ class MQTTRouter:
                 handled = await handler(route, inbound)
                 if handled:
                     dispatched = True
-            except (OSError, ValueError, TypeError, AttributeError, KeyError, IndexError, RuntimeError):
+            except (
+                OSError,
+                ValueError,
+                TypeError,
+                AttributeError,
+                KeyError,
+                IndexError,
+                RuntimeError,
+            ):
                 # [SIL-2] Fault Isolation: Don't let one handler crash the whole router.
                 # We log it and continue with the next one.
                 structlog.get_logger("mcubridge.router").exception(

@@ -32,7 +32,9 @@ def set_uci_value(u: uci.Uci, section: str, option: str, value: str) -> None:
     try:
         u.set("mcubridge", section, option, value)
     except (uci.UciException, RuntimeError) as e:
-        sys.stderr.write(f"[mcubridge-rotate-credentials] ERROR: Failed to set {section}.{option}: {e}\n")
+        sys.stderr.write(
+            f"[mcubridge-rotate-credentials] ERROR: Failed to set {section}.{option}: {e}\n"
+        )
         raise
 
 
@@ -42,6 +44,7 @@ def random_hex(length: int) -> str:
 
 def random_b64(length: int) -> str:
     import base64
+
     return base64.b64encode(os.urandom(length)).decode().rstrip("=")
 
 
@@ -78,11 +81,12 @@ def main() -> None:
         # 4. Restart service if init script exists
         init_script = Path("/etc/init.d/mcubridge")
         if init_script.exists():
+
             @tenacity.retry(
                 stop=tenacity.stop_after_attempt(3),
                 wait=tenacity.wait_fixed(1.0),
                 retry=tenacity.retry_if_exception_type(sh.ErrorReturnCode),
-                reraise=True
+                reraise=True,
             )
             def restart_service():
                 sh.Command(str(init_script))("restart")
@@ -90,10 +94,14 @@ def main() -> None:
             try:
                 restart_service()
             except sh.ErrorReturnCode as e:
-                sys.stderr.write(f"[mcubridge-rotate-credentials] WARNING: Service restart failed: {e}\n")
+                sys.stderr.write(
+                    f"[mcubridge-rotate-credentials] WARNING: Service restart failed: {e}\n"
+                )
                 # ROLLBACK: Restore config if restart fails critically
                 if backup_config.exists():
-                    sys.stderr.write("[mcubridge-rotate-credentials] INFO: Rolling back UCI configuration...\n")
+                    sys.stderr.write(
+                        "[mcubridge-rotate-credentials] INFO: Rolling back UCI configuration...\n"
+                    )
                     shutil.copy2(backup_config, uci_config)
                     raise typer.Exit(code=1)
 
@@ -102,14 +110,18 @@ def main() -> None:
         secret_file.write_text(f"SERIAL_SECRET={serial_secret}\n", encoding="utf-8")
         os.chmod(secret_file, 0o600)
         sys.stdout.write(f"SECRET_FILE={secret_file}\n")
-        sys.stderr.write("[mcubridge-rotate-credentials] Updated UCI credentials and restarted McuBridge.\n")
+        sys.stderr.write(
+            "[mcubridge-rotate-credentials] Updated UCI credentials and restarted McuBridge.\n"
+        )
 
     except (sh.ErrorReturnCode, uci.UciException, RuntimeError) as exc:
         if isinstance(exc, sh.ErrorReturnCode):
             msg = exc.stderr.decode()
         else:
             msg = str(exc)
-        sys.stderr.write(f"[mcubridge-rotate-credentials] ERROR: UCI or Service operation failed: {msg}\n")
+        sys.stderr.write(
+            f"[mcubridge-rotate-credentials] ERROR: UCI or Service operation failed: {msg}\n"
+        )
         if backup_config.exists():
             shutil.copy2(backup_config, uci_config)
         raise typer.Exit(code=1)

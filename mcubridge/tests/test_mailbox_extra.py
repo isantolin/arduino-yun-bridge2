@@ -1,4 +1,5 @@
 """Extra coverage for mcubridge.services.mailbox."""
+
 from typing import Any
 
 from unittest.mock import AsyncMock, MagicMock
@@ -14,7 +15,13 @@ from tests._helpers import make_route, make_mqtt_msg
 
 @pytest.mark.asyncio
 async def test_mailbox_handle_processed_fallback() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -31,7 +38,13 @@ async def test_mailbox_handle_processed_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_mailbox_handle_read_truncation() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -74,7 +87,13 @@ async def test_mailbox_handle_read_send_fail(tmp_path: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_mailbox_handle_mqtt_edge_cases() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -82,7 +101,9 @@ async def test_mailbox_handle_mqtt_edge_cases() -> None:
         mb = MailboxComponent(config, state, ctx)
 
         # Unknown action
-        await mb.handle_mqtt(make_route(Topic.MAILBOX, "unknown"), make_mqtt_msg(b"payload"))
+        await mb.handle_mqtt(
+            make_route(Topic.MAILBOX, "unknown"), make_mqtt_msg(b"payload")
+        )
 
         # Read from incoming queue
         state.enqueue_mailbox_incoming(b"inbound")
@@ -94,7 +115,13 @@ async def test_mailbox_handle_mqtt_edge_cases() -> None:
 
 @pytest.mark.asyncio
 async def test_mailbox_overflow_with_inbound() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -107,7 +134,10 @@ async def test_mailbox_overflow_with_inbound() -> None:
         # Check for bridge-error property
         found_error = False
         for call in ctx.publish.call_args_list:
-            if call.kwargs.get("properties") and ("bridge-error", "mailbox") in call.kwargs["properties"]:
+            if (
+                call.kwargs.get("properties")
+                and ("bridge-error", "mailbox") in call.kwargs["properties"]
+            ):
                 found_error = True
         assert found_error
     finally:

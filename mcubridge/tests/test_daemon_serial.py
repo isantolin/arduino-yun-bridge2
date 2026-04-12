@@ -1,4 +1,5 @@
 """Tests for serial transport resiliency."""
+
 from typing import Any
 
 import asyncio

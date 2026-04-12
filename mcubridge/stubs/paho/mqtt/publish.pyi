@@ -43,7 +43,6 @@ def single(
     transport: Literal["tcp", "websockets"] = "tcp",
     proxy_args: Any | None = None,
 ) -> None: ...
-
 def multiple(
     msgs: list[MessageDict | tuple[str, PayloadType, int, bool]],
     hostname: str = "localhost",

@@ -82,7 +82,9 @@ class DummyContext:
     ) -> None:
         self.published.append((topic, payload, qos, retain))
 
-    async def acknowledge_mcu_frame(self, command_id: int, seq_id: int, *, status: Any = None) -> None:
+    async def acknowledge_mcu_frame(
+        self, command_id: int, seq_id: int, *, status: Any = None
+    ) -> None:
         pass
 
     async def schedule_background(
@@ -95,7 +97,9 @@ class DummyContext:
         return asyncio.ensure_future(coroutine)
 
 
-def test_request_mcu_version_resets_cached_version(runtime_config: RuntimeConfig, runtime_state: RuntimeState):
+def test_request_mcu_version_resets_cached_version(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+):
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
@@ -124,17 +128,22 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
         component._pending_free_memory.append(msg)  # type: ignore[reportPrivateUsage]
 
         # Payload: 2 bytes (uint16)
-        await component.handle_get_free_memory_resp(0, structures.FreeMemoryResponsePacket(value=1024).encode())
+        await component.handle_get_free_memory_resp(
+            0, structures.FreeMemoryResponsePacket(value=1024).encode()
+        )
 
         # It publishes twice (one for reply, one for broadcast)
         assert len(ctx.published) == 2
         # First is reply (usually)
         # Check that value 1024 is in payload
         assert "1024" in str(ctx.published[0][1])
+
     _run(_coro())
 
 
-def test_handle_get_free_memory_resp_ignores_malformed(runtime_config: RuntimeConfig, runtime_state: RuntimeState):
+def test_handle_get_free_memory_resp_ignores_malformed(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+):
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
@@ -166,6 +175,7 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(
         assert runtime_state.mcu_version == (1, 2, 0)
         assert len(ctx.published) >= 1
         assert "1.2.0" in str(ctx.published[0][1])
+
     _run(_coro())
 
 
@@ -195,7 +205,9 @@ def test_handle_get_version_resp_malformed(
     _run(_coro())
 
 
-def test_handle_mqtt_version_get_with_cached_version(runtime_config: RuntimeConfig, runtime_state: RuntimeState):
+def test_handle_mqtt_version_get_with_cached_version(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+):
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
@@ -205,16 +217,21 @@ def test_handle_mqtt_version_get_with_cached_version(runtime_config: RuntimeConf
         msg.topic = "br/system/version/get"
         msg.payload = b""
 
-        await component.handle_mqtt(make_route(Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET), msg)
+        await component.handle_mqtt(
+            make_route(Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET), msg
+        )
 
         assert len(ctx.published) >= 1
         assert "2.0.0" in str(ctx.published[0][1])
         # It still requests version to refresh cache
         assert len(ctx.sent_frames) == 1
+
     _run(_coro())
 
 
-def test_handle_mqtt_version_get_without_cached_version(runtime_config: RuntimeConfig, runtime_state: RuntimeState):
+def test_handle_mqtt_version_get_without_cached_version(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+):
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
@@ -224,7 +241,9 @@ def test_handle_mqtt_version_get_without_cached_version(runtime_config: RuntimeC
         msg.topic = "br/system/version/get"
         msg.payload = b""
 
-        await component.handle_mqtt(make_route(Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET), msg)
+        await component.handle_mqtt(
+            make_route(Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET), msg
+        )
 
         assert len(ctx.sent_frames) == 1
         cmd, _pl = ctx.sent_frames[0]
@@ -234,7 +253,9 @@ def test_handle_mqtt_version_get_without_cached_version(runtime_config: RuntimeC
     _run(_coro())
 
 
-def test_handle_mqtt_free_memory_get_tracks_pending(runtime_config: RuntimeConfig, runtime_state: RuntimeState):
+def test_handle_mqtt_free_memory_get_tracks_pending(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+):
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
@@ -243,7 +264,9 @@ def test_handle_mqtt_free_memory_get_tracks_pending(runtime_config: RuntimeConfi
         msg.topic = "br/system/memory/get"
         msg.payload = b""
 
-        await component.handle_mqtt(make_route(Topic.SYSTEM, SystemAction.FREE_MEMORY, SystemAction.GET), msg)
+        await component.handle_mqtt(
+            make_route(Topic.SYSTEM, SystemAction.FREE_MEMORY, SystemAction.GET), msg
+        )
 
         assert len(ctx.sent_frames) == 1
         cmd, _pl = ctx.sent_frames[0]
@@ -251,4 +274,3 @@ def test_handle_mqtt_free_memory_get_tracks_pending(runtime_config: RuntimeConfi
         assert msg in component._pending_free_memory  # type: ignore[reportPrivateUsage]
 
     _run(_coro())
-

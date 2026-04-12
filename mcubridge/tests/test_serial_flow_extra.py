@@ -74,7 +74,8 @@ async def test_serial_flow_send_and_wait_write_fail() -> None:
 
     with pytest.raises(SerialFlowController._FatalSerialError):  # type: ignore[reportPrivateUsage]
         await flow._send_and_wait(  # type: ignore[reportPrivateUsage]
-            pending, b"p", sender, Command.CMD_GET_VERSION.value)
+            pending, b"p", sender, Command.CMD_GET_VERSION.value
+        )
 
 
 @pytest.mark.asyncio

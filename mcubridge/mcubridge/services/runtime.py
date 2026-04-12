@@ -83,13 +83,19 @@ class BridgeService:
 
         self._registry = svcs.Registry()
         _COMPONENTS: tuple[type, ...] = (
-            ConsoleComponent, DatastoreComponent, FileComponent,
-            MailboxComponent, PinComponent, ProcessComponent,
-            SpiComponent, SystemComponent,
+            ConsoleComponent,
+            DatastoreComponent,
+            FileComponent,
+            MailboxComponent,
+            PinComponent,
+            ProcessComponent,
+            SpiComponent,
+            SystemComponent,
         )
         for comp_cls in _COMPONENTS:
             self._registry.register_factory(  # type: ignore[reportUnknownMemberType]
-                comp_cls, lambda c=comp_cls: c(config, state, self),  # type: ignore[reportUnknownLambdaType]
+                comp_cls,
+                lambda c=comp_cls: c(config, state, self),  # type: ignore[reportUnknownLambdaType]
             )
         self._container = svcs.Container(self._registry)
 
@@ -133,7 +139,9 @@ class BridgeService:
             handle_link_reset_resp=self.handshake_manager.handle_link_reset_resp,
             handle_get_capabilities_resp=self.handshake_manager.handle_capabilities_resp,
             handle_ack=self._handle_ack,
-            status_handler_factory=lambda status: lambda s, p: self.handle_status(s, status, p),
+            status_handler_factory=lambda status: lambda s, p: self.handle_status(
+                s, status, p
+            ),
             handle_process_kill=self._container.get(ProcessComponent).handle_kill,
         )
 
@@ -157,7 +165,9 @@ class BridgeService:
         self._serial_sender = sender
         self._serial_flow.set_sender(sender)
 
-    async def send_frame(self, command_id: int, payload: bytes = b"", seq_id: int | None = None) -> bool:
+    async def send_frame(
+        self, command_id: int, payload: bytes = b"", seq_id: int | None = None
+    ) -> bool:
         if not self._serial_sender:
             logger.error(
                 "Serial sender not registered; cannot send frame 0x%02X",
@@ -190,12 +200,16 @@ class BridgeService:
 
         # [SIL-2] Boundary Guard: Do not proceed if synchronization failed.
         if not self.state.is_synchronized:
-            logger.warning("Link synchronization failed; aborting post-connection initialization")
+            logger.warning(
+                "Link synchronization failed; aborting post-connection initialization"
+            )
             self.handshake_manager.raise_if_handshake_fatal()
             return
 
         try:
-            version_ok = await self._container.get(SystemComponent).request_mcu_version()
+            version_ok = await self._container.get(
+                SystemComponent
+            ).request_mcu_version()
             if not version_ok:
                 logger.warning("Failed to dispatch MCU version request after reconnect")
         except (OSError, ValueError, RuntimeError) as e:
@@ -217,7 +231,8 @@ class BridgeService:
         total_pending = pending_digital + pending_analog
         if total_pending:
             logger.warning(
-                "Serial link lost; clearing %d pending request(s) " "(digital=%d analog=%d)",
+                "Serial link lost; clearing %d pending request(s) "
+                "(digital=%d analog=%d)",
                 total_pending,
                 pending_digital,
                 pending_analog,
@@ -231,7 +246,9 @@ class BridgeService:
         await self._serial_flow.reset()
         self.handshake_manager.clear_handshake_expectations()
 
-    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
+    async def handle_mcu_frame(
+        self, command_id: int, sequence_id: int, payload: bytes
+    ) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
         # [SIL-2] Automate latency tracking using native decorators
         stats = self.state.serial_latency_stats
@@ -285,18 +302,26 @@ class BridgeService:
         message_to_queue = message
         if reply_context is not None:
             props = reply_context.properties
-            target_topic = (props.ResponseTopic if props else None) or message.topic_name
+            target_topic = (
+                props.ResponseTopic if props else None
+            ) or message.topic_name
             if target_topic != message_to_queue.topic_name:
-                message_to_queue = msgspec.structs.replace(message_to_queue, topic_name=target_topic)
+                message_to_queue = msgspec.structs.replace(
+                    message_to_queue, topic_name=target_topic
+                )
 
             reply_correlation = props.CorrelationData if props else None
             if reply_correlation is not None:
-                message_to_queue = msgspec.structs.replace(message_to_queue, correlation_data=reply_correlation)
+                message_to_queue = msgspec.structs.replace(
+                    message_to_queue, correlation_data=reply_correlation
+                )
 
             origin_topic = str(reply_context.topic)
             user_properties = list(message_to_queue.user_properties)
             user_properties.append(("bridge-request-topic", origin_topic))
-            message_to_queue = msgspec.structs.replace(message_to_queue, user_properties=user_properties)
+            message_to_queue = msgspec.structs.replace(
+                message_to_queue, user_properties=user_properties
+            )
 
         try:
             self.state.mqtt_publish_queue.put_nowait(message_to_queue)
@@ -414,7 +439,9 @@ class BridgeService:
         desc = _STATUS_DESCRIPTIONS.get(status, "Unknown status code")
         text = payload.decode("utf-8", errors="ignore") if payload else ""
 
-        log_method = logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
+        log_method = (
+            logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
+        )
         if text:
             log_method("MCU > %s (seq=%d): %s (%s)", status.name, seq_id, desc, text)
         else:

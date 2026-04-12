@@ -111,14 +111,21 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
-                patch.object(transport, "_negotiate_baudrate", new_callable=AsyncMock, return_value=True),
+                patch.object(
+                    transport,
+                    "_negotiate_baudrate",
+                    new_callable=AsyncMock,
+                    return_value=True,
+                ),
                 patch.object(service, "on_serial_connected", new_callable=AsyncMock),
                 patch.object(service, "on_serial_disconnected", new_callable=AsyncMock),
             ):
                 # The test expects a failure due to EOF signal in mock_reader
                 with pytest.raises((ConnectionError, asyncio.TimeoutError)):
                     # Global timeout to prevent test hanging CI
-                    await asyncio.wait_for(orig_run(transport, asyncio.get_running_loop()), timeout=2.0)
+                    await asyncio.wait_for(
+                        orig_run(transport, asyncio.get_running_loop()), timeout=2.0
+                    )
 
             assert mock_open.await_args is not None
             assert mock_open.await_args.kwargs["baudrate"] == config.serial_safe_baud
@@ -146,8 +153,14 @@ async def test_transport_run_handshake_fatal() -> None:
 
             # Force handshake fatal error
             with (
-                patch.object(service, "on_serial_connected", side_effect=SerialHandshakeFatal("test")),
-                patch.object(serial_fast.SerialTransport, "_toggle_dtr", new_callable=AsyncMock),
+                patch.object(
+                    service,
+                    "on_serial_connected",
+                    side_effect=SerialHandshakeFatal("test"),
+                ),
+                patch.object(
+                    serial_fast.SerialTransport, "_toggle_dtr", new_callable=AsyncMock
+                ),
             ):
                 transport = serial_fast.SerialTransport(config, state, service)
                 with pytest.raises(SerialHandshakeFatal):
@@ -188,15 +201,16 @@ async def test_serial_disconnected_hook_error(
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
                 patch.object(service, "on_serial_connected", new_callable=AsyncMock),
-                patch.object(service, "on_serial_disconnected", side_effect=_raise_error),
+                patch.object(
+                    service, "on_serial_disconnected", side_effect=_raise_error
+                ),
             ):
                 caplog.set_level("ERROR")
 
                 try:
                     # Use a timeout to ensure the test doesn't block forever
                     await asyncio.wait_for(
-                        orig_run(transport, asyncio.get_running_loop()),
-                        timeout=5.0
+                        orig_run(transport, asyncio.get_running_loop()), timeout=5.0
                     )
                 except (ConnectionError, asyncio.TimeoutError, RuntimeError):
 
@@ -230,7 +244,9 @@ async def test_async_process_packet_os_error(
         from mcubridge.protocol.frame import Frame
         from mcubridge.protocol.protocol import Command
 
-        frame = Frame(command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00").build()
+        frame = Frame(
+            command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00"
+        ).build()
         encoded = cobs_encode(frame)
 
         caplog.set_level("ERROR")

@@ -95,7 +95,7 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     # Use sequence_id=0 for debug snapshots
     frame_obj = Frame(command_id=command_id, sequence_id=0, payload=payload)
     raw_frame = frame_obj.build()
-    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE:], "big")
+    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
     encoded_body = cobs_mod.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(
@@ -164,7 +164,9 @@ def _iter_counts(count: int) -> Iterable[int]:
         yield from range(count)
 
 
-app = typer.Typer(add_completion=False, help="Inspect and optionally send MCU Bridge RPC frames.")
+app = typer.Typer(
+    add_completion=False, help="Inspect and optionally send MCU Bridge RPC frames."
+)
 
 
 @app.command()
@@ -172,13 +174,23 @@ def main_cmd(
     command: Annotated[
         str, typer.Option("--command", "-c", help="Command or Status name/value")
     ] = "CMD_GET_FREE_MEMORY",
-    payload: Annotated[str | None, typer.Option("--payload", "-p", help="Payload in hex format")] = None,
+    payload: Annotated[
+        str | None, typer.Option("--payload", "-p", help="Payload in hex format")
+    ] = None,
     port: Annotated[str | None, typer.Option(help="Serial port device path")] = None,
     baud: Annotated[int, typer.Option(help="Serial baud rate")] = DEFAULT_BAUDRATE,
-    interval: Annotated[float, typer.Option(help="Interval between frames in seconds")] = 5.0,
-    count: Annotated[int, typer.Option(help="Number of frames to send (0 for infinite)")] = 1,
-    read_response: Annotated[bool, typer.Option(help="Wait for and print the next frame received")] = False,
-    read_timeout: Annotated[float, typer.Option(help="Timeout for reading responses")] = 2.0,
+    interval: Annotated[
+        float, typer.Option(help="Interval between frames in seconds")
+    ] = 5.0,
+    count: Annotated[
+        int, typer.Option(help="Number of frames to send (0 for infinite)")
+    ] = 1,
+    read_response: Annotated[
+        bool, typer.Option(help="Wait for and print the next frame received")
+    ] = False,
+    read_timeout: Annotated[
+        float, typer.Option(help="Timeout for reading responses")
+    ] = 2.0,
 ):
     try:
         cmd_id = _resolve_command(command)

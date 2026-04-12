@@ -59,7 +59,7 @@ from ..protocol.structures import (
     SupervisorStats,
 )
 from .metrics import DaemonMetrics
-from .queues import BoundedByteDeque, PersistentQueue
+from .queues import BridgeQueue
 from transitions import Machine
 
 logger = structlog.get_logger("mcubridge.state")
@@ -118,8 +118,12 @@ class ManagedProcess:
     pid: int
     command: str = ""
     handle: Any | None = None
-    stdout_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
-    stderr_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
+    stdout_buffer: collections.deque[int] = field(
+        default_factory=lambda: collections.deque(maxlen=4096)
+    )
+    stderr_buffer: collections.deque[int] = field(
+        default_factory=lambda: collections.deque(maxlen=4096)
+    )
     exit_code: int | None = None
     io_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     fsm_state: str = PROCESS_STATE_STARTING
@@ -136,10 +140,26 @@ class ManagedProcess:
                 PROCESS_STATE_ZOMBIE,
             ],
             transitions=[
-                {"trigger": "start", "source": PROCESS_STATE_STARTING, "dest": PROCESS_STATE_RUNNING},
-                {"trigger": "sigchld", "source": PROCESS_STATE_RUNNING, "dest": PROCESS_STATE_DRAINING},
-                {"trigger": "io_complete", "source": PROCESS_STATE_DRAINING, "dest": PROCESS_STATE_FINISHED},
-                {"trigger": "finalize", "source": PROCESS_STATE_FINISHED, "dest": PROCESS_STATE_ZOMBIE},
+                {
+                    "trigger": "start",
+                    "source": PROCESS_STATE_STARTING,
+                    "dest": PROCESS_STATE_RUNNING,
+                },
+                {
+                    "trigger": "sigchld",
+                    "source": PROCESS_STATE_RUNNING,
+                    "dest": PROCESS_STATE_DRAINING,
+                },
+                {
+                    "trigger": "io_complete",
+                    "source": PROCESS_STATE_DRAINING,
+                    "dest": PROCESS_STATE_FINISHED,
+                },
+                {
+                    "trigger": "finalize",
+                    "source": PROCESS_STATE_FINISHED,
+                    "dest": PROCESS_STATE_ZOMBIE,
+                },
                 {"trigger": "force_kill", "source": "*", "dest": PROCESS_STATE_ZOMBIE},
             ],
             initial=PROCESS_STATE_STARTING,
@@ -184,7 +204,12 @@ class ManagedProcess:
         for _ in range(err_len):
             self.stderr_buffer.popleft()
 
-        return stdout_chunk, stderr_chunk, bool(self.stdout_buffer), bool(self.stderr_buffer)
+        return (
+            stdout_chunk,
+            stderr_chunk,
+            bool(self.stdout_buffer),
+            bool(self.stderr_buffer),
+        )
 
     def is_drained(self) -> bool:
         # [FSM] Must be in FINISHED/ZOMBIE state to be drained
@@ -199,7 +224,11 @@ def collect_system_metrics() -> dict[str, Any]:
         proc = psutil.Process()
         with proc.oneshot():
             mem = psutil.virtual_memory()
-            load = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0.0, 0.0, 0.0)
+            load = (
+                psutil.getloadavg()
+                if hasattr(psutil, "getloadavg")
+                else (0.0, 0.0, 0.0)
+            )
 
             # Disk usage for root and /tmp (volatile RAM disk on OpenWrt)
             root_disk = psutil.disk_usage("/")
@@ -222,16 +251,18 @@ def collect_system_metrics() -> dict[str, Any]:
                 "disk_root_used_bytes": root_disk.used,
                 "disk_root_free_bytes": root_disk.free,
                 "disk_root_percent": root_disk.percent,
-                "temperature_celsius": next(
-                    (
-                        t[0].current
-                        for n, t in psutil.sensors_temperatures().items()
-                        if n in ("cpu_thermal", "coretemp", "soc_thermal") and t
-                    ),
-                    None,
-                )
-                if hasattr(psutil, "sensors_temperatures")
-                else None,
+                "temperature_celsius": (
+                    next(
+                        (
+                            t[0].current
+                            for n, t in psutil.sensors_temperatures().items()
+                            if n in ("cpu_thermal", "coretemp", "soc_thermal") and t
+                        ),
+                        None,
+                    )
+                    if hasattr(psutil, "sensors_temperatures")
+                    else None
+                ),
             }
             if tmp_disk is not None:
                 result["disk_tmp_total_bytes"] = tmp_disk.total
@@ -255,8 +286,16 @@ class RuntimeState(msgspec.Struct):
             model="self",
             states=["disconnected", "connected", "synchronized"],
             transitions=[
-                {"trigger": "connect", "source": ["disconnected", "connected", "synchronized"], "dest": "connected"},
-                {"trigger": "synchronize", "source": ["connected", "synchronized"], "dest": "synchronized"},
+                {
+                    "trigger": "connect",
+                    "source": ["disconnected", "connected", "synchronized"],
+                    "dest": "connected",
+                },
+                {
+                    "trigger": "synchronize",
+                    "source": ["connected", "synchronized"],
+                    "dest": "synchronized",
+                },
                 {"trigger": "disconnect", "source": "*", "dest": "disconnected"},
             ],
             initial="disconnected",
@@ -267,8 +306,8 @@ class RuntimeState(msgspec.Struct):
     )
 
     if TYPE_CHECKING:
-        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
-            ...
+
+        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool: ...
 
     @property
     def is_connected(self) -> bool:
@@ -301,7 +340,9 @@ class RuntimeState(msgspec.Struct):
         default_factory=lambda: asyncio.Queue[QueuedPublish](),  # noqa: PLW0108
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
+    mqtt_drop_counts: dict[str, int] = msgspec.field(
+        default_factory=lambda: {}
+    )  # noqa: PLW0108
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_replayed: int = 0
     mqtt_spool_degraded: bool = False
@@ -317,27 +358,36 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_dropped_limit: int = 0
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
-    _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
-    datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
+    _last_spool_snapshot: SpoolSnapshot = msgspec.field(
+        default_factory=lambda: {}
+    )  # noqa: PLW0108
+    datastore: dict[str, str] = msgspec.field(
+        default_factory=lambda: {}
+    )  # noqa: PLW0108
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
-    mailbox_queue: PersistentQueue[bytes] = msgspec.field(
-        default_factory=lambda: PersistentQueue[bytes](),  # noqa: PLW0108
+    mailbox_queue: BridgeQueue[bytes] = msgspec.field(
+        default_factory=lambda: BridgeQueue[bytes](),  # noqa: PLW0108
     )
-    mailbox_incoming_queue: PersistentQueue[bytes] = msgspec.field(
-        default_factory=lambda: PersistentQueue[bytes](),  # noqa: PLW0108
+    mailbox_incoming_queue: BridgeQueue[bytes] = msgspec.field(
+        default_factory=lambda: BridgeQueue[bytes](),  # noqa: PLW0108
     )
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    console_to_mcu_queue: BoundedByteDeque = msgspec.field(default_factory=BoundedByteDeque)
+    console_to_mcu_queue: BridgeQueue[bytes] = msgspec.field(
+        default_factory=lambda: BridgeQueue[bytes](),  # noqa: PLW0108
+    )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
+    running_processes: dict[int, ManagedProcess] = msgspec.field(
+        default_factory=lambda: {}
+    )  # noqa: PLW0108
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
@@ -397,8 +447,12 @@ class RuntimeState(msgspec.Struct):
     handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
     serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
-    serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
-    serial_latency_stats: SerialLatencyStats = msgspec.field(default_factory=SerialLatencyStats)
+    serial_throughput_stats: SerialThroughputStats = msgspec.field(
+        default_factory=SerialThroughputStats
+    )
+    serial_latency_stats: SerialLatencyStats = msgspec.field(
+        default_factory=SerialLatencyStats
+    )
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -409,7 +463,9 @@ class RuntimeState(msgspec.Struct):
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
     mcu_status_counters: dict[str, int] = msgspec.field(default_factory=lambda: {})
-    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=lambda: {})
+    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
+        default_factory=lambda: {}
+    )
 
     # Metrics (Synchronized with Prometheus)
     mqtt_messages_published: int = 0
@@ -514,7 +570,9 @@ class RuntimeState(msgspec.Struct):
         self.metrics.watchdog_beats.inc()
         self.last_watchdog_beat = timestamp or time.time()
 
-    def record_supervisor_failure(self, name: str, backoff: float, exc: Exception) -> None:
+    def record_supervisor_failure(
+        self, name: str, backoff: float, exc: Exception
+    ) -> None:
         """Record an internal service task failure."""
         stats = self.supervisor_stats.setdefault(name, SupervisorStats())
         stats.restarts += 1
@@ -548,16 +606,16 @@ class RuntimeState(msgspec.Struct):
         self.process_output_limit = config.process_max_output_bytes
         self.process_max_concurrent = config.process_max_concurrent
 
-        self.console_to_mcu_queue = BoundedByteDeque(
+        self.console_to_mcu_queue = BridgeQueue[bytes](
             max_bytes=self.console_queue_limit_bytes,
         )
 
-        def _create_spool(subdir: str) -> PersistentQueue[bytes]:
+        def _create_spool(subdir: str) -> BridgeQueue[bytes]:
             directory = None
             if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
                 directory = Path(self.file_system_root) / subdir
 
-            return PersistentQueue[bytes](
+            return BridgeQueue[bytes](
                 directory=directory,
                 max_items=self.mailbox_queue_limit,
             )
@@ -599,7 +657,9 @@ class RuntimeState(msgspec.Struct):
         self.console_to_mcu_queue.appendleft(chunk)
         self.console_queue_bytes = self.console_to_mcu_queue.bytes
 
-    def _mailbox_overflow(self, queue_len: int, payload_len: int, *, incoming: bool) -> bool:
+    def _mailbox_overflow(
+        self, queue_len: int, payload_len: int, *, incoming: bool
+    ) -> bool:
         """Return True if the mailbox queue is full. Updates overflow counters."""
         if queue_len < self.mailbox_queue_limit:
             return False
@@ -614,7 +674,9 @@ class RuntimeState(msgspec.Struct):
         return True
 
     def enqueue_mailbox_message(self, payload: bytes) -> bool:
-        if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
+        if self._mailbox_overflow(
+            len(self.mailbox_queue), len(payload), incoming=False
+        ):
             return False
         evt = self.mailbox_queue.append(payload)
         if evt.success:
@@ -634,7 +696,9 @@ class RuntimeState(msgspec.Struct):
             self.mailbox_queue_bytes += len(payload)
 
     def enqueue_mailbox_incoming(self, payload: bytes) -> bool:
-        if self._mailbox_overflow(len(self.mailbox_incoming_queue), len(payload), incoming=True):
+        if self._mailbox_overflow(
+            len(self.mailbox_incoming_queue), len(payload), incoming=True
+        ):
             return False
         evt = self.mailbox_incoming_queue.append(payload)
         if evt.success:
@@ -645,7 +709,9 @@ class RuntimeState(msgspec.Struct):
     def pop_mailbox_incoming(self) -> bytes | None:
         msg = self.mailbox_incoming_queue.popleft()
         if msg is not None:
-            self.mailbox_incoming_queue_bytes = max(0, self.mailbox_incoming_queue_bytes - len(msg))
+            self.mailbox_incoming_queue_bytes = max(
+                0, self.mailbox_incoming_queue_bytes - len(msg)
+            )
         return msg
 
     def sync_console_queue_limits(self) -> None:
@@ -755,7 +821,9 @@ class RuntimeState(msgspec.Struct):
         return self._last_spool_snapshot
 
     def record_mcu_status(self, status: Status) -> None:
-        self.mcu_status_counters[status.name] = self.mcu_status_counters.get(status.name, 0) + 1
+        self.mcu_status_counters[status.name] = (
+            self.mcu_status_counters.get(status.name, 0) + 1
+        )
 
     def apply_handshake_stats(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from external handshake statistics."""
@@ -776,13 +844,21 @@ class RuntimeState(msgspec.Struct):
         """Update internal state from spool statistics."""
         # [SIL-2] Static assignment to avoid reflection overhead and string manipulation
         if "corrupt_dropped" in observation:
-            self.mqtt_spool_corrupt_dropped = msgspec.convert(observation["corrupt_dropped"], int)
+            self.mqtt_spool_corrupt_dropped = msgspec.convert(
+                observation["corrupt_dropped"], int
+            )
         if "dropped_due_to_limit" in observation:
-            self.mqtt_spool_dropped_limit = msgspec.convert(observation["dropped_due_to_limit"], int)
+            self.mqtt_spool_dropped_limit = msgspec.convert(
+                observation["dropped_due_to_limit"], int
+            )
         if "trim_events" in observation:
-            self.mqtt_spool_trim_events = msgspec.convert(observation["trim_events"], int)
+            self.mqtt_spool_trim_events = msgspec.convert(
+                observation["trim_events"], int
+            )
         if "last_trim_unix" in observation:
-            self.mqtt_spool_last_trim_unix = msgspec.convert(observation["last_trim_unix"], float)
+            self.mqtt_spool_last_trim_unix = msgspec.convert(
+                observation["last_trim_unix"], float
+            )
 
     def configure_spool(self, directory: str, limit: int) -> None:
         if self.mqtt_spool:
@@ -807,7 +883,9 @@ class RuntimeState(msgspec.Struct):
             self.mqtt_spool = spool_obj
             if spool_obj.is_degraded:
                 self.mqtt_spool_degraded = True
-                self.mqtt_spool_failure_reason = spool_obj.failure_reason or "initialization_failed"
+                self.mqtt_spool_failure_reason = (
+                    spool_obj.failure_reason or "initialization_failed"
+                )
                 self.mqtt_spool_last_error = spool_obj.last_error
             else:
                 self.mqtt_spool_degraded = False
@@ -818,7 +896,11 @@ class RuntimeState(msgspec.Struct):
     async def ensure_spool(self) -> bool:
         if self.mqtt_spool:
             return True
-        if not self.mqtt_spool_dir or self.mqtt_spool_limit <= 0 or self._spool_backoff_remaining() > 0:
+        if (
+            not self.mqtt_spool_dir
+            or self.mqtt_spool_limit <= 0
+            or self._spool_backoff_remaining() > 0
+        ):
             return False
         try:
             self.mqtt_spool = await asyncio.to_thread(
@@ -829,7 +911,9 @@ class RuntimeState(msgspec.Struct):
             )
             if self.mqtt_spool.is_degraded:
                 self.mqtt_spool_degraded = True
-                self.mqtt_spool_failure_reason = self.mqtt_spool.failure_reason or "reactivation_failed"
+                self.mqtt_spool_failure_reason = (
+                    self.mqtt_spool.failure_reason or "reactivation_failed"
+                )
                 self.mqtt_spool_last_error = self.mqtt_spool.last_error
                 return False
             self.mqtt_spool_degraded = False
@@ -841,7 +925,11 @@ class RuntimeState(msgspec.Struct):
             return False
 
     def _spool_backoff_remaining(self) -> float:
-        return max(0.0, self.mqtt_spool_backoff_until - time.monotonic()) if self.mqtt_spool_backoff_until > 0 else 0.0
+        return (
+            max(0.0, self.mqtt_spool_backoff_until - time.monotonic())
+            if self.mqtt_spool_backoff_until > 0
+            else 0.0
+        )
 
     def _disable_mqtt_spool(self, reason: str, schedule_retry: bool = True) -> None:
         if self.mqtt_spool:
@@ -862,7 +950,9 @@ class RuntimeState(msgspec.Struct):
         )
         self.mqtt_spool_backoff_until = time.monotonic() + delay
 
-    def _handle_mqtt_spool_failure(self, reason: str, exc: BaseException | None = None) -> None:
+    def _handle_mqtt_spool_failure(
+        self, reason: str, exc: BaseException | None = None
+    ) -> None:
         self.record_mqtt_spool_error()
         if exc:
             self.mqtt_spool_last_error = str(exc)
@@ -967,7 +1057,9 @@ class RuntimeState(msgspec.Struct):
             serial_pipeline=self.build_serial_pipeline_snapshot(),
             serial_flow=self.serial_flow_stats.as_snapshot(),
             mcu_version=McuVersion(*self.mcu_version) if self.mcu_version else None,
-            capabilities=self.mcu_capabilities.as_dict() if self.mcu_capabilities else None,
+            capabilities=(
+                self.mcu_capabilities.as_dict() if self.mcu_capabilities else None
+            ),
         )
 
     def _handshake_duration_since_start(self) -> float:
@@ -1012,7 +1104,9 @@ class RuntimeState(msgspec.Struct):
             self.running_processes.clear()
 
 
-def create_runtime_state(config: RuntimeConfig | dict[str, Any], initialize_spool: bool = False) -> RuntimeState:
+def create_runtime_state(
+    config: RuntimeConfig | dict[str, Any], initialize_spool: bool = False
+) -> RuntimeState:
     from ..config.settings import RuntimeConfig as RC
 
     cfg = msgspec.convert(config, RC) if isinstance(config, dict) else config

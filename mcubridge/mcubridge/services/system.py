@@ -55,7 +55,9 @@ class SystemComponent(BaseComponent):
         return ok
 
     async def handle_get_free_memory_resp(self, seq_id: int, payload: bytes) -> None:
-        packet = self._decode_payload(FreeMemoryResponsePacket, payload, Command.CMD_GET_FREE_MEMORY_RESP)
+        packet = self._decode_payload(
+            FreeMemoryResponsePacket, payload, Command.CMD_GET_FREE_MEMORY_RESP
+        )
         if packet is None:
             return
 
@@ -65,17 +67,25 @@ class SystemComponent(BaseComponent):
             SystemAction.FREE_MEMORY,
             SystemAction.VALUE,
         )
-        reply_context = self._pending_free_memory.popleft() if self._pending_free_memory else None
-        await self._publish_value(topic, str(packet.value), MQTT_EXPIRY_DEFAULT, reply_context)
+        reply_context = (
+            self._pending_free_memory.popleft() if self._pending_free_memory else None
+        )
+        await self._publish_value(
+            topic, str(packet.value), MQTT_EXPIRY_DEFAULT, reply_context
+        )
 
     async def handle_get_version_resp(self, seq_id: int, payload: bytes) -> None:
-        packet = self._decode_payload(VersionResponsePacket, payload, Command.CMD_GET_VERSION_RESP)
+        packet = self._decode_payload(
+            VersionResponsePacket, payload, Command.CMD_GET_VERSION_RESP
+        )
         if packet is None:
             return
 
         major, minor, patch = packet.major, packet.minor, packet.patch
         self.state.mcu_version = (major, minor, patch)
-        reply_context = self._pending_version.popleft() if self._pending_version else None
+        reply_context = (
+            self._pending_version.popleft() if self._pending_version else None
+        )
         await self._publish_version((major, minor, patch), reply_context)
         logger.info("MCU firmware version reported as %d.%d.%d", major, minor, patch)
 
@@ -91,7 +101,9 @@ class SystemComponent(BaseComponent):
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
-        await self._publish_value(topic, f"{major}.{minor}.{patch}", MQTT_EXPIRY_DATASTORE, reply_context)
+        await self._publish_value(
+            topic, f"{major}.{minor}.{patch}", MQTT_EXPIRY_DATASTORE, reply_context
+        )
 
     async def handle_mqtt(
         self,
@@ -104,7 +116,9 @@ class SystemComponent(BaseComponent):
             case SystemAction.BOOTLOADER:
                 packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
                 logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
-                return await self.ctx.send_frame(Command.CMD_ENTER_BOOTLOADER.value, packet.encode())
+                return await self.ctx.send_frame(
+                    Command.CMD_ENTER_BOOTLOADER.value, packet.encode()
+                )
 
             case SystemAction.FREE_MEMORY:
                 if not (remainder and remainder[0] == SystemAction.GET):

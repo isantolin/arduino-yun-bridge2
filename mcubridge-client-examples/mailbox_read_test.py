@@ -61,7 +61,9 @@ def main(
     port: Annotated[int | None, typer.Option(help="MQTT Broker Port")] = None,
     user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
     password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
-    tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = False,
+    tls_insecure: Annotated[
+        bool, typer.Option(help="Disable TLS certificate verification")
+    ] = False,
     max_polls: Annotated[int, typer.Option(help="Max poll cycles (0 = unlimited)")] = 1,
 ) -> None:
     try:

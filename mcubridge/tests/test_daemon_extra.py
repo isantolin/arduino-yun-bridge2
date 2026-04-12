@@ -20,7 +20,8 @@ async def test_daemon_supervise_fatal_exception() -> None:
 
         with pytest.raises(SerialHandshakeFatal):
             await daemon._supervise(  # type: ignore[reportPrivateUsage]
-                "test-fatal", fatal_task, fatal_exceptions=(SerialHandshakeFatal,))
+                "test-fatal", fatal_task, fatal_exceptions=(SerialHandshakeFatal,)
+            )
     finally:
         daemon.state.cleanup()
 
@@ -53,6 +54,7 @@ async def test_daemon_supervise_cancelled() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     daemon = BridgeDaemon(config)
     try:
+
         async def hanging_task():
             await asyncio.Event().wait()
 

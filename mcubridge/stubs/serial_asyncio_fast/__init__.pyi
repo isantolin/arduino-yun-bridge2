@@ -1,4 +1,5 @@
 """Type stubs for serial_asyncio_fast."""
+
 import asyncio
 from typing import Any, Callable
 
@@ -12,7 +13,6 @@ async def open_serial_connection(
     *args: Any,
     **kwargs: Any,
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]: ...
-
 async def create_serial_connection(
     loop: asyncio.AbstractEventLoop,
     protocol_factory: Callable[[], asyncio.Protocol],

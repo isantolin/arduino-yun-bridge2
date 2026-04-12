@@ -131,9 +131,11 @@ async def test_stop_process_success(process_comp: ProcessComponent) -> None:
     mock_psutil_instance.children.return_value = []
     mock_psutil_instance.terminate = MagicMock()
 
-    with patch("psutil.Process", return_value=mock_psutil_instance), \
-            patch("psutil.wait_procs", return_value=([mock_psutil_instance], [])), \
-            patch("asyncio.create_subprocess_shell", return_value=mock_process):
+    with (
+        patch("psutil.Process", return_value=mock_psutil_instance),
+        patch("psutil.wait_procs", return_value=([mock_psutil_instance], [])),
+        patch("asyncio.create_subprocess_shell", return_value=mock_process),
+    ):
         mock_process.pid = 123
         pid = await process_comp.run_async("echo hello")
 
@@ -182,4 +184,7 @@ async def test_finalize_process(process_comp: ProcessComponent) -> None:
     await process_comp._finalize_process(pid)  # type: ignore[reportPrivateUsage]
 
     assert pid not in process_comp.state.running_processes
-    assert process_comp._process_slots._value == 2  # Released  # type: ignore[reportPrivateUsage]
+    assert (
+        process_comp._process_slots._value  # type: ignore[reportPrivateUsage, reportUnknownMemberType]
+        == 2
+    )  # Released  # type: ignore[reportPrivateUsage]

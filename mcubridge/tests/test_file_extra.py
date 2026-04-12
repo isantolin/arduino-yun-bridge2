@@ -94,7 +94,12 @@ async def test_file_handle_mqtt_unknown() -> None:
     state = create_runtime_state(config)
     try:
         fc = FileComponent(config, state, MagicMock())
-        route = TopicRoute(raw="br/file/unknown/path", prefix="br", topic=Topic.FILE, segments=("unknown", "path"))
+        route = TopicRoute(
+            raw="br/file/unknown/path",
+            prefix="br",
+            topic=Topic.FILE,
+            segments=("unknown", "path"),
+        )
         msg = type("MockMsg", (), {"topic": "br/file/unknown/path", "payload": b""})()
         await fc.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
     finally:

@@ -84,7 +84,9 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
         if config.mqtt_user:
             client.username_pw_set(config.mqtt_user, config.mqtt_pass)
 
-        client.connect(config.mqtt_host, config.mqtt_port, keepalive=MQTT_KEEPALIVE_SECONDS)
+        client.connect(
+            config.mqtt_host, config.mqtt_port, keepalive=MQTT_KEEPALIVE_SECONDS
+        )
         client.loop_start()
 
         info = client.publish(topic, payload, qos=MQTT_PUBLISH_QOS)
@@ -114,7 +116,9 @@ def get_pin_from_path(environ: dict[str, Any]) -> str | None:
     return match.group(1) if match else None
 
 
-def json_response(start_response: Any, status: str, data: dict[str, Any]) -> list[bytes]:
+def json_response(
+    start_response: Any, status: str, data: dict[str, Any]
+) -> list[bytes]:
     response_body = msgspec.json.encode(data)
     headers = [
         ("Content-Type", "application/json"),

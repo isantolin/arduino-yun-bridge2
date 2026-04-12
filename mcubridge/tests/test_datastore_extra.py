@@ -14,7 +14,13 @@ from tests._helpers import make_route, make_mqtt_msg
 
 @pytest.mark.asyncio
 async def test_datastore_handle_put_malformed() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -29,7 +35,13 @@ async def test_datastore_handle_put_malformed() -> None:
 
 @pytest.mark.asyncio
 async def test_datastore_handle_get_malformed() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -45,7 +57,13 @@ async def test_datastore_handle_get_malformed() -> None:
 
 @pytest.mark.asyncio
 async def test_datastore_handle_get_truncation() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -71,7 +89,13 @@ async def test_datastore_handle_get_truncation() -> None:
 
 @pytest.mark.asyncio
 async def test_datastore_handle_mqtt_edge_cases() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -79,21 +103,32 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
         ds = DatastoreComponent(config, state, ctx)
 
         # Unknown action
-        await ds.handle_mqtt(make_route(Topic.DATASTORE, "unknown", "key"), make_mqtt_msg(b"val"))
+        await ds.handle_mqtt(
+            make_route(Topic.DATASTORE, "unknown", "key"), make_mqtt_msg(b"val")
+        )
 
         # Put without key
-        await ds.handle_mqtt(make_route(Topic.DATASTORE, DatastoreAction.PUT), make_mqtt_msg(b"val"))
+        await ds.handle_mqtt(
+            make_route(Topic.DATASTORE, DatastoreAction.PUT), make_mqtt_msg(b"val")
+        )
 
         # Get without key
-        await ds.handle_mqtt(make_route(Topic.DATASTORE, DatastoreAction.GET), make_mqtt_msg(b""))
+        await ds.handle_mqtt(
+            make_route(Topic.DATASTORE, DatastoreAction.GET), make_mqtt_msg(b"")
+        )
 
         # Get request miss
-        await ds.handle_mqtt(make_route(Topic.DATASTORE, DatastoreAction.GET, "missing", "request"), make_mqtt_msg(b""))
+        await ds.handle_mqtt(
+            make_route(Topic.DATASTORE, DatastoreAction.GET, "missing", "request"),
+            make_mqtt_msg(b""),
+        )
         # Check for datastore-miss error
         found_miss = False
         for call in ctx.publish.call_args_list:
             props = call.kwargs.get("properties")
-            if props and any(k == "bridge-error" and v == "datastore-miss" for k, v in props):
+            if props and any(
+                k == "bridge-error" and v == "datastore-miss" for k, v in props
+            ):
                 found_miss = True
         assert found_miss
     finally:
@@ -102,7 +137,13 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
 
 @pytest.mark.asyncio
 async def test_datastore_mqtt_put_too_large() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -122,7 +163,13 @@ async def test_datastore_mqtt_put_too_large() -> None:
 
 @pytest.mark.asyncio
 async def test_datastore_mqtt_get_too_large() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()

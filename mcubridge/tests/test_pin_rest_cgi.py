@@ -19,7 +19,12 @@ from mcubridge.protocol import protocol
 
 
 def _load_pin_rest_cgi() -> ModuleType:
-    script_path = Path(__file__).resolve().parents[2] / "mcubridge" / "scripts" / "pin_rest_cgi.py"
+    script_path = (
+        Path(__file__).resolve().parents[2]
+        / "mcubridge"
+        / "scripts"
+        / "pin_rest_cgi.py"
+    )
     spec = importlib.util.spec_from_file_location("pin_rest_cgi", script_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load pin_rest_cgi script")
@@ -96,7 +101,8 @@ def test_publish_safe_configures_tls(
     import ssl
 
     monkeypatch.setattr(
-        ssl, "create_default_context",
+        ssl,
+        "create_default_context",
         lambda *args, **kwargs: MagicMock(),  # type: ignore[reportUnknownLambdaType]
     )
 
@@ -163,10 +169,12 @@ def test_main_invokes_publish(
         pin_rest_module,
         "publish_safe",
         lambda topic, payload, config: captured.update(  # type: ignore[reportUnknownLambdaType]
-            {"topic": topic, "payload": payload}),
+            {"topic": topic, "payload": payload}
+        ),
     )
     monkeypatch.setattr(
-        pin_rest_module, "configure_logging",
+        pin_rest_module,
+        "configure_logging",
         lambda config: None,  # type: ignore[reportUnknownLambdaType]
     )
 
@@ -208,7 +216,8 @@ def test_main_rejects_invalid_state(
 
     monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: fake_config)
     monkeypatch.setattr(
-        pin_rest_module, "configure_logging",
+        pin_rest_module,
+        "configure_logging",
         lambda config: None,  # type: ignore[reportUnknownLambdaType]
     )
 

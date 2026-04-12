@@ -82,7 +82,9 @@ def test_spool_snapshot_reports_pending(tmp_path: Path) -> None:
     spool.close()
 
 
-def test_spool_skips_corrupt_rows(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_spool_skips_corrupt_rows(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     spool_dir = tmp_path / "tmp" / "spool"
     spool_dir.mkdir(parents=True)
 
@@ -161,7 +163,7 @@ def test_spool_persists_across_reopen(tmp_path: Path) -> None:
     spool = MQTTPublishSpool(spool_dir.as_posix(), limit=10)
     spool.append(_make_message("topic/1"))
     spool.append(_make_message("topic/2"))
-    spool.close() # Close before reopening to ensure flush
+    spool.close()  # Close before reopening to ensure flush
 
     reopened = MQTTPublishSpool(spool_dir.as_posix(), limit=10)
     try:

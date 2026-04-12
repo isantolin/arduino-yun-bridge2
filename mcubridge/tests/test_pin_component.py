@@ -59,10 +59,14 @@ class RecordingBridgeContext:
         )
         self.enqueued.append((message, reply_to))
 
-    async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
+    async def enqueue_mqtt(
+        self, message: QueuedPublish, *, reply_context: Message | None = None
+    ) -> None:
         self.enqueued.append((message, reply_context))
 
-    async def acknowledge_mcu_frame(self, command_id: int, seq_id: int, *, status: Any = None) -> None:
+    async def acknowledge_mcu_frame(
+        self, command_id: int, seq_id: int, *, status: Any = None
+    ) -> None:
         pass
 
     def is_command_allowed(self, command: str) -> bool:
@@ -168,7 +172,9 @@ async def test_handle_digital_read_resp_with_pending_request_uses_reply_context(
     runtime_state: RuntimeState,
 ) -> None:
     inbound = _fake_inbound()
-    runtime_state.pending_digital_reads.append(PendingPinRequest(pin=7, reply_context=inbound))
+    runtime_state.pending_digital_reads.append(
+        PendingPinRequest(pin=7, reply_context=inbound)
+    )
 
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
@@ -193,12 +199,16 @@ async def test_handle_analog_read_resp_with_pending_request_decodes_big_endian(
     runtime_state: RuntimeState,
 ) -> None:
     inbound = _fake_inbound()
-    runtime_state.pending_analog_reads.append(PendingPinRequest(pin=3, reply_context=inbound))
+    runtime_state.pending_analog_reads.append(
+        PendingPinRequest(pin=3, reply_context=inbound)
+    )
 
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_analog_read_resp(0, structures.AnalogReadResponsePacket(value=256).encode())
+    await component.handle_analog_read_resp(
+        0, structures.AnalogReadResponsePacket(value=256).encode()
+    )
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound
@@ -252,7 +262,9 @@ async def test_handle_mqtt_read_command_queue_overflow_notifies_mqtt(
     runtime_state: RuntimeState,
 ) -> None:
     runtime_state.pending_pin_request_limit = 1
-    runtime_state.pending_digital_reads.append(PendingPinRequest(pin=1, reply_context=None))
+    runtime_state.pending_digital_reads.append(
+        PendingPinRequest(pin=1, reply_context=None)
+    )
 
     inbound = make_mqtt_msg("")
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
@@ -333,7 +345,10 @@ async def test_handle_mqtt_write_digital_accepts_empty_payload_as_zero(
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_DIGITAL_WRITE.value
-    assert payload == structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_LOW).encode()
+    assert (
+        payload
+        == structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_LOW).encode()
+    )
 
 
 @pytest.mark.asyncio

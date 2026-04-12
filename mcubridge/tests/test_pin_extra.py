@@ -11,7 +11,13 @@ from mcubridge.state.context import McuCapabilities, create_runtime_state
 
 @pytest.mark.asyncio
 async def test_pin_handle_read_overflow() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         state.pending_pin_request_limit = 1
@@ -27,14 +33,22 @@ async def test_pin_handle_read_overflow() -> None:
         # Overflow
         await pc._handle_read_command(Topic.DIGITAL, 13, None)  # type: ignore[reportPrivateUsage]
         ctx.publish.assert_called()
-        assert ("bridge-error", "pending-pin-overflow") in ctx.publish.call_args[1]["properties"]
+        assert ("bridge-error", "pending-pin-overflow") in ctx.publish.call_args[1][
+            "properties"
+        ]
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_pin_handle_read_send_fail() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
@@ -49,7 +63,13 @@ async def test_pin_handle_read_send_fail() -> None:
 
 @pytest.mark.asyncio
 async def test_pin_handle_mode_invalid() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         pc = PinComponent(config, state, MagicMock())
@@ -65,7 +85,13 @@ async def test_pin_handle_mode_invalid() -> None:
 
 @pytest.mark.asyncio
 async def test_pin_validate_access_block() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    import time
+    import os
+
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
         state.mcu_capabilities = McuCapabilities(
@@ -77,7 +103,13 @@ async def test_pin_validate_access_block() -> None:
         )
         pc = PinComponent(config, state, MagicMock())
 
-        assert pc._validate_pin_access(25, False) is False  # Digital limit 20  # type: ignore[reportPrivateUsage]
-        assert pc._validate_pin_access(10, True) is False  # Analog limit 6  # type: ignore[reportPrivateUsage]
+        assert (
+            pc._validate_pin_access(25, False)  # type: ignore[reportPrivateUsage]
+            is False
+        )  # Digital limit 20
+        assert (
+            pc._validate_pin_access(10, True)  # type: ignore[reportPrivateUsage]
+            is False
+        )  # Analog limit 6
     finally:
         state.cleanup()

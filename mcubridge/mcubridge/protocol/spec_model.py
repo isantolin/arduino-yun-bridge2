@@ -14,7 +14,6 @@ from typing import Any
 
 import msgspec
 
-
 # =============================================================================
 # Protocol Generation Structures (msgspec)
 # =============================================================================
@@ -38,14 +37,16 @@ class StatusDef(msgspec.Struct, frozen=True):
 
 class MessageFieldDef(msgspec.Struct, frozen=True):
     """A single field in a protocol message."""
+
     name: str
-    type: str           # uint8, uint16, uint32, int32, bytes, bin_fixed, string, bool
-    size: int = 0       # for bin_fixed
+    type: str  # uint8, uint16, uint32, int32, bytes, bin_fixed, string, bool
+    size: int = 0  # for bin_fixed
     max_size: int = 64  # for string
 
 
 class MessageDef(msgspec.Struct, frozen=True):
     """A protocol message definition (replaces .proto + .options)."""
+
     name: str
     fields: list[MessageFieldDef]
 

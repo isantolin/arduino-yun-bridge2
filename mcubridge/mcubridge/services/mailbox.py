@@ -44,7 +44,9 @@ class MailboxComponent(BaseComponent):
         message_id: int | None = None
         if len(payload) >= 2:
             try:
-                packet = MailboxProcessedPacket.decode(payload, Command.CMD_MAILBOX_PROCESSED)
+                packet = MailboxProcessedPacket.decode(
+                    payload, Command.CMD_MAILBOX_PROCESSED
+                )
                 message_id = packet.message_id
             except ValueError as exc:
                 logger.warning("MCU > Malformed Mailbox processed payload: %s", exc)
@@ -58,7 +60,9 @@ class MailboxComponent(BaseComponent):
         return True
 
     async def handle_push(self, seq_id: int, payload: bytes) -> bool:
-        packet = self._decode_payload(MailboxPushPacket, payload, Command.CMD_MAILBOX_PUSH)
+        packet = self._decode_payload(
+            MailboxPushPacket, payload, Command.CMD_MAILBOX_PUSH
+        )
         if packet is None:
             return False
 
@@ -66,11 +70,14 @@ class MailboxComponent(BaseComponent):
 
         stored = self.state.enqueue_mailbox_incoming(data)
         if not stored:
-            logger.error("Dropping incoming mailbox message (%d bytes) due to queue limits.", len(data))
+            logger.error(
+                "Dropping incoming mailbox message (%d bytes) due to queue limits.",
+                len(data),
+            )
             reason = protocol.STATUS_REASON_MAILBOX_INCOMING_OVERFLOW
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                reason.encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE],
+                reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
             )
             return False
 
@@ -82,7 +89,9 @@ class MailboxComponent(BaseComponent):
         await self.ctx.publish(topic=topic, payload=data)
 
         await self.ctx.publish(
-            topic=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"),
+            topic=topic_path(
+                self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
+            ),
             payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
         )
         return True
@@ -107,11 +116,15 @@ class MailboxComponent(BaseComponent):
 
     async def handle_read(self, seq_id: int, _: bytes) -> bool:
         original_payload = self.state.pop_mailbox_message()
-        message_payload: bytes = original_payload if original_payload is not None else b""
+        message_payload: bytes = (
+            original_payload if original_payload is not None else b""
+        )
 
         max_allowed = protocol.MAX_PAYLOAD_SIZE - 3
         if len(message_payload) > max_allowed:
-            logger.warning("Mailbox message too long (%d bytes), truncating.", len(message_payload))
+            logger.warning(
+                "Mailbox message too long (%d bytes), truncating.", len(message_payload)
+            )
             message_payload = message_payload[:max_allowed]
 
         response_payload = MailboxReadResponsePacket(content=message_payload).encode()
@@ -126,7 +139,9 @@ class MailboxComponent(BaseComponent):
                 self.state.requeue_mailbox_message_front(original_payload)
             return False
 
-        await self._publish_available("outgoing_available", len(self.state.mailbox_queue))
+        await self._publish_available(
+            "outgoing_available", len(self.state.mailbox_queue)
+        )
         return True
 
     async def handle_mqtt(
@@ -186,7 +201,9 @@ class MailboxComponent(BaseComponent):
                     reply_to=inbound,
                 )
             finally:
-                await self._publish_available("incoming_available", len(self.state.mailbox_incoming_queue))
+                await self._publish_available(
+                    "incoming_available", len(self.state.mailbox_incoming_queue)
+                )
             return
 
         message_payload = self.state.pop_mailbox_message()
@@ -200,7 +217,9 @@ class MailboxComponent(BaseComponent):
                 reply_to=inbound,
             )
         finally:
-            await self._publish_available("outgoing_available", len(self.state.mailbox_queue))
+            await self._publish_available(
+                "outgoing_available", len(self.state.mailbox_queue)
+            )
 
     async def _handle_outgoing_overflow(
         self,
@@ -220,7 +239,7 @@ class MailboxComponent(BaseComponent):
         reason = protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW
         await self.ctx.send_frame(
             Status.ERROR.value,
-            reason.encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE],
+            reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
         )
         await self._publish_available("outgoing_available", queue_len)
         overflow_topic = topic_path(

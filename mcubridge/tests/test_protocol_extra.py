@@ -18,12 +18,14 @@ def test_frame_parse_payload_length_mismatch() -> None:
     command_id = 0x40
     sequence_id = 0x01
 
-    header_raw = RPC_FRAME_HEADER.build({
-        "version": version,
-        "payload_len": claimed_len,
-        "command_id": command_id,
-        "sequence_id": sequence_id,
-    })
+    header_raw = RPC_FRAME_HEADER.build(
+        {
+            "version": version,
+            "payload_len": claimed_len,
+            "command_id": command_id,
+            "sequence_id": sequence_id,
+        }
+    )
 
     # Combined data for CRC
     data_for_crc = header_raw + actual_payload
@@ -35,7 +37,9 @@ def test_frame_parse_payload_length_mismatch() -> None:
     # or the length check at line 126 will catch it if Construct somehow returns.
     with pytest.raises(ValueError) as exc:
         Frame.parse(raw_frame)
-    assert "Incomplete or malformed frame" in str(exc.value) or "parsing failed" in str(exc.value)
+    assert "Incomplete or malformed frame" in str(exc.value) or "parsing failed" in str(
+        exc.value
+    )
 
 
 def test_rle_encode_decode_edge_cases() -> None:
@@ -75,7 +79,10 @@ def test_topics_handshake_topic() -> None:
     assert topic_path("p", Topic.DIGITAL, "13", "read") == "p/d/13/read"
     assert topic_path("p", Topic.SPI, "transfer") == "p/spi/transfer"
     assert topic_path("p", Topic.DATASTORE, "key", "get") == "p/datastore/key/get"
-    assert topic_path("p", Topic.FILE, "path/to/file", "read") == "p/file/path/to/file/read"
+    assert (
+        topic_path("p", Topic.FILE, "path/to/file", "read")
+        == "p/file/path/to/file/read"
+    )
     assert topic_path("p", Topic.SHELL, "123", "kill") == "p/sh/123/kill"
     assert topic_path("p", Topic.CONSOLE, "write") == "p/console/write"
     assert topic_path("p", Topic.MAILBOX, "push") == "p/mailbox/push"

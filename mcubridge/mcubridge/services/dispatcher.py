@@ -85,14 +85,21 @@ class BridgeDispatcher:
         # Console
         self.mcu_registry.register(Command.CMD_XOFF.value, console.handle_xoff)
         self.mcu_registry.register(Command.CMD_XON.value, console.handle_xon)
-        self.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, console.handle_write)
+        self.mcu_registry.register(
+            Command.CMD_CONSOLE_WRITE.value, console.handle_write
+        )
         self.mqtt_router.register(
-            Topic.CONSOLE, lambda r, m: self._guard_and_dispatch(r, m, handler=console.handle_mqtt)
+            Topic.CONSOLE,
+            lambda r, m: self._guard_and_dispatch(r, m, handler=console.handle_mqtt),
         )
 
         # Datastore
-        self.mcu_registry.register(Command.CMD_DATASTORE_PUT.value, datastore.handle_put)
-        self.mcu_registry.register(Command.CMD_DATASTORE_GET.value, datastore.handle_get_request)
+        self.mcu_registry.register(
+            Command.CMD_DATASTORE_PUT.value, datastore.handle_put
+        )
+        self.mcu_registry.register(
+            Command.CMD_DATASTORE_GET.value, datastore.handle_get_request
+        )
         self.mqtt_router.register(
             Topic.DATASTORE,
             lambda r, m: self._guard_and_dispatch(r, m, handler=datastore.handle_mqtt),
@@ -100,9 +107,13 @@ class BridgeDispatcher:
 
         # Mailbox
         self.mcu_registry.register(Command.CMD_MAILBOX_PUSH.value, mailbox.handle_push)
-        self.mcu_registry.register(Command.CMD_MAILBOX_AVAILABLE.value, mailbox.handle_available)
+        self.mcu_registry.register(
+            Command.CMD_MAILBOX_AVAILABLE.value, mailbox.handle_available
+        )
         self.mcu_registry.register(Command.CMD_MAILBOX_READ.value, mailbox.handle_read)
-        self.mcu_registry.register(Command.CMD_MAILBOX_PROCESSED.value, mailbox.handle_processed)
+        self.mcu_registry.register(
+            Command.CMD_MAILBOX_PROCESSED.value, mailbox.handle_processed
+        )
         self.mqtt_router.register(
             Topic.MAILBOX,
             lambda r, m: self._guard_and_dispatch(r, m, handler=mailbox.handle_mqtt),
@@ -112,7 +123,9 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_FILE_WRITE.value, file.handle_write)
         self.mcu_registry.register(Command.CMD_FILE_READ.value, file.handle_read)
         self.mcu_registry.register(Command.CMD_FILE_REMOVE.value, file.handle_remove)
-        self.mcu_registry.register(Command.CMD_FILE_READ_RESP.value, file.handle_read_response)
+        self.mcu_registry.register(
+            Command.CMD_FILE_READ_RESP.value, file.handle_read_response
+        )
 
         async def file_mqtt_handler(r: TopicRoute, m: Message) -> bool:
             if len(r.segments) < 2:
@@ -135,8 +148,12 @@ class BridgeDispatcher:
         )
 
         # Pin (GPIO)
-        self.mcu_registry.register(Command.CMD_DIGITAL_READ_RESP.value, pin.handle_digital_read_resp)
-        self.mcu_registry.register(Command.CMD_ANALOG_READ_RESP.value, pin.handle_analog_read_resp)
+        self.mcu_registry.register(
+            Command.CMD_DIGITAL_READ_RESP.value, pin.handle_digital_read_resp
+        )
+        self.mcu_registry.register(
+            Command.CMD_ANALOG_READ_RESP.value, pin.handle_analog_read_resp
+        )
 
         async def _handle_mcu_read(s: int, cmd: Command, p: bytes) -> bool:
             if self._container:
@@ -145,25 +162,33 @@ class BridgeDispatcher:
                 pin_cmp = self._container.get(PinComponent)
                 await pin_cmp.handle_unexpected_mcu_request(s, cmd, p)
                 return True
-            logger.warning("Pin component not registered; dropping unexpected %s", cmd.name)
+            logger.warning(
+                "Pin component not registered; dropping unexpected %s", cmd.name
+            )
             return False
 
         self.mcu_registry.register(
-            Command.CMD_DIGITAL_READ.value, lambda s, p: _handle_mcu_read(s, Command.CMD_DIGITAL_READ, p)
+            Command.CMD_DIGITAL_READ.value,
+            lambda s, p: _handle_mcu_read(s, Command.CMD_DIGITAL_READ, p),
         )
         self.mcu_registry.register(
-            Command.CMD_ANALOG_READ.value, lambda s, p: _handle_mcu_read(s, Command.CMD_ANALOG_READ, p)
+            Command.CMD_ANALOG_READ.value,
+            lambda s, p: _handle_mcu_read(s, Command.CMD_ANALOG_READ, p),
         )
 
         self.mqtt_router.register(
-            Topic.DIGITAL, lambda r, m: self._guard_and_dispatch(r, m, handler=pin.handle_mqtt)
+            Topic.DIGITAL,
+            lambda r, m: self._guard_and_dispatch(r, m, handler=pin.handle_mqtt),
         )
         self.mqtt_router.register(
-            Topic.ANALOG, lambda r, m: self._guard_and_dispatch(r, m, handler=pin.handle_mqtt)
+            Topic.ANALOG,
+            lambda r, m: self._guard_and_dispatch(r, m, handler=pin.handle_mqtt),
         )
 
         # SPI
-        self.mcu_registry.register(Command.CMD_SPI_TRANSFER_RESP.value, spi.handle_transfer_resp)
+        self.mcu_registry.register(
+            Command.CMD_SPI_TRANSFER_RESP.value, spi.handle_transfer_resp
+        )
         self.mqtt_router.register(
             Topic.SPI,
             lambda r, m: self._guard_and_dispatch(r, m, handler=spi.handle_mqtt),
@@ -186,12 +211,20 @@ class BridgeDispatcher:
         handle_link_reset_resp: Callable[[int, bytes], Awaitable[bool]],
         handle_get_capabilities_resp: Callable[[int, bytes], Awaitable[bool]],
         handle_ack: Callable[[int, bytes], Awaitable[None]],
-        status_handler_factory: Callable[[Status], Callable[[int, bytes], Awaitable[None]]],
+        status_handler_factory: Callable[
+            [Status], Callable[[int, bytes], Awaitable[None]]
+        ],
         handle_process_kill: Callable[[int, bytes], Awaitable[bool | None]],
     ) -> None:
-        self.mcu_registry.register(Command.CMD_LINK_SYNC_RESP.value, handle_link_sync_resp)
-        self.mcu_registry.register(Command.CMD_LINK_RESET_RESP.value, handle_link_reset_resp)
-        self.mcu_registry.register(Command.CMD_GET_CAPABILITIES_RESP.value, handle_get_capabilities_resp)
+        self.mcu_registry.register(
+            Command.CMD_LINK_SYNC_RESP.value, handle_link_sync_resp
+        )
+        self.mcu_registry.register(
+            Command.CMD_LINK_RESET_RESP.value, handle_link_reset_resp
+        )
+        self.mcu_registry.register(
+            Command.CMD_GET_CAPABILITIES_RESP.value, handle_get_capabilities_resp
+        )
         self.mcu_registry.register(Command.CMD_PROCESS_KILL.value, handle_process_kill)
 
         self.mcu_registry.register(Status.ACK.value, handle_ack)
@@ -200,7 +233,9 @@ class BridgeDispatcher:
                 continue
             self.mcu_registry.register(status.value, status_handler_factory(status))
 
-    async def dispatch_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
+    async def dispatch_mcu_frame(
+        self, command_id: int, sequence_id: int, payload: bytes
+    ) -> None:
         """
         Route an incoming frame from the MCU to the appropriate registered handler.
 
@@ -227,16 +262,26 @@ class BridgeDispatcher:
         handled_successfully = False
 
         if handler:
-            logger.debug("MCU > %s (seq=%d) [%d bytes]", command_name, sequence_id, len(payload))
+            logger.debug(
+                "MCU > %s (seq=%d) [%d bytes]", command_name, sequence_id, len(payload)
+            )
             try:
                 result = await handler(sequence_id, payload)
                 handled_successfully = result is not False
             except (
-                OSError, ValueError, TypeError, AttributeError, KeyError, IndexError, RuntimeError
+                OSError,
+                ValueError,
+                TypeError,
+                AttributeError,
+                KeyError,
+                IndexError,
+                RuntimeError,
             ) as exc:
                 logger.critical(
                     "Critical: Exception in handler for command %s: %s",
-                    command_name, exc, exc_info=True
+                    command_name,
+                    exc,
+                    exc_info=True,
                 )
                 if response_to_request(command_id) is None:
                     await self.send_frame(Status.ERROR.value, b"Internal Error")
@@ -284,7 +329,13 @@ class BridgeDispatcher:
         try:
             handled = await self.mqtt_router.dispatch(route, inbound)
         except (
-            OSError, ValueError, TypeError, AttributeError, KeyError, IndexError, RuntimeError
+            OSError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            KeyError,
+            IndexError,
+            RuntimeError,
         ):
             logger.exception("Error processing MQTT topic: %s", inbound_topic)
             return
@@ -328,7 +379,9 @@ class BridgeDispatcher:
 
     def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
         return (
-            self.state.is_synchronized or command_id in STATUS_VALUES or command_id in _PRE_SYNC_ALLOWED_COMMANDS
+            self.state.is_synchronized
+            or command_id in STATUS_VALUES
+            or command_id in _PRE_SYNC_ALLOWED_COMMANDS
         )
 
     # --- MQTT Handlers (Consolidated with match/case) ---

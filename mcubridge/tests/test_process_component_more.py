@@ -24,7 +24,9 @@ def process_comp(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
     return comp
 
 
-def test_post_init_disables_slots_when_limit_zero(runtime_config: Any, runtime_state: Any):
+def test_post_init_disables_slots_when_limit_zero(
+    runtime_config: Any, runtime_state: Any
+):
     runtime_config.process_max_concurrent = 0
     comp = ProcessComponent(runtime_config, runtime_state, MagicMock())
     assert comp._process_slots is not None  # type: ignore[reportPrivateUsage]
@@ -39,6 +41,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
 
     with patch.object(process_comp, "poll_process", return_value=batch):
         from mcubridge.protocol.structures import ProcessPollPacket
+
         payload = ProcessPollPacket(pid=100).encode()
         await process_comp.handle_poll(0, payload)
         process_comp.ctx.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
@@ -131,12 +134,16 @@ async def test_handle_kill_timeout_releases_slot(
 
     await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
-    with patch("psutil.Process") as mock_psutil_cls, \
-            patch("psutil.wait_procs", return_value=([], [])):
+    with (
+        patch("psutil.Process") as mock_psutil_cls,
+        patch("psutil.wait_procs", return_value=([], [])),
+    ):
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
         mock_psutil_instance.terminate = MagicMock()
-        ok = await process_comp.handle_kill(0, structures.ProcessKillPacket(pid=pid).encode())
+        ok = await process_comp.handle_kill(
+            0, structures.ProcessKillPacket(pid=pid).encode()
+        )
     assert ok is True
     mock_psutil_instance.terminate.assert_called_once()
 
@@ -155,11 +162,15 @@ async def test_handle_kill_process_lookup_error_is_handled(
     async with process_comp.state.process_lock:
         process_comp.state.running_processes[pid] = slot
 
-    with patch("psutil.Process") as mock_psutil_cls, \
-            patch("psutil.wait_procs", return_value=([], [])):
+    with (
+        patch("psutil.Process") as mock_psutil_cls,
+        patch("psutil.wait_procs", return_value=([], [])),
+    ):
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
-        ok = await process_comp.handle_kill(0, structures.ProcessKillPacket(pid=pid).encode())
+        ok = await process_comp.handle_kill(
+            0, structures.ProcessKillPacket(pid=pid).encode()
+        )
     # Should return True as we attempted termination
     assert ok is True
 

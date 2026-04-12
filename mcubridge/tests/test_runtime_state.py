@@ -352,8 +352,10 @@ async def test_spool_fallback_updates_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from pathlib import Path
+
     # Force a failure during diskcache initialization.
     import errno
+
     with patch.object(Path, "mkdir", side_effect=OSError(errno.ENOSPC, "disk full")):
         state = create_runtime_state(runtime_config, initialize_spool=True)
         try:

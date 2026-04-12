@@ -32,12 +32,19 @@ async def test_serial_reader_task_processes_frame(
         service = MockSerialService(runtime_config, state)
 
         payload = bytes([protocol.DIGITAL_HIGH])
-        frame = Frame(command_id=Command.CMD_DIGITAL_READ_RESP.value, sequence_id=0, payload=payload).build()
+        frame = Frame(
+            command_id=Command.CMD_DIGITAL_READ_RESP.value,
+            sequence_id=0,
+            payload=payload,
+        ).build()
         encoded = cobs.encode(frame) + FRAME_DELIMITER
 
         # Mock Streams API
         mock_reader = AsyncMock(spec=asyncio.StreamReader)
-        mock_reader.readuntil.side_effect = [encoded, asyncio.IncompleteReadError(b"", None)]
+        mock_reader.readuntil.side_effect = [
+            encoded,
+            asyncio.IncompleteReadError(b"", None),
+        ]
 
         mock_writer = MagicMock(spec=asyncio.StreamWriter)
         mock_writer.is_closing.return_value = False
@@ -115,7 +122,10 @@ async def test_serial_reader_task_emits_crc_mismatch(
 
         # Mock Streams API
         mock_reader = AsyncMock(spec=asyncio.StreamReader)
-        mock_reader.readuntil.side_effect = [encoded, asyncio.IncompleteReadError(b"", None)]
+        mock_reader.readuntil.side_effect = [
+            encoded,
+            asyncio.IncompleteReadError(b"", None),
+        ]
 
         mock_writer = MagicMock(spec=asyncio.StreamWriter)
         mock_writer.is_closing.return_value = False
@@ -180,7 +190,7 @@ async def test_serial_reader_task_limits_packet_size(
         mock_reader = AsyncMock(spec=asyncio.StreamReader)
         mock_reader.readuntil.side_effect = [
             asyncio.LimitOverrunError("Too long", 0),
-            asyncio.IncompleteReadError(b"", None)
+            asyncio.IncompleteReadError(b"", None),
         ]
 
         mock_writer = MagicMock(spec=asyncio.StreamWriter)
@@ -311,7 +321,9 @@ async def test_mqtt_task_handles_incoming_message(
 
         runtime_config.mqtt_tls = False
 
-        task = asyncio.create_task(MqttTransport(runtime_config, state, cast(Any, service)).run())
+        task = asyncio.create_task(
+            MqttTransport(runtime_config, state, cast(Any, service)).run()
+        )
 
         try:
             await asyncio.wait_for(service.handled.wait(), timeout=1)

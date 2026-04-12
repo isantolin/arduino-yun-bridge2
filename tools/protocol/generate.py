@@ -29,7 +29,9 @@ MISSING_DEPS = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep) is
 
 if MISSING_DEPS:
     sys.stderr.write("\n" + "!" * 80 + "\n")
-    sys.stderr.write("ERROR: Missing Python dependencies required for protocol generation:\n")
+    sys.stderr.write(
+        "ERROR: Missing Python dependencies required for protocol generation:\n"
+    )
     for dep in MISSING_DEPS:
         sys.stderr.write(f"  - {dep}\n")
     sys.stderr.write("\nTo fix this, run:\n")
@@ -44,9 +46,14 @@ if TYPE_CHECKING:
 else:
     _SPEC_MODEL_PATH = (
         Path(__file__).resolve().parent.parent.parent
-        / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"  # noqa: W503
+        / "mcubridge"
+        / "mcubridge"
+        / "protocol"
+        / "spec_model.py"  # noqa: W503
     )
-    _loader_spec = importlib.util.spec_from_file_location("spec_model", str(_SPEC_MODEL_PATH))
+    _loader_spec = importlib.util.spec_from_file_location(
+        "spec_model", str(_SPEC_MODEL_PATH)
+    )
     assert _loader_spec is not None and _loader_spec.loader is not None
     _spec_mod = importlib.util.module_from_spec(_loader_spec)
     _loader_spec.loader.exec_module(_spec_mod)
@@ -98,6 +105,7 @@ TOML_CPP_KIND_MAP: dict[str, str] = {
 @dataclasses.dataclass(frozen=True)
 class CppField:
     """A single field in a C++ struct for rpc_structs.h."""
+
     name: str
     # Field kind determines encode/decode strategy:
     #   "uint8" / "uint16" / "uint32" — integer scalar
@@ -112,9 +120,10 @@ class CppField:
 @dataclasses.dataclass(frozen=True)
 class CppStruct:
     """A C++ struct generated into rpc_structs.h."""
-    name: str                  # e.g. "VersionResponse"
+
+    name: str  # e.g. "VersionResponse"
     fields: tuple[CppField, ...]
-    field_count: int           # number of MsgPack array elements
+    field_count: int  # number of MsgPack array elements
 
 
 def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
@@ -128,7 +137,9 @@ def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
         for f in msg.fields:
             kind = TOML_CPP_KIND_MAP.get(f.type)
             if kind is None:
-                sys.stderr.write(f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}\n")
+                sys.stderr.write(
+                    f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}\n"
+                )
                 kind = "uint32"
 
             if kind == "bin_fixed":
@@ -138,11 +149,13 @@ def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
             else:
                 cpp_fields.append(CppField(name=f.name, kind=kind))
 
-        structs.append(CppStruct(
-            name=msg.name,
-            fields=tuple(cpp_fields),
-            field_count=len(cpp_fields),
-        ))
+        structs.append(
+            CppStruct(
+                name=msg.name,
+                fields=tuple(cpp_fields),
+                field_count=len(cpp_fields),
+            )
+        )
 
     return structs
 
@@ -175,27 +188,53 @@ class JinjaGenerator:
         result = "'".join(reversed(parts))
         return f"-{result}" if value < 0 else result
 
-    def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path, version: str) -> None:
+    def generate_cpp_header(
+        self, spec: ProtocolSpec, out_path: Path, version: str
+    ) -> None:
         template = self.env.get_template("rpc_protocol.h.j2")
 
         v_major, v_minor, v_patch = map(int, version.split("."))
 
         c = spec.constants
         constants = [
-            {"name": "PROTOCOL_VERSION", "type": "uint8_t", "value": c["protocol_version"]},
+            {
+                "name": "PROTOCOL_VERSION",
+                "type": "uint8_t",
+                "value": c["protocol_version"],
+            },
             {"name": "FIRMWARE_VERSION_MAJOR", "type": "uint8_t", "value": v_major},
             {"name": "FIRMWARE_VERSION_MINOR", "type": "uint8_t", "value": v_minor},
             {"name": "FIRMWARE_VERSION_PATCH", "type": "uint8_t", "value": v_patch},
-            {"name": "RPC_DEFAULT_BAUDRATE", "type": "unsigned long", "value": c["default_baudrate"]},
-            {"name": "MAX_PAYLOAD_SIZE", "type": "size_t", "value": c["max_payload_size"]},
+            {
+                "name": "RPC_DEFAULT_BAUDRATE",
+                "type": "unsigned long",
+                "value": c["default_baudrate"],
+            },
+            {
+                "name": "MAX_PAYLOAD_SIZE",
+                "type": "size_t",
+                "value": c["max_payload_size"],
+            },
             {
                 "name": "RPC_DEFAULT_SAFE_BAUDRATE",
                 "type": "unsigned long",
                 "value": c["default_safe_baudrate"],
             },
-            {"name": "RPC_SERIAL_TIMEOUT_MS", "type": "uint32_t", "value": spec.hardware["serial_timeout_ms"]},
-            {"name": "RPC_SPI_TIMEOUT_MS", "type": "uint32_t", "value": spec.hardware["spi_timeout_ms"]},
-            {"name": "RPC_MAX_FILEPATH_LENGTH", "type": "size_t", "value": c["max_filepath_length"]},
+            {
+                "name": "RPC_SERIAL_TIMEOUT_MS",
+                "type": "uint32_t",
+                "value": spec.hardware["serial_timeout_ms"],
+            },
+            {
+                "name": "RPC_SPI_TIMEOUT_MS",
+                "type": "uint32_t",
+                "value": spec.hardware["spi_timeout_ms"],
+            },
+            {
+                "name": "RPC_MAX_FILEPATH_LENGTH",
+                "type": "size_t",
+                "value": c["max_filepath_length"],
+            },
             {
                 "name": "RPC_MAX_DATASTORE_KEY_LENGTH",
                 "type": "size_t",
@@ -206,19 +245,63 @@ class JinjaGenerator:
                 "type": "unsigned int",
                 "value": c["default_ack_timeout_ms"],
             },
-            {"name": "RPC_DEFAULT_RETRY_LIMIT", "type": "uint8_t", "value": c["default_retry_limit"]},
-            {"name": "RPC_MAX_PENDING_TX_FRAMES", "type": "uint8_t", "value": c["max_pending_tx_frames"]},
-            {"name": "RPC_INVALID_ID_SENTINEL", "type": "uint16_t", "value": c["invalid_id_sentinel"]},
-            {"name": "RPC_NULL_TERMINATOR", "type": "char", "value": c["rpc_null_terminator"]},
-            {"name": "RPC_COMMAND_STRIDE", "type": "uint8_t", "value": c["rpc_command_stride"]},
-            {"name": "RPC_COMMAND_GROUP_SHIFT", "type": "uint8_t", "value": c["rpc_command_group_shift"]},
-            {"name": "RPC_COMMAND_GROUP_OFFSET", "type": "uint8_t", "value": c["rpc_command_group_offset"]},
-            {"name": "RPC_TIMER_OVERFLOW_THRESHOLD", "type": "uint32_t", "value": c["rpc_timer_overflow_threshold"]},
-            {"name": "RPC_CMD_FLAG_COMPRESSED", "type": "uint16_t", "value": c["cmd_flag_compressed"]},
-            {"name": "RPC_CMD_FLAG_COMPRESSED_BIT", "type": "uint8_t", "value": c["rpc_cmd_flag_compressed_bit"]},
+            {
+                "name": "RPC_DEFAULT_RETRY_LIMIT",
+                "type": "uint8_t",
+                "value": c["default_retry_limit"],
+            },
+            {
+                "name": "RPC_MAX_PENDING_TX_FRAMES",
+                "type": "uint8_t",
+                "value": c["max_pending_tx_frames"],
+            },
+            {
+                "name": "RPC_INVALID_ID_SENTINEL",
+                "type": "uint16_t",
+                "value": c["invalid_id_sentinel"],
+            },
+            {
+                "name": "RPC_NULL_TERMINATOR",
+                "type": "char",
+                "value": c["rpc_null_terminator"],
+            },
+            {
+                "name": "RPC_COMMAND_STRIDE",
+                "type": "uint8_t",
+                "value": c["rpc_command_stride"],
+            },
+            {
+                "name": "RPC_COMMAND_GROUP_SHIFT",
+                "type": "uint8_t",
+                "value": c["rpc_command_group_shift"],
+            },
+            {
+                "name": "RPC_COMMAND_GROUP_OFFSET",
+                "type": "uint8_t",
+                "value": c["rpc_command_group_offset"],
+            },
+            {
+                "name": "RPC_TIMER_OVERFLOW_THRESHOLD",
+                "type": "uint32_t",
+                "value": c["rpc_timer_overflow_threshold"],
+            },
+            {
+                "name": "RPC_CMD_FLAG_COMPRESSED",
+                "type": "uint16_t",
+                "value": c["cmd_flag_compressed"],
+            },
+            {
+                "name": "RPC_CMD_FLAG_COMPRESSED_BIT",
+                "type": "uint8_t",
+                "value": c["rpc_cmd_flag_compressed_bit"],
+            },
             {"name": "RPC_UINT8_MASK", "type": "uint8_t", "value": c["uint8_mask"]},
             {"name": "RPC_UINT16_MAX", "type": "uint16_t", "value": c["uint16_max"]},
-            {"name": "RPC_BOOTLOADER_MAGIC", "type": "uint32_t", "value": c["bootloader_magic"]},
+            {
+                "name": "RPC_BOOTLOADER_MAGIC",
+                "type": "uint32_t",
+                "value": c["bootloader_magic"],
+            },
             {
                 "name": "RPC_PROCESS_DEFAULT_EXIT_CODE",
                 "type": "uint8_t",
@@ -226,36 +309,124 @@ class JinjaGenerator:
             },
             {"name": "RPC_CRC32_MASK", "type": "uint32_t", "value": c["crc32_mask"]},
             {"name": "RPC_CRC_INITIAL", "type": "uint32_t", "value": c["crc_initial"]},
-            {"name": "RPC_CRC_POLYNOMIAL", "type": "uint32_t", "value": c["crc_polynomial"]},
-            {"name": "RPC_FRAME_DELIMITER", "type": "uint8_t", "value": c["frame_delimiter"]},
+            {
+                "name": "RPC_CRC_POLYNOMIAL",
+                "type": "uint32_t",
+                "value": c["crc_polynomial"],
+            },
+            {
+                "name": "RPC_FRAME_DELIMITER",
+                "type": "uint8_t",
+                "value": c["frame_delimiter"],
+            },
             {"name": "RPC_DIGITAL_LOW", "type": "uint8_t", "value": c["digital_low"]},
             {"name": "RPC_DIGITAL_HIGH", "type": "uint8_t", "value": c["digital_high"]},
-            {"name": "RPC_RLE_ESCAPE_BYTE", "type": "uint8_t", "value": c["rle_escape_byte"]},
-            {"name": "RPC_RLE_MIN_RUN_LENGTH", "type": "uint8_t", "value": c["rle_min_run_length"]},
-            {"name": "RPC_RLE_MAX_RUN_LENGTH", "type": "uint16_t", "value": c["rle_max_run_length"]},
+            {
+                "name": "RPC_RLE_ESCAPE_BYTE",
+                "type": "uint8_t",
+                "value": c["rle_escape_byte"],
+            },
+            {
+                "name": "RPC_RLE_MIN_RUN_LENGTH",
+                "type": "uint8_t",
+                "value": c["rle_min_run_length"],
+            },
+            {
+                "name": "RPC_RLE_MAX_RUN_LENGTH",
+                "type": "uint16_t",
+                "value": c["rle_max_run_length"],
+            },
             {
                 "name": "RPC_RLE_SINGLE_ESCAPE_MARKER",
                 "type": "uint8_t",
                 "value": c["rle_single_escape_marker"],
             },
-            {"name": "RPC_RLE_EXPANSION_FACTOR", "type": "uint8_t", "value": c["rle_expansion_factor"]},
+            {
+                "name": "RPC_RLE_EXPANSION_FACTOR",
+                "type": "uint8_t",
+                "value": c["rle_expansion_factor"],
+            },
             {"name": "RPC_RLE_OFFSET", "type": "uint8_t", "value": c["rle_offset"]},
-            {"name": "RPC_RLE_MIN_COMPRESS_INPUT_SIZE", "type": "size_t", "value": c["rle_min_compress_input_size"]},
-            {"name": "RPC_RLE_MIN_COMPRESS_SAVINGS", "type": "size_t", "value": c["rle_min_compress_savings"]},
-            {"name": "RPC_SHA256_DIGEST_SIZE", "type": "uint8_t", "value": spec.hardware["sha256_digest_size"]},
-            {"name": "RPC_SHA256_KAT_BUFFER_SIZE", "type": "uint8_t", "value": spec.hardware["sha256_kat_buffer_size"]},
-            {"name": "RPC_STATUS_CODE_MIN", "type": "uint8_t", "value": c["status_code_min"]},
-            {"name": "RPC_STATUS_CODE_MAX", "type": "uint8_t", "value": c["status_code_max"]},
-            {"name": "RPC_SYSTEM_COMMAND_MIN", "type": "uint16_t", "value": c["system_command_min"]},
-            {"name": "RPC_SYSTEM_COMMAND_MAX", "type": "uint16_t", "value": c["system_command_max"]},
-            {"name": "RPC_GPIO_COMMAND_MIN", "type": "uint16_t", "value": c["gpio_command_min"]},
-            {"name": "RPC_GPIO_COMMAND_MAX", "type": "uint16_t", "value": c["gpio_command_max"]},
-            {"name": "RPC_CONSOLE_COMMAND_MIN", "type": "uint16_t", "value": c["console_command_min"]},
-            {"name": "RPC_CONSOLE_COMMAND_MAX", "type": "uint16_t", "value": c["console_command_max"]},
-            {"name": "RPC_DATASTORE_COMMAND_MIN", "type": "uint16_t", "value": c["datastore_command_min"]},
-            {"name": "RPC_DATASTORE_COMMAND_MAX", "type": "uint16_t", "value": c["datastore_command_max"]},
-            {"name": "RPC_MAILBOX_COMMAND_MIN", "type": "uint16_t", "value": c["mailbox_command_min"]},
-            {"name": "RPC_MAILBOX_COMMAND_MAX", "type": "uint16_t", "value": c["mailbox_command_max"]},
+            {
+                "name": "RPC_RLE_MIN_COMPRESS_INPUT_SIZE",
+                "type": "size_t",
+                "value": c["rle_min_compress_input_size"],
+            },
+            {
+                "name": "RPC_RLE_MIN_COMPRESS_SAVINGS",
+                "type": "size_t",
+                "value": c["rle_min_compress_savings"],
+            },
+            {
+                "name": "RPC_SHA256_DIGEST_SIZE",
+                "type": "uint8_t",
+                "value": spec.hardware["sha256_digest_size"],
+            },
+            {
+                "name": "RPC_SHA256_KAT_BUFFER_SIZE",
+                "type": "uint8_t",
+                "value": spec.hardware["sha256_kat_buffer_size"],
+            },
+            {
+                "name": "RPC_STATUS_CODE_MIN",
+                "type": "uint8_t",
+                "value": c["status_code_min"],
+            },
+            {
+                "name": "RPC_STATUS_CODE_MAX",
+                "type": "uint8_t",
+                "value": c["status_code_max"],
+            },
+            {
+                "name": "RPC_SYSTEM_COMMAND_MIN",
+                "type": "uint16_t",
+                "value": c["system_command_min"],
+            },
+            {
+                "name": "RPC_SYSTEM_COMMAND_MAX",
+                "type": "uint16_t",
+                "value": c["system_command_max"],
+            },
+            {
+                "name": "RPC_GPIO_COMMAND_MIN",
+                "type": "uint16_t",
+                "value": c["gpio_command_min"],
+            },
+            {
+                "name": "RPC_GPIO_COMMAND_MAX",
+                "type": "uint16_t",
+                "value": c["gpio_command_max"],
+            },
+            {
+                "name": "RPC_CONSOLE_COMMAND_MIN",
+                "type": "uint16_t",
+                "value": c["console_command_min"],
+            },
+            {
+                "name": "RPC_CONSOLE_COMMAND_MAX",
+                "type": "uint16_t",
+                "value": c["console_command_max"],
+            },
+            {
+                "name": "RPC_DATASTORE_COMMAND_MIN",
+                "type": "uint16_t",
+                "value": c["datastore_command_min"],
+            },
+            {
+                "name": "RPC_DATASTORE_COMMAND_MAX",
+                "type": "uint16_t",
+                "value": c["datastore_command_max"],
+            },
+            {
+                "name": "RPC_MAILBOX_COMMAND_MIN",
+                "type": "uint16_t",
+                "value": c["mailbox_command_min"],
+            },
+            {
+                "name": "RPC_MAILBOX_COMMAND_MAX",
+                "type": "uint16_t",
+                "value": c["mailbox_command_max"],
+            },
             {
                 "name": "RPC_FILESYSTEM_COMMAND_MIN",
                 "type": "uint16_t",
@@ -266,32 +437,104 @@ class JinjaGenerator:
                 "type": "uint16_t",
                 "value": c["filesystem_command_max"],
             },
-            {"name": "RPC_PROCESS_COMMAND_MIN", "type": "uint16_t", "value": c["process_command_min"]},
-            {"name": "RPC_PROCESS_COMMAND_MAX", "type": "uint16_t", "value": c["process_command_max"]},
-            {"name": "RPC_SPI_COMMAND_MIN", "type": "uint16_t", "value": c["spi_command_min"]},
-            {"name": "RPC_SPI_COMMAND_MAX", "type": "uint16_t", "value": c["spi_command_max"]},
+            {
+                "name": "RPC_PROCESS_COMMAND_MIN",
+                "type": "uint16_t",
+                "value": c["process_command_min"],
+            },
+            {
+                "name": "RPC_PROCESS_COMMAND_MAX",
+                "type": "uint16_t",
+                "value": c["process_command_max"],
+            },
+            {
+                "name": "RPC_SPI_COMMAND_MIN",
+                "type": "uint16_t",
+                "value": c["spi_command_min"],
+            },
+            {
+                "name": "RPC_SPI_COMMAND_MAX",
+                "type": "uint16_t",
+                "value": c["spi_command_max"],
+            },
             # MsgPack wire-format constants
-            {"name": "MSGPACK_FIXARRAY_MASK", "type": "uint8_t", "value": c["msgpack_fixarray_mask"]},
-            {"name": "MSGPACK_FIXSTR_MASK", "type": "uint8_t", "value": c["msgpack_fixstr_mask"]},
+            {
+                "name": "MSGPACK_FIXARRAY_MASK",
+                "type": "uint8_t",
+                "value": c["msgpack_fixarray_mask"],
+            },
+            {
+                "name": "MSGPACK_FIXSTR_MASK",
+                "type": "uint8_t",
+                "value": c["msgpack_fixstr_mask"],
+            },
             {"name": "MSGPACK_BIN8", "type": "uint8_t", "value": c["msgpack_bin8"]},
             {"name": "MSGPACK_BIN16", "type": "uint8_t", "value": c["msgpack_bin16"]},
-            {"name": "MSGPACK_UINT8_FMT", "type": "uint8_t", "value": c["msgpack_uint8_fmt"]},
-            {"name": "MSGPACK_UINT16_FMT", "type": "uint8_t", "value": c["msgpack_uint16_fmt"]},
-            {"name": "MSGPACK_UINT32_FMT", "type": "uint8_t", "value": c["msgpack_uint32_fmt"]},
+            {
+                "name": "MSGPACK_UINT8_FMT",
+                "type": "uint8_t",
+                "value": c["msgpack_uint8_fmt"],
+            },
+            {
+                "name": "MSGPACK_UINT16_FMT",
+                "type": "uint8_t",
+                "value": c["msgpack_uint16_fmt"],
+            },
+            {
+                "name": "MSGPACK_UINT32_FMT",
+                "type": "uint8_t",
+                "value": c["msgpack_uint32_fmt"],
+            },
             {"name": "MSGPACK_STR8", "type": "uint8_t", "value": c["msgpack_str8"]},
-            {"name": "MSGPACK_POSITIVE_FIXINT_MAX", "type": "uint8_t", "value": c["msgpack_positive_fixint_max"]},
-            {"name": "MSGPACK_FIXARRAY_TYPE_MASK", "type": "uint8_t", "value": c["msgpack_fixarray_type_mask"]},
-            {"name": "MSGPACK_FIXARRAY_VALUE_MASK", "type": "uint8_t", "value": c["msgpack_fixarray_value_mask"]},
-            {"name": "MSGPACK_FIXSTR_TYPE_MASK", "type": "uint8_t", "value": c["msgpack_fixstr_type_mask"]},
-            {"name": "MSGPACK_FIXSTR_VALUE_MASK", "type": "uint8_t", "value": c["msgpack_fixstr_value_mask"]},
-            {"name": "MSGPACK_UINT8_MAX_VAL", "type": "uint8_t", "value": c["msgpack_uint8_max_val"]},
-            {"name": "MSGPACK_UINT16_MAX_VAL", "type": "uint16_t", "value": c["msgpack_uint16_max_val"]},
+            {
+                "name": "MSGPACK_POSITIVE_FIXINT_MAX",
+                "type": "uint8_t",
+                "value": c["msgpack_positive_fixint_max"],
+            },
+            {
+                "name": "MSGPACK_FIXARRAY_TYPE_MASK",
+                "type": "uint8_t",
+                "value": c["msgpack_fixarray_type_mask"],
+            },
+            {
+                "name": "MSGPACK_FIXARRAY_VALUE_MASK",
+                "type": "uint8_t",
+                "value": c["msgpack_fixarray_value_mask"],
+            },
+            {
+                "name": "MSGPACK_FIXSTR_TYPE_MASK",
+                "type": "uint8_t",
+                "value": c["msgpack_fixstr_type_mask"],
+            },
+            {
+                "name": "MSGPACK_FIXSTR_VALUE_MASK",
+                "type": "uint8_t",
+                "value": c["msgpack_fixstr_value_mask"],
+            },
+            {
+                "name": "MSGPACK_UINT8_MAX_VAL",
+                "type": "uint8_t",
+                "value": c["msgpack_uint8_max_val"],
+            },
+            {
+                "name": "MSGPACK_UINT16_MAX_VAL",
+                "type": "uint16_t",
+                "value": c["msgpack_uint16_max_val"],
+            },
         ]
 
         hs = spec.handshake
         handshake_constants = [
-            {"name": "RPC_HANDSHAKE_NONCE_LENGTH", "type": "unsigned int", "value": hs["nonce_length"]},
-            {"name": "RPC_HANDSHAKE_TAG_LENGTH", "type": "unsigned int", "value": hs["tag_length"]},
+            {
+                "name": "RPC_HANDSHAKE_NONCE_LENGTH",
+                "type": "unsigned int",
+                "value": hs["nonce_length"],
+            },
+            {
+                "name": "RPC_HANDSHAKE_TAG_LENGTH",
+                "type": "unsigned int",
+                "value": hs["tag_length"],
+            },
             {
                 "name": "RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS",
                 "type": "uint32_t",
@@ -312,8 +555,16 @@ class JinjaGenerator:
                 "type": "uint32_t",
                 "value": hs["response_timeout_max_ms"],
             },
-            {"name": "RPC_HANDSHAKE_RETRY_LIMIT_MIN", "type": "unsigned int", "value": hs["retry_limit_min"]},
-            {"name": "RPC_HANDSHAKE_RETRY_LIMIT_MAX", "type": "unsigned int", "value": hs["retry_limit_max"]},
+            {
+                "name": "RPC_HANDSHAKE_RETRY_LIMIT_MIN",
+                "type": "unsigned int",
+                "value": hs["retry_limit_min"],
+            },
+            {
+                "name": "RPC_HANDSHAKE_RETRY_LIMIT_MAX",
+                "type": "unsigned int",
+                "value": hs["retry_limit_max"],
+            },
             {
                 "name": "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH",
                 "type": "unsigned int",
@@ -336,7 +587,9 @@ class JinjaGenerator:
             "hkdf_salt_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_salt"]),
             "hkdf_salt_len": len(hs["hkdf_salt"]),
             "hkdf_info_auth": hs["hkdf_info_auth"],
-            "hkdf_info_auth_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"]),
+            "hkdf_info_auth_bytes": ", ".join(
+                f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"]
+            ),
             "hkdf_info_auth_len": len(hs["hkdf_info_auth"]),
         }
 
@@ -372,65 +625,217 @@ class JinjaGenerator:
             {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
             {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
             {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
-            {"name": "DEFAULT_SAFE_BAUDRATE", "type": "int", "value": c["default_safe_baudrate"]},
-            {"name": "SERIAL_TIMEOUT_MS", "type": "int", "value": spec.hardware["serial_timeout_ms"]},
-            {"name": "SPI_TIMEOUT_MS", "type": "int", "value": spec.hardware["spi_timeout_ms"]},
-            {"name": "MAX_FILEPATH_LENGTH", "type": "int", "value": c["max_filepath_length"]},
-            {"name": "MAX_DATASTORE_KEY_LENGTH", "type": "int", "value": c["max_datastore_key_length"]},
-            {"name": "DEFAULT_ACK_TIMEOUT_MS", "type": "int", "value": c["default_ack_timeout_ms"]},
-            {"name": "DEFAULT_RETRY_LIMIT", "type": "int", "value": c["default_retry_limit"]},
-            {"name": "MAX_PENDING_TX_FRAMES", "type": "int", "value": c["max_pending_tx_frames"]},
-            {"name": "INVALID_ID_SENTINEL", "type": "int", "value": c["invalid_id_sentinel"]},
-            {"name": "NULL_TERMINATOR", "type": "int", "value": c["rpc_null_terminator"]},
+            {
+                "name": "DEFAULT_SAFE_BAUDRATE",
+                "type": "int",
+                "value": c["default_safe_baudrate"],
+            },
+            {
+                "name": "SERIAL_TIMEOUT_MS",
+                "type": "int",
+                "value": spec.hardware["serial_timeout_ms"],
+            },
+            {
+                "name": "SPI_TIMEOUT_MS",
+                "type": "int",
+                "value": spec.hardware["spi_timeout_ms"],
+            },
+            {
+                "name": "MAX_FILEPATH_LENGTH",
+                "type": "int",
+                "value": c["max_filepath_length"],
+            },
+            {
+                "name": "MAX_DATASTORE_KEY_LENGTH",
+                "type": "int",
+                "value": c["max_datastore_key_length"],
+            },
+            {
+                "name": "DEFAULT_ACK_TIMEOUT_MS",
+                "type": "int",
+                "value": c["default_ack_timeout_ms"],
+            },
+            {
+                "name": "DEFAULT_RETRY_LIMIT",
+                "type": "int",
+                "value": c["default_retry_limit"],
+            },
+            {
+                "name": "MAX_PENDING_TX_FRAMES",
+                "type": "int",
+                "value": c["max_pending_tx_frames"],
+            },
+            {
+                "name": "INVALID_ID_SENTINEL",
+                "type": "int",
+                "value": c["invalid_id_sentinel"],
+            },
+            {
+                "name": "NULL_TERMINATOR",
+                "type": "int",
+                "value": c["rpc_null_terminator"],
+            },
             {"name": "COMMAND_STRIDE", "type": "int", "value": c["rpc_command_stride"]},
-            {"name": "COMMAND_GROUP_SHIFT", "type": "int", "value": c["rpc_command_group_shift"]},
-            {"name": "COMMAND_GROUP_OFFSET", "type": "int", "value": c["rpc_command_group_offset"]},
-            {"name": "TIMER_OVERFLOW_THRESHOLD", "type": "int", "value": c["rpc_timer_overflow_threshold"]},
-            {"name": "CMD_FLAG_COMPRESSED", "type": "int", "value": c["cmd_flag_compressed"]},
-            {"name": "CMD_FLAG_COMPRESSED_BIT", "type": "int", "value": c["rpc_cmd_flag_compressed_bit"]},
+            {
+                "name": "COMMAND_GROUP_SHIFT",
+                "type": "int",
+                "value": c["rpc_command_group_shift"],
+            },
+            {
+                "name": "COMMAND_GROUP_OFFSET",
+                "type": "int",
+                "value": c["rpc_command_group_offset"],
+            },
+            {
+                "name": "TIMER_OVERFLOW_THRESHOLD",
+                "type": "int",
+                "value": c["rpc_timer_overflow_threshold"],
+            },
+            {
+                "name": "CMD_FLAG_COMPRESSED",
+                "type": "int",
+                "value": c["cmd_flag_compressed"],
+            },
+            {
+                "name": "CMD_FLAG_COMPRESSED_BIT",
+                "type": "int",
+                "value": c["rpc_cmd_flag_compressed_bit"],
+            },
             {"name": "UINT8_MASK", "type": "int", "value": c["uint8_mask"]},
             {"name": "UINT16_MAX", "type": "int", "value": c["uint16_max"]},
             {"name": "BOOTLOADER_MAGIC", "type": "int", "value": c["bootloader_magic"]},
-            {"name": "PROCESS_DEFAULT_EXIT_CODE", "type": "int", "value": c["process_default_exit_code"]},
+            {
+                "name": "PROCESS_DEFAULT_EXIT_CODE",
+                "type": "int",
+                "value": c["process_default_exit_code"],
+            },
             {"name": "CRC32_MASK", "type": "int", "value": c["crc32_mask"]},
             {"name": "CRC_INITIAL", "type": "int", "value": c["crc_initial"]},
             {"name": "CRC_POLYNOMIAL", "type": "int", "value": c["crc_polynomial"]},
-            {"name": "FRAME_DELIMITER", "type": "bytes", "value": f"bytes([{c['frame_delimiter']}])"},
+            {
+                "name": "FRAME_DELIMITER",
+                "type": "bytes",
+                "value": f"bytes([{c['frame_delimiter']}])",
+            },
             {"name": "DIGITAL_LOW", "type": "int", "value": c["digital_low"]},
             {"name": "DIGITAL_HIGH", "type": "int", "value": c["digital_high"]},
             {"name": "RLE_ESCAPE_BYTE", "type": "int", "value": c["rle_escape_byte"]},
-            {"name": "RLE_MIN_RUN_LENGTH", "type": "int", "value": c["rle_min_run_length"]},
-            {"name": "RLE_MAX_RUN_LENGTH", "type": "int", "value": c["rle_max_run_length"]},
-            {"name": "RLE_SINGLE_ESCAPE_MARKER", "type": "int", "value": c["rle_single_escape_marker"]},
-            {"name": "RLE_EXPANSION_FACTOR", "type": "int", "value": c["rle_expansion_factor"]},
+            {
+                "name": "RLE_MIN_RUN_LENGTH",
+                "type": "int",
+                "value": c["rle_min_run_length"],
+            },
+            {
+                "name": "RLE_MAX_RUN_LENGTH",
+                "type": "int",
+                "value": c["rle_max_run_length"],
+            },
+            {
+                "name": "RLE_SINGLE_ESCAPE_MARKER",
+                "type": "int",
+                "value": c["rle_single_escape_marker"],
+            },
+            {
+                "name": "RLE_EXPANSION_FACTOR",
+                "type": "int",
+                "value": c["rle_expansion_factor"],
+            },
             {"name": "RLE_OFFSET", "type": "int", "value": c["rle_offset"]},
-            {"name": "RLE_MIN_COMPRESS_INPUT_SIZE", "type": "int", "value": c["rle_min_compress_input_size"]},
-            {"name": "RLE_MIN_COMPRESS_SAVINGS", "type": "int", "value": c["rle_min_compress_savings"]},
-            {"name": "SHA256_DIGEST_SIZE", "type": "int", "value": spec.hardware["sha256_digest_size"]},
-            {"name": "SHA256_KAT_BUFFER_SIZE", "type": "int", "value": spec.hardware["sha256_kat_buffer_size"]},
+            {
+                "name": "RLE_MIN_COMPRESS_INPUT_SIZE",
+                "type": "int",
+                "value": c["rle_min_compress_input_size"],
+            },
+            {
+                "name": "RLE_MIN_COMPRESS_SAVINGS",
+                "type": "int",
+                "value": c["rle_min_compress_savings"],
+            },
+            {
+                "name": "SHA256_DIGEST_SIZE",
+                "type": "int",
+                "value": spec.hardware["sha256_digest_size"],
+            },
+            {
+                "name": "SHA256_KAT_BUFFER_SIZE",
+                "type": "int",
+                "value": spec.hardware["sha256_kat_buffer_size"],
+            },
             {"name": "STATUS_CODE_MIN", "type": "int", "value": c["status_code_min"]},
             {"name": "STATUS_CODE_MAX", "type": "int", "value": c["status_code_max"]},
-            {"name": "SYSTEM_COMMAND_MIN", "type": "int", "value": c["system_command_min"]},
-            {"name": "SYSTEM_COMMAND_MAX", "type": "int", "value": c["system_command_max"]},
+            {
+                "name": "SYSTEM_COMMAND_MIN",
+                "type": "int",
+                "value": c["system_command_min"],
+            },
+            {
+                "name": "SYSTEM_COMMAND_MAX",
+                "type": "int",
+                "value": c["system_command_max"],
+            },
             {"name": "GPIO_COMMAND_MIN", "type": "int", "value": c["gpio_command_min"]},
             {"name": "GPIO_COMMAND_MAX", "type": "int", "value": c["gpio_command_max"]},
-            {"name": "CONSOLE_COMMAND_MIN", "type": "int", "value": c["console_command_min"]},
-            {"name": "CONSOLE_COMMAND_MAX", "type": "int", "value": c["console_command_max"]},
-            {"name": "DATASTORE_COMMAND_MIN", "type": "int", "value": c["datastore_command_min"]},
-            {"name": "DATASTORE_COMMAND_MAX", "type": "int", "value": c["datastore_command_max"]},
-            {"name": "MAILBOX_COMMAND_MIN", "type": "int", "value": c["mailbox_command_min"]},
-            {"name": "MAILBOX_COMMAND_MAX", "type": "int", "value": c["mailbox_command_max"]},
-            {"name": "FILESYSTEM_COMMAND_MIN", "type": "int", "value": c["filesystem_command_min"]},
-            {"name": "FILESYSTEM_COMMAND_MAX", "type": "int", "value": c["filesystem_command_max"]},
-            {"name": "PROCESS_COMMAND_MIN", "type": "int", "value": c["process_command_min"]},
-            {"name": "PROCESS_COMMAND_MAX", "type": "int", "value": c["process_command_max"]},
+            {
+                "name": "CONSOLE_COMMAND_MIN",
+                "type": "int",
+                "value": c["console_command_min"],
+            },
+            {
+                "name": "CONSOLE_COMMAND_MAX",
+                "type": "int",
+                "value": c["console_command_max"],
+            },
+            {
+                "name": "DATASTORE_COMMAND_MIN",
+                "type": "int",
+                "value": c["datastore_command_min"],
+            },
+            {
+                "name": "DATASTORE_COMMAND_MAX",
+                "type": "int",
+                "value": c["datastore_command_max"],
+            },
+            {
+                "name": "MAILBOX_COMMAND_MIN",
+                "type": "int",
+                "value": c["mailbox_command_min"],
+            },
+            {
+                "name": "MAILBOX_COMMAND_MAX",
+                "type": "int",
+                "value": c["mailbox_command_max"],
+            },
+            {
+                "name": "FILESYSTEM_COMMAND_MIN",
+                "type": "int",
+                "value": c["filesystem_command_min"],
+            },
+            {
+                "name": "FILESYSTEM_COMMAND_MAX",
+                "type": "int",
+                "value": c["filesystem_command_max"],
+            },
+            {
+                "name": "PROCESS_COMMAND_MIN",
+                "type": "int",
+                "value": c["process_command_min"],
+            },
+            {
+                "name": "PROCESS_COMMAND_MAX",
+                "type": "int",
+                "value": c["process_command_max"],
+            },
             {"name": "SPI_COMMAND_MIN", "type": "int", "value": c["spi_command_min"]},
             {"name": "SPI_COMMAND_MAX", "type": "int", "value": c["spi_command_max"]},
         ]
 
         hs = spec.handshake
         handshake_constants = [
-            {"name": "HANDSHAKE_NONCE_LENGTH", "type": "int", "value": hs["nonce_length"]},
+            {
+                "name": "HANDSHAKE_NONCE_LENGTH",
+                "type": "int",
+                "value": hs["nonce_length"],
+            },
             {"name": "HANDSHAKE_TAG_LENGTH", "type": "int", "value": hs["tag_length"]},
             {
                 "name": "HANDSHAKE_ACK_TIMEOUT_MIN_MS",
@@ -452,8 +857,16 @@ class JinjaGenerator:
                 "type": "int",
                 "value": hs["response_timeout_max_ms"],
             },
-            {"name": "HANDSHAKE_RETRY_LIMIT_MIN", "type": "int", "value": hs["retry_limit_min"]},
-            {"name": "HANDSHAKE_RETRY_LIMIT_MAX", "type": "int", "value": hs["retry_limit_max"]},
+            {
+                "name": "HANDSHAKE_RETRY_LIMIT_MIN",
+                "type": "int",
+                "value": hs["retry_limit_min"],
+            },
+            {
+                "name": "HANDSHAKE_RETRY_LIMIT_MAX",
+                "type": "int",
+                "value": hs["retry_limit_max"],
+            },
             {
                 "name": "HANDSHAKE_HKDF_OUTPUT_LENGTH",
                 "type": "int",
@@ -534,7 +947,10 @@ class JinjaGenerator:
                             else f"{topic_str.lower().title()}Action"
                         )
                         for act in spec.actions:
-                            if act["name"].startswith(f"{topic_str}_") and act["value"] == s:
+                            if (
+                                act["name"].startswith(f"{topic_str}_")
+                                and act["value"] == s
+                            ):
                                 sfx = act["name"].split("_", 1)[1]
                                 segments.append(f"{c_name}.{sfx}.value")
                                 mapped = True
@@ -575,7 +991,9 @@ class JinjaGenerator:
         )
         out_path.write_text(render, encoding="utf-8")
 
-    def generate_structures_packets(self, spec: ProtocolSpec, structures_path: Path) -> None:
+    def generate_structures_packets(
+        self, spec: ProtocolSpec, structures_path: Path
+    ) -> None:
         """Generate Packet classes from spec.toml messages and splice into structures.py."""
         packet_messages = [m for m in spec.messages if m.name not in PACKET_EXCLUDE]
 
@@ -591,11 +1009,13 @@ class JinjaGenerator:
                     )
                     continue
                 fields.append({"name": f.name, "python_type": py_type})
-            packets.append({
-                "class_name": packet_class_name(msg.name),
-                "proto_name": msg.name,
-                "fields": fields,
-            })
+            packets.append(
+                {
+                    "class_name": packet_class_name(msg.name),
+                    "proto_name": msg.name,
+                    "fields": fields,
+                }
+            )
 
         template = self.env.get_template("structures_packets.py.j2")
         generated = template.render(packets=packets)
@@ -630,8 +1050,16 @@ class JinjaGenerator:
             {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
             {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
             {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
-            {"name": "MAX_FILEPATH_LENGTH", "type": "int", "value": c["max_filepath_length"]},
-            {"name": "MAX_DATASTORE_KEY_LENGTH", "type": "int", "value": c["max_datastore_key_length"]},
+            {
+                "name": "MAX_FILEPATH_LENGTH",
+                "type": "int",
+                "value": c["max_filepath_length"],
+            },
+            {
+                "name": "MAX_DATASTORE_KEY_LENGTH",
+                "type": "int",
+                "value": c["max_datastore_key_length"],
+            },
         ]
 
         render = template.render(
@@ -646,7 +1074,9 @@ class JinjaGenerator:
 
 def read_version() -> str:
     if not VERSION_PATH.exists():
-        sys.stderr.write(f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n")
+        sys.stderr.write(
+            f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n"
+        )
         return "0.0.0"
     return VERSION_PATH.read_text(encoding="utf-8").strip()
 
@@ -656,7 +1086,9 @@ def update_metadata(version: str):
     pyproj = REPO_ROOT / "pyproject.toml"
     if pyproj.exists():
         content = pyproj.read_text(encoding="utf-8")
-        content = re.sub(r'version\s*=\s*"[^"]+"', f'version = "{version}"', content, count=1)
+        content = re.sub(
+            r'version\s*=\s*"[^"]+"', f'version = "{version}"', content, count=1
+        )
         pyproj.write_text(content, encoding="utf-8")
         sys.stderr.write(f"Updated {pyproj} to version {version}\n")
 
@@ -664,7 +1096,7 @@ def update_metadata(version: str):
     makefile = REPO_ROOT / "mcubridge" / "Makefile"
     if makefile.exists():
         content = makefile.read_text(encoding="utf-8")
-        content = re.sub(r'PKG_VERSION:=[^\n]+', f'PKG_VERSION:={version}', content)
+        content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", content)
         makefile.write_text(content, encoding="utf-8")
         sys.stderr.write(f"Updated {makefile} to version {version}\n")
 
@@ -672,22 +1104,31 @@ def update_metadata(version: str):
     lib_prop = REPO_ROOT / "mcubridge-library-arduino" / "library.properties"
     if lib_prop.exists():
         content = lib_prop.read_text(encoding="utf-8")
-        content = re.sub(r'version=[^\n]+', f'version={version}', content)
+        content = re.sub(r"version=[^\n]+", f"version={version}", content)
         lib_prop.write_text(content, encoding="utf-8")
         sys.stderr.write(f"Updated {lib_prop} to version {version}\n")
 
 
 @app.command()
 def main(
-    spec_path: Annotated[Path, typer.Option("--spec", help="Protocol specification file")],
-    cpp: Annotated[Optional[Path], typer.Option("--cpp", help="C++ header output")] = None,
+    spec_path: Annotated[
+        Path, typer.Option("--spec", help="Protocol specification file")
+    ],
+    cpp: Annotated[
+        Optional[Path], typer.Option("--cpp", help="C++ header output")
+    ] = None,
     cpp_structs: Annotated[
         Optional[Path], typer.Option("--cpp-structs", help="C++ structs output")
     ] = None,
     py: Annotated[Optional[Path], typer.Option("--py", help="Python output")] = None,
-    py_client: Annotated[Optional[Path], typer.Option("--py-client", help="Python client output")] = None,
+    py_client: Annotated[
+        Optional[Path], typer.Option("--py-client", help="Python client output")
+    ] = None,
     structures: Annotated[
-        Optional[Path], typer.Option("--structures", help="Splice generated Packets into structures.py")
+        Optional[Path],
+        typer.Option(
+            "--structures", help="Splice generated Packets into structures.py"
+        ),
     ] = None,
 ) -> None:
     spec = ProtocolSpec.load(spec_path)

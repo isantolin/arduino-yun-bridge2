@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, AsyncMock
 from mcubridge_client import Bridge
 from aiomqtt import Message
 
+
 @pytest.fixture
 def mock_client(monkeypatch):
     mock = MagicMock()
@@ -14,6 +15,7 @@ def mock_client(monkeypatch):
     monkeypatch.setattr("mcubridge_client.Client", mock)
     return mock
 
+
 @pytest.mark.asyncio
 async def test_client_connect_disconnect(mock_client) -> None:
     bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
@@ -21,6 +23,7 @@ async def test_client_connect_disconnect(mock_client) -> None:
     assert bridge._client is not None
     await bridge.disconnect()
     assert bridge._client is None
+
 
 @pytest.mark.asyncio
 async def test_client_digital_write(mock_client) -> None:
@@ -35,6 +38,7 @@ async def test_client_digital_write(mock_client) -> None:
     assert "br/d/13" in last_call.args[0]
     assert last_call.args[1] == "1"
 
+
 @pytest.mark.asyncio
 async def test_client_analog_write(mock_client) -> None:
     bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
@@ -47,6 +51,7 @@ async def test_client_analog_write(mock_client) -> None:
     last_call = client_instance.publish.call_args_list[-1]
     assert "br/a/3" in last_call.args[0]
     assert last_call.args[1] == "128"
+
 
 @pytest.mark.asyncio
 async def test_client_datastore_put(mock_client) -> None:
@@ -75,6 +80,7 @@ async def test_client_datastore_put(mock_client) -> None:
     await bridge.put("test_key", "test_value")
     assert client_instance.publish.called
 
+
 @pytest.mark.asyncio
 async def test_client_file_write(mock_client) -> None:
     bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
@@ -88,6 +94,7 @@ async def test_client_file_write(mock_client) -> None:
     assert "br/file/write/test.txt" in last_call.args[0]
     assert last_call.args[1] == "content"
 
+
 @pytest.mark.asyncio
 async def test_client_analog_read_timeout(mock_client) -> None:
     bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
@@ -95,6 +102,7 @@ async def test_client_analog_read_timeout(mock_client) -> None:
 
     with pytest.raises(TimeoutError):
         await bridge.analog_read(0, timeout=0.1)
+
 
 @pytest.mark.asyncio
 async def test_client_analog_write_direct(mock_client) -> None:

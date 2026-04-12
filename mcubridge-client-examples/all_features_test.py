@@ -53,6 +53,7 @@ async def run_test(host, port, user, password):
         # 5. File IO test
         logger.info("Testing File IO...")
         import uuid
+
         test_file = f"/tmp/e2e_test_{uuid.uuid4().hex[:8]}.txt"
         await client.file_write(test_file, "e2e-data")
         content = await client.file_read(test_file)
@@ -77,14 +78,10 @@ async def run_test(host, port, user, password):
     logger.info("ALL FEATURES PASSED.")
 
 
-def main(
-    host: str = "127.0.0.1",
-    port: int = 1883,
-    user: str = "",
-    password: str = ""
-):
+def main(host: str = "127.0.0.1", port: int = 1883, user: str = "", password: str = ""):
     # Pass None if empty to rely on anonymous
     asyncio.run(run_test(host, port, user or None, password or None))
+
 
 if __name__ == "__main__":
     typer.run(main)

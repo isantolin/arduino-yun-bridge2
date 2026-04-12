@@ -19,6 +19,7 @@ def get_uci_config() -> dict[str, Any]:
     """
     try:
         import uci
+
         # [SIL-2] Verify this is the real OpenWrt UCI library and not a host collision
         if not hasattr(uci, "Uci") and not hasattr(uci, "UCI"):
             raise ImportError("Incompatible uci library")
@@ -39,8 +40,13 @@ def get_uci_config() -> dict[str, Any]:
 
             # Clean and cast the UCI dictionary
             from collections.abc import Iterable
+
             config_dict: dict[str, Any] = {
-                str(k): (" ".join(map(str, cast(Iterable[Any], v))) if isinstance(v, (list, tuple)) else v)
+                str(k): (
+                    " ".join(map(str, cast(Iterable[Any], v)))
+                    if isinstance(v, (list, tuple))
+                    else v
+                )
                 for k, v in section.items()
                 if not str(k).startswith((".", "_"))
             }
@@ -61,6 +67,7 @@ def get_default_config() -> dict[str, Any]:
     """Return the default configuration as a dictionary (SIL 2)."""
     from mcubridge.config import const
     from mcubridge.protocol import protocol
+
     return {
         "serial_port": const.DEFAULT_SERIAL_PORT,
         "serial_baud": protocol.DEFAULT_BAUDRATE,

@@ -33,8 +33,7 @@ class EnqueueHook(Protocol):
         message: QueuedPublish,
         *,
         reply_context: Message | None = None,
-    ) -> Awaitable[None]:
-        ...
+    ) -> Awaitable[None]: ...
 
 
 class DummyBridge(BridgeContext):
@@ -91,7 +90,9 @@ class DummyBridge(BridgeContext):
     def set_enqueue_hook(self, hook: EnqueueHook | None) -> None:
         self._enqueue_hook = hook
 
-    async def acknowledge_mcu_frame(self, command_id: int, seq_id: int, *, status: Any = None) -> None:
+    async def acknowledge_mcu_frame(
+        self, command_id: int, seq_id: int, *, status: Any = None
+    ) -> None:
         pass
 
     def is_command_allowed(self, command: str) -> bool:
@@ -163,7 +164,7 @@ def test_handle_push_overflow_sends_error(
 ) -> None:
     component, bridge = mailbox_component
     runtime_state.mailbox_queue_limit = 0
-    payload = structures.MailboxPushPacket(data=b'A').encode()
+    payload = structures.MailboxPushPacket(data=b"A").encode()
     result = asyncio.run(component.handle_push(0, payload))
     assert result is False
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
@@ -210,7 +211,11 @@ def test_handle_mqtt_write_enqueues_and_notifies(
     runtime_state: RuntimeState,
 ) -> None:
     component, bridge = mailbox_component
-    asyncio.run(component.handle_mqtt(make_route(Topic.MAILBOX, MailboxAction.WRITE), make_mqtt_msg(b"mqtt")))
+    asyncio.run(
+        component.handle_mqtt(
+            make_route(Topic.MAILBOX, MailboxAction.WRITE), make_mqtt_msg(b"mqtt")
+        )
+    )
 
     assert runtime_state.pop_mailbox_message() == b"mqtt"
     assert bridge.published[-1].topic_name == (
@@ -225,7 +230,11 @@ def test_handle_mqtt_write_overflow_signals_error(
 ) -> None:
     component, bridge = mailbox_component
     runtime_state.mailbox_queue_limit = 0
-    asyncio.run(component.handle_mqtt(make_route(Topic.MAILBOX, MailboxAction.WRITE), make_mqtt_msg(b"boom")))
+    asyncio.run(
+        component.handle_mqtt(
+            make_route(Topic.MAILBOX, MailboxAction.WRITE), make_mqtt_msg(b"boom")
+        )
+    )
 
     assert not runtime_state.mailbox_queue
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
@@ -237,7 +246,9 @@ def test_handle_mqtt_write_overflow_signals_error(
         Topic.MAILBOX,
         "errors",
     )
-    assert topics[0] == topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available")
+    assert topics[0] == topic_path(
+        runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available"
+    )
     assert topics[1] == overflow_topic
     error_payload = msgspec.msgpack.decode(bridge.published[1].payload)
     assert error_payload["event"] == "write_overflow"
@@ -251,7 +262,11 @@ def test_handle_mqtt_read_prefers_incoming_queue(
     component, bridge = mailbox_component
     runtime_state.enqueue_mailbox_incoming(b"alpha")
 
-    asyncio.run(component.handle_mqtt(make_route(Topic.MAILBOX, MailboxAction.READ), make_mqtt_msg(b"")))
+    asyncio.run(
+        component.handle_mqtt(
+            make_route(Topic.MAILBOX, MailboxAction.READ), make_mqtt_msg(b"")
+        )
+    )
 
     topic_base = runtime_state.mqtt_topic_prefix
     topics = [msg.topic_name for msg in bridge.published]
@@ -270,7 +285,11 @@ def test_handle_mqtt_read_drains_mailbox_queue(
     component, bridge = mailbox_component
     runtime_state.enqueue_mailbox_message(b"beta")
 
-    asyncio.run(component.handle_mqtt(make_route(Topic.MAILBOX, MailboxAction.READ), make_mqtt_msg(b"")))
+    asyncio.run(
+        component.handle_mqtt(
+            make_route(Topic.MAILBOX, MailboxAction.READ), make_mqtt_msg(b"")
+        )
+    )
 
     topic_base = runtime_state.mqtt_topic_prefix
     topics = [msg.topic_name for msg in bridge.published]
@@ -301,7 +320,11 @@ def test_handle_mqtt_read_incoming_still_notifies_on_failure(
     bridge.set_enqueue_hook(flaky_enqueue)
 
     with pytest.raises(RuntimeError):
-        asyncio.run(component.handle_mqtt(make_route(Topic.MAILBOX, MailboxAction.READ), make_mqtt_msg(b"")))
+        asyncio.run(
+            component.handle_mqtt(
+                make_route(Topic.MAILBOX, MailboxAction.READ), make_mqtt_msg(b"")
+            )
+        )
 
     assert [msg.topic_name for msg in bridge.published] == [
         topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available")
@@ -327,7 +350,11 @@ def test_handle_mqtt_read_outgoing_still_notifies_on_failure(
     bridge.set_enqueue_hook(flaky_enqueue)
 
     with pytest.raises(RuntimeError):
-        asyncio.run(component.handle_mqtt(make_route(Topic.MAILBOX, MailboxAction.READ), make_mqtt_msg(b"")))
+        asyncio.run(
+            component.handle_mqtt(
+                make_route(Topic.MAILBOX, MailboxAction.READ), make_mqtt_msg(b"")
+            )
+        )
 
     assert [msg.topic_name for msg in bridge.published] == [
         topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available")

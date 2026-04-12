@@ -103,7 +103,9 @@ def _file_status_property(snapshot: dict[str, Any]) -> str | None:
         (
             label
             for key, label in checks
-            if (val := snapshot.get(key)) is not None and isinstance(val, (int, float)) and val > 0
+            if (val := snapshot.get(key)) is not None
+            and isinstance(val, (int, float))
+            and val > 0
         ),
         None,
     )
@@ -131,7 +133,11 @@ async def _emit_bridge_snapshot(
     flavor: str,
 ) -> None:
     try:
-        snapshot = state.build_handshake_snapshot() if flavor == "handshake" else state.build_bridge_snapshot()
+        snapshot = (
+            state.build_handshake_snapshot()
+            if flavor == "handshake"
+            else state.build_bridge_snapshot()
+        )
         await enqueue(
             _build_bridge_snapshot_message(
                 state,
@@ -250,13 +256,25 @@ class RuntimeStateCollector(Collector):
             "Current number of items in internal asynchronous queues",
             labels=["queue"],
         )
-        q_depths.add_metric(["mqtt_publish"], float(self._state.mqtt_publish_queue.qsize()))
-        q_depths.add_metric(["console_tx"], float(len(self._state.console_to_mcu_queue)))
+        q_depths.add_metric(
+            ["mqtt_publish"], float(self._state.mqtt_publish_queue.qsize())
+        )
+        q_depths.add_metric(
+            ["console_tx"], float(len(self._state.console_to_mcu_queue))
+        )
         q_depths.add_metric(["mailbox_tx"], float(len(self._state.mailbox_queue)))
-        q_depths.add_metric(["mailbox_rx"], float(len(self._state.mailbox_incoming_queue)))
-        q_depths.add_metric(["pending_digital_read"], float(len(self._state.pending_digital_reads)))
-        q_depths.add_metric(["pending_analog_read"], float(len(self._state.pending_analog_reads)))
-        q_depths.add_metric(["running_process"], float(len(self._state.running_processes)))
+        q_depths.add_metric(
+            ["mailbox_rx"], float(len(self._state.mailbox_incoming_queue))
+        )
+        q_depths.add_metric(
+            ["pending_digital_read"], float(len(self._state.pending_digital_reads))
+        )
+        q_depths.add_metric(
+            ["pending_analog_read"], float(len(self._state.pending_analog_reads))
+        )
+        q_depths.add_metric(
+            ["running_process"], float(len(self._state.running_processes))
+        )
         yield q_depths
 
         # 2. System Status (Gauges)
@@ -304,6 +322,7 @@ class PrometheusExporter:
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
         from prometheus_client import ProcessCollector
+
         self._state = state
         # Defensive normalization for tests/injected configs.
         self._host = host if host else "127.0.0.1"
@@ -344,7 +363,8 @@ class PrometheusExporter:
                         self._resolved_port = port_candidate
         logger.info(
             "Prometheus exporter listening",
-            host=self._host, port=self.port,
+            host=self._host,
+            port=self.port,
         )
 
     async def stop(self) -> None:
@@ -400,7 +420,9 @@ class PrometheusExporter:
         except (OSError, ValueError, IndexError) as e:
             logger.warning("Prometheus client request error: %s", e)
         except (TypeError, ValueError, AttributeError, OSError, RuntimeError) as e:
-            logger.critical("Unexpected error in Prometheus handler: %s", e, exc_info=True)
+            logger.critical(
+                "Unexpected error in Prometheus handler: %s", e, exc_info=True
+            )
         finally:
             try:
                 writer.close()
@@ -424,7 +446,11 @@ class PrometheusExporter:
             404: "Not Found",
         }
         status_line = f"HTTP/1.1 {status} {phrases.get(status, 'Error')}\r\n"
-        headers = f"Content-Type: {content_type}\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n\r\n"
+        headers = (
+            f"Content-Type: {content_type}\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            "Connection: close\r\n\r\n"
+        )
         writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
         await writer.drain()
 

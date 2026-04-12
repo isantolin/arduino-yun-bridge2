@@ -10,7 +10,7 @@ from typing import Any
 import msgspec
 
 from ..protocol.structures import QueuedPublish
-from ..state.queues import PersistentQueue
+from ..state.queues import BridgeQueue as PersistentQueue
 
 logger = structlog.get_logger("mcubridge.mqtt.spool")
 

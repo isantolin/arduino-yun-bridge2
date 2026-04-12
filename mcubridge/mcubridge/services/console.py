@@ -24,7 +24,9 @@ class ConsoleComponent(BaseComponent):
     async def handle_write(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
         packet = self._decode_payload(
-            ConsoleWritePacket, payload, Command.CMD_CONSOLE_WRITE,
+            ConsoleWritePacket,
+            payload,
+            Command.CMD_CONSOLE_WRITE,
         )
         if packet is None:
             return

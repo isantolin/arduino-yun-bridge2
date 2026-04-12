@@ -44,17 +44,13 @@ class MqttTransport:
 
     if TYPE_CHECKING:
         # FSM trigger stubs for static analysis (bound at runtime by transitions.Machine)
-        def connect(self) -> None:
-            ...
+        def connect(self) -> None: ...
 
-        def connected(self) -> None:
-            ...
+        def connected(self) -> None: ...
 
-        def subscribed(self) -> None:
-            ...
+        def subscribed(self) -> None: ...
 
-        def disconnect(self) -> None:
-            ...
+        def disconnect(self) -> None: ...
 
     def __init__(
         self,
@@ -77,9 +73,21 @@ class MqttTransport:
             ],
             transitions=[
                 {"trigger": "connect", "source": "*", "dest": self.STATE_CONNECTING},
-                {"trigger": "connected", "source": self.STATE_CONNECTING, "dest": self.STATE_SUBSCRIBING},
-                {"trigger": "subscribed", "source": self.STATE_SUBSCRIBING, "dest": self.STATE_READY},
-                {"trigger": "disconnect", "source": "*", "dest": self.STATE_DISCONNECTED},
+                {
+                    "trigger": "connected",
+                    "source": self.STATE_CONNECTING,
+                    "dest": self.STATE_SUBSCRIBING,
+                },
+                {
+                    "trigger": "subscribed",
+                    "source": self.STATE_SUBSCRIBING,
+                    "dest": self.STATE_READY,
+                },
+                {
+                    "trigger": "disconnect",
+                    "source": "*",
+                    "dest": self.STATE_DISCONNECTED,
+                },
             ],
             initial=self.STATE_DISCONNECTED,
             queued=True,
@@ -103,8 +111,11 @@ class MqttTransport:
             self.state.metrics.retries.labels(component="mqtt_connect").inc()
 
         retryer = tenacity.AsyncRetrying(
-            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
-            retry=tenacity.retry_if_exception_type((aiomqtt.MqttError, OSError, asyncio.TimeoutError)),
+            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
+            + tenacity.wait_random(0, 2),
+            retry=tenacity.retry_if_exception_type(
+                (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
+            ),
             before_sleep=_before_sleep,
             reraise=True,
         )
@@ -175,7 +186,9 @@ class MqttTransport:
 
             def safe_on_message(c: Any, userdata: Any, msg: Any) -> None:
                 if msg and msg.topic and original_on_message:
-                    with contextlib.suppress(OSError, RuntimeError, TypeError, ValueError):
+                    with contextlib.suppress(
+                        OSError, RuntimeError, TypeError, ValueError
+                    ):
                         original_on_message(c, userdata, msg)
 
             paho_client.on_message = safe_on_message
@@ -188,14 +201,19 @@ class MqttTransport:
             self.subscribed()
 
             # [SIL-2] Publish online status (retained) to complement the will message
-            await client.publish(will_topic, b'{"status": "online"}', qos=1, retain=True)
+            await client.publish(
+                will_topic, b'{"status": "online"}', qos=1, retain=True
+            )
 
             async with asyncio.TaskGroup() as task_group:
                 task_group.create_task(self._publisher_loop(client))
                 task_group.create_task(self._subscriber_loop(client))
 
     async def _subscribe_topics(self, client: aiomqtt.Client) -> None:
-        topics = [(topic_path(self.state.mqtt_topic_prefix, t, *s), int(q)) for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS]
+        topics = [
+            (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
+            for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
+        ]
 
         await client.subscribe(topics)
 
@@ -221,7 +239,12 @@ class MqttTransport:
                 retain = message.retain
 
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.log(logging.DEBUG, "[HEXDUMP] MQTT PUB > %s: %s", topic_name, payload.hex(" ").upper())
+                    logger.log(
+                        logging.DEBUG,
+                        "[HEXDUMP] MQTT PUB > %s: %s",
+                        topic_name,
+                        payload.hex(" ").upper(),
+                    )
 
                 @tenacity.retry(
                     wait=tenacity.wait_exponential(multiplier=0.1, max=10),
@@ -290,11 +313,23 @@ class MqttTransport:
                 try:
                     # Dispatch using native topic matching capability
                     await self.service.handle_mqtt_message(message)
-                except (AttributeError, IndexError, KeyError, OSError, RuntimeError, TypeError, ValueError) as e:
-                    logger.error("Error processing MQTT message on topic %s: %s", topic_str, e)
+                except (
+                    AttributeError,
+                    IndexError,
+                    KeyError,
+                    OSError,
+                    RuntimeError,
+                    TypeError,
+                    ValueError,
+                ) as e:
+                    logger.error(
+                        "Error processing MQTT message on topic %s: %s", topic_str, e
+                    )
                     payload_bytes = bytes(message.payload) if message.payload else b""
                     hexdump = payload_bytes.hex(" ").upper()
-                    logger.error("[HEXDUMP] FAILED MQTT MSG < %s: %s", topic_str, hexdump)
+                    logger.error(
+                        "[HEXDUMP] FAILED MQTT MSG < %s: %s", topic_str, hexdump
+                    )
         except asyncio.CancelledError:
             with contextlib.suppress(asyncio.CancelledError):
                 raise

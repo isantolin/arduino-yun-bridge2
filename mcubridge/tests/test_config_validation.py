@@ -68,7 +68,10 @@ def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> 
 
     # settings.py now raises ValueError during test source for invalid topic
     import msgspec
-    with pytest.raises(msgspec.ValidationError, match="mqtt_topic must contain at least one segment"):
+
+    with pytest.raises(
+        msgspec.ValidationError, match="mqtt_topic must contain at least one segment"
+    ):
         settings.load_runtime_config()
 
 
@@ -90,9 +93,13 @@ def test_runtime_config_requires_watchdog_interval_when_enabled() -> None:
         # or adjusting the test to what is actually correct (clamping).
         # But here we follow the user: "hacer lo que sea correcto".
         # Correct is rejecting invalid config.
-        msgspec.convert(_config_kwargs(watchdog_enabled=True, watchdog_interval=-1.0), RuntimeConfig)
+        msgspec.convert(
+            _config_kwargs(watchdog_enabled=True, watchdog_interval=-1.0), RuntimeConfig
+        )
 
 
 def test_runtime_config_rejects_non_positive_fatal_threshold() -> None:
     with pytest.raises((ValueError, msgspec.ValidationError)):
-        msgspec.convert(_config_kwargs(serial_handshake_fatal_failures=0), RuntimeConfig)
+        msgspec.convert(
+            _config_kwargs(serial_handshake_fatal_failures=0), RuntimeConfig
+        )

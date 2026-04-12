@@ -127,7 +127,14 @@ class DaemonMetrics:
         self.handshake_state = Enum(
             "mcubridge_handshake_state",
             "Serial handshake FSM state",
-            states=["unsynchronized", "resetting", "syncing", "confirming", "synchronized", "fault"],
+            states=[
+                "unsynchronized",
+                "resetting",
+                "syncing",
+                "confirming",
+                "synchronized",
+                "fault",
+            ],
             registry=self.registry,
         )
 
@@ -144,6 +151,7 @@ class DaemonMetrics:
     def _set_build_info(self) -> None:
         """Populate build info from package metadata."""
         import importlib.metadata
+
         try:
             version = importlib.metadata.version("mcubridge")
         except importlib.metadata.PackageNotFoundError:

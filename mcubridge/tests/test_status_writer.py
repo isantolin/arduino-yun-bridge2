@@ -113,7 +113,9 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             assert payload["mqtt_queue_limit"] == 42
             assert isinstance(payload["mqtt_messages_dropped"], int)
             assert payload["mqtt_messages_dropped"] >= 3
-            assert payload["mqtt_drop_counts"] == {f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test": 3}
+            assert payload["mqtt_drop_counts"] == {
+                f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test": 3
+            }
             assert payload["datastore_keys"] == ["foo"]
             assert payload["mailbox_size"] == 1
             assert payload["mailbox_bytes"] == 3

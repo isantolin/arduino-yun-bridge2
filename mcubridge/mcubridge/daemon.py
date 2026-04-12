@@ -128,7 +128,9 @@ class BridgeDaemon:
         self.service = BridgeService(config, self.state)
         # Initialize dependencies
 
-        async def _dummy_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def _dummy_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             return False
 
         self.service.register_serial_sender(_dummy_sender)
@@ -149,7 +151,9 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "serial-link",
-                            lambda: SerialTransport(self.config, self.state, self.service).run(),
+                            lambda: SerialTransport(
+                                self.config, self.state, self.service
+                            ).run(),
                             (SerialHandshakeFatal,),
                         )
                     )
@@ -158,7 +162,9 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "mqtt-link",
-                            lambda: MqttTransport(self.config, self.state, self.service).run(),
+                            lambda: MqttTransport(
+                                self.config, self.state, self.service
+                            ).run(),
                         )
                     )
 
@@ -166,7 +172,9 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "status-writer",
-                            lambda: status_writer(self.state, self.config.status_interval),
+                            lambda: status_writer(
+                                self.state, self.config.status_interval
+                            ),
                         )
                     )
                     tg.create_task(
@@ -181,21 +189,30 @@ class BridgeDaemon:
                     )
 
                     # 4. Optional Features
-                    if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
+                    if (
+                        self.config.bridge_summary_interval > 0.0
+                        or self.config.bridge_handshake_interval > 0.0
+                    ):
                         tg.create_task(
                             self._supervise(
                                 "bridge-snapshots",
                                 lambda: publish_bridge_snapshots(
                                     self.state,
                                     self.service.enqueue_mqtt,
-                                    summary_interval=float(self.config.bridge_summary_interval),
-                                    handshake_interval=float(self.config.bridge_handshake_interval),
+                                    summary_interval=float(
+                                        self.config.bridge_summary_interval
+                                    ),
+                                    handshake_interval=float(
+                                        self.config.bridge_handshake_interval
+                                    ),
                                 ),
                             )
                         )
 
                     if self.config.watchdog_enabled:
-                        self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
+                        self.watchdog = WatchdogKeepalive(
+                            interval=self.config.watchdog_interval, state=self.state
+                        )
                         tg.create_task(self._supervise("watchdog", self.watchdog.run))
 
                     if self.config.metrics_enabled:
@@ -204,7 +221,9 @@ class BridgeDaemon:
                             self.config.metrics_host,
                             self.config.metrics_port,
                         )
-                        tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
+                        tg.create_task(
+                            self._supervise("prometheus-exporter", self.exporter.run)
+                        )
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
@@ -254,12 +273,17 @@ class BridgeDaemon:
                     logger.critical(
                         "CIRCUIT BREAKER: Task '%s' tripped after %d failures at max backoff. "
                         "Marking as UNRECOVERABLE.",
-                        name, max_consecutive_max_backoff
+                        name,
+                        max_consecutive_max_backoff,
                     )
                     return False
                 return True
 
-        stop = tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never
+        stop = (
+            tenacity.stop_after_attempt(max_restarts + 1)
+            if max_restarts is not None
+            else tenacity.stop_never
+        )
 
         retryer = tenacity.AsyncRetrying(
             stop=stop,
@@ -286,7 +310,9 @@ def main(
     serial_baud: Annotated[int | None, typer.Option(help="Serial baud rate")] = None,
     mqtt_host: Annotated[str | None, typer.Option(help="MQTT host")] = None,
     mqtt_port: Annotated[int | None, typer.Option(help="MQTT port")] = None,
-    mqtt_tls: Annotated[int | None, typer.Option(help="Use TLS for MQTT (0 or 1)")] = None,
+    mqtt_tls: Annotated[
+        int | None, typer.Option(help="Use TLS for MQTT (0 or 1)")
+    ] = None,
     serial_shared_secret: Annotated[
         str | None, typer.Option(help="Shared secret for serial link")
     ] = None,
@@ -296,7 +322,9 @@ def main(
     non_interactive: Annotated[
         bool, typer.Option(help="Enable non-interactive mode")
     ] = False,
-    debug: Annotated[bool, typer.Option("--debug", help="Enable debug logging")] = False,
+    debug: Annotated[
+        bool, typer.Option("--debug", help="Enable debug logging")
+    ] = False,
 ) -> None:
     """Main entry point for the MCU Bridge daemon."""
     overrides: dict[str, Any] = {}
@@ -371,7 +399,9 @@ def main(
         msgspec.MsgspecError,
         tenacity.RetryError,
     ) as exc:
-        logger.critical("Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError))
+        logger.critical(
+            "Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError)
+        )
         sys.exit(1)
 
 

@@ -27,16 +27,14 @@ class BridgeContext(Protocol):
     config: RuntimeConfig
     state: RuntimeState
 
-    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
-        ...
+    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool: ...
 
     async def enqueue_mqtt(
         self,
         message: QueuedPublish,
         *,
         reply_context: Message | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     async def publish(
         self,
@@ -49,8 +47,7 @@ class BridgeContext(Protocol):
         properties: tuple[tuple[str, str], ...] = (),
         content_type: str | None = None,
         reply_to: Message | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     async def acknowledge_mcu_frame(
         self,
@@ -58,22 +55,22 @@ class BridgeContext(Protocol):
         seq_id: int,
         *,
         status: Any = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
         name: str | None = None,
-    ) -> asyncio.Task[Any]:
-        ...
+    ) -> asyncio.Task[Any]: ...
 
 
 class BaseComponent:
     """Base class for services providing shared configuration and context."""
 
-    def __init__(self, config: RuntimeConfig, state: RuntimeState, ctx: BridgeContext) -> None:
+    def __init__(
+        self, config: RuntimeConfig, state: RuntimeState, ctx: BridgeContext
+    ) -> None:
         self.config = config
         self.state = state
         self.ctx = ctx
@@ -112,12 +109,16 @@ class BaseComponent:
                 properties=properties,
             )
 
-    def _decode_payload(self, packet_cls: Any, payload: bytes, command_id: Any) -> Any | None:
+    def _decode_payload(
+        self, packet_cls: Any, payload: bytes, command_id: Any
+    ) -> Any | None:
         """Safely decode an RPC payload using the provided packet class."""
         try:
             return packet_cls.decode(payload, command_id)
-        except (ValueError):
-            logger.warning("Malformed %s payload: %s", packet_cls.__name__, payload.hex())
+        except ValueError:
+            logger.warning(
+                "Malformed %s payload: %s", packet_cls.__name__, payload.hex()
+            )
             return None
 
 

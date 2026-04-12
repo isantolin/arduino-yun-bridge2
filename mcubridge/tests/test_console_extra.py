@@ -12,6 +12,7 @@ from mcubridge.state.context import create_runtime_state
 async def test_console_handle_write_edge_cases() -> None:
     import os
     import time
+
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",
@@ -40,6 +41,7 @@ async def test_console_handle_write_edge_cases() -> None:
 async def test_console_mqtt_input_send_fail() -> None:
     import os
     import time
+
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",
@@ -51,7 +53,9 @@ async def test_console_mqtt_input_send_fail() -> None:
         cc = ConsoleComponent(config, state, ctx)
 
         # Send fails, should queue remaining
-        await cc._handle_mqtt_input(b"chunk1chunk2")  # pyright: ignore[reportPrivateUsage]
+        await cc._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
+            b"chunk1chunk2"
+        )  # pyright: ignore[reportPrivateUsage]
         assert len(state.console_to_mcu_queue) > 0
     finally:
         state.cleanup()
@@ -61,6 +65,7 @@ async def test_console_mqtt_input_send_fail() -> None:
 async def test_console_flush_queue_send_fail() -> None:
     import os
     import time
+
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",

@@ -25,7 +25,9 @@ def configure_tls_context(config: RuntimeConfig) -> ssl.SSLContext | None:
         if config.mqtt_cafile:
             if not Path(config.mqtt_cafile).exists():
                 raise RuntimeError(f"MQTT TLS CA file missing: {config.mqtt_cafile}")
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=config.mqtt_cafile)
+            context = ssl.create_default_context(
+                ssl.Purpose.SERVER_AUTH, cafile=config.mqtt_cafile
+            )
         else:
             context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
 
@@ -38,7 +40,9 @@ def configure_tls_context(config: RuntimeConfig) -> ssl.SSLContext | None:
 
         if config.mqtt_certfile or config.mqtt_keyfile:
             if not (config.mqtt_certfile and config.mqtt_keyfile):
-                raise ValueError("Both mqtt_certfile and mqtt_keyfile must be provided for mTLS.")
+                raise ValueError(
+                    "Both mqtt_certfile and mqtt_keyfile must be provided for mTLS."
+                )
             context.load_cert_chain(config.mqtt_certfile, config.mqtt_keyfile)
 
         return context

@@ -32,10 +32,13 @@ NONCE_COUNTER_BYTES: Final[int] = protocol.HANDSHAKE_NONCE_COUNTER_BYTES
 NONCE_TOTAL_BYTES: Final[int] = NONCE_RANDOM_BYTES + NONCE_COUNTER_BYTES
 
 # [SIL-2] Declarative Nonce Structure
-NONCE_STRUCT: Final = cast(Construct, Struct(
-    cast(Construct, "random" / Bytes(NONCE_RANDOM_BYTES)),
-    cast(Construct, "counter" / Int64ub),
-))
+NONCE_STRUCT: Final = cast(
+    Construct,
+    Struct(
+        cast(Construct, "random" / Bytes(NONCE_RANDOM_BYTES)),
+        cast(Construct, "counter" / Int64ub),
+    ),
+)
 
 
 def hkdf_sha256(ikm: bytes, salt: bytes, info: bytes, length: int) -> bytes:
@@ -86,10 +89,7 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     new_counter = counter + 1
     random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
     # [SIL-2] Declarative building
-    nonce = NONCE_STRUCT.build({
-        "random": random_part,
-        "counter": new_counter
-    })
+    nonce = NONCE_STRUCT.build({"random": random_part, "counter": new_counter})
     return nonce, new_counter
 
 

@@ -159,7 +159,9 @@ class _Pin:
     async def handle_analog_read_resp(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_unexpected_mcu_request(self, _command: Any, _payload: bytes) -> bool:
+    async def handle_unexpected_mcu_request(
+        self, _command: Any, _payload: bytes
+    ) -> bool:
         return True
 
     async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
@@ -372,6 +374,8 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             if mcu_registry.get(status.value) is None:
                 missing_status.append(status.name)
 
-        assert not missing_status, f"Missing status handler registrations: {missing_status}"
+        assert (
+            not missing_status
+        ), f"Missing status handler registrations: {missing_status}"
     finally:
         state.cleanup()

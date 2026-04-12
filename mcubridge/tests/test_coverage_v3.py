@@ -172,6 +172,7 @@ async def test_daemon_run_exception_group_coverage():
     config = create_real_config()
     d = daemon.BridgeDaemon(config)
     try:
+
         class FakeTaskGroup:
             async def __aenter__(self):
                 return self
@@ -297,7 +298,9 @@ async def test_serial_transport_run_fatal():
 
     from mcubridge.services.handshake import SerialHandshakeFatal
 
-    with patch.object(transport, "_retryable_run", side_effect=SerialHandshakeFatal("Fatal")):
+    with patch.object(
+        transport, "_retryable_run", side_effect=SerialHandshakeFatal("Fatal")
+    ):
         with pytest.raises(SerialHandshakeFatal):
             await transport.run()
 
@@ -316,7 +319,7 @@ async def test_serial_transport_on_disconnected_hook_error():
         patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
         patch(
             "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection",
-            side_effect=OSError("Connect fail")
+            side_effect=OSError("Connect fail"),
         ),
     ):
         with pytest.raises(OSError):

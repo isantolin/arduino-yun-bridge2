@@ -71,9 +71,13 @@ def main(
     port: Annotated[int | None, typer.Option(help="MQTT Broker Port")] = None,
     user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
     password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
-    pin: Annotated[str, typer.Option(help="Pin to read (e.g., 'd13' or 'a0').")] = "d13",
+    pin: Annotated[
+        str, typer.Option(help="Pin to read (e.g., 'd13' or 'a0').")
+    ] = "d13",
     interval: Annotated[float, typer.Option(help="Read interval in seconds.")] = 2.0,
-    tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = False,
+    tls_insecure: Annotated[
+        bool, typer.Option(help="Disable TLS certificate verification")
+    ] = False,
 ) -> None:
     try:
         asyncio.run(run_test(host, port, user, password, pin, interval, tls_insecure))

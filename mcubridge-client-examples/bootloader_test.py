@@ -5,7 +5,9 @@ import time
 
 
 def trigger_bootloader():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    )
     log = logging.getLogger("bootloader_sim")
 
     topic = "br/system/bootloader"
@@ -20,6 +22,7 @@ def trigger_bootloader():
 
     log.info("Message published. Watching for MCU output (5s)...")
     time.sleep(5)
+
 
 if __name__ == "__main__":
     trigger_bootloader()

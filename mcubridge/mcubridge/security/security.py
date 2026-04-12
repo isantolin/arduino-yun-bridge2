@@ -18,6 +18,7 @@ import hmac
 import secrets
 from typing import Final, cast
 from construct import Bytes, Int64ub, Struct, Construct
+from construct.core import ConstructError  # type: ignore[reportMissingTypeStubs]
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.constant_time import bytes_eq
@@ -98,7 +99,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
     try:
         return NONCE_STRUCT.parse(nonce).counter
-    except construct.ConstructError as e:
+    except ConstructError as e:  # type: ignore[reportUnknownVariableType]
         raise ValueError(f"Malformed nonce format: {e}") from e
 
 

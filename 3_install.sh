@@ -293,7 +293,12 @@ done
 if [ -n "$found_conflicts" ]; then
     echo "[WARN] Packages locking serial port found: $found_conflicts"
     printf "Remove these packages? [y/N]: "
-    read remove_answer || remove_answer=""
+    if [ "${FORCE:-0}" = "1" ]; then
+        remove_answer="y"
+        echo "y (forced)"
+    else
+        read remove_answer || remove_answer=""
+    fi
     case "$remove_answer" in
         y|Y)
             echo "[INFO] Removing conflicting packages..."

@@ -165,6 +165,7 @@ def phase_expand(child: Any) -> None:
     # Pre-set UCI to skip interactive confirmation and enable internet
     send_and_wait(
         child,
+        "touch /etc/config/mcubridge; "
         "uci set mcubridge.general=settings 2>/dev/null; "
         "uci set mcubridge.general.extroot_force=1 2>/dev/null; "
         "uci commit mcubridge 2>/dev/null || true",
@@ -172,10 +173,12 @@ def phase_expand(child: Any) -> None:
     )
 
     # Bring up network for apk update via udhcpc
+    # Detect first non-loopback interface
     send_and_wait(
         child,
-        "ip link set eth0 up; udhcpc -i eth0 -q 2>/dev/null || true",
-        timeout=15,
+        "NET_IF=$(ip -o link show | awk -F': ' '$2 != \"lo\" {print $2; exit}'); "
+        "if [ -n \"$NET_IF\" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true",
+        timeout=20,
     )
 
     # Wait for network to establish
@@ -184,7 +187,8 @@ def phase_expand(child: Any) -> None:
 
     # Run with 512MB swap and target /dev/vdc
     # The script ends with sleep 5 + reboot
-    child.sendline("/root/2_expand.sh 512 /dev/sdc")
+    # Use FORCE=1 to ensure non-interactive execution
+    child.sendline("FORCE=1 /root/2_expand.sh 512 /dev/sdc")
 
     log_info("[WAIT] Waiting for reboot after 2_expand.sh...")
     wait_for_boot(child, timeout=180)
@@ -212,8 +216,9 @@ def phase_install(child: Any) -> None:
     # Bring up network for apk update via udhcpc
     send_and_wait(
         child,
-        "ip link set eth0 up; udhcpc -i eth0 -q 2>/dev/null || true",
-        timeout=15,
+        "NET_IF=$(ip -o link show | awk -F': ' '$2 != \"lo\" {print $2; exit}'); "
+        "if [ -n \"$NET_IF\" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true",
+        timeout=20,
     )
 
     # Wait for network to establish
@@ -221,7 +226,7 @@ def phase_install(child: Any) -> None:
     wait_for_prompt(child, timeout=15)
 
     # Run non-interactively: pipe "n" for the PPP removal prompt
-    child.sendline("cd /root/deploy && echo 'n' | sh ./3_install.sh")
+    child.sendline("cd /root/deploy && echo 'n' | FORCE=1 sh ./3_install.sh")
 
     # Wait for the final success message (long timeout for package installs)
     child.expect("Installation Complete", timeout=600)

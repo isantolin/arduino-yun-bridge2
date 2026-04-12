@@ -128,10 +128,11 @@ fi
 if [ "$SKIP_EXTROOT" -eq 0 ]; then
     echo "2.1 Extroot requires configuration. Proceeding to format and configure..."
     
-    # Confirmation skip check via UCI (optional)
-    FORCE=$(uci -q get mcubridge.general.extroot_force)
-    if [ "$FORCE" != "1" ]; then
-        read -p "CONFIRM: $DEVICE will be formatted and configured as overlay. Continue? [y/N]: " CONFIRM
+    # Confirmation skip check via UCI or Environment Variable
+    UCI_FORCE=$(uci -q get mcubridge.general.extroot_force)
+    if [ "$UCI_FORCE" != "1" ] && [ "$FORCE" != "1" ]; then
+        echo -n "CONFIRM: $DEVICE will be formatted and configured as overlay. Continue? [y/N]: "
+        read -r CONFIRM
         if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
             echo "   Aborted by user."
             exit 0

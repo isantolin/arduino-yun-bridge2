@@ -184,9 +184,10 @@ def test_link_sync_resp_respects_rate_limit(
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent _serial_flow from blocking
             ack_payload = structures.AckPacket(command_id=command_id).encode()
-            await service._serial_flow.on_frame_received(  # type: ignore[reportPrivateUsage]
-                Status.ACK.value, seq_id or 0, ack_payload,
-            )
+            if service._serial_flow:
+                service._serial_flow.on_frame_received(  # type: ignore[reportPrivateUsage]
+                    Status.ACK.value, seq_id or 0, ack_payload,
+                )
             if command_id == Command.CMD_GET_CAPABILITIES.value:
                 await service.handshake_manager.handle_capabilities_resp(0, b"\x02\x00\x14\x06\x00\x00\x00\x00")
             return True

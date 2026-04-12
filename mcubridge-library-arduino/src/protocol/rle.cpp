@@ -1,45 +1,91 @@
 #include "rle.h"
 #include <etl/algorithm.h>
 #include <etl/iterator.h>
+#include <etl/fsm.h>
+#include <etl/message.h>
 
 namespace rle {
+namespace {
 
-size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
-  if (src.empty() || dst.empty()) return 0;
+enum StateId { LITERAL = 0, ESC_MARKER, ESC_VAL };
 
-  auto dst_it = dst.begin();
+struct ByteMsg : public etl::message<1> {
+  uint8_t b;
+  explicit ByteMsg(uint8_t byte) : b(byte) {}
+};
 
-  enum class State { LITERAL, ESC_MARKER, ESC_VAL };
-  State state = State::LITERAL;
+class RleFsm;
+
+struct LiteralState : public etl::fsm_state<RleFsm, LiteralState, StateId::LITERAL, ByteMsg> {
+  etl::fsm_state_id_t on_event(const ByteMsg& msg);
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return get_state_id(); }
+};
+
+struct EscMarkerState : public etl::fsm_state<RleFsm, EscMarkerState, StateId::ESC_MARKER, ByteMsg> {
+  etl::fsm_state_id_t on_event(const ByteMsg& msg);
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return get_state_id(); }
+};
+
+struct EscValState : public etl::fsm_state<RleFsm, EscValState, StateId::ESC_VAL, ByteMsg> {
+  etl::fsm_state_id_t on_event(const ByteMsg& msg);
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return get_state_id(); }
+};
+
+class RleFsm : public etl::fsm {
+public:
+  etl::span<uint8_t>::iterator it;
+  etl::span<uint8_t>::iterator end;
   uint8_t esc_count = 0;
   bool error = false;
 
-  (void)etl::find_if(src.begin(), src.end(), [&](uint8_t b) {
-    if (state == State::LITERAL) {
-      if (b == ESCAPE_BYTE) {
-        state = State::ESC_MARKER;
-      } else {
-        if (dst_it == dst.end()) { error = true; return true; }
-        *dst_it++ = b;
-      }
-    } else if (state == State::ESC_MARKER) {
-      esc_count = b;
-      state = State::ESC_VAL;
-    } else if (state == State::ESC_VAL) {
-      size_t run_len = (esc_count == SINGLE_ESCAPE_MARKER) ? 1 : static_cast<size_t>(esc_count) + rpc::RPC_RLE_OFFSET;
-      if (static_cast<size_t>(etl::distance(dst_it, dst.end())) < run_len) {
-        error = true;
-        return true;
-      }
-      etl::fill_n(dst_it, run_len, b);
-      dst_it += run_len;
-      state = State::LITERAL;
+  explicit RleFsm(etl::span<uint8_t> dst) : etl::fsm(StateId::LITERAL), it(dst.begin()), end(dst.end()) {
+    static LiteralState s1;
+    static EscMarkerState s2;
+    static EscValState s3;
+    static etl::ifsm_state* state_list[] = {&s1, &s2, &s3};
+    set_states(state_list, 3);
+    start();
+  }
+};
+
+etl::fsm_state_id_t LiteralState::on_event(const ByteMsg& msg) {
+  auto& m = get_fsm_context();
+  if (msg.b == ESCAPE_BYTE) return StateId::ESC_MARKER;
+  if (m.it == m.end) { m.error = true; return StateId::LITERAL; }
+  *m.it++ = msg.b;
+  return StateId::LITERAL;
+}
+
+etl::fsm_state_id_t EscMarkerState::on_event(const ByteMsg& msg) {
+  auto& m = get_fsm_context();
+  m.esc_count = msg.b;
+  return StateId::ESC_VAL;
+}
+
+etl::fsm_state_id_t EscValState::on_event(const ByteMsg& msg) {
+  auto& m = get_fsm_context();
+  size_t run_len = (m.esc_count == SINGLE_ESCAPE_MARKER) ? 1 : static_cast<size_t>(m.esc_count) + rpc::RPC_RLE_OFFSET;
+  if (static_cast<size_t>(etl::distance(m.it, m.end)) < run_len) { m.error = true; return StateId::LITERAL; }
+  etl::fill_n(m.it, run_len, msg.b);
+  m.it += run_len;
+  return StateId::LITERAL;
+}
+
+} // namespace
+
+size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
+  if (src.empty() || dst.empty()) return 0;
+  RleFsm fsm(dst);
+  
+  etl::for_each(src.begin(), src.end(), [&fsm](uint8_t b) {
+    if (!fsm.error) {
+      ByteMsg msg(b);
+      fsm.receive(msg);
     }
-    return false;
   });
 
-  if (error || state != State::LITERAL) return 0;
-  return etl::distance(dst.begin(), dst_it);
+  if (fsm.error || fsm.get_state_id() != StateId::LITERAL) return 0;
+  return static_cast<size_t>(etl::distance(dst.begin(), fsm.it));
 }
 
 } // namespace rle

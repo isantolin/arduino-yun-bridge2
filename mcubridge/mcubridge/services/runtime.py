@@ -383,7 +383,7 @@ class BridgeService:
 
         try:
             await self._serial_sender(status.value, payload, seq_id)
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             logger.warning(
                 "Failed to enqueue status 0x%02X for command 0x%02X: %s",
                 status.value,

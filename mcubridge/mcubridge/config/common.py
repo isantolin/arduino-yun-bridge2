@@ -49,8 +49,7 @@ def get_uci_config() -> dict[str, Any]:
         # [SIL-2] Log only specific configuration/system errors to syslog.
         logger.warning("UCI system error, falling back to safe defaults: %s", err)
     except Exception as err:
-        # [SIL-2] Catch-all for other uci-related errors (like UciError if not mapped to OSError)
-        if "UciError" in str(type(err)):
+        if "UciError" in type(err).__name__:
             logger.warning("UCI internal error, falling back to safe defaults: %s", err)
         else:
             raise

@@ -117,8 +117,8 @@ class PersistentQueue(Generic[T]):
             if hasattr(self, "_cache") and self._cache is not None:
                 try:
                     cast(Any, self._cache).close()  # type: ignore[reportUnknownMemberType]
-                except Exception:
-                    pass
+                except (OSError, RuntimeError, AttributeError, ValueError) as exc:
+                    logger.warning("Failed to close memory queue cache fallback: %s", exc)
                 self._cache = None
 
     def __del__(self) -> None:

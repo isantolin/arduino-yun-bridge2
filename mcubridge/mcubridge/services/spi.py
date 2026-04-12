@@ -58,7 +58,7 @@ class SpiComponent(BaseComponent):
                     return await self.ctx.send_frame(Command.CMD_SPI_TRANSFER.value, packet.encode())
                 case _:
                     return False
-        except Exception as e:
+        except (ValueError, TypeError, msgspec.ValidationError) as e:
             logger.error("Error handling SPI MQTT action %s: %s", action, e)
             return False
 

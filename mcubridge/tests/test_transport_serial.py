@@ -199,16 +199,15 @@ async def test_process_packet_fallback_triggers_negotiation(
         raw = b"\xff" + b"x" * 20
         monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
 
-        # First error
         await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
-        assert transport._consecutive_crc_errors  # type: ignore[reportPrivateUsage] == 1  # type: ignore[reportPrivateUsage]
+        assert transport._consecutive_crc_errors == 1  # type: ignore[reportPrivateUsage]
+
         transport._negotiate_baudrate.assert_not_called()  # type: ignore[reportPrivateUsage]
 
         # Second error (threshold reached)
         await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
-        assert (
-            transport._consecutive_crc_errors  # type: ignore[reportPrivateUsage] == 0
-        )  # Reset after trigger  # type: ignore[reportPrivateUsage]
+        assert transport._consecutive_crc_errors == 0  # type: ignore[reportPrivateUsage]
+
         transport._negotiate_baudrate.assert_awaited_once_with(57600)  # type: ignore[reportPrivateUsage]
     finally:
         state.cleanup()

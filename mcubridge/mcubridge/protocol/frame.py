@@ -33,11 +33,32 @@ from construct import (
     Struct,
     this,
 )
-from construct.core import ConstructError  # type: ignore[import-untyped]
+from construct.core import ConstructError
 
 from . import protocol
 
 T = TypeVar("T")
+
+
+def _decode_command_id(obj: Any, ctx: Any) -> int:
+    """SIL-2: Typed decoder for command ID enum to int."""
+    return int(obj)
+
+
+def _encode_command_id(obj: Any, ctx: Any) -> Any:
+    """SIL-2: Typed pass-through for command ID encoder."""
+    return obj
+
+
+def _check_version(ctx: Any) -> bool:
+    """SIL-2: Strictly validate protocol version in frame header."""
+    return int(getattr(ctx, "version", 0)) == protocol.PROTOCOL_VERSION
+
+
+def _calculate_crc32(data: Any) -> int:
+    """SIL-2: Ensure 32-bit unsigned CRC calculation."""
+    return crc32(cast(bytes, data)) & 0xFFFFFFFF
+
 
 # [SIL-2] Declarative Command ID Codec: Handles Bit 15 (Compression Flag)
 COMMAND_ID_CODEC: Construct = BitStruct(
@@ -54,17 +75,11 @@ RPC_FRAME_HEADER: Construct = Struct(
     "command_id"
     / ExprAdapter(
         Enum(Int16ub, protocol.Command, protocol.Status),
-        decoder=lambda obj, ctx: int(obj),  # type: ignore[reportUnknownLambdaType]
-        encoder=lambda obj, ctx: obj,  # type: ignore[reportUnknownLambdaType]
+        decoder=_decode_command_id,
+        encoder=_encode_command_id,
     ),
     "sequence_id" / Int16ub,
-    "version_check"
-    / Check(
-        lambda ctx: getattr(  # type: ignore[reportUnknownLambdaType]
-            cast(Any, ctx), "version", 0
-        )
-        == protocol.PROTOCOL_VERSION,
-    ),
+    "version_check" / Check(_check_version),
 )
 
 
@@ -115,12 +130,7 @@ RPC_PAYLOAD_CONTAINER: Construct = FrameAdapter(
 # Uses RawCopy to capture the bytes for CRC calculation without manual slicing.
 RPC_FRAME: Construct = Struct(
     "header_payload" / RawCopy(RPC_PAYLOAD_CONTAINER),
-    "crc"
-    / Checksum(
-        Int32ub,
-        lambda data: crc32(cast(bytes, data)) & 0xFFFFFFFF,  # type: ignore[reportUnknownLambdaType]
-        this.header_payload.data,
-    ),
+    "crc" / Checksum(Int32ub, _calculate_crc32, this.header_payload.data),
 ).compile()
 
 

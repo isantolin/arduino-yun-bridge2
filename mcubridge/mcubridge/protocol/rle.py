@@ -27,9 +27,29 @@ from construct import (
     Struct,
     Terminated,
 )
-from construct.core import ConstructError  # type: ignore[import-untyped]
+from construct.core import ConstructError
 
 from . import protocol
+
+
+def _rle_encode_nop(obj: Any, ctx: Any) -> None:
+    """SIL-2: NOP encoder for RLE escape (decoder only usage in ExprAdapter)."""
+    return None
+
+
+def _literal_decode(obj: Any, ctx: Any) -> bytes:
+    """SIL-2: Decode a literal byte into a single-byte bytes object."""
+    return bytes([obj])
+
+
+def _literal_encode(obj: Any, ctx: Any) -> int:
+    """SIL-2: Encode a single-byte bytes object into an integer."""
+    return int(obj[0])
+
+
+def _is_not_escape(ctx: Any) -> bool:
+    """SIL-2: Check if current byte is not the protocol escape byte."""
+    return int(getattr(ctx, "value", 0)) != protocol.RLE_ESCAPE_BYTE
 
 
 def _rle_decode(obj: Any, ctx: Any) -> bytes:
@@ -56,20 +76,17 @@ RLE_DECODER: Construct = Struct(
             ExprAdapter(
                 RLE_ESCAPE,
                 decoder=_rle_decode,
-                encoder=lambda obj, ctx: None,  # type: ignore[reportUnknownLambdaType]
+                encoder=_rle_encode_nop,
             ),
             # Literal byte (MUST NOT be the escape byte)
             ExprAdapter(
                 FocusedSeq(
                     "value",
                     "value" / Int8ub,
-                    "_"
-                    / Check(
-                        lambda ctx: ctx.value != protocol.RLE_ESCAPE_BYTE,  # type: ignore[reportUnknownLambdaType]
-                    ),
+                    "_" / Check(_is_not_escape),
                 ),
-                decoder=lambda obj, ctx: bytes([obj]),  # type: ignore[reportUnknownLambdaType]
-                encoder=lambda obj, ctx: obj[0],  # type: ignore[reportUnknownLambdaType]
+                decoder=_literal_decode,
+                encoder=_literal_encode,
             ),
         )
     ),

@@ -95,10 +95,11 @@ class BridgeQueue(Generic[T]):
             if isinstance(old, (bytes, bytearray)):
                 dropped_bytes += len(old)
 
-        if self._cache is not None:
-            tail: int = cast(int, self._cache["tail"])
-            self._cache[tail] = item
-            self._cache["tail"] = tail + 1
+        cache = self._cache
+        if cache is not None:
+            tail: int = cast(int, cast(Any, cache)["tail"])
+            cast(Any, cache)[tail] = item
+            cast(Any, cache)["tail"] = tail + 1
         else:
             self._items.append(item)
 
@@ -116,10 +117,11 @@ class BridgeQueue(Generic[T]):
 
         data_len = len(item) if isinstance(item, (bytes, bytearray)) else 0
 
-        if self._cache is not None:
-            head: int = cast(int, self._cache["head"]) - 1
-            self._cache[head] = item
-            self._cache["head"] = head
+        cache = self._cache
+        if cache is not None:
+            head: int = cast(int, cast(Any, cache)["head"]) - 1
+            cast(Any, cache)[head] = item
+            cast(Any, cache)["head"] = head
         else:
             self._items.appendleft(item)
 
@@ -131,28 +133,30 @@ class BridgeQueue(Generic[T]):
             return None
 
         val: T | None = None
-        if self._cache is not None:
-            head: int = cast(int, self._cache["head"])
+        cache = self._cache
+        if cache is not None:
+            head: int = cast(int, cast(Any, cache)["head"])
             # [SIL-2] Use get and delete to emulate atomic pop from cache
-            val = cast(Any, self._cache.get(head))  # type: ignore[reportUnknownMemberType]
+            val = cast(Any, cache).get(head)
             if val is not None:
-                self._cache.delete(head)  # type: ignore[reportUnknownMemberType]
-            self._cache["head"] = head + 1
+                cast(Any, cache).delete(head)
+            cast(Any, cache)["head"] = head + 1
         else:
             val = self._items.popleft()
 
         if val is not None and isinstance(val, (bytes, bytearray)):
             self._current_bytes = max(0, self._current_bytes - len(val))
 
-        return val
+        return cast(Any, val)
 
     def clear(self) -> None:
         if self._closed:
             return
-        if self._cache is not None:
-            self._cache.clear()  # type: ignore[reportUnknownMemberType]
-            self._cache["head"] = 0
-            self._cache["tail"] = 0
+        cache = self._cache
+        if cache is not None:
+            cast(Any, cache).clear()
+            cast(Any, cache)["head"] = 0
+            cast(Any, cache)["tail"] = 0
         else:
             self._items.clear()
         self._current_bytes = 0
@@ -160,9 +164,10 @@ class BridgeQueue(Generic[T]):
     def close(self) -> None:
         if not self._closed:
             self._closed = True
-            if self._cache is not None:
+            cache = self._cache
+            if cache is not None:
                 try:
-                    self._cache.close()  # type: ignore[reportUnknownMemberType]
+                    cast(Any, cache).close()
                 except (OSError, RuntimeError, AttributeError) as exc:
                     logger.warning("Failed to close queue cache: %s", exc)
                 self._cache = None
@@ -184,8 +189,9 @@ class BridgeQueue(Generic[T]):
         return self._last_err_msg
 
     def __len__(self) -> int:
-        if self._cache is not None:
-            return cast(int, self._cache["tail"]) - cast(int, self._cache["head"])
+        cache = self._cache
+        if cache is not None:
+            return cast(int, cast(Any, cache)["tail"]) - cast(int, cast(Any, cache)["head"])
         return len(self._items)
 
 

@@ -18,7 +18,7 @@ import hmac
 import secrets
 from typing import Final, cast
 from construct import Bytes, Int64ub, Struct, Construct
-from construct.core import ConstructError  # type: ignore[reportMissingTypeStubs]
+from construct.core import ConstructError
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.constant_time import bytes_eq

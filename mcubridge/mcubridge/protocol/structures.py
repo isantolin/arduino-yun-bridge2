@@ -132,12 +132,11 @@ class RLEPayload(msgspec.Struct, frozen=True):
 
         if not self.data:
             return b""
-        from construct.core import ConstructError  # type: ignore[reportMissingTypeStubs]
-
+        from construct.core import ConstructError
         try:
             parsed: Any = RLE_DECODER.parse(self.data)
             return b"".join(parsed.chunks)
-        except ConstructError as e:  # type: ignore[reportUnknownVariableType]
+        except ConstructError as e:
             # Fallback or raise for protocol integrity
             raise ValueError(f"RLE decompression failed: {e}") from e
 

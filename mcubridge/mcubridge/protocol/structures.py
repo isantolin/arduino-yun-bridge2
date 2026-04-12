@@ -78,10 +78,8 @@ def _int_to_capabilities(val: int) -> dict[str, bool]:
         return {}
 
 
-from .frame import Frame as Frame  # noqa: E402, F401
-
-
 class TopicRoute(msgspec.Struct, frozen=True):
+
     """Parsed representation of an MQTT topic targeting the daemon."""
 
     raw: str
@@ -1008,7 +1006,7 @@ class PendingCommand(msgspec.Struct):
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_resp_ids: set[int] = msgspec.field(default_factory=set)
+    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: set[int]())  # noqa: PLW0108
     completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     attempts: int = 0
     success: bool | None = None

@@ -1107,9 +1107,9 @@ class RuntimeState(msgspec.Struct):
 def create_runtime_state(
     config: RuntimeConfig | dict[str, Any], initialize_spool: bool = False
 ) -> RuntimeState:
-    from ..config.settings import RuntimeConfig as RC
+    from ..config.settings import RuntimeConfig
 
-    cfg = msgspec.convert(config, RC) if isinstance(config, dict) else config
+    cfg = msgspec.convert(config, RuntimeConfig) if isinstance(config, dict) else config
     state = RuntimeState(
         mqtt_publish_queue=asyncio.Queue(cfg.mqtt_queue_limit),
         serial_tx_allowed=asyncio.Event(),

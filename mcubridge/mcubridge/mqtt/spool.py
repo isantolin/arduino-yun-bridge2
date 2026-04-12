@@ -10,7 +10,7 @@ from typing import Any
 import msgspec
 
 from ..protocol.structures import QueuedPublish
-from ..state.queues import BridgeQueue as PersistentQueue
+from ..state.queues import BridgeQueue
 
 logger = structlog.get_logger("mcubridge.mqtt.spool")
 
@@ -43,9 +43,9 @@ class MQTTPublishSpool:
         self.directory = Path(directory)
         self._on_fallback = on_fallback
         self._limit = max(1, limit)
-        self._records = PersistentQueue[dict[str, Any]](
-            directory=self.directory,
-            max_items=self._limit,
+        self._records = BridgeQueue[dict[str, Any]](
+            directory=directory,
+            max_items=limit,
         )
         self._dropped_due_to_limit = 0
         self._trim_events = 0

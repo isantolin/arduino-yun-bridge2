@@ -79,7 +79,7 @@ class SerialTransport:
         self.loop: asyncio.AbstractEventLoop | None = None
 
         # Register ourselves as the sender for the service
-        self.service.register_serial_sender(self._serial_sender)
+        self.service.register_serial_sender(self.serial_sender)
 
         self._stop_event = asyncio.Event()
         self._negotiating = False
@@ -203,7 +203,7 @@ class SerialTransport:
                 # 1. Negotiate baudrate if needed
                 self.begin_negotiate()
                 if self.config.serial_baud != connect_baud:
-                    if not await self._negotiate_baudrate(self.config.serial_baud):
+                    if not await self.negotiate_baudrate(self.config.serial_baud):
                         raise ConnectionError("Baudrate negotiation failed")
 
                 # 2. Complete handshake via service
@@ -309,16 +309,16 @@ class SerialTransport:
                 logger.debug("Discarding malformed frame during read: %s", e)
 
         if self.loop:
-            self.loop.create_task(self._async_process_packet_with_limit(encoded_packet))
+            self.loop.create_task(self.async_process_packet_with_limit(encoded_packet))
 
     async def _async_process_packet_with_limit(
         self, encoded_packet: bytes | memoryview
     ) -> None:
         """Async packet processing logic with backpressure limit."""
         async with self._packet_semaphore:
-            await self._async_process_packet(encoded_packet)
+            await self.async_process_packet(encoded_packet)
 
-    async def _async_process_packet(self, encoded_packet: bytes | memoryview) -> None:
+    async def async_process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Async packet processing logic."""
         packet_bytes = (
             encoded_packet
@@ -359,7 +359,7 @@ class SerialTransport:
             )
             self._consecutive_crc_errors = 0
             if self.config.serial_baud != self.config.serial_safe_baud:
-                await self._negotiate_baudrate(self.config.serial_safe_baud)
+                await self.negotiate_baudrate(self.config.serial_safe_baud)
             else:
                 logger.error("Already at safe baudrate; cannot fallback further.")
 
@@ -411,7 +411,7 @@ class SerialTransport:
             logger.warning("Send failed: %s", e)
             return False
 
-    async def _negotiate_baudrate(self, target_baud: int) -> bool:
+    async def negotiate_baudrate(self, target_baud: int) -> bool:
         """Execute baudrate switch protocol."""
         logger.info("Negotiating baudrate switch to %d...", target_baud)
 
@@ -433,7 +433,7 @@ class SerialTransport:
         async def _attempt() -> bool:
             assert self.loop is not None
             self._negotiation_future = self.loop.create_future()
-            if not await self._serial_sender(
+            if not await self.serial_sender(
                 protocol.Command.CMD_SET_BAUDRATE.value, payload
             ):
                 raise asyncio.TimeoutError("Write failed")

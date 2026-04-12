@@ -44,7 +44,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        flow = service._serial_flow  # type: ignore[reportPrivateUsage]
+        flow = service.serial_flow  # type: ignore[reportPrivateUsage]
 
         async def fake_sender(
             command_id: int, payload: bytes, seq_id: int | None = None
@@ -124,7 +124,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         runtime_state.enqueue_console_chunk(b"hello")
         runtime_state.mcu_is_paused = False
-        runtime_state.mcu_version = (1, 2, 0)
+        runtime_state.mcu_version = "1.2.0"
         runtime_state.mark_transport_connected()
 
         await service.on_serial_connected()
@@ -206,8 +206,8 @@ def test_link_sync_resp_respects_rate_limit(
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent _serial_flow from blocking
             ack_payload = structures.AckPacket(command_id=command_id).encode()
-            if service._serial_flow:  # type: ignore[reportPrivateUsage]
-                service._serial_flow.on_frame_received(  # type: ignore[reportPrivateUsage]
+            if service.serial_flow:  # type: ignore[reportPrivateUsage]
+                service.serial_flow.on_frame_received(  # type: ignore[reportPrivateUsage]
                     Status.ACK.value,
                     seq_id or 0,
                     ack_payload,
@@ -974,7 +974,7 @@ async def test_process_run_async_accepts_complex_arguments(
 
     # Override the handler in the MCU registry (bound method was captured at init)
     mock_run = AsyncMock()
-    service._dispatcher.mcu_registry.register(  # type: ignore[reportPrivateUsage]
+    service.dispatcher.mcu_registry.register(  # type: ignore[reportPrivateUsage]
         Command.CMD_PROCESS_RUN_ASYNC.value,
         mock_run,
     )

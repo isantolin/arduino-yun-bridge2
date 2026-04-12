@@ -47,9 +47,9 @@ async def test_negotiate_baudrate_success() -> None:
                     neg.set_result(True)
                 return True
 
-            transport._serial_sender = mock_sender  # type: ignore[reportPrivateUsage]
+            transport.serial_sender = mock_sender  # type: ignore[reportPrivateUsage]
 
-            ok = await transport._negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
+            ok = await transport.negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
             assert ok is True
         finally:
             state.cleanup()
@@ -73,11 +73,11 @@ async def test_negotiate_baudrate_timeout() -> None:
             transport.loop = asyncio.get_running_loop()
 
             # Mock sender to succeed but don't resolve future
-            transport._serial_sender = AsyncMock(return_value=True)  # type: ignore[reportPrivateUsage]
+            transport.serial_sender = AsyncMock(return_value=True)  # type: ignore[reportPrivateUsage]
 
             # Mock sleep to avoid waiting
             with patch("asyncio.sleep", AsyncMock()):
-                ok = await transport._negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
+                ok = await transport.negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
                 assert ok is False
         finally:
             state.cleanup()
@@ -250,7 +250,7 @@ async def test_async_process_packet_os_error(
         encoded = cobs_encode(frame)
 
         caplog.set_level("ERROR")
-        await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
+        await transport.async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
         assert any("error" in r.getMessage().lower() for r in caplog.records)
         assert any("dispatch" in r.getMessage().lower() for r in caplog.records)

@@ -16,8 +16,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Optional
+from typing import Annotated, Any, Optional
 
+import msgspec
 import typer
 from jinja2 import Environment, FileSystemLoader
 
@@ -40,24 +41,79 @@ if MISSING_DEPS:
     sys.exit(1)
 # ═════════════════════════════════════════════════════════════════════════════
 
-# Load ProtocolSpec directly from spec_model.py via importlib.util
-if TYPE_CHECKING:
-    from mcubridge.protocol.spec_model import ProtocolSpec
-else:
-    _SPEC_MODEL_PATH = (
-        Path(__file__).resolve().parent.parent.parent
-        / "mcubridge"
-        / "mcubridge"
-        / "protocol"
-        / "spec_model.py"  # noqa: W503
-    )
-    _loader_spec = importlib.util.spec_from_file_location(
-        "spec_model", str(_SPEC_MODEL_PATH)
-    )
-    assert _loader_spec is not None and _loader_spec.loader is not None
-    _spec_mod = importlib.util.module_from_spec(_loader_spec)
-    _loader_spec.loader.exec_module(_spec_mod)
-    ProtocolSpec = _spec_mod.ProtocolSpec
+
+
+class EnumField(msgspec.Struct):
+    """A field within an enumeration."""
+
+    name: str
+    value: int
+
+
+class EnumDef(msgspec.Struct):
+    """A protocol enumeration (Status, Command, etc.)."""
+
+    name: str
+    fields: list[EnumField] = msgspec.field(default_factory=list)
+
+
+class MessageField(msgspec.Struct):
+    """A field within a structured message payload."""
+
+    name: str
+    type: str
+    size: int | None = None
+
+
+class MessageDef(msgspec.Struct):
+    """A structured message payload definition."""
+
+    name: str
+    fields: list[MessageField] = msgspec.field(default_factory=list)
+
+
+class CommandDef(msgspec.Struct):
+    """A protocol command definition."""
+
+    name: str
+    value: int
+    directions: list[str] = msgspec.field(default_factory=list)
+    payload: str | None = None
+    requires_ack: bool = False
+    expects_direct_response: bool = False
+
+
+class ProtocolSpec(msgspec.Struct):
+    """Root model for the protocol specification TOML."""
+
+    constants: dict[str, int | str] = msgspec.field(default_factory=dict)
+    hardware: dict[str, int | str] = msgspec.field(default_factory=dict)
+    handshake: dict[str, int | str] = msgspec.field(default_factory=dict)
+    capabilities: dict[str, int | str] = msgspec.field(default_factory=dict)
+    architectures: dict[str, int | str] = msgspec.field(default_factory=dict)
+    architecture_display_names: dict[str, str] = msgspec.field(default_factory=dict)
+    compression: dict[str, int | str] = msgspec.field(default_factory=dict)
+    data_formats: dict[str, int | str] = msgspec.field(default_factory=dict)
+    mqtt_suffixes: dict[str, str] = msgspec.field(default_factory=dict)
+    mqtt_defaults: dict[str, int | str] = msgspec.field(default_factory=dict)
+    status_reasons: dict[str, str] = msgspec.field(default_factory=dict)
+    topics: list[dict[str, Any]] = msgspec.field(default_factory=list)
+    statuses: list[dict[str, Any]] = msgspec.field(default_factory=list)
+    actions: list[dict[str, Any]] = msgspec.field(default_factory=list)
+    mqtt_subscriptions: list[dict[str, Any]] = msgspec.field(default_factory=list)
+    enums: list[EnumDef] = msgspec.field(default_factory=list)
+    messages: list[MessageDef] = msgspec.field(default_factory=list)
+    commands: list[CommandDef] = msgspec.field(default_factory=list)
+
+    @staticmethod
+    def load(path: Path | str) -> ProtocolSpec:
+        """Load protocol specification from a TOML file (SIL-2)."""
+        import tomllib
+
+        with Path(path).open("rb") as f:
+            data = tomllib.load(f)
+        return msgspec.convert(data, ProtocolSpec)
+
 
 app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
 

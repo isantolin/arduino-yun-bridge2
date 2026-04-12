@@ -89,7 +89,7 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
 @pytest.mark.asyncio
 async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
     """Cover line 165-166 in dispatcher.py (Pin component not registered)."""
-    dispatcher._container = None  # type: ignore[reportPrivateUsage]
+    dispatcher.container = None  # type: ignore[reportPrivateUsage]
     # CMD_DIGITAL_READ = 0x23
     # Find the handler registered for CMD_DIGITAL_READ
     handler = None
@@ -166,7 +166,7 @@ async def test_dispatcher_handle_system_topic_no_component(
     dispatcher: BridgeDispatcher,
 ):
     """Cover line 347 in dispatcher.py."""
-    dispatcher._container = None  # type: ignore[reportPrivateUsage]
+    dispatcher.container = None  # type: ignore[reportPrivateUsage]
     route = TopicRoute(
         raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",)
     )

@@ -57,11 +57,11 @@ class ProcessComponent(BaseComponent):
 
         # [SIL-2] Ensure numeric limit for semaphore
         limit = int(state.process_max_concurrent)
-        self._process_slots = asyncio.Semaphore(limit)
+        self.process_slots = asyncio.Semaphore(limit)
 
     @property
     def _slots(self) -> asyncio.Semaphore:
-        return self._process_slots
+        return self.process_slots
 
     # --- MQTT Handlers ---
 
@@ -306,7 +306,7 @@ class ProcessComponent(BaseComponent):
             return 0
 
         # [SIL-2] Wait for an available process slot
-        await self._process_slots.acquire()
+        await self.process_slots.acquire()
 
         pid = 0
         try:
@@ -333,7 +333,7 @@ class ProcessComponent(BaseComponent):
 
         except (OSError, ValueError, RuntimeError) as exc:
             logger.error("Failed to spawn process: %s", exc)
-            self._process_slots.release()
+            self.process_slots.release()
             return 0
 
     async def _allocate_pid(self) -> int:
@@ -388,7 +388,7 @@ class ProcessComponent(BaseComponent):
                     proc.trigger("sigchld")
                     proc.trigger("io_complete")
         finally:
-            self._finalize_process_internal(pid)
+            self.finalize_process_internal(pid)
 
     async def poll_process(self, pid: int) -> ProcessOutputBatch:
         """Fetch pending output and status for a running process."""
@@ -415,7 +415,7 @@ class ProcessComponent(BaseComponent):
                     t_err,
                 )
                 if is_finished and proc.is_drained():
-                    self._finalize_process_internal(pid)
+                    self.finalize_process_internal(pid)
                 return batch
 
     async def stop_process(self, pid: int) -> bool:
@@ -485,7 +485,7 @@ class ProcessComponent(BaseComponent):
             if current is not None and current is proc_entry:
                 current.exit_code = getattr(handle, "returncode", None)
 
-        await self._finalize_process(pid)
+        await self.finalize_process(pid)
         return True
 
     async def publish_poll_result(
@@ -519,16 +519,16 @@ class ProcessComponent(BaseComponent):
             )
         )
 
-    async def _finalize_process(self, pid: int) -> None:
+    async def finalize_process(self, pid: int) -> None:
         async with self.state.process_lock:
-            self._finalize_process_internal(pid)
+            self.finalize_process_internal(pid)
 
-    def _finalize_process_internal(self, pid: int) -> None:
+    def finalize_process_internal(self, pid: int) -> None:
         proc = self.state.running_processes.pop(pid, None)
         if proc:
             with contextlib.suppress(AttributeError, ValueError):
                 proc.trigger("finalize")
-            self._process_slots.release()
+            self.process_slots.release()
 
 
 __all__ = ["ProcessComponent", "ProcessOutputBatch"]

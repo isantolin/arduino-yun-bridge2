@@ -37,7 +37,7 @@ logger = structlog.get_logger("mcubridge.file")
 class _PendingMcuRead:
     identifier: str
     future: asyncio.Future[bytes]
-    chunks: list[bytes] = field(default_factory=list)  # type: ignore[reportUnknownVariableType]
+    chunks: list[bytes] = field(default_factory=list)
 
 
 def _do_write_file(path: Path, data: bytes) -> None:

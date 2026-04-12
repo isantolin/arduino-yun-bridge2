@@ -224,7 +224,7 @@ async def test_process_run_async_limit_reached():
     ctx = MagicMock()
 
     comp = ProcessComponent(config, state, ctx)
-    await comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
+    await comp.process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     try:
         async with asyncio.timeout(0.1):
@@ -271,7 +271,7 @@ async def test_process_finalize_process_missing_slot():
     comp = ProcessComponent(config, state, MagicMock())
 
     # Should not raise
-    await comp._finalize_process(999)  # type: ignore[reportPrivateUsage]
+    await comp.finalize_process(999)  # type: ignore[reportPrivateUsage]
 
 
 # --- mcubridge.transport.serial ---

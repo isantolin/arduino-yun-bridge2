@@ -28,7 +28,7 @@ class MockSerialService:
     def register_serial_sender(
         self, sender: Callable[[int, bytes], Awaitable[bool]]
     ) -> None:
-        self._serial_sender = sender
+        self.serial_sender = sender
 
     async def on_serial_connected(self) -> None:
         self.serial_connected.set()
@@ -42,9 +42,9 @@ class MockSerialService:
         self.received_frames.append((command_id, sequence_id, payload))
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
-        if self._serial_sender is None:
+        if self.serial_sender is None:
             return False
-        return await self._serial_sender(command_id, payload)
+        return await self.serial_sender(command_id, payload)
 
     async def enqueue_mqtt(self, *_: object, **__: object) -> None:
         return None

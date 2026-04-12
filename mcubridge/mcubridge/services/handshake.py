@@ -631,8 +631,6 @@ class SerialHandshakeManager:
         ).encode()
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
-        return (
-            reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
-            or self._state.handshake_failure_streak
-            >= self._fatal_threshold  # noqa: W503
+        return reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS or (
+            self._state.handshake_failure_streak >= self._fatal_threshold
         )

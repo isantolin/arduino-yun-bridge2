@@ -175,7 +175,7 @@ async def test_status_writer_with_version() -> None:
             ):
                 state = RuntimeState()
                 try:
-                    state.mcu_version = (1, 2, 0)
+                    state.mcu_version = "1.2.0"
                     state.mcu_capabilities = McuCapabilities()
                     _write_status_file(state.build_metrics_snapshot())  # type: ignore[reportArgumentType]
                     assert mock_tf.called

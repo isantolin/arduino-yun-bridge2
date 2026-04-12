@@ -66,7 +66,7 @@ async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> 
     payload = b"input"
     console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
-    await console_component._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
+    await console_component.handle_mqtt_input(  # type: ignore[reportPrivateUsage]
         payload
     )  # pyright: ignore[reportPrivateUsage]
 
@@ -84,7 +84,7 @@ async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> 
     console_component.state.mcu_is_paused = True
     payload = b"input"
 
-    await console_component._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
+    await console_component.handle_mqtt_input(  # type: ignore[reportPrivateUsage]
         payload
     )  # pyright: ignore[reportPrivateUsage]
 
@@ -104,7 +104,7 @@ async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -
     large_payload = b"a" * (MAX_PAYLOAD_SIZE + 10)
     console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
-    await console_component._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
+    await console_component.handle_mqtt_input(  # type: ignore[reportPrivateUsage]
         large_payload
     )  # pyright: ignore[reportPrivateUsage]
 

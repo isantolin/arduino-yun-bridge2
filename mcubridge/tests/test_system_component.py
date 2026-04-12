@@ -103,7 +103,7 @@ def test_request_mcu_version_resets_cached_version(
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
-        runtime_state.mcu_version = (1, 0, 0)
+        runtime_state.mcu_version = "1.0.0"
 
         await component.request_mcu_version()
 
@@ -211,7 +211,7 @@ def test_handle_mqtt_version_get_with_cached_version(
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
-        runtime_state.mcu_version = (2, 0, 0)
+        runtime_state.mcu_version = "2.0.0"
 
         msg = MagicMock()
         msg.topic = "br/system/version/get"

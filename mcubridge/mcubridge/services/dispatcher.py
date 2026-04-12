@@ -57,7 +57,7 @@ class BridgeDispatcher:
 
         self.on_frame_received_callback = on_frame_received
 
-        self._container: svcs.Container | None = None
+        self.container: svcs.Container | None = None
 
     def register_components(self, container: svcs.Container) -> None:
         """Register all component handlers with the registries."""
@@ -72,7 +72,7 @@ class BridgeDispatcher:
             SystemComponent,
         )
 
-        self._container = container
+        self.container = container
         console = container.get(ConsoleComponent)
         datastore = container.get(DatastoreComponent)
         file = container.get(FileComponent)
@@ -156,10 +156,10 @@ class BridgeDispatcher:
         )
 
         async def _handle_mcu_read(s: int, cmd: Command, p: bytes) -> bool:
-            if self._container:
+            if self.container:
                 from . import PinComponent
 
-                pin_cmp = self._container.get(PinComponent)
+                pin_cmp = self.container.get(PinComponent)
                 await pin_cmp.handle_unexpected_mcu_request(s, cmd, p)
                 return True
             logger.warning(
@@ -391,10 +391,10 @@ class BridgeDispatcher:
             case "bridge":
                 return await self._handle_bridge_topic(route, inbound)
             case _:
-                if self._container:
+                if self.container:
                     from . import SystemComponent
 
-                    system = self._container.get(SystemComponent)
+                    system = self.container.get(SystemComponent)
                     return await system.handle_mqtt(route, inbound)
         return False
 

@@ -142,7 +142,7 @@ class PinComponent(BaseComponent):
             and topic_enum == Topic.ANALOG
         )
 
-        if not self._validate_pin_access(pin, is_analog_read):
+        if not self.validate_pin_access(pin, is_analog_read):
             return True
 
         if len(segments) == 2:
@@ -280,7 +280,7 @@ class PinComponent(BaseComponent):
             reply_to=inbound,
         )
 
-    def _validate_pin_access(self, pin: int, is_analog_input: bool) -> bool:
+    def validate_pin_access(self, pin: int, is_analog_input: bool) -> bool:
         caps = self.state.mcu_capabilities
         if caps is None:
             return True

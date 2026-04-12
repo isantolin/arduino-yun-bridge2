@@ -329,16 +329,16 @@ class PrometheusExporter:
         self._port = port
         self._server: asyncio.AbstractServer | None = None
         self._resolved_port: int | None = None
-        self._registry = state.metrics.registry
+        self.registry = state.metrics.registry
 
         # [OPTIMIZATION] Initialize native prometheus Summary for percentiles
-        state.serial_latency_stats.initialize_prometheus(self._registry)
+        state.serial_latency_stats.initialize_prometheus(self.registry)
 
         # [SIL-2 / Library-First] Use native ProcessCollector to get CPU/RAM/FDs for free
-        ProcessCollector(registry=self._registry)
+        ProcessCollector(registry=self.registry)
 
         # Register the dynamic state collector
-        self._registry.register(RuntimeStateCollector(state))
+        self.registry.register(RuntimeStateCollector(state))
 
     @property
     def port(self) -> int:
@@ -455,7 +455,7 @@ class PrometheusExporter:
         await writer.drain()
 
     def _render_metrics(self) -> bytes:
-        return generate_latest(self._registry)
+        return generate_latest(self.registry)
 
 
 def _build_bridge_snapshot_message(

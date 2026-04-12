@@ -1005,7 +1005,7 @@ class PendingCommand(msgspec.Struct):
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: set[int]())  # noqa: PLW0108
+    expected_resp_ids: set[int] = msgspec.field(default_factory=set)
     completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     attempts: int = 0
     success: bool | None = None

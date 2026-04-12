@@ -104,11 +104,11 @@ async def test_pin_validate_access_block() -> None:
         pc = PinComponent(config, state, MagicMock())
 
         assert (
-            pc._validate_pin_access(25, False)  # type: ignore[reportPrivateUsage]
+            pc.validate_pin_access(25, False)  # type: ignore[reportPrivateUsage]
             is False
         )  # Digital limit 20
         assert (
-            pc._validate_pin_access(10, True)  # type: ignore[reportPrivateUsage]
+            pc.validate_pin_access(10, True)  # type: ignore[reportPrivateUsage]
             is False
         )  # Analog limit 6
     finally:

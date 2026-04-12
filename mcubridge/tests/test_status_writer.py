@@ -65,7 +65,7 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             state.record_handshake_attempt()
             state.record_handshake_attempt()
             state.allowed_policy = AllowedCommandPolicy.from_iterable(["ls"])
-            state.mcu_version = (2, 5, 0)
+            state.mcu_version = "2.5.0"
             state.file_system_root = "/tmp/bridge"
             state.file_storage_bytes_used = 2048
             state.file_storage_quota_bytes = 4096
@@ -95,7 +95,7 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             state.watchdog_enabled = True
             state.watchdog_interval = 7.5
             for _ in range(11):
-                state.record_watchdog_beat(101.0)
+                state.record_watchdog_beat()
 
             task = asyncio.create_task(status.status_writer(state, 0))
             for _ in range(10):

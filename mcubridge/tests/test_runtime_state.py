@@ -114,7 +114,7 @@ def test_mqtt_queue_respects_config(
 
 def test_watchdog_tracking(runtime_state: RuntimeState) -> None:
     assert runtime_state.watchdog_beats == 0
-    runtime_state.record_watchdog_beat(123.0)
+    runtime_state.record_watchdog_beat()
     assert runtime_state.watchdog_beats == 1
     assert runtime_state.last_watchdog_beat == 123.0
 
@@ -228,7 +228,7 @@ def test_bridge_snapshot_combines_sections(
     runtime_state.mark_transport_connected()
     runtime_state.record_handshake_attempt()
     runtime_state.record_handshake_attempt()
-    runtime_state.mcu_version = (1, 2, 0)
+    runtime_state.mcu_version = "1.2.0"
     runtime_state.record_serial_pipeline_event(
         {
             "event": "start",

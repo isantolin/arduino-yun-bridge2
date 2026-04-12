@@ -34,7 +34,7 @@ def hexdump_processor(
 def configure_logging(config: RuntimeConfig) -> None:
     """Configure logging with structlog: JSON for syslog, colored for console."""
 
-    level = "DEBUG" if getattr(config, "debug_logging", False) else "INFO"
+    level = "DEBUG" if config.debug_logging else "INFO"
     force_stream = bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
     use_syslog = not force_stream and (
         SYSLOG_SOCKET.exists() or SYSLOG_SOCKET_FALLBACK.exists()

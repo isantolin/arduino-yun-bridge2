@@ -19,21 +19,13 @@ def get_uci_config() -> dict[str, Any]:
     """
     try:
         import uci
-
-        # [SIL-2] Verify this is the real OpenWrt UCI library and not a host collision
-        if not hasattr(uci, "Uci") and not hasattr(uci, "UCI"):
-            raise ImportError("Incompatible uci library")
     except ImportError:
         # Fallback for non-OpenWrt environments (e.g. dev/test)
         return get_default_config()
 
     try:
-        # [SIL-2] Dynamic class detection to handle library variations
-        UciClass = getattr(uci, "Uci", None) or getattr(uci, "UCI")
-        with UciClass() as cursor:
-            # Verify it's a real cursor with get_all method
-            if not hasattr(cursor, "get_all"):
-                return get_default_config()
+        # [SIL-2] Direct use of OpenWrt UCI library
+        with uci.Uci() as cursor:
             section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
             if not section:
                 return get_default_config()

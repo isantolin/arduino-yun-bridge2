@@ -169,7 +169,8 @@ class Bridge:
         if not self._client:
             return
         async for message in self._client.messages:
-            correlation = getattr(message.properties, "CorrelationData", None)
+            props = message.properties
+            correlation = props.CorrelationData if props else None
             if correlation and (
                 queue := self._correlation_routes.pop(correlation, None)
             ):

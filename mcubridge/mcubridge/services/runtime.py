@@ -284,13 +284,12 @@ class BridgeService:
         """Enqueues an MQTT message for publishing with an overflow dropping strategy."""
         message_to_queue = message
         if reply_context is not None:
-            props = getattr(reply_context, "properties", None)
-            resp_topic = getattr(props, "ResponseTopic", None) if props else None
-            target_topic = resp_topic or message.topic_name
+            props = reply_context.properties
+            target_topic = (props.ResponseTopic if props else None) or message.topic_name
             if target_topic != message_to_queue.topic_name:
                 message_to_queue = msgspec.structs.replace(message_to_queue, topic_name=target_topic)
 
-            reply_correlation = getattr(props, "CorrelationData", None) if props else None
+            reply_correlation = props.CorrelationData if props else None
             if reply_correlation is not None:
                 message_to_queue = msgspec.structs.replace(message_to_queue, correlation_data=reply_correlation)
 

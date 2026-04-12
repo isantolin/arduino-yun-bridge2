@@ -99,22 +99,3 @@ async def test_file_handle_mqtt_unknown() -> None:
         await fc.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
     finally:
         state.cleanup()
-
-
-@pytest.mark.asyncio
-async def test_file_perform_operation_unknown() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
-    state = create_runtime_state(config)
-    try:
-        fc = FileComponent(config, state, MagicMock())
-        # bypass safe path check by mocking it to return something
-        with patch.object(fc, "_get_safe_path", return_value=Path("/tmp/foo")):
-            success, content, reason = (  # type: ignore[reportUnusedVariable]
-                await fc._perform_file_operation(  # type: ignore[reportPrivateUsage]
-                    "unknown", "foo",  # type: ignore[reportArgumentType]
-                )
-            )
-            assert success is False
-            assert reason == "unknown_operation"
-    finally:
-        state.cleanup()

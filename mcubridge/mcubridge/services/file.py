@@ -69,17 +69,67 @@ class FileComponent(BaseComponent):
 
     async def handle_write(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_WRITE from MCU."""
-        success, _, _ = await self._perform_file_operation("write", payload)
-        return success
+        try:
+            packet = FileWritePacket.decode(payload)
+            path = self._get_safe_path(packet.path)
+            if not path:
+                await self.ctx.send_frame(Status.ERROR.value, b"Invalid path")
+                return False
+
+            if not await self._write_with_quota(path, packet.data):
+                await self.ctx.send_frame(Status.ERROR.value, b"Quota exceeded")
+                return False
+
+            self._metadata_cache.pop(str(path), None)
+            await self.ctx.send_frame(Status.OK.value)
+            return True
+        except (ValueError, OSError) as e:
+            logger.error("File write failed: %s", e)
+            err_payload = str(e).encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
+            await self.ctx.send_frame(Status.ERROR.value, err_payload)
+            return False
 
     async def handle_read(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_FILE_READ from MCU."""
-        await self._perform_file_operation("read", payload)
+        try:
+            packet = FileReadPacket.decode(payload)
+            path = self._get_safe_path(packet.path)
+            if not path or not path.is_file():
+                await self.ctx.send_frame(Status.ERROR.value, b"File not found")
+                return
+            data = await asyncio.to_thread(path.read_bytes)
+            self._metadata_cache[str(path)] = {"size": len(data), "mtime": path.stat().st_mtime}
+
+            # [SIL-2] Use FileReadResponsePacket for consistent framing
+            if not data:
+                response_packet = FileReadResponsePacket(content=b"")
+                await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
+            else:
+                for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE - 3):
+                    response_packet = FileReadResponsePacket(content=chunk)
+                    await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
+        except (ValueError, OSError) as e:
+            logger.error("File read failed: %s", e)
+            err_payload = str(e).encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
+            await self.ctx.send_frame(Status.ERROR.value, err_payload)
 
     async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_REMOVE from MCU."""
-        success, _, _ = await self._perform_file_operation("remove", payload)
-        return success
+        try:
+            packet = FileRemovePacket.decode(payload)
+            path = self._get_safe_path(packet.path)
+            if path and await self._remove_with_tracking(path):
+                self._metadata_cache.pop(str(path), None)
+                await self.ctx.send_frame(Status.OK.value)
+                return True
+
+            await self.ctx.send_frame(Status.ERROR.value, b"File not found")
+            return False
+        except (ValueError, OSError) as e:
+            logger.error("File remove failed: %s", e)
+            err_payload = str(e).encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
+            await self.ctx.send_frame(Status.ERROR.value, err_payload)
+            return False
 
     async def handle_read_response(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_READ_RESP from MCU for MQTT-originated mcu/ reads."""
@@ -304,59 +354,6 @@ class FileComponent(BaseComponent):
             )
             return False
         return True
-
-    async def _perform_file_operation(self, operation: str, payload: bytes) -> tuple[bool, bytes | None, str | None]:
-        """Internal worker for MCU-originated file operations (legacy name kept for tests)."""
-        try:
-            if operation == "write":
-                packet = FileWritePacket.decode(payload)
-                path = self._get_safe_path(packet.path)
-                if not path:
-                    await self.ctx.send_frame(Status.ERROR.value, b"Invalid path")
-                    return False, None, "invalid_path"
-
-                if not await self._write_with_quota(path, packet.data):
-                    await self.ctx.send_frame(Status.ERROR.value, b"Quota exceeded")
-                    return False, None, "quota_exceeded"
-
-                self._metadata_cache.pop(str(path), None)
-                await self.ctx.send_frame(Status.OK.value)
-                return True, b"OK", None
-            elif operation == "read":
-                packet = FileReadPacket.decode(payload)
-                path = self._get_safe_path(packet.path)
-                if not path or not path.is_file():
-                    await self.ctx.send_frame(Status.ERROR.value, b"File not found")
-                    return False, None, "file_not_found"
-                data = await asyncio.to_thread(path.read_bytes)
-                self._metadata_cache[str(path)] = {"size": len(data), "mtime": path.stat().st_mtime}
-
-                # [SIL-2] Use FileReadResponsePacket for consistent framing
-                if not data:
-                    response_packet = FileReadResponsePacket(content=b"")
-                    await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
-                else:
-                    for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                        response_packet = FileReadResponsePacket(content=chunk)
-                        await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
-                return True, data, None
-            elif operation == "remove":
-                packet = FileRemovePacket.decode(payload)
-                path = self._get_safe_path(packet.path)
-                if path and await self._remove_with_tracking(path):
-                    self._metadata_cache.pop(str(path), None)
-                    await self.ctx.send_frame(Status.OK.value)
-                    return True, b"OK", None
-
-                await self.ctx.send_frame(Status.ERROR.value, b"File not found")
-                return False, None, "file_not_found"
-        except (ValueError, OSError) as e:
-            logger.error("File operation %s failed: %s", operation, e)
-            err_payload = str(e).encode("utf-8", errors="ignore")[:protocol.MAX_PAYLOAD_SIZE]
-            await self.ctx.send_frame(Status.ERROR.value, err_payload)
-            return False, None, str(e)
-
-        return False, None, "unknown_operation"
 
     def _get_safe_path(self, filename: str) -> Path | None:
         """Resolve and validate path within storage root (SIL-2)."""

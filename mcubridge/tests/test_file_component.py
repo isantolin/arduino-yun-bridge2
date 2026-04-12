@@ -518,33 +518,20 @@ async def test_handle_mqtt_unknown_action_is_ignored(
 
 
 @pytest.mark.asyncio
-async def test_perform_file_operation_unknown_operation_branch(
-    file_component: tuple[FileComponent, DummyBridge],
-) -> None:
-    component, _ = file_component
-    ok, content, reason = await component._perform_file_operation("bogus", b"")  # type: ignore[reportPrivateUsage]
-    assert ok is False
-    assert content is None
-    assert reason == "unknown_operation"
-
-
-@pytest.mark.asyncio
-async def test_perform_file_operation_oserror_returns_false(
+async def test_handle_read_oserror_returns_false(
     file_component: tuple[FileComponent, DummyBridge],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    component, _ = file_component
+    component, bridge = file_component
 
     def boom(*_args: Any, **_kwargs: Any) -> bytes:
         raise OSError("read_failed")
 
     monkeypatch.setattr(Path, "read_bytes", boom)
-    ok, content, reason = await component._perform_file_operation(  # type: ignore[reportPrivateUsage]
-        "read", b"\x08file.txt",
+    await component.handle_read(
+        0, structures.FileReadPacket(path="file.txt").encode(),
     )
-    assert ok is False
-    assert content is None
-    assert reason is not None
+    assert any(cmd == Status.ERROR.value for cmd, _ in bridge.sent_frames)
 
 
 def test_normalise_filename_rejects_bad_inputs() -> None:
@@ -604,12 +591,11 @@ async def test_write_with_quota_emits_flash_warning_for_non_tmp_path(
         component.config.file_write_max_bytes = 32
         component.config.file_storage_quota_bytes = 1024
 
-        ok, _, reason = await component._perform_file_operation(  # type: ignore[reportPrivateUsage]
-            "write",
+        ok = await component.handle_write(
+            0,
             _build_write_payload("alpha.txt", b"abc")
         )
         assert ok is True
-        assert reason is None
     finally:
         for child in non_tmp_root.rglob("*"):
             if child.is_file():

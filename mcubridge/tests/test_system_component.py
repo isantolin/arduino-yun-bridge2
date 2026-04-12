@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Coroutine
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig

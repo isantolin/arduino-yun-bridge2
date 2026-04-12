@@ -56,11 +56,7 @@ class ProcessComponent(BaseComponent):
         super().__init__(config, state, ctx)
 
         # [SIL-2] Ensure numeric limit for semaphore
-        try:
-            limit = int(getattr(state, "process_max_concurrent", 1))
-        except (ValueError, TypeError):
-            limit = 1
-
+        limit = int(state.process_max_concurrent)
         self._process_slots = asyncio.Semaphore(limit)
 
     @property

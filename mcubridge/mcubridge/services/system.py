@@ -5,8 +5,6 @@ from __future__ import annotations
 import collections
 import contextlib
 import structlog
-from collections.abc import Awaitable, Callable
-from typing import cast
 
 from aiomqtt.message import Message
 from ..protocol import protocol

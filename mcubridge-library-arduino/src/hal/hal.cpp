@@ -89,23 +89,29 @@ bool resolve_to_full_path(etl::string_view path, PathString& full_path_out) {
 
 bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
 
-void _forceSafeStateRecursive(uint8_t pin, uint8_t count) {
-  if (pin >= count) return;
+namespace {
+template <size_t I>
+void _forceSinglePin() {
   if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-    ::pinMode(pin, OUTPUT); 
-    ::digitalWrite(pin, LOW);
+    ::pinMode(static_cast<uint8_t>(I), OUTPUT); 
+    ::digitalWrite(static_cast<uint8_t>(I), LOW);
   } else {
-    ::pinMode(pin, INPUT_PULLUP);
+    ::pinMode(static_cast<uint8_t>(I), INPUT_PULLUP);
   }
-  _forceSafeStateRecursive(pin + 1, count);
+}
+
+template <size_t... Is>
+void _forceSafePins(etl::index_sequence<Is...>) {
+  (_forceSinglePin<Is>(), ...);
+}
 }
 
 void forceSafeState() {
-  const uint8_t pin_count = (Traits::id == ArchId::ARCH_AVR) ? 
-                            static_cast<uint8_t>(bridge::config::DIGITAL_PINS) : 
-                            static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS);
-
-  _forceSafeStateRecursive(0, pin_count);
+  if constexpr (Traits::id == ArchId::ARCH_AVR) {
+    _forceSafePins(etl::make_index_sequence<bridge::config::DIGITAL_PINS>{});
+  } else {
+    _forceSafePins(etl::make_index_sequence<bridge::config::SAMD_DIGITAL_PINS>{});
+  }
 }
 
 uint16_t getFreeMemory() {

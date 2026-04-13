@@ -141,12 +141,13 @@ def _extract_cpp_dispatch_commands(cpp_content: str) -> set[str]:
     command_re = re.compile(
         r"(?:Behavior(?:Cmd|BridgePayload|ServicePayload|GpioPayload|PinRead)<.*?rpc::CommandId::(CMD_[A-Z0-9_]+))|"
         r"(?:case\s+rpc::to_underlying\(rpc::CommandId::(CMD_[A-Z0-9_]+)\):)|"
-        r"(?:\{\s*rpc::to_underlying\(rpc::CommandId::(CMD_[A-Z0-9_]+)\))",
+        r"(?:\{\s*rpc::to_underlying\(rpc::CommandId::(CMD_[A-Z0-9_]+)\))|"
+        r"(?:\/\*\s*0x[0-9A-F]+:\s*(CMD_[A-Z0-9_]+)\s*\*\/)",
         re.MULTILINE,
     )
     # Extract matches from all groups
     matches = command_re.findall(cpp_content)
-    return {m[0] or m[1] or m[2] for m in matches}
+    return {next(item for item in m if item) for m in matches if any(m)}
 
 
 def test_mcu_inbound_commands_have_cpp_jump_table_handlers() -> None:

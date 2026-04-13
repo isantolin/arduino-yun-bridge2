@@ -19,16 +19,19 @@ class RleFsm;
 struct LiteralState : public etl::fsm_state<RleFsm, LiteralState, StateId::LITERAL, ByteMsg> {
   LiteralState() { (void)&LiteralState::on_event; }
   etl::fsm_state_id_t on_event(const ByteMsg& msg);
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return StateId::LITERAL; }
 };
 
 struct EscMarkerState : public etl::fsm_state<RleFsm, EscMarkerState, StateId::ESC_MARKER, ByteMsg> {
   EscMarkerState() { (void)&EscMarkerState::on_event; }
   etl::fsm_state_id_t on_event(const ByteMsg& msg);
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return StateId::LITERAL; }
 };
 
 struct EscValState : public etl::fsm_state<RleFsm, EscValState, StateId::ESC_VAL, ByteMsg> {
   EscValState() { (void)&EscValState::on_event; }
   etl::fsm_state_id_t on_event(const ByteMsg& msg);
+  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return StateId::LITERAL; }
 };
 
 class RleFsm : public etl::fsm {

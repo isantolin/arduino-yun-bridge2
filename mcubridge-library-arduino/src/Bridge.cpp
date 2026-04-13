@@ -177,8 +177,8 @@ void BridgeClass::process() {
 bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 
 void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
-  uint16_t cmd_id = frame.header.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
-  bridge::router::CommandContext ctx(
+  const uint16_t cmd_id = frame.header.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
+  const bridge::router::CommandContext ctx(
       &frame, cmd_id, frame.header.sequence_id,
       _rx_history.exists(frame.header.sequence_id),
       rpc::requires_ack(cmd_id));
@@ -188,85 +188,161 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     return;
   }
 
-  struct CommandRoute {
-    uint16_t id;
-    void (BridgeClass::*handler)(const bridge::router::CommandContext&);
-  };
+  using Handler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+  static constexpr uint16_t RANGE_START = 0x30;
+  static constexpr uint16_t RANGE_END = 0xBF;
+  static constexpr size_t TABLE_SIZE = RANGE_END - RANGE_START + 1;
 
-  static constexpr size_t ROUTE_COUNT = 17
+  static constexpr etl::array<Handler, TABLE_SIZE> jump_table = {{
+    /* 0x30: STATUS_OK */             &BridgeClass::_handleStatusOk,
+    /* 0x31: STATUS_ERROR */          &BridgeClass::onUnknownCommand,
+    /* 0x32: STATUS_CMD_UNKNOWN */    &BridgeClass::onUnknownCommand,
+    /* 0x33: STATUS_MALFORMED */      &BridgeClass::_handleStatusMalformed,
+    /* 0x34: STATUS_OVERFLOW */       &BridgeClass::onUnknownCommand,
+    /* 0x35: STATUS_CRC_MISMATCH */   &BridgeClass::onUnknownCommand,
+    /* 0x36: STATUS_TIMEOUT */        &BridgeClass::onUnknownCommand,
+    /* 0x37: STATUS_NOT_IMPLEMENTED */&BridgeClass::onUnknownCommand,
+    /* 0x38: STATUS_ACK */            &BridgeClass::_handleStatusAck,
+    /* 0x39 - 0x3F */                 &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+    /* 0x40: CMD_GET_VERSION */       &BridgeClass::_handleGetVersion,
+    /* 0x41: CMD_GET_VERSION_RESP */  &BridgeClass::onUnknownCommand,
+    /* 0x42: CMD_GET_FREE_MEMORY */   &BridgeClass::_handleGetFreeMemory,
+    /* 0x43: CMD_GET_FREE_MEMORY_RESP */ &BridgeClass::onUnknownCommand,
+    /* 0x44: CMD_LINK_SYNC */         &BridgeClass::_handleLinkSync,
+    /* 0x45: CMD_LINK_SYNC_RESP */    &BridgeClass::onUnknownCommand,
+    /* 0x46: CMD_LINK_RESET */        &BridgeClass::_handleLinkReset,
+    /* 0x47: CMD_LINK_RESET_RESP */   &BridgeClass::onUnknownCommand,
+    /* 0x48: CMD_GET_CAPABILITIES */  &BridgeClass::_handleGetCapabilities,
+    /* 0x49: CMD_GET_CAPABILITIES_RESP */ &BridgeClass::onUnknownCommand,
+    /* 0x4A: CMD_SET_BAUDRATE */      &BridgeClass::_handleSetBaudrateCommand,
+    /* 0x4B: CMD_SET_BAUDRATE_RESP */ &BridgeClass::onUnknownCommand,
+    /* 0x4C: CMD_ENTER_BOOTLOADER */  &BridgeClass::_handleEnterBootloaderCommand,
+    /* 0x4D: CMD_ENTER_BOOTLOADER_RESP */ &BridgeClass::onUnknownCommand,
+    /* 0x4E: CMD_XOFF */              &BridgeClass::_handleXoff,
+    /* 0x4F: CMD_XON */               &BridgeClass::_handleXon,
+    /* 0x50: CMD_SET_PIN_MODE */      &BridgeClass::_handleSetPinModeCommand,
+    /* 0x51: CMD_DIGITAL_WRITE */     &BridgeClass::_handleDigitalWriteCommand,
+    /* 0x52: CMD_ANALOG_WRITE */      &BridgeClass::_handleAnalogWriteCommand,
+    /* 0x53: CMD_DIGITAL_READ */      &BridgeClass::_handleDigitalReadCommand,
+    /* 0x54: CMD_ANALOG_READ */       &BridgeClass::_handleAnalogReadCommand,
+    /* 0x55: CMD_DIGITAL_READ_RESP */ &BridgeClass::onUnknownCommand,
+    /* 0x56: CMD_ANALOG_READ_RESP */  &BridgeClass::onUnknownCommand,
+    /* 0x57 - 0x5F */                 &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+    /* 0x60: CMD_CONSOLE_WRITE */     &BridgeClass::_handleConsoleWriteCommand,
+    /* 0x61 - 0x6F */                 &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+    /* 0x70: CMD_DATASTORE_PUT */     &BridgeClass::onUnknownCommand,
+    /* 0x71: CMD_DATASTORE_GET */     &BridgeClass::onUnknownCommand,
+    /* 0x72: CMD_DATASTORE_GET_RESP */
 #if BRIDGE_ENABLE_DATASTORE
-    + 1
+                                      &BridgeClass::_handleDataStoreGetResponseCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
 #endif
+    /* 0x73 - 0x7F */                 &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+    /* 0x80: CMD_MAILBOX_PUSH */
 #if BRIDGE_ENABLE_MAILBOX
-    + 3
+                                      &BridgeClass::_handleMailboxPushCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
 #endif
-#if BRIDGE_ENABLE_FILESYSTEM
-    + 4
-#endif
-#if BRIDGE_ENABLE_PROCESS
-    + 3
-#endif
-#if BRIDGE_ENABLE_SPI
-    + 4
-#endif
-    ;
-
-  static constexpr etl::array<CommandRoute, ROUTE_COUNT> routes = {{
-    { static_cast<uint16_t>(rpc::StatusCode::STATUS_MALFORMED), &BridgeClass::_handleStatusMalformed },
-    { static_cast<uint16_t>(rpc::StatusCode::STATUS_ACK),       &BridgeClass::_handleStatusAck },
-    { rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION),      &BridgeClass::_handleGetVersion },
-    { rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY),  &BridgeClass::_handleGetFreeMemory },
-    { rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC),        &BridgeClass::_handleLinkSync },
-    { rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET),       &BridgeClass::_handleLinkReset },
-    { rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES), &BridgeClass::_handleGetCapabilities },
-    { rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),     &BridgeClass::_handleSetBaudrateCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER), &BridgeClass::_handleEnterBootloaderCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_XOFF),             &BridgeClass::_handleXoff },
-    { rpc::to_underlying(rpc::CommandId::CMD_XON),              &BridgeClass::_handleXon },
-    { rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),     &BridgeClass::_handleSetPinModeCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE),    &BridgeClass::_handleDigitalWriteCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),     &BridgeClass::_handleAnalogWriteCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ),     &BridgeClass::_handleDigitalReadCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ),      &BridgeClass::_handleAnalogReadCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE),    &BridgeClass::_handleConsoleWriteCommand },
-#if BRIDGE_ENABLE_DATASTORE
-    { rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP), &BridgeClass::_handleDataStoreGetResponseCommand },
-#endif
+    /* 0x81: CMD_MAILBOX_READ */      &BridgeClass::onUnknownCommand,
+    /* 0x82: CMD_MAILBOX_READ_RESP */
 #if BRIDGE_ENABLE_MAILBOX
-    { rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH),           &BridgeClass::_handleMailboxPushCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP),      &BridgeClass::_handleMailboxReadResponseCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP), &BridgeClass::_handleMailboxAvailableResponseCommand },
+                                      &BridgeClass::_handleMailboxReadResponseCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
 #endif
+    /* 0x83: CMD_MAILBOX_AVAILABLE */ &BridgeClass::onUnknownCommand,
+    /* 0x84: CMD_MAILBOX_AVAILABLE_RESP */
+#if BRIDGE_ENABLE_MAILBOX
+                                      &BridgeClass::_handleMailboxAvailableResponseCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
+#endif
+    /* 0x85 - 0x8F */                 &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+    /* 0x90: CMD_FILE_WRITE */
 #if BRIDGE_ENABLE_FILESYSTEM
-    { rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE),     &BridgeClass::_handleFileWriteCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_FILE_READ),      &BridgeClass::_handleFileReadCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE),    &BridgeClass::_handleFileRemoveCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP), &BridgeClass::_handleFileReadResponseCommand },
+                                      &BridgeClass::_handleFileWriteCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
 #endif
+    /* 0x91: CMD_FILE_READ */
+#if BRIDGE_ENABLE_FILESYSTEM
+                                      &BridgeClass::_handleFileReadCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
+#endif
+    /* 0x92: CMD_FILE_REMOVE */
+#if BRIDGE_ENABLE_FILESYSTEM
+                                      &BridgeClass::_handleFileRemoveCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
+#endif
+    /* 0x93: CMD_FILE_READ_RESP */
+#if BRIDGE_ENABLE_FILESYSTEM
+                                      &BridgeClass::_handleFileReadResponseCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
+#endif
+    /* 0x94 - 0x9F */                 &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+    /* 0xA0: CMD_PROCESS_RUN_ASYNC */ &BridgeClass::onUnknownCommand,
+    /* 0xA1: CMD_PROCESS_RUN_ASYNC_RESP */
 #if BRIDGE_ENABLE_PROCESS
-    { rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL),           &BridgeClass::_handleProcessKillCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP), &BridgeClass::_handleProcessRunAsyncResponseCommand },
-    { rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP),      &BridgeClass::_handleProcessPollResponseCommand },
+                                      &BridgeClass::_handleProcessRunAsyncResponseCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
 #endif
+    /* 0xA2: CMD_PROCESS_POLL */      &BridgeClass::onUnknownCommand,
+    /* 0xA3: CMD_PROCESS_POLL_RESP */
+#if BRIDGE_ENABLE_PROCESS
+                                      &BridgeClass::_handleProcessPollResponseCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
+#endif
+    /* 0xA4: CMD_PROCESS_KILL */
+#if BRIDGE_ENABLE_PROCESS
+                                      &BridgeClass::_handleProcessKillCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
+#endif
+    /* 0xA5 - 0xAF */                 &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+    /* 0xB0: CMD_SPI_BEGIN */
 #if BRIDGE_ENABLE_SPI
-    { rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN),      &BridgeClass::_handleSpiBegin },
-    { rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER),   &BridgeClass::_handleSpiTransfer },
-    { rpc::to_underlying(rpc::CommandId::CMD_SPI_END),        &BridgeClass::_handleSpiEnd },
-    { rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG), &BridgeClass::_handleSpiSetConfigCommand },
+                                      &BridgeClass::_handleSpiBegin,
+#else
+                                      &BridgeClass::onUnknownCommand,
 #endif
+    /* 0xB1: CMD_SPI_TRANSFER */
+#if BRIDGE_ENABLE_SPI
+                                      &BridgeClass::_handleSpiTransfer,
+#else
+                                      &BridgeClass::onUnknownCommand,
+#endif
+    /* 0xB2: CMD_SPI_END */
+#if BRIDGE_ENABLE_SPI
+                                      &BridgeClass::_handleSpiEnd,
+#else
+                                      &BridgeClass::onUnknownCommand,
+#endif
+    /* 0xB3: CMD_SPI_SET_CONFIG */
+#if BRIDGE_ENABLE_SPI
+                                      &BridgeClass::_handleSpiSetConfigCommand,
+#else
+                                      &BridgeClass::onUnknownCommand,
+#endif
+    /* 0xB4 - 0xBF */                 &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand
   }};
 
-  // [SIL-2] Deterministic dispatch using binary search (O(log N)).
-  auto it = etl::lower_bound(routes.begin(), routes.end(), ctx.raw_command,
-                             [](const CommandRoute& route, uint16_t id) {
-                               return route.id < id;
-                             });
-  
-  if (it != routes.end() && it->id == ctx.raw_command) {
-    (this->*(it->handler))(ctx);
+  if (ctx.raw_command >= RANGE_START && ctx.raw_command <= RANGE_END) {
+    (this->*(jump_table[ctx.raw_command - RANGE_START]))(ctx);
   } else {
     onUnknownCommand(ctx);
   }
+}
+
+void BridgeClass::_handleStatusOk(const bridge::router::CommandContext& ctx) {
+  (void)ctx;
+  // OK status received from daemon, no action needed but hookable
 }
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {

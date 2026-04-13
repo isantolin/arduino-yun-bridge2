@@ -122,7 +122,7 @@ class BridgeService:
         self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
         self._serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
 
-        self._dispatcher = BridgeDispatcher(
+        self.dispatcher = BridgeDispatcher(
             mcu_registry=MCUHandlerRegistry(),
             mqtt_router=MQTTRouter(),
             state=state,
@@ -133,8 +133,8 @@ class BridgeService:
             publish_bridge_snapshot=self._publish_bridge_snapshot,
             on_frame_received=self._serial_flow.on_frame_received,
         )
-        self._dispatcher.register_components(self._container)
-        self._dispatcher.register_system_handlers(
+        self.dispatcher.register_components(self._container)
+        self.dispatcher.register_system_handlers(
             handle_link_sync_resp=self.handshake_manager.handle_link_sync_resp,
             handle_link_reset_resp=self.handshake_manager.handle_link_reset_resp,
             handle_get_capabilities_resp=self.handshake_manager.handle_capabilities_resp,
@@ -257,7 +257,7 @@ class BridgeService:
         # specifically for successful dispatches in the state.
         start = time.perf_counter()
         try:
-            await self._dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
+            await self.dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
         except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
                 "Critical error handling MCU frame: CMD=0x%02X payload=%s: %s",
@@ -276,7 +276,7 @@ class BridgeService:
         # [SIL-2] Performance monitoring for MQTT message processing
         start = time.perf_counter()
         try:
-            await self._dispatcher.dispatch_mqtt_message(
+            await self.dispatcher.dispatch_mqtt_message(
                 inbound,
                 lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
             )

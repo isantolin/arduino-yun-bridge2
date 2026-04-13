@@ -949,7 +949,8 @@ class TestDispatcherEdgeCases:
             route = TopicRoute(
                 raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
             )
-            result = d._should_reject_topic_action(route)  # type: ignore[reportPrivateUsage]
+            result = d._get_topic_action(route)  # type: ignore[reportPrivateUsage]
+            assert result is None
             assert result is None
         finally:
             state.cleanup()

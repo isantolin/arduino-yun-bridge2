@@ -88,10 +88,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(
             Command.CMD_CONSOLE_WRITE.value, console.handle_write
         )
-        self.mqtt_router.register(
-            Topic.CONSOLE,
-            lambda r, m: self._guard_and_dispatch(r, m, handler=console.handle_mqtt),
-        )
+        self.mqtt_router.register(Topic.CONSOLE, console.handle_mqtt)
 
         # Datastore
         self.mcu_registry.register(
@@ -100,10 +97,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(
             Command.CMD_DATASTORE_GET.value, datastore.handle_get_request
         )
-        self.mqtt_router.register(
-            Topic.DATASTORE,
-            lambda r, m: self._guard_and_dispatch(r, m, handler=datastore.handle_mqtt),
-        )
+        self.mqtt_router.register(Topic.DATASTORE, datastore.handle_mqtt)
 
         # Mailbox
         self.mcu_registry.register(Command.CMD_MAILBOX_PUSH.value, mailbox.handle_push)
@@ -114,10 +108,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(
             Command.CMD_MAILBOX_PROCESSED.value, mailbox.handle_processed
         )
-        self.mqtt_router.register(
-            Topic.MAILBOX,
-            lambda r, m: self._guard_and_dispatch(r, m, handler=mailbox.handle_mqtt),
-        )
+        self.mqtt_router.register(Topic.MAILBOX, mailbox.handle_mqtt)
 
         # File
         self.mcu_registry.register(Command.CMD_FILE_WRITE.value, file.handle_write)
@@ -126,13 +117,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(
             Command.CMD_FILE_READ_RESP.value, file.handle_read_response
         )
-
-        async def file_mqtt_handler(r: TopicRoute, m: Message) -> bool:
-            if len(r.segments) < 2:
-                return False
-            return await self._guard_and_dispatch(r, m, handler=file.handle_mqtt)
-
-        self.mqtt_router.register(Topic.FILE, file_mqtt_handler)
+        self.mqtt_router.register(Topic.FILE, file.handle_mqtt)
 
         # Process
         self.mcu_registry.register(
@@ -142,10 +127,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_PROCESS_POLL.value, process.handle_poll)
 
         # Shell (MQTT only - now handled by unified ProcessComponent)
-        self.mqtt_router.register(
-            Topic.SHELL,
-            lambda r, m: self._guard_and_dispatch(r, m, handler=process.handle_mqtt),
-        )
+        self.mqtt_router.register(Topic.SHELL, process.handle_mqtt)
 
         # Pin (GPIO)
         self.mcu_registry.register(
@@ -176,23 +158,14 @@ class BridgeDispatcher:
             lambda s, p: _handle_mcu_read(s, Command.CMD_ANALOG_READ, p),
         )
 
-        self.mqtt_router.register(
-            Topic.DIGITAL,
-            lambda r, m: self._guard_and_dispatch(r, m, handler=pin.handle_mqtt),
-        )
-        self.mqtt_router.register(
-            Topic.ANALOG,
-            lambda r, m: self._guard_and_dispatch(r, m, handler=pin.handle_mqtt),
-        )
+        self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt)
+        self.mqtt_router.register(Topic.ANALOG, pin.handle_mqtt)
 
         # SPI
         self.mcu_registry.register(
             Command.CMD_SPI_TRANSFER_RESP.value, spi.handle_transfer_resp
         )
-        self.mqtt_router.register(
-            Topic.SPI,
-            lambda r, m: self._guard_and_dispatch(r, m, handler=spi.handle_mqtt),
-        )
+        self.mqtt_router.register(Topic.SPI, spi.handle_mqtt)
 
         # System
         self.mcu_registry.register(
@@ -238,15 +211,10 @@ class BridgeDispatcher:
     ) -> None:
         """
         Route an incoming frame from the MCU to the appropriate registered handler.
-
-        This method acts as a Firewall/Router. It enforces pre-sync validation
-        and wraps handler execution in a safety try/except block.
         """
-        # 0. Notify Flow Controller (if registered)
         if self.on_frame_received_callback:
             self.on_frame_received_callback(command_id, sequence_id, payload)
 
-        # 1. Security Check: Link Synchronization
         if not self._is_frame_allowed_pre_sync(command_id):
             logger.warning(
                 "Security: Rejecting MCU frame 0x%02X (Link not synchronized)",
@@ -254,11 +222,8 @@ class BridgeDispatcher:
             )
             return
 
-        # 2. Handler Resolution
         handler = self.mcu_registry.get(command_id)
         command_name = resolve_command_id(command_id)
-
-        # 3. Safe Execution Strategy
         handled_successfully = False
 
         if handler:
@@ -278,25 +243,16 @@ class BridgeDispatcher:
                 RuntimeError,
             ) as exc:
                 logger.critical(
-                    "Critical: Exception in handler for command %s: %s",
-                    command_name,
-                    exc,
-                    exc_info=True,
+                    "Critical: Exception in handler for %s: %s", command_name, exc
                 )
                 if response_to_request(command_id) is None:
                     await self.send_frame(Status.ERROR.value, b"Internal Error")
 
         elif response_to_request(command_id) is None:
-            logger.warning(
-                "Protocol: Unhandled MCU command %s (No handler registered)",
-                command_name,
-            )
+            logger.warning("Protocol: Unhandled MCU command %s", command_name)
             self.state.record_unknown_command_id(command_id)
             await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
-        else:
-            logger.debug("Protocol: Ignoring orphaned MCU response %s", command_name)
 
-        # 4. Auto-Acknowledgement (if applicable)
         if handled_successfully and command_id not in STATUS_VALUES:
             await self.acknowledge_frame(command_id, sequence_id)
 
@@ -308,74 +264,43 @@ class BridgeDispatcher:
         inbound_topic = str(inbound.topic)
         route = parse_topic_func(inbound_topic)
         if route is None or not route.segments:
-            logger.debug("Ignoring MQTT message: %s", inbound_topic)
             return
 
-        # [SIL-2] Synchronization Guard: Wait for the serial link to be ready
-        # before dispatching non-system commands. This prevents race conditions
-        # during the handshake stabilization period.
+        # 1. Policy Guard (Eradicated _guard_and_dispatch wrapper)
+        if action := self._get_topic_action(route):
+            if not self.is_topic_action_allowed(route.topic, action):
+                await self.reject_topic_action(inbound, route.topic, action)
+                return
+
+        # 2. Synchronization Guard
         if route.topic != Topic.SYSTEM:
             try:
                 async with asyncio.timeout(30.0):
                     await self.state.link_sync_event.wait()
             except asyncio.TimeoutError:
-                logger.warning(
-                    "MQTT > Link synchronization timeout; dropping message on topic %s",
-                    inbound_topic,
-                )
-                # Reject with forbidden status if policy allows, or just drop
+                logger.warning("MQTT > Link sync timeout for %s", inbound_topic)
                 return
 
+        # 3. Router Dispatch
         try:
-            handled = await self.mqtt_router.dispatch(route, inbound)
-        except (
-            OSError,
-            ValueError,
-            TypeError,
-            AttributeError,
-            KeyError,
-            IndexError,
-            RuntimeError,
-        ):
-            logger.exception("Error processing MQTT topic: %s", inbound_topic)
-            return
+            if not await self.mqtt_router.dispatch(route, inbound):
+                logger.debug("Unhandled MQTT topic %s", inbound_topic)
+        except Exception:
+            logger.exception("Fault Isolation: MQTT processing failed for %s", inbound_topic)
 
-        if not handled:
-            logger.debug("Unhandled MQTT topic %s", inbound_topic)
-
-    async def _guard_and_dispatch(
-        self,
-        route: TopicRoute,
-        inbound: Message,
-        handler: Callable[[TopicRoute, Message], Awaitable[bool]],
-    ) -> bool:
-        """Enforces policy then delegates to the component handler."""
-        if action := self._should_reject_topic_action(route):
-            await self.reject_topic_action(inbound, route.topic, action)
-            return True
-
-        return await handler(route, inbound)
-
-    def _should_reject_topic_action(self, route: TopicRoute) -> str | None:
-        """Deduce if an MQTT route should be rejected based on policy."""
+    def _get_topic_action(self, route: TopicRoute) -> str | None:
+        """Deduce the action name for policy enforcement from the route."""
         match route.topic:
             case Topic.SYSTEM:
                 return None
             case Topic.DIGITAL | Topic.ANALOG:
                 if not route.segments:
-                    action = None
-                elif len(route.segments) == 1:
-                    action = "write"
-                else:
-                    action = route.segments[1].strip().lower() or None
+                    return None
+                return "write" if len(route.segments) == 1 else (route.segments[1].lower() or None)
             case Topic.CONSOLE:
-                action = "in" if route.identifier == "in" else None
+                return "in" if route.identifier == "in" else None
             case _:
-                action = route.identifier
-
-        if action and not self.is_topic_action_allowed(route.topic, action):
-            return action
-        return None
+                return route.identifier or None
 
     def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
         return (
@@ -384,8 +309,6 @@ class BridgeDispatcher:
             or command_id in _PRE_SYNC_ALLOWED_COMMANDS
         )
 
-    # --- MQTT Handlers (Consolidated with match/case) ---
-
     async def _handle_system_topic(self, route: TopicRoute, inbound: Message) -> bool:
         match route.identifier:
             case "bridge":
@@ -393,21 +316,15 @@ class BridgeDispatcher:
             case _:
                 if self._container:
                     from . import SystemComponent
-
-                    system = self._container.get(SystemComponent)
-                    return await system.handle_mqtt(route, inbound)
+                    return await self._container.get(SystemComponent).handle_mqtt(route, inbound)
         return False
 
     async def _handle_bridge_topic(self, route: TopicRoute, inbound: Message) -> bool:
-        segments = list(route.remainder)
-        if not segments:
-            return False
-        match segments:
+        match list(route.remainder):
             case ["handshake", "get"]:
                 await self.publish_bridge_snapshot("handshake", inbound)
                 return True
             case [("summary" | "state"), "get"]:
                 await self.publish_bridge_snapshot("summary", inbound)
                 return True
-            case _:
-                return False
+        return False

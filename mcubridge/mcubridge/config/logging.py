@@ -1,9 +1,8 @@
-"""Logging configuration for MCU Bridge daemon using structlog."""
+"""Modernized Logging configuration for MCU Bridge daemon (SIL-2)."""
 
 from __future__ import annotations
 
-import logging
-import logging.handlers
+import logging.config
 import os
 from pathlib import Path
 from typing import Any
@@ -21,18 +20,14 @@ def hexdump_processor(
 ) -> structlog.types.EventDict:
     """Format binary fields as standardized hex strings [DE AD BE EF]."""
     for key, value in event_dict.items():
-        if isinstance(value, memoryview):
-            raw = value.tobytes()
-        elif isinstance(value, (bytes, bytearray)):
+        if isinstance(value, (bytes, bytearray, memoryview)):
             raw = bytes(value)
-        else:
-            continue
-        event_dict[key] = f"[{raw.hex(' ').upper()}]" if raw else "[]"
+            event_dict[key] = f"[{raw.hex(' ').upper()}]" if raw else "[]"
     return event_dict
 
 
 def configure_logging(config: RuntimeConfig) -> None:
-    """Configure logging with structlog: JSON for syslog, colored for console."""
+    """Configure logging using declarative dictConfig and structlog native processors."""
 
     level = "DEBUG" if getattr(config, "debug_logging", False) else "INFO"
     force_stream = bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
@@ -40,7 +35,7 @@ def configure_logging(config: RuntimeConfig) -> None:
         SYSLOG_SOCKET.exists() or SYSLOG_SOCKET_FALLBACK.exists()
     )
 
-    pre_chain: list[Any] = [
+    shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
@@ -52,36 +47,44 @@ def configure_logging(config: RuntimeConfig) -> None:
     ]
 
     structlog.configure(
-        processors=[*pre_chain, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
-        wrapper_class=structlog.stdlib.BoundLogger,
+        processors=[*shared_processors, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
         logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
 
+    # Declarative Logging Configuration
+    log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "()": structlog.stdlib.ProcessorFormatter,
+                "processors": [
+                    structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                    structlog.processors.JSONRenderer() if use_syslog else structlog.dev.ConsoleRenderer(),
+                ],
+                "foreign_pre_chain": shared_processors,
+            },
+        },
+        "handlers": {
+            "default": {
+                "level": level,
+                "()": logging.handlers.SysLogHandler if use_syslog else logging.StreamHandler,
+                "formatter": "default",
+            },
+        },
+        "loggers": {
+            "": {
+                "handlers": ["default"],
+                "level": level,
+            },
+        },
+    }
+
     if use_syslog:
-        socket_path = (
-            SYSLOG_SOCKET if SYSLOG_SOCKET.exists() else SYSLOG_SOCKET_FALLBACK
-        )
-        renderer: Any = structlog.processors.JSONRenderer()
-        handler: logging.Handler = logging.handlers.SysLogHandler(
-            address=str(socket_path),
-            facility=logging.handlers.SysLogHandler.LOG_DAEMON,
-        )
-    else:
-        renderer = structlog.dev.ConsoleRenderer()
-        handler = logging.StreamHandler()
+        socket_path = str(SYSLOG_SOCKET if SYSLOG_SOCKET.exists() else SYSLOG_SOCKET_FALLBACK)
+        log_config["handlers"]["default"]["address"] = socket_path
+        log_config["handlers"]["default"]["facility"] = logging.handlers.SysLogHandler.LOG_DAEMON
 
-    formatter = structlog.stdlib.ProcessorFormatter(
-        processors=[
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            renderer,
-        ],
-        foreign_pre_chain=pre_chain,
-    )
-    handler.setFormatter(formatter)
-    handler.setLevel(level)
-
-    root = logging.getLogger()
-    root.handlers.clear()
-    root.addHandler(handler)
-    root.setLevel(level)
+    logging.config.dictConfig(log_config)

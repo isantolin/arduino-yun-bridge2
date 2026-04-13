@@ -60,9 +60,8 @@ def test_configure_logging_syslog_fallback(tmp_path: Any):
     with (
         patch("mcubridge.config.logging.SYSLOG_SOCKET", Path("/non/existent/dev/log")),
         patch("mcubridge.config.logging.SYSLOG_SOCKET_FALLBACK", fake_fallback),
-        patch("logging.handlers.SysLogHandler", return_value=mock_handler) as mock_cls,
+        patch("logging.handlers.SysLogHandler", autospec=True) as mock_cls,
     ):
-        mock_cls.LOG_DAEMON = logging.handlers.SysLogHandler.LOG_DAEMON
         logging_config.configure_logging(config)
         mock_cls.assert_called_once_with(
             address=str(fake_fallback),

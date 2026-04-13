@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import structlog
-import time
-from pathlib import Path
 from typing import Any
 
 import msgspec
@@ -40,48 +38,31 @@ class MQTTPublishSpool:
         *,
         on_fallback: Any | None = None,
     ) -> None:
-        self.directory = Path(directory)
         self._on_fallback = on_fallback
-        self._limit = max(1, limit)
         self._records = BridgeQueue[dict[str, Any]](
             directory=directory,
             max_items=limit,
         )
-        self._dropped_due_to_limit = 0
-        self._trim_events = 0
-        self._last_trim_unix = 0.0
         self._corrupt_dropped = 0
-        self._closed = False
+        self._dropped_due_to_limit = 0
 
     def close(self) -> None:
-        if getattr(self, "_closed", False):
-            return
-        self._closed = True
-        try:
-            if hasattr(self, "_records"):
-                self._records.close()
-        finally:
-            if hasattr(self, "_records"):
-                del self._records
+        self._records.close()
 
     def append(self, message: QueuedPublish) -> None:
-        if self._closed:
-            return
-        if self.pending >= self._limit:
-            self._dropped_due_to_limit += 1
-            self._trim_events += 1
-            self._last_trim_unix = time.time()
-        record = msgspec.structs.asdict(message)
-        evt = self._records.append(record)
+        # Use directly msgspec.structs.asdict for zero-wrapper serialization
+        evt = self._records.append(msgspec.structs.asdict(message))
         if not evt.success:
             raise MQTTSpoolError("append_failed")
+        self._dropped_due_to_limit += evt.dropped_chunks
 
     def pop_next(self) -> QueuedPublish | None:
-        while self.pending > 0 and not self._closed:
+        while len(self._records) > 0:
             record = self._records.popleft()
             if record is None:
-                return None
+                break
             try:
+                # Direct call to from_record
                 return QueuedPublish.from_record(record)
             except (msgspec.MsgspecError, TypeError, ValueError) as exc:
                 self._corrupt_dropped += 1
@@ -89,10 +70,7 @@ class MQTTPublishSpool:
         return None
 
     def requeue(self, message: QueuedPublish) -> None:
-        if self._closed:
-            return
-        record = msgspec.structs.asdict(message)
-        self._records.appendleft(record)
+        self._records.appendleft(msgspec.structs.asdict(message))
 
     @property
     def pending(self) -> int:
@@ -104,34 +82,26 @@ class MQTTPublishSpool:
         return self._records.fallback_active
 
     @property
-    def failure_reason(self) -> str | None:
-        return None
-
-    @property
     def last_error(self) -> str | None:
         """Return the last error message from the underlying queue."""
         return self._records.last_error
 
     @property
     def limit(self) -> int:
-        return self._limit
+        return self._records.max_items or 0
 
     @limit.setter
     def limit(self, value: int) -> None:
-        self._limit = max(1, value)
-        self._records.max_items = self._limit
+        self._records.max_items = max(1, value)
 
     def snapshot(self) -> dict[str, int | float]:
-        stats = {
+        return {
             "pending": self.pending,
             "limit": self.limit,
             "dropped_due_to_limit": self._dropped_due_to_limit,
-            "trim_events": self._trim_events,
-            "last_trim_unix": self._last_trim_unix,
             "corrupt_dropped": self._corrupt_dropped,
             "fallback_active": int(self.is_degraded),
         }
-        return stats
 
 
 __all__ = ["QueuedPublish", "MQTTPublishSpool", "MQTTSpoolError"]

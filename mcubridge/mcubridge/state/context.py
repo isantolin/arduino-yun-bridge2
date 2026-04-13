@@ -885,9 +885,7 @@ class RuntimeState(msgspec.Struct):
             self.mqtt_spool = spool_obj
             if spool_obj.is_degraded:
                 self.mqtt_spool_degraded = True
-                self.mqtt_spool_failure_reason = (
-                    spool_obj.failure_reason or "initialization_failed"
-                )
+                self.mqtt_spool_failure_reason = spool_obj.last_error or "initialization_failed"
                 self.mqtt_spool_last_error = spool_obj.last_error
             else:
                 self.mqtt_spool_degraded = False

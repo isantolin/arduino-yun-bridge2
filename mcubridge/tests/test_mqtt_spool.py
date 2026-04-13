@@ -62,7 +62,6 @@ def test_spool_trim_limit(tmp_path: Path) -> None:
     assert spool.pending == 2
     snapshot = spool.snapshot()
     assert snapshot["dropped_due_to_limit"] == 3
-    assert snapshot["trim_events"] >= 1
     spool.close()
 
 

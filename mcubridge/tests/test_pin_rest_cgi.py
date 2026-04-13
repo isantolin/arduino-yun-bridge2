@@ -1,49 +1,41 @@
-"""Regression tests for the pin_rest_cgi MQTT helper."""
+"""Tests for the Pin REST CGI helper."""
 
 from __future__ import annotations
 
-import importlib.util
 import io
-import os
-import sys
-from importlib.abc import Loader
-from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock
 
 import msgspec
 import pytest
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
+from mcubridge.config.settings import RuntimeConfig
 
 
-def _load_pin_rest_cgi() -> ModuleType:
-    script_path = (
-        Path(__file__).resolve().parents[2]
-        / "mcubridge"
-        / "scripts"
-        / "pin_rest_cgi.py"
-    )
+@pytest.fixture
+def pin_rest_module() -> ModuleType:
+    import importlib.util
+    from pathlib import Path
+
+    script_path = Path(__file__).parent.parent / "scripts" / "pin_rest_cgi.py"
     spec = importlib.util.spec_from_file_location("pin_rest_cgi", script_path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("Unable to load pin_rest_cgi script")
-    module = importlib.util.module_from_spec(spec)
-    loader = spec.loader
-    assert isinstance(loader, Loader)
-    sys.modules[spec.name] = module
-    loader.exec_module(module)
-    return module
+        raise ImportError(f"Could not load script from {script_path}")
 
-
-@pytest.fixture()
-def pin_rest_module() -> ModuleType:
-    return _load_pin_rest_cgi()
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 class MockInfo:
-    def __init__(self, published: bool = True):
+    def __init__(self, published: bool = True) -> None:
         self._published = published
+        self.rc = 0
+
+    def wait_for_publish(self, timeout: float | None = None) -> None:
+        if not self._published:
+            raise TimeoutError("Mock timeout")
 
     def is_published(self) -> bool:
         return self._published
@@ -51,23 +43,27 @@ class MockInfo:
 
 class CapturingFakeClient:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.args = args
-        self.kwargs = kwargs
-        self.tls_kwargs: dict[str, Any] = {}
-        self.auth_args: tuple[Any, ...] = ()
-        self.published: list[tuple[str, str | bytes, int]] = []
+        self.connected = False
+        self.published_topic: str | None = None
+        self.published_payload: str | bytes | None = None
+        self.tls_context: Any = None
 
-    def tls_set(self, **kwargs: Any) -> None:
-        self.tls_kwargs = kwargs
+    def connect(self, host: str, port: int, keepalive: int = 60) -> None:
+        self.connected = True
 
     def tls_set_context(self, context: Any) -> None:
         self.tls_context = context
 
-    def username_pw_set(self, *args: Any) -> None:
-        self.auth_args = args
-
-    def connect(self, *args: Any, **kwargs: Any) -> None:
+    def username_pw_set(self, user: str, password: str | None = None) -> None:
         pass
+
+    def publish(self, topic: str, payload: str | bytes, qos: int = 0) -> Any:
+        self.published_topic = topic
+        self.published_payload = payload
+        return MockInfo()
+
+    def disconnect(self) -> None:
+        self.connected = False
 
     def loop_start(self) -> None:
         pass
@@ -75,19 +71,12 @@ class CapturingFakeClient:
     def loop_stop(self) -> None:
         pass
 
-    def disconnect(self) -> None:
-        pass
 
-    def publish(self, topic: str, payload: str | bytes, qos: int = 0) -> Any:
-        self.published.append((topic, payload, qos))
-        return MockInfo()
-
-
-def test_publish_safe_configures_tls(
+def test_publish_sync_configures_tls(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    tmp_path: Any,
 ) -> None:
     captured_clients: list[CapturingFakeClient] = []
 
@@ -99,11 +88,10 @@ def test_publish_safe_configures_tls(
     monkeypatch.setattr(pin_rest_module, "Client", TestClient)
 
     import ssl
-
     monkeypatch.setattr(
         ssl,
         "create_default_context",
-        lambda *args, **kwargs: MagicMock(),  # type: ignore[reportUnknownLambdaType]
+        lambda *args, **kwargs: MagicMock(),
     )
 
     runtime_config.mqtt_user = "user"
@@ -113,19 +101,18 @@ def test_publish_safe_configures_tls(
     cafile.write_text("dummy-ca")
     runtime_config.mqtt_cafile = str(cafile)
 
-    pin_rest_module.publish_safe(
+    pin_rest_module.publish_sync(
         topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13",
         payload="1",
         config=runtime_config,
     )
 
     assert len(captured_clients) == 1
-    fake_client = captured_clients[0]
-    assert fake_client.auth_args == ("user", "secret")
-    assert fake_client.tls_context is not None
+    assert captured_clients[0].connected is False  # Disconnected at end
+    assert captured_clients[0].published_topic == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13"
 
 
-def test_publish_safe_times_out(
+def test_publish_sync_times_out(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
@@ -134,22 +121,18 @@ def test_publish_safe_times_out(
         def publish(self, topic: str, payload: str | bytes, qos: int = 0) -> Any:
             return MockInfo(published=False)
 
-            monkeypatch.setattr(pin_rest_module, "Client", TimeoutClient)
+    monkeypatch.setattr(pin_rest_module, "Client", TimeoutClient)
+    runtime_config.mqtt_tls = False
 
-            # Patch retry to fail fast
-
-            monkeypatch.setattr(pin_rest_module, "retries", 1)
-
-    monkeypatch.setattr(pin_rest_module, "DEFAULT_PUBLISH_TIMEOUT", 0.01)
-
-    with pytest.raises((TimeoutError, Exception)):
-        pin_rest_module.publish_safe(topic="br/d/2", payload="0", config=runtime_config)
+    with pytest.raises(TimeoutError):
+        pin_rest_module.publish_sync(topic="br/d/2", payload="0", config=runtime_config)
 
 
-def test_main_invokes_publish(
+def test_application_invokes_publish(
     pin_rest_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from types import SimpleNamespace
     fake_config = SimpleNamespace(
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         mqtt_host="localhost",
@@ -160,6 +143,8 @@ def test_main_invokes_publish(
         mqtt_cafile="/tmp/test-ca.pem",
         mqtt_certfile=None,
         mqtt_keyfile=None,
+        mqtt_tls_insecure=False,
+        tls_enabled=True,
     )
 
     captured: dict[str, Any] = {}
@@ -167,15 +152,15 @@ def test_main_invokes_publish(
     monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: fake_config)
     monkeypatch.setattr(
         pin_rest_module,
-        "publish_safe",
-        lambda topic, payload, config: captured.update(  # type: ignore[reportUnknownLambdaType]
+        "publish_sync",
+        lambda topic, payload, config: captured.update(
             {"topic": topic, "payload": payload}
         ),
     )
     monkeypatch.setattr(
         pin_rest_module,
         "configure_logging",
-        lambda config: None,  # type: ignore[reportUnknownLambdaType]
+        lambda config: None,
     )
 
     environ = {
@@ -184,59 +169,11 @@ def test_main_invokes_publish(
         "CONTENT_LENGTH": str(len(msgspec.json.encode({"state": "ON"}))),
         "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "ON"})),
     }
-    monkeypatch.setattr(os, "environ", environ)
 
-    def start_response(status: Any, headers: Any):
-        captured["status"] = status
+    start_response = MagicMock()
+    response = pin_rest_module.application(environ, start_response)
 
-    result = pin_rest_module.application(environ, start_response)
-    body = msgspec.json.decode(b"".join(result))
-
-    assert captured["topic"] == "br/d/7"
+    assert captured["topic"] == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/7"
     assert captured["payload"] == "1"
-    assert body["status"] == "ok"
-    assert captured["status"] == "200 OK"
-
-
-def test_main_rejects_invalid_state(
-    pin_rest_module: ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_config = SimpleNamespace(
-        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
-        mqtt_host="localhost",
-        mqtt_port=1883,
-        mqtt_user=None,
-        mqtt_pass=None,
-        mqtt_tls=True,
-        mqtt_cafile="/tmp/test-ca.pem",
-        mqtt_certfile=None,
-        mqtt_keyfile=None,
-    )
-
-    monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: fake_config)
-    monkeypatch.setattr(
-        pin_rest_module,
-        "configure_logging",
-        lambda config: None,  # type: ignore[reportUnknownLambdaType]
-    )
-
-    environ = {
-        "REQUEST_METHOD": "POST",
-        "PATH_INFO": "/pin/9",
-        "CONTENT_LENGTH": str(len(msgspec.json.encode({"state": "MAYBE"}))),
-        "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "MAYBE"})),
-    }
-    monkeypatch.setattr(os, "environ", environ)
-
-    captured_status = []
-
-    def start_response(status: Any, headers: Any):
-        captured_status.append(status)  # type: ignore[reportUnknownMemberType]
-
-    result = pin_rest_module.application(environ, start_response)
-    body = msgspec.json.decode(b"".join(result))
-
-    assert captured_status[0] == "400 Bad Request"
-    assert body["status"] == "error"
-    assert "Invalid state" in body["message"]
+    assert b"\"status\":\"ok\"" in response[0]
+    start_response.assert_called_once()

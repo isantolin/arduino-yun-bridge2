@@ -1,56 +1,60 @@
 #!/usr/bin/env python3
-"""CLI utility to push files to the MCU Bridge (Linux or MCU storage)."""
+"""Modernized File Push utility for MCU Bridge (SIL-2)."""
 
 from __future__ import annotations
 
 import asyncio
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import aiomqtt
-import click
-from mcubridge.config.const import DEFAULT_MQTT_HOST, DEFAULT_MQTT_PORT
+import typer
 from mcubridge.config.settings import get_uci_config
+from mcubridge.util.mqtt_helper import configure_tls_context
+
+app = typer.Typer(add_completion=False, help="Push files to MCU or Linux storage.")
 
 
-@click.command()
-@click.argument("source_file", type=click.Path(exists=True, dir_okay=False))
-@click.argument("target_path")
-@click.option("--mcu", is_flag=True, help="Target MCU storage (e.g. SD card)")
-@click.option("--host", default=None, help="MQTT host")
-@click.option("--port", default=None, type=int, help="MQTT port")
-def main(
-    source_file: str,
-    target_path: str,
-    mcu: bool,
-    host: str | None,
-    port: int | None,
-) -> None:
-    """Push SOURCE_FILE to TARGET_PATH on the bridge."""
-
+async def push_file(topic: str, data: bytes) -> None:
+    """Publish file data using core configuration."""
     config = get_uci_config()
-    resolved_host: str = host or str(config.get("mqtt_host") or DEFAULT_MQTT_HOST)
-    resolved_port: int = port or int(config.get("mqtt_port") or DEFAULT_MQTT_PORT)
-    prefix: str = str(config.get("mqtt_topic") or "br")
+    tls_context = configure_tls_context(config)
 
-    if mcu:
-        topic = f"{prefix}/file/write/mcu/{target_path.lstrip('/')}"
-    else:
-        topic = f"{prefix}/file/write/{target_path.lstrip('/')}"
+    try:
+        async with aiomqtt.Client(
+            hostname=config.mqtt_host,
+            port=config.mqtt_port,
+            username=config.mqtt_user or None,
+            password=config.mqtt_pass or None,
+            tls_context=tls_context,
+        ) as client:
+            await client.publish(topic, payload=data, qos=1)
+    except (aiomqtt.MqttError, OSError, RuntimeError) as e:
+        sys.stderr.write(f"Error: File push failed: {e}\n")
+        raise typer.Exit(code=1)
 
-    async def push() -> None:
-        try:
-            async with aiomqtt.Client(resolved_host, resolved_port) as client:
-                data = Path(source_file).read_bytes()
-                click.echo(f"Pushing {len(data)} bytes to {topic}...")
-                await client.publish(topic, payload=data, qos=1)
-                click.echo("Success.")
-        except (aiomqtt.MqttError, OSError, ValueError) as e:
-            click.echo(f"Error: {e}", err=True)
-            sys.exit(1)
 
-    asyncio.run(push())
+@app.command()
+def main(
+    source: Annotated[Path, typer.Argument(help="Source file to push", exists=True, dir_okay=False)],
+    target: Annotated[str, typer.Argument(help="Target path on the bridge")],
+    mcu: Annotated[bool, typer.Option(help="Target MCU storage")] = False,
+) -> None:
+    """Push file data to the bridge via MQTT."""
+    config = get_uci_config()
+    prefix = config.mqtt_topic
+
+    clean_target = target.lstrip("/")
+    sub = "file/write/mcu" if mcu else "file/write"
+    topic = f"{prefix}/{sub}/{clean_target}"
+
+    data = source.read_bytes()
+    typer.echo(f"Pushing {len(data)} bytes to {topic}...")
+
+    asyncio.run(push_file(topic, data))
+    typer.echo("Success.")
 
 
 if __name__ == "__main__":
-    main()
+    app()

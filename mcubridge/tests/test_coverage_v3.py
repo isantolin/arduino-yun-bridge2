@@ -55,8 +55,6 @@ def test_configure_logging_syslog_fallback(tmp_path: Any):
     fake_fallback = tmp_path / "log_fallback"
     fake_fallback.touch()
 
-    mock_handler = MagicMock()
-
     with (
         patch("mcubridge.config.logging.SYSLOG_SOCKET", Path("/non/existent/dev/log")),
         patch("mcubridge.config.logging.SYSLOG_SOCKET_FALLBACK", fake_fallback),

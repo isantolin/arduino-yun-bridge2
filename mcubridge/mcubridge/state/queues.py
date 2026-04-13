@@ -4,7 +4,7 @@ Manual index management to ensure resource cleanup and persistence integrity.
 
 from __future__ import annotations
 
-import os
+import sqlite3
 from collections import deque
 from pathlib import Path
 from typing import Any, Generic, TypeVar, cast
@@ -48,21 +48,17 @@ class BridgeQueue(Generic[T]):
             try:
                 self.directory = Path(directory)
                 self.directory.mkdir(parents=True, exist_ok=True)
-                os.chmod(self.directory, 0o700)
                 self._cache = diskcache.Cache(str(self.directory))
                 if "head" not in self._cache:
                     self._cache["head"] = 0
                 if "tail" not in self._cache:
                     self._cache["tail"] = 0
-            except (OSError, RuntimeError, Exception) as exc:
+            except (OSError, RuntimeError, AttributeError, sqlite3.Error) as exc:
                 # [SIL-2] Resilient fallback to RAM if SQLite fails (e.g. I/O error in tests)
                 logger.warning("Queue falling back to RAM: %s", exc)
                 self._fallback_active = True
                 self._last_err_msg = str(exc)
                 self._cache = None
-        else:
-            self._cache = None
-
     def append(self, item: T) -> QueueEvent:
         if self._closed:
             return QueueEvent(success=False)

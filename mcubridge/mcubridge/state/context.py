@@ -6,6 +6,8 @@ import asyncio
 import collections
 import contextlib
 import functools
+import os
+import tempfile
 import structlog
 import time
 from collections.abc import Mapping
@@ -1110,6 +1112,21 @@ def create_runtime_state(
     from ..config.settings import RuntimeConfig
 
     cfg = msgspec.convert(config, RuntimeConfig) if isinstance(config, dict) else config
+
+    if os.environ.get("MCUBRIDGE_TEST_MODE") == "1":
+        # [SIL-2] Automated isolation for test environment.
+        # Force unique paths if they match system defaults or current const defaults.
+        from ..config import const
+        _SYS_FS = "/tmp/yun_files"
+        _SYS_SPOOL = "/tmp/mcubridge/spool"
+
+        if cfg.file_system_root in (_SYS_FS, const.DEFAULT_FILE_SYSTEM_ROOT):
+            new_fs = tempfile.mkdtemp(prefix="mcubridge-test-fs-")
+            cfg = msgspec.structs.replace(cfg, file_system_root=new_fs)
+        if cfg.mqtt_spool_dir in (_SYS_SPOOL, const.DEFAULT_MQTT_SPOOL_DIR):
+            new_spool = tempfile.mkdtemp(prefix="mcubridge-test-spool-")
+            cfg = msgspec.structs.replace(cfg, mqtt_spool_dir=new_spool)
+
     state = RuntimeState(
         mqtt_publish_queue=asyncio.Queue(cfg.mqtt_queue_limit),
         serial_tx_allowed=asyncio.Event(),

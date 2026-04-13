@@ -39,7 +39,7 @@ rationale = "Template engine for professional and auditable code generation [BUI
 [[dependency]]
 name = "msgspec"
 openwrt = "python3-msgspec"
-pip = "msgspec==0.21.0"
+pip = "msgspec==0.21.1"
 rationale = "High-performance JSON/MessagePack library"
 
 [[dependency]]

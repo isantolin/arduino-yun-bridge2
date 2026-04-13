@@ -193,7 +193,25 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     void (BridgeClass::*handler)(const bridge::router::CommandContext&);
   };
 
-  static constexpr CommandRoute routes[] = {
+  static constexpr size_t ROUTE_COUNT = 17
+#if BRIDGE_ENABLE_DATASTORE
+    + 1
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+    + 3
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+    + 4
+#endif
+#if BRIDGE_ENABLE_PROCESS
+    + 3
+#endif
+#if BRIDGE_ENABLE_SPI
+    + 4
+#endif
+    ;
+
+  static constexpr etl::array<CommandRoute, ROUTE_COUNT> routes = {{
     { static_cast<uint16_t>(rpc::StatusCode::STATUS_MALFORMED), &BridgeClass::_handleStatusMalformed },
     { static_cast<uint16_t>(rpc::StatusCode::STATUS_ACK),       &BridgeClass::_handleStatusAck },
     { rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION),      &BridgeClass::_handleGetVersion },
@@ -236,15 +254,15 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     { rpc::to_underlying(rpc::CommandId::CMD_SPI_END),        &BridgeClass::_handleSpiEnd },
     { rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG), &BridgeClass::_handleSpiSetConfigCommand },
 #endif
-  };
+  }};
 
   // [SIL-2] Deterministic dispatch using binary search (O(log N)).
-  auto it = etl::lower_bound(etl::begin(routes), etl::end(routes), ctx.raw_command,
+  auto it = etl::lower_bound(routes.begin(), routes.end(), ctx.raw_command,
                              [](const CommandRoute& route, uint16_t id) {
                                return route.id < id;
                              });
   
-  if (it != etl::end(routes) && it->id == ctx.raw_command) {
+  if (it != routes.end() && it->id == ctx.raw_command) {
     (this->*(it->handler))(ctx);
   } else {
     onUnknownCommand(ctx);

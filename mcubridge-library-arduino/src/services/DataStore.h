@@ -22,7 +22,7 @@ class DataStoreClass {
   static void notification(MsgBridgeSynchronized) { /* ready */ }
   void notification(MsgBridgeLost) { _pending_gets.clear(); }
 
-  struct PendingGet { char key[16]; };
+  struct PendingGet { etl::array<char, 16> key; };
   etl::queue<PendingGet, bridge::config::MAX_PENDING_DATASTORE> _pending_gets;
 };
 

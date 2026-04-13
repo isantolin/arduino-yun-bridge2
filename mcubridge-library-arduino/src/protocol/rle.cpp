@@ -17,18 +17,18 @@ struct ByteMsg : public etl::message<1> {
 class RleFsm;
 
 struct LiteralState : public etl::fsm_state<RleFsm, LiteralState, StateId::LITERAL, ByteMsg> {
+  LiteralState() { (void)&LiteralState::on_event; }
   etl::fsm_state_id_t on_event(const ByteMsg& msg);
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return get_state_id(); }
 };
 
 struct EscMarkerState : public etl::fsm_state<RleFsm, EscMarkerState, StateId::ESC_MARKER, ByteMsg> {
+  EscMarkerState() { (void)&EscMarkerState::on_event; }
   etl::fsm_state_id_t on_event(const ByteMsg& msg);
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return get_state_id(); }
 };
 
 struct EscValState : public etl::fsm_state<RleFsm, EscValState, StateId::ESC_VAL, ByteMsg> {
+  EscValState() { (void)&EscValState::on_event; }
   etl::fsm_state_id_t on_event(const ByteMsg& msg);
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return get_state_id(); }
 };
 
 class RleFsm : public etl::fsm {
@@ -42,8 +42,8 @@ public:
     static LiteralState s1;
     static EscMarkerState s2;
     static EscValState s3;
-    static etl::ifsm_state* state_list[] = {&s1, &s2, &s3};
-    set_states(state_list, 3);
+    static etl::array<etl::ifsm_state*, 3> state_list = {&s1, &s2, &s3};
+    set_states(state_list.data(), state_list.size());
     start();
   }
 };

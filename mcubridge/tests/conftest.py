@@ -18,6 +18,8 @@ import structlog
 
 import pytest
 
+os.environ["MCUBRIDGE_TEST_MODE"] = "1"
+
 # [TEST FIX] Mock 'uci' module strictly before importing mcubridge.common.
 # This simulates the OpenWrt environment where 'uci' is available.
 # We use the stub from stubs/uci/ which provides proper UciException and Uci classes.
@@ -158,14 +160,20 @@ def force_gc_cleanup():
 
 
 @pytest.fixture(autouse=True)
-def _isolate_file_system_root(tmp_path: Path) -> Iterator[None]:  # type: ignore[reportUnusedFunction]
-    """Give each test a unique file_system_root to prevent cross-test interference."""
+def _isolate_test_paths(tmp_path: Path) -> Iterator[None]:  # type: ignore[reportUnusedFunction]
+    """Give each test unique file_system_root and mqtt_spool_dir to prevent cross-test interference."""
     import mcubridge.config.const as _const
 
-    original = _const.DEFAULT_FILE_SYSTEM_ROOT
+    original_fs = _const.DEFAULT_FILE_SYSTEM_ROOT
+    original_spool = _const.DEFAULT_MQTT_SPOOL_DIR
+
     _const.DEFAULT_FILE_SYSTEM_ROOT = str(tmp_path / "yun_files")
+    _const.DEFAULT_MQTT_SPOOL_DIR = str(tmp_path / "spool")
+
     yield
-    _const.DEFAULT_FILE_SYSTEM_ROOT = original
+
+    _const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
+    _const.DEFAULT_MQTT_SPOOL_DIR = original_spool
 
 
 @pytest.fixture(autouse=True)

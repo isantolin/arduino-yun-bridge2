@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from typing import Annotated, cast, Any
 
 import aiomqtt
 import typer
 from mcubridge.config.settings import get_uci_config
+from mcubridge.protocol.structures import RuntimeConfig
 from mcubridge.util.mqtt_helper import configure_tls_context
 
 app = typer.Typer(add_completion=False, help="Diagnostic smoke test for MCU hardware.")
@@ -16,7 +17,7 @@ app = typer.Typer(add_completion=False, help="Diagnostic smoke test for MCU hard
 
 class SmokeTester:
     def __init__(self) -> None:
-        self.config = get_uci_config()
+        self.config = cast(RuntimeConfig, get_uci_config())
         self.prefix = self.config.mqtt_topic
         self.results: dict[str, bool] = {}
 
@@ -37,19 +38,20 @@ class SmokeTester:
                 version_topic = f"{self.prefix}/system/version/get"
                 resp_topic = f"{self.prefix}/system/version/response"
 
-                async with client.messages() as messages:
-                    await client.subscribe(resp_topic)
-                    await client.publish(version_topic, payload=b"")
+                await client.subscribe(resp_topic)
+                await client.publish(version_topic, payload=b"")
 
-                    try:
-                        async with asyncio.timeout(timeout):
-                            async for msg in messages:
-                                typer.echo(f"[+] Version received: {msg.payload.decode()}")
-                                self.results["connectivity"] = True
-                                break
-                    except asyncio.TimeoutError:
-                        typer.echo("[-] Timeout waiting for version response.")
-                        self.results["connectivity"] = False
+                try:
+                    async with asyncio.timeout(timeout):
+                        async for msg in client.messages:
+                            payload_raw: Any = msg.payload
+                            payload_str = payload_raw.decode() if isinstance(payload_raw, bytes) else str(payload_raw)
+                            typer.echo(f"[+] Version received: {payload_str}")
+                            self.results["connectivity"] = True
+                            break
+                except asyncio.TimeoutError:
+                    typer.echo("[-] Timeout waiting for version response.")
+                    self.results["connectivity"] = False
 
                 if not self.results.get("connectivity"):
                     return
@@ -77,7 +79,7 @@ def main(
     tester = SmokeTester()
     asyncio.run(tester.run(pin, timeout))
 
-    success = all(tester.results.values()) and tester.results
+    success = all(tester.results.values()) and bool(tester.results)
     if success:
         typer.echo("\n[PASS] Hardware smoke test successful.")
     else:

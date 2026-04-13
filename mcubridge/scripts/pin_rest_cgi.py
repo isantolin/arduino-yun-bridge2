@@ -13,6 +13,7 @@ import msgspec
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
+from mcubridge.protocol.structures import RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
@@ -23,9 +24,9 @@ logger = logging.getLogger("mcubridge.pin_rest")
 app = typer.Typer(add_completion=False)
 
 
-def publish_sync(topic: str, payload: str, config: Any) -> None:
+def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     """Synchronous MQTT publish for CGI context."""
-    client = Client(
+    client: Any = Client(
         client_id=f"mcubridge_cgi_{time.time_ns()}",
         protocol=MQTTv5,
         callback_api_version=CallbackAPIVersion.VERSION2,
@@ -40,7 +41,9 @@ def publish_sync(topic: str, payload: str, config: Any) -> None:
         client.username_pw_set(config.mqtt_user, config.mqtt_pass)
 
     client.connect(config.mqtt_host, config.mqtt_port)
-    client.publish(topic, payload, qos=1).wait_for_publish(timeout=5.0)
+    res = client.publish(topic, payload, qos=1)
+    if res is not None:
+        res.wait_for_publish(timeout=5.0)
     client.disconnect()
 
 
@@ -65,7 +68,8 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             return json_res(start_response, "405 Method Not Allowed", {"status": "error"})
 
         body_len = int(environ.get("CONTENT_LENGTH", "0"))
-        data = msgspec.json.decode(environ["wsgi.input"].read(body_len)) if body_len else {}
+        body_data = environ["wsgi.input"].read(body_len)
+        data: dict[str, Any] = msgspec.json.decode(body_data) if body_len else {}
         state = str(data.get("state", "")).upper()
 
         if state not in ("ON", "OFF"):

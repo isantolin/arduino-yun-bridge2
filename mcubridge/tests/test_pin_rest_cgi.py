@@ -91,7 +91,7 @@ def test_publish_sync_configures_tls(
     monkeypatch.setattr(
         ssl,
         "create_default_context",
-        lambda *args, **kwargs: MagicMock(),
+        lambda *args, **kwargs: MagicMock(),  # type: ignore[reportUnknownLambdaType]
     )
 
     runtime_config.mqtt_user = "user"
@@ -153,14 +153,14 @@ def test_application_invokes_publish(
     monkeypatch.setattr(
         pin_rest_module,
         "publish_sync",
-        lambda topic, payload, config: captured.update(
+        lambda topic, payload, config: captured.update(  # type: ignore[reportUnknownLambdaType]
             {"topic": topic, "payload": payload}
         ),
     )
     monkeypatch.setattr(
         pin_rest_module,
         "configure_logging",
-        lambda config: None,
+        lambda config: None,  # type: ignore[reportUnknownLambdaType]
     )
 
     environ = {

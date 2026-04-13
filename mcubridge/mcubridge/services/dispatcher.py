@@ -327,4 +327,6 @@ class BridgeDispatcher:
             case [("summary" | "state"), "get"]:
                 await self.publish_bridge_snapshot("summary", inbound)
                 return True
+            case _:
+                return False
         return False

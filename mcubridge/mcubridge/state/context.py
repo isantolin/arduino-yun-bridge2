@@ -912,12 +912,12 @@ class RuntimeState(msgspec.Struct):
             if self.mqtt_spool.is_degraded:
                 self.mqtt_spool_degraded = True
                 self.mqtt_spool_failure_reason = (
-                    self.mqtt_spool.failure_reason or "reactivation_failed"
+                    self.mqtt_spool.last_error or "reactivation_failed"
                 )
                 self.mqtt_spool_last_error = self.mqtt_spool.last_error
-                return False
-            self.mqtt_spool_degraded = False
-            self.mqtt_spool_failure_reason = None
+            else:
+                self.mqtt_spool_degraded = False
+                self.mqtt_spool_failure_reason = None
             self.mqtt_spool_recoveries += 1
             return True
         except (OSError, MQTTSpoolError) as exc:

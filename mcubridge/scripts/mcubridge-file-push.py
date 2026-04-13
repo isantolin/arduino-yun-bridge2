@@ -6,11 +6,12 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import aiomqtt
 import typer
 from mcubridge.config.settings import get_uci_config
+from mcubridge.protocol.structures import RuntimeConfig
 from mcubridge.util.mqtt_helper import configure_tls_context
 
 app = typer.Typer(add_completion=False, help="Push files to MCU or Linux storage.")
@@ -18,7 +19,7 @@ app = typer.Typer(add_completion=False, help="Push files to MCU or Linux storage
 
 async def push_file(topic: str, data: bytes) -> None:
     """Publish file data using core configuration."""
-    config = get_uci_config()
+    config = cast(RuntimeConfig, get_uci_config())
     tls_context = configure_tls_context(config)
 
     try:
@@ -42,7 +43,7 @@ def main(
     mcu: Annotated[bool, typer.Option(help="Target MCU storage")] = False,
 ) -> None:
     """Push file data to the bridge via MQTT."""
-    config = get_uci_config()
+    config = cast(RuntimeConfig, get_uci_config())
     prefix = config.mqtt_topic
 
     clean_target = target.lstrip("/")

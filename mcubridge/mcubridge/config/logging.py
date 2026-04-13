@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging.config
+import logging.handlers
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import structlog
 
@@ -21,7 +22,7 @@ def hexdump_processor(
     """Format binary fields as standardized hex strings [DE AD BE EF]."""
     for key, value in event_dict.items():
         if isinstance(value, (bytes, bytearray, memoryview)):
-            raw = bytes(value)
+            raw = bytes(cast(Any, value))
             event_dict[key] = f"[{raw.hex(' ').upper()}]" if raw else "[]"
     return event_dict
 
@@ -54,7 +55,7 @@ def configure_logging(config: RuntimeConfig) -> None:
     )
 
     # Declarative Logging Configuration
-    log_config = {
+    log_config: dict[str, Any] = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {

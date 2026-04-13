@@ -59,7 +59,7 @@ class ConsoleComponent(BaseComponent):
 
     async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
         payload = msgspec.convert(inbound.payload, bytes)
-        await self.handle_mqtt_input(payload, inbound)
+        await self._handle_mqtt_input(payload, inbound)
         return True
 
     async def _handle_mqtt_input(

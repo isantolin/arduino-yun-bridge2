@@ -103,7 +103,7 @@ def test_request_mcu_version_resets_cached_version(
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
-        runtime_state.mcu_version = "1.0.0"
+        runtime_state.mcu_version = (1, 0, 0)
 
         await component.request_mcu_version()
 
@@ -125,7 +125,7 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
 
         msg = MagicMock()
         msg.topic = "reply/topic"
-        component._pending_free_memory.append(msg)
+        component._pending_free_memory.append(msg)  # type: ignore[reportPrivateUsage]
 
         # Payload: 2 bytes (uint16)
         await component.handle_get_free_memory_resp(
@@ -165,7 +165,7 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(
 
         msg = MagicMock()
         msg.topic = "reply/ver"
-        component._pending_version.append(msg)
+        component._pending_version.append(msg)  # type: ignore[reportPrivateUsage]
 
         # Payload: major=1, minor=2
         payload = structures.VersionResponsePacket(major=1, minor=2, patch=0).encode()
@@ -198,7 +198,7 @@ def test_handle_get_version_resp_malformed(
         messages = (record.getMessage() for record in caplog.records)
         assert any(
             "Malformed structures.VersionResponsePacket" in msg
-            or "Malformed VersionResponsePacket" in msg
+            or "Malformed VersionResponsePacket" in msg  # noqa: W503
             for msg in messages
         )
 
@@ -211,7 +211,7 @@ def test_handle_mqtt_version_get_with_cached_version(
     async def _coro():
         ctx = DummyContext(runtime_config, runtime_state)
         component = SystemComponent(runtime_config, runtime_state, ctx)
-        runtime_state.mcu_version = "2.0.0"
+        runtime_state.mcu_version = (2, 0, 0)
 
         msg = MagicMock()
         msg.topic = "br/system/version/get"
@@ -248,7 +248,7 @@ def test_handle_mqtt_version_get_without_cached_version(
         assert len(ctx.sent_frames) == 1
         cmd, _pl = ctx.sent_frames[0]
         assert cmd == protocol.Command.CMD_GET_VERSION.value
-        assert msg in component._pending_version
+        assert msg in component._pending_version  # type: ignore[reportPrivateUsage]
 
     _run(_coro())
 
@@ -271,6 +271,6 @@ def test_handle_mqtt_free_memory_get_tracks_pending(
         assert len(ctx.sent_frames) == 1
         cmd, _pl = ctx.sent_frames[0]
         assert cmd == protocol.Command.CMD_GET_FREE_MEMORY.value
-        assert msg in component._pending_free_memory
+        assert msg in component._pending_free_memory  # type: ignore[reportPrivateUsage]
 
     _run(_coro())

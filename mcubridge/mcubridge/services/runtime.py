@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import structlog
 import time
-from collections.abc import Callable, Coroutine
-from typing import Any, cast
+from collections.abc import Coroutine
+from typing import Any
 
 import msgspec
 import svcs
@@ -77,13 +77,11 @@ class BridgeService:
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
         self.config = config
         self.state = state
-        self.serial_sender: SendFrameCallable | None = None
+        self._serial_sender: SendFrameCallable | None = None
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_group: asyncio.TaskGroup | None = None
 
-        self.registry = svcs.Registry()
-        from .base import BaseComponent
-
+        self._registry = svcs.Registry()
         _COMPONENTS: tuple[type, ...] = (
             ConsoleComponent,
             DatastoreComponent,
@@ -94,19 +92,12 @@ class BridgeService:
             SpiComponent,
             SystemComponent,
         )
-
-        def _make_factory(
-            cls: type[BaseComponent],
-        ) -> Callable[[], BaseComponent]:
-            return lambda: cls(config, state, self)
-
         for comp_cls in _COMPONENTS:
-            # [SIL-2] Cast to Any to avoid unknown member issues with svcs library
-            cast(Any, self.registry).register_factory(
-                comp_cls, cast(Any, _make_factory(comp_cls))
+            self._registry.register_factory(  # type: ignore[reportUnknownMemberType]
+                comp_cls,
+                lambda c=comp_cls: c(config, state, self),  # type: ignore[reportUnknownLambdaType]
             )
-
-        self.container = svcs.Container(self.registry)
+        self._container = svcs.Container(self._registry)
 
         self.handshake_manager = SerialHandshakeManager(
             config=config,
@@ -122,16 +113,16 @@ class BridgeService:
         state.serial_response_timeout_ms = self._serial_timing.response_timeout_ms
         state.serial_retry_limit = self._serial_timing.retry_limit
 
-        self.serial_flow = SerialFlowController(
+        self._serial_flow = SerialFlowController(
             ack_timeout=self._serial_timing.ack_timeout_seconds,
             response_timeout=self._serial_timing.response_timeout_seconds,
             max_attempts=self._serial_timing.retry_limit,
             logger=logger,
         )
-        self.serial_flow.set_metrics_callback(state.record_serial_flow_event)
-        self.serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
+        self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
+        self._serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
 
-        self.dispatcher = BridgeDispatcher(
+        self._dispatcher = BridgeDispatcher(
             mcu_registry=MCUHandlerRegistry(),
             mqtt_router=MQTTRouter(),
             state=state,
@@ -140,18 +131,18 @@ class BridgeService:
             is_topic_action_allowed=self._is_topic_action_allowed,
             reject_topic_action=self._reject_topic_action,
             publish_bridge_snapshot=self._publish_bridge_snapshot,
-            on_frame_received=self.serial_flow.on_frame_received,
+            on_frame_received=self._serial_flow.on_frame_received,
         )
-        self.dispatcher.register_components(self.container)
-        self.dispatcher.register_system_handlers(
+        self._dispatcher.register_components(self._container)
+        self._dispatcher.register_system_handlers(
             handle_link_sync_resp=self.handshake_manager.handle_link_sync_resp,
             handle_link_reset_resp=self.handshake_manager.handle_link_reset_resp,
             handle_get_capabilities_resp=self.handshake_manager.handle_capabilities_resp,
-            handle_ack=self.handle_ack,
+            handle_ack=self._handle_ack,
             status_handler_factory=lambda status: lambda s, p: self.handle_status(
                 s, status, p
             ),
-            handle_process_kill=self.container.get(ProcessComponent).handle_kill,
+            handle_process_kill=self._container.get(ProcessComponent).handle_kill,
         )
 
     async def __aenter__(self) -> BridgeService:
@@ -171,19 +162,19 @@ class BridgeService:
     def register_serial_sender(self, sender: SendFrameCallable) -> None:
         """Allow the serial transport to provide its send coroutine."""
 
-        self.serial_sender = sender
-        self.serial_flow.set_sender(sender)
+        self._serial_sender = sender
+        self._serial_flow.set_sender(sender)
 
     async def send_frame(
         self, command_id: int, payload: bytes = b"", seq_id: int | None = None
     ) -> bool:
-        if not self.serial_sender:
+        if not self._serial_sender:
             logger.error(
                 "Serial sender not registered; cannot send frame 0x%02X",
                 command_id,
             )
             return False
-        return await self.serial_flow.send(command_id, payload)
+        return await self._serial_flow.send(command_id, payload)
 
     async def schedule_background(
         self,
@@ -216,14 +207,16 @@ class BridgeService:
             return
 
         try:
-            version_ok = await self.container.get(SystemComponent).request_mcu_version()
+            version_ok = await self._container.get(
+                SystemComponent
+            ).request_mcu_version()
             if not version_ok:
                 logger.warning("Failed to dispatch MCU version request after reconnect")
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to request MCU version after reconnect: %s", e)
 
         try:
-            await self.container.get(ConsoleComponent).flush_queue()
+            await self._container.get(ConsoleComponent).flush_queue()
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to flush console backlog after reconnect: %s", e)
 
@@ -249,8 +242,8 @@ class BridgeService:
         self.state.pending_analog_reads.clear()
 
         # Ensure we do not keep the console in a paused state between links.
-        self.container.get(ConsoleComponent).on_serial_disconnected()
-        await self.serial_flow.reset()
+        self._container.get(ConsoleComponent).on_serial_disconnected()
+        await self._serial_flow.reset()
         self.handshake_manager.clear_handshake_expectations()
 
     async def handle_mcu_frame(
@@ -264,7 +257,7 @@ class BridgeService:
         # specifically for successful dispatches in the state.
         start = time.perf_counter()
         try:
-            await self.dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
+            await self._dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
         except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
                 "Critical error handling MCU frame: CMD=0x%02X payload=%s: %s",
@@ -283,7 +276,7 @@ class BridgeService:
         # [SIL-2] Performance monitoring for MQTT message processing
         start = time.perf_counter()
         try:
-            await self.dispatcher.dispatch_mqtt_message(
+            await self._dispatcher.dispatch_mqtt_message(
                 inbound,
                 lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
             )
@@ -317,13 +310,12 @@ class BridgeService:
                     message_to_queue, topic_name=target_topic
                 )
 
-            reply_correlation = (
-                getattr(props, "CorrelationData", None) if props else None
-            )
+            reply_correlation = getattr(props, "CorrelationData", None) if props else None
             if reply_correlation is not None:
                 message_to_queue = msgspec.structs.replace(
                     message_to_queue, correlation_data=reply_correlation
                 )
+
 
             origin_topic = str(reply_context.topic)
             user_properties = list(message_to_queue.user_properties)
@@ -407,7 +399,7 @@ class BridgeService:
     ) -> None:
         # [SIL-2] Use structured packet for acknowledgements
         payload = AckPacket(command_id=command_id).encode()
-        if not self.serial_sender:
+        if not self._serial_sender:
             logger.error(
                 "Serial sender not registered; cannot emit status 0x%02X",
                 status.value,
@@ -415,7 +407,7 @@ class BridgeService:
             return
 
         try:
-            await self.serial_sender(status.value, payload, seq_id)
+            await self._serial_sender(status.value, payload, seq_id)
         except (OSError, RuntimeError, ValueError) as exc:
             logger.warning(
                 "Failed to enqueue status 0x%02X for command 0x%02X: %s",

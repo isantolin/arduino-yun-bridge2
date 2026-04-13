@@ -101,7 +101,7 @@ def test_runtime_state_mailbox_requeue_front() -> None:
 
         # Spool retry logic
         state.mqtt_spool_retry_attempts = 0
-        state._schedule_spool_retry()
+        state._schedule_spool_retry()  # type: ignore[reportPrivateUsage]
         assert state.mqtt_spool_retry_attempts == 1
         assert state.mqtt_spool_backoff_until > 0
     finally:
@@ -166,7 +166,7 @@ async def test_status_writer_with_version() -> None:
     # Test _write_status_file directly instead of the infinite loop
     with patch("mcubridge.state.status.NamedTemporaryFile") as mock_tf:
         with patch("mcubridge.state.status.Path"):
-            from mcubridge.state.status import _write_status_file
+            from mcubridge.state.status import _write_status_file  # type: ignore[reportPrivateUsage]
 
             # Mock build_metrics_snapshot on the CLASS because msgspec.Struct instances are rigid
             with patch(
@@ -175,9 +175,9 @@ async def test_status_writer_with_version() -> None:
             ):
                 state = RuntimeState()
                 try:
-                    state.mcu_version = "1.2.0"
+                    state.mcu_version = (1, 2, 0)
                     state.mcu_capabilities = McuCapabilities()
-                    _write_status_file(state.build_metrics_snapshot())
+                    _write_status_file(state.build_metrics_snapshot())  # type: ignore[reportArgumentType]
                     assert mock_tf.called
                 finally:
                     state.cleanup()

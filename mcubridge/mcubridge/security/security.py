@@ -99,7 +99,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
     try:
         return NONCE_STRUCT.parse(nonce).counter
-    except ConstructError as e:
+    except ConstructError as e:  # type: ignore[reportUnknownVariableType]
         raise ValueError(f"Malformed nonce format: {e}") from e
 
 

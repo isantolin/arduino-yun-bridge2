@@ -107,7 +107,7 @@ async def test_mailbox_handle_mqtt_edge_cases() -> None:
 
         # Read from incoming queue
         state.enqueue_mailbox_incoming(b"inbound")
-        await mb._handle_mqtt_read(None)
+        await mb._handle_mqtt_read(None)  # type: ignore[reportPrivateUsage]
         ctx.publish.assert_called()
     finally:
         state.cleanup()
@@ -130,7 +130,7 @@ async def test_mailbox_overflow_with_inbound() -> None:
         mb = MailboxComponent(config, state, ctx)
 
         inbound = MagicMock()
-        await mb._handle_outgoing_overflow(100, inbound)
+        await mb._handle_outgoing_overflow(100, inbound)  # type: ignore[reportPrivateUsage]
         # Check for bridge-error property
         found_error = False
         for call in ctx.publish.call_args_list:

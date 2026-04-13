@@ -1,90 +1,125 @@
-"""Models for protocol specification and internal state tracking."""
+"""Protocol spec data model — pure parsing, zero dependency on generated code.
 
-from __future__ import annotations
+This module exists to break the circular dependency between the code generator
+(``tools/protocol/generate.py``) and the generated ``protocol.py``.  The
+generator needs :class:`ProtocolSpec` to read ``spec.toml``, while the rest of
+the protocol package imports symbols *from* the generated module.  By keeping
+the spec model in its own file with **no** relative imports, the generator can
+load it via :mod:`importlib.util` without triggering the package
+``__init__.py``.
+"""
 
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import msgspec
 
-# --- State Constants ---
-PROCESS_STATE_RUNNING: Final[str] = "running"
-PROCESS_STATE_FINISHED: Final[str] = "finished"
+# =============================================================================
+# Protocol Generation Structures (msgspec)
+# =============================================================================
 
 
-class ManagedProcess(msgspec.Struct):
-    """Internal tracking for a background shell process."""
-
-    pid: int
-    command: str
-    state: str = "running"
-    exit_code: int | None = None
-    stdout_buffer: bytearray = msgspec.field(default_factory=bytearray)
-    stderr_buffer: bytearray = msgspec.field(default_factory=bytearray)
-    start_time: float = 0.0
-    last_activity: float = 0.0
-
-
-class PendingPinRequest(msgspec.Struct):
-    """Tracking for an in-flight pin read request."""
-
-    pin: int
-    is_analog: bool
-    future: Any  # Use Any to avoid forward ref with asyncio.Future
-    timestamp: float = 0.0
-
-
-# --- Protocol Specification Models (Required by generate.py) ---
-
-
-class EnumField(msgspec.Struct):
-    """A field within an enumeration."""
-
+class CommandDef(msgspec.Struct, frozen=True):
     name: str
     value: int
-
-
-class EnumDef(msgspec.Struct):
-    """A protocol enumeration (Status, Command, etc.)."""
-
-    name: str
-    fields: list[EnumField]
-
-
-class MessageField(msgspec.Struct):
-    """A field within a structured message payload."""
-
-    name: str
-    type: str
-
-
-class MessageDef(msgspec.Struct):
-    """A structured message payload definition."""
-
-    name: str
-    fields: list[MessageField]
-
-
-class CommandDef(msgspec.Struct):
-    """A protocol command definition."""
-
-    name: str
     directions: list[str]
-    payload: str | None = None
+    category: str | None = None
+    description: str | None = None
+    requires_ack: bool = False
+    expects_direct_response: bool = False
+
+
+class StatusDef(msgspec.Struct, frozen=True):
+    name: str
+    value: int
+    description: str
+
+
+class MessageFieldDef(msgspec.Struct, frozen=True):
+    """A single field in a protocol message."""
+
+    name: str
+    type: str  # uint8, uint16, uint32, int32, bytes, bin_fixed, string, bool
+    size: int = 0  # for bin_fixed
+    max_size: int = 64  # for string
+
+
+class MessageDef(msgspec.Struct, frozen=True):
+    """A protocol message definition (replaces .proto + .options)."""
+
+    name: str
+    fields: list[MessageFieldDef]
+
+
+class RawProtocolData(msgspec.Struct):
+    constants: dict[str, Any]
+    hardware: dict[str, Any]
+    commands: list[dict[str, Any]]
+    statuses: list[dict[str, Any]]
+    handshake: dict[str, Any]
+    mqtt_subscriptions: list[dict[str, Any]]
+    actions: list[dict[str, Any]]
+    topics: list[dict[str, Any]]
+    capabilities: dict[str, int]
+    architectures: dict[str, int]
+    compression: dict[str, int]
+    data_formats: dict[str, str]
+    mqtt_suffixes: dict[str, str]
+    mqtt_defaults: dict[str, str]
+    status_reasons: dict[str, str]
+    architecture_display_names: dict[str, str] = {}
+    messages: list[dict[str, Any]] = []
 
 
 class ProtocolSpec(msgspec.Struct):
-    """Root model for the protocol specification TOML."""
+    """Root model of the parsed spec.toml."""
 
-    enums: list[EnumDef]
-    messages: list[MessageDef]
+    constants: dict[str, Any]
+    hardware: dict[str, Any]
     commands: list[CommandDef]
+    statuses: list[StatusDef]
+    handshake: dict[str, Any]
+    mqtt_subscriptions: list[dict[str, Any]]
+    actions: list[dict[str, Any]]
+    topics: list[dict[str, Any]]
+    capabilities: dict[str, int]
+    architectures: dict[str, int]
+    compression: dict[str, int]
+    data_formats: dict[str, str]
+    mqtt_suffixes: dict[str, str]
+    mqtt_defaults: dict[str, str]
+    status_reasons: dict[str, str]
+    architecture_display_names: dict[str, str] = {}
+    messages: list[MessageDef] = []
 
-    @staticmethod
-    def load(path: Path | str) -> ProtocolSpec:
-        """Load protocol specification from a TOML file (SIL-2)."""
-        import tomllib
+    @classmethod
+    def load(cls, path: Path) -> "ProtocolSpec":
+        import msgspec.toml
 
-        with Path(path).open("rb") as f:
-            data = tomllib.load(f)
-        return msgspec.convert(data, ProtocolSpec)
+        with path.open("rb") as f:
+            raw = msgspec.toml.decode(f.read(), type=RawProtocolData)
+
+        # Convert raw dicts to Structs
+        cmds = [msgspec.convert(c, CommandDef) for c in raw.commands]
+        statuses = [msgspec.convert(s, StatusDef) for s in raw.statuses]
+        msgs = [msgspec.convert(m, MessageDef) for m in raw.messages]
+
+        return cls(
+            constants=raw.constants,
+            hardware=raw.hardware,
+            commands=cmds,
+            statuses=statuses,
+            handshake=raw.handshake,
+            mqtt_subscriptions=raw.mqtt_subscriptions,
+            actions=raw.actions,
+            topics=raw.topics,
+            capabilities=raw.capabilities,
+            architectures=raw.architectures,
+            compression=raw.compression,
+            data_formats=raw.data_formats,
+            mqtt_suffixes=raw.mqtt_suffixes,
+            mqtt_defaults=raw.mqtt_defaults,
+            architecture_display_names=raw.architecture_display_names,
+            status_reasons=raw.status_reasons,
+            messages=msgs,
+        )

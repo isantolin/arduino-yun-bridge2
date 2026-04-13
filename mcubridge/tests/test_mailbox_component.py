@@ -83,7 +83,7 @@ class DummyBridge(BridgeContext):
             retain=retain,
             content_type=content_type,
             message_expiry_interval=expiry,
-            user_properties=properties,
+            user_properties=properties,  # type: ignore[reportArgumentType]
         )
         await self.enqueue_mqtt(message, reply_context=reply_to)
 

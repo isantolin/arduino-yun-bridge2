@@ -52,7 +52,7 @@ def _encode_command_id(obj: Any, ctx: Any) -> Any:
 
 def _check_version(ctx: Any) -> bool:
     """SIL-2: Strictly validate protocol version in frame header."""
-    return int(ctx.get("version", 0)) == protocol.PROTOCOL_VERSION
+    return int(getattr(ctx, "version", 0)) == protocol.PROTOCOL_VERSION
 
 
 def _calculate_crc32(data: Any) -> int:

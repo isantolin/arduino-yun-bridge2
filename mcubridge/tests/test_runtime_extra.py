@@ -22,8 +22,8 @@ async def test_runtime_on_serial_connected_errors() -> None:
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state)
-        system = service.container.get(SystemComponent)
-        console = service.container.get(ConsoleComponent)
+        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
+        console = service._container.get(ConsoleComponent)  # type: ignore[reportPrivateUsage]
 
         # Mock failures
         with (
@@ -103,7 +103,7 @@ async def test_runtime_acknowledge_frame_no_sender() -> None:
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state)
-        service.serial_sender = None
+        service._serial_sender = None  # type: ignore[reportPrivateUsage]
 
         await service.acknowledge_mcu_frame(Command.CMD_GET_VERSION.value, 0)
         # Should log error and return
@@ -130,7 +130,7 @@ async def test_runtime_handle_ack_fallback() -> None:
         with patch(
             "mcubridge.protocol.structures.AckPacket.decode", side_effect=ValueError
         ):
-            await service.handle_ack(0, b"\x00\x40")
+            await service._handle_ack(0, b"\x00\x40")  # type: ignore[reportPrivateUsage]
             # Should handle the decode failure gracefully
     finally:
         state.cleanup()

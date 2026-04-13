@@ -82,8 +82,8 @@ async def test_run_async_success(process_comp: ProcessComponent) -> None:
 @pytest.mark.asyncio
 async def test_run_async_limit_reached(process_comp: ProcessComponent) -> None:
     # Acquire all slots
-    await process_comp.process_slots.acquire()
-    await process_comp.process_slots.acquire()
+    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
+    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     # The 3rd should fail or timeout (non-blocking)
     try:
@@ -179,9 +179,12 @@ async def test_finalize_process(process_comp: ProcessComponent) -> None:
 
     assert pid in process_comp.state.running_processes
     # 2 - 1 = 1
-    assert process_comp.process_slots._value == 1
+    assert process_comp._process_slots._value == 1  # type: ignore[reportPrivateUsage]
 
-    await process_comp.finalize_process(pid)
+    await process_comp._finalize_process(pid)  # type: ignore[reportPrivateUsage]
 
     assert pid not in process_comp.state.running_processes
-    assert process_comp.process_slots._value == 2  # Released
+    assert (
+        process_comp._process_slots._value  # type: ignore[reportPrivateUsage, reportUnknownMemberType]
+        == 2
+    )  # Released  # type: ignore[reportPrivateUsage]

@@ -100,9 +100,6 @@ preview = true
 explicit-preview-rules = true
 
 [tool.ruff.lint.per-file-ignores]
-"mcubridge/tests/test_repo_policy_gates.py" = ["N802"]
-"mcubridge/mcubridge/state/context.py" = ["PLW0108"]
-"mcubridge/mcubridge/protocol/structures.py" = ["PLW0108"]
 
 [tool.ruff.lint.mccabe]
 # [QUALITY] Reduced from 50 to 25 for SIL-2 compliance and maintainability

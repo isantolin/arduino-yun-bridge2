@@ -61,7 +61,7 @@ async def test_finalize_process_slot_gone(
 ) -> None:
     """Cover branch where slot is gone in _finalize_process."""
     pid = 77
-    await process_comp.finalize_process(pid)
+    await process_comp._finalize_process(pid)  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio

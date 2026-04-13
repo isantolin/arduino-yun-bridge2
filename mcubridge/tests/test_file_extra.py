@@ -6,7 +6,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Status
-from mcubridge.services.file import FileComponent, _do_write_file
+from mcubridge.services.file import FileComponent, _do_write_file  # type: ignore[reportPrivateUsage]
 from mcubridge.state.context import create_runtime_state
 
 
@@ -101,6 +101,6 @@ async def test_file_handle_mqtt_unknown() -> None:
             segments=("unknown", "path"),
         )
         msg = type("MockMsg", (), {"topic": "br/file/unknown/path", "payload": b""})()
-        await fc.handle_mqtt(route, msg)
+        await fc.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
     finally:
         state.cleanup()

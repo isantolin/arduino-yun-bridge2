@@ -27,11 +27,11 @@ async def test_pin_handle_read_overflow() -> None:
         pc = PinComponent(config, state, ctx)
 
         # Fill queue
-        await pc._handle_read_command(Topic.DIGITAL, 13, None)
+        await pc._handle_read_command(Topic.DIGITAL, 13, None)  # type: ignore[reportPrivateUsage]
         assert len(state.pending_digital_reads) == 1
 
         # Overflow
-        await pc._handle_read_command(Topic.DIGITAL, 13, None)
+        await pc._handle_read_command(Topic.DIGITAL, 13, None)  # type: ignore[reportPrivateUsage]
         ctx.publish.assert_called()
         assert ("bridge-error", "pending-pin-overflow") in ctx.publish.call_args[1][
             "properties"
@@ -55,7 +55,7 @@ async def test_pin_handle_read_send_fail() -> None:
         ctx.send_frame = AsyncMock(return_value=False)
         pc = PinComponent(config, state, ctx)
 
-        await pc._handle_read_command(Topic.DIGITAL, 13, None)
+        await pc._handle_read_command(Topic.DIGITAL, 13, None)  # type: ignore[reportPrivateUsage]
         assert len(state.pending_digital_reads) == 0
     finally:
         state.cleanup()
@@ -75,10 +75,10 @@ async def test_pin_handle_mode_invalid() -> None:
         pc = PinComponent(config, state, MagicMock())
 
         # Invalid int
-        await pc._handle_mode_command(13, "13", "not_an_int")
+        await pc._handle_mode_command(13, "13", "not_an_int")  # type: ignore[reportPrivateUsage]
 
         # Invalid mode
-        await pc._handle_mode_command(13, "13", "5")
+        await pc._handle_mode_command(13, "13", "5")  # type: ignore[reportPrivateUsage]
     finally:
         state.cleanup()
 
@@ -99,11 +99,17 @@ async def test_pin_validate_access_block() -> None:
             board_arch=1,
             num_digital_pins=20,
             num_analog_inputs=6,
-            features={},
+            features={},  # type: ignore[reportArgumentType]
         )
         pc = PinComponent(config, state, MagicMock())
 
-        assert pc.validate_pin_access(25, False) is False  # Digital limit 20
-        assert pc.validate_pin_access(10, True) is False  # Analog limit 6
+        assert (
+            pc._validate_pin_access(25, False)  # type: ignore[reportPrivateUsage]
+            is False
+        )  # Digital limit 20
+        assert (
+            pc._validate_pin_access(10, True)  # type: ignore[reportPrivateUsage]
+            is False
+        )  # Analog limit 6
     finally:
         state.cleanup()

@@ -87,7 +87,7 @@ async def testacknowledge_mcu_frame_sends_ack_packet() -> None:
             sent.append((cmd, payload))
             return True
 
-        service.register_serial_sender(_sender)
+        service.register_serial_sender(_sender)  # type: ignore[reportArgumentType]
 
         await service.acknowledge_mcu_frame(
             protocol.Command.CMD_GET_FREE_MEMORY.value,
@@ -128,7 +128,7 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
             properties=props,
         )
 
-        await service.enqueue_mqtt(msg, reply_context=inbound)
+        await service.enqueue_mqtt(msg, reply_context=inbound)  # type: ignore[reportArgumentType]
 
         queued = state.mqtt_publish_queue.get_nowait()
         assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
@@ -158,7 +158,7 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
             return True
 
         monkeypatch.setattr(RuntimeState, "stash_mqtt_message", _stash_ok)
-        state.mqtt_spool = SimpleNamespace(pending=3)
+        state.mqtt_spool = SimpleNamespace(pending=3)  # type: ignore[reportAttributeAccessIssue]
 
         service = BridgeService(config, state)
 
@@ -191,7 +191,7 @@ async def test_handle_get_free_memory_resp_malformed_no_publish() -> None:
     try:
         service = BridgeService(config, state)
 
-        system = service.container.get(SystemComponent)
+        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
         await system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)
         assert state.mqtt_publish_queue.qsize() == 0
     finally:
@@ -206,7 +206,7 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
         service = BridgeService(config, state)
 
         pkt = structures.VersionResponsePacket(major=1, minor=2, patch=0)
-        system = service.container.get(SystemComponent)
+        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
         await system.handle_get_version_resp(0, pkt.encode())
 
         assert state.mcu_version == (1, 2, 0)
@@ -227,7 +227,7 @@ async def test_reject_topic_action_enqueues_status() -> None:
             topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret",
             properties=None,
         )
-        await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")
+        await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")  # type: ignore[reportPrivateUsage]
 
         queued = state.mqtt_publish_queue.get_nowait()
         status_topic = topic_path(state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS)
@@ -249,7 +249,7 @@ async def test_publish_bridge_snapshot_handshake_flavor() -> None:
             topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get",
             properties=None,
         )
-        await service._publish_bridge_snapshot("handshake", inbound)
+        await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[reportPrivateUsage]
 
         queued = state.mqtt_publish_queue.get_nowait()
         assert "bridge/handshake/value" in queued.topic_name
@@ -263,7 +263,7 @@ def test_is_topic_action_allowed_empty_action_true() -> None:
     try:
         service = BridgeService(config, state)
 
-        assert service._is_topic_action_allowed(Topic.SYSTEM, "") is True
+        assert service._is_topic_action_allowed(Topic.SYSTEM, "") is True  # type: ignore[reportPrivateUsage]
     finally:
         state.cleanup()
 

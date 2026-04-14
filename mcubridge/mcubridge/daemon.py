@@ -227,7 +227,16 @@ class BridgeDaemon:
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
-        except* Exception as exc_group:
+        except* (
+            OSError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            KeyError,
+            IndexError,
+            msgspec.MsgspecError,
+        ) as exc_group:
             for exc in exc_group.exceptions:
                 log.critical("Fatal task error: %s", exc, exc_info=exc)
             raise

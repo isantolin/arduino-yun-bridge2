@@ -28,6 +28,9 @@ def get_uci_config() -> dict[str, Any]:
         # Fallback for non-OpenWrt environments (e.g. dev/test)
         return get_default_config()
 
+    # [SIL-2] Dynamic exception detection to avoid hard dependency
+    UciException = getattr(uci, "UciException", RuntimeError)
+
     try:
         # [SIL-2] Dynamic class detection to handle library variations
         UciClass = getattr(uci, "Uci", None) or getattr(uci, "UCI")
@@ -52,14 +55,9 @@ def get_uci_config() -> dict[str, Any]:
                 if not str(k).startswith((".", "_"))
             }
             return config_dict
-    except (RuntimeError, ValueError, OSError) as err:
+    except (RuntimeError, ValueError, OSError, AttributeError, UciException) as err:  # type: ignore[reportUnknownVariableType]
         # [SIL-2] Log only specific configuration/system errors to syslog.
-        logger.warning("UCI system error, falling back to safe defaults: %s", err)
-    except Exception as err:
-        if "UciError" in type(err).__name__:
-            logger.warning("UCI internal error, falling back to safe defaults: %s", err)
-        else:
-            raise
+        logger.warning("UCI configuration error, falling back to safe defaults: %s", err)
 
     return get_default_config()
 

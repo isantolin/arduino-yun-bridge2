@@ -551,5 +551,5 @@ class FileComponent(BaseComponent):
 
             usage = await asyncio.to_thread(_get_size)
             self.state.file_storage_bytes_used = usage
-        except (Exception, ValueError, IndexError, OSError):
+        except (ValueError, IndexError, OSError, RuntimeError):
             self.state.file_storage_bytes_used = 0

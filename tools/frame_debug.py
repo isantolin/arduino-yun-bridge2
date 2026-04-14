@@ -9,6 +9,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated
 
+import msgspec
+
 # [SIL-2] Use robust absolute submodule imports to avoid package attribute issues
 import cobs.cobs as cobs_mod
 import serial
@@ -217,7 +219,7 @@ def main_cmd(
                     else:
                         try:
                             _print_response(_decode_frame(resp))
-                        except Exception as e:
+                        except (ValueError, msgspec.MsgspecError, OSError) as e:
                             sys.stderr.write(f"[FrameDebug] Failed to decode: {e}\n")
             if count == 0 or iteration + 1 < count:
                 time.sleep(interval)

@@ -1,285 +1,157 @@
 #!/usr/bin/env python3
-"""Generate derived dependency files from the runtime manifest."""
+"""Synchronize runtime dependencies between runtime.toml and mcubridge/Makefile."""
 
 from __future__ import annotations
 
+import re
 import sys
+import urllib.error
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Annotated, TypedDict
+from typing import Annotated, TypeVar
 
 import msgspec
 import typer
 
-app = typer.Typer(help="Generate derived dependency files from the runtime manifest.")
+app = typer.Typer(add_completion=False)
 
-ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
-REQUIREMENTS_PATH = ROOT / "requirements" / "runtime.txt"
-PYPROJECT_PATH = ROOT / "pyproject.toml"
-MAKEFILE_PATH = ROOT / "mcubridge" / "Makefile"
-BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
-BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
+# --- Configuration ---
+REPO_ROOT = Path(__file__).resolve().parent.parent
+RUNTIME_TOML = REPO_ROOT / "requirements" / "runtime.toml"
+MAKEFILE = REPO_ROOT / "mcubridge" / "Makefile"
 
-# --- [FILTRADO INTELIGENTE DE DEPENDENCIAS] ---
+BLOCK_START = "# --- RUNTIME DEPENDENCIES START ---"
+BLOCK_END = "# --- RUNTIME DEPENDENCIES END ---"
 
-# uci: Solo en OpenWrt (Makefile), no en pip (runtime.txt) para evitar errores locales.
-SYSTEM_ONLY_PACKAGES = {"uci"}
-
-# jinja2, nanopb, grpcio-tools, xxd: Solo en pip (Dev/CI), no en el APK de OpenWrt para ahorrar Flash.
-BUILD_ONLY_PACKAGES = {"jinja2", "nanopb", "grpcio-tools", "xxd"}
+_T = TypeVar("_T")
 
 
 class ManifestError(RuntimeError):
-    """Raised when the manifest file is missing or malformed."""
+    """Raised when the dependency manifest is inconsistent."""
 
 
-class _DepEntry(TypedDict):
+class _DepEntry(msgspec.Struct):
     name: str
-    openwrt: str
-    pip: str
+    version: str
+    apk: str | None = None
 
 
-def load_manifest() -> list[_DepEntry]:
-    if not MANIFEST_PATH.exists():
-        raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
-
-    data = msgspec.toml.decode(MANIFEST_PATH.read_text(encoding="utf-8"))
-    entries = data.get("dependency")
-    if not entries:
-        raise ManifestError("Manifest must declare at least one dependency")
-    normalized: list[_DepEntry] = []
-    for entry in entries:
-        openwrt = entry.get("openwrt", "").strip()
-        pip_spec = entry.get("pip", "").strip()
-        name = entry.get("name") or openwrt or "(unnamed)"
-        normalized.append(
-            _DepEntry(
-                name=name,
-                openwrt=openwrt,
-                pip=pip_spec,
-            )
-        )
-    return normalized
+def load_deps() -> list[_DepEntry]:
+    """Load dependencies from runtime.toml."""
+    try:
+        data = msgspec.toml.decode(RUNTIME_TOML.read_text())
+        deps_raw = data.get("dependencies", [])
+        return [msgspec.convert(d, _DepEntry) for d in deps_raw]
+    except (msgspec.MsgspecError, OSError) as e:
+        sys.stderr.write(f"Error: Failed to load {RUNTIME_TOML}: {e}\n")
+        raise typer.Exit(code=1) from e
 
 
-def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:
-    # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci)
-    specs = {dep["pip"] for dep in deps if dep.get("pip")}
-    filtered = {
-        s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)
-    }
-    return sorted(filtered)
-
-
-def collect_openwrt_packages(deps: Sequence[_DepEntry]) -> list[str]:
-    # Mantiene todo EXCEPTO los paquetes exclusivos de construcción (jinja2, etc)
-    # Esto asegura que el APK sea ultra-lean.
-    return [
-        dep["openwrt"]
-        for dep in deps
-        if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES
-    ]
-
-
-def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
-    pip_specs = collect_pip_specs(deps)
-    content = ["# Generated via tools/sync_runtime_deps.py; do not edit."]
-    content.extend(pip_specs)
-    new_text = "\n".join(content) + "\n"
-    if REQUIREMENTS_PATH.exists():
-        existing = REQUIREMENTS_PATH.read_text(encoding="utf-8")
-        if existing == new_text:
-            return False
-    if not dry_run:
-        REQUIREMENTS_PATH.write_text(new_text, encoding="utf-8")
-    return True
-
-
-def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
-    if not PYPROJECT_PATH.exists():
-        return False
-
-    # Collect only runtime dependencies for project.dependencies
-    runtime_pip_specs = sorted(
-        [
-            dep["pip"]
-            for dep in deps
-            if (
-                dep.get("pip")
-                and dep["name"] not in BUILD_ONLY_PACKAGES
-                and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES)
-            )  # noqa: W503
-        ]
-    )
-
-    content = PYPROJECT_PATH.read_text(encoding="utf-8")
-
-    # Robust replacement of dependencies block
-    lines = content.splitlines()
-    new_lines: list[str] = []
-    in_dependencies = False
-    replaced = False
-
-    for line in lines:
-        if not replaced and line.strip() == "dependencies = [":
-            in_dependencies = True
-            new_lines.append(line)
-            for spec in runtime_pip_specs:
-                new_lines.append(f'    "{spec}",')
-            # Remove trailing comma from last dependency for strictly valid TOML if preferred,
-            # though most parsers handle it. Ruff likes it.
-            replaced = True
-            continue
-
-        if in_dependencies:
-            if line.strip() == "]":
-                in_dependencies = False
-                new_lines.append(line)
-            continue
-
-        new_lines.append(line)
-
-    new_content = "\n".join(new_lines) + "\n"
-
-    if new_content == content:
-        return False
-
-    if not dry_run:
-        PYPROJECT_PATH.write_text(new_content, encoding="utf-8")
-    return True
-
-
-def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
-    lines: list[str] = []
-    for index, token in enumerate(tokens):
-        suffix = " \\" if index < len(tokens) - 1 else ""
-        lines.append(f"\t\t{token}{suffix}")
-    return lines
-
-
-def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
-    makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
-    if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
-        raise ManifestError(
-            "Makefile is missing dependency markers; cannot inject dependencies"
-        )
-    tokens = [f"+{pkg}" for pkg in collect_openwrt_packages(deps)]
-    if tokens:
-        block_lines = ["\tDEPENDS+= \\"]
-        block_lines.extend(format_openwrt_lines(tokens))
-    else:
-        block_lines = ["\tDEPENDS+="]
-    rendered_block = "\n".join(block_lines)
-    new_text: list[str] = []
-    in_block = False
-    for line in makefile_text.splitlines():
-        if BLOCK_START in line:
-            in_block = True
-            new_text.append(line)
-            new_text.append(rendered_block)
-            continue
-        if BLOCK_END in line:
-            in_block = False
-            new_text.append(line)
-            continue
-        if not in_block:
-            new_text.append(line)
-    updated = "\n".join(new_text) + "\n"
-    if updated == makefile_text:
-        return False
-    if not dry_run:
-        MAKEFILE_PATH.write_text(updated, encoding="utf-8")
-    return True
-
-
-def _parse_pip_spec(spec: str) -> tuple[str, str]:
-    """Extract (package_name, pinned_version) from a pip spec like 'foo==1.2.3'."""
-    if "==" not in spec:
-        return spec, ""
-    # Handle extras: 'typer[all]==0.24.1' -> 'typer', '0.24.1'
-    name_part, version = spec.split("==", 1)
-    name = name_part.split("[")[0].strip()
-    return name, version.strip()
-
-
-def _fetch_latest_version(package_name: str) -> str | None:
-    """Query PyPI JSON API for the latest release version."""
+def get_pypi_version(package_name: str) -> str | None:
+    """Fetch the latest version of a package from PyPI JSON API."""
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
         with urllib.request.urlopen(url, timeout=10) as resp:  # noqa: S310
             data = msgspec.json.decode(resp.read())
-            return data["info"]["version"]
-    except Exception:  # noqa: BLE001
+            return str(data["info"]["version"])
+    except (urllib.error.URLError, msgspec.MsgspecError, OSError, TimeoutError, KeyError):
         return None
 
 
 def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:
     """Return list of (package, pinned, latest) for outdated packages."""
     outdated: list[tuple[str, str, str]] = []
-    pip_specs = [dep["pip"] for dep in deps if dep.get("pip")]
-    for spec in pip_specs:
-        name, pinned = _parse_pip_spec(spec)
+    for dep in deps:
+        name = dep.name
+        pinned = dep.version
         if not pinned:
             continue
-        latest = _fetch_latest_version(name)
+        latest = get_pypi_version(name)
         if latest and latest != pinned:
             outdated.append((name, pinned, latest))
     return outdated
 
 
+def collect_pip_specs(deps: Iterable[_DepEntry]) -> list[str]:
+    """Generate pip-compatible requirement strings."""
+    return [f"{d.name}=={d.version}" for d in deps if d.version]
+
+
+def collect_apk_names(deps: Iterable[_DepEntry]) -> list[str]:
+    """Generate APK package list for OpenWrt."""
+    return [d.apk for d in deps if d.apk]
+
+
+def write_requirements(deps: Iterable[_DepEntry], dry_run: bool = False) -> bool:
+    """Update requirements/runtime.txt."""
+    output_path = REPO_ROOT / "requirements" / "runtime.txt"
+    lines = collect_pip_specs(deps)
+    new_content = "\n".join(lines) + "\n"
+
+    if dry_run:
+        if not output_path.exists() or output_path.read_text() != new_content:
+            return True
+        return False
+
+    output_path.write_text(new_content)
+    return True
+
+
+def update_makefile(deps: Iterable[_DepEntry], dry_run: bool = False) -> bool:
+    """Update PKG_BUILD_DEPENDS in mcubridge/Makefile."""
+    apk_list = collect_apk_names(deps)
+    apk_line = " ".join(apk_list)
+    new_block = f"{BLOCK_START}\nPKG_BUILD_DEPENDS:={apk_line}\n{BLOCK_END}"
+
+    makefile_text = MAKEFILE.read_text()
+    if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
+        raise ManifestError(
+            f"Could not find dependency block markers in {MAKEFILE}"
+        )
+
+    pattern = re.compile(f"{re.escape(BLOCK_START)}.*?{re.escape(BLOCK_END)}", re.DOTALL)
+    updated_text = pattern.sub(new_block, makefile_text)
+
+    if dry_run:
+        return updated_text != makefile_text
+
+    MAKEFILE.write_text(updated_text)
+    return True
+
+
 @app.command()
-def main(
-    check: Annotated[
-        bool,
-        typer.Option(
-            "--check", help="Exit with status 1 if running would change any files"
-        ),
-    ] = False,
-    check_latest: Annotated[
-        bool,
-        typer.Option(
-            "--check-latest", help="Query PyPI and warn about outdated pinned versions"
-        ),
-    ] = False,
-    print_openwrt: Annotated[
-        bool,
-        typer.Option("--print-openwrt", help="Print OpenWrt package names and exit"),
-    ] = False,
-    print_pip: Annotated[
-        bool,
-        typer.Option("--print-pip", help="Print pip requirement specifiers and exit"),
-    ] = False,
+def sync(
+    check: Annotated[bool, typer.Option("--check", help="Only check for changes")] = False,
+    update_pypi: Annotated[bool, typer.Option("--update", help="Check PyPI for newer versions")] = False,
 ) -> None:
-    deps = load_manifest()
-    if print_openwrt:
-        sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
-        raise typer.Exit()
-    if print_pip:
-        sys.stdout.write("\n".join(collect_pip_specs(deps)) + "\n")
-        raise typer.Exit()
+    """Synchronize runtime dependencies across the project."""
+    deps = load_deps()
 
-    updated_requirements = write_requirements(deps, dry_run=check)
-    updated_makefile = update_makefile(deps, dry_run=check)
-    updated_pyproject = update_pyproject(deps, dry_run=check)
-
-    fail = False
-    if check and (updated_requirements or updated_makefile or updated_pyproject):
-        fail = True
-
-    if check_latest:
+    if update_pypi:
+        typer.echo("Checking PyPI for updates...")
         outdated = check_latest_versions(deps)
         if outdated:
-            typer.echo("Outdated dependencies:")
-            for name, pinned, latest in outdated:
-                typer.echo(f"  {name}: {pinned} -> {latest}")
-            fail = True
+            typer.echo("\nOutdated packages found:")
+            for name, pinned_ver, latest_ver in outdated:
+                typer.echo(f"  {name}: {pinned_ver} -> {latest_ver}")
+            typer.echo("\nPlease update requirements/runtime.toml manually.")
         else:
-            typer.echo("All dependencies are up to date.")
+            typer.echo("All packages are up to date.")
 
-    if fail:
-        raise typer.Exit(code=1)
+    changed_req = write_requirements(deps, dry_run=check)
+    changed_make = update_makefile(deps, dry_run=check)
+
+    if check:
+        if changed_req or changed_make:
+            typer.echo("Changes detected. Run without --check to synchronize.")
+            raise typer.Exit(code=1)
+        typer.echo("Synchronized.")
+    else:
+        if changed_req or changed_make:
+            typer.echo("Synchronized successfully.")
+        else:
+            typer.echo("Already synchronized.")
 
 
 if __name__ == "__main__":

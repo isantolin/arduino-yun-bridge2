@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+import msgspec
 import structlog
 import svcs
 
@@ -241,6 +242,7 @@ class BridgeDispatcher:
                 KeyError,
                 IndexError,
                 RuntimeError,
+                msgspec.MsgspecError,
             ) as exc:
                 logger.critical(
                     "Critical: Exception in handler for %s: %s", command_name, exc
@@ -285,8 +287,19 @@ class BridgeDispatcher:
         try:
             if not await self.mqtt_router.dispatch(route, inbound):
                 logger.debug("Unhandled MQTT topic %s", inbound_topic)
-        except Exception:
-            logger.exception("Fault Isolation: MQTT processing failed for %s", inbound_topic)
+        except (
+            OSError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            KeyError,
+            IndexError,
+            msgspec.MsgspecError,
+        ):
+            logger.exception(
+                "Fault Isolation: MQTT processing failed for %s", inbound_topic
+            )
 
     def _get_topic_action(self, route: TopicRoute) -> str | None:
         """Deduce the action name for policy enforcement from the route."""

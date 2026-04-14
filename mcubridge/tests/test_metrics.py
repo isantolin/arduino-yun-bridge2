@@ -11,8 +11,8 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.state.context import RuntimeState
 
 

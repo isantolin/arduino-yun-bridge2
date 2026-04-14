@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import collections
 import contextlib
-import structlog
 from typing import Any
 
 import msgspec
+import structlog
 from aiomqtt.message import Message
+
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, PinAction, Status
 from mcubridge.protocol.structures import (
@@ -177,7 +178,7 @@ class PinComponent(BaseComponent):
             return
 
         # [SIL-2] Use structured packet encoding
-        payload = PinModePacket(pin=pin, mode=mode).encode()
+        payload = msgspec.msgpack.encode(PinModePacket(pin=pin, mode=mode))
         await self.ctx.send_frame(Command.CMD_SET_PIN_MODE.value, payload)
 
     async def _handle_read_command(
@@ -204,7 +205,7 @@ class PinComponent(BaseComponent):
         pending_request = PendingPinRequest(pin=pin, reply_context=inbound)
         queue.append(pending_request)
 
-        payload = PinReadPacket(pin=pin).encode()
+        payload = msgspec.msgpack.encode(PinReadPacket(pin=pin))
         ok = await self.ctx.send_frame(command.value, payload)
         if not ok:
             with contextlib.suppress(ValueError):
@@ -225,10 +226,10 @@ class PinComponent(BaseComponent):
 
         if topic_type == Topic.DIGITAL:
             command = Command.CMD_DIGITAL_WRITE
-            payload = DigitalWritePacket(pin=pin, value=value).encode()
+            payload = msgspec.msgpack.encode(DigitalWritePacket(pin=pin, value=value))
         else:
             command = Command.CMD_ANALOG_WRITE
-            payload = AnalogWritePacket(pin=pin, value=value).encode()
+            payload = msgspec.msgpack.encode(AnalogWritePacket(pin=pin, value=value))
 
         await self.ctx.send_frame(command.value, payload)
 

@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 
 import msgspec
 import pytest
-from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import protocol
 
 
 @pytest.fixture

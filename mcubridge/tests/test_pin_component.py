@@ -9,14 +9,14 @@ from unittest.mock import AsyncMock
 import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, PinAction, Status
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.pin import PinComponent
 from mcubridge.state.context import PendingPinRequest, RuntimeState
 
-from tests._helpers import make_route, make_mqtt_msg
+from tests._helpers import make_mqtt_msg, make_route
 
 
 class RecordingBridgeContext:
@@ -151,7 +151,7 @@ async def test_handle_digital_read_resp_without_pending_request_publishes_unknow
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_digital_read_resp(
-        0, structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode()
+        0, structures.msgspec.msgpack.encode(structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW))
     )
 
     assert len(ctx.enqueued) == 1
@@ -180,7 +180,7 @@ async def test_handle_digital_read_resp_with_pending_request_uses_reply_context(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_digital_read_resp(
-        0, structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW).encode()
+        0, structures.msgspec.msgpack.encode(structures.DigitalReadResponsePacket(value=protocol.DIGITAL_LOW))
     )
 
     message, reply_context = ctx.enqueued[0]
@@ -207,7 +207,7 @@ async def test_handle_analog_read_resp_with_pending_request_decodes_big_endian(
     component = PinComponent(runtime_config, runtime_state, ctx)
 
     await component.handle_analog_read_resp(
-        0, structures.AnalogReadResponsePacket(value=256).encode()
+        0, structures.msgspec.msgpack.encode(structures.AnalogReadResponsePacket(value=256))
     )
 
     message, reply_context = ctx.enqueued[0]
@@ -237,7 +237,7 @@ async def test_handle_mqtt_mode_command_valid_payload_sends_frame(
     assert ctx.sent_frames
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_SET_PIN_MODE.value
-    assert payload == structures.DigitalWritePacket(pin=2, value=1).encode()
+    assert payload == structures.msgspec.msgpack.encode(structures.DigitalWritePacket(pin=2, value=1))
 
 
 @pytest.mark.asyncio
@@ -323,7 +323,7 @@ async def test_handle_mqtt_read_command_appends_pending_on_success(
     assert ctx.sent_frames
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_ANALOG_READ.value
-    assert payload == structures.PinReadPacket(pin=3).encode()
+    assert payload == structures.msgspec.msgpack.encode(structures.PinReadPacket(pin=3))
     assert runtime_state.pending_analog_reads
     request = runtime_state.pending_analog_reads[-1]
     assert request.pin == 3
@@ -347,7 +347,7 @@ async def test_handle_mqtt_write_digital_accepts_empty_payload_as_zero(
     assert command_id == Command.CMD_DIGITAL_WRITE.value
     assert (
         payload
-        == structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_LOW).encode()
+        == structures.msgspec.msgpack.encode(structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_LOW))
     )
 
 
@@ -382,4 +382,4 @@ async def test_handle_mqtt_parses_analog_pin_identifier_prefix_a(
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_ANALOG_WRITE.value
-    assert payload == structures.DigitalWritePacket(pin=1, value=10).encode()
+    assert payload == structures.msgspec.msgpack.encode(structures.DigitalWritePacket(pin=1, value=10))

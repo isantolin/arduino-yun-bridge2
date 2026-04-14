@@ -9,13 +9,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated
 
-import serial
-import typer
-
 # [SIL-2] Use robust absolute submodule imports to avoid package attribute issues
 import cobs.cobs as cobs_mod
+import serial
+import typer
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.frame import Frame, build_frame, parse_frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 
 
@@ -94,7 +93,7 @@ def _hex_with_spacing(data: bytes) -> str:
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     # Use sequence_id=0 for debug snapshots
     frame_obj = Frame(command_id=command_id, sequence_id=0, payload=payload)
-    raw_frame = frame_obj.build()
+    raw_frame = build_frame(frame_obj)
     crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
     encoded_body = cobs_mod.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
@@ -142,7 +141,7 @@ def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
 
 
 def _decode_frame(encoded_packet: bytes) -> Frame:
-    return Frame.parse(cobs_mod.decode(encoded_packet))
+    return parse_frame(cobs_mod.decode(encoded_packet))
 
 
 def _print_response(frame: Frame) -> None:

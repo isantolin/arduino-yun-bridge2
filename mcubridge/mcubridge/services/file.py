@@ -1,5 +1,4 @@
 """Filesystem component wrapping MCU and MQTT file operations."""
-
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+import msgspec
+import structlog
 from aiomqtt.message import Message
 
 from mcubridge.protocol import protocol
@@ -28,7 +29,6 @@ from ..protocol.topics import Topic, TopicRoute, topic_path
 from ..state.context import RuntimeState
 from ..util import chunk_bytes
 from .base import BaseComponent, BridgeContext
-import structlog
 
 logger = structlog.get_logger("mcubridge.file")
 
@@ -68,7 +68,7 @@ class FileComponent(BaseComponent):
     async def handle_write(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_WRITE from MCU."""
         try:
-            packet = FileWritePacket.decode(payload)
+            packet = msgspec.msgpack.decode(payload, type=FileWritePacket)
             path = self._get_safe_path(packet.path)
             if not path:
                 await self.ctx.send_frame(Status.ERROR.value, b"Invalid path")
@@ -81,7 +81,7 @@ class FileComponent(BaseComponent):
             self._metadata_cache.pop(str(path), None)
             await self.ctx.send_frame(Status.OK.value)
             return True
-        except (ValueError, OSError) as e:
+        except (msgspec.MsgspecError, ValueError, OSError) as e:
             logger.error("File write failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
@@ -92,7 +92,7 @@ class FileComponent(BaseComponent):
     async def handle_read(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_FILE_READ from MCU."""
         try:
-            packet = FileReadPacket.decode(payload)
+            packet = msgspec.msgpack.decode(payload, type=FileReadPacket)
             path = self._get_safe_path(packet.path)
             if not path or not path.is_file():
                 await self.ctx.send_frame(Status.ERROR.value, b"File not found")
@@ -107,15 +107,15 @@ class FileComponent(BaseComponent):
             if not data:
                 response_packet = FileReadResponsePacket(content=b"")
                 await self.ctx.send_frame(
-                    Command.CMD_FILE_READ_RESP.value, response_packet.encode()
+                    Command.CMD_FILE_READ_RESP.value, msgspec.msgpack.encode(response_packet)
                 )
             else:
                 for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE - 3):
                     response_packet = FileReadResponsePacket(content=chunk)
                     await self.ctx.send_frame(
-                        Command.CMD_FILE_READ_RESP.value, response_packet.encode()
+                        Command.CMD_FILE_READ_RESP.value, msgspec.msgpack.encode(response_packet)
                     )
-        except (ValueError, OSError) as e:
+        except (msgspec.MsgspecError, ValueError, OSError) as e:
             logger.error("File read failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
@@ -125,7 +125,7 @@ class FileComponent(BaseComponent):
     async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_REMOVE from MCU."""
         try:
-            packet = FileRemovePacket.decode(payload)
+            packet = msgspec.msgpack.decode(payload, type=FileRemovePacket)
             path = self._get_safe_path(packet.path)
             if path and await self._remove_with_tracking(path):
                 self._metadata_cache.pop(str(path), None)
@@ -134,7 +134,7 @@ class FileComponent(BaseComponent):
 
             await self.ctx.send_frame(Status.ERROR.value, b"File not found")
             return False
-        except (ValueError, OSError) as e:
+        except (msgspec.MsgspecError, ValueError, OSError) as e:
             logger.error("File remove failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
@@ -285,7 +285,7 @@ class FileComponent(BaseComponent):
             )
             return False
 
-        packet = FileWritePacket(path=relative_path, data=payload).encode()
+        packet = msgspec.msgpack.encode(FileWritePacket(path=relative_path, data=payload))
         if not await self.ctx.send_frame(Command.CMD_FILE_WRITE.value, packet):
             logger.error("MQTT write failed for %s: MCU rejected write", identifier)
             await self._publish_mqtt_error(
@@ -323,7 +323,7 @@ class FileComponent(BaseComponent):
                 future=asyncio.get_running_loop().create_future(),
             )
             self._pending_mcu_read = pending
-            packet = FileReadPacket(path=relative_path).encode()
+            packet = msgspec.msgpack.encode(FileReadPacket(path=relative_path))
 
             try:
                 if not await self.ctx.send_frame(Command.CMD_FILE_READ.value, packet):
@@ -386,7 +386,7 @@ class FileComponent(BaseComponent):
             )
             return False
 
-        packet = FileRemovePacket(path=relative_path).encode()
+        packet = msgspec.msgpack.encode(FileRemovePacket(path=relative_path))
         if not await self.ctx.send_frame(Command.CMD_FILE_REMOVE.value, packet):
             logger.error("MQTT remove failed for %s: MCU rejected remove", identifier)
             await self._publish_mqtt_error(

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import msgspec
@@ -12,7 +12,6 @@ import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
-from mcubridge.protocol.structures import LinkSyncPacket
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.handshake import SerialHandshakeFatal, derive_serial_timing
 from mcubridge.services.runtime import BridgeService
@@ -32,7 +31,7 @@ class _FakeMonotonic:
 
 def _encode_link_sync(nonce: bytes, tag: bytes) -> bytes:
     """Encode nonce and tag as a MsgPack LinkSync payload."""
-    return LinkSyncPacket(nonce=nonce, tag=tag).encode()
+    return msgspec.msgpack.encode(structures.LinkSyncPacket(nonce=nonce, tag=tag))
 
 
 @pytest.mark.asyncio
@@ -79,7 +78,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                     # Priming capabilities AFTER sync resp is handled
                     await service.handshake_manager.handle_capabilities_resp(
                         0,
-                        structures.CapabilitiesPacket(
+                        structures.msgspec.msgpack.encode(structures.CapabilitiesPacket(
                             ver=2,
                             arch=1,
                             dig=20,
@@ -99,7 +98,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                                 rle=False,
                                 watchdog=False,
                             ),
-                        ).encode(),
+                        )),
                     )
 
                 asyncio.create_task(_respond())
@@ -114,9 +113,9 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                 flow.on_frame_received(
                     Status.ACK.value,
                     0,
-                    structures.AckPacket(
+                    structures.msgspec.msgpack.encode(structures.AckPacket(
                         command_id=Command.CMD_CONSOLE_WRITE.value
-                    ).encode(),
+                    )),
                 )
             return True
 
@@ -205,7 +204,7 @@ def test_link_sync_resp_respects_rate_limit(
         ) -> bool:
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent _serial_flow from blocking
-            ack_payload = structures.AckPacket(command_id=command_id).encode()
+            ack_payload = structures.msgspec.msgpack.encode(structures.AckPacket(command_id=command_id))
             if service._serial_flow:  # type: ignore[reportPrivateUsage]
                 service._serial_flow.on_frame_received(  # type: ignore[reportPrivateUsage]
                     Status.ACK.value,
@@ -474,7 +473,7 @@ async def test_mailbox_available_flow(tmp_path: Path) -> None:
             if len(payload) < 2:
                 return False
             # payload is just the count (uint16)
-            resp = structures.MailboxAvailableResponsePacket.decode(payload)
+            resp = msgspec.msgpack.decode(payload, type=structures.MailboxAvailableResponsePacket)
             return resp.count == 1
 
         assert any(_check_mailbox_ack(f, p) for f, p in sent_frames)
@@ -529,7 +528,7 @@ async def test_mailbox_push_overflow_returns_error(
     service.register_serial_sender(fake_sender)
 
     # First push OK
-    payload = structures.MailboxPushPacket(data=b"aam1").encode()
+    payload = structures.msgspec.msgpack.encode(structures.MailboxPushPacket(data=b"aam1"))
     await service.handle_mcu_frame(protocol.Command.CMD_MAILBOX_PUSH.value, 0, payload)
     assert len(runtime_state.mailbox_incoming_queue) == 1
 
@@ -586,7 +585,7 @@ async def test_datastore_get_from_mcu_returns_cached_value() -> None:
 
         service.register_serial_sender(fake_sender)
 
-        payload = structures.DatastoreGetPacket(key="key1").encode()
+        payload = structures.msgspec.msgpack.encode(structures.DatastoreGetPacket(key="key1"))
         await service.handle_mcu_frame(
             protocol.Command.CMD_DATASTORE_GET.value, 0, payload
         )
@@ -638,7 +637,7 @@ async def test_datastore_put_from_mcu_updates_cache_and_mqtt(
         runtime_state.mark_transport_connected()
         runtime_state.mark_synchronized()
 
-        payload = structures.DatastorePutPacket(key="k1", value=b"v1").encode()
+        payload = structures.msgspec.msgpack.encode(structures.DatastorePutPacket(key="k1", value=b"v1"))
         await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, 0, payload)
 
         assert runtime_state.datastore["k1"] == "v1"

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import structlog
 from collections.abc import Coroutine
-from typing import Any, Protocol, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
+import msgspec
+import structlog
 from aiomqtt.message import Message
 
 from ..config.settings import RuntimeConfig
@@ -114,8 +115,8 @@ class BaseComponent:
     ) -> Any | None:
         """Safely decode an RPC payload using the provided packet class."""
         try:
-            return packet_cls.decode(payload, command_id)
-        except ValueError:
+            return msgspec.msgpack.decode(payload, type=packet_cls)
+        except (msgspec.MsgspecError, ValueError, TypeError):
             logger.warning(
                 "Malformed %s payload: %s", packet_cls.__name__, payload.hex()
             )

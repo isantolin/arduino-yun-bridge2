@@ -1,22 +1,21 @@
 """Extra coverage for mcubridge.services.mailbox."""
 
 from typing import Any
-
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.topics import Topic
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.state.context import create_runtime_state
-from mcubridge.protocol.topics import Topic
 
-from tests._helpers import make_route, make_mqtt_msg
+from tests._helpers import make_mqtt_msg, make_route
 
 
 @pytest.mark.asyncio
 async def test_mailbox_handle_processed_fallback() -> None:
-    import time
     import os
+    import time
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
@@ -38,8 +37,8 @@ async def test_mailbox_handle_processed_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_mailbox_handle_read_truncation() -> None:
-    import time
     import os
+    import time
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
@@ -87,8 +86,8 @@ async def test_mailbox_handle_read_send_fail(tmp_path: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_mailbox_handle_mqtt_edge_cases() -> None:
-    import time
     import os
+    import time
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
@@ -115,8 +114,8 @@ async def test_mailbox_handle_mqtt_edge_cases() -> None:
 
 @pytest.mark.asyncio
 async def test_mailbox_overflow_with_inbound() -> None:
-    import time
     import os
+    import time
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",

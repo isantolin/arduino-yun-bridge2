@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import structlog
 from typing import Any
 
 import msgspec
+import structlog
 from aiomqtt.message import Message
 
 from mcubridge.protocol.protocol import (
@@ -49,8 +49,8 @@ class DatastoreComponent(BaseComponent):
     async def handle_get_request(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
         try:
-            packet = DatastoreGetPacket.decode(payload, Command.CMD_DATASTORE_GET)
-        except ValueError:
+            packet = msgspec.msgpack.decode(payload, type=DatastoreGetPacket)
+        except (msgspec.MsgspecError, ValueError):
             logger.warning(
                 "Malformed DATASTORE_GET payload: %s",
                 payload.hex() if payload else "(empty)",
@@ -76,7 +76,7 @@ class DatastoreComponent(BaseComponent):
             value_bytes = value_bytes[:255]
 
         # [SIL-2] Use structured response packet
-        response_payload = DatastoreGetResponsePacket(value=value_bytes).encode()
+        response_payload = msgspec.msgpack.encode(DatastoreGetResponsePacket(value=value_bytes))
 
         send_ok = await self.ctx.send_frame(
             Command.CMD_DATASTORE_GET_RESP.value,

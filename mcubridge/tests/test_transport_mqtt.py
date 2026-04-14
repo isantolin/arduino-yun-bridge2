@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiomqtt
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import mqtt

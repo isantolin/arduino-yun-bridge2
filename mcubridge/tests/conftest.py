@@ -13,10 +13,9 @@ from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import svcs
-import structlog
-
 import pytest
+import structlog
+import svcs
 
 os.environ["MCUBRIDGE_TEST_MODE"] = "1"
 
@@ -54,9 +53,8 @@ if "serial_asyncio_fast" not in sys.modules:
 
 # [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
 # and interference with Python 3.13 representation during cleanup.
-from mcubridge.config import common
+from mcubridge.config import common, settings
 from mcubridge.config import logging as mcubridge_logging
-from mcubridge.config import settings
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,

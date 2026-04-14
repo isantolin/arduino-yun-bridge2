@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import structlog
-
 import msgspec
+import structlog
 from aiomqtt.message import Message
 
 from mcubridge.protocol import protocol
@@ -44,11 +43,9 @@ class MailboxComponent(BaseComponent):
         message_id: int | None = None
         if len(payload) >= 2:
             try:
-                packet = MailboxProcessedPacket.decode(
-                    payload, Command.CMD_MAILBOX_PROCESSED
-                )
+                packet = msgspec.msgpack.decode(payload, type=MailboxProcessedPacket)
                 message_id = packet.message_id
-            except ValueError as exc:
+            except (msgspec.MsgspecError, ValueError) as exc:
                 logger.warning("MCU > Malformed Mailbox processed payload: %s", exc)
 
         if message_id is not None:
@@ -101,12 +98,12 @@ class MailboxComponent(BaseComponent):
         if payload:
             await self.ctx.send_frame(
                 Status.MALFORMED.value,
-                AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value).encode(),
+                msgspec.msgpack.encode(AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value)),
             )
             return False
 
         queue_len = len(self.state.mailbox_queue)
-        response = MailboxAvailableResponsePacket(count=queue_len).encode()
+        response = msgspec.msgpack.encode(MailboxAvailableResponsePacket(count=queue_len))
 
         await self.ctx.send_frame(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
@@ -127,7 +124,7 @@ class MailboxComponent(BaseComponent):
             )
             message_payload = message_payload[:max_allowed]
 
-        response_payload = MailboxReadResponsePacket(content=message_payload).encode()
+        response_payload = msgspec.msgpack.encode(MailboxReadResponsePacket(content=message_payload))
 
         send_ok = await self.ctx.send_frame(
             Command.CMD_MAILBOX_READ_RESP.value,

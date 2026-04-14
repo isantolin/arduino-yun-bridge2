@@ -109,9 +109,9 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
     sample = structures.HandshakeConfigPacket(
         ack_timeout_ms=750, ack_retry_limit=3, response_timeout_ms=120000
     )
-    encoded = sample.encode()
+    encoded = msgspec.msgpack.encode(sample)
     assert len(encoded) > 0
-    decoded = structures.HandshakeConfigPacket.decode(encoded)
+    decoded = msgspec.msgpack.decode(encoded, type=structures.HandshakeConfigPacket)
     assert decoded == sample
 
 

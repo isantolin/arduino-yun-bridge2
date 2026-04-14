@@ -7,7 +7,6 @@ import tempfile
 from unittest.mock import MagicMock
 
 import msgspec
-
 from mcubridge.config.common import get_default_config
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import TopicRoute

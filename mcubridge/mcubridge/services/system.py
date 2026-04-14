@@ -1,13 +1,13 @@
 """System component handling MCU system requests and MQTT interactions."""
-
 from __future__ import annotations
 
 import collections
 import contextlib
-import structlog
 
+import msgspec
+import structlog
 from aiomqtt.message import Message
-from ..protocol import protocol
+
 from mcubridge.protocol.protocol import Command, SystemAction
 from mcubridge.protocol.structures import (
     EnterBootloaderPacket,
@@ -18,6 +18,7 @@ from mcubridge.protocol.structures import (
 
 from ..config.const import MQTT_EXPIRY_DATASTORE, MQTT_EXPIRY_DEFAULT
 from ..config.settings import RuntimeConfig
+from ..protocol import protocol
 from ..protocol.topics import Topic, topic_path
 from ..state.context import RuntimeState
 from .base import BaseComponent, BridgeContext
@@ -117,7 +118,7 @@ class SystemComponent(BaseComponent):
                 packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
                 logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
                 return await self.ctx.send_frame(
-                    Command.CMD_ENTER_BOOTLOADER.value, packet.encode()
+                    Command.CMD_ENTER_BOOTLOADER.value, msgspec.msgpack.encode(packet)
                 )
 
             case SystemAction.FREE_MEMORY:

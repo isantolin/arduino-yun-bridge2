@@ -1,7 +1,7 @@
 # --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from spec.toml)
 {% for packet in packets %}
 
-class {{ packet.class_name }}(BaseStruct, frozen=True):
+class {{ packet.class_name }}(msgspec.Struct, frozen=True, array_like=True):
 {%- for field in packet.fields %}
     {{ field.name }}: {{ field.python_type }}
 {%- endfor %}

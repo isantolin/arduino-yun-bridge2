@@ -11,8 +11,8 @@ from mcubridge.state.context import McuCapabilities, create_runtime_state
 
 @pytest.mark.asyncio
 async def test_pin_handle_read_overflow() -> None:
-    import time
     import os
+    import time
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
@@ -42,8 +42,8 @@ async def test_pin_handle_read_overflow() -> None:
 
 @pytest.mark.asyncio
 async def test_pin_handle_read_send_fail() -> None:
-    import time
     import os
+    import time
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
@@ -63,8 +63,8 @@ async def test_pin_handle_read_send_fail() -> None:
 
 @pytest.mark.asyncio
 async def test_pin_handle_mode_invalid() -> None:
-    import time
     import os
+    import time
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
@@ -85,8 +85,8 @@ async def test_pin_handle_mode_invalid() -> None:
 
 @pytest.mark.asyncio
 async def test_pin_validate_access_block() -> None:
-    import time
     import os
+    import time
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",

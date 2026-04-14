@@ -109,8 +109,8 @@ def test_runtime_state_mailbox_requeue_front() -> None:
 
 
 def test_runtime_state_mailbox_requeue_front_full() -> None:
-    from mcubridge.state.context import create_runtime_state
     from mcubridge.config.settings import RuntimeConfig
+    from mcubridge.state.context import create_runtime_state
 
     config = RuntimeConfig(
         mailbox_queue_limit=5,

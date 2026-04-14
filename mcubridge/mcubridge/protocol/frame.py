@@ -14,11 +14,12 @@ from __future__ import annotations
 
 from binascii import crc32
 from typing import Any, TypeVar, cast
+
 import msgspec
 from construct import (
     Adapter,
-    BitStruct,
     BitsInteger,
+    BitStruct,
     Bytes,
     Check,
     Checksum,
@@ -137,9 +138,6 @@ RPC_FRAME: Construct = Struct(
 class Frame(msgspec.Struct, frozen=True):
     """Represents an RPC frame for MCU-Linux communication.
 
-    This class provides both object-oriented and static methods for
-    frame construction and parsing.
-
     Attributes:
         command_id: The RPC command or status code (16-bit).
         sequence_id: The RPC sequence ID (16-bit) for deduplication.
@@ -168,41 +166,41 @@ class Frame(msgspec.Struct, frozen=True):
             int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
         )
 
-    def build(self) -> bytes:
-        """Build the binary frame representation."""
-        if len(self.payload) > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(
-                f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}"
-            )
-        try:
-            # Use simple dictionary for building
-            return RPC_FRAME.build(
-                {
-                    "header_payload": {
-                        "value": {
-                            "header": {
-                                "version": protocol.PROTOCOL_VERSION,
-                                "payload_len": len(self.payload),
-                                "command_id": int(self.command_id),
-                                "sequence_id": self.sequence_id,
-                            },
-                            "payload": self.payload,
-                        }
+
+def build_frame(frame: Frame) -> bytes:
+    """Build the binary frame representation using Construct directly."""
+    if len(frame.payload) > protocol.MAX_PAYLOAD_SIZE:
+        raise ValueError(
+            f"Payload too large: {len(frame.payload)} > {protocol.MAX_PAYLOAD_SIZE}"
+        )
+    try:
+        return RPC_FRAME.build(
+            {
+                "header_payload": {
+                    "value": {
+                        "header": {
+                            "version": protocol.PROTOCOL_VERSION,
+                            "payload_len": len(frame.payload),
+                            "command_id": int(frame.command_id),
+                            "sequence_id": frame.sequence_id,
+                        },
+                        "payload": frame.payload,
                     }
                 }
-            )
-        except (ConstructError, ValueError, TypeError) as e:
-            raise ValueError(f"Failed to build frame: {e}") from e
+            }
+        )
+    except (ConstructError, ValueError, TypeError) as e:
+        raise ValueError(f"Failed to build frame: {e}") from e
 
-    @classmethod
-    def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
-        """Parse *raw_frame_buffer* and create a :class:`Frame`."""
-        try:
-            obj: Any = RPC_FRAME.parse(raw_frame_buffer)
-            return cls(
-                command_id=int(obj.header_payload.value.header.command_id),
-                sequence_id=int(obj.header_payload.value.header.sequence_id),
-                payload=obj.header_payload.value.payload,
-            )
-        except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:
-            raise ValueError(f"Incomplete or malformed frame: {e}") from e
+
+def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview) -> Frame:
+    """Parse raw bytes into a Frame using Construct directly."""
+    try:
+        obj: Any = RPC_FRAME.parse(raw_frame_buffer)
+        return Frame(
+            command_id=int(obj.header_payload.value.header.command_id),
+            sequence_id=int(obj.header_payload.value.header.sequence_id),
+            payload=obj.header_payload.value.payload,
+        )
+    except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:
+        raise ValueError(f"Incomplete or malformed frame: {e}") from e

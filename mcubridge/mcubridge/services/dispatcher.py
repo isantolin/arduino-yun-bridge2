@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+import structlog
 import svcs
 
 from mcubridge.protocol.contracts import response_to_request
@@ -17,7 +18,6 @@ from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.state.context import RuntimeState, resolve_command_id
 
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
-import structlog
 
 if TYPE_CHECKING:
     from aiomqtt import Message

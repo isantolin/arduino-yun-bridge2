@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
+from mcubridge.protocol.structures import QueuedPublish
 
 
 def test_queued_publish_roundtrip_with_correlation_and_user_properties() -> None:

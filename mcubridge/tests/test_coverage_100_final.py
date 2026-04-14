@@ -5,17 +5,19 @@ all mcubridge modules.
 """
 
 from __future__ import annotations
-from typing import Any
 
 import asyncio
 import contextlib
 import logging
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import psutil
 import msgspec
+import psutil
 import pytest
+from mcubridge.protocol import structures
+from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol.protocol import (
     Command,
     Status,
@@ -23,7 +25,8 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.state.context import create_runtime_state
 
-from tests._helpers import make_test_config as _make_config, make_route, make_mqtt_msg
+from tests._helpers import make_mqtt_msg, make_route
+from tests._helpers import make_test_config as _make_config
 
 # ============================================================================
 # ============================================================================
@@ -470,10 +473,10 @@ class TestMqttBuildProperties:
 class TestShellMqttLogic:
     @pytest.fixture
     def shell_comp(self):
-        from mcubridge.services.process import ProcessComponent
-
-        import time
         import os
+        import time
+
+        from mcubridge.services.process import ProcessComponent
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -533,10 +536,10 @@ class TestShellMqttLogic:
 class TestStatusWriter:
     @pytest.mark.asyncio
     async def test_status_writer_write_tick(self):
-        from mcubridge.state.status import status_writer
-
-        import time
         import os
+        import time
+
+        from mcubridge.state.status import status_writer
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -628,30 +631,29 @@ class TestProtocolFrame:
     def test_frame_encode_decode(self):
         from mcubridge.protocol.frame import Frame
 
-        raw = Frame(
+        raw = build_frame(Frame(
             command_id=Command.CMD_DIGITAL_READ.value,
             sequence_id=0,
             payload=b"\x01\x02",
-        ).build()
-        cmd_id, _seq_id, payload = Frame.parse(raw)
+        ))
+        cmd_id, _seq_id, payload = parse_frame(raw)
         assert cmd_id == Command.CMD_DIGITAL_READ.value
         assert payload == b"\x01\x02"
 
     def test_decode_rpc_frame_too_short(self):
-        from mcubridge.protocol.frame import Frame
 
         with pytest.raises(ValueError, match="Incomplete or malformed frame"):
-            Frame.parse(b"\x01")
+            parse_frame(b"\x01")
 
     def test_decode_rpc_frame_bad_crc(self):
         from mcubridge.protocol.frame import Frame
 
         frame = bytearray(
-            Frame(command_id=0x01, sequence_id=0, payload=b"test").build()
+            build_frame(Frame(command_id=0x01, sequence_id=0, payload=b"test"))
         )
         frame[-1] ^= 0xFF  # Corrupt CRC
         with pytest.raises(ValueError):
-            Frame.parse(bytes(frame))
+            parse_frame(bytes(frame))
 
 
 # ============================================================================
@@ -694,10 +696,10 @@ class TestProtocolTopics:
 
 class TestBaseComponent:
     def test_base_component_publish(self):
-        from mcubridge.services.base import BaseComponent
-
-        import time
         import os
+        import time
+
+        from mcubridge.services.base import BaseComponent
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -791,9 +793,8 @@ class TestProcessComponent:
 
     @pytest.mark.asyncio
     async def test_handle_kill_no_ack(self: Any, _process: Any):
-        from mcubridge.protocol.structures import ProcessKillPacket
 
-        payload = ProcessKillPacket(pid=999).encode()
+        payload = msgspec.msgpack.encode(structures.ProcessKillPacket(pid=999))
         result = await _process.handle_kill(0, payload, send_ack=False)
         assert result is False
 
@@ -806,10 +807,10 @@ class TestProcessComponent:
 class TestConsoleComponent:
     @pytest.mark.asyncio
     async def test_console_queue_flush_empty(self):
-        from mcubridge.services.console import ConsoleComponent
-
-        import time
         import os
+        import time
+
+        from mcubridge.services.console import ConsoleComponent
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -856,10 +857,10 @@ class TestMailboxComponent:
 class TestPinComponent:
     @pytest.mark.asyncio
     async def test_pin_handle_digital_read(self):
-        from mcubridge.services.pin import PinComponent
-
-        import time
         import os
+        import time
+
+        from mcubridge.services.pin import PinComponent
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -870,9 +871,8 @@ class TestPinComponent:
             ctx.publish = AsyncMock()
             comp = PinComponent(config, state, ctx)
             # Test without pending requests
-            from mcubridge.protocol.structures import DigitalReadResponsePacket
 
-            payload = DigitalReadResponsePacket(value=1).encode()
+            payload = msgspec.msgpack.encode(structures.DigitalReadResponsePacket(value=1))
             await comp.handle_digital_read_resp(0, payload)
         finally:
             state.cleanup()
@@ -886,10 +886,10 @@ class TestPinComponent:
 class TestDatastoreComponent:
     @pytest.mark.asyncio
     async def test_datastore_get_miss_publishes_empty(self):
-        from mcubridge.services.datastore import DatastoreComponent
-
-        import time
         import os
+        import time
+
+        from mcubridge.services.datastore import DatastoreComponent
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -912,13 +912,13 @@ class TestDatastoreComponent:
 class TestDispatcherEdgeCases:
     @pytest.mark.asyncio
     async def test_dispatcher_digital_topic_no_segments(self):
+        import os
+        import time
+
         from mcubridge.protocol.topics import TopicRoute
         from mcubridge.services.dispatcher import BridgeDispatcher
 
         from .conftest import make_component_container
-
-        import time
-        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1013,11 +1013,10 @@ class TestFileComponent:
             ctx.send_frame = AsyncMock(return_value=True)
             comp = FileComponent(config, state, ctx)
             # This tests the error path when file is not found
-            from mcubridge.protocol.structures import FileReadPacket
 
-            payload = FileReadPacket(
+            payload = msgspec.msgpack.encode(structures.FileReadPacket(
                 path="/nonexistent_file_12345.txt",
-            ).encode()
+            ))
             await comp.handle_read(0, payload)
         finally:
             state.cleanup()
@@ -1031,10 +1030,10 @@ class TestFileComponent:
 class TestWatchdog:
     @pytest.mark.asyncio
     async def test_watchdog_run_cancel(self):
-        from mcubridge.watchdog import WatchdogKeepalive
-
-        import time
         import os
+        import time
+
+        from mcubridge.watchdog import WatchdogKeepalive
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1059,10 +1058,10 @@ class TestWatchdog:
 class TestSystemComponent:
     @pytest.mark.asyncio
     async def test_system_handle_version(self):
-        from mcubridge.services.system import SystemComponent
-
-        import time
         import os
+        import time
+
+        from mcubridge.services.system import SystemComponent
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1111,13 +1110,13 @@ class TestHandshakeEdgeCases:
 
     @pytest.fixture
     def handshake_mgr(self):
+        import os
+        import time
+
         from mcubridge.services.handshake import (
             SerialHandshakeManager,
             derive_serial_timing,
         )
-
-        import time
-        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1255,10 +1254,10 @@ class TestRuntimeStateEdges:
 class TestBridgeServiceEdges:
     @pytest.fixture
     def service(self):
-        from mcubridge.services.runtime import BridgeService
-
-        import time
         import os
+        import time
+
+        from mcubridge.services.runtime import BridgeService
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1289,10 +1288,10 @@ class TestBridgeServiceEdges:
 
 class TestMqttTransport:
     def test_mqtt_transport_init(self):
-        from mcubridge.transport.mqtt import MqttTransport
-
-        import time
         import os
+        import time
+
+        from mcubridge.transport.mqtt import MqttTransport
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1305,10 +1304,10 @@ class TestMqttTransport:
             state.cleanup()
 
     def test_mqtt_transport_fsm_transitions(self):
-        from mcubridge.transport.mqtt import MqttTransport
-
-        import time
         import os
+        import time
+
+        from mcubridge.transport.mqtt import MqttTransport
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1340,10 +1339,10 @@ class TestMqttTransport:
 class TestMetrics:
     @pytest.mark.asyncio
     async def test_publish_metrics_error_path(self):
-        from mcubridge.metrics import publish_metrics
-
-        import time
         import os
+        import time
+
+        from mcubridge.metrics import publish_metrics
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1361,10 +1360,10 @@ class TestMetrics:
 
     @pytest.mark.asyncio
     async def test_publish_bridge_snapshots_both_disabled(self):
-        from mcubridge.metrics import publish_bridge_snapshots
-
-        import time
         import os
+        import time
+
+        from mcubridge.metrics import publish_bridge_snapshots
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1386,10 +1385,10 @@ class TestMetrics:
 
     @pytest.mark.asyncio
     async def test_publish_bridge_snapshots_summary_error(self):
-        from mcubridge.metrics import publish_bridge_snapshots
-
-        import time
         import os
+        import time
+
+        from mcubridge.metrics import publish_bridge_snapshots
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1411,10 +1410,10 @@ class TestMetrics:
 
     @pytest.mark.asyncio
     async def test_publish_bridge_snapshots_handshake_error(self):
-        from mcubridge.metrics import publish_bridge_snapshots
-
-        import time
         import os
+        import time
+
+        from mcubridge.metrics import publish_bridge_snapshots
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1443,10 +1442,10 @@ class TestMetrics:
 class TestSerialTransport:
     @pytest.mark.asyncio
     async def test_serial_transport_init(self):
-        from mcubridge.transport.serial import SerialTransport
-
-        import time
         import os
+        import time
+
+        from mcubridge.transport.serial import SerialTransport
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)

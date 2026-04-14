@@ -1,9 +1,10 @@
-from typing import Any
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.frame import build_frame
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
@@ -244,9 +245,9 @@ async def test_async_process_packet_os_error(
         from mcubridge.protocol.frame import Frame
         from mcubridge.protocol.protocol import Command
 
-        frame = Frame(
+        frame = build_frame(Frame(
             command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00"
-        ).build()
+        ))
         encoded = cobs_encode(frame)
 
         caplog.set_level("ERROR")

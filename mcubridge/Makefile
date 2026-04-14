@@ -98,6 +98,10 @@ define Build/Prepare
 	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/ || true
 endef
 
+# --- RUNTIME DEPENDENCIES START ---
+PKG_BUILD_DEPENDS:=
+# --- RUNTIME DEPENDENCIES END ---
+
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/libexec/mcubridge
 	$(INSTALL_DIR) $(1)/etc/init.d

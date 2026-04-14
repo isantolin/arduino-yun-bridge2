@@ -1056,7 +1056,7 @@ class RuntimeState(msgspec.Struct):
             serial_flow=self.serial_flow_stats.as_snapshot(),
             mcu_version=McuVersion(*self.mcu_version) if self.mcu_version else None,
             capabilities=(
-                self.mcu_capabilities.as_dict() if self.mcu_capabilities else None
+                msgspec.structs.asdict(self.mcu_capabilities) if self.mcu_capabilities else None
             ),
         )
 

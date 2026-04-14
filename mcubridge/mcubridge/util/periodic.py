@@ -1,12 +1,10 @@
-"""Tenacity-based periodic task helper for McuBridge."""
+"""Asyncio periodic task helper for McuBridge."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-
-import tenacity
 
 Tick = Callable[[], Awaitable[None]]
 
@@ -20,20 +18,15 @@ async def periodic_task(
 ) -> None:
     """Run *tick* repeatedly at *interval* seconds until cancelled.
 
-    Uses ``tenacity`` to space iterations and survive transient errors
-    raised by the callback.  Only ``asyncio.CancelledError`` propagates
-    immediately — all other exceptions are caught by tenacity and
-    trigger the next wait/retry cycle.
+    Catches all transient errors raised by the callback and logs them.
+    Only ``asyncio.CancelledError`` propagates immediately.
     """
+    while True:
+        try:
+            await tick()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.log(log_level, "Periodic task exception: %s", exc)
 
-    @tenacity.retry(
-        wait=tenacity.wait_fixed(interval),
-        stop=tenacity.stop_never,
-        retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError),
-        before_sleep=tenacity.before_sleep_log(logger, log_level),
-    )
-    async def _loop() -> None:
-        await tick()
-        raise RuntimeError("tick")
-
-    await _loop()
+        await asyncio.sleep(interval)

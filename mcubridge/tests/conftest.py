@@ -18,8 +18,6 @@ import structlog
 
 import pytest
 
-os.environ["MCUBRIDGE_TEST_MODE"] = "1"
-
 # [TEST FIX] Mock 'uci' module strictly before importing mcubridge.common.
 # This simulates the OpenWrt environment where 'uci' is available.
 # We use the stub from stubs/uci/ which provides proper UciException and Uci classes.

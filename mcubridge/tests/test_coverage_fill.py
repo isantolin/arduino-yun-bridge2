@@ -26,6 +26,7 @@ def runtime_config() -> RuntimeConfig:
         DEFAULT_STATUS_INTERVAL,
     )
 
+    import tempfile
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=115200,
@@ -34,7 +35,8 @@ def runtime_config() -> RuntimeConfig:
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_topic="bridge",
         allowed_commands=("true",),
-        file_system_root="/tmp",
+        file_system_root=tempfile.mkdtemp(prefix="mcubridge-test-fs-"),
+        mqtt_spool_dir=tempfile.mkdtemp(prefix="mcubridge-test-spool-"),
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,

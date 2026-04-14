@@ -26,6 +26,7 @@ def _run(coro: Coroutine[Any, Any, Any]) -> None:
 
 @pytest.fixture
 def runtime_config() -> RuntimeConfig:
+    import tempfile
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=115200,
@@ -34,6 +35,8 @@ def runtime_config() -> RuntimeConfig:
         mqtt_port=1883,
         mqtt_topic="br",
         serial_shared_secret=b"secret12345",
+        file_system_root=tempfile.mkdtemp(prefix="mcubridge-test-fs-"),
+        mqtt_spool_dir=tempfile.mkdtemp(prefix="mcubridge-test-spool-"),
     )
 
 

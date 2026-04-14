@@ -31,7 +31,7 @@ async def test_handle_write(console_component: ConsoleComponent) -> None:
     from mcubridge.protocol import structures
 
     await console_component.handle_write(
-        0, structures.msgspec.msgpack.encode(structures.ConsoleWritePacket(data=payload))
+        0, structures.ConsoleWritePacket(data=payload).encode()
     )
 
     console_component.ctx.publish.assert_awaited_once()  # type: ignore[reportUnknownMemberType]
@@ -72,7 +72,7 @@ async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> 
 
     from mcubridge.protocol import structures
 
-    expected = structures.msgspec.msgpack.encode(structures.ConsoleWritePacket(data=payload))
+    expected = structures.ConsoleWritePacket(data=payload).encode()
     console_component.ctx.send_frame.assert_awaited_once_with(  # type: ignore[reportUnknownMemberType]
         Command.CMD_CONSOLE_WRITE.value,
         expected,
@@ -126,7 +126,7 @@ async def test_flush_queue(console_component: ConsoleComponent) -> None:
 
     from mcubridge.protocol import structures
 
-    expected = structures.msgspec.msgpack.encode(structures.ConsoleWritePacket(data=b"queued"))
+    expected = structures.ConsoleWritePacket(data=b"queued").encode()
     console_component.ctx.send_frame.assert_awaited_once_with(  # type: ignore[reportUnknownMemberType]
         Command.CMD_CONSOLE_WRITE.value,
         expected,

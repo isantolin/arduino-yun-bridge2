@@ -1,10 +1,10 @@
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+import asyncio
 import pytest
 from cobs.cobs import encode as cobs_encode
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.frame import Frame, build_frame
+from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
@@ -62,9 +62,9 @@ async def test_process_packet_success_dispatches() -> None:
 
         service.handle_mcu_frame = AsyncMock()
 
-        frame_bytes = build_frame(Frame(
+        frame_bytes = Frame(
             command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi"
-        ))
+        ).build()
         encoded = cobs_encode(frame_bytes)
 
         transport = serial_fast.SerialTransport(config, state, service)
@@ -102,11 +102,11 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport._negotiation_future = transport.loop.create_future()  # type: ignore[reportPrivateUsage]
 
         encoded = cobs_encode(
-            build_frame(Frame(
+            Frame(
                 command_id=Command.CMD_SET_BAUDRATE_RESP.value,
                 sequence_id=0,
                 payload=b"",
-            ))
+            ).build()
         )
         transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
 

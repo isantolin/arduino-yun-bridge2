@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import structlog
 from typing import TYPE_CHECKING
 
 import msgspec
-import structlog
 from aiomqtt.message import Message
 
 from ..protocol import structures
@@ -49,7 +49,7 @@ class SpiComponent(BaseComponent):
                             frequency=int(data.get("frequency", 4000000)),
                         )
                         return await self.ctx.send_frame(
-                            Command.CMD_SPI_SET_CONFIG.value, msgspec.msgpack.encode(packet)
+                            Command.CMD_SPI_SET_CONFIG.value, packet.encode()
                         )
                     except (msgspec.DecodeError, ValueError, TypeError) as e:
                         logger.warning("Malformed SPI config request: %s", e)
@@ -58,7 +58,7 @@ class SpiComponent(BaseComponent):
                     # Simple case: raw bytes to transfer
                     packet = structures.SpiTransferPacket(data=payload)
                     return await self.ctx.send_frame(
-                        Command.CMD_SPI_TRANSFER.value, msgspec.msgpack.encode(packet)
+                        Command.CMD_SPI_TRANSFER.value, packet.encode()
                     )
                 case _:
                     return False
@@ -69,7 +69,7 @@ class SpiComponent(BaseComponent):
     async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_SPI_TRANSFER_RESP from MCU."""
         try:
-            packet = msgspec.msgpack.decode(payload, type=structures.SpiTransferResponsePacket)
+            packet = structures.SpiTransferResponsePacket.decode(payload)
             # Publish received bytes back to MQTT
             topic = topic_path(
                 self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"

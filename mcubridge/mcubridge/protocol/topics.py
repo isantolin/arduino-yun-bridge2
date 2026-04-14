@@ -6,6 +6,7 @@ Avoid hardcoding topic strings elsewhere.
 
 from __future__ import annotations
 
+
 from .protocol import Topic
 from .structures import TopicRoute
 

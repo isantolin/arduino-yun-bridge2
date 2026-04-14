@@ -10,7 +10,7 @@ import pytest
 from cobs import cobs
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import Frame, build_frame
+from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import FRAME_DELIMITER, Command
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.state.context import create_runtime_state
@@ -32,11 +32,11 @@ async def test_serial_reader_task_processes_frame(
         service = MockSerialService(runtime_config, state)
 
         payload = bytes([protocol.DIGITAL_HIGH])
-        frame = build_frame(Frame(
+        frame = Frame(
             command_id=Command.CMD_DIGITAL_READ_RESP.value,
             sequence_id=0,
             payload=payload,
-        ))
+        ).build()
         encoded = cobs.encode(frame) + FRAME_DELIMITER
 
         # Mock Streams API
@@ -111,11 +111,11 @@ async def test_serial_reader_task_emits_crc_mismatch(
         state.mark_synchronized()
         service = MockSerialService(runtime_config, state)
 
-        frame = build_frame(Frame(
+        frame = Frame(
             command_id=Command.CMD_DIGITAL_READ_RESP.value,
             sequence_id=0,
             payload=bytes([protocol.DIGITAL_HIGH]),
-        ))
+        ).build()
         corrupted = bytearray(cobs.encode(frame))
         corrupted[0] = protocol.UINT8_MASK  # Invalid COBS code
         encoded = bytes(corrupted) + FRAME_DELIMITER

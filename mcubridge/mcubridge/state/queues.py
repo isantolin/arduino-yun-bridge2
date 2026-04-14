@@ -9,9 +9,9 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Generic, TypeVar, cast
 
-import diskcache
 import msgspec
 import structlog
+import diskcache
 
 T = TypeVar("T")
 logger = structlog.get_logger("mcubridge.state.queues")

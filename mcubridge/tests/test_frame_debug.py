@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from mcubridge.protocol.protocol import UINT8_MASK, Command, Status
-
+from mcubridge.protocol.protocol import Command, Status, UINT8_MASK
 from tests.test_constants import TEST_BROKEN_CRC  # noqa: E402
+
 from tools import frame_debug  # noqa: E402
 
 

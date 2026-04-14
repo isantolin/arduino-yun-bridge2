@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import structlog
 from typing import Any
 
 import msgspec
-import structlog
 
 from ..protocol.structures import QueuedPublish
 from ..state.queues import BridgeQueue

@@ -9,15 +9,14 @@ from typing import Any
 
 import msgspec
 import psutil
-import structlog
 from aiomqtt.message import Message
 
 from ..protocol import protocol, structures
 from ..protocol.protocol import ShellAction, Status
 from ..protocol.structures import (
-    PayloadValidationError,
     ProcessOutputBatch,
     QueuedPublish,
+    PayloadValidationError,
     ShellCommandPayload,
     ShellPidPayload,
     TopicRoute,
@@ -29,6 +28,8 @@ from ..state.context import (
     RuntimeState,
 )
 from .base import BaseComponent, BridgeContext
+
+import structlog
 
 logger = structlog.get_logger("mcubridge.services.process")
 _msgpack_enc = msgspec.msgpack.Encoder()
@@ -195,7 +196,7 @@ class ProcessComponent(BaseComponent):
     async def handle_run_async(self, seq_id: int, payload: bytes) -> None:
         """Handle async process execution request from MCU."""
         try:
-            packet = msgspec.msgpack.decode(payload, type=structures.ProcessRunAsyncPacket)
+            packet = structures.ProcessRunAsyncPacket.decode(payload)
             command = packet.command
 
             if not command:
@@ -224,7 +225,7 @@ class ProcessComponent(BaseComponent):
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     status=Status.OK,
                 )
-                resp = msgspec.msgpack.encode(structures.ProcessRunAsyncResponsePacket(pid=pid))
+                resp = structures.ProcessRunAsyncResponsePacket(pid=pid).encode()
                 await self.ctx.send_frame(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
                     resp,
@@ -245,7 +246,7 @@ class ProcessComponent(BaseComponent):
     async def handle_poll(self, seq_id: int, payload: bytes) -> None:
         """Handle process poll request from MCU."""
         try:
-            packet = msgspec.msgpack.decode(payload, type=structures.ProcessPollPacket)
+            packet = structures.ProcessPollPacket.decode(payload)
             pid = packet.pid
 
             batch = await self.poll_process(pid)
@@ -254,12 +255,12 @@ class ProcessComponent(BaseComponent):
                 protocol.Command.CMD_PROCESS_POLL.value,
                 status=Status.OK,
             )
-            resp = msgspec.msgpack.encode(structures.ProcessPollResponsePacket(
+            resp = structures.ProcessPollResponsePacket(
                 status=batch.status_byte,
                 exit_code=batch.exit_code,
                 stdout_data=batch.stdout_chunk,
                 stderr_data=batch.stderr_chunk,
-            ))
+            ).encode()
             await self.ctx.send_frame(
                 protocol.Command.CMD_PROCESS_POLL_RESP.value,
                 resp,
@@ -276,7 +277,7 @@ class ProcessComponent(BaseComponent):
     ) -> bool:
         """Handle process termination request."""
         try:
-            packet = msgspec.msgpack.decode(payload, type=structures.ProcessKillPacket)
+            packet = structures.ProcessKillPacket.decode(payload)
             pid = packet.pid
 
             success = await self.stop_process(pid)

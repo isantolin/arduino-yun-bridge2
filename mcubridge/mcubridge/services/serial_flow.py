@@ -8,7 +8,6 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-import msgspec
 import tenacity
 
 from mcubridge.config.const import (
@@ -158,8 +157,8 @@ class SerialFlowController:
             ack_target = pending.command_id
             if payload:
                 try:
-                    ack_target = msgspec.msgpack.decode(payload, type=AckPacket).command_id
-                except (msgspec.MsgspecError, ValueError):
+                    ack_target = AckPacket.decode(payload).command_id
+                except ValueError:
                     pass
             if ack_target != pending.command_id:
                 return
@@ -183,10 +182,11 @@ class SerialFlowController:
                 should_reject = True
             else:
                 try:
-                    ack_target = msgspec.msgpack.decode(payload, type=AckPacket).command_id
-                    should_reject = (ack_target == pending.command_id)
-                except (msgspec.MsgspecError, ValueError):
-                    # Non-msgpack (human-readable string) → reject only if binary
+                    should_reject = (
+                        AckPacket.decode(payload).command_id == pending.command_id
+                    )
+                except ValueError:
+                    # Non-protobuf (human-readable string) → reject only if binary
                     should_reject = not all(32 <= byte < 127 for byte in payload)
 
             if should_reject:

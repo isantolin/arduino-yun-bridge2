@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mcubridge.protocol import structures
+
 import asyncio
 import logging
 from collections.abc import Awaitable, Coroutine
@@ -11,9 +13,8 @@ import msgspec
 import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Command, MailboxAction, Status
 from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol.protocol import Command, MailboxAction, Status
 from mcubridge.protocol.topics import (
     Topic,
     topic_path,
@@ -21,9 +22,9 @@ from mcubridge.protocol.topics import (
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.state.context import RuntimeState
-
-from tests._helpers import make_mqtt_msg, make_route
 from tests.test_constants import TEST_MSG_ID
+
+from tests._helpers import make_route, make_mqtt_msg
 
 
 class EnqueueHook(Protocol):
@@ -126,7 +127,7 @@ def test_handle_processed_publishes_json(
     runtime_state: RuntimeState,
 ) -> None:
     component, bridge = mailbox_component
-    payload = structures.msgspec.msgpack.encode(structures.MailboxProcessedPacket(message_id=TEST_MSG_ID))
+    payload = structures.MailboxProcessedPacket(message_id=TEST_MSG_ID).encode()
     asyncio.run(component.handle_processed(0, payload))
 
     assert bridge.published
@@ -144,7 +145,7 @@ def test_handle_push_stores_incoming_queue(
     runtime_state: RuntimeState,
 ) -> None:
     component, bridge = mailbox_component
-    payload = structures.msgspec.msgpack.encode(structures.MailboxPushPacket(data=b"hello"))
+    payload = structures.MailboxPushPacket(data=b"hello").encode()
     result = asyncio.run(component.handle_push(0, payload))
     assert result is True
     assert runtime_state.pop_mailbox_incoming() == b"hello"
@@ -163,7 +164,7 @@ def test_handle_push_overflow_sends_error(
 ) -> None:
     component, bridge = mailbox_component
     runtime_state.mailbox_queue_limit = 0
-    payload = structures.msgspec.msgpack.encode(structures.MailboxPushPacket(data=b"A"))
+    payload = structures.MailboxPushPacket(data=b"A").encode()
     result = asyncio.run(component.handle_push(0, payload))
     assert result is False
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
@@ -182,7 +183,7 @@ def test_handle_read_success_publishes_available(
 
     command_id, payload = bridge.sent_frames[-1]
     assert command_id == Command.CMD_MAILBOX_READ_RESP.value
-    assert payload == structures.msgspec.msgpack.encode(structures.MailboxReadResponsePacket(content=b"payload"))
+    assert payload == structures.MailboxReadResponsePacket(content=b"payload").encode()
 
     assert bridge.published[-1].topic_name == (
         topic_path(runtime_state.mqtt_topic_prefix, Topic.MAILBOX, "outgoing_available")

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 from aiomqtt.message import Message

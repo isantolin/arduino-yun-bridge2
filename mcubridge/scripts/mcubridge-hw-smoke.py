@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated, Any, cast
+from typing import Annotated, cast, Any
 
 import aiomqtt
 import typer

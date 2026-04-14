@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import (
     Annotated,
     Any,
+    ClassVar,
     Final,
     Self,
     Type,
@@ -24,7 +25,7 @@ from typing import (
 
 import msgspec
 import msgspec.msgpack
-from construct import BitStruct, Construct, Flag, Padding
+from construct import BitStruct, Flag, Padding, Construct
 
 # [SIL-2] Declarative bitmask definition for MCU capabilities.
 # This ensures atomic bit-level parsing/building via Construct's C-backed engine.
@@ -529,9 +530,40 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 # 3. Operational Structures
 # =============================================================================
 
+T = TypeVar("T", bound="BaseStruct")
+
 # [SIL-2] Shared encoder/decoder — reuse avoids per-call allocation overhead.
 _msgpack_encoder = msgspec.msgpack.Encoder()
 _msgpack_decoder = msgspec.msgpack.Decoder()
+
+
+class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
+    """Base class for all serial payload packets.
+
+    Encoded as MsgPack arrays (positional fields) for compact wire format.
+    """
+
+    @classmethod
+    def decode(
+        cls: Type[T],
+        data: bytes | bytearray | memoryview,
+        command_id: int | None = None,
+    ) -> T:
+        try:
+            return msgspec.msgpack.decode(
+                data if isinstance(data, bytes) else bytes(data), type=cls
+            )
+        except (
+            msgspec.MsgspecError,
+            ValueError,
+            TypeError,
+        ) as e:
+            raise ValueError(
+                f"Malformed {cls.__name__} payload: {bytes(data).hex()} - Error: {e}"
+            ) from e
+
+    def encode(self) -> bytes:
+        return msgspec.msgpack.encode(self)
 
 
 # --- Binary Protocol Packets ---
@@ -539,148 +571,148 @@ _msgpack_decoder = msgspec.msgpack.Decoder()
 # --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from spec.toml)
 
 
-class VersionResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class VersionResponsePacket(BaseStruct, frozen=True):
     major: Annotated[int, msgspec.Meta(ge=0)]
     minor: Annotated[int, msgspec.Meta(ge=0)]
     patch: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class FreeMemoryResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class FreeMemoryResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class PinModePacket(msgspec.Struct, frozen=True, array_like=True):
+class PinModePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     mode: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class DigitalWritePacket(msgspec.Struct, frozen=True, array_like=True):
+class DigitalWritePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class AnalogWritePacket(msgspec.Struct, frozen=True, array_like=True):
+class AnalogWritePacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
     value: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class PinReadPacket(msgspec.Struct, frozen=True, array_like=True):
+class PinReadPacket(BaseStruct, frozen=True):
     pin: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class DigitalReadResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class DigitalReadResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class AnalogReadResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class AnalogReadResponsePacket(BaseStruct, frozen=True):
     value: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class ConsoleWritePacket(msgspec.Struct, frozen=True, array_like=True):
+class ConsoleWritePacket(BaseStruct, frozen=True):
     data: bytes
 
 
-class DatastorePutPacket(msgspec.Struct, frozen=True, array_like=True):
+class DatastorePutPacket(BaseStruct, frozen=True):
     key: str
     value: bytes
 
 
-class DatastoreGetPacket(msgspec.Struct, frozen=True, array_like=True):
+class DatastoreGetPacket(BaseStruct, frozen=True):
     key: str
 
 
-class DatastoreGetResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class DatastoreGetResponsePacket(BaseStruct, frozen=True):
     value: bytes
 
 
-class MailboxPushPacket(msgspec.Struct, frozen=True, array_like=True):
+class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
 
-class MailboxProcessedPacket(msgspec.Struct, frozen=True, array_like=True):
+class MailboxProcessedPacket(BaseStruct, frozen=True):
     message_id: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class MailboxAvailableResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
     count: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class MailboxReadResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class MailboxReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
 
-class FileWritePacket(msgspec.Struct, frozen=True, array_like=True):
+class FileWritePacket(BaseStruct, frozen=True):
     path: str
     data: bytes
 
 
-class FileReadPacket(msgspec.Struct, frozen=True, array_like=True):
+class FileReadPacket(BaseStruct, frozen=True):
     path: str
 
 
-class FileRemovePacket(msgspec.Struct, frozen=True, array_like=True):
+class FileRemovePacket(BaseStruct, frozen=True):
     path: str
 
 
-class FileReadResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class FileReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
 
-class ProcessRunAsyncPacket(msgspec.Struct, frozen=True, array_like=True):
+class ProcessRunAsyncPacket(BaseStruct, frozen=True):
     command: str
 
 
-class ProcessRunAsyncResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class ProcessPollPacket(msgspec.Struct, frozen=True, array_like=True):
+class ProcessPollPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class ProcessPollResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class ProcessPollResponsePacket(BaseStruct, frozen=True):
     status: Annotated[int, msgspec.Meta(ge=0)]
     exit_code: Annotated[int, msgspec.Meta(ge=0)]
     stdout_data: bytes
     stderr_data: bytes
 
 
-class ProcessKillPacket(msgspec.Struct, frozen=True, array_like=True):
+class ProcessKillPacket(BaseStruct, frozen=True):
     pid: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class AckPacket(msgspec.Struct, frozen=True, array_like=True):
+class AckPacket(BaseStruct, frozen=True):
     command_id: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class HandshakeConfigPacket(msgspec.Struct, frozen=True, array_like=True):
+class HandshakeConfigPacket(BaseStruct, frozen=True):
     ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
     ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
     response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class SetBaudratePacket(msgspec.Struct, frozen=True, array_like=True):
+class SetBaudratePacket(BaseStruct, frozen=True):
     baudrate: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class LinkSyncPacket(msgspec.Struct, frozen=True, array_like=True):
+class LinkSyncPacket(BaseStruct, frozen=True):
     nonce: bytes
     tag: bytes
 
 
-class EnterBootloaderPacket(msgspec.Struct, frozen=True, array_like=True):
+class EnterBootloaderPacket(BaseStruct, frozen=True):
     magic: Annotated[int, msgspec.Meta(ge=0)]
 
 
-class SpiTransferPacket(msgspec.Struct, frozen=True, array_like=True):
+class SpiTransferPacket(BaseStruct, frozen=True):
     data: bytes
 
 
-class SpiTransferResponsePacket(msgspec.Struct, frozen=True, array_like=True):
+class SpiTransferResponsePacket(BaseStruct, frozen=True):
     data: bytes
 
 
-class SpiConfigPacket(msgspec.Struct, frozen=True, array_like=True):
+class SpiConfigPacket(BaseStruct, frozen=True):
     bit_order: Annotated[int, msgspec.Meta(ge=0)]
     data_mode: Annotated[int, msgspec.Meta(ge=0)]
     frequency: Annotated[int, msgspec.Meta(ge=0)]
@@ -710,7 +742,7 @@ class CapabilitiesFeatures(msgspec.Struct, frozen=True):
     sd: bool
 
 
-class CapabilitiesPacket(msgspec.Struct, frozen=True, array_like=True):
+class CapabilitiesPacket(BaseStruct, frozen=True):
     ver: Annotated[int, msgspec.Meta(ge=0)]
     arch: Annotated[int, msgspec.Meta(ge=0)]
     dig: Annotated[int, msgspec.Meta(ge=0)]
@@ -1000,6 +1032,29 @@ class PendingCommand(msgspec.Struct):
 _SnapshotT = TypeVar("_SnapshotT", bound=msgspec.Struct)
 
 
+class BaseStats(msgspec.Struct):
+    """Base for statistics containers providing standard dict conversion.
+
+    Subclasses that define ``SNAPSHOT_TYPE`` get a generic ``as_snapshot()``
+    that converts all fields into the frozen snapshot class via msgspec.
+    """
+
+    SNAPSHOT_TYPE: ClassVar[type | None] = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Export internal state as a dictionary."""
+        return msgspec.structs.asdict(self)
+
+    def as_snapshot(self) -> msgspec.Struct:
+        """Convert mutable stats to a frozen snapshot struct."""
+        snap_cls = self.__class__.SNAPSHOT_TYPE
+        if snap_cls is None:
+            raise NotImplementedError(f"{self.__class__.__name__} has no SNAPSHOT_TYPE")
+        return cast(
+            msgspec.Struct, msgspec.convert(msgspec.structs.asdict(self), snap_cls)
+        )
+
+
 class SupervisorSnapshot(msgspec.Struct):
     restarts: Annotated[int, msgspec.Meta(ge=0)]
     last_failure_unix: float
@@ -1008,8 +1063,10 @@ class SupervisorSnapshot(msgspec.Struct):
     fatal: bool
 
 
-class SupervisorStats(msgspec.Struct):
+class SupervisorStats(BaseStats):
     """Task supervisor statistics."""
+
+    SNAPSHOT_TYPE: ClassVar[type | None] = SupervisorSnapshot
 
     restarts: int = 0
     last_failure_unix: float = 0.0
@@ -1018,7 +1075,7 @@ class SupervisorStats(msgspec.Struct):
     fatal: bool = False
 
     def as_snapshot(self) -> SupervisorSnapshot:
-        return msgspec.convert(msgspec.structs.asdict(self), SupervisorSnapshot)
+        return cast(SupervisorSnapshot, super().as_snapshot())
 
 
 class McuCapabilities(msgspec.Struct):
@@ -1116,7 +1173,7 @@ class McuCapabilities(msgspec.Struct):
         return res
 
 
-class SerialThroughputStats(msgspec.Struct):
+class SerialThroughputStats(BaseStats):
     """Serial link throughput counters."""
 
     bytes_sent: int = 0
@@ -1265,8 +1322,10 @@ class SerialFlowSnapshot(msgspec.Struct):
     last_event_unix: float
 
 
-class SerialFlowStats(msgspec.Struct):
+class SerialFlowStats(BaseStats):
     """Serial flow control statistics (Mutable)."""
+
+    SNAPSHOT_TYPE: ClassVar[type | None] = SerialFlowSnapshot
 
     commands_sent: int = 0
     commands_acked: int = 0
@@ -1275,7 +1334,7 @@ class SerialFlowStats(msgspec.Struct):
     last_event_unix: float = 0.0
 
     def as_snapshot(self) -> SerialFlowSnapshot:
-        return msgspec.convert(msgspec.structs.asdict(self), SerialFlowSnapshot)
+        return cast(SerialFlowSnapshot, super().as_snapshot())
 
 
 class ProcessStats(msgspec.Struct):

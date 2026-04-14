@@ -3,20 +3,16 @@ Coverage gap filler tests for Python.
 """
 
 from __future__ import annotations
-
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import msgspec
 import pytest
-from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Command, Topic
+from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.protocol.topics import TopicRoute
 from mcubridge.services.datastore import DatastoreComponent
-from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.state.context import create_runtime_state
+from aiomqtt.message import Message
 
 from .conftest import make_component_container
 
@@ -218,7 +214,8 @@ async def test_datastore_handle_get_request_fail_send(
     ctx = MagicMock()
     ctx.send_frame = AsyncMock(return_value=False)
     ds = DatastoreComponent(runtime_config, runtime_state, ctx)
+    from mcubridge.protocol.structures import DatastoreGetPacket
 
-    payload = msgspec.msgpack.encode(structures.DatastoreGetPacket(key="test"))
+    payload = DatastoreGetPacket(key="test").encode()
     result = await ds.handle_get_request(0, payload)
     assert result is False

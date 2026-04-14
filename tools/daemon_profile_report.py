@@ -17,10 +17,10 @@ import importlib
 import resource
 import sys
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
+from collections.abc import Callable
 
 import typer
 
@@ -243,8 +243,7 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
     results: list[BenchmarkResult] = []
 
     # --- Frame parse/build ---
-    import msgspec
-    from mcubridge.protocol.frame import Frame, build_frame, parse_frame
+    from mcubridge.protocol.frame import Frame
     from mcubridge.protocol.protocol import Command
 
     sample_frame = Frame(
@@ -252,22 +251,22 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
         sequence_id=42,
         payload=b"Hello, Bridge!" * 4,
     )
-    raw = build_frame(sample_frame)
+    raw = sample_frame.build()
 
-    results.append(_benchmark("build_frame()", lambda: build_frame(sample_frame), iterations))
-    results.append(_benchmark("parse_frame()", lambda: parse_frame(raw), iterations))
+    results.append(_benchmark("Frame.build()", sample_frame.build, iterations))
+    results.append(_benchmark("Frame.parse()", lambda: Frame.parse(raw), iterations))
 
     # --- MsgPack encode/decode (serial payload) ---
     from mcubridge.protocol.structures import ConsoleWritePacket
 
     sample_packet = ConsoleWritePacket(data=b"Hello, Bridge!" * 4)
-    mp_bytes = msgspec.msgpack.encode(sample_packet)
+    mp_bytes = sample_packet.encode()
 
     def _mp_encode() -> bytes:
-        return msgspec.msgpack.encode(ConsoleWritePacket(data=b"Hello, Bridge!" * 4))
+        return ConsoleWritePacket(data=b"Hello, Bridge!" * 4).encode()
 
     def _mp_decode() -> Any:
-        return msgspec.msgpack.decode(mp_bytes, type=ConsoleWritePacket)
+        return ConsoleWritePacket.decode(mp_bytes)
 
     results.append(_benchmark("MsgPack encode", _mp_encode, iterations))
     results.append(_benchmark("MsgPack decode", _mp_decode, iterations))

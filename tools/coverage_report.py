@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Annotated, Any, cast
 
 import msgspec
-import typer
 from rich.console import Console as RichConsole
 from rich.table import Table
+import typer
 
 app = typer.Typer(
     help="Aggregate Python and Arduino coverage results into a single summary."

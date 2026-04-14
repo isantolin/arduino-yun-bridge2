@@ -17,9 +17,9 @@ import hashlib
 import hmac
 import secrets
 from typing import Final, cast
-
-from construct import Bytes, Construct, Int64ub, Struct
+from construct import Bytes, Int64ub, Struct, Construct
 from construct.core import ConstructError
+
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF

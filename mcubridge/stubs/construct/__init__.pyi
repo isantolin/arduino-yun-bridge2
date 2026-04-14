@@ -1,7 +1,6 @@
 """High-level manual stub for Construct."""
 
 from __future__ import annotations
-
 from typing import Any
 
 class Construct:

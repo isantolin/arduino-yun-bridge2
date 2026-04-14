@@ -30,15 +30,15 @@ import asyncio
 import contextlib
 import sys
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Any
+from typing import Any, Annotated
 
 import msgspec
 import psutil
+import tenacity
+import typer
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
 import structlog
-import tenacity
-import typer
 import uvloop
 
 from mcubridge.config.const import (
@@ -227,16 +227,7 @@ class BridgeDaemon:
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
-        except* (
-            OSError,
-            RuntimeError,
-            ValueError,
-            TypeError,
-            AttributeError,
-            KeyError,
-            IndexError,
-            msgspec.MsgspecError,
-        ) as exc_group:
+        except* Exception as exc_group:
             for exc in exc_group.exceptions:
                 log.critical("Fatal task error: %s", exc, exc_info=exc)
             raise

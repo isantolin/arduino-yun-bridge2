@@ -1,7 +1,7 @@
 import importlib
 import sys
 import types
-from typing import Any, Self
+from typing import Self, Any
 
 import pytest
 from mcubridge.config import common, const

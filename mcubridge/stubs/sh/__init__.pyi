@@ -1,7 +1,6 @@
 """Manual stub for sh library."""
 
 from __future__ import annotations
-
 from typing import Any
 
 class ErrorReturnCode(Exception):

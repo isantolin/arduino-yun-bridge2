@@ -11,17 +11,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import structlog
 import time
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 import msgspec.msgpack
-import structlog
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.constant_time import bytes_eq
-from transitions import Machine
 
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -45,6 +44,9 @@ from ..security.security import (
     validate_nonce_counter,
 )
 from ..state.context import McuCapabilities, RuntimeState
+from transitions import Machine
+
+from typing import Protocol
 
 
 class SendFrameCallable(Protocol):
@@ -256,7 +258,7 @@ class SerialHandshakeManager:
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
-        sync_payload = msgspec.msgpack.encode(LinkSyncPacket(nonce=nonce, tag=our_tag))
+        sync_payload = LinkSyncPacket(nonce=nonce, tag=our_tag).encode()
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
             self.clear_handshake_expectations()
@@ -323,7 +325,7 @@ class SerialHandshakeManager:
             self._state.handshake_rate_until = now + rate_limit
 
         try:
-            sync_pkt = msgspec.msgpack.decode(payload, type=LinkSyncPacket)
+            sync_pkt = LinkSyncPacket.decode(payload)
             nonce = bytes(sync_pkt.nonce)
             tag_bytes = bytes(sync_pkt.tag)
         except (ValueError, TypeError):
@@ -444,7 +446,7 @@ class SerialHandshakeManager:
 
     def _parse_capabilities(self, payload: bytes) -> None:
         try:
-            cap = msgspec.msgpack.decode(payload, type=CapabilitiesPacket)
+            cap = CapabilitiesPacket.decode(payload)
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
                 board_arch=cap.arch,
@@ -622,11 +624,11 @@ class SerialHandshakeManager:
 
     def _build_reset_payload(self) -> bytes:
         # [SIL-2] Use structured packet encoding
-        return msgspec.msgpack.encode(HandshakeConfigPacket(
+        return HandshakeConfigPacket(
             ack_timeout_ms=self._timing.ack_timeout_ms,
             ack_retry_limit=self._timing.retry_limit,
             response_timeout_ms=self._timing.response_timeout_ms,
-        ))
+        ).encode()
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         return (

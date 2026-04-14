@@ -11,9 +11,9 @@ Runs the full deployment pipeline inside a QEMU VM:
 Requires: qemu-system-mips, python3-pexpect, wget, e2fsprogs
 """
 
-import shutil
-import subprocess
 import sys
+import subprocess
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -309,7 +309,7 @@ def run_test(apk_disk: str, extroot_disk: str) -> None:
         child.sendline("poweroff")
         child.expect(pexpect.EOF, timeout=30)
 
-    except (pexpect.ExceptionPexpect, OSError, RuntimeError) as e:
+    except Exception as e:
         log_error(f"\n[ERROR] Test failed: {e}")
         if hasattr(child, "before") and child.before:
             log_error(f"[DEBUG] Last output:\n{child.before[-500:]}")

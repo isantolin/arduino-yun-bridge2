@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import msgspec
 import structlog
-from aiomqtt.message import Message
 
+import msgspec
+from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, ConsoleAction
 from mcubridge.protocol.structures import ConsoleWritePacket, TopicRoute
@@ -86,7 +86,7 @@ class ConsoleComponent(BaseComponent):
                 continue
 
             # [SIL-2] Use structured packet encoding
-            frame_payload = msgspec.msgpack.encode(ConsoleWritePacket(data=chunk))
+            frame_payload = ConsoleWritePacket(data=chunk).encode()
 
             send_ok = await self.ctx.send_frame(
                 Command.CMD_CONSOLE_WRITE.value,
@@ -113,7 +113,7 @@ class ConsoleComponent(BaseComponent):
                     continue
 
                 # [SIL-2] Use structured packet encoding
-                frame_payload = msgspec.msgpack.encode(ConsoleWritePacket(data=chunk))
+                frame_payload = ConsoleWritePacket(data=chunk).encode()
 
                 send_ok = await self.ctx.send_frame(
                     Command.CMD_CONSOLE_WRITE.value,

@@ -6,14 +6,16 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from aiomqtt import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import SystemAction
+from mcubridge.protocol import structures
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState, create_runtime_state
+
+from aiomqtt import Message
 
 from tests._helpers import make_route
 
@@ -127,7 +129,7 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
 
         # Payload: 2 bytes (uint16)
         await component.handle_get_free_memory_resp(
-            0, structures.msgspec.msgpack.encode(structures.FreeMemoryResponsePacket(value=1024))
+            0, structures.FreeMemoryResponsePacket(value=1024).encode()
         )
 
         # It publishes twice (one for reply, one for broadcast)
@@ -166,7 +168,7 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(
         component._pending_version.append(msg)  # type: ignore[reportPrivateUsage]
 
         # Payload: major=1, minor=2
-        payload = structures.msgspec.msgpack.encode(structures.VersionResponsePacket(major=1, minor=2, patch=0))
+        payload = structures.VersionResponsePacket(major=1, minor=2, patch=0).encode()
 
         await component.handle_get_version_resp(0, payload)
 

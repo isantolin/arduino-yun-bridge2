@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import msgspec
+
 import pytest
 from mcubridge.protocol.contracts import expected_responses
 from mcubridge.protocol.protocol import (

@@ -8,6 +8,7 @@ import contextlib
 import functools
 import os
 import tempfile
+import structlog
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -16,8 +17,6 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
 import psutil
-import structlog
-from transitions import Machine
 
 from ..config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -39,6 +38,7 @@ from ..config.const import (
     SPOOL_BACKOFF_MIN_SECONDS,
 )
 from ..config.settings import RuntimeConfig
+from ..protocol.structures import QueuedPublish
 from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from ..policy import AllowedCommandPolicy, TopicAuthorization
 from ..protocol import protocol
@@ -53,7 +53,6 @@ from ..protocol.structures import (
     McuCapabilities,
     McuVersion,
     PendingPinRequest,
-    QueuedPublish,
     SerialFlowStats,
     SerialLatencyStats,
     SerialLinkSnapshot,
@@ -63,6 +62,7 @@ from ..protocol.structures import (
 )
 from .metrics import DaemonMetrics
 from .queues import BridgeQueue
+from transitions import Machine
 
 logger = structlog.get_logger("mcubridge.state")
 

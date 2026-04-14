@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import msgspec
 import pytest
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.structures import AckPacket
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 
@@ -28,7 +28,7 @@ async def _send_ack(
     controller.on_frame_received(
         Status.ACK.value,
         0,
-        msgspec.msgpack.encode(structures.AckPacket(command_id=command_id)),
+        AckPacket(command_id=command_id).encode(),
     )
 
 
@@ -235,7 +235,7 @@ def test_serial_flow_acknowledges_ack_only_command(
                 controller.on_frame_received,
                 Status.ACK.value,
                 0,
-                msgspec.msgpack.encode(structures.AckPacket(command_id=command_id)),
+                AckPacket(command_id=command_id).encode(),
             )
             return True
 
@@ -268,7 +268,7 @@ def test_serial_flow_handles_response_after_ack(
                 controller.on_frame_received(
                     Status.ACK.value,
                     0,
-                    msgspec.msgpack.encode(structures.AckPacket(command_id=command_id)),
+                    AckPacket(command_id=command_id).encode(),
                 )
                 controller.on_frame_received(
                     Command.CMD_DIGITAL_READ_RESP.value,
@@ -308,7 +308,7 @@ def test_serial_flow_retries_on_mismatched_ack(
                 controller.on_frame_received(
                     Status.ACK.value,
                     0,
-                    msgspec.msgpack.encode(structures.AckPacket(command_id=other_cmd)),
+                    AckPacket(command_id=other_cmd).encode(),
                 )
 
             loop.call_soon(emit_wrong_ack)

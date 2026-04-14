@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import msgspec
 import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Status
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.services.system import SystemComponent
@@ -100,9 +100,9 @@ async def testacknowledge_mcu_frame_sends_ack_packet() -> None:
         assert status_cmd == Status.MALFORMED.value
         assert (
             payload
-            == structures.msgspec.msgpack.encode(structures.AckPacket(
+            == structures.AckPacket(
                 command_id=protocol.Command.CMD_GET_FREE_MEMORY.value
-            ))
+            ).encode()
         )
     finally:
         state.cleanup()
@@ -207,7 +207,7 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
 
         pkt = structures.VersionResponsePacket(major=1, minor=2, patch=0)
         system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
-        await system.handle_get_version_resp(0, msgspec.msgpack.encode(pkt))
+        await system.handle_get_version_resp(0, pkt.encode())
 
         assert state.mcu_version == (1, 2, 0)
         queued = state.mqtt_publish_queue.get_nowait()

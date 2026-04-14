@@ -1,7 +1,6 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import msgspec
 import pytest
 from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Status
@@ -41,8 +40,9 @@ async def test_handle_poll_finished_path_executes_debug_branch(
     batch = ProcessOutputBatch(Status.OK.value, 0, b"out", b"err", True, False, False)
 
     with patch.object(process_comp, "poll_process", return_value=batch):
+        from mcubridge.protocol.structures import ProcessPollPacket
 
-        payload = msgspec.msgpack.encode(structures.ProcessPollPacket(pid=100))
+        payload = ProcessPollPacket(pid=100).encode()
         await process_comp.handle_poll(0, payload)
         process_comp.ctx.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
 
@@ -142,7 +142,7 @@ async def test_handle_kill_timeout_releases_slot(
         mock_psutil_instance.children.return_value = []
         mock_psutil_instance.terminate = MagicMock()
         ok = await process_comp.handle_kill(
-            0, structures.msgspec.msgpack.encode(structures.ProcessKillPacket(pid=pid))
+            0, structures.ProcessKillPacket(pid=pid).encode()
         )
     assert ok is True
     mock_psutil_instance.terminate.assert_called_once()
@@ -169,7 +169,7 @@ async def test_handle_kill_process_lookup_error_is_handled(
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
         ok = await process_comp.handle_kill(
-            0, structures.msgspec.msgpack.encode(structures.ProcessKillPacket(pid=pid))
+            0, structures.ProcessKillPacket(pid=pid).encode()
         )
     # Should return True as we attempted termination
     assert ok is True

@@ -1,22 +1,21 @@
+from typing import Any
 import asyncio
 import errno
 import logging.handlers
 import os
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import psutil
 import pytest
+from mcubridge import daemon
 from mcubridge.config import logging as logging_config
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.process import ProcessComponent
 from mcubridge.transport.serial import (
     SerialTransport,
 )
-
-from mcubridge import daemon
 
 
 def create_real_config():

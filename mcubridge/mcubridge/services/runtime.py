@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import structlog
 import time
 from collections.abc import Coroutine
 from typing import Any
 
 import msgspec
-import structlog
 import svcs
 from aiomqtt.message import Message
 
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
 from ..config.settings import RuntimeConfig
+from ..protocol.structures import QueuedPublish
 from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
-from ..protocol.structures import AckPacket, QueuedPublish
+from ..protocol.structures import AckPacket
 from ..protocol.topics import Topic, parse_topic, topic_path
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
 from ..state.context import RuntimeState
@@ -397,7 +398,7 @@ class BridgeService:
         status: Status = Status.ACK,
     ) -> None:
         # [SIL-2] Use structured packet for acknowledgements
-        payload = msgspec.msgpack.encode(AckPacket(command_id=command_id))
+        payload = AckPacket(command_id=command_id).encode()
         if not self._serial_sender:
             logger.error(
                 "Serial sender not registered; cannot emit status 0x%02X",
@@ -424,10 +425,10 @@ class BridgeService:
     async def _handle_ack(self, seq_id: int, payload: bytes) -> None:
         if len(payload) >= 2:
             try:
-                packet = msgspec.msgpack.decode(payload, type=AckPacket)
+                packet = AckPacket.decode(payload)
                 command_id = packet.command_id
                 logger.debug("MCU > ACK received for 0x%02X", command_id)
-            except (msgspec.MsgspecError, ValueError) as exc:
+            except (msgspec.ValidationError, ValueError) as exc:
                 logger.warning("MCU > Malformed ACK payload: %s", exc)
         else:
             logger.debug("MCU > ACK received")

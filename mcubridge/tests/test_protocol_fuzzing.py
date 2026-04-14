@@ -2,9 +2,8 @@ import random
 
 import pytest
 from cobs import cobs
-from mcubridge.protocol.frame import parse_frame
+from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
-
 from tests.test_constants import TEST_RANDOM_SEED
 
 # Deterministic seed for reproducibility
@@ -27,7 +26,7 @@ def test_frame_parsing_resilience_to_fuzzing():
         try:
             # We attempt to parse raw data directly as if it was decoded from COBS
             # (Testing the internal Frame structure parser)
-            _ = parse_frame(raw_data)
+            _ = Frame.parse(raw_data)
         except valid_exceptions:
             # This is expected behavior for garbage data
             pass
@@ -70,7 +69,7 @@ def test_frame_header_parsing_resilience():
         raw_data = random.randbytes(length)
 
         try:
-            _ = parse_frame(raw_data)
+            _ = Frame.parse(raw_data)
         except ValueError:
             pass
         except Exception as exc:

@@ -15,34 +15,28 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import structlog
 from typing import TYPE_CHECKING, Any, Final, cast
 
-import msgspec
-import serial
-import serial_asyncio_fast
-import structlog
-import tenacity
-from cobs.cobs import (
-    DecodeError as CobsDecodeError,
-)
-from cobs.cobs import (
-    decode as cobs_decode,
-)
 from cobs.cobs import (
     encode as cobs_encode,
+    decode as cobs_decode,
+    DecodeError as CobsDecodeError,
 )
-from transitions import Machine
+import serial
+import serial_asyncio_fast
+import tenacity
 
 from mcubridge.config.const import (
-    DEFAULT_RECONNECT_DELAY,
     MAX_SERIAL_FRAME_BYTES,
+    DEFAULT_RECONNECT_DELAY,
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
-from mcubridge.protocol import protocol
-from mcubridge.protocol import structures as structures
-from mcubridge.protocol.frame import Frame, build_frame, parse_frame
+from mcubridge.protocol import protocol, structures as structures
+from mcubridge.protocol.frame import Frame
+from transitions import Machine
 
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
@@ -306,7 +300,7 @@ class SerialTransport:
             and not self._negotiation_future.done()
         ):
             try:
-                frame = parse_frame(cobs_decode(encoded_packet))
+                frame = Frame.parse(cobs_decode(encoded_packet))
                 if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
                     self._switch_local_baudrate(self.config.serial_baud)
                     self._negotiation_future.set_result(True)
@@ -333,7 +327,7 @@ class SerialTransport:
         )
 
         try:
-            frame = parse_frame(cobs_decode(packet_bytes))
+            frame = Frame.parse(cobs_decode(packet_bytes))
             cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
             if logger.isEnabledFor(logging.DEBUG):
@@ -398,7 +392,7 @@ class SerialTransport:
                 seq = self._tx_sequence_id
 
             frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)
-            encoded = cobs_encode(build_frame(frame)) + protocol.FRAME_DELIMITER
+            encoded = cobs_encode(frame.build()) + protocol.FRAME_DELIMITER
 
             if logger.isEnabledFor(logging.DEBUG):
                 logger.log(
@@ -421,7 +415,7 @@ class SerialTransport:
         """Execute baudrate switch protocol."""
         logger.info("Negotiating baudrate switch to %d...", target_baud)
 
-        payload = msgspec.msgpack.encode(structures.SetBaudratePacket(baudrate=target_baud))
+        payload = structures.SetBaudratePacket(baudrate=target_baud).encode()
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(3),
             wait=tenacity.wait_exponential(

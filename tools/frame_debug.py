@@ -9,14 +9,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated
 
-import msgspec
+import serial
+import typer
 
 # [SIL-2] Use robust absolute submodule imports to avoid package attribute issues
 import cobs.cobs as cobs_mod
-import serial
-import typer
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import Frame, build_frame, parse_frame
+from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 
 
@@ -95,7 +94,7 @@ def _hex_with_spacing(data: bytes) -> str:
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     # Use sequence_id=0 for debug snapshots
     frame_obj = Frame(command_id=command_id, sequence_id=0, payload=payload)
-    raw_frame = build_frame(frame_obj)
+    raw_frame = frame_obj.build()
     crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
     encoded_body = cobs_mod.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
@@ -143,7 +142,7 @@ def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
 
 
 def _decode_frame(encoded_packet: bytes) -> Frame:
-    return parse_frame(cobs_mod.decode(encoded_packet))
+    return Frame.parse(cobs_mod.decode(encoded_packet))
 
 
 def _print_response(frame: Frame) -> None:
@@ -219,7 +218,7 @@ def main_cmd(
                     else:
                         try:
                             _print_response(_decode_frame(resp))
-                        except (ValueError, msgspec.MsgspecError, OSError) as e:
+                        except Exception as e:
                             sys.stderr.write(f"[FrameDebug] Failed to decode: {e}\n")
             if count == 0 or iteration + 1 < count:
                 time.sleep(interval)

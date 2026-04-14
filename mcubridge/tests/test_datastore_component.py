@@ -1,12 +1,11 @@
 """Tests for the DatastoreComponent."""
 
 from __future__ import annotations
-
 from collections.abc import AsyncIterator
 from typing import Any
+
 from unittest.mock import AsyncMock, patch
 
-import msgspec
 import pytest
 import pytest_asyncio
 from mcubridge.config.const import (
@@ -65,7 +64,7 @@ async def datastore_component() -> AsyncIterator[DatastoreComponent]:
 async def test_handle_put_success(datastore_component: DatastoreComponent) -> None:
     key = "key1"
     val_bytes = b"value1"
-    payload = structures.msgspec.msgpack.encode(structures.DatastorePutPacket(key=key, value=val_bytes))
+    payload = structures.DatastorePutPacket(key=key, value=val_bytes).encode()
 
     # Mock _publish_value
     with patch.object(
@@ -98,7 +97,7 @@ async def test_handle_get_request_success(
     datastore_component.state.datastore["key1"] = "value1"
 
     key = "key1"
-    payload = structures.msgspec.msgpack.encode(structures.DatastoreGetPacket(key=key))
+    payload = structures.DatastoreGetPacket(key=key).encode()
 
     await datastore_component.handle_get_request(0, payload)
 
@@ -108,6 +107,6 @@ async def test_handle_get_request_success(
 
     # Should return empty bytes
     resp = args[1]  # type: ignore[reportUnknownVariableType]
-    decoded = msgspec.msgpack.decode(resp, type=structures.DatastoreGetResponsePacket)  # type: ignore[reportUnknownArgumentType]
+    decoded = structures.DatastoreGetResponsePacket.decode(resp)  # type: ignore[reportUnknownArgumentType]
     assert decoded.value == b"value1"
     assert len(resp) > 0  # type: ignore[reportUnknownArgumentType]

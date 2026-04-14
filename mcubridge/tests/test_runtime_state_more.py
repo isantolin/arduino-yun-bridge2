@@ -1,16 +1,17 @@
 """Additional unit tests for RuntimeState coverage gaps."""
 
 from __future__ import annotations
+from typing import Any
 
 import asyncio
 import time
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 

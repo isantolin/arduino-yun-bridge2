@@ -7,9 +7,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from mcubridge.mqtt.spool import MQTTPublishSpool
+
 from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.mqtt.spool import MQTTPublishSpool
 
 
 def _make_message(

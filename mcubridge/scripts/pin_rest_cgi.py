@@ -15,9 +15,9 @@ from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.structures import RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.util.mqtt_helper import configure_tls_context
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
+from mcubridge.util.mqtt_helper import configure_tls_context
 
 logger = logging.getLogger("mcubridge.pin_rest")
 

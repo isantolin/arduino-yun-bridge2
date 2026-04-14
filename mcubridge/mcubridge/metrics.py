@@ -11,10 +11,10 @@ from typing import (
 )
 
 import msgspec
-import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
+import structlog
 
 from .protocol.structures import QueuedPublish
 from .protocol.topics import Topic, topic_path

@@ -56,7 +56,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
         PendingPinRequest(pin=7, reply_context=None)
     )
 
-    payload = structures.msgspec.msgpack.encode(structures.DigitalReadResponsePacket(value=1))
+    payload = structures.DigitalReadResponsePacket(value=1).encode()
     await service.handle_mcu_frame(Command.CMD_DIGITAL_READ_RESP.value, 0, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
@@ -75,7 +75,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     assert ack_id == Status.ACK.value
     assert (
         ack_payload
-        == structures.msgspec.msgpack.encode(structures.AckPacket(command_id=Command.CMD_DIGITAL_READ_RESP.value))
+        == structures.AckPacket(command_id=Command.CMD_DIGITAL_READ_RESP.value).encode()
     )
 
 
@@ -101,7 +101,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     )
 
     TEST_EXIT_CODE = 0x7F
-    payload = structures.msgspec.msgpack.encode(structures.AnalogReadResponsePacket(value=TEST_EXIT_CODE))
+    payload = structures.AnalogReadResponsePacket(value=TEST_EXIT_CODE).encode()
     await service.handle_mcu_frame(Command.CMD_ANALOG_READ_RESP.value, 0, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
@@ -120,7 +120,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     assert ack_id == Status.ACK.value
     assert (
         ack_payload
-        == structures.msgspec.msgpack.encode(structures.AckPacket(command_id=Command.CMD_ANALOG_READ_RESP.value))
+        == structures.AckPacket(command_id=Command.CMD_ANALOG_READ_RESP.value).encode()
     )
 
 
@@ -140,7 +140,7 @@ async def test_mqtt_digital_write_sends_frame(
         sent_frames.append((command_id, payload))
         flow.on_frame_received(  # type: ignore[reportCallIssue]
             Status.ACK.value,
-            structures.msgspec.msgpack.encode(structures.AckPacket(command_id=command_id)),
+            structures.AckPacket(command_id=command_id).encode(),
         )
         return True
 
@@ -162,7 +162,7 @@ async def test_mqtt_digital_write_sends_frame(
     assert command_id == Command.CMD_DIGITAL_WRITE.value
     assert (
         payload
-        == structures.msgspec.msgpack.encode(structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_HIGH))
+        == structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_HIGH).encode()
     )
 
 
@@ -204,7 +204,7 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     assert sent_frames
     command_id, payload = sent_frames[0]
     assert command_id == Command.CMD_ANALOG_READ.value
-    assert payload == structures.msgspec.msgpack.encode(structures.PinReadPacket(pin=2))
+    assert payload == structures.PinReadPacket(pin=2).encode()
     pending = runtime_state.pending_analog_reads[-1]
     assert pending.pin == 2
 
@@ -252,7 +252,7 @@ async def test_mcu_free_memory_response_enqueues_value(
 
     service.register_serial_sender(fake_sender)
 
-    payload = structures.msgspec.msgpack.encode(structures.FreeMemoryResponsePacket(value=100))
+    payload = structures.FreeMemoryResponsePacket(value=100).encode()
     await service.handle_mcu_frame(Command.CMD_GET_FREE_MEMORY_RESP.value, 0, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
@@ -271,9 +271,9 @@ async def test_mcu_free_memory_response_enqueues_value(
     assert ack_id == Status.ACK.value
     assert (
         ack_payload
-        == structures.msgspec.msgpack.encode(structures.AckPacket(
+        == structures.AckPacket(
             command_id=Command.CMD_GET_FREE_MEMORY_RESP.value
-        ))
+        ).encode()
     )
 
 

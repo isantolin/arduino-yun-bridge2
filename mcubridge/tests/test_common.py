@@ -7,9 +7,10 @@ from unittest.mock import MagicMock, patch
 
 from mcubridge.config import common
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
-from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import QueuedPublish
+
 from mcubridge.util import normalise_allowed_commands, parse_bool
+from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol import protocol
 
 
 def test_parse_bool():

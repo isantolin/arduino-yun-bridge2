@@ -285,7 +285,14 @@ class BridgeDispatcher:
         try:
             if not await self.mqtt_router.dispatch(route, inbound):
                 logger.debug("Unhandled MQTT topic %s", inbound_topic)
-        except Exception:
+        except (
+            ValueError,
+            TypeError,
+            AttributeError,
+            KeyError,
+            IndexError,
+            RuntimeError,
+        ):
             logger.exception("Fault Isolation: MQTT processing failed for %s", inbound_topic)
 
     def _get_topic_action(self, route: TopicRoute) -> str | None:

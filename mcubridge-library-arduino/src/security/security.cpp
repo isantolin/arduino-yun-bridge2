@@ -99,7 +99,9 @@ bool run_cryptographic_self_tests() {
   sha256.update(etl::span<const uint8_t>(buffer.data(), msg_len));
   sha256.finalize(actual);
 
-  if (memcmp_P(actual.data(), kat_sha256_expected.data(), rpc::RPC_SHA256_DIGEST_SIZE) != 0)
+  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
+  memcpy_P(expected_buf.data(), kat_sha256_expected.data(), rpc::RPC_SHA256_DIGEST_SIZE);
+  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 
   // 2. HMAC-SHA256 KAT
@@ -114,7 +116,8 @@ bool run_cryptographic_self_tests() {
   sha256.update(etl::span<const uint8_t>(buffer.data(), data_len));
   sha256.finalizeHMAC(actual);
 
-  if (memcmp_P(actual.data(), kat_hmac_expected.data(), rpc::RPC_SHA256_DIGEST_SIZE) != 0)
+  memcpy_P(expected_buf.data(), kat_hmac_expected.data(), rpc::RPC_SHA256_DIGEST_SIZE);
+  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 
   return true;

@@ -9,8 +9,9 @@ from __future__ import annotations
 import ssl
 from pathlib import Path
 
-from mcubridge.config.const import MQTT_TLS_MIN_VERSION
 import structlog
+
+from mcubridge.config.const import MQTT_TLS_MIN_VERSION
 from mcubridge.config.settings import RuntimeConfig
 
 logger = structlog.get_logger("mcubridge.util.mqtt")

@@ -4,8 +4,9 @@ __version__ = "2.8.1"
 
 import importlib
 import importlib.util
-import structlog
 import sys
+
+import structlog
 
 logger = structlog.get_logger(__name__)
 

@@ -11,9 +11,9 @@ Runs the full deployment pipeline inside a QEMU VM:
 Requires: qemu-system-mips, python3-pexpect, wget, e2fsprogs
 """
 
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 

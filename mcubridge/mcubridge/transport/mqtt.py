@@ -5,18 +5,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import structlog
 from typing import TYPE_CHECKING, Any
 
 import aiomqtt
+import structlog
 import tenacity
+from transitions import Machine
+
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
-from mcubridge.protocol.topics import topic_path
 from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Topic
+from mcubridge.protocol.topics import topic_path
 from mcubridge.state.context import RuntimeState
 from mcubridge.util.mqtt_helper import configure_tls_context
-from transitions import Machine
 
 if TYPE_CHECKING:
     from mcubridge.services.runtime import BridgeService

@@ -5,12 +5,12 @@ from enum import IntEnum
 from typing import Annotated, Final
 
 import msgspec
+from mcubridge.config.const import DEFAULT_MQTT_PORT
+from mcubridge.mqtt import build_mqtt_properties as _daemon_build_props
+from mcubridge.protocol.structures import QOSLevel, UserProperty
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
-from mcubridge.config.const import DEFAULT_MQTT_PORT
-from mcubridge.protocol.structures import QOSLevel, UserProperty
-from mcubridge.mqtt import build_mqtt_properties as _daemon_build_props
 from .protocol import MAX_PAYLOAD_SIZE as PROTOCOL_MAX_PAYLOAD_SIZE
 
 # Client-specific default (remote board IP, NOT localhost)

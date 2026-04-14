@@ -30,15 +30,15 @@ import asyncio
 import contextlib
 import sys
 from collections.abc import Awaitable, Callable
-from typing import Any, Annotated
+from typing import Annotated, Any
 
 import msgspec
 import psutil
-import tenacity
-import typer
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
 import structlog
+import tenacity
+import typer
 import uvloop
 
 from mcubridge.config.const import (

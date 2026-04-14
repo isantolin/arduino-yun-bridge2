@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import structlog
 import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import msgspec
 import psutil
+import structlog
 
 from ..config.const import STATUS_FILE_PATH
 from ..protocol.structures import (

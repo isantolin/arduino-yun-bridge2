@@ -1,8 +1,9 @@
 """Manual stub for OpenWrt UCI."""
 
 from __future__ import annotations
-from typing import Any, Optional, Dict, overload
+
 from types import TracebackType
+from typing import Any, Dict, Optional, overload
 
 class Uci:
     def __init__(self) -> None: ...

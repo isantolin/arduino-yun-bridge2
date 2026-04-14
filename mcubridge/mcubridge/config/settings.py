@@ -9,16 +9,17 @@ not used.
 
 from __future__ import annotations
 
-import structlog
 from typing import Any
 
 import msgspec
+import structlog
+
+from mcubridge.protocol.structures import RuntimeConfig
 
 from ..config.common import (
     get_default_config,
     get_uci_config,
 )
-from mcubridge.protocol.structures import RuntimeConfig
 
 logger = structlog.get_logger(__name__)
 

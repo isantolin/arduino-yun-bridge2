@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import structlog
 from typing import Any, Final, cast
+
+import structlog
 
 logger = structlog.get_logger(__name__)
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import logging
-import paho.mqtt.publish as publish
 import time
+
+import paho.mqtt.publish as publish
 
 
 def trigger_bootloader():

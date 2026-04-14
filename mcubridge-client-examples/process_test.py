@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Annotated
+from typing import Annotated, Any
 
 import typer
 from mcubridge_client import Bridge

@@ -9,16 +9,16 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+import structlog
+from transitions import Machine
+
 from .config.const import (
     DEFAULT_WATCHDOG_INTERVAL,
     WATCHDOG_MIN_INTERVAL,
     WATCHDOG_TRIGGER_TOKEN,
 )
 from .state.context import RuntimeState
-from transitions import Machine
-
 from .util.periodic import periodic_task
-import structlog
 
 WatchdogWrite = Callable[[bytes], None]
 

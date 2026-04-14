@@ -1,7 +1,8 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock
-from mcubridge_client import Bridge
 from aiomqtt import Message
+from mcubridge_client import Bridge
 
 
 @pytest.fixture

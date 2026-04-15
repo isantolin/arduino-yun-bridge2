@@ -17,14 +17,10 @@ from .config.const import (
 from .state.context import RuntimeState
 from transitions import Machine
 
-from .util.periodic import periodic_task
+import functools
 import structlog
 
 WatchdogWrite = Callable[[bytes], None]
-
-
-def _default_write(payload: bytes) -> None:
-    os.write(1, payload)
 
 
 class WatchdogKeepalive:
@@ -53,7 +49,7 @@ class WatchdogKeepalive:
         self._interval = max(WATCHDOG_MIN_INTERVAL, interval)
         self._state = state
         self._token = token
-        self._write = write or _default_write
+        self._write = write or functools.partial(os.write, 1)
         self._logger = logger or structlog.get_logger("mcubridge.watchdog")
 
         # FSM Initialization
@@ -121,18 +117,12 @@ class WatchdogKeepalive:
         self.start()
 
         try:
-            await periodic_task(
-                self._async_kick,
-                self._interval,
-                self._logger,
-            )
+            while True:
+                self.kick()
+                await asyncio.sleep(self._interval)
         except asyncio.CancelledError:
             self.stop()
             self._logger.debug("Watchdog keepalive cancelled")
             raise
-
-    async def _async_kick(self) -> None:
-        self.kick()
-
 
 __all__ = ["WatchdogKeepalive"]

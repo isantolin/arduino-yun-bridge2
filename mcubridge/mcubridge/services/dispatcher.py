@@ -16,11 +16,12 @@ from mcubridge.protocol.protocol import (
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.state.context import RuntimeState, resolve_command_id
 
-from ..router.routers import MCUHandlerRegistry, MQTTRouter
+from ..router.routers import MQTTRouter
 import structlog
 
 if TYPE_CHECKING:
     from aiomqtt import Message
+    from ..router.routers import McuHandler
 
 logger = structlog.get_logger("mcubridge.dispatcher")
 
@@ -36,7 +37,7 @@ class BridgeDispatcher:
 
     def __init__(
         self,
-        mcu_registry: MCUHandlerRegistry,
+        mcu_registry: dict[int, McuHandler],
         mqtt_router: MQTTRouter,
         state: RuntimeState,
         send_frame: Callable[[int, bytes], Awaitable[bool]],
@@ -83,59 +84,40 @@ class BridgeDispatcher:
         system = container.get(SystemComponent)
 
         # Console
-        self.mcu_registry.register(Command.CMD_XOFF.value, console.handle_xoff)
-        self.mcu_registry.register(Command.CMD_XON.value, console.handle_xon)
-        self.mcu_registry.register(
-            Command.CMD_CONSOLE_WRITE.value, console.handle_write
-        )
+        self.mcu_registry[Command.CMD_XOFF.value] = console.handle_xoff
+        self.mcu_registry[Command.CMD_XON.value] = console.handle_xon
+        self.mcu_registry[Command.CMD_CONSOLE_WRITE.value] = console.handle_write
         self.mqtt_router.register(Topic.CONSOLE, console.handle_mqtt)
 
         # Datastore
-        self.mcu_registry.register(
-            Command.CMD_DATASTORE_PUT.value, datastore.handle_put
-        )
-        self.mcu_registry.register(
-            Command.CMD_DATASTORE_GET.value, datastore.handle_get_request
-        )
+        self.mcu_registry[Command.CMD_DATASTORE_PUT.value] = datastore.handle_put
+        self.mcu_registry[Command.CMD_DATASTORE_GET.value] = datastore.handle_get_request
         self.mqtt_router.register(Topic.DATASTORE, datastore.handle_mqtt)
 
         # Mailbox
-        self.mcu_registry.register(Command.CMD_MAILBOX_PUSH.value, mailbox.handle_push)
-        self.mcu_registry.register(
-            Command.CMD_MAILBOX_AVAILABLE.value, mailbox.handle_available
-        )
-        self.mcu_registry.register(Command.CMD_MAILBOX_READ.value, mailbox.handle_read)
-        self.mcu_registry.register(
-            Command.CMD_MAILBOX_PROCESSED.value, mailbox.handle_processed
-        )
+        self.mcu_registry[Command.CMD_MAILBOX_PUSH.value] = mailbox.handle_push
+        self.mcu_registry[Command.CMD_MAILBOX_AVAILABLE.value] = mailbox.handle_available
+        self.mcu_registry[Command.CMD_MAILBOX_READ.value] = mailbox.handle_read
+        self.mcu_registry[Command.CMD_MAILBOX_PROCESSED.value] = mailbox.handle_processed
         self.mqtt_router.register(Topic.MAILBOX, mailbox.handle_mqtt)
 
         # File
-        self.mcu_registry.register(Command.CMD_FILE_WRITE.value, file.handle_write)
-        self.mcu_registry.register(Command.CMD_FILE_READ.value, file.handle_read)
-        self.mcu_registry.register(Command.CMD_FILE_REMOVE.value, file.handle_remove)
-        self.mcu_registry.register(
-            Command.CMD_FILE_READ_RESP.value, file.handle_read_response
-        )
+        self.mcu_registry[Command.CMD_FILE_WRITE.value] = file.handle_write
+        self.mcu_registry[Command.CMD_FILE_READ.value] = file.handle_read
+        self.mcu_registry[Command.CMD_FILE_REMOVE.value] = file.handle_remove
+        self.mcu_registry[Command.CMD_FILE_READ_RESP.value] = file.handle_read_response
         self.mqtt_router.register(Topic.FILE, file.handle_mqtt)
 
         # Process
-        self.mcu_registry.register(
-            Command.CMD_PROCESS_RUN_ASYNC.value,
-            process.handle_run_async,
-        )
-        self.mcu_registry.register(Command.CMD_PROCESS_POLL.value, process.handle_poll)
+        self.mcu_registry[Command.CMD_PROCESS_RUN_ASYNC.value] = process.handle_run_async
+        self.mcu_registry[Command.CMD_PROCESS_POLL.value] = process.handle_poll
 
         # Shell (MQTT only - now handled by unified ProcessComponent)
         self.mqtt_router.register(Topic.SHELL, process.handle_mqtt)
 
         # Pin (GPIO)
-        self.mcu_registry.register(
-            Command.CMD_DIGITAL_READ_RESP.value, pin.handle_digital_read_resp
-        )
-        self.mcu_registry.register(
-            Command.CMD_ANALOG_READ_RESP.value, pin.handle_analog_read_resp
-        )
+        self.mcu_registry[Command.CMD_DIGITAL_READ_RESP.value] = pin.handle_digital_read_resp
+        self.mcu_registry[Command.CMD_ANALOG_READ_RESP.value] = pin.handle_analog_read_resp
 
         async def _handle_mcu_read(s: int, cmd: Command, p: bytes) -> bool:
             if self._container:
@@ -149,33 +131,23 @@ class BridgeDispatcher:
             )
             return False
 
-        self.mcu_registry.register(
-            Command.CMD_DIGITAL_READ.value,
-            lambda s, p: _handle_mcu_read(s, Command.CMD_DIGITAL_READ, p),
+        self.mcu_registry[Command.CMD_DIGITAL_READ.value] = (
+            lambda s, p: _handle_mcu_read(s, Command.CMD_DIGITAL_READ, p)
         )
-        self.mcu_registry.register(
-            Command.CMD_ANALOG_READ.value,
-            lambda s, p: _handle_mcu_read(s, Command.CMD_ANALOG_READ, p),
+        self.mcu_registry[Command.CMD_ANALOG_READ.value] = (
+            lambda s, p: _handle_mcu_read(s, Command.CMD_ANALOG_READ, p)
         )
 
         self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt)
         self.mqtt_router.register(Topic.ANALOG, pin.handle_mqtt)
 
         # SPI
-        self.mcu_registry.register(
-            Command.CMD_SPI_TRANSFER_RESP.value, spi.handle_transfer_resp
-        )
+        self.mcu_registry[Command.CMD_SPI_TRANSFER_RESP.value] = spi.handle_transfer_resp
         self.mqtt_router.register(Topic.SPI, spi.handle_mqtt)
 
         # System
-        self.mcu_registry.register(
-            Command.CMD_GET_FREE_MEMORY_RESP.value,
-            system.handle_get_free_memory_resp,
-        )
-        self.mcu_registry.register(
-            Command.CMD_GET_VERSION_RESP.value,
-            system.handle_get_version_resp,
-        )
+        self.mcu_registry[Command.CMD_GET_FREE_MEMORY_RESP.value] = system.handle_get_free_memory_resp
+        self.mcu_registry[Command.CMD_GET_VERSION_RESP.value] = system.handle_get_version_resp
         self.mqtt_router.register(Topic.SYSTEM, self._handle_system_topic)
 
     def register_system_handlers(
@@ -189,22 +161,16 @@ class BridgeDispatcher:
         ],
         handle_process_kill: Callable[[int, bytes], Awaitable[bool | None]],
     ) -> None:
-        self.mcu_registry.register(
-            Command.CMD_LINK_SYNC_RESP.value, handle_link_sync_resp
-        )
-        self.mcu_registry.register(
-            Command.CMD_LINK_RESET_RESP.value, handle_link_reset_resp
-        )
-        self.mcu_registry.register(
-            Command.CMD_GET_CAPABILITIES_RESP.value, handle_get_capabilities_resp
-        )
-        self.mcu_registry.register(Command.CMD_PROCESS_KILL.value, handle_process_kill)
+        self.mcu_registry[Command.CMD_LINK_SYNC_RESP.value] = handle_link_sync_resp
+        self.mcu_registry[Command.CMD_LINK_RESET_RESP.value] = handle_link_reset_resp
+        self.mcu_registry[Command.CMD_GET_CAPABILITIES_RESP.value] = handle_get_capabilities_resp
+        self.mcu_registry[Command.CMD_PROCESS_KILL.value] = handle_process_kill
 
-        self.mcu_registry.register(Status.ACK.value, handle_ack)
+        self.mcu_registry[Status.ACK.value] = handle_ack
         for status in Status:
             if status == Status.ACK:
                 continue
-            self.mcu_registry.register(status.value, status_handler_factory(status))
+            self.mcu_registry[status.value] = status_handler_factory(status)
 
     async def dispatch_mcu_frame(
         self, command_id: int, sequence_id: int, payload: bytes

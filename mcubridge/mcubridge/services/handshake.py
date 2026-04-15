@@ -134,7 +134,11 @@ class SerialHandshakeManager:
         self._acknowledge_frame = acknowledge_frame
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
-        self._reset_payload = self._build_reset_payload()
+        self._reset_payload = HandshakeConfigPacket(
+            ack_timeout_ms=self._timing.ack_timeout_ms,
+            ack_retry_limit=self._timing.retry_limit,
+            response_timeout_ms=self._timing.response_timeout_ms,
+        ).encode()
         self._capabilities_future: asyncio.Future[bytes] | None = None
 
         # FSM Initialization
@@ -621,14 +625,6 @@ class SerialHandshakeManager:
         h.update(nonce)
         tag = h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
         return tag
-
-    def _build_reset_payload(self) -> bytes:
-        # [SIL-2] Use structured packet encoding
-        return HandshakeConfigPacket(
-            ack_timeout_ms=self._timing.ack_timeout_ms,
-            ack_retry_limit=self._timing.retry_limit,
-            response_timeout_ms=self._timing.response_timeout_ms,
-        ).encode()
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         return (

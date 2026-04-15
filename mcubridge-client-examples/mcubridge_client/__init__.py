@@ -168,18 +168,22 @@ class Bridge:
     async def _message_listener(self) -> None:
         if not self._client:
             return
-        async for message in self._client.messages:
-            props = message.properties
-            correlation = getattr(props, "CorrelationData", None) if props else None
-            if correlation and (queue := self._correlation_routes.pop(correlation, None)):
-                queue.put_nowait(message)
+        try:
+            async for message in self._client.messages:
+                props = message.properties
+                correlation = getattr(props, "CorrelationData", None) if props else None
+                if correlation and (queue := self._correlation_routes.pop(correlation, None)):
+                    queue.put_nowait(message)
 
-            elif message.topic.matches(self._console_topic):
-                self._console_queue.put_nowait(
-                    bytes(message.payload) if message.payload else b""
-                )
-            else:
-                logger.debug("Orphaned or broadcast message on %s", message.topic)
+                elif message.topic.matches(self._console_topic):
+                    self._console_queue.put_nowait(
+                        bytes(message.payload) if message.payload else b""
+                    )
+                else:
+                    logger.debug("Orphaned or broadcast message on %s", message.topic)
+        except MqttError:
+            # Expected during shutdown or reconnect
+            pass
 
     async def _publish_and_wait(
         self,

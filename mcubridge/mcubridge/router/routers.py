@@ -12,19 +12,6 @@ McuHandler = Callable[[int, bytes], Awaitable[bool | None]]
 MqttHandler = Callable[[TopicRoute, Message], Awaitable[bool]]
 
 
-class MCUHandlerRegistry:
-    """Registry that maps command identifiers to asyncio handlers."""
-
-    def __init__(self) -> None:
-        self._handlers: dict[int, McuHandler] = {}
-
-    def register(self, command_id: int, handler: McuHandler) -> None:
-        self._handlers[command_id] = handler
-
-    def get(self, command_id: int) -> McuHandler | None:
-        return self._handlers.get(command_id)
-
-
 class MQTTRouter:
     """Topic-based dispatcher for inbound MQTT messages."""
 
@@ -63,4 +50,4 @@ class MQTTRouter:
         return dispatched
 
 
-__all__ = ["MCUHandlerRegistry", "MQTTRouter", "McuHandler", "MqttHandler"]
+__all__ = ["MQTTRouter", "McuHandler", "MqttHandler"]

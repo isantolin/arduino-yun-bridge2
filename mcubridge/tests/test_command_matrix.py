@@ -20,7 +20,7 @@ from mcubridge.protocol.protocol import (
     Topic,
 )
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
-from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
+from mcubridge.router.routers import MQTTRouter, McuHandler
 from mcubridge.services.dispatcher import BridgeDispatcher
 
 from .conftest import make_component_container
@@ -220,7 +220,7 @@ def _materialize_subscription_segments(pattern: tuple[str, ...]) -> tuple[str, .
 async def test_mqtt_subscriptions_are_dispatched() -> None:
     """Every subscribed MQTT topic pattern is accepted by the dispatcher."""
 
-    mcu_registry = MCUHandlerRegistry()
+    mcu_registry: dict[int, McuHandler] = {}
     mqtt_router = MQTTRouter()
 
     from mcubridge.config.settings import get_default_config
@@ -274,7 +274,7 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     protocol enum should require a corresponding dispatcher/handler update.
     """
 
-    mcu_registry = MCUHandlerRegistry()
+    mcu_registry: dict[int, McuHandler] = {}
     mqtt_router = MQTTRouter()
 
     from mcubridge.config.settings import get_default_config

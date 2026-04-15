@@ -4,7 +4,7 @@ import asyncio
 import structlog
 import time
 from collections.abc import Coroutine
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 import svcs
@@ -16,8 +16,11 @@ from ..protocol.structures import QueuedPublish
 from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
 from ..protocol.structures import AckPacket
 from ..protocol.topics import Topic, parse_topic, topic_path
-from ..router.routers import MCUHandlerRegistry, MQTTRouter
+from ..router.routers import MQTTRouter
 from ..state.context import RuntimeState
+
+if TYPE_CHECKING:
+    from ..router.routers import McuHandler
 from . import (
     ConsoleComponent,
     DatastoreComponent,
@@ -122,8 +125,9 @@ class BridgeService:
         self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
         self._serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
 
+        mcu_registry: dict[int, McuHandler] = {}
         self.dispatcher = BridgeDispatcher(
-            mcu_registry=MCUHandlerRegistry(),
+            mcu_registry=mcu_registry,
             mqtt_router=MQTTRouter(),
             state=state,
             send_frame=self.send_frame,

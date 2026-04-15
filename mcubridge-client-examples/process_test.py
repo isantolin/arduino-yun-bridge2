@@ -93,7 +93,8 @@ async def run_test(
         ]
 
         logging.info("Launching async command: %s", " ".join(command_to_run))
-        pid: int = await bridge.run_shell_command_async(command_to_run)
+        pid: int = await bridge.run_shell_command_async(command_to_run, timeout=30)
+
         logging.info("Async process PID %d started; polling for output", pid)
         await _stream_poll_updates(bridge, pid)
 

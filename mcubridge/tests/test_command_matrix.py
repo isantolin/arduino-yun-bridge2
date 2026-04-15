@@ -1,29 +1,27 @@
 """Command-matrix parity checks.
 
 These tests ensure that the generated protocol routing data (MQTT subscriptions)
-matches what the Python dispatcher actually handles.
+matches what the Python service actually handles.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import unittest.mock
 from typing import Any, cast
 
 import msgspec
-
 import pytest
+
+from mcubridge.config.settings import RuntimeConfig, get_default_config
 from mcubridge.protocol.contracts import expected_responses
 from mcubridge.protocol.protocol import (
     MQTT_COMMAND_SUBSCRIPTIONS,
     Command,
     Status,
-    Topic,
 )
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
-from mcubridge.router.routers import MQTTRouter, McuHandler
-from mcubridge.services.dispatcher import BridgeDispatcher
-
-from .conftest import make_component_container
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import create_runtime_state
 
 
 class _DummyMessage(msgspec.Struct):
@@ -39,169 +37,18 @@ def _parse_inbound_topic(topic: str) -> TopicRoute | None:
     return parse_topic(_MQTT_PREFIX, topic)
 
 
-async def _noop_send_frame(_command_id: int, _payload: bytes) -> bool:
-    return True
-
-
-async def _noop_acknowledge_frame(*_args: Any, **_kwargs: Any) -> None:
-    return None
-
-
-async def _noop_reject_topic_action(
-    _inbound: Any,
-    _topic: Topic | str,
-    _action: str,
-) -> None:
-    return None
-
-
-async def _noop_publish_bridge_snapshot(
-    _kind: str,
-    _inbound: Any,
-) -> None:
-    return None
-
-
-async def _noop_link_handler(_seq_id: int, _payload: bytes) -> bool:
-    return True
-
-
-async def _noop_ack_handler(_payload: bytes) -> None:
-    return None
-
-
-async def _noop_process_kill(_payload: bytes) -> bool:
-    return True
-
-
-async def _noop_status_handler(_payload: bytes) -> None:
-    return None
-
-
-def _noop_status_handler_factory(_status: Status) -> Callable[[bytes], Any]:
-    return _noop_status_handler
-
-
-def _always_allowed(_topic: Topic | str, _action: str) -> bool:
-    return True
-
-
-def _link_synchronized() -> bool:  # type: ignore[reportUnusedFunction]
-    return True
-
-
-class _Console:
-    async def handle_xoff(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_xon(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_write(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt_input(self, _payload: bytes, _inbound: _DummyMessage) -> bool:
-        return True
-
+class _NoopComponent:
     async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
         return True
 
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("handle_") or name.startswith("on_"):
 
-class _Datastore:
-    async def handle_put(self, _payload: bytes) -> bool:
-        return True
+            async def _noop(*args: Any, **kwargs: Any) -> bool:
+                return True
 
-    async def handle_get_request(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _File:
-    async def handle_write(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_read(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_remove(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_read_response(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _Mailbox:
-    async def handle_push(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_available(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_read(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_processed(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _Pin:
-    async def handle_digital_read_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_analog_read_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_unexpected_mcu_request(
-        self, _command: Any, _payload: bytes
-    ) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _Process:
-    async def handle_run(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_run_async(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_poll(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _Spi:
-    async def handle_transfer_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _System:
-    async def handle_get_free_memory_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_get_version_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_set_baudrate_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
+            return _noop
+        raise AttributeError(name)
 
 
 def _materialize_subscription_segments(pattern: tuple[str, ...]) -> tuple[str, ...]:
@@ -218,39 +65,14 @@ def _materialize_subscription_segments(pattern: tuple[str, ...]) -> tuple[str, .
 
 @pytest.mark.asyncio
 async def test_mqtt_subscriptions_are_dispatched() -> None:
-    """Every subscribed MQTT topic pattern is accepted by the dispatcher."""
+    """Every subscribed MQTT topic pattern is accepted by the service."""
 
-    mcu_registry: dict[int, McuHandler] = {}
-    mqtt_router = MQTTRouter()
+    config = cast(RuntimeConfig, get_default_config())
+    state = create_runtime_state(config)
 
-    from mcubridge.config.settings import get_default_config
-    from mcubridge.state.context import create_runtime_state
-
-    state = create_runtime_state(get_default_config())
-    try:
-        dispatcher = BridgeDispatcher(
-            mcu_registry=mcu_registry,
-            mqtt_router=mqtt_router,
-            state=state,
-            send_frame=_noop_send_frame,
-            acknowledge_frame=_noop_acknowledge_frame,
-            is_topic_action_allowed=_always_allowed,
-            reject_topic_action=_noop_reject_topic_action,
-            publish_bridge_snapshot=_noop_publish_bridge_snapshot,
-        )
-
-        dispatcher.register_components(
-            make_component_container(
-                console=cast(Any, _Console()),
-                datastore=cast(Any, _Datastore()),
-                file=cast(Any, _File()),
-                mailbox=cast(Any, _Mailbox()),
-                pin=cast(Any, _Pin()),
-                process=cast(Any, _Process()),
-                spi=cast(Any, _Spi()),
-                system=cast(Any, _System()),
-            )
-        )
+    # We mock the internal registry to avoid real component instantiation
+    with unittest.mock.patch("svcs.Container.get", return_value=_NoopComponent()):
+        service = BridgeService(config, state)
 
         for topic_enum, pattern, _qos in MQTT_COMMAND_SUBSCRIPTIONS:
             concrete = _materialize_subscription_segments(pattern)
@@ -260,62 +82,26 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
 
             inbound: Any = _DummyMessage(topic=topic, payload=b"hello")
 
-            handled = await mqtt_router.dispatch(route, inbound)
+            handled = await service._mqtt_router.dispatch(  # type: ignore[reportPrivateUsage]
+                route, inbound
+            )
             assert handled, f"No handler registered for subscribed topic: {topic}"
-    finally:
-        state.cleanup()
+
+    state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_mcu_inbound_commands_are_registered() -> None:
-    """MCU->Linux command IDs must always have registered handlers.
+    """MCU->Linux command IDs must always have registered handlers."""
 
-    This guards against protocol drift: adding a new command to the generated
-    protocol enum should require a corresponding dispatcher/handler update.
-    """
+    config = cast(RuntimeConfig, get_default_config())
+    state = create_runtime_state(config)
 
-    mcu_registry: dict[int, McuHandler] = {}
-    mqtt_router = MQTTRouter()
+    with unittest.mock.patch("svcs.Container.get", return_value=_NoopComponent()):
+        service = BridgeService(config, state)
+        mcu_registry = service._mcu_registry  # type: ignore[reportPrivateUsage]
 
-    from mcubridge.config.settings import get_default_config
-    from mcubridge.state.context import create_runtime_state
-
-    state = create_runtime_state(get_default_config())
-    try:
-        dispatcher = BridgeDispatcher(
-            mcu_registry=mcu_registry,
-            mqtt_router=mqtt_router,
-            state=state,
-            send_frame=_noop_send_frame,
-            acknowledge_frame=_noop_acknowledge_frame,
-            is_topic_action_allowed=_always_allowed,
-            reject_topic_action=_noop_reject_topic_action,
-            publish_bridge_snapshot=_noop_publish_bridge_snapshot,
-        )
-
-        dispatcher.register_components(
-            make_component_container(
-                console=cast(Any, _Console()),
-                datastore=cast(Any, _Datastore()),
-                file=cast(Any, _File()),
-                mailbox=cast(Any, _Mailbox()),
-                pin=cast(Any, _Pin()),
-                process=cast(Any, _Process()),
-                spi=cast(Any, _Spi()),
-                system=cast(Any, _System()),
-            )
-        )
-        dispatcher.register_system_handlers(
-            handle_link_sync_resp=_noop_link_handler,
-            handle_link_reset_resp=_noop_link_handler,
-            handle_get_capabilities_resp=_noop_link_handler,
-            handle_ack=_noop_ack_handler,  # type: ignore[reportArgumentType]
-            status_handler_factory=_noop_status_handler_factory,  # type: ignore[reportArgumentType]
-            handle_process_kill=_noop_process_kill,  # type: ignore[reportArgumentType]
-        )
-
-        # Commands initiated by Linux (to the MCU). These requests should not be
-        # required as inbound handlers (though some may have "unexpected" handlers).
+        # Commands initiated by Linux (to the MCU).
         linux_to_mcu_requests: frozenset[int] = frozenset(
             {
                 Command.CMD_GET_VERSION.value,
@@ -377,5 +163,5 @@ async def test_mcu_inbound_commands_are_registered() -> None:
         assert (
             not missing_status
         ), f"Missing status handler registrations: {missing_status}"
-    finally:
-        state.cleanup()
+
+    state.cleanup()

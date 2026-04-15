@@ -339,8 +339,8 @@ async def test_mqtt_shell_kill_invokes_processonent(
     process = service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
 
     with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:
-        # Re-register mock in router because dispatcher registers methods at init time
-        service.dispatcher.mqtt_router.register(Topic.SHELL, mock_mqtt)
+        # Re-register mock in router because registry happens at init time
+        service._mqtt_router.register(Topic.SHELL, mock_mqtt) # type: ignore[reportPrivateUsage]
         pid = 21
         await service.handle_mqtt_message(
             _make_inbound(

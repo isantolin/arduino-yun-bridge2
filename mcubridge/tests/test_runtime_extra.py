@@ -27,7 +27,9 @@ async def test_runtime_on_serial_connected_errors() -> None:
 
         # Mock failures
         with (
-            patch.object(service, "sync_link", side_effect=RuntimeError("sync fail")),
+            patch.object(
+                service.handshake_manager, "synchronize", side_effect=RuntimeError("sync fail")
+            ),
             patch.object(
                 system, "request_mcu_version", side_effect=RuntimeError("ver fail")
             ),

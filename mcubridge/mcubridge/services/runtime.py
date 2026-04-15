@@ -194,7 +194,7 @@ class BridgeService:
 
         # [SIL-2] Protocol Synchronization: Force handshake immediately.
         try:
-            await self.sync_link()
+            await self.handshake_manager.synchronize()
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to synchronize link after reconnect: %s", e)
 
@@ -375,20 +375,6 @@ class BridgeService:
             user_properties=list(properties or []),
         )
         await self.enqueue_mqtt(message, reply_context=reply_to)
-
-    async def sync_link(self) -> bool:
-        return await self.handshake_manager.synchronize()
-
-    async def _handle_handshake_failure(
-        self,
-        reason: str,
-        *,
-        detail: str | None = None,
-    ) -> None:
-        await self.handshake_manager.handle_handshake_failure(
-            reason,
-            detail=detail,
-        )
 
     async def acknowledge_mcu_frame(
         self,

@@ -133,6 +133,9 @@ class BridgeClass {
   HardwareSerial* _hardware_serial;
   CommandHandler _command_handler;
   StatusHandler _status_handler;
+  // --- State & Timing (SIL-2) ---
+  uint32_t _last_tick_ms;
+  bool _xoff_sent;
   uint16_t _last_command_id;
   uint16_t _tx_sequence_id;
   uint8_t _retry_count;

@@ -16,26 +16,42 @@ enum class StateId {
   FAULT
 };
 
+// [SIL-2] Forward declarations for States
+struct StateStartup;
+struct StateUnsynchronized;
+struct StateHandshake;
+struct StateSynchronized;
+struct StateAwaitingAck;
+struct StateFault;
+
 struct BridgeFsm : public etl::fsm {
-  BridgeFsm() : etl::fsm(0), _state(StateId::STARTUP) {}
+  BridgeFsm();
 
-  void begin() { _state = StateId::STARTUP; }
-  void resetFsm() { _state = StateId::STARTUP; }
-  void stabilized() { if (_state == StateId::STARTUP) _state = StateId::UNSYNCHRONIZED; }
-  void handshakeStart() { if (_state == StateId::UNSYNCHRONIZED) _state = StateId::HANDSHAKE; }
-  void handshakeComplete() { if (_state == StateId::HANDSHAKE) _state = StateId::SYNCHRONIZED; }
-  void handshakeFailed() { _state = StateId::STARTUP; }
-  void sendCritical() { if (_state == StateId::SYNCHRONIZED) _state = StateId::AWAITING_ACK; }
-  void ackReceived() { if (_state == StateId::AWAITING_ACK) _state = StateId::SYNCHRONIZED; }
-  void timeout() { _state = StateId::FAULT; }
+  void begin() { etl::fsm::reset(); }
+  void resetFsm() { etl::fsm::reset(); }
+  void stabilized();
+  void handshakeStart();
+  void handshakeComplete();
+  void handshakeFailed();
+  void sendCritical();
+  void ackReceived();
+  void timeout();
 
-  bool isSynchronized() const { return _state == StateId::SYNCHRONIZED || _state == StateId::AWAITING_ACK; }
-  bool isAwaitingAck() const { return _state == StateId::AWAITING_ACK; }
-  [[maybe_unused]] bool isFault() const { return _state == StateId::FAULT; }
-  [[maybe_unused]] StateId get_bridge_state() const { return _state; }
+  bool isSynchronized() const { 
+      return get_state_id() == static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED) || 
+             get_state_id() == static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK); 
+  }
+  bool isAwaitingAck() const { 
+      return get_state_id() == static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK); 
+  }
+  [[maybe_unused]] bool isFault() const { 
+      return get_state_id() == static_cast<etl::fsm_state_id_t>(StateId::FAULT); 
+  }
+  [[maybe_unused]] StateId get_bridge_state() const { return static_cast<StateId>(get_state_id()); }
 
  private:
-  StateId _state;
+  // Persistent state instances
+  etl::array<etl::ifsm_state*, 6> _states;
 };
 
 } // namespace bridge::fsm

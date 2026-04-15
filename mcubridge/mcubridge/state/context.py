@@ -274,6 +274,38 @@ def collect_system_metrics() -> dict[str, Any]:
         return {}
 
 
+def _mqtt_publish_queue_factory() -> asyncio.Queue[QueuedPublish]:
+    return asyncio.Queue[QueuedPublish]()
+
+
+def _mqtt_drop_counts_factory() -> dict[str, int]:
+    return {}
+
+
+def _spool_snapshot_factory() -> SpoolSnapshot:
+    return {}
+
+
+def _datastore_factory() -> dict[str, str]:
+    return {}
+
+
+def _mailbox_queue_factory() -> BridgeQueue[bytes]:
+    return BridgeQueue[bytes]()
+
+
+def _mailbox_incoming_queue_factory() -> BridgeQueue[bytes]:
+    return BridgeQueue[bytes]()
+
+
+def _console_to_mcu_queue_factory() -> BridgeQueue[bytes]:
+    return BridgeQueue[bytes]()
+
+
+def _running_processes_factory() -> dict[int, ManagedProcess]:
+    return {}
+
+
 class RuntimeState(msgspec.Struct):
     """Aggregated mutable state shared across the daemon layers."""
 
@@ -337,12 +369,12 @@ class RuntimeState(msgspec.Struct):
             self.link_sync_event.set()
 
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=lambda: asyncio.Queue[QueuedPublish](),  # noqa: PLW0108
+        default_factory=_mqtt_publish_queue_factory
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_drop_counts: dict[str, int] = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+        default_factory=_mqtt_drop_counts_factory
+    )
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_replayed: int = 0
     mqtt_spool_degraded: bool = False
@@ -359,24 +391,24 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+        default_factory=_spool_snapshot_factory
+    )
     datastore: dict[str, str] = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+        default_factory=_datastore_factory
+    )
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
     mailbox_queue: BridgeQueue[bytes] = msgspec.field(
-        default_factory=lambda: BridgeQueue[bytes](),  # noqa: PLW0108
+        default_factory=_mailbox_queue_factory
     )
     mailbox_incoming_queue: BridgeQueue[bytes] = msgspec.field(
-        default_factory=lambda: BridgeQueue[bytes](),  # noqa: PLW0108
+        default_factory=_mailbox_incoming_queue_factory
     )
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     console_to_mcu_queue: BridgeQueue[bytes] = msgspec.field(
-        default_factory=lambda: BridgeQueue[bytes](),  # noqa: PLW0108
+        default_factory=_console_to_mcu_queue_factory
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
 
@@ -386,12 +418,12 @@ class RuntimeState(msgspec.Struct):
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
     running_processes: dict[int, ManagedProcess] = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+        default_factory=_running_processes_factory
+    )
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
-        default_factory=lambda: AllowedCommandPolicy.create_empty(),  # noqa: PLW0108
+        default_factory=AllowedCommandPolicy.create_empty
     )
     topic_authorization: TopicAuthorization | None = None
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT

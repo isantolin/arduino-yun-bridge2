@@ -82,6 +82,8 @@ BridgeClass::BridgeClass(Stream& stream)
       _hardware_serial(nullptr),
       _command_handler(),
       _status_handler(),
+      _last_tick_ms(0),
+      _xoff_sent(false),
       _last_command_id(0),
       _tx_sequence_id(0),
       _retry_count(0),
@@ -150,9 +152,10 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 void BridgeClass::process() {
 #if defined(ARDUINO_ARCH_AVR)
   wdt_reset();
+#elif defined(ARDUINO_ARCH_ESP32)
+  esp_task_wdt_reset();
 #endif
   uint32_t now = bridge::now_ms();
-  static uint32_t _last_tick_ms = 0;
   if (_last_tick_ms == 0) _last_tick_ms = now;
   uint32_t elapsed = now - _last_tick_ms;
   if (elapsed > 0) {
@@ -161,14 +164,13 @@ void BridgeClass::process() {
   }
   _packet_serial.update(_stream);
 
-  static bool xoff_sent = false;
   int available_bytes = _stream.available();
-  if (!xoff_sent && available_bytes > 48) {
+  if (!_xoff_sent && available_bytes > 48) {
     signalXoff();
-    xoff_sent = true;
-  } else if (xoff_sent && available_bytes < 16) {
+    _xoff_sent = true;
+  } else if (_xoff_sent && available_bytes < 16) {
     signalXon();
-    xoff_sent = false;
+    _xoff_sent = false;
   }
 }
 
@@ -349,17 +351,22 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_drainStartupRecursive(uint32_t start_ms, uint16_t iterations) {
-  if (iterations == 0) return;
-  if (_stream.available() <= 0 || (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
-    return;
-  }
-  (void)_stream.read();
-  _drainStartupRecursive(start_ms, iterations - 1);
+  // [SIL-2] Replaced recursion with bounded ETL iteration to protect stack.
+  auto sequence = etl::make_index_sequence<bridge::config::STARTUP_DRAIN_FINAL>();
+  (void)sequence; // silence unused
+
+  etl::for_each(etl::make_constant_iterator<0>(), 
+                etl::make_constant_iterator<bridge::config::STARTUP_DRAIN_FINAL>(),
+                [this, start_ms](int) {
+    if (_stream.available() > 0 && (bridge::now_ms() - start_ms < bridge::config::SERIAL_TIMEOUT_MS)) {
+      (void)_stream.read();
+    }
+  });
 }
 
 void BridgeClass::_onStartupStabilized() {
   uint32_t start_ms = bridge::now_ms();
-  // [SIL-2] Pure ETL streaming drain via terminal recursion (No Raw Loops).
+  // [SIL-2] Pure ETL streaming drain (No Raw Loops / No Recursion).
   _drainStartupRecursive(start_ms, bridge::config::STARTUP_DRAIN_FINAL);
   BRIDGE_ATOMIC_BLOCK { _fsm.stabilized(); }
 }

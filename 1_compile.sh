@@ -6,7 +6,7 @@ set -e
 # Copyright (C) 2025 Ignacio Santolin and contributors
 #
 # compile.sh - Compila todos los paquetes del ecosistema Arduino MCU v2
-# Target: OpenWrt 25.12.0 (APK System)
+# Target: OpenWrt 25.12.2 (APK System)
 #
 
 usage() {
@@ -67,8 +67,8 @@ done
 
 set -- "${POSITIONAL[@]}"
 
-# [CONFIG] Target Final OpenWrt 25.12.0
-OPENWRT_VERSION=${1:-"25.12.0"}
+# [CONFIG] Target Final OpenWrt 25.12.2
+OPENWRT_VERSION=${1:-"25.12.2"}
 OPENWRT_TARGET=${2:-"malta/be"}
 
 OPENWRT_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
@@ -424,7 +424,7 @@ echo "[INFO] Installing required packages and their dependencies..."
 ./scripts/feeds install mcubridge luci-app-mcubridge
 
 # ==============================================================================
-# [FIX CRITICO] Breaking Kconfig Recursive Dependencies (SDK 25.12.0)
+# [FIX CRITICO] Breaking Kconfig Recursive Dependencies (SDK 25.12.2)
 # ==============================================================================
 echo "[FIX] Breaking Kconfig recursive dependencies..."
 

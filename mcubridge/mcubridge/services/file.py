@@ -149,12 +149,12 @@ class FileComponent(BaseComponent):
             logger.warning("Received MCU file read response without pending request")
             return False
 
-        packet = self._decode_payload(
-            FileReadResponsePacket,
-            payload,
-            Command.CMD_FILE_READ_RESP,
-        )
-        if packet is None:
+        try:
+            packet = FileReadResponsePacket.decode(
+                payload,
+                Command.CMD_FILE_READ_RESP,
+            )
+        except ValueError:
             if not pending.future.done():
                 pending.future.set_exception(
                     ValueError("Malformed MCU file read response")

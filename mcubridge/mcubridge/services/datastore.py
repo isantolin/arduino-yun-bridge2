@@ -32,10 +32,10 @@ class DatastoreComponent(BaseComponent):
 
     async def handle_put(self, seq_id: int, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
-        packet = self._decode_payload(
-            DatastorePutPacket, payload, Command.CMD_DATASTORE_PUT
-        )
-        if packet is None:
+        try:
+            packet = DatastorePutPacket.decode(payload, Command.CMD_DATASTORE_PUT)
+        except ValueError:
+            logger.warning("Malformed DatastorePutPacket payload: %s", payload.hex())
             return False
 
         key = packet.key
@@ -206,13 +206,23 @@ class DatastoreComponent(BaseComponent):
         if error_reason:
             properties.append(("bridge-error", error_reason))
 
-        await self._publish_value(
+        # Direct call to BridgeContext.publish
+        props_tuple = tuple(properties)
+        await self.ctx.publish(
             topic=topic_name,
             payload=value,
             expiry=MQTT_EXPIRY_DATASTORE,
-            reply_context=reply_context,
-            properties=tuple(properties),
+            reply_to=None,
+            properties=props_tuple,
         )
+        if reply_context is not None:
+            await self.ctx.publish(
+                topic=topic_name,
+                payload=value,
+                expiry=MQTT_EXPIRY_DATASTORE,
+                reply_to=reply_context,
+                properties=props_tuple,
+            )
 
 
 __all__ = ["DatastoreComponent"]

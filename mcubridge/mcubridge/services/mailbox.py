@@ -60,10 +60,12 @@ class MailboxComponent(BaseComponent):
         return True
 
     async def handle_push(self, seq_id: int, payload: bytes) -> bool:
-        packet = self._decode_payload(
-            MailboxPushPacket, payload, Command.CMD_MAILBOX_PUSH
-        )
-        if packet is None:
+        try:
+            packet = MailboxPushPacket.decode(
+                payload, Command.CMD_MAILBOX_PUSH
+            )
+        except ValueError:
+            logger.warning("Malformed MailboxPushPacket payload: %s", payload.hex())
             return False
 
         data = packet.data

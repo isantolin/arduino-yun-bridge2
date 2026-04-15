@@ -71,8 +71,10 @@ class PinComponent(BaseComponent):
         pending_queue: collections.deque[PendingPinRequest],
     ) -> None:
         """Shared implementation for digital/analog read response handling."""
-        packet = self._decode_payload(packet_cls, payload, command_id)
-        if packet is None:
+        try:
+            packet = packet_cls.decode(payload, command_id)
+        except ValueError:
+            logger.warning("Malformed %s payload: %s", packet_cls.__name__, payload.hex())
             return
 
         value = packet.value

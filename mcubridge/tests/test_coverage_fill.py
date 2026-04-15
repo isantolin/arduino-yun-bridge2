@@ -189,15 +189,14 @@ async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDisp
 async def test_datastore_publish_value_error_reason(
     runtime_config: Any, runtime_state: Any
 ):
-    """Cover line 174 in datastore.py."""
+    """Cover logic in _publish_datastore_value."""
     ctx = MagicMock()
     ctx.publish = AsyncMock()
     ds = DatastoreComponent(runtime_config, runtime_state, ctx)
-    await ds._publish_value(  # type: ignore[reportPrivateUsage]
-        topic="key",
-        payload=b"val",
-        expiry=60,
-        properties=(("bridge-error", "testing"),),
+    await ds._publish_datastore_value(  # type: ignore[reportPrivateUsage]
+        key="key",
+        value=b"val",
+        error_reason="testing",
     )
     _args, kwargs = ctx.publish.call_args
     props = kwargs.get("properties", ())

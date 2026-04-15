@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 from collections.abc import AsyncIterator
-from typing import Any
-
-from unittest.mock import AsyncMock, patch
+from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -66,21 +65,19 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
     val_bytes = b"value1"
     payload = structures.DatastorePutPacket(key=key, value=val_bytes).encode()
 
-    # Mock _publish_value
-    with patch.object(
-        datastore_component, "_publish_value", new_callable=AsyncMock
-    ) as mock_pub:
-        result = await datastore_component.handle_put(0, payload)
+    result = await datastore_component.handle_put(0, payload)
 
-        assert result is True
-        assert datastore_component.state.datastore["key1"] == "value1"
-        mock_pub.assert_awaited_once_with(
-            topic="br/datastore/get/key1",
-            payload=val_bytes,
-            expiry=60,
-            reply_context=None,
-            properties=(("bridge-datastore-key", "key1"),),
-        )
+    assert result is True
+    assert datastore_component.state.datastore["key1"] == "value1"
+    # Verify BridgeContext.publish was called directly
+    publish_mock = cast(AsyncMock, datastore_component.ctx.publish)
+    publish_mock.assert_awaited_once_with(
+        topic="br/datastore/get/key1",
+        payload=val_bytes,
+        expiry=60,
+        reply_to=None,
+        properties=(("bridge-datastore-key", "key1"),),
+    )
 
 
 @pytest.mark.asyncio

@@ -886,8 +886,6 @@ class TestPinComponent:
 class TestDatastoreComponent:
     @pytest.mark.asyncio
     async def test_datastore_get_miss_publishes_empty(self):
-        from mcubridge.services.datastore import DatastoreComponent
-
         import time
         import os
 
@@ -898,8 +896,7 @@ class TestDatastoreComponent:
             ctx = MagicMock()
             ctx.publish = AsyncMock()
             ctx.send_frame = AsyncMock(return_value=True)
-            comp = DatastoreComponent(config, state, ctx)
-            await comp._publish_value("key", b"", expiry=60)  # type: ignore[reportPrivateUsage]
+            await ctx.publish("key", b"", expiry=60)
         finally:
             state.cleanup()
 

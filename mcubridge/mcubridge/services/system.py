@@ -55,10 +55,12 @@ class SystemComponent(BaseComponent):
         return ok
 
     async def handle_get_free_memory_resp(self, seq_id: int, payload: bytes) -> None:
-        packet = self._decode_payload(
-            FreeMemoryResponsePacket, payload, Command.CMD_GET_FREE_MEMORY_RESP
-        )
-        if packet is None:
+        try:
+            packet = FreeMemoryResponsePacket.decode(
+                payload, Command.CMD_GET_FREE_MEMORY_RESP
+            )
+        except ValueError:
+            logger.warning("Malformed FreeMemoryResponsePacket payload: %s", payload.hex())
             return
 
         topic = topic_path(
@@ -70,15 +72,26 @@ class SystemComponent(BaseComponent):
         reply_context = (
             self._pending_free_memory.popleft() if self._pending_free_memory else None
         )
-        await self._publish_value(
-            topic, str(packet.value), MQTT_EXPIRY_DEFAULT, reply_context
+        # Direct call to BridgeContext.publish
+        await self.ctx.publish(
+            topic=topic,
+            payload=str(packet.value),
+            expiry=MQTT_EXPIRY_DEFAULT,
+            reply_to=None,
         )
+        if reply_context is not None:
+            await self.ctx.publish(
+                topic=topic,
+                payload=str(packet.value),
+                expiry=MQTT_EXPIRY_DEFAULT,
+                reply_to=reply_context,
+            )
 
     async def handle_get_version_resp(self, seq_id: int, payload: bytes) -> None:
-        packet = self._decode_payload(
-            VersionResponsePacket, payload, Command.CMD_GET_VERSION_RESP
-        )
-        if packet is None:
+        try:
+            packet = VersionResponsePacket.decode(payload, Command.CMD_GET_VERSION_RESP)
+        except ValueError:
+            logger.warning("Malformed VersionResponsePacket payload: %s", payload.hex())
             return
 
         major, minor, patch = packet.major, packet.minor, packet.patch
@@ -101,9 +114,21 @@ class SystemComponent(BaseComponent):
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
-        await self._publish_value(
-            topic, f"{major}.{minor}.{patch}", MQTT_EXPIRY_DATASTORE, reply_context
+        # Direct call to BridgeContext.publish
+        payload = f"{major}.{minor}.{patch}"
+        await self.ctx.publish(
+            topic=topic,
+            payload=payload,
+            expiry=MQTT_EXPIRY_DATASTORE,
+            reply_to=None,
         )
+        if reply_context is not None:
+            await self.ctx.publish(
+                topic=topic,
+                payload=payload,
+                expiry=MQTT_EXPIRY_DATASTORE,
+                reply_to=reply_context,
+            )
 
     async def handle_mqtt(
         self,

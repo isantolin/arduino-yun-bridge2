@@ -73,6 +73,7 @@ SOURCES=(
     "${SRC_DIR}/services/FileSystem.cpp"
     "${SRC_DIR}/services/Process.cpp"
     "${SRC_DIR}/services/SPIService.cpp"
+    "${TEST_DIR}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
 

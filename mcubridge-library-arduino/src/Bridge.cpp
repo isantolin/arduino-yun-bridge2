@@ -348,19 +348,31 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   else emitStatus<rpc::StatusCode::STATUS_ERROR>();
 }
 
-void BridgeClass::_drainStartupRecursive(uint32_t start_ms, uint16_t iterations) {
-  if (iterations == 0) return;
-  if (_stream.available() <= 0 || (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
-    return;
-  }
-  (void)_stream.read();
-  _drainStartupRecursive(start_ms, iterations - 1);
-}
-
 void BridgeClass::_onStartupStabilized() {
   uint32_t start_ms = bridge::now_ms();
-  // [SIL-2] Pure ETL streaming drain via terminal recursion (No Raw Loops).
-  _drainStartupRecursive(start_ms, bridge::config::STARTUP_DRAIN_FINAL);
+  // [SIL-2] Deterministic drain via ETL algorithm (No Raw Loops).
+  // We simulate a loop using a recursive structure that avoids deep stack if needed,
+  // or a counting iterator if available. Given AVR limits, we use a simple functional 
+  // approach using etl::find_if on a counting range.
+  struct Counter {
+    uint16_t current = 0;
+    bool operator==(const Counter& other) const { return current == other.current; }
+    bool operator!=(const Counter& other) const { return current != other.current; }
+    Counter& operator++() { ++current; return *this; }
+    uint16_t operator*() const { return current; }
+  };
+
+  Counter it_begin{0};
+  Counter it_end{bridge::config::STARTUP_DRAIN_FINAL};
+
+  (void)etl::find_if(it_begin, it_end, [this, start_ms](uint16_t) {
+    if (_stream.available() <= 0 || (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
+      return true; // Stop condition
+    }
+    (void)_stream.read();
+    return false; // Continue
+  });
+
   BRIDGE_ATOMIC_BLOCK { _fsm.stabilized(); }
 }
 

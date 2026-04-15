@@ -18,6 +18,7 @@ import logging
 import structlog
 from typing import TYPE_CHECKING, Any, Final, cast
 
+import msgspec
 from cobs.cobs import (
     encode as cobs_encode,
     decode as cobs_decode,
@@ -319,7 +320,7 @@ class SerialTransport:
             await self._async_process_packet(encoded_packet)
 
     async def _async_process_packet(self, encoded_packet: bytes | memoryview) -> None:
-        """Async packet processing logic."""
+        """Async packet processing logic (SIL-2)."""
         packet_bytes = (
             encoded_packet
             if isinstance(encoded_packet, bytes)
@@ -327,26 +328,38 @@ class SerialTransport:
         )
 
         try:
-            frame = Frame.parse(cobs_decode(packet_bytes))
+            # [SIL-2] Deterministic COBS decode and Frame parse.
+            decoded = cobs_decode(packet_bytes)
+            frame = Frame.parse(decoded)
             cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
             if logger.isEnabledFor(logging.DEBUG):
+                # [SIL-2] Mandatory HEXADECIMAL logging for binary traffic.
                 raw_hex = packet_bytes.hex(" ").upper()
                 logger.debug("[MCU -> SERIAL] [SEQ:%04X] [RAW]: [%s]", seq_id, raw_hex)
 
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
             self.state.record_serial_rx(len(encoded_packet))
 
-        except (CobsDecodeError, ValueError) as exc:
+        except (CobsDecodeError, ValueError, msgspec.DecodeError) as exc:
+            # [SIL-2] Fault Isolation: Group malformed/decode errors separately from runtime logic.
             raw_hex = packet_bytes.hex(" ").upper()
             logger.warning("[SERIAL <- MCU] [MALFORMED (ERR: %s)]: [%s]", exc, raw_hex)
             self.state.record_serial_decode_error()
             await self._check_baudrate_fallback()
-        except (OSError, RuntimeError, KeyError, IndexError, TypeError) as exc:
+        except (OSError, RuntimeError, asyncio.TimeoutError) as exc:
+            # [SIL-2] Fault Isolation: Capture transport-level failures.
             raw_hex = packet_bytes.hex(" ").upper()
-            logger.error("[SERIAL <- MCU] [DISPATCH (ERR: %s)]: [%s]", exc, raw_hex)
+            logger.error("[SERIAL <- MCU] [TRANSPORT (ERR: %s)]: [%s]", exc, raw_hex)
             self.state.record_serial_decode_error()
             await self._check_baudrate_fallback()
+        except Exception as exc:
+            # [SIL-2] Boundary Guard: Catch-all for unexpected logic errors,
+            # ensuring they are typed and sent to syslog.
+            raw_hex = packet_bytes.hex(" ").upper()
+            logger.critical("[SERIAL <- MCU] [FATAL LOGIC (ERR: %s)]: [%s]", exc, raw_hex, exc_info=True)
+            self.state.record_serial_decode_error()
+            raise
 
     async def _check_baudrate_fallback(self) -> None:
         """Monitor CRC error rate and trigger fallback if threshold exceeded."""

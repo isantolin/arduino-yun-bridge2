@@ -235,11 +235,10 @@ async def test_async_process_packet_os_error(
         transport.loop = asyncio.get_running_loop()
 
         # Mock handle_mcu_frame to raise OSError
-        async def _raise_os_error(cmd: int, payload: bytes) -> None:
+        async def _raise_os_error(cmd: int, seq: int, payload: bytes) -> None:
             raise OSError("Device error")
 
         service.handle_mcu_frame = _raise_os_error  # type: ignore[reportAttributeAccessIssue]
-
         from cobs.cobs import encode as cobs_encode
         from mcubridge.protocol.frame import Frame
         from mcubridge.protocol.protocol import Command
@@ -253,6 +252,6 @@ async def test_async_process_packet_os_error(
         await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
         assert any("error" in r.getMessage().lower() for r in caplog.records)
-        assert any("dispatch" in r.getMessage().lower() for r in caplog.records)
+        assert any("transport" in r.getMessage().lower() for r in caplog.records)
     finally:
         state.cleanup()

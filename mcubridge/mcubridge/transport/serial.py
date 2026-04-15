@@ -58,14 +58,6 @@ class SerialTransport:
     STATE_NEGOTIATING: Final[str] = "negotiating"
     STATE_CONNECTED: Final[str] = "connected"
 
-    if TYPE_CHECKING:
-        # FSM trigger stubs for static analysis (bound at runtime by transitions.Machine)
-        def begin_negotiate(self) -> None: ...
-
-        def mark_connected(self) -> None: ...
-
-        def mark_disconnected(self) -> None: ...
-
     def __init__(
         self,
         config: RuntimeConfig,
@@ -139,7 +131,7 @@ class SerialTransport:
             ) from e
 
     def _on_state_change(self) -> None:
-        logger.debug("Serial transport state: %s", self.fsm_state)
+        logger.debug("Serial transport state: %s", self.fsm_state)  # type: ignore
 
     async def run(self) -> None:
         """Main transport entry point with auto-reconnect."""
@@ -231,7 +223,7 @@ class SerialTransport:
                 read_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await read_task
-                self.mark_disconnected()
+                self.mark_disconnected()  # type: ignore
                 await self.service.on_serial_disconnected()
 
         except (OSError, serial.SerialException) as exc:
@@ -468,3 +460,4 @@ class SerialTransport:
         finally:
             self._negotiating = False
             self._negotiation_future = None
+n_future = None

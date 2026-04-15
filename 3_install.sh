@@ -33,11 +33,11 @@ DEFAULT_SERIAL_RETRY_ATTEMPTS="3"
 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL="0.0"
 DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES="3"
 
-# [FIX] Added python3-*.apk to the top to ensure dependencies are installed BEFORE the bridge
+# [FIX] Flexible pattern to match standard OpenWrt APK naming convention (pkg_version...)
 PROJECT_APK_PATTERNS="\
-python3-*.apk \
-mcubridge-*.apk \
-luci-app-mcubridge-*.apk"
+python3*.apk \
+mcubridge*.apk \
+luci-app-mcubridge*.apk"
 
 UCI_GENERAL_DIRTY=0
 
@@ -88,9 +88,9 @@ install_dependency() {
     
     # Check for local bundled APK first
     local local_apk=""
-    # [FIX] Strict pattern: require a digit after hyphen to avoid partial matches
-    # e.g., prevents 'python3' matching 'python3-aiomqtt'
-    for candidate in "bin/${pkg}"-[0-9]*.apk; do
+    # [FIX] Flexible pattern: allow underscore or hyphen after package name
+    # to match standard OpenWrt/APK naming (pkg_version or pkg-version)
+    for candidate in "bin/${pkg}"[_-]*.apk; do
         if [ -f "$candidate" ]; then
             local_apk="$candidate"
             break

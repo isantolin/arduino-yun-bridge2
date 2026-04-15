@@ -27,9 +27,7 @@ constexpr bool is_compressed_cmd(uint16_t id) {
 }
 }
 
-#ifndef BRIDGE_TEST_NO_GLOBALS
 BridgeClass Bridge(Serial);
-#endif
 
 namespace etl {
 void __attribute__((weak)) __attribute__((unused)) handle_error(const etl::exception& e) {

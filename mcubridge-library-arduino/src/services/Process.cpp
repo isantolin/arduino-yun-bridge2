@@ -44,8 +44,6 @@ void ProcessClass::reset() {
   _pending_polls.clear();
 }
 
-#ifndef BRIDGE_TEST_NO_GLOBALS
 ProcessClass Process;
-#endif
 
 #endif

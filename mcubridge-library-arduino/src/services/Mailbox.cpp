@@ -41,8 +41,6 @@ void MailboxClass::_onAvailableResponse(const rpc::payload::MailboxAvailableResp
   (void)msg; // Handled by accessor in tests or higher level logic
 }
 
-#ifndef BRIDGE_TEST_NO_GLOBALS
 MailboxClass Mailbox;
-#endif
 
 #endif

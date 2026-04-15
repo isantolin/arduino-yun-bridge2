@@ -57,8 +57,6 @@ size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) { return buffer.size
 
 #endif /* BRIDGE_HOST_TEST */
 
-#ifndef BRIDGE_TEST_NO_GLOBALS
 SPIServiceClass SPIService;
-#endif
 
 #endif // BRIDGE_ENABLE_SPI

@@ -78,8 +78,6 @@ void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
   }
 }
 
-#ifndef BRIDGE_TEST_NO_GLOBALS
 FileSystemClass FileSystem;
-#endif
 
 #endif

@@ -30,8 +30,6 @@ void DataStoreClass::_onResponse(const rpc::payload::DatastoreGetResponse& msg) 
   (void)msg;
 }
 
-#ifndef BRIDGE_TEST_NO_GLOBALS
 DataStoreClass DataStore;
-#endif
 
 #endif

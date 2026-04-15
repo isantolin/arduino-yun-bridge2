@@ -28,7 +28,7 @@ void reset_bridge_comp(BiStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "top-secret");
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.onStartupStabilized();
   ba.setSynchronized();
 }

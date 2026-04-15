@@ -28,7 +28,7 @@ HardwareSerial Serial1;
 void test_fsm_initial_state() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
   accessor.onStartupStabilized();
   TEST_ASSERT(accessor.isUnsynchronized());
 }
@@ -37,7 +37,7 @@ void test_mutual_auth_success() {
   BridgeClass localBridge(g_test_stream);
   const char* secret = "secret_1234567890123456";
   localBridge.begin(115200, secret);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
   accessor.onStartupStabilized();
   
   const uint8_t nonce[16] = {1, 2,  3,  4,  5,  6,  7,  8, 9, 10, 11, 12, 13, 14, 15, 16};
@@ -62,7 +62,7 @@ void test_mutual_auth_failure_wrong_tag() {
   BridgeClass localBridge(g_test_stream);
   const char* secret = "secret_1234567890123456";
   localBridge.begin(115200, secret);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
   accessor.onStartupStabilized();
   
   const uint8_t nonce[16] = {1, 2, 3, 4};
@@ -86,7 +86,7 @@ void test_mutual_auth_failure_wrong_tag() {
 void test_fsm_timeout_to_unsynchronized() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200);
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
   accessor.onStartupStabilized();
   accessor.setSynchronized();
   

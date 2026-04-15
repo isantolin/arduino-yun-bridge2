@@ -249,7 +249,7 @@ static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
   } else {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
   }
-  auto ba = bridge::test::TestAccessor::create(bridge);
+  auto& ba = bridge::test::TestAccessor::create(bridge);
   ba.onStartupStabilized();
   ba.setIdle();
 }

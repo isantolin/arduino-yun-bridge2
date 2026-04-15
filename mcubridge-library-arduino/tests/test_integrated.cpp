@@ -19,7 +19,7 @@ void integrated_test_bridge_core() {
   BiStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin(115200, "test_secret_1234567890123456");
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
   accessor.onStartupStabilized();
 
   rpc::Frame sync;
@@ -36,7 +36,7 @@ void integrated_test_bridge_core() {
 void integrated_test_components() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = bridge::test::TestAccessor::create(Bridge);
+  auto& ba = bridge::test::TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   Console.begin();

@@ -124,7 +124,7 @@ class BridgeClass {
     BridgeClass& _bridge;
   };
 
- private:
+ protected:
   struct TxPayloadBuffer { etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data; };
   struct PendingTxFrame { uint16_t command_id; uint16_t sequence_id; TxPayloadBuffer* buffer; size_t length; };
 
@@ -252,8 +252,6 @@ class BridgeClass {
   void _flushPendingTxQueue();
   void _handleAck(uint16_t command_id);
   void _handleMalformed(uint16_t command_id);
-
-  friend class bridge::test::TestAccessor;
 };
 
 extern BridgeClass Bridge;

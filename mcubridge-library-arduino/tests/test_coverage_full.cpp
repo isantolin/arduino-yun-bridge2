@@ -23,7 +23,7 @@ void test_fsm_timeout_fault() {
   BiStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin(115200);
-  auto ba = TestAccessor::create(localBridge);
+  auto& ba = TestAccessor::create(localBridge);
 
   ba.setIdle();
   ba.onStartupStabilized();
@@ -41,7 +41,7 @@ void test_crc_error_escalation() {
   BiStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin(115200);
-  auto ba = TestAccessor::create(localBridge);
+  auto& ba = TestAccessor::create(localBridge);
 
   ba.setIdle();
   ba.onStartupStabilized();
@@ -53,7 +53,7 @@ void test_ack_timeout_retry_exceeded() {
   BiStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin(115200);
-  auto ba = TestAccessor::create(localBridge);
+  auto& ba = TestAccessor::create(localBridge);
 
   ba.setIdle();
   ba.onStartupStabilized();

@@ -23,7 +23,7 @@ void test_bridge_reset_state() {
   BiStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin(115200);
-  auto ba = TestAccessor::create(localBridge);
+  auto& ba = TestAccessor::create(localBridge);
 
   ba.onStartupStabilized(); // Move from STARTUP to UNSYNCHRONIZED
   TEST_ASSERT(ba.isUnsynchronized());
@@ -36,7 +36,7 @@ void test_bridge_is_recent_duplicate_edge_cases() {
   BiStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin();
-  auto ba = TestAccessor::create(localBridge);
+  auto& ba = TestAccessor::create(localBridge);
 
   rpc::Frame f = {};
   f.header.sequence_id = 42;

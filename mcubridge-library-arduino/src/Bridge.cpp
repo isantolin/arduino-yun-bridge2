@@ -622,10 +622,6 @@ void BridgeClass::_handleEnterBootloader(const rpc::payload::EnterBootloader& ms
   }
 }
 
-[[maybe_unused]] void BridgeClass::_onBootloaderDelay() {
-  bridge::hal::CurrentArchTraits::reset();
-}
-
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) { (void)ctx; SPIService.begin(); }
 void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) { (void)ctx; SPIService.end(); }
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) {

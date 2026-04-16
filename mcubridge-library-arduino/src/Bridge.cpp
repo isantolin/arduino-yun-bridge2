@@ -617,9 +617,13 @@ void BridgeClass::_handleSetTiming(const rpc::payload::HandshakeConfig& msg) {
 
 void BridgeClass::_handleEnterBootloader(const rpc::payload::EnterBootloader& msg) {
   if (msg.magic == rpc::RPC_BOOTLOADER_MAGIC) {
-    this->flushStream(); delay(bridge::config::BOOTLOADER_DELAY_MS);
-    bridge::hal::CurrentArchTraits::reset();
+    this->flushStream();
+    _timers.start(_timer_ids[bridge::scheduler::TIMER_BOOTLOADER_DELAY]);
   }
+}
+
+[[maybe_unused]] void BridgeClass::_onBootloaderDelay() {
+  bridge::hal::CurrentArchTraits::reset();
 }
 
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) { (void)ctx; SPIService.begin(); }

@@ -89,7 +89,8 @@ enum TimerId : uint8_t {
   TIMER_RX_DEDUPE = 1,
   TIMER_BAUDRATE_CHANGE = 2,
   TIMER_STARTUP_STABILIZATION = 3,
-  NUMBER_OF_TIMERS = 4
+  TIMER_BOOTLOADER_DELAY = 4,
+  NUMBER_OF_TIMERS = 5
 };
 } // namespace scheduler
 }  // namespace bridge

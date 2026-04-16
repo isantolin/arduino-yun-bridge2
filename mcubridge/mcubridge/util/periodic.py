@@ -26,7 +26,7 @@ async def periodic_task(
             await tick()
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError, asyncio.TimeoutError) as exc:
             logger.log(log_level, "Periodic task exception: %s", exc)
 
         await asyncio.sleep(interval)

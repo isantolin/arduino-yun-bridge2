@@ -353,7 +353,7 @@ class SerialTransport:
             logger.error("[SERIAL <- MCU] [TRANSPORT (ERR: %s)]: [%s]", exc, raw_hex)
             self.state.record_serial_decode_error()
             await self._check_baudrate_fallback()
-        except Exception as exc:
+        except (TypeError, AttributeError, KeyError) as exc:
             # [SIL-2] Boundary Guard: Catch-all for unexpected logic errors,
             # ensuring they are typed and sent to syslog.
             raw_hex = packet_bytes.hex(" ").upper()

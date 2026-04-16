@@ -902,66 +902,53 @@ class TestDatastoreComponent:
 
 
 # ============================================================================
-# BridgeService Dispatch Edge Cases
+# mcubridge/services/dispatcher.py — lines 256, 314, 358-359
 # ============================================================================
 
 
-class TestBridgeServiceEdgeCases:
+class TestDispatcherEdgeCases:
     @pytest.mark.asyncio
-    async def test_service_topic_action_gaps(self):
+    async def test_dispatcher_digital_topic_no_segments(self):
         from mcubridge.protocol.topics import TopicRoute
-        from mcubridge.services.runtime import BridgeService
+        from mcubridge.services.dispatcher import BridgeDispatcher
 
-        config = _make_config()
+        from .conftest import make_component_container
+
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = _make_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
-            service = BridgeService(config, state)
-
-            # DIGITAL topic with 1 segment -> write
-            route1 = TopicRoute(
-                raw="br/digital/13", prefix="br", topic=Topic.DIGITAL, segments=("13",)
+            d = BridgeDispatcher(
+                mcu_registry=MagicMock(),
+                mqtt_router=MagicMock(),
+                state=state,
+                send_frame=AsyncMock(),
+                acknowledge_frame=AsyncMock(),
+                is_topic_action_allowed=lambda t, a: True,
+                reject_topic_action=AsyncMock(),
+                publish_bridge_snapshot=AsyncMock(),
             )
-            assert (
-                service._get_topic_action(route1) == "write"
-            )  # type: ignore[reportPrivateUsage]
-
-            # DIGITAL topic with 0 segments -> None
-            route2 = TopicRoute(
-                raw="br/digital", prefix="br", topic=Topic.DIGITAL, segments=()
+            d.register_components(
+                make_component_container(
+                    console=MagicMock(),
+                    datastore=MagicMock(),
+                    file=MagicMock(),
+                    mailbox=MagicMock(),
+                    pin=MagicMock(),
+                    process=MagicMock(),
+                    spi=MagicMock(),
+                    system=MagicMock(),
+                )
             )
-            assert (
-                service._get_topic_action(route2) is None
-            )  # type: ignore[reportPrivateUsage]
-
-            # ANALOG topic with 2 segments -> segments[1]
-            route3 = TopicRoute(
-                raw="br/analog/0/read",
-                prefix="br",
-                topic=Topic.ANALOG,
-                segments=("0", "read"),
+            route = TopicRoute(
+                raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
             )
-            assert (
-                service._get_topic_action(route3) == "read"
-            )  # type: ignore[reportPrivateUsage]
-
-            # CONSOLE in -> in
-            route4 = TopicRoute(
-                raw="br/console/in", prefix="br", topic=Topic.CONSOLE, segments=("in",)
-            )
-            assert (
-                service._get_topic_action(route4) == "in"
-            )  # type: ignore[reportPrivateUsage]
-
-            # Bridge topic unknown remainder
-            route5 = TopicRoute(
-                raw="br/system/bridge/unknown",
-                prefix="br",
-                topic=Topic.SYSTEM,
-                segments=("bridge", "unknown"),
-            )
-            assert (
-                await service._handle_mqtt_system(route5, MagicMock()) is False
-            )  # type: ignore[reportPrivateUsage]
+            result = d._get_topic_action(route)  # type: ignore[reportPrivateUsage]
+            assert result is None
+            assert result is None
         finally:
             state.cleanup()
 

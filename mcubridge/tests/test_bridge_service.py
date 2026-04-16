@@ -974,7 +974,7 @@ async def test_process_run_async_accepts_complex_arguments(
 
     # Override the handler in the MCU registry (bound method was captured at init)
     mock_run = AsyncMock()
-    service._mcu_registry[Command.CMD_PROCESS_RUN_ASYNC.value] = mock_run # type: ignore[reportPrivateUsage]
+    service.dispatcher.mcu_registry[Command.CMD_PROCESS_RUN_ASYNC.value] = mock_run
     cmd_bytes = b"ls -l /tmp"
     await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, 0, cmd_bytes)
 

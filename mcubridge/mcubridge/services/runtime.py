@@ -19,6 +19,8 @@ from ..protocol.topics import Topic, parse_topic, topic_path
 from ..router.routers import MQTTRouter
 from ..state.context import RuntimeState
 
+if TYPE_CHECKING:
+    from ..router.routers import McuHandler
 from . import (
     ConsoleComponent,
     DatastoreComponent,
@@ -29,6 +31,7 @@ from . import (
     SpiComponent,
     SystemComponent,
 )
+from .dispatcher import BridgeDispatcher
 from .handshake import (
     SendFrameCallable,
     SerialHandshakeManager,
@@ -36,28 +39,12 @@ from .handshake import (
     derive_serial_timing,
 )
 from .serial_flow import SerialFlowController
-from ..protocol.contracts import response_to_request
-
-if TYPE_CHECKING:
-    from ..router.routers import McuHandler
-    from mcubridge.protocol.topics import TopicRoute
 
 logger = structlog.get_logger("mcubridge.service")
 _msgpack_enc = msgspec.msgpack.Encoder()
 
-_PRE_SYNC_ALLOWED_COMMANDS = {
-    Status.OK.value,
-    Status.ERROR.value,
-    Status.CMD_UNKNOWN.value,
-    Status.MALFORMED.value,
-    Status.OVERFLOW.value,
-    Status.CRC_MISMATCH.value,
-    Status.TIMEOUT.value,
-    Status.NOT_IMPLEMENTED.value,
-    # System essentials
-    0x02,  # CMD_LINK_SYNC_RESP (Value from generated protocol)
-    0x04,  # CMD_LINK_RESET_RESP
-}
+
+STATUS_VALUES = {status.value for status in Status}
 
 _STATUS_DESCRIPTIONS: dict[Status, str] = {
     Status.OK: "Operation completed successfully",
@@ -72,7 +59,23 @@ _STATUS_DESCRIPTIONS: dict[Status, str] = {
 
 
 class BridgeService:
-    """Service façade orchestrating MCU and MQTT interactions (SIL-2)."""
+    """Service façade orchestrating MCU and MQTT interactions.
+
+    This class acts as the central business logic layer for the MCU Bridge daemon,
+    decoupling the transport mechanisms (serial and MQTT) from the command
+    processing and state management. It handles:
+
+    -   Dispatching incoming MCU frames to appropriate component handlers.
+    -   Routing incoming MQTT messages to their respective handlers.
+    -   Managing the serial link handshake and flow control.
+    -   Orchestrating various components (Console, Datastore, File, Mailbox, Pin, Process, Shell, System)
+        by providing them with necessary context and a communication channel.
+    -   Managing background tasks related to the bridge's operation.
+
+    It relies on `RuntimeConfig` for configuration, `RuntimeState` for
+    managing transient and persistent state, and various component classes
+    to encapsulate specific functionalities.
+    """
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
         self.config = config
@@ -122,78 +125,29 @@ class BridgeService:
         self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
         self._serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
 
-        self._mcu_registry: dict[int, McuHandler] = {}
-        self._mqtt_router = MQTTRouter()
-        self._register_all_handlers()
-
-    def _register_all_handlers(self) -> None:
-        """Centralized registration of all MCU and MQTT handlers (No Wrappers)."""
-        console = self._container.get(ConsoleComponent)
-        datastore = self._container.get(DatastoreComponent)
-        file = self._container.get(FileComponent)
-        mailbox = self._container.get(MailboxComponent)
-        pin = self._container.get(PinComponent)
-        process = self._container.get(ProcessComponent)
-        spi = self._container.get(SpiComponent)
-        system = self._container.get(SystemComponent)
-
-        # 1. MCU Command Registry (O(1) Jump Table)
-        from ..protocol.protocol import Command
-        r = self._mcu_registry
-        r[Command.CMD_LINK_SYNC_RESP.value] = self.handshake_manager.handle_link_sync_resp
-        r[Command.CMD_LINK_RESET_RESP.value] = self.handshake_manager.handle_link_reset_resp
-        r[Command.CMD_GET_CAPABILITIES_RESP.value] = (
-            self.handshake_manager.handle_capabilities_resp
+        mcu_registry: dict[int, McuHandler] = {}
+        self.dispatcher = BridgeDispatcher(
+            mcu_registry=mcu_registry,
+            mqtt_router=MQTTRouter(),
+            state=state,
+            send_frame=self.send_frame,
+            acknowledge_frame=self.acknowledge_mcu_frame,
+            is_topic_action_allowed=self._is_topic_action_allowed,
+            reject_topic_action=self._reject_topic_action,
+            publish_bridge_snapshot=self._publish_bridge_snapshot,
+            on_frame_received=self._serial_flow.on_frame_received,
         )
-        r[Command.CMD_GET_VERSION_RESP.value] = system.handle_get_version_resp
-        r[Command.CMD_GET_FREE_MEMORY_RESP.value] = system.handle_get_free_memory_resp
-        r[Command.CMD_XOFF.value] = console.handle_xoff
-        r[Command.CMD_XON.value] = console.handle_xon
-        r[Command.CMD_CONSOLE_WRITE.value] = console.handle_write
-        r[Command.CMD_DATASTORE_PUT.value] = datastore.handle_put
-        r[Command.CMD_DATASTORE_GET.value] = datastore.handle_get_request
-        r[Command.CMD_MAILBOX_PUSH.value] = mailbox.handle_push
-        r[Command.CMD_MAILBOX_AVAILABLE.value] = mailbox.handle_available
-        r[Command.CMD_MAILBOX_READ.value] = mailbox.handle_read
-        r[Command.CMD_MAILBOX_PROCESSED.value] = mailbox.handle_processed
-        r[Command.CMD_FILE_WRITE.value] = file.handle_write
-        r[Command.CMD_FILE_READ.value] = file.handle_read
-        r[Command.CMD_FILE_REMOVE.value] = file.handle_remove
-        r[Command.CMD_FILE_READ_RESP.value] = file.handle_read_response
-        r[Command.CMD_PROCESS_RUN_ASYNC.value] = process.handle_run_async
-        r[Command.CMD_PROCESS_POLL.value] = process.handle_poll
-        r[Command.CMD_PROCESS_KILL.value] = process.handle_kill
-        r[Command.CMD_DIGITAL_READ_RESP.value] = pin.handle_digital_read_resp
-        r[Command.CMD_ANALOG_READ_RESP.value] = pin.handle_analog_read_resp
-        r[Command.CMD_SPI_TRANSFER_RESP.value] = spi.handle_transfer_resp
-
-        # Unhandled direct MCU requests
-        r[Command.CMD_DIGITAL_READ.value] = (
-            lambda s, p: pin.handle_unexpected_mcu_request(
-                s, Command.CMD_DIGITAL_READ, p
-            )
+        self.dispatcher.register_components(self._container)
+        self.dispatcher.register_system_handlers(
+            handle_link_sync_resp=self.handshake_manager.handle_link_sync_resp,
+            handle_link_reset_resp=self.handshake_manager.handle_link_reset_resp,
+            handle_get_capabilities_resp=self.handshake_manager.handle_capabilities_resp,
+            handle_ack=self._handle_ack,
+            status_handler_factory=lambda status: lambda s, p: self.handle_status(
+                s, status, p
+            ),
+            handle_process_kill=self._container.get(ProcessComponent).handle_kill,
         )
-        r[Command.CMD_ANALOG_READ.value] = (
-            lambda s, p: pin.handle_unexpected_mcu_request(s, Command.CMD_ANALOG_READ, p)
-        )
-
-        # Status Handlers
-        r[Status.ACK.value] = self._handle_ack
-        for status in Status:
-            if status != Status.ACK:
-                r[status.value] = lambda s, p, st=status: self.handle_status(s, st, p)
-
-        # 2. MQTT Topic Registry
-        m = self._mqtt_router
-        m.register(Topic.CONSOLE, console.handle_mqtt)
-        m.register(Topic.DATASTORE, datastore.handle_mqtt)
-        m.register(Topic.MAILBOX, mailbox.handle_mqtt)
-        m.register(Topic.FILE, file.handle_mqtt)
-        m.register(Topic.SHELL, process.handle_mqtt)
-        m.register(Topic.DIGITAL, pin.handle_mqtt)
-        m.register(Topic.ANALOG, pin.handle_mqtt)
-        m.register(Topic.SPI, spi.handle_mqtt)
-        m.register(Topic.SYSTEM, self._handle_mqtt_system)
 
     async def __aenter__(self) -> BridgeService:
         self._task_group = asyncio.TaskGroup()
@@ -299,100 +253,38 @@ class BridgeService:
     async def handle_mcu_frame(
         self, command_id: int, sequence_id: int, payload: bytes
     ) -> None:
-        """Entry point invoked by the serial transport for each MCU frame (SIL-2)."""
-        from ..state.context import resolve_command_id
-
-        self._serial_flow.on_frame_received(command_id, sequence_id, payload)
+        """Entry point invoked by the serial transport for each MCU frame."""
+        # [SIL-2] Automate latency tracking using native decorators
         stats = self.state.serial_latency_stats
+
+        # We use a manual context manager as we want to record the latency
+        # specifically for successful dispatches in the state.
         start = time.perf_counter()
-
         try:
-            if not self._is_mcu_frame_allowed_pre_sync(command_id):
-                logger.warning(
-                    "Security: Rejecting MCU frame 0x%02X (Link not synchronized)",
-                    command_id,
-                )
-                return
-
-            handler = self._mcu_registry.get(command_id)
-            command_name = resolve_command_id(command_id)
-            handled_successfully = False
-
-            if handler:
-                logger.debug(
-                    "MCU > %s (seq=%d) [%d bytes]",
-                    command_name,
-                    sequence_id,
-                    len(payload),
-                )
-                try:
-                    result = await handler(sequence_id, payload)
-                    handled_successfully = result is not False
-                except (
-                    OSError,
-                    ValueError,
-                    TypeError,
-                    AttributeError,
-                    KeyError,
-                    IndexError,
-                    RuntimeError,
-                ) as exc:
-                    logger.critical(
-                        "Critical: Exception in handler for %s: %s", command_name, exc
-                    )
-                    if response_to_request(command_id) is None:
-                        await self.send_frame(Status.ERROR.value, b"Internal Error")
-
-            elif response_to_request(command_id) is None:
-                logger.warning("Protocol: Unhandled MCU command %s", command_name)
-                self.state.record_unknown_command_id(command_id)
-                await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
-
-            if handled_successfully and command_id not in {
-                status.value for status in Status
-            }:
-                await self.acknowledge_mcu_frame(command_id, sequence_id)
-
+            await self.dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
+            logger.critical(
+                "Critical error handling MCU frame: CMD=0x%02X payload=%s: %s",
+                command_id,
+                payload.hex(),
+                e,
+                exc_info=True,
+            )
         finally:
             latency_ms = (time.perf_counter() - start) * 1000.0
             stats.record(latency_ms)
 
     async def handle_mqtt_message(self, inbound: Message) -> None:
-        """Handle an inbound MQTT message (SIL-2)."""
         inbound_topic = str(inbound.topic)
-        route = parse_topic(self.state.mqtt_topic_prefix, inbound_topic)
-        if route is None or not route.segments:
-            return
 
+        # [SIL-2] Performance monitoring for MQTT message processing
         start = time.perf_counter()
         try:
-            # 1. Policy Guard
-            if action := self._get_topic_action(route):
-                if not self._is_topic_action_allowed(route.topic, action):
-                    await self._reject_topic_action(inbound, route.topic, action)
-                    return
-
-            # 2. Synchronization Guard
-            if route.topic != Topic.SYSTEM:
-                try:
-                    async with asyncio.timeout(30.0):
-                        await self.state.link_sync_event.wait()
-                except asyncio.TimeoutError:
-                    logger.warning("MQTT > Link sync timeout for %s", inbound_topic)
-                    return
-
-            # 3. Router Dispatch
-            if not await self._mqtt_router.dispatch(route, inbound):
-                logger.debug("Unhandled MQTT topic %s", inbound_topic)
-
-        except (
-            ValueError,
-            TypeError,
-            AttributeError,
-            KeyError,
-            IndexError,
-            RuntimeError,
-        ) as e:
+            await self.dispatcher.dispatch_mqtt_message(
+                inbound,
+                lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
+            )
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
                 "Critical error processing MQTT message on topic %s: %s",
                 inbound_topic,
@@ -401,46 +293,8 @@ class BridgeService:
             )
         finally:
             latency_ms = (time.perf_counter() - start) * 1000.0
+            # Note: We share latency stats or can create a specific one for MQTT
             self.state.record_rpc_latency_ms(latency_ms)
-
-    def _is_mcu_frame_allowed_pre_sync(self, command_id: int) -> bool:
-        return self.state.is_synchronized or command_id in _PRE_SYNC_ALLOWED_COMMANDS
-
-    def _get_topic_action(self, route: TopicRoute) -> str | None:
-        """Deduce the action name for policy enforcement from the route."""
-        match route.topic:
-            case Topic.SYSTEM:
-                return None
-            case Topic.DIGITAL | Topic.ANALOG:
-                if not route.segments:
-                    return None
-                return (
-                    "write"
-                    if len(route.segments) == 1
-                    else (route.segments[1].lower() or None)
-                )
-            case Topic.CONSOLE:
-                return "in" if route.identifier == "in" else None
-            case _:
-                return route.identifier or None
-
-    async def _handle_mqtt_system(self, route: TopicRoute, inbound: Message) -> bool:
-        match route.identifier:
-            case "bridge":
-                match list(route.remainder):
-                    case ["handshake", "get"]:
-                        await self._publish_bridge_snapshot("handshake", inbound)
-                        return True
-                    case [("summary" | "state"), "get"]:
-                        await self._publish_bridge_snapshot("summary", inbound)
-                        return True
-                    case _:
-                        return False
-            case _:
-                return await self._container.get(SystemComponent).handle_mqtt(
-                    route, inbound
-                )
-        return False
 
     async def enqueue_mqtt(
         self,
@@ -460,13 +314,12 @@ class BridgeService:
                     message_to_queue, topic_name=target_topic
                 )
 
-            reply_correlation = (
-                getattr(props, "CorrelationData", None) if props else None
-            )
+            reply_correlation = getattr(props, "CorrelationData", None) if props else None
             if reply_correlation is not None:
                 message_to_queue = msgspec.structs.replace(
                     message_to_queue, correlation_data=reply_correlation
                 )
+
 
             origin_topic = str(reply_context.topic)
             user_properties = list(message_to_queue.user_properties)

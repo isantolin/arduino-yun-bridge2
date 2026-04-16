@@ -3,6 +3,7 @@
 from .base import BridgeContext
 from .console import ConsoleComponent
 from .datastore import DatastoreComponent
+from .dispatcher import BridgeDispatcher
 from .file import FileComponent
 from .handshake import SerialHandshakeFatal, SerialHandshakeManager, SerialTimingWindow
 from .mailbox import MailboxComponent
@@ -10,11 +11,10 @@ from .pin import PinComponent
 from .process import ProcessComponent
 from .spi import SpiComponent
 from .system import SystemComponent
-from .runtime import BridgeService
 
 __all__ = [
     "BridgeContext",
-    "BridgeService",
+    "BridgeDispatcher",
     "ConsoleComponent",
     "DatastoreComponent",
     "FileComponent",

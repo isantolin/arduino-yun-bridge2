@@ -14,7 +14,7 @@ import logging
 import structlog
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 import msgspec.msgpack
@@ -96,6 +96,16 @@ _IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
 
 class SerialHandshakeManager:
     """Encapsulates MCU serial handshake orchestration and telemetry."""
+
+    if TYPE_CHECKING:
+        # FSM generated methods and attributes for static analysis
+        fsm_state: str
+        reset_fsm: Callable[[], None]
+        fail_handshake: Callable[[], None]
+        start_reset: Callable[[], None]
+        start_sync: Callable[[], None]
+        start_confirm: Callable[[], None]
+        complete_handshake: Callable[[], None]
 
     # FSM States
     STATE_UNSYNCHRONIZED = "unsynchronized"
@@ -247,7 +257,7 @@ class SerialHandshakeManager:
         await asyncio.sleep(0.5)
 
         # Transition to SYNCING
-        self.start_sync()  # type: ignore
+        self.start_sync()
         await asyncio.sleep(0.05)
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
@@ -260,18 +270,18 @@ class SerialHandshakeManager:
             return False
 
         # [SIL-2] Race Condition Guard: check if async response already put us in fault or success.
-        if self.fsm_state == self.STATE_FAULT:  # type: ignore
+        if self.fsm_state == self.STATE_FAULT:
             return False
 
         # Transition to CONFIRMING only if we are still in SYNCING.
         # High-speed emulators may have already triggered complete_handshake().
-        if self.fsm_state == self.STATE_SYNCING:  # type: ignore
-            self.start_confirm()  # type: ignore
+        if self.fsm_state == self.STATE_SYNCING:
+            self.start_confirm()
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
         if not confirmed:
             # [SIL-2] Double check if we didn't just transition to fault via async path.
-            if self.fsm_state == self.STATE_FAULT:  # type: ignore
+            if self.fsm_state == self.STATE_FAULT:
                 return False
 
             pending_nonce = self._state.link_handshake_nonce
@@ -282,10 +292,10 @@ class SerialHandshakeManager:
 
         # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
         if (
-            self.fsm_state != self.STATE_SYNCHRONIZED  # type: ignore
-            and self.fsm_state != self.STATE_FAULT  # type: ignore
+            self.fsm_state != self.STATE_SYNCHRONIZED
+            and self.fsm_state != self.STATE_FAULT
         ):
-            self.complete_handshake()  # type: ignore
+            self.complete_handshake()
 
         return self.fsm_state == self.STATE_SYNCHRONIZED
 
@@ -463,7 +473,7 @@ class SerialHandshakeManager:
         detail: str | None = None,
     ) -> None:
         # FSM Transition to FAULT
-        self.fail_handshake()  # type: ignore
+        self.fail_handshake()
 
         self._state.record_handshake_failure(reason)
         self._state.mark_transport_connected()

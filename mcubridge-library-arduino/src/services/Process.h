@@ -12,7 +12,7 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
-class ProcessClass {
+class ProcessClass : public BridgeObserver {
  public:
   using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>, etl::span<const uint8_t>)>;
 
@@ -26,8 +26,8 @@ class ProcessClass {
   static void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
   void reset();
 
-  static void notification(MsgBridgeSynchronized) { /* ready */ }
-  void notification(MsgBridgeLost) { reset(); }
+  void notification(MsgBridgeSynchronized) override { /* ready */ }
+  void notification(MsgBridgeLost) override { reset(); }
 
   struct PendingPoll { int32_t pid; };
   etl::queue<PendingPoll, bridge::config::MAX_PENDING_PROCESS_POLLS> _pending_polls;

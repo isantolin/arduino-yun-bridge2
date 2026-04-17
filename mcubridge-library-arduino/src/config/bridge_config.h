@@ -52,6 +52,7 @@ static constexpr uint16_t FILE_MAX_READ_CHUNKS = 64;
 
 static constexpr uint8_t MAX_PENDING_DATASTORE = 4;
 static constexpr uint8_t MAX_PENDING_PROCESS_POLLS = 4;
+static constexpr uint8_t MAX_OBSERVERS = 8;
 
 // --- Safety ---
 static constexpr bool SAFE_START_PINS_ENABLED = true;

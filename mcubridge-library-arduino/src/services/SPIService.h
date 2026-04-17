@@ -12,7 +12,7 @@
 #include "protocol/BridgeEvents.h"
 #include "protocol/rpc_structs.h"
 
-class SPIServiceClass {
+class SPIServiceClass : public BridgeObserver {
 public:
   SPIServiceClass();
 
@@ -21,8 +21,8 @@ public:
   void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
-  static void notification(const MsgBridgeSynchronized&) {}
-  static void notification(const MsgBridgeLost&) {}
+  void notification(MsgBridgeSynchronized) override {}
+  void notification(MsgBridgeLost) override {}
 
 private:
   bool _initialized;

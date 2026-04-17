@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include <etl/algorithm.h>
+#include <etl/byte_stream.h>
 #include <etl/span.h>
 #include <etl/array.h>
 #include "../protocol/rpc_protocol.h"
@@ -114,7 +115,10 @@ template <typename RandomFunc>
                 [&]() { return static_cast<uint8_t>(random_func() & rpc::RPC_UINT8_MASK); });
 
   counter++;
-  rpc::write_u64_be(out_nonce.subspan(RPC_HANDSHAKE_NONCE_RANDOM_BYTES), counter);
+  etl::byte_stream_writer w(
+      out_nonce.data() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+      out_nonce.size() - RPC_HANDSHAKE_NONCE_RANDOM_BYTES, etl::endian::big);
+  w.write<uint64_t>(counter);
 }
 
 /**
@@ -122,7 +126,10 @@ template <typename RandomFunc>
  */
 inline uint64_t extract_nonce_counter(etl::span<const uint8_t> nonce) {
   if (nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return 0;
-  return rpc::read_u64_be(nonce.subspan(RPC_HANDSHAKE_NONCE_RANDOM_BYTES));
+  etl::byte_stream_reader r(
+      nonce.data() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+      nonce.size() - RPC_HANDSHAKE_NONCE_RANDOM_BYTES, etl::endian::big);
+  return r.read<uint64_t>().value_or(0);
 }
 
 /**

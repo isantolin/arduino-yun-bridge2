@@ -35,46 +35,29 @@ void __attribute__((weak)) __attribute__((unused)) handle_error(
 }
 }  // namespace etl
 
+void BridgeClass::registerObserver(BridgeObserver& observer) {
+  if (!_observers.full()) {
+    _observers.push_back(&observer);
+  }
+}
+
+void BridgeClass::unregisterObserver(BridgeObserver& observer) {
+  auto it = etl::find(_observers.begin(), _observers.end(), &observer);
+  if (it != _observers.end()) {
+    _observers.erase(it);
+  }
+}
+
 void BridgeClass::notify_observers(const MsgBridgeSynchronized& msg) {
-#if BRIDGE_ENABLE_CONSOLE
-  Console.notification(msg);
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-  Mailbox.notification(msg);
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-  FileSystem.notification(msg);
-#endif
-#if BRIDGE_ENABLE_DATASTORE
-  DataStore.notification(msg);
-#endif
-#if BRIDGE_ENABLE_PROCESS
-  Process.notification(msg);
-#endif
-#if BRIDGE_ENABLE_SPI
-  SPIService.notification(msg);
-#endif
+  for (auto* observer : _observers) {
+    observer->notification(msg);
+  }
 }
 
 void BridgeClass::notify_observers(const MsgBridgeLost& msg) {
-#if BRIDGE_ENABLE_CONSOLE
-  Console.notification(msg);
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-  Mailbox.notification(msg);
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-  FileSystem.notification(msg);
-#endif
-#if BRIDGE_ENABLE_DATASTORE
-  DataStore.notification(msg);
-#endif
-#if BRIDGE_ENABLE_PROCESS
-  Process.notification(msg);
-#endif
-#if BRIDGE_ENABLE_SPI
-  SPIService.notification(msg);
-#endif
+  for (auto* observer : _observers) {
+    observer->notification(msg);
+  }
 }
 
 BridgeClass::BridgeClass(Stream& stream)
@@ -105,12 +88,32 @@ BridgeClass::BridgeClass(Stream& stream)
       _frame_parser(),
       _is_post_passed(false),
       _tx_enabled(true),
-      _gpio_adapter(*this),
       _tx_payload_pool(),
       _pending_tx_queue(),
       _rx_history() {
   _shared_secret.clear();
   _rx_storage.fill(0);
+
+  // [SIL-2] Register service observers
+#if BRIDGE_ENABLE_CONSOLE
+  registerObserver(Console);
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+  registerObserver(Mailbox);
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  registerObserver(FileSystem);
+#endif
+#if BRIDGE_ENABLE_DATASTORE
+  registerObserver(DataStore);
+#endif
+#if BRIDGE_ENABLE_PROCESS
+  registerObserver(Process);
+#endif
+#if BRIDGE_ENABLE_SPI
+  registerObserver(SPIService);
+#endif
+
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR) {
     _hardware_serial = static_cast<HardwareSerial*>(&stream);
@@ -191,9 +194,18 @@ bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
   const uint16_t cmd_id =
       frame.header.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
+  
+  auto it = etl::find(_rx_history.begin(), _rx_history.end(), frame.header.sequence_id);
+  const bool is_duplicate = (it != _rx_history.end());
+
   const bridge::router::CommandContext ctx(
       &frame, cmd_id, frame.header.sequence_id,
-      _rx_history.exists(frame.header.sequence_id), rpc::requires_ack(cmd_id));
+      is_duplicate, rpc::requires_ack(cmd_id));
+
+  if (!is_duplicate) {
+    if (_rx_history.full()) _rx_history.pop();
+    _rx_history.push(frame.header.sequence_id);
+  }
 
   if (!_isSecurityCheckPassed(ctx.raw_command)) {
     (void)sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
@@ -656,19 +668,34 @@ void BridgeClass::_handleEnterBootloaderCommand(
 }
 void BridgeClass::_handleSetPinModeCommand(
     const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::PinMode>(
-      ctx, [this](const auto& m) { _gpio_adapter.setPinMode(m); });
+  _withPayloadAck<rpc::payload::PinMode>(ctx, [this](const auto& m) {
+    if (bridge::hal::isValidPin(m.pin))
+      ::pinMode(m.pin, m.mode);
+    else
+      emitStatus<rpc::StatusCode::STATUS_ERROR>();
+  });
 }
+
 void BridgeClass::_handleDigitalWriteCommand(
     const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::DigitalWrite>(
-      ctx, [this](const auto& m) { _gpio_adapter.digitalWrite(m); });
+  _withPayloadAck<rpc::payload::DigitalWrite>(ctx, [this](const auto& m) {
+    if (bridge::hal::isValidPin(m.pin))
+      ::digitalWrite(m.pin, m.value);
+    else
+      emitStatus<rpc::StatusCode::STATUS_ERROR>();
+  });
 }
+
 void BridgeClass::_handleAnalogWriteCommand(
     const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::AnalogWrite>(
-      ctx, [this](const auto& m) { _gpio_adapter.analogWrite(m); });
+  _withPayloadAck<rpc::payload::AnalogWrite>(ctx, [this](const auto& m) {
+    if (bridge::hal::isValidPin(m.pin))
+      ::analogWrite(m.pin, m.value);
+    else
+      emitStatus<rpc::StatusCode::STATUS_ERROR>();
+  });
 }
+
 void BridgeClass::_handleDigitalReadCommand(
     const bridge::router::CommandContext& ctx) {
   _handlePinRead<rpc::payload::DigitalReadResponse>(

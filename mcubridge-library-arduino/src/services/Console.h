@@ -13,15 +13,15 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
-class ConsoleClass : public Stream {
+class ConsoleClass : public Stream, public BridgeObserver {
  public:
   ConsoleClass();
   void begin();
   void _push(const rpc::payload::ConsoleWrite& msg);
   void process();
 
-  void notification(MsgBridgeSynchronized) { begin(); }
-  void notification(MsgBridgeLost) { _flags.reset(BEGUN); }
+  void notification(MsgBridgeSynchronized) override { begin(); }
+  void notification(MsgBridgeLost) override { _flags.reset(BEGUN); }
 
   // Stream implementation
   size_t write(uint8_t c) override;

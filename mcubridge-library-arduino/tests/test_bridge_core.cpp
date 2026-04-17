@@ -144,11 +144,12 @@ void test_bridge_dedup_console_write_retry() {
 
   etl::crc32 crc_calc;
   uint8_t h[rpc::FRAME_HEADER_SIZE];
-  h[0] = frame.header.version;
-  rpc::write_u16_be(etl::span<uint8_t>(h + 1, 2), frame.header.payload_length);
-  rpc::write_u16_be(etl::span<uint8_t>(h + 3, 2), frame.header.command_id);
-  rpc::write_u16_be(etl::span<uint8_t>(h + 5, 2), frame.header.sequence_id);
-  
+  h[0] = 0x02; // version
+  etl::byte_stream_writer w(h + 1, 6, etl::endian::big);
+  w.write<uint16_t>(frame.header.payload_length);
+  w.write<uint16_t>(frame.header.command_id);
+  w.write<uint16_t>(frame.header.sequence_id);
+
   crc_calc.add(h, h + rpc::FRAME_HEADER_SIZE);
   crc_calc.add(frame.payload.data(), frame.payload.data() + frame.header.payload_length);
   frame.crc = crc_calc.value();

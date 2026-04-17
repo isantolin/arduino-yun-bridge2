@@ -216,7 +216,10 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
       calc.reset();
       calc.add(decoded_buf, decoded_buf + (decoded_len - rpc::CRC_TRAILER_SIZE));
       uint32_t cv = calc.value();
-      rpc::write_u32_be(etl::span<uint8_t>(decoded_buf + decoded_len - rpc::CRC_TRAILER_SIZE, rpc::CRC_TRAILER_SIZE), cv);
+      etl::byte_stream_writer w(
+          decoded_buf + decoded_len - rpc::CRC_TRAILER_SIZE,
+          rpc::CRC_TRAILER_SIZE, etl::endian::big);
+      w.write<uint32_t>(cv);
 
       auto result =
           parser.parse(etl::span<const uint8_t>(decoded_buf, decoded_len));

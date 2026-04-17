@@ -147,36 +147,6 @@ class FrameBuilder {
   }
 };
 
-[[maybe_unused]] inline uint16_t read_u16_be(etl::span<const uint8_t> b) {
-  etl::byte_stream_reader r(b.data(), b.size(), etl::endian::big);
-  return r.read<uint16_t>().value_or(0);
-}
-
-[[maybe_unused]] inline uint32_t read_u32_be(etl::span<const uint8_t> b) {
-  etl::byte_stream_reader r(b.data(), b.size(), etl::endian::big);
-  return r.read<uint32_t>().value_or(0);
-}
-
-[[maybe_unused]] inline uint64_t read_u64_be(etl::span<const uint8_t> b) {
-  etl::byte_stream_reader r(b.data(), b.size(), etl::endian::big);
-  return r.read<uint64_t>().value_or(0);
-}
-
-[[maybe_unused]] inline void write_u16_be(etl::span<uint8_t> b, uint16_t v) {
-  etl::byte_stream_writer w(b.data(), b.size(), etl::endian::big);
-  w.write<uint16_t>(v);
-}
-
-[[maybe_unused]] inline void write_u32_be(etl::span<uint8_t> b, uint32_t v) {
-  etl::byte_stream_writer w(b.data(), b.size(), etl::endian::big);
-  w.write<uint32_t>(v);
-}
-
-[[maybe_unused]] inline void write_u64_be(etl::span<uint8_t> b, uint64_t v) {
-  etl::byte_stream_writer w(b.data(), b.size(), etl::endian::big);
-  w.write<uint64_t>(v);
-}
-
 } // namespace rpc
 
 #endif

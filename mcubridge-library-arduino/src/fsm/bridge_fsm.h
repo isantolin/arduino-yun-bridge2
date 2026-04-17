@@ -8,34 +8,70 @@
 namespace bridge::fsm {
 
 enum class StateId {
-  STARTUP,
-  UNSYNCHRONIZED,
-  HANDSHAKE,
-  SYNCHRONIZED,
-  AWAITING_ACK,
-  FAULT
+  STARTUP = 0,
+  UNSYNCHRONIZED = 1,
+  HANDSHAKE = 2,
+  SYNCHRONIZED = 3,
+  AWAITING_ACK = 4,
+  FAULT = 5
 };
 
-struct BridgeFsm : public etl::fsm {
-  BridgeFsm() : etl::fsm(0), _state(StateId::STARTUP) {}
+// --- State IDs ---
+struct State {
+  enum Id {
+    STARTUP = 0,
+    UNSYNCHRONIZED = 1,
+    HANDSHAKE = 2,
+    SYNCHRONIZED = 3,
+    AWAITING_ACK = 4,
+    FAULT = 5
+  };
+};
 
-  void begin() { _state = StateId::STARTUP; }
-  void resetFsm() { _state = StateId::STARTUP; }
-  void stabilized() { if (_state == StateId::STARTUP) _state = StateId::UNSYNCHRONIZED; }
-  void handshakeStart() { if (_state == StateId::UNSYNCHRONIZED) _state = StateId::HANDSHAKE; }
-  void handshakeComplete() { if (_state == StateId::HANDSHAKE) _state = StateId::SYNCHRONIZED; }
-  void handshakeFailed() { _state = StateId::STARTUP; }
-  void sendCritical() { if (_state == StateId::SYNCHRONIZED) _state = StateId::AWAITING_ACK; }
-  void ackReceived() { if (_state == StateId::AWAITING_ACK) _state = StateId::SYNCHRONIZED; }
-  void timeout() { _state = StateId::FAULT; }
+// --- Events ---
+struct EvStabilized : public etl::message<0> {};
+struct EvHandshakeStart : public etl::message<1> {};
+struct EvHandshakeComplete : public etl::message<2> {};
+struct EvHandshakeFailed : public etl::message<3> {};
+struct EvSendCritical : public etl::message<4> {};
+struct EvAckReceived : public etl::message<5> {};
+struct EvTimeout : public etl::message<6> {};
+struct EvReset : public etl::message<7> {};
 
-  bool isSynchronized() const { return _state == StateId::SYNCHRONIZED || _state == StateId::AWAITING_ACK; }
-  bool isAwaitingAck() const { return _state == StateId::AWAITING_ACK; }
-  [[maybe_unused]] bool isFault() const { return _state == StateId::FAULT; }
-  [[maybe_unused]] StateId get_bridge_state() const { return _state; }
+// --- Forward Declarations ---
+class StartupState;
+class UnsynchronizedState;
+class HandshakeState;
+class SynchronizedState;
+class AwaitingAckState;
+class FaultState;
 
- private:
-  StateId _state;
+class BridgeFsm : public etl::fsm {
+ public:
+  BridgeFsm();
+
+  bool isSynchronized() const;
+  bool isAwaitingAck() const;
+  bool isFault() const;
+  StateId get_bridge_state() const { return static_cast<StateId>(get_state_id()); }
+
+  // [SIL-2] Wrapper methods for backward compatibility with BridgeClass calls,
+  // but internally dispatching ETL events.
+  void begin() { 
+    if (!is_started()) start();
+    receive(EvReset()); 
+  }
+  void resetFsm() { 
+    if (!is_started()) start();
+    receive(EvReset()); 
+  }
+  void stabilized() { receive(EvStabilized()); }
+  void handshakeStart() { receive(EvHandshakeStart()); }
+  void handshakeComplete() { receive(EvHandshakeComplete()); }
+  void handshakeFailed() { receive(EvHandshakeFailed()); }
+  void sendCritical() { receive(EvSendCritical()); }
+  void ackReceived() { receive(EvAckReceived()); }
+  void timeout() { receive(EvTimeout()); }
 };
 
 } // namespace bridge::fsm

@@ -19,17 +19,6 @@ HardwareSerial Serial1;
 void setUp(void) {}
 void tearDown(void) {}
 
-// 1. Helpers de Endianness
-static void test_endianness_helpers() {
-  uint8_t buffer[8] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0};
-  TEST_ASSERT(read_u16_be(etl::span<const uint8_t>(buffer, 2)) == 0x1234);
-  TEST_ASSERT(read_u64_be(etl::span<const uint8_t>(buffer, 8)) == 0x123456789ABCDEF0ULL);
-
-  uint8_t out[8] = {0};
-  write_u64_be(etl::span<uint8_t>(out, 8), 0xDEADBEEFCAFEBABEULL);
-  TEST_ASSERT(out[0] == 0xDE && out[7] == 0xBE);
-}
-
 // 2. CRC Helpers
 static void test_crc_helpers() {
   const uint8_t data[] = {0x01, 0x02, 0x03, 0x04};
@@ -124,10 +113,10 @@ static void test_builder_buffer_too_small() {
   TEST_ASSERT(len == 0);
 }
 
-int main() {
+int main(void) {
   UNITY_BEGIN();
-  RUN_TEST(test_endianness_helpers);
   RUN_TEST(test_crc_helpers);
+
   RUN_TEST(test_builder_roundtrip);
   RUN_TEST(test_builder_payload_limit);
   RUN_TEST(test_parser_incomplete_packets);

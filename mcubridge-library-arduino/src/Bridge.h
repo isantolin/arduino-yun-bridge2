@@ -39,9 +39,6 @@
 #include <etl/variant.h>
 #include <etl/vector.h>
 
-// Forward declaration for friend class
-namespace bridge { namespace test { class TestAccessor; } }
-
 namespace rpc {
   class Serializable {
    public:
@@ -69,6 +66,9 @@ class BridgeClass {
  public:
   using ErrorPolicy = bridge::SafeStatePolicy;
   explicit BridgeClass(Stream& stream);
+
+  void registerObserver(BridgeObserver& observer);
+  void unregisterObserver(BridgeObserver& observer);
 
   void notify_observers(const MsgBridgeSynchronized& msg);
   void notify_observers(const MsgBridgeLost& msg);
@@ -116,14 +116,6 @@ class BridgeClass {
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   void _onPacketReceived(etl::span<const uint8_t> packet);
 
-  struct GpioAdapter {
-    void setPinMode(const rpc::payload::PinMode& m) { if (bridge::hal::isValidPin(m.pin)) ::pinMode(m.pin, m.mode); else _bridge.emitStatus<rpc::StatusCode::STATUS_ERROR>(); }
-    void digitalWrite(const rpc::payload::DigitalWrite& m) { if (bridge::hal::isValidPin(m.pin)) ::digitalWrite(m.pin, m.value); else _bridge.emitStatus<rpc::StatusCode::STATUS_ERROR>(); }
-    void analogWrite(const rpc::payload::AnalogWrite& m) { if (bridge::hal::isValidPin(m.pin)) ::analogWrite(m.pin, m.value); else _bridge.emitStatus<rpc::StatusCode::STATUS_ERROR>(); }
-    explicit GpioAdapter(BridgeClass& b) : _bridge(b) {}
-    BridgeClass& _bridge;
-  };
-
  protected:
   struct TxPayloadBuffer { etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data; };
   struct PendingTxFrame { uint16_t command_id; uint16_t sequence_id; TxPayloadBuffer* buffer; size_t length; };
@@ -157,17 +149,11 @@ class BridgeClass {
   bool _is_post_passed;
   bool _tx_enabled;
 
-  GpioAdapter _gpio_adapter;
+  etl::vector<BridgeObserver*, bridge::config::MAX_OBSERVERS> _observers;
   etl::pool<TxPayloadBuffer, bridge::config::TX_QUEUE_CAPACITY> _tx_payload_pool;
   etl::queue<PendingTxFrame, bridge::config::TX_QUEUE_CAPACITY> _pending_tx_queue;
 
-  struct RxHistory {
-    etl::array<uint16_t, bridge::config::RX_HISTORY_SIZE> buffer;
-    uint8_t head = 0;
-    void push(uint16_t seq) { buffer[head] = seq; head = (head + 1) % bridge::config::RX_HISTORY_SIZE; }
-    bool exists(uint16_t seq) const { return etl::find(buffer.begin(), buffer.end(), seq) != buffer.end(); }
-    void clear() { buffer.fill(0xFFFF); }
-  } _rx_history;
+  etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
 
   [[nodiscard]] bool _sendFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);
   void _sendRawFrame(uint16_t command_id, uint16_t sequence_id, etl::span<const uint8_t> payload);

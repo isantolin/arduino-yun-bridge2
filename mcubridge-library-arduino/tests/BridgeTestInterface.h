@@ -44,7 +44,9 @@ class TestAccessor : public BridgeClass {
   uint8_t getAckRetryLimit() const { return _retry_limit; }
   void setRetryCount(uint8_t c) { _retry_count = c; }
   void clearRxHistory() { _rx_history.clear(); }
-  bool isRecentDuplicateRx(const rpc::Frame& f) const { return _rx_history.exists(f.header.sequence_id); }
+  bool isRecentDuplicateRx(const rpc::Frame& f) const { 
+    return etl::find(_rx_history.begin(), _rx_history.end(), f.header.sequence_id) != _rx_history.end(); 
+  }
   void markRxProcessed(const rpc::Frame& f) { _rx_history.push(f.header.sequence_id); }
 
   void setIdle() {

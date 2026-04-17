@@ -3,7 +3,7 @@ Only includes types used by the MCU Bridge project.
 """
 
 from __future__ import annotations
-from typing import Any, Optional, Union, TypeVar, Generic, Iterable
+from typing import Any, Optional, TypeVar
 
 T = TypeVar("T")
 
@@ -78,7 +78,7 @@ class Select(Construct):
 
 class Terminated(Construct): ...
 
-def compile(filename: Optional[str] = None) -> Any: ...
+def compile(filename: Optional[str] = None) -> Any: ...  # noqa: A001
 
 class ConstructError(Exception): ...
 

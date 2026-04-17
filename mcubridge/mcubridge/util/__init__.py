@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 __all__ = [
-    "parse_bool",
     "normalise_allowed_commands",
     "chunk_bytes",
 ]
@@ -22,21 +21,6 @@ def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
     import itertools
 
     return [bytes(chunk) for chunk in itertools.batched(payload, chunk_size)]
-
-
-_TRUE_STRINGS = frozenset({"1", "yes", "on", "true", "enable", "enabled"})
-
-
-def parse_bool(value: object) -> bool:
-    """Parse a boolean value safely from various types."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if value is None:
-        return False
-    s = str(value).lower().strip()
-    return s in _TRUE_STRINGS
 
 
 def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:

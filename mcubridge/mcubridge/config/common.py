@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import structlog
-from typing import Any, Final, cast
+from typing import Any, Final
 
 logger = structlog.get_logger(__name__)
 
@@ -34,19 +34,12 @@ def get_uci_config() -> dict[str, Any]:
             if not section:
                 return get_default_config()
 
-            # Clean and cast the UCI dictionary
-            from collections.abc import Iterable
-
-            config_dict: dict[str, Any] = {
-                str(k): (
-                    " ".join(map(str, cast(Iterable[Any], v)))
-                    if isinstance(v, (list, tuple))
-                    else v
-                )
+            # Clean UCI dictionary (remove internal keys)
+            return {
+                str(k): v
                 for k, v in section.items()
                 if not str(k).startswith((".", "_"))
             }
-            return config_dict
     except (RuntimeError, ValueError, OSError) as err:
         # [SIL-2] Log only specific configuration/system errors to syslog.
         logger.warning("UCI system error, falling back to safe defaults: %s", err)

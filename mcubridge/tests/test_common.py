@@ -8,25 +8,9 @@ from unittest.mock import MagicMock, patch
 from mcubridge.config import common
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
 
-from mcubridge.util import normalise_allowed_commands, parse_bool
+from mcubridge.util import normalise_allowed_commands
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
-
-
-def test_parse_bool():
-    assert parse_bool(True) is True
-    assert parse_bool(False) is False
-    assert parse_bool(1) is True
-    assert parse_bool(0) is False
-    assert parse_bool("1") is True
-    assert parse_bool("0") is False
-    assert parse_bool("true") is True
-    assert parse_bool("False") is False
-    assert parse_bool("yes") is True
-    assert parse_bool("on") is True
-    assert parse_bool("enabled") is True
-    assert parse_bool(None) is False
-    assert parse_bool("invalid") is False
 
 
 def test_normalise_commands():
@@ -80,7 +64,7 @@ def test_get_uci_config_missing_section_returns_defaults() -> None:
         assert config == common.get_default_config()
 
 
-def test_get_uci_config_flattens_list_values_and_skips_internal_keys() -> None:
+def test_get_uci_config_skips_internal_keys() -> None:
     mock_module = MagicMock()
     mock_module.UciException = Exception
     mock_module.UCI = mock_module.Uci
@@ -98,7 +82,8 @@ def test_get_uci_config_flattens_list_values_and_skips_internal_keys() -> None:
     with patch.dict("sys.modules", {"uci": mock_module}):
         importlib.reload(common)
         config = common.get_uci_config()
-        assert config["mqtt_host"] == "example.com 1883"
+        # Raw list preserved in the raw reader; flattening happens in settings.load_runtime_config
+        assert config["mqtt_host"] == ["example.com", 1883]
         assert config["mqtt_tls"] == 0
         assert ".type" not in config
         assert "_meta" not in config

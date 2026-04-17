@@ -57,7 +57,8 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
     config = common.get_uci_config()
 
     assert config["serial_port"] == "uci-port"
-    assert config["allowed_commands"] == "ls echo"
+    # Raw tuple preserved in raw reader
+    assert config["allowed_commands"] == ("ls", "echo")
     assert config["mqtt_queue_limit"] == 42
 
 

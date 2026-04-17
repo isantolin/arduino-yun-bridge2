@@ -35,8 +35,8 @@ NONCE_TOTAL_BYTES: Final[int] = NONCE_RANDOM_BYTES + NONCE_COUNTER_BYTES
 NONCE_STRUCT: Final = cast(
     Construct,
     Struct(
-        cast(Construct, "random" / Bytes(NONCE_RANDOM_BYTES)),
-        cast(Construct, "counter" / Int64ub),
+        "random" / Bytes(NONCE_RANDOM_BYTES),
+        "counter" / Int64ub,
     ),
 )
 

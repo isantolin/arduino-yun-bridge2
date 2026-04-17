@@ -1192,7 +1192,7 @@ def main(
         sys.stderr.write(f"Generated Packet classes in {structures}\n")
 
     # Step 4: Generate type stubs for untyped libraries using pyright
-    untyped_libs = ["construct", "diskcache", "transitions"]
+    untyped_libs = ["diskcache", "transitions"]
     sys.stderr.write(f"Generating type stubs for {', '.join(untyped_libs)}...\n")
     for lib in untyped_libs:
         # [SIL-2] Use -m pyright to ensure we use the version installed in the current venv

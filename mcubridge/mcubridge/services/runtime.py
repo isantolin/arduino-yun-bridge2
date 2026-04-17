@@ -45,17 +45,6 @@ _msgpack_enc = msgspec.msgpack.Encoder()
 
 STATUS_VALUES = {status.value for status in Status}
 
-_STATUS_DESCRIPTIONS: dict[Status, str] = {
-    Status.OK: "Operation completed successfully",
-    Status.ERROR: "Generic failure",
-    Status.CMD_UNKNOWN: "Command not recognized by MCU",
-    Status.MALFORMED: "MCU reported malformed payload structure",
-    Status.OVERFLOW: "MCU reported buffer overflow (frame exceeded limits)",
-    Status.CRC_MISMATCH: "MCU reported CRC32 integrity check failure",
-    Status.TIMEOUT: "MCU reported operation timeout",
-    Status.NOT_IMPLEMENTED: "Command defined but not supported by MCU",
-}
-
 
 class BridgeService:
     """Service façade orchestrating MCU and MQTT interactions.
@@ -392,8 +381,8 @@ class BridgeService:
     async def handle_status(self, seq_id: int, status: Status, payload: bytes) -> None:
         self.state.record_mcu_status(status)
 
-        # [SIL-2] Improved status reporting with descriptive names
-        desc = _STATUS_DESCRIPTIONS.get(status, "Unknown status code")
+        # [SIL-2] Improved status reporting with descriptive names from protocol
+        desc = status.description
         text = payload.decode("utf-8", errors="ignore") if payload else ""
 
         log_method = (

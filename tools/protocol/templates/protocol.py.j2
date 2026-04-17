@@ -55,6 +55,17 @@ class Status(IntEnum):
     {{ status.name }} = {{ status.value }}  # {{ status.description }}
     {%- endfor %}
 
+    @property
+    def description(self) -> str:
+        """Return a human-readable description for this status code."""
+        return _STATUS_DESCRIPTIONS.get(self, "Unknown status code")
+
+_STATUS_DESCRIPTIONS: Final[dict[Status, str]] = {
+    {%- for status in statuses %}
+    Status.{{ status.name }}: {{ status.description|tojson }},
+    {%- endfor %}
+}
+
 class Command(IntEnum):
     {%- for cmd in commands %}
     {{ cmd.name }} = {{ cmd.value }}

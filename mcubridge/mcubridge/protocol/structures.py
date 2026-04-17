@@ -719,6 +719,14 @@ class SpiConfigPacket(BaseStruct, frozen=True):
 # --- END GENERATED PACKETS ---
 
 
+class GenericResponsePacket(msgspec.Struct, frozen=True):
+    """Generic high-level API response packet."""
+
+    status: str
+    message: str | None = None
+    data: dict[str, Any] | None = None
+
+
 # --- Manual Packet Classes (require special handling) ---
 
 

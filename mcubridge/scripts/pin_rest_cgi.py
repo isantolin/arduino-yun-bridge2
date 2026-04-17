@@ -13,7 +13,7 @@ import msgspec
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
-from mcubridge.protocol.structures import RuntimeConfig
+from mcubridge.protocol.structures import GenericResponsePacket, RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
@@ -47,9 +47,15 @@ def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     client.disconnect()
 
 
-def json_res(start_response: Any, status: str, data: dict[str, Any]) -> list[bytes]:
-    body = msgspec.json.encode(data)
-    start_response(status, [("Content-Type", "application/json"), ("Content-Length", str(len(body)))])
+def json_res(
+    start_response: Any, status: str, response: GenericResponsePacket
+) -> list[bytes]:
+    body = msgspec.json.encode(response)
+    headers = [
+        ("Content-Type", "application/json"),
+        ("Content-Length", str(len(body))),
+    ]
+    start_response(status, headers)
     return [body]
 
 
@@ -61,11 +67,19 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
 
         path = environ.get("PATH_INFO", "")
         if not (match := re.match(r"/pin/(\d+)", path)):
-            return json_res(start_response, "400 Bad Request", {"status": "error", "message": "Invalid path"})
+            return json_res(
+                start_response,
+                "400 Bad Request",
+                GenericResponsePacket(status="error", message="Invalid path"),
+            )
 
         pin = match.group(1)
         if environ.get("REQUEST_METHOD") != "POST":
-            return json_res(start_response, "405 Method Not Allowed", {"status": "error"})
+            return json_res(
+                start_response,
+                "405 Method Not Allowed",
+                GenericResponsePacket(status="error", message="Method not allowed"),
+            )
 
         body_len = int(environ.get("CONTENT_LENGTH", "0"))
         body_data = environ["wsgi.input"].read(body_len)
@@ -73,16 +87,28 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         state = str(data.get("state", "")).upper()
 
         if state not in ("ON", "OFF"):
-            return json_res(start_response, "400 Bad Request", {"status": "error", "message": "Invalid state"})
+            return json_res(
+                start_response,
+                "400 Bad Request",
+                GenericResponsePacket(status="error", message="Invalid state"),
+            )
 
         topic = topic_path(config.mqtt_topic, Topic.DIGITAL, pin)
         publish_sync(topic, "1" if state == "ON" else "0", config)
 
-        return json_res(start_response, "200 OK", {"status": "ok", "pin": int(pin), "state": state})
+        return json_res(
+            start_response,
+            "200 OK",
+            GenericResponsePacket(status="ok", data={"pin": int(pin), "state": state}),
+        )
 
     except Exception as e:
         logger.exception("CGI Error")
-        return json_res(start_response, "500 Internal Server Error", {"status": "error", "message": str(e)})
+        return json_res(
+            start_response,
+            "500 Internal Server Error",
+            GenericResponsePacket(status="error", message=str(e)),
+        )
 
 
 @app.command()
@@ -94,6 +120,7 @@ def run_cgi() -> None:
 if __name__ == "__main__":
     # If called without arguments, assume CGI environment
     import sys
+
     if len(sys.argv) == 1:
         run_cgi()
     else:

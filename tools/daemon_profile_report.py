@@ -272,11 +272,13 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
     results.append(_benchmark("MsgPack decode", _mp_decode, iterations))
 
     # --- RLE compress ---
-    from mcubridge.protocol.rle import encode as rle_encode
+    import mcubridge.protocol.rle
 
     rle_input = bytes([0] * 50 + [1] * 30 + [2] * 20 + [255] * 28)
 
-    results.append(_benchmark("RLE encode", lambda: rle_encode(rle_input), iterations))
+    results.append(
+        _benchmark("RLE encode", lambda: mcubridge.protocol.rle.encode(rle_input), iterations)
+    )
 
     # --- Topic parsing ---
     from mcubridge.protocol.topics import parse_topic

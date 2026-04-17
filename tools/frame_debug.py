@@ -12,8 +12,8 @@ from typing import Annotated
 import serial
 import typer
 
-# [SIL-2] Use robust absolute submodule imports to avoid package attribute issues
-import cobs.cobs as cobs_mod
+# [SIL-2] Use direct library functions for framing
+from cobs import cobs
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
@@ -96,7 +96,7 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     frame_obj = Frame(command_id=command_id, sequence_id=0, payload=payload)
     raw_frame = frame_obj.build()
     crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
-    encoded_body = cobs_mod.encode(raw_frame)
+    encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(
         command_id=command_id,
@@ -142,7 +142,7 @@ def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
 
 
 def _decode_frame(encoded_packet: bytes) -> Frame:
-    return Frame.parse(cobs_mod.decode(encoded_packet))
+    return Frame.parse(cobs.decode(encoded_packet))
 
 
 def _print_response(frame: Frame) -> None:

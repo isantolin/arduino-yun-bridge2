@@ -19,7 +19,6 @@ import structlog
 from .protocol.structures import QueuedPublish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
-from .util.periodic import periodic_task
 
 logger = structlog.get_logger("mcubridge.metrics")
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
@@ -186,7 +185,9 @@ async def publish_metrics(
             logger.error("Periodic metrics emit failed: %s", e)
 
     try:
-        await periodic_task(_metrics_tick, tick_seconds, logger)
+        while True:
+            await _metrics_tick()
+            await asyncio.sleep(tick_seconds)
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
         raise
@@ -214,27 +215,31 @@ async def publish_bridge_snapshots(
     async with asyncio.TaskGroup() as tg:
         if summary_seconds is not None:
 
-            async def _summary_tick() -> None:
-                try:
-                    await _emit_bridge_snapshot(state, enqueue, flavor="summary")
-                except asyncio.CancelledError:
-                    raise
-                except (OSError, RuntimeError, msgspec.MsgspecError) as e:
-                    logger.error("Bridge summary emit failed: %s", e)
+            async def _summary_loop() -> None:
+                while True:
+                    try:
+                        await _emit_bridge_snapshot(state, enqueue, flavor="summary")
+                    except asyncio.CancelledError:
+                        raise
+                    except (OSError, RuntimeError, msgspec.MsgspecError) as e:
+                        logger.error("Bridge summary emit failed: %s", e)
+                    await asyncio.sleep(summary_seconds)
 
-            tg.create_task(periodic_task(_summary_tick, summary_seconds, logger))
+            tg.create_task(_summary_loop())
 
         if handshake_seconds is not None:
 
-            async def _handshake_tick() -> None:
-                try:
-                    await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
-                except asyncio.CancelledError:
-                    raise
-                except (OSError, RuntimeError, msgspec.MsgspecError) as e:
-                    logger.error("Bridge handshake emit failed: %s", e)
+            async def _handshake_loop() -> None:
+                while True:
+                    try:
+                        await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
+                    except asyncio.CancelledError:
+                        raise
+                    except (OSError, RuntimeError, msgspec.MsgspecError) as e:
+                        logger.error("Bridge handshake emit failed: %s", e)
+                    await asyncio.sleep(handshake_seconds)
 
-            tg.create_task(periodic_task(_handshake_tick, handshake_seconds, logger))
+            tg.create_task(_handshake_loop())
 
 
 class RuntimeStateCollector(Collector):

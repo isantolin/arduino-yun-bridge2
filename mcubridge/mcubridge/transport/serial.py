@@ -19,7 +19,7 @@ import structlog
 from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
-import cobs.cobs as cobs
+from cobs import cobs
 import serial
 import serial_asyncio_fast
 import tenacity

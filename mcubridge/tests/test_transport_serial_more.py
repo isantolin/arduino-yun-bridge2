@@ -239,7 +239,7 @@ async def test_async_process_packet_os_error(
             raise OSError("Device error")
 
         service.handle_mcu_frame = _raise_os_error  # type: ignore[reportAttributeAccessIssue]
-        import cobs.cobs as cobs
+        from cobs import cobs
         from mcubridge.protocol.frame import Frame
         from mcubridge.protocol.protocol import Command
 

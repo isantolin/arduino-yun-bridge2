@@ -17,7 +17,6 @@ from ..protocol.structures import (
     McuVersion,
     ProcessStats,
 )
-from ..util.periodic import periodic_task
 from .context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.status")
@@ -144,7 +143,9 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
             logger.error("Periodic status write failed: %s", e)
 
     try:
-        await periodic_task(_write_tick, interval, logger)
+        while True:
+            await _write_tick()
+            await asyncio.sleep(interval)
     except asyncio.CancelledError:
         logger.info("Status writer task cancelled.")
         raise

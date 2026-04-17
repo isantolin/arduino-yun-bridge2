@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import logging
-import paho.mqtt.publish as publish
+import paho.mqtt.publish
 import time
+
 
 
 def trigger_bootloader():
@@ -18,7 +19,7 @@ def trigger_bootloader():
     time.sleep(30)
 
     log.info(f"Triggering bootloader via MQTT topic: {topic}")
-    publish.single(topic, b"", hostname=broker, qos=1)
+    paho.mqtt.publish.single(topic, b"", hostname=broker, qos=1)
 
     log.info("Message published. Watching for MCU output (5s)...")
     time.sleep(5)

@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import asyncio
 import pytest
-import cobs.cobs as cobs
+from cobs import cobs
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import Command

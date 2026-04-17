@@ -60,7 +60,7 @@ class Command(IntEnum):
     {{ cmd.name }} = {{ cmd.value }}
     {%- endfor %}
 
-ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
+ACK_ONLY_COMMANDS: Final[frozenset[int]] = frozenset({
     {%- for cmd in ack_commands %}
     Command.{{ cmd.name }}.value,
     {%- endfor %}
@@ -68,11 +68,37 @@ ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
 
 # Commands that expect a direct response without a prior ACK.
 # The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.
-RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({
+RESPONSE_ONLY_COMMANDS: Final[frozenset[int]] = frozenset({
     {%- for cmd in response_only_commands %}
     Command.{{ cmd.name }}.value,
     {%- endfor %}
 })
+
+# Mapping of request command IDs to their valid direct response IDs.
+_REQUEST_RESPONSE_MAP: Final[dict[int, frozenset[int]]] = {
+    {%- for req, resps in request_response_pairs.items() %}
+    Command.{{ req }}.value: frozenset({
+        {%- for resp in resps %}
+        Command.{{ resp }}.value,
+        {%- endfor %}
+    }),
+    {%- endfor %}
+}
+
+# Mapping of response command IDs to their request IDs.
+_RESPONSE_TO_REQUEST_MAP: Final[dict[int, int]] = {
+    {%- for resp, req in response_to_req_map.items() %}
+    Command.{{ resp }}.value: Command.{{ req }}.value,
+    {%- endfor %}
+}
+
+def expected_responses(command_id: int) -> frozenset[int]:
+    """Look up the expected MCU responses for the given command ID."""
+    return _REQUEST_RESPONSE_MAP.get(command_id, frozenset())
+
+def response_to_request(command_id: int) -> int | None:
+    """Resolve the request ID for the given response command ID."""
+    return _RESPONSE_TO_REQUEST_MAP.get(command_id)
 
 class Topic(StrEnum):
     {%- for topic in topics %}

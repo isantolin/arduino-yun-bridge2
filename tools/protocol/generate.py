@@ -988,8 +988,32 @@ class JinjaGenerator:
             topics=spec.topics,
             grouped_actions=grouped_actions,
             subscriptions=subscriptions,
+            request_response_pairs=self._build_req_resp_map(spec),
+            response_to_req_map=self._build_resp_to_req_map(spec),
         )
         out_path.write_text(render, encoding="utf-8")
+
+    @staticmethod
+    def _build_req_resp_map(spec: ProtocolSpec) -> dict[str, list[str]]:
+        pairs: dict[str, list[str]] = {}
+        cmd_names = {c.name for c in spec.commands}
+        for cmd in spec.commands:
+            if cmd.name.endswith("_RESP"):
+                req_name = cmd.name[:-5]
+                if req_name in cmd_names:
+                    pairs.setdefault(req_name, []).append(cmd.name)
+        return pairs
+
+    @staticmethod
+    def _build_resp_to_req_map(spec: ProtocolSpec) -> dict[str, str]:
+        reverse: dict[str, str] = {}
+        cmd_names = {c.name for c in spec.commands}
+        for cmd in spec.commands:
+            if cmd.name.endswith("_RESP"):
+                req_name = cmd.name[:-5]
+                if req_name in cmd_names:
+                    reverse[cmd.name] = req_name
+        return reverse
 
     def generate_structures_packets(
         self, spec: ProtocolSpec, structures_path: Path

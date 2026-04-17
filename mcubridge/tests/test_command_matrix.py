@@ -12,12 +12,12 @@ from typing import Any, cast
 import msgspec
 
 import pytest
-from mcubridge.protocol.contracts import expected_responses
 from mcubridge.protocol.protocol import (
     MQTT_COMMAND_SUBSCRIPTIONS,
     Command,
     Status,
     Topic,
+    expected_responses,
 )
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
 from mcubridge.router.routers import MQTTRouter, McuHandler

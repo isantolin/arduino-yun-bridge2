@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING
 
 import svcs
 
-from mcubridge.protocol.contracts import response_to_request
 from mcubridge.protocol.protocol import (
     Command,
     Status,
+    response_to_request,
 )
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.state.context import RuntimeState, resolve_command_id

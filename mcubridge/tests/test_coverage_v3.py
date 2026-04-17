@@ -10,7 +10,8 @@ import msgspec
 import psutil
 import pytest
 from mcubridge import daemon
-from mcubridge.config import logging as logging_config
+import logging
+import mcubridge.config.logging
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.process import ProcessComponent
 from mcubridge.transport.serial import (
@@ -38,15 +39,14 @@ def create_real_config():
 def test_configure_logging_stream_env():
     config = create_real_config()
     with patch.dict(os.environ, {"MCUBRIDGE_LOG_STREAM": "1"}):
-        logging_config.configure_logging(config)
-        import logging as _logging
+        mcubridge.config.logging.configure_logging(config)
 
-        root = _logging.getLogger()
+        root = logging.getLogger()
         assert len(root.handlers) == 1
-        assert isinstance(root.handlers[0], _logging.StreamHandler)
+        assert isinstance(root.handlers[0], logging.StreamHandler)
         assert not isinstance(
             root.handlers[0],
-            _logging.handlers.SysLogHandler,  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            logging.handlers.SysLogHandler,  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
         )
 
 
@@ -60,7 +60,7 @@ def test_configure_logging_syslog_fallback(tmp_path: Any):
         patch("mcubridge.config.logging.SYSLOG_SOCKET_FALLBACK", fake_fallback),
         patch("logging.handlers.SysLogHandler", autospec=True) as mock_cls,
     ):
-        logging_config.configure_logging(config)
+        mcubridge.config.logging.configure_logging(config)
         mock_cls.assert_called_once_with(
             address=str(fake_fallback),
             facility=logging.handlers.SysLogHandler.LOG_DAEMON,
@@ -70,11 +70,10 @@ def test_configure_logging_syslog_fallback(tmp_path: Any):
 def test_configure_logging_debug():
     config = create_real_config()
     config.debug_logging = True
-    logging_config.configure_logging(config)
-    import logging as _logging
+    mcubridge.config.logging.configure_logging(config)
 
-    root = _logging.getLogger()
-    assert root.level == _logging.DEBUG
+    root = logging.getLogger()
+    assert root.level == logging.DEBUG
 
 
 # --- mcubridge.daemon ---

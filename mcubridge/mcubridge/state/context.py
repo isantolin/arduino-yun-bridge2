@@ -714,18 +714,6 @@ class RuntimeState(msgspec.Struct):
             )
         return msg
 
-    def sync_console_queue_limits(self) -> None:
-        # Managed automatically by BoundedByteDeque
-        self.console_queue_bytes = self.console_to_mcu_queue.bytes
-
-    def sync_mailbox_limits(self, queue: Any) -> None:
-        # Limits are enforced on enqueue and update_limits handles console trimming.
-        pass
-
-    def update_mailbox_bytes(self) -> None:
-        # Automatically tracked in our wrappers
-        pass
-
     def record_handshake_fatal(self, reason: str, detail: str | None = None) -> None:
         self.handshake_fatal_count += 1
         self.handshake_fatal_reason = reason

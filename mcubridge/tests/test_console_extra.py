@@ -1,3 +1,4 @@
+
 """Extra coverage for mcubridge.services.console."""
 
 from unittest.mock import AsyncMock, MagicMock
@@ -53,7 +54,7 @@ async def test_console_mqtt_input_send_fail() -> None:
         cc = ConsoleComponent(config, state, ctx)
 
         # Send fails, should queue remaining
-        await cc._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
+        await getattr(cc, "_handle_mqtt_input")(
             b"chunk1chunk2"
         )  # pyright: ignore[reportPrivateUsage]
         assert len(state.console_to_mcu_queue) > 0

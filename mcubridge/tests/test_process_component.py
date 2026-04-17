@@ -8,19 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from mcubridge.config.const import (
-    DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_STATUS_INTERVAL,
-)
+from mcubridge.config.const import (DEFAULT_MQTT_PORT, DEFAULT_PROCESS_TIMEOUT,
+                                    DEFAULT_RECONNECT_DELAY,
+                                    DEFAULT_STATUS_INTERVAL)
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import (
-    DEFAULT_BAUDRATE,
-    DEFAULT_SAFE_BAUDRATE,
-    Status,
-)
+from mcubridge.protocol.protocol import (DEFAULT_BAUDRATE,
+                                         DEFAULT_SAFE_BAUDRATE, Status)
 from mcubridge.services.process import ProcessComponent
 from mcubridge.state.context import create_runtime_state
 
@@ -82,8 +76,8 @@ async def test_run_async_success(process_comp: ProcessComponent) -> None:
 @pytest.mark.asyncio
 async def test_run_async_limit_reached(process_comp: ProcessComponent) -> None:
     # Acquire all slots
-    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
-    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
+    await getattr(process_comp, "_process_slots").acquire()
+    await getattr(process_comp, "_process_slots").acquire()
 
     # The 3rd should fail or timeout (non-blocking)
     try:
@@ -179,12 +173,12 @@ async def test_finalize_process(process_comp: ProcessComponent) -> None:
 
     assert pid in process_comp.state.running_processes
     # 2 - 1 = 1
-    assert process_comp._process_slots._value == 1  # type: ignore[reportPrivateUsage]
+    assert getattr(process_comp, "_process_slots")._value == 1
 
-    await process_comp._finalize_process(pid)  # type: ignore[reportPrivateUsage]
+    await getattr(process_comp, "_finalize_process")(pid)
 
     assert pid not in process_comp.state.running_processes
     assert (
-        process_comp._process_slots._value  # type: ignore[reportPrivateUsage, reportUnknownMemberType]
+        getattr(process_comp, "_process_slots")._value
         == 2
-    )  # Released  # type: ignore[reportPrivateUsage]
+    )  # Released

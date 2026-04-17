@@ -1,3 +1,4 @@
+
 """Extra coverage for mcubridge.services.serial_flow."""
 
 import logging
@@ -37,7 +38,7 @@ async def test_serial_flow_on_frame_ack_mismatch() -> None:
         logger=logging.getLogger("test"),
     )
     pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
-    flow._current = pending  # type: ignore[reportPrivateUsage]
+    setattr(flow, "_current", pending)
 
     # ACK for different command
     payload = AckPacket(command_id=Command.CMD_GET_FREE_MEMORY.value).encode()
@@ -54,7 +55,7 @@ async def test_serial_flow_on_frame_failure_human_readable() -> None:
         logger=logging.getLogger("test"),
     )
     pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
-    flow._current = pending  # type: ignore[reportPrivateUsage]
+    setattr(flow, "_current", pending)
 
     # Human readable error (all printable ASCII) should be ignored
     flow.on_frame_received(Status.ERROR.value, 0, b"some error")
@@ -72,8 +73,8 @@ async def test_serial_flow_send_and_wait_write_fail() -> None:
     pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
     sender = AsyncMock(return_value=False)
 
-    with pytest.raises(SerialFlowController._FatalSerialError):  # type: ignore[reportPrivateUsage]
-        await flow._send_and_wait(  # type: ignore[reportPrivateUsage]
+    with pytest.raises(getattr(SerialFlowController, "_FatalSerialError")):
+        await getattr(flow, "_send_and_wait")(
             pending, b"p", sender, Command.CMD_GET_VERSION.value
         )
 
@@ -92,5 +93,5 @@ async def test_serial_flow_send_and_wait_completion_set_during_timeout() -> None
     # Set completion and success manually to simulate race/early success
     pending.completion.set()
     pending.success = True
-    await flow._send_and_wait(pending, b"p", sender, Command.CMD_GET_VERSION.value)  # type: ignore[reportPrivateUsage]
+    await getattr(flow, "_send_and_wait")(pending, b"p", sender, Command.CMD_GET_VERSION.value)
     # Should return without raising TimeoutError

@@ -1,5 +1,5 @@
-from typing import Any
 import asyncio
+from typing import Any
 
 import pytest
 from mcubridge.metrics import PrometheusExporter

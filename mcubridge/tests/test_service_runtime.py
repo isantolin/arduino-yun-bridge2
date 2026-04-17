@@ -9,14 +9,13 @@ from types import SimpleNamespace
 import msgspec
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Status
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState, create_runtime_state
-
 from tests._helpers import make_test_config
 
 
@@ -87,7 +86,7 @@ async def testacknowledge_mcu_frame_sends_ack_packet() -> None:
             sent.append((cmd, payload))
             return True
 
-        service.register_serial_sender(_sender)  # type: ignore[reportArgumentType]
+        service.register_serial_sender(_sender)
 
         await service.acknowledge_mcu_frame(
             protocol.Command.CMD_GET_FREE_MEMORY.value,
@@ -128,7 +127,7 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
             properties=props,
         )
 
-        await service.enqueue_mqtt(msg, reply_context=inbound)  # type: ignore[reportArgumentType]
+        await service.enqueue_mqtt(msg, reply_context=inbound)
 
         queued = state.mqtt_publish_queue.get_nowait()
         assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
@@ -158,7 +157,7 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
             return True
 
         monkeypatch.setattr(RuntimeState, "stash_mqtt_message", _stash_ok)
-        state.mqtt_spool = SimpleNamespace(pending=3)  # type: ignore[reportAttributeAccessIssue]
+        state.mqtt_spool = SimpleNamespace(pending=3)
 
         service = BridgeService(config, state)
 
@@ -191,7 +190,7 @@ async def test_handle_get_free_memory_resp_malformed_no_publish() -> None:
     try:
         service = BridgeService(config, state)
 
-        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
+        system = getattr(service, "_container").get(SystemComponent)
         await system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)
         assert state.mqtt_publish_queue.qsize() == 0
     finally:
@@ -206,7 +205,7 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
         service = BridgeService(config, state)
 
         pkt = structures.VersionResponsePacket(major=1, minor=2, patch=0)
-        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
+        system = getattr(service, "_container").get(SystemComponent)
         await system.handle_get_version_resp(0, pkt.encode())
 
         assert state.mcu_version == (1, 2, 0)
@@ -227,7 +226,7 @@ async def test_reject_topic_action_enqueues_status() -> None:
             topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret",
             properties=None,
         )
-        await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")  # type: ignore[reportPrivateUsage]
+        await getattr(service, "_reject_topic_action")(inbound, Topic.SYSTEM, "reboot")
 
         queued = state.mqtt_publish_queue.get_nowait()
         status_topic = topic_path(state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS)
@@ -249,7 +248,7 @@ async def test_publish_bridge_snapshot_handshake_flavor() -> None:
             topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get",
             properties=None,
         )
-        await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[reportPrivateUsage]
+        await getattr(service, "_publish_bridge_snapshot")("handshake", inbound)
 
         queued = state.mqtt_publish_queue.get_nowait()
         assert "bridge/handshake/value" in queued.topic_name
@@ -263,7 +262,7 @@ def test_is_topic_action_allowed_empty_action_true() -> None:
     try:
         service = BridgeService(config, state)
 
-        assert service._is_topic_action_allowed(Topic.SYSTEM, "") is True  # type: ignore[reportPrivateUsage]
+        assert getattr(service, "_is_topic_action_allowed")(Topic.SYSTEM, "") is True
     finally:
         state.cleanup()
 

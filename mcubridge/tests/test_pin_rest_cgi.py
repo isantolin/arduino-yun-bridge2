@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 
 import msgspec
 import pytest
-from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import protocol
 
 
 @pytest.fixture
@@ -30,15 +30,15 @@ def pin_rest_module() -> ModuleType:
 
 class MockInfo:
     def __init__(self, published: bool = True) -> None:
-        self._published = published
+        setattr(self, "_published", published)
         self.rc = 0
 
     def wait_for_publish(self, timeout: float | None = None) -> None:
-        if not self._published:
+        if not getattr(self, "_published"):
             raise TimeoutError("Mock timeout")
 
     def is_published(self) -> bool:
-        return self._published
+        return getattr(self, "_published")
 
 
 class CapturingFakeClient:
@@ -91,7 +91,7 @@ def test_publish_sync_configures_tls(
     monkeypatch.setattr(
         ssl,
         "create_default_context",
-        lambda *args, **kwargs: MagicMock(),  # type: ignore[reportUnknownLambdaType]
+        lambda *args, **kwargs: MagicMock(),
     )
 
     runtime_config.mqtt_user = "user"
@@ -153,14 +153,14 @@ def test_application_invokes_publish(
     monkeypatch.setattr(
         pin_rest_module,
         "publish_sync",
-        lambda topic, payload, config: captured.update(  # type: ignore[reportUnknownLambdaType]
+        lambda topic, payload, config: captured.update(
             {"topic": topic, "payload": payload}
         ),
     )
     monkeypatch.setattr(
         pin_rest_module,
         "configure_logging",
-        lambda config: None,  # type: ignore[reportUnknownLambdaType]
+        lambda config: None,
     )
 
     environ = {

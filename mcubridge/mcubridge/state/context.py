@@ -406,10 +406,10 @@ class RuntimeState(msgspec.Struct):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: collections.deque[PendingPinRequest](),  # noqa: PLW0108
+        default_factory=collections.deque,
     )
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: collections.deque[PendingPinRequest](),  # noqa: PLW0108
+        default_factory=collections.deque,
     )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT

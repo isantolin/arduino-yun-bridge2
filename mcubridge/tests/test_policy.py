@@ -115,7 +115,7 @@ class TestTopicAuthorization:
     def test_console_and_pin_toggles_respected(
         self, kwargs: dict[str, bool], topic: str, action: str
     ) -> None:
-        policy = TopicAuthorization(**kwargs)  # type: ignore[reportArgumentType]
+        policy = TopicAuthorization(**kwargs)
         assert policy.allows(topic, action) is False
 
     def test_case_insensitivity(self) -> None:

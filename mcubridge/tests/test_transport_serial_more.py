@@ -1,5 +1,5 @@
-from typing import Any
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,7 +8,6 @@ from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import serial as serial_fast
-
 from tests._helpers import make_test_config
 
 
@@ -42,14 +41,14 @@ async def test_negotiate_baudrate_success() -> None:
 
             # Mock _serial_sender to avoid real I/O and return True
             async def mock_sender(cmd: Any, payload: Any):
-                neg = transport._negotiation_future  # type: ignore[reportPrivateUsage]
+                neg = getattr(transport, "_negotiation_future")
                 if neg and not neg.done():
                     neg.set_result(True)
                 return True
 
-            transport._serial_sender = mock_sender  # type: ignore[reportPrivateUsage]
+            setattr(transport, "_serial_sender", mock_sender)
 
-            ok = await transport._negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
+            ok = await getattr(transport, "_negotiate_baudrate")(115200)
             assert ok is True
         finally:
             state.cleanup()
@@ -73,11 +72,11 @@ async def test_negotiate_baudrate_timeout() -> None:
             transport.loop = asyncio.get_running_loop()
 
             # Mock sender to succeed but don't resolve future
-            transport._serial_sender = AsyncMock(return_value=True)  # type: ignore[reportPrivateUsage]
+            setattr(transport, "_serial_sender", AsyncMock(return_value=True))
 
             # Mock sleep to avoid waiting
             with patch("asyncio.sleep", AsyncMock()):
-                ok = await transport._negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
+                ok = await getattr(transport, "_negotiate_baudrate")(115200)
                 assert ok is False
         finally:
             state.cleanup()
@@ -107,7 +106,7 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
             transport = serial_fast.SerialTransport(config, state, service)
             # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
             # This prevents infinite loops when the mock reader fails.
-            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+            orig_run = getattr(serial_fast.SerialTransport, "_retryable_run").__wrapped__
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -196,7 +195,7 @@ async def test_serial_disconnected_hook_error(
 
             transport = serial_fast.SerialTransport(config, state, service)
             # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
-            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+            orig_run = getattr(serial_fast.SerialTransport, "_retryable_run").__wrapped__
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -238,7 +237,7 @@ async def test_async_process_packet_os_error(
         async def _raise_os_error(cmd: int, seq: int, payload: bytes) -> None:
             raise OSError("Device error")
 
-        service.handle_mcu_frame = _raise_os_error  # type: ignore[reportAttributeAccessIssue]
+        service.handle_mcu_frame = _raise_os_error
         from cobs.cobs import encode as cobs_encode
         from mcubridge.protocol.frame import Frame
         from mcubridge.protocol.protocol import Command
@@ -249,7 +248,7 @@ async def test_async_process_packet_os_error(
         encoded = cobs_encode(frame)
 
         caplog.set_level("ERROR")
-        await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
+        await getattr(transport, "_async_process_packet")(encoded)
 
         assert any("error" in r.getMessage().lower() for r in caplog.records)
         assert any("transport" in r.getMessage().lower() for r in caplog.records)

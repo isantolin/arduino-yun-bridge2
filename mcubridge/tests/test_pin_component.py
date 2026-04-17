@@ -9,14 +9,13 @@ from unittest.mock import AsyncMock
 import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, PinAction, Status
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.pin import PinComponent
 from mcubridge.state.context import PendingPinRequest, RuntimeState
-
-from tests._helpers import make_route, make_mqtt_msg
+from tests._helpers import make_mqtt_msg, make_route
 
 
 class RecordingBridgeContext:
@@ -55,7 +54,7 @@ class RecordingBridgeContext:
             retain=retain,
             content_type=content_type,
             message_expiry_interval=expiry,
-            user_properties=properties,  # type: ignore[reportArgumentType]
+            user_properties=properties,
         )
         self.enqueued.append((message, reply_to))
 

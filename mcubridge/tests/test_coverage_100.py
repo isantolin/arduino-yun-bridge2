@@ -12,12 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from mcubridge.protocol.protocol import (
-    Status,
-)
+from mcubridge.protocol.protocol import Status
 from mcubridge.services.process import ProcessComponent
 from mcubridge.state.context import create_runtime_state
-
 from tests._helpers import make_test_config
 
 
@@ -61,7 +58,7 @@ async def test_finalize_process_slot_gone(
 ) -> None:
     """Cover branch where slot is gone in _finalize_process."""
     pid = 77
-    await process_comp._finalize_process(pid)  # type: ignore[reportPrivateUsage]
+    await getattr(process_comp, "_finalize_process")(pid)
 
 
 @pytest.mark.asyncio

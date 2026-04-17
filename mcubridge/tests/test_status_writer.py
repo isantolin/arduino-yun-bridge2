@@ -145,7 +145,7 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             assert payload["file_storage_limit_rejections"] == 2
             assert "bridge" in payload
             bridge_snapshot = payload["bridge"]
-            handshake_snapshot = bridge_snapshot["handshake"]  # type: ignore[reportUnknownVariableType]
+            handshake_snapshot = bridge_snapshot["handshake"]
             assert handshake_snapshot["attempts"] >= 2
             assert isinstance(payload["mqtt_spooled_messages"], int)
             assert payload["mqtt_spooled_messages"] >= 10

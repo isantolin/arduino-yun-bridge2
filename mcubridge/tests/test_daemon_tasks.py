@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,13 +14,11 @@ from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import FRAME_DELIMITER, Command
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.state.context import create_runtime_state
-from mcubridge.transport import (
-    SerialTransport,
-)
+from mcubridge.transport import SerialTransport
 from mcubridge.transport.mqtt import MqttTransport
-
 # [REDUCTION] Use shared mocks to avoid duplication
-from tests.mocks import MockFatalSerialService, MockMQTTService, MockSerialService
+from tests.mocks import (MockFatalSerialService, MockMQTTService,
+                         MockSerialService)
 
 
 @pytest.mark.asyncio
@@ -62,9 +60,9 @@ async def test_serial_reader_task_processes_frame(
             patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
         ):
             # Patch tenacity retry to fail after first attempt to avoid infinite loops
-            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+            orig_run = getattr(SerialTransport, "_retryable_run").__wrapped__
             with patch.object(SerialTransport, "_retryable_run"):
-                transport = SerialTransport(runtime_config, state, cast(Any, service))
+                transport = SerialTransport(runtime_config, state, service)
 
                 # We want to break the loop after one failure
                 async def _limited_run(loop: Any):
@@ -92,7 +90,7 @@ async def test_serial_reader_task_processes_frame(
                     assert command_id == Command.CMD_DIGITAL_READ_RESP.value
                     assert seq_id == 0
                     assert received_payload == payload
-                    transport._stop_event.set()  # type: ignore[reportPrivateUsage]
+                    getattr(transport, "_stop_event").set()
                     try:
                         await asyncio.wait_for(task, timeout=0.5)
                     except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -142,9 +140,9 @@ async def test_serial_reader_task_emits_crc_mismatch(
             patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
             patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
         ):
-            transport = SerialTransport(runtime_config, state, cast(Any, service))
+            transport = SerialTransport(runtime_config, state, service)
 
-            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+            orig_run = getattr(SerialTransport, "_retryable_run").__wrapped__
 
             async def _limited_run(loop: Any):
                 try:
@@ -167,7 +165,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
                 assert not service.received_frames
                 assert state.serial_decode_errors > 0
 
-                transport._stop_event.set()  # type: ignore[reportPrivateUsage]
+                getattr(transport, "_stop_event").set()
                 try:
                     await asyncio.wait_for(task, timeout=0.5)
                 except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -208,9 +206,9 @@ async def test_serial_reader_task_limits_packet_size(
             patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
             patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
         ):
-            transport = SerialTransport(runtime_config, state, cast(Any, service))
+            transport = SerialTransport(runtime_config, state, service)
 
-            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+            orig_run = getattr(SerialTransport, "_retryable_run").__wrapped__
 
             async def _limited_run(loop: Any):
                 try:
@@ -232,7 +230,7 @@ async def test_serial_reader_task_limits_packet_size(
                 assert not service.received_frames
                 assert state.serial_decode_errors >= 1
 
-                transport._stop_event.set()  # type: ignore[reportPrivateUsage]
+                getattr(transport, "_stop_event").set()
                 try:
                     await asyncio.wait_for(task, timeout=0.5)
                 except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -268,7 +266,7 @@ async def test_serial_reader_task_propagates_handshake_fatal(
             patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
             patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr),
         ):
-            transport = SerialTransport(runtime_config, state, cast(Any, service))
+            transport = SerialTransport(runtime_config, state, service)
             task = asyncio.create_task(transport.run())
 
             try:
@@ -294,8 +292,8 @@ async def test_mqtt_task_handles_incoming_message(
 
         # Mock aiomqtt Client
         mock_client = AsyncMock()
-        mock_client.__aenter__.return_value = mock_client
-        mock_client.__aexit__.return_value = None
+        getattr(mock_client, "__aenter__").return_value = mock_client
+        getattr(mock_client, "__aexit__").return_value = None
 
         # Mock messages iterator
         mock_msgs_ctx = AsyncMock()
@@ -312,17 +310,17 @@ async def test_mqtt_task_handles_incoming_message(
         async def msg_gen():
             yield fake_msg
 
-        mock_msgs_ctx.__aiter__.side_effect = msg_gen
+        getattr(mock_msgs_ctx, "__aiter__").side_effect = msg_gen
 
         monkeypatch.setattr(
             "mcubridge.transport.mqtt.aiomqtt.Client",
-            lambda **_kw: mock_client,  # type: ignore[reportUnknownLambdaType]
+            lambda **_kw: mock_client,
         )
 
         runtime_config.mqtt_tls = False
 
         task = asyncio.create_task(
-            MqttTransport(runtime_config, state, cast(Any, service)).run()
+            MqttTransport(runtime_config, state, service).run()
         )
 
         try:

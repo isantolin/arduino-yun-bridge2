@@ -1,3 +1,4 @@
+
 """Extra coverage for mcubridge.router.routers."""
 
 from unittest.mock import AsyncMock, MagicMock

@@ -1,3 +1,4 @@
+
 """Extra coverage for mcubridge.services.handshake."""
 
 import asyncio
@@ -7,10 +8,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.services.handshake import (
-    SerialHandshakeManager,
-    derive_serial_timing,
-)
+from mcubridge.services.handshake import (SerialHandshakeManager,
+                                          derive_serial_timing)
 from mcubridge.state.context import create_runtime_state
 
 
@@ -39,7 +38,7 @@ async def test_handshake_sync_resp_rate_limit() -> None:
         state.link_handshake_nonce = b"A" * 16
         state.handshake_rate_until = time.monotonic() + 5.0
         assert await manager.handle_link_sync_resp(0, b"A" * 32) is False
-        manager._acknowledge_frame.assert_called_with(  # type: ignore[reportPrivateUsage, reportFunctionMemberAccess]
+        getattr(manager, "_acknowledge_frame").assert_called_with(
             Command.CMD_LINK_SYNC_RESP.value, 0, status=Status.MALFORMED
         )
     finally:
@@ -115,7 +114,7 @@ async def test_handshake_fetch_capabilities_timeout_and_retry() -> None:
             ),
             patch.object(manager, "_parse_capabilities"),
         ):
-            assert await manager._fetch_capabilities() is True  # type: ignore[reportPrivateUsage]
+            assert await getattr(manager, "_fetch_capabilities")() is True
             assert send_frame.call_count == 3
     finally:
         state.cleanup()
@@ -142,10 +141,10 @@ async def test_handshake_handle_capabilities_resp() -> None:
             acknowledge_frame=AsyncMock(),
         )
         loop = asyncio.get_running_loop()
-        manager._capabilities_future = loop.create_future()  # type: ignore[reportPrivateUsage]
+        setattr(manager, "_capabilities_future", loop.create_future())
         await manager.handle_capabilities_resp(0, b"payload")
-        assert manager._capabilities_future.done()  # type: ignore[reportPrivateUsage]
-        assert await manager._capabilities_future == b"payload"  # type: ignore[reportPrivateUsage]
+        assert getattr(manager, "_capabilities_future").done()
+        assert await getattr(manager, "_capabilities_future") == b"payload"
     finally:
         state.cleanup()
 

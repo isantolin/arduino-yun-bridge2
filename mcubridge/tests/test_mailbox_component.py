@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from mcubridge.protocol import structures
-
 import asyncio
 import logging
 from collections.abc import Awaitable, Coroutine
@@ -13,18 +11,15 @@ import msgspec
 import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Command, MailboxAction, Status
-from mcubridge.protocol.topics import (
-    Topic,
-    topic_path,
-)
+from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.state.context import RuntimeState
+from tests._helpers import make_mqtt_msg, make_route
 from tests.test_constants import TEST_MSG_ID
-
-from tests._helpers import make_route, make_mqtt_msg
 
 
 class EnqueueHook(Protocol):
@@ -55,8 +50,8 @@ class DummyBridge(BridgeContext):
         *,
         reply_context: Message | None = None,
     ) -> None:
-        if self._enqueue_hook is not None:
-            await self._enqueue_hook(
+        if getattr(self, "_enqueue_hook") is not None:
+            await getattr(self, "_enqueue_hook")(
                 message,
                 reply_context=reply_context,
             )
@@ -83,12 +78,12 @@ class DummyBridge(BridgeContext):
             retain=retain,
             content_type=content_type,
             message_expiry_interval=expiry,
-            user_properties=properties,  # type: ignore[reportArgumentType]
+            user_properties=properties,
         )
         await self.enqueue_mqtt(message, reply_context=reply_to)
 
     def set_enqueue_hook(self, hook: EnqueueHook | None) -> None:
-        self._enqueue_hook = hook
+        setattr(self, "_enqueue_hook", hook)
 
     async def acknowledge_mcu_frame(
         self, command_id: int, seq_id: int, *, status: Any = None

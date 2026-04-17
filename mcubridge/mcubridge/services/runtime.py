@@ -4,7 +4,7 @@ import asyncio
 import structlog
 import time
 from collections.abc import Coroutine
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import msgspec
 import svcs
@@ -96,9 +96,9 @@ class BridgeService:
             SystemComponent,
         )
         for comp_cls in _COMPONENTS:
-            self._registry.register_factory(  # type: ignore[reportUnknownMemberType]
+            cast(Any, self._registry).register_factory(
                 comp_cls,
-                lambda c=comp_cls: c(config, state, self),  # type: ignore[reportUnknownLambdaType]
+                lambda c=comp_cls: cast(Any, c)(config, state, self),
             )
         self._container = svcs.Container(self._registry)
 

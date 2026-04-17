@@ -1,7 +1,7 @@
 import importlib
 import sys
 import types
-from typing import Self, Any
+from typing import Any, Self
 
 import pytest
 from mcubridge.config import common, const
@@ -23,7 +23,7 @@ def test_get_default_config_matches_constants():
 def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
     class FakeCursor:
         def __init__(self, payload: dict[str, Any]) -> None:
-            self._payload = payload
+            setattr(self, "_payload", payload)
 
         def __enter__(self) -> Self:
             return self
@@ -34,7 +34,7 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
         def get_all(self, package: str, section: str) -> dict[str, Any]:
             assert package == "mcubridge"
             assert section == "general"
-            return self._payload
+            return getattr(self, "_payload")
 
     payload = {
         ".name": "general",

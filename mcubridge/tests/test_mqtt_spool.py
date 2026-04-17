@@ -7,10 +7,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
+from mcubridge.mqtt.spool import MQTTPublishSpool
 from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import QueuedPublish
-from mcubridge.mqtt.spool import MQTTPublishSpool
 
 
 def _make_message(
@@ -96,7 +95,7 @@ def test_spool_skips_corrupt_rows(
     original = QueuedPublish.from_record
 
     def _decode(record: object) -> QueuedPublish:
-        msg = original(record)  # type: ignore[reportArgumentType]
+        msg = original(record)
         if msg.topic_name == "topic/second":
             raise ValueError("Corrupt msgpack")
         return msg

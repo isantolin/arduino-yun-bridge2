@@ -4,9 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Status
-from mcubridge.protocol.structures import (
-    ProcessOutputBatch,
-)
+from mcubridge.protocol.structures import ProcessOutputBatch
 from mcubridge.services.process import ProcessComponent
 from mcubridge.state.context import PROCESS_STATE_FINISHED, ManagedProcess
 
@@ -29,7 +27,7 @@ def test_post_init_disables_slots_when_limit_zero(
 ):
     runtime_config.process_max_concurrent = 0
     comp = ProcessComponent(runtime_config, runtime_state, MagicMock())
-    assert comp._process_slots is not None  # type: ignore[reportPrivateUsage]
+    assert getattr(comp, "_process_slots") is not None
 
 
 @pytest.mark.asyncio
@@ -44,7 +42,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
 
         payload = ProcessPollPacket(pid=100).encode()
         await process_comp.handle_poll(0, payload)
-        process_comp.ctx.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
+        process_comp.ctx.acknowledge_mcu_frame.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -54,7 +52,7 @@ async def test_run_async_rejects_when_slot_limit_reached(
     limit = process_comp.state.process_max_concurrent
     # Acquire all permits
     for _ in range(limit):
-        await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
+        await getattr(process_comp, "_process_slots").acquire()
 
     pid = await process_comp.run_async("cmd")
     assert pid == 0
@@ -73,16 +71,16 @@ async def test_poll_process_finishing_process_releases_slot(
         process_comp.state.running_processes[pid] = slot
 
     # Save initial available value
-    initial_value = process_comp._process_slots._value  # type: ignore[reportPrivateUsage]
+    initial_value = getattr(process_comp, "_process_slots")._value
 
     # Acquire one
-    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
+    await getattr(process_comp, "_process_slots").acquire()
 
     batch = await process_comp.poll_process(pid)
     assert batch.exit_code == 7
 
     # Slot should be released (back to initial)
-    assert process_comp._process_slots._value == initial_value  # type: ignore[reportPrivateUsage]
+    assert getattr(process_comp, "_process_slots")._value == initial_value
 
 
 @pytest.mark.asyncio
@@ -101,7 +99,7 @@ async def test_finalize_callback_async_handles_wait_exception(
 
     async with slot.io_lock:
         slot.exit_code = 99
-    process_comp._finalize_process_internal(pid)  # type: ignore[reportPrivateUsage]
+    getattr(process_comp, "_finalize_process_internal")(pid)
 
     # Should finalize
     assert pid not in process_comp.state.running_processes
@@ -113,10 +111,10 @@ async def test_finalize_process_slot_missing_releases(
 ) -> None:
     # If missing, it currently DOES NOT release by design (safety).
     # Update test to expect current value.
-    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
-    val_after_acquire = process_comp._process_slots._value  # type: ignore[reportPrivateUsage]
-    await process_comp._finalize_process(999)  # type: ignore[reportPrivateUsage]
-    assert process_comp._process_slots._value == val_after_acquire  # type: ignore[reportPrivateUsage]
+    await getattr(process_comp, "_process_slots").acquire()
+    val_after_acquire = getattr(process_comp, "_process_slots")._value
+    await getattr(process_comp, "_finalize_process")(999)
+    assert getattr(process_comp, "_process_slots")._value == val_after_acquire
 
 
 @pytest.mark.asyncio
@@ -132,7 +130,7 @@ async def test_handle_kill_timeout_releases_slot(
     async with process_comp.state.process_lock:
         process_comp.state.running_processes[pid] = slot
 
-    await process_comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
+    await getattr(process_comp, "_process_slots").acquire()
 
     with (
         patch("psutil.Process") as mock_psutil_cls,
@@ -183,6 +181,6 @@ async def test_handle_run_async_validation_error_sends_error_frame(
     await process_comp.handle_run_async(0, b"")
 
     # Verify it called with correct named parameter
-    process_comp.ctx.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
-    args, kwargs = process_comp.ctx.acknowledge_mcu_frame.call_args  # type: ignore[reportUnknownVariableType]
-    assert kwargs.get("status") == Status.MALFORMED  # type: ignore[reportUnknownMemberType]
+    process_comp.ctx.acknowledge_mcu_frame.assert_awaited()
+    args, kwargs = process_comp.ctx.acknowledge_mcu_frame.call_args
+    assert kwargs.get("status") == Status.MALFORMED

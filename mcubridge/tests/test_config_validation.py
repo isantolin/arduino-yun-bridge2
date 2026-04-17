@@ -8,10 +8,7 @@ from typing import Any
 import msgspec
 import pytest
 from mcubridge.config import settings
-from mcubridge.config.const import (
-    DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
-)
+from mcubridge.config.const import DEFAULT_MQTT_PORT, DEFAULT_PROCESS_TIMEOUT
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 

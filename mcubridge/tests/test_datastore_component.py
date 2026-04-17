@@ -1,18 +1,16 @@
 """Tests for the DatastoreComponent."""
 
 from __future__ import annotations
+
 from collections.abc import AsyncIterator
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
-from mcubridge.config.const import (
-    DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_STATUS_INTERVAL,
-)
+from mcubridge.config.const import (DEFAULT_MQTT_PORT, DEFAULT_PROCESS_TIMEOUT,
+                                    DEFAULT_RECONNECT_DELAY,
+                                    DEFAULT_STATUS_INTERVAL)
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command
@@ -98,12 +96,12 @@ async def test_handle_get_request_success(
 
     await datastore_component.handle_get_request(0, payload)
 
-    datastore_component.ctx.send_frame.assert_awaited_once()  # type: ignore[reportUnknownMemberType]
-    args = datastore_component.ctx.send_frame.call_args[0]  # type: ignore[reportUnknownVariableType]
+    datastore_component.ctx.send_frame.assert_awaited_once()
+    args = datastore_component.ctx.send_frame.call_args[0]
     assert args[0] == Command.CMD_DATASTORE_GET_RESP.value
 
     # Should return empty bytes
-    resp = args[1]  # type: ignore[reportUnknownVariableType]
-    decoded = structures.DatastoreGetResponsePacket.decode(resp)  # type: ignore[reportUnknownArgumentType]
+    resp = args[1]
+    decoded = structures.DatastoreGetResponsePacket.decode(resp)
     assert decoded.value == b"value1"
-    assert len(resp) > 0  # type: ignore[reportUnknownArgumentType]
+    assert len(resp) > 0

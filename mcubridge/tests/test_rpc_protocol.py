@@ -1,7 +1,8 @@
+
 """Regression tests for RPC protocol helpers."""
 
-from mcubridge.protocol.frame import Frame
 from mcubridge.protocol import protocol
+from mcubridge.protocol.frame import Frame
 
 
 def test_crc_is_32bit() -> None:

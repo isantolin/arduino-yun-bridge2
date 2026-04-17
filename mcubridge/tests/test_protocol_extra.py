@@ -1,3 +1,4 @@
+
 """Extra coverage for mcubridge.protocol components."""
 
 import pytest
@@ -9,8 +10,9 @@ def test_frame_parse_payload_length_mismatch() -> None:
     # We need a frame where the header payload_len doesn't match the actual payload size.
     # This is hard to build with Frame.build, so we manually construct it.
 
-    from mcubridge.protocol.frame import RPC_FRAME_HEADER, Int32ub
     from binascii import crc32
+
+    from mcubridge.protocol.frame import RPC_FRAME_HEADER, Int32ub
 
     version = protocol.PROTOCOL_VERSION
     actual_payload = b"ABC"
@@ -70,10 +72,7 @@ def test_rle_encode_decode_edge_cases() -> None:
 
 
 def test_topics_handshake_topic() -> None:
-    from mcubridge.protocol.topics import (
-        Topic,
-        topic_path,
-    )
+    from mcubridge.protocol.topics import Topic, topic_path
 
     assert topic_path("prefix", Topic.SYSTEM, "handshake") == "prefix/system/handshake"
     assert topic_path("p", Topic.DIGITAL, "13", "read") == "p/d/13/read"

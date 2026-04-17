@@ -23,7 +23,7 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.state.context import create_runtime_state
 
-from tests._helpers import make_test_config as _make_config, make_route, make_mqtt_msg
+from tests._helpers import make_test_config, make_route, make_mqtt_msg
 
 # ============================================================================
 # ============================================================================
@@ -59,7 +59,7 @@ class TestMqttHelper:
     def test_configure_tls_context_no_tls(self):
         from mcubridge.util.mqtt_helper import configure_tls_context
 
-        config = _make_config(mqtt_tls=False)
+        config = make_test_config(mqtt_tls=False)
         assert configure_tls_context(config) is None
 
     def test_configure_tls_context_with_cafile(self: Any, tmp_path: Any):
@@ -67,7 +67,7 @@ class TestMqttHelper:
 
         ca = tmp_path / "ca.pem"
         ca.write_text("fake-ca")
-        config = _make_config(mqtt_tls=True, mqtt_cafile=str(ca))
+        config = make_test_config(mqtt_tls=True, mqtt_cafile=str(ca))
         # Invalid cert data triggers RuntimeError which covers the except branch
         with pytest.raises(RuntimeError, match="TLS setup failed"):
             configure_tls_context(config)
@@ -75,7 +75,7 @@ class TestMqttHelper:
     def test_configure_tls_context_no_cafile(self):
         from mcubridge.util.mqtt_helper import configure_tls_context
 
-        config = _make_config(mqtt_tls=True, mqtt_cafile=None)
+        config = make_test_config(mqtt_tls=True, mqtt_cafile=None)
         ctx = configure_tls_context(config)
         assert ctx is not None
 
@@ -184,19 +184,19 @@ class TestSecurity:
 
 class TestInit:
     def test_check_dependencies_missing_callback_api_version(self):
-        import paho.mqtt.client as pmc
+        import paho.mqtt.client
 
         import mcubridge
 
         # Temporarily remove CallbackAPIVersion from the real module
-        orig = pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
+        orig = paho.mqtt.client.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
         # type: ignore[reportUnknownMemberType, reportUnknownVariableType]
         try:
-            del pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
+            del paho.mqtt.client.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
             with pytest.raises(SystemExit):
                 mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
         finally:
-            pmc.CallbackAPIVersion = orig  # type: ignore[reportAttributeAccessIssue]
+            paho.mqtt.client.CallbackAPIVersion = orig  # type: ignore[reportAttributeAccessIssue]
 
     def test_check_dependencies_import_error(self):
         import sys
@@ -476,7 +476,7 @@ class TestShellMqttLogic:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         ctx = MagicMock()
         ctx.publish = AsyncMock()
@@ -539,7 +539,7 @@ class TestStatusWriter:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
 
         try:
@@ -700,7 +700,7 @@ class TestBaseComponent:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -719,18 +719,18 @@ class TestBaseComponent:
 
 class TestConfigSettings:
     def test_runtime_config_defaults(self):
-        config = _make_config()
+        config = make_test_config()
         assert config.serial_port == "/dev/null"
 
     def test_runtime_config_shared_secret_too_short(self):
         with pytest.raises(
             (ValueError, msgspec.ValidationError), match="serial_shared_secret"
         ):
-            _make_config(serial_shared_secret=b"abc")
+            make_test_config(serial_shared_secret=b"abc")
 
     def test_runtime_config_changeme_secret(self):
         with pytest.raises((ValueError, msgspec.ValidationError), match="insecure"):
-            _make_config(serial_shared_secret=b"changeme123")
+            make_test_config(serial_shared_secret=b"changeme123")
 
 
 # ============================================================================
@@ -743,7 +743,7 @@ class TestProcessComponent:
     def _process(self):
         from mcubridge.services.process import ProcessComponent
 
-        config = _make_config(process_max_concurrent=4)
+        config = make_test_config(process_max_concurrent=4)
         state = create_runtime_state(config)
         service = MagicMock()
         service.acknowledge_mcu_frame = AsyncMock()
@@ -812,7 +812,7 @@ class TestConsoleComponent:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -834,7 +834,7 @@ class TestMailboxComponent:
     async def test_mailbox_handle_mqtt_write(self):
         from mcubridge.services.mailbox import MailboxComponent
 
-        config = _make_config(mailbox_queue_limit=5, mailbox_queue_bytes_limit=1024)
+        config = make_test_config(mailbox_queue_limit=5, mailbox_queue_bytes_limit=1024)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -862,7 +862,7 @@ class TestPinComponent:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -890,7 +890,7 @@ class TestDatastoreComponent:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -918,7 +918,7 @@ class TestDispatcherEdgeCases:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             d = BridgeDispatcher(
@@ -1002,7 +1002,7 @@ class TestFileComponent:
     async def test_file_handle_read_nonexistent(self):
         from mcubridge.services.file import FileComponent
 
-        config = _make_config(file_system_root="/tmp")
+        config = make_test_config(file_system_root="/tmp")
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -1034,7 +1034,7 @@ class TestWatchdog:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             wd = WatchdogKeepalive(state=state, interval=0.1)
@@ -1062,7 +1062,7 @@ class TestSystemComponent:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
@@ -1117,7 +1117,7 @@ class TestHandshakeEdgeCases:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         timing = derive_serial_timing(config)
         mgr = SerialHandshakeManager(
@@ -1136,7 +1136,7 @@ class TestHandshakeEdgeCases:
     def test_derive_serial_timing(self):
         from mcubridge.services.handshake import derive_serial_timing
 
-        config = _make_config()
+        config = make_test_config()
         timing = derive_serial_timing(config)
         assert timing.ack_timeout_ms > 0
         assert timing.response_timeout_ms > 0
@@ -1154,7 +1154,7 @@ class TestHandshakeEdgeCases:
 class TestRuntimeStateEdges:
     @pytest.fixture
     def state(self):
-        config = _make_config()
+        config = make_test_config()
         s = create_runtime_state(config)
         try:
             yield s
@@ -1258,7 +1258,7 @@ class TestBridgeServiceEdges:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         svc = BridgeService(config, state)
         try:
@@ -1292,7 +1292,7 @@ class TestMqttTransport:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             service = MagicMock()
@@ -1308,7 +1308,7 @@ class TestMqttTransport:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             service = MagicMock()
@@ -1343,7 +1343,7 @@ class TestMetrics:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock(side_effect=OSError("boom"))
@@ -1364,7 +1364,7 @@ class TestMetrics:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock()
@@ -1389,7 +1389,7 @@ class TestMetrics:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock(side_effect=OSError("summary fail"))
@@ -1414,7 +1414,7 @@ class TestMetrics:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock(side_effect=OSError("handshake fail"))
@@ -1446,7 +1446,7 @@ class TestSerialTransport:
         import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = _make_config(file_system_root=unique_root)
+        config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
             service = MagicMock()

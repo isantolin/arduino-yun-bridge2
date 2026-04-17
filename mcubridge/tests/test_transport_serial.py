@@ -2,13 +2,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import asyncio
 import pytest
-from cobs.cobs import encode as cobs_encode
+import cobs.cobs as cobs
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
-from mcubridge.transport import serial as serial_fast
+from mcubridge.transport.serial import SerialTransport
 
 from tests._helpers import make_test_config
 
@@ -38,12 +38,12 @@ async def test_process_packet_crc_mismatch_reports_crc(
         service = BridgeService(config, state)
 
         # Use SerialTransport to test async process packet logic
-        transport = serial_fast.SerialTransport(config, state, service)
+        transport = SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
 
         # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
         raw = b"\xff" + b"x" * 20
-        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
+        monkeypatch.setattr(cobs, "decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
 
         # Manual call to async method
         await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
@@ -65,9 +65,9 @@ async def test_process_packet_success_dispatches() -> None:
         frame_bytes = Frame(
             command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi"
         ).build()
-        encoded = cobs_encode(frame_bytes)
+        encoded = cobs.encode(frame_bytes)
+        transport = SerialTransport(config, state, service)
 
-        transport = serial_fast.SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
 
         await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
@@ -88,7 +88,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
     try:
         service = BridgeService(config, state)
 
-        transport = serial_fast.SerialTransport(config, state, service)
+        transport = SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
 
         mock_writer = MagicMock(spec=asyncio.StreamWriter)
@@ -101,7 +101,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport._negotiating = True  # type: ignore[reportPrivateUsage]
         transport._negotiation_future = transport.loop.create_future()  # type: ignore[reportPrivateUsage]
 
-        encoded = cobs_encode(
+        encoded = cobs.encode(
             Frame(
                 command_id=Command.CMD_SET_BAUDRATE_RESP.value,
                 sequence_id=0,
@@ -124,25 +124,26 @@ async def test_write_frame_debug_logs_unknown_command(
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state)
+        import mcubridge.transport.serial
 
-        transport = serial_fast.SerialTransport(config, state, service)
+        transport = SerialTransport(config, state, service)
         mock_writer = MagicMock(spec=asyncio.StreamWriter)
         mock_writer.is_closing.return_value = False
         transport.writer = mock_writer
 
         monkeypatch.setattr(
-            serial_fast.logger,
+            mcubridge.transport.serial.logger,
             "isEnabledFor",
             lambda _lvl: True,  # type: ignore[reportUnknownLambdaType]
         )
         seen: dict[str, str] = {}
         monkeypatch.setattr(
-            serial_fast.logger,
+            mcubridge.transport.serial.logger,
             "debug",
             lambda msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownLambdaType]
         )
         monkeypatch.setattr(
-            serial_fast.logger,
+            mcubridge.transport.serial.logger,
             "log",
             lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownLambdaType]
         )
@@ -163,7 +164,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
     try:
         service = BridgeService(config, state)
 
-        transport = serial_fast.SerialTransport(config, state, service)
+        transport = SerialTransport(config, state, service)
         mock_writer = MagicMock(spec=asyncio.StreamWriter)
         mock_writer.is_closing.return_value = False
         mock_writer.write.side_effect = OSError("boom")
@@ -189,7 +190,7 @@ async def test_process_packet_fallback_triggers_negotiation(
         state.mark_synchronized()
         service = BridgeService(config, state)
 
-        transport = serial_fast.SerialTransport(config, state, service)
+        transport = SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
 
         # Mock negotiation method
@@ -197,7 +198,7 @@ async def test_process_packet_fallback_triggers_negotiation(
 
         # Create an invalid frame manually
         raw = b"\xff" + b"x" * 20
-        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
+        monkeypatch.setattr(cobs, "decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
 
         await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
         assert transport._consecutive_crc_errors == 1  # type: ignore[reportPrivateUsage]

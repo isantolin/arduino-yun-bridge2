@@ -7,7 +7,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
-from mcubridge.transport import serial as serial_fast
+from mcubridge.transport.serial import SerialTransport
 
 from tests._helpers import make_test_config
 
@@ -36,8 +36,8 @@ async def test_negotiate_baudrate_success() -> None:
         state = create_runtime_state(config)
         try:
             service = BridgeService(config, state)
+            transport = SerialTransport(config, state, service)
 
-            transport = serial_fast.SerialTransport(config, state, service)
             transport.loop = asyncio.get_running_loop()
 
             # Mock _serial_sender to avoid real I/O and return True
@@ -68,8 +68,8 @@ async def test_negotiate_baudrate_timeout() -> None:
         state = create_runtime_state(config)
         try:
             service = BridgeService(config, state)
+            transport = SerialTransport(config, state, service)
 
-            transport = serial_fast.SerialTransport(config, state, service)
             transport.loop = asyncio.get_running_loop()
 
             # Mock sender to succeed but don't resolve future
@@ -103,11 +103,11 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
         state = create_runtime_state(config)
         try:
             service = BridgeService(config, state)
+            transport = SerialTransport(config, state, service)
 
-            transport = serial_fast.SerialTransport(config, state, service)
             # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
             # This prevents infinite loops when the mock reader fails.
-            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -159,10 +159,10 @@ async def test_transport_run_handshake_fatal() -> None:
                     side_effect=SerialHandshakeFatal("test"),
                 ),
                 patch.object(
-                    serial_fast.SerialTransport, "_toggle_dtr", new_callable=AsyncMock
+                    SerialTransport, "_toggle_dtr", new_callable=AsyncMock
                 ),
             ):
-                transport = serial_fast.SerialTransport(config, state, service)
+                transport = SerialTransport(config, state, service)
                 with pytest.raises(SerialHandshakeFatal):
                     await transport.run()
         finally:
@@ -194,9 +194,9 @@ async def test_serial_disconnected_hook_error(
             async def _raise_error() -> None:
                 raise RuntimeError("disconnected hook error")
 
-            transport = serial_fast.SerialTransport(config, state, service)
+            transport = SerialTransport(config, state, service)
             # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
-            orig_run = serial_fast.SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -230,8 +230,8 @@ async def test_async_process_packet_os_error(
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state)
+        transport = SerialTransport(config, state, service)
 
-        transport = serial_fast.SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
 
         # Mock handle_mcu_frame to raise OSError
@@ -239,14 +239,14 @@ async def test_async_process_packet_os_error(
             raise OSError("Device error")
 
         service.handle_mcu_frame = _raise_os_error  # type: ignore[reportAttributeAccessIssue]
-        from cobs.cobs import encode as cobs_encode
+        import cobs.cobs as cobs
         from mcubridge.protocol.frame import Frame
         from mcubridge.protocol.protocol import Command
 
         frame = Frame(
             command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00"
         ).build()
-        encoded = cobs_encode(frame)
+        encoded = cobs.encode(frame)
 
         caplog.set_level("ERROR")
         await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]

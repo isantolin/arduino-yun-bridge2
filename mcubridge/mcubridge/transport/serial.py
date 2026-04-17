@@ -19,11 +19,7 @@ import structlog
 from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
-from cobs.cobs import (
-    encode as cobs_encode,
-    decode as cobs_decode,
-    DecodeError as CobsDecodeError,
-)
+import cobs.cobs as cobs
 import serial
 import serial_asyncio_fast
 import tenacity
@@ -35,7 +31,7 @@ from mcubridge.config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
-from mcubridge.protocol import protocol, structures as structures
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.frame import Frame
 from transitions import Machine
 
@@ -293,12 +289,12 @@ class SerialTransport:
             and not self._negotiation_future.done()
         ):
             try:
-                frame = Frame.parse(cobs_decode(encoded_packet))
+                frame = Frame.parse(cobs.decode(encoded_packet))
                 if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
                     self._switch_local_baudrate(self.config.serial_baud)
                     self._negotiation_future.set_result(True)
                     return
-            except (CobsDecodeError, ValueError) as e:
+            except (cobs.DecodeError, ValueError) as e:
                 logger.debug("Discarding malformed frame during read: %s", e)
 
         if self.loop:
@@ -321,7 +317,7 @@ class SerialTransport:
 
         try:
             # [SIL-2] Deterministic COBS decode and Frame parse.
-            decoded = cobs_decode(packet_bytes)
+            decoded = cobs.decode(packet_bytes)
             frame = Frame.parse(decoded)
             cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
@@ -333,7 +329,7 @@ class SerialTransport:
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
             self.state.record_serial_rx(len(encoded_packet))
 
-        except (CobsDecodeError, ValueError, msgspec.DecodeError) as exc:
+        except (cobs.DecodeError, ValueError, msgspec.DecodeError) as exc:
             # [SIL-2] Fault Isolation: Group malformed/decode errors separately from runtime logic.
             raw_hex = packet_bytes.hex(" ").upper()
             logger.warning("[SERIAL <- MCU] [MALFORMED (ERR: %s)]: [%s]", exc, raw_hex)
@@ -397,7 +393,7 @@ class SerialTransport:
                 seq = self._tx_sequence_id
 
             frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)
-            encoded = cobs_encode(frame.build()) + protocol.FRAME_DELIMITER
+            encoded = cobs.encode(frame.build()) + protocol.FRAME_DELIMITER
 
             if logger.isEnabledFor(logging.DEBUG):
                 logger.log(

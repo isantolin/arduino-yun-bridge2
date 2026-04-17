@@ -53,7 +53,7 @@ if "serial_asyncio_fast" not in sys.modules:
 # [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
 # and interference with Python 3.13 representation during cleanup.
 from mcubridge.config import common
-from mcubridge.config import logging as mcubridge_logging
+import mcubridge.config.logging
 from mcubridge.config import settings
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
@@ -69,7 +69,7 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
-mcubridge_logging.SYSLOG_SOCKET = Path("/dev/null/no-syslog-in-tests")
+mcubridge.config.logging.SYSLOG_SOCKET = Path("/dev/null/no-syslog-in-tests")
 
 # [TEST FIX] Configure structlog to use stdlib backend so pytest's caplog works.
 structlog.configure(

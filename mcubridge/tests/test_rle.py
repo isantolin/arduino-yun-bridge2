@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from mcubridge.protocol.protocol import RLE_ESCAPE_BYTE as ESCAPE_BYTE
+from mcubridge.protocol import protocol
 from mcubridge.protocol.rle import (
     encode,
     should_compress,
@@ -38,41 +38,41 @@ class TestRLEEncode:
         """Runs of exactly MIN_RUN_LENGTH are encoded."""
         # Run of 4: ESCAPE, count-2=2, byte
         data = b"AAAA"
-        expected = bytes([ESCAPE_BYTE, 2, ord("A")])
+        expected = bytes([protocol.RLE_ESCAPE_BYTE, 2, ord("A")])
         assert encode(data) == expected
 
     def test_long_run(self) -> None:
         """Long runs are properly encoded."""
         # Run of 10: ESCAPE, count-2=8, byte
         data = b"A" * 10
-        expected = bytes([ESCAPE_BYTE, 8, ord("A")])
+        expected = bytes([protocol.RLE_ESCAPE_BYTE, 8, ord("A")])
         assert encode(data) == expected
 
     def test_escape_byte_handling(self) -> None:
         """Escape byte (0xFD) in input is properly escaped."""
         # Single 0xFD becomes: ESCAPE, 255 (special marker), 0xFD
-        data = bytes([ESCAPE_BYTE])
-        expected = bytes([ESCAPE_BYTE, 255, ESCAPE_BYTE])
+        data = bytes([protocol.RLE_ESCAPE_BYTE])
+        expected = bytes([protocol.RLE_ESCAPE_BYTE, 255, protocol.RLE_ESCAPE_BYTE])
         assert encode(data) == expected
 
     def test_mixed_data(self) -> None:
         """Mixed data with runs and literals."""
         # "ABBBBBCD" = A + run(5,B) + C + D
         data = b"ABBBBBCD"
-        expected = b"A" + bytes([ESCAPE_BYTE, 3, ord("B")]) + b"CD"
+        expected = b"A" + bytes([protocol.RLE_ESCAPE_BYTE, 3, ord("B")]) + b"CD"
         assert encode(data) == expected
 
     def test_multiple_runs(self) -> None:
         """Multiple runs in sequence."""
         # AAAABBBB = run(4,A) + run(4,B)
         data = b"AAAABBBB"
-        expected = bytes([ESCAPE_BYTE, 2, ord("A"), ESCAPE_BYTE, 2, ord("B")])
+        expected = bytes([protocol.RLE_ESCAPE_BYTE, 2, ord("A"), protocol.RLE_ESCAPE_BYTE, 2, ord("B")])
         assert encode(data) == expected
 
     def test_null_bytes(self) -> None:
         """Null bytes are handled correctly."""
         data = b"\x00\x00\x00\x00"  # Run of 4 nulls
-        expected = bytes([ESCAPE_BYTE, 2, 0])
+        expected = bytes([protocol.RLE_ESCAPE_BYTE, 2, 0])
         assert encode(data) == expected
 
 
@@ -91,22 +91,22 @@ class TestRLEDecode:
     def test_encoded_run(self) -> None:
         """Encoded runs are properly expanded."""
         # ESCAPE, count-2=3, 'A' = AAAAA (5 A's)
-        encoded = bytes([ESCAPE_BYTE, 3, ord("A")])
+        encoded = bytes([protocol.RLE_ESCAPE_BYTE, 3, ord("A")])
         assert RLEPayload(encoded).decode() == b"AAAAA"
 
     def test_escaped_escape(self) -> None:
         """Escaped escape byte decodes to single 0xFD."""
         # ESCAPE, 255, 0xFD = single 0xFD (special marker)
-        encoded = bytes([ESCAPE_BYTE, 255, ESCAPE_BYTE])
-        assert RLEPayload(encoded).decode() == bytes([ESCAPE_BYTE])
+        encoded = bytes([protocol.RLE_ESCAPE_BYTE, 255, protocol.RLE_ESCAPE_BYTE])
+        assert RLEPayload(encoded).decode() == bytes([protocol.RLE_ESCAPE_BYTE])
 
     def test_malformed_truncated(self) -> None:
         """Malformed data (truncated escape sequence) raises ValueError."""
         # ESCAPE without enough following bytes
         with pytest.raises(ValueError, match="RLE decompression failed"):
-            RLEPayload(bytes([ESCAPE_BYTE])).decode()
+            RLEPayload(bytes([protocol.RLE_ESCAPE_BYTE])).decode()
         with pytest.raises(ValueError, match="RLE decompression failed"):
-            RLEPayload(bytes([ESCAPE_BYTE, 5])).decode()
+            RLEPayload(bytes([protocol.RLE_ESCAPE_BYTE, 5])).decode()
 
 
 class TestRLERoundtrip:
@@ -164,7 +164,7 @@ class TestShouldCompress:
 
     def test_many_escapes(self) -> None:
         """Data with many escape bytes and no runs should not compress."""
-        data = bytes([ESCAPE_BYTE if i % 2 == 0 else (i & 0xFE) for i in range(50)])
+        data = bytes([protocol.RLE_ESCAPE_BYTE if i % 2 == 0 else (i & 0xFE) for i in range(50)])
         assert should_compress(data) is False
 
 

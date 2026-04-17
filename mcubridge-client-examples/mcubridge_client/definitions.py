@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ssl
 from enum import IntEnum
-from typing import Annotated, Final
+from typing import Annotated
 
 import msgspec
 from paho.mqtt.packettypes import PacketTypes
@@ -10,12 +10,10 @@ from paho.mqtt.properties import Properties
 
 from mcubridge.config.const import DEFAULT_MQTT_PORT
 from mcubridge.protocol.structures import QOSLevel, UserProperty
-from mcubridge.mqtt import build_mqtt_properties as _daemon_build_props
-from .protocol import MAX_PAYLOAD_SIZE as PROTOCOL_MAX_PAYLOAD_SIZE
+from .protocol import MAX_PAYLOAD_SIZE
 
 # Client-specific default (remote board IP, NOT localhost)
 DEFAULT_MQTT_HOST: str = "192.168.15.36"
-MAX_PAYLOAD_SIZE: Final[int] = PROTOCOL_MAX_PAYLOAD_SIZE
 DEFAULT_MQTT_TOPIC: str = "br"
 
 
@@ -60,7 +58,8 @@ def build_mqtt_properties(message: QueuedPublish) -> Properties:
     """
     # The daemon helper returns None when no standard fields are set;
     # the client always needs a Properties object for the extra fields.
-    props = _daemon_build_props(message) or Properties(PacketTypes.PUBLISH)
+    import mcubridge.mqtt
+    props = mcubridge.mqtt.build_mqtt_properties(message) or Properties(PacketTypes.PUBLISH)
 
     # Client-specific MQTT v5 properties not used by the daemon
     if message.topic_alias is not None:

@@ -5,12 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Annotated, cast
+from typing import Annotated
 
 import aiomqtt
 import typer
-from mcubridge.config.settings import get_uci_config
-from mcubridge.protocol.structures import RuntimeConfig
+from mcubridge.config.settings import load_runtime_config
+from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.util.mqtt_helper import configure_tls_context
 
 app = typer.Typer(add_completion=False, help="Control MCU LED via MQTT.")
@@ -18,7 +18,7 @@ app = typer.Typer(add_completion=False, help="Control MCU LED via MQTT.")
 
 async def do_publish(topic: str, payload: str) -> None:
     """Publish LED state using core configuration."""
-    config = cast(RuntimeConfig, get_uci_config())
+    config = load_runtime_config()
     tls_context = configure_tls_context(config)
 
     try:
@@ -46,8 +46,8 @@ def main(
         sys.stderr.write(f"Error: invalid state '{state}'. Use on|off.\n")
         raise typer.Exit(code=2)
 
-    config = cast(RuntimeConfig, get_uci_config())
-    topic = f"{config.mqtt_topic}/d/{pin}"
+    config = load_runtime_config()
+    topic = topic_path(config.mqtt_topic, Topic.DIGITAL, pin)
     payload = "1" if state_norm == "on" else "0"
 
     asyncio.run(do_publish(topic, payload))

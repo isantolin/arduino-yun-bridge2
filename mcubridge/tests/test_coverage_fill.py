@@ -103,7 +103,7 @@ async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
 
 @pytest.mark.asyncio
 async def test_dispatcher_mcu_handler_exception(dispatcher: BridgeDispatcher):
-    """Cover lines 258-272 in dispatcher.py (Exception in MCU handler)."""
+    """Confirm that MCU handler exceptions bubble up directly."""
 
     async def buggy_handler(seq_id: Any, payload: Any):
         raise RuntimeError("bug")
@@ -111,8 +111,8 @@ async def test_dispatcher_mcu_handler_exception(dispatcher: BridgeDispatcher):
     dispatcher.mcu_registry[0x99] = buggy_handler
     # Use patch to set is_synchronized
     with patch.object(type(dispatcher.state), "is_synchronized", True):
-        await dispatcher.dispatch_mcu_frame(0x99, 0, b"")
-        dispatcher.send_frame.assert_called()  # type: ignore[reportFunctionMemberAccess]
+        with pytest.raises(RuntimeError, match="bug"):
+            await dispatcher.dispatch_mcu_frame(0x99, 0, b"")
 
 
 @pytest.mark.asyncio
@@ -130,7 +130,7 @@ async def test_dispatcher_mqtt_no_segments(dispatcher: BridgeDispatcher):
 
 @pytest.mark.asyncio
 async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
-    """Cover lines 288-292 in dispatcher.py."""
+    """Confirm that MQTT handler exceptions bubble up directly."""
     msg = MagicMock(spec=Message)
     msg.topic = "bridge/system/test"
     msg.payload = b""
@@ -142,7 +142,8 @@ async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
     with patch.object(
         dispatcher.mqtt_router, "dispatch", side_effect=RuntimeError("mqtt bug")
     ):
-        await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
+        with pytest.raises(RuntimeError, match="mqtt bug"):
+            await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
 
 
 @pytest.mark.asyncio

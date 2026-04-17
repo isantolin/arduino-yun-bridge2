@@ -196,23 +196,7 @@ class BridgeDispatcher:
             logger.debug(
                 "MCU > %s (seq=%d) [%d bytes]", command_name, sequence_id, len(payload)
             )
-            try:
-                result = await handler(sequence_id, payload)
-                handled_successfully = result is not False
-            except (
-                OSError,
-                ValueError,
-                TypeError,
-                AttributeError,
-                KeyError,
-                IndexError,
-                RuntimeError,
-            ) as exc:
-                logger.critical(
-                    "Critical: Exception in handler for %s: %s", command_name, exc
-                )
-                if response_to_request(command_id) is None:
-                    await self.send_frame(Status.ERROR.value, b"Internal Error")
+            handled_successfully = (await handler(sequence_id, payload)) is not False
 
         elif response_to_request(command_id) is None:
             logger.warning("Protocol: Unhandled MCU command %s", command_name)
@@ -248,18 +232,8 @@ class BridgeDispatcher:
                 return
 
         # 3. Router Dispatch
-        try:
-            if not await self.mqtt_router.dispatch(route, inbound):
-                logger.debug("Unhandled MQTT topic %s", inbound_topic)
-        except (
-            ValueError,
-            TypeError,
-            AttributeError,
-            KeyError,
-            IndexError,
-            RuntimeError,
-        ):
-            logger.exception("Fault Isolation: MQTT processing failed for %s", inbound_topic)
+        if not await self.mqtt_router.dispatch(route, inbound):
+            logger.debug("Unhandled MQTT topic %s", inbound_topic)
 
     def _get_topic_action(self, route: TopicRoute) -> str | None:
         """Deduce the action name for policy enforcement from the route."""

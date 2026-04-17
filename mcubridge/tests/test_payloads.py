@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import pytest
-from mcubridge.protocol.structures import (PayloadValidationError,
-                                           ShellCommandPayload,
-                                           ShellPidPayload)
+from mcubridge.protocol.structures import (
+    PayloadValidationError,
+    ShellCommandPayload,
+    ShellPidPayload,
+)
 
 
 def test_shell_command_payload_plain_text() -> None:

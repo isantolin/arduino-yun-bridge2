@@ -162,17 +162,17 @@ class _ShadowVisitor(ast.NodeVisitor):
 
     def _check_target(self, target: ast.AST, lineno: int, context: str) -> None:
         if isinstance(target, ast.Name):
-            getattr(self, "_check_name")(target.id, lineno, context)
+            self._check_name(target.id, lineno, context)
             return
         if isinstance(target, (ast.Tuple, ast.List)):
             for elt in target.elts:
-                getattr(self, "_check_target")(elt, lineno, context)
+                self._check_target(elt, lineno, context)
 
-    def visit_Global(self, node: ast.Global) -> None:
+    def visit_Global(self, node: ast.Global) -> None:  # noqa: N802
         self.hits.append((self.path, node.lineno, "global statement"))
         self.generic_visit(node)
 
-    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:  # noqa: N802
         self.hits.append((self.path, node.lineno, "nonlocal statement"))
         self.generic_visit(node)
 
@@ -182,55 +182,55 @@ class _ShadowVisitor(ast.NodeVisitor):
             + list(node.args.args)
             + list(node.args.kwonlyargs)
         ):
-            getattr(self, "_check_name")(arg.arg, arg.lineno or node.lineno, "argument")
+            self._check_name(arg.arg, arg.lineno or node.lineno, "argument")
         if node.args.vararg is not None:
-            getattr(self, "_check_name")(node.args.vararg.arg, node.lineno, "*args")
+            self._check_name(node.args.vararg.arg, node.lineno, "*args")
         if node.args.kwarg is not None:
-            getattr(self, "_check_name")(node.args.kwarg.arg, node.lineno, "**kwargs")
+            self._check_name(node.args.kwarg.arg, node.lineno, "**kwargs")
         self.generic_visit(node)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        getattr(self, "_visit_function")(node)
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        self._visit_function(node)
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        getattr(self, "_visit_function")(node)
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+        self._visit_function(node)
 
-    def visit_Assign(self, node: ast.Assign) -> None:
+    def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
         for t in node.targets:
-            getattr(self, "_check_target")(t, node.lineno, "assignment")
+            self._check_target(t, node.lineno, "assignment")
         self.generic_visit(node)
 
-    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-        getattr(self, "_check_target")(node.target, node.lineno, "annotated assignment")
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:  # noqa: N802
+        self._check_target(node.target, node.lineno, "annotated assignment")
         self.generic_visit(node)
 
-    def visit_AugAssign(self, node: ast.AugAssign) -> None:
-        getattr(self, "_check_target")(node.target, node.lineno, "augmented assignment")
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+        self._check_target(node.target, node.lineno, "augmented assignment")
         self.generic_visit(node)
 
-    def visit_For(self, node: ast.For) -> None:
-        getattr(self, "_check_target")(node.target, node.lineno, "for target")
+    def visit_For(self, node: ast.For) -> None:  # noqa: N802
+        self._check_target(node.target, node.lineno, "for target")
         self.generic_visit(node)
 
-    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        getattr(self, "_check_target")(node.target, node.lineno, "async for target")
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
+        self._check_target(node.target, node.lineno, "async for target")
         self.generic_visit(node)
 
-    def visit_With(self, node: ast.With) -> None:
+    def visit_With(self, node: ast.With) -> None:  # noqa: N802
         for item in node.items:
             if item.optional_vars is not None:
-                getattr(self, "_check_target")(item.optional_vars, node.lineno, "with as")
+                self._check_target(item.optional_vars, node.lineno, "with as")
         self.generic_visit(node)
 
-    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # noqa: N802
         for item in node.items:
             if item.optional_vars is not None:
-                getattr(self, "_check_target")(item.optional_vars, node.lineno, "async with as")
+                self._check_target(item.optional_vars, node.lineno, "async with as")
         self.generic_visit(node)
 
-    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
         if node.name:
-            getattr(self, "_check_name")(node.name, node.lineno, "except as")
+            self._check_name(node.name, node.lineno, "except as")
         self.generic_visit(node)
 
 

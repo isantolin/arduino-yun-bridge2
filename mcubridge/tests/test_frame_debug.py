@@ -3,47 +3,47 @@
 from __future__ import annotations
 
 import pytest
-from mcubridge.protocol.protocol import UINT8_MASK, Command, Status
-from tests.test_constants import TEST_BROKEN_CRC
+from mcubridge.protocol.protocol import Command, Status, UINT8_MASK
+from tests.test_constants import TEST_BROKEN_CRC  # noqa: E402
 
-from tools import frame_debug
+from tools import frame_debug  # noqa: E402
 
 
 def test_resolve_command_hex() -> None:
     assert (
-        getattr(frame_debug, "_resolve_command")(
+        frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
             f"0x{Command.CMD_LINK_RESET.value:02X}"
         )
         == Command.CMD_LINK_RESET.value
     )
     # Use lowercase 0x to match frame_debug.py startswith if upper() was missing
     assert (
-        getattr(frame_debug, "_resolve_command")(
+        frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
             f"0x{UINT8_MASK:02X}"
         )
         == UINT8_MASK
     )
     assert (
-        getattr(frame_debug, "_resolve_command")("10") == 10
+        frame_debug._resolve_command("10") == 10  # type: ignore[reportPrivateUsage]
     )  # Just an integer
 
 
 def test_resolve_command_name() -> None:
     assert (
-        getattr(frame_debug, "_resolve_command")(
+        frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
             "CMD_GET_VERSION"
         )
         == Command.CMD_GET_VERSION.value
     )
     assert (
-        getattr(frame_debug, "_resolve_command")(
+        frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
             "CMD_GET_FREE_MEMORY"
         )
         == Command.CMD_GET_FREE_MEMORY.value
     )
     # Case insensitive
     assert (
-        getattr(frame_debug, "_resolve_command")(
+        frame_debug._resolve_command(  # type: ignore[reportPrivateUsage]
             "cmd_get_version"
         )
         == Command.CMD_GET_VERSION.value
@@ -52,45 +52,45 @@ def test_resolve_command_name() -> None:
 
 def test_resolve_command_invalid() -> None:
     with pytest.raises(ValueError, match="command may not be empty"):
-        getattr(frame_debug, "_resolve_command")("")
+        frame_debug._resolve_command("")  # type: ignore[reportPrivateUsage]
 
     with pytest.raises(ValueError, match="Unknown command"):
-        getattr(frame_debug, "_resolve_command")("INVALID_CMD")
+        frame_debug._resolve_command("INVALID_CMD")  # type: ignore[reportPrivateUsage]
 
 
 def test_parse_payload() -> None:
-    assert getattr(frame_debug, "_parse_payload")(None) == b""
-    assert getattr(frame_debug, "_parse_payload")("") == b""
-    assert getattr(frame_debug, "_parse_payload")("010203") == bytes([1, 2, 3])
-    assert getattr(frame_debug, "_parse_payload")(f"0x{1:02X}{2:02X}") == bytes([1, 2])
-    assert getattr(frame_debug, "_parse_payload")("01 02 03") == bytes([1, 2, 3])
+    assert frame_debug._parse_payload(None) == b""  # type: ignore[reportPrivateUsage]
+    assert frame_debug._parse_payload("") == b""  # type: ignore[reportPrivateUsage]
+    assert frame_debug._parse_payload("010203") == bytes([1, 2, 3])  # type: ignore[reportPrivateUsage]
+    assert frame_debug._parse_payload(f"0x{1:02X}{2:02X}") == bytes([1, 2])  # type: ignore[reportPrivateUsage]
+    assert frame_debug._parse_payload("01 02 03") == bytes([1, 2, 3])  # type: ignore[reportPrivateUsage]
 
 
 def test_parse_payload_invalid() -> None:
     # binascii.unhexlify raises binascii.Error: Odd-length string
     with pytest.raises(ValueError, match="Odd-length string"):
-        getattr(frame_debug, "_parse_payload")("123")
+        frame_debug._parse_payload("123")  # type: ignore[reportPrivateUsage]
 
     with pytest.raises(ValueError, match="Invalid hex payload"):
-        getattr(frame_debug, "_parse_payload")("ZZ")
+        frame_debug._parse_payload("ZZ")  # type: ignore[reportPrivateUsage]
 
 
 def test_name_for_command() -> None:
     assert (
-        getattr(frame_debug, "_name_for_command")(
+        frame_debug._name_for_command(  # type: ignore[reportPrivateUsage]
             Command.CMD_GET_VERSION.value
         )
         == "CMD_GET_VERSION"
     )
     # Keep testing Status resolution
     assert (
-        getattr(frame_debug, "_name_for_command")(
+        frame_debug._name_for_command(  # type: ignore[reportPrivateUsage]
             Status.ACK.value
         )
         == "ACK"
     )
     assert (
-        getattr(frame_debug, "_name_for_command")(UINT8_MASK)
+        frame_debug._name_for_command(UINT8_MASK)  # type: ignore[reportPrivateUsage]
         == f"UNKNOWN(0x{UINT8_MASK:02X})"
     )
 

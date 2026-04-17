@@ -1,4 +1,3 @@
-
 import pytest
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame

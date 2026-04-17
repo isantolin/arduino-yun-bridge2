@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Any, cast
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import msgspec
@@ -12,20 +12,19 @@ import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
-from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import LinkSyncPacket
-from mcubridge.services.handshake import (SerialHandshakeFatal,
-                                          derive_serial_timing)
+from mcubridge.protocol.protocol import Command, Status
+from mcubridge.services.handshake import SerialHandshakeFatal, derive_serial_timing
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
 class _FakeMonotonic:
     def __init__(self, start_time: float = 0.0) -> None:
-        setattr(self, "_current", start_time)
+        self._current = start_time
 
     def monotonic(self) -> float:
-        return getattr(self, "_current")
+        return self._current
 
     def advance(self, seconds: float) -> None:
         self._current += seconds
@@ -45,7 +44,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        flow = getattr(service, "_serial_flow")
+        flow = service._serial_flow  # type: ignore[reportPrivateUsage]
 
         async def fake_sender(
             command_id: int, payload: bytes, seq_id: int | None = None
@@ -207,8 +206,8 @@ def test_link_sync_resp_respects_rate_limit(
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent _serial_flow from blocking
             ack_payload = structures.AckPacket(command_id=command_id).encode()
-            if getattr(service, "_serial_flow"):
-                getattr(service, "_serial_flow").on_frame_received(
+            if service._serial_flow:  # type: ignore[reportPrivateUsage]
+                service._serial_flow.on_frame_received(  # type: ignore[reportPrivateUsage]
                     Status.ACK.value,
                     seq_id or 0,
                     ack_payload,
@@ -657,8 +656,8 @@ async def test_on_serial_disconnected_clears_pending(
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
     runtime_state.mark_transport_connected()
-    runtime_state.pending_digital_reads.append(b"1")
-    runtime_state.pending_analog_reads.append(b"2")
+    runtime_state.pending_digital_reads.append(b"1")  # type: ignore[reportArgumentType]
+    runtime_state.pending_analog_reads.append(b"2")  # type: ignore[reportArgumentType]
 
     await service.on_serial_disconnected()
 
@@ -815,7 +814,7 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
         qos=0,
         retain=False,
         properties=cast(Any, Props()),
-        mid=1,
+        mid=1,  # type: ignore[reportArgumentType]
     )
 
     await service.handle_mqtt_message(msg)
@@ -853,7 +852,7 @@ async def test_mqtt_datastore_get_request_miss_responds_with_error(
         qos=0,
         retain=False,
         properties=cast(Any, Props()),
-        mid=1,
+        mid=1,  # type: ignore[reportArgumentType]
     )
 
     await service.handle_mqtt_message(msg)
@@ -933,7 +932,7 @@ async def test_run_command_respects_allow_list(
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["/usr/bin/id"])
     _service = BridgeService(
         runtime_config, runtime_state
-    )
+    )  # noqa: F841 — validates init
 
     # Simulate forbidden command logic
     status = Status.ERROR.value
@@ -953,7 +952,7 @@ async def test_run_command_accepts_shell_metacharacters_as_literals(
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
     _service = BridgeService(
         runtime_config, runtime_state
-    )
+    )  # noqa: F841 — validates init
 
     # Logic is now handled inside ProcessComponent and asyncio
     pass

@@ -5,21 +5,25 @@ all mcubridge modules.
 """
 
 from __future__ import annotations
+from typing import Any
 
 import asyncio
 import contextlib
 import logging
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import msgspec
 import psutil
+import msgspec
 import pytest
-from mcubridge.protocol.protocol import Command, Status, Topic
+from mcubridge.protocol.protocol import (
+    Command,
+    Status,
+    Topic,
+)
 from mcubridge.state.context import create_runtime_state
-from tests._helpers import make_mqtt_msg, make_route
-from tests._helpers import make_test_config as _make_config
+
+from tests._helpers import make_test_config as _make_config, make_route, make_mqtt_msg
 
 # ============================================================================
 # ============================================================================
@@ -111,8 +115,10 @@ class TestSecurity:
         assert new_counter == 1
 
     def test_extract_nonce_counter(self):
-        from mcubridge.security.security import (extract_nonce_counter,
-                                                 generate_nonce_with_counter)
+        from mcubridge.security.security import (
+            extract_nonce_counter,
+            generate_nonce_with_counter,
+        )
 
         nonce, _ = generate_nonce_with_counter(41)
         counter = extract_nonce_counter(nonce)
@@ -125,8 +131,10 @@ class TestSecurity:
             extract_nonce_counter(b"short")
 
     def test_validate_nonce_counter_valid(self):
-        from mcubridge.security.security import (generate_nonce_with_counter,
-                                                 validate_nonce_counter)
+        from mcubridge.security.security import (
+            generate_nonce_with_counter,
+            validate_nonce_counter,
+        )
 
         nonce, _ = generate_nonce_with_counter(5)
         valid, new_last = validate_nonce_counter(nonce, 3)
@@ -134,8 +142,10 @@ class TestSecurity:
         assert new_last == 6
 
     def test_validate_nonce_counter_replay(self):
-        from mcubridge.security.security import (generate_nonce_with_counter,
-                                                 validate_nonce_counter)
+        from mcubridge.security.security import (
+            generate_nonce_with_counter,
+            validate_nonce_counter,
+        )
 
         nonce, _ = generate_nonce_with_counter(2)
         valid, new_last = validate_nonce_counter(nonce, 100)
@@ -179,14 +189,14 @@ class TestInit:
         import mcubridge
 
         # Temporarily remove CallbackAPIVersion from the real module
-        orig = pmc.CallbackAPIVersion
-
+        orig = pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
+        # type: ignore[reportUnknownMemberType, reportUnknownVariableType]
         try:
-            del pmc.CallbackAPIVersion
+            del pmc.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
             with pytest.raises(SystemExit):
-                getattr(mcubridge, "_check_dependencies")()
+                mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
         finally:
-            pmc.CallbackAPIVersion = orig
+            pmc.CallbackAPIVersion = orig  # type: ignore[reportAttributeAccessIssue]
 
     def test_check_dependencies_import_error(self):
         import sys
@@ -195,9 +205,9 @@ class TestInit:
 
         # When paho.mqtt.client can't be imported at all, should pass silently
         orig = sys.modules.get("paho.mqtt.client")
-        sys.modules["paho.mqtt.client"] = None
+        sys.modules["paho.mqtt.client"] = None  # type: ignore[reportArgumentType]
         try:
-            getattr(mcubridge, "_check_dependencies")()
+            mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
         finally:
             if orig is not None:
                 sys.modules["paho.mqtt.client"] = orig
@@ -205,7 +215,7 @@ class TestInit:
     def test_check_dependencies_ok(self):
         import mcubridge
 
-        getattr(mcubridge, "_check_dependencies")()
+        mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
 
 
 # ============================================================================
@@ -215,22 +225,19 @@ class TestInit:
 
 class TestPolicy:
     def test_tokenize_empty_command(self):
-        from mcubridge.policy import (CommandValidationError,
-                                      tokenize_shell_command)
+        from mcubridge.policy import CommandValidationError, tokenize_shell_command
 
         with pytest.raises(CommandValidationError, match="Empty command"):
             tokenize_shell_command("")
 
     def test_tokenize_whitespace_only(self):
-        from mcubridge.policy import (CommandValidationError,
-                                      tokenize_shell_command)
+        from mcubridge.policy import CommandValidationError, tokenize_shell_command
 
         with pytest.raises(CommandValidationError, match="Empty command"):
             tokenize_shell_command("   ")
 
     def test_tokenize_malformed_quotes(self):
-        from mcubridge.policy import (CommandValidationError,
-                                      tokenize_shell_command)
+        from mcubridge.policy import CommandValidationError, tokenize_shell_command
 
         with pytest.raises(CommandValidationError, match="Malformed"):
             tokenize_shell_command("echo 'unterminated")
@@ -463,10 +470,10 @@ class TestMqttBuildProperties:
 class TestShellMqttLogic:
     @pytest.fixture
     def shell_comp(self):
-        import os
-        import time
-
         from mcubridge.services.process import ProcessComponent
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -509,12 +516,12 @@ class TestShellMqttLogic:
 
     @pytest.mark.asyncio
     async def test_parse_shell_command_invalid(self: Any, shell_comp: Any):
-        result = getattr(shell_comp, "_parse_shell_command")(b"", "run")
+        result = shell_comp._parse_shell_command(b"", "run")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_parse_shell_pid_invalid(self: Any, shell_comp: Any):
-        result = getattr(shell_comp, "_parse_shell_pid")("notanumber", "poll")
+        result = shell_comp._parse_shell_pid("notanumber", "poll")
         assert result is None
 
 
@@ -526,10 +533,10 @@ class TestShellMqttLogic:
 class TestStatusWriter:
     @pytest.mark.asyncio
     async def test_status_writer_write_tick(self):
-        import os
-        import time
-
         from mcubridge.state.status import status_writer
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -687,10 +694,10 @@ class TestProtocolTopics:
 
 class TestBaseComponent:
     def test_base_component_publish(self):
-        import os
-        import time
-
         from mcubridge.services.base import BaseComponent
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -799,10 +806,10 @@ class TestProcessComponent:
 class TestConsoleComponent:
     @pytest.mark.asyncio
     async def test_console_queue_flush_empty(self):
-        import os
-        import time
-
         from mcubridge.services.console import ConsoleComponent
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -849,10 +856,10 @@ class TestMailboxComponent:
 class TestPinComponent:
     @pytest.mark.asyncio
     async def test_pin_handle_digital_read(self):
-        import os
-        import time
-
         from mcubridge.services.pin import PinComponent
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -879,8 +886,8 @@ class TestPinComponent:
 class TestDatastoreComponent:
     @pytest.mark.asyncio
     async def test_datastore_get_miss_publishes_empty(self):
-        import os
         import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -902,13 +909,13 @@ class TestDatastoreComponent:
 class TestDispatcherEdgeCases:
     @pytest.mark.asyncio
     async def test_dispatcher_digital_topic_no_segments(self):
-        import os
-        import time
-
         from mcubridge.protocol.topics import TopicRoute
         from mcubridge.services.dispatcher import BridgeDispatcher
 
         from .conftest import make_component_container
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -939,7 +946,7 @@ class TestDispatcherEdgeCases:
             route = TopicRoute(
                 raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
             )
-            result = getattr(d, "_get_topic_action")(route)
+            result = d._get_topic_action(route)  # type: ignore[reportPrivateUsage]
             assert result is None
             assert result is None
         finally:
@@ -953,8 +960,10 @@ class TestDispatcherEdgeCases:
 
 class TestPayloads:
     def test_shell_pid_from_topic_segment_invalid(self):
-        from mcubridge.protocol.structures import (PayloadValidationError,
-                                                   ShellPidPayload)
+        from mcubridge.protocol.structures import (
+            PayloadValidationError,
+            ShellPidPayload,
+        )
 
         with pytest.raises(PayloadValidationError):
             ShellPidPayload.from_topic_segment("abc")
@@ -971,7 +980,7 @@ class TestDaemon:
         from mcubridge import daemon
 
         with patch("psutil.Process", side_effect=psutil.NoSuchProcess(1)):
-            getattr(daemon, "_cleanup_child_processes")()
+            daemon._cleanup_child_processes()  # type: ignore[reportPrivateUsage]
 
     @pytest.mark.asyncio
     async def test_cleanup_status_file_missing(self):
@@ -1019,10 +1028,10 @@ class TestFileComponent:
 class TestWatchdog:
     @pytest.mark.asyncio
     async def test_watchdog_run_cancel(self):
-        import os
-        import time
-
         from mcubridge.watchdog import WatchdogKeepalive
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1047,10 +1056,10 @@ class TestWatchdog:
 class TestSystemComponent:
     @pytest.mark.asyncio
     async def test_system_handle_version(self):
-        import os
-        import time
-
         from mcubridge.services.system import SystemComponent
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1099,11 +1108,13 @@ class TestHandshakeEdgeCases:
 
     @pytest.fixture
     def handshake_mgr(self):
-        import os
-        import time
+        from mcubridge.services.handshake import (
+            SerialHandshakeManager,
+            derive_serial_timing,
+        )
 
-        from mcubridge.services.handshake import (SerialHandshakeManager,
-                                                  derive_serial_timing)
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1241,10 +1252,10 @@ class TestRuntimeStateEdges:
 class TestBridgeServiceEdges:
     @pytest.fixture
     def service(self):
-        import os
-        import time
-
         from mcubridge.services.runtime import BridgeService
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1275,10 +1286,10 @@ class TestBridgeServiceEdges:
 
 class TestMqttTransport:
     def test_mqtt_transport_init(self):
-        import os
-        import time
-
         from mcubridge.transport.mqtt import MqttTransport
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1291,10 +1302,10 @@ class TestMqttTransport:
             state.cleanup()
 
     def test_mqtt_transport_fsm_transitions(self):
-        import os
-        import time
-
         from mcubridge.transport.mqtt import MqttTransport
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1303,16 +1314,16 @@ class TestMqttTransport:
             service = MagicMock()
             transport = MqttTransport(config, state, service)
 
-            transport.trigger("connect")
+            transport.trigger("connect")  # type: ignore[reportUnknownMemberType]
             assert transport.fsm_state == MqttTransport.STATE_CONNECTING
 
-            transport.trigger("connected")
+            transport.trigger("connected")  # type: ignore[reportUnknownMemberType]
             assert transport.fsm_state == MqttTransport.STATE_SUBSCRIBING
 
-            transport.trigger("subscribed")
+            transport.trigger("subscribed")  # type: ignore[reportUnknownMemberType]
             assert transport.fsm_state == MqttTransport.STATE_READY
 
-            transport.trigger("disconnect")
+            transport.trigger("disconnect")  # type: ignore[reportUnknownMemberType]
             assert transport.fsm_state == MqttTransport.STATE_DISCONNECTED
         finally:
             state.cleanup()
@@ -1326,10 +1337,10 @@ class TestMqttTransport:
 class TestMetrics:
     @pytest.mark.asyncio
     async def test_publish_metrics_error_path(self):
-        import os
-        import time
-
         from mcubridge.metrics import publish_metrics
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1347,10 +1358,10 @@ class TestMetrics:
 
     @pytest.mark.asyncio
     async def test_publish_bridge_snapshots_both_disabled(self):
-        import os
-        import time
-
         from mcubridge.metrics import publish_bridge_snapshots
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1372,10 +1383,10 @@ class TestMetrics:
 
     @pytest.mark.asyncio
     async def test_publish_bridge_snapshots_summary_error(self):
-        import os
-        import time
-
         from mcubridge.metrics import publish_bridge_snapshots
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1397,10 +1408,10 @@ class TestMetrics:
 
     @pytest.mark.asyncio
     async def test_publish_bridge_snapshots_handshake_error(self):
-        import os
-        import time
-
         from mcubridge.metrics import publish_bridge_snapshots
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)
@@ -1429,10 +1440,10 @@ class TestMetrics:
 class TestSerialTransport:
     @pytest.mark.asyncio
     async def test_serial_transport_init(self):
-        import os
-        import time
-
         from mcubridge.transport.serial import SerialTransport
+
+        import time
+        import os
 
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = _make_config(file_system_root=unique_root)

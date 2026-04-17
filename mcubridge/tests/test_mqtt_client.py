@@ -13,17 +13,17 @@ async def test_aiomqtt_context_manager_mocking():
     mock_client_instance = AsyncMock(spec=Client)
 
     # Setup the __aenter__ to return the mock instance itself
-    getattr(mock_client_instance, "__aenter__").return_value = mock_client_instance
+    mock_client_instance.__aenter__.return_value = mock_client_instance
 
-    async with mock_client_instance as client:
+    async with mock_client_instance as client:  # type: ignore[reportUnknownVariableType]
         assert client is mock_client_instance
-        await client.publish("test/topic", b"payload")
+        await client.publish("test/topic", b"payload")  # type: ignore[reportUnknownMemberType]
 
     mock_client_instance.publish.assert_awaited_once_with(
         "test/topic",
         b"payload",
     )
-    getattr(mock_client_instance, "__aexit__").assert_awaited_once()
+    mock_client_instance.__aexit__.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -44,12 +44,12 @@ async def test_aiomqtt_messages_iterator_mocking():
     async def msg_gen():
         yield fake_msg
 
-    getattr(mock_messages, "__aiter__").side_effect = msg_gen
+    mock_messages.__aiter__.side_effect = msg_gen
 
     received = []
     async for msg in mock_client.messages:
-        received.append(msg)
+        received.append(msg)  # type: ignore[reportUnknownMemberType]
 
-    assert len(received) == 1
-    assert received[0].topic == "test/in"
-    assert received[0].payload == b"123"
+    assert len(received) == 1  # type: ignore[reportUnknownArgumentType]
+    assert received[0].topic == "test/in"  # type: ignore[reportUnknownMemberType]
+    assert received[0].payload == b"123"  # type: ignore[reportUnknownMemberType]

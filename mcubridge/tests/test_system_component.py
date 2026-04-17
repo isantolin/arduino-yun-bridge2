@@ -6,14 +6,17 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from aiomqtt import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import SystemAction
+from mcubridge.protocol import structures
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState, create_runtime_state
+
+from aiomqtt import Message
+
 from tests._helpers import make_route
 
 
@@ -125,7 +128,7 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
 
         msg = MagicMock()
         msg.topic = "reply/topic"
-        getattr(component, "_pending_free_memory").append(msg)
+        component._pending_free_memory.append(msg)  # type: ignore[reportPrivateUsage]
 
         # Payload: 2 bytes (uint16)
         await component.handle_get_free_memory_resp(
@@ -165,7 +168,7 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(
 
         msg = MagicMock()
         msg.topic = "reply/ver"
-        getattr(component, "_pending_version").append(msg)
+        component._pending_version.append(msg)  # type: ignore[reportPrivateUsage]
 
         # Payload: major=1, minor=2
         payload = structures.VersionResponsePacket(major=1, minor=2, patch=0).encode()
@@ -198,7 +201,7 @@ def test_handle_get_version_resp_malformed(
         messages = (record.getMessage() for record in caplog.records)
         assert any(
             "Malformed structures.VersionResponsePacket" in msg
-            or "Malformed VersionResponsePacket" in msg
+            or "Malformed VersionResponsePacket" in msg  # noqa: W503
             for msg in messages
         )
 
@@ -248,7 +251,7 @@ def test_handle_mqtt_version_get_without_cached_version(
         assert len(ctx.sent_frames) == 1
         cmd, _pl = ctx.sent_frames[0]
         assert cmd == protocol.Command.CMD_GET_VERSION.value
-        assert msg in getattr(component, "_pending_version")
+        assert msg in component._pending_version  # type: ignore[reportPrivateUsage]
 
     _run(_coro())
 
@@ -271,6 +274,6 @@ def test_handle_mqtt_free_memory_get_tracks_pending(
         assert len(ctx.sent_frames) == 1
         cmd, _pl = ctx.sent_frames[0]
         assert cmd == protocol.Command.CMD_GET_FREE_MEMORY.value
-        assert msg in getattr(component, "_pending_free_memory")
+        assert msg in component._pending_free_memory  # type: ignore[reportPrivateUsage]
 
     _run(_coro())

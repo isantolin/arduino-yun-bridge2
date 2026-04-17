@@ -5,7 +5,10 @@ import pytest
 from mcubridge.protocol.protocol import Status
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import PROCESS_STATE_FINISHED, ManagedProcess
+from mcubridge.state.context import (
+    PROCESS_STATE_FINISHED,
+    ManagedProcess,
+)
 
 
 @pytest.fixture
@@ -33,7 +36,7 @@ async def test_poll_process_flushes_stored_buffers(
     async with state.process_lock:
         state.running_processes[pid] = slot
 
-    _processonent = getattr(runtime_service, "_container").get(ProcessComponent)
+    _processonent = runtime_service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
     batch = await _processonent.poll_process(pid)
 
     # ProcessOutputBatch fields: status_byte, exit_code, stdout_chunk, stderr_chunk, finished, ...
@@ -51,12 +54,12 @@ async def test_poll_process_flushes_stored_buffers(
 async def test_run_async_respects_concurrency_limit(
     runtime_service: BridgeService,
 ) -> None:
-    _processonent = getattr(runtime_service, "_container").get(ProcessComponent)
+    _processonent = runtime_service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
 
     # Consume all available slots
     limit = _processonent.state.process_max_concurrent
     for _ in range(limit):
-        await getattr(_processonent, "_process_slots").acquire()
+        await _processonent._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     # Try to start another
     pid = await _processonent.run_async("ls")
@@ -64,14 +67,14 @@ async def test_run_async_respects_concurrency_limit(
 
     # Release all
     for _ in range(limit):
-        getattr(_processonent, "_process_slots").release()
+        _processonent._process_slots.release()  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
 async def test_monitor_process_releases_slot(
     runtime_service: BridgeService,
 ) -> None:
-    _processonent = getattr(runtime_service, "_container").get(ProcessComponent)
+    _processonent = runtime_service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
     state = runtime_service.state
 
     mock_handle = MagicMock()
@@ -90,16 +93,16 @@ async def test_monitor_process_releases_slot(
         state.running_processes[77] = slot
 
     # Save initial value
-    initial_value = getattr(_processonent, "_process_slots")._value
+    initial_value = _processonent._process_slots._value  # type: ignore[reportPrivateUsage]
 
     # Acquire one slot manually
-    await getattr(_processonent, "_process_slots").acquire()
+    await _processonent._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     async with slot.io_lock:
         slot.exit_code = 5
-    getattr(_processonent, "_finalize_process_internal")(77)
+    _processonent._finalize_process_internal(77)  # type: ignore[reportPrivateUsage]
 
     assert slot.exit_code == 5
 
     # Should be back to initial value (because it finalized and released the slot)
-    assert getattr(_processonent, "_process_slots")._value == initial_value
+    assert _processonent._process_slots._value == initial_value  # type: ignore[reportPrivateUsage]

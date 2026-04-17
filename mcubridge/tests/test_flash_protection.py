@@ -1,4 +1,3 @@
-
 """Test suite for Flash Protection mechanisms (SIL-2 Safety)."""
 
 import unittest

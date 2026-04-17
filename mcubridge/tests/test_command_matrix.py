@@ -10,12 +10,17 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import msgspec
+
 import pytest
 from mcubridge.protocol.contracts import expected_responses
-from mcubridge.protocol.protocol import (MQTT_COMMAND_SUBSCRIPTIONS, Command,
-                                         Status, Topic)
+from mcubridge.protocol.protocol import (
+    MQTT_COMMAND_SUBSCRIPTIONS,
+    Command,
+    Status,
+    Topic,
+)
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
-from mcubridge.router.routers import McuHandler, MQTTRouter
+from mcubridge.router.routers import MQTTRouter, McuHandler
 from mcubridge.services.dispatcher import BridgeDispatcher
 
 from .conftest import make_component_container
@@ -81,6 +86,8 @@ def _always_allowed(_topic: Topic | str, _action: str) -> bool:
     return True
 
 
+def _link_synchronized() -> bool:  # type: ignore[reportUnusedFunction]
+    return True
 
 
 class _Console:
@@ -302,9 +309,9 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             handle_link_sync_resp=_noop_link_handler,
             handle_link_reset_resp=_noop_link_handler,
             handle_get_capabilities_resp=_noop_link_handler,
-            handle_ack=_noop_ack_handler,
-            status_handler_factory=_noop_status_handler_factory,
-            handle_process_kill=_noop_process_kill,
+            handle_ack=_noop_ack_handler,  # type: ignore[reportArgumentType]
+            status_handler_factory=_noop_status_handler_factory,  # type: ignore[reportArgumentType]
+            handle_process_kill=_noop_process_kill,  # type: ignore[reportArgumentType]
         )
 
         # Commands initiated by Linux (to the MCU). These requests should not be

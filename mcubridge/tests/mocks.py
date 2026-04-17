@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 from aiomqtt.message import Message
@@ -18,7 +18,7 @@ from mcubridge.state.context import RuntimeState
 class MockSerialService:
     config: RuntimeConfig
     state: RuntimeState
-    received_frames: deque[tuple[int, int, bytes]] = field(
+    received_frames: deque[tuple[int, int, bytes]] = field(  # type: ignore[reportUnknownVariableType]
         default_factory=deque
     )
     serial_connected: asyncio.Event = field(default_factory=asyncio.Event)
@@ -28,7 +28,7 @@ class MockSerialService:
     def register_serial_sender(
         self, sender: Callable[[int, bytes], Awaitable[bool]]
     ) -> None:
-        setattr(self, "_serial_sender", sender)
+        self._serial_sender = sender
 
     async def on_serial_connected(self) -> None:
         self.serial_connected.set()
@@ -42,9 +42,9 @@ class MockSerialService:
         self.received_frames.append((command_id, sequence_id, payload))
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
-        if getattr(self, "_serial_sender") is None:
+        if self._serial_sender is None:
             return False
-        return await getattr(self, "_serial_sender")(command_id, payload)
+        return await self._serial_sender(command_id, payload)
 
     async def enqueue_mqtt(self, *_: object, **__: object) -> None:
         return None

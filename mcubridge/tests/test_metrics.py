@@ -7,9 +7,12 @@ from unittest.mock import patch
 
 import msgspec
 import pytest
-from mcubridge.metrics import publish_bridge_snapshots, publish_metrics
-from mcubridge.protocol import protocol
+from mcubridge.metrics import (
+    publish_bridge_snapshots,
+    publish_metrics,
+)
 from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
 
 
@@ -41,7 +44,7 @@ async def test_publish_metrics_publishes_snapshot(
     with patch.object(
         RuntimeState,
         "build_metrics_snapshot",
-        side_effect=lambda self: fake_snapshot,
+        side_effect=lambda self: fake_snapshot,  # type: ignore[reportUnknownLambdaType]
         autospec=True,
     ):
         task = asyncio.create_task(
@@ -85,7 +88,7 @@ async def test_publish_metrics_marks_unknown_spool_reason(
     with patch.object(
         RuntimeState,
         "build_metrics_snapshot",
-        side_effect=lambda self: {
+        side_effect=lambda self: {  # type: ignore[reportUnknownLambdaType]
             "mqtt_spool_degraded": True,
             "watchdog_enabled": False,
         },
@@ -125,13 +128,13 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
         patch.object(
             RuntimeState,
             "build_bridge_snapshot",
-            side_effect=lambda self: {"snapshot": "summary"},
+            side_effect=lambda self: {"snapshot": "summary"},  # type: ignore[reportUnknownLambdaType]
             autospec=True,
         ),
         patch.object(
             RuntimeState,
             "build_handshake_snapshot",
-            side_effect=lambda self: {"snapshot": "handshake"},
+            side_effect=lambda self: {"snapshot": "handshake"},  # type: ignore[reportUnknownLambdaType]
             autospec=True,
         ),
     ):

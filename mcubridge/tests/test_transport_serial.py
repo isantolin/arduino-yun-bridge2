@@ -1,6 +1,6 @@
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+import asyncio
 import pytest
 from cobs.cobs import encode as cobs_encode
 from mcubridge.config.settings import RuntimeConfig
@@ -9,6 +9,7 @@ from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import serial as serial_fast
+
 from tests._helpers import make_test_config
 
 
@@ -42,10 +43,10 @@ async def test_process_packet_crc_mismatch_reports_crc(
 
         # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
         raw = b"\xff" + b"x" * 20
-        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data=None: raw)
+        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
 
         # Manual call to async method
-        await getattr(transport, "_async_process_packet")(b"\x02encoded")
+        await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
 
         assert state.serial_decode_errors == 1
     finally:
@@ -69,7 +70,7 @@ async def test_process_packet_success_dispatches() -> None:
         transport = serial_fast.SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
 
-        await getattr(transport, "_async_process_packet")(encoded)
+        await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
         service.handle_mcu_frame.assert_awaited_once_with(
             Command.CMD_CONSOLE_WRITE.value, 0, b"hi"
@@ -97,8 +98,8 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         mock_writer.transport = MagicMock(serial=serial_port)
         transport.writer = mock_writer
 
-        setattr(transport, "_negotiating", True)
-        setattr(transport, "_negotiation_future", transport.loop.create_future())
+        transport._negotiating = True  # type: ignore[reportPrivateUsage]
+        transport._negotiation_future = transport.loop.create_future()  # type: ignore[reportPrivateUsage]
 
         encoded = cobs_encode(
             Frame(
@@ -107,9 +108,9 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
                 payload=b"",
             ).build()
         )
-        getattr(transport, "_process_packet")(encoded)
+        transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
-        assert await getattr(transport, "_negotiation_future") is True
+        assert await transport._negotiation_future is True  # type: ignore[reportPrivateUsage]
         assert serial_port.baudrate == config.serial_baud
     finally:
         state.cleanup()
@@ -132,21 +133,21 @@ async def test_write_frame_debug_logs_unknown_command(
         monkeypatch.setattr(
             serial_fast.logger,
             "isEnabledFor",
-            lambda _lvl=None: True,
+            lambda _lvl: True,  # type: ignore[reportUnknownLambdaType]
         )
         seen: dict[str, str] = {}
         monkeypatch.setattr(
             serial_fast.logger,
             "debug",
-            lambda msg, *args: seen.setdefault("msg", msg % args),
+            lambda msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownLambdaType]
         )
         monkeypatch.setattr(
             serial_fast.logger,
             "log",
-            lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),
+            lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownLambdaType]
         )
 
-        ok = await getattr(transport, "_serial_sender")(0xFE, b"payload")
+        ok = await transport._serial_sender(0xFE, b"payload")  # type: ignore[reportPrivateUsage]
         assert ok is True
         assert mock_writer.write.called
         # Check that the command 0xFE is present in the encoded hex string
@@ -168,7 +169,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         mock_writer.write.side_effect = OSError("boom")
         transport.writer = mock_writer
 
-        ok = await getattr(transport, "_serial_sender")(Command.CMD_CONSOLE_WRITE.value, b"hi")
+        ok = await transport._serial_sender(Command.CMD_CONSOLE_WRITE.value, b"hi")  # type: ignore[reportPrivateUsage]
         assert ok is False
     finally:
         state.cleanup()
@@ -192,21 +193,21 @@ async def test_process_packet_fallback_triggers_negotiation(
         transport.loop = asyncio.get_running_loop()
 
         # Mock negotiation method
-        setattr(transport, "_negotiate_baudrate", AsyncMock(return_value=True))
+        transport._negotiate_baudrate = AsyncMock(return_value=True)  # type: ignore[reportPrivateUsage]
 
         # Create an invalid frame manually
         raw = b"\xff" + b"x" * 20
-        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data=None: raw)
+        monkeypatch.setattr(serial_fast, "cobs_decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
 
-        await getattr(transport, "_async_process_packet")(b"\x02encoded")
-        assert getattr(transport, "_consecutive_crc_errors") == 1
+        await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
+        assert transport._consecutive_crc_errors == 1  # type: ignore[reportPrivateUsage]
 
-        getattr(transport, "_negotiate_baudrate").assert_not_called()
+        transport._negotiate_baudrate.assert_not_called()  # type: ignore[reportPrivateUsage]
 
         # Second error (threshold reached)
-        await getattr(transport, "_async_process_packet")(b"\x02encoded")
-        assert getattr(transport, "_consecutive_crc_errors") == 0
+        await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
+        assert transport._consecutive_crc_errors == 0  # type: ignore[reportPrivateUsage]
 
-        getattr(transport, "_negotiate_baudrate").assert_awaited_once_with(57600)
+        transport._negotiate_baudrate.assert_awaited_once_with(57600)  # type: ignore[reportPrivateUsage]
     finally:
         state.cleanup()

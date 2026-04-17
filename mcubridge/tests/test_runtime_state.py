@@ -1,18 +1,19 @@
 """Unit tests for RuntimeState helpers."""
 
 from __future__ import annotations
+from typing import Any
 
 import logging
 from collections.abc import Iterator
-from typing import Any, cast
+from typing import cast
 from unittest.mock import patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
@@ -350,9 +351,10 @@ async def test_spool_fallback_updates_state(
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from pathlib import Path
+
     # Force a failure during diskcache initialization.
     import errno
-    from pathlib import Path
 
     with patch.object(Path, "mkdir", side_effect=OSError(errno.ENOSPC, "disk full")):
         state = create_runtime_state(runtime_config, initialize_spool=True)

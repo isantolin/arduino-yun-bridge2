@@ -1,20 +1,21 @@
+from typing import Any
 import asyncio
 import errno
 import logging.handlers
 import os
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import psutil
 import pytest
+from mcubridge import daemon
 from mcubridge.config import logging as logging_config
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.process import ProcessComponent
-from mcubridge.transport.serial import SerialTransport
-
-from mcubridge import daemon
+from mcubridge.transport.serial import (
+    SerialTransport,
+)
 
 
 def create_real_config():
@@ -45,7 +46,7 @@ def test_configure_logging_stream_env():
         assert isinstance(root.handlers[0], _logging.StreamHandler)
         assert not isinstance(
             root.handlers[0],
-            _logging.handlers.SysLogHandler,
+            _logging.handlers.SysLogHandler,  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
         )
 
 
@@ -92,7 +93,7 @@ async def test_cleanup_child_processes_coverage():
         patch("psutil.wait_procs", return_value=([], [mock_zombie])),
     ):
         mock_proc_cls.return_value.children.return_value = [mock_child, mock_zombie]
-        getattr(daemon, "_cleanup_child_processes")()
+        daemon._cleanup_child_processes()  # type: ignore[reportPrivateUsage]
         mock_zombie.kill.assert_called_once()
 
 
@@ -111,7 +112,7 @@ async def test_supervise_task_retry_error():
     d = daemon.BridgeDaemon(create_real_config())
     try:
         with pytest.raises(RuntimeError):
-            await getattr(d, "_supervise")(
+            await d._supervise(  # type: ignore[reportPrivateUsage]
                 spec.name,
                 spec.factory,
                 spec.fatal_exceptions,
@@ -144,14 +145,14 @@ async def test_supervise_task_telemetry_error_path():
     async def fake_iter(*args: Any, **kwargs: Any):
         yield MagicMock()
 
-    setattr(mock_retryer, "__aiter__", fake_iter)
+    mock_retryer.__aiter__ = fake_iter
 
     try:
         with (
             patch("tenacity.AsyncRetrying", return_value=mock_retryer),
             pytest.raises(RuntimeError),
         ):
-            await getattr(d, "_supervise")(
+            await d._supervise(  # type: ignore[reportPrivateUsage]
                 spec.name,
                 spec.factory,
                 spec.fatal_exceptions,
@@ -203,7 +204,7 @@ async def test_cleanup_child_processes_alive():
         patch("psutil.wait_procs", return_value=([], [mock_child])),  # Still alive
     ):
         mock_proc_cls.return_value.children.return_value = [mock_child]
-        getattr(daemon, "_cleanup_child_processes")()
+        daemon._cleanup_child_processes()  # type: ignore[reportPrivateUsage]
         mock_child.kill.assert_called_once()
 
 
@@ -220,7 +221,7 @@ async def test_process_run_async_limit_reached():
     ctx = MagicMock()
 
     comp = ProcessComponent(config, state, ctx)
-    await getattr(comp, "_process_slots").acquire()
+    await comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     try:
         async with asyncio.timeout(0.1):
@@ -267,7 +268,7 @@ async def test_process_finalize_process_missing_slot():
     comp = ProcessComponent(config, state, MagicMock())
 
     # Should not raise
-    await getattr(comp, "_finalize_process")(999)
+    await comp._finalize_process(999)  # type: ignore[reportPrivateUsage]
 
 
 # --- mcubridge.transport.serial ---
@@ -281,13 +282,13 @@ async def test_serial_transport_toggle_dtr_error():
     transport = SerialTransport(config, state, service)
 
     with patch("serial.Serial", side_effect=OSError(errno.ENOTTY, "Not a typewriter")):
-        await getattr(transport, "_toggle_dtr")(asyncio.get_running_loop())
+        await transport._toggle_dtr(asyncio.get_running_loop())  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
 async def test_serial_transport_run_fatal():
     config = create_real_config()
-    config.reconnect_delay = 0.01
+    config.reconnect_delay = 0.01  # type: ignore[reportAttributeAccessIssue]
     state = MagicMock()
     service = MagicMock()
     transport = SerialTransport(config, state, service)
@@ -310,7 +311,7 @@ async def test_serial_transport_on_disconnected_hook_error():
     service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("Hook fail"))
     transport = SerialTransport(config, state, service)
 
-    orig_run = getattr(SerialTransport, "_retryable_run").__wrapped__
+    orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
     with (
         patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
         patch(

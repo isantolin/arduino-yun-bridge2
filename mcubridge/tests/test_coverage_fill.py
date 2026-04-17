@@ -3,30 +3,30 @@ Coverage gap filler tests for Python.
 """
 
 from __future__ import annotations
-
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
-from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Topic
+from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.protocol.topics import TopicRoute
 from mcubridge.services.datastore import DatastoreComponent
-from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.state.context import create_runtime_state
+from aiomqtt.message import Message
 
 from .conftest import make_component_container
 
 
 @pytest.fixture
 def runtime_config() -> RuntimeConfig:
-    import tempfile
+    from mcubridge.config.const import (
+        DEFAULT_MQTT_PORT,
+        DEFAULT_PROCESS_TIMEOUT,
+        DEFAULT_RECONNECT_DELAY,
+        DEFAULT_STATUS_INTERVAL,
+    )
 
-    from mcubridge.config.const import (DEFAULT_MQTT_PORT,
-                                        DEFAULT_PROCESS_TIMEOUT,
-                                        DEFAULT_RECONNECT_DELAY,
-                                        DEFAULT_STATUS_INTERVAL)
+    import tempfile
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=115200,
@@ -91,13 +91,13 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
 @pytest.mark.asyncio
 async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
     """Cover line 165-166 in dispatcher.py (Pin component not registered)."""
-    setattr(dispatcher, "_container", None)
+    dispatcher._container = None  # type: ignore[reportPrivateUsage]
     # CMD_DIGITAL_READ = 0x23
     # Find the handler registered for CMD_DIGITAL_READ
     handler = dispatcher.mcu_registry.get(Command.CMD_DIGITAL_READ.value)
 
     assert handler is not None
-    result = await handler(0, b"\x01")
+    result = await handler(0, b"\x01")  # type: ignore[reportUnknownVariableType]
     assert result is False
 
 
@@ -112,7 +112,7 @@ async def test_dispatcher_mcu_handler_exception(dispatcher: BridgeDispatcher):
     # Use patch to set is_synchronized
     with patch.object(type(dispatcher.state), "is_synchronized", True):
         await dispatcher.dispatch_mcu_frame(0x99, 0, b"")
-        dispatcher.send_frame.assert_called()
+        dispatcher.send_frame.assert_called()  # type: ignore[reportFunctionMemberAccess]
 
 
 @pytest.mark.asyncio
@@ -150,13 +150,13 @@ async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDisp
     """Cover lines 316, 319 in dispatcher.py."""
     # Line 316: Topic.DIGITAL with no segments
     route1 = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
-    assert getattr(dispatcher, "_get_topic_action")(route1) is None
+    assert dispatcher._get_topic_action(route1) is None  # type: ignore[reportPrivateUsage]
 
     # Line 319: len(segments) > 1 but segments[1] is empty
     route2 = TopicRoute(
         raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("1", "")
     )
-    assert getattr(dispatcher, "_get_topic_action")(route2) is None
+    assert dispatcher._get_topic_action(route2) is None  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
@@ -164,11 +164,11 @@ async def test_dispatcher_handle_system_topic_no_component(
     dispatcher: BridgeDispatcher,
 ):
     """Cover line 347 in dispatcher.py."""
-    setattr(dispatcher, "_container", None)
+    dispatcher._container = None  # type: ignore[reportPrivateUsage]
     route = TopicRoute(
         raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",)
     )
-    result = await getattr(dispatcher, "_handle_system_topic")(route, MagicMock())
+    result = await dispatcher._handle_system_topic(route, MagicMock())  # type: ignore[reportPrivateUsage]
     assert result is False
 
 
@@ -178,7 +178,7 @@ async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDisp
     route = TopicRoute(
         raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("bridge",)
     )
-    result = await getattr(dispatcher, "_handle_bridge_topic")(route, MagicMock())
+    result = await dispatcher._handle_bridge_topic(route, MagicMock())  # type: ignore[reportPrivateUsage]
     assert result is False
 
 
@@ -193,7 +193,7 @@ async def test_datastore_publish_value_error_reason(
     ctx = MagicMock()
     ctx.publish = AsyncMock()
     ds = DatastoreComponent(runtime_config, runtime_state, ctx)
-    await getattr(ds, "_publish_datastore_value")(
+    await ds._publish_datastore_value(  # type: ignore[reportPrivateUsage]
         key="key",
         value=b"val",
         error_reason="testing",

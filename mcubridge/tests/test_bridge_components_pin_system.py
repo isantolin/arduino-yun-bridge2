@@ -12,7 +12,10 @@ from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import PendingPinRequest, RuntimeState
+from mcubridge.state.context import (
+    PendingPinRequest,
+    RuntimeState,
+)
 
 from .mqtt_helpers import make_inbound_message
 
@@ -129,13 +132,13 @@ async def test_mqtt_digital_write_sends_frame(
     service = BridgeService(runtime_config, runtime_state)
 
     sent_frames: list[tuple[int, bytes]] = []
-    flow = getattr(service, "_serial_flow")
+    flow = service._serial_flow  # type: ignore[reportPrivateUsage]
 
     async def fake_sender(
         command_id: int, payload: bytes, seq_id: int | None = None
     ) -> bool:
         sent_frames.append((command_id, payload))
-        flow.on_frame_received(
+        flow.on_frame_received(  # type: ignore[reportCallIssue]
             Status.ACK.value,
             structures.AckPacket(command_id=command_id).encode(),
         )
@@ -171,7 +174,7 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     service = BridgeService(runtime_config, runtime_state)
 
     sent_frames: list[tuple[int, bytes]] = []
-    flow = getattr(service, "_serial_flow")
+    flow = service._serial_flow  # type: ignore[reportPrivateUsage]
 
     async def fake_sender(
         command_id: int, payload: bytes, seq_id: int | None = None
@@ -284,7 +287,7 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     runtime_state.mcu_version = (1, 2, 0)
 
     sent_frames: list[tuple[int, bytes]] = []
-    flow = getattr(service, "_serial_flow")
+    flow = service._serial_flow  # type: ignore[reportPrivateUsage]
 
     async def fake_sender(
         command_id: int, payload: bytes, seq_id: int | None = None
@@ -333,7 +336,7 @@ async def test_mqtt_shell_kill_invokes_processonent(
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
-    process = getattr(service, "_container").get(ProcessComponent)
+    process = service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
 
     with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:
         # Re-register mock in router because dispatcher registers methods at init time

@@ -7,9 +7,10 @@ from unittest.mock import MagicMock, patch
 
 from mcubridge.config import common
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
-from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import QueuedPublish
+
 from mcubridge.util import normalise_allowed_commands, parse_bool
+from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol import protocol
 
 
 def test_parse_bool():
@@ -126,7 +127,7 @@ def test_build_mqtt_properties_populates_fields() -> None:
         message_expiry_interval=10,
         response_topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response",
         correlation_data=b"cid",
-        user_properties=(("k", "v"),),
+        user_properties=(("k", "v"),),  # type: ignore[reportArgumentType]
     )
     props = build_mqtt_properties(message)
     assert props is not None

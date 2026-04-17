@@ -23,15 +23,6 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger("mcubridge")
 
-# [SIL-2] Paho log-level → stdlib mapping (module constant to avoid per-connection allocation)
-_PAHO_LOG_MAP: dict[int, int] = {
-    1: logging.DEBUG,
-    5: logging.INFO,
-    4: logging.WARNING,
-    8: logging.ERROR,
-    16: logging.DEBUG,
-}
-
 
 class MqttTransport:
     """MQTT transport with FSM-based state management."""
@@ -137,9 +128,6 @@ class MqttTransport:
     async def _connect_session(self, tls_context: Any) -> None:
         connect_props = build_mqtt_connect_properties()
 
-        def on_log(client: Any, userdata: Any, level: int, buf: str) -> None:
-            logger.log(_PAHO_LOG_MAP.get(level, logging.DEBUG), "[PAHO] %s", buf)
-
         # [SIL-2] Warn if connecting without authentication
         if not self.config.mqtt_user:
             logger.warning(
@@ -166,22 +154,6 @@ class MqttTransport:
             will=will,
             properties=connect_props,
         )
-
-        # [SIL-2] Direct Paho configuration to avoid aiomqtt internal wrappers
-        paho_client = getattr(client, "_client", None)
-        if paho_client is not None:
-            paho_client.on_log = on_log
-            # [SIL-2] Tighten on_message by delegating directly while suppressing Paho internals
-            original_on_message = paho_client.on_message
-
-            def safe_on_message(c: Any, userdata: Any, msg: Any) -> None:
-                if msg and msg.topic and original_on_message:
-                    with contextlib.suppress(
-                        OSError, RuntimeError, TypeError, ValueError
-                    ):
-                        original_on_message(c, userdata, msg)
-
-            paho_client.on_message = safe_on_message
 
         async with client as connected_client:
             logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")

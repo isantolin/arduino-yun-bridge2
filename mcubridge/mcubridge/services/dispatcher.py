@@ -118,25 +118,8 @@ class BridgeDispatcher:
         # Pin (GPIO)
         self.mcu_registry[Command.CMD_DIGITAL_READ_RESP.value] = pin.handle_digital_read_resp
         self.mcu_registry[Command.CMD_ANALOG_READ_RESP.value] = pin.handle_analog_read_resp
-
-        async def _handle_mcu_read(s: int, cmd: Command, p: bytes) -> bool:
-            if self._container:
-                from . import PinComponent
-
-                pin_cmp = self._container.get(PinComponent)
-                await pin_cmp.handle_unexpected_mcu_request(s, cmd, p)
-                return True
-            logger.warning(
-                "Pin component not registered; dropping unexpected %s", cmd.name
-            )
-            return False
-
-        self.mcu_registry[Command.CMD_DIGITAL_READ.value] = (
-            lambda s, p: _handle_mcu_read(s, Command.CMD_DIGITAL_READ, p)
-        )
-        self.mcu_registry[Command.CMD_ANALOG_READ.value] = (
-            lambda s, p: _handle_mcu_read(s, Command.CMD_ANALOG_READ, p)
-        )
+        self.mcu_registry[Command.CMD_DIGITAL_READ.value] = pin.handle_mcu_digital_read
+        self.mcu_registry[Command.CMD_ANALOG_READ.value] = pin.handle_mcu_analog_read
 
         self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt)
         self.mqtt_router.register(Topic.ANALOG, pin.handle_mqtt)

@@ -153,14 +153,20 @@ class _Mailbox:
 
 
 class _Pin:
-    async def handle_digital_read_resp(self, _payload: bytes) -> bool:
+    async def handle_digital_read_resp(self, seq_id: int, _payload: bytes) -> bool:
         return True
 
-    async def handle_analog_read_resp(self, _payload: bytes) -> bool:
+    async def handle_analog_read_resp(self, seq_id: int, _payload: bytes) -> bool:
+        return True
+
+    async def handle_mcu_digital_read(self, seq_id: int, _payload: bytes) -> bool:
+        return True
+
+    async def handle_mcu_analog_read(self, seq_id: int, _payload: bytes) -> bool:
         return True
 
     async def handle_unexpected_mcu_request(
-        self, _command: Any, _payload: bytes
+        self, seq_id: int, _command: Any, _payload: bytes
     ) -> bool:
         return True
 

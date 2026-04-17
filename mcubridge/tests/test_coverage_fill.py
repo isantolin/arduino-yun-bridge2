@@ -70,16 +70,27 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
         publish_bridge_snapshot=AsyncMock(),
     )
     # Register components with mocks
+    console = MagicMock()
+    datastore = MagicMock()
+    file = MagicMock()
+    mailbox = MagicMock()
+    pin = MagicMock()
+    pin.handle_mcu_digital_read = AsyncMock(return_value=False)
+    pin.handle_mcu_analog_read = AsyncMock(return_value=False)
+    process = MagicMock()
+    spi = MagicMock()
+    system = MagicMock()
+
     d.register_components(
         make_component_container(
-            console=MagicMock(),
-            datastore=MagicMock(),
-            file=MagicMock(),
-            mailbox=MagicMock(),
-            pin=MagicMock(),
-            process=MagicMock(),
-            spi=MagicMock(),
-            system=MagicMock(),
+            console=console,
+            datastore=datastore,
+            file=file,
+            mailbox=mailbox,
+            pin=pin,
+            process=process,
+            spi=spi,
+            system=system,
         )
     )
     return d

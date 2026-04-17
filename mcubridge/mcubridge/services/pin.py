@@ -32,6 +32,18 @@ logger = structlog.get_logger("mcubridge.pin")
 class PinComponent(BaseComponent):
     """Encapsulate pin read/write logic."""
 
+    async def handle_mcu_digital_read(self, seq_id: int, payload: bytes) -> bool:
+        """Handle CMD_DIGITAL_READ initiated by MCU."""
+        return await self.handle_unexpected_mcu_request(
+            seq_id, Command.CMD_DIGITAL_READ, payload
+        )
+
+    async def handle_mcu_analog_read(self, seq_id: int, payload: bytes) -> bool:
+        """Handle CMD_ANALOG_READ initiated by MCU."""
+        return await self.handle_unexpected_mcu_request(
+            seq_id, Command.CMD_ANALOG_READ, payload
+        )
+
     async def handle_unexpected_mcu_request(
         self,
         seq_id: int,

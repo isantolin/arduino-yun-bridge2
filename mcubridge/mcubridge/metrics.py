@@ -45,6 +45,7 @@ def _build_metrics_message(
         payload=_msgpack_enc.encode(snapshot),
         content_type="application/msgpack",
         message_expiry_interval=int(expiry_seconds),
+        user_properties=(),
     )
 
     mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
@@ -90,7 +91,7 @@ def _with_user_property(
     user_properties.append((key, value))
     return msgspec.structs.replace(
         message,
-        user_properties=user_properties,
+        user_properties=tuple(user_properties),
     )
 
 
@@ -478,7 +479,7 @@ def _build_bridge_snapshot_message(
         payload=_msgpack_enc.encode(snapshot),
         content_type="application/msgpack",
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
-        user_properties=[("bridge-snapshot", flavor)],
+        user_properties=(("bridge-snapshot", flavor),),
     )
 
 

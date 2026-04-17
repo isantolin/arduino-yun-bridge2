@@ -280,7 +280,7 @@ class BridgeService:
             user_properties = list(message_to_queue.user_properties)
             user_properties.append(("bridge-request-topic", origin_topic))
             message_to_queue = msgspec.structs.replace(
-                message_to_queue, user_properties=user_properties
+                message_to_queue, user_properties=tuple(user_properties)
             )
 
         try:
@@ -331,7 +331,7 @@ class BridgeService:
             retain=retain,
             content_type=content_type,
             message_expiry_interval=expiry,
-            user_properties=list(properties or []),
+            user_properties=tuple(properties or ()),
         )
         await self.enqueue_mqtt(message, reply_context=reply_to)
 

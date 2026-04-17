@@ -393,7 +393,7 @@ class TestMqttBuildProperties:
             message_expiry_interval=60,
             response_topic="resp",
             correlation_data=b"\x01",
-            user_properties=[("key", "value")],
+            user_properties=(("key", "value"),),
         )
         props = build_mqtt_properties(msg)
         assert props is not None
@@ -440,7 +440,7 @@ class TestMqttBuildProperties:
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(
-            topic_name="test", payload=b"", user_properties=[("k", "v")]
+            topic_name="test", payload=b"", user_properties=(("k", "v"),)
         )
         props = build_mqtt_properties(msg)
         assert props is not None

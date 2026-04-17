@@ -583,7 +583,7 @@ class SerialHandshakeManager:
             ),
             payload=_msgpack_enc.encode(payload),
             content_type="application/msgpack",
-            user_properties=[("bridge-event", "handshake")],
+            user_properties=(("bridge-event", "handshake"),),
         )
         await self._enqueue_mqtt(message)
 

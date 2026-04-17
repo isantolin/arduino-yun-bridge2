@@ -1,5 +1,5 @@
-"""Functional minimalistic persistent queues powered by diskcache.Cache (SIL-2).
-Manual index management to ensure resource cleanup and persistence integrity.
+"""Functional minimalistic persistent queues powered by diskcache.Deque (SIL-2).
+Leverages library features to eliminate manual index management.
 """
 
 from __future__ import annotations
@@ -42,23 +42,28 @@ class BridgeQueue(Generic[T]):
         self._current_bytes = 0
         self._last_err_msg: str | None = None
         self._cache: diskcache.Cache | None = None
-        self._items: deque[T] = deque()
+        self._deque: diskcache.Deque | deque[T]
 
         if directory:
             try:
                 self.directory = Path(directory)
                 self.directory.mkdir(parents=True, exist_ok=True)
                 self._cache = diskcache.Cache(str(self.directory))
-                if "head" not in self._cache:
-                    self._cache["head"] = 0
-                if "tail" not in self._cache:
-                    self._cache["tail"] = 0
+                self._deque = diskcache.Deque.fromcache(self._cache)  # type: ignore[reportUnknownMemberType]
+                # Re-calculate current bytes from existing items
+                for item in self._deque:  # type: ignore[reportUnknownVariableType]
+                    if isinstance(item, (bytes, bytearray)):
+                        self._current_bytes += len(item)
             except (OSError, RuntimeError, AttributeError, sqlite3.Error) as exc:
-                # [SIL-2] Resilient fallback to RAM if SQLite fails (e.g. I/O error in tests)
+                # [SIL-2] Resilient fallback to RAM if SQLite fails
                 logger.warning("Queue falling back to RAM: %s", exc)
                 self._fallback_active = True
                 self._last_err_msg = str(exc)
                 self._cache = None
+                self._deque = deque()
+        else:
+            self._deque = deque()
+
     def append(self, item: T) -> QueueEvent:
         if self._closed:
             return QueueEvent(success=False)
@@ -91,14 +96,7 @@ class BridgeQueue(Generic[T]):
             if isinstance(old, (bytes, bytearray)):
                 dropped_bytes += len(old)
 
-        cache = self._cache
-        if cache is not None:
-            tail: int = cast(int, cast(Any, cache)["tail"])
-            cast(Any, cache)[tail] = item
-            cast(Any, cache)["tail"] = tail + 1
-        else:
-            self._items.append(item)
-
+        self._deque.append(item)  # type: ignore[reportUnknownMemberType]
         self._current_bytes += data_len
         return QueueEvent(
             success=True,
@@ -112,15 +110,7 @@ class BridgeQueue(Generic[T]):
             return QueueEvent(success=False)
 
         data_len = len(item) if isinstance(item, (bytes, bytearray)) else 0
-
-        cache = self._cache
-        if cache is not None:
-            head: int = cast(int, cast(Any, cache)["head"]) - 1
-            cast(Any, cache)[head] = item
-            cast(Any, cache)["head"] = head
-        else:
-            self._items.appendleft(item)
-
+        self._deque.appendleft(item)  # type: ignore[reportUnknownMemberType]
         self._current_bytes += data_len
         return QueueEvent(success=True)
 
@@ -128,42 +118,26 @@ class BridgeQueue(Generic[T]):
         if self._closed or len(self) == 0:
             return None
 
-        val: T | None = None
-        cache = self._cache
-        if cache is not None:
-            head: int = cast(int, cast(Any, cache)["head"])
-            # [SIL-2] Use get and delete to emulate atomic pop from cache
-            val = cast(Any, cache).get(head)
-            if val is not None:
-                cast(Any, cache).delete(head)
-            cast(Any, cache)["head"] = head + 1
-        else:
-            val = self._items.popleft()
-
-        if val is not None and isinstance(val, (bytes, bytearray)):
-            self._current_bytes = max(0, self._current_bytes - len(val))
-
-        return cast(Any, val)
+        try:
+            val = self._deque.popleft()  # type: ignore[reportUnknownMemberType]
+            if val is not None and isinstance(val, (bytes, bytearray)):
+                self._current_bytes = max(0, self._current_bytes - len(val))
+            return cast(Any, val)
+        except (IndexError, AttributeError):
+            return None
 
     def clear(self) -> None:
         if self._closed:
             return
-        cache = self._cache
-        if cache is not None:
-            cast(Any, cache).clear()
-            cast(Any, cache)["head"] = 0
-            cast(Any, cache)["tail"] = 0
-        else:
-            self._items.clear()
+        self._deque.clear()  # type: ignore[reportUnknownMemberType]
         self._current_bytes = 0
 
     def close(self) -> None:
         if not self._closed:
             self._closed = True
-            cache = self._cache
-            if cache is not None:
+            if self._cache is not None:
                 try:
-                    cast(Any, cache).close()
+                    self._cache.close()  # type: ignore[reportUnknownMemberType]
                 except (OSError, RuntimeError, AttributeError) as exc:
                     logger.warning("Failed to close queue cache: %s", exc)
                 self._cache = None
@@ -185,10 +159,7 @@ class BridgeQueue(Generic[T]):
         return self._last_err_msg
 
     def __len__(self) -> int:
-        cache = self._cache
-        if cache is not None:
-            return cast(int, cast(Any, cache)["tail"]) - cast(int, cast(Any, cache)["head"])
-        return len(self._items)
+        return len(self._deque)
 
 
 __all__ = ["BridgeQueue", "QueueEvent"]

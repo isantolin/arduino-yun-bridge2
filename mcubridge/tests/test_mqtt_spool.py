@@ -17,14 +17,14 @@ def _make_message(
     topic: str,
     payload: str = "hello",
     *,
-    user_properties: list[tuple[str, str]] | None = None,
+    user_properties: tuple[tuple[str, str], ...] | None = None,
 ) -> QueuedPublish:
     return QueuedPublish(
         topic_name=topic,
         payload=payload.encode(),
         qos=0,
         retain=False,
-        user_properties=user_properties or [],
+        user_properties=user_properties or (),
     )
 
 
@@ -35,7 +35,7 @@ def test_spool_roundtrip(tmp_path: Path) -> None:
     spool = MQTTPublishSpool(spool_dir.as_posix(), limit=4)
     message = _make_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/test",
-        user_properties=[("k", "v")],
+        user_properties=(("k", "v"),),
     )
 
     spool.append(message)

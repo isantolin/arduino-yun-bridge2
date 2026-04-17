@@ -17,7 +17,7 @@ def test_queued_publish_json_roundtrip() -> None:
         message_expiry_interval=30,
         response_topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp",
         correlation_data=b"cid",
-        user_properties=[("k", "v")],
+        user_properties=(("k", "v"),),
     )
 
     # Use direct library calls as per zero-wrapper mandate
@@ -26,4 +26,4 @@ def test_queued_publish_json_roundtrip() -> None:
 
     assert restored == message
     assert restored.correlation_data == b"cid"
-    assert restored.user_properties == [("k", "v")]
+    assert restored.user_properties == (("k", "v"),)

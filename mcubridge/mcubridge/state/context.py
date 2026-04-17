@@ -224,21 +224,14 @@ def collect_system_metrics() -> dict[str, Any]:
         proc = psutil.Process()
         with proc.oneshot():
             mem = psutil.virtual_memory()
-            load = (
-                psutil.getloadavg()
-                if hasattr(psutil, "getloadavg")
-                else (0.0, 0.0, 0.0)
-            )
-
-            # Disk usage for root and /tmp (volatile RAM disk on OpenWrt)
+            load = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0.0, 0.0, 0.0)
             root_disk = psutil.disk_usage("/")
-            try:
+            tmp_disk = None
+            with contextlib.suppress(OSError):
                 tmp_disk = psutil.disk_usage("/tmp")
-            except OSError:
-                tmp_disk = None
 
             # [SIL-2] Direct mapping from native library structures
-            result: dict[str, Any] = {
+            result = {
                 "cpu_percent": psutil.cpu_percent(interval=None),
                 "cpu_count": psutil.cpu_count() or 1,
                 "memory_total_bytes": mem.total,
@@ -251,24 +244,22 @@ def collect_system_metrics() -> dict[str, Any]:
                 "disk_root_used_bytes": root_disk.used,
                 "disk_root_free_bytes": root_disk.free,
                 "disk_root_percent": root_disk.percent,
-                "temperature_celsius": (
-                    next(
-                        (
-                            t[0].current
-                            for n, t in psutil.sensors_temperatures().items()
-                            if n in ("cpu_thermal", "coretemp", "soc_thermal") and t
-                        ),
-                        None,
-                    )
-                    if hasattr(psutil, "sensors_temperatures")
-                    else None
-                ),
             }
-            if tmp_disk is not None:
-                result["disk_tmp_total_bytes"] = tmp_disk.total
-                result["disk_tmp_used_bytes"] = tmp_disk.used
-                result["disk_tmp_free_bytes"] = tmp_disk.free
-                result["disk_tmp_percent"] = tmp_disk.percent
+
+            if hasattr(psutil, "sensors_temperatures"):
+                temps = psutil.sensors_temperatures()
+                for n in ("cpu_thermal", "coretemp", "soc_thermal"):
+                    if n in temps and temps[n]:
+                        result["temperature_celsius"] = temps[n][0].current
+                        break
+
+            if tmp_disk:
+                result.update({
+                    "disk_tmp_total_bytes": tmp_disk.total,
+                    "disk_tmp_used_bytes": tmp_disk.used,
+                    "disk_tmp_free_bytes": tmp_disk.free,
+                    "disk_tmp_percent": tmp_disk.percent,
+                })
             return result
     except (psutil.Error, RuntimeError, OSError):
         return {}

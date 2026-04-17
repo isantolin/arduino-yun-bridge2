@@ -924,7 +924,7 @@ class QOSLevel(IntEnum):
 UserProperty = tuple[str, str]
 
 
-class QueuedPublish(msgspec.Struct):
+class QueuedPublish(msgspec.Struct, frozen=True):
     """Serializable MQTT publish packet used by the durable spool."""
 
     topic_name: str
@@ -934,11 +934,11 @@ class QueuedPublish(msgspec.Struct):
     content_type: str | None = None
     payload_format_indicator: int | None = None
     message_expiry_interval: int | None = None
+    topic_alias: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(
-        default_factory=list[tuple[str, str]]
-    )
+    user_properties: tuple[UserProperty, ...] = ()
+    subscription_identifier: tuple[int, ...] | None = None
 
 
 # --- Process Service Structures ---

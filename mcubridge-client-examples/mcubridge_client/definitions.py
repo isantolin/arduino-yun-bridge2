@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import ssl
 from enum import IntEnum
-from typing import Annotated
-
-import msgspec
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from mcubridge.config.const import DEFAULT_MQTT_PORT
-from mcubridge.protocol.structures import QOSLevel, UserProperty
+from mcubridge.protocol.structures import QOSLevel, UserProperty, QueuedPublish
 from .protocol import MAX_PAYLOAD_SIZE
 
 # Client-specific default (remote board IP, NOT localhost)
@@ -31,23 +28,6 @@ class SpiMode(IntEnum):
     MODE1 = 1
     MODE2 = 2
     MODE3 = 3
-
-
-class QueuedPublish(msgspec.Struct, frozen=True):
-    """Internal representation of a message waiting to be published."""
-
-    topic_name: str
-    payload: bytes
-    qos: Annotated[int, msgspec.Meta(ge=0, le=2)] = 0
-    retain: bool = False
-    content_type: str | None = None
-    message_expiry_interval: int | None = None
-    topic_alias: int | None = None
-    response_topic: str | None = None
-    correlation_data: bytes | None = None
-    user_properties: tuple[UserProperty, ...] = ()
-    subscription_identifier: tuple[int, ...] | None = None
-    payload_format_indicator: int | None = None  # 0=bytes, 1=utf-8
 
 
 def build_mqtt_properties(message: QueuedPublish) -> Properties:

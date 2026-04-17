@@ -17,13 +17,13 @@ def get_uci_config() -> dict[str, Any]:
     [SIL-2] Tipado estricto de excepciones y aislamiento de fallos para garantizar
     la integridad del sistema de configuración.
     """
-    import uci
-
-    # [SIL-2] Verify this is the real OpenWrt UCI library and not a host collision
-    if not hasattr(uci, "Uci") and not hasattr(uci, "UCI"):
-        raise ImportError("Incompatible uci library")
-
     try:
+        import uci
+
+        # [SIL-2] Verify this is the real OpenWrt UCI library and not a host collision
+        if not hasattr(uci, "Uci") and not hasattr(uci, "UCI"):
+            return get_default_config()
+
         # [SIL-2] Dynamic class detection to handle library variations
         UciClass = getattr(uci, "Uci", None) or getattr(uci, "UCI")
         with UciClass() as cursor:
@@ -40,7 +40,7 @@ def get_uci_config() -> dict[str, Any]:
                 for k, v in section.items()
                 if not str(k).startswith((".", "_"))
             }
-    except (RuntimeError, ValueError, OSError) as err:
+    except (ImportError, RuntimeError, ValueError, OSError) as err:
         # [SIL-2] Log only specific configuration/system errors to syslog.
         logger.warning("UCI system error, falling back to safe defaults: %s", err)
     except (KeyError, TypeError, AttributeError, NameError) as err:

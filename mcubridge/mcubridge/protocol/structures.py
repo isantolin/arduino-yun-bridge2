@@ -7,7 +7,6 @@ Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 from __future__ import annotations
 
 import asyncio
-import base64
 import time
 from collections.abc import Iterable
 from enum import IntEnum
@@ -17,7 +16,6 @@ from typing import (
     Any,
     ClassVar,
     Final,
-    Self,
     Type,
     TypeVar,
     cast,
@@ -918,23 +916,6 @@ class QOSLevel(IntEnum):
 UserProperty = tuple[str, str]
 
 
-class SpoolRecord(msgspec.Struct, omit_defaults=True):
-    """JSON-serializable record stored in the durable spool (RAM/Disk)."""
-
-    topic_name: str
-    payload: bytes
-    qos: Annotated[int, msgspec.Meta(ge=0, le=2)] = 0
-    retain: bool = False
-    content_type: str | None = None
-    payload_format_indicator: int | None = None
-    message_expiry_interval: int | None = None
-    response_topic: str | None = None
-    correlation_data: bytes | None = None
-    user_properties: list[UserProperty] = msgspec.field(
-        default_factory=list[tuple[str, str]]
-    )
-
-
 class QueuedPublish(msgspec.Struct):
     """Serializable MQTT publish packet used by the durable spool."""
 
@@ -950,37 +931,6 @@ class QueuedPublish(msgspec.Struct):
     user_properties: list[UserProperty] = msgspec.field(
         default_factory=list[tuple[str, str]]
     )
-
-    def to_record(self) -> SpoolRecord:
-        """Convert to a QueuedPublish to SpoolRecord for serialization."""
-        return SpoolRecord(
-            topic_name=self.topic_name,
-            payload=self.payload,
-            qos=int(self.qos),
-            retain=self.retain,
-            content_type=self.content_type,
-            payload_format_indicator=self.payload_format_indicator,
-            message_expiry_interval=self.message_expiry_interval,
-            response_topic=self.response_topic,
-            correlation_data=self.correlation_data,
-            user_properties=self.user_properties,
-        )
-
-    @classmethod
-    def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
-        """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
-
-        def dec_hook(target_type: Type[Any], obj: Any) -> Any:
-            if target_type is bytes and isinstance(obj, str):
-                try:
-                    return base64.b64decode(obj)
-                except ValueError:
-                    return obj.encode("utf-8")
-            return obj
-
-        # [SIL-2] Bulk conversion with hook delegates normalization to library
-        data = record if isinstance(record, dict) else msgspec.structs.asdict(record)
-        return msgspec.convert(data, cls, dec_hook=dec_hook)
 
 
 # --- Process Service Structures ---

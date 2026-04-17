@@ -93,17 +93,23 @@ def test_spool_skips_corrupt_rows(
     spool.append(first)
     spool.append(second)
 
-    original = QueuedPublish.from_record
+    import msgspec
+    from typing import Any
 
-    def _decode(record: object) -> QueuedPublish:
-        msg = original(record)  # type: ignore[reportArgumentType]
-        if msg.topic_name == "topic/second":
-            raise ValueError("Corrupt msgpack")
-        return msg
+    # Capture original to avoid infinite recursion
+    original_decode = msgspec.json.decode
+    call_count = 0
+
+    def _decode_side_effect(record: bytes, **kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise msgspec.MsgspecError("Corrupt JSON")
+        return original_decode(record, **kwargs)
 
     caplog.set_level(logging.WARNING, "mcubridge.mqtt.spool")
 
-    with patch("mcubridge.mqtt.spool.QueuedPublish.from_record", side_effect=_decode):
+    with patch("msgspec.json.decode", side_effect=_decode_side_effect):
         restored_one = spool.pop_next()
         restored_two = spool.pop_next()
 

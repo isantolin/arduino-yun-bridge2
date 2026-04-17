@@ -39,7 +39,7 @@ class MQTTPublishSpool:
         on_fallback: Any | None = None,
     ) -> None:
         self._on_fallback = on_fallback
-        self._records = BridgeQueue[dict[str, Any]](
+        self._records = BridgeQueue[bytes](
             directory=directory,
             max_items=limit,
         )
@@ -50,27 +50,27 @@ class MQTTPublishSpool:
         self._records.close()
 
     def append(self, message: QueuedPublish) -> None:
-        # Use directly msgspec.structs.asdict for zero-wrapper serialization
-        evt = self._records.append(msgspec.structs.asdict(message))
+        # Use msgspec.json.encode for high-performance direct serialization
+        evt = self._records.append(msgspec.json.encode(message))
         if not evt.success:
             raise MQTTSpoolError("append_failed")
         self._dropped_due_to_limit += evt.dropped_chunks
 
     def pop_next(self) -> QueuedPublish | None:
         while len(self._records) > 0:
-            record = self._records.popleft()
-            if record is None:
+            record_bytes = self._records.popleft()
+            if record_bytes is None:
                 break
             try:
-                # Direct call to from_record
-                return QueuedPublish.from_record(record)
-            except (msgspec.MsgspecError, TypeError, ValueError) as exc:
+                # Direct JSON decoding into msgspec.Struct
+                return msgspec.json.decode(record_bytes, type=QueuedPublish)
+            except msgspec.MsgspecError as exc:
                 self._corrupt_dropped += 1
                 logger.warning("Dropping corrupt MQTT spool entry: %s", exc)
         return None
 
     def requeue(self, message: QueuedPublish) -> None:
-        self._records.appendleft(msgspec.structs.asdict(message))
+        self._records.appendleft(msgspec.json.encode(message))
 
     @property
     def pending(self) -> int:

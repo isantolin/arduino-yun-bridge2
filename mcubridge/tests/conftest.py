@@ -160,18 +160,17 @@ def force_gc_cleanup():
 @pytest.fixture(autouse=True)
 def _isolate_test_paths(tmp_path: Path) -> Iterator[None]:  # type: ignore[reportUnusedFunction]
     """Give each test unique file_system_root and mqtt_spool_dir to prevent cross-test interference."""
-    import mcubridge.config.const as _const
+    import mcubridge.config.const
 
-    original_fs = _const.DEFAULT_FILE_SYSTEM_ROOT
-    original_spool = _const.DEFAULT_MQTT_SPOOL_DIR
+    original_fs = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
+    original_spool = mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR
 
-    _const.DEFAULT_FILE_SYSTEM_ROOT = str(tmp_path / "yun_files")
-    _const.DEFAULT_MQTT_SPOOL_DIR = str(tmp_path / "spool")
-
+    mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = str(tmp_path / "yun_files")
+    mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = str(tmp_path / "spool")
     yield
+    mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
+    mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = original_spool
 
-    _const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
-    _const.DEFAULT_MQTT_SPOOL_DIR = original_spool
 
 
 @pytest.fixture(autouse=True)

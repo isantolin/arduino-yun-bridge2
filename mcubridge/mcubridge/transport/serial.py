@@ -58,14 +58,6 @@ class SerialTransport:
     STATE_NEGOTIATING: Final[str] = "negotiating"
     STATE_CONNECTED: Final[str] = "connected"
 
-    if TYPE_CHECKING:
-        # FSM trigger stubs for static analysis (bound at runtime by transitions.Machine)
-        def begin_negotiate(self) -> None: ...
-
-        def mark_connected(self) -> None: ...
-
-        def mark_disconnected(self) -> None: ...
-
     def __init__(
         self,
         config: RuntimeConfig,
@@ -202,13 +194,13 @@ class SerialTransport:
 
             try:
                 # 1. Negotiate baudrate if needed
-                self.begin_negotiate()
+                self._machine.dispatch("begin_negotiate")
                 if self.config.serial_baud != connect_baud:
                     if not await self._negotiate_baudrate(self.config.serial_baud):
                         raise ConnectionError("Baudrate negotiation failed")
 
                 # 2. Complete handshake via service
-                self.mark_connected()
+                self._machine.dispatch("mark_connected")
                 await self.service.on_serial_connected()
 
                 # 3. Wait for reader to finish or stop event
@@ -231,7 +223,7 @@ class SerialTransport:
                 read_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await read_task
-                self.mark_disconnected()
+                self._machine.dispatch("mark_disconnected")
                 await self.service.on_serial_disconnected()
 
         except (OSError, serial.SerialException) as exc:

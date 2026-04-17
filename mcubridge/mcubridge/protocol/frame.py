@@ -24,7 +24,6 @@ from construct import (
     Checksum,
     Construct,
     Enum,
-    ExprAdapter,
     Flag,
     Int8ub,
     Int16ub,
@@ -38,16 +37,6 @@ from construct.core import ConstructError
 from . import protocol
 
 T = TypeVar("T")
-
-
-def _decode_command_id(obj: Any, ctx: Any) -> int:
-    """SIL-2: Typed decoder for command ID enum to int."""
-    return int(obj)
-
-
-def _encode_command_id(obj: Any, ctx: Any) -> Any:
-    """SIL-2: Typed pass-through for command ID encoder."""
-    return obj
 
 
 def _check_version(ctx: Any) -> bool:
@@ -68,16 +57,10 @@ COMMAND_ID_CODEC: Construct = BitStruct(
 
 # [SIL-2] Declarative Frame Structure using Construct
 # This ensures big-endian encoding and automatic length/CRC validation.
-# We use ExprAdapter to cast EnumIntegerString to int for standard logging compatibility.
 RPC_FRAME_HEADER: Construct = Struct(
     "version" / Int8ub,
     "payload_len" / Int16ub,
-    "command_id"
-    / ExprAdapter(
-        Enum(Int16ub, protocol.Command, protocol.Status),
-        decoder=_decode_command_id,
-        encoder=_encode_command_id,
-    ),
+    "command_id" / Enum(Int16ub, protocol.Command, protocol.Status),
     "sequence_id" / Int16ub,
     "version_check" / Check(_check_version),
 )
@@ -87,11 +70,11 @@ class FrameAdapter(Adapter):
     """Transparently handles RLE compression encoding and decoding within Construct."""
 
     def _decode(self, obj: Any, context: Any, path: Any) -> Any:
-        if obj.header.command_id & protocol.CMD_FLAG_COMPRESSED:
+        if int(obj.header.command_id) & protocol.CMD_FLAG_COMPRESSED:
             from . import rle
 
             obj.payload = rle.decode(obj.payload)
-            obj.header.command_id &= ~protocol.CMD_FLAG_COMPRESSED
+            obj.header.command_id = int(obj.header.command_id) & ~protocol.CMD_FLAG_COMPRESSED
             obj.header.payload_len = len(obj.payload)
         return obj
 

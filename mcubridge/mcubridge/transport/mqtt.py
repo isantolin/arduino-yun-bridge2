@@ -42,16 +42,6 @@ class MqttTransport:
     STATE_SUBSCRIBING = "subscribing"
     STATE_READY = "ready"
 
-    if TYPE_CHECKING:
-        # FSM trigger stubs for static analysis (bound at runtime by transitions.Machine)
-        def connect(self) -> None: ...
-
-        def connected(self) -> None: ...
-
-        def subscribed(self) -> None: ...
-
-        def disconnect(self) -> None: ...
-
     def __init__(
         self,
         config: RuntimeConfig,
@@ -138,10 +128,10 @@ class MqttTransport:
                         raise
                     finally:
                         if self.fsm_state != self.STATE_DISCONNECTED:
-                            self.disconnect()
+                            self.machine.dispatch("disconnect")
         except asyncio.CancelledError:
             logger.info("MQTT transport stopping.")
-            self.disconnect()
+            self.machine.dispatch("disconnect")
             raise
 
     async def _connect_session(self, tls_context: Any) -> None:
@@ -157,7 +147,7 @@ class MqttTransport:
                 "consider setting mqtt_user/mqtt_pass for production"
             )
 
-        self.connect()
+        self.machine.dispatch("connect")
 
         # [SIL-2] Last Will and Testament: auto-publish offline status on unexpected disconnect
         will_topic = topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "status")
@@ -195,10 +185,10 @@ class MqttTransport:
 
         async with client as connected_client:
             logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
-            self.connected()
+            self.machine.dispatch("connected")
             self._mqtt_client = connected_client
             await self._subscribe_topics(client)
-            self.subscribed()
+            self.machine.dispatch("subscribed")
 
             # [SIL-2] Publish online status (retained) to complement the will message
             await client.publish(

@@ -865,17 +865,17 @@ async def test_write_with_quota_flash_warning(
     caplog.set_level("WARNING")
 
     # Make resolve return a non-volatile path
-    from pathlib import Path as RealPath
+    import pathlib
 
-    original_resolve = RealPath.resolve
+    original_resolve = pathlib.Path.resolve
 
     def _fake_resolve(self: Any):
-        return RealPath("/home/user/data")
+        return pathlib.Path("/home/user/data")
 
-    monkeypatch.setattr(RealPath, "resolve", _fake_resolve)
+    monkeypatch.setattr(pathlib.Path, "resolve", _fake_resolve)
 
     # Reset so it doesn't interfere with actual write
-    monkeypatch.setattr(RealPath, "resolve", original_resolve)
+    monkeypatch.setattr(pathlib.Path, "resolve", original_resolve)
 
 
 @pytest.mark.asyncio

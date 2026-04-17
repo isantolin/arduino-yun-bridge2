@@ -7,11 +7,12 @@ matches what the Python dispatcher actually handles.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
-
 import pytest
+
 from mcubridge.protocol.protocol import (
     MQTT_COMMAND_SUBSCRIPTIONS,
     Command,
@@ -86,130 +87,6 @@ def _always_allowed(_topic: Topic | str, _action: str) -> bool:
     return True
 
 
-def _link_synchronized() -> bool:  # type: ignore[reportUnusedFunction]
-    return True
-
-
-class _Console:
-    async def handle_xoff(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_xon(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_write(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt_input(self, _payload: bytes, _inbound: _DummyMessage) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _Datastore:
-    async def handle_put(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_get_request(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _File:
-    async def handle_write(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_read(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_remove(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_read_response(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _Mailbox:
-    async def handle_push(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_available(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_read(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_processed(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _Pin:
-    async def handle_digital_read_resp(self, seq_id: int, _payload: bytes) -> bool:
-        return True
-
-    async def handle_analog_read_resp(self, seq_id: int, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mcu_digital_read(self, seq_id: int, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mcu_analog_read(self, seq_id: int, _payload: bytes) -> bool:
-        return True
-
-    async def handle_unexpected_mcu_request(
-        self, seq_id: int, _command: Any, _payload: bytes
-    ) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _Process:
-    async def handle_run(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_run_async(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_poll(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _Spi:
-    async def handle_transfer_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
-class _System:
-    async def handle_get_free_memory_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_get_version_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_set_baudrate_resp(self, _payload: bytes) -> bool:
-        return True
-
-    async def handle_mqtt(self, *args: Any, **kwargs: Any) -> bool:
-        return True
-
-
 def _materialize_subscription_segments(pattern: tuple[str, ...]) -> tuple[str, ...]:
     rendered: list[str] = []
     for segment in pattern:
@@ -247,14 +124,14 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
 
         dispatcher.register_components(
             make_component_container(
-                console=cast(Any, _Console()),
-                datastore=cast(Any, _Datastore()),
-                file=cast(Any, _File()),
-                mailbox=cast(Any, _Mailbox()),
-                pin=cast(Any, _Pin()),
-                process=cast(Any, _Process()),
-                spi=cast(Any, _Spi()),
-                system=cast(Any, _System()),
+                console=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                datastore=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                file=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                mailbox=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                pin=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                process=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                spi=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                system=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
             )
         )
 
@@ -301,14 +178,14 @@ async def test_mcu_inbound_commands_are_registered() -> None:
 
         dispatcher.register_components(
             make_component_container(
-                console=cast(Any, _Console()),
-                datastore=cast(Any, _Datastore()),
-                file=cast(Any, _File()),
-                mailbox=cast(Any, _Mailbox()),
-                pin=cast(Any, _Pin()),
-                process=cast(Any, _Process()),
-                spi=cast(Any, _Spi()),
-                system=cast(Any, _System()),
+                console=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                datastore=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                file=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                mailbox=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                pin=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                process=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                spi=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                system=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
             )
         )
         dispatcher.register_system_handlers(

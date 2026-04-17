@@ -138,12 +138,12 @@ async def test_mqtt_digital_write_sends_frame(
         command_id: int, payload: bytes, seq_id: int | None = None
     ) -> bool:
         sent_frames.append((command_id, payload))
-        flow.on_frame_received(  # type: ignore[reportCallIssue]
+        flow.on_frame_received(
             Status.ACK.value,
+            seq_id or 0,
             structures.AckPacket(command_id=command_id).encode(),
         )
         return True
-
     service.register_serial_sender(fake_sender)
 
     await service.handle_mqtt_message(

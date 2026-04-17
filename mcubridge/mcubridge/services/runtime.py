@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import structlog
-import time
 from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
@@ -254,47 +253,14 @@ class BridgeService:
         self, command_id: int, sequence_id: int, payload: bytes
     ) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
-        # [SIL-2] Automate latency tracking using native decorators
-        stats = self.state.serial_latency_stats
-
-        # We use a manual context manager as we want to record the latency
-        # specifically for successful dispatches in the state.
-        start = time.perf_counter()
-        try:
-            await self.dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
-        except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
-            logger.critical(
-                "Critical error handling MCU frame: CMD=0x%02X payload=%s: %s",
-                command_id,
-                payload.hex(),
-                e,
-                exc_info=True,
-            )
-        finally:
-            latency_ms = (time.perf_counter() - start) * 1000.0
-            stats.record(latency_ms)
+        await self.dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
 
     async def handle_mqtt_message(self, inbound: Message) -> None:
-        inbound_topic = str(inbound.topic)
-
-        # [SIL-2] Performance monitoring for MQTT message processing
-        start = time.perf_counter()
-        try:
-            await self.dispatcher.dispatch_mqtt_message(
-                inbound,
-                lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
-            )
-        except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
-            logger.critical(
-                "Critical error processing MQTT message on topic %s: %s",
-                inbound_topic,
-                e,
-                exc_info=True,
-            )
-        finally:
-            latency_ms = (time.perf_counter() - start) * 1000.0
-            # Note: We share latency stats or can create a specific one for MQTT
-            self.state.record_rpc_latency_ms(latency_ms)
+        """Entry point invoked by the MQTT transport for each inbound message."""
+        await self.dispatcher.dispatch_mqtt_message(
+            inbound,
+            lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
+        )
 
     async def enqueue_mqtt(
         self,

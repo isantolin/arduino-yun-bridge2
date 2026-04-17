@@ -178,62 +178,72 @@ class BridgeDispatcher:
         """
         Route an incoming frame from the MCU to the appropriate registered handler.
         """
-        if self.on_frame_received_callback:
-            self.on_frame_received_callback(command_id, sequence_id, payload)
+        start = asyncio.get_running_loop().time()
+        try:
+            if self.on_frame_received_callback:
+                self.on_frame_received_callback(command_id, sequence_id, payload)
 
-        if not self._is_frame_allowed_pre_sync(command_id):
-            logger.warning(
-                "Security: Rejecting MCU frame 0x%02X (Link not synchronized)",
-                command_id,
-            )
-            return
+            if not self._is_frame_allowed_pre_sync(command_id):
+                logger.warning(
+                    "Security: Rejecting MCU frame 0x%02X (Link not synchronized)",
+                    command_id,
+                )
+                return
 
-        handler = self.mcu_registry.get(command_id)
-        command_name = resolve_command_id(command_id)
-        handled_successfully = False
+            handler = self.mcu_registry.get(command_id)
+            command_name = resolve_command_id(command_id)
+            handled_successfully = False
 
-        if handler:
-            logger.debug(
-                "MCU > %s (seq=%d) [%d bytes]", command_name, sequence_id, len(payload)
-            )
-            handled_successfully = (await handler(sequence_id, payload)) is not False
+            if handler:
+                logger.debug(
+                    "MCU > %s (seq=%d) [%d bytes]", command_name, sequence_id, len(payload)
+                )
+                handled_successfully = (await handler(sequence_id, payload)) is not False
 
-        elif response_to_request(command_id) is None:
-            logger.warning("Protocol: Unhandled MCU command %s", command_name)
-            self.state.record_unknown_command_id(command_id)
-            await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
+            elif response_to_request(command_id) is None:
+                logger.warning("Protocol: Unhandled MCU command %s", command_name)
+                self.state.record_unknown_command_id(command_id)
+                await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
 
-        if handled_successfully and command_id not in STATUS_VALUES:
-            await self.acknowledge_frame(command_id, sequence_id)
+            if handled_successfully and command_id not in STATUS_VALUES:
+                await self.acknowledge_frame(command_id, sequence_id)
+        finally:
+            latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
+            self.state.serial_latency_stats.record(latency_ms)
 
     async def dispatch_mqtt_message(
         self,
         inbound: Message,
         parse_topic_func: Callable[[str], TopicRoute | None],
     ) -> None:
-        inbound_topic = str(inbound.topic)
-        route = parse_topic_func(inbound_topic)
-        if route is None or not route.segments:
-            return
-
-        # 1. Policy Guard (Eradicated _guard_and_dispatch wrapper)
-        if action := self._get_topic_action(route):
-            if not self.is_topic_action_allowed(route.topic, action):
-                await self.reject_topic_action(inbound, route.topic, action)
+        start = asyncio.get_running_loop().time()
+        try:
+            inbound_topic = str(inbound.topic)
+            route = parse_topic_func(inbound_topic)
+            if route is None or not route.segments:
                 return
 
-        # 2. Synchronization Guard
-        if route.topic != Topic.SYSTEM:
-            try:
-                async with asyncio.timeout(30.0):
-                    await self.state.link_sync_event.wait()
-            except asyncio.TimeoutError:
-                logger.warning("MQTT > Link sync timeout for %s", inbound_topic)
-                return
+            # 1. Policy Guard (Eradicated _guard_and_dispatch wrapper)
+            if action := self._get_topic_action(route):
+                if not self.is_topic_action_allowed(route.topic, action):
+                    await self.reject_topic_action(inbound, route.topic, action)
+                    return
 
-        # 3. Router Dispatch
-        if not await self.mqtt_router.dispatch(route, inbound):
-            logger.debug("Unhandled MQTT topic %s", inbound_topic)
+            # 2. Synchronization Guard
+            if route.topic != Topic.SYSTEM:
+                try:
+                    async with asyncio.timeout(30.0):
+                        await self.state.link_sync_event.wait()
+                except asyncio.TimeoutError:
+                    logger.warning("MQTT > Link sync timeout for %s", inbound_topic)
+                    return
+
+            # 3. Router Dispatch
+            if not await self.mqtt_router.dispatch(route, inbound):
+                logger.debug("Unhandled MQTT topic %s", inbound_topic)
+        finally:
+            latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
+            self.state.record_rpc_latency_ms(latency_ms)
 
     def _get_topic_action(self, route: TopicRoute) -> str | None:
         """Deduce the action name for policy enforcement from the route."""

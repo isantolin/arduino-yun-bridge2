@@ -6,15 +6,21 @@ LIB_ROOT="${ROOT_DIR}/mcubridge-library-arduino"
 SRC_ROOT="${LIB_ROOT}/src"
 TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
-ETL_PATH="${ROOT_DIR}/.dummy_libs/Embedded_Template_Library"
-WOLFSSL_PATH="${ROOT_DIR}/.dummy_libs/wolfssl"
-PACKETSERIAL_PATH="${ROOT_DIR}/.dummy_libs/PacketSerial"
 BUILD_DIR="${LIB_ROOT}/build-coverage"
 OUTPUT_ROOT="${LIB_ROOT}/coverage-report"
 
 # Create build directory
 mkdir -p "${BUILD_DIR}/objs"
 mkdir -p "${OUTPUT_ROOT}"
+
+# Setup dependencies in .dummy_libs
+echo "[coverage_arduino] Installing library dependencies..."
+mkdir -p "${ROOT_DIR}/.dummy_libs"
+"${LIB_ROOT}/tools/install.sh" "${ROOT_DIR}/.dummy_libs"
+
+ETL_PATH="${ROOT_DIR}/.dummy_libs/Embedded_Template_Library"
+WOLFSSL_PATH="${ROOT_DIR}/.dummy_libs/wolfssl"
+PACKETSERIAL_PATH="${ROOT_DIR}/.dummy_libs/PacketSerial"
 
 # Clean old coverage data
 find "${BUILD_DIR}" -name "*.gcda" -delete
@@ -53,7 +59,7 @@ BASE_FLAGS=(
     "-DUNITY_INCLUDE_DOUBLE"
     "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}"
-    "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
+    "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}" "-I${WOLFSSL_PATH}/src"
     "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
     "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"

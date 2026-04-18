@@ -69,7 +69,7 @@ void test_bridge_ack_timeout_retry() {
     auto& ba = TestAccessor::create(Bridge);
     ba.setSynchronized();
     rpc::payload::LinkSync ls = {};
-    Bridge.send(rpc::CommandId::CMD_LINK_SYNC, 0, ls);
+    (void)Bridge.send(rpc::CommandId::CMD_LINK_SYNC, 0, ls);
     for(int i=0; i < 20; ++i) ba.onAckTimeout();
 }
 

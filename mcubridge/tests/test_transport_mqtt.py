@@ -18,7 +18,6 @@ from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import mqtt
-from mcubridge.util import mqtt_helper
 
 from tests._helpers import make_test_config
 
@@ -42,13 +41,13 @@ def _make_config(
 
 def test_configure_tls_disabled_returns_none(tmp_path: Path) -> None:
     config = _make_config(tls=False, cafile=str(tmp_path / "ca.pem"))
-    assert mqtt_helper.configure_tls_context(config) is None
+    assert config.get_ssl_context() is None
 
 
 def test_configure_tls_missing_cafile_raises(tmp_path: Path) -> None:
     config = _make_config(tls=True, cafile=str(tmp_path / "missing.pem"))
     with pytest.raises(RuntimeError, match="MQTT TLS CA file missing"):
-        mqtt_helper.configure_tls_context(config)
+        config.get_ssl_context()
 
 
 def test_configure_tls_loads_cert_chain_when_provided(
@@ -75,7 +74,7 @@ def test_configure_tls_loads_cert_chain_when_provided(
     config = _make_config(tls=True, cafile=str(cafile))
     config.mqtt_certfile = str(tmp_path / "client.crt")
     config.mqtt_keyfile = str(tmp_path / "client.key")
-    ctx = mqtt_helper.configure_tls_context(config)
+    ctx = config.get_ssl_context()
     assert ctx is fake_context
     assert calls == [(config.mqtt_certfile, config.mqtt_keyfile)]
 
@@ -92,7 +91,7 @@ def test_configure_tls_wraps_ssl_errors(
     )
     config = _make_config(tls=True, cafile=str(cafile))
     with pytest.raises(RuntimeError, match=r"TLS setup failed"):
-        mqtt_helper.configure_tls_context(config)
+        config.get_ssl_context()
 
 
 @pytest.mark.asyncio

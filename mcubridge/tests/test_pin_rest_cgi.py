@@ -25,7 +25,6 @@ def pin_rest_module() -> ModuleType:
 def test_publish_sync_configures_tls(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Patch paho.mqtt.publish.single
     with patch("paho.mqtt.publish.single") as mock_publish:
@@ -35,11 +34,10 @@ def test_publish_sync_configures_tls(
         runtime_config.mqtt_pass = "pass"
         runtime_config.mqtt_tls = True
 
-        # Mock configure_tls_context using monkeypatch on the loaded module
+        # Mock get_ssl_context using patch at class level
         mock_ctx = MagicMock()
-        monkeypatch.setattr(pin_rest_module, "configure_tls_context", lambda _cfg: mock_ctx) # type: ignore
-
-        pin_rest_module.publish_sync("topic", "1", runtime_config)
+        with patch("mcubridge.protocol.structures.RuntimeConfig.get_ssl_context", return_value=mock_ctx):
+            pin_rest_module.publish_sync("topic", "1", runtime_config)
 
         mock_publish.assert_called_once()
         args, kwargs = mock_publish.call_args
@@ -78,7 +76,7 @@ def test_application_invokes_publish(
     """End-to-end WSGI application test."""
 
     # Mock dependencies
-    monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: runtime_config) # type: ignore
+    monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: runtime_config)  # type: ignore
     monkeypatch.setattr(pin_rest_module, "publish_sync", MagicMock())
 
     # Ensure no logging errors interfere

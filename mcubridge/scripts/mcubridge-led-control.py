@@ -11,7 +11,6 @@ import aiomqtt
 import typer
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.util.mqtt_helper import configure_tls_context
 
 app = typer.Typer(add_completion=False, help="Control MCU LED via MQTT.")
 
@@ -19,7 +18,7 @@ app = typer.Typer(add_completion=False, help="Control MCU LED via MQTT.")
 async def do_publish(topic: str, payload: str) -> None:
     """Publish LED state using core configuration."""
     config = load_runtime_config()
-    tls_context = configure_tls_context(config)
+    tls_context = config.get_ssl_context()
 
     try:
         async with aiomqtt.Client(

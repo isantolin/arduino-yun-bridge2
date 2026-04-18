@@ -12,7 +12,6 @@ import aiomqtt
 import typer
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.util.mqtt_helper import configure_tls_context
 
 app = typer.Typer(add_completion=False, help="Push files to MCU or Linux storage.")
 
@@ -20,7 +19,7 @@ app = typer.Typer(add_completion=False, help="Push files to MCU or Linux storage
 async def push_file(topic: str, data: bytes) -> None:
     """Publish file data using core configuration."""
     config = load_runtime_config()
-    tls_context = configure_tls_context(config)
+    tls_context = config.get_ssl_context()
 
     try:
         async with aiomqtt.Client(

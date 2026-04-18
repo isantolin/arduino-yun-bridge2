@@ -414,6 +414,42 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     )
     allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
 
+    def get_ssl_context(self) -> Any | None:
+        """Create an ssl.SSLContext based on the current configuration (SIL-2)."""
+        if not self.mqtt_tls:
+            return None
+
+        import ssl
+        from mcubridge.config.const import MQTT_TLS_MIN_VERSION
+
+        try:
+            if self.mqtt_cafile:
+                ca_path = Path(self.mqtt_cafile)
+                if not ca_path.exists():
+                    raise RuntimeError(f"MQTT TLS CA file missing: {self.mqtt_cafile}")
+                context = ssl.create_default_context(
+                    ssl.Purpose.SERVER_AUTH, cafile=str(ca_path)
+                )
+            else:
+                context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
+            context.minimum_version = MQTT_TLS_MIN_VERSION
+
+            if self.mqtt_tls_insecure:
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+
+            if self.mqtt_certfile or self.mqtt_keyfile:
+                if not (self.mqtt_certfile and self.mqtt_keyfile):
+                    raise ValueError(
+                        "Both mqtt_certfile and mqtt_keyfile must be provided for mTLS."
+                    )
+                context.load_cert_chain(self.mqtt_certfile, self.mqtt_keyfile)
+
+            return context
+        except (OSError, ssl.SSLError, ValueError) as exc:
+            raise RuntimeError(f"TLS setup failed: {exc}") from exc
+
     @property
     def tls_enabled(self) -> bool:
         return self.mqtt_tls

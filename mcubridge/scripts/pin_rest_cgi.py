@@ -15,7 +15,6 @@ from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.structures import GenericResponsePacket, RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.util.mqtt_helper import configure_tls_context
 
 logger = logging.getLogger("mcubridge.pin_rest")
 
@@ -25,7 +24,7 @@ app = typer.Typer(add_completion=False)
 def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     """Synchronous MQTT publish for CGI context using direct library call."""
     tls_config: Any = None
-    if tls_ctx := configure_tls_context(config):
+    if tls_ctx := config.get_ssl_context():
         # paho.mqtt.publish.single takes a dict for tls or an SSLContext
         tls_config = {"context": tls_ctx}
 

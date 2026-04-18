@@ -4,25 +4,23 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated, cast, Any
+from typing import Annotated, Any
 
 import aiomqtt
 import typer
-from mcubridge.config.settings import get_uci_config
-from mcubridge.protocol.structures import RuntimeConfig
-from mcubridge.util.mqtt_helper import configure_tls_context
+from mcubridge.config.settings import load_runtime_config
 
 app = typer.Typer(add_completion=False, help="Diagnostic smoke test for MCU hardware.")
 
 
 class SmokeTester:
     def __init__(self) -> None:
-        self.config = cast(RuntimeConfig, get_uci_config())
+        self.config = load_runtime_config()
         self.prefix = self.config.mqtt_topic
         self.results: dict[str, bool] = {}
 
     async def run(self, pin: int, timeout: float) -> None:
-        tls_context = configure_tls_context(self.config)
+        tls_context = self.config.get_ssl_context()
 
         try:
             async with aiomqtt.Client(

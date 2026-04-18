@@ -51,32 +51,26 @@ class TestUtilInit:
 
 
 # ============================================================================
-# mcubridge/util/mqtt_helper.py — lines 30, 35, 41
+# mcubridge/protocol/structures.py — RuntimeConfig.get_ssl_context
 # ============================================================================
 
 
 class TestMqttHelper:
     def test_configure_tls_context_no_tls(self):
-        from mcubridge.util.mqtt_helper import configure_tls_context
-
         config = make_test_config(mqtt_tls=False)
-        assert configure_tls_context(config) is None
+        assert config.get_ssl_context() is None
 
     def test_configure_tls_context_with_cafile(self: Any, tmp_path: Any):
-        from mcubridge.util.mqtt_helper import configure_tls_context
-
         ca = tmp_path / "ca.pem"
         ca.write_text("fake-ca")
         config = make_test_config(mqtt_tls=True, mqtt_cafile=str(ca))
         # Invalid cert data triggers RuntimeError which covers the except branch
         with pytest.raises(RuntimeError, match="TLS setup failed"):
-            configure_tls_context(config)
+            config.get_ssl_context()
 
     def test_configure_tls_context_no_cafile(self):
-        from mcubridge.util.mqtt_helper import configure_tls_context
-
         config = make_test_config(mqtt_tls=True, mqtt_cafile=None)
-        ctx = configure_tls_context(config)
+        ctx = config.get_ssl_context()
         assert ctx is not None
 
 

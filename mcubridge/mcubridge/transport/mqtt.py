@@ -15,7 +15,6 @@ from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
 from mcubridge.protocol.topics import topic_path
 from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Topic
 from mcubridge.state.context import RuntimeState
-from mcubridge.util.mqtt_helper import configure_tls_context
 from transitions import Machine
 
 if TYPE_CHECKING:
@@ -82,7 +81,7 @@ class MqttTransport:
             logger.info("MQTT transport is DISABLED in configuration.")
             return
 
-        tls_context = configure_tls_context(self.config)
+        tls_context = self.config.get_ssl_context()
         reconnect_delay = max(1, self.config.reconnect_delay)
 
         _log_cb = tenacity.before_sleep_log(logger, logging.WARNING)

@@ -15,9 +15,9 @@ class TestAccessor : public BridgeClass {
   static TestAccessor& create(BridgeClass& bridge) { return static_cast<TestAccessor&>(bridge); }
 
   bool isAwaitingAck() const { return _fsm.isAwaitingAck(); }
-  bool isFault() const { return _fsm.isFault(); }
-  bool isUnsynchronized() const { return _fsm.get_bridge_state() == bridge::fsm::StateId::UNSYNCHRONIZED; }
-  bool getStartupStabilizing() const { return _fsm.get_bridge_state() == bridge::fsm::StateId::STARTUP; }
+  bool isFault() const { return _fsm.get_state_id() == bridge::fsm::State::FAULT; }
+  bool isUnsynchronized() const { return _fsm.get_state_id() == bridge::fsm::State::UNSYNCHRONIZED; }
+  bool getStartupStabilizing() const { return _fsm.get_state_id() == bridge::fsm::State::STARTUP; }
 
   void onStartupStabilized() { _onStartupStabilized(); }
   void dispatch(const rpc::Frame& frame) { _dispatchCommand(frame); }

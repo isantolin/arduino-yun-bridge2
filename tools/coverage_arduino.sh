@@ -60,8 +60,8 @@ BASE_FLAGS=(
     "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}"
     "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
-    "-I${WOLFSSL_PATH}" "-I${WOLFSSL_PATH}/src"
-    "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
+    "-I${WOLFSSL_PATH}"
+    "-I${PACKETSERIAL_PATH}/src"
     "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"
 )
 

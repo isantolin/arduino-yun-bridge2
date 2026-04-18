@@ -6,57 +6,29 @@ LIB_ROOT="${ROOT_DIR}/mcubridge-library-arduino"
 SRC_ROOT="${LIB_ROOT}/src"
 TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
-OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
+ETL_PATH="${ROOT_DIR}/.dummy_libs/Embedded_Template_Library"
+WOLFSSL_PATH="${ROOT_DIR}/.dummy_libs/wolfssl"
+PACKETSERIAL_PATH="${ROOT_DIR}/.dummy_libs/PacketSerial"
 BUILD_DIR="${LIB_ROOT}/build-coverage"
-OBJ_DIR="${BUILD_DIR}/objs"
+OUTPUT_ROOT="${LIB_ROOT}/coverage-report"
 
-# Use the python from the current environment (e.g. tox virtualenv)
-PYTHON_CMD=$(command -v python || command -v python3)
+# Create build directory
+mkdir -p "${BUILD_DIR}/objs"
+mkdir -p "${OUTPUT_ROOT}"
 
-# Completely clean previous build artifacts to prevent path mismatches (.gcno/.gcda)
-rm -rf "${BUILD_DIR}"
-mkdir -p "${OUTPUT_ROOT}" "${OBJ_DIR}"
+# Clean old coverage data
+find "${BUILD_DIR}" -name "*.gcda" -delete
 
-# [SIL-2] Library Installation (Dependencies)
-# When run from tox, commands_pre already generates protocol bindings.
-# Re-running here would race with parallel coverage_python.sh.
-if [ -z "${TOX_ENV_NAME:-}" ]; then
-    echo "[coverage_arduino] Generating protocol bindings..."
-    ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
-        --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
-        --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
-        --cpp "${SRC_ROOT}/protocol/rpc_protocol.h" \
-        --cpp-structs "${SRC_ROOT}/protocol/rpc_structs.h" \
-        --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py" \
-        --structures "${ROOT_DIR}/mcubridge/mcubridge/protocol/structures.py"
-else
-    echo "[coverage_arduino] Skipping protocol generation (already done by tox commands_pre)"
-fi
-
-# Ensure DUMMY_ARDUINO_LIBS is set for CI
-export DUMMY_ARDUINO_LIBS="${ROOT_DIR}/.dummy_libs"
-mkdir -p "${DUMMY_ARDUINO_LIBS}"
-"${ROOT_DIR}/tools/ci_arduino_host_tests.sh" --install-only
-
-# Get standard library path
-ARDUINO_LIBS="${DUMMY_ARDUINO_LIBS}"
-
-# Define explicit include paths for official libraries
-ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
-PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
-
-# Sources to track for coverage
 SOURCES=(
     "${SRC_ROOT}/security/security.cpp"
-    "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/hash.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/kdf.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/error.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/sha256.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/hmac.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/hash.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/kdf.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/error.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/logging.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/wc_port.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/memory.c"
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/fsm/bridge_fsm.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
@@ -71,106 +43,63 @@ SOURCES=(
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
 
-
-# Unity test framework
-UNITY_DIR="${TEST_ROOT}/Unity/src"
-UNITY_OBJ="${OBJ_DIR}/unity.o"
-if [ -f "${UNITY_DIR}/unity.c" ]; then
-    gcc -c -O0 -g -fprofile-arcs -ftest-coverage -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
-else
-    echo "ERROR: Unity not found at ${UNITY_DIR}; run install.sh first."
-    exit 1
-fi
-
-# Base compiler flags
 BASE_FLAGS=(
-    "-O0"
-    "-g"
-    "-fprofile-arcs"
-    "-ftest-coverage"
-    "-fPIC"
-    "-DARDUINO=100"
-    "-DBRIDGE_HOST_TEST=1"
-    "-DWOLFSSL_USER_SETTINGS"
-    "-DETL_NO_STL"
-    "-DBRIDGE_DEBUG_IO=1"
-    "-DBRIDGE_ENABLE_CONSOLE=1"
-    "-DBRIDGE_ENABLE_DATASTORE=1"
-    "-DBRIDGE_ENABLE_MAILBOX=1"
-    "-DBRIDGE_ENABLE_FILESYSTEM=1"
-    "-DBRIDGE_ENABLE_PROCESS=1"
-    "-DBRIDGE_ENABLE_SPI=1"
+    "-O0" "-g" "-fprofile-arcs" "-ftest-coverage" "-fPIC"
+    "-DARDUINO=100" "-DBRIDGE_HOST_TEST=1" "-DWOLFSSL_USER_SETTINGS"
+    "-DETL_NO_STL" "-DBRIDGE_DEBUG_IO=1"
+    "-DBRIDGE_ENABLE_CONSOLE=1" "-DBRIDGE_ENABLE_DATASTORE=1"
+    "-DBRIDGE_ENABLE_MAILBOX=1" "-DBRIDGE_ENABLE_FILESYSTEM=1"
+    "-DBRIDGE_ENABLE_PROCESS=1" "-DBRIDGE_ENABLE_SPI=1"
     "-DUNITY_INCLUDE_DOUBLE"
-    "-I${SRC_ROOT}"
-    "-I${SRC_ROOT}/config"
-    "-I${SRC_ROOT}/protocol"
+    "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}"
-    "-I$ETL_PATH"
-    "-I$ETL_PATH/include"
-    "-I$ETL_PATH/arduino"
-    "-I$WOLFSSL_PATH"
-    "-I$WOLFSSL_PATH/src"
-    "-I$PACKETSERIAL_PATH"
-    "-I$PACKETSERIAL_PATH/src"
-    "-I${TEST_ROOT}/mocks"
-    "-I${TEST_ROOT}/Unity/src"
+    "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
+    "-I${WOLFSSL_PATH}" "-I${WOLFSSL_PATH}/src"
+    "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
+    "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"
 )
 
-# Compile common sources to objects in parallel
-echo "[coverage_arduino] Compiling common sources in parallel..."
 OBJECTS=()
 for src in "${SOURCES[@]}"; do
-    obj_name=$(basename "${src}")
-    obj="${OBJ_DIR}/${obj_name}.o"
-    OBJECTS+=("${obj}")
-    
-    if [[ "${src}" == *.c ]]; then
-        gcc "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
+    obj="${BUILD_DIR}/objs/$(basename "${src}").o"
+    if [[ "${src}" == *.cpp ]]; then
+        g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}"
     else
-        g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
+        gcc "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}"
     fi
+    OBJECTS+=("${obj}")
 done
-wait
 
-# [SIL-2] All test suites contribute to coverage via cumulative .gcda
+UNITY_OBJ="${BUILD_DIR}/objs/unity.o"
+gcc "${BASE_FLAGS[@]}" -c "${TEST_ROOT}/Unity/src/unity.c" -o "${UNITY_OBJ}"
+
 TEST_SUITES=(
+    "test_arduino_100_coverage"
     "test_integrated"
     "test_bridge_core"
     "test_bridge_components"
     "test_host_filesystem"
     "test_protocol"
     "test_fsm_mutual_auth"
-    "test_arduino_100_coverage"
     "test_coverage_full"
+    "test_rle"
+    "test_msgpack"
+    "test_rpc_structs"
 )
 
-echo "[coverage_arduino] Compilando y ejecutando suites en paralelo..."
+echo "[coverage_arduino] Compilando y ejecutando suites..."
 
 pushd "${BUILD_DIR}" > /dev/null
-pids=()
 for suite in "${TEST_SUITES[@]}"; do
-    (
-        suite_src="${TEST_ROOT}/${suite}.cpp"
-        suite_bin="${BUILD_DIR}/${suite}"
-        g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${suite_bin}"
-        "${suite_bin}"
-    ) &
-    pids+=($!)
-    
-    if [[ ${#pids[@]} -ge 5 ]]; then
-        wait ${pids[0]}
-        pids=("${pids[@]:1}")
-    fi
-done
-
-for pid in "${pids[@]}"; do
-    wait "$pid"
+    suite_src="${TEST_ROOT}/${suite}.cpp"
+    suite_bin="${BUILD_DIR}/${suite}"
+    g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${suite_bin}"
+    "${suite_bin}"
 done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
 gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --merge-mode-functions=merge-use-line-max --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
-# Optional: also output term summary
 cat "${OUTPUT_ROOT}/summary.txt"
 echo "[coverage_arduino] Proceso finalizado."

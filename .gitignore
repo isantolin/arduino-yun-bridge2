@@ -91,3 +91,4 @@ mcubridge-library-arduino/src/wolfssl/
 typings/
 .codex_tmp/
 .local_arduino_libs/
+mcubridge-library-arduino/coverage-report/

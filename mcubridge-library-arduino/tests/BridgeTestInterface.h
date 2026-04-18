@@ -54,6 +54,7 @@ class TestAccessor : public BridgeClass {
   }
 
   void setSynchronized() {
+    _fsm.stabilized();
     _fsm.handshakeStart();
     _fsm.handshakeComplete();
   }

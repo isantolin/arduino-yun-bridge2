@@ -17,29 +17,21 @@ struct ByteMsg : public etl::message<1> {
 
 class RleFsm;
 
-struct LiteralState
-    : public etl::fsm_state<RleFsm, LiteralState, StateId::LITERAL, ByteMsg> {
+struct LiteralState : public etl::fsm_state<RleFsm, LiteralState, StateId::LITERAL, ByteMsg> {
   etl::fsm_state_id_t on_event(const ByteMsg& msg);
-  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return StateId::LITERAL;
-  }
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return get_state_id(); }
 };
 
-struct EscMarkerState : public etl::fsm_state<RleFsm, EscMarkerState,
-                                              StateId::ESC_MARKER, ByteMsg> {
+struct EscMarkerState : public etl::fsm_state<RleFsm, EscMarkerState, StateId::ESC_MARKER, ByteMsg> {
   etl::fsm_state_id_t on_event(const ByteMsg& msg);
-  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return StateId::LITERAL;
-  }
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return get_state_id(); }
 };
 
-struct EscValState
-    : public etl::fsm_state<RleFsm, EscValState, StateId::ESC_VAL, ByteMsg> {
+struct EscValState : public etl::fsm_state<RleFsm, EscValState, StateId::ESC_VAL, ByteMsg> {
   etl::fsm_state_id_t on_event(const ByteMsg& msg);
-  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return StateId::LITERAL;
-  }
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return get_state_id(); }
 };
+
 
 class RleFsm : public etl::fsm {
  public:
@@ -51,10 +43,13 @@ class RleFsm : public etl::fsm {
   LiteralState s_literal;
   EscMarkerState s_marker;
   EscValState s_val;
+  etl::ifsm_state* state_list[3];
 
   explicit RleFsm(etl::span<uint8_t> dst)
       : etl::fsm(StateId::LITERAL), it(dst.begin()), end(dst.end()) {
-    static etl::ifsm_state* state_list[] = {&s_literal, &s_marker, &s_val};
+    state_list[0] = &s_literal;
+    state_list[1] = &s_marker;
+    state_list[2] = &s_val;
     set_states(state_list, 3);
     start();
   }

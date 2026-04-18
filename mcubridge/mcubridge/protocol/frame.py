@@ -71,9 +71,9 @@ class FrameAdapter(Adapter):
 
     def _decode(self, obj: Any, context: Any, path: Any) -> Any:
         if int(obj.header.command_id) & protocol.CMD_FLAG_COMPRESSED:
-            from . import rle
+            from .rle import RLE_TRANSFORM
 
-            obj.payload = rle.decode(obj.payload)
+            obj.payload = RLE_TRANSFORM.parse(obj.payload)
             obj.header.command_id = int(obj.header.command_id) & ~protocol.CMD_FLAG_COMPRESSED
             obj.header.payload_len = len(obj.payload)
         return obj
@@ -87,7 +87,7 @@ class FrameAdapter(Adapter):
 
         if payload and rle.should_compress(payload):
             try:
-                compressed = rle.encode(payload)
+                compressed = rle.RLE_TRANSFORM.build(payload)
                 if len(compressed) < len(payload):
                     new_header = dict(header)
                     new_header["command_id"] = command_id | protocol.CMD_FLAG_COMPRESSED

@@ -5,18 +5,16 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from typing import Any
 from wsgiref.handlers import CGIHandler
 
 import msgspec
+import paho.mqtt.publish as publish
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.structures import GenericResponsePacket, RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
-from paho.mqtt.client import Client, MQTTv5
-from paho.mqtt.enums import CallbackAPIVersion
 from mcubridge.util.mqtt_helper import configure_tls_context
 
 logger = logging.getLogger("mcubridge.pin_rest")
@@ -25,26 +23,25 @@ app = typer.Typer(add_completion=False)
 
 
 def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
-    """Synchronous MQTT publish for CGI context."""
-    client: Any = Client(
-        client_id=f"mcubridge_cgi_{time.time_ns()}",
-        protocol=MQTTv5,
-        callback_api_version=CallbackAPIVersion.VERSION2,
-    )
-
+    """Synchronous MQTT publish for CGI context using direct library call."""
+    tls_config: Any = None
     if tls_ctx := configure_tls_context(config):
-        client.tls_set_context(tls_ctx)
-        if config.mqtt_tls_insecure:
-            client.tls_insecure_set(True)
+        # paho.mqtt.publish.single takes a dict for tls or an SSLContext
+        tls_config = {"context": tls_ctx}
 
+    auth: Any = None
     if config.mqtt_user:
-        client.username_pw_set(config.mqtt_user, config.mqtt_pass)
+        auth = {"username": config.mqtt_user, "password": config.mqtt_pass}
 
-    client.connect(config.mqtt_host, config.mqtt_port)
-    res = client.publish(topic, payload, qos=1)
-    if res is not None:
-        res.wait_for_publish(timeout=5.0)
-    client.disconnect()
+    publish.single(
+        topic,
+        payload=payload,
+        qos=1,
+        hostname=config.mqtt_host,
+        port=config.mqtt_port,
+        auth=auth,
+        tls=tls_config,
+    )
 
 
 def json_res(

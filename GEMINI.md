@@ -1,92 +1,50 @@
-# GEMINI.md: Your AI Assistant's Guide to Arduino MCU Bridge 2
+# GEMINI.md: Your AI Assistant's Guide to Arduino MCU Bridge 2 (SIL-2/MIL-SPEC)
 
-This document provides a comprehensive overview of the Arduino MCU Bridge 2 project, designed to be used as a context file for AI assistants like Gemini.
+This document provides a comprehensive overview of the Arduino MCU Bridge 2 project, optimized for AI agents following aerospace and medical engineering standards.
 
 ## Project Overview
 
-Arduino MCU Bridge 2 is a modern, high-performance replacement for the original Arduino MCU Bridge system. It facilitates robust and efficient communication between the Arduino-compatible microcontroller (MCU) and the Linux-based microprocessor (MPU) on the Arduino MCU and compatible boards.
+Arduino MCU Bridge 2 is a modern, high-performance communication system between Arduino-compatible microcontrollers (MCU) and Linux-based microprocessors (MPU). It adheres to **SIL-2** safety standards and **MIL-SPEC** (FIPS 140-3) integrity.
 
-The core of the project is a Python daemon that runs on the Linux MPU and a C++ library that runs on the Arduino MCU. They communicate over the serial port using a custom, efficient, and reliable binary RPC protocol. The protocol is formally defined in a TOML file, and the corresponding C++ and Python code is generated from this specification, ensuring consistency between the two sides of the bridge.
+### Key Technologies & Standards
 
-The project also includes a LuCI web interface for configuration and monitoring, as well as example code for both Python and Arduino.
-
-### Key Technologies
-
-*   **Python:** The main daemon on the Linux MPU is written in Python (3.13.9-r2), using `asyncio` for high-performance, non-blocking I/O.
-*   **C++:** The library for the Arduino MCU is written in C++11, strictly adhering to **SIL-2** safety standards (no STL, no dynamic memory) and **MIL-SPEC** (FIPS 140-3) for cryptographic integrity.
-*   **Cryptography:** Implements **HKDF-SHA256** (RFC 5869) for key derivation and mandatory **Power-On Self-Tests (POST/KAT)** at startup.
-*   **Lua:** The LuCI web interface is written in Lua.
-*   **OpenWrt:** The target operating system is **OpenWrt 25.12.2** (APK based).
-*   **MQTT:** The bridge uses MQTT v5 for communication with other devices.
-*   **TOML:** The communication protocol is defined in a TOML file.
-
-## Building and Running
-
-The project provides a set of shell scripts to automate the build, deployment, and installation process.
-
-### Building
-
-To build the project for OpenWrt 25.12.2, run the `1_compile.sh` script. This script will:
-
-1.  Download and configure the OpenWrt SDK (25.12.2).
-2.  Copy the project's packages into the SDK.
-3.  Compile the packages to create `.apk` files (modern package format).
-4.  Place the resulting `.apk` files in the `bin/` directory.
-
-```bash
-./1_compile.sh
-```
-
-### Expanding the Filesystem (Optional)
-
-If your device has limited storage, you can use the `2_expand.sh` script to expand the filesystem onto a microSD card or USB drive.
-
-```bash
-./2_expand.sh
-```
-
-### Installing
-
-To install the bridge on your Arduino MCU, transfer the project files to the device and run the `3_install.sh` script as root. This script will:
-
-1.  Install the necessary system dependencies.
-2.  Install the project's `.apk` packages.
-3.  Configure the system.
-4.  Start the `mcubridge` daemon.
-
-```bash
-./3_install.sh
-```
-
-### Testing
-
-The project uses `tox` to run a comprehensive suite of tests. To run the tests, simply run the `tox` command in the root of the project. This will run unit tests, linting, type checking, and more.
-
-```bash
-tox
-```
+*   **Python:** Main daemon (3.13.9+), `asyncio` for high-concurrency, `msgspec` for MsgPack.
+*   **C++:** Arduino library (C++17), **Zero-Heap** (no STL, no `malloc`), `etl::fsm` for deterministic states, `etl::observer` for decoupling.
+*   **Safety (SIL-2):** Static allocation only, O(1) jump tables for dispatch, rigorous validation gates.
+*   **OpenWrt:** Target OS is **OpenWrt 25.12.2** (APK based).
+*   **Communication:** Custom binary RPC over serial (COBS + CRC32) + MQTT v5 (aiomqtt).
 
 ## Development Conventions
 
-The project follows modern, best-practice development conventions:
+### Python (Linux MPU)
+*   **Direct Library Calls:** Zero-wrapper policy. Use libraries directly (e.g., `aiomqtt`, `paho.mqtt`) instead of custom abstraction layers.
+*   **Strict Typing:** `pyright` in strict mode. All tests must use `unittest.mock.AsyncMock(spec=Interface)`.
+*   **No "Dummy" Classes:** Manual mock classes are prohibited in favor of standardized `AsyncMock`.
+*   **Async Patterns:** Mandatory `asyncio` usage; no blocking calls in the main event loop.
 
-*   **Code Formatting:** Python code is formatted with `black`.
-*   **Import Sorting:** Python imports are sorted with `isort`.
-*   **Linting:** The code is linted with `ruff` and `flake8`.
-*   **Static Type Checking:** Python code is type-checked with `pyright`.
-*   **Protocol as Code:** The communication protocol is defined in `tools/protocol/spec.toml` (enums, constants) and `tools/protocol/mcubridge.proto` (payload schemas). The corresponding code is generated using `tools/protocol/generate.py` to produce both Python (`structures.py`) and C++ (`rpc_structs.h`) bindings. This ensures that the protocol is always in sync between the C++ and Python codebases.
-*   **Architecture:** Payload serialization uses **MsgPack** (array format) on both sides: `msgspec` (Python) and a minimal header-only codec `msgpack_codec.h` (C++, static allocation, no heap). Frame-level constructs (CRC, header) are handled by `construct` (Python) and internal C++ helpers. The `rpc_structs.h` file provides native `rpc::payload::*` structs with `encode()`/`decode()` methods and `Payload::parse<T>()` / `sendPbFrame<T>()` wrappers for type-safe MsgPack encode/decode.
-    *   **Frame Layer (Sustitución Drástica):** Uses the `construct` library for declarative frame definition. This eliminates manual offset logic and centralizes integrity validation (CRC32) in a single, auditable schema.
-    *   **RLE Protocol (Refactor):** Compression uses deterministic grouping logic (`itertools.groupby`) and declarative decoding via `construct`. It is encapsulated under a `msgspec` payload handler for seamless integration with the rest of the Python system.
-    *   **Packet Layer:** Uses **MsgPack** (`msgspec` Packet classes) to decode payloads into typed messages.
-    *   **C++ Dispatch:** Uses O(1) jump tables of member function pointers for command dispatch, eliminating `switch/case` overhead and reducing stack depth.
-    *   **C++ Validation:** Implements `rpc::Payload::parse<T>` using `msgpack::Decoder` with struct-level `decode()` methods generated from `mcubridge.proto`.
-*   **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, and SPI.
-*   **Observability:** Built-in Prometheus exporter exposes extensive runtime metrics, including task supervisor health, queue depths, serial latency histograms, CPU temperature, and I/O throughput. Logs use structured hex format `[DE AD BE EF]` with directional labels `[MCU -> SERIAL]` and `[SERIAL -> MCU]`.
-*   **Robustness:**
-    *   **Jitter:** Handshake retries use exponential backoff with jitter to prevent network resonance.
-    *   **Race Condition Guard:** State machine includes guards to prevent invalid transitions during high-speed asynchronous responses.
-    *   **Cleanup:** Child processes are robustly terminated using `psutil` traversal on shutdown.
-    *   **E2E Testing:** Automated integration testing (`tox -e e2e`) verifies the full stack against a native C++ emulator.
-*   **Status:** The ecosystem is fully modernized and synchronized. All services use **MsgPack** typed messages for payload serialization. The C++ library strictly adheres to SIL-2 standards with O(1) dispatch and ETL integration.
-*   **Automated CI/CD:** The project uses GitHub Actions to automate the build and test process.
+### C++ (Arduino MCU)
+*   **Zero-Heap:** Strictly no dynamic memory allocation. All structures and buffers are statically sized.
+*   **ETL Integration:** Leverage the Embedded Template Library for data structures and logic.
+*   **FSM:** Implement state logic using `etl::fsm` for deterministic transitions.
+*   **Observer:** Components register as observers for system events (e.g., `on_frame`, `on_reset`).
+
+### Protocol as Code
+*   **Specification:** `tools/protocol/spec.toml` (constants, enums) and `tools/protocol/mcubridge.proto` (schemas).
+*   **Generation:** `tools/protocol/generate.py` produces both Python (`structures.py`) and C++ (`rpc_structs.h`) bindings.
+*   **Serialization:** **MsgPack** (array format) for all payloads. Python uses `msgspec`, C++ uses a header-only, static MsgPack codec.
+
+## Building and Running
+
+### Build Pipeline
+1.  **Compile:** `./1_compile.sh` for OpenWrt APK creation.
+2.  **Install:** `./3_install.sh` on target device.
+3.  **Validate:** `tox` runs all unit tests; `tox -e e2e` runs full system integration tests against a native C++ emulator.
+
+### Observability
+*   **Metrics:** Prometheus exporter on port 8000.
+*   **Tracing:** Structured hex logs `[MCU -> SERIAL]` for auditability.
+*   **Watchdog:** Hardware-backed watchdog support with heartbeat monitoring.
+
+## Status
+
+The ecosystem is fully refactored and modernized. Primary service components utilize `AsyncMock` for testing, ensuring high interface fidelity. The C++ library follows strict SIL-2 guidelines with O(1) dispatching. End-to-end testing verifies the complete integration between the Python daemon and the C++ logic.

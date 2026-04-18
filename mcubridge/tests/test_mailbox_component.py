@@ -76,7 +76,7 @@ async def test_handle_push_stores_incoming_queue(
     msgs = []
     for i in range(len(bridge.publish.call_args_list)):
         msg, _ = _extract_enqueued_publish(bridge, i)
-        msgs.append(msg.payload)
+        msgs.append(msg.payload) # type: ignore
 
     assert b"hello" in msgs
 
@@ -153,8 +153,8 @@ async def test_handle_mqtt_write_overflow_signals_error(
     component, bridge = mailbox_component
     runtime_state.mailbox_queue_limit = 1
     # Directly manipulate queue for reliable overflow
-    runtime_state.mailbox_queue.clear()
-    runtime_state.mailbox_queue.append(b"existing")
+    runtime_state.mailbox_queue.clear() # type: ignore
+    runtime_state.mailbox_queue.append(b"existing") # type: ignore
 
     await component.handle_mqtt(
         make_route(Topic.MAILBOX, MailboxAction.WRITE.value),

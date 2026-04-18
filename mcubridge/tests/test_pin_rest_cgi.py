@@ -37,7 +37,7 @@ def test_publish_sync_configures_tls(
 
         # Mock configure_tls_context using monkeypatch on the loaded module
         mock_ctx = MagicMock()
-        monkeypatch.setattr(pin_rest_module, "configure_tls_context", lambda cfg: mock_ctx)
+        monkeypatch.setattr(pin_rest_module, "configure_tls_context", lambda _cfg: mock_ctx) # type: ignore
 
         pin_rest_module.publish_sync("topic", "1", runtime_config)
 
@@ -78,7 +78,7 @@ def test_application_invokes_publish(
     """End-to-end WSGI application test."""
 
     # Mock dependencies
-    monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: runtime_config)
+    monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: runtime_config) # type: ignore
     monkeypatch.setattr(pin_rest_module, "publish_sync", MagicMock())
 
     # Ensure no logging errors interfere

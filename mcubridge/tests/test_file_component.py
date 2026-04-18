@@ -102,7 +102,7 @@ async def test_handle_write_rejects_absolute_path(
 ) -> None:
     component, bridge = file_component
     await component.handle_write(0, _build_write_payload("/etc/passwd", b"boom"))
-    bridge.send_frame.assert_called()
+    assert bridge.send_frame.called
     assert bridge.send_frame.call_args.args[0] == Status.ERROR.value
 
 
@@ -122,7 +122,7 @@ async def test_handle_write_failure_sends_error(
 ) -> None:
     component, bridge = file_component
 
-    def boom(*args: Any, **kwargs: Any) -> None:
+    def boom(*_args: Any, **_kwargs: Any) -> None:
         raise OSError("Disk full")
 
     monkeypatch.setattr(Path, "write_bytes", boom)
@@ -135,7 +135,7 @@ async def test_handle_mqtt_remove_action(
     file_component: tuple[FileComponent, AsyncMock],
     tmp_path: Path,
 ) -> None:
-    component, bridge = file_component
+    component, _bridge = file_component
     test_file = tmp_path / "rm.txt"
     test_file.write_bytes(b"bye")
 
@@ -172,9 +172,8 @@ async def test_handle_read_rejects_invalid_payloads(
 ) -> None:
     component, bridge = file_component
     await component.handle_read(0, b"\xff\xff\xff")
-    bridge.send_frame.assert_called()
+    assert bridge.send_frame.called
     # Check Status.MALFORMED (0x33 = 51) or Status.ERROR (0x31 = 49)
-    # The logs say 49.
     assert bridge.send_frame.call_args.args[0] in (49, 51)
 
 
@@ -187,7 +186,7 @@ async def test_handle_mqtt_missing_filename_is_ignored(
         raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",)
     )
     await component.handle_mqtt(route, make_mqtt_msg(""))
-    bridge.publish.assert_not_called()
+    assert not bridge.publish.called
 
 
 @pytest.mark.asyncio
@@ -202,7 +201,7 @@ async def test_handle_mqtt_unknown_action_is_ignored(
         segments=("magic", "file.txt"),
     )
     await component.handle_mqtt(route, make_mqtt_msg(""))
-    bridge.publish.assert_not_called()
+    assert not bridge.publish.called
 
 
 @pytest.mark.asyncio
@@ -212,7 +211,7 @@ async def test_handle_read_oserror_returns_false(
 ) -> None:
     component, bridge = file_component
 
-    def boom(*args: Any, **kwargs: Any) -> Any:
+    def boom(*_args: Any, **_kwargs: Any) -> Any:
         raise OSError("Read fail")
 
     monkeypatch.setattr(Path, "read_bytes", boom)
@@ -221,7 +220,10 @@ async def test_handle_read_oserror_returns_false(
         structures.FileReadPacket(path="file.txt").encode(),
     )
     # Filter only send_frame calls
-    error_sent = any(call.args[0] == Status.ERROR.value for call in (bridge.send_frame.call_args_list or [])) # type: ignore
+    error_sent = any(
+        call.args[0] == Status.ERROR.value # type: ignore
+        for call in (bridge.send_frame.call_args_list or []) # type: ignore
+    )
     assert error_sent
 
 
@@ -244,7 +246,7 @@ def test_normalise_filename_rejects_bad_inputs() -> None:
 def test_get_safe_path_confines_to_root(
     file_component: tuple[FileComponent, AsyncMock], input_path: str
 ) -> None:
-    component, bridge = file_component
+    component, _bridge = file_component
     safe = component._get_safe_path(input_path)  # type: ignore[reportPrivateUsage]
     assert safe is not None
     assert str(safe).endswith(input_path)
@@ -266,9 +268,9 @@ async def test_handle_read_large_payload_truncation_reproduction(
     total_received = b""
     # Filter for CMD_FILE_READ_RESP (0x93)
     for call in (bridge.send_frame.call_args_list or []): # type: ignore
-        if call.args[0] == Command.CMD_FILE_READ_RESP.value:
-            payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")
-            total_received += structures.FileReadResponsePacket.decode(payload).content
+        if call.args[0] == Command.CMD_FILE_READ_RESP.value: # type: ignore
+            payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"") # type: ignore
+            total_received += structures.FileReadResponsePacket.decode(payload).content # type: ignore
 
     assert total_received == large_data
 
@@ -351,7 +353,8 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
         segments=("read", "mcu", "test.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    # Use wait_for to avoid hangs if crash happens
+    await asyncio.wait_for(component.handle_mqtt(route, msg), timeout=1.0)  # type: ignore[reportArgumentType]
 
     assert any(
         "MCU filesystem unavailable" in str(_get_publish_arg(bridge, 1, "payload", i))
@@ -418,4 +421,4 @@ async def test_handle_mqtt_remove_from_mcu_storage_enabled(
     # Exact payload check might be tricky with MsgPack vs our expectations,
     # but the failing test says Actual: send_frame(146, b'\x91\xa8test.txt')
     # Where \xa8 is string header for 8 chars.
-    assert b"test.txt" in bridge.send_frame.call_args.args[1]
+    assert b"test.txt" in bridge.send_frame.call_args.args[1] # type: ignore

@@ -19,9 +19,8 @@ from mcubridge.services.runtime import BridgeService
 
 
 @pytest.mark.asyncio
-async def test_serial_reader_task_processes_frame(monkeypatch: pytest.MonkeyPatch,
-    runtime_config: RuntimeConfig,
-    runtime_state: Any,
+async def test_serial_reader_task_processes_frame(
+    monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
     state = runtime_state
     service = AsyncMock(spec=BridgeService)
@@ -29,12 +28,12 @@ async def test_serial_reader_task_processes_frame(monkeypatch: pytest.MonkeyPatc
     service.state = state
     service.serial_connected = asyncio.Event()
     service.received_frames = []
-
+    
     async def _on_connected() -> None:
         service.serial_connected.set()
     service.on_serial_connected.side_effect = _on_connected
-
-    async def _handle_mcu(cmd: int, seq: int, pl: bytes):
+    
+    async def _handle_mcu(cmd: int, seq: int, pl: bytes) -> None:
         service.received_frames.append((cmd, seq, pl))
     service.handle_mcu_frame.side_effect = _handle_mcu
 
@@ -63,8 +62,8 @@ async def test_serial_reader_task_processes_frame(monkeypatch: pytest.MonkeyPatc
         patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()),
     ):
-        transport: Any = SerialTransport(runtime_config, state, cast(Any, service))
-        orig_run = SerialTransport._retryable_run.__wrapped__
+        transport = SerialTransport(runtime_config, state, cast(Any, service))
+        orig_run = SerialTransport._retryable_run.__wrapped__ # type: ignore
 
         async def _limited_run(loop: Any) -> None:
             try:
@@ -73,7 +72,7 @@ async def test_serial_reader_task_processes_frame(monkeypatch: pytest.MonkeyPatc
                 pass
             raise RuntimeError("Break Loop")
 
-        with patch.object(transport, "_retryable_run", _limited_run):
+        with patch.object(transport, "_retryable_run", _limited_run): # type: ignore
             task = asyncio.create_task(transport.run())
             await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
@@ -87,7 +86,7 @@ async def test_serial_reader_task_processes_frame(monkeypatch: pytest.MonkeyPatc
             cmd, _seq, pl = service.received_frames[0]
             assert cmd == Command.CMD_DIGITAL_READ_RESP.value
             assert pl == payload
-            transport._stop_event # type: ignore # type: ignore.set()
+            transport._stop_event.set() # type: ignore
             try:
                 await asyncio.wait_for(task, timeout=0.5)
             except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -95,9 +94,8 @@ async def test_serial_reader_task_processes_frame(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_serial_reader_task_emits_crc_mismatch(monkeypatch: pytest.MonkeyPatch,
-    runtime_config: RuntimeConfig,
-    runtime_state: Any,
+async def test_serial_reader_task_emits_crc_mismatch(
+    monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
     state = runtime_state
     state.mark_transport_connected()
@@ -106,7 +104,7 @@ async def test_serial_reader_task_emits_crc_mismatch(monkeypatch: pytest.MonkeyP
     service.config = runtime_config
     service.state = state
     service.serial_connected = asyncio.Event()
-
+    
     async def _on_connected() -> None:
         service.serial_connected.set()
     service.on_serial_connected.side_effect = _on_connected
@@ -137,8 +135,8 @@ async def test_serial_reader_task_emits_crc_mismatch(monkeypatch: pytest.MonkeyP
         patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()),
     ):
-        transport: Any = SerialTransport(runtime_config, state, cast(Any, service))
-        orig_run = SerialTransport._retryable_run.__wrapped__
+        transport = SerialTransport(runtime_config, state, cast(Any, service))
+        orig_run = SerialTransport._retryable_run.__wrapped__ # type: ignore
 
         async def _limited_run(loop: Any) -> None:
             try:
@@ -147,7 +145,7 @@ async def test_serial_reader_task_emits_crc_mismatch(monkeypatch: pytest.MonkeyP
                 pass
             raise RuntimeError("Break Loop")
 
-        with patch.object(transport, "_retryable_run", _limited_run):
+        with patch.object(transport, "_retryable_run", _limited_run): # type: ignore
             task = asyncio.create_task(transport.run())
             await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
@@ -157,7 +155,7 @@ async def test_serial_reader_task_emits_crc_mismatch(monkeypatch: pytest.MonkeyP
                 await asyncio.sleep(0.01)
 
             assert state.serial_decode_errors > 0
-            transport._stop_event # type: ignore # type: ignore.set()
+            transport._stop_event.set() # type: ignore
             try:
                 await asyncio.wait_for(task, timeout=0.5)
             except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -165,9 +163,8 @@ async def test_serial_reader_task_emits_crc_mismatch(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
-async def test_serial_reader_task_propagates_handshake_fatal(monkeypatch: pytest.MonkeyPatch,
-    runtime_config: RuntimeConfig,
-    runtime_state: Any,
+async def test_serial_reader_task_propagates_handshake_fatal(
+    monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
     state = runtime_state
     service = AsyncMock(spec=BridgeService)
@@ -187,7 +184,7 @@ async def test_serial_reader_task_propagates_handshake_fatal(monkeypatch: pytest
         patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()),
     ):
-        transport: Any = SerialTransport(runtime_config, state, cast(Any, service))
+        transport = SerialTransport(runtime_config, state, cast(Any, service))
         task = asyncio.create_task(transport.run())
 
         try:
@@ -201,16 +198,15 @@ async def test_serial_reader_task_propagates_handshake_fatal(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
-async def test_mqtt_task_handles_incoming_message(monkeypatch: pytest.MonkeyPatch,
-    runtime_config: RuntimeConfig,
-    runtime_state: Any,
+async def test_mqtt_task_handles_incoming_message(
+    monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
     state = runtime_state
     state.mqtt_topic_prefix = runtime_config.mqtt_topic
     service = AsyncMock(spec=BridgeService)
     service.state = state
     service.handled = asyncio.Event()
-
+    
     async def _handle_mqtt(inbound: Any) -> None:
         service.handled.set()
     service.handle_mqtt_message.side_effect = _handle_mqtt
@@ -227,25 +223,21 @@ async def test_mqtt_task_handles_incoming_message(monkeypatch: pytest.MonkeyPatc
     fake_msg.retain = False
     fake_msg.properties = None
 
-    async def msg_gen():
+    async def msg_gen(): # type: ignore
         yield fake_msg
     mock_msgs_ctx.__aiter__.side_effect = msg_gen
 
-    monkeypatch.setattr(
-        "mcubridge.transport.mqtt.aiomqtt.Client",
-        lambda **_kw: mock_client # type: ignore,
-    )
+    with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_client):
+        runtime_config.mqtt_tls = False
+        task = asyncio.create_task(
+            MqttTransport(runtime_config, state, cast(Any, service)).run()
+        )
 
-    runtime_config.mqtt_tls = False
-    task = asyncio.create_task(
-        MqttTransport(runtime_config, state, cast(Any, service)).run()
-    )
-
-    try:
-        await asyncio.wait_for(service.handled.wait(), timeout=1)
-    finally:
-        task.cancel()
         try:
-            await task
-        except* asyncio.CancelledError:
-            pass
+            await asyncio.wait_for(service.handled.wait(), timeout=1)
+        finally:
+            task.cancel()
+            try:
+                await task
+            except* asyncio.CancelledError:
+                pass

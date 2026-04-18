@@ -12,8 +12,6 @@ from typing import Protocol
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
-from mcubridge.protocol import protocol
-
 
 class MQTTPublishable(Protocol):
     """Structural type for objects that carry MQTT v5 publish properties."""

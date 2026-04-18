@@ -28,11 +28,11 @@ async def test_serial_reader_task_processes_frame(
     service.state = state
     service.serial_connected = asyncio.Event()
     service.received_frames = []
-    
+
     async def _on_connected() -> None:
         service.serial_connected.set()
     service.on_serial_connected.side_effect = _on_connected
-    
+
     async def _handle_mcu(cmd: int, seq: int, pl: bytes) -> None:
         service.received_frames.append((cmd, seq, pl))
     service.handle_mcu_frame.side_effect = _handle_mcu
@@ -104,7 +104,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
     service.config = runtime_config
     service.state = state
     service.serial_connected = asyncio.Event()
-    
+
     async def _on_connected() -> None:
         service.serial_connected.set()
     service.on_serial_connected.side_effect = _on_connected
@@ -206,7 +206,7 @@ async def test_mqtt_task_handles_incoming_message(
     service = AsyncMock(spec=BridgeService)
     service.state = state
     service.handled = asyncio.Event()
-    
+
     async def _handle_mqtt(inbound: Any) -> None:
         service.handled.set()
     service.handle_mqtt_message.side_effect = _handle_mqtt

@@ -58,6 +58,7 @@ SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
     "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
     "${SRC_ROOT}/hal/hal.cpp"
+    "${SRC_ROOT}/fsm/bridge_fsm.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
     "${SRC_ROOT}/Bridge.cpp"
     "${SRC_ROOT}/services/Console.cpp"

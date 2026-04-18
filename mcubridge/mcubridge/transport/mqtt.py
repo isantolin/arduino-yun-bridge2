@@ -15,7 +15,6 @@ from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
 from mcubridge.protocol.topics import topic_path
 from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Topic
 from mcubridge.state.context import RuntimeState
-from transitions import Machine
 
 if TYPE_CHECKING:
     from mcubridge.services.runtime import BridgeService
@@ -24,13 +23,7 @@ logger = structlog.get_logger("mcubridge")
 
 
 class MqttTransport:
-    """MQTT transport with FSM-based state management."""
-
-    # FSM States
-    STATE_DISCONNECTED = "disconnected"
-    STATE_CONNECTING = "connecting"
-    STATE_SUBSCRIBING = "subscribing"
-    STATE_READY = "ready"
+    """Simplified MQTT transport (SIL-2)."""
 
     def __init__(
         self,
@@ -41,39 +34,6 @@ class MqttTransport:
         self.config = config
         self.state = state
         self.service = service
-        self.fsm_state = self.STATE_DISCONNECTED
-
-        self.machine = Machine(
-            model=self,
-            states=[
-                self.STATE_DISCONNECTED,
-                self.STATE_CONNECTING,
-                self.STATE_SUBSCRIBING,
-                self.STATE_READY,
-            ],
-            transitions=[
-                {"trigger": "connect", "source": "*", "dest": self.STATE_CONNECTING},
-                {
-                    "trigger": "connected",
-                    "source": self.STATE_CONNECTING,
-                    "dest": self.STATE_SUBSCRIBING,
-                },
-                {
-                    "trigger": "subscribed",
-                    "source": self.STATE_SUBSCRIBING,
-                    "dest": self.STATE_READY,
-                },
-                {
-                    "trigger": "disconnect",
-                    "source": "*",
-                    "dest": self.STATE_DISCONNECTED,
-                },
-            ],
-            initial=self.STATE_DISCONNECTED,
-            queued=True,
-            model_attribute="fsm_state",
-            ignore_invalid_triggers=True,
-        )
 
     async def run(self) -> None:
         """Main run loop with reconnection logic."""
@@ -116,12 +76,8 @@ class MqttTransport:
                         if len(exc_group.exceptions) >= 1:
                             raise exc_group.exceptions[0]
                         raise
-                    finally:
-                        if self.fsm_state != self.STATE_DISCONNECTED:
-                            self.machine.dispatch("disconnect")
         except asyncio.CancelledError:
             logger.info("MQTT transport stopping.")
-            self.machine.dispatch("disconnect")
             raise
 
     async def _connect_session(self, tls_context: Any) -> None:
@@ -134,14 +90,12 @@ class MqttTransport:
                 "consider setting mqtt_user/mqtt_pass for production"
             )
 
-        self.machine.dispatch("connect")
-
         # [SIL-2] Last Will and Testament: auto-publish offline status on unexpected disconnect
         will_topic = topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "status")
         will_payload = b'{"status": "offline", "reason": "unexpected_disconnect"}'
         will = aiomqtt.Will(topic=will_topic, payload=will_payload, qos=1, retain=True)
 
-        client = aiomqtt.Client(
+        async with aiomqtt.Client(
             hostname=self.config.mqtt_host,
             port=self.config.mqtt_port,
             username=self.config.mqtt_user or None,
@@ -152,14 +106,16 @@ class MqttTransport:
             clean_session=None,
             will=will,
             properties=connect_props,
-        )
-
-        async with client as connected_client:
+        ) as client:
             logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
-            self.machine.dispatch("connected")
-            self._mqtt_client = connected_client
-            await self._subscribe_topics(client)
-            self.machine.dispatch("subscribed")
+
+            # Subscribe
+            topics = [
+                (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
+                for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
+            ]
+            await client.subscribe(topics)
+            logger.info("Subscribed to %d command topics.", len(topics))
 
             # [SIL-2] Publish online status (retained) to complement the will message
             await client.publish(
@@ -169,16 +125,6 @@ class MqttTransport:
             async with asyncio.TaskGroup() as task_group:
                 task_group.create_task(self._publisher_loop(client))
                 task_group.create_task(self._subscriber_loop(client))
-
-    async def _subscribe_topics(self, client: aiomqtt.Client) -> None:
-        topics = [
-            (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
-            for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
-        ]
-
-        await client.subscribe(topics)
-
-        logger.info("Subscribed to %d command topics.", len(topics))
 
     async def _publisher_loop(self, client: aiomqtt.Client) -> None:
         """Publishes messages from the internal queue to the MQTT broker."""

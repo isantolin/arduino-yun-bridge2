@@ -1291,34 +1291,7 @@ class TestMqttTransport:
         try:
             service = MagicMock()
             transport = MqttTransport(config, state, service)
-            assert transport.fsm_state == MqttTransport.STATE_DISCONNECTED
-        finally:
-            state.cleanup()
-
-    def test_mqtt_transport_fsm_transitions(self):
-        from mcubridge.transport.mqtt import MqttTransport
-
-        import time
-        import os
-
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        config = make_test_config(file_system_root=unique_root)
-        state = create_runtime_state(config)
-        try:
-            service = MagicMock()
-            transport = MqttTransport(config, state, service)
-
-            transport.trigger("connect")  # type: ignore[reportUnknownMemberType]
-            assert transport.fsm_state == MqttTransport.STATE_CONNECTING
-
-            transport.trigger("connected")  # type: ignore[reportUnknownMemberType]
-            assert transport.fsm_state == MqttTransport.STATE_SUBSCRIBING
-
-            transport.trigger("subscribed")  # type: ignore[reportUnknownMemberType]
-            assert transport.fsm_state == MqttTransport.STATE_READY
-
-            transport.trigger("disconnect")  # type: ignore[reportUnknownMemberType]
-            assert transport.fsm_state == MqttTransport.STATE_DISCONNECTED
+            assert transport is not None
         finally:
             state.cleanup()
 

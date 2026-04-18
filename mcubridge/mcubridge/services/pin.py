@@ -66,7 +66,7 @@ class PinComponent(BaseComponent):
             command.name,
             payload.hex(),
         )
-        await self.ctx.send_frame(
+        await self.ctx.serial_flow.send(
             Status.NOT_IMPLEMENTED.value,
             reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
         )
@@ -100,8 +100,8 @@ class PinComponent(BaseComponent):
         topic = self._build_pin_topic(topic_type, pin_value)
         pin_label = str(pin_value) if pin_value is not None else "unknown"
 
-        # Special case: Pin reads require 'bridge-pin' property, so we use direct publish for now
-        await self.ctx.publish(
+        # Special case: Pin reads require 'bridge-pin' property, so we use direct publish
+        await self.state.publish(
             topic=topic,
             payload=str(value).encode("utf-8"),
             expiry=MQTT_EXPIRY_PIN,
@@ -192,7 +192,7 @@ class PinComponent(BaseComponent):
 
         # [SIL-2] Use structured packet encoding
         payload = PinModePacket(pin=pin, mode=mode).encode()
-        await self.ctx.send_frame(Command.CMD_SET_PIN_MODE.value, payload)
+        await self.ctx.serial_flow.send(Command.CMD_SET_PIN_MODE.value, payload)
 
     async def _handle_read_command(
         self,
@@ -219,7 +219,7 @@ class PinComponent(BaseComponent):
         queue.append(pending_request)
 
         payload = PinReadPacket(pin=pin).encode()
-        ok = await self.ctx.send_frame(command.value, payload)
+        ok = await self.ctx.serial_flow.send(command.value, payload)
         if not ok:
             with contextlib.suppress(ValueError):
                 queue.remove(pending_request)
@@ -244,7 +244,7 @@ class PinComponent(BaseComponent):
             command = Command.CMD_ANALOG_WRITE
             payload = AnalogWritePacket(pin=pin, value=value).encode()
 
-        await self.ctx.send_frame(command.value, payload)
+        await self.ctx.serial_flow.send(command.value, payload)
 
     def _parse_pin_identifier(self, pin_str: str) -> int:
         s = pin_str.upper()
@@ -283,7 +283,7 @@ class PinComponent(BaseComponent):
         inbound: Message | None,
     ) -> None:
         topic = self._build_pin_topic(topic_type, pin)
-        await self.ctx.publish(
+        await self.state.publish(
             topic=topic,
             payload=b"",
             expiry=MQTT_EXPIRY_PIN,

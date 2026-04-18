@@ -41,7 +41,7 @@ class ConsoleComponent(BaseComponent):
             Topic.CONSOLE,
             ConsoleAction.OUT,
         )
-        await self.ctx.publish(
+        await self.state.publish(
             topic=topic,
             payload=data,
             expiry=MQTT_EXPIRY_CONSOLE,
@@ -89,7 +89,7 @@ class ConsoleComponent(BaseComponent):
             # [SIL-2] Use structured packet encoding
             frame_payload = ConsoleWritePacket(data=chunk).encode()
 
-            send_ok = await self.ctx.send_frame(
+            send_ok = await self.ctx.serial_flow.send(
                 Command.CMD_CONSOLE_WRITE.value,
                 frame_payload,
             )
@@ -116,7 +116,7 @@ class ConsoleComponent(BaseComponent):
                 # [SIL-2] Use structured packet encoding
                 frame_payload = ConsoleWritePacket(data=chunk).encode()
 
-                send_ok = await self.ctx.send_frame(
+                send_ok = await self.ctx.serial_flow.send(
                     Command.CMD_CONSOLE_WRITE.value,
                     frame_payload,
                 )

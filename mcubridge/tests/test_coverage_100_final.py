@@ -26,7 +26,6 @@ from mcubridge.state.context import create_runtime_state
 from tests._helpers import make_test_config, make_route, make_mqtt_msg
 
 # ============================================================================
-# ============================================================================
 # mcubridge/util/__init__.py — lines 22, 24, 50
 # ============================================================================
 
@@ -183,14 +182,15 @@ class TestInit:
         import mcubridge
 
         # Temporarily remove CallbackAPIVersion from the real module
-        orig = paho.mqtt.client.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
-        # type: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        orig = getattr(paho.mqtt.client, "CallbackAPIVersion", None)
         try:
-            del paho.mqtt.client.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
+            if hasattr(paho.mqtt.client, "CallbackAPIVersion"):
+                del paho.mqtt.client.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
             with pytest.raises(SystemExit):
                 mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
         finally:
-            paho.mqtt.client.CallbackAPIVersion = orig  # type: ignore[reportAttributeAccessIssue]
+            if orig is not None:
+                paho.mqtt.client.CallbackAPIVersion = orig  # type: ignore[reportAttributeAccessIssue]
 
     def test_check_dependencies_import_error(self):
         import sys
@@ -472,9 +472,8 @@ class TestShellMqttLogic:
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
+
         ctx = MagicMock()
-        ctx.publish = AsyncMock()
-        ctx.enqueue_mqtt = AsyncMock()
         comp = ProcessComponent(config, state, ctx)
         comp.poll_process = AsyncMock()
         comp.stop_process = AsyncMock(return_value=True)
@@ -500,13 +499,17 @@ class TestShellMqttLogic:
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(
-            make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b"")
-        )
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
+            await shell_comp.handle_mqtt(
+                make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b"")
+            )
+            mock_pub.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
+            await shell_comp.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
+            mock_pub.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_parse_shell_command_invalid(self: Any, shell_comp: Any):
@@ -698,10 +701,10 @@ class TestBaseComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            ctx.publish = AsyncMock()
-            comp = BaseComponent(config, state, ctx)
-            assert comp.config is config
-            assert comp.state is state
+            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+                comp = BaseComponent(config, state, ctx)
+                assert comp.config is config
+                assert comp.state is state
         finally:
             state.cleanup()
 
@@ -739,11 +742,12 @@ class TestProcessComponent:
 
         config = make_test_config(process_max_concurrent=4)
         state = create_runtime_state(config)
+
         service = MagicMock()
-        service.acknowledge_mcu_frame = AsyncMock()
-        service.send_frame = AsyncMock(return_value=True)
-        service.enqueue_mqtt = AsyncMock()
-        service.publish = AsyncMock()
+        service.serial_flow = MagicMock()
+        service.serial_flow.acknowledge = AsyncMock()
+        service.serial_flow.send = AsyncMock(return_value=True)
+
         comp = ProcessComponent(config, state, service)
         try:
             yield comp
@@ -754,32 +758,32 @@ class TestProcessComponent:
     async def test_handle_run_async_empty_command(self: Any, _process: Any):
         # Empty command encodes to b""
         await _process.handle_run_async(0, b"")
-        _process.ctx.acknowledge_mcu_frame.assert_called()
+        _process.ctx.serial_flow.acknowledge.assert_called()
 
     @pytest.mark.asyncio
     async def test_handle_run_async_malformed(self: Any, _process: Any):
         await _process.handle_run_async(0, b"\xff\xff\xff")
-        _process.ctx.acknowledge_mcu_frame.assert_called_with(
-            0,
+        _process.ctx.serial_flow.acknowledge.assert_called_with(
             Command.CMD_PROCESS_RUN_ASYNC.value,
+            0,
             status=Status.MALFORMED,
         )
 
     @pytest.mark.asyncio
     async def test_handle_poll_malformed(self: Any, _process: Any):
         await _process.handle_poll(0, b"\xff\xff\xff")
-        _process.ctx.acknowledge_mcu_frame.assert_called_with(
-            0,
+        _process.ctx.serial_flow.acknowledge.assert_called_with(
             Command.CMD_PROCESS_POLL.value,
+            0,
             status=Status.MALFORMED,
         )
 
     @pytest.mark.asyncio
     async def test_handle_kill_malformed(self: Any, _process: Any):
         await _process.handle_kill(0, b"\xff\xff\xff")
-        _process.ctx.acknowledge_mcu_frame.assert_called_with(
-            0,
+        _process.ctx.serial_flow.acknowledge.assert_called_with(
             Command.CMD_PROCESS_KILL.value,
+            0,
             status=Status.MALFORMED,
         )
 
@@ -810,7 +814,8 @@ class TestConsoleComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            ctx.send_frame = AsyncMock(return_value=True)
+            ctx.serial_flow = MagicMock()
+            ctx.serial_flow.send = AsyncMock(return_value=True)
             comp = ConsoleComponent(config, state, ctx)
             # Flush when empty should be fine
             await comp.flush_queue()
@@ -832,12 +837,12 @@ class TestMailboxComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            ctx.publish = AsyncMock()
-
-            comp = MailboxComponent(config, state, ctx)
-            await comp.handle_mqtt(
-                make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
-            )
+            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+                comp = MailboxComponent(config, state, ctx)
+                await comp.handle_mqtt(
+                    make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
+                )
+                assert len(state.mailbox_queue) == 1
         finally:
             state.cleanup()
 
@@ -860,14 +865,16 @@ class TestPinComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            ctx.send_frame = AsyncMock(return_value=True)
-            ctx.publish = AsyncMock()
-            comp = PinComponent(config, state, ctx)
-            # Test without pending requests
-            from mcubridge.protocol.structures import DigitalReadResponsePacket
+            ctx.serial_flow = MagicMock()
+            ctx.serial_flow.send = AsyncMock(return_value=True)
+            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+                comp = PinComponent(config, state, ctx)
+                # Test without pending requests
+                from mcubridge.protocol.structures import DigitalReadResponsePacket
 
-            payload = DigitalReadResponsePacket(value=1).encode()
-            await comp.handle_digital_read_resp(0, payload)
+                payload = DigitalReadResponsePacket(value=1).encode()
+                await comp.handle_digital_read_resp(0, payload)
+                mock_pub.assert_called_once()
         finally:
             state.cleanup()
 
@@ -888,9 +895,11 @@ class TestDatastoreComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            ctx.publish = AsyncMock()
-            ctx.send_frame = AsyncMock(return_value=True)
-            await ctx.publish("key", b"", expiry=60)
+            ctx.serial_flow = MagicMock()
+            ctx.serial_flow.send = AsyncMock(return_value=True)
+            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+                await state.publish("key", b"", expiry=60)
+                mock_pub.assert_called_once()
         finally:
             state.cleanup()
 
@@ -941,7 +950,6 @@ class TestDispatcherEdgeCases:
                 raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
             )
             result = d._get_topic_action(route)  # type: ignore[reportPrivateUsage]
-            assert result is None
             assert result is None
         finally:
             state.cleanup()
@@ -1000,16 +1008,18 @@ class TestFileComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            ctx.publish = AsyncMock()
-            ctx.send_frame = AsyncMock(return_value=True)
-            comp = FileComponent(config, state, ctx)
-            # This tests the error path when file is not found
-            from mcubridge.protocol.structures import FileReadPacket
+            ctx.serial_flow = MagicMock()
+            ctx.serial_flow.send = AsyncMock(return_value=True)
+            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+                comp = FileComponent(config, state, ctx)
+                # This tests the error path when file is not found
+                from mcubridge.protocol.structures import FileReadPacket
 
-            payload = FileReadPacket(
-                path="/nonexistent_file_12345.txt",
-            ).encode()
-            await comp.handle_read(0, payload)
+                payload = FileReadPacket(
+                    path="/nonexistent_file_12345.txt",
+                ).encode()
+                await comp.handle_read(0, payload)
+                ctx.serial_flow.send.assert_called()
         finally:
             state.cleanup()
 
@@ -1051,6 +1061,7 @@ class TestSystemComponent:
     @pytest.mark.asyncio
     async def test_system_handle_version(self):
         from mcubridge.services.system import SystemComponent
+        from mcubridge.protocol.structures import VersionResponsePacket
 
         import time
         import os
@@ -1060,14 +1071,16 @@ class TestSystemComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            ctx.publish = AsyncMock()
-            ctx.send_frame = AsyncMock(return_value=True)
-            ctx.enqueue_mqtt = AsyncMock()
-            comp = SystemComponent(config, state, ctx)
-            await comp.handle_get_version_resp(0, b"\x01\x02\x03")
+            ctx.serial_flow = MagicMock()
+            ctx.serial_flow.send = AsyncMock(return_value=True)
+            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+                comp = SystemComponent(config, state, ctx)
+                # Provide valid encoded packet
+                payload = VersionResponsePacket(major=1, minor=2, patch=3).encode()
+                await comp.handle_get_version_resp(0, payload)
+                mock_pub.assert_called()
         finally:
             state.cleanup()
-
 
 # ============================================================================
 # mcubridge/services/_serial_flow.py — lines 110-112, 170-171, etc.
@@ -1269,7 +1282,8 @@ class TestBridgeServiceEdges:
 
     @pytest.mark.asyncio
     async def test_send_frame_no_sender(self: Any, service: Any):
-        result = await service.send_frame(0x01, b"")
+        # send_frame was removed; testing serial_flow.send directly
+        result = await service.serial_flow.send(0x01, b"")
         assert result is False
 
 

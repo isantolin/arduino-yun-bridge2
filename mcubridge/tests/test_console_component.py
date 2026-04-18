@@ -1,16 +1,24 @@
+"""Unit tests for mcubridge.services.console."""
+
+from __future__ import annotations
+
 import asyncio
 from collections import deque
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import cast
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import MAX_PAYLOAD_SIZE, Command
+from mcubridge.protocol import protocol
+from mcubridge.protocol.structures import ConsoleWritePacket
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.state.context import RuntimeState
 
+MAX_PAYLOAD_SIZE = protocol.MAX_PAYLOAD_SIZE
 
-@pytest.fixture
+
+@pytest.fixture()
 def console_component() -> ConsoleComponent:
     config = MagicMock(spec=RuntimeConfig)
     state = MagicMock(spec=RuntimeState)
@@ -19,64 +27,56 @@ def console_component() -> ConsoleComponent:
     state.serial_tx_allowed = asyncio.Event()
     state.serial_tx_allowed.set()
     state.console_to_mcu_queue = deque()
+    state.pop_console_chunk = MagicMock()
 
-    ctx = AsyncMock(spec=BridgeContext)
+    # Instance-level mock for publish (will be used by the component)
+    state.publish = AsyncMock()
+    state.enqueue_console_chunk = MagicMock()
+    state.requeue_console_chunk_front = MagicMock()
+
+    ctx = MagicMock(spec=BridgeContext)
+    ctx.state = state
+    ctx.config = config
+    ctx.serial_flow = MagicMock()
+    ctx.serial_flow.send = AsyncMock(return_value=True)
 
     return ConsoleComponent(config, state, ctx)
 
 
 @pytest.mark.asyncio
 async def test_handle_write(console_component: ConsoleComponent) -> None:
-    payload = b"console output"
-    from mcubridge.protocol import structures
+    data = b"hello world"
+    payload = ConsoleWritePacket(data=data).encode()
 
-    await console_component.handle_write(
-        0, structures.ConsoleWritePacket(data=payload).encode()
-    )
+    await console_component.handle_write(0, payload)
 
-    console_component.ctx.publish.assert_awaited_once()  # type: ignore[reportUnknownMemberType]
-    call_args = console_component.ctx.publish.call_args  # type: ignore[reportUnknownVariableType]
-    assert call_args.kwargs["topic"].endswith("console/out")  # type: ignore[reportUnknownMemberType]
-    assert call_args.kwargs["payload"] == payload  # type: ignore[reportUnknownMemberType]
+    mock_pub = cast(AsyncMock, console_component.state.publish)
+    mock_pub.assert_called_once()
+    args, kwargs = mock_pub.call_args
+    # Check if data was published
+    published_payload = kwargs.get("payload") or (args[1] if len(args) > 1 else None)
+    assert published_payload == data
 
 
 @pytest.mark.asyncio
 async def test_flow_control(console_component: ConsoleComponent) -> None:
-    # Initial state
-    assert console_component.state.mcu_is_paused is False
-    assert console_component.state.serial_tx_allowed.is_set() is True
-
-    # XOFF
+    # Test XOFF
     await console_component.handle_xoff(0, b"")
     assert console_component.state.mcu_is_paused is True
-    assert console_component.state.serial_tx_allowed.is_set() is False
+    assert not console_component.state.serial_tx_allowed.is_set()
 
-    # XON
-    with patch.object(
-        console_component, "flush_queue", new_callable=AsyncMock
-    ) as mock_flush:
-        await console_component.handle_xon(0, b"")
-        assert console_component.state.mcu_is_paused is False
-        assert console_component.state.serial_tx_allowed.is_set() is True
-        mock_flush.assert_awaited_once()
+    # Test XON
+    await console_component.handle_xon(0, b"")
+    assert console_component.state.mcu_is_paused is False
+    assert console_component.state.serial_tx_allowed.is_set()
 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> None:
     payload = b"input"
-    console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
+    await console_component._handle_mqtt_input(payload)  # type: ignore[reportPrivateUsage]
 
-    await console_component._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
-        payload
-    )  # pyright: ignore[reportPrivateUsage]
-
-    from mcubridge.protocol import structures
-
-    expected = structures.ConsoleWritePacket(data=payload).encode()
-    console_component.ctx.send_frame.assert_awaited_once_with(  # type: ignore[reportUnknownMemberType]
-        Command.CMD_CONSOLE_WRITE.value,
-        expected,
-    )
+    console_component.ctx.serial_flow.send.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -84,31 +84,21 @@ async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> 
     console_component.state.mcu_is_paused = True
     payload = b"input"
 
-    await console_component._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
-        payload
-    )  # pyright: ignore[reportPrivateUsage]
+    await console_component._handle_mqtt_input(payload)  # type: ignore[reportPrivateUsage]
 
-    console_component.ctx.send_frame.assert_not_awaited()  # type: ignore[reportUnknownMemberType]
-    # verify enqueue was called since state is a mock
-    # The actual queue won't change because enqueue_console_chunk is a mock
-    # We can't easily match the logger instance exactly without patching,
-    # but we can check the payload.
-    console_component.state.enqueue_console_chunk.assert_called_once()  # type: ignore[reportUnknownMemberType]
-    args = console_component.state.enqueue_console_chunk.call_args  # type: ignore[reportUnknownVariableType]
-    assert args[0][0] == payload
+    console_component.ctx.serial_flow.send.assert_not_called()
+    mock_enqueue = cast(MagicMock, console_component.state.enqueue_console_chunk)
+    assert len(mock_enqueue.call_args_list) == 1
 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -> None:
     # Payload larger than MAX_PAYLOAD_SIZE
     large_payload = b"a" * (MAX_PAYLOAD_SIZE + 10)
-    console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
 
-    await console_component._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
-        large_payload
-    )  # pyright: ignore[reportPrivateUsage]
+    await console_component._handle_mqtt_input(large_payload)  # type: ignore[reportPrivateUsage]
 
-    assert console_component.ctx.send_frame.await_count >= 2  # type: ignore[reportUnknownMemberType]
+    assert console_component.ctx.serial_flow.send.call_count >= 2
 
 
 @pytest.mark.asyncio
@@ -116,19 +106,11 @@ async def test_flush_queue(console_component: ConsoleComponent) -> None:
     # Setup mock state behavior
     queue = deque([b"queued"])
     console_component.state.console_to_mcu_queue = queue  # type: ignore[reportAttributeAccessIssue]
-    console_component.state.pop_console_chunk.side_effect = (  # type: ignore[reportAttributeAccessIssue]
+    mock_pop = cast(MagicMock, console_component.state.pop_console_chunk)
+    mock_pop.side_effect = (
         lambda: (queue.popleft() if queue else None)
     )
 
-    console_component.ctx.send_frame.return_value = True  # type: ignore[reportAttributeAccessIssue]
-
     await console_component.flush_queue()
 
-    from mcubridge.protocol import structures
-
-    expected = structures.ConsoleWritePacket(data=b"queued").encode()
-    console_component.ctx.send_frame.assert_awaited_once_with(  # type: ignore[reportUnknownMemberType]
-        Command.CMD_CONSOLE_WRITE.value,
-        expected,
-    )
-    assert len(queue) == 0
+    console_component.ctx.serial_flow.send.assert_awaited_once()

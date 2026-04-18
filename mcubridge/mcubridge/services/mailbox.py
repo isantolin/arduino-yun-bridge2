@@ -56,7 +56,7 @@ class MailboxComponent(BaseComponent):
         else:
             body = payload
 
-        await self.ctx.publish(topic=topic_name, payload=body)
+        await self.state.publish(topic=topic_name, payload=body)
         return True
 
     async def handle_push(self, seq_id: int, payload: bytes) -> bool:
@@ -77,7 +77,7 @@ class MailboxComponent(BaseComponent):
                 len(data),
             )
             reason = protocol.STATUS_REASON_MAILBOX_INCOMING_OVERFLOW
-            await self.ctx.send_frame(
+            await self.ctx.serial_flow.send(
                 Status.ERROR.value,
                 reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
             )
@@ -88,9 +88,9 @@ class MailboxComponent(BaseComponent):
             Topic.MAILBOX,
             MailboxAction.INCOMING,
         )
-        await self.ctx.publish(topic=topic, payload=data)
+        await self.state.publish(topic=topic, payload=data)
 
-        await self.ctx.publish(
+        await self.state.publish(
             topic=topic_path(
                 self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
             ),
@@ -101,7 +101,7 @@ class MailboxComponent(BaseComponent):
     async def handle_available(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_MAILBOX_AVAILABLE."""
         if payload:
-            await self.ctx.send_frame(
+            await self.ctx.serial_flow.send(
                 Status.MALFORMED.value,
                 AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value).encode(),
             )
@@ -110,7 +110,7 @@ class MailboxComponent(BaseComponent):
         queue_len = len(self.state.mailbox_queue)
         response = MailboxAvailableResponsePacket(count=queue_len).encode()
 
-        await self.ctx.send_frame(
+        await self.ctx.serial_flow.send(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
             response,
         )
@@ -131,7 +131,7 @@ class MailboxComponent(BaseComponent):
 
         response_payload = MailboxReadResponsePacket(content=message_payload).encode()
 
-        send_ok = await self.ctx.send_frame(
+        send_ok = await self.ctx.serial_flow.send(
             Command.CMD_MAILBOX_READ_RESP.value,
             response_payload,
         )
@@ -197,7 +197,7 @@ class MailboxComponent(BaseComponent):
                 return
 
             try:
-                await self.ctx.publish(
+                await self.state.publish(
                     topic=topic,
                     payload=message_payload,
                     reply_to=inbound,
@@ -213,7 +213,7 @@ class MailboxComponent(BaseComponent):
             return
 
         try:
-            await self.ctx.publish(
+            await self.state.publish(
                 topic=topic,
                 payload=message_payload,
                 reply_to=inbound,
@@ -239,7 +239,7 @@ class MailboxComponent(BaseComponent):
             payload_bytes=payload_size,
         )
         reason = protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW
-        await self.ctx.send_frame(
+        await self.ctx.serial_flow.send(
             Status.ERROR.value,
             reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
         )
@@ -268,7 +268,7 @@ class MailboxComponent(BaseComponent):
         else:
             properties = ()
 
-        await self.ctx.publish(
+        await self.state.publish(
             topic=overflow_topic,
             payload=body,
             content_type="application/msgpack",
@@ -286,7 +286,7 @@ class MailboxComponent(BaseComponent):
             Topic.MAILBOX,
             suffix,
         )
-        await self.ctx.publish(
+        await self.state.publish(
             topic=topic_name,
             payload=str(count).encode("utf-8"),
         )

@@ -35,9 +35,9 @@ class SpiComponent(BaseComponent):
         try:
             match action:
                 case "begin":
-                    return await self.ctx.send_frame(Command.CMD_SPI_BEGIN.value)
+                    return await self.ctx.serial_flow.send(Command.CMD_SPI_BEGIN.value, b"")
                 case "end":
-                    return await self.ctx.send_frame(Command.CMD_SPI_END.value)
+                    return await self.ctx.serial_flow.send(Command.CMD_SPI_END.value, b"")
                 case "config":
                     try:
                         # Expecting JSON or MsgPack config
@@ -48,7 +48,7 @@ class SpiComponent(BaseComponent):
                             data_mode=int(data.get("data_mode", 0)),
                             frequency=int(data.get("frequency", 4000000)),
                         )
-                        return await self.ctx.send_frame(
+                        return await self.ctx.serial_flow.send(
                             Command.CMD_SPI_SET_CONFIG.value, packet.encode()
                         )
                     except (msgspec.DecodeError, ValueError, TypeError) as e:
@@ -57,7 +57,7 @@ class SpiComponent(BaseComponent):
                 case "transfer":
                     # Simple case: raw bytes to transfer
                     packet = structures.SpiTransferPacket(data=payload)
-                    return await self.ctx.send_frame(
+                    return await self.ctx.serial_flow.send(
                         Command.CMD_SPI_TRANSFER.value, packet.encode()
                     )
                 case _:
@@ -74,7 +74,7 @@ class SpiComponent(BaseComponent):
             topic = topic_path(
                 self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"
             )
-            await self.ctx.publish(topic, packet.data)
+            await self.state.publish(topic, packet.data)
             return True
         except (ValueError, msgspec.MsgspecError) as e:
             logger.warning("Malformed SPI transfer response: %s", e)

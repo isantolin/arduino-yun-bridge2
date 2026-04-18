@@ -71,22 +71,22 @@ class FileComponent(BaseComponent):
             packet = FileWritePacket.decode(payload)
             path = self._get_safe_path(packet.path)
             if not path:
-                await self.ctx.send_frame(Status.ERROR.value, b"Invalid path")
+                await self.ctx.serial_flow.send(Status.ERROR.value, b"Invalid path")
                 return False
 
             if not await self._write_with_quota(path, packet.data):
-                await self.ctx.send_frame(Status.ERROR.value, b"Quota exceeded")
+                await self.ctx.serial_flow.send(Status.ERROR.value, b"Quota exceeded")
                 return False
 
             self._metadata_cache.pop(str(path), None)
-            await self.ctx.send_frame(Status.OK.value)
+            await self.ctx.serial_flow.send(Status.OK.value)
             return True
         except (ValueError, OSError) as e:
             logger.error("File write failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
             ]
-            await self.ctx.send_frame(Status.ERROR.value, err_payload)
+            await self.ctx.serial_flow.send(Status.ERROR.value, err_payload)
             return False
 
     async def handle_read(self, seq_id: int, payload: bytes) -> None:
@@ -95,7 +95,7 @@ class FileComponent(BaseComponent):
             packet = FileReadPacket.decode(payload)
             path = self._get_safe_path(packet.path)
             if not path or not path.is_file():
-                await self.ctx.send_frame(Status.ERROR.value, b"File not found")
+                await self.ctx.serial_flow.send(Status.ERROR.value, b"File not found")
                 return
             data = await asyncio.to_thread(path.read_bytes)
             self._metadata_cache[str(path)] = {
@@ -106,13 +106,13 @@ class FileComponent(BaseComponent):
             # [SIL-2] Use FileReadResponsePacket for consistent framing
             if not data:
                 response_packet = FileReadResponsePacket(content=b"")
-                await self.ctx.send_frame(
+                await self.ctx.serial_flow.send(
                     Command.CMD_FILE_READ_RESP.value, response_packet.encode()
                 )
             else:
                 for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE - 3):
                     response_packet = FileReadResponsePacket(content=chunk)
-                    await self.ctx.send_frame(
+                    await self.ctx.serial_flow.send(
                         Command.CMD_FILE_READ_RESP.value, response_packet.encode()
                     )
         except (ValueError, OSError) as e:
@@ -120,7 +120,7 @@ class FileComponent(BaseComponent):
             err_payload = str(e).encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
             ]
-            await self.ctx.send_frame(Status.ERROR.value, err_payload)
+            await self.ctx.serial_flow.send(Status.ERROR.value, err_payload)
 
     async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_REMOVE from MCU."""
@@ -129,17 +129,17 @@ class FileComponent(BaseComponent):
             path = self._get_safe_path(packet.path)
             if path and await self._remove_with_tracking(path):
                 self._metadata_cache.pop(str(path), None)
-                await self.ctx.send_frame(Status.OK.value)
+                await self.ctx.serial_flow.send(Status.OK.value)
                 return True
 
-            await self.ctx.send_frame(Status.ERROR.value, b"File not found")
+            await self.ctx.serial_flow.send(Status.ERROR.value, b"File not found")
             return False
         except (ValueError, OSError) as e:
             logger.error("File remove failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
             ]
-            await self.ctx.send_frame(Status.ERROR.value, err_payload)
+            await self.ctx.serial_flow.send(Status.ERROR.value, err_payload)
             return False
 
     async def handle_read_response(self, seq_id: int, payload: bytes) -> bool:
@@ -236,7 +236,7 @@ class FileComponent(BaseComponent):
                 "size": len(data),
                 "mtime": path.stat().st_mtime,
             }
-            await self.ctx.publish(
+            await self.state.publish(
                 topic=self._mqtt_response_topic(FileAction.READ, identifier),
                 payload=data,
                 reply_to=inbound,
@@ -286,7 +286,7 @@ class FileComponent(BaseComponent):
             return False
 
         packet = FileWritePacket(path=relative_path, data=payload).encode()
-        if not await self.ctx.send_frame(Command.CMD_FILE_WRITE.value, packet):
+        if not await self.ctx.serial_flow.send(Command.CMD_FILE_WRITE.value, packet):
             logger.error("MQTT write failed for %s: MCU rejected write", identifier)
             await self._publish_mqtt_error(
                 inbound,
@@ -326,7 +326,7 @@ class FileComponent(BaseComponent):
             packet = FileReadPacket(path=relative_path).encode()
 
             try:
-                if not await self.ctx.send_frame(Command.CMD_FILE_READ.value, packet):
+                if not await self.ctx.serial_flow.send(Command.CMD_FILE_READ.value, packet):
                     logger.error(
                         "MQTT read failed for %s: MCU rejected read", identifier
                     )
@@ -359,7 +359,7 @@ class FileComponent(BaseComponent):
                 if self._pending_mcu_read is pending:
                     self._pending_mcu_read = None
 
-        await self.ctx.publish(
+        await self.state.publish(
             topic=self._mqtt_response_topic(FileAction.READ, identifier),
             payload=data,
             reply_to=inbound,
@@ -387,7 +387,7 @@ class FileComponent(BaseComponent):
             return False
 
         packet = FileRemovePacket(path=relative_path).encode()
-        if not await self.ctx.send_frame(Command.CMD_FILE_REMOVE.value, packet):
+        if not await self.ctx.serial_flow.send(Command.CMD_FILE_REMOVE.value, packet):
             logger.error("MQTT remove failed for %s: MCU rejected remove", identifier)
             await self._publish_mqtt_error(
                 inbound,
@@ -476,7 +476,7 @@ class FileComponent(BaseComponent):
         identifier: str,
         reason: str,
     ) -> None:
-        await self.ctx.publish(
+        await self.state.publish(
             topic=self._mqtt_response_topic(action, identifier),
             payload=reason.encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
@@ -553,3 +553,6 @@ class FileComponent(BaseComponent):
             self.state.file_storage_bytes_used = usage
         except (Exception, ValueError, IndexError, OSError):
             self.state.file_storage_bytes_used = 0
+
+
+__all__ = ["FileComponent"]

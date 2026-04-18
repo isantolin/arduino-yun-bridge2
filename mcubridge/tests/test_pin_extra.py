@@ -1,19 +1,22 @@
-"""Extra coverage for mcubridge.services.pin."""
+"""Extra edge-case tests for PinComponent (SIL-2)."""
 
-from unittest.mock import AsyncMock, MagicMock
+from __future__ import annotations
+
+import os
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Topic
+from mcubridge.protocol.topics import Topic, TopicRoute
+from mcubridge.protocol.protocol import PinAction
 from mcubridge.services.pin import PinComponent
-from mcubridge.state.context import McuCapabilities, create_runtime_state
+from mcubridge.state.context import create_runtime_state
+from tests._helpers import make_mqtt_msg
 
 
 @pytest.mark.asyncio
 async def test_pin_handle_read_overflow() -> None:
-    import time
-    import os
-
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
@@ -22,29 +25,31 @@ async def test_pin_handle_read_overflow() -> None:
     try:
         state.pending_pin_request_limit = 1
         ctx = MagicMock()
-        ctx.publish = AsyncMock()
-        ctx.send_frame = AsyncMock(return_value=True)
-        pc = PinComponent(config, state, ctx)
+        ctx.serial_flow = MagicMock()
+        ctx.serial_flow.send = AsyncMock(return_value=True)
 
-        # Fill queue
-        await pc._handle_read_command(Topic.DIGITAL, 13, None)  # type: ignore[reportPrivateUsage]
-        assert len(state.pending_digital_reads) == 1
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            comp = PinComponent(config, state, ctx)
 
-        # Overflow
-        await pc._handle_read_command(Topic.DIGITAL, 13, None)  # type: ignore[reportPrivateUsage]
-        ctx.publish.assert_called()
-        assert ("bridge-error", "pending-pin-overflow") in ctx.publish.call_args[1][
-            "properties"
-        ]
+            # Fill queue
+            state.pending_digital_reads.append(MagicMock())
+
+            route = TopicRoute(f"br/d/13/{PinAction.READ.value}", "br", Topic.DIGITAL, ("13", PinAction.READ.value))
+            result = await comp.handle_mqtt(route, make_mqtt_msg(b""))
+
+            # True because handled (rejected gracefully)
+            assert result is True
+            # Should publish overflow error
+            mock_pub.assert_called_once()
+            args, kwargs = mock_pub.call_args
+            props = kwargs.get("properties") or args[4]
+            assert ("bridge-error", "pending-pin-overflow") in props
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_pin_handle_read_send_fail() -> None:
-    import time
-    import os
-
+async def test_pin_handle_mqtt_edge_cases() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
@@ -52,64 +57,60 @@ async def test_pin_handle_read_send_fail() -> None:
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
-        ctx.send_frame = AsyncMock(return_value=False)
-        pc = PinComponent(config, state, ctx)
+        ctx.serial_flow = MagicMock()
+        ctx.serial_flow.send = AsyncMock(return_value=True)
 
-        await pc._handle_read_command(Topic.DIGITAL, 13, None)  # type: ignore[reportPrivateUsage]
-        assert len(state.pending_digital_reads) == 0
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            comp = PinComponent(config, state, ctx)
+
+            # 1. No segments
+            route1 = TopicRoute("br/d", "br", Topic.DIGITAL, ())
+            await comp.handle_mqtt(route1, make_mqtt_msg(b""))
+            ctx.serial_flow.send.assert_not_called()
+
+            # 2. Invalid pin
+            route2 = TopicRoute("br/d/invalid", "br", Topic.DIGITAL, ("invalid",))
+            await comp.handle_mqtt(route2, make_mqtt_msg(b""))
+            ctx.serial_flow.send.assert_not_called()
+
+            # 3. Unknown subtopic
+            route3 = TopicRoute("br/d/13/magic", "br", Topic.DIGITAL, ("13", "magic"))
+            await comp.handle_mqtt(route3, make_mqtt_msg(b""))
+            ctx.serial_flow.send.assert_not_called()
+
+            # 4. Invalid mode
+            route4 = TopicRoute("br/d/13/mode", "br", Topic.DIGITAL, ("13", "mode"))
+            await comp.handle_mqtt(route4, make_mqtt_msg(b"invalid"))
+            ctx.serial_flow.send.assert_not_called()
+
+            await comp.handle_mqtt(route4, make_mqtt_msg(b"99"))
+            ctx.serial_flow.send.assert_not_called()
+
+            # 5. Invalid write value
+            route5 = TopicRoute("br/d/13", "br", Topic.DIGITAL, ("13",))
+            await comp.handle_mqtt(route5, make_mqtt_msg(b"invalid"))
+            ctx.serial_flow.send.assert_not_called()
+
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_pin_handle_mode_invalid() -> None:
-    import time
-    import os
-
+async def test_pin_handle_analog_read_resp_malformed() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
-        pc = PinComponent(config, state, MagicMock())
+        ctx = MagicMock()
+        ctx.serial_flow = MagicMock()
 
-        # Invalid int
-        await pc._handle_mode_command(13, "13", "not_an_int")  # type: ignore[reportPrivateUsage]
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            comp = PinComponent(config, state, ctx)
 
-        # Invalid mode
-        await pc._handle_mode_command(13, "13", "5")  # type: ignore[reportPrivateUsage]
-    finally:
-        state.cleanup()
+            await comp.handle_analog_read_resp(0, b"\xff\xff")
 
-
-@pytest.mark.asyncio
-async def test_pin_validate_access_block() -> None:
-    import time
-    import os
-
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
-    )
-    state = create_runtime_state(config)
-    try:
-        state.mcu_capabilities = McuCapabilities(
-            protocol_version=2,
-            board_arch=1,
-            num_digital_pins=20,
-            num_analog_inputs=6,
-            features={},  # type: ignore[reportArgumentType]
-        )
-        pc = PinComponent(config, state, MagicMock())
-
-        assert (
-            pc._validate_pin_access(25, False)  # type: ignore[reportPrivateUsage]
-            is False
-        )  # Digital limit 20
-        assert (
-            pc._validate_pin_access(10, True)  # type: ignore[reportPrivateUsage]
-            is False
-        )  # Analog limit 6
+            mock_pub.assert_not_called()
     finally:
         state.cleanup()

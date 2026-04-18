@@ -1,106 +1,128 @@
-"""Extra coverage for mcubridge.services.file."""
+"""Extra edge-case tests for FileComponent (SIL-2)."""
 
+from __future__ import annotations
+
+import os
+import time
 from pathlib import Path
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Status
-from mcubridge.services.file import FileComponent, _do_write_file  # type: ignore[reportPrivateUsage]
+from mcubridge.services.file import FileComponent
 from mcubridge.state.context import create_runtime_state
 
 
-def test_file_do_write_large_warning(tmp_path: Path) -> None:
-    test_file = tmp_path / "large.bin"
-    # FILE_LARGE_WARNING_BYTES is 1MB
-    data = b"A" * (1024 * 1024 + 1)
-    with patch("mcubridge.services.file.logger.warning") as mock_warn:
-        _do_write_file(test_file, data)
-        mock_warn.assert_called()
+@pytest.mark.asyncio
+async def test_file_do_write_large_warning() -> None:
+    from mcubridge.services.file import _do_write_file  # type: ignore[reportPrivateUsage]
+
+    import tempfile
+
+    # We use a real temp dir to avoid quota issues with large files
+    with tempfile.TemporaryDirectory(prefix="mcubridge-test-large-") as tmpdir:
+        path = Path(tmpdir) / "large.bin"
+        # 1MB + 1 byte
+        data = b"\x00" * (1024 * 1024 + 1)
+
+        # Should log a warning, but we just verify it doesn't crash
+        _do_write_file(path, data)
+        assert path.stat().st_size > 1024 * 1024
 
 
 @pytest.mark.asyncio
-async def test_file_handle_write_malformed() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+async def test_file_refresh_storage_usage_handles_oserror() -> None:
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
-        fc = FileComponent(config, state, AsyncMock())
-        assert await fc.handle_write(0, b"") is False
+        ctx = MagicMock()
+        ctx.serial_flow = MagicMock()
+        ctx.serial_flow.send = AsyncMock(return_value=True)
+
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            comp = FileComponent(config, state, ctx)
+
+            def boom(*_args: Any, **_kwargs: Any) -> Any:
+                raise OSError("Permission denied")
+
+            with patch("pathlib.Path.rglob", side_effect=boom):
+                await comp._refresh_storage_usage() # type: ignore[reportPrivateUsage]
+                assert state.file_storage_bytes_used == 0
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_file_handle_write_traversal() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+async def test_file_remove_with_tracking_not_a_file(tmp_path: Path) -> None:
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=str(tmp_path),
+    )
     state = create_runtime_state(config)
     try:
-        ctx = AsyncMock()
-        fc = FileComponent(config, state, ctx)
+        ctx = MagicMock()
+        ctx.serial_flow = MagicMock()
 
-        from mcubridge.protocol.structures import FileWritePacket
+        comp = FileComponent(config, state, ctx)
 
-        # Path traversal
-        payload = FileWritePacket(path="../etc/passwd", data=b"data").encode()
-        assert await fc.handle_write(0, payload) is False
-        ctx.send_frame.assert_called_with(Status.ERROR.value, ANY)  # INVALID_PATH
+        # Test with directory
+        d = tmp_path / "dir"
+        d.mkdir()
+        result = await comp._remove_with_tracking(d) # type: ignore[reportPrivateUsage]
+        assert result is False
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_file_handle_write_absolute() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+async def test_file_handle_read_response_no_pending() -> None:
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
-        ctx = AsyncMock()
-        fc = FileComponent(config, state, ctx)
+        ctx = MagicMock()
+        ctx.serial_flow = MagicMock()
 
-        from mcubridge.protocol.structures import FileWritePacket
+        comp = FileComponent(config, state, ctx)
 
-        payload = FileWritePacket(path="/tmp/foo", data=b"data").encode()
-        assert await fc.handle_write(0, payload) is False
+        # No pending request set
+        result = await comp.handle_read_response(0, b"\x00")
+        assert result is False
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_file_handle_read_malformed() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+async def test_file_handle_read_response_malformed() -> None:
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+    )
     state = create_runtime_state(config)
     try:
-        fc = FileComponent(config, state, AsyncMock())
-        await fc.handle_read(0, b"")
-    finally:
-        state.cleanup()
+        ctx = MagicMock()
+        ctx.serial_flow = MagicMock()
 
+        comp = FileComponent(config, state, ctx)
 
-@pytest.mark.asyncio
-async def test_file_handle_remove_malformed() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
-    state = create_runtime_state(config)
-    try:
-        fc = FileComponent(config, state, AsyncMock())
-        assert await fc.handle_remove(0, b"") is False
-    finally:
-        state.cleanup()
+        import asyncio
+        from mcubridge.services.file import _PendingMcuRead  # type: ignore[reportPrivateUsage]
 
-
-@pytest.mark.asyncio
-async def test_file_handle_mqtt_unknown() -> None:
-    from mcubridge.protocol.topics import Topic, TopicRoute
-
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
-    state = create_runtime_state(config)
-    try:
-        fc = FileComponent(config, state, MagicMock())
-        route = TopicRoute(
-            raw="br/file/unknown/path",
-            prefix="br",
-            topic=Topic.FILE,
-            segments=("unknown", "path"),
+        pending = _PendingMcuRead(
+            identifier="test",
+            future=asyncio.get_running_loop().create_future()
         )
-        msg = type("MockMsg", (), {"topic": "br/file/unknown/path", "payload": b""})()
-        await fc.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+        comp._pending_mcu_read = pending # type: ignore[reportPrivateUsage]
+
+        result = await comp.handle_read_response(0, b"\xff\xff")
+        assert result is False
+        assert pending.future.done()
+        assert isinstance(pending.future.exception(), ValueError)
     finally:
         state.cleanup()

@@ -18,9 +18,9 @@ from mcubridge.state.context import RuntimeState
 from tests._helpers import make_mqtt_msg, make_route
 
 
-def _extract_enqueued_publish(ctx: AsyncMock, index: int = -1) -> tuple[QueuedPublish, Any]:
+def _extract_enqueued_publish(state: AsyncMock, index: int = -1) -> tuple[QueuedPublish, Any]:
     """Helper to extract QueuedPublish and reply_context from AsyncMock.publish calls."""
-    call = ctx.publish.call_args_list[index]
+    call = state.publish.call_args_list[index]
     topic = call.kwargs.get("topic", call.args[0] if call.args else "")
     payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")
 
@@ -42,14 +42,15 @@ def _extract_enqueued_publish(ctx: AsyncMock, index: int = -1) -> tuple[QueuedPu
 @pytest.mark.asyncio
 async def test_shell_run_async_success(
     runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
 ) -> None:
+    state = AsyncMock(spec=RuntimeState)
+    state.mqtt_topic_prefix = "br"
     ctx = AsyncMock(spec=BridgeContext)
     ctx.config = runtime_config
-    ctx.state = runtime_state
-    ctx.send_frame.return_value = True
+    ctx.state = state
+    ctx.serial_flow.send.return_value = True
 
-    component = ProcessComponent(runtime_config, runtime_state, ctx)
+    component = ProcessComponent(runtime_config, state, ctx)
 
     # Mock low-level execution but use real component logic for MQTT
     component.run_async = AsyncMock(return_value=1234)
@@ -60,11 +61,11 @@ async def test_shell_run_async_success(
         inbound,
     )
 
-    assert ctx.publish.call_count == 1
-    msg, reply_to = _extract_enqueued_publish(ctx)
+    state.publish.assert_awaited_once()
+    msg, reply_to = _extract_enqueued_publish(state)
     assert reply_to is inbound
     assert msg.topic_name == topic_path(
-        runtime_state.mqtt_topic_prefix,
+        state.mqtt_topic_prefix,
         Topic.SHELL,
         ShellAction.RUN_ASYNC,
         protocol.MQTT_SUFFIX_RESPONSE,
@@ -75,14 +76,15 @@ async def test_shell_run_async_success(
 @pytest.mark.asyncio
 async def test_shell_run_async_exception_returns_error(
     runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
 ) -> None:
+    state = AsyncMock(spec=RuntimeState)
+    state.mqtt_topic_prefix = "br"
     ctx = AsyncMock(spec=BridgeContext)
     ctx.config = runtime_config
-    ctx.state = runtime_state
-    ctx.send_frame.return_value = True
+    ctx.state = state
+    ctx.serial_flow.send.return_value = True
 
-    component = ProcessComponent(runtime_config, runtime_state, ctx)
+    component = ProcessComponent(runtime_config, state, ctx)
     component.run_async = AsyncMock(side_effect=RuntimeError("crash"))
 
     inbound = make_mqtt_msg(b"echo hi")
@@ -91,22 +93,23 @@ async def test_shell_run_async_exception_returns_error(
         inbound,
     )
 
-    assert ctx.publish.call_count == 1
-    msg, _ = _extract_enqueued_publish(ctx)
+    state.publish.assert_awaited_once()
+    msg, _ = _extract_enqueued_publish(state)
     assert msg.payload == b"error:internal"
 
 
 @pytest.mark.asyncio
 async def test_shell_run_async_not_allowed_returns_error_payload(
     runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
 ) -> None:
+    state = AsyncMock(spec=RuntimeState)
+    state.mqtt_topic_prefix = "br"
     ctx = AsyncMock(spec=BridgeContext)
     ctx.config = runtime_config
-    ctx.state = runtime_state
-    ctx.send_frame.return_value = True
+    ctx.state = state
+    ctx.serial_flow.send.return_value = True
 
-    component = ProcessComponent(runtime_config, runtime_state, ctx)
+    component = ProcessComponent(runtime_config, state, ctx)
     component.run_async = AsyncMock(return_value=0)
 
     await component.handle_mqtt(
@@ -114,22 +117,23 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
         make_mqtt_msg(b"echo hi"),
     )
 
-    assert ctx.publish.call_count == 1
-    msg, _ = _extract_enqueued_publish(ctx)
+    state.publish.assert_awaited_once()
+    msg, _ = _extract_enqueued_publish(state)
     assert msg.payload == b"error:not_allowed_or_limit_reached"
 
 
 @pytest.mark.asyncio
 async def test_shell_poll_calls_process_helpers(
     runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
 ) -> None:
+    state = AsyncMock(spec=RuntimeState)
+    state.mqtt_topic_prefix = "br"
     ctx = AsyncMock(spec=BridgeContext)
     ctx.config = runtime_config
-    ctx.state = runtime_state
-    ctx.send_frame.return_value = True
+    ctx.state = state
+    ctx.serial_flow.send.return_value = True
 
-    component = ProcessComponent(runtime_config, runtime_state, ctx)
+    component = ProcessComponent(runtime_config, state, ctx)
 
     from mcubridge.protocol.structures import ProcessOutputBatch
 
@@ -150,14 +154,15 @@ async def test_shell_poll_calls_process_helpers(
 @pytest.mark.asyncio
 async def test_shell_kill_invokes_stop_process(
     runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
 ) -> None:
+    state = AsyncMock(spec=RuntimeState)
+    state.mqtt_topic_prefix = "br"
     ctx = AsyncMock(spec=BridgeContext)
     ctx.config = runtime_config
-    ctx.state = runtime_state
-    ctx.send_frame.return_value = True
+    ctx.state = state
+    ctx.serial_flow.send.return_value = True
 
-    component = ProcessComponent(runtime_config, runtime_state, ctx)
+    component = ProcessComponent(runtime_config, state, ctx)
     component.stop_process = AsyncMock(return_value=True)
 
     await component.handle_mqtt(
@@ -171,14 +176,14 @@ async def test_shell_kill_invokes_stop_process(
 @pytest.mark.asyncio
 async def test_shell_ignores_invalid_payloads_and_actions(
     runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
 ) -> None:
+    state = AsyncMock(spec=RuntimeState)
     ctx = AsyncMock(spec=BridgeContext)
     ctx.config = runtime_config
-    ctx.state = runtime_state
-    ctx.send_frame.return_value = True
+    ctx.state = state
+    ctx.serial_flow.send.return_value = True
 
-    component = ProcessComponent(runtime_config, runtime_state, ctx)
+    component = ProcessComponent(runtime_config, state, ctx)
 
     # Empty segments
     await component.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
@@ -186,5 +191,5 @@ async def test_shell_ignores_invalid_payloads_and_actions(
     # Unknown action
     await component.handle_mqtt(make_route(Topic.SHELL, "unknown"), make_mqtt_msg(b""))
 
-    ctx.publish.assert_not_called()
-    ctx.send_frame.assert_not_called()
+    state.publish.assert_not_called()
+    ctx.serial_flow.send.assert_not_called()

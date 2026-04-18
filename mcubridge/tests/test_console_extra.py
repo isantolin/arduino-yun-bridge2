@@ -1,18 +1,20 @@
-"""Extra coverage for mcubridge.services.console."""
+"""Extra edge-case tests for ConsoleComponent (SIL-2)."""
 
-from unittest.mock import AsyncMock, MagicMock
+from __future__ import annotations
+
+import os
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.structures import ConsoleWritePacket
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.state.context import create_runtime_state
 
 
 @pytest.mark.asyncio
 async def test_console_handle_write_edge_cases() -> None:
-    import os
-    import time
-
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",
@@ -20,64 +22,43 @@ async def test_console_handle_write_edge_cases() -> None:
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
-        ctx.publish = AsyncMock()
-        cc = ConsoleComponent(config, state, ctx)
+        ctx.serial_flow = MagicMock()
+        ctx.serial_flow.send = AsyncMock(return_value=True)
 
-        # Malformed
-        await cc.handle_write(0, b"")
-        assert ctx.publish.call_count == 0
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
+            comp = ConsoleComponent(config, state, ctx)
 
-        # Empty data (decoded from valid but empty packet)
-        from mcubridge.protocol.structures import ConsoleWritePacket
+            # 1. Malformed payload
+            await comp.handle_write(0, b"\xff\xff")
+            mock_pub.assert_not_called()
 
-        payload = ConsoleWritePacket(data=b"").encode()
-        await cc.handle_write(0, payload)
-        assert ctx.publish.call_count == 0
+            # 2. Empty data in packet
+            empty_pkt = ConsoleWritePacket(data=b"").encode()
+            await comp.handle_write(1, empty_pkt)
+            mock_pub.assert_not_called()
+
+            # 3. Successful write
+            valid_pkt = ConsoleWritePacket(data=b"hello").encode()
+            await comp.handle_write(2, valid_pkt)
+            mock_pub.assert_called_once()
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_console_mqtt_input_send_fail() -> None:
-    import os
-    import time
-
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",
-    )
+async def test_console_mqtt_input_error_paths() -> None:
+    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
-        ctx.send_frame = AsyncMock(return_value=False)
-        cc = ConsoleComponent(config, state, ctx)
+        ctx.serial_flow = MagicMock()
+        # Simulate serial failure
+        ctx.serial_flow.send = AsyncMock(return_value=False)
 
-        # Send fails, should queue remaining
-        await cc._handle_mqtt_input(  # type: ignore[reportPrivateUsage]
-            b"chunk1chunk2"
-        )  # pyright: ignore[reportPrivateUsage]
-        assert len(state.console_to_mcu_queue) > 0
-    finally:
-        state.cleanup()
+        comp = ConsoleComponent(config, state, ctx)
 
-
-@pytest.mark.asyncio
-async def test_console_flush_queue_send_fail() -> None:
-    import os
-    import time
-
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",
-    )
-    state = create_runtime_state(config)
-    try:
-        ctx = MagicMock()
-        ctx.send_frame = AsyncMock(return_value=False)
-        cc = ConsoleComponent(config, state, ctx)
-
-        state.enqueue_console_chunk(b"hello")
-        await cc.flush_queue()
-        assert len(state.console_to_mcu_queue) > 0
+        # Sending input when serial fails should queue it
+        await comp._handle_mqtt_input(b"lost-data")  # type: ignore[reportPrivateUsage]
+        assert len(state.console_to_mcu_queue) == 1
     finally:
         state.cleanup()

@@ -89,7 +89,7 @@ class SerialFlowController:
             self._current = None
             self._condition.notify_all()
 
-    async def send(self, command_id: int, payload: bytes) -> bool:
+    async def send(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sender = self._sender
         if sender is None:
             self._logger.error(
@@ -119,6 +119,33 @@ class SerialFlowController:
                 if self._current is pending:
                     self._current = None
                     self._condition.notify_all()
+
+    async def acknowledge(
+        self,
+        command_id: int,
+        seq_id: int,
+        *,
+        status: Status = Status.ACK,
+    ) -> None:
+        """Send an acknowledgement frame to the MCU (SIL-2)."""
+        sender = self._sender
+        if not sender:
+            self._logger.error(
+                "Serial writer unavailable; cannot acknowledge frame 0x%02X",
+                command_id,
+            )
+            return
+
+        payload = AckPacket(command_id=command_id).encode()
+        try:
+            await sender(status.value, payload)
+        except (OSError, RuntimeError, ValueError) as exc:
+            self._logger.warning(
+                "Failed to enqueue status %s for command 0x%02X: %s",
+                status.name,
+                command_id,
+                exc,
+            )
 
     def _emit_metric(self, event: str) -> None:
         if self._metrics_callback is None:

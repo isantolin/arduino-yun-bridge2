@@ -121,7 +121,7 @@ class ProcessComponent(BaseComponent):
                 ShellAction.RUN_ASYNC,
                 "error",
             )
-            await self.ctx.publish(
+            await self.state.publish(
                 topic=response_topic,
                 payload=b"error:internal",
                 reply_to=inbound,
@@ -136,14 +136,14 @@ class ProcessComponent(BaseComponent):
         )
 
         if pid == 0:
-            await self.ctx.publish(
+            await self.state.publish(
                 topic=response_topic,
                 payload=b"error:not_allowed_or_limit_reached",
                 reply_to=inbound,
             )
             return
 
-        await self.ctx.publish(
+        await self.state.publish(
             topic=response_topic,
             payload=str(pid).encode("utf-8"),
             reply_to=inbound,
@@ -200,9 +200,9 @@ class ProcessComponent(BaseComponent):
             command = packet.command
 
             if not command:
-                await self.ctx.acknowledge_mcu_frame(
-                    seq_id,
+                await self.ctx.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                    seq_id,
                     status=Status.MALFORMED,
                 )
                 return
@@ -210,9 +210,9 @@ class ProcessComponent(BaseComponent):
             # 2. Policy check
             if not self.state.allowed_policy.is_allowed(command):
                 logger.warning("Process execution denied by policy: %s", command)
-                await self.ctx.acknowledge_mcu_frame(
-                    seq_id,
+                await self.ctx.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                    seq_id,
                     status=Status.ERROR,
                 )
                 return
@@ -220,26 +220,26 @@ class ProcessComponent(BaseComponent):
             # 3. Execution
             pid = await self.run_async(command)
             if pid > 0:
-                await self.ctx.acknowledge_mcu_frame(
-                    seq_id,
+                await self.ctx.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                    seq_id,
                     status=Status.OK,
                 )
                 resp = structures.ProcessRunAsyncResponsePacket(pid=pid).encode()
-                await self.ctx.send_frame(
+                await self.ctx.serial_flow.send(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
                     resp,
                 )
             else:
-                await self.ctx.acknowledge_mcu_frame(
-                    seq_id,
+                await self.ctx.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                    seq_id,
                     status=Status.ERROR,
                 )
         except (msgspec.ValidationError, ValueError, AttributeError):
-            await self.ctx.acknowledge_mcu_frame(
-                seq_id,
+            await self.ctx.serial_flow.acknowledge(
                 protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                seq_id,
                 status=Status.MALFORMED,
             )
 
@@ -250,9 +250,9 @@ class ProcessComponent(BaseComponent):
             pid = packet.pid
 
             batch = await self.poll_process(pid)
-            await self.ctx.acknowledge_mcu_frame(
-                seq_id,
+            await self.ctx.serial_flow.acknowledge(
                 protocol.Command.CMD_PROCESS_POLL.value,
+                seq_id,
                 status=Status.OK,
             )
             resp = structures.ProcessPollResponsePacket(
@@ -261,14 +261,14 @@ class ProcessComponent(BaseComponent):
                 stdout_data=batch.stdout_chunk,
                 stderr_data=batch.stderr_chunk,
             ).encode()
-            await self.ctx.send_frame(
+            await self.ctx.serial_flow.send(
                 protocol.Command.CMD_PROCESS_POLL_RESP.value,
                 resp,
             )
         except (msgspec.ValidationError, ValueError, AttributeError):
-            await self.ctx.acknowledge_mcu_frame(
-                seq_id,
+            await self.ctx.serial_flow.acknowledge(
                 protocol.Command.CMD_PROCESS_POLL.value,
+                seq_id,
                 status=Status.MALFORMED,
             )
 
@@ -282,17 +282,17 @@ class ProcessComponent(BaseComponent):
 
             success = await self.stop_process(pid)
             if send_ack:
-                await self.ctx.acknowledge_mcu_frame(
-                    seq_id,
+                await self.ctx.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_KILL.value,
+                    seq_id,
                     status=Status.OK if success else Status.ERROR,
                 )
             return success
         except (msgspec.ValidationError, ValueError, AttributeError):
             if send_ack:
-                await self.ctx.acknowledge_mcu_frame(
-                    seq_id,
+                await self.ctx.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_KILL.value,
+                    seq_id,
                     status=Status.MALFORMED,
                 )
             return False
@@ -509,7 +509,7 @@ class ProcessComponent(BaseComponent):
             reply_topic = getattr(inbound.properties, "ResponseTopic", None)
             correlation_data = getattr(inbound.properties, "CorrelationData", None)
 
-        await self.ctx.enqueue_mqtt(
+        await self.state.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
                 payload=_msgpack_enc.encode(batch),

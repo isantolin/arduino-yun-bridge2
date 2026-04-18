@@ -1,23 +1,21 @@
-"""Extra coverage for mcubridge.services.mailbox."""
+"""Extra edge-case tests for MailboxComponent (SIL-2)."""
 
-from typing import Any
+from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import os
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.state.context import create_runtime_state
-from mcubridge.protocol.topics import Topic
-
-from tests._helpers import make_route, make_mqtt_msg
+from mcubridge.protocol.topics import Topic, TopicRoute
+from tests._helpers import make_mqtt_msg
 
 
 @pytest.mark.asyncio
 async def test_mailbox_handle_processed_fallback() -> None:
-    import time
-    import os
-
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
@@ -25,22 +23,24 @@ async def test_mailbox_handle_processed_fallback() -> None:
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
-        ctx.publish = AsyncMock()
-        mb = MailboxComponent(config, state, ctx)
+        ctx.serial_flow = MagicMock()
 
-        # Payload too short or invalid for packet
-        await mb.handle_processed(0, b"A")
-        ctx.publish.assert_called_once()
-        assert ctx.publish.call_args[1]["payload"] == b"A"
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            comp = MailboxComponent(config, state, ctx)
+
+            # Malformed payload fallback
+            await comp.handle_processed(0, b"\xff\xff")
+
+            mock_pub.assert_called_once()
+            args, kwargs = mock_pub.call_args
+            pub_payload = kwargs.get("payload") or args[1]
+            assert pub_payload == b"\xff\xff"
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_mailbox_handle_read_truncation() -> None:
-    import time
-    import os
-
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
@@ -48,48 +48,56 @@ async def test_mailbox_handle_read_truncation() -> None:
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
-        ctx.send_frame = AsyncMock(return_value=True)
-        ctx.publish = AsyncMock()
-        mb = MailboxComponent(config, state, ctx)
+        ctx.serial_flow = MagicMock()
+        ctx.serial_flow.send = AsyncMock(return_value=True)
 
-        state.enqueue_mailbox_message(b"A" * 100)
-        await mb.handle_read(0, b"")
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            comp = MailboxComponent(config, state, ctx)
 
-        # Verify sent payload is truncated to MAX_PAYLOAD_SIZE - 3 (61)
-        args = ctx.send_frame.call_args[0]
-        assert len(args[1]) <= 64  # 3 bytes msgpack prefix + 61 data
+            # Very large payload
+            large_data = b"x" * 1024
+            state.enqueue_mailbox_message(large_data)
+
+            await comp.handle_read(0, b"")
+
+            ctx.serial_flow.send.assert_called_once()
+            args, _ = ctx.serial_flow.send.call_args
+            # Verify truncation in the sent frame
+            sent_payload = args[1]
+            assert len(sent_payload) < 1024
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_mailbox_handle_read_send_fail(tmp_path: Any) -> None:
+async def test_mailbox_handle_read_send_fail() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=tmp_path.as_posix(),
-        mqtt_spool_dir=(tmp_path / "spool").as_posix(),
+        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
-        ctx.send_frame = AsyncMock(return_value=False)
-        ctx.publish = AsyncMock()
-        mb = MailboxComponent(config, state, ctx)
+        ctx.serial_flow = MagicMock()
+        ctx.serial_flow.send = AsyncMock(return_value=False)
 
-        msg = b"persistent"
-        state.enqueue_mailbox_message(msg)
-        await mb.handle_read(0, b"")
-        # Message should be requeued at front
-        assert state.pop_mailbox_message() == msg
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            comp = MailboxComponent(config, state, ctx)
+
+            data = b"hello"
+            state.enqueue_mailbox_message(data)
+
+            result = await comp.handle_read(0, b"")
+
+            assert result is False
+            # Should have requeued
+            assert len(state.mailbox_queue) == 1
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_mailbox_handle_mqtt_edge_cases() -> None:
-    import time
-    import os
-
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
@@ -97,27 +105,22 @@ async def test_mailbox_handle_mqtt_edge_cases() -> None:
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
-        ctx.publish = AsyncMock()
-        mb = MailboxComponent(config, state, ctx)
+        ctx.serial_flow = MagicMock()
 
-        # Unknown action
-        await mb.handle_mqtt(
-            make_route(Topic.MAILBOX, "unknown"), make_mqtt_msg(b"payload")
-        )
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            comp = MailboxComponent(config, state, ctx)
 
-        # Read from incoming queue
-        state.enqueue_mailbox_incoming(b"inbound")
-        await mb._handle_mqtt_read(None)  # type: ignore[reportPrivateUsage]
-        ctx.publish.assert_called()
+            # Unknown action
+            route = TopicRoute("br/m/unknown", "br", Topic.MAILBOX, ("unknown",))
+            await comp.handle_mqtt(route, make_mqtt_msg(b""))
+
+            mock_pub.assert_not_called()
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_mailbox_overflow_with_inbound() -> None:
-    import time
-    import os
-
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
@@ -125,20 +128,22 @@ async def test_mailbox_overflow_with_inbound() -> None:
     state = create_runtime_state(config)
     try:
         ctx = MagicMock()
-        ctx.send_frame = AsyncMock()
-        ctx.publish = AsyncMock()
-        mb = MailboxComponent(config, state, ctx)
+        ctx.serial_flow = MagicMock()
+        ctx.serial_flow.send = AsyncMock(return_value=True)
 
-        inbound = MagicMock()
-        await mb._handle_outgoing_overflow(100, inbound)  # type: ignore[reportPrivateUsage]
-        # Check for bridge-error property
-        found_error = False
-        for call in ctx.publish.call_args_list:
-            if (
-                call.kwargs.get("properties")
-                and ("bridge-error", "mailbox") in call.kwargs["properties"]
-            ):
-                found_error = True
-        assert found_error
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            comp = MailboxComponent(config, state, ctx)
+
+            # Force overflow
+            state.mailbox_queue_limit = 0
+
+            inbound = make_mqtt_msg(b"data")
+            inbound.properties = type("Props", (), {"ResponseTopic": "reply"})()
+
+            await comp._handle_mqtt_write(b"data", inbound) # type: ignore[reportPrivateUsage]
+
+            mock_pub.assert_called()
+            # Should include reply_to context
+            assert any(call.kwargs.get("reply_to") is inbound for call in mock_pub.call_args_list)
     finally:
         state.cleanup()

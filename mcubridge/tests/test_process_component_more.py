@@ -16,7 +16,8 @@ def process_comp(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
     from mcubridge.services.runtime import BridgeService
 
     service = MagicMock(spec=BridgeService)
-    service.acknowledge_mcu_frame = AsyncMock()
+    service.serial_flow.acknowledge = AsyncMock()
+    service.serial_flow.send = AsyncMock()
     service.state = runtime_state
 
     # Create component
@@ -44,7 +45,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
 
         payload = ProcessPollPacket(pid=100).encode()
         await process_comp.handle_poll(0, payload)
-        process_comp.ctx.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
+        process_comp.ctx.serial_flow.acknowledge.assert_awaited()  # type: ignore[reportUnknownMemberType]
 
 
 @pytest.mark.asyncio
@@ -183,6 +184,6 @@ async def test_handle_run_async_validation_error_sends_error_frame(
     await process_comp.handle_run_async(0, b"")
 
     # Verify it called with correct named parameter
-    process_comp.ctx.acknowledge_mcu_frame.assert_awaited()  # type: ignore[reportUnknownMemberType]
-    args, kwargs = process_comp.ctx.acknowledge_mcu_frame.call_args  # type: ignore[reportUnknownVariableType]
+    process_comp.ctx.serial_flow.acknowledge.assert_awaited()  # type: ignore[reportUnknownMemberType]
+    args, kwargs = process_comp.ctx.serial_flow.acknowledge.call_args  # type: ignore[reportUnknownVariableType]
     assert kwargs.get("status") == Status.MALFORMED  # type: ignore[reportUnknownMemberType]

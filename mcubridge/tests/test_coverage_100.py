@@ -31,7 +31,8 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
     config = make_test_config(process_max_concurrent=4)
     state = create_runtime_state(config)
     service = MagicMock()
-    service.acknowledge_mcu_frame = AsyncMock()
+    service.serial_flow = MagicMock()
+    service.serial_flow.acknowledge = AsyncMock()
     component = ProcessComponent(config, state, service)
     try:
         yield component

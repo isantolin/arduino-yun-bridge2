@@ -90,20 +90,6 @@ class BridgeService:
             )
         self._container = svcs.Container(self._registry)
 
-        self.handshake_manager = SerialHandshakeManager(
-            config=config,
-            state=state,
-            serial_timing=self._serial_timing,
-            send_frame=self.send_frame,
-            enqueue_mqtt=self.enqueue_mqtt,
-            acknowledge_frame=self.acknowledge_mcu_frame,
-            logger_=logger,
-        )
-
-        state.serial_ack_timeout_ms = self._serial_timing.ack_timeout_ms
-        state.serial_response_timeout_ms = self._serial_timing.response_timeout_ms
-        state.serial_retry_limit = self._serial_timing.retry_limit
-
         self._serial_flow = SerialFlowController(
             ack_timeout=self._serial_timing.ack_timeout_seconds,
             response_timeout=self._serial_timing.response_timeout_seconds,
@@ -113,13 +99,27 @@ class BridgeService:
         self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
         self._serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
 
+        self.handshake_manager = SerialHandshakeManager(
+            config=config,
+            state=state,
+            serial_timing=self._serial_timing,
+            send_frame=self._serial_flow.send,
+            enqueue_mqtt=state.enqueue_mqtt,
+            acknowledge_frame=self._serial_flow.acknowledge,
+            logger_=logger,
+        )
+
+        state.serial_ack_timeout_ms = self._serial_timing.ack_timeout_ms
+        state.serial_response_timeout_ms = self._serial_timing.response_timeout_ms
+        state.serial_retry_limit = self._serial_timing.retry_limit
+
         mcu_registry: dict[int, McuHandler] = {}
         self.dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
             mqtt_router=MQTTRouter(),
             state=state,
-            send_frame=self.send_frame,
-            acknowledge_frame=self.acknowledge_mcu_frame,
+            send_frame=self._serial_flow.send,
+            acknowledge_frame=self._serial_flow.acknowledge,
             is_topic_action_allowed=self._is_topic_action_allowed,
             reject_topic_action=self._reject_topic_action,
             publish_bridge_snapshot=self._publish_bridge_snapshot,
@@ -151,22 +151,14 @@ class BridgeService:
         if self._task_group:
             await self._task_group.__aexit__(exc_type, exc_val, exc_tb)
 
+    @property
+    def serial_flow(self) -> SerialFlowController:
+        """Access to the serial flow controller (SIL-2)."""
+        return self._serial_flow
+
     def register_serial_sender(self, sender: SendFrameCallable) -> None:
         """Allow the serial transport to provide its send coroutine."""
-
-        self._serial_sender = sender
         self._serial_flow.set_sender(sender)
-
-    async def send_frame(
-        self, command_id: int, payload: bytes = b"", seq_id: int | None = None
-    ) -> bool:
-        if not self._serial_sender:
-            logger.error(
-                "Serial sender not registered; cannot send frame 0x%02X",
-                command_id,
-            )
-            return False
-        return await self._serial_flow.send(command_id, payload)
 
     async def schedule_background(
         self,

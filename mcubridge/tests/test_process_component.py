@@ -55,9 +55,12 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
         serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
     state = create_runtime_state(config)
-    # Correct initialization with mock service
+    # Correct initialization with mock service and serial_flow
     service = MagicMock()
-    service.acknowledge_mcu_frame = AsyncMock()
+    service.serial_flow = MagicMock()
+    service.serial_flow.acknowledge = AsyncMock()
+    service.serial_flow.send = AsyncMock(return_value=True)
+
     component = ProcessComponent(config, state, service)
     try:
         yield component
@@ -69,10 +72,15 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
 
 @pytest.mark.asyncio
 async def test_run_async_success(process_comp: ProcessComponent) -> None:
-    mock_handle = MagicMock()
-    mock_sh = MagicMock(return_value=mock_handle)
+    mock_process = AsyncMock()
+    mock_process.pid = 123
+    mock_process.wait = AsyncMock(return_value=0)
+    mock_process.stdout = AsyncMock()
+    mock_process.stdout.read.return_value = b""
+    mock_process.stderr = AsyncMock()
+    mock_process.stderr.read.return_value = b""
 
-    with patch("sh.Command", return_value=mock_sh):
+    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
         pid = await process_comp.run_async("echo hello")
         assert pid > 0
         assert pid in process_comp.state.running_processes
@@ -103,9 +111,15 @@ async def test_poll_process_not_found(process_comp: ProcessComponent) -> None:
 
 @pytest.mark.asyncio
 async def test_poll_process_running(process_comp: ProcessComponent) -> None:
-    mock_handle = MagicMock()
-    mock_sh = MagicMock(return_value=mock_handle)
-    with patch("sh.Command", return_value=mock_sh):
+    mock_process = AsyncMock()
+    mock_process.pid = 123
+    mock_process.wait = AsyncMock(return_value=0)
+    mock_process.stdout = AsyncMock()
+    mock_process.stdout.read.return_value = b""
+    mock_process.stderr = AsyncMock()
+    mock_process.stderr.read.return_value = b""
+
+    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
         pid = await process_comp.run_async("echo hello")
 
     proc = process_comp.state.running_processes[pid]
@@ -148,17 +162,20 @@ async def test_stop_process_success(process_comp: ProcessComponent) -> None:
 
 @pytest.mark.asyncio
 async def test_monitor_process_finishes(process_comp: ProcessComponent) -> None:
-    # _monitor_process was removed. We only test creation.
-    mock_handle = MagicMock()
-    mock_sh = MagicMock(return_value=mock_handle)
+    mock_process = AsyncMock()
+    mock_process.pid = 123
+    mock_process.wait = AsyncMock(return_value=0)
+    mock_process.stdout = AsyncMock()
+    mock_process.stdout.read.return_value = b""
+    mock_process.stderr = AsyncMock()
+    mock_process.stderr.read.return_value = b""
 
-    with patch("sh.Command", return_value=mock_sh):
+    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
         pid = await process_comp.run_async("echo hello")
 
     async with process_comp.state.process_lock:
         if pid in process_comp.state.running_processes:
             proc = process_comp.state.running_processes[pid]
-            # Simulating _done callback manually would test finalization, handled below.
             assert proc.command == "echo hello"
 
 

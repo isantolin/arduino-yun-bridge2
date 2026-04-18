@@ -55,7 +55,7 @@ class DatastoreComponent(BaseComponent):
                 "Malformed DATASTORE_GET payload: %s",
                 payload.hex() if payload else "(empty)",
             )
-            await self.ctx.send_frame(
+            await self.ctx.serial_flow.send(
                 Status.MALFORMED.value,
                 b"data_get_malformed",
             )
@@ -78,7 +78,7 @@ class DatastoreComponent(BaseComponent):
         # [SIL-2] Use structured response packet
         response_payload = DatastoreGetResponsePacket(value=value_bytes).encode()
 
-        send_ok = await self.ctx.send_frame(
+        send_ok = await self.ctx.serial_flow.send(
             Command.CMD_DATASTORE_GET_RESP.value,
             response_payload,
         )
@@ -206,9 +206,9 @@ class DatastoreComponent(BaseComponent):
         if error_reason:
             properties.append(("bridge-error", error_reason))
 
-        # Direct call to BridgeContext.publish
+        # Direct call to RuntimeState.publish
         props_tuple = tuple(properties)
-        await self.ctx.publish(
+        await self.state.publish(
             topic=topic_name,
             payload=value,
             expiry=MQTT_EXPIRY_DATASTORE,
@@ -216,7 +216,7 @@ class DatastoreComponent(BaseComponent):
             properties=props_tuple,
         )
         if reply_context is not None:
-            await self.ctx.publish(
+            await self.state.publish(
                 topic=topic_name,
                 payload=value,
                 expiry=MQTT_EXPIRY_DATASTORE,

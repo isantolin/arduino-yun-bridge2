@@ -45,7 +45,7 @@ class SystemComponent(BaseComponent):
         if inbound is not None:
             self._pending_version.append(inbound)
 
-        ok = await self.ctx.send_frame(Command.CMD_GET_VERSION.value, b"")
+        ok = await self.ctx.serial_flow.send(Command.CMD_GET_VERSION.value, b"")
         if ok:
             self.state.mcu_version = None
         else:
@@ -72,15 +72,15 @@ class SystemComponent(BaseComponent):
         reply_context = (
             self._pending_free_memory.popleft() if self._pending_free_memory else None
         )
-        # Direct call to BridgeContext.publish
-        await self.ctx.publish(
+        # Direct call to RuntimeState.publish
+        await self.state.publish(
             topic=topic,
             payload=str(packet.value),
             expiry=MQTT_EXPIRY_DEFAULT,
             reply_to=None,
         )
         if reply_context is not None:
-            await self.ctx.publish(
+            await self.state.publish(
                 topic=topic,
                 payload=str(packet.value),
                 expiry=MQTT_EXPIRY_DEFAULT,
@@ -114,16 +114,16 @@ class SystemComponent(BaseComponent):
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
-        # Direct call to BridgeContext.publish
+        # Direct call to RuntimeState.publish
         payload = f"{major}.{minor}.{patch}"
-        await self.ctx.publish(
+        await self.state.publish(
             topic=topic,
             payload=payload,
             expiry=MQTT_EXPIRY_DATASTORE,
             reply_to=None,
         )
         if reply_context is not None:
-            await self.ctx.publish(
+            await self.state.publish(
                 topic=topic,
                 payload=payload,
                 expiry=MQTT_EXPIRY_DATASTORE,
@@ -141,7 +141,7 @@ class SystemComponent(BaseComponent):
             case SystemAction.BOOTLOADER:
                 packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
                 logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
-                return await self.ctx.send_frame(
+                return await self.ctx.serial_flow.send(
                     Command.CMD_ENTER_BOOTLOADER.value, packet.encode()
                 )
 
@@ -153,7 +153,7 @@ class SystemComponent(BaseComponent):
                     return False
 
                 self._pending_free_memory.append(inbound)
-                ok = await self.ctx.send_frame(Command.CMD_GET_FREE_MEMORY.value, b"")
+                ok = await self.ctx.serial_flow.send(Command.CMD_GET_FREE_MEMORY.value, b"")
                 if not ok:
                     with contextlib.suppress(ValueError):
                         self._pending_free_memory.append(inbound)

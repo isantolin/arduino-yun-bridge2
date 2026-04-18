@@ -10,7 +10,6 @@ from typing import Any, Protocol, TypeVar, TYPE_CHECKING
 from aiomqtt.message import Message
 
 from ..config.settings import RuntimeConfig
-from ..protocol.structures import QueuedPublish
 from ..state.context import RuntimeState
 
 if TYPE_CHECKING:
@@ -22,40 +21,15 @@ logger = structlog.get_logger("mcubridge.services")
 
 
 class BridgeContext(Protocol):
-    """Protocol describing the surface required by service components."""
+    """Protocol describing the surface required by service components (SIL-2)."""
 
     config: RuntimeConfig
     state: RuntimeState
 
-    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool: ...
-
-    async def enqueue_mqtt(
-        self,
-        message: QueuedPublish,
-        *,
-        reply_context: Message | None = None,
-    ) -> None: ...
-
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes | str,
-        *,
-        qos: int = 0,
-        retain: bool = False,
-        expiry: int | None = None,
-        properties: tuple[tuple[str, str], ...] = (),
-        content_type: str | None = None,
-        reply_to: Message | None = None,
-    ) -> None: ...
-
-    async def acknowledge_mcu_frame(
-        self,
-        command_id: int,
-        seq_id: int,
-        *,
-        status: Any = None,
-    ) -> None: ...
+    @property
+    def serial_flow(self) -> Any:
+        """Access to the serial flow controller for sending frames."""
+        ...
 
     async def schedule_background(
         self,

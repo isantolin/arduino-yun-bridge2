@@ -34,7 +34,8 @@ async def test_send_frame_without_serial_sender_returns_false() -> None:
     try:
         service = BridgeService(config, state)
 
-        ok = await service.send_frame(protocol.Command.CMD_GET_VERSION.value, b"x")
+        # Testing direct serial flow via service property
+        ok = await service.serial_flow.send(protocol.Command.CMD_GET_VERSION.value, b"x")
         assert ok is False
     finally:
         state.cleanup()
@@ -67,7 +68,7 @@ async def testacknowledge_mcu_frame_no_sender_is_noop() -> None:
     try:
         service = BridgeService(config, state)
 
-        await service.acknowledge_mcu_frame(
+        await service.serial_flow.acknowledge(
             protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK
         )
     finally:
@@ -89,7 +90,7 @@ async def testacknowledge_mcu_frame_sends_ack_packet() -> None:
 
         service.register_serial_sender(_sender)  # type: ignore[reportArgumentType]
 
-        await service.acknowledge_mcu_frame(
+        await service.serial_flow.acknowledge(
             protocol.Command.CMD_GET_FREE_MEMORY.value,
             0,
             status=Status.MALFORMED,
@@ -113,8 +114,6 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
-
         msg = QueuedPublish(
             topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello"
         )
@@ -128,7 +127,8 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
             properties=props,
         )
 
-        await service.enqueue_mqtt(msg, reply_context=inbound)  # type: ignore[reportArgumentType]
+        # Calling direct state method
+        await state.enqueue_mqtt(msg, reply_context=inbound)  # type: ignore[reportArgumentType]
 
         queued = state.mqtt_publish_queue.get_nowait()
         assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
@@ -160,8 +160,6 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
         monkeypatch.setattr(RuntimeState, "stash_mqtt_message", _stash_ok)
         state.mqtt_spool = SimpleNamespace(pending=3)  # type: ignore[reportAttributeAccessIssue]
 
-        service = BridgeService(config, state)
-
         first = QueuedPublish(
             topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/old",
             payload=b"1",
@@ -172,7 +170,8 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
             topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new",
             payload=b"2",
         )
-        await service.enqueue_mqtt(second)
+        # Calling direct state method
+        await state.enqueue_mqtt(second)
 
         # Queue now contains the new message.
         queued = state.mqtt_publish_queue.get_nowait()
@@ -285,7 +284,6 @@ async def test_enqueue_mqtt_spool_unavailable_logs(
         state.mqtt_spool_failure_reason = "disabled"
         state.mqtt_spool_backoff_until = time.monotonic() + 5
 
-        service = BridgeService(config, state)
         state.mqtt_publish_queue.put_nowait(
             QueuedPublish(
                 topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/old",
@@ -293,7 +291,7 @@ async def test_enqueue_mqtt_spool_unavailable_logs(
             )
         )
 
-        await service.enqueue_mqtt(
+        await state.enqueue_mqtt(
             QueuedPublish(
                 topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new",
                 payload=b"2",

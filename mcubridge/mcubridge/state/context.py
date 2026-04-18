@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
 import psutil
+from aiomqtt.message import Message
 
 from ..config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -560,6 +561,89 @@ class RuntimeState(msgspec.Struct):
         self.watchdog_beats += 1
         self.metrics.watchdog_beats.inc()
         self.last_watchdog_beat = timestamp or time.time()
+
+    async def enqueue_mqtt(
+        self,
+        message: QueuedPublish,
+        *,
+        reply_context: Message | None = None,
+    ) -> None:
+        """Enqueues an MQTT message for publishing with an overflow dropping strategy."""
+        message_to_queue = message
+        if reply_context is not None:
+            props = reply_context.properties
+            target_topic = (
+                getattr(props, "ResponseTopic", None) if props else None
+            ) or message.topic_name
+            if target_topic != message_to_queue.topic_name:
+                message_to_queue = msgspec.structs.replace(
+                    message_to_queue, topic_name=target_topic
+                )
+
+            reply_correlation = getattr(props, "CorrelationData", None) if props else None
+            if reply_correlation is not None:
+                message_to_queue = msgspec.structs.replace(
+                    message_to_queue, correlation_data=reply_correlation
+                )
+
+            origin_topic = str(reply_context.topic)
+            user_properties = list(message_to_queue.user_properties)
+            user_properties.append(("bridge-request-topic", origin_topic))
+            message_to_queue = msgspec.structs.replace(
+                message_to_queue, user_properties=tuple(user_properties)
+            )
+
+        try:
+            self.mqtt_publish_queue.put_nowait(message_to_queue)
+        except (asyncio.QueueFull, asyncio.queues.QueueFull):
+            # Dropping strategy: discard oldest, spool it, and insert new
+            try:
+                dropped = self.mqtt_publish_queue.get_nowait()
+                self.mqtt_publish_queue.task_done()
+                self.record_mqtt_drop(dropped.topic_name)
+
+                # Use background task for spooling to avoid blocking enqueue
+                await self.stash_mqtt_message(dropped)
+
+                # Now the queue definitely has room
+                self.mqtt_publish_queue.put_nowait(message_to_queue)
+
+                logger.warning(
+                    "MQTT publish queue saturated; dropped oldest message from topic=%s",
+                    dropped.topic_name,
+                )
+            except (asyncio.QueueEmpty, asyncio.queues.QueueEmpty):
+                # Race condition: someone else emptied it? Just retry insertion
+                self.mqtt_publish_queue.put_nowait(message_to_queue)
+
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes | str,
+        *,
+        qos: int = 0,
+        retain: bool = False,
+        expiry: int | None = None,
+        properties: tuple[tuple[str, str], ...] = (),
+        content_type: str | None = None,
+        reply_to: Message | None = None,
+    ) -> None:
+        """Helper to enqueue an MQTT message without manually creating QueuedPublish."""
+        if isinstance(payload, str):
+            payload_bytes = payload.encode("utf-8")
+        else:
+            payload_bytes = payload
+
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=payload_bytes,
+            qos=qos,
+            retain=retain,
+            content_type=content_type,
+            message_expiry_interval=expiry,
+            user_properties=tuple(properties or ()),
+        )
+        await self.enqueue_mqtt(message, reply_context=reply_to)
 
     def record_supervisor_failure(
         self, name: str, backoff: float, exc: Exception

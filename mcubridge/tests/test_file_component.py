@@ -81,7 +81,7 @@ async def test_handle_mqtt_write_and_read(
     component, bridge = file_component  # type: ignore[reportUnusedVariable]
     # Ensure component uses tmp_path
     component.config.file_system_root = str(tmp_path)
-    
+
     msg = type(
         "MockMsg", (), {"topic": "br/file/write/dir/file.txt", "payload": b"payload"}
     )()

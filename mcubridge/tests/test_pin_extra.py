@@ -60,7 +60,7 @@ async def test_pin_handle_mqtt_edge_cases() -> None:
         ctx.serial_flow = MagicMock()
         ctx.serial_flow.send = AsyncMock(return_value=True)
 
-        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
             comp = PinComponent(config, state, ctx)
 
             # 1. No segments

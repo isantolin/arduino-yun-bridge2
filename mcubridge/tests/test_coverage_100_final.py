@@ -701,7 +701,7 @@ class TestBaseComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
                 comp = BaseComponent(config, state, ctx)
                 assert comp.config is config
                 assert comp.state is state
@@ -837,7 +837,7 @@ class TestMailboxComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
                 comp = MailboxComponent(config, state, ctx)
                 await comp.handle_mqtt(
                     make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
@@ -1010,7 +1010,7 @@ class TestFileComponent:
             ctx = MagicMock()
             ctx.serial_flow = MagicMock()
             ctx.serial_flow.send = AsyncMock(return_value=True)
-            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
                 comp = FileComponent(config, state, ctx)
                 # This tests the error path when file is not found
                 from mcubridge.protocol.structures import FileReadPacket

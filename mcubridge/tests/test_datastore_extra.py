@@ -135,7 +135,8 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
             args, kwargs = mock_pub.call_args
             pub_payload = kwargs.get("payload") or args[1]
             # Since type drift during injection, it coerces to bytes representation or string rep depending on logic.
-            # In our SIL-2 code: val_bytes = bytes(val_to_check) if not str, but actually the value in dict is usually str.
+            # In our SIL-2 code: val_bytes = bytes(val_to_check) if not str,
+            # but actually the value in dict is usually str.
             # Let's just check it published *something* without crashing.
             assert pub_payload is not None
 

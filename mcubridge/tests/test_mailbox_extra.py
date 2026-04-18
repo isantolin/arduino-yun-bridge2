@@ -51,7 +51,7 @@ async def test_mailbox_handle_read_truncation() -> None:
         ctx.serial_flow = MagicMock()
         ctx.serial_flow.send = AsyncMock(return_value=True)
 
-        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
             comp = MailboxComponent(config, state, ctx)
 
             # Very large payload
@@ -81,7 +81,7 @@ async def test_mailbox_handle_read_send_fail() -> None:
         ctx.serial_flow = MagicMock()
         ctx.serial_flow.send = AsyncMock(return_value=False)
 
-        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
+        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
             comp = MailboxComponent(config, state, ctx)
 
             data = b"hello"

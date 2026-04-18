@@ -88,6 +88,4 @@ def build_mqtt_connect_properties() -> Properties:
     props.SessionExpiryInterval = 0
     props.RequestResponseInformation = 1
     props.RequestProblemInformation = 1
-    # [OPTIMIZATION] Enable Topic Aliases (MQTT v5) to reduce overhead
-    props.TopicAliasMaximum = protocol.MAX_PAYLOAD_SIZE
     return props

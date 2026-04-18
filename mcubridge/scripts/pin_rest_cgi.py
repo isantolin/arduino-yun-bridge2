@@ -102,7 +102,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             GenericResponsePacket(status="ok", data={"pin": int(pin), "state": state}),
         )
 
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, OSError) as e:
         logger.exception("CGI Error")
         return json_res(
             start_response,

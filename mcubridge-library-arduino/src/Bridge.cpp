@@ -41,23 +41,16 @@ void BridgeClass::registerObserver(BridgeObserver& observer) {
   }
 }
 
-void BridgeClass::unregisterObserver(BridgeObserver& observer) {
-  auto it = etl::find(_observers.begin(), _observers.end(), &observer);
-  if (it != _observers.end()) {
-    _observers.erase(it);
-  }
-}
-
 void BridgeClass::notify_observers(const MsgBridgeSynchronized& msg) {
-  for (auto* observer : _observers) {
+  etl::for_each(_observers.begin(), _observers.end(), [&msg](BridgeObserver* observer) {
     observer->notification(msg);
-  }
+  });
 }
 
 void BridgeClass::notify_observers(const MsgBridgeLost& msg) {
-  for (auto* observer : _observers) {
+  etl::for_each(_observers.begin(), _observers.end(), [&msg](BridgeObserver* observer) {
     observer->notification(msg);
-  }
+  });
 }
 
 BridgeClass::BridgeClass(Stream& stream)

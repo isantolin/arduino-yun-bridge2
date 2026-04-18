@@ -68,7 +68,6 @@ class BridgeClass {
   explicit BridgeClass(Stream& stream);
 
   void registerObserver(BridgeObserver& observer);
-  void unregisterObserver(BridgeObserver& observer);
 
   void notify_observers(const MsgBridgeSynchronized& msg);
   void notify_observers(const MsgBridgeLost& msg);

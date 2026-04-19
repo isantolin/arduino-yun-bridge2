@@ -10,7 +10,7 @@ from typing import Any
 import msgspec
 from aiomqtt.message import Message
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command, PinAction, Status
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import (
     AnalogReadResponsePacket,
     AnalogWritePacket,

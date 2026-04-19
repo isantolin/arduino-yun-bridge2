@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from types import TracebackType
-from typing import Sequence, Union, cast
+from typing import Sequence, Union
 
 import msgspec
 from aiomqtt import Client
@@ -46,7 +46,7 @@ class SpiDevice:
         if self._active:
             return
         await self._client.publish(str(Topic.build(Topic.SPI, "begin")), b"")
-        
+
         config = {
             "frequency": self._frequency,
             "bit_order": self._bit_order.value,
@@ -68,13 +68,13 @@ class SpiDevice:
             await self.begin()
 
         payload = bytes(data) if not isinstance(data, (bytes, bytearray)) else bytes(data)
-        
+
         transfer_topic = str(Topic.build(Topic.SPI, "transfer"))
         resp_topic = str(Topic.build(Topic.SPI, "transfer", "resp"))
-        
+
         await self._client.subscribe(resp_topic)
         await self._client.publish(transfer_topic, payload)
-        
+
         try:
             async with asyncio.timeout(5.0):
                 async for message in self._client.messages:

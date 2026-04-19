@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 async def mqtt_mailbox_read(client, timeout: float = 5.0) -> bytes | None:
     read_topic = str(Topic.build(Topic.MAILBOX, "read"))
     resp_topic = str(Topic.build(Topic.MAILBOX, "incoming"))
-    
+
     await client.subscribe(resp_topic)
     await client.publish(read_topic, b"")
-    
+
     try:
         async with asyncio.timeout(timeout):
             async for message in client.messages:

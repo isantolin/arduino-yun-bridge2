@@ -1,7 +1,6 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 from mcubridge_client import get_client, Topic
-import ssl
 
 
 def test_get_client_defaults() -> None:
@@ -34,9 +33,9 @@ async def test_client_context_manager() -> None:
         mock_instance = mock_client.return_value
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
         mock_instance.__aexit__ = AsyncMock()
-        
+
         async with get_client() as client:
             assert client is mock_instance
-        
+
         mock_instance.__aenter__.assert_called_once()
         mock_instance.__aexit__.assert_called_once()

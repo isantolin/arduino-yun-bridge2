@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -51,8 +51,9 @@ def file_component(
     bridge.serial_flow.send = AsyncMock(return_value=True)
     bridge.serial_flow.acknowledge = AsyncMock()
 
-    def _chunk(p, size):
-        return [p[i:i+size] for i in range(0, len(p), size)] if p else []
+    def _chunk(p: bytes, size: int) -> list[bytes]:
+        return [p[i : i + size] for i in range(0, len(p), size)] if p else []
+
     bridge.serial_flow.chunk_payload.side_effect = _chunk
 
     async def _schedule(

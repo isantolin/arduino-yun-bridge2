@@ -18,10 +18,10 @@ configure_logging()
 async def mqtt_get(client, key: str) -> str:
     get_topic = str(Topic.build(Topic.DATASTORE, "get", key))
     req_topic = str(Topic.build(Topic.DATASTORE, "get", key, "request"))
-    
+
     await client.subscribe(get_topic)
     await client.publish(req_topic, b"")
-    
+
     try:
         async with asyncio.timeout(5.0):
             async for message in client.messages:

@@ -18,10 +18,10 @@ configure_logging()
 async def mqtt_file_read(client, filename: str) -> bytes:
     read_topic = str(Topic.build(Topic.FILE, "read", filename.lstrip("/")))
     resp_topic = str(Topic.build(Topic.FILE, "read", "response", filename.lstrip("/")))
-    
+
     await client.subscribe(resp_topic)
     await client.publish(read_topic, b"")
-    
+
     try:
         async with asyncio.timeout(5.0):
             async for message in client.messages:

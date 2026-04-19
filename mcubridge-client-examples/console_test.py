@@ -29,7 +29,7 @@ async def run_test(
         # Start a task to listen for console messages
         console_out_topic = str(Topic.build(Topic.CONSOLE, "out"))
         await client.subscribe(console_out_topic)
-        
+
         async def console_listener() -> None:
             async for message in client.messages:
                 if Topic.matches(console_out_topic, str(message.topic)):

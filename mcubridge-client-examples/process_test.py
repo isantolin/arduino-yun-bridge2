@@ -24,10 +24,10 @@ POLL_INTERVAL = 0.5
 async def mqtt_run_shell(client, command: str) -> int:
     run_topic = str(Topic.build(Topic.SHELL, "run_async"))
     resp_topic = str(Topic.build(Topic.SHELL, "run_async", "response"))
-    
+
     await client.subscribe(resp_topic)
     await client.publish(run_topic, command.encode())
-    
+
     try:
         async with asyncio.timeout(5.0):
             async for message in client.messages:
@@ -43,10 +43,10 @@ async def mqtt_run_shell(client, command: str) -> int:
 async def mqtt_poll_process(client, pid: int) -> dict[str, Any]:
     poll_topic = str(Topic.build(Topic.SHELL, "poll", pid))
     resp_topic = str(Topic.build(Topic.SHELL, "poll", pid, "response"))
-    
+
     await client.subscribe(resp_topic)
     await client.publish(poll_topic, b"")
-    
+
     try:
         async with asyncio.timeout(5.0):
             async for message in client.messages:

@@ -40,8 +40,9 @@ def console_component() -> ConsoleComponent:
     ctx.serial_flow.send = AsyncMock(return_value=True)
 
     # Use a real implementation for chunk_payload or mock it to return the input
-    def _chunk(p, size):
-        return [p[i:i+size] for i in range(0, len(p), size)] if p else []
+    def _chunk(p: bytes, size: int) -> list[bytes]:
+        return [p[i : i + size] for i in range(0, len(p), size)] if p else []
+
     ctx.serial_flow.chunk_payload.side_effect = _chunk
 
     ctx.mqtt_flow = MagicMock()

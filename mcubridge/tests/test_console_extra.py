@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import os
-import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.state.context import create_runtime_state
@@ -44,8 +41,9 @@ async def test_console_mqtt_input_error_paths() -> None:
         # Simulate serial failure
         ctx.serial_flow.send = AsyncMock(return_value=False)
 
-        def _chunk(p, size):
-            return [p[i:i+size] for i in range(0, len(p), size)] if p else []
+        def _chunk(p: bytes, size: int) -> list[bytes]:
+            return [p[i : i + size] for i in range(0, len(p), size)] if p else []
+
         ctx.serial_flow.chunk_payload.side_effect = _chunk
 
         comp = ConsoleComponent(config, state, ctx)
@@ -70,8 +68,9 @@ async def test_console_flush_queue_serial_fail() -> None:
         # Initial success then failure
         ctx.serial_flow.send = AsyncMock(side_effect=[True, False])
 
-        def _chunk(p, size):
-            return [p[i:i+size] for i in range(0, len(p), size)] if p else []
+        def _chunk(p: bytes, size: int) -> list[bytes]:
+            return [p[i : i + size] for i in range(0, len(p), size)] if p else []
+
         ctx.serial_flow.chunk_payload.side_effect = _chunk
 
         comp = ConsoleComponent(config, state, ctx)

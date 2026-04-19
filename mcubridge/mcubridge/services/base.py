@@ -54,9 +54,5 @@ class BaseComponent:
         self.state = state
         self.ctx = ctx
 
-    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle an inbound MQTT message routed to this service."""
-        return False
-
 
 __all__ = ["BridgeContext", "BaseComponent"]

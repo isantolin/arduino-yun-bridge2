@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: Test file I/O using the async McuBridge client."""
+"""Example: Test file I/O using direct MQTT."""
 
 from __future__ import annotations
 
@@ -8,10 +8,30 @@ import logging
 from typing import Annotated
 
 import typer
+from mcubridge_client import Topic
 from mcubridge_client.cli import bridge_session, configure_logging
 
-app = typer.Typer(help="Example: Test file I/O using the async McuBridge client.")
+app = typer.Typer(help="Example: Test file I/O using direct MQTT.")
 configure_logging()
+
+
+async def mqtt_file_read(client, filename: str) -> bytes:
+    read_topic = str(Topic.build(Topic.FILE, "read", filename.lstrip("/")))
+    resp_topic = str(Topic.build(Topic.FILE, "read", "response", filename.lstrip("/")))
+    
+    await client.subscribe(resp_topic)
+    await client.publish(read_topic, b"")
+    
+    try:
+        async with asyncio.timeout(5.0):
+            async for message in client.messages:
+                if Topic.matches(resp_topic, str(message.topic)):
+                    return bytes(message.payload) if message.payload else b""
+    except asyncio.TimeoutError:
+        return b""
+    finally:
+        await client.unsubscribe(resp_topic)
+    return b""
 
 
 async def run_test(
@@ -22,18 +42,21 @@ async def run_test(
     tls_insecure: bool,
 ) -> None:
 
-    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
-        test_filename: str = "/tmp/test_file.txt"
+    async with bridge_session(host, port, user, password, tls_insecure) as client:
+        test_filename: str = "tmp/test_file.txt"
         test_content: str = "hello from async fileio_test"
 
         try:
             # --- Test File Write ---
-            logging.info(f"Writing '{test_content}' to {test_filename}")
-            await bridge.file_write(test_filename, test_content)
+            write_topic = str(Topic.build(Topic.FILE, "write", test_filename))
+            logging.info(f"Writing '{test_content}' to {write_topic}")
+            await client.publish(write_topic, test_content.encode())
+
+            await asyncio.sleep(0.5)
 
             # --- Test File Read ---
             logging.info(f"Reading from {test_filename}")
-            content: bytes = await bridge.file_read(test_filename)
+            content = await mqtt_file_read(client, test_filename)
             decoded = content.decode()
             logging.info("Read content: %s", decoded)
 
@@ -44,8 +67,9 @@ async def run_test(
 
         finally:
             # --- Test File Remove ---
-            logging.info("Removing %s", test_filename)
-            await bridge.file_remove(test_filename)
+            remove_topic = str(Topic.build(Topic.FILE, "remove", test_filename))
+            logging.info("Removing via %s", remove_topic)
+            await client.publish(remove_topic, b"")
 
     logging.info("Done.")
 

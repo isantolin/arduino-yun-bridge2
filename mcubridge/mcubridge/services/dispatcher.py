@@ -87,33 +87,43 @@ class BridgeDispatcher:
         self.mcu_registry[Command.CMD_XOFF.value] = console.handle_xoff
         self.mcu_registry[Command.CMD_XON.value] = console.handle_xon
         self.mcu_registry[Command.CMD_CONSOLE_WRITE.value] = console.handle_write
-        self.mqtt_router.register(Topic.CONSOLE, console.handle_mqtt)
+        self.mqtt_router.register(Topic.CONSOLE, console.handle_mqtt_in, action="in")
 
         # Datastore
+        from mcubridge.protocol.protocol import DatastoreAction
         self.mcu_registry[Command.CMD_DATASTORE_PUT.value] = datastore.handle_put
         self.mcu_registry[Command.CMD_DATASTORE_GET.value] = datastore.handle_get_request
-        self.mqtt_router.register(Topic.DATASTORE, datastore.handle_mqtt)
+        self.mqtt_router.register(Topic.DATASTORE, datastore.handle_mqtt_put, action=DatastoreAction.PUT)
+        self.mqtt_router.register(Topic.DATASTORE, datastore.handle_mqtt_get, action=DatastoreAction.GET)
 
         # Mailbox
+        from mcubridge.protocol.protocol import MailboxAction
         self.mcu_registry[Command.CMD_MAILBOX_PUSH.value] = mailbox.handle_push
         self.mcu_registry[Command.CMD_MAILBOX_AVAILABLE.value] = mailbox.handle_available
         self.mcu_registry[Command.CMD_MAILBOX_READ.value] = mailbox.handle_read
         self.mcu_registry[Command.CMD_MAILBOX_PROCESSED.value] = mailbox.handle_processed
-        self.mqtt_router.register(Topic.MAILBOX, mailbox.handle_mqtt)
+        self.mqtt_router.register(Topic.MAILBOX, mailbox.handle_mqtt_write, action=MailboxAction.WRITE)
+        self.mqtt_router.register(Topic.MAILBOX, mailbox.handle_mqtt_read, action=MailboxAction.READ)
 
         # File
+        from mcubridge.protocol.protocol import FileAction
         self.mcu_registry[Command.CMD_FILE_WRITE.value] = file.handle_write
         self.mcu_registry[Command.CMD_FILE_READ.value] = file.handle_read
         self.mcu_registry[Command.CMD_FILE_REMOVE.value] = file.handle_remove
         self.mcu_registry[Command.CMD_FILE_READ_RESP.value] = file.handle_read_response
-        self.mqtt_router.register(Topic.FILE, file.handle_mqtt)
+        self.mqtt_router.register(Topic.FILE, file.handle_mqtt_write, action=FileAction.WRITE)
+        self.mqtt_router.register(Topic.FILE, file.handle_mqtt_read, action=FileAction.READ)
+        self.mqtt_router.register(Topic.FILE, file.handle_mqtt_remove, action=FileAction.REMOVE)
 
         # Process
         self.mcu_registry[Command.CMD_PROCESS_RUN_ASYNC.value] = process.handle_run_async
         self.mcu_registry[Command.CMD_PROCESS_POLL.value] = process.handle_poll
 
         # Shell (MQTT only - now handled by unified ProcessComponent)
-        self.mqtt_router.register(Topic.SHELL, process.handle_mqtt)
+        from mcubridge.protocol.protocol import ShellAction
+        self.mqtt_router.register(Topic.SHELL, process.handle_mqtt_run_async, action=ShellAction.RUN_ASYNC)
+        self.mqtt_router.register(Topic.SHELL, process.handle_mqtt_poll, action=ShellAction.POLL)
+        self.mqtt_router.register(Topic.SHELL, process.handle_mqtt_kill, action=ShellAction.KILL)
 
         # Pin (GPIO)
         self.mcu_registry[Command.CMD_DIGITAL_READ_RESP.value] = pin.handle_digital_read_resp
@@ -121,16 +131,30 @@ class BridgeDispatcher:
         self.mcu_registry[Command.CMD_DIGITAL_READ.value] = pin.handle_mcu_digital_read
         self.mcu_registry[Command.CMD_ANALOG_READ.value] = pin.handle_mcu_analog_read
 
-        self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt)
-        self.mqtt_router.register(Topic.ANALOG, pin.handle_mqtt)
+        from mcubridge.protocol.protocol import PinAction
+        self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt_write, action="write")
+        self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt_read, action=PinAction.READ)
+        self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt_mode, action=PinAction.MODE)
+        
+        self.mqtt_router.register(Topic.ANALOG, pin.handle_mqtt_write, action="write")
+        self.mqtt_router.register(Topic.ANALOG, pin.handle_mqtt_read, action=PinAction.READ)
 
         # SPI
         self.mcu_registry[Command.CMD_SPI_TRANSFER_RESP.value] = spi.handle_transfer_resp
-        self.mqtt_router.register(Topic.SPI, spi.handle_mqtt)
+        self.mqtt_router.register(Topic.SPI, spi.handle_mqtt_begin, action="begin")
+        self.mqtt_router.register(Topic.SPI, spi.handle_mqtt_end, action="end")
+        self.mqtt_router.register(Topic.SPI, spi.handle_mqtt_config, action="config")
+        self.mqtt_router.register(Topic.SPI, spi.handle_mqtt_transfer, action="transfer")
 
         # System
         self.mcu_registry[Command.CMD_GET_FREE_MEMORY_RESP.value] = system.handle_get_free_memory_resp
         self.mcu_registry[Command.CMD_GET_VERSION_RESP.value] = system.handle_get_version_resp
+        
+        from mcubridge.protocol.protocol import SystemAction
+        self.mqtt_router.register(Topic.SYSTEM, system.handle_mqtt_bootloader, action=SystemAction.BOOTLOADER)
+        self.mqtt_router.register(Topic.SYSTEM, system.handle_mqtt_free_memory, action=SystemAction.FREE_MEMORY)
+        self.mqtt_router.register(Topic.SYSTEM, system.handle_mqtt_version, action=SystemAction.VERSION)
+        # For legacy/generic system topics
         self.mqtt_router.register(Topic.SYSTEM, self._handle_system_topic)
 
     def register_system_handlers(
@@ -207,9 +231,9 @@ class BridgeDispatcher:
                 return
 
             # 1. Policy Guard (Eradicated _guard_and_dispatch wrapper)
-            if action := self._get_topic_action(route):
-                if not self.is_topic_action_allowed(route.topic, action):
-                    await self.reject_topic_action(inbound, route.topic, action)
+            if route.action:
+                if not self.is_topic_action_allowed(route.topic, route.action):
+                    await self.reject_topic_action(inbound, route.topic, route.action)
                     return
 
             # 2. Synchronization Guard
@@ -227,20 +251,6 @@ class BridgeDispatcher:
         finally:
             latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
             self.state.record_rpc_latency_ms(latency_ms)
-
-    def _get_topic_action(self, route: TopicRoute) -> str | None:
-        """Deduce the action name for policy enforcement from the route."""
-        match route.topic:
-            case Topic.SYSTEM:
-                return None
-            case Topic.DIGITAL | Topic.ANALOG:
-                if not route.segments:
-                    return None
-                return "write" if len(route.segments) == 1 else (route.segments[1].lower() or None)
-            case Topic.CONSOLE:
-                return "in" if route.identifier == "in" else None
-            case _:
-                return route.identifier or None
 
     def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
         return (

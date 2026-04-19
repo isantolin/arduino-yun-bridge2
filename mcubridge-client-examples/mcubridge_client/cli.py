@@ -7,7 +7,8 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
-from . import Bridge, build_bridge_args, dump_client_env
+from aiomqtt import Client
+from . import get_client, build_bridge_args, dump_client_env
 
 
 def configure_logging() -> None:
@@ -25,13 +26,9 @@ async def bridge_session(
     user: str | None,
     password: str | None,
     tls_insecure: bool = False,
-) -> AsyncIterator[Bridge]:
-    """Connect a Bridge and guarantee disconnect on exit."""
+) -> AsyncIterator[Client]:
+    """Connect an aiomqtt.Client and guarantee disconnect on exit."""
     dump_client_env(logging.getLogger(__name__))
     bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
-    bridge = Bridge(**cast("dict[str, Any]", bridge_args))
-    await bridge.connect()
-    try:
-        yield bridge
-    finally:
-        await bridge.disconnect()
+    async with get_client(**cast("dict[str, Any]", bridge_args)) as client:
+        yield client

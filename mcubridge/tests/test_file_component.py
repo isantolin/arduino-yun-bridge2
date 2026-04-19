@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.protocol import Command, Status, FileAction
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.file import FileComponent
@@ -51,6 +51,10 @@ def file_component(
     bridge.serial_flow.send = AsyncMock(return_value=True)
     bridge.serial_flow.acknowledge = AsyncMock()
 
+    def _chunk(p, size):
+        return [p[i:i+size] for i in range(0, len(p), size)] if p else []
+    bridge.serial_flow.chunk_payload.side_effect = _chunk
+
     async def _schedule(
         coro: Any, *, name: str | None = None
     ) -> asyncio.Task[Any]:
@@ -85,7 +89,7 @@ async def test_handle_mqtt_write_and_read(
     component, bridge = file_component # type: ignore[reportUnusedVariable]
     # Ensure component uses tmp_path
     component.config.file_system_root = str(tmp_path)
-
+    
     msg = type(
         "MockMsg", (), {"topic": "br/file/write/dir/file.txt", "payload": b"payload", "properties": None}
     )()
@@ -96,7 +100,7 @@ async def test_handle_mqtt_write_and_read(
         segments=("write", "dir", "file.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt_write(route, msg)  # type: ignore[reportArgumentType]
     assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
 
     msg_read = type(
@@ -109,7 +113,7 @@ async def test_handle_mqtt_write_and_read(
         segments=("read", "dir", "file.txt"),
     )
 
-    await component.handle_mqtt(route_read, msg_read)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt_read(route_read, msg_read)  # type: ignore[reportArgumentType]
     # Read from local FS publishes the result
     assert bridge.mqtt_flow.publish.called
     payload = _get_publish_arg(bridge.mqtt_flow.publish, 1, "payload")
@@ -168,7 +172,7 @@ async def test_handle_mqtt_remove_action(
         segments=("remove", "rm.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt_remove(route, msg)  # type: ignore[reportArgumentType]
     assert not test_file.exists()
 
 
@@ -207,7 +211,7 @@ async def test_handle_mqtt_missing_filename_is_ignored(
     route = TopicRoute(
         raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",)
     )
-    await component.handle_mqtt(route, make_mqtt_msg(""))
+    await component.handle_mqtt_read(route, make_mqtt_msg(""))
     assert not bridge.mqtt_flow.publish.called
 
 
@@ -216,13 +220,21 @@ async def test_handle_mqtt_unknown_action_is_ignored(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
     component, bridge = file_component # type: ignore[reportUnusedVariable]
+    from mcubridge.router.routers import MQTTRouter
+    router = MQTTRouter()
+    router.register(Topic.FILE, component.handle_mqtt_write, action=FileAction.WRITE)
+    router.register(Topic.FILE, component.handle_mqtt_read, action=FileAction.READ)
+    router.register(Topic.FILE, component.handle_mqtt_remove, action=FileAction.REMOVE)
+
     route = TopicRoute(
         raw="br/file/magic/file.txt",
         prefix="br",
         topic=Topic.FILE,
         segments=("magic", "file.txt"),
     )
-    await component.handle_mqtt(route, make_mqtt_msg(""))
+    # Action "magic" is not registered, so dispatch should return False and not call any handler.
+    dispatched = await router.dispatch(route, make_mqtt_msg(""))
+    assert not dispatched
     assert not bridge.mqtt_flow.publish.called
 
 
@@ -314,7 +326,7 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
         segments=("write", "mcu", "test.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt_write(route, msg)  # type: ignore[reportArgumentType]
 
     # Just check that it published the error
     assert any(
@@ -354,7 +366,7 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
         segments=("read", "mcu", "test.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt_read(route, msg)  # type: ignore[reportArgumentType]
     assert (
         _get_publish_arg(bridge.mqtt_flow.publish, 1, "payload")
         == b"mcu-data"
@@ -377,7 +389,7 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
     )
 
     # Use wait_for to avoid hangs if crash happens
-    await asyncio.wait_for(component.handle_mqtt(route, msg), timeout=1.0)  # type: ignore[reportArgumentType]
+    await asyncio.wait_for(component.handle_mqtt_read(route, msg), timeout=1.0)  # type: ignore[reportArgumentType]
 
     assert any(
         "MCU filesystem unavailable" in str(_get_publish_arg(bridge.mqtt_flow.publish, 1, "payload", i))
@@ -402,7 +414,7 @@ async def test_handle_mqtt_read_failure(
         segments=("read", "mcu", "fail.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt_read(route, msg)  # type: ignore[reportArgumentType]
     assert (
         _get_publish_arg(bridge.mqtt_flow.publish, 1, "payload")
         == b"MCU filesystem read failed"
@@ -437,7 +449,7 @@ async def test_handle_mqtt_remove_from_mcu_storage_enabled(
         segments=("remove", "mcu", "test.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt_remove(route, msg)  # type: ignore[reportArgumentType]
     # Use positional argument match. Packet encoding for string 'test.txt' is \x91\xa8test.txt (fix for length header)
     # Command 146 = CMD_FILE_REMOVE
     assert bridge.serial_flow.send.call_args.args[0] == Command.CMD_FILE_REMOVE.value

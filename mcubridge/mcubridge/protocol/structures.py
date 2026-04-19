@@ -90,22 +90,35 @@ class TopicRoute(msgspec.Struct, frozen=True):
         return self.segments[0] if self.segments else ""
 
     @property
-    def action(self) -> Any:
-        """Infer the service action from the first segment if applicable.
-        Ignore segments that indicate a response flavor.
+    def action(self) -> str | None:
+        """Infer the service action from the topic segments (SIL-2).
+        Handles different structures for PIN (d/13/read) and general (sh/run) topics.
         """
-        from .protocol import FileAction, ShellAction, SystemAction
-
-        if not self.segments or "response" in self.segments or "value" in self.segments:
+        if not self.segments:
             return None
-        val = self.segments[0]
-        # Attempt to map to known action enums
-        for enum_cls in (FileAction, ShellAction, SystemAction):
-            try:
-                return enum_cls(val)
-            except ValueError:
-                continue
-        return val
+
+        # Guard segments that indicate a status/value publication, not a request
+        if "response" in self.segments or "value" in self.segments:
+            return None
+
+        from .protocol import Topic
+        
+        # d/PIN -> write, d/PIN/mode -> mode
+        if self.topic in (Topic.DIGITAL, Topic.ANALOG):
+            if len(self.segments) == 1:
+                return "write"
+            return self.segments[1].lower()
+
+        # console/in -> in
+        if self.topic == Topic.CONSOLE:
+            return "in" if self.identifier == "in" else None
+
+        # system/... identifier is the action
+        if self.topic == Topic.SYSTEM:
+            return None # System handles its own sub-routing for now
+
+        # Default: first segment is the action (sh/run, mailbox/read, etc.)
+        return self.identifier.lower()
 
     @property
     def remainder(self) -> tuple[str, ...]:

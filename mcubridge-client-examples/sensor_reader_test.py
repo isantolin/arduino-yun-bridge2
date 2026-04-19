@@ -8,7 +8,8 @@ import logging
 from typing import Annotated
 
 import typer
-from mcubridge_client.cli import bridge_session, configure_logging
+from mcubridge_client import Topic, build_bridge_args, get_client
+from mcubridge_client.cli import configure_logging
 
 app = typer.Typer(help="Poll sensor values via the async bridge client.")
 configure_logging()
@@ -24,7 +25,7 @@ async def run_test(
     tls_insecure: bool,
 ) -> None:
 
-    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
+    async with get_client(**build_bridge_args(host, port, user, password, tls_insecure)) as client:
         logging.info(
             "Requesting a reading from pin %s every %.1f seconds.",
             pin,
@@ -41,28 +42,33 @@ async def run_test(
             logging.error(f"Invalid pin format: {pin}")
             raise typer.Exit(code=1)
 
+        topic_type = Topic.ANALOG if is_analog else Topic.DIGITAL
+        topic_val = Topic.build(topic_type, pin_number, "value")
+        topic_read = Topic.build(topic_type, pin_number, "read")
+
+        await client.subscribe(topic_val)
+
         start_time = asyncio.get_running_loop().time()
         while True:
             if asyncio.get_running_loop().time() - start_time > 10.0:
                 logging.info("Test duration of 10 seconds exceeded. Finishing.")
                 break
 
-            if is_analog:
-                value: int = await bridge.analog_read(pin_number)
-                logging.info(
-                    "Received analog value for pin %s: %d",
-                    pin,
-                    value,
-                )
-            else:
-                value = await bridge.digital_read(pin_number)
-                logging.info(
-                    "Received digital value for pin %s: %d",
-                    pin,
-                    value,
-                )
+            await client.publish(topic_read, b"")
+
+            async for message in client.messages:
+                if Topic.matches(topic_val, str(message.topic)):
+                    value = int(message.payload.decode())
+                    logging.info(
+                        "Received %s value for pin %s: %d",
+                        "analog" if is_analog else "digital",
+                        pin,
+                        value,
+                    )
+                    break
 
             await asyncio.sleep(interval)
+
 
 
 @app.command()

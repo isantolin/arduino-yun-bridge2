@@ -339,9 +339,10 @@ async def test_mqtt_shell_kill_invokes_processonent(
     service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     process = service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
 
-    with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:
+    from mcubridge.protocol.protocol import ShellAction
+    with patch.object(process, "handle_mqtt_kill", new_callable=AsyncMock) as mock_mqtt:
         # Re-register mock in router because dispatcher registers methods at init time
-        service.dispatcher.mqtt_router.register(Topic.SHELL, mock_mqtt)
+        service.dispatcher.mqtt_router.register(Topic.SHELL, mock_mqtt, action=ShellAction.KILL)
         pid = 21
         await service.handle_mqtt_message(
             _make_inbound(

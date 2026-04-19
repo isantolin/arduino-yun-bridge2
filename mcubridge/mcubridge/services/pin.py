@@ -129,52 +129,49 @@ class PinComponent(BaseComponent):
             pending_queue=self.state.pending_analog_reads,
         )
 
-    async def handle_mqtt(
-        self,
-        route: TopicRoute,
-        inbound: Message,
-    ) -> bool:
-        segments = list(route.segments)
-        payload_bytes = msgspec.convert(inbound.payload, bytes)
-        payload_str = payload_bytes.decode("utf-8", errors="ignore")
-        if not segments:
-            return True
-
-        try:
-            topic_enum = Topic(route.topic)
-        except ValueError:
-            return True
-
-        pin_str = segments[0]
-        pin = self._parse_pin_identifier(pin_str)
+    async def handle_mqtt_write(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle pin write command from MQTT (DIGITAL or ANALOG)."""
+        pin = self._parse_pin_identifier(route.identifier)
         if pin < 0:
             return True
 
-        is_analog_read = (
-            len(segments) == 2
-            and segments[1] == PinAction.READ
-            and topic_enum == Topic.ANALOG
-        )
-
-        if not self._validate_pin_access(pin, is_analog_read):
+        if not self._validate_pin_access(pin, route.topic == Topic.ANALOG):
             return True
 
-        if len(segments) == 2:
-            subtopic = segments[1]
-            if subtopic == PinAction.MODE and topic_enum == Topic.DIGITAL:
-                await self._handle_mode_command(pin, pin_str, payload_str)
-            elif subtopic == PinAction.READ:
-                await self._handle_read_command(topic_enum, pin, inbound)
-            else:
-                logger.debug("Unknown pin subtopic for %s: %s", pin_str, subtopic)
+        payload_bytes = msgspec.convert(inbound.payload, bytes)
+        payload_str = payload_bytes.decode("utf-8", errors="ignore")
+
+        await self._handle_write_command(route.topic, pin, payload_str)
+        return True
+
+    async def handle_mqtt_read(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle pin read request from MQTT."""
+        pin = self._parse_pin_identifier(route.identifier)
+        if pin < 0:
             return True
 
-        if len(segments) == 1:
-            await self._handle_write_command(
-                topic_enum,
-                pin,
-                payload_str,
-            )
+        if not self._validate_pin_access(pin, route.topic == Topic.ANALOG):
+            return True
+
+        await self._handle_read_command(route.topic, pin, inbound)
+        return True
+
+    async def handle_mqtt_mode(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle digital pin mode command from MQTT."""
+        if route.topic != Topic.DIGITAL:
+            return False
+
+        pin = self._parse_pin_identifier(route.identifier)
+        if pin < 0:
+            return True
+
+        if not self._validate_pin_access(pin, False):
+            return True
+
+        payload_bytes = msgspec.convert(inbound.payload, bytes)
+        payload_str = payload_bytes.decode("utf-8", errors="ignore")
+
+        await self._handle_mode_command(pin, route.identifier, payload_str)
         return True
 
     async def _handle_mode_command(

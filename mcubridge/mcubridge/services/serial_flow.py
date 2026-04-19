@@ -65,6 +65,18 @@ class SerialFlowController:
     def set_sender(self, sender: SendFrameCallable) -> None:
         self._sender = sender
 
+    @staticmethod
+    def chunk_payload(payload: bytes, chunk_size: int) -> list[bytes]:
+        """Split a large payload into chunks that fit within MCU buffers (SIL-2)."""
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        if not payload:
+            return []
+
+        import itertools
+
+        return [bytes(chunk) for chunk in itertools.batched(payload, chunk_size)]
+
     def set_metrics_callback(self, callback: Callable[[str], None] | None) -> None:
         self._metrics_callback = callback
 

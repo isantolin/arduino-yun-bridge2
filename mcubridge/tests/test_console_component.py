@@ -8,9 +8,10 @@ from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import ConsoleWritePacket
+from mcubridge.protocol.structures import ConsoleWritePacket, TopicRoute
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.state.context import RuntimeState
@@ -37,6 +38,12 @@ def console_component() -> ConsoleComponent:
     ctx.config = config
     ctx.serial_flow = MagicMock()
     ctx.serial_flow.send = AsyncMock(return_value=True)
+
+    # Use a real implementation for chunk_payload or mock it to return the input
+    def _chunk(p, size):
+        return [p[i:i+size] for i in range(0, len(p), size)] if p else []
+    ctx.serial_flow.chunk_payload.side_effect = _chunk
+
     ctx.mqtt_flow = MagicMock()
     ctx.mqtt_flow.publish = AsyncMock()
     ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
@@ -75,7 +82,10 @@ async def test_flow_control(console_component: ConsoleComponent) -> None:
 @pytest.mark.asyncio
 async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> None:
     payload = b"input"
-    await console_component._handle_mqtt_input(payload)  # type: ignore[reportPrivateUsage]
+    route = MagicMock(spec=TopicRoute)
+    message = MagicMock(spec=Message)
+    message.payload = payload
+    await console_component.handle_mqtt_in(route, message)
 
     console_component.ctx.serial_flow.send.assert_awaited_once()
 
@@ -84,8 +94,11 @@ async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> 
 async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> None:
     console_component.state.mcu_is_paused = True
     payload = b"input"
+    route = MagicMock(spec=TopicRoute)
+    message = MagicMock(spec=Message)
+    message.payload = payload
 
-    await console_component._handle_mqtt_input(payload)  # type: ignore[reportPrivateUsage]
+    await console_component.handle_mqtt_in(route, message)
 
     console_component.ctx.serial_flow.send.assert_not_called()
     mock_enqueue = cast(MagicMock, console_component.state.enqueue_console_chunk)
@@ -96,8 +109,11 @@ async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> 
 async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -> None:
     # Payload larger than MAX_PAYLOAD_SIZE
     large_payload = b"a" * (MAX_PAYLOAD_SIZE + 10)
+    route = MagicMock(spec=TopicRoute)
+    message = MagicMock(spec=Message)
+    message.payload = large_payload
 
-    await console_component._handle_mqtt_input(large_payload)  # type: ignore[reportPrivateUsage]
+    await console_component.handle_mqtt_in(route, message)
 
     assert console_component.ctx.serial_flow.send.call_count >= 2
 

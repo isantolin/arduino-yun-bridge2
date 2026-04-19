@@ -122,16 +122,55 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             publish_bridge_snapshot=_noop_publish_bridge_snapshot,
         )
 
+        # Mock components with specialized handlers
+        console = MagicMock()
+        console.handle_mqtt_in = AsyncMock(return_value=True)
+        
+        datastore = MagicMock()
+        datastore.handle_mqtt_put = AsyncMock(return_value=True)
+        datastore.handle_mqtt_get = AsyncMock(return_value=True)
+        
+        file = MagicMock()
+        file.handle_mqtt_write = AsyncMock(return_value=True)
+        file.handle_mqtt_read = AsyncMock(return_value=True)
+        file.handle_mqtt_remove = AsyncMock(return_value=True)
+        
+        mailbox = MagicMock()
+        mailbox.handle_mqtt_write = AsyncMock(return_value=True)
+        mailbox.handle_mqtt_read = AsyncMock(return_value=True)
+        
+        pin = MagicMock()
+        pin.handle_mqtt_write = AsyncMock(return_value=True)
+        pin.handle_mqtt_read = AsyncMock(return_value=True)
+        pin.handle_mqtt_mode = AsyncMock(return_value=True)
+        
+        process = MagicMock()
+        process.handle_mqtt_run_async = AsyncMock(return_value=True)
+        process.handle_mqtt_poll = AsyncMock(return_value=True)
+        process.handle_mqtt_kill = AsyncMock(return_value=True)
+        
+        spi = MagicMock()
+        spi.handle_mqtt_begin = AsyncMock(return_value=True)
+        spi.handle_mqtt_end = AsyncMock(return_value=True)
+        spi.handle_mqtt_config = AsyncMock(return_value=True)
+        spi.handle_mqtt_transfer = AsyncMock(return_value=True)
+        
+        system = MagicMock()
+        system.handle_mqtt_bootloader = AsyncMock(return_value=True)
+        system.handle_mqtt_free_memory = AsyncMock(return_value=True)
+        system.handle_mqtt_version = AsyncMock(return_value=True)
+        system.handle_mqtt = AsyncMock(return_value=True)
+
         dispatcher.register_components(
             make_component_container(
-                console=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                datastore=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                file=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                mailbox=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                pin=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                process=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                spi=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                system=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                console=console,
+                datastore=datastore,
+                file=file,
+                mailbox=mailbox,
+                pin=pin,
+                process=process,
+                spi=spi,
+                system=system,
             )
         )
 
@@ -178,14 +217,14 @@ async def test_mcu_inbound_commands_are_registered() -> None:
 
         dispatcher.register_components(
             make_component_container(
-                console=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                datastore=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                file=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                mailbox=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                pin=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                process=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                spi=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                system=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+                console=MagicMock(),
+                datastore=MagicMock(),
+                file=MagicMock(),
+                mailbox=MagicMock(),
+                pin=MagicMock(),
+                process=MagicMock(),
+                spi=MagicMock(),
+                system=MagicMock(),
             )
         )
         dispatcher.register_system_handlers(

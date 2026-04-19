@@ -89,7 +89,7 @@ async def test_handle_mqtt_put(
 ) -> None:
     component = DatastoreComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_mqtt(
+    await component.handle_mqtt_put(
         make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "newkey"),
         make_mqtt_msg(b"newval"),
     )
@@ -108,7 +108,7 @@ async def test_handle_mqtt_get_request(
     runtime_state.datastore["reqkey"] = "reqval"
 
     # Simulate a get request via MQTT
-    await component.handle_mqtt(
+    await component.handle_mqtt_get(
         make_route(Topic.DATASTORE, DatastoreAction.GET.value, "reqkey", "request"),
         make_mqtt_msg(b""),
     )

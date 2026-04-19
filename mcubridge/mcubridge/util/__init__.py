@@ -6,21 +6,7 @@ from collections.abc import Iterable
 
 __all__ = [
     "normalise_allowed_commands",
-    "chunk_bytes",
 ]
-
-
-def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
-    """Split payload into fixed-size chunks using optimized itertools.batched (Python 3.12+)."""
-    if not payload:
-        return []
-    if chunk_size <= 0:
-        raise ValueError("chunk_size must be positive")
-
-    # [SIL-2] Delegate chunking to Python's C core for maximum performance
-    import itertools
-
-    return [bytes(chunk) for chunk in itertools.batched(payload, chunk_size)]
 
 
 def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:

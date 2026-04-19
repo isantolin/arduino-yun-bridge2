@@ -59,7 +59,7 @@ async def test_shell_run_async_success(
     component.run_async = AsyncMock(return_value=1234)
 
     inbound = make_mqtt_msg(b"echo hello")
-    await component.handle_mqtt(
+    await component.handle_mqtt_run_async(
         make_route(Topic.SHELL, ShellAction.RUN_ASYNC.value),
         inbound,
     )
@@ -94,7 +94,7 @@ async def test_shell_run_async_exception_returns_error(
     component.run_async = AsyncMock(side_effect=RuntimeError("crash"))
 
     inbound = make_mqtt_msg(b"echo hi")
-    await component.handle_mqtt(
+    await component.handle_mqtt_run_async(
         make_route(Topic.SHELL, ShellAction.RUN_ASYNC.value),
         inbound,
     )
@@ -121,7 +121,7 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
     component = ProcessComponent(runtime_config, state, ctx)
     component.run_async = AsyncMock(return_value=0)
 
-    await component.handle_mqtt(
+    await component.handle_mqtt_run_async(
         make_route(Topic.SHELL, ShellAction.RUN_ASYNC.value),
         make_mqtt_msg(b"echo hi"),
     )
@@ -154,7 +154,7 @@ async def test_shell_poll_calls_process_helpers(
     component.publish_poll_result = AsyncMock()
 
     inbound = make_mqtt_msg(b"")
-    await component.handle_mqtt(
+    await component.handle_mqtt_poll(
         make_route(Topic.SHELL, ShellAction.POLL.value, "123"),
         inbound,
     )
@@ -180,7 +180,7 @@ async def test_shell_kill_invokes_stop_process(
     component = ProcessComponent(runtime_config, state, ctx)
     component.stop_process = AsyncMock(return_value=True)
 
-    await component.handle_mqtt(
+    await component.handle_mqtt_kill(
         make_route(Topic.SHELL, ShellAction.KILL.value, "42"),
         make_mqtt_msg(b""),
     )
@@ -204,10 +204,10 @@ async def test_shell_ignores_invalid_payloads_and_actions(
     component = ProcessComponent(runtime_config, state, ctx)
 
     # Empty segments
-    await component.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
+    await component.handle_mqtt_run_async(make_route(Topic.SHELL), make_mqtt_msg(b""))
 
     # Unknown action
-    await component.handle_mqtt(make_route(Topic.SHELL, "unknown"), make_mqtt_msg(b""))
+    await component.handle_mqtt_run_async(make_route(Topic.SHELL, "unknown"), make_mqtt_msg(b""))
 
     ctx.mqtt_flow.publish.assert_not_called()
     ctx.serial_flow.send.assert_not_called()

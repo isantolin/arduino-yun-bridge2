@@ -146,30 +146,12 @@ class MailboxComponent(BaseComponent):
         )
         return True
 
-    async def handle_mqtt(
-        self,
-        route: TopicRoute,
-        inbound: Message,
-    ) -> bool:
+    async def handle_mqtt_write(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle MAILBOX_WRITE request from MQTT."""
         payload = msgspec.convert(inbound.payload, bytes)
-        action = route.identifier
-        match action:
-            case MailboxAction.WRITE:
-                await self._handle_mqtt_write(payload, inbound)
-            case MailboxAction.READ:
-                await self._handle_mqtt_read(inbound)
-            case _:
-                logger.debug("Ignoring mailbox action '%s'", action)
-        return True
-
-    async def _handle_mqtt_write(
-        self,
-        payload: bytes,
-        inbound: Message | None = None,
-    ) -> None:
         if not self.state.enqueue_mailbox_message(payload):
             await self._handle_outgoing_overflow(len(payload), inbound)
-            return
+            return True
         queue_len = len(self.state.mailbox_queue)
         logger.info(
             "Added message to mailbox queue. Size=%d",
@@ -179,11 +161,10 @@ class MailboxComponent(BaseComponent):
             queue_bytes_used=self.state.mailbox_queue_bytes,
         )
         await self._publish_available("outgoing_available", queue_len)
+        return True
 
-    async def _handle_mqtt_read(
-        self,
-        inbound: Message | None = None,
-    ) -> None:
+    async def handle_mqtt_read(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle MAILBOX_READ request from MQTT."""
         topic = self.state.mailbox_incoming_topic or topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
@@ -194,7 +175,7 @@ class MailboxComponent(BaseComponent):
             message_payload = self.state.pop_mailbox_incoming()
             if message_payload is None:
                 await self._publish_available("incoming_available", 0)
-                return
+                return True
 
             try:
                 await self.ctx.mqtt_flow.publish(
@@ -206,11 +187,11 @@ class MailboxComponent(BaseComponent):
                 await self._publish_available(
                     "incoming_available", len(self.state.mailbox_incoming_queue)
                 )
-            return
+            return True
 
         message_payload = self.state.pop_mailbox_message()
         if message_payload is None:
-            return
+            return True
 
         try:
             await self.ctx.mqtt_flow.publish(
@@ -222,6 +203,7 @@ class MailboxComponent(BaseComponent):
             await self._publish_available(
                 "outgoing_available", len(self.state.mailbox_queue)
             )
+        return True
 
     async def _handle_outgoing_overflow(
         self,

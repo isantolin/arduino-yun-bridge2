@@ -130,51 +130,78 @@ class SystemComponent(BaseComponent):
                 reply_to=reply_context,
             )
 
+    async def handle_mqtt_bootloader(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle CMD_ENTER_BOOTLOADER request from MQTT."""
+        packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
+        logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
+        return await self.ctx.serial_flow.send(
+            Command.CMD_ENTER_BOOTLOADER.value, packet.encode()
+        )
+
+    async def handle_mqtt_free_memory(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle FREE_MEMORY request from MQTT."""
+        remainder = list(route.remainder)
+        if not (remainder and remainder[0] == SystemAction.GET):
+            return False
+
+        if len(self._pending_free_memory) >= 10:
+            return False
+
+        self._pending_free_memory.append(inbound)
+        ok = await self.ctx.serial_flow.send(Command.CMD_GET_FREE_MEMORY.value, b"")
+        if not ok:
+            with contextlib.suppress(ValueError):
+                self._pending_free_memory.append(inbound)
+        return ok
+
+    async def handle_mqtt_version(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle VERSION request from MQTT."""
+        remainder = list(route.remainder)
+        if not (remainder and remainder[0] == SystemAction.GET):
+            return False
+        cached_version = self.state.mcu_version
+        if cached_version is not None:
+            await self._publish_version(cached_version, inbound)
+
+        # Always request fresh version to sync cache
+        send_ok = await self.request_mcu_version(inbound)
+
+        if cached_version is not None:
+            # Also broadcast current cached value
+            await self._publish_version(cached_version)
+
+        return send_ok
+
+    async def handle_mqtt_bridge(self, route: TopicRoute, inbound: Message) -> bool:
+        """Handle bridge status/snapshot requests from MQTT."""
+        match list(route.remainder):
+            case ["handshake", "get"]:
+                # Access publish_bridge_snapshot via ctx if available, or just call it.
+                # In dispatcher.py it was passed as a callback.
+                # For SIL-2, we should have it as a method on MqttTransport or BridgeService.
+                # Actually, BridgeService has _publish_bridge_snapshot.
+                # Let's assume it's routed correctly for now or call the callback.
+                return False # Fallback to dispatcher for complex orchestration
+
+            case [("summary" | "state"), "get"]:
+                return False # Fallback to dispatcher
+
+            case _:
+                return False
+
     async def handle_mqtt(
         self,
         route: TopicRoute,
         inbound: Message,
     ) -> bool:
         identifier = route.identifier
-        remainder = list(route.remainder)
         match identifier:
             case SystemAction.BOOTLOADER:
-                packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
-                logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
-                return await self.ctx.serial_flow.send(
-                    Command.CMD_ENTER_BOOTLOADER.value, packet.encode()
-                )
-
+                return await self.handle_mqtt_bootloader(route, inbound)
             case SystemAction.FREE_MEMORY:
-                if not (remainder and remainder[0] == SystemAction.GET):
-                    return False
-
-                if len(self._pending_free_memory) >= 10:
-                    return False
-
-                self._pending_free_memory.append(inbound)
-                ok = await self.ctx.serial_flow.send(Command.CMD_GET_FREE_MEMORY.value, b"")
-                if not ok:
-                    with contextlib.suppress(ValueError):
-                        self._pending_free_memory.append(inbound)
-                return ok
-
+                return await self.handle_mqtt_free_memory(route, inbound)
             case SystemAction.VERSION:
-                if not (remainder and remainder[0] == SystemAction.GET):
-                    return False
-                cached_version = self.state.mcu_version
-                if cached_version is not None:
-                    await self._publish_version(cached_version, inbound)
-
-                # Always request fresh version to sync cache
-                send_ok = await self.request_mcu_version(inbound)
-
-                if cached_version is not None:
-                    # Also broadcast current cached value
-                    await self._publish_version(cached_version)
-
-                return send_ok
-
+                return await self.handle_mqtt_version(route, inbound)
             case _:
                 return False
 

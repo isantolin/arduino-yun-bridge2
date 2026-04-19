@@ -964,11 +964,11 @@ def create_runtime_state(
     )
     state.serial_tx_allowed.set()
     state.configure(cfg)
-    
+
     from ..transport.mqtt import MqttTransport
     transport = MqttTransport(cfg, state)
     transport.configure_spool(cfg.mqtt_spool_dir, cfg.mqtt_queue_limit * 4)
     if initialize_spool:
         transport.initialize_spool()
-        
+
     return state

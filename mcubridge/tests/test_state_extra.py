@@ -41,7 +41,8 @@ def test_mcu_capabilities_properties() -> None:
         features=features,
     )
     assert caps.num_digital_pins == 20
-    assert caps.features is not None; assert caps.features.hw_serial1 is True
+    assert caps.features is not None
+    assert caps.features.hw_serial1 is True
 
 
 def test_managed_process_is_drained() -> None:

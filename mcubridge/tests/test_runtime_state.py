@@ -79,7 +79,7 @@ async def test_initialize_spool_handles_creation_failure(
 
     state = create_runtime_state(runtime_config)
     transport = MqttTransport(runtime_config, state)
-    
+
     def mock_init_fail(*args: Any, **kwargs: Any) -> Any:
         raise OSError("Permission denied")
 
@@ -101,13 +101,13 @@ async def test_spool_fallback_updates_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from mcubridge.transport.mqtt import MqttTransport
-    
+
     state = create_runtime_state(runtime_config)
     transport = MqttTransport(runtime_config, state)
-    
+
     before = time.monotonic()
     transport._disable_mqtt_spool("disk error") # type: ignore[reportPrivateUsage]
-    
+
     assert state.mqtt_spool_degraded is True
     assert state.mqtt_spool_failure_reason == "disk error"
     assert state.mqtt_spool_backoff_until >= before
@@ -119,7 +119,7 @@ def test_mark_supervisor_healthy_resets_backoff(runtime_config: RuntimeConfig) -
     try:
         state.record_supervisor_failure("test_svc", 10.0, RuntimeError("fail"))
         assert state.supervisor_stats["test_svc"].backoff_seconds == 10.0
-        
+
         state.mark_supervisor_healthy("test_svc")
         assert state.supervisor_stats["test_svc"].backoff_seconds == 0.0
     finally:

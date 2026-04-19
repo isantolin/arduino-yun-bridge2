@@ -221,7 +221,7 @@ class BridgeService:
         })
         props = [("bridge-status", status.name), ("bridge-status-description", status.description)]
         if text: props.append(("bridge-status-message", text))
-        
+
         await self.mqtt_flow.publish(
             topic=status_topic, payload=report, content_type="application/msgpack",
             expiry=MQTT_EXPIRY_SHELL, properties=tuple(props)

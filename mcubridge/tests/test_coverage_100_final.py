@@ -912,7 +912,7 @@ class TestDatastoreComponent:
             ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
             ctx.serial_flow = MagicMock()
             ctx.serial_flow.send = AsyncMock(return_value=True)
-            
+
             # Using MqttTransport since publish moved there
             transport = MqttTransport(config, state)
             await transport.publish("key", b"", expiry=60)

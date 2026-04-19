@@ -102,7 +102,7 @@ class TopicRoute(msgspec.Struct, frozen=True):
             return None
 
         from .protocol import Topic
-        
+
         # d/PIN -> write, d/PIN/mode -> mode
         if self.topic in (Topic.DIGITAL, Topic.ANALOG):
             if len(self.segments) == 1:

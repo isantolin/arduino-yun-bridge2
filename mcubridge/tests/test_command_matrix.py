@@ -125,36 +125,36 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
         # Mock components with specialized handlers
         console = MagicMock()
         console.handle_mqtt_in = AsyncMock(return_value=True)
-        
+
         datastore = MagicMock()
         datastore.handle_mqtt_put = AsyncMock(return_value=True)
         datastore.handle_mqtt_get = AsyncMock(return_value=True)
-        
+
         file = MagicMock()
         file.handle_mqtt_write = AsyncMock(return_value=True)
         file.handle_mqtt_read = AsyncMock(return_value=True)
         file.handle_mqtt_remove = AsyncMock(return_value=True)
-        
+
         mailbox = MagicMock()
         mailbox.handle_mqtt_write = AsyncMock(return_value=True)
         mailbox.handle_mqtt_read = AsyncMock(return_value=True)
-        
+
         pin = MagicMock()
         pin.handle_mqtt_write = AsyncMock(return_value=True)
         pin.handle_mqtt_read = AsyncMock(return_value=True)
         pin.handle_mqtt_mode = AsyncMock(return_value=True)
-        
+
         process = MagicMock()
         process.handle_mqtt_run_async = AsyncMock(return_value=True)
         process.handle_mqtt_poll = AsyncMock(return_value=True)
         process.handle_mqtt_kill = AsyncMock(return_value=True)
-        
+
         spi = MagicMock()
         spi.handle_mqtt_begin = AsyncMock(return_value=True)
         spi.handle_mqtt_end = AsyncMock(return_value=True)
         spi.handle_mqtt_config = AsyncMock(return_value=True)
         spi.handle_mqtt_transfer = AsyncMock(return_value=True)
-        
+
         system = MagicMock()
         system.handle_mqtt_bootloader = AsyncMock(return_value=True)
         system.handle_mqtt_free_memory = AsyncMock(return_value=True)

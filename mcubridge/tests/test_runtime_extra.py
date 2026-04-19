@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,8 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Status
-from mcubridge.protocol.topics import Topic
 from mcubridge.services import (
     ConsoleComponent,
     SystemComponent,
@@ -19,7 +16,6 @@ from mcubridge.services import (
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.mqtt import MqttTransport
-from tests.mqtt_helpers import make_inbound_message
 
 
 @pytest.mark.asyncio
@@ -48,11 +44,11 @@ async def test_runtime_on_serial_connected_errors() -> None:
         # Retrieve the real components from the container
         system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
         console = service._container.get(ConsoleComponent)  # type: ignore[reportPrivateUsage]
-        
+
         # Patch them
         with patch.object(system, "request_mcu_version", new_callable=AsyncMock) as mock_version, \
              patch.object(console, "flush_queue", new_callable=AsyncMock) as mock_flush:
-            
+
             # 1. Error requesting version
             mock_version.side_effect = RuntimeError("fail")
             await service.on_serial_connected()

@@ -7,13 +7,11 @@ import structlog
 from collections.abc import Coroutine
 from typing import Any, Protocol, TypeVar, TYPE_CHECKING
 
-from aiomqtt.message import Message
 
 from ..config.settings import RuntimeConfig
 from ..state.context import RuntimeState
 
 if TYPE_CHECKING:
-    from ..protocol.structures import TopicRoute
     from .serial_flow import SerialFlowController
     from ..transport.mqtt import MqttTransport
 

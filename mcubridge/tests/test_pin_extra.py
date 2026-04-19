@@ -74,16 +74,16 @@ async def test_pin_handle_mqtt_edge_cases() -> None:
         # 1. No segments -> action is None -> not dispatched
         route1 = TopicRoute("br/d", "br", Topic.DIGITAL, ())
         assert not await router.dispatch(route1, make_mqtt_msg(b""))
-        
+
         # 2. Invalid pin (handled inside handler)
         route2 = TopicRoute("br/d/invalid", "br", Topic.DIGITAL, ("invalid",))
         assert await router.dispatch(route2, make_mqtt_msg(b""))
         ctx.serial_flow.send.assert_not_called()
-        
+
         # 3. Unknown subtopic -> action "magic" -> not dispatched
         route3 = TopicRoute("br/d/13/magic", "br", Topic.DIGITAL, ("13", "magic"))
         assert not await router.dispatch(route3, make_mqtt_msg(b""))
-        
+
         # 4. Invalid digital mode (handled inside handler)
         route4 = TopicRoute("br/d/13/mode", "br", Topic.DIGITAL, ("13", "mode"))
         assert await router.dispatch(route4, make_mqtt_msg(b"invalid"))

@@ -137,7 +137,7 @@ class BridgeDispatcher:
         self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt_write, action="write")
         self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt_read, action=PinAction.READ)
         self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt_mode, action=PinAction.MODE)
-        
+
         self.mqtt_router.register(Topic.ANALOG, pin.handle_mqtt_write, action="write")
         self.mqtt_router.register(Topic.ANALOG, pin.handle_mqtt_read, action=PinAction.READ)
 
@@ -151,7 +151,7 @@ class BridgeDispatcher:
         # System
         self.mcu_registry[Command.CMD_GET_FREE_MEMORY_RESP.value] = system.handle_get_free_memory_resp
         self.mcu_registry[Command.CMD_GET_VERSION_RESP.value] = system.handle_get_version_resp
-        
+
         from mcubridge.protocol.protocol import SystemAction
         self.mqtt_router.register(Topic.SYSTEM, system.handle_mqtt_bootloader, action=SystemAction.BOOTLOADER)
         self.mqtt_router.register(Topic.SYSTEM, system.handle_mqtt_free_memory, action=SystemAction.FREE_MEMORY)

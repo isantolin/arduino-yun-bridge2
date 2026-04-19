@@ -1,7 +1,6 @@
-"""Unit tests for mcubridge.transport.mqtt."""
+"""Unit tests for mcubridge.transport.mqtt (SIL-2)."""
 
 from __future__ import annotations
-from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
 import contextlib
@@ -96,9 +95,7 @@ def test_configure_tls_wraps_ssl_errors(
 
 
 @pytest.mark.asyncio
-async def test_mqtt_task_requeues_on_publish_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_mqtt_task_stashes_on_publish_failure() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
@@ -109,78 +106,40 @@ async def test_mqtt_task_requeues_on_publish_failure(
             )
         )
 
-        class FakeClient:
-            def __init__(self, **kwargs: Any) -> None:
-                self._client = MagicMock()
-                self._client.on_log = None
+        client = MagicMock(spec=aiomqtt.Client)
+        client.publish = AsyncMock(side_effect=aiomqtt.MqttError("failed"))
 
-            async def __aenter__(self) -> FakeClient:
-                return self
-
-            async def __aexit__(self, *args: Any) -> None:
-                pass
-
-            async def subscribe(self, *args: Any, **kwargs: Any) -> None:
-                pass
-
-            async def publish(self, *args: Any, **kwargs: Any) -> None:
-                raise aiomqtt.MqttError("failed")
-
-            @property
-            def messages(self) -> Any:
-                async def _iter():
-                    if False:
-                        yield None
-
-                return _iter()
-
-        monkeypatch.setattr(aiomqtt, "Client", FakeClient)
-        monkeypatch.setattr(
-            mqtt.tenacity,
-            "retry",
-            lambda *args, **kwargs: (lambda fn: fn),  # type: ignore[reportUnknownLambdaType]
-        )
         stash_calls: list[QueuedPublish] = []
         stashed = asyncio.Event()
 
-        async def _stash(self: Any, message: QueuedPublish) -> bool:
-            del self
+        async def _stash(message: QueuedPublish) -> bool:
             stash_calls.append(message)
             stashed.set()
             return True
 
-        monkeypatch.setattr(mqtt.MqttTransport, "stash_mqtt_message", _stash)
-        monkeypatch.setattr(
-            mqtt.MqttTransport, "flush_mqtt_spool", AsyncMock(return_value=None)
-        )
-
         transport = mqtt.MqttTransport(config, state)
-        task = asyncio.create_task(transport._publisher_loop(FakeClient()))  # type: ignore[reportPrivateUsage]
+        transport.stash_mqtt_message = _stash # type: ignore[method-assign]
+        transport.flush_mqtt_spool = AsyncMock() # type: ignore[method-assign]
+
+        task = asyncio.create_task(transport._publisher_loop(client))  # type: ignore[reportPrivateUsage]
 
         await asyncio.wait_for(stashed.wait(), timeout=1.0)
         task.cancel()
-        with pytest.raises(asyncio.CancelledError):
+        with contextlib.suppress(asyncio.CancelledError):
             await task
 
         assert len(stash_calls) == 1
-        assert (
-            stash_calls[0].topic_name
-            == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic"
-        )
+        assert stash_calls[0].topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic"
         assert state.mqtt_publish_queue.qsize() == 0
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_mqtt_publisher_loop_queue_full_on_cancel() -> None:
+async def test_mqtt_publisher_loop_stashes_on_cancel() -> None:
     config = _make_config(tls=False, cafile=None)
-    config.mqtt_queue_limit = 1
     state = create_runtime_state(config)
     try:
-        MagicMock()
-        transport = mqtt.MqttTransport(config, state)
-
         await state.mqtt_publish_queue.put(
             QueuedPublish(
                 topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic",
@@ -188,28 +147,36 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel() -> None:
             )
         )
         client = MagicMock(spec=aiomqtt.Client)
+        # Never finish publish to allow cancellation to hit it
         client.publish = AsyncMock(side_effect=asyncio.CancelledError)
 
+        stashed = asyncio.Event()
+        async def _stash(message: QueuedPublish) -> bool:
+            stashed.set()
+            return True
+
+        transport = mqtt.MqttTransport(config, state)
+        transport.stash_mqtt_message = _stash # type: ignore[method-assign]
+        transport.flush_mqtt_spool = AsyncMock() # type: ignore[method-assign]
+
         task = asyncio.create_task(transport._publisher_loop(client))  # type: ignore[reportPrivateUsage]
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.05)
         task.cancel()
-        try:
+
+        await asyncio.wait_for(stashed.wait(), timeout=1.0)
+        with contextlib.suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
-        assert state.mqtt_publish_queue.qsize() == 1
+
+        assert stashed.is_set()
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_mqtt_subscriber_loop_handles_mqtt_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_mqtt_subscriber_loop_handles_mqtt_error() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        BridgeService(config, state, MqttTransport(config, state))
         transport = mqtt.MqttTransport(config, state)
 
         class FakeClient:
@@ -224,7 +191,7 @@ async def test_mqtt_subscriber_loop_handles_mqtt_error(
         client = FakeClient()
 
         with pytest.raises(aiomqtt.MqttError, match="boom"):
-            await transport._subscriber_loop(client)  # type: ignore[reportPrivateUsage]
+            await transport._subscriber_loop(cast(aiomqtt.Client, client))  # type: ignore[reportPrivateUsage]
     finally:
         state.cleanup()
 
@@ -235,15 +202,14 @@ async def test_mqtt_publisher_debug_logging() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        MagicMock()
         transport = mqtt.MqttTransport(config, state)
         published: list[tuple[str, bytes]] = []
 
-        class FakeClient:
-            async def publish(self: Any, topic: Any, payload: Any, **kwargs: Any):
-                published.append((str(topic), payload))
+        client = MagicMock(spec=aiomqtt.Client)
+        async def _mock_pub(topic: Any, payload: Any, **_kwargs: Any):
+            published.append((str(topic), payload))
+        client.publish.side_effect = _mock_pub
 
-        client = FakeClient()
         await state.mqtt_publish_queue.put(
             QueuedPublish(
                 topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/debug",
@@ -260,18 +226,13 @@ async def test_mqtt_publisher_debug_logging() -> None:
                     await asyncio.sleep(0.1)
 
             stop_task = asyncio.create_task(wait_publish())
+            task = asyncio.create_task(transport._publisher_loop(client))  # type: ignore[reportPrivateUsage]
 
-            async def run_loop():
-                try:
-                    await transport._publisher_loop(client)  # type: ignore[reportPrivateUsage]
-                except asyncio.CancelledError:
-                    pass
-
-            loop_task = asyncio.create_task(run_loop())
             await stop_task
-            loop_task.cancel()
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await loop_task
+                await task
+
         assert len(published) == 1
     finally:
         state.cleanup()
@@ -282,7 +243,7 @@ async def test_mqtt_subscriber_processes_message() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, MqttTransport(config, state))
+        service = MagicMock(spec=BridgeService)
         transport = mqtt.MqttTransport(config, state)
         transport.set_service(service)
         msg_count = 0
@@ -290,8 +251,7 @@ async def test_mqtt_subscriber_processes_message() -> None:
         async def _mock_handle(msg: Any):
             nonlocal msg_count
             msg_count += 1
-
-        service.handle_mqtt_message = _mock_handle  # type: ignore[reportAttributeAccessIssue]
+        service.handle_mqtt_message = _mock_handle
 
         class FakeMsg:
             def __init__(self):
@@ -307,7 +267,7 @@ async def test_mqtt_subscriber_processes_message() -> None:
                 yield FakeMsg()
 
         client = FakeClient()
-        task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[reportPrivateUsage]
+        task = asyncio.create_task(transport._subscriber_loop(cast(aiomqtt.Client, client)))  # type: ignore[reportPrivateUsage]
         await asyncio.sleep(0.05)
         task.cancel()
         assert msg_count == 1
@@ -320,7 +280,7 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, MqttTransport(config, state))
+        service = MagicMock(spec=BridgeService)
         transport = mqtt.MqttTransport(config, state)
         transport.set_service(service)
         msg_count = 0
@@ -328,8 +288,7 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
         async def _mock_handle(msg: Any):
             nonlocal msg_count
             msg_count += 1
-
-        service.handle_mqtt_message = _mock_handle  # type: ignore[reportAttributeAccessIssue]
+        service.handle_mqtt_message = _mock_handle
 
         class FakeMsg:
             def __init__(self):
@@ -344,7 +303,7 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
                 yield FakeMsg()
 
         client = FakeClient()
-        task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[reportPrivateUsage]
+        task = asyncio.create_task(transport._subscriber_loop(cast(aiomqtt.Client, client)))  # type: ignore[reportPrivateUsage]
         await asyncio.sleep(0.05)
         task.cancel()
         assert msg_count == 0

@@ -14,6 +14,8 @@ from ..state.context import RuntimeState
 
 if TYPE_CHECKING:
     from ..protocol.structures import TopicRoute
+    from .serial_flow import SerialFlowController
+    from ..transport.mqtt import MqttTransport
 
 TReq = TypeVar("TReq")
 
@@ -27,12 +29,12 @@ class BridgeContext(Protocol):
     state: RuntimeState
 
     @property
-    def serial_flow(self) -> Any:
+    def serial_flow(self) -> SerialFlowController:
         """Access to the serial flow controller for sending frames."""
         ...
 
     @property
-    def mqtt_flow(self) -> Any:
+    def mqtt_flow(self) -> MqttTransport:
         """Access to the MQTT transport for publishing."""
         ...
 

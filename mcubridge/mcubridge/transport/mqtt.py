@@ -264,12 +264,10 @@ class MqttTransport:
         message_to_queue = message
         if reply_context is not None:
             props = reply_context.properties
-            target_topic = (
-                getattr(props, "ResponseTopic", None) if props else None
-            ) or message.topic_name
-            if target_topic != message_to_queue.topic_name:
+            resp_topic = getattr(props, "ResponseTopic", None) if props else None
+            if resp_topic:
                 message_to_queue = msgspec.structs.replace(
-                    message_to_queue, topic_name=target_topic
+                    message_to_queue, response_topic=resp_topic
                 )
 
             reply_correlation = getattr(props, "CorrelationData", None) if props else None
@@ -478,4 +476,89 @@ class MqttTransport:
             except (MQTTSpoolError, OSError) as exc:
                 self._handle_mqtt_spool_failure("pop_failed", exc=exc)
                 break
+
+    async def publish_bridge_snapshot(
+        self,
+        flavor: str,
+        inbound: Message | None = None,
+    ) -> None:
+        """Collect metrics and publish a system status snapshot (SIL-2)."""
+        if flavor == "handshake":
+            snapshot = self.state.build_handshake_snapshot()
+            topic_segments = ("bridge", "handshake", "value")
+        else:
+            snapshot = self.state.build_bridge_snapshot()
+            topic_segments = ("bridge", "summary", "value")
+
+        from mcubridge.config.const import MQTT_EXPIRY_SHELL
+        from mcubridge.protocol.topics import topic_path
+
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            *topic_segments,
+        )
+        # Using msgspec for deterministic serialization
+        payload = msgspec.msgpack.encode(snapshot)
+
+        await self.publish(
+            topic=topic,
+            payload=payload,
+            content_type="application/msgpack",
+            expiry=MQTT_EXPIRY_SHELL,
+            properties=(("bridge-snapshot", flavor),),
+            reply_to=inbound,
+        )
+
+    def is_topic_action_allowed(
+        self,
+        topic_type: Topic | str,
+        action: str,
+    ) -> bool:
+        """Check if an action is permitted by the active policy."""
+        if not action:
+            return True
+        topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
+        if self.state.topic_authorization:
+            return self.state.topic_authorization.allows(topic_value, action)
+        return False
+
+    async def reject_topic_action(
+        self,
+        inbound: Message,
+        topic_type: Topic | str,
+        action: str,
+    ) -> None:
+        """Log a policy violation and publish a FORBIDDEN status response."""
+        topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
+        logger.warning(
+            "Blocked MQTT action topic=%s action=%s (message topic=%s)",
+            topic_value,
+            action or "<missing>",
+            str(inbound.topic),
+        )
+
+        from mcubridge.config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
+        from mcubridge.protocol.topics import topic_path
+
+        payload = msgspec.msgpack.encode(
+            {
+                "status": "forbidden",
+                "topic": topic_value,
+                "action": action,
+            }
+        )
+        status_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            Topic.STATUS,
+        )
+        await self.publish(
+            topic=status_topic,
+            payload=payload,
+            content_type="application/msgpack",
+            expiry=MQTT_EXPIRY_SHELL,
+            properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
+            reply_to=inbound,
+        )
 

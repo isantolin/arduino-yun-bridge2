@@ -29,6 +29,8 @@ STATUS_VALUES = {status.value for status in Status}
 _PRE_SYNC_ALLOWED_COMMANDS = {
     Command.CMD_LINK_SYNC_RESP.value,
     Command.CMD_LINK_RESET_RESP.value,
+    Command.CMD_GET_VERSION_RESP.value,
+    Command.CMD_GET_CAPABILITIES_RESP.value,
 }
 
 

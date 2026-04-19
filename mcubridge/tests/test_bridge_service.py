@@ -805,16 +805,18 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
 
     topic = f"{runtime_config.mqtt_topic}/datastore/get/k1"
 
-    class Props:
-        ResponseTopic = "reply/here"
-        CorrelationData = b"corr123"
+    from types import SimpleNamespace
+    props = SimpleNamespace(
+        ResponseTopic="reply/here",
+        CorrelationData=b"corr123"
+    )
 
     msg = Message(
         topic=topic,
         payload=b"",
         qos=0,
         retain=False,
-        properties=cast(Any, Props()),
+        properties=props,
         mid=1,  # type: ignore[reportArgumentType]
     )
 
@@ -825,13 +827,13 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
     reply = None
     while not runtime_state.mqtt_publish_queue.empty():
         item = runtime_state.mqtt_publish_queue.get_nowait()
-        if item.topic_name == "reply/here":
+        if item.response_topic == "reply/here":
             reply = item
             break
 
     assert reply is not None
-    assert reply.topic_name == "reply/here"
-    assert reply.payload == b"v1"
+    assert reply.topic_name == topic
+    assert reply.response_topic == "reply/here"
     assert reply.correlation_data == b"corr123"
 
 

@@ -277,6 +277,33 @@ class SerialFlowController:
         self._notify_pipeline("success", pending)
         return True
 
+    async def acknowledge(
+        self,
+        command_id: int,
+        seq_id: int,
+        status: int = 56,  # Status.ACK.value
+    ) -> bool:
+        """Send a low-level status response (ACK/Status) to the MCU (SIL-2)."""
+        if self._sender is None:
+            self._logger.error("Serial sender not registered; cannot send ACK")
+            return False
+
+        from ..protocol.structures import AckPacket
+
+        payload = AckPacket(command_id=command_id).encode()
+
+        try:
+            # ACKs are fire-and-forget at the flow level (no ACK-of-ACK)
+            return await self._sender(status, payload, seq_id)
+        except (OSError, RuntimeError, ValueError) as exc:
+            self._logger.warning(
+                "Failed to emit status 0x%02X for command 0x%02X: %s",
+                status,
+                command_id,
+                exc,
+            )
+            return False
+
     async def _execute_with_retries(
         self,
         pending: PendingCommand,

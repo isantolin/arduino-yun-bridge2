@@ -31,6 +31,11 @@ class BridgeContext(Protocol):
         """Access to the serial flow controller for sending frames."""
         ...
 
+    @property
+    def mqtt_flow(self) -> Any:
+        """Access to the MQTT transport for publishing."""
+        ...
+
     async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],

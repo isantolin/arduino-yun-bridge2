@@ -43,7 +43,7 @@ async def test_file_refresh_storage_usage_handles_oserror() -> None:
         ctx.serial_flow = MagicMock()
         ctx.serial_flow.send = AsyncMock(return_value=True)
 
-        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
+        with patch("mcubridge.transport.mqtt.MqttTransport.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
             comp = FileComponent(config, state, ctx)
 
             def boom(*_args: Any, **_kwargs: Any) -> Any:

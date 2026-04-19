@@ -73,14 +73,14 @@ class SystemComponent(BaseComponent):
             self._pending_free_memory.popleft() if self._pending_free_memory else None
         )
         # Direct call to RuntimeState.publish
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=topic,
             payload=str(packet.value),
             expiry=MQTT_EXPIRY_DEFAULT,
             reply_to=None,
         )
         if reply_context is not None:
-            await self.state.publish(
+            await self.ctx.mqtt_flow.publish(
                 topic=topic,
                 payload=str(packet.value),
                 expiry=MQTT_EXPIRY_DEFAULT,
@@ -116,14 +116,14 @@ class SystemComponent(BaseComponent):
         )
         # Direct call to RuntimeState.publish
         payload = f"{major}.{minor}.{patch}"
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=topic,
             payload=payload,
             expiry=MQTT_EXPIRY_DATASTORE,
             reply_to=None,
         )
         if reply_context is not None:
-            await self.state.publish(
+            await self.ctx.mqtt_flow.publish(
                 topic=topic,
                 payload=payload,
                 expiry=MQTT_EXPIRY_DATASTORE,

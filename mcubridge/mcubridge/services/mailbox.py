@@ -56,7 +56,7 @@ class MailboxComponent(BaseComponent):
         else:
             body = payload
 
-        await self.state.publish(topic=topic_name, payload=body)
+        await self.ctx.mqtt_flow.publish(topic=topic_name, payload=body)
         return True
 
     async def handle_push(self, seq_id: int, payload: bytes) -> bool:
@@ -88,9 +88,9 @@ class MailboxComponent(BaseComponent):
             Topic.MAILBOX,
             MailboxAction.INCOMING,
         )
-        await self.state.publish(topic=topic, payload=data)
+        await self.ctx.mqtt_flow.publish(topic=topic, payload=data)
 
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=topic_path(
                 self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
             ),
@@ -197,7 +197,7 @@ class MailboxComponent(BaseComponent):
                 return
 
             try:
-                await self.state.publish(
+                await self.ctx.mqtt_flow.publish(
                     topic=topic,
                     payload=message_payload,
                     reply_to=inbound,
@@ -213,7 +213,7 @@ class MailboxComponent(BaseComponent):
             return
 
         try:
-            await self.state.publish(
+            await self.ctx.mqtt_flow.publish(
                 topic=topic,
                 payload=message_payload,
                 reply_to=inbound,
@@ -268,7 +268,7 @@ class MailboxComponent(BaseComponent):
         else:
             properties = ()
 
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=overflow_topic,
             payload=body,
             content_type="application/msgpack",
@@ -286,7 +286,7 @@ class MailboxComponent(BaseComponent):
             Topic.MAILBOX,
             suffix,
         )
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=topic_name,
             payload=str(count).encode("utf-8"),
         )

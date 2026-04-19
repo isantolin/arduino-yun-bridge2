@@ -208,7 +208,7 @@ class DatastoreComponent(BaseComponent):
 
         # Direct call to RuntimeState.publish
         props_tuple = tuple(properties)
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=topic_name,
             payload=value,
             expiry=MQTT_EXPIRY_DATASTORE,
@@ -216,7 +216,7 @@ class DatastoreComponent(BaseComponent):
             properties=props_tuple,
         )
         if reply_context is not None:
-            await self.state.publish(
+            await self.ctx.mqtt_flow.publish(
                 topic=topic_name,
                 payload=value,
                 expiry=MQTT_EXPIRY_DATASTORE,

@@ -22,6 +22,7 @@ from mcubridge.protocol.protocol import (
     Topic,
 )
 from mcubridge.state.context import create_runtime_state
+from mcubridge.transport.mqtt import MqttTransport
 
 from tests._helpers import make_test_config, make_route, make_mqtt_msg
 
@@ -474,6 +475,9 @@ class TestShellMqttLogic:
         state = create_runtime_state(config)
 
         ctx = MagicMock()
+        ctx.mqtt_flow = MagicMock()
+        ctx.mqtt_flow.publish = AsyncMock()
+        ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
         comp = ProcessComponent(config, state, ctx)
         comp.poll_process = AsyncMock()
         comp.stop_process = AsyncMock(return_value=True)
@@ -499,17 +503,15 @@ class TestShellMqttLogic:
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
-        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-            await shell_comp.handle_mqtt(
-                make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b"")
-            )
-            mock_pub.assert_not_called()
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b"")
+        )
+        shell_comp.ctx.mqtt_flow.publish.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
-        with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-            await shell_comp.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
-            mock_pub.assert_not_called()
+        await shell_comp.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
+        shell_comp.ctx.mqtt_flow.publish.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_parse_shell_command_invalid(self: Any, shell_comp: Any):
@@ -701,10 +703,12 @@ class TestBaseComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
-                comp = BaseComponent(config, state, ctx)
-                assert comp.config is config
-                assert comp.state is state
+            ctx.mqtt_flow = MagicMock()
+            ctx.mqtt_flow.publish = AsyncMock()
+            ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
+            comp = BaseComponent(config, state, ctx)
+            assert comp.config is config
+            assert comp.state is state
         finally:
             state.cleanup()
 
@@ -814,6 +818,9 @@ class TestConsoleComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
+            ctx.mqtt_flow = MagicMock()
+            ctx.mqtt_flow.publish = AsyncMock()
+            ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
             ctx.serial_flow = MagicMock()
             ctx.serial_flow.send = AsyncMock(return_value=True)
             comp = ConsoleComponent(config, state, ctx)
@@ -837,12 +844,14 @@ class TestMailboxComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
-            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
-                comp = MailboxComponent(config, state, ctx)
-                await comp.handle_mqtt(
-                    make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
-                )
-                assert len(state.mailbox_queue) == 1
+            ctx.mqtt_flow = MagicMock()
+            ctx.mqtt_flow.publish = AsyncMock()
+            ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
+            comp = MailboxComponent(config, state, ctx)
+            await comp.handle_mqtt(
+                make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
+            )
+            assert len(state.mailbox_queue) == 1
         finally:
             state.cleanup()
 
@@ -865,16 +874,18 @@ class TestPinComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
+            ctx.mqtt_flow = MagicMock()
+            ctx.mqtt_flow.publish = AsyncMock()
+            ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
             ctx.serial_flow = MagicMock()
             ctx.serial_flow.send = AsyncMock(return_value=True)
-            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
-                comp = PinComponent(config, state, ctx)
-                # Test without pending requests
-                from mcubridge.protocol.structures import DigitalReadResponsePacket
+            comp = PinComponent(config, state, ctx)
+            # Test without pending requests
+            from mcubridge.protocol.structures import DigitalReadResponsePacket
 
-                payload = DigitalReadResponsePacket(value=1).encode()
-                await comp.handle_digital_read_resp(0, payload)
-                mock_pub.assert_called_once()
+            payload = DigitalReadResponsePacket(value=1).encode()
+            await comp.handle_digital_read_resp(0, payload)
+            ctx.mqtt_flow.publish.assert_called_once()
         finally:
             state.cleanup()
 
@@ -895,11 +906,23 @@ class TestDatastoreComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
+            ctx.mqtt_flow = MagicMock()
+            ctx.mqtt_flow.publish = AsyncMock()
+            ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
             ctx.serial_flow = MagicMock()
             ctx.serial_flow.send = AsyncMock(return_value=True)
-            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
-                await state.publish("key", b"", expiry=60)
-                mock_pub.assert_called_once()
+
+            # Using MqttTransport since publish moved there
+            transport = MqttTransport(config, state)
+            # To capture calls, we must ensure transport uses ctx.mqtt_flow or similar?
+            # Actually, MqttTransport.publish uses state.enqueue_mqtt which calls self.mqtt_publish_queue.put_nowait()
+            # But the component calls self.ctx.mqtt_flow.publish
+            # In this gap test, we just want to exercise RuntimeState.publish if it existed,
+            # but it was moved to MqttTransport.
+            await transport.publish("key", b"", expiry=60)
+            # This won't call ctx.mqtt_flow.publish because it's a DIFFERENT object.
+            # But it will put in state.mqtt_publish_queue.
+            assert state.mqtt_publish_queue.qsize() == 1
         finally:
             state.cleanup()
 
@@ -1008,18 +1031,20 @@ class TestFileComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
+            ctx.mqtt_flow = MagicMock()
+            ctx.mqtt_flow.publish = AsyncMock()
+            ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
             ctx.serial_flow = MagicMock()
             ctx.serial_flow.send = AsyncMock(return_value=True)
-            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
-                comp = FileComponent(config, state, ctx)
-                # This tests the error path when file is not found
-                from mcubridge.protocol.structures import FileReadPacket
+            comp = FileComponent(config, state, ctx)
+            # This tests the error path when file is not found
+            from mcubridge.protocol.structures import FileReadPacket
 
-                payload = FileReadPacket(
-                    path="/nonexistent_file_12345.txt",
-                ).encode()
-                await comp.handle_read(0, payload)
-                ctx.serial_flow.send.assert_called()
+            payload = FileReadPacket(
+                path="/nonexistent_file_12345.txt",
+            ).encode()
+            await comp.handle_read(0, payload)
+            ctx.serial_flow.send.assert_called()
         finally:
             state.cleanup()
 
@@ -1071,14 +1096,16 @@ class TestSystemComponent:
         state = create_runtime_state(config)
         try:
             ctx = MagicMock()
+            ctx.mqtt_flow = MagicMock()
+            ctx.mqtt_flow.publish = AsyncMock()
+            ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
             ctx.serial_flow = MagicMock()
             ctx.serial_flow.send = AsyncMock(return_value=True)
-            with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:  # type: ignore[reportUnusedVariable]
-                comp = SystemComponent(config, state, ctx)
-                # Provide valid encoded packet
-                payload = VersionResponsePacket(major=1, minor=2, patch=3).encode()
-                await comp.handle_get_version_resp(0, payload)
-                mock_pub.assert_called()
+            comp = SystemComponent(config, state, ctx)
+            # Provide valid encoded packet
+            payload = VersionResponsePacket(major=1, minor=2, patch=3).encode()
+            await comp.handle_get_version_resp(0, payload)
+            ctx.mqtt_flow.publish.assert_called()
         finally:
             state.cleanup()
 
@@ -1215,7 +1242,6 @@ class TestRuntimeStateEdges:
     @pytest.mark.asyncio
     async def test_stash_mqtt_message_no_spool(self: Any, state: Any, monkeypatch: Any):
         from mcubridge.protocol.structures import QueuedPublish
-        from mcubridge.state.context import RuntimeState
 
         state.mqtt_spool = None
         msg = QueuedPublish(topic_name="t", payload=b"p")
@@ -1223,18 +1249,22 @@ class TestRuntimeStateEdges:
         async def mock_ensure_spool(instance: Any):
             return True
 
-        monkeypatch.setattr(RuntimeState, "ensure_spool", mock_ensure_spool)
+        monkeypatch.setattr(MqttTransport, "ensure_spool", mock_ensure_spool)
 
         # We also need to mock mqtt_spool since it's used after ensure_spool
         state.mqtt_spool = MagicMock()
-        result = await state.stash_mqtt_message(msg)
+        from tests._helpers import make_test_config
+        transport = MqttTransport(make_test_config(), state)
+        result = await transport.stash_mqtt_message(msg)
         assert result is True
         state.mqtt_spool.append.assert_called_with(msg)
 
     @pytest.mark.asyncio
     async def test_flush_mqtt_spool_no_spool(self: Any, state: Any):
         state.mqtt_spool = None
-        await state.flush_mqtt_spool()
+        from tests._helpers import make_test_config
+        transport = MqttTransport(make_test_config(), state)
+        await transport.flush_mqtt_spool()
 
     def test_enqueue_mailbox_overflow(self: Any, state: Any):
         # Fill up to limit
@@ -1267,7 +1297,7 @@ class TestBridgeServiceEdges:
         unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
-        svc = BridgeService(config, state)
+        svc = BridgeService(config, state, MqttTransport(config, state))
         try:
             yield svc
         finally:
@@ -1303,8 +1333,7 @@ class TestMqttTransport:
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
-            service = MagicMock()
-            transport = MqttTransport(config, state, service)
+            transport = MqttTransport(config, state)
             assert transport is not None
         finally:
             state.cleanup()

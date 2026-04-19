@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgspec
 import psutil
-from aiomqtt.message import Message
 
 from ..config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -33,12 +32,10 @@ from ..config.const import (
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
-    SPOOL_BACKOFF_MAX_SECONDS,
-    SPOOL_BACKOFF_MIN_SECONDS,
 )
 from ..config.settings import RuntimeConfig
 from ..protocol.structures import QueuedPublish
-from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
+from ..mqtt.spool import MQTTPublishSpool
 from ..policy import AllowedCommandPolicy, TopicAuthorization
 from ..protocol import protocol
 from ..protocol.protocol import (
@@ -562,88 +559,7 @@ class RuntimeState(msgspec.Struct):
         self.metrics.watchdog_beats.inc()
         self.last_watchdog_beat = timestamp or time.time()
 
-    async def enqueue_mqtt(
-        self,
-        message: QueuedPublish,
-        *,
-        reply_context: Message | None = None,
-    ) -> None:
-        """Enqueues an MQTT message for publishing with an overflow dropping strategy."""
-        message_to_queue = message
-        if reply_context is not None:
-            props = reply_context.properties
-            target_topic = (
-                getattr(props, "ResponseTopic", None) if props else None
-            ) or message.topic_name
-            if target_topic != message_to_queue.topic_name:
-                message_to_queue = msgspec.structs.replace(
-                    message_to_queue, topic_name=target_topic
-                )
 
-            reply_correlation = getattr(props, "CorrelationData", None) if props else None
-            if reply_correlation is not None:
-                message_to_queue = msgspec.structs.replace(
-                    message_to_queue, correlation_data=reply_correlation
-                )
-
-            origin_topic = str(reply_context.topic)
-            user_properties = list(message_to_queue.user_properties)
-            user_properties.append(("bridge-request-topic", origin_topic))
-            message_to_queue = msgspec.structs.replace(
-                message_to_queue, user_properties=tuple(user_properties)
-            )
-
-        try:
-            self.mqtt_publish_queue.put_nowait(message_to_queue)
-        except (asyncio.QueueFull, asyncio.queues.QueueFull):
-            # Dropping strategy: discard oldest, spool it, and insert new
-            try:
-                dropped = self.mqtt_publish_queue.get_nowait()
-                self.mqtt_publish_queue.task_done()
-                self.record_mqtt_drop(dropped.topic_name)
-
-                # Use background task for spooling to avoid blocking enqueue
-                await self.stash_mqtt_message(dropped)
-
-                # Now the queue definitely has room
-                self.mqtt_publish_queue.put_nowait(message_to_queue)
-
-                logger.warning(
-                    "MQTT publish queue saturated; dropped oldest message from topic=%s",
-                    dropped.topic_name,
-                )
-            except (asyncio.QueueEmpty, asyncio.queues.QueueEmpty):
-                # Race condition: someone else emptied it? Just retry insertion
-                self.mqtt_publish_queue.put_nowait(message_to_queue)
-
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes | str,
-        *,
-        qos: int = 0,
-        retain: bool = False,
-        expiry: int | None = None,
-        properties: tuple[tuple[str, str], ...] = (),
-        content_type: str | None = None,
-        reply_to: Message | None = None,
-    ) -> None:
-        """Helper to enqueue an MQTT message without manually creating QueuedPublish."""
-        if isinstance(payload, str):
-            payload_bytes = payload.encode("utf-8")
-        else:
-            payload_bytes = payload
-
-        message = QueuedPublish(
-            topic_name=topic,
-            payload=payload_bytes,
-            qos=qos,
-            retain=retain,
-            content_type=content_type,
-            message_expiry_interval=expiry,
-            user_properties=tuple(properties or ()),
-        )
-        await self.enqueue_mqtt(message, reply_context=reply_to)
 
     def record_supervisor_failure(
         self, name: str, backoff: float, exc: Exception
@@ -923,147 +839,15 @@ class RuntimeState(msgspec.Struct):
                 observation["last_trim_unix"], float
             )
 
-    def configure_spool(self, directory: str, limit: int) -> None:
-        if self.mqtt_spool:
-            self.mqtt_spool.close()
-            self.mqtt_spool = None
-        self.mqtt_spool_dir = directory
-        self.mqtt_spool_limit = max(0, limit)
 
-    def initialize_spool(self) -> None:
-        if not self.mqtt_spool_dir or self.mqtt_spool_limit <= 0:
-            self._disable_mqtt_spool("disabled", schedule_retry=False)
-            return
-        try:
-            if self.mqtt_spool:
-                self.mqtt_spool.close()
-                self.mqtt_spool = None
-            spool_obj = MQTTPublishSpool(
-                self.mqtt_spool_dir,
-                self.mqtt_spool_limit,
-                on_fallback=self._on_spool_fallback,
-            )
-            self.mqtt_spool = spool_obj
-            if spool_obj.is_degraded:
-                self.mqtt_spool_degraded = True
-                self.mqtt_spool_failure_reason = spool_obj.last_error or "initialization_failed"
-                self.mqtt_spool_last_error = spool_obj.last_error
-            else:
-                self.mqtt_spool_degraded = False
-                self.mqtt_spool_failure_reason = None
-        except (OSError, MQTTSpoolError) as exc:
-            self._handle_mqtt_spool_failure("initialization_failed", exc=exc)
 
-    async def ensure_spool(self) -> bool:
-        if self.mqtt_spool:
-            return True
-        if (
-            not self.mqtt_spool_dir
-            or self.mqtt_spool_limit <= 0
-            or self._spool_backoff_remaining() > 0
-        ):
-            return False
-        try:
-            self.mqtt_spool = await asyncio.to_thread(
-                MQTTPublishSpool,
-                self.mqtt_spool_dir,
-                self.mqtt_spool_limit,
-                on_fallback=self._on_spool_fallback,
-            )
-            if self.mqtt_spool.is_degraded:
-                self.mqtt_spool_degraded = True
-                self.mqtt_spool_failure_reason = (
-                    self.mqtt_spool.last_error or "reactivation_failed"
-                )
-                self.mqtt_spool_last_error = self.mqtt_spool.last_error
-            else:
-                self.mqtt_spool_degraded = False
-                self.mqtt_spool_failure_reason = None
-            self.mqtt_spool_recoveries += 1
-            return True
-        except (OSError, MQTTSpoolError) as exc:
-            self._handle_mqtt_spool_failure("reactivation_failed", exc=exc)
-            return False
 
-    def _spool_backoff_remaining(self) -> float:
-        return (
-            max(0.0, self.mqtt_spool_backoff_until - time.monotonic())
-            if self.mqtt_spool_backoff_until > 0
-            else 0.0
-        )
 
-    def _disable_mqtt_spool(self, reason: str, schedule_retry: bool = True) -> None:
-        if self.mqtt_spool:
-            with contextlib.suppress(OSError, AttributeError):
-                self.mqtt_spool.close()
-        self.mqtt_spool = None
-        self.mqtt_spool_degraded = True
-        self.mqtt_spool_failure_reason = reason
-        if schedule_retry:
-            self._schedule_spool_retry()
 
-    def _schedule_spool_retry(self) -> None:
-        """Calculate and set exponential backoff for spool retry."""
-        self.mqtt_spool_retry_attempts = min(self.mqtt_spool_retry_attempts + 1, 6)
-        delay = min(
-            SPOOL_BACKOFF_MIN_SECONDS * (2 ** (self.mqtt_spool_retry_attempts - 1)),
-            SPOOL_BACKOFF_MAX_SECONDS,
-        )
-        self.mqtt_spool_backoff_until = time.monotonic() + delay
 
-    def _handle_mqtt_spool_failure(
-        self, reason: str, exc: BaseException | None = None
-    ) -> None:
-        self.record_mqtt_spool_error()
-        if exc:
-            self.mqtt_spool_last_error = str(exc)
-        self._disable_mqtt_spool(reason)
 
-    def _on_spool_fallback(self, reason: str, exc: BaseException | None = None) -> None:
-        self.mqtt_spool_degraded = True
-        self.mqtt_spool_failure_reason = reason
-        if exc:
-            self.mqtt_spool_last_error = str(exc)
-        self.record_mqtt_spool_error()
 
-    async def stash_mqtt_message(self, message: QueuedPublish) -> bool:
-        if not await self.ensure_spool():
-            return False
-        spool = self.mqtt_spool
-        if spool is None:
-            return False
-        try:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, spool.append, message)
-            self.record_mqtt_spool()
-            return True
-        except (MQTTSpoolError, OSError) as exc:
-            self._handle_mqtt_spool_failure("append_failed", exc=exc)
-            return False
 
-    async def flush_mqtt_spool(self) -> None:
-        if not await self.ensure_spool():
-            return
-        spool = self.mqtt_spool
-        if spool is None:
-            return
-        while self.mqtt_publish_queue.qsize() < self.mqtt_queue_limit:
-            try:
-                msg = await asyncio.to_thread(spool.pop_next)
-                if not msg:
-                    break
-                props = list(msg.user_properties) + [("bridge-spooled", "1")]
-                final_msg = msgspec.structs.replace(msg, user_properties=props)
-                try:
-                    self.mqtt_publish_queue.put_nowait(final_msg)
-                    self.mqtt_spooled_replayed += 1
-                except asyncio.QueueFull:
-                    # Re-spool if queue became full between qsize check and put
-                    await asyncio.to_thread(spool.requeue, msg)
-                    break
-            except (MQTTSpoolError, OSError) as exc:
-                self._handle_mqtt_spool_failure("pop_failed", exc=exc)
-                break
 
     def build_metrics_snapshot(self) -> dict[str, Any]:
         # [SIL-2] Return rich objects where possible to preserve attribute-based API
@@ -1180,7 +964,11 @@ def create_runtime_state(
     )
     state.serial_tx_allowed.set()
     state.configure(cfg)
-    state.configure_spool(cfg.mqtt_spool_dir, cfg.mqtt_queue_limit * 4)
+    
+    from ..transport.mqtt import MqttTransport
+    transport = MqttTransport(cfg, state)
+    transport.configure_spool(cfg.mqtt_spool_dir, cfg.mqtt_queue_limit * 4)
     if initialize_spool:
-        state.initialize_spool()
+        transport.initialize_spool()
+        
     return state

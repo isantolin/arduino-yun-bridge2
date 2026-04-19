@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -41,6 +41,9 @@ def ctx(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> MagicMock
     c.serial_flow = MagicMock()
     c.serial_flow.send = AsyncMock(return_value=True)
     c.serial_flow.acknowledge = AsyncMock()
+    c.mqtt_flow = MagicMock()
+    c.mqtt_flow.publish = AsyncMock()
+    c.mqtt_flow.enqueue_mqtt = AsyncMock()
     return c
 
 
@@ -54,15 +57,14 @@ async def test_handle_push_stores_incoming_queue(
     data = b"hello from mcu"
     payload = structures.MailboxPushPacket(data=data).encode()
 
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        await component.handle_push(0, payload)
+    await component.handle_push(0, payload)
 
-        assert len(runtime_state.mailbox_incoming_queue) == 1
-        # Pop to check content as BridgeQueue is not subscriptable
-        popped = runtime_state.pop_mailbox_incoming()
-        assert popped == data
-        # Check that it published to MQTT
-        assert mock_pub.called
+    assert len(runtime_state.mailbox_incoming_queue) == 1
+    # Pop to check content as BridgeQueue is not subscriptable
+    popped = runtime_state.pop_mailbox_incoming()
+    assert popped == data
+    # Check that it published to MQTT
+    assert ctx.mqtt_flow.publish.called
 
 
 @pytest.mark.asyncio
@@ -74,15 +76,14 @@ async def test_handle_read_success_publishes_available(
     component = MailboxComponent(runtime_config, runtime_state, ctx)
     runtime_state.enqueue_mailbox_message(b"msg1")
 
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        await component.handle_read(0, b"")
+    await component.handle_read(0, b"")
 
-        ctx.serial_flow.send.assert_called_once()
-        # Verify it published the new count
-        mock_pub.assert_called()
-        args, kwargs = mock_pub.call_args
-        topic = kwargs.get("topic") or args[0]
-        assert "outgoing_available" in topic
+    ctx.serial_flow.send.assert_called_once()
+    # Verify it published the new count
+    ctx.mqtt_flow.publish.assert_called()
+    args, kwargs = ctx.mqtt_flow.publish.call_args
+    topic = kwargs.get("topic") or args[0]
+    assert "outgoing_available" in topic
 
 
 @pytest.mark.asyncio
@@ -110,14 +111,13 @@ async def test_handle_mqtt_write_enqueues_and_notifies(
 ) -> None:
     component = MailboxComponent(runtime_config, runtime_state, ctx)
 
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        await component.handle_mqtt(
-            make_route(Topic.MAILBOX, MailboxAction.WRITE.value),
-            make_mqtt_msg(b"mqtt msg"),
-        )
+    await component.handle_mqtt(
+        make_route(Topic.MAILBOX, MailboxAction.WRITE.value),
+        make_mqtt_msg(b"mqtt msg"),
+    )
 
-        assert len(runtime_state.mailbox_queue) == 1
-        mock_pub.assert_called()
+    assert len(runtime_state.mailbox_queue) == 1
+    assert ctx.mqtt_flow.publish.called
 
 
 @pytest.mark.asyncio
@@ -133,16 +133,15 @@ async def test_handle_mqtt_read_prefers_incoming_queue(
     # Message to MCU
     runtime_state.enqueue_mailbox_message(b"linux-data")
 
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        await component.handle_mqtt(
-            make_route(Topic.MAILBOX, MailboxAction.READ.value),
-            make_mqtt_msg(b""),
-        )
+    await component.handle_mqtt(
+        make_route(Topic.MAILBOX, MailboxAction.READ.value),
+        make_mqtt_msg(b""),
+    )
 
-        # Should have popped mcu-data first
-        first_call = mock_pub.call_args_list[0]
-        args, kwargs = first_call
-        payload = kwargs.get("payload") or args[1]
-        assert payload == b"mcu-data"
-        assert len(runtime_state.mailbox_incoming_queue) == 0
-        assert len(runtime_state.mailbox_queue) == 1
+    # Should have popped mcu-data first
+    first_call = ctx.mqtt_flow.publish.call_args_list[0]
+    args, kwargs = first_call
+    payload = kwargs.get("payload") or args[1]
+    assert payload == b"mcu-data"
+    assert len(runtime_state.mailbox_incoming_queue) == 0
+    assert len(runtime_state.mailbox_queue) == 1

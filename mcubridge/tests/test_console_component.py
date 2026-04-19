@@ -29,8 +29,6 @@ def console_component() -> ConsoleComponent:
     state.console_to_mcu_queue = deque()
     state.pop_console_chunk = MagicMock()
 
-    # Instance-level mock for publish (will be used by the component)
-    state.publish = AsyncMock()
     state.enqueue_console_chunk = MagicMock()
     state.requeue_console_chunk_front = MagicMock()
 
@@ -39,6 +37,9 @@ def console_component() -> ConsoleComponent:
     ctx.config = config
     ctx.serial_flow = MagicMock()
     ctx.serial_flow.send = AsyncMock(return_value=True)
+    ctx.mqtt_flow = MagicMock()
+    ctx.mqtt_flow.publish = AsyncMock()
+    ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
 
     return ConsoleComponent(config, state, ctx)
 
@@ -50,7 +51,7 @@ async def test_handle_write(console_component: ConsoleComponent) -> None:
 
     await console_component.handle_write(0, payload)
 
-    mock_pub = cast(AsyncMock, console_component.state.publish)
+    mock_pub = cast(AsyncMock, console_component.ctx.mqtt_flow.publish)
     mock_pub.assert_called_once()
     args, kwargs = mock_pub.call_args
     # Check if data was published

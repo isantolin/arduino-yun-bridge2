@@ -236,7 +236,7 @@ class FileComponent(BaseComponent):
                 "size": len(data),
                 "mtime": path.stat().st_mtime,
             }
-            await self.state.publish(
+            await self.ctx.mqtt_flow.publish(
                 topic=self._mqtt_response_topic(FileAction.READ, identifier),
                 payload=data,
                 reply_to=inbound,
@@ -359,7 +359,7 @@ class FileComponent(BaseComponent):
                 if self._pending_mcu_read is pending:
                     self._pending_mcu_read = None
 
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=self._mqtt_response_topic(FileAction.READ, identifier),
             payload=data,
             reply_to=inbound,
@@ -476,7 +476,7 @@ class FileComponent(BaseComponent):
         identifier: str,
         reason: str,
     ) -> None:
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=self._mqtt_response_topic(action, identifier),
             payload=reason.encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE

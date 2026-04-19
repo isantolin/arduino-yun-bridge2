@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -41,6 +41,9 @@ def ctx(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> MagicMock
     c.serial_flow = MagicMock()
     c.serial_flow.send = AsyncMock(return_value=True)
     c.serial_flow.acknowledge = AsyncMock()
+    c.mqtt_flow = MagicMock()
+    c.mqtt_flow.publish = AsyncMock()
+    c.mqtt_flow.enqueue_mqtt = AsyncMock()
     return c
 
 
@@ -95,18 +98,17 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     # 1. MCU sends response for A0
     payload = structures.AnalogReadResponsePacket(value=512).encode()
 
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        await component.handle_analog_read_resp(0, payload)
+    await component.handle_analog_read_resp(0, payload)
 
-        # Verify MQTT publish
-        mock_pub.assert_called_once()
-        args, kwargs = mock_pub.call_args
-        # Topic check
-        topic = kwargs.get("topic") or args[0]
-        assert "a/value" in topic
-        # Value check
-        pld = kwargs.get("payload") or args[1]
-        assert pld == b"512"
+    # Verify MQTT publish
+    ctx.mqtt_flow.publish.assert_called_once()
+    args, kwargs = ctx.mqtt_flow.publish.call_args
+    # Topic check
+    topic = kwargs.get("topic") or args[0]
+    assert "a/value" in topic
+    # Value check
+    pld = kwargs.get("payload") or args[1]
+    assert pld == b"512"
 
 
 @pytest.mark.asyncio

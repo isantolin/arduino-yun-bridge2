@@ -1,3 +1,4 @@
+from mcubridge.transport.mqtt import MqttTransport
 from typing import Any
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -35,7 +36,7 @@ async def test_negotiate_baudrate_success() -> None:
         config = _make_config()
         state = create_runtime_state(config)
         try:
-            service = BridgeService(config, state)
+            service = BridgeService(config, state, MqttTransport(config, state))
             transport = SerialTransport(config, state, service)
 
             transport.loop = asyncio.get_running_loop()
@@ -67,7 +68,7 @@ async def test_negotiate_baudrate_timeout() -> None:
         config = _make_config()
         state = create_runtime_state(config)
         try:
-            service = BridgeService(config, state)
+            service = BridgeService(config, state, MqttTransport(config, state))
             transport = SerialTransport(config, state, service)
 
             transport.loop = asyncio.get_running_loop()
@@ -102,7 +103,7 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
         config.serial_safe_baud = 115200
         state = create_runtime_state(config)
         try:
-            service = BridgeService(config, state)
+            service = BridgeService(config, state, MqttTransport(config, state))
             transport = SerialTransport(config, state, service)
 
             # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
@@ -149,7 +150,7 @@ async def test_transport_run_handshake_fatal() -> None:
         config = _make_config()
         state = create_runtime_state(config)
         try:
-            service = BridgeService(config, state)
+            service = BridgeService(config, state, MqttTransport(config, state))
 
             # Force handshake fatal error
             with (
@@ -188,7 +189,7 @@ async def test_serial_disconnected_hook_error(
         config = _make_config()
         state = create_runtime_state(config)
         try:
-            service = BridgeService(config, state)
+            service = BridgeService(config, state, MqttTransport(config, state))
 
             # Make on_serial_disconnected raise
             async def _raise_error() -> None:
@@ -229,7 +230,7 @@ async def test_async_process_packet_os_error(
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
+        service = BridgeService(config, state, MqttTransport(config, state))
         transport = SerialTransport(config, state, service)
 
         transport.loop = asyncio.get_running_loop()

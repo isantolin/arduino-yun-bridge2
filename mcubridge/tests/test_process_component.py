@@ -60,6 +60,10 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
     service.serial_flow = MagicMock()
     service.serial_flow.acknowledge = AsyncMock()
     service.serial_flow.send = AsyncMock(return_value=True)
+    service.mqtt_flow = MagicMock()
+    service.mqtt_flow.publish = AsyncMock()
+    service.mqtt_flow.enqueue_mqtt = AsyncMock()
+    service.schedule_background = AsyncMock()
 
     component = ProcessComponent(config, state, service)
     try:

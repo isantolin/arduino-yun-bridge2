@@ -101,7 +101,7 @@ class PinComponent(BaseComponent):
         pin_label = str(pin_value) if pin_value is not None else "unknown"
 
         # Special case: Pin reads require 'bridge-pin' property, so we use direct publish
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=topic,
             payload=str(value).encode("utf-8"),
             expiry=MQTT_EXPIRY_PIN,
@@ -283,7 +283,7 @@ class PinComponent(BaseComponent):
         inbound: Message | None,
     ) -> None:
         topic = self._build_pin_topic(topic_type, pin)
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=topic,
             payload=b"",
             expiry=MQTT_EXPIRY_PIN,

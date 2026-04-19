@@ -41,7 +41,7 @@ class ConsoleComponent(BaseComponent):
             Topic.CONSOLE,
             ConsoleAction.OUT,
         )
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=topic,
             payload=data,
             expiry=MQTT_EXPIRY_CONSOLE,

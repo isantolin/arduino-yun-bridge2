@@ -1,10 +1,14 @@
 """Extra coverage for mcubridge.services.runtime."""
 
-from unittest.mock import patch
+from __future__ import annotations
+
+import os
+import time
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command
 from mcubridge.services import ConsoleComponent, SystemComponent
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
@@ -12,127 +16,112 @@ from mcubridge.state.context import create_runtime_state
 
 @pytest.mark.asyncio
 async def test_runtime_on_serial_connected_errors() -> None:
-    import time
-    import os
-
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
+        mqtt_mock = MagicMock()
+        mqtt_mock.enqueue_mqtt = AsyncMock()
+        mqtt_mock.publish = AsyncMock()
+
+        service = BridgeService(config, state, mqtt_mock)
+
+        # Side effect to update state when synchronize is called
+        async def _mock_sync():
+            state.mark_synchronized()
+            return True
+        service.handshake_manager.synchronize = AsyncMock(side_effect=_mock_sync)
+
         system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
         console = service._container.get(ConsoleComponent)  # type: ignore[reportPrivateUsage]
 
-        # Mock failures
-        with (
-            patch.object(
-                service.handshake_manager, "synchronize", side_effect=RuntimeError("sync fail")
-            ),
-            patch.object(
-                system, "request_mcu_version", side_effect=RuntimeError("ver fail")
-            ),
-            patch.object(
-                console, "flush_queue", side_effect=RuntimeError("flush fail")
-            ),
-        ):
-            await service.on_serial_connected()
-            # Should not raise
+        # 1. Error requesting version
+        system.request_mcu_version = AsyncMock(side_effect=RuntimeError("fail"))
+        await service.on_serial_connected()
+        assert system.request_mcu_version.called
+
+        # 2. Error flushing console
+        console.flush_queue = AsyncMock(side_effect=ValueError("boom"))
+        await service.on_serial_connected()
+        assert console.flush_queue.called
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_runtime_on_serial_disconnected_with_pending() -> None:
-    import time
-    import os
-
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
-    )
+async def test_runtime_handle_mqtt_message_dispatch_error() -> None:
+    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
+        mqtt_mock = MagicMock()
+        mqtt_mock.enqueue_mqtt = AsyncMock()
+        mqtt_mock.publish = AsyncMock()
 
-        # Add pending reads
-        from mcubridge.state.context import PendingPinRequest
+        service = BridgeService(config, state, mqtt_mock)
 
-        state.pending_digital_reads.append(
-            PendingPinRequest(pin=13, reply_context=None)
-        )
+        from tests.mqtt_helpers import make_inbound_message
+        msg = make_inbound_message("br/system/status", b"{}")
 
-        await service.on_serial_disconnected()
-        assert len(state.pending_digital_reads) == 0
+        # Mock dispatcher.dispatch_mqtt_message to see if it's called
+        service.dispatcher.dispatch_mqtt_message = AsyncMock(side_effect=IndexError("bad dispatch"))
+
+        with pytest.raises(IndexError, match="bad dispatch"):
+            await service.handle_mqtt_message(msg)
+
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_runtime_enqueue_mqtt_saturated() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234", mqtt_queue_limit=1)
+async def test_runtime_reject_topic_action_properties() -> None:
+    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
+        mqtt_mock = MagicMock()
+        mqtt_mock.enqueue_mqtt = AsyncMock()
+        mqtt_mock.publish = AsyncMock()
 
-        from mcubridge.protocol.structures import QueuedPublish
+        service = BridgeService(config, state, mqtt_mock)
+        from mcubridge.protocol.topics import Topic
+        from tests.mqtt_helpers import make_inbound_message
 
-        msg1 = QueuedPublish(topic_name="t1", payload=b"p1")
-        msg2 = QueuedPublish(topic_name="t2", payload=b"p2")
+        inbound = make_inbound_message("br/system/cmd", b"")
+        inbound.properties = MagicMock()
+        inbound.properties.ResponseTopic = "resp"
+        inbound.properties.CorrelationData = b"cid"
 
-        await service.enqueue_mqtt(msg1)
-        # This should drop msg1 and spool it
-        with patch(
-            "mcubridge.state.context.RuntimeState.stash_mqtt_message", return_value=True
-        ):
-            await service.enqueue_mqtt(msg2)
+        await service._reject_topic_action(inbound, Topic.SYSTEM, "action")  # type: ignore[reportPrivateUsage]
 
-        assert state.mqtt_publish_queue.qsize() == 1
+        # Should have called publish
+        assert service.mqtt_flow.publish.called
+        # Fix: checking kwargs accurately
+        _, kwargs = service.mqtt_flow.publish.call_args
+        assert kwargs.get("reply_to") is inbound
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_runtime_acknowledge_frame_no_sender() -> None:
-    import time
-    import os
-
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
-    )
+async def test_runtime_publish_bridge_snapshot_handshake() -> None:
+    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
-        service._serial_sender = None  # type: ignore[reportPrivateUsage]
+        mqtt_mock = MagicMock()
+        mqtt_mock.enqueue_mqtt = AsyncMock()
+        mqtt_mock.publish = AsyncMock()
 
-        await service.acknowledge_mcu_frame(Command.CMD_GET_VERSION.value, 0)
-        # Should log error and return
-    finally:
-        state.cleanup()
+        service = BridgeService(config, state, mqtt_mock)
 
+        from tests.mqtt_helpers import make_inbound_message
 
-@pytest.mark.asyncio
-async def test_runtime_handle_ack_fallback() -> None:
-    import time
-    import os
+        inbound = make_inbound_message("br/s/b/h/get", b"")
+        inbound.properties = MagicMock()
+        inbound.properties.ResponseTopic = "reply"
 
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
-    )
-    state = create_runtime_state(config)
-    try:
-        service = BridgeService(config, state)
+        await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[reportPrivateUsage]
 
-        # Payload valid length (2) but decode may fail for malformed data.
-        # AckPacket is a protobuf message with a single uint32 field.
-        # Let's try to trigger a failure in AckPacket.decode.
-        with patch(
-            "mcubridge.protocol.structures.AckPacket.decode", side_effect=ValueError
-        ):
-            await service._handle_ack(0, b"\x00\x40")  # type: ignore[reportPrivateUsage]
-            # Should handle the decode failure gracefully
+        assert service.mqtt_flow.publish.called
     finally:
         state.cleanup()

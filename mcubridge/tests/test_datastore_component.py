@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -41,6 +41,9 @@ def ctx(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> MagicMock
     c.serial_flow = MagicMock()
     c.serial_flow.send = AsyncMock(return_value=True)
     c.serial_flow.acknowledge = AsyncMock()
+    c.mqtt_flow = MagicMock()
+    c.mqtt_flow.publish = AsyncMock()
+    c.mqtt_flow.enqueue_mqtt = AsyncMock()
     return c
 
 
@@ -55,11 +58,10 @@ async def test_handle_put_success(
     value = b"testvalue"
     payload = structures.DatastorePutPacket(key=key, value=value).encode()
 
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        await component.handle_put(0, payload)
+    await component.handle_put(0, payload)
 
-        assert runtime_state.datastore.get(key) == "testvalue"
-        assert mock_pub.called
+    assert runtime_state.datastore.get(key) == "testvalue"
+    ctx.mqtt_flow.publish.assert_called()
 
 
 @pytest.mark.asyncio
@@ -72,12 +74,11 @@ async def test_handle_get_request_success(
     runtime_state.datastore["mykey"] = "myvalue"
     payload = structures.DatastoreGetPacket(key="mykey").encode()
 
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        await component.handle_get_request(0, payload)
+    await component.handle_get_request(0, payload)
 
-        ctx.serial_flow.send.assert_called_once()
-        # Verify it published the result to MQTT as well
-        assert mock_pub.called
+    ctx.serial_flow.send.assert_called_once()
+    # Verify it published the result to MQTT as well
+    ctx.mqtt_flow.publish.assert_called()
 
 
 @pytest.mark.asyncio
@@ -88,14 +89,13 @@ async def test_handle_mqtt_put(
 ) -> None:
     component = DatastoreComponent(runtime_config, runtime_state, ctx)
 
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        await component.handle_mqtt(
-            make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "newkey"),
-            make_mqtt_msg(b"newval"),
-        )
+    await component.handle_mqtt(
+        make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "newkey"),
+        make_mqtt_msg(b"newval"),
+    )
 
-        assert runtime_state.datastore.get("newkey") == "newval"
-        assert mock_pub.called
+    assert runtime_state.datastore.get("newkey") == "newval"
+    ctx.mqtt_flow.publish.assert_called()
 
 
 @pytest.mark.asyncio
@@ -107,14 +107,13 @@ async def test_handle_mqtt_get_request(
     component = DatastoreComponent(runtime_config, runtime_state, ctx)
     runtime_state.datastore["reqkey"] = "reqval"
 
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        # Simulate a get request via MQTT
-        await component.handle_mqtt(
-            make_route(Topic.DATASTORE, DatastoreAction.GET.value, "reqkey", "request"),
-            make_mqtt_msg(b""),
-        )
+    # Simulate a get request via MQTT
+    await component.handle_mqtt(
+        make_route(Topic.DATASTORE, DatastoreAction.GET.value, "reqkey", "request"),
+        make_mqtt_msg(b""),
+    )
 
-        mock_pub.assert_called()
-        args, kwargs = mock_pub.call_args
-        pld = kwargs.get("payload") or args[1]
-        assert pld == b"reqval"
+    ctx.mqtt_flow.publish.assert_called()
+    args, kwargs = ctx.mqtt_flow.publish.call_args
+    pld = kwargs.get("payload") or args[1]
+    assert pld == b"reqval"

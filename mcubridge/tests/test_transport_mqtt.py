@@ -1,6 +1,7 @@
 """Unit tests for mcubridge.transport.mqtt."""
 
 from __future__ import annotations
+from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
 import contextlib
@@ -148,12 +149,12 @@ async def test_mqtt_task_requeues_on_publish_failure(
             stashed.set()
             return True
 
-        monkeypatch.setattr(type(state), "stash_mqtt_message", _stash)
+        monkeypatch.setattr(mqtt.MqttTransport, "stash_mqtt_message", _stash)
         monkeypatch.setattr(
-            type(state), "flush_mqtt_spool", AsyncMock(return_value=None)
+            mqtt.MqttTransport, "flush_mqtt_spool", AsyncMock(return_value=None)
         )
 
-        transport = mqtt.MqttTransport(config, state, MagicMock())
+        transport = mqtt.MqttTransport(config, state)
         task = asyncio.create_task(transport._publisher_loop(FakeClient()))  # type: ignore[reportPrivateUsage]
 
         await asyncio.wait_for(stashed.wait(), timeout=1.0)
@@ -177,8 +178,8 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel() -> None:
     config.mqtt_queue_limit = 1
     state = create_runtime_state(config)
     try:
-        service = MagicMock()
-        transport = mqtt.MqttTransport(config, state, service)
+        MagicMock()
+        transport = mqtt.MqttTransport(config, state)
 
         await state.mqtt_publish_queue.put(
             QueuedPublish(
@@ -208,8 +209,8 @@ async def test_mqtt_subscriber_loop_handles_mqtt_error(
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
-        transport = mqtt.MqttTransport(config, state, service)
+        BridgeService(config, state, MqttTransport(config, state))
+        transport = mqtt.MqttTransport(config, state)
 
         class FakeClient:
             @property
@@ -234,8 +235,8 @@ async def test_mqtt_publisher_debug_logging() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        service = MagicMock()
-        transport = mqtt.MqttTransport(config, state, service)
+        MagicMock()
+        transport = mqtt.MqttTransport(config, state)
         published: list[tuple[str, bytes]] = []
 
         class FakeClient:
@@ -281,8 +282,9 @@ async def test_mqtt_subscriber_processes_message() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
-        transport = mqtt.MqttTransport(config, state, service)
+        service = BridgeService(config, state, MqttTransport(config, state))
+        transport = mqtt.MqttTransport(config, state)
+        transport.set_service(service)
         msg_count = 0
 
         async def _mock_handle(msg: Any):
@@ -318,8 +320,9 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
-        transport = mqtt.MqttTransport(config, state, service)
+        service = BridgeService(config, state, MqttTransport(config, state))
+        transport = mqtt.MqttTransport(config, state)
+        transport.set_service(service)
         msg_count = 0
 
         async def _mock_handle(msg: Any):

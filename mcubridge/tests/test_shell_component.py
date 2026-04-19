@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -18,9 +18,9 @@ from mcubridge.state.context import RuntimeState
 from tests._helpers import make_mqtt_msg, make_route
 
 
-def _extract_enqueued_publish(state: AsyncMock, index: int = -1) -> tuple[QueuedPublish, Any]:
+def _extract_enqueued_publish(mqtt_flow: AsyncMock, index: int = -1) -> tuple[QueuedPublish, Any]:
     """Helper to extract QueuedPublish and reply_context from AsyncMock.publish calls."""
-    call = state.publish.call_args_list[index]
+    call = mqtt_flow.publish.call_args_list[index]
     topic = call.kwargs.get("topic", call.args[0] if call.args else "")
     payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")
 
@@ -43,12 +43,15 @@ def _extract_enqueued_publish(state: AsyncMock, index: int = -1) -> tuple[Queued
 async def test_shell_run_async_success(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = AsyncMock(spec=RuntimeState)
+    state = MagicMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
-    ctx = AsyncMock(spec=BridgeContext)
+    ctx = MagicMock(spec=BridgeContext)
     ctx.config = runtime_config
     ctx.state = state
-    ctx.serial_flow.send.return_value = True
+    ctx.mqtt_flow = MagicMock()
+    ctx.mqtt_flow.publish = AsyncMock()
+    ctx.serial_flow = MagicMock()
+    ctx.serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(runtime_config, state, ctx)
 
@@ -61,8 +64,8 @@ async def test_shell_run_async_success(
         inbound,
     )
 
-    state.publish.assert_awaited_once()
-    msg, reply_to = _extract_enqueued_publish(state)
+    ctx.mqtt_flow.publish.assert_awaited_once()
+    msg, reply_to = _extract_enqueued_publish(ctx.mqtt_flow)
     assert reply_to is inbound
     assert msg.topic_name == topic_path(
         state.mqtt_topic_prefix,
@@ -77,12 +80,15 @@ async def test_shell_run_async_success(
 async def test_shell_run_async_exception_returns_error(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = AsyncMock(spec=RuntimeState)
+    state = MagicMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
-    ctx = AsyncMock(spec=BridgeContext)
+    ctx = MagicMock(spec=BridgeContext)
     ctx.config = runtime_config
     ctx.state = state
-    ctx.serial_flow.send.return_value = True
+    ctx.mqtt_flow = MagicMock()
+    ctx.mqtt_flow.publish = AsyncMock()
+    ctx.serial_flow = MagicMock()
+    ctx.serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(runtime_config, state, ctx)
     component.run_async = AsyncMock(side_effect=RuntimeError("crash"))
@@ -93,8 +99,8 @@ async def test_shell_run_async_exception_returns_error(
         inbound,
     )
 
-    state.publish.assert_awaited_once()
-    msg, _ = _extract_enqueued_publish(state)
+    ctx.mqtt_flow.publish.assert_awaited_once()
+    msg, _ = _extract_enqueued_publish(ctx.mqtt_flow)
     assert msg.payload == b"error:internal"
 
 
@@ -102,12 +108,15 @@ async def test_shell_run_async_exception_returns_error(
 async def test_shell_run_async_not_allowed_returns_error_payload(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = AsyncMock(spec=RuntimeState)
+    state = MagicMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
-    ctx = AsyncMock(spec=BridgeContext)
+    ctx = MagicMock(spec=BridgeContext)
     ctx.config = runtime_config
     ctx.state = state
-    ctx.serial_flow.send.return_value = True
+    ctx.mqtt_flow = MagicMock()
+    ctx.mqtt_flow.publish = AsyncMock()
+    ctx.serial_flow = MagicMock()
+    ctx.serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(runtime_config, state, ctx)
     component.run_async = AsyncMock(return_value=0)
@@ -117,8 +126,8 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
         make_mqtt_msg(b"echo hi"),
     )
 
-    state.publish.assert_awaited_once()
-    msg, _ = _extract_enqueued_publish(state)
+    ctx.mqtt_flow.publish.assert_awaited_once()
+    msg, _ = _extract_enqueued_publish(ctx.mqtt_flow)
     assert msg.payload == b"error:not_allowed_or_limit_reached"
 
 
@@ -126,12 +135,15 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
 async def test_shell_poll_calls_process_helpers(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = AsyncMock(spec=RuntimeState)
+    state = MagicMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
-    ctx = AsyncMock(spec=BridgeContext)
+    ctx = MagicMock(spec=BridgeContext)
     ctx.config = runtime_config
     ctx.state = state
-    ctx.serial_flow.send.return_value = True
+    ctx.mqtt_flow = MagicMock()
+    ctx.mqtt_flow.publish = AsyncMock()
+    ctx.serial_flow = MagicMock()
+    ctx.serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(runtime_config, state, ctx)
 
@@ -155,12 +167,15 @@ async def test_shell_poll_calls_process_helpers(
 async def test_shell_kill_invokes_stop_process(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = AsyncMock(spec=RuntimeState)
+    state = MagicMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
-    ctx = AsyncMock(spec=BridgeContext)
+    ctx = MagicMock(spec=BridgeContext)
     ctx.config = runtime_config
     ctx.state = state
-    ctx.serial_flow.send.return_value = True
+    ctx.mqtt_flow = MagicMock()
+    ctx.mqtt_flow.publish = AsyncMock()
+    ctx.serial_flow = MagicMock()
+    ctx.serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(runtime_config, state, ctx)
     component.stop_process = AsyncMock(return_value=True)
@@ -177,11 +192,14 @@ async def test_shell_kill_invokes_stop_process(
 async def test_shell_ignores_invalid_payloads_and_actions(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = AsyncMock(spec=RuntimeState)
-    ctx = AsyncMock(spec=BridgeContext)
+    state = MagicMock(spec=RuntimeState)
+    ctx = MagicMock(spec=BridgeContext)
     ctx.config = runtime_config
     ctx.state = state
-    ctx.serial_flow.send.return_value = True
+    ctx.mqtt_flow = MagicMock()
+    ctx.mqtt_flow.publish = AsyncMock()
+    ctx.serial_flow = MagicMock()
+    ctx.serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(runtime_config, state, ctx)
 
@@ -191,5 +209,5 @@ async def test_shell_ignores_invalid_payloads_and_actions(
     # Unknown action
     await component.handle_mqtt(make_route(Topic.SHELL, "unknown"), make_mqtt_msg(b""))
 
-    state.publish.assert_not_called()
+    ctx.mqtt_flow.publish.assert_not_called()
     ctx.serial_flow.send.assert_not_called()

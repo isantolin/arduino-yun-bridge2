@@ -11,7 +11,6 @@ from aiomqtt.message import Message
 
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
 from ..config.settings import RuntimeConfig
-from ..protocol.structures import QueuedPublish
 from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
 from ..protocol.structures import AckPacket
 from ..protocol.topics import Topic, parse_topic, topic_path
@@ -65,9 +64,10 @@ class BridgeService:
     to encapsulate specific functionalities.
     """
 
-    def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
+    def __init__(self, config: RuntimeConfig, state: RuntimeState, mqtt_transport: Any) -> None:
         self.config = config
         self.state = state
+        self._mqtt_transport = mqtt_transport
         self._serial_sender: SendFrameCallable | None = None
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_group: asyncio.TaskGroup | None = None
@@ -104,7 +104,7 @@ class BridgeService:
             state=state,
             serial_timing=self._serial_timing,
             send_frame=self._serial_flow.send,
-            enqueue_mqtt=state.enqueue_mqtt,
+            enqueue_mqtt=mqtt_transport.enqueue_mqtt,
             acknowledge_frame=self._serial_flow.acknowledge,
             logger_=logger,
         )
@@ -155,6 +155,11 @@ class BridgeService:
     def serial_flow(self) -> SerialFlowController:
         """Access to the serial flow controller (SIL-2)."""
         return self._serial_flow
+
+    @property
+    def mqtt_flow(self) -> Any:
+        """Access to the MQTT transport."""
+        return self._mqtt_transport
 
     def register_serial_sender(self, sender: SendFrameCallable) -> None:
         """Allow the serial transport to provide its send coroutine."""
@@ -243,89 +248,7 @@ class BridgeService:
             lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
         )
 
-    async def enqueue_mqtt(
-        self,
-        message: QueuedPublish,
-        *,
-        reply_context: Message | None = None,
-    ) -> None:
-        """Enqueues an MQTT message for publishing with an overflow dropping strategy."""
-        message_to_queue = message
-        if reply_context is not None:
-            props = reply_context.properties
-            target_topic = (
-                getattr(props, "ResponseTopic", None) if props else None
-            ) or message.topic_name
-            if target_topic != message_to_queue.topic_name:
-                message_to_queue = msgspec.structs.replace(
-                    message_to_queue, topic_name=target_topic
-                )
 
-            reply_correlation = getattr(props, "CorrelationData", None) if props else None
-            if reply_correlation is not None:
-                message_to_queue = msgspec.structs.replace(
-                    message_to_queue, correlation_data=reply_correlation
-                )
-
-
-            origin_topic = str(reply_context.topic)
-            user_properties = list(message_to_queue.user_properties)
-            user_properties.append(("bridge-request-topic", origin_topic))
-            message_to_queue = msgspec.structs.replace(
-                message_to_queue, user_properties=tuple(user_properties)
-            )
-
-        try:
-            self.state.mqtt_publish_queue.put_nowait(message_to_queue)
-        except (asyncio.QueueFull, asyncio.queues.QueueFull):
-            # Dropping strategy: discard oldest, spool it, and insert new
-            try:
-                dropped = self.state.mqtt_publish_queue.get_nowait()
-                self.state.mqtt_publish_queue.task_done()
-                self.state.record_mqtt_drop(dropped.topic_name)
-
-                # Use background task for spooling to avoid blocking enqueue
-                await self.state.stash_mqtt_message(dropped)
-
-                # Now the queue definitely has room
-                self.state.mqtt_publish_queue.put_nowait(message_to_queue)
-
-                logger.warning(
-                    "MQTT publish queue saturated; dropped oldest message from topic=%s",
-                    dropped.topic_name,
-                )
-            except (asyncio.QueueEmpty, asyncio.queues.QueueEmpty):
-                # Race condition: someone else emptied it? Just retry insertion
-                self.state.mqtt_publish_queue.put_nowait(message_to_queue)
-
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes | str,
-        *,
-        qos: int = 0,
-        retain: bool = False,
-        expiry: int | None = None,
-        properties: tuple[tuple[str, str], ...] = (),
-        content_type: str | None = None,
-        reply_to: Message | None = None,
-    ) -> None:
-        """Helper to enqueue an MQTT message without manually creating QueuedPublish."""
-        if isinstance(payload, str):
-            payload_bytes = payload.encode("utf-8")
-        else:
-            payload_bytes = payload
-
-        message = QueuedPublish(
-            topic_name=topic,
-            payload=payload_bytes,
-            qos=qos,
-            retain=retain,
-            content_type=content_type,
-            message_expiry_interval=expiry,
-            user_properties=tuple(properties or ()),
-        )
-        await self.enqueue_mqtt(message, reply_context=reply_to)
 
     async def acknowledge_mcu_frame(
         self,
@@ -404,7 +327,7 @@ class BridgeService:
         ]
         if text:
             properties.append(("bridge-status-message", text))
-        await self.publish(
+        await self.mqtt_flow.publish(
             topic=status_topic,
             payload=report,
             content_type="application/msgpack",
@@ -432,7 +355,7 @@ class BridgeService:
             Topic.SYSTEM,
             *topic_segments,
         )
-        await self.publish(
+        await self.mqtt_flow.publish(
             topic=topic,
             payload=_msgpack_enc.encode(snapshot),
             content_type="application/msgpack",
@@ -478,7 +401,7 @@ class BridgeService:
             Topic.SYSTEM,
             Topic.STATUS,
         )
-        await self.publish(
+        await self.mqtt_flow.publish(
             topic=status_topic,
             payload=payload,
             content_type="application/msgpack",

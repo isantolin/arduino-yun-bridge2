@@ -123,9 +123,13 @@ class BridgeDaemon:
             config: Validated RuntimeConfig from UCI/defaults.
         """
         self.config = config
-        self.state = create_runtime_state(config, initialize_spool=True)
+        self.state = create_runtime_state(config)
         self.state.config_source = get_config_source()
-        self.service = BridgeService(config, self.state)
+        self.mqtt_transport = MqttTransport(self.config, self.state)
+        self.mqtt_transport.configure_spool(self.config.mqtt_spool_dir, self.config.mqtt_queue_limit * 4)
+        self.mqtt_transport.initialize_spool()
+        self.service = BridgeService(config, self.state, self.mqtt_transport)
+        self.mqtt_transport.set_service(self.service)
         # Initialize dependencies
 
         async def _dummy_sender(
@@ -162,9 +166,7 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "mqtt-link",
-                            lambda: MqttTransport(
-                                self.config, self.state, self.service
-                            ).run(),
+                            self.mqtt_transport.run,
                         )
                     )
 
@@ -182,7 +184,7 @@ class BridgeDaemon:
                             "metrics-publisher",
                             lambda: publish_metrics(
                                 self.state,
-                                self.service.enqueue_mqtt,
+                                self.mqtt_transport.enqueue_mqtt,
                                 float(self.config.status_interval),
                             ),
                         )
@@ -198,7 +200,7 @@ class BridgeDaemon:
                                 "bridge-snapshots",
                                 lambda: publish_bridge_snapshots(
                                     self.state,
-                                    self.service.enqueue_mqtt,
+                                    self.mqtt_transport.enqueue_mqtt,
                                     summary_interval=float(
                                         self.config.bridge_summary_interval
                                     ),

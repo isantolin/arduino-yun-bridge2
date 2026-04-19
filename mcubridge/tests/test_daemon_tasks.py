@@ -229,9 +229,9 @@ async def test_mqtt_task_handles_incoming_message(
 
     with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_client):
         runtime_config.mqtt_tls = False
-        task = asyncio.create_task(
-            MqttTransport(runtime_config, state, cast(Any, service)).run()
-        )
+        transport = MqttTransport(runtime_config, state)
+        transport.set_service(cast(Any, service))
+        task = asyncio.create_task(transport.run())
 
         try:
             await asyncio.wait_for(service.handled.wait(), timeout=1)
@@ -239,5 +239,40 @@ async def test_mqtt_task_handles_incoming_message(
             task.cancel()
             try:
                 await task
-            except* asyncio.CancelledError:
+            except (asyncio.CancelledError, Exception):
                 pass
+
+@pytest.mark.asyncio
+async def test_publish_metrics_task_handles_error(runtime_state: Any) -> None:
+    from mcubridge.metrics import publish_metrics
+
+    enqueue = AsyncMock(side_effect=RuntimeError("publish-fail"))
+    # Should catch error and log it, then continue
+    task = asyncio.create_task(publish_metrics(runtime_state, enqueue, interval=0.1))
+    await asyncio.sleep(0.2)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    assert enqueue.called
+
+
+@pytest.mark.asyncio
+async def test_publish_snapshots_task_handles_error(runtime_state: Any) -> None:
+    from mcubridge.metrics import publish_bridge_snapshots
+
+    enqueue = AsyncMock(side_effect=RuntimeError("snapshot-fail"))
+    # Should catch error and log it
+    task = asyncio.create_task(
+        publish_bridge_snapshots(
+            runtime_state, enqueue, summary_interval=0.1, handshake_interval=0.1
+        )
+    )
+    await asyncio.sleep(0.2)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    assert enqueue.called

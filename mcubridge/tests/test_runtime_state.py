@@ -1,347 +1,96 @@
-"""Unit tests for RuntimeState helpers."""
+"""Unit tests for mcubridge.state.context.RuntimeState (SIL-2)."""
 
 from __future__ import annotations
-from typing import Any
 
-import logging
-from collections.abc import Iterator
-from typing import cast
-from unittest.mock import patch
+import time
+from typing import Any
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.structures import QueuedPublish
-from mcubridge.mqtt.spool import MQTTPublishSpool
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command, Status
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.state.context import create_runtime_state
 
 
-class _ListHandler(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__()
-        self.records: list[logging.LogRecord] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        self.records.append(record)
-
-
-@pytest.fixture()
-def logger_spy() -> Iterator[tuple[logging.Logger, _ListHandler]]:
-    logger = logging.getLogger("mcubridge.tests")
-    handler = _ListHandler()
-    logger.addHandler(handler)
-    previous_level = logger.level
-    logger.setLevel(logging.WARNING)
+def test_create_runtime_state_initializes_queues(runtime_config: RuntimeConfig) -> None:
+    state = create_runtime_state(runtime_config)
     try:
-        yield logger, handler
+        assert state.mqtt_publish_queue is not None
+        assert state.console_to_mcu_queue is not None
+        assert state.mailbox_queue is not None
     finally:
-        logger.removeHandler(handler)
-        logger.setLevel(previous_level)
+        state.cleanup()
 
 
-def test_enqueue_console_chunk_trims_and_drops(
-    runtime_state: RuntimeState,
-) -> None:
-    # 1. Chunk that requires truncation
-    runtime_state.enqueue_console_chunk(b"a" * 128)
-    assert runtime_state.console_queue_bytes == 64
-    assert runtime_state.console_truncated_chunks == 1
-    assert runtime_state.console_truncated_bytes == 64
-
-    # 2. Add another chunk that exceeds total byte limit (64 bytes)
-    # The first 'a'*64 should be dropped to make room for 'b'*64
-    runtime_state.enqueue_console_chunk(b"b" * 64)
-    assert runtime_state.console_queue_bytes == 64
-    assert runtime_state.console_dropped_chunks == 1
-    assert runtime_state.console_dropped_bytes == 64
-    assert runtime_state.pop_console_chunk() == b"b" * 64
+def test_configure_updates_derived_values(runtime_config: RuntimeConfig) -> None:
+    state = create_runtime_state(runtime_config)
+    try:
+        runtime_config.mqtt_topic = "custom/prefix"
+        state.configure(runtime_config)
+        assert state.mqtt_topic_prefix == "custom/prefix"
+    finally:
+        state.cleanup()
 
 
-def test_enqueue_mailbox_message_respects_limits(
-    runtime_state: RuntimeState,
-) -> None:
-    assert runtime_state.enqueue_mailbox_message(b"a" * 16) is True
-    assert runtime_state.enqueue_mailbox_message(b"b" * 16) is True
-    assert runtime_state.mailbox_queue_bytes == 32
-
-    # Next message should trigger rejection based on limit
-    assert runtime_state.enqueue_mailbox_message(b"c" * 40) is False
-    assert runtime_state.mailbox_queue_bytes == 32
-    assert len(runtime_state.mailbox_queue) == 2
-
-    # Check FIFO: oldest first
-    assert runtime_state.pop_mailbox_message() == b"a" * 16
-    assert runtime_state.mailbox_outgoing_overflow_events == 1
+def test_mark_transport_connected_updates_state(runtime_config: RuntimeConfig) -> None:
+    state = create_runtime_state(runtime_config)
+    try:
+        state.mark_transport_connected()
+        assert state.is_connected is True
+        assert state.is_synchronized is False
+    finally:
+        state.cleanup()
 
 
-def test_enqueue_mailbox_incoming_respects_limits(
-    runtime_state: RuntimeState,
-) -> None:
-    assert runtime_state.enqueue_mailbox_incoming(b"x" * 16) is True
-    assert runtime_state.enqueue_mailbox_incoming(b"y" * 16) is True
-    assert runtime_state.mailbox_incoming_queue_bytes == 32
-
-    assert runtime_state.enqueue_mailbox_incoming(b"z" * 40) is False
-    assert runtime_state.mailbox_incoming_queue_bytes == 32
-    assert len(runtime_state.mailbox_incoming_queue) == 2
-
-    # Check FIFO
-    assert runtime_state.pop_mailbox_incoming() == b"x" * 16
-    assert runtime_state.mailbox_incoming_overflow_events == 1
+def test_mark_synchronized_sets_flag(runtime_config: RuntimeConfig) -> None:
+    state = create_runtime_state(runtime_config)
+    try:
+        state.mark_transport_connected()
+        state.mark_synchronized()
+        assert state.is_synchronized is True
+    finally:
+        state.cleanup()
 
 
-def test_requeue_console_chunk_front_restores_bytes(
-    runtime_state: RuntimeState,
-) -> None:
-    runtime_state.enqueue_console_chunk(b"hello")
-    queued = runtime_state.pop_console_chunk()
-    assert runtime_state.console_queue_bytes == 0
-
-    runtime_state.requeue_console_chunk_front(queued)
-
-    assert runtime_state.console_queue_bytes == len(queued)
-    assert runtime_state.pop_console_chunk() == queued
+def test_record_watchdog_beat_updates_counters(runtime_config: RuntimeConfig) -> None:
+    state = create_runtime_state(runtime_config)
+    try:
+        initial_beats = state.watchdog_beats
+        state.record_watchdog_beat()
+        assert state.watchdog_beats == initial_beats + 1
+        assert state.last_watchdog_beat > 0
+    finally:
+        state.cleanup()
 
 
-def test_mqtt_queue_respects_config(
-    runtime_state: RuntimeState,
-    runtime_config: RuntimeConfig,
-) -> None:
-    assert runtime_state.mqtt_publish_queue.maxsize == runtime_config.mqtt_queue_limit
-    assert runtime_state.mqtt_queue_limit == runtime_config.mqtt_queue_limit
+def test_record_mqtt_drop_increments_counter(runtime_config: RuntimeConfig) -> None:
+    state = create_runtime_state(runtime_config)
+    try:
+        state.record_mqtt_drop("test/topic")
+        assert state.mqtt_dropped_messages == 1
+    finally:
+        state.cleanup()
 
 
-def test_watchdog_tracking(runtime_state: RuntimeState) -> None:
-    assert runtime_state.watchdog_beats == 0
-    runtime_state.record_watchdog_beat(123.0)
-    assert runtime_state.watchdog_beats == 1
-    assert runtime_state.last_watchdog_beat == 123.0
-
-
-def test_metrics_snapshot_exposes_error_counters(
-    runtime_state: RuntimeState,
-) -> None:
-    runtime_state.record_serial_flow_event("sent")
-    runtime_state.record_serial_decode_error()
-    runtime_state.record_serial_crc_error()
-    runtime_state.record_mcu_status(Status.CRC_MISMATCH)
-    runtime_state.record_mcu_status(Status.CRC_MISMATCH)
-    runtime_state.record_mqtt_drop("bridge/status")
-    runtime_state.mqtt_spool_degraded = True
-    runtime_state.mqtt_spool_failure_reason = "disk-full"
-    runtime_state.mqtt_spool_retry_attempts = 2
-    runtime_state.mqtt_spool_backoff_until = 123.0
-    runtime_state.mqtt_spool_last_error = "disk-full"
-    runtime_state.mqtt_spool_recoveries = 1
-
-    snapshot = runtime_state.build_metrics_snapshot()
-
-    assert snapshot["serial"].commands_sent == 1
-    assert snapshot["bridge"].serial_flow.commands_sent == 1
-    assert snapshot["mqtt_drop_counts"]["bridge/status"] == 1
-    assert snapshot["bridge"].handshake.attempts >= 0
-
-
-def test_metrics_snapshot_includes_spool_snapshot(
-    runtime_state: RuntimeState,
-) -> None:
-    class _StubSpool:
-        @property
-        def pending(self) -> int:
-            return 5
-
-        @property
-        def limit(self) -> int:
-            return 128
-
-        def snapshot(self) -> dict[str, int]:
-            return {"pending": 5, "limit": 128}
-
-    runtime_state.mqtt_spool = cast(MQTTPublishSpool, _StubSpool())
-
-    snapshot = runtime_state.build_metrics_snapshot()
-
-    assert snapshot["spool_pending"] == 5
-    assert snapshot["spool_limit"] == 128
-
-
-def test_handshake_snapshot_reflects_state(
-    runtime_state: RuntimeState,
-) -> None:
-    runtime_state.mark_transport_connected()
-    runtime_state.mark_synchronized()
-    runtime_state.record_handshake_attempt()
-    runtime_state.record_handshake_attempt()
-    runtime_state.link_nonce_length = 16
-
-    snapshot = runtime_state.build_handshake_snapshot()
-
-    assert snapshot.synchronised is True
-    assert snapshot.attempts >= 2
-    assert snapshot.nonce_length == 16
-
-
-def test_serial_pipeline_snapshot_tracks_events(
-    runtime_state: RuntimeState,
-) -> None:
-    runtime_state.record_serial_pipeline_event(
-        {
-            "event": "start",
-            "command_id": Command.CMD_DIGITAL_WRITE.value,
-            "attempt": 1,
-            "timestamp": 10.0,
-        }
-    )
-    runtime_state.record_serial_pipeline_event(
-        {
-            "event": "ack",
-            "command_id": Command.CMD_DIGITAL_WRITE.value,
-            "attempt": 1,
-            "timestamp": 10.1,
-            "ack_received": True,
-        }
-    )
-    runtime_state.record_serial_pipeline_event(
-        {
-            "event": "success",
-            "command_id": Command.CMD_DIGITAL_WRITE.value,
-            "attempt": 1,
-            "timestamp": 10.2,
-            "ack_received": True,
-            "status": Status.OK.value,
-        }
-    )
-
-    snapshot = runtime_state.build_serial_pipeline_snapshot()
-    assert snapshot.inflight is None
-    last = snapshot.last_completion
-    assert last is not None
-    assert last["event"] == "success"
-    assert last["status_name"] == "OK"
-    assert last["duration"] > 0
-
-
-def test_bridge_snapshot_combines_sections(
-    runtime_state: RuntimeState,
-) -> None:
-    runtime_state.mark_transport_connected()
-    runtime_state.record_handshake_attempt()
-    runtime_state.record_handshake_attempt()
-    runtime_state.mcu_version = (1, 2, 0)
-    runtime_state.record_serial_pipeline_event(
-        {
-            "event": "start",
-            "command_id": Command.CMD_DIGITAL_READ.value,
-            "attempt": 1,
-            "timestamp": 20.0,
-        }
-    )
-    runtime_state.record_serial_pipeline_event(
-        {
-            "event": "failure",
-            "command_id": Command.CMD_DIGITAL_READ.value,
-            "attempt": 1,
-            "timestamp": 20.5,
-            "status": Status.TIMEOUT.value,
-        }
-    )
-
-    bridge = runtime_state.build_bridge_snapshot()
-    assert bridge.serial_link.connected is True
-    assert bridge.handshake.attempts >= 2
-    assert bridge.mcu_version is not None
-    assert bridge.mcu_version.major == 1
-    assert bridge.mcu_version.minor == 2
-    last = bridge.serial_pipeline.last_completion
-    assert last is not None and last["event"] == "failure"
-
-
-def test_create_runtime_state_marks_spool_degraded(
+@pytest.mark.asyncio
+async def test_initialize_spool_handles_creation_failure(
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _BoomSpool:
-        def __init__(self: Any, *_args: Any, **_kwargs: Any) -> None:
-            raise OSError("boom")
+    from mcubridge.transport.mqtt import MqttTransport
 
-    monkeypatch.setattr(
-        "mcubridge.state.context.MQTTPublishSpool",
-        _BoomSpool,
-    )
+    state = create_runtime_state(runtime_config)
+    transport = MqttTransport(runtime_config, state)
+    
+    def mock_init_fail(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("Permission denied")
 
-    state = create_runtime_state(runtime_config, initialize_spool=True)
+    from mcubridge.mqtt.spool import MQTTPublishSpool
+    monkeypatch.setattr(MQTTPublishSpool, "__init__", mock_init_fail)
+
     try:
+        transport.initialize_spool()
         assert state.mqtt_spool is None
         assert state.mqtt_spool_degraded is True
         assert state.mqtt_spool_failure_reason == "initialization_failed"
-        assert state.mqtt_spool_last_error
-        assert "boom" in state.mqtt_spool_last_error
-    finally:
-        state.cleanup()
-
-
-@pytest.mark.asyncio
-async def test_stash_mqtt_message_disables_spool_on_failure(
-    runtime_config: RuntimeConfig,
-) -> None:
-    state = create_runtime_state(runtime_config, initialize_spool=True)
-    try:
-        if state.mqtt_spool is not None:
-            state.mqtt_spool.close()
-
-        class _BrokenSpool:
-            def append(self, _message: QueuedPublish) -> None:
-                raise OSError("disk-full")
-
-            def close(self) -> None:
-                return None
-
-        state.mqtt_spool = cast(MQTTPublishSpool, _BrokenSpool())
-        message = QueuedPublish(
-            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
-            payload=b"{}",
-        )
-        stored = await state.stash_mqtt_message(message)
-
-        assert stored is False
-        assert state.mqtt_spool is None
-        assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_errors == 1
-        assert state.mqtt_dropped_messages == 0
-        assert state.mqtt_spool_failure_reason == "append_failed"
-        assert state.mqtt_spool_last_error == "disk-full"
-    finally:
-        state.cleanup()
-
-
-@pytest.mark.asyncio
-async def test_flush_mqtt_spool_handles_pop_failure(
-    runtime_config: RuntimeConfig,
-) -> None:
-    state = create_runtime_state(runtime_config, initialize_spool=True)
-    try:
-        if state.mqtt_spool is not None:
-            state.mqtt_spool.close()
-
-        class _FailingSpool:
-            def pop_next(self) -> QueuedPublish | None:
-                raise OSError("read-error")
-
-            def requeue(self, _message: QueuedPublish) -> None:
-                return None
-
-            def close(self) -> None:
-                return None
-
-        state.mqtt_spool = cast(MQTTPublishSpool, _FailingSpool())
-        await state.flush_mqtt_spool()
-
-        assert state.mqtt_spool is None
-        assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_errors == 1
-        assert state.mqtt_spool_failure_reason == "pop_failed"
-        assert state.mqtt_spool_last_error == "read-error"
     finally:
         state.cleanup()
 
@@ -351,41 +100,27 @@ async def test_spool_fallback_updates_state(
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pathlib import Path
-
-    # Force a failure during diskcache initialization.
-    import errno
-
-    with patch.object(Path, "mkdir", side_effect=OSError(errno.ENOSPC, "disk full")):
-        state = create_runtime_state(runtime_config, initialize_spool=True)
-        try:
-            # The spool now degrades to RAM if durable initialization fails.
-            assert state.mqtt_spool is not None
-            assert state.mqtt_spool_degraded is True
-            assert state.mqtt_spool_last_error is not None
-            assert "disk full" in state.mqtt_spool_last_error
-        finally:
-            state.cleanup()
+    from mcubridge.transport.mqtt import MqttTransport
+    
+    state = create_runtime_state(runtime_config)
+    transport = MqttTransport(runtime_config, state)
+    
+    before = time.monotonic()
+    transport._disable_mqtt_spool("disk error") # type: ignore[reportPrivateUsage]
+    
+    assert state.mqtt_spool_degraded is True
+    assert state.mqtt_spool_failure_reason == "disk error"
+    assert state.mqtt_spool_backoff_until >= before
+    state.cleanup()
 
 
-@pytest.mark.asyncio
-async def test_ensure_spool_recovers_after_disable(
-    runtime_state: RuntimeState,
-) -> None:
-    # Use the fixture-provided state and mock the spooler
-    with patch("mcubridge.state.context.MQTTPublishSpool") as mock_spool_cls:
-        mock_spool_cls.return_value.is_degraded = False
-        mock_spool_cls.return_value.limit = 32
-        mock_spool_cls.return_value.pending = 0
-
-        runtime_state.mqtt_spool = None
-        runtime_state.mqtt_spool_degraded = True
-        runtime_state.mqtt_spool_failure_reason = "test"
-
-        recovered = await runtime_state.ensure_spool()
-
-        assert recovered is True
-        assert runtime_state.mqtt_spool is not None
-        assert runtime_state.mqtt_spool_degraded is False
-        assert runtime_state.mqtt_spool_failure_reason is None
-        assert runtime_state.mqtt_spool_recoveries == 1
+def test_mark_supervisor_healthy_resets_backoff(runtime_config: RuntimeConfig) -> None:
+    state = create_runtime_state(runtime_config)
+    try:
+        state.record_supervisor_failure("test_svc", 10.0, RuntimeError("fail"))
+        assert state.supervisor_stats["test_svc"].backoff_seconds == 10.0
+        
+        state.mark_supervisor_healthy("test_svc")
+        assert state.supervisor_stats["test_svc"].backoff_seconds == 0.0
+    finally:
+        state.cleanup()

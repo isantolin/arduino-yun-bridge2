@@ -74,7 +74,7 @@ class SpiComponent(BaseComponent):
             topic = topic_path(
                 self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"
             )
-            await self.state.publish(topic, packet.data)
+            await self.ctx.mqtt_flow.publish(topic, packet.data)
             return True
         except (ValueError, msgspec.MsgspecError) as e:
             logger.warning("Malformed SPI transfer response: %s", e)

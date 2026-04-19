@@ -1,3 +1,4 @@
+from mcubridge.transport.mqtt import MqttTransport
 from unittest.mock import AsyncMock, MagicMock
 
 import asyncio
@@ -35,7 +36,7 @@ async def test_process_packet_crc_mismatch_reports_crc(
     try:
         state.mark_transport_connected()
         state.mark_synchronized()
-        service = BridgeService(config, state)
+        service = BridgeService(config, state, MqttTransport(config, state))
 
         # Use SerialTransport to test async process packet logic
         transport = SerialTransport(config, state, service)
@@ -58,7 +59,7 @@ async def test_process_packet_success_dispatches() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
+        service = BridgeService(config, state, MqttTransport(config, state))
 
         service.handle_mcu_frame = AsyncMock()
 
@@ -86,7 +87,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
     config.serial_safe_baud = 115200
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
+        service = BridgeService(config, state, MqttTransport(config, state))
 
         transport = SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
@@ -123,7 +124,7 @@ async def test_write_frame_debug_logs_unknown_command(
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
+        service = BridgeService(config, state, MqttTransport(config, state))
         import mcubridge.transport.serial
 
         transport = SerialTransport(config, state, service)
@@ -162,7 +163,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state)
+        service = BridgeService(config, state, MqttTransport(config, state))
 
         transport = SerialTransport(config, state, service)
         mock_writer = MagicMock(spec=asyncio.StreamWriter)
@@ -188,7 +189,7 @@ async def test_process_packet_fallback_triggers_negotiation(
     try:
         state.mark_transport_connected()
         state.mark_synchronized()
-        service = BridgeService(config, state)
+        service = BridgeService(config, state, MqttTransport(config, state))
 
         transport = SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()

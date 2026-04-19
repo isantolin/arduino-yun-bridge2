@@ -121,7 +121,7 @@ class ProcessComponent(BaseComponent):
                 ShellAction.RUN_ASYNC,
                 "error",
             )
-            await self.state.publish(
+            await self.ctx.mqtt_flow.publish(
                 topic=response_topic,
                 payload=b"error:internal",
                 reply_to=inbound,
@@ -136,14 +136,14 @@ class ProcessComponent(BaseComponent):
         )
 
         if pid == 0:
-            await self.state.publish(
+            await self.ctx.mqtt_flow.publish(
                 topic=response_topic,
                 payload=b"error:not_allowed_or_limit_reached",
                 reply_to=inbound,
             )
             return
 
-        await self.state.publish(
+        await self.ctx.mqtt_flow.publish(
             topic=response_topic,
             payload=str(pid).encode("utf-8"),
             reply_to=inbound,
@@ -509,7 +509,7 @@ class ProcessComponent(BaseComponent):
             reply_topic = getattr(inbound.properties, "ResponseTopic", None)
             correlation_data = getattr(inbound.properties, "CorrelationData", None)
 
-        await self.state.enqueue_mqtt(
+        await self.ctx.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
                 payload=_msgpack_enc.encode(batch),

@@ -1,6 +1,7 @@
 """Tests for the BridgeService façade."""
 
 from __future__ import annotations
+from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
 from typing import Any, cast
@@ -40,7 +41,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
     runtime_config = RuntimeConfig(serial_shared_secret=b"test_secret_1234")
     runtime_state = create_runtime_state(runtime_config)
     try:
-        service = BridgeService(runtime_config, runtime_state)
+        service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
         sent_frames: list[tuple[int, bytes]] = []
 
@@ -177,7 +178,7 @@ async def test_repeated_sync_timeouts_become_fatal(
     runtime_state: RuntimeState,
 ) -> None:
     runtime_config.serial_handshake_fatal_failures = 2
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
     await service.handshake_manager.handle_handshake_failure("link_sync_timeout")
     assert runtime_state.handshake_failure_streak == 1
@@ -196,7 +197,7 @@ def test_link_sync_resp_respects_rate_limit(
 
     async def _run() -> None:
         runtime_config.serial_handshake_min_interval = 5.0
-        service = BridgeService(runtime_config, runtime_state)
+        service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
         sent_frames: list[tuple[int, bytes]] = []
 
@@ -269,7 +270,7 @@ async def test_sync_auth_failure_schedules_backoff(
     runtime_state: RuntimeState,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
     async def fake_sender(
         command_id: int, payload: bytes, seq_id: int | None = None
@@ -328,7 +329,7 @@ async def test_transient_handshake_failures_eventually_backoff(
     runtime_state: RuntimeState,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
     fake_clock = _FakeMonotonic(300.0)
     monkeypatch.setattr(
@@ -371,7 +372,7 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
     runtime_state.mark_transport_connected()
     runtime_state.link_sync_event.clear()
 
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
     async def fake_sender(
         command_id: int, payload: bytes, seq_id: int | None = None
@@ -418,7 +419,7 @@ async def test_mcu_status_frames_increment_counters(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     # Status frames don't need link sync in the dispatcher
     await service.handle_mcu_frame(Status.ERROR.value, 0, b"something failed")
     assert runtime_state.mcu_status_counters[Status.ERROR.name] == 1
@@ -429,7 +430,7 @@ async def test_mcu_frame_before_sync_is_rejected(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     runtime_state.mark_transport_connected()
 
     # Use a non-status, non-pre-sync command
@@ -447,7 +448,7 @@ async def test_mailbox_available_flow(tmp_path: Path) -> None:
     )
     runtime_state = create_runtime_state(runtime_config)
     try:
-        service = BridgeService(runtime_config, runtime_state)
+        service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
         runtime_state.mark_transport_connected()
         runtime_state.mark_synchronized()
 
@@ -487,7 +488,7 @@ async def test_mailbox_available_rejects_payload(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     runtime_state.mark_transport_connected()
     runtime_state.mark_synchronized()
 
@@ -514,7 +515,7 @@ async def test_mailbox_push_overflow_returns_error(
     runtime_state: RuntimeState,
 ) -> None:
     runtime_config.mailbox_queue_limit = 1
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     runtime_state.mark_transport_connected()
     runtime_state.mark_synchronized()
 
@@ -546,7 +547,7 @@ async def test_mailbox_read_requeues_on_send_failure(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     runtime_state.mark_transport_connected()
     runtime_state.mark_synchronized()
     runtime_state.enqueue_mailbox_message(b"lost-message")
@@ -571,7 +572,7 @@ async def test_datastore_get_from_mcu_returns_cached_value() -> None:
     runtime_config = RuntimeConfig(serial_shared_secret=b"12345678")
     runtime_state = create_runtime_state(runtime_config)
     try:
-        service = BridgeService(runtime_config, runtime_state)
+        service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
         runtime_state.mark_transport_connected()
         runtime_state.mark_synchronized()
         runtime_state.datastore["key1"] = "value1"
@@ -606,7 +607,7 @@ async def test_datastore_get_from_mcu_unknown_key_returns_empty(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     runtime_state.mark_transport_connected()
     runtime_state.mark_synchronized()
 
@@ -634,7 +635,7 @@ async def test_datastore_put_from_mcu_updates_cache_and_mqtt(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    async with BridgeService(runtime_config, runtime_state) as service:
+    async with BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)) as service:
         runtime_state.mark_transport_connected()
         runtime_state.mark_synchronized()
 
@@ -654,7 +655,7 @@ async def test_on_serial_disconnected_clears_pending(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     runtime_state.mark_transport_connected()
     runtime_state.pending_digital_reads.append(b"1")  # type: ignore[reportArgumentType]
     runtime_state.pending_analog_reads.append(b"2")  # type: ignore[reportArgumentType]
@@ -671,7 +672,7 @@ async def test_mqtt_mailbox_read_preserves_empty_payload(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     # Mock MQTT message
     topic = f"{runtime_config.mqtt_topic}/mailbox/read"
     msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
@@ -697,7 +698,7 @@ async def test_mqtt_datastore_put_updates_local_cache(
     from mcubridge.policy import TopicAuthorization
 
     runtime_state.topic_authorization = TopicAuthorization()
-    async with BridgeService(runtime_config, runtime_state) as service:
+    async with BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)) as service:
         topic = f"{runtime_config.mqtt_topic}/datastore/put/mykey"
         msg = Message(
             topic=topic, payload=b"val123", qos=0, retain=False, properties=None, mid=1
@@ -713,7 +714,7 @@ async def test_mqtt_bridge_handshake_topic_returns_snapshot(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    async with BridgeService(runtime_config, runtime_state) as service:
+    async with BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)) as service:
         topic = f"{runtime_config.mqtt_topic}/system/bridge/handshake/get"
         msg = Message(
             topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1
@@ -733,7 +734,7 @@ async def test_mqtt_bridge_summary_topic_returns_snapshot(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    async with BridgeService(runtime_config, runtime_state) as service:
+    async with BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)) as service:
         topic = f"{runtime_config.mqtt_topic}/system/bridge/summary/get"
         msg = Message(
             topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1
@@ -753,7 +754,7 @@ async def test_mqtt_datastore_put_without_key_is_ignored(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     # Topic with only /datastore/set
     topic = f"{runtime_config.mqtt_topic}/datastore/set"
     msg = Message(
@@ -774,7 +775,7 @@ async def test_mqtt_datastore_get_non_request_uses_cache(
     from mcubridge.policy import TopicAuthorization
 
     runtime_state.topic_authorization = TopicAuthorization()
-    async with BridgeService(runtime_config, runtime_state) as service:
+    async with BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)) as service:
         runtime_state.datastore["k1"] = "v1"
 
         topic = f"{runtime_config.mqtt_topic}/datastore/get/k1"
@@ -799,7 +800,7 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
     from mcubridge.policy import TopicAuthorization
 
     runtime_state.topic_authorization = TopicAuthorization()
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     runtime_state.datastore["k1"] = "v1"
 
     topic = f"{runtime_config.mqtt_topic}/datastore/get/k1"
@@ -839,7 +840,7 @@ async def test_mqtt_datastore_get_request_miss_responds_with_error(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
     topic = f"{runtime_config.mqtt_topic}/datastore/get/missing"
 
@@ -868,7 +869,7 @@ async def test_mqtt_datastore_get_non_request_miss_is_silent(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     topic = f"{runtime_config.mqtt_topic}/datastore/get/missing"
     msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
 
@@ -881,7 +882,7 @@ async def test_mqtt_datastore_get_key_too_large_logs_warning(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     # Key > 64 bytes
     big_key = "a" * 70
     topic = f"{runtime_config.mqtt_topic}/datastore/get/{big_key}"
@@ -898,19 +899,19 @@ async def test_enqueue_mqtt_drops_oldest_when_full(
     runtime_state: RuntimeState,
 ) -> None:
     runtime_config.mqtt_queue_limit = 2
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     # Re-create queue with the test limit
     from asyncio import Queue
 
     runtime_state.mqtt_publish_queue = Queue(maxsize=2)
 
     # Fill queue
-    await service.publish("t1", "p1")
-    await service.publish("t2", "p2")
+    await service.mqtt_flow.publish("t1", "p1")
+    await service.mqtt_flow.publish("t2", "p2")
     assert runtime_state.mqtt_publish_queue.qsize() == 2
 
     # Enqueue 3rd - should drop t1
-    await service.publish("t3", "p3")
+    await service.mqtt_flow.publish("t3", "p3")
 
     q = runtime_state.mqtt_publish_queue
     m1 = q.get_nowait()
@@ -930,9 +931,7 @@ async def test_run_command_respects_allow_list(
     from mcubridge.policy import AllowedCommandPolicy
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["/usr/bin/id"])
-    _service = BridgeService(
-        runtime_config, runtime_state
-    )  # noqa: F841 — validates init
+    _service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))  # noqa: F841 — validates init
 
     # Simulate forbidden command logic
     status = Status.ERROR.value
@@ -950,9 +949,7 @@ async def test_run_command_accepts_shell_metacharacters_as_literals(
     from mcubridge.policy import AllowedCommandPolicy
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
-    _service = BridgeService(
-        runtime_config, runtime_state
-    )  # noqa: F841 — validates init
+    _service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))  # noqa: F841 — validates init
 
     # Logic is now handled inside ProcessComponent and asyncio
     pass
@@ -967,7 +964,7 @@ async def test_process_run_async_accepts_complex_arguments(
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
 
-    service = BridgeService(runtime_config, runtime_state)
+    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     # Mark state as synchronized so MCU frames are not rejected pre-sync
     runtime_state.mark_transport_connected()
     runtime_state.mark_synchronized()

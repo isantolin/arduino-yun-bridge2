@@ -204,16 +204,18 @@ async def test_datastore_publish_value_error_reason(
     """Cover logic in _publish_datastore_value."""
     ctx = MagicMock()
     ctx.serial_flow = MagicMock()
+    ctx.mqtt_flow = MagicMock()
+    ctx.mqtt_flow.publish = AsyncMock()
     ds = DatastoreComponent(runtime_config, runtime_state, ctx)
-    with patch("mcubridge.state.context.RuntimeState.publish", new_callable=AsyncMock) as mock_pub:
-        await ds._publish_datastore_value(  # type: ignore[reportPrivateUsage]
-            key="key",
-            value=b"val",
-            error_reason="testing",
-        )
-        _args, kwargs = mock_pub.call_args
-        props = kwargs.get("properties", ())
-        assert any(k == "bridge-error" and v == "testing" for k, v in props)
+    await ds._publish_datastore_value(  # type: ignore[reportPrivateUsage]
+        key="key",
+        value=b"val",
+        error_reason="testing",
+    )
+    # Check ctx.mqtt_flow.publish instead of state.publish
+    _args, kwargs = ctx.mqtt_flow.publish.call_args
+    props = kwargs.get("properties", ())
+    assert any(k == "bridge-error" and v == "testing" for k, v in props)
 
 
 @pytest.mark.asyncio
@@ -222,6 +224,7 @@ async def test_datastore_handle_get_request_fail_send(
 ):
     """Cover line 86->88 in datastore.py."""
     ctx = MagicMock()
+    ctx.serial_flow = MagicMock()
     ctx.serial_flow.send = AsyncMock(return_value=False)
     ds = DatastoreComponent(runtime_config, runtime_state, ctx)
     from mcubridge.protocol.structures import DatastoreGetPacket

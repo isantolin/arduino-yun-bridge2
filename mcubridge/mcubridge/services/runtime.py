@@ -31,6 +31,7 @@ from . import (
 from .dispatcher import BridgeDispatcher
 from .handshake import (
     SendFrameCallable,
+    SerialHandshakeFatal,
     SerialHandshakeManager,
     SerialTimingWindow,
     derive_serial_timing,
@@ -157,6 +158,8 @@ class BridgeService:
         self.state.mark_transport_connected()
         try:
             await self.handshake_manager.synchronize()
+        except SerialHandshakeFatal:
+            raise
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to synchronize link after reconnect: %s", e)
 
@@ -183,7 +186,7 @@ class BridgeService:
     ) -> None:
         try:
             await self.dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
-        except (ValueError, TypeError, RuntimeError) as e:
+        except (ValueError, TypeError, RuntimeError, OSError) as e:
             logger.error("MCU > Dispatch error cmd=0x%02X: %s", command_id, e)
 
     async def handle_mqtt_message(self, inbound: Message) -> None:
@@ -192,7 +195,7 @@ class BridgeService:
                 inbound,
                 lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
             )
-        except (ValueError, TypeError, RuntimeError) as e:
+        except (ValueError, TypeError, RuntimeError, OSError) as e:
             logger.error("MQTT > Dispatch error topic=%s: %s", str(inbound.topic), e)
 
     async def _handle_ack(self, seq_id: int, payload: bytes) -> None:

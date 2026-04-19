@@ -1393,7 +1393,7 @@ class TestMetrics:
 class TestSerialTransport:
     @pytest.mark.asyncio
     async def test_serial_transport_init(self):
-        from mcubridge.transport.serial import SerialTransport
+        from mcubridge.transport import SerialTransport
 
         import time
         import os

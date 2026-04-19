@@ -32,6 +32,8 @@ from ssl import TLSVersion
 
 # -- Serial Port Defaults --
 DEFAULT_SERIAL_PORT: str = "/dev/ttyATH0"
+DEFAULT_BAUDRATE: int = 115200
+DEFAULT_SAFE_BAUDRATE: int = 115200
 # Initial wait for serial port availability (reconnect loop)
 DEFAULT_RECONNECT_DELAY: int = 5
 # Maximum size of a raw serial frame including overhead
@@ -169,6 +171,8 @@ __all__ = [
     "ALLOWED_COMMAND_WILDCARD",
     "MQTT_TLS_MIN_VERSION",
     "DEFAULT_SERIAL_PORT",
+    "DEFAULT_BAUDRATE",
+    "DEFAULT_SAFE_BAUDRATE",
     "DEFAULT_MQTT_HOST",
     "DEFAULT_MQTT_PORT",
     "DEFAULT_MQTT_CAFILE",

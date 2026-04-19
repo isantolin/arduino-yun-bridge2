@@ -304,6 +304,46 @@ class SerialFlowController:
             )
             return False
 
+    async def negotiate_baudrate(self, target_baud: int) -> bool:
+        """Execute baudrate negotiation sequence with the MCU (SIL-2).
+        Sends CMD_SET_BAUDRATE and waits for CMD_SET_BAUDRATE_RESP.
+        """
+        if self._sender is None:
+            return False
+
+        from ..protocol.structures import SetBaudratePacket
+
+        payload = SetBaudratePacket(baudrate=target_baud).encode()
+
+        # [SIL-2] Use a dedicated pending state for negotiation to avoid
+        # interference with standard RPC flows.
+        pending = PendingCommand(
+            command_id=Command.CMD_SET_BAUDRATE.value,
+            expected_resp_ids={Command.CMD_SET_BAUDRATE_RESP.value},
+        )
+
+        async with self._condition:
+            await self._condition.wait_for(lambda: self._current is None)
+            self._current = pending
+
+        try:
+            # Send command (fire-and-forget at this baudrate)
+            await self._sender(Command.CMD_SET_BAUDRATE.value, payload, 0)
+
+            # Wait for response with specific timeout.
+            # MCU switches baudrate immediately after receiving command,
+            # so the response will arrive on the NEW baudrate.
+            try:
+                async with asyncio.timeout(self._response_timeout):
+                    await pending.future
+                return True
+            except asyncio.TimeoutError:
+                return False
+        finally:
+            async with self._condition:
+                if self._current is pending:
+                    self._current = None
+
     async def _execute_with_retries(
         self,
         pending: PendingCommand,

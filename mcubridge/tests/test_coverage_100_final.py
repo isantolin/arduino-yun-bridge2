@@ -1186,11 +1186,11 @@ class TestRuntimeStateEdges:
         assert not state.is_connected
 
     def test_enqueue_console_chunk_overflow(self: Any, state: Any):
-        state.enqueue_console_chunk(b"x" * 100)
+        state.console_to_mcu_queue.append(b"x" * 100)
 
     def test_requeue_console_chunk_front(self: Any, state: Any):
-        state.enqueue_console_chunk(b"hi")
-        state.requeue_console_chunk_front(b"x" * 1000)
+        state.console_to_mcu_queue.append(b"hi")
+        state.console_to_mcu_queue.appendleft(b"x" * 1000)
 
     def test_record_handshake_fatal(self: Any, state: Any):
         state.handshake_fatal_count += 1
@@ -1211,7 +1211,6 @@ class TestRuntimeStateEdges:
 
     def test_apply_handshake_stats(self: Any, state: Any):
         pass
-
 
     def test_collect_system_metrics(self):
         from mcubridge.state.context import collect_system_metrics
@@ -1254,15 +1253,15 @@ class TestRuntimeStateEdges:
     def test_enqueue_mailbox_overflow(self: Any, state: Any):
         # Fill up to limit
         for i in range(state.mailbox_queue_limit + 1):
-            state.enqueue_mailbox_message(f"msg{i}".encode())
+            state.mailbox_queue.append(f"msg{i}".encode())
 
     def test_pop_mailbox_message(self: Any, state: Any):
-        state.enqueue_mailbox_message(b"message1")
-        result = state.pop_mailbox_message()
+        state.mailbox_queue.append(b"message1")
+        result = state.mailbox_queue.popleft()
         assert result == b"message1"
 
     def test_pop_mailbox_message_empty(self: Any, state: Any):
-        result = state.pop_mailbox_message()
+        result = state.mailbox_queue.popleft()
         assert result is None
 
 

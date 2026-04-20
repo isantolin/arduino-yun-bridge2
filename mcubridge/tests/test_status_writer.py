@@ -1,4 +1,3 @@
-
 from typing import Any, cast
 import asyncio
 from types import SimpleNamespace
@@ -10,6 +9,7 @@ from mcubridge.state.context import RuntimeState, SupervisorStats
 from mcubridge.protocol import protocol
 from mcubridge.policy import AllowedCommandPolicy
 from mcubridge.mqtt.spool import MQTTPublishSpool
+
 
 def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
     async def run() -> None:

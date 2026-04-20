@@ -44,6 +44,12 @@ class BridgeQueue(Generic[T]):
         self._cache: diskcache.Cache | None = None
         self._deque: diskcache.Deque | deque[T]
 
+        # [SIL-2] Integrated observability counters
+        self.dropped_chunks: int = 0
+        self.dropped_bytes: int = 0
+        self.truncated_chunks: int = 0
+        self.truncated_bytes: int = 0
+
         if directory:
             try:
                 self.directory = Path(directory)
@@ -94,6 +100,14 @@ class BridgeQueue(Generic[T]):
 
         self._deque.append(item)  # type: ignore[reportUnknownMemberType]
         self._current_bytes += data_len
+
+        # [SIL-2] Native metrics aggregation
+        self.dropped_chunks += dropped_chunks
+        self.dropped_bytes += dropped_bytes
+        self.truncated_bytes += truncated
+        if truncated > 0:
+            self.truncated_chunks += 1
+
         return QueueEvent(
             success=True,
             dropped_chunks=dropped_chunks,

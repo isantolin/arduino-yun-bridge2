@@ -66,7 +66,7 @@ class MailboxComponent(BaseComponent):
 
         data = packet.data
 
-        stored = self.state.enqueue_mailbox_incoming(data)
+        stored = self.state.mailbox_incoming_queue.append(data).success
         if not stored:
             logger.error(
                 "Dropping incoming mailbox message (%d bytes) due to queue limits.",
@@ -111,7 +111,7 @@ class MailboxComponent(BaseComponent):
         return True
 
     async def handle_read(self, seq_id: int, _: bytes) -> bool:
-        original_payload = self.state.pop_mailbox_message()
+        original_payload = self.state.mailbox_queue.popleft()
         message_payload: bytes = original_payload if original_payload is not None else b""
 
         max_allowed = protocol.MAX_PAYLOAD_SIZE - 3
@@ -128,7 +128,7 @@ class MailboxComponent(BaseComponent):
 
         if not send_ok:
             if original_payload is not None:
-                self.state.requeue_mailbox_message_front(original_payload)
+                self.state.mailbox_queue.appendleft(original_payload)
             return False
 
         await self._publish_available("outgoing_available", len(self.state.mailbox_queue))
@@ -155,7 +155,7 @@ class MailboxComponent(BaseComponent):
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        if not self.state.enqueue_mailbox_message(payload):
+        if not self.state.mailbox_queue.append(payload).success:
             await self._handle_outgoing_overflow(len(payload), inbound)
             return
         queue_len = len(self.state.mailbox_queue)
@@ -179,7 +179,7 @@ class MailboxComponent(BaseComponent):
         )
 
         if self.state.mailbox_incoming_queue:
-            message_payload = self.state.pop_mailbox_incoming()
+            message_payload = self.state.mailbox_incoming_queue.popleft()
             if message_payload is None:
                 await self._publish_available("incoming_available", 0)
                 return
@@ -194,7 +194,7 @@ class MailboxComponent(BaseComponent):
                 await self._publish_available("incoming_available", len(self.state.mailbox_incoming_queue))
             return
 
-        message_payload = self.state.pop_mailbox_message()
+        message_payload = self.state.mailbox_queue.popleft()
         if message_payload is None:
             return
 

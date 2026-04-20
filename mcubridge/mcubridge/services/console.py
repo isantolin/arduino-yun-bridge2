@@ -79,7 +79,7 @@ class ConsoleComponent(BaseComponent):
             )
             for chunk in chunks:
                 if chunk:
-                    self.state.enqueue_console_chunk(chunk)
+                    self.state.console_to_mcu_queue.append(chunk)
             return
 
         for index, chunk in enumerate(chunks):
@@ -96,7 +96,7 @@ class ConsoleComponent(BaseComponent):
             if not send_ok:
                 remaining = b"".join(chunks[index:])
                 if remaining:
-                    self.state.enqueue_console_chunk(remaining)
+                    self.state.console_to_mcu_queue.append(remaining)
                 logger.warning(
                     "Serial send failed for console input; payload queued for retry",
                 )
@@ -104,7 +104,7 @@ class ConsoleComponent(BaseComponent):
 
     async def flush_queue(self) -> None:
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
-            buffered = self.state.pop_console_chunk()
+            buffered = self.state.console_to_mcu_queue.popleft()
             if not buffered:
                 break
 
@@ -124,7 +124,7 @@ class ConsoleComponent(BaseComponent):
                     continue
                 unsent = b"".join(chunks[index:])
                 if unsent:
-                    self.state.requeue_console_chunk_front(unsent)
+                    self.state.console_to_mcu_queue.appendleft(unsent)
                 logger.warning(
                     "Serial send failed while flushing console; chunk requeued",
                 )

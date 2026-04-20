@@ -471,82 +471,6 @@ class RuntimeState(msgspec.Struct):
             stats.backoff_seconds = 0.0
             stats.fatal = False
 
-    def enqueue_console_chunk(self, chunk: bytes) -> None:
-        if not chunk:
-            return
-        evt = self.console_to_mcu_queue.append(chunk)
-        if evt.truncated_bytes:
-            self.console_truncated_chunks += 1
-            self.console_truncated_bytes += evt.truncated_bytes
-        if evt.dropped_chunks:
-            self.console_dropped_chunks += evt.dropped_chunks
-            self.console_dropped_bytes += evt.dropped_bytes
-        if not evt.success:
-            self.console_dropped_chunks += 1
-            self.console_dropped_bytes += len(chunk)
-        else:
-            self.console_queue_bytes = self.console_to_mcu_queue.bytes
-
-    def pop_console_chunk(self) -> bytes:
-        chunk = self.console_to_mcu_queue.popleft()
-        self.console_queue_bytes = self.console_to_mcu_queue.bytes
-        return chunk or b""
-
-    def requeue_console_chunk_front(self, chunk: bytes) -> None:
-        if not chunk:
-            return
-        self.console_to_mcu_queue.appendleft(chunk)
-        self.console_queue_bytes = self.console_to_mcu_queue.bytes
-
-    def _mailbox_overflow(self, queue_len: int, payload_len: int, *, incoming: bool) -> bool:
-        """Return True if the mailbox queue is full. Updates overflow counters."""
-        if queue_len < self.mailbox_queue_limit:
-            return False
-        if incoming:
-            self.mailbox_incoming_dropped_messages += 1
-            self.mailbox_incoming_dropped_bytes += payload_len
-            self.mailbox_incoming_overflow_events += 1
-        else:
-            self.mailbox_dropped_messages += 1
-            self.mailbox_dropped_bytes += payload_len
-            self.mailbox_outgoing_overflow_events += 1
-        return True
-
-    def enqueue_mailbox_message(self, payload: bytes) -> bool:
-        if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
-            return False
-        evt = self.mailbox_queue.append(payload)
-        if evt.success:
-            self.mailbox_queue_bytes += len(payload)
-            return True
-        return False
-
-    def pop_mailbox_message(self) -> bytes | None:
-        msg = self.mailbox_queue.popleft()
-        if msg is not None:
-            self.mailbox_queue_bytes = max(0, self.mailbox_queue_bytes - len(msg))
-        return msg
-
-    def requeue_mailbox_message_front(self, payload: bytes) -> None:
-        evt = self.mailbox_queue.appendleft(payload)
-        if evt.success:
-            self.mailbox_queue_bytes += len(payload)
-
-    def enqueue_mailbox_incoming(self, payload: bytes) -> bool:
-        if self._mailbox_overflow(len(self.mailbox_incoming_queue), len(payload), incoming=True):
-            return False
-        evt = self.mailbox_incoming_queue.append(payload)
-        if evt.success:
-            self.mailbox_incoming_queue_bytes += len(payload)
-            return True
-        return False
-
-    def pop_mailbox_incoming(self) -> bytes | None:
-        msg = self.mailbox_incoming_queue.popleft()
-        if msg is not None:
-            self.mailbox_incoming_queue_bytes = max(0, self.mailbox_incoming_queue_bytes - len(msg))
-        return msg
-
     def record_serial_flow_event(self, event: str) -> None:
         stats = self.serial_flow_stats
         if event == "sent":
@@ -618,6 +542,7 @@ class RuntimeState(msgspec.Struct):
 
             if "duration" in payload:
                 from typing import cast as t_cast
+
                 duration_val = float(t_cast(float, payload["duration"]))
                 self.metrics.serial_latency_ms.observe(duration_val * 1000.0)
 

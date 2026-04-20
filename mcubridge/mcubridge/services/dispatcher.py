@@ -127,6 +127,7 @@ class BridgeDispatcher:
         }
         for topic, handler in mqtt_map.items():
             self.mqtt_router.register(topic, handler)
+
     def register_system_handlers(
         self,
         handle_link_sync_resp: Callable[[int, bytes], Awaitable[bool]],
@@ -185,8 +186,6 @@ class BridgeDispatcher:
             latency_ms = (asyncio.get_running_loop().time() - now) * 1000.0
             self.state.serial_latency_stats.record(latency_ms)
             self.state.metrics.serial_latency_ms.observe(latency_ms)
-
-
 
     async def dispatch_mqtt_message(
         self,

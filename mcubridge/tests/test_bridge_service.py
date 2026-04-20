@@ -104,7 +104,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         service.register_serial_sender(fake_sender)
 
-        runtime_state.enqueue_console_chunk(b"hello")
+        runtime_state.console_to_mcu_queue.append(b"hello")
         runtime_state.mcu_is_paused = False
         runtime_state.mcu_version = (1, 2, 0)
         runtime_state.mark_transport_connected()
@@ -437,7 +437,7 @@ async def test_mailbox_available_flow(tmp_path: Path) -> None:
         service.register_serial_sender(fake_sender)
 
         # Enqueue something in mailbox
-        runtime_state.enqueue_mailbox_message(b"msg1")
+        runtime_state.mailbox_queue.append(b"msg1").success
 
         # MCU checks if mailbox is available
         await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, 0, b"")
@@ -517,7 +517,7 @@ async def test_mailbox_read_requeues_on_send_failure(
     service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     runtime_state.mark_transport_connected()
     runtime_state.mark_synchronized()
-    runtime_state.enqueue_mailbox_message(b"lost-message")
+    runtime_state.mailbox_queue.append(b"lost-message").success
 
     async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         return False
@@ -529,7 +529,7 @@ async def test_mailbox_read_requeues_on_send_failure(
 
     # Message should be back in queue
     assert len(runtime_state.mailbox_queue) == 1
-    assert runtime_state.pop_mailbox_message() == b"lost-message"
+    assert runtime_state.mailbox_queue.popleft() == b"lost-message"
 
 
 @pytest.mark.asyncio
@@ -641,7 +641,7 @@ async def test_mqtt_mailbox_read_preserves_empty_payload(
     # No sender registered, so it logs error but we can check dispatcher was called
     # via state changes if any. Actually mailbox/read pops from incoming queue.
     # Let's prime it.
-    runtime_state.enqueue_mailbox_incoming(b"remote-msg")
+    runtime_state.mailbox_incoming_queue.append(b"remote-msg").success
     await service.handle_mqtt_message(msg)
     assert len(runtime_state.mailbox_incoming_queue) == 0
 

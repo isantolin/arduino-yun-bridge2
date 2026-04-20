@@ -68,9 +68,7 @@ class SerialFlowController:
     def set_metrics_callback(self, callback: Callable[[str], None] | None) -> None:
         self._metrics_callback = callback
 
-    def set_pipeline_observer(
-        self, observer: Callable[[dict[str, Any]], None] | None
-    ) -> None:
+    def set_pipeline_observer(self, observer: Callable[[dict[str, Any]], None] | None) -> None:
         self._pipeline_observer = observer
 
     async def reset(self) -> None:
@@ -111,9 +109,7 @@ class SerialFlowController:
             self._current = pending
 
         try:
-            return await self._execute_with_retries(
-                pending, payload, sender, command_id
-            )
+            return await self._execute_with_retries(pending, payload, sender, command_id)
         finally:
             async with self._condition:
                 if self._current is pending:
@@ -171,9 +167,7 @@ class SerialFlowController:
         }
         self._pipeline_observer(payload)
 
-    def on_frame_received(
-        self, command_id: int, sequence_id: int, payload: bytes
-    ) -> None:
+    def on_frame_received(self, command_id: int, sequence_id: int, payload: bytes) -> None:
         pending = self._current
         if pending is None:
             return
@@ -207,9 +201,7 @@ class SerialFlowController:
                 should_reject = True
             else:
                 try:
-                    should_reject = (
-                        AckPacket.decode(payload).command_id == pending.command_id
-                    )
+                    should_reject = AckPacket.decode(payload).command_id == pending.command_id
                 except ValueError:
                     # Non-protobuf (human-readable string) → reject only if binary
                     should_reject = not all(32 <= byte < 127 for byte in payload)
@@ -276,9 +268,7 @@ class SerialFlowController:
 
         try:
             retryer = self._build_retryer()
-            return await retryer(
-                self._single_attempt, pending, payload, sender, cmd_to_send
-            )
+            return await retryer(self._single_attempt, pending, payload, sender, cmd_to_send)
         except self._RetryableSerialError:
             pending.mark_failure(Status.TIMEOUT.value)
             self._notify_pipeline("failure", pending, status=Status.TIMEOUT.value)
@@ -307,9 +297,7 @@ class SerialFlowController:
         actual_cmd_id: int,
     ) -> None:
         if not await sender(actual_cmd_id, payload):
-            self._logger.error(
-                "Serial write failed for command 0x%02X", pending.command_id
-            )
+            self._logger.error("Serial write failed for command 0x%02X", pending.command_id)
             pending.mark_failure(None)
             raise self._FatalSerialError(None)
 

@@ -146,7 +146,7 @@ async def test_mailbox_overflow_with_inbound() -> None:
         inbound.properties = MagicMock()
         inbound.properties.ResponseTopic = "reply"
 
-        await comp._handle_mqtt_write(b"data", inbound) # type: ignore[reportPrivateUsage]
+        await comp._handle_mqtt_write(b"data", inbound)  # type: ignore[reportPrivateUsage]
 
         assert ctx.mqtt_flow.publish.called
         # Should include reply_to context

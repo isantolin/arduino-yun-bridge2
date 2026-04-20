@@ -19,6 +19,7 @@ from tests._helpers import make_route
 @pytest.fixture
 def runtime_config() -> RuntimeConfig:
     import tempfile
+
     return RuntimeConfig(
         serial_port="/dev/null",
         mqtt_topic="br",
@@ -164,9 +165,7 @@ async def test_handle_get_version_resp_publishes_pending_and_updates_state(
     )
 
     # 2. Receive response
-    await component.handle_get_version_resp(
-        0, structures.VersionResponsePacket(major=2, minor=0, patch=0).encode()
-    )
+    await component.handle_get_version_resp(0, structures.VersionResponsePacket(major=2, minor=0, patch=0).encode())
 
     assert runtime_state.mcu_version == (2, 0, 0)
     assert ctx.mqtt_flow.publish.called

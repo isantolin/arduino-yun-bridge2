@@ -84,6 +84,7 @@ async def test_initialize_spool_handles_creation_failure(
         raise OSError("Permission denied")
 
     from mcubridge.mqtt.spool import MQTTPublishSpool
+
     monkeypatch.setattr(MQTTPublishSpool, "__init__", mock_init_fail)
 
     try:
@@ -106,7 +107,7 @@ async def test_spool_fallback_updates_state(
     transport = MqttTransport(runtime_config, state)
 
     before = time.monotonic()
-    transport._disable_mqtt_spool("disk error") # type: ignore[reportPrivateUsage]
+    transport._disable_mqtt_spool("disk error")  # type: ignore[reportPrivateUsage]
 
     assert state.mqtt_spool_degraded is True
     assert state.mqtt_spool_failure_reason == "disk error"

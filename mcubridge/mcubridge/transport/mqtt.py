@@ -60,11 +60,8 @@ class MqttTransport:
             self.state.metrics.retries.labels(component="mqtt_connect").inc()
 
         retryer = tenacity.AsyncRetrying(
-            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
-            + tenacity.wait_random(0, 2),
-            retry=tenacity.retry_if_exception_type(
-                (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
-            ),
+            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
+            retry=tenacity.retry_if_exception_type((aiomqtt.MqttError, OSError, asyncio.TimeoutError)),
             before_sleep=_before_sleep,
             reraise=True,
         )
@@ -120,16 +117,13 @@ class MqttTransport:
 
             # Subscribe
             topics = [
-                (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
-                for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
+                (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q)) for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
             ]
             await client.subscribe(topics)
             logger.info("Subscribed to %d command topics.", len(topics))
 
             # [SIL-2] Publish online status (retained) to complement the will message
-            await client.publish(
-                will_topic, b'{"status": "online"}', qos=1, retain=True
-            )
+            await client.publish(will_topic, b'{"status": "online"}', qos=1, retain=True)
 
             async with asyncio.TaskGroup() as task_group:
                 task_group.create_task(self._publisher_loop(client))
@@ -239,14 +233,10 @@ class MqttTransport:
                     TypeError,
                     ValueError,
                 ) as e:
-                    logger.error(
-                        "Error processing MQTT message on topic %s: %s", topic_str, e
-                    )
+                    logger.error("Error processing MQTT message on topic %s: %s", topic_str, e)
                     payload_bytes = bytes(message.payload) if message.payload else b""
                     hexdump = payload_bytes.hex(" ").upper()
-                    logger.error(
-                        "[HEXDUMP] FAILED MQTT MSG < %s: %s", topic_str, hexdump
-                    )
+                    logger.error("[HEXDUMP] FAILED MQTT MSG < %s: %s", topic_str, hexdump)
         except asyncio.CancelledError:
             with contextlib.suppress(asyncio.CancelledError):
                 raise
@@ -264,26 +254,18 @@ class MqttTransport:
         message_to_queue = message
         if reply_context is not None:
             props = reply_context.properties
-            target_topic = (
-                getattr(props, "ResponseTopic", None) if props else None
-            ) or message.topic_name
+            target_topic = (getattr(props, "ResponseTopic", None) if props else None) or message.topic_name
             if target_topic != message_to_queue.topic_name:
-                message_to_queue = msgspec.structs.replace(
-                    message_to_queue, topic_name=target_topic
-                )
+                message_to_queue = msgspec.structs.replace(message_to_queue, topic_name=target_topic)
 
             reply_correlation = getattr(props, "CorrelationData", None) if props else None
             if reply_correlation is not None:
-                message_to_queue = msgspec.structs.replace(
-                    message_to_queue, correlation_data=reply_correlation
-                )
+                message_to_queue = msgspec.structs.replace(message_to_queue, correlation_data=reply_correlation)
 
             origin_topic = str(reply_context.topic)
             user_properties = list(message_to_queue.user_properties)
             user_properties.append(("bridge-request-topic", origin_topic))
-            message_to_queue = msgspec.structs.replace(
-                message_to_queue, user_properties=tuple(user_properties)
-            )
+            message_to_queue = msgspec.structs.replace(message_to_queue, user_properties=tuple(user_properties))
 
         try:
             self.state.mqtt_publish_queue.put_nowait(message_to_queue)
@@ -371,11 +353,7 @@ class MqttTransport:
     async def ensure_spool(self) -> bool:
         if self.state.mqtt_spool:
             return True
-        if (
-            not self.state.mqtt_spool_dir
-            or self.state.mqtt_spool_limit <= 0
-            or self._spool_backoff_remaining() > 0
-        ):
+        if not self.state.mqtt_spool_dir or self.state.mqtt_spool_limit <= 0 or self._spool_backoff_remaining() > 0:
             return False
         try:
             self.state.mqtt_spool = await asyncio.to_thread(
@@ -386,9 +364,7 @@ class MqttTransport:
             )
             if self.state.mqtt_spool.is_degraded:
                 self.state.mqtt_spool_degraded = True
-                self.state.mqtt_spool_failure_reason = (
-                    self.state.mqtt_spool.last_error or "reactivation_failed"
-                )
+                self.state.mqtt_spool_failure_reason = self.state.mqtt_spool.last_error or "reactivation_failed"
                 self.state.mqtt_spool_last_error = self.state.mqtt_spool.last_error
             else:
                 self.state.mqtt_spool_degraded = False
@@ -425,9 +401,7 @@ class MqttTransport:
         )
         self.state.mqtt_spool_backoff_until = time.monotonic() + delay
 
-    def _handle_mqtt_spool_failure(
-        self, reason: str, exc: BaseException | None = None
-    ) -> None:
+    def _handle_mqtt_spool_failure(self, reason: str, exc: BaseException | None = None) -> None:
         self.state.record_mqtt_spool_error()
         if exc:
             self.state.mqtt_spool_last_error = str(exc)
@@ -478,4 +452,3 @@ class MqttTransport:
             except (MQTTSpoolError, OSError) as exc:
                 self._handle_mqtt_spool_failure("pop_failed", exc=exc)
                 break
-

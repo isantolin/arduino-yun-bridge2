@@ -157,9 +157,7 @@ async def test_transport_run_handshake_fatal() -> None:
                     "on_serial_connected",
                     side_effect=SerialHandshakeFatal("test"),
                 ),
-                patch.object(
-                    SerialTransport, "_toggle_dtr", new_callable=AsyncMock
-                ),
+                patch.object(SerialTransport, "_toggle_dtr", new_callable=AsyncMock),
             ):
                 transport = SerialTransport(config, state, service)
                 transport.loop = asyncio.get_running_loop()
@@ -202,9 +200,7 @@ async def test_serial_disconnected_hook_error(
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
                 patch.object(service, "on_serial_connected", new_callable=AsyncMock),
-                patch.object(
-                    service, "on_serial_disconnected", side_effect=_raise_error
-                ),
+                patch.object(service, "on_serial_disconnected", side_effect=_raise_error),
             ):
                 caplog.set_level("ERROR")
 
@@ -244,9 +240,7 @@ async def test_async_process_packet_os_error(
         from mcubridge.protocol.frame import Frame
         from mcubridge.protocol.protocol import Command
 
-        frame = Frame(
-            command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00"
-        ).build()
+        frame = Frame(command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00").build()
         encoded = cobs.encode(frame)
 
         caplog.set_level("ERROR")

@@ -39,6 +39,7 @@ def build_mqtt_properties(message: QueuedPublish) -> Properties:
     # The daemon helper returns None when no standard fields are set;
     # the client always needs a Properties object for the extra fields.
     import mcubridge.mqtt
+
     props = mcubridge.mqtt.build_mqtt_properties(message) or Properties(PacketTypes.PUBLISH)
 
     # Client-specific MQTT v5 properties not used by the daemon

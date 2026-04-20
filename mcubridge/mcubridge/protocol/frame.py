@@ -147,16 +147,12 @@ class Frame(msgspec.Struct, frozen=True):
     @property
     def raw_command_id(self) -> int:
         """Get the raw 15-bit command ID without the compression flag."""
-        return (
-            int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
-        )
+        return int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
 
     def build(self) -> bytes:
         """Build the binary frame representation."""
         if len(self.payload) > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(
-                f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}"
-            )
+            raise ValueError(f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}")
         try:
             # Use simple dictionary for building
             return RPC_FRAME.build(

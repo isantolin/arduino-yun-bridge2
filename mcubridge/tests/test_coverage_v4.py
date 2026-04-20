@@ -1,4 +1,3 @@
-
 import asyncio
 from typer.testing import CliRunner
 from mcubridge.daemon import app
@@ -6,11 +5,13 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 runner = CliRunner()
 
+
 def test_daemon_cli_help():
     """Verify CLI help works and covers entry paths."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "Main entry point" in result.output
+
 
 def test_daemon_cli_invalid_config():
     """Verify CLI error handling for invalid config."""
@@ -18,12 +19,14 @@ def test_daemon_cli_invalid_config():
         result = runner.invoke(app, ["--serial-port", "/dev/null"])
         assert result.exit_code == 1
 
+
 @patch("mcubridge.daemon.verify_crypto_integrity", return_value=False)
 def test_daemon_cli_crypto_fail(mock_verify: MagicMock):
     """Verify CLI aborts on crypto integrity failure."""
     result = runner.invoke(app, ["--serial-port", "/dev/null"])
     assert result.exit_code == 1
     assert "CRYPTOGRAPHIC INTEGRITY CHECK FAILED" in result.output
+
 
 def test_daemon_cli_default_secret_warning():
     """Verify CLI warning when using default secret."""
@@ -48,6 +51,7 @@ def test_daemon_cli_default_secret_warning():
         # Typer/CliRunner executes the function
         result = runner.invoke(app, ["--non-interactive"])
         assert "SECURITY CRITICAL" in result.output
+
 
 def test_spi_service_coverage():
     """Boost coverage for SPI service which is at 29%."""
@@ -75,10 +79,11 @@ def test_spi_service_coverage():
     # Test handle_mqtt for 'config'
     route_cfg = TopicRoute(raw="br/spi/config", prefix="br", topic=Topic.SPI, segments=("config",))
     import msgspec
+
     payload = msgspec.json.encode({"frequency": 1000000})
     msg_cfg = Message(Topic.SPI.value, payload, 0, False, False, None)
     asyncio.run(service.handle_mqtt(route_cfg, msg_cfg))
 
     # Test handle_transfer_resp
-    asyncio.run(service.handle_transfer_resp(1, b"\x91\xC4\x04data"))
+    asyncio.run(service.handle_transfer_resp(1, b"\x91\xc4\x04data"))
     mock_ctx.mqtt_flow.publish.assert_called()

@@ -80,11 +80,7 @@ class BridgeQueue(Generic[T]):
         dropped_chunks, dropped_bytes = 0, 0
         while True:
             too_many_items = self.max_items and len(self) >= self.max_items
-            too_many_bytes = (
-                self.max_bytes
-                and data_len > 0
-                and (self._current_bytes + data_len > self.max_bytes)
-            )
+            too_many_bytes = self.max_bytes and data_len > 0 and (self._current_bytes + data_len > self.max_bytes)
 
             if not (too_many_items or too_many_bytes):
                 break

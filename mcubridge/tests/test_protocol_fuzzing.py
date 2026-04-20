@@ -15,7 +15,6 @@ def test_frame_parsing_resilience_to_fuzzing():
     """Fuzzing test to ensure Frame.parse never crashes with unhandled exceptions."""
     random.seed(TEST_RANDOM_SEED)
 
-
     for i in range(FUZZ_ITERATIONS):
         # Generate random length between 0 and 200 bytes
         length = random.randint(0, 200)
@@ -52,9 +51,7 @@ def test_cobs_decoding_resilience():
         except (cobs.DecodeError, ValueError, TypeError):
             pass
         except BaseException as exc:
-            pytest.fail(
-                f"cobs.decode crashed on iteration {i} with unhandled exception: {type(exc).__name__}: {exc}"
-            )
+            pytest.fail(f"cobs.decode crashed on iteration {i} with unhandled exception: {type(exc).__name__}: {exc}")
 
 
 @pytest.mark.fuzz

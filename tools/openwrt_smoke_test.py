@@ -292,9 +292,7 @@ def run_test(apk_disk: str, extroot_disk: str) -> None:
     import pexpect  # pyright: ignore[reportMissingModuleSource]
 
     qemu_cmd = build_qemu_cmd(apk_disk, extroot_disk)
-    child: pexpect.spawn[str] = pexpect.spawn(
-        qemu_cmd[0], qemu_cmd[1:], encoding="utf-8", timeout=300
-    )
+    child: pexpect.spawn[str] = pexpect.spawn(qemu_cmd[0], qemu_cmd[1:], encoding="utf-8", timeout=300)
     child.logfile = sys.stdout
 
     try:

@@ -43,9 +43,7 @@ def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     )
 
 
-def json_res(
-    start_response: Any, status: str, response: GenericResponsePacket
-) -> list[bytes]:
+def json_res(start_response: Any, status: str, response: GenericResponsePacket) -> list[bytes]:
     body = msgspec.json.encode(response)
     headers = [
         ("Content-Type", "application/json"),

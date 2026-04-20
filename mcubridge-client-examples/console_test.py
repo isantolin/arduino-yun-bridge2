@@ -37,9 +37,7 @@ async def run_test(
         listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 
         # [CI] Automatic Echo Test if not in a TTY or forced via env
-        is_interactive = (
-            sys.stdin.isatty() and os.environ.get("MCUBRIDGE_NON_INTERACTIVE") != "1"
-        )
+        is_interactive = sys.stdin.isatty() and os.environ.get("MCUBRIDGE_NON_INTERACTIVE") != "1"
 
         if not is_interactive:
             logging.info("Non-interactive mode. Running Echo Test (ping/pong)...")
@@ -52,9 +50,7 @@ async def run_test(
                 await asyncio.sleep(0.5)
             logging.info("Echo Test phase completed.")
         else:
-            logging.info(
-                "Enter text to send to the Arduino console. Type 'exit' to quit."
-            )
+            logging.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
             while True:
                 try:
                     # Run blocking input in a separate thread
@@ -78,9 +74,7 @@ def main(
     port: Annotated[int | None, typer.Option(help="MQTT Broker Port")] = None,
     user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
     password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
-    tls_insecure: Annotated[
-        bool, typer.Option(help="Disable TLS certificate verification")
-    ] = False,
+    tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = False,
 ) -> None:
     asyncio.run(run_test(host, port, user, password, tls_insecure))
 

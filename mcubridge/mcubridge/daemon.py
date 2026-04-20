@@ -149,9 +149,7 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "serial-link",
-                            lambda: SerialTransport(
-                                self.config, self.state, self.service
-                            ).run(),
+                            lambda: SerialTransport(self.config, self.state, self.service).run(),
                             (SerialHandshakeFatal,),
                         )
                     )
@@ -168,9 +166,7 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "status-writer",
-                            lambda: status_writer(
-                                self.state, self.config.status_interval
-                            ),
+                            lambda: status_writer(self.state, self.config.status_interval),
                         )
                     )
                     tg.create_task(
@@ -185,30 +181,21 @@ class BridgeDaemon:
                     )
 
                     # 4. Optional Features
-                    if (
-                        self.config.bridge_summary_interval > 0.0
-                        or self.config.bridge_handshake_interval > 0.0
-                    ):
+                    if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
                         tg.create_task(
                             self._supervise(
                                 "bridge-snapshots",
                                 lambda: publish_bridge_snapshots(
                                     self.state,
                                     self.mqtt_transport.enqueue_mqtt,
-                                    summary_interval=float(
-                                        self.config.bridge_summary_interval
-                                    ),
-                                    handshake_interval=float(
-                                        self.config.bridge_handshake_interval
-                                    ),
+                                    summary_interval=float(self.config.bridge_summary_interval),
+                                    handshake_interval=float(self.config.bridge_handshake_interval),
                                 ),
                             )
                         )
 
                     if self.config.watchdog_enabled:
-                        self.watchdog = WatchdogKeepalive(
-                            interval=self.config.watchdog_interval, state=self.state
-                        )
+                        self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
                         tg.create_task(self._supervise("watchdog", self.watchdog.run))
 
                     if self.config.metrics_enabled:
@@ -217,9 +204,7 @@ class BridgeDaemon:
                             self.config.metrics_host,
                             self.config.metrics_port,
                         )
-                        tg.create_task(
-                            self._supervise("prometheus-exporter", self.exporter.run)
-                        )
+                        tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
@@ -275,11 +260,7 @@ class BridgeDaemon:
                     return False
                 return True
 
-        stop = (
-            tenacity.stop_after_attempt(max_restarts + 1)
-            if max_restarts is not None
-            else tenacity.stop_never
-        )
+        stop = tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never
 
         retryer = tenacity.AsyncRetrying(
             stop=stop,
@@ -306,21 +287,11 @@ def main(
     serial_baud: Annotated[int | None, typer.Option(help="Serial baud rate")] = None,
     mqtt_host: Annotated[str | None, typer.Option(help="MQTT host")] = None,
     mqtt_port: Annotated[int | None, typer.Option(help="MQTT port")] = None,
-    mqtt_tls: Annotated[
-        int | None, typer.Option(help="Use TLS for MQTT (0 or 1)")
-    ] = None,
-    serial_shared_secret: Annotated[
-        str | None, typer.Option(help="Shared secret for serial link")
-    ] = None,
-    allowed_commands: Annotated[
-        str | None, typer.Option(help="Comma-separated list of allowed shell commands")
-    ] = None,
-    non_interactive: Annotated[
-        bool, typer.Option(help="Enable non-interactive mode")
-    ] = False,
-    debug: Annotated[
-        bool, typer.Option("--debug", help="Enable debug logging")
-    ] = False,
+    mqtt_tls: Annotated[int | None, typer.Option(help="Use TLS for MQTT (0 or 1)")] = None,
+    serial_shared_secret: Annotated[str | None, typer.Option(help="Shared secret for serial link")] = None,
+    allowed_commands: Annotated[str | None, typer.Option(help="Comma-separated list of allowed shell commands")] = None,
+    non_interactive: Annotated[bool, typer.Option(help="Enable non-interactive mode")] = False,
+    debug: Annotated[bool, typer.Option("--debug", help="Enable debug logging")] = False,
 ) -> None:
     """Main entry point for the MCU Bridge daemon."""
     overrides: dict[str, Any] = {}
@@ -341,9 +312,7 @@ def main(
     if debug:
         overrides["debug_logging"] = True
     if allowed_commands:
-        overrides["allowed_commands"] = (
-            allowed_commands.split(",") if allowed_commands != "*" else "*"
-        )
+        overrides["allowed_commands"] = allowed_commands.split(",") if allowed_commands != "*" else "*"
 
     config = load_runtime_config(overrides)
     configure_logging(config)
@@ -395,9 +364,7 @@ def main(
         msgspec.MsgspecError,
         tenacity.RetryError,
     ) as exc:
-        logger.critical(
-            "Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError)
-        )
+        logger.critical("Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError))
         sys.exit(1)
 
 

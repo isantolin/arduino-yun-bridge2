@@ -63,9 +63,7 @@ async def test_process_packet_success_dispatches() -> None:
 
         service.handle_mcu_frame = AsyncMock()
 
-        frame_bytes = Frame(
-            command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi"
-        ).build()
+        frame_bytes = Frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi").build()
         encoded = cobs.encode(frame_bytes)
         transport = SerialTransport(config, state, service)
 
@@ -73,9 +71,7 @@ async def test_process_packet_success_dispatches() -> None:
 
         await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
-        service.handle_mcu_frame.assert_awaited_once_with(
-            Command.CMD_CONSOLE_WRITE.value, 0, b"hi"
-        )
+        service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
     finally:
         state.cleanup()
 

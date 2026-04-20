@@ -41,9 +41,7 @@ def _load_raw_config() -> tuple[dict[str, Any], str]:
             source = "uci"
     except (OSError, ValueError, RuntimeError, ImportError) as err:
         # [SIL-2] UCI is optional for system survival. Log error and continue with defaults.
-        logger.warning(
-            "UCI configuration unavailable or locked (using safe defaults): %s", err
-        )
+        logger.warning("UCI configuration unavailable or locked (using safe defaults): %s", err)
 
     return config, source
 
@@ -82,9 +80,7 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
     try:
         # [SIL-2] Holistic Validation via msgspec.Struct.
         # strict=False allows some flexibility during test/migration phases (e.g. string to bytes)
-        return msgspec.convert(
-            raw_values, RuntimeConfig, strict=False, dec_hook=dec_hook
-        )
+        return msgspec.convert(raw_values, RuntimeConfig, strict=False, dec_hook=dec_hook)
     except (msgspec.ValidationError, ValueError) as e:
         if source == "uci":
             # [SIL-2] Deterministic Failure: If UCI is present but invalid, abort.

@@ -149,16 +149,12 @@ class ProcessComponent(BaseComponent):
             reply_to=inbound,
         )
 
-    async def _handle_mqtt_poll(
-        self, pid_model: ShellPidPayload, inbound: Message | None = None
-    ) -> None:
+    async def _handle_mqtt_poll(self, pid_model: ShellPidPayload, inbound: Message | None = None) -> None:
         pid = pid_model.pid
         batch = await self.poll_process(pid)
         await self.publish_poll_result(pid, batch, inbound)
 
-    async def _handle_mqtt_kill(
-        self, pid_model: ShellPidPayload, inbound: Message | None = None
-    ) -> None:
+    async def _handle_mqtt_kill(self, pid_model: ShellPidPayload, inbound: Message | None = None) -> None:
         await self.stop_process(pid_model.pid)
 
     def _parse_shell_command(
@@ -272,9 +268,7 @@ class ProcessComponent(BaseComponent):
                 status=Status.MALFORMED,
             )
 
-    async def handle_kill(
-        self, seq_id: int, payload: bytes, *, send_ack: bool = True
-    ) -> bool:
+    async def handle_kill(self, seq_id: int, payload: bytes, *, send_ack: bool = True) -> bool:
         """Handle process termination request."""
         try:
             packet = structures.ProcessKillPacket.decode(payload)
@@ -351,17 +345,13 @@ class ProcessComponent(BaseComponent):
 
             if proc and proc.handle:
                 # [SIL-2] Delegate stream reading with global safety timeout
-                async def _read(
-                    reader: asyncio.StreamReader | None, buffer: collections.deque[int]
-                ) -> None:
+                async def _read(reader: asyncio.StreamReader | None, buffer: collections.deque[int]) -> None:
                     if not reader:
                         return
                     try:
                         # Timeout per chunk to avoid infinite waiting on broken pipes
                         while True:
-                            chunk = await asyncio.wait_for(
-                                reader.read(4096), timeout=2.0
-                            )
+                            chunk = await asyncio.wait_for(reader.read(4096), timeout=2.0)
                             if not chunk:
                                 break
                             buffer.extend(chunk)
@@ -372,17 +362,11 @@ class ProcessComponent(BaseComponent):
                 try:
                     async with asyncio.timeout(5.0):
                         async with asyncio.TaskGroup() as tg:
-                            tg.create_task(
-                                _read(proc.handle.stdout, proc.stdout_buffer)
-                            )
-                            tg.create_task(
-                                _read(proc.handle.stderr, proc.stderr_buffer)
-                            )
+                            tg.create_task(_read(proc.handle.stdout, proc.stdout_buffer))
+                            tg.create_task(_read(proc.handle.stderr, proc.stderr_buffer))
                         proc.exit_code = await proc.handle.wait()
                 except asyncio.TimeoutError:
-                    logger.warning(
-                        "Process %d monitor timed out; forcing finalization", pid
-                    )
+                    logger.warning("Process %d monitor timed out; forcing finalization", pid)
 
                 async with proc.io_lock:
                     proc.trigger("sigchld")
@@ -395,14 +379,10 @@ class ProcessComponent(BaseComponent):
         async with self.state.process_lock:
             proc = self.state.running_processes.get(pid)
             if not proc:
-                return ProcessOutputBatch(
-                    Status.ERROR.value, 1, b"", b"", True, False, False
-                )
+                return ProcessOutputBatch(Status.ERROR.value, 1, b"", b"", True, False, False)
 
             async with proc.io_lock:
-                stdout, stderr, t_out, t_err = proc.pop_payload(
-                    protocol.MAX_PAYLOAD_SIZE - 32
-                )
+                stdout, stderr, t_out, t_err = proc.pop_payload(protocol.MAX_PAYLOAD_SIZE - 32)
                 is_finished = proc.fsm_state == PROCESS_STATE_FINISHED
 
                 batch = ProcessOutputBatch(
@@ -442,9 +422,7 @@ class ProcessComponent(BaseComponent):
                     logger.warning("Force killing zombie child process %d", p.pid)
                     p.kill()
 
-            with contextlib.suppress(
-                ProcessLookupError, OSError, RuntimeError, AttributeError
-            ):
+            with contextlib.suppress(ProcessLookupError, OSError, RuntimeError, AttributeError):
                 handle.terminate()
         except (psutil.NoSuchProcess, ProcessLookupError):
             pass
@@ -459,9 +437,7 @@ class ProcessComponent(BaseComponent):
                 if inspect.isawaitable(wait_result):
                     await asyncio.wait_for(wait_result, timeout=1.0)
             except asyncio.TimeoutError:
-                with contextlib.suppress(
-                    ProcessLookupError, OSError, RuntimeError, AttributeError
-                ):
+                with contextlib.suppress(ProcessLookupError, OSError, RuntimeError, AttributeError):
                     handle.kill()
                 try:
                     wait_result = wait_fn()
@@ -474,9 +450,7 @@ class ProcessComponent(BaseComponent):
                     RuntimeError,
                     ValueError,
                 ):
-                    logger.warning(
-                        "Timed out waiting for process %d to exit cleanly", pid
-                    )
+                    logger.warning("Timed out waiting for process %d to exit cleanly", pid)
             except (ProcessLookupError, OSError, RuntimeError, ValueError):
                 pass
 

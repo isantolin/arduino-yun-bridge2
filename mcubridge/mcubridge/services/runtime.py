@@ -131,9 +131,7 @@ class BridgeService:
             handle_link_reset_resp=self.handshake_manager.handle_link_reset_resp,
             handle_get_capabilities_resp=self.handshake_manager.handle_capabilities_resp,
             handle_ack=self._handle_ack,
-            status_handler_factory=lambda status: lambda s, p: self.handle_status(
-                s, status, p
-            ),
+            status_handler_factory=lambda status: lambda s, p: self.handle_status(s, status, p),
             handle_process_kill=self._container.get(ProcessComponent).handle_kill,
         )
 
@@ -189,16 +187,12 @@ class BridgeService:
 
         # [SIL-2] Boundary Guard: Do not proceed if synchronization failed.
         if not self.state.is_synchronized:
-            logger.warning(
-                "Link synchronization failed; aborting post-connection initialization"
-            )
+            logger.warning("Link synchronization failed; aborting post-connection initialization")
             self.handshake_manager.raise_if_handshake_fatal()
             return
 
         try:
-            version_ok = await self._container.get(
-                SystemComponent
-            ).request_mcu_version()
+            version_ok = await self._container.get(SystemComponent).request_mcu_version()
             if not version_ok:
                 logger.warning("Failed to dispatch MCU version request after reconnect")
         except (OSError, ValueError, RuntimeError) as e:
@@ -220,8 +214,7 @@ class BridgeService:
         total_pending = pending_digital + pending_analog
         if total_pending:
             logger.warning(
-                "Serial link lost; clearing %d pending request(s) "
-                "(digital=%d analog=%d)",
+                "Serial link lost; clearing %d pending request(s) (digital=%d analog=%d)",
                 total_pending,
                 pending_digital,
                 pending_analog,
@@ -235,9 +228,7 @@ class BridgeService:
         await self._serial_flow.reset()
         self.handshake_manager.clear_handshake_expectations()
 
-    async def handle_mcu_frame(
-        self, command_id: int, sequence_id: int, payload: bytes
-    ) -> None:
+    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
         await self.dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
 
@@ -247,8 +238,6 @@ class BridgeService:
             inbound,
             lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
         )
-
-
 
     async def acknowledge_mcu_frame(
         self,
@@ -300,9 +289,7 @@ class BridgeService:
         desc = status.description
         text = payload.decode("utf-8", errors="ignore") if payload else ""
 
-        log_method = (
-            logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
-        )
+        log_method = logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
         if text:
             log_method("MCU > %s (seq=%d): %s (%s)", status.name, seq_id, desc, text)
         else:

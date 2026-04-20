@@ -154,9 +154,7 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
 
     topics = {message.topic_name for message in messages}
     assert f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/value" in topics
-    assert (
-        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/value" in topics
-    )
+    assert f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/value" in topics
     properties = [prop for message in messages for prop in message.user_properties]
     assert ("bridge-snapshot", "summary") in properties
     assert ("bridge-snapshot", "handshake") in properties

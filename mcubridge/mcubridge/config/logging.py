@@ -16,9 +16,7 @@ SYSLOG_SOCKET = Path("/dev/log")
 SYSLOG_SOCKET_FALLBACK = Path("/var/run/log")
 
 
-def hexdump_processor(
-    _: Any, __: str, event_dict: structlog.types.EventDict
-) -> structlog.types.EventDict:
+def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) -> structlog.types.EventDict:
     """Format binary fields as standardized hex strings [DE AD BE EF]."""
     for key, value in event_dict.items():
         if isinstance(value, (bytes, bytearray, memoryview)):
@@ -32,9 +30,7 @@ def configure_logging(config: RuntimeConfig) -> None:
 
     level = "DEBUG" if getattr(config, "debug_logging", False) else "INFO"
     force_stream = bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
-    use_syslog = not force_stream and (
-        SYSLOG_SOCKET.exists() or SYSLOG_SOCKET_FALLBACK.exists()
-    )
+    use_syslog = not force_stream and (SYSLOG_SOCKET.exists() or SYSLOG_SOCKET_FALLBACK.exists())
 
     shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,

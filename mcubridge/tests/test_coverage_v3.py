@@ -287,9 +287,7 @@ async def test_serial_transport_run_fatal():
 
     from mcubridge.services.handshake import SerialHandshakeFatal
 
-    with patch.object(
-        transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal")
-    ):
+    with patch.object(transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal")):
         with pytest.raises(SerialHandshakeFatal):
             await transport.run()
 

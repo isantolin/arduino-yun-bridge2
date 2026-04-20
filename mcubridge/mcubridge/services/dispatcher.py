@@ -139,9 +139,7 @@ class BridgeDispatcher:
         handle_link_reset_resp: Callable[[int, bytes], Awaitable[bool]],
         handle_get_capabilities_resp: Callable[[int, bytes], Awaitable[bool]],
         handle_ack: Callable[[int, bytes], Awaitable[None]],
-        status_handler_factory: Callable[
-            [Status], Callable[[int, bytes], Awaitable[None]]
-        ],
+        status_handler_factory: Callable[[Status], Callable[[int, bytes], Awaitable[None]]],
         handle_process_kill: Callable[[int, bytes], Awaitable[bool | None]],
     ) -> None:
         self.mcu_registry[Command.CMD_LINK_SYNC_RESP.value] = handle_link_sync_resp
@@ -155,9 +153,7 @@ class BridgeDispatcher:
                 continue
             self.mcu_registry[status.value] = status_handler_factory(status)
 
-    async def dispatch_mcu_frame(
-        self, command_id: int, sequence_id: int, payload: bytes
-    ) -> None:
+    async def dispatch_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
         """
         Route an incoming frame from the MCU to the appropriate registered handler.
         """
@@ -178,9 +174,7 @@ class BridgeDispatcher:
             handled_successfully = False
 
             if handler:
-                logger.debug(
-                    "MCU > %s (seq=%d) [%d bytes]", command_name, sequence_id, len(payload)
-                )
+                logger.debug("MCU > %s (seq=%d) [%d bytes]", command_name, sequence_id, len(payload))
                 handled_successfully = (await handler(sequence_id, payload)) is not False
 
             elif response_to_request(command_id) is None:
@@ -243,11 +237,7 @@ class BridgeDispatcher:
                 return route.identifier or None
 
     def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
-        return (
-            self.state.is_synchronized
-            or command_id in STATUS_VALUES
-            or command_id in _PRE_SYNC_ALLOWED_COMMANDS
-        )
+        return self.state.is_synchronized or command_id in STATUS_VALUES or command_id in _PRE_SYNC_ALLOWED_COMMANDS
 
     async def _handle_system_topic(self, route: TopicRoute, inbound: Message) -> bool:
         match route.identifier:
@@ -256,6 +246,7 @@ class BridgeDispatcher:
             case _:
                 if self._container:
                     from . import SystemComponent
+
                     return await self._container.get(SystemComponent).handle_mqtt(route, inbound)
         return False
 

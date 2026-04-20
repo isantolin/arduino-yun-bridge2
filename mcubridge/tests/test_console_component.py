@@ -108,9 +108,7 @@ async def test_flush_queue(console_component: ConsoleComponent) -> None:
     queue = deque([b"queued"])
     console_component.state.console_to_mcu_queue = queue  # type: ignore[reportAttributeAccessIssue]
     mock_pop = cast(MagicMock, console_component.state.pop_console_chunk)
-    mock_pop.side_effect = (
-        lambda: (queue.popleft() if queue else None)
-    )
+    mock_pop.side_effect = lambda: queue.popleft() if queue else None
 
     await console_component.flush_queue()
 

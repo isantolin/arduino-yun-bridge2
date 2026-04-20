@@ -50,9 +50,7 @@ from typing import Protocol
 
 
 class SendFrameCallable(Protocol):
-    async def __call__(
-        self, command_id: int, payload: bytes, seq_id: int | None = None
-    ) -> bool: ...
+    async def __call__(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool: ...
 
 
 EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
@@ -239,9 +237,7 @@ class SerialHandshakeManager:
 
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = nonce_length
-        self._state.link_expected_tag = self.calculate_handshake_tag(
-            self._config.serial_shared_secret, nonce
-        )
+        self._state.link_expected_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
 
         reset_ok = await self._send_frame(
             Command.CMD_LINK_RESET.value,
@@ -291,10 +287,7 @@ class SerialHandshakeManager:
             return False
 
         # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
-        if (
-            self.fsm_state != self.STATE_SYNCHRONIZED
-            and self.fsm_state != self.STATE_FAULT
-        ):
+        if self.fsm_state != self.STATE_SYNCHRONIZED and self.fsm_state != self.STATE_FAULT:
             self.complete_handshake()
 
         return self.fsm_state == self.STATE_SYNCHRONIZED
@@ -316,7 +309,7 @@ class SerialHandshakeManager:
             now = time.monotonic()
             if now < self._state.handshake_rate_until:
                 self._logger.warning(
-                    ("LINK_SYNC_RESP throttled due to rate limit " "(remaining=%.2fs)"),
+                    ("LINK_SYNC_RESP throttled due to rate limit (remaining=%.2fs)"),
                     self._state.handshake_rate_until - now,
                 )
                 await self._acknowledge_frame(
@@ -347,26 +340,19 @@ class SerialHandshakeManager:
             return False
 
         expected_tag = self._state.link_expected_tag
-        recalculated_tag = self.calculate_handshake_tag(
-            self._config.serial_shared_secret, nonce
-        )
+        recalculated_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
 
         nonce_mismatch = not bytes_eq(nonce, expected)
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
         tag_mismatch = (
-            not bytes_eq(tag_bytes, recalculated_tag)
-            and self._config.serial_shared_secret != b"DEBUG_INSECURE"  # noqa: W503
+            not bytes_eq(tag_bytes, recalculated_tag) and self._config.serial_shared_secret != b"DEBUG_INSECURE"  # noqa: W503
         )
 
         if not nonce_mismatch and not missing_expected_tag:
-            is_valid, _ = validate_nonce_counter(
-                nonce, self._state.link_last_nonce_counter
-            )
+            is_valid, _ = validate_nonce_counter(nonce, self._state.link_last_nonce_counter)
             if not is_valid:
-                self._logger.warning(
-                    "LINK_SYNC_RESP replay detected (nonce counter too low)"
-                )
+                self._logger.warning("LINK_SYNC_RESP replay detected (nonce counter too low)")
                 nonce_mismatch = True
 
         if nonce_mismatch or missing_expected_tag or bad_tag_length or tag_mismatch:
@@ -404,9 +390,7 @@ class SerialHandshakeManager:
     async def _fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
         cmd_id = Command.CMD_GET_CAPABILITIES.value
-        self._logger.debug(
-            "Starting capabilities discovery using Command ID 0x%02X", cmd_id
-        )
+        self._logger.debug("Starting capabilities discovery using Command ID 0x%02X", cmd_id)
 
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(5),
@@ -428,9 +412,7 @@ class SerialHandshakeManager:
 
             try:
                 timeout = max(5.0, self._timing.response_timeout_seconds)
-                payload = await asyncio.wait_for(
-                    self._capabilities_future, timeout=timeout
-                )
+                payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
                 self._parse_capabilities(payload)
                 return True
             except asyncio.TimeoutError:
@@ -480,9 +462,7 @@ class SerialHandshakeManager:
         is_fatal = self._should_mark_failure_fatal(reason)
         fatal_detail = detail
         if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
-            fatal_detail = detail or (
-                f"failure_streak_exceeded_{self._fatal_threshold}"
-            )
+            fatal_detail = detail or (f"failure_streak_exceeded_{self._fatal_threshold}")
         if is_fatal:
             self._state.record_handshake_fatal(reason, fatal_detail)
             self._logger.error(
@@ -520,9 +500,7 @@ class SerialHandshakeManager:
             "Verify mcubridge.general.serial_shared_secret (configured via UCI/LuCI) "
             "matches the BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
         )
-        raise SerialHandshakeFatal(
-            "MCU rejected the serial shared secret " f"(reason={reason}). {hint}"
-        )
+        raise SerialHandshakeFatal(f"MCU rejected the serial shared secret (reason={reason}). {hint}")
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
         timeout = max(0.5, self._timing.response_timeout_seconds)
@@ -578,9 +556,7 @@ class SerialHandshakeManager:
         if extra:
             payload |= extra
         message = QueuedPublish(
-            topic_name=topic_path(
-                self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"
-            ),
+            topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
             payload=_msgpack_enc.encode(payload),
             content_type="application/msgpack",
             user_properties=(("bridge-event", "handshake"),),
@@ -629,6 +605,5 @@ class SerialHandshakeManager:
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         return (
             reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
-            or self._state.handshake_failure_streak
-            >= self._fatal_threshold  # noqa: W503
+            or self._state.handshake_failure_streak >= self._fatal_threshold  # noqa: W503
         )

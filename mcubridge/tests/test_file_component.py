@@ -21,6 +21,7 @@ from tests._helpers import make_mqtt_msg
 @pytest.fixture
 def runtime_config() -> RuntimeConfig:
     import tempfile
+
     return RuntimeConfig(
         serial_port="/dev/null",
         mqtt_topic="br",
@@ -51,9 +52,7 @@ def file_component(
     bridge.serial_flow.send = AsyncMock(return_value=True)
     bridge.serial_flow.acknowledge = AsyncMock()
 
-    async def _schedule(
-        coro: Any, *, name: str | None = None
-    ) -> asyncio.Task[Any]:
+    async def _schedule(coro: Any, *, name: str | None = None) -> asyncio.Task[Any]:
         return asyncio.create_task(coro, name=name)
 
     bridge.schedule_background.side_effect = _schedule
@@ -82,13 +81,11 @@ async def test_handle_mqtt_write_and_read(
     file_component: tuple[FileComponent, MagicMock],
     tmp_path: Path,
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
     # Ensure component uses tmp_path
     component.config.file_system_root = str(tmp_path)
 
-    msg = type(
-        "MockMsg", (), {"topic": "br/file/write/dir/file.txt", "payload": b"payload", "properties": None}
-    )()
+    msg = type("MockMsg", (), {"topic": "br/file/write/dir/file.txt", "payload": b"payload", "properties": None})()
     route = TopicRoute(
         raw="br/file/write/dir/file.txt",
         prefix="br",
@@ -99,9 +96,7 @@ async def test_handle_mqtt_write_and_read(
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
     assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
 
-    msg_read = type(
-        "MockMsg", (), {"topic": "br/file/read/dir/file.txt", "payload": b"", "properties": None}
-    )()
+    msg_read = type("MockMsg", (), {"topic": "br/file/read/dir/file.txt", "payload": b"", "properties": None})()
     route_read = TopicRoute(
         raw="br/file/read/dir/file.txt",
         prefix="br",
@@ -120,7 +115,7 @@ async def test_handle_mqtt_write_and_read(
 async def test_handle_write_rejects_absolute_path(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
     await component.handle_write(0, _build_write_payload("/etc/passwd", b"boom"))
     assert bridge.serial_flow.send.called
     assert bridge.serial_flow.send.call_args.args[0] == Status.ERROR.value
@@ -130,7 +125,7 @@ async def test_handle_write_rejects_absolute_path(
 async def test_handle_write_rejects_parent_dir(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
     await component.handle_write(0, _build_write_payload("../secret.txt", b"boom"))
     assert bridge.serial_flow.send.call_args.args[0] == Status.ERROR.value
 
@@ -140,7 +135,7 @@ async def test_handle_write_failure_sends_error(
     file_component: tuple[FileComponent, MagicMock],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
 
     def boom(*_args: Any, **_kwargs: Any) -> None:
         raise OSError("Disk full")
@@ -155,7 +150,7 @@ async def test_handle_mqtt_remove_action(
     file_component: tuple[FileComponent, MagicMock],
     tmp_path: Path,
 ) -> None:
-    component, _bridge = file_component # type: ignore[reportUnusedVariable]
+    component, _bridge = file_component  # type: ignore[reportUnusedVariable]
     component.config.file_system_root = str(tmp_path)
     test_file = tmp_path / "rm.txt"
     test_file.write_bytes(b"bye")
@@ -177,7 +172,7 @@ async def test_handle_read_large_payload_chunking(
     file_component: tuple[FileComponent, MagicMock],
     tmp_path: Path,
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
     component.config.file_system_root = str(tmp_path)
     large_data = b"X" * 128  # Exactly 2 chunks
     (tmp_path / "large.bin").write_bytes(large_data)
@@ -192,7 +187,7 @@ async def test_handle_read_large_payload_chunking(
 async def test_handle_read_rejects_invalid_payloads(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
     await component.handle_read(0, b"\xff\xff\xff")
     assert bridge.serial_flow.send.called
     # Check Status.MALFORMED (0x33 = 51) or Status.ERROR (0x31 = 49)
@@ -203,10 +198,8 @@ async def test_handle_read_rejects_invalid_payloads(
 async def test_handle_mqtt_missing_filename_is_ignored(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
-    route = TopicRoute(
-        raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",)
-    )
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    route = TopicRoute(raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",))
     await component.handle_mqtt(route, make_mqtt_msg(""))
     assert not bridge.mqtt_flow.publish.called
 
@@ -215,7 +208,7 @@ async def test_handle_mqtt_missing_filename_is_ignored(
 async def test_handle_mqtt_unknown_action_is_ignored(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
     route = TopicRoute(
         raw="br/file/magic/file.txt",
         prefix="br",
@@ -231,7 +224,7 @@ async def test_handle_read_oserror_returns_false(
     file_component: tuple[FileComponent, MagicMock],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
 
     def boom(*_args: Any, **_kwargs: Any) -> Any:
         raise OSError("Read fail")
@@ -243,8 +236,8 @@ async def test_handle_read_oserror_returns_false(
     )
     # Filter only send_frame calls
     error_sent = any(
-        call.args[0] == Status.ERROR.value # type: ignore
-        for call in (bridge.serial_flow.send.call_args_list or []) # type: ignore
+        call.args[0] == Status.ERROR.value  # type: ignore
+        for call in (bridge.serial_flow.send.call_args_list or [])  # type: ignore
     )
     assert error_sent
 
@@ -265,10 +258,8 @@ def test_normalise_filename_rejects_bad_inputs() -> None:
         "file_with_underscores.txt",
     ],
 )
-def test_get_safe_path_confines_to_root(
-    file_component: tuple[FileComponent, MagicMock], input_path: str
-) -> None:
-    component, _bridge = file_component # type: ignore[reportUnusedVariable]
+def test_get_safe_path_confines_to_root(file_component: tuple[FileComponent, MagicMock], input_path: str) -> None:
+    component, _bridge = file_component  # type: ignore[reportUnusedVariable]
     safe = component._get_safe_path(input_path)  # type: ignore[reportPrivateUsage]
     assert safe is not None
     assert str(safe).endswith(input_path)
@@ -280,7 +271,7 @@ async def test_handle_read_large_payload_truncation_reproduction(
     tmp_path: Path,
 ) -> None:
     """Reproduction test for a bug where large file reads were incorrectly truncated."""
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
     component.config.file_system_root = str(tmp_path)
     large_data = b"ABC" * 50  # 150 bytes
     (tmp_path / "trunc.bin").write_bytes(large_data)
@@ -290,10 +281,10 @@ async def test_handle_read_large_payload_truncation_reproduction(
     # Total bytes sent in responses should match input
     total_received = b""
     # Filter for CMD_FILE_READ_RESP (0x93)
-    for call in (bridge.serial_flow.send.call_args_list or []): # type: ignore
-        if call.args[0] == Command.CMD_FILE_READ_RESP.value: # type: ignore
-            payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"") # type: ignore
-            total_received += structures.FileReadResponsePacket.decode(payload).content # type: ignore
+    for call in bridge.serial_flow.send.call_args_list or []:  # type: ignore
+        if call.args[0] == Command.CMD_FILE_READ_RESP.value:  # type: ignore
+            payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")  # type: ignore
+            total_received += structures.FileReadResponsePacket.decode(payload).content  # type: ignore
 
     assert total_received == large_data
 
@@ -302,9 +293,9 @@ async def test_handle_read_large_payload_truncation_reproduction(
 async def test_handle_mqtt_write_to_mcu_storage_disabled(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
     # Disable MCU backend
-    component._mcu_backend_enabled = False # type: ignore[reportPrivateUsage]
+    component._mcu_backend_enabled = False  # type: ignore[reportPrivateUsage]
 
     msg = type("MockMsg", (), {"topic": "br/file/write/mcu/test.txt", "payload": b"x", "properties": None})()
     route = TopicRoute(
@@ -327,12 +318,10 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
 async def test_handle_mqtt_read_from_mcu_storage_enabled(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
-    component._mcu_backend_enabled = True # type: ignore[reportPrivateUsage]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]
 
-    async def _send_frame(
-        command_id: int, payload: bytes = b"", seq_id: int | None = None
-    ) -> bool:
+    async def _send_frame(command_id: int, payload: bytes = b"", seq_id: int | None = None) -> bool:
         if command_id == Command.CMD_FILE_READ.value:
             await component.handle_read_response(
                 0,
@@ -355,18 +344,15 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
     )
 
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
-    assert (
-        _get_publish_arg(bridge.mqtt_flow.publish, 1, "payload")
-        == b"mcu-data"
-    )
+    assert _get_publish_arg(bridge.mqtt_flow.publish, 1, "payload") == b"mcu-data"
 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_read_from_mcu_storage_disabled(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
-    component._mcu_backend_enabled = False # type: ignore[reportPrivateUsage]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component._mcu_backend_enabled = False  # type: ignore[reportPrivateUsage]
 
     msg = type("MockMsg", (), {"topic": "br/file/read/mcu/test.txt", "payload": b"", "properties": None})()
     route = TopicRoute(
@@ -389,8 +375,8 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
 async def test_handle_mqtt_read_failure(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
-    component._mcu_backend_enabled = True # type: ignore[reportPrivateUsage]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]
     # Mock send_frame returning error status immediately
     bridge.serial_flow.send.return_value = False
 
@@ -403,17 +389,14 @@ async def test_handle_mqtt_read_failure(
     )
 
     await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
-    assert (
-        _get_publish_arg(bridge.mqtt_flow.publish, 1, "payload")
-        == b"MCU filesystem read failed"
-    )
+    assert _get_publish_arg(bridge.mqtt_flow.publish, 1, "payload") == b"MCU filesystem read failed"
 
 
 @pytest.mark.asyncio
 async def test_get_safe_path_none_base_dir(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
     # Set to something that will fail path joining
     bridge.config.file_system_root = "/"
     bridge.state.file_system_root = "/"
@@ -426,8 +409,8 @@ async def test_get_safe_path_none_base_dir(
 async def test_handle_mqtt_remove_from_mcu_storage_enabled(
     file_component: tuple[FileComponent, MagicMock],
 ) -> None:
-    component, bridge = file_component # type: ignore[reportUnusedVariable]
-    component._mcu_backend_enabled = True # type: ignore[reportPrivateUsage]
+    component, bridge = file_component  # type: ignore[reportUnusedVariable]
+    component._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]
 
     msg = type("MockMsg", (), {"topic": "br/file/remove/mcu/test.txt", "payload": b"", "properties": None})()
     route = TopicRoute(
@@ -444,4 +427,4 @@ async def test_handle_mqtt_remove_from_mcu_storage_enabled(
     # Exact payload check might be tricky with MsgPack vs our expectations,
     # but the failing test says Actual: send_frame(146, b'\x91\xa8test.txt')
     # Where \xa8 is string header for 8 chars.
-    assert b"test.txt" in bridge.serial_flow.send.call_args.args[1] # type: ignore
+    assert b"test.txt" in bridge.serial_flow.send.call_args.args[1]  # type: ignore

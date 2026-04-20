@@ -18,6 +18,7 @@ from tests._helpers import make_mqtt_msg, make_route
 @pytest.fixture
 def runtime_config() -> RuntimeConfig:
     import tempfile
+
     return RuntimeConfig(
         serial_port="/dev/null",
         mqtt_topic="br",

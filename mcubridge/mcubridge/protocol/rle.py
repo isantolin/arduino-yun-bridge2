@@ -101,6 +101,7 @@ RLE_ESCAPE: Construct = Struct(
     "value" / Int8ub,
 )
 
+
 def _rle_encode_chunk_nop(obj: Any, ctx: Any) -> None:
     """SIL-2: NOP encoder for RLE escape."""
     return None
@@ -158,6 +159,3 @@ def should_compress(payload: bytes) -> bool:
         if sum(1 for _ in group) >= protocol.RLE_MIN_RUN_LENGTH:
             return True
     return False
-
-
-

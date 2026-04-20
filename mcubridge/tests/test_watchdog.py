@@ -53,9 +53,7 @@ def test_watchdog_interval_updates(runtime_state: RuntimeState) -> None:
     assert keepalive.interval == 0.5
 
 
-def test_watchdog_kick_handles_write_errors(
-    runtime_state: RuntimeState, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_watchdog_kick_handles_write_errors(runtime_state: RuntimeState, caplog: pytest.LogCaptureFixture) -> None:
     """Watchdog should log and continue when the writer fails."""
 
     def broken_writer(_: bytes) -> None:
@@ -67,14 +65,10 @@ def test_watchdog_kick_handles_write_errors(
 
     assert runtime_state.watchdog_beats == 0
     assert runtime_state.last_watchdog_beat == 0
-    assert any(
-        "Failed to emit watchdog trigger" in record.message for record in caplog.records
-    )
+    assert any("Failed to emit watchdog trigger" in record.message for record in caplog.records)
 
 
-def test_watchdog_run_logs_cancellation(
-    runtime_state: RuntimeState, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState, caplog: pytest.LogCaptureFixture) -> None:
     runtime_state.watchdog_enabled = True
     runtime_state.watchdog_interval = 0.05
 

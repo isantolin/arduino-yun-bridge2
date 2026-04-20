@@ -11,7 +11,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, cast
+from typing import Any, Final, cast
 
 import msgspec
 import psutil
@@ -58,7 +58,6 @@ from ..protocol.structures import (
 )
 from .metrics import DaemonMetrics
 from .queues import BridgeQueue
-from transitions import Machine
 
 logger = structlog.get_logger("mcubridge.state")
 
@@ -116,62 +115,24 @@ class ManagedProcess:
     pid: int
     command: str = ""
     handle: Any | None = None
-    stdout_buffer: collections.deque[int] = field(
-        default_factory=lambda: collections.deque(maxlen=4096)
-    )
-    stderr_buffer: collections.deque[int] = field(
-        default_factory=lambda: collections.deque(maxlen=4096)
-    )
+    stdout_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
+    stderr_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
     exit_code: int | None = None
     io_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     fsm_state: str = PROCESS_STATE_STARTING
-    _machine: Any = None
 
-    def __post_init__(self) -> None:
-        self._machine = Machine(
-            model=self,
-            states=[
-                PROCESS_STATE_STARTING,
-                PROCESS_STATE_RUNNING,
-                PROCESS_STATE_DRAINING,
-                PROCESS_STATE_FINISHED,
-                PROCESS_STATE_ZOMBIE,
-            ],
-            transitions=[
-                {
-                    "trigger": "start",
-                    "source": PROCESS_STATE_STARTING,
-                    "dest": PROCESS_STATE_RUNNING,
-                },
-                {
-                    "trigger": "sigchld",
-                    "source": PROCESS_STATE_RUNNING,
-                    "dest": PROCESS_STATE_DRAINING,
-                },
-                {
-                    "trigger": "io_complete",
-                    "source": PROCESS_STATE_DRAINING,
-                    "dest": PROCESS_STATE_FINISHED,
-                },
-                {
-                    "trigger": "finalize",
-                    "source": PROCESS_STATE_FINISHED,
-                    "dest": PROCESS_STATE_ZOMBIE,
-                },
-                {"trigger": "force_kill", "source": "*", "dest": PROCESS_STATE_ZOMBIE},
-            ],
-            initial=PROCESS_STATE_STARTING,
-            queued=True,
-            model_attribute="fsm_state",
-            ignore_invalid_triggers=True,
-            auto_transitions=False,
-        )
-
-    if TYPE_CHECKING:
-
-        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
-            """FSM trigger placeholder."""
-            ...
+    def trigger(self, event: str) -> None:
+        """[SIL-2] Deterministic state transitions without FSM library overhead."""
+        if event == "start":
+            self.fsm_state = PROCESS_STATE_RUNNING
+        elif event == "sigchld":
+            self.fsm_state = PROCESS_STATE_DRAINING
+        elif event == "io_complete":
+            self.fsm_state = PROCESS_STATE_FINISHED
+        elif event == "finalize":
+            self.fsm_state = PROCESS_STATE_ZOMBIE
+        elif event == "force_kill":
+            self.fsm_state = PROCESS_STATE_ZOMBIE
 
     def append_output(
         self,
@@ -252,12 +213,14 @@ def collect_system_metrics() -> dict[str, Any]:
                         break
 
             if tmp_disk:
-                result.update({
-                    "disk_tmp_total_bytes": tmp_disk.total,
-                    "disk_tmp_used_bytes": tmp_disk.used,
-                    "disk_tmp_free_bytes": tmp_disk.free,
-                    "disk_tmp_percent": tmp_disk.percent,
-                })
+                result.update(
+                    {
+                        "disk_tmp_total_bytes": tmp_disk.total,
+                        "disk_tmp_used_bytes": tmp_disk.used,
+                        "disk_tmp_free_bytes": tmp_disk.free,
+                        "disk_tmp_percent": tmp_disk.percent,
+                    }
+                )
             return result
     except (psutil.Error, RuntimeError, OSError):
         return {}
@@ -268,70 +231,49 @@ class RuntimeState(msgspec.Struct):
 
     metrics: DaemonMetrics = msgspec.field(default_factory=DaemonMetrics)
     serial_writer: asyncio.BaseTransport | None = None
-
-    # [SIL-2] Lifecycle FSM (Single Source of Truth)
-    _machine: Any = msgspec.field(
-        default_factory=lambda: Machine(
-            model="self",
-            states=["disconnected", "connected", "synchronized"],
-            transitions=[
-                {
-                    "trigger": "connect",
-                    "source": ["disconnected", "connected", "synchronized"],
-                    "dest": "connected",
-                },
-                {
-                    "trigger": "synchronize",
-                    "source": ["connected", "synchronized"],
-                    "dest": "synchronized",
-                },
-                {"trigger": "disconnect", "source": "*", "dest": "disconnected"},
-            ],
-            initial="disconnected",
-            queued=True,
-            model_attribute="state",
-            ignore_invalid_triggers=True,
-        )
-    )
-
-    if TYPE_CHECKING:
-
-        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool: ...
+    state: str = "disconnected"
 
     @property
     def is_connected(self) -> bool:
-        return self._machine.state in {"connected", "synchronized"}
+        return self.state in {"connected", "synchronized"}
 
     @property
     def is_synchronized(self) -> bool:
-        return self._machine.state == "synchronized"
+        return self.state == "synchronized"
 
     def mark_transport_connected(self) -> None:
         """Signal that serial connection is open but unsynchronized."""
-        self._machine.trigger("connect")
+        self.state = "connected"
         self.metrics.link_state.state("connected")
 
     def mark_transport_disconnected(self) -> None:
         """Signal that serial connection is lost."""
-        self._machine.trigger("disconnect")
+        self.state = "disconnected"
         self.metrics.link_state.state("disconnected")
         if self.link_sync_event:
             self.link_sync_event.clear()
 
     def mark_synchronized(self) -> None:
         """Signal that protocol handshake is successfully completed."""
-        self._machine.trigger("synchronize")
+        self.state = "synchronized"
         self.metrics.link_state.state("synchronized")
         if self.link_sync_event:
             self.link_sync_event.set()
+
+    def trigger(self, event: str) -> None:
+        """[SIL-2] Direct lifecycle triggers."""
+        if event == "connect":
+            self.mark_transport_connected()
+        elif event == "synchronize":
+            self.mark_synchronized()
+        elif event == "disconnect":
+            self.mark_transport_disconnected()
 
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
         default_factory=lambda: asyncio.Queue[QueuedPublish](),  # noqa: PLW0108
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    mqtt_drop_counts: dict[str, int] = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_replayed: int = 0
     mqtt_spool_degraded: bool = False
@@ -347,12 +289,8 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_dropped_limit: int = 0
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
-    _last_spool_snapshot: SpoolSnapshot = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
-    datastore: dict[str, str] = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+    _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
+    datastore: dict[str, str] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
     mailbox_queue: BridgeQueue[bytes] = msgspec.field(
@@ -374,9 +312,7 @@ class RuntimeState(msgspec.Struct):
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+    running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
@@ -436,12 +372,8 @@ class RuntimeState(msgspec.Struct):
     handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
     serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
-    serial_throughput_stats: SerialThroughputStats = msgspec.field(
-        default_factory=SerialThroughputStats
-    )
-    serial_latency_stats: SerialLatencyStats = msgspec.field(
-        default_factory=SerialLatencyStats
-    )
+    serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
+    serial_latency_stats: SerialLatencyStats = msgspec.field(default_factory=SerialLatencyStats)
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -452,9 +384,7 @@ class RuntimeState(msgspec.Struct):
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
     mcu_status_counters: dict[str, int] = msgspec.field(default_factory=lambda: {})
-    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
-        default_factory=lambda: {}
-    )
+    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=lambda: {})
 
     # Metrics (Synchronized with Prometheus)
     mqtt_messages_published: int = 0
@@ -559,11 +489,7 @@ class RuntimeState(msgspec.Struct):
         self.metrics.watchdog_beats.inc()
         self.last_watchdog_beat = timestamp or time.time()
 
-
-
-    def record_supervisor_failure(
-        self, name: str, backoff: float, exc: Exception
-    ) -> None:
+    def record_supervisor_failure(self, name: str, backoff: float, exc: Exception) -> None:
         """Record an internal service task failure."""
         stats = self.supervisor_stats.setdefault(name, SupervisorStats())
         stats.restarts += 1
@@ -648,9 +574,7 @@ class RuntimeState(msgspec.Struct):
         self.console_to_mcu_queue.appendleft(chunk)
         self.console_queue_bytes = self.console_to_mcu_queue.bytes
 
-    def _mailbox_overflow(
-        self, queue_len: int, payload_len: int, *, incoming: bool
-    ) -> bool:
+    def _mailbox_overflow(self, queue_len: int, payload_len: int, *, incoming: bool) -> bool:
         """Return True if the mailbox queue is full. Updates overflow counters."""
         if queue_len < self.mailbox_queue_limit:
             return False
@@ -665,9 +589,7 @@ class RuntimeState(msgspec.Struct):
         return True
 
     def enqueue_mailbox_message(self, payload: bytes) -> bool:
-        if self._mailbox_overflow(
-            len(self.mailbox_queue), len(payload), incoming=False
-        ):
+        if self._mailbox_overflow(len(self.mailbox_queue), len(payload), incoming=False):
             return False
         evt = self.mailbox_queue.append(payload)
         if evt.success:
@@ -687,9 +609,7 @@ class RuntimeState(msgspec.Struct):
             self.mailbox_queue_bytes += len(payload)
 
     def enqueue_mailbox_incoming(self, payload: bytes) -> bool:
-        if self._mailbox_overflow(
-            len(self.mailbox_incoming_queue), len(payload), incoming=True
-        ):
+        if self._mailbox_overflow(len(self.mailbox_incoming_queue), len(payload), incoming=True):
             return False
         evt = self.mailbox_incoming_queue.append(payload)
         if evt.success:
@@ -700,9 +620,7 @@ class RuntimeState(msgspec.Struct):
     def pop_mailbox_incoming(self) -> bytes | None:
         msg = self.mailbox_incoming_queue.popleft()
         if msg is not None:
-            self.mailbox_incoming_queue_bytes = max(
-                0, self.mailbox_incoming_queue_bytes - len(msg)
-            )
+            self.mailbox_incoming_queue_bytes = max(0, self.mailbox_incoming_queue_bytes - len(msg))
         return msg
 
     def record_handshake_fatal(self, reason: str, detail: str | None = None) -> None:
@@ -800,9 +718,7 @@ class RuntimeState(msgspec.Struct):
         return self._last_spool_snapshot
 
     def record_mcu_status(self, status: Status) -> None:
-        self.mcu_status_counters[status.name] = (
-            self.mcu_status_counters.get(status.name, 0) + 1
-        )
+        self.mcu_status_counters[status.name] = self.mcu_status_counters.get(status.name, 0) + 1
 
     def apply_handshake_stats(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from external handshake statistics."""
@@ -823,31 +739,13 @@ class RuntimeState(msgspec.Struct):
         """Update internal state from spool statistics."""
         # [SIL-2] Static assignment to avoid reflection overhead and string manipulation
         if "corrupt_dropped" in observation:
-            self.mqtt_spool_corrupt_dropped = msgspec.convert(
-                observation["corrupt_dropped"], int
-            )
+            self.mqtt_spool_corrupt_dropped = msgspec.convert(observation["corrupt_dropped"], int)
         if "dropped_due_to_limit" in observation:
-            self.mqtt_spool_dropped_limit = msgspec.convert(
-                observation["dropped_due_to_limit"], int
-            )
+            self.mqtt_spool_dropped_limit = msgspec.convert(observation["dropped_due_to_limit"], int)
         if "trim_events" in observation:
-            self.mqtt_spool_trim_events = msgspec.convert(
-                observation["trim_events"], int
-            )
+            self.mqtt_spool_trim_events = msgspec.convert(observation["trim_events"], int)
         if "last_trim_unix" in observation:
-            self.mqtt_spool_last_trim_unix = msgspec.convert(
-                observation["last_trim_unix"], float
-            )
-
-
-
-
-
-
-
-
-
-
+            self.mqtt_spool_last_trim_unix = msgspec.convert(observation["last_trim_unix"], float)
 
     def build_metrics_snapshot(self) -> dict[str, Any]:
         # [SIL-2] Return rich objects where possible to preserve attribute-based API
@@ -902,9 +800,7 @@ class RuntimeState(msgspec.Struct):
             serial_pipeline=self.build_serial_pipeline_snapshot(),
             serial_flow=self.serial_flow_stats.as_snapshot(),
             mcu_version=McuVersion(*self.mcu_version) if self.mcu_version else None,
-            capabilities=(
-                msgspec.structs.asdict(self.mcu_capabilities) if self.mcu_capabilities else None
-            ),
+            capabilities=(msgspec.structs.asdict(self.mcu_capabilities) if self.mcu_capabilities else None),
         )
 
     def _handshake_duration_since_start(self) -> float:
@@ -949,9 +845,7 @@ class RuntimeState(msgspec.Struct):
             self.running_processes.clear()
 
 
-def create_runtime_state(
-    config: RuntimeConfig | dict[str, Any], initialize_spool: bool = False
-) -> RuntimeState:
+def create_runtime_state(config: RuntimeConfig | dict[str, Any], initialize_spool: bool = False) -> RuntimeState:
     from ..config.settings import RuntimeConfig
 
     cfg = msgspec.convert(config, RuntimeConfig) if isinstance(config, dict) else config
@@ -966,6 +860,7 @@ def create_runtime_state(
     state.configure(cfg)
 
     from ..transport.mqtt import MqttTransport
+
     transport = MqttTransport(cfg, state)
     transport.configure_spool(cfg.mqtt_spool_dir, cfg.mqtt_queue_limit * 4)
     if initialize_spool:

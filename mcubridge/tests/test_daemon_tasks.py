@@ -31,10 +31,12 @@ async def test_serial_reader_task_processes_frame(
 
     async def _on_connected() -> None:
         service.serial_connected.set()
+
     service.on_serial_connected.side_effect = _on_connected
 
     async def _handle_mcu(cmd: int, seq: int, pl: bytes) -> None:
         service.received_frames.append((cmd, seq, pl))
+
     service.handle_mcu_frame.side_effect = _handle_mcu
 
     payload = bytes([protocol.DIGITAL_HIGH])
@@ -87,7 +89,7 @@ async def test_serial_reader_task_processes_frame(
             cmd, _seq, pl = service.received_frames[0]
             assert cmd == Command.CMD_DIGITAL_READ_RESP.value
             assert pl == payload
-            transport._stop_event.set() # type: ignore
+            transport._stop_event.set()  # type: ignore
             try:
                 await asyncio.wait_for(task, timeout=0.5)
             except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -108,6 +110,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
 
     async def _on_connected() -> None:
         service.serial_connected.set()
+
     service.on_serial_connected.side_effect = _on_connected
 
     frame = Frame(
@@ -157,7 +160,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
                 await asyncio.sleep(0.01)
 
             assert state.serial_decode_errors > 0
-            transport._stop_event.set() # type: ignore
+            transport._stop_event.set()  # type: ignore
             try:
                 await asyncio.wait_for(task, timeout=0.5)
             except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
@@ -211,6 +214,7 @@ async def test_mqtt_task_handles_incoming_message(
 
     async def _handle_mqtt(inbound: Any) -> None:
         service.handled.set()
+
     service.handle_mqtt_message.side_effect = _handle_mqtt
 
     mock_client = AsyncMock()
@@ -225,8 +229,9 @@ async def test_mqtt_task_handles_incoming_message(
     fake_msg.retain = False
     fake_msg.properties = None
 
-    async def msg_gen(): # type: ignore
+    async def msg_gen():  # type: ignore
         yield fake_msg
+
     mock_msgs_ctx.__aiter__.side_effect = msg_gen
 
     with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_client):
@@ -243,6 +248,7 @@ async def test_mqtt_task_handles_incoming_message(
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+
 
 @pytest.mark.asyncio
 async def test_publish_metrics_task_handles_error(runtime_state: Any) -> None:
@@ -267,9 +273,7 @@ async def test_publish_snapshots_task_handles_error(runtime_state: Any) -> None:
     enqueue = AsyncMock(side_effect=RuntimeError("snapshot-fail"))
     # Should catch error and log it
     task = asyncio.create_task(
-        publish_bridge_snapshots(
-            runtime_state, enqueue, summary_interval=0.1, handshake_interval=0.1
-        )
+        publish_bridge_snapshots(runtime_state, enqueue, summary_interval=0.1, handshake_interval=0.1)
     )
     await asyncio.sleep(0.2)
     task.cancel()

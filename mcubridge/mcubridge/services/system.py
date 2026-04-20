@@ -56,9 +56,7 @@ class SystemComponent(BaseComponent):
 
     async def handle_get_free_memory_resp(self, seq_id: int, payload: bytes) -> None:
         try:
-            packet = FreeMemoryResponsePacket.decode(
-                payload, Command.CMD_GET_FREE_MEMORY_RESP
-            )
+            packet = FreeMemoryResponsePacket.decode(payload, Command.CMD_GET_FREE_MEMORY_RESP)
         except ValueError:
             logger.warning("Malformed FreeMemoryResponsePacket payload: %s", payload.hex())
             return
@@ -69,9 +67,7 @@ class SystemComponent(BaseComponent):
             SystemAction.FREE_MEMORY,
             SystemAction.VALUE,
         )
-        reply_context = (
-            self._pending_free_memory.popleft() if self._pending_free_memory else None
-        )
+        reply_context = self._pending_free_memory.popleft() if self._pending_free_memory else None
         # Direct call to RuntimeState.publish
         await self.ctx.mqtt_flow.publish(
             topic=topic,
@@ -96,9 +92,7 @@ class SystemComponent(BaseComponent):
 
         major, minor, patch = packet.major, packet.minor, packet.patch
         self.state.mcu_version = (major, minor, patch)
-        reply_context = (
-            self._pending_version.popleft() if self._pending_version else None
-        )
+        reply_context = self._pending_version.popleft() if self._pending_version else None
         await self._publish_version((major, minor, patch), reply_context)
         logger.info("MCU firmware version reported as %d.%d.%d", major, minor, patch)
 
@@ -141,9 +135,7 @@ class SystemComponent(BaseComponent):
             case SystemAction.BOOTLOADER:
                 packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
                 logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
-                return await self.ctx.serial_flow.send(
-                    Command.CMD_ENTER_BOOTLOADER.value, packet.encode()
-                )
+                return await self.ctx.serial_flow.send(Command.CMD_ENTER_BOOTLOADER.value, packet.encode())
 
             case SystemAction.FREE_MEMORY:
                 if not (remainder and remainder[0] == SystemAction.GET):

@@ -10,9 +10,7 @@ from typing import Annotated
 
 import typer
 
-app = typer.Typer(
-    help="Parse Arduino compilation logs and generate a memory usage report."
-)
+app = typer.Typer(help="Parse Arduino compilation logs and generate a memory usage report.")
 
 BOARD_MAPPING = {
     "arduino-avr-yun": "Arduino Yún",
@@ -97,9 +95,7 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
 
 @app.command()
 def main(
-    log_dir: Annotated[
-        Path, typer.Argument(help="Directory containing build log files.")
-    ],
+    log_dir: Annotated[Path, typer.Argument(help="Directory containing build log files.")],
     github_step_summary: Annotated[
         Path | None,
         typer.Option(help="Append the table to GitHub step summary output."),

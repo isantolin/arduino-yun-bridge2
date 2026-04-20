@@ -48,11 +48,11 @@ def test_mcu_capabilities_properties() -> None:
 def test_managed_process_is_drained() -> None:
     proc = ManagedProcess(pid=1, command="echo")
     # Must be in FINISHED/ZOMBIE to be drained
-    proc.trigger("start") # STARTING -> RUNNING
+    proc.trigger("start")  # STARTING -> RUNNING
     assert proc.is_drained() is False
 
-    proc.trigger("sigchld") # RUNNING -> DRAINING
-    proc.trigger("io_complete") # DRAINING -> FINISHED
+    proc.trigger("sigchld")  # RUNNING -> DRAINING
+    proc.trigger("io_complete")  # DRAINING -> FINISHED
     assert proc.is_drained() is True
 
 

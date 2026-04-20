@@ -32,6 +32,7 @@ async def test_runtime_on_serial_connected_errors() -> None:
         async def _mock_sync():
             state.mark_synchronized()
             return True
+
         service.handshake_manager.synchronize = AsyncMock(side_effect=_mock_sync)
 
         system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
@@ -62,6 +63,7 @@ async def test_runtime_handle_mqtt_message_dispatch_error() -> None:
         service = BridgeService(config, state, mqtt_mock)
 
         from tests.mqtt_helpers import make_inbound_message
+
         msg = make_inbound_message("br/system/status", b"{}")
 
         # Mock dispatcher.dispatch_mqtt_message to see if it's called

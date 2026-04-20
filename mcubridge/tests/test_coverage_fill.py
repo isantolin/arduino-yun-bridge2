@@ -27,6 +27,7 @@ def runtime_config() -> RuntimeConfig:
     )
 
     import tempfile
+
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=115200,
@@ -146,13 +147,9 @@ async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
     msg.topic = "bridge/system/test"
     msg.payload = b""
 
-    route = TopicRoute(
-        raw=str(msg.topic), prefix="bridge", topic=Topic.SYSTEM, segments=("test",)
-    )
+    route = TopicRoute(raw=str(msg.topic), prefix="bridge", topic=Topic.SYSTEM, segments=("test",))
 
-    with patch.object(
-        dispatcher.mqtt_router, "dispatch", side_effect=RuntimeError("mqtt bug")
-    ):
+    with patch.object(dispatcher.mqtt_router, "dispatch", side_effect=RuntimeError("mqtt bug")):
         with pytest.raises(RuntimeError, match="mqtt bug"):
             await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
 
@@ -165,9 +162,7 @@ async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDisp
     assert dispatcher._get_topic_action(route1) is None  # type: ignore[reportPrivateUsage]
 
     # Line 319: len(segments) > 1 but segments[1] is empty
-    route2 = TopicRoute(
-        raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("1", "")
-    )
+    route2 = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("1", ""))
     assert dispatcher._get_topic_action(route2) is None  # type: ignore[reportPrivateUsage]
 
 
@@ -177,9 +172,7 @@ async def test_dispatcher_handle_system_topic_no_component(
 ):
     """Cover line 347 in dispatcher.py."""
     dispatcher._container = None  # type: ignore[reportPrivateUsage]
-    route = TopicRoute(
-        raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",)
-    )
+    route = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",))
     result = await dispatcher._handle_system_topic(route, MagicMock())  # type: ignore[reportPrivateUsage]
     assert result is False
 
@@ -187,9 +180,7 @@ async def test_dispatcher_handle_system_topic_no_component(
 @pytest.mark.asyncio
 async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDispatcher):
     """Cover lines 360-361 in dispatcher.py."""
-    route = TopicRoute(
-        raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("bridge",)
-    )
+    route = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("bridge",))
     result = await dispatcher._handle_bridge_topic(route, MagicMock())  # type: ignore[reportPrivateUsage]
     assert result is False
 
@@ -198,9 +189,7 @@ async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDisp
 
 
 @pytest.mark.asyncio
-async def test_datastore_publish_value_error_reason(
-    runtime_config: Any, runtime_state: Any
-):
+async def test_datastore_publish_value_error_reason(runtime_config: Any, runtime_state: Any):
     """Cover logic in _publish_datastore_value."""
     ctx = MagicMock()
     ctx.serial_flow = MagicMock()
@@ -219,9 +208,7 @@ async def test_datastore_publish_value_error_reason(
 
 
 @pytest.mark.asyncio
-async def test_datastore_handle_get_request_fail_send(
-    runtime_config: Any, runtime_state: Any
-):
+async def test_datastore_handle_get_request_fail_send(runtime_config: Any, runtime_state: Any):
     """Cover line 86->88 in datastore.py."""
     ctx = MagicMock()
     ctx.serial_flow = MagicMock()

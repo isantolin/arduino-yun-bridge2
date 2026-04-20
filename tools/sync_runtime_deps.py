@@ -68,20 +68,14 @@ def load_manifest() -> list[_DepEntry]:
 def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:
     # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci)
     specs = {dep["pip"] for dep in deps if dep.get("pip")}
-    filtered = {
-        s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)
-    }
+    filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
     return sorted(filtered)
 
 
 def collect_openwrt_packages(deps: Sequence[_DepEntry]) -> list[str]:
     # Mantiene todo EXCEPTO los paquetes exclusivos de construcción (jinja2, etc)
     # Esto asegura que el APK sea ultra-lean.
-    return [
-        dep["openwrt"]
-        for dep in deps
-        if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES
-    ]
+    return [dep["openwrt"] for dep in deps if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES]
 
 
 def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
@@ -163,9 +157,7 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
 def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
-        raise ManifestError(
-            "Makefile is missing dependency markers; cannot inject dependencies"
-        )
+        raise ManifestError("Makefile is missing dependency markers; cannot inject dependencies")
     tokens = [f"+{pkg}" for pkg in collect_openwrt_packages(deps)]
     if tokens:
         block_lines = ["\tDEPENDS+= \\"]
@@ -234,15 +226,11 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
 def main(
     check: Annotated[
         bool,
-        typer.Option(
-            "--check", help="Exit with status 1 if running would change any files"
-        ),
+        typer.Option("--check", help="Exit with status 1 if running would change any files"),
     ] = False,
     check_latest: Annotated[
         bool,
-        typer.Option(
-            "--check-latest", help="Query PyPI and warn about outdated pinned versions"
-        ),
+        typer.Option("--check-latest", help="Query PyPI and warn about outdated pinned versions"),
     ] = False,
     print_openwrt: Annotated[
         bool,

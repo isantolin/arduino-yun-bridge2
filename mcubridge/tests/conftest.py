@@ -44,9 +44,7 @@ if "serial_asyncio_fast" not in sys.modules:
         )
     )
     # Maintain create_serial_connection for older tests that haven't been migrated yet
-    mock_saf.create_serial_connection = AsyncMock(
-        return_value=(AsyncMock(), AsyncMock())
-    )
+    mock_saf.create_serial_connection = AsyncMock(return_value=(AsyncMock(), AsyncMock()))
     sys.modules["serial_asyncio_fast"] = mock_saf
 
 
@@ -138,9 +136,7 @@ def force_gc_cleanup():
     # Access the policy's thread-local directly to avoid triggering the
     # DeprecationWarning that filterwarnings=["error"] would promote to fatal.
     with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", category=DeprecationWarning, message=".*get_event_loop_policy.*"
-        )
+        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*get_event_loop_policy.*")
         policy = asyncio.get_event_loop_policy()
     loop = getattr(getattr(policy, "_local", None), "_loop", None)
     if loop is not None and not loop.is_closed():
@@ -151,9 +147,7 @@ def force_gc_cleanup():
     # connections are managed by diskcache internals and cannot be closed earlier
     # without coupling test infrastructure to the library's threading model.
     with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", category=pytest.PytestUnraisableExceptionWarning
-        )
+        warnings.filterwarnings("ignore", category=pytest.PytestUnraisableExceptionWarning)
         gc.collect()
 
 
@@ -170,7 +164,6 @@ def _isolate_test_paths(tmp_path: Path) -> Iterator[None]:  # type: ignore[repor
     yield
     mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
     mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = original_spool
-
 
 
 @pytest.fixture(autouse=True)
@@ -358,8 +351,6 @@ def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
         yield state
     finally:
         state.cleanup()
-
-
 
 
 @pytest.fixture

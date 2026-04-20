@@ -47,9 +47,7 @@ class BridgeContext(Protocol):
 class BaseComponent:
     """Base class for services providing shared configuration and context."""
 
-    def __init__(
-        self, config: RuntimeConfig, state: RuntimeState, ctx: BridgeContext
-    ) -> None:
+    def __init__(self, config: RuntimeConfig, state: RuntimeState, ctx: BridgeContext) -> None:
         self.config = config
         self.state = state
         self.ctx = ctx

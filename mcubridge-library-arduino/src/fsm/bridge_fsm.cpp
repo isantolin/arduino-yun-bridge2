@@ -13,7 +13,7 @@ static SynchronizedState synchronized_state;
 static AwaitingAckState awaiting_ack_state;
 static FaultState fault_state;
 
-static const etl::array<etl::ifsm_state*, 6> state_table = {
+static etl::array<etl::ifsm_state*, 6> state_table = {
     &startup_state,
     &unsynchronized_state,
     &handshake_state,

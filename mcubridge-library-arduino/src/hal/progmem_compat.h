@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
+#include <etl/algorithm.h>
 #include "config/bridge_config.h"
 
 #if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
@@ -50,16 +52,13 @@ namespace bridge::hal {
  * @param n Maximum number of bytes to copy.
  */
 inline void copy_string(char* dest, const char* src, size_t n) {
-  if (n == 0) return;
-  if constexpr (bridge::config::IS_AVR) {
-#if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
-    strncpy_P(dest, src, n);
-#else
-    strncpy(dest, src, n);
-#endif
-  } else {
-    strncpy(dest, src, n);
-  }
+  if (n == 0 || dest == nullptr || src == nullptr) return;
+  struct { const char* s; bool done; } ctx = { src, false };
+  etl::for_each(dest, dest + n, [&ctx](char& d) {
+    if (ctx.done) { d = '\0'; return; }
+    d = static_cast<char>(read_byte(reinterpret_cast<const uint8_t*>(ctx.s++)));
+    if (d == '\0') ctx.done = true;
+  });
 }
 
 } // namespace bridge::hal

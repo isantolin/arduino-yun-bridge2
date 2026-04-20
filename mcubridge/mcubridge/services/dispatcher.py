@@ -74,6 +74,8 @@ class BridgeDispatcher:
         )
 
         self._container = container
+
+        # [SIL-2] Type-safe component retrieval
         console = container.get(ConsoleComponent)
         datastore = container.get(DatastoreComponent)
         file = container.get(FileComponent)
@@ -83,56 +85,48 @@ class BridgeDispatcher:
         spi = container.get(SpiComponent)
         system = container.get(SystemComponent)
 
-        # Console
-        self.mcu_registry[Command.CMD_XOFF.value] = console.handle_xoff
-        self.mcu_registry[Command.CMD_XON.value] = console.handle_xon
-        self.mcu_registry[Command.CMD_CONSOLE_WRITE.value] = console.handle_write
-        self.mqtt_router.register(Topic.CONSOLE, console.handle_mqtt)
+        # MCU Command Dispatch Map (Centralized for auditability)
+        mcu_map: dict[Command, McuHandler] = {
+            Command.CMD_XOFF: console.handle_xoff,
+            Command.CMD_XON: console.handle_xon,
+            Command.CMD_CONSOLE_WRITE: console.handle_write,
+            Command.CMD_DATASTORE_PUT: datastore.handle_put,
+            Command.CMD_DATASTORE_GET: datastore.handle_get_request,
+            Command.CMD_MAILBOX_PUSH: mailbox.handle_push,
+            Command.CMD_MAILBOX_AVAILABLE: mailbox.handle_available,
+            Command.CMD_MAILBOX_READ: mailbox.handle_read,
+            Command.CMD_MAILBOX_PROCESSED: mailbox.handle_processed,
+            Command.CMD_FILE_WRITE: file.handle_write,
+            Command.CMD_FILE_READ: file.handle_read,
+            Command.CMD_FILE_REMOVE: file.handle_remove,
+            Command.CMD_FILE_READ_RESP: file.handle_read_response,
+            Command.CMD_PROCESS_RUN_ASYNC: process.handle_run_async,
+            Command.CMD_PROCESS_POLL: process.handle_poll,
+            Command.CMD_DIGITAL_READ_RESP: pin.handle_digital_read_resp,
+            Command.CMD_ANALOG_READ_RESP: pin.handle_analog_read_resp,
+            Command.CMD_DIGITAL_READ: pin.handle_mcu_digital_read,
+            Command.CMD_ANALOG_READ: pin.handle_mcu_analog_read,
+            Command.CMD_SPI_TRANSFER_RESP: spi.handle_transfer_resp,
+            Command.CMD_GET_FREE_MEMORY_RESP: system.handle_get_free_memory_resp,
+            Command.CMD_GET_VERSION_RESP: system.handle_get_version_resp,
+        }
+        for cmd, handler in mcu_map.items():
+            self.mcu_registry[cmd.value] = handler
 
-        # Datastore
-        self.mcu_registry[Command.CMD_DATASTORE_PUT.value] = datastore.handle_put
-        self.mcu_registry[Command.CMD_DATASTORE_GET.value] = datastore.handle_get_request
-        self.mqtt_router.register(Topic.DATASTORE, datastore.handle_mqtt)
-
-        # Mailbox
-        self.mcu_registry[Command.CMD_MAILBOX_PUSH.value] = mailbox.handle_push
-        self.mcu_registry[Command.CMD_MAILBOX_AVAILABLE.value] = mailbox.handle_available
-        self.mcu_registry[Command.CMD_MAILBOX_READ.value] = mailbox.handle_read
-        self.mcu_registry[Command.CMD_MAILBOX_PROCESSED.value] = mailbox.handle_processed
-        self.mqtt_router.register(Topic.MAILBOX, mailbox.handle_mqtt)
-
-        # File
-        self.mcu_registry[Command.CMD_FILE_WRITE.value] = file.handle_write
-        self.mcu_registry[Command.CMD_FILE_READ.value] = file.handle_read
-        self.mcu_registry[Command.CMD_FILE_REMOVE.value] = file.handle_remove
-        self.mcu_registry[Command.CMD_FILE_READ_RESP.value] = file.handle_read_response
-        self.mqtt_router.register(Topic.FILE, file.handle_mqtt)
-
-        # Process
-        self.mcu_registry[Command.CMD_PROCESS_RUN_ASYNC.value] = process.handle_run_async
-        self.mcu_registry[Command.CMD_PROCESS_POLL.value] = process.handle_poll
-
-        # Shell (MQTT only - now handled by unified ProcessComponent)
-        self.mqtt_router.register(Topic.SHELL, process.handle_mqtt)
-
-        # Pin (GPIO)
-        self.mcu_registry[Command.CMD_DIGITAL_READ_RESP.value] = pin.handle_digital_read_resp
-        self.mcu_registry[Command.CMD_ANALOG_READ_RESP.value] = pin.handle_analog_read_resp
-        self.mcu_registry[Command.CMD_DIGITAL_READ.value] = pin.handle_mcu_digital_read
-        self.mcu_registry[Command.CMD_ANALOG_READ.value] = pin.handle_mcu_analog_read
-
-        self.mqtt_router.register(Topic.DIGITAL, pin.handle_mqtt)
-        self.mqtt_router.register(Topic.ANALOG, pin.handle_mqtt)
-
-        # SPI
-        self.mcu_registry[Command.CMD_SPI_TRANSFER_RESP.value] = spi.handle_transfer_resp
-        self.mqtt_router.register(Topic.SPI, spi.handle_mqtt)
-
-        # System
-        self.mcu_registry[Command.CMD_GET_FREE_MEMORY_RESP.value] = system.handle_get_free_memory_resp
-        self.mcu_registry[Command.CMD_GET_VERSION_RESP.value] = system.handle_get_version_resp
-        self.mqtt_router.register(Topic.SYSTEM, self._handle_system_topic)
-
+        # MQTT Topic Dispatch Map
+        mqtt_map = {
+            Topic.CONSOLE: console.handle_mqtt,
+            Topic.DATASTORE: datastore.handle_mqtt,
+            Topic.MAILBOX: mailbox.handle_mqtt,
+            Topic.FILE: file.handle_mqtt,
+            Topic.SHELL: process.handle_mqtt,
+            Topic.DIGITAL: pin.handle_mqtt,
+            Topic.ANALOG: pin.handle_mqtt,
+            Topic.SPI: spi.handle_mqtt,
+            Topic.SYSTEM: self._handle_system_topic,
+        }
+        for topic, handler in mqtt_map.items():
+            self.mqtt_router.register(topic, handler)
     def register_system_handlers(
         self,
         handle_link_sync_resp: Callable[[int, bytes], Awaitable[bool]],

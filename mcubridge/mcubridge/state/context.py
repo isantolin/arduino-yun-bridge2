@@ -374,16 +374,18 @@ class RuntimeState(msgspec.Struct):
     serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
     serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
     serial_latency_stats: SerialLatencyStats = msgspec.field(default_factory=SerialLatencyStats)
+    rpc_latency_stats: SerialLatencyStats = msgspec.field(default_factory=SerialLatencyStats)
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
-    unknown_command_ids: int = 0
+    unknown_command_count: int = 0
+    unknown_command_last_id: int = 0
     config_source: str = "uci"
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counters: dict[str, int] = msgspec.field(default_factory=lambda: {})
+    mcu_status_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})
     supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=lambda: {})
 
     # Metrics (Synchronized with Prometheus)
@@ -410,84 +412,6 @@ class RuntimeState(msgspec.Struct):
     def allowed_commands(self) -> tuple[str, ...]:
         """Return the current allowed command list from policy."""
         return self.allowed_policy.as_tuple()
-
-    def record_mqtt_publish(self) -> None:
-        """Increment MQTT publish counter."""
-        self.mqtt_messages_published += 1
-        self.metrics.mqtt_messages_published.inc()
-
-    def record_mqtt_drop(self, topic: str) -> None:
-        """Record a dropped MQTT message due to overflow."""
-        self.mqtt_drop_counts[topic] = self.mqtt_drop_counts.get(topic, 0) + 1
-        self.mqtt_dropped_messages += 1
-        self.metrics.mqtt_messages_dropped.inc()
-
-    def record_mqtt_spool(self) -> None:
-        """Record message written to durable spool."""
-        self.mqtt_spooled_messages += 1
-        self.metrics.mqtt_spooled_messages.inc()
-
-    def record_mqtt_spool_error(self) -> None:
-        """Record error during spool operation."""
-        self.mqtt_spool_errors += 1
-        self.metrics.mqtt_spool_errors.inc()
-
-    def record_serial_tx(self, nbytes: int) -> None:
-        """Record serial transmission metrics."""
-        self.serial_bytes_sent += nbytes
-        self.serial_frames_sent += 1
-        self.metrics.serial_bytes_sent.inc(nbytes)
-        self.metrics.serial_frames_sent.inc()
-        self.serial_throughput_stats.record_tx(nbytes)
-
-    def record_serial_rx(self, nbytes: int) -> None:
-        """Record serial reception metrics."""
-        self.serial_bytes_received += nbytes
-        self.serial_frames_received += 1
-        self.metrics.serial_bytes_received.inc(nbytes)
-        self.metrics.serial_frames_received.inc()
-        self.serial_throughput_stats.record_rx(nbytes)
-
-    def record_serial_crc_error(self) -> None:
-        """Record serial frame CRC mismatch."""
-        self.serial_crc_errors += 1
-        self.metrics.serial_crc_errors.inc()
-
-    def record_serial_decode_error(self) -> None:
-        """Record serial frame decoding failure."""
-        self.serial_decode_errors += 1
-        self.metrics.serial_decode_errors.inc()
-
-    def record_handshake_attempt(self) -> None:
-        """Start tracking a handshake attempt."""
-        self.last_handshake_unix = time.time()
-        self._handshake_last_started = time.monotonic()
-        self.handshake_attempts += 1
-        self.metrics.handshake_attempts.inc()
-
-    def record_handshake_success(self) -> None:
-        """Record successful link synchronization."""
-        self.handshake_failure_streak = 0
-        self.handshake_backoff_until = 0.0
-        self.last_handshake_error = None
-        self.last_handshake_unix = time.time()
-        self.handshake_last_duration = self._handshake_duration_since_start()
-        self.mark_synchronized()
-        self.handshake_successes += 1
-        self.metrics.handshake_successes.inc()
-
-    def record_handshake_failure(self, reason: str) -> None:
-        """Record failed link synchronization."""
-        self.handshake_failure_streak += 1
-        self.last_handshake_error = reason
-        self.last_handshake_unix = time.time()
-        self.handshake_last_duration = self._handshake_duration_since_start()
-        self.mark_transport_connected()
-
-    def record_watchdog_beat(self, timestamp: float | None = None) -> None:
-        self.watchdog_beats += 1
-        self.metrics.watchdog_beats.inc()
-        self.last_watchdog_beat = timestamp or time.time()
 
     def record_supervisor_failure(self, name: str, backoff: float, exc: Exception) -> None:
         """Record an internal service task failure."""
@@ -623,12 +547,6 @@ class RuntimeState(msgspec.Struct):
             self.mailbox_incoming_queue_bytes = max(0, self.mailbox_incoming_queue_bytes - len(msg))
         return msg
 
-    def record_handshake_fatal(self, reason: str, detail: str | None = None) -> None:
-        self.handshake_fatal_count += 1
-        self.handshake_fatal_reason = reason
-        self.handshake_fatal_detail = detail
-        self.handshake_fatal_unix = time.time()
-
     def record_serial_flow_event(self, event: str) -> None:
         stats = self.serial_flow_stats
         if event == "sent":
@@ -698,12 +616,10 @@ class RuntimeState(msgspec.Struct):
             self.serial_pipeline_last = payload
             self.serial_pipeline_inflight = None
 
-    def record_unknown_command_id(self, command_id: int) -> None:
-        self.unknown_command_ids += 1
-
-    def record_rpc_latency_ms(self, latency_ms: float) -> None:
-        self.serial_latency_stats.record(latency_ms)
-        self.metrics.serial_latency_ms.observe(latency_ms)
+            if "duration" in payload:
+                from typing import cast as t_cast
+                duration_val = float(t_cast(float, payload["duration"]))
+                self.metrics.serial_latency_ms.observe(duration_val * 1000.0)
 
     def build_serial_pipeline_snapshot(self) -> SerialPipelineSnapshot:
         return SerialPipelineSnapshot(
@@ -716,9 +632,6 @@ class RuntimeState(msgspec.Struct):
         if self.mqtt_spool:
             self._last_spool_snapshot = self.mqtt_spool.snapshot()
         return self._last_spool_snapshot
-
-    def record_mcu_status(self, status: Status) -> None:
-        self.mcu_status_counters[status.name] = self.mcu_status_counters.get(status.name, 0) + 1
 
     def apply_handshake_stats(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from external handshake statistics."""

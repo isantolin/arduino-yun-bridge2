@@ -1,19 +1,15 @@
-"""Tests for the periodic status writer."""
 
-from __future__ import annotations
-
+from typing import Any, cast
 import asyncio
 from types import SimpleNamespace
-from typing import Any, cast
 
 import msgspec
 import pytest
-from mcubridge.mqtt.spool import MQTTPublishSpool
-from mcubridge.policy import AllowedCommandPolicy
-from mcubridge.protocol import protocol
 from mcubridge.state import status
 from mcubridge.state.context import RuntimeState, SupervisorStats
-
+from mcubridge.protocol import protocol
+from mcubridge.policy import AllowedCommandPolicy
+from mcubridge.mqtt.spool import MQTTPublishSpool
 
 def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
     async def run() -> None:
@@ -35,18 +31,20 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
         state = RuntimeState()
         try:
             state.mqtt_queue_limit = 42
-            # Use record methods for read-only properties
-            for _ in range(3):
-                state.record_mqtt_drop(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test")
+            # Direct attribute updates for read-only properties (formerly record methods)
+            topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test"
+            state.mqtt_drop_counts[topic] = 3
+            state.mqtt_dropped_messages = 3
+            state.metrics.mqtt_messages_dropped.inc(3)
 
             state.datastore["foo"] = "bar"
-            state.enqueue_mailbox_message(b"abc")
+            state.mailbox_queue.append(b"abc")
             state.mailbox_queue_bytes = 3
             state.mailbox_dropped_messages = 1
             state.mailbox_truncated_messages = 1
             state.mailbox_truncated_bytes = 2
             state.mailbox_dropped_bytes = 3
-            state.enqueue_mailbox_incoming(b"xyz")
+            state.mailbox_incoming_queue.append(b"xyz")
             state.mailbox_incoming_queue_bytes = 3
             state.mailbox_incoming_dropped_messages = 1
             state.mailbox_incoming_truncated_messages = 2
@@ -62,8 +60,10 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             state.mark_transport_connected()
             state.mark_synchronized()
             state.mark_transport_connected()
-            state.record_handshake_attempt()
-            state.record_handshake_attempt()
+
+            state.handshake_attempts = 2
+            state.metrics.handshake_attempts.inc(2)
+
             state.allowed_policy = AllowedCommandPolicy.from_iterable(["ls"])
             state.mcu_version = (2, 5, 0)
             state.file_system_root = "/tmp/bridge"
@@ -75,12 +75,12 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             state.supervisor_stats = {
                 "file": SupervisorStats(restarts=3),
             }
-            # Spooled metrics are also read-only properties
-            for _ in range(10):
-                state.record_mqtt_spool()
+
+            state.mqtt_spooled_messages = 10
+            state.metrics.mqtt_spooled_messages.inc(10)
             state.mqtt_spooled_replayed = 4
-            for _ in range(2):
-                state.record_mqtt_spool_error()
+            state.mqtt_spool_errors = 2
+            state.metrics.mqtt_spool_errors.inc(2)
 
             state.mqtt_spool_degraded = True
             state.mqtt_spool_failure_reason = "disk-full"
@@ -94,8 +94,9 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             )
             state.watchdog_enabled = True
             state.watchdog_interval = 7.5
-            for _ in range(11):
-                state.record_watchdog_beat(101.0)
+            state.watchdog_beats = 11
+            state.metrics.watchdog_beats.inc(11)
+            state.last_watchdog_beat = 101.0
 
             task = asyncio.create_task(status.status_writer(state, 0))
             for _ in range(10):
@@ -113,7 +114,7 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             assert payload["mqtt_queue_limit"] == 42
             assert isinstance(payload["mqtt_messages_dropped"], int)
             assert payload["mqtt_messages_dropped"] >= 3
-            assert payload["mqtt_drop_counts"] == {f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test": 3}
+            assert payload["mqtt_drop_counts"] == {topic: 3}
             assert payload["datastore_keys"] == ["foo"]
             assert payload["mailbox_size"] == 1
             assert payload["mailbox_bytes"] == 3

@@ -174,7 +174,9 @@ class MqttTransport:
                 should_requeue = False
                 try:
                     await _reliable_publish()
-                    self.state.record_mqtt_publish()
+                    # [SIL-2] Direct metrics recording (No Wrapper)
+                    self.state.mqtt_messages_published += 1
+                    self.state.metrics.mqtt_messages_published.inc()
                     published = True
                 except aiomqtt.MqttError as exc:
                     logger.warning("MQTT persistent publish failure: %s", exc)
@@ -274,7 +276,12 @@ class MqttTransport:
             try:
                 dropped = self.state.mqtt_publish_queue.get_nowait()
                 self.state.mqtt_publish_queue.task_done()
-                self.state.record_mqtt_drop(dropped.topic_name)
+                # [SIL-2] Direct metrics recording (No Wrapper)
+                self.state.mqtt_drop_counts[dropped.topic_name] = (
+                    self.state.mqtt_drop_counts.get(dropped.topic_name, 0) + 1
+                )
+                self.state.mqtt_dropped_messages += 1
+                self.state.metrics.mqtt_messages_dropped.inc()
 
                 # Use background task for spooling to avoid blocking enqueue
                 await self.stash_mqtt_message(dropped)
@@ -402,7 +409,9 @@ class MqttTransport:
         self.state.mqtt_spool_backoff_until = time.monotonic() + delay
 
     def _handle_mqtt_spool_failure(self, reason: str, exc: BaseException | None = None) -> None:
-        self.state.record_mqtt_spool_error()
+        # [SIL-2] Direct metrics recording (No Wrapper)
+        self.state.mqtt_spool_errors += 1
+        self.state.metrics.mqtt_spool_errors.inc()
         if exc:
             self.state.mqtt_spool_last_error = str(exc)
         self._disable_mqtt_spool(reason)
@@ -412,7 +421,9 @@ class MqttTransport:
         self.state.mqtt_spool_failure_reason = reason
         if exc:
             self.state.mqtt_spool_last_error = str(exc)
-        self.state.record_mqtt_spool_error()
+        # [SIL-2] Direct metrics recording (No Wrapper)
+        self.state.mqtt_spool_errors += 1
+        self.state.metrics.mqtt_spool_errors.inc()
 
     async def stash_mqtt_message(self, message: QueuedPublish) -> bool:
         if not await self.ensure_spool():
@@ -423,7 +434,9 @@ class MqttTransport:
         try:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, spool.append, message)
-            self.state.record_mqtt_spool()
+            # [SIL-2] Direct metrics recording (No Wrapper)
+            self.state.mqtt_spooled_messages += 1
+            self.state.metrics.mqtt_spooled_messages.inc()
             return True
         except (MQTTSpoolError, OSError) as exc:
             self._handle_mqtt_spool_failure("append_failed", exc=exc)

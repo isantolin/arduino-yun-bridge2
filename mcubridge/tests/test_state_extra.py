@@ -58,7 +58,9 @@ def test_managed_process_is_drained() -> None:
 
 def test_serial_stats_recording() -> None:
     state = RuntimeState()
-    state.record_serial_decode_error()
+    # [SIL-2] Direct metrics recording (No Wrapper)
+    state.serial_decode_errors += 1
+    state.metrics.serial_decode_errors.inc()
     assert state.serial_decode_errors == 1
 
 
@@ -86,9 +88,9 @@ def test_runtime_state_mailbox_requeue_front() -> None:
 def test_runtime_state_mailbox_requeue_front_full() -> None:
     state = RuntimeState()
     state.mailbox_queue_limit = 1
-    state.enqueue_mailbox_message(b"msg1")
-    # requeue_mailbox_message_front returns None
-    state.requeue_mailbox_message_front(b"msg2")
+    state.mailbox_queue.append(b"msg1")
+    # Native queue append_left for front requeue
+    state.mailbox_queue.appendleft(b"msg2")
 
 
 def test_record_serial_pipeline_event_edge_cases() -> None:

@@ -201,7 +201,9 @@ class SerialTransport:
 
             except asyncio.LimitOverrunError:
                 logger.warning("Serial packet too large, flushing.")
-                self.state.record_serial_decode_error()
+                # [SIL-2] Direct metrics recording (No Wrapper)
+                self.state.serial_decode_errors += 1
+                self.state.metrics.serial_decode_errors.inc()
                 # Drain the overrun data
                 await reader.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError as e:
@@ -256,26 +258,38 @@ class SerialTransport:
                 logger.debug("[MCU -> SERIAL] [SEQ:%04X] [RAW]: [%s]", seq_id, raw_hex)
 
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
-            self.state.record_serial_rx(len(encoded_packet))
+            # [SIL-2] Direct metrics recording (No Wrapper)
+            nbytes = len(encoded_packet)
+            self.state.serial_bytes_received += nbytes
+            self.state.serial_frames_received += 1
+            self.state.metrics.serial_bytes_received.inc(nbytes)
+            self.state.metrics.serial_frames_received.inc()
+            self.state.serial_throughput_stats.record_rx(nbytes)
 
         except (cobs.DecodeError, ValueError, msgspec.DecodeError) as exc:
             # [SIL-2] Fault Isolation: Group malformed/decode errors separately from runtime logic.
             raw_hex = packet_bytes.hex(" ").upper()
             logger.warning("[SERIAL <- MCU] [MALFORMED (ERR: %s)]: [%s]", exc, raw_hex)
-            self.state.record_serial_decode_error()
+            # [SIL-2] Direct metrics recording (No Wrapper)
+            self.state.serial_decode_errors += 1
+            self.state.metrics.serial_decode_errors.inc()
             await self._check_baudrate_fallback()
         except (OSError, RuntimeError, asyncio.TimeoutError) as exc:
             # [SIL-2] Fault Isolation: Capture transport-level failures.
             raw_hex = packet_bytes.hex(" ").upper()
             logger.error("[SERIAL <- MCU] [TRANSPORT (ERR: %s)]: [%s]", exc, raw_hex)
-            self.state.record_serial_decode_error()
+            # [SIL-2] Direct metrics recording (No Wrapper)
+            self.state.serial_decode_errors += 1
+            self.state.metrics.serial_decode_errors.inc()
             await self._check_baudrate_fallback()
         except (TypeError, AttributeError, KeyError) as exc:
             # [SIL-2] Boundary Guard: Catch-all for unexpected logic errors,
             # ensuring they are typed and sent to syslog.
             raw_hex = packet_bytes.hex(" ").upper()
             logger.critical("[SERIAL <- MCU] [FATAL LOGIC (ERR: %s)]: [%s]", exc, raw_hex, exc_info=True)
-            self.state.record_serial_decode_error()
+            # [SIL-2] Direct metrics recording (No Wrapper)
+            self.state.serial_decode_errors += 1
+            self.state.metrics.serial_decode_errors.inc()
             raise
 
     async def _check_baudrate_fallback(self) -> None:
@@ -331,7 +345,14 @@ class SerialTransport:
             self.writer.write(encoded)
             await self.writer.drain()
 
-            self.state.record_serial_tx(len(encoded))
+            # [SIL-2] Direct metrics recording (No Wrapper)
+            nbytes = len(encoded)
+            self.state.serial_bytes_sent += nbytes
+            self.state.serial_frames_sent += 1
+            self.state.metrics.serial_bytes_sent.inc(nbytes)
+            self.state.metrics.serial_frames_sent.inc()
+            self.state.serial_throughput_stats.record_tx(nbytes)
+
             return True
         except (OSError, asyncio.CancelledError) as e:
             logger.warning("Send failed: %s", e)

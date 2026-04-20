@@ -212,7 +212,11 @@ class SerialHandshakeManager:
         )
 
         async def _attempt() -> bool:
-            self._state.record_handshake_attempt()
+            # [SIL-2] Direct metrics recording (No Wrapper)
+            self._state.last_handshake_unix = time.time()
+            self._state._handshake_last_started = time.monotonic()  # type: ignore[reportPrivateUsage]
+            self._state.handshake_attempts += 1
+            self._state.metrics.handshake_attempts.inc()
             self.reset_fsm()  # Ensure clean slate
             return await self._synchronize_attempt()
 
@@ -457,14 +461,26 @@ class SerialHandshakeManager:
         # FSM Transition to FAULT
         self.fail_handshake()
 
-        self._state.record_handshake_failure(reason)
+        # [SIL-2] Direct metrics recording (No Wrapper)
+        self._state.handshake_failure_streak += 1
+        self._state.last_handshake_error = reason
+        self._state.last_handshake_unix = time.time()
+        self._state.handshake_last_duration = (
+            self._state._handshake_duration_since_start()  # type: ignore[reportPrivateUsage]
+        )
         self._state.mark_transport_connected()
+
         is_fatal = self._should_mark_failure_fatal(reason)
         fatal_detail = detail
         if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
             fatal_detail = detail or (f"failure_streak_exceeded_{self._fatal_threshold}")
         if is_fatal:
-            self._state.record_handshake_fatal(reason, fatal_detail)
+            # [SIL-2] Direct metrics recording (No Wrapper)
+            self._state.handshake_fatal_count += 1
+            self._state.handshake_fatal_reason = reason
+            self._state.handshake_fatal_detail = fatal_detail
+            self._state.handshake_fatal_unix = time.time()
+
             self._logger.error(
                 "Fatal serial handshake failure reason=%s detail=%s",
                 reason,
@@ -564,7 +580,17 @@ class SerialHandshakeManager:
         await self._enqueue_mqtt(message)
 
     async def _handle_handshake_success(self) -> None:
-        self._state.record_handshake_success()
+        # [SIL-2] Direct metrics recording (No Wrapper)
+        self._state.handshake_failure_streak = 0
+        self._state.handshake_backoff_until = 0.0
+        self._state.last_handshake_error = None
+        self._state.last_handshake_unix = time.time()
+        self._state.handshake_last_duration = (
+            self._state._handshake_duration_since_start()  # type: ignore[reportPrivateUsage]
+        )
+        self._state.mark_synchronized()
+        self._state.handshake_successes += 1
+        self._state.metrics.handshake_successes.inc()
         duration = round(self._state.handshake_last_duration, 3)
         await self._publish_handshake_event(
             "success",

@@ -398,7 +398,7 @@ async def test_mcu_status_frames_increment_counters(
     service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
     # Status frames don't need link sync in the dispatcher
     await service.handle_mcu_frame(Status.ERROR.value, 0, b"something failed")
-    assert runtime_state.mcu_status_counters[Status.ERROR.name] == 1
+    assert runtime_state.mcu_status_counts[Status.ERROR.name] == 1
 
 
 @pytest.mark.asyncio

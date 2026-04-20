@@ -87,8 +87,25 @@ class DaemonMetrics:
             buckets=(5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000),
             registry=self.registry,
         )
+        self.rpc_latency_ms = Histogram(
+            "mcubridge_rpc_latency_ms",
+            "MQTT -> MCU command round-trip latency in milliseconds",
+            buckets=(50, 100, 250, 500, 1000, 2500, 5000),
+            registry=self.registry,
+        )
 
         # System Metrics
+        self.unknown_command_count = Counter(
+            "mcubridge_unknown_commands_total",
+            "Total unknown commands received from MCU",
+            registry=self.registry,
+        )
+        self.mcu_status_counts = Counter(
+            "mcubridge_mcu_status_total",
+            "Total status responses from MCU by status name",
+            labelnames=["status"],
+            registry=self.registry,
+        )
         self.handshake_attempts = Counter(
             "mcubridge_handshake_attempts_total",
             "Total serial handshake attempts",

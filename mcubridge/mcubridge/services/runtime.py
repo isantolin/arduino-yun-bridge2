@@ -283,7 +283,11 @@ class BridgeService:
             logger.debug("MCU > ACK received")
 
     async def handle_status(self, seq_id: int, status: Status, payload: bytes) -> None:
-        self.state.record_mcu_status(status)
+        # [SIL-2] Direct metrics recording (No Wrapper)
+        self.state.mcu_status_counts[status.name] = (
+            self.state.mcu_status_counts.get(status.name, 0) + 1
+        )
+        self.state.metrics.mcu_status_counts.labels(status=status.name).inc()
 
         # [SIL-2] Improved status reporting with descriptive names from protocol
         desc = status.description

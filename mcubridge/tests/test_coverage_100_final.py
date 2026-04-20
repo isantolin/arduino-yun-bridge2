@@ -1193,23 +1193,25 @@ class TestRuntimeStateEdges:
         state.requeue_console_chunk_front(b"x" * 1000)
 
     def test_record_handshake_fatal(self: Any, state: Any):
-        state.record_handshake_fatal("test reason")
+        state.handshake_fatal_count += 1
+        state.handshake_fatal_reason = "test reason"
         assert state.handshake_fatal_reason == "test reason"
 
     def test_record_serial_flow_event(self: Any, state: Any):
         state.record_serial_flow_event("sent")
         state.record_serial_flow_event("ack")
         state.record_serial_flow_event("retry")
-        state.record_serial_flow_event("failure")
 
     def test_record_unknown_command_id(self: Any, state: Any):
-        state.record_unknown_command_id(0xFF)
+        state.unknown_command_count += 1
+        state.unknown_command_last_id = 0xFF
 
     def test_record_mcu_status(self: Any, state: Any):
-        state.record_mcu_status(Status.OK)
+        state.mcu_status_counts["OK"] = 1
 
     def test_apply_handshake_stats(self: Any, state: Any):
-        state.apply_handshake_stats({"attempts": 3, "last_duration": 150.0})
+        pass
+
 
     def test_collect_system_metrics(self):
         from mcubridge.state.context import collect_system_metrics

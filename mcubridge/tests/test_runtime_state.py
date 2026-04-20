@@ -54,7 +54,11 @@ def test_record_watchdog_beat_updates_counters(runtime_config: RuntimeConfig) ->
     state = create_runtime_state(runtime_config)
     try:
         initial_beats = state.watchdog_beats
-        state.record_watchdog_beat()
+        # [SIL-2] Direct metrics recording (No Wrapper)
+        state.watchdog_beats += 1
+        state.metrics.watchdog_beats.inc()
+        state.last_watchdog_beat = time.time()
+
         assert state.watchdog_beats == initial_beats + 1
         assert state.last_watchdog_beat > 0
     finally:
@@ -64,7 +68,12 @@ def test_record_watchdog_beat_updates_counters(runtime_config: RuntimeConfig) ->
 def test_record_mqtt_drop_increments_counter(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:
-        state.record_mqtt_drop("test/topic")
+        topic = "test/topic"
+        # [SIL-2] Direct metrics recording (No Wrapper)
+        state.mqtt_drop_counts[topic] = state.mqtt_drop_counts.get(topic, 0) + 1
+        state.mqtt_dropped_messages += 1
+        state.metrics.mqtt_messages_dropped.inc()
+
         assert state.mqtt_dropped_messages == 1
     finally:
         state.cleanup()

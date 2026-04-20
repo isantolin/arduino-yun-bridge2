@@ -151,7 +151,7 @@ class BridgeDispatcher:
         """
         Route an incoming frame from the MCU to the appropriate registered handler.
         """
-        start = asyncio.get_running_loop().time()
+        now = asyncio.get_running_loop().time()
         try:
             if self.on_frame_received_callback:
                 self.on_frame_received_callback(command_id, sequence_id, payload)
@@ -173,14 +173,20 @@ class BridgeDispatcher:
 
             elif response_to_request(command_id) is None:
                 logger.warning("Protocol: Unhandled MCU command %s", command_name)
-                self.state.record_unknown_command_id(command_id)
+                # [SIL-2] Direct metrics recording (No Wrapper)
+                self.state.unknown_command_count += 1
+                self.state.metrics.unknown_command_count.inc()
+                self.state.unknown_command_last_id = command_id
                 await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
 
             if handled_successfully and command_id not in STATUS_VALUES:
                 await self.acknowledge_frame(command_id, sequence_id)
         finally:
-            latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
+            latency_ms = (asyncio.get_running_loop().time() - now) * 1000.0
             self.state.serial_latency_stats.record(latency_ms)
+            self.state.metrics.serial_latency_ms.observe(latency_ms)
+
+
 
     async def dispatch_mqtt_message(
         self,
@@ -214,7 +220,9 @@ class BridgeDispatcher:
                 logger.debug("Unhandled MQTT topic %s", inbound_topic)
         finally:
             latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
-            self.state.record_rpc_latency_ms(latency_ms)
+            # [SIL-2] Direct metrics recording (No Wrapper)
+            self.state.rpc_latency_stats.record(latency_ms)
+            self.state.metrics.rpc_latency_ms.observe(latency_ms)
 
     def _get_topic_action(self, route: TopicRoute) -> str | None:
         """Deduce the action name for policy enforcement from the route."""

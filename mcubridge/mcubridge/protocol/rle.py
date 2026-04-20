@@ -160,11 +160,4 @@ def should_compress(payload: bytes) -> bool:
     return False
 
 
-def encode(uncompressed: bytes) -> bytes:
-    """Legacy wrapper for RleAdapter.build."""
-    return RLE_TRANSFORM.build(uncompressed)
 
-
-def decode(compressed: bytes) -> bytes:
-    """Legacy wrapper for RleAdapter.parse."""
-    return RLE_TRANSFORM.parse(compressed)

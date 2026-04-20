@@ -277,7 +277,11 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
     rle_input = bytes([0] * 50 + [1] * 30 + [2] * 20 + [255] * 28)
 
     results.append(
-        _benchmark("RLE encode", lambda: mcubridge.protocol.rle.encode(rle_input), iterations)
+        _benchmark(
+            "RLE encode",
+            lambda: mcubridge.protocol.rle.RLE_TRANSFORM.build(rle_input),
+            iterations,
+        )
     )
 
     # --- Topic parsing ---

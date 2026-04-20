@@ -20,7 +20,7 @@ async def test_serial_flow_compression_failure() -> None:
     # Mock rle.should_compress to True, but rle.encode to raise
     with (
         patch("mcubridge.protocol.rle.should_compress", return_value=True),
-        patch("mcubridge.protocol.rle.encode", side_effect=ValueError("fail")),
+        patch("mcubridge.protocol.rle.RLE_TRANSFORM.build", side_effect=ValueError("fail")),
     ):
         flow.set_sender(AsyncMock(return_value=True))
         # Not tracking this command to reach compression block easily

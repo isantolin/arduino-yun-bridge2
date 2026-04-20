@@ -47,21 +47,21 @@ def test_rle_encode_decode_edge_cases() -> None:
     from mcubridge.protocol.structures import RLEPayload
 
     # Empty
-    assert rle.encode(b"") == b""
+    assert rle.RLE_TRANSFORM.build(b"") == b""
     assert RLEPayload(b"").decode() == b""
     # No compression benefit
-    assert rle.encode(b"ABC") == b"ABC"  # Wait, literals are as-is if not 0xFF
+    assert rle.RLE_TRANSFORM.build(b"ABC") == b"ABC"  # Wait, literals are as-is if not 0xFF
 
     # Literal 0xFF
-    assert rle.encode(b"\xff") == b"\xff\xff\xff"
+    assert rle.RLE_TRANSFORM.build(b"\xff") == b"\xff\xff\xff"
 
     # 2 and 3 0xFF (encoded as individual literal escapes since len < 4)
-    assert rle.encode(b"\xff\xff") == b"\xff\xff\xff\xff\xff\xff"
-    assert rle.encode(b"\xff\xff\xff") == b"\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+    assert rle.RLE_TRANSFORM.build(b"\xff\xff") == b"\xff\xff\xff\xff\xff\xff"
+    assert rle.RLE_TRANSFORM.build(b"\xff\xff\xff") == b"\xff\xff\xff\xff\xff\xff\xff\xff\xff"
 
     # Large run
     data = b"A" * 300
-    encoded = rle.encode(data)
+    encoded = rle.RLE_TRANSFORM.build(data)
     # 300 = 256 + 44
     # Run 1: 0xFF, 254 (256-2), 'A'
     # Run 2: 'A' repeated 44 times -> 0xFF, 42 (44-2), 'A'

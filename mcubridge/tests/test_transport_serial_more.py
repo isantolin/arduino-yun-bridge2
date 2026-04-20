@@ -41,14 +41,14 @@ async def test_negotiate_baudrate_success() -> None:
 
             transport.loop = asyncio.get_running_loop()
 
-            # Mock _serial_sender to avoid real I/O and return True
-            async def mock_sender(cmd: Any, payload: Any):
+            # Mock send to avoid real I/O and return True
+            async def mock_send(cmd: Any, payload: Any):
                 neg = transport._negotiation_future  # type: ignore[reportPrivateUsage]
                 if neg and not neg.done():
                     neg.set_result(True)
                 return True
 
-            transport._serial_sender = mock_sender  # type: ignore[reportPrivateUsage]
+            transport.send = mock_send  # type: ignore[reportAttributeAccessIssue]
 
             ok = await transport._negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
             assert ok is True
@@ -74,7 +74,7 @@ async def test_negotiate_baudrate_timeout() -> None:
             transport.loop = asyncio.get_running_loop()
 
             # Mock sender to succeed but don't resolve future
-            transport._serial_sender = AsyncMock(return_value=True)  # type: ignore[reportPrivateUsage]
+            transport.send = AsyncMock(return_value=True)  # type: ignore[reportAttributeAccessIssue]
 
             # Mock sleep to avoid waiting
             with patch("asyncio.sleep", AsyncMock()):
@@ -105,10 +105,7 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
         try:
             service = BridgeService(config, state, MqttTransport(config, state))
             transport = SerialTransport(config, state, service)
-
-            # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
-            # This prevents infinite loops when the mock reader fails.
-            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+            transport.loop = asyncio.get_running_loop()
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -125,7 +122,8 @@ async def test_retryable_run_opens_uart_at_safe_baud() -> None:
                 with pytest.raises((ConnectionError, asyncio.TimeoutError)):
                     # Global timeout to prevent test hanging CI
                     await asyncio.wait_for(
-                        orig_run(transport, asyncio.get_running_loop()), timeout=2.0
+                        transport._connect_and_run(),  # type: ignore[reportPrivateUsage]
+                        timeout=2.0,
                     )
 
             assert mock_open.await_args is not None
@@ -164,8 +162,11 @@ async def test_transport_run_handshake_fatal() -> None:
                 ),
             ):
                 transport = SerialTransport(config, state, service)
+                transport.loop = asyncio.get_running_loop()
+                # We need to mock the retry loop or it will keep retrying and eventually crash
+                # or just use _connect_and_run
                 with pytest.raises(SerialHandshakeFatal):
-                    await transport.run()
+                    await transport._connect_and_run()  # type: ignore[reportPrivateUsage]
         finally:
             state.cleanup()
 
@@ -196,8 +197,7 @@ async def test_serial_disconnected_hook_error(
                 raise RuntimeError("disconnected hook error")
 
             transport = SerialTransport(config, state, service)
-            # [SIL-2] Use .__wrapped__ to bypass tenacity retry logic in unit tests.
-            orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
+            transport.loop = asyncio.get_running_loop()
 
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
@@ -211,10 +211,10 @@ async def test_serial_disconnected_hook_error(
                 try:
                     # Use a timeout to ensure the test doesn't block forever
                     await asyncio.wait_for(
-                        orig_run(transport, asyncio.get_running_loop()), timeout=5.0
+                        transport._connect_and_run(),  # type: ignore[reportPrivateUsage]
+                        timeout=5.0,
                     )
                 except (ConnectionError, asyncio.TimeoutError, RuntimeError):
-
                     pass
 
                 assert any("error" in r.getMessage().lower() for r in caplog.records)

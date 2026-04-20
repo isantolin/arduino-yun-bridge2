@@ -63,16 +63,17 @@ async def test_serial_reader_task_processes_frame(
         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()),
     ):
         transport = SerialTransport(runtime_config, state, cast(Any, service))
-        orig_run = SerialTransport._retryable_run.__wrapped__ # type: ignore
+        transport.loop = asyncio.get_running_loop()
+        orig_connect_and_run = transport._connect_and_run  # type: ignore[reportPrivateUsage]
 
-        async def _limited_run(loop: Any) -> None:
+        async def _limited_run() -> None:
             try:
-                await orig_run(transport, loop) # type: ignore
+                await orig_connect_and_run()
             except (ConnectionError, asyncio.IncompleteReadError):
                 pass
             raise RuntimeError("Break Loop")
 
-        with patch.object(transport, "_retryable_run", _limited_run): # type: ignore
+        with patch.object(transport, "_connect_and_run", _limited_run):
             task = asyncio.create_task(transport.run())
             await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
@@ -136,16 +137,17 @@ async def test_serial_reader_task_emits_crc_mismatch(
         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()),
     ):
         transport = SerialTransport(runtime_config, state, cast(Any, service))
-        orig_run = SerialTransport._retryable_run.__wrapped__ # type: ignore
+        transport.loop = asyncio.get_running_loop()
+        orig_connect_and_run = transport._connect_and_run  # type: ignore[reportPrivateUsage]
 
-        async def _limited_run(loop: Any) -> None:
+        async def _limited_run() -> None:
             try:
-                await orig_run(transport, loop) # type: ignore
+                await orig_connect_and_run()
             except (ConnectionError, asyncio.IncompleteReadError):
                 pass
             raise RuntimeError("Break Loop")
 
-        with patch.object(transport, "_retryable_run", _limited_run): # type: ignore
+        with patch.object(transport, "_connect_and_run", _limited_run):
             task = asyncio.create_task(transport.run())
             await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 

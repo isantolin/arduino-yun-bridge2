@@ -271,9 +271,10 @@ async def test_serial_transport_toggle_dtr_error():
     state = MagicMock()
     service = MagicMock()
     transport = SerialTransport(config, state, service)
+    transport.loop = asyncio.get_running_loop()
 
     with patch("serial.Serial", side_effect=OSError(errno.ENOTTY, "Not a typewriter")):
-        await transport._toggle_dtr(asyncio.get_running_loop())  # type: ignore[reportPrivateUsage]
+        await transport._toggle_dtr()  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
@@ -287,7 +288,7 @@ async def test_serial_transport_run_fatal():
     from mcubridge.services.handshake import SerialHandshakeFatal
 
     with patch.object(
-        transport, "_retryable_run", side_effect=SerialHandshakeFatal("Fatal")
+        transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal")
     ):
         with pytest.raises(SerialHandshakeFatal):
             await transport.run()
@@ -301,8 +302,8 @@ async def test_serial_transport_on_disconnected_hook_error():
     service.on_serial_connected = AsyncMock()
     service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("Hook fail"))
     transport = SerialTransport(config, state, service)
+    transport.loop = asyncio.get_running_loop()
 
-    orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
     with (
         patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
         patch(
@@ -311,7 +312,7 @@ async def test_serial_transport_on_disconnected_hook_error():
         ),
     ):
         with pytest.raises(OSError):
-            await orig_run(transport, asyncio.get_running_loop())
+            await transport._connect_and_run()  # type: ignore[reportPrivateUsage]
 
 
 # --- mcubridge.config.settings ---

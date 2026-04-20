@@ -149,7 +149,7 @@ async def test_write_frame_debug_logs_unknown_command(
             lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),  # type: ignore[reportUnknownLambdaType]
         )
 
-        ok = await transport._serial_sender(0xFE, b"payload")  # type: ignore[reportPrivateUsage]
+        ok = await transport.send(0xFE, b"payload")
         assert ok is True
         assert mock_writer.write.called
         # Check that the command 0xFE is present in the encoded hex string
@@ -171,7 +171,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         mock_writer.write.side_effect = OSError("boom")
         transport.writer = mock_writer
 
-        ok = await transport._serial_sender(Command.CMD_CONSOLE_WRITE.value, b"hi")  # type: ignore[reportPrivateUsage]
+        ok = await transport.send(Command.CMD_CONSOLE_WRITE.value, b"hi")
         assert ok is False
     finally:
         state.cleanup()

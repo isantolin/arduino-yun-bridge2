@@ -13,7 +13,12 @@ from .structures import TopicRoute
 
 def topic_path(prefix: str, topic: Topic, *segments: str | int) -> str:
     """Join prefix, topic and optional sub-segments into a topic path."""
-    return str(topic.build(prefix, *segments))
+    parts = [prefix.strip("/"), str(topic).strip("/")]
+    for s in segments:
+        val = str(s).strip("/")
+        if val:
+            parts.append(val)
+    return "/".join(filter(None, parts))
 
 
 # --- Service Specific Topics ---

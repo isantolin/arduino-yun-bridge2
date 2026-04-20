@@ -14,6 +14,7 @@ import typer
 
 # [SIL-2] Use direct library functions for framing
 from cobs import cobs
+import construct
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
@@ -218,7 +219,7 @@ def main_cmd(
                     else:
                         try:
                             _print_response(_decode_frame(resp))
-                        except Exception as e:
+                        except (ValueError, KeyError, TypeError, construct.ConstructError) as e:
                             sys.stderr.write(f"[FrameDebug] Failed to decode: {e}\n")
             if count == 0 or iteration + 1 < count:
                 time.sleep(interval)

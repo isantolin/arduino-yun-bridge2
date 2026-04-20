@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import sys
 import urllib.request
+import urllib.error
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated, TypedDict
@@ -211,7 +212,7 @@ def _fetch_latest_version(package_name: str) -> str | None:
         with urllib.request.urlopen(url, timeout=10) as resp:  # noqa: S310
             data = msgspec.json.decode(resp.read())
             return data["info"]["version"]
-    except Exception:  # noqa: BLE001
+    except (urllib.error.URLError, ValueError, KeyError, msgspec.DecodeError):
         return None
 
 

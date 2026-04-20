@@ -309,7 +309,7 @@ def run_test(apk_disk: str, extroot_disk: str) -> None:
         child.sendline("poweroff")
         child.expect(pexpect.EOF, timeout=30)
 
-    except Exception as e:
+    except (pexpect.ExceptionPexpect, OSError, ValueError) as e:
         log_error(f"\n[ERROR] Test failed: {e}")
         if hasattr(child, "before") and child.before:
             log_error(f"[DEBUG] Last output:\n{child.before[-500:]}")

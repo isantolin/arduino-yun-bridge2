@@ -231,7 +231,7 @@ def main(
 
                 # Small cool-down between scripts to keep logs separated
                 time.sleep(1)
-    except Exception as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         logger.error("Emulation error: %s", exc)
         all_success = False
     finally:

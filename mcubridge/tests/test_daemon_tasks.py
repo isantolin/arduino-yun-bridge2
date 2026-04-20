@@ -191,7 +191,7 @@ async def test_serial_reader_task_propagates_handshake_fatal(
             await asyncio.wait_for(task, timeout=1)
         except SerialHandshakeFatal:
             pass
-        except Exception as exc:
+        except (asyncio.TimeoutError, RuntimeError, OSError) as exc:
             pytest.fail(f"Expected SerialHandshakeFatal, got {type(exc)}")
         else:
             pytest.fail("Did not raise SerialHandshakeFatal")

@@ -43,14 +43,14 @@ class RleFsm : public etl::fsm {
   LiteralState s_literal;
   EscMarkerState s_marker;
   EscValState s_val;
-  etl::ifsm_state* state_list[3];
+  etl::array<etl::ifsm_state*, 3> state_list;
 
   explicit RleFsm(etl::span<uint8_t> dst)
       : etl::fsm(StateId::LITERAL), it(dst.begin()), end(dst.end()) {
     state_list[0] = &s_literal;
     state_list[1] = &s_marker;
     state_list[2] = &s_val;
-    set_states(state_list, 3);
+    set_states(state_list.data(), state_list.size());
     start();
   }
 };

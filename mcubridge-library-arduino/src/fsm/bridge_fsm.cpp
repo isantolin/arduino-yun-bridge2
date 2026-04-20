@@ -1,5 +1,6 @@
 #include "bridge_fsm.h"
 #include <etl/fsm.h>
+#include <etl/array.h>
 
 namespace bridge::fsm {
 
@@ -12,7 +13,7 @@ static SynchronizedState synchronized_state;
 static AwaitingAckState awaiting_ack_state;
 static FaultState fault_state;
 
-static etl::ifsm_state* state_table[] = {
+static const etl::array<etl::ifsm_state*, 6> state_table = {
     &startup_state,
     &unsynchronized_state,
     &handshake_state,
@@ -22,7 +23,7 @@ static etl::ifsm_state* state_table[] = {
 };
 
 BridgeFsm::BridgeFsm() : etl::fsm(0) {
-  set_states(state_table, etl::size(state_table));
+  set_states(state_table.data(), state_table.size());
 }
 
 bool BridgeFsm::isSynchronized() const {

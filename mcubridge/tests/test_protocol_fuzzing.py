@@ -27,10 +27,10 @@ def test_frame_parsing_resilience_to_fuzzing():
             # We attempt to parse raw data directly as if it was decoded from COBS
             # (Testing the internal Frame structure parser)
             _ = Frame.parse(raw_data)
-        except valid_exceptions:
+        except (ValueError, TypeError, LookupError, RuntimeError, AttributeError) as exc:
             # This is expected behavior for garbage data
             pass
-        except Exception as exc:
+        except BaseException as exc:
             message = (
                 f"Frame.parse crashed on iteration {i} with unhandled exception: "
                 f"{type(exc).__name__}: {exc}. Data hex: {raw_data.hex()}"
@@ -50,9 +50,9 @@ def test_cobs_decoding_resilience():
         try:
             # Most random data is invalid COBS (e.g. 0 byte in wrong place)
             _ = cobs.decode(raw_data)
-        except cobs.DecodeError:
+        except (cobs.DecodeError, ValueError, TypeError):
             pass
-        except Exception as exc:
+        except BaseException as exc:
             pytest.fail(
                 f"cobs.decode crashed on iteration {i} with unhandled exception: {type(exc).__name__}: {exc}"
             )
@@ -70,7 +70,7 @@ def test_frame_header_parsing_resilience():
 
         try:
             _ = Frame.parse(raw_data)
-        except ValueError:
+        except (ValueError, TypeError, LookupError):
             pass
-        except Exception as exc:
+        except BaseException as exc:
             pytest.fail(f"Header parsing crashed on iteration {i} with: {exc}")

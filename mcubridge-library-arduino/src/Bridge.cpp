@@ -117,9 +117,10 @@ BridgeClass::BridgeClass(Stream& stream)
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _shared_secret.clear();
   if (secret != nullptr) {
-    const size_t len = etl::min(strlen(secret), _shared_secret.capacity());
-    _shared_secret.assign(reinterpret_cast<const uint8_t*>(secret),
-                          reinterpret_cast<const uint8_t*>(secret) + len);
+    const etl::string_view s(secret);
+    const size_t len = etl::min(s.size(), _shared_secret.capacity());
+    _shared_secret.assign(reinterpret_cast<const uint8_t*>(s.data()),
+                          reinterpret_cast<const uint8_t*>(s.data()) + len);
   }
 
   bridge::hal::init();
@@ -845,7 +846,8 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
         etl::string_view(reinterpret_cast<const char*>(_shared_secret.data()),
                          _shared_secret.size())) {
       const char* DEBUG_TAG_P = PSTR("DEBUG_TAG_UNUSED");
-      memcpy_P(resp.tag.data(), DEBUG_TAG_P, 16);
+      bridge::hal::copy_string(reinterpret_cast<char*>(resp.tag.data()),
+                               DEBUG_TAG_P, 16);
     } else {
       if (!rpc::security::timing_safe_equal(
               etl::span<const uint8_t>(full_tag.data(),

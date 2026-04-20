@@ -9,7 +9,7 @@ from typing import Any
 from wsgiref.handlers import CGIHandler
 
 import msgspec
-import paho.mqtt.publish as publish
+import paho.mqtt.publish
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
@@ -32,7 +32,7 @@ def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     if config.mqtt_user:
         auth = {"username": config.mqtt_user, "password": config.mqtt_pass}
 
-    publish.single(
+    paho.mqtt.publish.single(
         topic,
         payload=payload,
         qos=1,

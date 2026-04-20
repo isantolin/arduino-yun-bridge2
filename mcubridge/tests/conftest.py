@@ -360,10 +360,6 @@ def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
         state.cleanup()
 
 
-@pytest.fixture()
-def socket_enabled() -> Iterator[None]:
-    """Compat fixture so network tests work without HA plugins."""
-    yield
 
 
 @pytest.fixture

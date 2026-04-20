@@ -169,19 +169,11 @@ async def test_daemon_run_exception_group_coverage():
     d = daemon.BridgeDaemon(config)
     try:
 
-        class FakeTaskGroup:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self: Any, exc_type: Any, exc_val: Any, exc_tb: Any):
-                raise ExceptionGroup("Main Group", [RuntimeError("Sub-error")])
-
-            def create_task(self: Any, coro: Any):
-                coro.close()
-                return MagicMock(spec=asyncio.Task)
+        async def _mock_supervise(*args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("Sub-error")
 
         with (
-            patch("asyncio.TaskGroup", return_value=FakeTaskGroup()),
+            patch.object(d, "_supervise", side_effect=_mock_supervise),
             patch.object(d.service, "__aenter__", new_callable=AsyncMock),
             patch.object(d.service, "__aexit__", new_callable=AsyncMock),
             patch("mcubridge.daemon._cleanup_child_processes"),

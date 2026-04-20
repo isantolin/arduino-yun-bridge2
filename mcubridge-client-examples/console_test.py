@@ -10,7 +10,6 @@ import sys
 from typing import Annotated
 
 import typer
-from mcubridge_client import Topic
 from mcubridge_client.cli import bridge_session, configure_logging
 
 app = typer.Typer(help="Interactive console helper for the Arduino bridge.")
@@ -25,15 +24,15 @@ async def run_test(
     tls_insecure: bool,
 ) -> None:
 
-    async with bridge_session(host, port, user, password, tls_insecure) as client:
+    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
         # Start a task to listen for console messages
-        console_out_topic = str(Topic.build(Topic.CONSOLE, "out"))
-        await client.subscribe(console_out_topic)
-
         async def console_listener() -> None:
-            async for message in client.messages:
-                if Topic.matches(console_out_topic, str(message.topic)):
-                    logging.info("Received from Arduino: %s", message.payload.decode(errors="replace"))
+            while True:
+                message = await bridge.console_read_async()
+                if message is not None:
+                    logging.info("Received from Arduino: %s", message)
+                else:
+                    await asyncio.sleep(0.1)
 
         listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 
@@ -42,11 +41,9 @@ async def run_test(
             sys.stdin.isatty() and os.environ.get("MCUBRIDGE_NON_INTERACTIVE") != "1"
         )
 
-        console_in_topic = str(Topic.build(Topic.CONSOLE, "in"))
-
         if not is_interactive:
             logging.info("Non-interactive mode. Running Echo Test (ping/pong)...")
-            await client.publish(console_in_topic, b"ping")
+            await bridge.console_write("ping")
 
             # Wait up to 5 seconds for a response
             start = asyncio.get_running_loop().time()
@@ -64,7 +61,7 @@ async def run_test(
                     user_input = await asyncio.to_thread(input)
                     if user_input.lower() == "exit":
                         break
-                    await client.publish(console_in_topic, user_input.encode())
+                    await bridge.console_write(user_input)
                 except EOFError:
                     break
 

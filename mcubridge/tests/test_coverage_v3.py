@@ -274,6 +274,17 @@ async def test_process_finalize_process_missing_slot():
 
 
 @pytest.mark.asyncio
+async def test_serial_transport_toggle_dtr_error():
+    config = create_real_config()
+    state = MagicMock()
+    service = MagicMock()
+    transport = SerialTransport(config, state, service)
+
+    with patch("serial.Serial", side_effect=OSError(errno.ENOTTY, "Not a typewriter")):
+        await transport._toggle_dtr(asyncio.get_running_loop())  # type: ignore[reportPrivateUsage]
+
+
+@pytest.mark.asyncio
 async def test_serial_transport_run_fatal():
     config = create_real_config()
     config.reconnect_delay = 0.01  # type: ignore[reportAttributeAccessIssue]
@@ -299,15 +310,16 @@ async def test_serial_transport_on_disconnected_hook_error():
     service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("Hook fail"))
     transport = SerialTransport(config, state, service)
 
-    # Use the real method, no longer wrapped by tenacity in the class itself
+    orig_run = SerialTransport._retryable_run.__wrapped__  # type: ignore[reportPrivateUsage]
     with (
+        patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
         patch(
-            "serial_asyncio_fast.open_serial_connection",
+            "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection",
             side_effect=OSError("Connect fail"),
         ),
     ):
         with pytest.raises(OSError):
-            await transport._retryable_run(asyncio.get_running_loop()) # type: ignore[reportPrivateUsage]
+            await orig_run(transport, asyncio.get_running_loop())
 
 
 # --- mcubridge.config.settings ---

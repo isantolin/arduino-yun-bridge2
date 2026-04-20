@@ -65,14 +65,51 @@ class ProcessComponent(BaseComponent):
 
     # --- MQTT Handlers ---
 
-    async def handle_mqtt_run_async(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle ShellAction.RUN_ASYNC request from MQTT."""
+    async def handle_mqtt(
+        self,
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        """Handle shell-related MQTT topics."""
+        segments = list(route.segments)
         payload = msgspec.convert(inbound.payload, bytes)
-        payload_model = self._parse_shell_command(payload, ShellAction.RUN_ASYNC)
-        if payload_model is None:
+        if not segments:
             return True
 
-        command = payload_model.command
+        action = segments[0]
+
+        match action:
+            case ShellAction.RUN_ASYNC:
+                payload_model = self._parse_shell_command(payload, action)
+                if payload_model is None:
+                    return True
+                await self._handle_mqtt_run_async(payload_model, inbound)
+
+            case ShellAction.POLL if len(segments) == 2:
+                pid_model = self._parse_shell_pid(segments[1], action)
+                if pid_model is None:
+                    return True
+                await self._handle_mqtt_poll(pid_model, inbound)
+
+            case ShellAction.KILL if len(segments) == 2:
+                pid_model = self._parse_shell_pid(segments[1], action)
+                if pid_model is None:
+                    return True
+                await self._handle_mqtt_kill(pid_model, inbound)
+
+            case _:
+                logger.debug(
+                    "Ignoring shell topic action: %s",
+                    "/".join(segments),
+                )
+        return True
+
+    async def _handle_mqtt_run_async(
+        self,
+        payload: ShellCommandPayload,
+        inbound: Message | None,
+    ) -> None:
+        command = payload.command
         logger.info("MQTT async shell command: '%s'", command)
         try:
             pid = await self.run_async(command)
@@ -89,7 +126,7 @@ class ProcessComponent(BaseComponent):
                 payload=b"error:internal",
                 reply_to=inbound,
             )
-            return True
+            return
 
         response_topic = topic_path(
             self.state.mqtt_topic_prefix,
@@ -104,38 +141,25 @@ class ProcessComponent(BaseComponent):
                 payload=b"error:not_allowed_or_limit_reached",
                 reply_to=inbound,
             )
-            return True
+            return
 
         await self.ctx.mqtt_flow.publish(
             topic=response_topic,
             payload=str(pid).encode("utf-8"),
             reply_to=inbound,
         )
-        return True
 
-    async def handle_mqtt_poll(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle ShellAction.POLL request from MQTT."""
-        if len(route.segments) < 2:
-            return False
-        pid_model = self._parse_shell_pid(route.segments[1], ShellAction.POLL)
-        if pid_model is None:
-            return True
-
+    async def _handle_mqtt_poll(
+        self, pid_model: ShellPidPayload, inbound: Message | None = None
+    ) -> None:
         pid = pid_model.pid
         batch = await self.poll_process(pid)
         await self.publish_poll_result(pid, batch, inbound)
-        return True
 
-    async def handle_mqtt_kill(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle ShellAction.KILL request from MQTT."""
-        if len(route.segments) < 2:
-            return False
-        pid_model = self._parse_shell_pid(route.segments[1], ShellAction.KILL)
-        if pid_model is None:
-            return True
-
+    async def _handle_mqtt_kill(
+        self, pid_model: ShellPidPayload, inbound: Message | None = None
+    ) -> None:
         await self.stop_process(pid_model.pid)
-        return True
 
     def _parse_shell_command(
         self,

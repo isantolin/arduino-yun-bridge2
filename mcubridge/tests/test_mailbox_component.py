@@ -111,7 +111,7 @@ async def test_handle_mqtt_write_enqueues_and_notifies(
 ) -> None:
     component = MailboxComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_mqtt_write(
+    await component.handle_mqtt(
         make_route(Topic.MAILBOX, MailboxAction.WRITE.value),
         make_mqtt_msg(b"mqtt msg"),
     )
@@ -133,7 +133,7 @@ async def test_handle_mqtt_read_prefers_incoming_queue(
     # Message to MCU
     runtime_state.enqueue_mailbox_message(b"linux-data")
 
-    await component.handle_mqtt_read(
+    await component.handle_mqtt(
         make_route(Topic.MAILBOX, MailboxAction.READ.value),
         make_mqtt_msg(b""),
     )

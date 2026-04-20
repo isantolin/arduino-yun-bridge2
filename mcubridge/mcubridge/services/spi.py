@@ -28,43 +28,45 @@ class SpiComponent(BaseComponent):
     def __init__(self, config: RuntimeConfig, state: RuntimeState, ctx: BridgeContext):
         super().__init__(config, state, ctx)
 
-    async def handle_mqtt_begin(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle SPI_BEGIN request from MQTT."""
-        return await self.ctx.serial_flow.send(Command.CMD_SPI_BEGIN.value, b"")
-
-    async def handle_mqtt_end(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle SPI_END request from MQTT."""
-        return await self.ctx.serial_flow.send(Command.CMD_SPI_END.value, b"")
-
-    async def handle_mqtt_config(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle SPI_CONFIG request from MQTT."""
+    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
+        """Process inbound MQTT requests for SPI operations."""
+        action = route.identifier
         payload = msgspec.convert(inbound.payload, bytes)
         try:
-            # Expecting JSON or MsgPack config
-            # frequency, bit_order (0:LSB, 1:MSB), data_mode (0-3)
-            data = msgspec.json.decode(payload)
-            packet = structures.SpiConfigPacket(
-                bit_order=int(data.get("bit_order", 1)),
-                data_mode=int(data.get("data_mode", 0)),
-                frequency=int(data.get("frequency", 4000000)),
-            )
-            return await self.ctx.serial_flow.send(
-                Command.CMD_SPI_SET_CONFIG.value, packet.encode()
-            )
-        except (msgspec.DecodeError, ValueError, TypeError) as e:
-            logger.warning("Malformed SPI config request: %s", e)
-            return True
+            match action:
+                case "begin":
+                    return await self.ctx.serial_flow.send(Command.CMD_SPI_BEGIN.value, b"")
+                case "end":
+                    return await self.ctx.serial_flow.send(Command.CMD_SPI_END.value, b"")
+                case "config":
+                    try:
+                        # Expecting JSON or MsgPack config
+                        # frequency, bit_order (0:LSB, 1:MSB), data_mode (0-3)
+                        data = msgspec.json.decode(payload)
+                        packet = structures.SpiConfigPacket(
+                            bit_order=int(data.get("bit_order", 1)),
+                            data_mode=int(data.get("data_mode", 0)),
+                            frequency=int(data.get("frequency", 4000000)),
+                        )
+                        return await self.ctx.serial_flow.send(
+                            Command.CMD_SPI_SET_CONFIG.value, packet.encode()
+                        )
+                    except (msgspec.DecodeError, ValueError, TypeError) as e:
+                        logger.warning("Malformed SPI config request: %s", e)
+                        return False
+                case "transfer":
+                    # Simple case: raw bytes to transfer
+                    packet = structures.SpiTransferPacket(data=payload)
+                    return await self.ctx.serial_flow.send(
+                        Command.CMD_SPI_TRANSFER.value, packet.encode()
+                    )
+                case _:
+                    return False
+        except (ValueError, TypeError, msgspec.ValidationError) as e:
+            logger.error("Error handling SPI MQTT action %s: %s", action, e)
+            return False
 
-    async def handle_mqtt_transfer(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle SPI_TRANSFER request from MQTT."""
-        payload = msgspec.convert(inbound.payload, bytes)
-        packet = structures.SpiTransferPacket(data=payload)
-        return await self.ctx.serial_flow.send(
-            Command.CMD_SPI_TRANSFER.value, packet.encode()
-        )
-
-    async def handle_transfer_resp(
-self, seq_id: int, payload: bytes) -> bool:
+    async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_SPI_TRANSFER_RESP from MCU."""
         try:
             packet = structures.SpiTransferResponsePacket.decode(payload)

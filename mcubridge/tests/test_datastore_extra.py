@@ -13,7 +13,6 @@ from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.state.context import create_runtime_state
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.protocol.protocol import DatastoreAction
-from mcubridge.router.routers import MQTTRouter
 from tests._helpers import make_mqtt_msg, make_route
 
 
@@ -108,25 +107,22 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
         ctx.mqtt_flow.publish = AsyncMock()
 
         comp = DatastoreComponent(config, state, ctx)
-        router = MQTTRouter()
-        router.register(Topic.DATASTORE, comp.handle_mqtt_put, action=DatastoreAction.PUT)
-        router.register(Topic.DATASTORE, comp.handle_mqtt_get, action=DatastoreAction.GET)
 
-        # 1. No segments -> action is None -> not dispatched
-        route1 = TopicRoute("br/d", "br", Topic.DATASTORE, ())
-        assert not await router.dispatch(route1, make_mqtt_msg(b""))
-
-        # 2. Unknown action -> not dispatched
-        await router.dispatch(make_route(Topic.DATASTORE, "unknown", "key"), make_mqtt_msg(b""))
+        # 1. Empty route
+        await comp.handle_mqtt(TopicRoute("br/d", "br", Topic.DATASTORE, ()), make_mqtt_msg(b""))
         assert not ctx.mqtt_flow.publish.called
 
-        # 3. Missing key (handled inside handler)
-        await router.dispatch(make_route(Topic.DATASTORE, DatastoreAction.PUT.value), make_mqtt_msg(b""))
+        # 2. Unknown action
+        await comp.handle_mqtt(make_route(Topic.DATASTORE, "unknown", "key"), make_mqtt_msg(b""))
         assert not ctx.mqtt_flow.publish.called
 
-        # 4. Echo suppression on GET (handled inside handler)
+        # 3. Missing key
+        await comp.handle_mqtt(make_route(Topic.DATASTORE, DatastoreAction.PUT.value), make_mqtt_msg(b""))
+        assert not ctx.mqtt_flow.publish.called
+
+        # 4. Echo suppression on GET
         state.datastore["echo_key"] = "val"
-        await router.dispatch(
+        await comp.handle_mqtt(
             make_route(Topic.DATASTORE, DatastoreAction.GET.value, "echo_key"),
             make_mqtt_msg(b"val")
         )
@@ -134,7 +130,7 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
 
         # 5. Type coercion from int
         state.datastore["int_key"] = 42 # type: ignore
-        await router.dispatch(
+        await comp.handle_mqtt(
             make_route(Topic.DATASTORE, DatastoreAction.GET.value, "int_key", "request"),
             make_mqtt_msg(b"")
         )
@@ -162,15 +158,19 @@ async def test_datastore_mqtt_put_too_large() -> None:
 
         # Key too large
         long_key = "k" * 300
-        route = make_route(Topic.DATASTORE, DatastoreAction.PUT.value, long_key)
-        await comp.handle_mqtt_put(route, make_mqtt_msg(b"val"))
+        await comp.handle_mqtt(
+            make_route(Topic.DATASTORE, DatastoreAction.PUT.value, long_key),
+            make_mqtt_msg(b"val")
+        )
         assert not ctx.mqtt_flow.publish.called
         assert long_key not in state.datastore
 
         # Value too large
         long_val = b"v" * 300
-        route2 = make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "key")
-        await comp.handle_mqtt_put(route2, make_mqtt_msg(long_val))
+        await comp.handle_mqtt(
+            make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "key"),
+            make_mqtt_msg(long_val)
+        )
         assert not ctx.mqtt_flow.publish.called
         assert "key" not in state.datastore
 
@@ -194,8 +194,10 @@ async def test_datastore_mqtt_get_too_large() -> None:
         comp = DatastoreComponent(config, state, ctx)
 
         long_key = "k" * 300
-        route = make_route(Topic.DATASTORE, DatastoreAction.GET.value, long_key, "request")
-        await comp.handle_mqtt_get(route, make_mqtt_msg(b""))
+        await comp.handle_mqtt(
+            make_route(Topic.DATASTORE, DatastoreAction.GET.value, long_key, "request"),
+            make_mqtt_msg(b"")
+        )
         assert not ctx.mqtt_flow.publish.called
 
     finally:

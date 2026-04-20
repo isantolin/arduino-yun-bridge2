@@ -13,9 +13,10 @@ from aiomqtt.message import Message
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from mcubridge.config.const import SPOOL_BACKOFF_MIN_SECONDS, SPOOL_BACKOFF_MAX_SECONDS
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiomqtt
+import tenacity
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
 from mcubridge.protocol.topics import topic_path
@@ -44,36 +45,80 @@ class MqttTransport:
         self.service = service
 
     async def run(self) -> None:
-        """Main run loop using aiomqtt's native reconnection (SIL-2)."""
+        """Main run loop with reconnection logic."""
         if not self.config.mqtt_enabled:
             logger.info("MQTT transport is DISABLED in configuration.")
             return
 
         tls_context = self.config.get_ssl_context()
+        reconnect_delay = max(1, self.config.reconnect_delay)
+
+        _log_cb = tenacity.before_sleep_log(logger, logging.WARNING)
+
+        def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
+            _log_cb(retry_state)
+            self.state.metrics.retries.labels(component="mqtt_connect").inc()
+
+        retryer = tenacity.AsyncRetrying(
+            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
+            + tenacity.wait_random(0, 2),
+            retry=tenacity.retry_if_exception_type(
+                (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
+            ),
+            before_sleep=_before_sleep,
+            reraise=True,
+        )
+
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    try:
+                        await self._connect_session(tls_context)
+                    except* (
+                        aiomqtt.MqttError,
+                        OSError,
+                        asyncio.TimeoutError,
+                    ) as exc_group:
+                        # Unwrap exception group to allow tenacity to retry
+                        for exc in exc_group.exceptions:
+                            logger.error("MQTT connection error: %s", exc)
+                        if len(exc_group.exceptions) >= 1:
+                            raise exc_group.exceptions[0]
+                        raise
+        except asyncio.CancelledError:
+            logger.info("MQTT transport stopping.")
+            raise
+
+    async def _connect_session(self, tls_context: Any) -> None:
+        connect_props = build_mqtt_connect_properties()
+
+        # [SIL-2] Warn if connecting without authentication
+        if not self.config.mqtt_user:
+            logger.warning(
+                "MQTT connecting without authentication (anonymous); "
+                "consider setting mqtt_user/mqtt_pass for production"
+            )
 
         # [SIL-2] Last Will and Testament: auto-publish offline status on unexpected disconnect
         will_topic = topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "status")
         will_payload = b'{"status": "offline", "reason": "unexpected_disconnect"}'
         will = aiomqtt.Will(topic=will_topic, payload=will_payload, qos=1, retain=True)
-        connect_props = build_mqtt_connect_properties()
 
-        # [SIL-2] Leverage aiomqtt's built-in reconnection logic.
         async with aiomqtt.Client(
             hostname=self.config.mqtt_host,
             port=self.config.mqtt_port,
             username=self.config.mqtt_user or None,
             password=self.config.mqtt_pass or None,
             tls_context=tls_context,
+            logger=logging.getLogger("mcubridge.mqtt.client"),
             protocol=aiomqtt.ProtocolVersion.V5,
-            clean_session=False,
+            clean_session=None,
             will=will,
             properties=connect_props,
-            logger=logging.getLogger("mcubridge.mqtt.client"),
         ) as client:
-            logger.info("Connected to MQTT broker (reconnection enabled).")
-            self.state.mark_transport_connected()
+            logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
 
-            # [SIL-2] Subscribe to all command patterns defined in the protocol
+            # Subscribe
             topics = [
                 (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
                 for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
@@ -86,18 +131,23 @@ class MqttTransport:
                 will_topic, b'{"status": "online"}', qos=1, retain=True
             )
 
-            # Concurrent publisher and subscriber loops
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(self._publisher_loop(client))
-                tg.create_task(self._subscriber_loop(client))
+            async with asyncio.TaskGroup() as task_group:
+                task_group.create_task(self._publisher_loop(client))
+                task_group.create_task(self._subscriber_loop(client))
 
     async def _publisher_loop(self, client: aiomqtt.Client) -> None:
         """Publishes messages from the internal queue to the MQTT broker."""
+
         try:
             while True:
+                # [OPTIMIZATION] Flush spool before processing new messages
                 await self.flush_mqtt_spool()
+
+                # Wait for next message
                 message = await self.state.mqtt_publish_queue.get()
 
+                # [SIL-2] Pre-calculate properties ONCE before the retry block
+                # to avoid redundant introspection logic.
                 topic_name = message.topic_name
                 props = build_mqtt_properties(message)
                 payload = message.payload
@@ -112,8 +162,12 @@ class MqttTransport:
                         payload.hex(" ").upper(),
                     )
 
-                published = False
-                try:
+                @tenacity.retry(
+                    wait=tenacity.wait_exponential(multiplier=0.1, max=10),
+                    retry=tenacity.retry_if_exception_type(aiomqtt.MqttError),
+                    before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
+                )
+                async def _reliable_publish() -> None:
                     await client.publish(
                         topic_name,
                         payload,
@@ -121,17 +175,31 @@ class MqttTransport:
                         retain=retain,
                         properties=props,
                     )
+
+                published = False
+                should_requeue = False
+                try:
+                    await _reliable_publish()
                     self.state.record_mqtt_publish()
                     published = True
-                except (aiomqtt.MqttError, OSError, RuntimeError) as exc:
-                    logger.warning("MQTT publish failure: %s", exc)
-                    await self.stash_mqtt_message(message)
+                except aiomqtt.MqttError as exc:
+                    logger.warning("MQTT persistent publish failure: %s", exc)
+                    should_requeue = not await self.stash_mqtt_message(message)
                 except asyncio.CancelledError:
-                    # Fail-safe: try to spool before dying
-                    await self.stash_mqtt_message(message)
+                    should_requeue = True
                     raise
+                except (OSError, RuntimeError, ValueError, TypeError) as exc:
+                    logger.error("Unexpected error in MQTT publisher: %s", exc)
+                    should_requeue = not await self.stash_mqtt_message(message)
                 finally:
+                    if not published and should_requeue:
+                        # [SIL-2] Fail-Safe: Re-enqueue if not sent (e.g. on cancellation)
+                        try:
+                            self.state.mqtt_publish_queue.put_nowait(message)
+                        except asyncio.QueueFull:
+                            await self.stash_mqtt_message(message)
                     self.state.mqtt_publish_queue.task_done()
+
         except asyncio.CancelledError:
             logger.debug("MQTT publisher loop cancelled.")
             raise
@@ -196,10 +264,12 @@ class MqttTransport:
         message_to_queue = message
         if reply_context is not None:
             props = reply_context.properties
-            resp_topic = getattr(props, "ResponseTopic", None) if props else None
-            if resp_topic:
+            target_topic = (
+                getattr(props, "ResponseTopic", None) if props else None
+            ) or message.topic_name
+            if target_topic != message_to_queue.topic_name:
                 message_to_queue = msgspec.structs.replace(
-                    message_to_queue, response_topic=resp_topic
+                    message_to_queue, topic_name=target_topic
                 )
 
             reply_correlation = getattr(props, "CorrelationData", None) if props else None
@@ -408,87 +478,4 @@ class MqttTransport:
             except (MQTTSpoolError, OSError) as exc:
                 self._handle_mqtt_spool_failure("pop_failed", exc=exc)
                 break
-
-    async def publish_bridge_snapshot(
-        self,
-        flavor: str,
-        inbound: Message | None = None,
-    ) -> None:
-        """Collect metrics and publish a system status snapshot (SIL-2)."""
-        if flavor == "handshake":
-            snapshot = self.state.build_handshake_snapshot()
-            topic_segments = ("bridge", "handshake", "value")
-        else:
-            snapshot = self.state.build_bridge_snapshot()
-            topic_segments = ("bridge", "summary", "value")
-
-        from mcubridge.config.const import MQTT_EXPIRY_SHELL
-
-        topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SYSTEM,
-            *topic_segments,
-        )
-        # Using msgspec for deterministic serialization
-        payload = msgspec.msgpack.encode(snapshot)
-
-        await self.publish(
-            topic=topic,
-            payload=payload,
-            content_type="application/msgpack",
-            expiry=MQTT_EXPIRY_SHELL,
-            properties=(("bridge-snapshot", flavor),),
-            reply_to=inbound,
-        )
-
-    def is_topic_action_allowed(
-        self,
-        topic_type: Topic | str,
-        action: str,
-    ) -> bool:
-        """Check if an action is permitted by the active policy."""
-        if not action:
-            return True
-        topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
-        if self.state.topic_authorization:
-            return self.state.topic_authorization.allows(topic_value, action)
-        return False
-
-    async def reject_topic_action(
-        self,
-        inbound: Message,
-        topic_type: Topic | str,
-        action: str,
-    ) -> None:
-        """Log a policy violation and publish a FORBIDDEN status response."""
-        topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
-        logger.warning(
-            "Blocked MQTT action topic=%s action=%s (message topic=%s)",
-            topic_value,
-            action or "<missing>",
-            str(inbound.topic),
-        )
-
-        from mcubridge.config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
-
-        payload = msgspec.msgpack.encode(
-            {
-                "status": "forbidden",
-                "topic": topic_value,
-                "action": action,
-            }
-        )
-        status_topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SYSTEM,
-            Topic.STATUS,
-        )
-        await self.publish(
-            topic=status_topic,
-            payload=payload,
-            content_type="application/msgpack",
-            expiry=MQTT_EXPIRY_SHELL,
-            properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
-            reply_to=inbound,
-        )
 

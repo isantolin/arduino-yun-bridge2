@@ -86,17 +86,45 @@ class DatastoreComponent(BaseComponent):
             await self._publish_datastore_value(key, value_bytes)
         return send_ok
 
-    async def handle_mqtt_put(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle DATASTORE_PUT request from MQTT."""
+    async def handle_mqtt(
+        self,
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        identifier = route.identifier
+        remainder = list(route.remainder)
         payload = msgspec.convert(inbound.payload, bytes)
         payload_str = payload.decode("utf-8", errors="ignore")
 
-        key = "/".join(route.remainder)
+        is_request = (
+            identifier == DatastoreAction.GET
+            and bool(remainder)
+            and remainder[-1] == "request"
+        )
+        parts = remainder[:-1] if is_request else remainder
+
+        key = "/".join(parts)
         if not key:
+            logger.debug("Ignoring datastore action '%s' without key", identifier)
             return True
 
+        match identifier:
+            case DatastoreAction.PUT:
+                await self._handle_mqtt_put(key, payload_str, inbound)
+            case DatastoreAction.GET:
+                await self._handle_mqtt_get(key, is_request, inbound)
+            case _:
+                logger.debug("Unknown datastore action '%s'", identifier)
+        return True
+
+    async def _handle_mqtt_put(
+        self,
+        key: str,
+        value_text: str,
+        inbound: Message | None,
+    ) -> None:
         key_bytes = key.encode("utf-8")
-        value_bytes = payload_str.encode("utf-8")
+        value_bytes = value_text.encode("utf-8")
 
         if len(key_bytes) > 255 or len(value_bytes) > 255:
             logger.warning(
@@ -104,33 +132,28 @@ class DatastoreComponent(BaseComponent):
                 len(key_bytes),
                 len(value_bytes),
             )
-            return True
+            return
 
-        self.state.datastore[key] = payload_str
+        self.state.datastore[key] = value_text
         await self._publish_datastore_value(
             key,
             value_bytes,
             reply_context=inbound,
         )
-        return True
 
-    async def handle_mqtt_get(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle DATASTORE_GET request from MQTT."""
-        remainder = list(route.remainder)
-        is_request = bool(remainder) and remainder[-1] == "request"
-        parts = remainder[:-1] if is_request else remainder
-
-        key = "/".join(parts)
-        if not key:
-            return True
-
+    async def _handle_mqtt_get(
+        self,
+        key: str,
+        is_request: bool,
+        inbound: Message | None,
+    ) -> None:
         key_bytes = key.encode("utf-8")
         if len(key_bytes) > 255:
             logger.warning(
                 "Datastore key too large for GET request (%d bytes)",
                 len(key_bytes),
             )
-            return True
+            return
 
         cached_value = self.state.datastore.get(key)
         if cached_value is None:
@@ -143,7 +166,7 @@ class DatastoreComponent(BaseComponent):
                 )
             else:
                 logger.debug("Datastore GET for '%s' has no cached value", key)
-            return True
+            return
 
         # [SIL-2] Handle potential type drift during testing/injection
         val_to_check: Any = cached_value
@@ -156,14 +179,13 @@ class DatastoreComponent(BaseComponent):
         # Ignore echoes: if it's not an explicit /request and it has a payload,
         # it is an echo of a published value, so we do not republish.
         if not is_request and inbound and inbound.payload:
-            return True
+            return
 
         await self._publish_datastore_value(
             key,
             val_bytes,
             reply_context=inbound,
         )
-        return True
 
     async def _publish_datastore_value(
         self,

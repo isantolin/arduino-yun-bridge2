@@ -32,16 +32,16 @@ from tests._helpers import make_test_config, make_route, make_mqtt_msg
 
 
 class TestUtilInit:
-    def test_chunk_payload_empty(self):
-        from mcubridge.services.serial_flow import SerialFlowController
+    def test_chunk_bytes_empty(self):
+        from mcubridge.util import chunk_bytes
 
-        assert SerialFlowController.chunk_payload(b"", 5) == []
+        assert chunk_bytes(b"", 5) == []
 
-    def test_chunk_payload_invalid_size(self):
-        from mcubridge.services.serial_flow import SerialFlowController
+    def test_chunk_bytes_invalid_size(self):
+        from mcubridge.util import chunk_bytes
 
         with pytest.raises(ValueError):
-            SerialFlowController.chunk_payload(b"data", 0)
+            chunk_bytes(b"data", 0)
 
     def test_normalise_allowed_commands_empty_strings(self):
         from mcubridge.util import normalise_allowed_commands
@@ -489,39 +489,38 @@ class TestShellMqttLogic:
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_poll(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt_poll(
+        await shell_comp.handle_mqtt(
             make_route(Topic.SHELL, "poll", "42"), make_mqtt_msg(b"")
         )
         shell_comp.poll_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_kill(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt_kill(
+        await shell_comp.handle_mqtt(
             make_route(Topic.SHELL, "kill", "42"), make_mqtt_msg(b"")
         )
         shell_comp.stop_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt_run_async(
+        await shell_comp.handle_mqtt(
             make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b"")
         )
-        # Verify no unintended publish
-        assert not shell_comp.ctx.mqtt_flow.publish.called
+        shell_comp.ctx.mqtt_flow.publish.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt_run_async(make_route(Topic.SHELL), make_mqtt_msg(b""))
-        assert not shell_comp.ctx.mqtt_flow.publish.called
+        await shell_comp.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
+        shell_comp.ctx.mqtt_flow.publish.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_parse_shell_command_invalid(self: Any, shell_comp: Any):
-        result = shell_comp._parse_shell_command(b"", "run") # type: ignore[reportPrivateUsage]
+        result = shell_comp._parse_shell_command(b"", "run")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_parse_shell_pid_invalid(self: Any, shell_comp: Any):
-        result = shell_comp._parse_shell_pid("notanumber", "poll") # type: ignore[reportPrivateUsage]
+        result = shell_comp._parse_shell_pid("notanumber", "poll")
         assert result is None
 
 
@@ -849,7 +848,7 @@ class TestMailboxComponent:
             ctx.mqtt_flow.publish = AsyncMock()
             ctx.mqtt_flow.enqueue_mqtt = AsyncMock()
             comp = MailboxComponent(config, state, ctx)
-            await comp.handle_mqtt_write(
+            await comp.handle_mqtt(
                 make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
             )
             assert len(state.mailbox_queue) == 1
@@ -915,8 +914,66 @@ class TestDatastoreComponent:
 
             # Using MqttTransport since publish moved there
             transport = MqttTransport(config, state)
+            # To capture calls, we must ensure transport uses ctx.mqtt_flow or similar?
+            # Actually, MqttTransport.publish uses state.enqueue_mqtt which calls self.mqtt_publish_queue.put_nowait()
+            # But the component calls self.ctx.mqtt_flow.publish
+            # In this gap test, we just want to exercise RuntimeState.publish if it existed,
+            # but it was moved to MqttTransport.
             await transport.publish("key", b"", expiry=60)
+            # This won't call ctx.mqtt_flow.publish because it's a DIFFERENT object.
+            # But it will put in state.mqtt_publish_queue.
             assert state.mqtt_publish_queue.qsize() == 1
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/services/dispatcher.py — lines 256, 314, 358-359
+# ============================================================================
+
+
+class TestDispatcherEdgeCases:
+    @pytest.mark.asyncio
+    async def test_dispatcher_digital_topic_no_segments(self):
+        from mcubridge.protocol.topics import TopicRoute
+        from mcubridge.services.dispatcher import BridgeDispatcher
+
+        from .conftest import make_component_container
+
+        import time
+        import os
+
+        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            d = BridgeDispatcher(
+                mcu_registry=MagicMock(),
+                mqtt_router=MagicMock(),
+                state=state,
+                send_frame=AsyncMock(),
+                acknowledge_frame=AsyncMock(),
+                is_topic_action_allowed=lambda t, a: True,
+                reject_topic_action=AsyncMock(),
+                publish_bridge_snapshot=AsyncMock(),
+            )
+            d.register_components(
+                make_component_container(
+                    console=MagicMock(),
+                    datastore=MagicMock(),
+                    file=MagicMock(),
+                    mailbox=MagicMock(),
+                    pin=MagicMock(),
+                    process=MagicMock(),
+                    spi=MagicMock(),
+                    system=MagicMock(),
+                )
+            )
+            route = TopicRoute(
+                raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
+            )
+            result = d._get_topic_action(route)  # type: ignore[reportPrivateUsage]
+            assert result is None
         finally:
             state.cleanup()
 
@@ -1393,7 +1450,7 @@ class TestMetrics:
 class TestSerialTransport:
     @pytest.mark.asyncio
     async def test_serial_transport_init(self):
-        from mcubridge.transport import SerialTransport
+        from mcubridge.transport.serial import SerialTransport
 
         import time
         import os

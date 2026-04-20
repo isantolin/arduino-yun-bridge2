@@ -55,7 +55,7 @@ async def test_mqtt_digital_write_sends_frame(
 ) -> None:
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_mqtt_write(
+    await component.handle_mqtt(
         make_route(Topic.DIGITAL, "13"),
         make_mqtt_msg("1"),
     )
@@ -74,7 +74,7 @@ async def test_mqtt_analog_read_tracks_pending_queue(
 ) -> None:
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_mqtt_read(
+    await component.handle_mqtt(
         make_route(Topic.ANALOG, "A1", "read"),
         make_mqtt_msg(""),
     )
@@ -119,7 +119,7 @@ async def test_mqtt_analog_write_sends_frame(
 ) -> None:
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_mqtt_write(
+    await component.handle_mqtt(
         make_route(Topic.ANALOG, "A1"),
         make_mqtt_msg("10"),
     )

@@ -116,7 +116,7 @@ async def test_mailbox_handle_mqtt_edge_cases() -> None:
 
         # Unknown action
         route = TopicRoute("br/m/unknown", "br", Topic.MAILBOX, ("unknown",))
-        await comp.handle_mqtt_read(route, make_mqtt_msg(b""))
+        await comp.handle_mqtt(route, make_mqtt_msg(b""))
 
         assert not ctx.mqtt_flow.publish.called
     finally:
@@ -145,9 +145,8 @@ async def test_mailbox_overflow_with_inbound() -> None:
         inbound = make_mqtt_msg(b"data")
         inbound.properties = MagicMock()
         inbound.properties.ResponseTopic = "reply"
-        route = MagicMock(spec=TopicRoute)
 
-        await comp.handle_mqtt_write(route, inbound)
+        await comp._handle_mqtt_write(b"data", inbound) # type: ignore[reportPrivateUsage]
 
         assert ctx.mqtt_flow.publish.called
         # Should include reply_to context

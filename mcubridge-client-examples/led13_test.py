@@ -8,8 +8,7 @@ import logging
 from typing import Annotated
 
 import typer
-from mcubridge_client import Topic, build_bridge_args, get_client
-from mcubridge_client.cli import configure_logging
+from mcubridge_client.cli import bridge_session, configure_logging
 
 app = typer.Typer(help="Test generic pin control using the async McuBridge client.")
 configure_logging()
@@ -24,19 +23,18 @@ async def run_test(
     tls_insecure: bool,
 ) -> None:
 
-    async with get_client(**build_bridge_args(host, port, user, password, tls_insecure)) as client:
+    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
         logging.info("--- Starting LED Pin Control Test ---")
 
         logging.info(f"Turning pin {pin} ON")
-        await client.publish(Topic.build(Topic.DIGITAL, pin), b"1")
+        await bridge.digital_write(pin, 1)
         await asyncio.sleep(2)
 
         logging.info(f"Turning pin {pin} OFF")
-        await client.publish(Topic.build(Topic.DIGITAL, pin), b"0")
+        await bridge.digital_write(pin, 0)
         await asyncio.sleep(2)
 
     logging.info("--- LED Test Complete ---")
-
     logging.info("Done.")
 
 

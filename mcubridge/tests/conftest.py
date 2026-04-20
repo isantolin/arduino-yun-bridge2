@@ -43,6 +43,10 @@ if "serial_asyncio_fast" not in sys.modules:
             AsyncMock(spec=asyncio.StreamWriter),
         )
     )
+    # Maintain create_serial_connection for older tests that haven't been migrated yet
+    mock_saf.create_serial_connection = AsyncMock(
+        return_value=(AsyncMock(), AsyncMock())
+    )
     sys.modules["serial_asyncio_fast"] = mock_saf
 
 

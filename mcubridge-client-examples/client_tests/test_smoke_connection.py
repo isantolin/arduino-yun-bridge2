@@ -1,18 +1,56 @@
-import pytest
-from unittest.mock import patch, AsyncMock
-from mcubridge_client import get_client
+#!/usr/bin/env python3
+"""Minimal connectivity smoke test for the bridge client."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Annotated
+
+import typer
+from mcubridge_client import Bridge, dump_client_env
+
+app = typer.Typer(help="Minimal connectivity smoke test for the bridge client.")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 
 
-@pytest.mark.asyncio
-async def test_smoke_connect_disconnect() -> None:
-    """Verify that get_client returns a valid Client and it can 'connect'."""
-    with patch("mcubridge_client.Client") as mock_client:
-        mock_instance = mock_client.return_value
-        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
-        mock_instance.__aexit__ = AsyncMock()
+async def run_test(
+    host: str | None,
+    port: int | None,
+    user: str | None,
+    password: str | None,
+) -> None:
+    dump_client_env(logging.getLogger(__name__))
 
-        async with get_client(host="127.0.0.1", port=1883) as client:
-            assert client is mock_instance
+    bridge_args = {}
+    if host:
+        bridge_args["host"] = host
+    if port:
+        bridge_args["port"] = port
+    if user:
+        bridge_args["username"] = user
+    if password:
+        bridge_args["password"] = password
 
-        mock_instance.__aenter__.assert_called_once()
-        mock_instance.__aexit__.assert_called_once()
+    bridge = Bridge(**bridge_args)
+    await bridge.connect()
+    logging.info("Bridge connected")
+    await bridge.disconnect()
+
+
+@app.command()
+def main(
+    host: Annotated[str | None, typer.Option(help="MQTT Broker Host")] = None,
+    port: Annotated[int | None, typer.Option(help="MQTT Broker Port")] = None,
+    user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
+    password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
+) -> None:
+    asyncio.run(run_test(host, port, user, password))
+
+
+if __name__ == "__main__":
+    app()

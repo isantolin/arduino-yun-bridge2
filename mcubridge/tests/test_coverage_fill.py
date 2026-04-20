@@ -158,6 +158,20 @@ async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
 
 
 @pytest.mark.asyncio
+async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDispatcher):
+    """Cover lines 316, 319 in dispatcher.py."""
+    # Line 316: Topic.DIGITAL with no segments
+    route1 = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
+    assert dispatcher._get_topic_action(route1) is None  # type: ignore[reportPrivateUsage]
+
+    # Line 319: len(segments) > 1 but segments[1] is empty
+    route2 = TopicRoute(
+        raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("1", "")
+    )
+    assert dispatcher._get_topic_action(route2) is None  # type: ignore[reportPrivateUsage]
+
+
+@pytest.mark.asyncio
 async def test_dispatcher_handle_system_topic_no_component(
     dispatcher: BridgeDispatcher,
 ):

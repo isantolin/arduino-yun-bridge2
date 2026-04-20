@@ -12,7 +12,6 @@ from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.protocol.protocol import PinAction
 from mcubridge.services.pin import PinComponent
 from mcubridge.state.context import create_runtime_state
-from mcubridge.router.routers import MQTTRouter
 from tests._helpers import make_mqtt_msg
 
 
@@ -34,11 +33,10 @@ async def test_pin_handle_read_overflow() -> None:
         comp = PinComponent(config, state, ctx)
 
         # Fill queue
-        from mcubridge.state.context import PendingPinRequest
-        state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
+        state.pending_digital_reads.append(MagicMock())
 
         route = TopicRoute(f"br/d/13/{PinAction.READ.value}", "br", Topic.DIGITAL, ("13", PinAction.READ.value))
-        result = await comp.handle_mqtt_read(route, make_mqtt_msg(b""))
+        result = await comp.handle_mqtt(route, make_mqtt_msg(b""))
 
         # True because handled (rejected gracefully)
         assert result is True
@@ -66,27 +64,33 @@ async def test_pin_handle_mqtt_edge_cases() -> None:
         ctx.mqtt_flow.publish = AsyncMock()
 
         comp = PinComponent(config, state, ctx)
-        router = MQTTRouter()
-        router.register(Topic.DIGITAL, comp.handle_mqtt_write, action="write")
-        router.register(Topic.DIGITAL, comp.handle_mqtt_read, action=PinAction.READ)
-        router.register(Topic.DIGITAL, comp.handle_mqtt_mode, action=PinAction.MODE)
 
-        # 1. No segments -> action is None -> not dispatched
+        # 1. No segments
         route1 = TopicRoute("br/d", "br", Topic.DIGITAL, ())
-        assert not await router.dispatch(route1, make_mqtt_msg(b""))
-
-        # 2. Invalid pin (handled inside handler)
-        route2 = TopicRoute("br/d/invalid", "br", Topic.DIGITAL, ("invalid",))
-        assert await router.dispatch(route2, make_mqtt_msg(b""))
+        await comp.handle_mqtt(route1, make_mqtt_msg(b""))
         ctx.serial_flow.send.assert_not_called()
 
-        # 3. Unknown subtopic -> action "magic" -> not dispatched
-        route3 = TopicRoute("br/d/13/magic", "br", Topic.DIGITAL, ("13", "magic"))
-        assert not await router.dispatch(route3, make_mqtt_msg(b""))
+        # 2. Invalid pin
+        route2 = TopicRoute("br/d/invalid", "br", Topic.DIGITAL, ("invalid",))
+        await comp.handle_mqtt(route2, make_mqtt_msg(b""))
+        ctx.serial_flow.send.assert_not_called()
 
-        # 4. Invalid digital mode (handled inside handler)
+        # 3. Unknown subtopic
+        route3 = TopicRoute("br/d/13/magic", "br", Topic.DIGITAL, ("13", "magic"))
+        await comp.handle_mqtt(route3, make_mqtt_msg(b""))
+        ctx.serial_flow.send.assert_not_called()
+
+        # 4. Invalid mode
         route4 = TopicRoute("br/d/13/mode", "br", Topic.DIGITAL, ("13", "mode"))
-        assert await router.dispatch(route4, make_mqtt_msg(b"invalid"))
+        await comp.handle_mqtt(route4, make_mqtt_msg(b"invalid"))
+        ctx.serial_flow.send.assert_not_called()
+
+        await comp.handle_mqtt(route4, make_mqtt_msg(b"99"))
+        ctx.serial_flow.send.assert_not_called()
+
+        # 5. Invalid write value
+        route5 = TopicRoute("br/d/13", "br", Topic.DIGITAL, ("13",))
+        await comp.handle_mqtt(route5, make_mqtt_msg(b"invalid"))
         ctx.serial_flow.send.assert_not_called()
 
     finally:

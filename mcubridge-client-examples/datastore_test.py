@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise datastore interactions using direct MQTT."""
+"""Exercise datastore interactions using the bridge client."""
 
 from __future__ import annotations
 
@@ -8,30 +8,10 @@ import logging
 from typing import Annotated
 
 import typer
-from mcubridge_client import Topic
 from mcubridge_client.cli import bridge_session, configure_logging
 
-app = typer.Typer(help="Exercise datastore interactions using direct MQTT.")
+app = typer.Typer(help="Exercise datastore interactions using the bridge client.")
 configure_logging()
-
-
-async def mqtt_get(client, key: str) -> str:
-    get_topic = str(Topic.build(Topic.DATASTORE, "get", key))
-    req_topic = str(Topic.build(Topic.DATASTORE, "get", key, "request"))
-
-    await client.subscribe(get_topic)
-    await client.publish(req_topic, b"")
-
-    try:
-        async with asyncio.timeout(5.0):
-            async for message in client.messages:
-                if Topic.matches(get_topic, str(message.topic)):
-                    return message.payload.decode()
-    except asyncio.TimeoutError:
-        return ""
-    finally:
-        await client.unsubscribe(get_topic)
-    return ""
 
 
 async def run_test(
@@ -42,21 +22,18 @@ async def run_test(
     tls_insecure: bool,
 ) -> None:
 
-    async with bridge_session(host, port, user, password, tls_insecure) as client:
-        logging.info("--- Starting DataStore Direct MQTT Test ---")
+    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
+        logging.info("--- Starting DataStore Bridge Client Test ---")
 
         # --- Test 1: Put and Get a new key-value pair ---
         logging.info("[Test 1: Put and Get a new key-value pair]")
         key1: str = "client_test/temperature"
         value1: str = "25.5"
 
-        put_topic = str(Topic.build(Topic.DATASTORE, "put", key1))
-        await client.publish(put_topic, value1.encode())
-        logging.info(f"Published value '{value1}' to topic '{put_topic}'")
+        await bridge.put(key1, value1)
+        logging.info(f"Put value '{value1}' to key '{key1}'")
 
-        await asyncio.sleep(0.5) # Give daemon time to process
-
-        retrieved_value = await mqtt_get(client, key1)
+        retrieved_value: str = await bridge.get(key1)
         if retrieved_value == value1:
             logging.info(
                 "SUCCESS: Retrieved value '%s' matches put value '%s'.",
@@ -74,7 +51,7 @@ async def run_test(
         logging.info("\n[Test 2: Get a non-existent key]")
         key2: str = "non_existent/key"
 
-        retrieved_value_2 = await mqtt_get(client, key2)
+        retrieved_value_2: str = await bridge.get(key2)
         # Expecting an empty payload for a non-existent key
         if retrieved_value_2 == "":
             logging.info(

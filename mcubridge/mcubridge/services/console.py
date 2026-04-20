@@ -12,6 +12,7 @@ from mcubridge.protocol.structures import ConsoleWritePacket, TopicRoute
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..protocol.topics import Topic, topic_path
+from ..util import chunk_bytes
 from .base import BaseComponent
 
 logger = structlog.get_logger("mcubridge.console")
@@ -57,11 +58,18 @@ class ConsoleComponent(BaseComponent):
         self.state.serial_tx_allowed.set()
         await self.flush_queue()
 
-    async def handle_mqtt_in(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle console input request from MQTT."""
+    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
         payload = msgspec.convert(inbound.payload, bytes)
+        await self._handle_mqtt_input(payload, inbound)
+        return True
+
+    async def _handle_mqtt_input(
+        self,
+        payload: bytes,
+        inbound: Message | None = None,
+    ) -> None:
         # [SIL-2] Ensure we chunk data to fit into frames
-        chunks = self.ctx.serial_flow.chunk_payload(payload, protocol.MAX_PAYLOAD_SIZE)
+        chunks = chunk_bytes(payload, protocol.MAX_PAYLOAD_SIZE)
         if self.state.mcu_is_paused:
             logger.warning(
                 "MCU paused, queueing %d console chunk(s) (%d bytes), hex=%s",
@@ -72,7 +80,7 @@ class ConsoleComponent(BaseComponent):
             for chunk in chunks:
                 if chunk:
                     self.state.enqueue_console_chunk(chunk)
-            return True
+            return
 
         for index, chunk in enumerate(chunks):
             if not chunk:
@@ -93,7 +101,6 @@ class ConsoleComponent(BaseComponent):
                     "Serial send failed for console input; payload queued for retry",
                 )
                 break
-        return True
 
     async def flush_queue(self) -> None:
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
@@ -101,7 +108,7 @@ class ConsoleComponent(BaseComponent):
             if not buffered:
                 break
 
-            chunks = self.ctx.serial_flow.chunk_payload(buffered, protocol.MAX_PAYLOAD_SIZE)
+            chunks = chunk_bytes(buffered, protocol.MAX_PAYLOAD_SIZE)
             for index, chunk in enumerate(chunks):
                 if not chunk:
                     continue

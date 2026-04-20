@@ -65,18 +65,6 @@ class SerialFlowController:
     def set_sender(self, sender: SendFrameCallable) -> None:
         self._sender = sender
 
-    @staticmethod
-    def chunk_payload(payload: bytes, chunk_size: int) -> list[bytes]:
-        """Split a large payload into chunks that fit within MCU buffers (SIL-2)."""
-        if chunk_size <= 0:
-            raise ValueError("chunk_size must be positive")
-        if not payload:
-            return []
-
-        import itertools
-
-        return [bytes(chunk) for chunk in itertools.batched(payload, chunk_size)]
-
     def set_metrics_callback(self, callback: Callable[[str], None] | None) -> None:
         self._metrics_callback = callback
 
@@ -276,73 +264,6 @@ class SerialFlowController:
         self._emit_metric("ack")
         self._notify_pipeline("success", pending)
         return True
-
-    async def acknowledge(
-        self,
-        command_id: int,
-        seq_id: int,
-        status: int = 56,  # Status.ACK.value
-    ) -> bool:
-        """Send a low-level status response (ACK/Status) to the MCU (SIL-2)."""
-        if self._sender is None:
-            self._logger.error("Serial sender not registered; cannot send ACK")
-            return False
-
-        from ..protocol.structures import AckPacket
-
-        payload = AckPacket(command_id=command_id).encode()
-
-        try:
-            # ACKs are fire-and-forget at the flow level (no ACK-of-ACK)
-            return await self._sender(status, payload, seq_id)
-        except (OSError, RuntimeError, ValueError) as exc:
-            self._logger.warning(
-                "Failed to emit status 0x%02X for command 0x%02X: %s",
-                status,
-                command_id,
-                exc,
-            )
-            return False
-
-    async def negotiate_baudrate(self, target_baud: int) -> bool:
-        """Execute baudrate negotiation sequence with the MCU (SIL-2).
-        Sends CMD_SET_BAUDRATE and waits for CMD_SET_BAUDRATE_RESP.
-        """
-        if self._sender is None:
-            return False
-
-        from ..protocol.structures import SetBaudratePacket
-
-        payload = SetBaudratePacket(baudrate=target_baud).encode()
-
-        # [SIL-2] Use a dedicated pending state for negotiation to avoid
-        # interference with standard RPC flows.
-        pending = PendingCommand(
-            command_id=Command.CMD_SET_BAUDRATE.value,
-            expected_resp_ids={Command.CMD_SET_BAUDRATE_RESP.value},
-        )
-
-        async with self._condition:
-            await self._condition.wait_for(lambda: self._current is None)
-            self._current = pending
-
-        try:
-            # Send command (fire-and-forget at this baudrate)
-            await self._sender(Command.CMD_SET_BAUDRATE.value, payload, 0)
-
-            # Wait for response with specific timeout.
-            # MCU switches baudrate immediately after receiving command,
-            # so the response will arrive on the NEW baudrate.
-            try:
-                async with asyncio.timeout(self._response_timeout):
-                    await pending.future
-                return True
-            except asyncio.TimeoutError:
-                return False
-        finally:
-            async with self._condition:
-                if self._current is pending:
-                    self._current = None
 
     async def _execute_with_retries(
         self,

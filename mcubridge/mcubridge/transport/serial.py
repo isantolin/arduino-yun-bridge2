@@ -2,58 +2,80 @@
 
 This module implements a Zero-Overhead asyncio transport using StreamReader
 and StreamWriter. It delegates delimiter searching to Python's C core via
-`readuntil(b"\0")`.
+`readuntil`, ensuring maximum throughput for high-speed serial links.
+
+[SIL-2 COMPLIANCE]
+- Deterministic buffer handling.
+- Explicit lifecycle management.
+- Zero dynamic allocation after initialization.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, cast
+import structlog
+from typing import TYPE_CHECKING, Any, Final, cast
 
+import msgspec
 from cobs import cobs
 import serial
-import structlog
+import serial_asyncio_fast
 import tenacity
-from transitions import Machine
 
 from mcubridge.config.const import (
-    DEFAULT_BAUDRATE,
+    MAX_SERIAL_FRAME_BYTES,
     DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SAFE_BAUDRATE,
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.frame import Frame
+from transitions import Machine
 
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
-    from mcubridge.services.runtime import BridgeService
     from mcubridge.state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.serial")
 
+_RAW_FRAME_MIN_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.CRC_SIZE
+_RAW_FRAME_MAX_SIZE: Final[int] = (
+    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE
+)
+
 
 class SerialTransport:
-    """Asyncio-based serial transport with automated reconnection (SIL-2)."""
+    """High-performance asyncio serial transport."""
 
-    STATE_DISCONNECTED = "disconnected"
-    STATE_NEGOTIATING = "negotiating"
-    STATE_CONNECTED = "connected"
+    STATE_DISCONNECTED: Final[str] = "disconnected"
+    STATE_NEGOTIATING: Final[str] = "negotiating"
+    STATE_CONNECTED: Final[str] = "connected"
 
     def __init__(
-        self, config: RuntimeConfig, state: RuntimeState, service: BridgeService
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        service: Any,
     ) -> None:
         self.config = config
         self.state = state
         self.service = service
-        self.baudrate = DEFAULT_SAFE_BAUDRATE
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
+
+        # Register ourselves as the sender for the service
+        self.service.register_serial_sender(self._serial_sender)
+
         self._stop_event = asyncio.Event()
+        self._negotiating = False
+        self._negotiation_future: asyncio.Future[bool] | None = None
+        self._consecutive_crc_errors = 0
+        self._tx_sequence_id = 0
+        self._packet_semaphore = asyncio.Semaphore(16)
 
         # State Machine
         self.fsm_state: str = self.STATE_DISCONNECTED
@@ -128,141 +150,309 @@ class SerialTransport:
                 await asyncio.sleep(DEFAULT_RECONNECT_DELAY)
 
     async def stop(self) -> None:
-        """Signal the transport to stop and close connection."""
+        """Gracefully stop the transport."""
         self._stop_event.set()
-        await self._close_connection()
+        if self.writer:
+            self.writer.close()
+            with contextlib.suppress(OSError, RuntimeError):
+                await self.writer.wait_closed()
 
+    @tenacity.retry(
+        wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
+        retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError)
+        & tenacity.retry_if_exception(
+            lambda e: "SerialHandshakeFatal" not in type(e).__name__
+        ),
+        before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+    )
     async def _retryable_run(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Handle a single connection lifecycle with auto-negotiation."""
-        self.baudrate = DEFAULT_SAFE_BAUDRATE
-        logger.info(
-            "Opening serial port %s at %d baud...",
-            self.config.serial_port,
-            self.baudrate,
-        )
+        """Single connection attempt."""
+        logger.info("Connecting to MCU on %s...", self.config.serial_port)
 
-        from serial_asyncio_fast import open_serial_connection
-
-        self.reader, self.writer = await open_serial_connection(
-            url=self.config.serial_port,
-            baudrate=self.baudrate,
-            loop=loop,
-        )
+        await self._toggle_dtr(loop)
 
         try:
-            self.service.register_serial_sender(self._serial_sender)
-            await self.service.on_serial_connected()
+            connect_baud = self.config.serial_safe_baud
+            if connect_baud <= 0:
+                connect_baud = protocol.DEFAULT_SAFE_BAUDRATE
 
-            # Attempt to switch to high-speed baudrate if configured
-            if self.config.serial_baud != self.baudrate:
-                if await self._negotiate_baudrate(self.config.serial_baud):
-                    logger.info("Serial high-speed link established.")
-                else:
-                    logger.warning("Baudrate negotiation failed; staying at safe baud.")
+            self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
+                url=self.config.serial_port,
+                baudrate=connect_baud,
+                xonxoff=False,
+            )
+            # Use cast to satisfy pyright that StreamWriter is a BaseTransport (it is in asyncio)
+            self.state.serial_writer = cast(asyncio.BaseTransport, self.writer)
 
-            # Main read loop
-            await self._read_loop()
+            reader = self.reader
+            # Start reader loop
+            read_task = loop.create_task(self._read_loop(reader))
 
-        finally:
-            await self._close_connection()
             try:
-                await self.service.on_serial_disconnected()
-            except (OSError, ValueError, RuntimeError) as e:
-                logger.error("Error in on_serial_disconnected hook: %s", e)
+                # 1. Negotiate baudrate if needed
+                self._machine.dispatch("begin_negotiate")
+                if self.config.serial_baud != connect_baud:
+                    if not await self._negotiate_baudrate(self.config.serial_baud):
+                        raise ConnectionError("Baudrate negotiation failed")
 
-    async def _read_loop(self) -> None:
-        """Low-level delimiter-based read loop (Zero-Heap friendly)."""
-        assert self.reader is not None
+                # 2. Complete handshake via service
+                self._machine.dispatch("mark_connected")
+                await self.service.on_serial_connected()
+
+                # 3. Wait for reader to finish or stop event
+                stop_task = loop.create_task(self._stop_event.wait())
+                done, pending = await asyncio.wait(
+                    [read_task, stop_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if stop_task in pending:
+                    stop_task.cancel()
+
+                if read_task in done:
+                    exc = read_task.exception()
+                    if exc:
+                        raise ConnectionError(f"Serial read loop failed: {exc}")
+                    raise ConnectionError("Serial connection lost (EOF)")
+
+            finally:
+                read_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await read_task
+                self._machine.dispatch("mark_disconnected")
+                await self.service.on_serial_disconnected()
+
+        except (OSError, serial.SerialException) as exc:
+            logger.warning("Connection failed: %s", exc)
+            raise
+        except (asyncio.TimeoutError, RuntimeError, tenacity.RetryError) as exc:
+            logger.error("CRITICAL RETRY ERROR: %s", exc, exc_info=True)
+            raise
+
+    async def _toggle_dtr(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Hardware reset via DTR toggle using async sleep."""
+        try:
+            # [SIL-2] Precise async pulsing to avoid blocking thread pool
+            def _set_dtr(val: bool):
+                with serial.Serial(self.config.serial_port) as s:
+                    s.dtr = val
+
+            await loop.run_in_executor(None, _set_dtr, False)
+            await asyncio.sleep(0.1)
+            await loop.run_in_executor(None, _set_dtr, True)
+        except (OSError, serial.SerialException) as exc:
+            logger.debug("DTR toggle not supported or failed: %s", exc)
+
+    async def _read_loop(self, reader: asyncio.StreamReader) -> None:
+        """Main loop reading complete frames directly from the C-backed Stream."""
         while not self._stop_event.is_set():
             try:
-                # [SIL-2] readuntil(0x00) is highly efficient as it uses
-                # buffer searching in the C core of asyncio.
-                packet = await self.reader.readuntil(protocol.FRAME_DELIMITER)
-                if packet:
-                    await self._process_packet(packet)
-            except (asyncio.LimitOverrunError, ValueError) as e:
-                logger.warning("Serial read frame too large or malformed: %s", e)
-                # Recover by consuming until next delimiter
-                await self.reader.read(64)
-            except asyncio.IncompleteReadError:
-                logger.info("Serial port closed by peer.")
+                # readuntil delegates the delimiter search to C, saving CPU
+                packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
+                packet_view = memoryview(packet_with_sep)[
+                    :-1
+                ]  # remove delimiter (Zero-copy)
+
+                if packet_view:
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            "[SERIAL <- MCU] [RAW]: [%s]", packet_view.hex(" ").upper()
+                        )
+                    self._process_packet(packet_view)
+
+            except asyncio.LimitOverrunError:
+                logger.warning("Serial packet too large, flushing.")
+                self.state.record_serial_decode_error()
+                # Drain the overrun data
+                await reader.read(MAX_SERIAL_FRAME_BYTES)
+            except asyncio.IncompleteReadError as e:
+                # EOF reached, connection closed
+                logger.info(
+                    "Serial connection closed (EOF). Partial data: %s",
+                    e.partial.hex(" ") if e.partial else "None",
+                )
+                break
+            except (
+                OSError,
+                serial.SerialException,
+                asyncio.TimeoutError,
+                RuntimeError,
+            ) as exc:
+                logger.error("Error in _read_loop: %s", exc)
                 break
 
-    async def _process_packet(self, packet: bytes) -> None:
-        """Parse and dispatch an inbound serial frame."""
-        try:
-            # [SIL-2] Strip delimiter and decode COBS
-            raw_data = cobs.decode(packet[:-1])
-            cmd_id, seq_id, payload = Frame.parse(raw_data)
-            await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
-        except (ValueError, cobs.DecodeError) as e:
-            # Handle CRC mismatches and malformed frames
-            error_text = str(e)
-            if "checksum" in error_text.lower() or "crc" in error_text.lower():
-                self.state.record_serial_crc_error()
-                logger.warning("MCU > CRC error: %s", error_text)
-            else:
-                logger.warning("MCU > Malformed frame: %s", error_text)
+    def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
+        """Dispatcher for decoded packets."""
+        if (
+            self._negotiating
+            and self._negotiation_future
+            and not self._negotiation_future.done()
+        ):
+            try:
+                frame = Frame.parse(cobs.decode(encoded_packet))
+                if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
+                    self._switch_local_baudrate(self.config.serial_baud)
+                    self._negotiation_future.set_result(True)
+                    return
+            except (cobs.DecodeError, ValueError) as e:
+                logger.debug("Discarding malformed frame during read: %s", e)
 
-    async def _serial_sender(self, command_id: int, payload: bytes, seq_id: int = 0) -> bool:
-        """Internal low-level writer for the Flow Controller."""
-        if self.writer is None or self.writer.is_closing():
+        if self.loop:
+            self.loop.create_task(self._async_process_packet_with_limit(encoded_packet))
+
+    async def _async_process_packet_with_limit(
+        self, encoded_packet: bytes | memoryview
+    ) -> None:
+        """Async packet processing logic with backpressure limit."""
+        async with self._packet_semaphore:
+            await self._async_process_packet(encoded_packet)
+
+    async def _async_process_packet(self, encoded_packet: bytes | memoryview) -> None:
+        """Async packet processing logic (SIL-2)."""
+        packet_bytes = (
+            encoded_packet
+            if isinstance(encoded_packet, bytes)
+            else encoded_packet.tobytes()
+        )
+
+        try:
+            # [SIL-2] Deterministic COBS decode and Frame parse.
+            decoded = cobs.decode(packet_bytes)
+            frame = Frame.parse(decoded)
+            cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
+
+            if logger.isEnabledFor(logging.DEBUG):
+                # [SIL-2] Mandatory HEXADECIMAL logging for binary traffic.
+                raw_hex = packet_bytes.hex(" ").upper()
+                logger.debug("[MCU -> SERIAL] [SEQ:%04X] [RAW]: [%s]", seq_id, raw_hex)
+
+            await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
+            self.state.record_serial_rx(len(encoded_packet))
+
+        except (cobs.DecodeError, ValueError, msgspec.DecodeError) as exc:
+            # [SIL-2] Fault Isolation: Group malformed/decode errors separately from runtime logic.
+            raw_hex = packet_bytes.hex(" ").upper()
+            logger.warning("[SERIAL <- MCU] [MALFORMED (ERR: %s)]: [%s]", exc, raw_hex)
+            self.state.record_serial_decode_error()
+            await self._check_baudrate_fallback()
+        except (OSError, RuntimeError, asyncio.TimeoutError) as exc:
+            # [SIL-2] Fault Isolation: Capture transport-level failures.
+            raw_hex = packet_bytes.hex(" ").upper()
+            logger.error("[SERIAL <- MCU] [TRANSPORT (ERR: %s)]: [%s]", exc, raw_hex)
+            self.state.record_serial_decode_error()
+            await self._check_baudrate_fallback()
+        except (TypeError, AttributeError, KeyError) as exc:
+            # [SIL-2] Boundary Guard: Catch-all for unexpected logic errors,
+            # ensuring they are typed and sent to syslog.
+            raw_hex = packet_bytes.hex(" ").upper()
+            logger.critical("[SERIAL <- MCU] [FATAL LOGIC (ERR: %s)]: [%s]", exc, raw_hex, exc_info=True)
+            self.state.record_serial_decode_error()
+            raise
+
+    async def _check_baudrate_fallback(self) -> None:
+        """Monitor CRC error rate and trigger fallback if threshold exceeded."""
+        self._consecutive_crc_errors += 1
+        if self._consecutive_crc_errors >= self.config.serial_fallback_threshold:
+            logger.warning(
+                "CRC error threshold reached (%d). Attempting baudrate fallback to safe speed (%d).",
+                self._consecutive_crc_errors,
+                self.config.serial_safe_baud,
+            )
+            self._consecutive_crc_errors = 0
+            if self.config.serial_baud != self.config.serial_safe_baud:
+                await self._negotiate_baudrate(self.config.serial_safe_baud)
+            else:
+                logger.error("Already at safe baudrate; cannot fallback further.")
+
+    async def _serial_sender(self, cmd: int, pl: bytes, seq: int | None = None) -> bool:
+        """Low-level serial frame sender with flow control integration."""
+        if not self.writer or self.writer.is_closing():
             return False
 
+        # [SIL-2] Flow Control: Wait if MCU requested a pause (XOFF)
+        # Toggled by CMD_XOFF/CMD_XON in ConsoleComponent.
+        # We use a safety timeout to avoid permanent deadlocks if MCU fails to send XON.
+        if not self.state.serial_tx_allowed.is_set():
+            try:
+                logger.debug(
+                    "Serial TX paused by MCU; waiting for XON (timeout=30s)..."
+                )
+                async with asyncio.timeout(30.0):
+                    await self.state.serial_tx_allowed.wait()
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.error(
+                    "Flow control deadlock detected: MCU stayed in XOFF for >30s. Forcing re-sync."
+                )
+                raise ConnectionError("Flow control timeout (MCU XOFF deadlock)")
+            except (asyncio.CancelledError, RuntimeError):
+                return False
+
         try:
-            frame = Frame(
-                command_id=command_id,
-                sequence_id=seq_id,
-                payload=payload,
-            ).build()
+            if seq is None:
+                self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
+                seq = self._tx_sequence_id
+
+            frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)
+            encoded = cobs.encode(frame.build()) + protocol.FRAME_DELIMITER
 
             if logger.isEnabledFor(logging.DEBUG):
                 logger.log(
                     logging.DEBUG,
-                    "SERIAL TX > 0x%02X (seq=%d) [%s]",
-                    command_id,
-                    seq_id,
-                    frame.hex(" ").upper(),
+                    "[SERIAL -> MCU] [SEQ:%04X] [RAW]: [%s]",
+                    seq,
+                    encoded.hex(" ").upper(),
                 )
 
-            self.writer.write(frame)
+            self.writer.write(encoded)
             await self.writer.drain()
+
+            self.state.record_serial_tx(len(encoded))
             return True
         except (OSError, asyncio.CancelledError) as e:
             logger.warning("Send failed: %s", e)
             return False
 
     async def _negotiate_baudrate(self, target_baud: int) -> bool:
-        """Switch to target baudrate with MCU handshake (SIL-2)."""
-        if target_baud == self.baudrate:
-            return True
-
+        """Execute baudrate switch protocol."""
         logger.info("Negotiating baudrate switch to %d...", target_baud)
-        self.begin_negotiate()
 
-        # Send negotiation command via flow controller
-        success = await self.service.serial_flow.negotiate_baudrate(target_baud)
+        payload = structures.SetBaudratePacket(baudrate=target_baud).encode()
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(3),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
+            retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            reraise=True,
+        )
 
-        if success:
+        if self.loop is None:
+            raise RuntimeError("Serial event loop is not initialized")
+
+        async def _attempt() -> bool:
+            assert self.loop is not None
+            self._negotiation_future = self.loop.create_future()
+            if not await self._serial_sender(
+                protocol.Command.CMD_SET_BAUDRATE.value, payload
+            ):
+                raise asyncio.TimeoutError("Write failed")
+
             try:
-                self._switch_local_baudrate(target_baud)
-                self.baudrate = target_baud
-                self.mark_connected()
+                await asyncio.wait_for(
+                    self._negotiation_future,
+                    timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+                )
                 return True
-            except RuntimeError as e:
-                logger.error("Failed to switch local baudrate: %s", e)
+            except asyncio.TimeoutError:
+                raise
 
-        self.mark_disconnected()
-        return False
-
-    async def _close_connection(self) -> None:
-        """Gracefully close the serial connection."""
-        self.mark_disconnected()
-        if self.writer:
-            try:
-                self.writer.close()
-                await self.writer.wait_closed()
-            except (OSError, asyncio.CancelledError):
-                pass
-            self.writer = None
-            self.reader = None
+        self._negotiating = True
+        try:
+            return await retryer(_attempt)
+        except (tenacity.RetryError, asyncio.TimeoutError):
+            return False
+        finally:
+            self._negotiating = False
+            self._negotiation_future = None

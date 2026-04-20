@@ -26,6 +26,7 @@ from ..protocol.structures import (
 )
 from ..protocol.topics import Topic, TopicRoute, topic_path
 from ..state.context import RuntimeState
+from ..util import chunk_bytes
 from .base import BaseComponent, BridgeContext
 import structlog
 
@@ -109,7 +110,7 @@ class FileComponent(BaseComponent):
                     Command.CMD_FILE_READ_RESP.value, response_packet.encode()
                 )
             else:
-                for chunk in self.ctx.serial_flow.chunk_payload(data, protocol.MAX_PAYLOAD_SIZE - 3):
+                for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE - 3):
                     response_packet = FileReadResponsePacket(content=chunk)
                     await self.ctx.serial_flow.send(
                         Command.CMD_FILE_READ_RESP.value, response_packet.encode()
@@ -168,50 +169,64 @@ class FileComponent(BaseComponent):
             pending.future.set_result(b"".join(pending.chunks))
         return True
 
-    async def handle_mqtt_write(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle FILE_WRITE request from MQTT."""
+    async def handle_mqtt(
+        self,
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        """Process MQTT filesystem requests."""
+        action = route.action
         target = "/".join(route.remainder)
-        payload = bytes(inbound.payload)
-        if not target:
+        pl = bytes(inbound.payload)
+
+        if not action or not target:
             return False
 
-        if self._is_mcu_identifier(target):
-            return await self._handle_mcu_write(inbound, target, payload)
+        match action:
+            case FileAction.WRITE:
+                return await self._handle_mqtt_write(inbound, target, pl)
+            case FileAction.READ:
+                return await self._handle_mqtt_read(inbound, target)
+            case FileAction.REMOVE:
+                return await self._handle_mqtt_remove(inbound, target)
+            case _:
+                return False
 
-        path = self._get_safe_path(target)
+    async def _handle_mqtt_write(
+        self, inbound: Message, identifier: str, payload: bytes
+    ) -> bool:
+        if self._is_mcu_identifier(identifier):
+            return await self._handle_mcu_write(inbound, identifier, payload)
+
+        path = self._get_safe_path(identifier)
         if not path:
             await self._publish_mqtt_error(
-                inbound, FileAction.WRITE, target, "Invalid path"
+                inbound, FileAction.WRITE, identifier, "Invalid path"
             )
-            return True # Handled
+            return False
 
         # Quota check
         if not await self._write_with_quota(path, payload):
-            logger.error("MQTT write failed for %s: quota exceeded", target)
+            logger.error("MQTT write failed for %s: quota exceeded", identifier)
             await self._publish_mqtt_error(
                 inbound,
                 FileAction.WRITE,
-                target,
+                identifier,
                 "Quota exceeded or invalid path",
             )
-            return True
+            return False
 
         self._metadata_cache.pop(str(path), None)
         return True
 
-    async def handle_mqtt_read(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle FILE_READ request from MQTT."""
-        target = "/".join(route.remainder)
-        if not target:
-            return False
+    async def _handle_mqtt_read(self, inbound: Message, identifier: str) -> bool:
+        if self._is_mcu_identifier(identifier):
+            return await self._handle_mcu_read(inbound, identifier)
 
-        if self._is_mcu_identifier(target):
-            return await self._handle_mcu_read(inbound, target)
-
-        path = self._get_safe_path(target)
+        path = self._get_safe_path(identifier)
         if not path or not path.is_file():
             await self._publish_mqtt_error(
-                inbound, FileAction.READ, target, "File not found"
+                inbound, FileAction.READ, identifier, "File not found"
             )
             return True
 
@@ -222,7 +237,7 @@ class FileComponent(BaseComponent):
                 "mtime": path.stat().st_mtime,
             }
             await self.ctx.mqtt_flow.publish(
-                topic=self._mqtt_response_topic(FileAction.READ, target),
+                topic=self._mqtt_response_topic(FileAction.READ, identifier),
                 payload=data,
                 reply_to=inbound,
             )
@@ -230,28 +245,23 @@ class FileComponent(BaseComponent):
         except OSError:
             return False
 
-    async def handle_mqtt_remove(self, route: TopicRoute, inbound: Message) -> bool:
-        """Handle FILE_REMOVE request from MQTT."""
-        target = "/".join(route.remainder)
-        if not target:
-            return False
+    async def _handle_mqtt_remove(self, inbound: Message, identifier: str) -> bool:
+        if self._is_mcu_identifier(identifier):
+            return await self._handle_mcu_remove(inbound, identifier)
 
-        if self._is_mcu_identifier(target):
-            return await self._handle_mcu_remove(inbound, target)
-
-        path = self._get_safe_path(target)
+        path = self._get_safe_path(identifier)
         if path and await self._remove_with_tracking(path):
             self._metadata_cache.pop(str(path), None)
             return True
         else:
-            logger.error("MQTT remove failed for %s", target)
+            logger.error("MQTT remove failed for %s", identifier)
             await self._publish_mqtt_error(
                 inbound,
                 FileAction.REMOVE,
-                target,
+                identifier,
                 "File not found or protected",
             )
-            return True
+            return False
 
     async def _handle_mcu_write(
         self, inbound: Message, identifier: str, payload: bytes
@@ -541,8 +551,7 @@ class FileComponent(BaseComponent):
 
             usage = await asyncio.to_thread(_get_size)
             self.state.file_storage_bytes_used = usage
-        except (ValueError, IndexError, OSError) as e:
-            logger.error("Failed to refresh storage usage: %s", e)
+        except (ValueError, IndexError, OSError):
             self.state.file_storage_bytes_used = 0
 
 

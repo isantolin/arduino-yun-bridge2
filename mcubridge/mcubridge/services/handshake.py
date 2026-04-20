@@ -306,7 +306,7 @@ class SerialHandshakeManager:
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 seq_id,
-                status=Status.MALFORMED.value,
+                status=Status.MALFORMED,
             )
             await self.handle_handshake_failure("unexpected_sync_resp")
             return False
@@ -322,7 +322,7 @@ class SerialHandshakeManager:
                 await self._acknowledge_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     seq_id,
-                    status=Status.MALFORMED.value,
+                    status=Status.MALFORMED,
                 )
                 await self.handle_handshake_failure("sync_rate_limited")
                 return False
@@ -340,7 +340,7 @@ class SerialHandshakeManager:
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 seq_id,
-                status=Status.MALFORMED.value,
+                status=Status.MALFORMED,
             )
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("sync_decode_failed")

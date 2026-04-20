@@ -331,19 +331,13 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
 
         service.handle_mqtt_message = _mock_handle  # type: ignore[reportAttributeAccessIssue]
 
-        class FakeMsg:
-            def __init__(self):
-                self.topic = ""
-                self.payload = b"p"
+        client = AsyncMock(spec=aiomqtt.Client)
+        msg = MagicMock(topic="", payload=b"p")
 
-        class FakeClient:
-            def __init__(self):
-                self.messages = self
+        async def _iter():
+            yield msg
 
-            async def __aiter__(self):
-                yield FakeMsg()
-
-        client = FakeClient()
+        client.messages = _iter()
         task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[reportPrivateUsage]
         await asyncio.sleep(0.05)
         task.cancel()

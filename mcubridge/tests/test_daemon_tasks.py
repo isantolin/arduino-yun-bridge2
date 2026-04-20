@@ -222,7 +222,9 @@ async def test_mqtt_task_handles_incoming_message(
     mock_msgs_ctx = AsyncMock()
     mock_client.messages = mock_msgs_ctx
 
-    fake_msg = MagicMock()
+    from aiomqtt.message import Message
+
+    fake_msg = MagicMock(spec=Message)
     fake_msg.topic = f"{state.mqtt_topic_prefix}/console/in"
     fake_msg.payload = b"hi"
     fake_msg.qos = 0

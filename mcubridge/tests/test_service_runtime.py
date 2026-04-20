@@ -5,7 +5,7 @@ from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
 import time
-from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
 import pytest
@@ -83,11 +83,12 @@ async def testacknowledge_mcu_frame_sends_ack_packet() -> None:
 
         sent: list[tuple[int, bytes]] = []
 
-        async def _sender(cmd: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def _sender_side_effect(cmd: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent.append((cmd, payload))
             return True
 
-        service.register_serial_sender(_sender)  # type: ignore[reportArgumentType]
+        mock_sender = AsyncMock(side_effect=_sender_side_effect)
+        service.register_serial_sender(mock_sender)
 
         await service.serial_flow.acknowledge(
             protocol.Command.CMD_GET_FREE_MEMORY.value,
@@ -110,17 +111,18 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
     try:
         msg = QueuedPublish(topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello")
 
-        props = SimpleNamespace(
-            ResponseTopic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp",
-            CorrelationData=b"cid",
-        )
-        inbound = SimpleNamespace(
-            topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/origin",
-            properties=props,
-        )
+        mock_props = MagicMock()
+        mock_props.ResponseTopic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
+        mock_props.CorrelationData = b"cid"
+
+        from aiomqtt.message import Message
+
+        mock_inbound = MagicMock(spec=Message)
+        mock_inbound.topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/origin"
+        mock_inbound.properties = mock_props
 
         # Calling direct state method
-        await MqttTransport(config, state).enqueue_mqtt(msg, reply_context=inbound)  # type: ignore[reportArgumentType]
+        await MqttTransport(config, state).enqueue_mqtt(msg, reply_context=mock_inbound)
 
         queued = state.mqtt_publish_queue.get_nowait()
         assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
@@ -151,7 +153,9 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
 
         monkeypatch.setattr(MqttTransport, "stash_mqtt_message", _stash_ok)
 
-        state.mqtt_spool = SimpleNamespace(pending=3)  # type: ignore[reportAttributeAccessIssue]
+        mock_spool = MagicMock()
+        mock_spool.pending = 3
+        state.mqtt_spool = mock_spool
 
         first = QueuedPublish(
             topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/old",
@@ -215,11 +219,13 @@ async def test_reject_topic_action_enqueues_status() -> None:
     try:
         service = BridgeService(config, state, MqttTransport(config, state))
 
-        inbound = SimpleNamespace(
-            topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret",
-            properties=None,
-        )
-        await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")  # type: ignore[reportPrivateUsage]
+        from aiomqtt.message import Message
+
+        mock_inbound = MagicMock(spec=Message)
+        mock_inbound.topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret"
+        mock_inbound.properties = None
+
+        await service._reject_topic_action(mock_inbound, Topic.SYSTEM, "reboot")  # type: ignore[reportPrivateUsage]
 
         queued = state.mqtt_publish_queue.get_nowait()
         status_topic = topic_path(state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS)
@@ -237,11 +243,13 @@ async def test_publish_bridge_snapshot_handshake_flavor() -> None:
     try:
         service = BridgeService(config, state, MqttTransport(config, state))
 
-        inbound = SimpleNamespace(
-            topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get",
-            properties=None,
-        )
-        await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[reportPrivateUsage]
+        from aiomqtt.message import Message
+
+        mock_inbound = MagicMock(spec=Message)
+        mock_inbound.topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get"
+        mock_inbound.properties = None
+
+        await service._publish_bridge_snapshot("handshake", mock_inbound)  # type: ignore[reportPrivateUsage]
 
         queued = state.mqtt_publish_queue.get_nowait()
         assert "bridge/handshake/value" in queued.topic_name

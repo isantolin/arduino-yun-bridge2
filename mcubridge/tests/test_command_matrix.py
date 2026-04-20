@@ -85,7 +85,12 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             route = _parse_inbound_topic(topic)
             assert route is not None, f"Failed to parse subscribed topic: {topic}"
 
-            inbound: Any = MagicMock(topic=topic, payload=b"hello", properties=None)
+            from aiomqtt.message import Message
+
+            inbound: Any = MagicMock(spec=Message)
+            inbound.topic = topic
+            inbound.payload = b"hello"
+            inbound.properties = None
 
             handled = await mqtt_router.dispatch(route, inbound)
             assert handled, f"No handler registered for subscribed topic: {topic}"

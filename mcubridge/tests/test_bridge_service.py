@@ -4,7 +4,6 @@ from __future__ import annotations
 from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
-from typing import Any, cast
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -36,7 +35,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         flow = service._serial_flow  # type: ignore[reportPrivateUsage]
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def _sender_side_effect(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
             raw_cmd = command_id & 0xFF  # Strip high-order flags like COMPRESSED (0x8000)
             if raw_cmd == Command.CMD_LINK_RESET.value:
@@ -102,7 +101,8 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                 )
             return True
 
-        service.register_serial_sender(fake_sender)
+        mock_sender = AsyncMock(side_effect=_sender_side_effect)
+        service.register_serial_sender(mock_sender)
 
         runtime_state.console_to_mcu_queue.append(b"hello")
         runtime_state.mcu_is_paused = False
@@ -175,7 +175,7 @@ def test_link_sync_resp_respects_rate_limit(
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def _sender_side_effect(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent _serial_flow from blocking
             ack_payload = structures.AckPacket(command_id=command_id).encode()
@@ -189,7 +189,8 @@ def test_link_sync_resp_respects_rate_limit(
                 await service.handshake_manager.handle_capabilities_resp(0, b"\x02\x00\x14\x06\x00\x00\x00\x00")
             return True
 
-        service.register_serial_sender(fake_sender)
+        mock_sender = AsyncMock(side_effect=_sender_side_effect)
+        service.register_serial_sender(mock_sender)
 
         # Patch time.monotonic in all modules that use it
         fake_clock = MagicMock()
@@ -245,10 +246,8 @@ async def test_sync_auth_failure_schedules_backoff(
 ) -> None:
     service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
-        return True
-
-    service.register_serial_sender(fake_sender)
+    mock_sender = AsyncMock(return_value=True)
+    service.register_serial_sender(mock_sender)
 
     fake_clock = MagicMock()
     fake_clock._current = 200.0
@@ -354,7 +353,7 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
 
     service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def _sender_side_effect(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         raw_cmd = command_id & 0xFF
         if raw_cmd == Command.CMD_LINK_RESET.value:
             asyncio.create_task(
@@ -380,7 +379,8 @@ async def test_on_serial_connected_raises_on_secret_mismatch(
             )
         return True
 
-    service.register_serial_sender(fake_sender)
+    mock_sender = AsyncMock(side_effect=_sender_side_effect)
+    service.register_serial_sender(mock_sender)
 
     # Service raises SerialHandshakeFatal on auth mismatch if fatal failure threshold reached.
     with pytest.raises(SerialHandshakeFatal):
@@ -430,11 +430,12 @@ async def test_mailbox_available_flow(tmp_path: Path) -> None:
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def _sender_side_effect(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
             return True
 
-        service.register_serial_sender(fake_sender)
+        mock_sender = AsyncMock(side_effect=_sender_side_effect)
+        service.register_serial_sender(mock_sender)
 
         # Enqueue something in mailbox
         runtime_state.mailbox_queue.append(b"msg1").success
@@ -468,11 +469,12 @@ async def test_mailbox_available_rejects_payload(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def _sender_side_effect(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
-    service.register_serial_sender(fake_sender)
+    mock_sender = AsyncMock(side_effect=_sender_side_effect)
+    service.register_serial_sender(mock_sender)
 
     # MCU checks availability with invalid payload
     await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, 0, b"junk")
@@ -493,11 +495,12 @@ async def test_mailbox_push_overflow_returns_error(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def _sender_side_effect(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
-    service.register_serial_sender(fake_sender)
+    mock_sender = AsyncMock(side_effect=_sender_side_effect)
+    service.register_serial_sender(mock_sender)
 
     # First push OK
     payload = structures.MailboxPushPacket(data=b"aam1").encode()
@@ -519,10 +522,8 @@ async def test_mailbox_read_requeues_on_send_failure(
     runtime_state.mark_synchronized()
     runtime_state.mailbox_queue.append(b"lost-message").success
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
-        return False
-
-    service.register_serial_sender(fake_sender)
+    mock_sender = AsyncMock(return_value=False)
+    service.register_serial_sender(mock_sender)
 
     # MCU tries to read
     await service.handle_mcu_frame(Command.CMD_MAILBOX_READ.value, 0, b"")
@@ -544,11 +545,12 @@ async def test_datastore_get_from_mcu_returns_cached_value() -> None:
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def _sender_side_effect(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
             return True
 
-        service.register_serial_sender(fake_sender)
+        mock_sender = AsyncMock(side_effect=_sender_side_effect)
+        service.register_serial_sender(mock_sender)
 
         payload = structures.DatastoreGetPacket(key="key1").encode()
         await service.handle_mcu_frame(protocol.Command.CMD_DATASTORE_GET.value, 0, payload)
@@ -573,11 +575,12 @@ async def test_datastore_get_from_mcu_unknown_key_returns_empty(
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def _sender_side_effect(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
-    service.register_serial_sender(fake_sender)
+    mock_sender = AsyncMock(side_effect=_sender_side_effect)
+    service.register_serial_sender(mock_sender)
 
     await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, 0, b"\x05ghost")
 
@@ -753,16 +756,16 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
 
     topic = f"{runtime_config.mqtt_topic}/datastore/get/k1"
 
-    class Props:
-        ResponseTopic = "reply/here"
-        CorrelationData = b"corr123"
+    mock_props = MagicMock()
+    mock_props.ResponseTopic = "reply/here"
+    mock_props.CorrelationData = b"corr123"
 
     msg = Message(
         topic=topic,
         payload=b"",
         qos=0,
         retain=False,
-        properties=cast(Any, Props()),
+        properties=mock_props,
         mid=1,  # type: ignore[reportArgumentType]
     )
 
@@ -792,15 +795,15 @@ async def test_mqtt_datastore_get_request_miss_responds_with_error(
 
     topic = f"{runtime_config.mqtt_topic}/datastore/get/missing"
 
-    class Props:
-        ResponseTopic = "err/topic"
+    mock_props = MagicMock()
+    mock_props.ResponseTopic = "err/topic"
 
     msg = Message(
         topic=topic,
         payload=b"",
         qos=0,
         retain=False,
-        properties=cast(Any, Props()),
+        properties=mock_props,
         mid=1,  # type: ignore[reportArgumentType]
     )
 

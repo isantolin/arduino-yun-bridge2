@@ -3,13 +3,15 @@ from unittest.mock import MagicMock, AsyncMock
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.protocol.structures import TopicRoute, ConsoleWritePacket
 from mcubridge.protocol.topics import Topic
+from mcubridge.services.base import BridgeContext
 from typing import Any
 
 
 @pytest.fixture
 def console_component(runtime_config: Any, runtime_state: Any) -> ConsoleComponent:
-    ctx = MagicMock()
-    ctx.serial_flow = AsyncMock()
+    # Use strict spec-based mocks as mandated
+    ctx = MagicMock(spec=BridgeContext)
+    ctx.serial_flow = AsyncMock()  # SerialFlow interface is dynamic but we could spec it too
     ctx.mqtt_flow = AsyncMock()
     return ConsoleComponent(runtime_config, runtime_state, ctx)
 
@@ -20,6 +22,7 @@ async def test_handle_write_publishes_to_mqtt(console_component: ConsoleComponen
     payload = ConsoleWritePacket(data=b"hello").encode()
     await console_component.handle_write(1, payload)
 
+    # [SIL-2] Direct verification of library calls
     console_component.ctx.mqtt_flow.publish.assert_called()
     _, kwargs = console_component.ctx.mqtt_flow.publish.call_args
     assert "console/out" in kwargs["topic"]

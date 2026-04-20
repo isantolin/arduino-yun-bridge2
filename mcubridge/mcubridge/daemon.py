@@ -132,12 +132,6 @@ class BridgeDaemon:
         self.mqtt_transport.set_service(self.service)
         # Initialize dependencies
 
-        async def _dummy_sender(
-            command_id: int, payload: bytes, seq_id: int | None = None
-        ) -> bool:
-            return False
-
-        self.service.register_serial_sender(_dummy_sender)
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 import asyncio
 import pytest
-from typing import cast
 from unittest.mock import MagicMock, patch
 
 from mcubridge.mqtt.spool import MQTTPublishSpool
@@ -30,11 +29,9 @@ async def test_disable_mqtt_spool_handles_close_error_and_schedules_retry(
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     transport = MqttTransport(config, runtime_state)
 
-    class _BrokenCloseSpool:
-        def close(self) -> None:
-            raise OSError("close-failed")
-
-    runtime_state.mqtt_spool = cast(MQTTPublishSpool, _BrokenCloseSpool())
+    mock_spool = MagicMock(spec=MQTTPublishSpool)
+    mock_spool.close.side_effect = OSError("close-failed")
+    runtime_state.mqtt_spool = mock_spool
 
     before = time.monotonic()
     transport._disable_mqtt_spool("test")  # type: ignore[reportPrivateUsage]

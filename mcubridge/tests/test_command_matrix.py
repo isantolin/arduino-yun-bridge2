@@ -6,18 +6,15 @@ matches what the Python dispatcher actually handles.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import msgspec
 import pytest
 
 from mcubridge.protocol.protocol import (
     MQTT_COMMAND_SUBSCRIPTIONS,
     Command,
     Status,
-    Topic,
     expected_responses,
 )
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
@@ -27,64 +24,11 @@ from mcubridge.services.dispatcher import BridgeDispatcher
 from .conftest import make_component_container
 
 
-class _DummyMessage(msgspec.Struct):
-    topic: str
-    payload: bytes = b""
-    properties: Any = None
-
-
 _MQTT_PREFIX = "br"
 
 
 def _parse_inbound_topic(topic: str) -> TopicRoute | None:
     return parse_topic(_MQTT_PREFIX, topic)
-
-
-async def _noop_send_frame(_command_id: int, _payload: bytes) -> bool:
-    return True
-
-
-async def _noop_acknowledge_frame(*_args: Any, **_kwargs: Any) -> None:
-    return None
-
-
-async def _noop_reject_topic_action(
-    _inbound: Any,
-    _topic: Topic | str,
-    _action: str,
-) -> None:
-    return None
-
-
-async def _noop_publish_bridge_snapshot(
-    _kind: str,
-    _inbound: Any,
-) -> None:
-    return None
-
-
-async def _noop_link_handler(_seq_id: int, _payload: bytes) -> bool:
-    return True
-
-
-async def _noop_ack_handler(_payload: bytes) -> None:
-    return None
-
-
-async def _noop_process_kill(_payload: bytes) -> bool:
-    return True
-
-
-async def _noop_status_handler(_payload: bytes) -> None:
-    return None
-
-
-def _noop_status_handler_factory(_status: Status) -> Callable[[bytes], Any]:
-    return _noop_status_handler
-
-
-def _always_allowed(_topic: Topic | str, _action: str) -> bool:
-    return True
 
 
 def _materialize_subscription_segments(pattern: tuple[str, ...]) -> tuple[str, ...]:
@@ -115,11 +59,11 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             mcu_registry=mcu_registry,
             mqtt_router=mqtt_router,
             state=state,
-            send_frame=_noop_send_frame,
-            acknowledge_frame=_noop_acknowledge_frame,
-            is_topic_action_allowed=_always_allowed,
-            reject_topic_action=_noop_reject_topic_action,
-            publish_bridge_snapshot=_noop_publish_bridge_snapshot,
+            send_frame=AsyncMock(return_value=True),
+            acknowledge_frame=AsyncMock(),
+            is_topic_action_allowed=MagicMock(return_value=True),
+            reject_topic_action=AsyncMock(),
+            publish_bridge_snapshot=AsyncMock(),
         )
 
         dispatcher.register_components(
@@ -141,7 +85,7 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             route = _parse_inbound_topic(topic)
             assert route is not None, f"Failed to parse subscribed topic: {topic}"
 
-            inbound: Any = _DummyMessage(topic=topic, payload=b"hello")
+            inbound: Any = MagicMock(topic=topic, payload=b"hello", properties=None)
 
             handled = await mqtt_router.dispatch(route, inbound)
             assert handled, f"No handler registered for subscribed topic: {topic}"
@@ -169,11 +113,11 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             mcu_registry=mcu_registry,
             mqtt_router=mqtt_router,
             state=state,
-            send_frame=_noop_send_frame,
-            acknowledge_frame=_noop_acknowledge_frame,
-            is_topic_action_allowed=_always_allowed,
-            reject_topic_action=_noop_reject_topic_action,
-            publish_bridge_snapshot=_noop_publish_bridge_snapshot,
+            send_frame=AsyncMock(return_value=True),
+            acknowledge_frame=AsyncMock(),
+            is_topic_action_allowed=MagicMock(return_value=True),
+            reject_topic_action=AsyncMock(),
+            publish_bridge_snapshot=AsyncMock(),
         )
 
         dispatcher.register_components(
@@ -189,12 +133,12 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             )
         )
         dispatcher.register_system_handlers(
-            handle_link_sync_resp=_noop_link_handler,
-            handle_link_reset_resp=_noop_link_handler,
-            handle_get_capabilities_resp=_noop_link_handler,
-            handle_ack=_noop_ack_handler,  # type: ignore[reportArgumentType]
-            status_handler_factory=_noop_status_handler_factory,  # type: ignore[reportArgumentType]
-            handle_process_kill=_noop_process_kill,  # type: ignore[reportArgumentType]
+            handle_link_sync_resp=AsyncMock(return_value=True),
+            handle_link_reset_resp=AsyncMock(return_value=True),
+            handle_get_capabilities_resp=AsyncMock(return_value=True),
+            handle_ack=AsyncMock(),
+            status_handler_factory=MagicMock(return_value=AsyncMock()),
+            handle_process_kill=AsyncMock(return_value=True),
         )
 
         # Commands initiated by Linux (to the MCU). These requests should not be

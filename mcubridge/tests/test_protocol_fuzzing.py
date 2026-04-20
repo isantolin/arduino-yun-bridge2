@@ -15,7 +15,6 @@ def test_frame_parsing_resilience_to_fuzzing():
     """Fuzzing test to ensure Frame.parse never crashes with unhandled exceptions."""
     random.seed(TEST_RANDOM_SEED)
 
-    valid_exceptions = (ValueError, cobs.DecodeError)
 
     for i in range(FUZZ_ITERATIONS):
         # Generate random length between 0 and 200 bytes
@@ -27,7 +26,7 @@ def test_frame_parsing_resilience_to_fuzzing():
             # We attempt to parse raw data directly as if it was decoded from COBS
             # (Testing the internal Frame structure parser)
             _ = Frame.parse(raw_data)
-        except (ValueError, TypeError, LookupError, RuntimeError, AttributeError) as exc:
+        except (ValueError, TypeError, LookupError, RuntimeError, AttributeError):
             # This is expected behavior for garbage data
             pass
         except BaseException as exc:

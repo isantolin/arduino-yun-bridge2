@@ -1,7 +1,8 @@
 import importlib
 import sys
 import types
-from typing import Self, Any
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from mcubridge.config import common, const
@@ -21,21 +22,6 @@ def test_get_default_config_matches_constants():
 
 
 def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
-    class FakeCursor:
-        def __init__(self, payload: dict[str, Any]) -> None:
-            self._payload = payload
-
-        def __enter__(self) -> Self:
-            return self
-
-        def __exit__(self: Any, exc_type: Any, exc: Any, _tb: Any) -> bool:
-            return False
-
-        def get_all(self, package: str, section: str) -> dict[str, Any]:
-            assert package == "mcubridge"
-            assert section == "general"
-            return self._payload
-
     payload = {
         ".name": "general",
         ".type": "mcubridge",
@@ -46,8 +32,12 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
         "mqtt_queue_limit": 42,
     }
 
+    mock_cursor = MagicMock()
+    mock_cursor.__enter__.return_value = mock_cursor
+    mock_cursor.get_all.return_value = payload
+
     module = types.SimpleNamespace(
-        Uci=lambda: FakeCursor(payload),
+        Uci=MagicMock(return_value=mock_cursor),
         UciException=RuntimeError,
     )
 
@@ -63,18 +53,12 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
-    class FakeCursor:
-        def __enter__(self) -> Self:
-            return self
-
-        def __exit__(self: Any, exc_type: Any, exc: Any, _tb: Any) -> bool:
-            return False
-
-        def get_all(self, package: str, section: str) -> dict[str, Any]:
-            raise OSError("boom")
+    mock_cursor = MagicMock()
+    mock_cursor.__enter__.return_value = mock_cursor
+    mock_cursor.get_all.side_effect = OSError("boom")
 
     module = types.SimpleNamespace(
-        UCI=FakeCursor,
+        UCI=MagicMock(return_value=mock_cursor),
         UciException=OSError,
     )
     monkeypatch.setitem(sys.modules, "uci", module)

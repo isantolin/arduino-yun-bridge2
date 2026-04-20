@@ -6,7 +6,7 @@ from mcubridge.transport.mqtt import MqttTransport
 import asyncio
 from typing import Any, cast
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
 import pytest
@@ -20,15 +20,7 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
-class _FakeMonotonic:
-    def __init__(self, start_time: float = 0.0) -> None:
-        self._current = start_time
 
-    def monotonic(self) -> float:
-        return self._current
-
-    def advance(self, seconds: float) -> None:
-        self._current += seconds
 
 
 def _encode_link_sync(nonce: bytes, tag: bytes) -> bytes:
@@ -222,7 +214,12 @@ def test_link_sync_resp_respects_rate_limit(
         service.register_serial_sender(fake_sender)
 
         # Patch time.monotonic in all modules that use it
-        fake_clock = _FakeMonotonic(100.0)
+        fake_clock = MagicMock()
+        fake_clock._current = 100.0
+        fake_clock.monotonic.side_effect = lambda: fake_clock._current
+        def _advance(sec: float) -> None:
+            fake_clock._current += sec
+        fake_clock.advance = _advance
         for module_path in [
             "mcubridge.services.handshake.time.monotonic",
             "mcubridge.state.context.time.monotonic",
@@ -279,7 +276,12 @@ async def test_sync_auth_failure_schedules_backoff(
 
     service.register_serial_sender(fake_sender)
 
-    fake_clock = _FakeMonotonic(200.0)
+    fake_clock = MagicMock()
+    fake_clock._current = 200.0
+    fake_clock.monotonic.side_effect = lambda: fake_clock._current
+    def _advance(sec: float) -> None:
+        fake_clock._current += sec
+    fake_clock.advance = _advance
     monkeypatch.setattr(
         "mcubridge.services.handshake.time.monotonic",
         fake_clock.monotonic,
@@ -331,7 +333,13 @@ async def test_transient_handshake_failures_eventually_backoff(
 ) -> None:
     service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
-    fake_clock = _FakeMonotonic(300.0)
+    fake_clock = MagicMock()
+    fake_clock._current = 300.0
+    fake_clock.monotonic.side_effect = lambda: fake_clock._current
+    def _advance(sec: float) -> None:
+        fake_clock._current += sec
+    fake_clock.advance = _advance
+
     monkeypatch.setattr(
         "mcubridge.services.handshake.time.monotonic",
         fake_clock.monotonic,

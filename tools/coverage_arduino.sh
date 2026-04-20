@@ -6,8 +6,8 @@ LIB_ROOT="${ROOT_DIR}/mcubridge-library-arduino"
 SRC_ROOT="${LIB_ROOT}/src"
 TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
-BUILD_DIR="${LIB_ROOT}/build-coverage"
-OUTPUT_ROOT="${LIB_ROOT}/coverage-report"
+BUILD_DIR="${ROOT_DIR}/coverage/build-arduino"
+OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
 
 # Create build directory
 mkdir -p "${BUILD_DIR}/objs"

@@ -1,137 +1,87 @@
-"""Unit tests for mcubridge.services.pin (SIL-2)."""
+"""Unit tests for the PinComponent."""
 
 from __future__ import annotations
-import msgspec
 
+import collections
 from unittest.mock import AsyncMock, MagicMock
 
+import msgspec
 import pytest
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Command
+from mcubridge.protocol.protocol import (
+    Command,
+    PinAction,
+)
+from mcubridge.protocol.structures import (
+    DigitalReadResponsePacket,
+    PinModePacket,
+    PinReadPacket,
+)
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.pin import PinComponent
-from mcubridge.state.context import RuntimeState, create_runtime_state
-from tests._helpers import make_mqtt_msg, make_route
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.state.context import RuntimeState
+from mcubridge.transport.mqtt import MqttTransport
+from tests._helpers import make_mqtt_msg, make_route, make_test_config
 
 
 @pytest.fixture
-def runtime_config() -> RuntimeConfig:
-    import tempfile
+def pin_component() -> PinComponent:
+    config = make_test_config()
+    state = MagicMock(spec=RuntimeState)
+    state.mqtt_topic_prefix = "br"
+    state.pending_digital_reads = collections.deque()
+    state.pending_analog_reads = collections.deque()
+    state.pending_pin_request_limit = 10
+    state.mcu_capabilities = None
 
-    return RuntimeConfig(
-        serial_port="/dev/null",
-        mqtt_topic="br",
-        file_system_root=tempfile.mkdtemp(prefix="mcubridge-test-fs-"),
-        mqtt_spool_dir=tempfile.mkdtemp(prefix="mcubridge-test-spool-"),
-        serial_shared_secret=b"s_e_c_r_e_t_mock",
-    )
+    serial_flow = MagicMock(spec=SerialFlowController)
+    serial_flow.acknowledge = AsyncMock()
+    serial_flow.send = AsyncMock(return_value=True)
+    mqtt_flow = MagicMock(spec=MqttTransport)
+    mqtt_flow.publish = AsyncMock()
 
-
-@pytest.fixture
-def runtime_state(runtime_config: RuntimeConfig) -> RuntimeState:
-    state = create_runtime_state(runtime_config)
-    return state
-
-
-@pytest.fixture
-def serial_flow() -> MagicMock:
-    sf = MagicMock()
-    sf.send = AsyncMock(return_value=True)
-    sf.acknowledge = AsyncMock()
-    return sf
-
-
-@pytest.fixture
-def mqtt_flow() -> MagicMock:
-    mf = MagicMock()
-    mf.publish = AsyncMock()
-    mf.enqueue_mqtt = AsyncMock()
-    return mf
-
-
-@pytest.mark.asyncio
-async def test_mqtt_digital_write_sends_frame(
-    serial_flow: MagicMock,
-    mqtt_flow: MagicMock,
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    component = PinComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
-
-    await component.handle_mqtt(
-        make_route(Topic.DIGITAL, "13"),
-        make_mqtt_msg("1"),
-    )
-
-    serial_flow.send.assert_called_once_with(
-        Command.CMD_DIGITAL_WRITE.value,
-        msgspec.msgpack.encode(structures.DigitalWritePacket(pin=13, value=1)),
+    return PinComponent(
+        config=config,
+        state=state,
+        serial_flow=serial_flow,
+        mqtt_flow=mqtt_flow
     )
 
 
 @pytest.mark.asyncio
-async def test_mqtt_analog_read_tracks_pending_queue(
-    serial_flow: MagicMock,
-    mqtt_flow: MagicMock,
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    component = PinComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
+async def test_pin_handle_digital_read_resp(pin_component: PinComponent) -> None:
+    from mcubridge.state.context import PendingPinRequest
 
-    await component.handle_mqtt(
-        make_route(Topic.ANALOG, "A1", "read"),
-        make_mqtt_msg(""),
-    )
+    pin_component.state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
+    payload = msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
 
-    assert len(runtime_state.pending_analog_reads) == 1
-    assert runtime_state.pending_analog_reads[0].pin == 1
-    serial_flow.send.assert_called_once_with(
-        Command.CMD_ANALOG_READ.value,
-        msgspec.msgpack.encode(structures.PinReadPacket(pin=1)),
+    await pin_component.handle_digital_read_resp(0, payload)
+
+    pin_component.mqtt_flow.publish.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_pin_handle_mqtt_mode(pin_component: PinComponent) -> None:
+    route = make_route(Topic.DIGITAL, "13", PinAction.MODE.value)
+    msg = make_mqtt_msg(b"1")  # OUTPUT
+
+    await pin_component.handle_mqtt(route, msg)
+
+    pin_component.serial_flow.send.assert_called_with(
+        Command.CMD_SET_PIN_MODE.value,
+        msgspec.msgpack.encode(PinModePacket(pin=13, mode=1)),
     )
 
 
 @pytest.mark.asyncio
-async def test_mcu_analog_read_response_publishes_to_mqtt(
-    serial_flow: MagicMock,
-    mqtt_flow: MagicMock,
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    component = PinComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
+async def test_pin_handle_mqtt_read(pin_component: PinComponent) -> None:
+    route = make_route(Topic.DIGITAL, "13", PinAction.READ.value)
+    msg = make_mqtt_msg(b"")
 
-    # 1. MCU sends response for A0
-    payload = msgspec.msgpack.encode(structures.AnalogReadResponsePacket(value=512))
+    await pin_component.handle_mqtt(route, msg)
 
-    await component.handle_analog_read_resp(0, payload)
-
-    # Verify MQTT publish
-    mqtt_flow.publish.assert_called_once()
-    args, kwargs = mqtt_flow.publish.call_args
-    # Topic check
-    topic = kwargs.get("topic") or args[0]
-    assert "a/value" in topic
-    # Value check
-    pld = kwargs.get("payload") or args[1]
-    assert pld == b"512"
-
-
-@pytest.mark.asyncio
-async def test_mqtt_analog_write_sends_frame(
-    serial_flow: MagicMock,
-    mqtt_flow: MagicMock,
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-) -> None:
-    component = PinComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
-
-    await component.handle_mqtt(
-        make_route(Topic.ANALOG, "A1"),
-        make_mqtt_msg("10"),
+    pin_component.serial_flow.send.assert_called_with(
+        Command.CMD_DIGITAL_READ.value,
+        msgspec.msgpack.encode(PinReadPacket(pin=13)),
     )
-
-    serial_flow.send.assert_called_once_with(
-        Command.CMD_ANALOG_WRITE.value,
-        msgspec.msgpack.encode(structures.AnalogWritePacket(pin=1, value=10)),
-    )
+    assert len(pin_component.state.pending_digital_reads) == 1

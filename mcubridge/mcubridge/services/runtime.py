@@ -68,7 +68,7 @@ class BridgeService:
         for comp_cls in _COMPONENTS:
             self._registry.register_factory(  # type: ignore[reportUnknownMemberType]
                 comp_cls,
-                lambda c_cls=comp_cls: c_cls(
+                lambda c_cls: c_cls(
                     config=config,
                     state=state,
                     serial_flow=self.serial_flow,

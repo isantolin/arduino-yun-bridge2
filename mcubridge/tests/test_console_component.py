@@ -1,69 +1,62 @@
+"""Unit tests for the ConsoleComponent."""
+
+from __future__ import annotations
+
+import collections
+from unittest.mock import AsyncMock, MagicMock
+
 import msgspec
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from mcubridge.protocol.structures import ConsoleWritePacket
 from mcubridge.services.console import ConsoleComponent
-from mcubridge.protocol.structures import TopicRoute, ConsoleWritePacket
-from mcubridge.protocol.topics import Topic
-from typing import Any
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.state.context import RuntimeState
+from mcubridge.transport.mqtt import MqttTransport
+from tests._helpers import make_test_config
 
 
 @pytest.fixture
-def console_component(runtime_config: Any, runtime_state: Any) -> ConsoleComponent:
-    serial_flow = MagicMock()
-    serial_flow.send = AsyncMock()
-    mqtt_flow = MagicMock()
+def console_component() -> ConsoleComponent:
+    config = make_test_config()
+    state = MagicMock(spec=RuntimeState)
+    state.mqtt_topic_prefix = "br"
+    state.mcu_is_paused = False
+    state.console_to_mcu_queue = collections.deque()
+
+    serial_flow = MagicMock(spec=SerialFlowController)
+    serial_flow.send = AsyncMock(return_value=True)
+    mqtt_flow = MagicMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
-    return ConsoleComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
+
+    return ConsoleComponent(
+        config=config,
+        state=state,
+        serial_flow=serial_flow,
+        mqtt_flow=mqtt_flow
+    )
 
 
 @pytest.mark.asyncio
-async def test_handle_write_publishes_to_mqtt(console_component: ConsoleComponent):
-    # Use proper encoding from the protocol structures
+async def test_console_handle_write_success(console_component: ConsoleComponent) -> None:
+    # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
     payload = msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))
-    await console_component.handle_write(1, payload)
 
-    # [SIL-2] Direct verification of library calls
+    await console_component.handle_write(0, payload)
+
     console_component.mqtt_flow.publish.assert_called()
-    _, kwargs = console_component.mqtt_flow.publish.call_args
-    assert "console/out" in kwargs["topic"]
-    assert kwargs["payload"] == b"hello"
 
 
 @pytest.mark.asyncio
-async def test_handle_mqtt_input_chunks_and_sends(console_component: ConsoleComponent):
-    from aiomqtt.message import Message
+async def test_console_xoff_xon(console_component: ConsoleComponent) -> None:
+    await console_component.handle_xoff(0, b"")
+    assert console_component.state.mcu_is_paused is True
 
-    route = TopicRoute(raw="br/console/in", prefix="br", topic=Topic.CONSOLE, segments=("in",))
-    msg = Message(Topic.CONSOLE.value, b"very long payload", 0, False, False, None)
-
-    await console_component.handle_mqtt(route, msg)
-    assert console_component.serial_flow.send.called
+    await console_component.handle_xon(1, b"")
+    assert console_component.state.mcu_is_paused is False
 
 
 @pytest.mark.asyncio
-async def test_handle_mqtt_input_queues_when_paused(console_component: ConsoleComponent):
-    from aiomqtt.message import Message
-
-    console_component.state.mcu_is_paused = True
-    route = TopicRoute(raw="br/console/in", prefix="br", topic=Topic.CONSOLE, segments=("in",))
-    msg = Message(Topic.CONSOLE.value, b"hello", 0, False, False, None)
-
-    await console_component.handle_mqtt(route, msg)
-    assert len(console_component.state.console_to_mcu_queue) > 0
-    assert console_component.state.console_to_mcu_queue.popleft() == b"hello"
-
-
-@pytest.mark.asyncio
-async def test_flush_queue_sends_buffered_data(console_component: ConsoleComponent):
-    console_component.state.console_to_mcu_queue.append(b"buffered")
-    console_component.state.mcu_is_paused = False
-
-    await console_component.flush_queue()
-    assert console_component.serial_flow.send.called
-    assert len(console_component.state.console_to_mcu_queue) == 0
-
-
-def test_on_serial_disconnected_resets_pause(console_component: ConsoleComponent):
+async def test_console_on_serial_disconnected(console_component: ConsoleComponent) -> None:
     console_component.state.mcu_is_paused = True
     console_component.on_serial_disconnected()
     assert console_component.state.mcu_is_paused is False

@@ -17,7 +17,8 @@
                 "WOLFSSL_USER_SETTINGS"
             ],
             "includePath": [
-                "/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/**"
+                "/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/**",
+                "${workspaceFolder}/tools/arduino_stub/include"
             ],
             "browse": {
                 "path": [

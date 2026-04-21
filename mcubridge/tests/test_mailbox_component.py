@@ -8,11 +8,18 @@ from mcubridge.protocol.protocol import MailboxAction
 from aiomqtt.message import Message
 
 
+from mcubridge.services.base import BridgeContext
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
+
+
 @pytest.fixture
 def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxComponent:
-    ctx = MagicMock()
-    ctx.serial_flow = AsyncMock()
-    ctx.mqtt_flow = AsyncMock()
+    ctx = MagicMock(spec=BridgeContext)
+    ctx.serial_flow = MagicMock(spec=SerialFlowController)
+    ctx.serial_flow.send = AsyncMock()
+    ctx.mqtt_flow = MagicMock(spec=MqttTransport)
+    ctx.mqtt_flow.publish = AsyncMock()
     return MailboxComponent(runtime_config, runtime_state, ctx)
 
 

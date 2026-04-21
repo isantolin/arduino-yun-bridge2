@@ -365,9 +365,7 @@ def main(
         msgspec.MsgspecError,
         tenacity.RetryError,
     ) as exc:
-        logger.critical(
-            "Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError)
-        )
+        logger.critical("Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError))
         sys.exit(1)
     except BaseException as exc:
         # [SIL-2] Catch-all for unhandled system-level errors

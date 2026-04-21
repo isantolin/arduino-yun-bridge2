@@ -432,37 +432,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             VOLATILE_STORAGE_PATHS,
         )
 
-        # [SIL-2] Automated Normalization: Strip and clean inputs
-        self.serial_port = self.serial_port.strip()
-        self.mqtt_host = self.mqtt_host.strip()
-        self.file_system_root = str(Path(self.file_system_root).expanduser().resolve())
-        self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).expanduser().resolve())
-
-        # Support single string for allowed_commands (common in tests/UCI)
-        if isinstance(self.allowed_commands, str):
-            self.allowed_commands = tuple(self.allowed_commands.split())
-
-        # Normalize Optional strings
-        if self.mqtt_user is not None:
-            self.mqtt_user = self.mqtt_user.strip() or None
-        if self.mqtt_pass is not None:
-            self.mqtt_pass = self.mqtt_pass.strip() or None
-        if self.mqtt_cafile is not None:
-            self.mqtt_cafile = self.mqtt_cafile.strip() or None
-        if self.mqtt_certfile is not None:
-            self.mqtt_certfile = self.mqtt_certfile.strip() or None
-        if self.mqtt_keyfile is not None:
-            self.mqtt_keyfile = self.mqtt_keyfile.strip() or None
-
-        # [SIL-2] MQTT Topic Normalization
-        raw_topic = str(self.mqtt_topic).strip()
-        segments = tuple(filter(None, raw_topic.split("/")))
-        if not segments:
-            raise ValueError("mqtt_topic must contain at least one segment")
-        self.mqtt_topic = "/".join(segments)
-
+        # [SIL-2] Semantic Policy Derivation
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
         self.allowed_commands = self.allowed_policy.entries if self.allowed_policy else ()
+
         if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
             self.topic_authorization = (
                 msgspec.convert(self.topic_authorization, TopicAuthorization)
@@ -470,11 +443,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                 else TopicAuthorization()
             )
 
-        # [SIL-2] Coerce secret to bytes
-        if isinstance(self.serial_shared_secret, str):
-            self.serial_shared_secret = self.serial_shared_secret.strip().encode("utf-8")
-
         # [SIL-2] Strict Semantic Validations
+        if not self.mqtt_topic or not any(filter(None, self.mqtt_topic.split("/"))):
+            raise ValueError("mqtt_topic must contain at least one segment")
+
         if self.serial_response_timeout < self.serial_retry_timeout * 2:
             raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
 

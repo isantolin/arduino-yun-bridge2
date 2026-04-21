@@ -20,9 +20,6 @@ from typing import Final, cast
 from construct import Bytes, Int64ub, Struct, Construct
 from construct.core import ConstructError
 
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.constant_time import bytes_eq
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from ..protocol import protocol
 
@@ -41,27 +38,6 @@ NONCE_STRUCT: Final = cast(
 )
 
 
-def hkdf_sha256(ikm: bytes, salt: bytes, info: bytes, length: int) -> bytes:
-    """Derive a key using HKDF-SHA256 via native cryptography library."""
-    hkdf = HKDF(
-        algorithm=hashes.SHA256(),
-        length=length,
-        salt=salt,
-        info=info,
-    )
-    return hkdf.derive(ikm)
-
-
-def derive_handshake_key(shared_secret: bytes) -> bytes:
-    """Derive the internal handshake authentication key."""
-    return hkdf_sha256(
-        shared_secret,
-        protocol.HANDSHAKE_HKDF_SALT,
-        protocol.HANDSHAKE_HKDF_INFO_AUTH,
-        protocol.HANDSHAKE_HKDF_OUTPUT_LENGTH,
-    )
-
-
 def secure_zero(data: bytearray | memoryview) -> None:
     """Securely zero memory, resistant to interpreter optimization."""
     # [SIL-2] Bulk zeroing for performance
@@ -77,11 +53,6 @@ def secure_zero(data: bytearray | memoryview) -> None:
 def secure_zero_bytes_copy(data: bytes) -> bytes:
     """Return a zeroed copy of the same length (for immutable bytes)."""
     return bytes(len(data))
-
-
-def timing_safe_equal(a: bytes, b: bytes) -> bool:
-    """Timing-safe comparison delegating to cryptography library."""
-    return bytes_eq(a, b)
 
 
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
@@ -146,6 +117,4 @@ __all__ = [
     "secure_zero_bytes_copy",
     "validate_nonce_counter",
     "verify_crypto_integrity",
-    "hkdf_sha256",
-    "derive_handshake_key",
 ]

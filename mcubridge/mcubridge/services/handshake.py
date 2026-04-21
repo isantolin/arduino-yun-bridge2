@@ -21,6 +21,7 @@ import msgspec.msgpack
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.constant_time import bytes_eq
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -38,7 +39,6 @@ from ..protocol.structures import (
 )
 from ..protocol.topics import Topic, topic_path
 from ..security.security import (
-    derive_handshake_key,
     generate_nonce_with_counter,
     secure_zero,
     validate_nonce_counter,
@@ -592,8 +592,17 @@ class SerialHandshakeManager:
         if secret == b"DEBUG_INSECURE":
             # Return dummy 16-byte tag to satisfy required_length
             return b"DEBUG_TAG_UNUSED"
+
         # [MIL-SPEC] Use HKDF derived key for handshake authentication
-        auth_key = derive_handshake_key(secret)
+        # Eradicated derive_handshake_key wrapper (Llamada directa a cryptography)
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=protocol.HANDSHAKE_HKDF_OUTPUT_LENGTH,
+            salt=protocol.HANDSHAKE_HKDF_SALT,
+            info=protocol.HANDSHAKE_HKDF_INFO_AUTH,
+        )
+        auth_key = hkdf.derive(secret)
+
         h = hmac.HMAC(auth_key, hashes.SHA256())
         h.update(nonce)
         tag = h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]

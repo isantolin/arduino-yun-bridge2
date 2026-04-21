@@ -35,12 +35,14 @@ from tests._helpers import make_test_config, make_route, make_mqtt_msg
 class TestAllowedCommandPolicy:
     def test_from_iterable_normalisation(self):
         from mcubridge.protocol.structures import AllowedCommandPolicy
+
         policy = AllowedCommandPolicy.from_iterable(["", "echo", ""])
         assert "echo" in policy.entries
         assert "" not in policy.entries
 
     def test_from_iterable_wildcard(self):
         from mcubridge.protocol.structures import AllowedCommandPolicy
+
         policy = AllowedCommandPolicy.from_iterable(["ls", "*", "echo"])
         assert policy.as_tuple() == ("*",)
 
@@ -152,18 +154,6 @@ class TestSecurity:
         from mcubridge.security.security import verify_crypto_integrity
 
         assert verify_crypto_integrity() is True
-
-    def test_hkdf_sha256(self):
-        from mcubridge.security.security import hkdf_sha256
-
-        key = hkdf_sha256(b"ikm", b"salt", b"info", 32)
-        assert len(key) == 32
-
-    def test_derive_handshake_key(self):
-        from mcubridge.security.security import derive_handshake_key
-
-        key = derive_handshake_key(b"shared_secret_test")
-        assert len(key) == 32
 
 
 # ============================================================================

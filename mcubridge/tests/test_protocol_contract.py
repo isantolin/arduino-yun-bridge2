@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import re
 from pathlib import Path
 
@@ -96,15 +94,28 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
 
 
 def test_handshake_tag_reference_vector_matches_spec() -> None:
-    from mcubridge.security.security import derive_handshake_key
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives import hashes, hmac
 
     secret = b"mcubridge-shared"
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+
     # [MIL-SPEC] Test must use HKDF derived key to match runtime implementation
-    auth_key = derive_handshake_key(secret)
-    expected = hmac.new(auth_key, nonce, hashlib.sha256).digest()[: protocol.HANDSHAKE_TAG_LENGTH]
+    # Eradicated derive_handshake_key wrapper (Llamada directa a cryptography)
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=protocol.HANDSHAKE_HKDF_OUTPUT_LENGTH,
+        salt=protocol.HANDSHAKE_HKDF_SALT,
+        info=protocol.HANDSHAKE_HKDF_INFO_AUTH,
+    )
+    auth_key = hkdf.derive(secret)
+
+    expected = hmac.HMAC(auth_key, hashes.SHA256())
+    expected.update(nonce)
+    expected_tag = expected.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
+
     computed = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
-    assert computed == expected
+    assert computed == expected_tag
 
 
 def _command_to_handler(name: str) -> str:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
@@ -57,7 +58,7 @@ async def test_pin_handle_digital_read_resp(pin_component: PinComponent) -> None
 
     await pin_component.handle_digital_read_resp(0, payload)
 
-    pin_component.mqtt_flow.publish.assert_called()
+    cast(Any, pin_component.mqtt_flow.publish).assert_called()
 
 
 @pytest.mark.asyncio
@@ -67,7 +68,7 @@ async def test_pin_handle_mqtt_mode(pin_component: PinComponent) -> None:
 
     await pin_component.handle_mqtt(route, msg)
 
-    pin_component.serial_flow.send.assert_called_with(
+    cast(Any, pin_component.serial_flow.send).assert_called_with(
         Command.CMD_SET_PIN_MODE.value,
         msgspec.msgpack.encode(PinModePacket(pin=13, mode=1)),
     )
@@ -80,7 +81,7 @@ async def test_pin_handle_mqtt_read(pin_component: PinComponent) -> None:
 
     await pin_component.handle_mqtt(route, msg)
 
-    pin_component.serial_flow.send.assert_called_with(
+    cast(Any, pin_component.serial_flow.send).assert_called_with(
         Command.CMD_DIGITAL_READ.value,
         msgspec.msgpack.encode(PinReadPacket(pin=13)),
     )

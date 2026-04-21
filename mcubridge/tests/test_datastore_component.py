@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
@@ -48,7 +49,7 @@ async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> 
     await datastore_component.handle_put(0, payload)
 
     assert datastore_component.state.datastore["temp"] == "25.5"
-    datastore_component.mqtt_flow.publish.assert_called()
+    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
 
 
 @pytest.mark.asyncio
@@ -58,8 +59,8 @@ async def test_datastore_handle_get_request(datastore_component: DatastoreCompon
 
     await datastore_component.handle_get_request(0, payload)
 
-    datastore_component.serial_flow.send.assert_called()
-    datastore_component.mqtt_flow.publish.assert_called()
+    cast(Any, datastore_component.serial_flow.send).assert_called()
+    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
 
 
 @pytest.mark.asyncio
@@ -70,7 +71,7 @@ async def test_datastore_handle_mqtt_put(datastore_component: DatastoreComponent
     await datastore_component.handle_mqtt(route, msg)
 
     assert datastore_component.state.datastore["sys/uptime"] == "3600"
-    datastore_component.mqtt_flow.publish.assert_called()
+    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
 
 
 @pytest.mark.asyncio
@@ -81,4 +82,4 @@ async def test_datastore_handle_mqtt_get(datastore_component: DatastoreComponent
 
     await datastore_component.handle_mqtt(route, msg)
 
-    datastore_component.mqtt_flow.publish.assert_called()
+    cast(Any, datastore_component.mqtt_flow.publish).assert_called()

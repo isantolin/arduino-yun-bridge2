@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
@@ -49,7 +50,7 @@ async def test_system_handle_get_version_resp(system_component: SystemComponent)
     await system_component.handle_get_version_resp(0, payload)
 
     assert system_component.state.mcu_version == (1, 2, 3)
-    system_component.mqtt_flow.publish.assert_called()
+    cast(Any, system_component.mqtt_flow.publish).assert_called()
 
 
 @pytest.mark.asyncio
@@ -57,7 +58,7 @@ async def test_system_handle_get_free_memory_resp(system_component: SystemCompon
     payload = msgspec.msgpack.encode(FreeMemoryResponsePacket(value=2048))
     await system_component.handle_get_free_memory_resp(0, payload)
 
-    system_component.mqtt_flow.publish.assert_called()
+    cast(Any, system_component.mqtt_flow.publish).assert_called()
 
 
 @pytest.mark.asyncio
@@ -67,13 +68,13 @@ async def test_system_handle_mqtt_bootloader(system_component: SystemComponent) 
 
     await system_component.handle_mqtt(route, msg)
 
-    system_component.serial_flow.send.assert_called()
-    assert system_component.serial_flow.send.call_args[0][0] == Command.CMD_ENTER_BOOTLOADER.value
+    cast(Any, system_component.serial_flow.send).assert_called()
+    assert cast(Any, system_component.serial_flow.send).call_args[0][0] == Command.CMD_ENTER_BOOTLOADER.value
 
 
 @pytest.mark.asyncio
 async def test_system_request_mcu_version(system_component: SystemComponent) -> None:
     await system_component.request_mcu_version()
 
-    system_component.serial_flow.send.assert_called_with(Command.CMD_GET_VERSION.value, b"")
+    cast(Any, system_component.serial_flow.send).assert_called_with(Command.CMD_GET_VERSION.value, b"")
     assert system_component.state.mcu_version is None

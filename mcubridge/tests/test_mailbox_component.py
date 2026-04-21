@@ -1,6 +1,6 @@
 import msgspec
 import pytest
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, AsyncMock
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.protocol.structures import TopicRoute, MailboxPushPacket
@@ -36,14 +36,14 @@ async def test_handle_push_stores_in_incoming_queue(mailbox_component: MailboxCo
 async def test_handle_available_replies_if_not_empty(mailbox_component: MailboxComponent, runtime_state: Any):
     runtime_state.mailbox_queue.append(b"msg1")
     await mailbox_component.handle_available(1, b"")
-    assert mailbox_component.serial_flow.send.called
+    assert cast(Any, mailbox_component.serial_flow.send).called
 
 
 @pytest.mark.asyncio
 async def test_handle_read_sends_pop(mailbox_component: MailboxComponent, runtime_state: Any):
     runtime_state.mailbox_queue.append(b"msg1")
     await mailbox_component.handle_read(1, b"")
-    assert mailbox_component.serial_flow.send.called
+    assert cast(Any, mailbox_component.serial_flow.send).called
 
 
 @pytest.mark.asyncio
@@ -61,4 +61,4 @@ async def test_handle_mqtt_logic(mailbox_component: MailboxComponent, runtime_st
     msg_read = Message(Topic.MAILBOX.value, b"", 0, False, False, None)
     runtime_state.mailbox_incoming_queue.append(b"mcu-reply")
     await mailbox_component.handle_mqtt(route_read, msg_read)
-    assert mailbox_component.mqtt_flow.publish.called
+    assert cast(Any, mailbox_component.mqtt_flow.publish).called

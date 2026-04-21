@@ -231,8 +231,8 @@ async def test_handle_read_oserror_returns_false(
     )
     # Filter only send_frame calls
     error_sent = any(
-        call.args[0] == Status.ERROR.value  # type: ignore
-        for call in (serial_flow.send.call_args_list or [])  # type: ignore
+        call.args[0] == Status.ERROR.value
+        for call in (serial_flow.send.call_args_list or [])
     )
     assert error_sent
 
@@ -278,10 +278,10 @@ async def test_handle_read_large_payload_truncation_reproduction(
     # Total bytes sent in responses should match input
     total_received = b""
     # Filter for CMD_FILE_READ_RESP (0x93)
-    for call in serial_flow.send.call_args_list or []:  # type: ignore
-        if call.args[0] == Command.CMD_FILE_READ_RESP.value:  # type: ignore
-            payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")  # type: ignore
-            total_received += msgspec.msgpack.decode(payload, type=structures.FileReadResponsePacket).content  # type: ignore
+    for call in serial_flow.send.call_args_list or []:
+        if call.args[0] == Command.CMD_FILE_READ_RESP.value:
+            payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")
+            total_received += msgspec.msgpack.decode(payload, type=structures.FileReadResponsePacket).content
 
     assert total_received == large_data
 
@@ -424,4 +424,4 @@ async def test_handle_mqtt_remove_from_mcu_storage_enabled(
     # Exact payload check might be tricky with MsgPack vs our expectations,
     # but the failing test says Actual: send_frame(146, b'\x91\xa8test.txt')
     # Where \xa8 is string header for 8 chars.
-    assert b"test.txt" in serial_flow.send.call_args.args[1]  # type: ignore
+    assert b"test.txt" in serial_flow.send.call_args.args[1]

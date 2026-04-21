@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import structlog
 from collections.abc import Coroutine
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import msgspec
 import svcs
@@ -68,7 +68,7 @@ class BridgeService:
         for comp_cls in _COMPONENTS:
             self._registry.register_factory(  # type: ignore[reportUnknownMemberType]
                 comp_cls,
-                lambda c_cls: c_cls(
+                lambda c_cls=comp_cls: cast(Any, c_cls)(
                     config=config,
                     state=state,
                     serial_flow=self.serial_flow,

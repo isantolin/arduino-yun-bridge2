@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
@@ -43,7 +44,7 @@ async def test_console_handle_write_success(console_component: ConsoleComponent)
 
     await console_component.handle_write(0, payload)
 
-    console_component.mqtt_flow.publish.assert_called()
+    cast(Any, console_component.mqtt_flow.publish).assert_called()
 
 
 @pytest.mark.asyncio

@@ -253,16 +253,17 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
     results.append(_benchmark("Frame.parse()", lambda: Frame.parse(raw), iterations))
 
     # --- MsgPack encode/decode (serial payload) ---
+    import msgspec
     from mcubridge.protocol.structures import ConsoleWritePacket
 
     sample_packet = ConsoleWritePacket(data=b"Hello, Bridge!" * 4)
-    mp_bytes = sample_packet.encode()
+    mp_bytes = msgspec.msgpack.encode(sample_packet)
 
     def _mp_encode() -> bytes:
-        return ConsoleWritePacket(data=b"Hello, Bridge!" * 4).encode()
+        return msgspec.msgpack.encode(ConsoleWritePacket(data=b"Hello, Bridge!" * 4))
 
     def _mp_decode() -> Any:
-        return ConsoleWritePacket.decode(mp_bytes)
+        return msgspec.msgpack.decode(mp_bytes, type=ConsoleWritePacket)
 
     results.append(_benchmark("MsgPack encode", _mp_encode, iterations))
     results.append(_benchmark("MsgPack decode", _mp_decode, iterations))

@@ -80,7 +80,7 @@ async def test_bridge_service_handle_status_reporting(runtime_config: RuntimeCon
 
     # Check that MQTT publish was called
     mqtt.publish.assert_called()
-    args, kwargs = mqtt.publish.call_args
+    _, kwargs = mqtt.publish.call_args
     assert "status" in kwargs["topic"]
     # Payload is msgpacked
     report = msgspec.msgpack.decode(kwargs["payload"])

@@ -88,7 +88,10 @@ def test_mcu_registry_completeness() -> None:
 
     # Mock components for registration
     class MockComp:
-        def __getattr__(self, name):
+        __aenter__ = None
+        __aexit__ = None
+
+        def __getattr__(self, name: str):
             if name.startswith("handle_") or name == "on_serial_disconnected":
                 return AsyncMock()
             raise AttributeError(name)
@@ -106,8 +109,6 @@ def test_mcu_registry_completeness() -> None:
     ]:
         cls = getattr(__import__("mcubridge.services", fromlist=[cls_name]), cls_name)
         mock_inst = MockComp()
-        mock_inst.__aenter__ = None
-        mock_inst.__aexit__ = None
         reg.register_value(cls, mock_inst)
 
     container = svcs.Container(reg)

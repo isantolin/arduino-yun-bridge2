@@ -230,11 +230,8 @@ async def test_handle_read_oserror_returns_false(
         msgspec.msgpack.encode(structures.FileReadPacket(path="file.txt")),
     )
     # Filter only send_frame calls
-    # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportUnknownArgumentType]
-    error_sent = any(
-        call.args[0] == Status.ERROR.value
-        for call in (serial_flow.send.call_args_list or [])
-    )
+    calls = cast(list[Any], serial_flow.send.call_args_list)
+    error_sent = any(call.args[0] == Status.ERROR.value for call in calls)
     assert error_sent
 
 
@@ -279,8 +276,8 @@ async def test_handle_read_large_payload_truncation_reproduction(
     # Total bytes sent in responses should match input
     total_received = b""
     # Filter for CMD_FILE_READ_RESP (0x93)
-    # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportUnknownArgumentType]
-    for call in serial_flow.send.call_args_list or []:
+    calls = cast(list[Any], serial_flow.send.call_args_list)
+    for call in calls:
         if call.args[0] == Command.CMD_FILE_READ_RESP.value:
             payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")
             total_received += msgspec.msgpack.decode(payload, type=structures.FileReadResponsePacket).content

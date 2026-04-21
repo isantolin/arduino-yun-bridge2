@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import structlog
 from collections.abc import Coroutine
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 import svcs
@@ -55,7 +55,7 @@ class BridgeService:
         self._task_group: asyncio.TaskGroup | None = None
 
         self._registry = svcs.Registry()
-        _COMPONENTS: tuple[type, ...] = (
+        _COMPONENTS: tuple[type[Any], ...] = (
             ConsoleComponent,
             DatastoreComponent,
             FileComponent,
@@ -68,9 +68,11 @@ class BridgeService:
         for comp_cls in _COMPONENTS:
 
             def component_factory(
-                c_cls: type = comp_cls,
+                *args: Any,
+                c_cls: type[Any] = comp_cls,
+                **kwargs: Any,
             ) -> Any:
-                return cast(Any, c_cls)(
+                return c_cls(
                     config=config,
                     state=state,
                     serial_flow=self.serial_flow,

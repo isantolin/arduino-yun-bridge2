@@ -119,7 +119,7 @@ async def test_mqtt_digital_write_sends_frame(
     service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
     sent_frames: list[tuple[int, bytes]] = []
-    flow = service._serial_flow  # type: ignore[reportPrivateUsage]
+    flow = service.serial_flow
 
     async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
@@ -157,7 +157,7 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
 
     sent_frames: list[tuple[int, bytes]] = []
-    flow = service._serial_flow  # type: ignore[reportPrivateUsage]
+    flow = service.serial_flow
 
     async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))
@@ -259,7 +259,7 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     runtime_state.mcu_version = (1, 2, 0)
 
     sent_frames: list[tuple[int, bytes]] = []
-    flow = service._serial_flow  # type: ignore[reportPrivateUsage]
+    flow = service.serial_flow
 
     async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         sent_frames.append((command_id, payload))

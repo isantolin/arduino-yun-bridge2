@@ -63,7 +63,7 @@ async def test_schedule_background_requires_context() -> None:
 
 
 @pytest.mark.asyncio
-async def testacknowledge_mcu_frame_no_sender_is_noop() -> None:
+async def test_serial_flow_acknowledge_no_sender_is_noop() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
@@ -75,7 +75,7 @@ async def testacknowledge_mcu_frame_no_sender_is_noop() -> None:
 
 
 @pytest.mark.asyncio
-async def testacknowledge_mcu_frame_sends_ack_packet() -> None:
+async def test_serial_flow_acknowledge_sends_ack_packet() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
@@ -153,7 +153,9 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
 
         monkeypatch.setattr(MqttTransport, "stash_mqtt_message", _stash_ok)
 
-        mock_spool = MagicMock()
+        from mcubridge.mqtt.spool import MQTTPublishSpool
+
+        mock_spool = MagicMock(spec=MQTTPublishSpool)
         mock_spool.pending = 3
         state.mqtt_spool = mock_spool
 

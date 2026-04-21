@@ -11,7 +11,7 @@ from aiomqtt.message import Message
 
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
 from ..config.settings import RuntimeConfig
-from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
+from ..protocol.protocol import Status
 from ..protocol.structures import AckPacket
 from ..protocol.topics import Topic, parse_topic, topic_path
 from ..router.routers import MQTTRouter
@@ -46,29 +46,12 @@ STATUS_VALUES = {status.value for status in Status}
 
 
 class BridgeService:
-    """Service façade orchestrating MCU and MQTT interactions.
-
-    This class acts as the central business logic layer for the MCU Bridge daemon,
-    decoupling the transport mechanisms (serial and MQTT) from the command
-    processing and state management. It handles:
-
-    -   Dispatching incoming MCU frames to appropriate component handlers.
-    -   Routing incoming MQTT messages to their respective handlers.
-    -   Managing the serial link handshake and flow control.
-    -   Orchestrating various components (Console, Datastore, File, Mailbox, Pin, Process, Shell, System)
-        by providing them with necessary context and a communication channel.
-    -   Managing background tasks related to the bridge's operation.
-
-    It relies on `RuntimeConfig` for configuration, `RuntimeState` for
-    managing transient and persistent state, and various component classes
-    to encapsulate specific functionalities.
-    """
+    """Service façade orchestrating MCU and MQTT interactions. [SIL-2]"""
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, mqtt_transport: Any) -> None:
         self.config = config
         self.state = state
-        self._mqtt_transport = mqtt_transport
-        self._serial_sender: SendFrameCallable | None = None
+        self.mqtt_flow = mqtt_transport
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_group: asyncio.TaskGroup | None = None
 
@@ -90,22 +73,22 @@ class BridgeService:
             )
         self._container = svcs.Container(self._registry)
 
-        self._serial_flow = SerialFlowController(
+        self.serial_flow = SerialFlowController(
             ack_timeout=self._serial_timing.ack_timeout_seconds,
             response_timeout=self._serial_timing.response_timeout_seconds,
             max_attempts=self._serial_timing.retry_limit,
             logger=logger,
         )
-        self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
-        self._serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
+        self.serial_flow.set_metrics_callback(state.record_serial_flow_event)
+        self.serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
 
         self.handshake_manager = SerialHandshakeManager(
             config=config,
             state=state,
             serial_timing=self._serial_timing,
-            send_frame=self._serial_flow.send,
+            send_frame=self.serial_flow.send,
             enqueue_mqtt=mqtt_transport.enqueue_mqtt,
-            acknowledge_frame=self._serial_flow.acknowledge,
+            acknowledge_frame=self.serial_flow.acknowledge,
             logger_=logger,
         )
 
@@ -118,12 +101,12 @@ class BridgeService:
             mcu_registry=mcu_registry,
             mqtt_router=MQTTRouter(),
             state=state,
-            send_frame=self._serial_flow.send,
-            acknowledge_frame=self._serial_flow.acknowledge,
+            send_frame=self.serial_flow.send,
+            acknowledge_frame=self.serial_flow.acknowledge,
             is_topic_action_allowed=self._is_topic_action_allowed,
             reject_topic_action=self._reject_topic_action,
             publish_bridge_snapshot=self._publish_bridge_snapshot,
-            on_frame_received=self._serial_flow.on_frame_received,
+            on_frame_received=self.serial_flow.on_frame_received,
         )
         self.dispatcher.register_components(self._container)
         self.dispatcher.register_system_handlers(
@@ -149,19 +132,9 @@ class BridgeService:
         if self._task_group:
             await self._task_group.__aexit__(exc_type, exc_val, exc_tb)
 
-    @property
-    def serial_flow(self) -> SerialFlowController:
-        """Access to the serial flow controller (SIL-2)."""
-        return self._serial_flow
-
-    @property
-    def mqtt_flow(self) -> Any:
-        """Access to the MQTT transport."""
-        return self._mqtt_transport
-
     def register_serial_sender(self, sender: SendFrameCallable) -> None:
         """Allow the serial transport to provide its send coroutine."""
-        self._serial_flow.set_sender(sender)
+        self.serial_flow.set_sender(sender)
 
     async def schedule_background(
         self,
@@ -225,7 +198,7 @@ class BridgeService:
 
         # Ensure we do not keep the console in a paused state between links.
         self._container.get(ConsoleComponent).on_serial_disconnected()
-        await self._serial_flow.reset()
+        await self.serial_flow.reset()
         self.handshake_manager.clear_handshake_expectations()
 
     async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
@@ -239,37 +212,7 @@ class BridgeService:
             lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
         )
 
-    async def acknowledge_mcu_frame(
-        self,
-        command_id: int,
-        seq_id: int,
-        *,
-        status: Status = Status.ACK,
-    ) -> None:
-        # [SIL-2] Use structured packet for acknowledgements
-        payload = AckPacket(command_id=command_id).encode()
-        if not self._serial_sender:
-            logger.error(
-                "Serial sender not registered; cannot emit status 0x%02X",
-                status.value,
-            )
-            return
-
-        try:
-            await self._serial_sender(status.value, payload, seq_id)
-        except (OSError, RuntimeError, ValueError) as exc:
-            logger.warning(
-                "Failed to enqueue status 0x%02X for command 0x%02X: %s",
-                status.value,
-                command_id,
-                exc,
-            )
-
     # --- MCU command handlers ---
-
-    # ------------------------------------------------------------------
-    # MCU -> Linux handlers
-    # ------------------------------------------------------------------
 
     async def _handle_ack(self, seq_id: int, payload: bytes) -> None:
         if len(payload) >= 2:
@@ -323,10 +266,6 @@ class BridgeService:
             expiry=MQTT_EXPIRY_SHELL,
             properties=tuple(properties),
         )
-
-    # ------------------------------------------------------------------
-    # Process management
-    # ------------------------------------------------------------------
 
     async def _publish_bridge_snapshot(
         self,

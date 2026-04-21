@@ -15,7 +15,7 @@ from mcubridge.state.context import RuntimeState
 
 @pytest.fixture()
 def serial_flow_logger() -> logging.Logger:
-    return logging.getLogger("test._serial_flow")
+    return logging.getLogger("test.serial_flow")
 
 
 async def _send_ack(

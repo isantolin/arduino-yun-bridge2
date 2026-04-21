@@ -33,7 +33,7 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
         sent_frames: list[tuple[int, bytes]] = []
 
-        flow = service._serial_flow  # type: ignore[reportPrivateUsage]
+        flow = service.serial_flow
 
         async def _sender_side_effect(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
             sent_frames.append((command_id, payload))
@@ -179,8 +179,8 @@ def test_link_sync_resp_respects_rate_limit(
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent _serial_flow from blocking
             ack_payload = structures.AckPacket(command_id=command_id).encode()
-            if service._serial_flow:  # type: ignore[reportPrivateUsage]
-                service._serial_flow.on_frame_received(  # type: ignore[reportPrivateUsage]
+            if service.serial_flow:
+                service.serial_flow.on_frame_received(
                     Status.ACK.value,
                     seq_id or 0,
                     ack_payload,

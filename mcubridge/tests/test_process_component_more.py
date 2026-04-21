@@ -16,6 +16,8 @@ def process_comp(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
     from mcubridge.services.runtime import BridgeService
 
     service = MagicMock(spec=BridgeService)
+    service.serial_flow = MagicMock()
+    service.mqtt_flow = MagicMock()
     service.serial_flow.acknowledge = AsyncMock()
     service.serial_flow.send = AsyncMock()
     service.state = runtime_state
@@ -26,8 +28,10 @@ def process_comp(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
 
 
 def test_post_init_disables_slots_when_limit_zero(runtime_config: Any, runtime_state: Any):
+    from mcubridge.services.runtime import BridgeService
+
     runtime_config.process_max_concurrent = 0
-    comp = ProcessComponent(runtime_config, runtime_state, MagicMock())
+    comp = ProcessComponent(runtime_config, runtime_state, MagicMock(spec=BridgeService))
     assert comp._process_slots is not None  # type: ignore[reportPrivateUsage]
 
 

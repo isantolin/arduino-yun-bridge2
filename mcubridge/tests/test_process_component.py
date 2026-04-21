@@ -55,17 +55,20 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
         serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
     state = create_runtime_state(config)
-    # Correct initialization with mock service and serial_flow
-    service = MagicMock()
-    service.serial_flow = MagicMock()
-    service.serial_flow.acknowledge = AsyncMock()
-    service.serial_flow.send = AsyncMock(return_value=True)
-    service.mqtt_flow = MagicMock()
-    service.mqtt_flow.publish = AsyncMock()
-    service.mqtt_flow.enqueue_mqtt = AsyncMock()
-    service.schedule_background = AsyncMock()
+    # Correct initialization with specific mocks for flows
+    serial_flow = MagicMock()
+    serial_flow.acknowledge = AsyncMock()
+    serial_flow.send = AsyncMock(return_value=True)
+    mqtt_flow = MagicMock()
+    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
 
-    component = ProcessComponent(config, state, service)
+    component = ProcessComponent(
+        config=config,
+        state=state,
+        serial_flow=serial_flow,
+        mqtt_flow=mqtt_flow,
+    )
     try:
         yield component
     finally:

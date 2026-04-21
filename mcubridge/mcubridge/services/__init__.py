@@ -1,6 +1,5 @@
 """Service layer for MCU Bridge daemon operations."""
 
-from .base import BridgeContext
 from .console import ConsoleComponent
 from .datastore import DatastoreComponent
 from .dispatcher import BridgeDispatcher
@@ -13,7 +12,6 @@ from .spi import SpiComponent
 from .system import SystemComponent
 
 __all__ = [
-    "BridgeContext",
     "BridgeDispatcher",
     "ConsoleComponent",
     "DatastoreComponent",

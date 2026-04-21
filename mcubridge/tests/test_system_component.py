@@ -10,7 +10,6 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import SystemAction
 from mcubridge.protocol.topics import Topic
-from mcubridge.services.base import BridgeContext
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from tests._helpers import make_route
@@ -36,17 +35,19 @@ def runtime_state(runtime_config: RuntimeConfig) -> RuntimeState:
 
 
 @pytest.fixture
-def ctx(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> MagicMock:
-    c = MagicMock(spec=BridgeContext)
-    c.config = runtime_config
-    c.state = runtime_state
-    c.mqtt_flow = MagicMock()
-    c.mqtt_flow.publish = AsyncMock()
-    c.mqtt_flow.enqueue_mqtt = AsyncMock()
-    c.serial_flow = MagicMock()
-    c.serial_flow.send = AsyncMock(return_value=True)
-    c.serial_flow.acknowledge = AsyncMock()
-    return c
+def serial_flow() -> MagicMock:
+    sf = MagicMock()
+    sf.send = AsyncMock(return_value=True)
+    sf.acknowledge = AsyncMock()
+    return sf
+
+
+@pytest.fixture
+def mqtt_flow() -> MagicMock:
+    mf = MagicMock()
+    mf.publish = AsyncMock()
+    mf.enqueue_mqtt = AsyncMock()
+    return mf
 
 
 def _get_publish_arg(mock_pub: Any, arg_idx: int, kw_name: str, call_idx: int = -1) -> Any:
@@ -61,9 +62,9 @@ def _get_publish_arg(mock_pub: Any, arg_idx: int, kw_name: str, call_idx: int = 
 
 @pytest.mark.asyncio
 async def test_handle_get_free_memory_resp_publishes_with_pending_reply(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, ctx: MagicMock
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, serial_flow: MagicMock, mqtt_flow: MagicMock
 ) -> None:
-    component = SystemComponent(runtime_config, runtime_state, ctx)
+    component = SystemComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
     # 1. Simulate MQTT request
     inbound = type("MockMsg", (), {"topic": "br/system/free_memory/get", "payload": b""})()
@@ -72,33 +73,33 @@ async def test_handle_get_free_memory_resp_publishes_with_pending_reply(
         inbound,  # type: ignore
     )
 
-    ctx.serial_flow.send.assert_called_once()
+    serial_flow.send.assert_called_once()
 
     # 2. Simulate MCU response
     payload = structures.FreeMemoryResponsePacket(value=1024).encode()
     await component.handle_get_free_memory_resp(0, payload)
 
-    assert ctx.mqtt_flow.publish.called
+    assert mqtt_flow.publish.called
     # SystemComponent publishes twice: once for broadcast, once for reply context
-    pub = ctx.mqtt_flow.publish
+    pub = mqtt_flow.publish
     topics = [str(_get_publish_arg(pub, 0, "topic", i)) for i in range(len(pub.call_args_list))]
     assert any("free_memory/value" in t for t in topics)
 
 
 @pytest.mark.asyncio
 async def test_handle_get_free_memory_resp_ignores_malformed(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, ctx: MagicMock
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, serial_flow: MagicMock, mqtt_flow: MagicMock
 ):
-    component = SystemComponent(runtime_config, runtime_state, ctx)
+    component = SystemComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
     await component.handle_get_free_memory_resp(0, b"\xff")
-    assert ctx.mqtt_flow.publish.call_count == 0
+    assert mqtt_flow.publish.call_count == 0
 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_free_memory_get_tracks_pending(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, ctx: MagicMock
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, serial_flow: MagicMock, mqtt_flow: MagicMock
 ):
-    component = SystemComponent(runtime_config, runtime_state, ctx)
+    component = SystemComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
     # Fill internal pending queue
     for _ in range(10):
@@ -107,35 +108,35 @@ async def test_handle_mqtt_free_memory_get_tracks_pending(
             type("MockMsg", (), {"topic": "br/system/free_memory/get", "payload": b""})(),  # type: ignore
         )
 
-    ctx.serial_flow.send.reset_mock()
+    serial_flow.send.reset_mock()
     # This one should be rejected due to queue full
     await component.handle_mqtt(
         make_route(Topic.SYSTEM, SystemAction.FREE_MEMORY.value, SystemAction.GET.value),
         type("MockMsg", (), {"topic": "br/system/free_memory/get", "payload": b""})(),  # type: ignore
     )
-    ctx.serial_flow.send.assert_not_called()
+    serial_flow.send.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_version_get_without_cached_version(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, ctx: MagicMock
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, serial_flow: MagicMock, mqtt_flow: MagicMock
 ):
-    component = SystemComponent(runtime_config, runtime_state, ctx)
+    component = SystemComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
     await component.handle_mqtt(
         make_route(Topic.SYSTEM, SystemAction.VERSION.value, SystemAction.GET.value),
         type("MockMsg", (), {"topic": "br/system/version/get", "payload": b""})(),  # type: ignore
     )
 
-    ctx.serial_flow.send.assert_called_once()
+    serial_flow.send.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_version_get_with_cached_version(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, ctx: MagicMock
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, serial_flow: MagicMock, mqtt_flow: MagicMock
 ):
     runtime_state.mcu_version = (1, 2, 0)
-    component = SystemComponent(runtime_config, runtime_state, ctx)
+    component = SystemComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
     await component.handle_mqtt(
         make_route(Topic.SYSTEM, SystemAction.VERSION.value, SystemAction.GET.value),
@@ -144,18 +145,18 @@ async def test_handle_mqtt_version_get_with_cached_version(
 
     # SystemComponent ALWAYS requests fresh version to sync cache,
     # even if it has a cached one.
-    assert ctx.serial_flow.send.called
-    assert ctx.mqtt_flow.publish.called
-    pub = ctx.mqtt_flow.publish
+    assert serial_flow.send.called
+    assert mqtt_flow.publish.called
+    pub = mqtt_flow.publish
     payloads = [str(_get_publish_arg(pub, 1, "payload", i)) for i in range(len(pub.call_args_list))]
     assert any("1.2.0" in p for p in payloads)
 
 
 @pytest.mark.asyncio
 async def test_handle_get_version_resp_publishes_pending_and_updates_state(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, ctx: MagicMock
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, serial_flow: MagicMock, mqtt_flow: MagicMock
 ):
-    component = SystemComponent(runtime_config, runtime_state, ctx)
+    component = SystemComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
     # 1. Request version
     inbound = type("MockMsg", (), {"topic": "br/system/version/get", "payload": b""})()
@@ -168,28 +169,28 @@ async def test_handle_get_version_resp_publishes_pending_and_updates_state(
     await component.handle_get_version_resp(0, structures.VersionResponsePacket(major=2, minor=0, patch=0).encode())
 
     assert runtime_state.mcu_version == (2, 0, 0)
-    assert ctx.mqtt_flow.publish.called
-    pub = ctx.mqtt_flow.publish
+    assert mqtt_flow.publish.called
+    pub = mqtt_flow.publish
     payloads = [str(_get_publish_arg(pub, 1, "payload", i)) for i in range(len(pub.call_args_list))]
     assert any("2.0.0" in p for p in payloads)
 
 
 @pytest.mark.asyncio
 async def test_handle_get_version_resp_malformed(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, ctx: MagicMock
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, serial_flow: MagicMock, mqtt_flow: MagicMock
 ):
-    component = SystemComponent(runtime_config, runtime_state, ctx)
+    component = SystemComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
     await component.handle_get_version_resp(0, b"\x00")
     assert runtime_state.mcu_version is None
 
 
 @pytest.mark.asyncio
 async def test_request_mcu_version_resets_cached_version(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, ctx: MagicMock
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, serial_flow: MagicMock, mqtt_flow: MagicMock
 ):
     runtime_state.mcu_version = (1, 1, 1)
-    component = SystemComponent(runtime_config, runtime_state, ctx)
+    component = SystemComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
     await component.request_mcu_version()
     assert runtime_state.mcu_version is None
-    ctx.serial_flow.send.assert_called_once()
+    serial_flow.send.assert_called_once()

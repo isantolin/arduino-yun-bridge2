@@ -64,17 +64,17 @@ def test_spi_service_coverage():
     mock_config = MagicMock(spec=RuntimeConfig)
     mock_state = MagicMock()
     mock_state.mqtt_topic_prefix = "br"
-    mock_ctx = MagicMock()
-    mock_ctx.serial_flow = AsyncMock()
-    mock_ctx.mqtt_flow = AsyncMock()
 
-    service = SpiComponent(mock_config, mock_state, mock_ctx)
+    serial_flow = AsyncMock()
+    mqtt_flow = AsyncMock()
+
+    service = SpiComponent(config=mock_config, state=mock_state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
 
     # Test handle_mqtt for 'begin'
     route = TopicRoute(raw="br/spi/begin", prefix="br", topic=Topic.SPI, segments=("begin",))
     msg = Message(Topic.SPI.value, b"", 0, False, False, None)
     asyncio.run(service.handle_mqtt(route, msg))
-    mock_ctx.serial_flow.send.assert_called()
+    serial_flow.send.assert_called()
 
     # Test handle_mqtt for 'config'
     route_cfg = TopicRoute(raw="br/spi/config", prefix="br", topic=Topic.SPI, segments=("config",))
@@ -86,4 +86,4 @@ def test_spi_service_coverage():
 
     # Test handle_transfer_resp
     asyncio.run(service.handle_transfer_resp(1, b"\x91\xc4\x04data"))
-    mock_ctx.mqtt_flow.publish.assert_called()
+    mqtt_flow.publish.assert_called()

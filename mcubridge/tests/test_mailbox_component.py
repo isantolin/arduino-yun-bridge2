@@ -8,19 +8,17 @@ from mcubridge.protocol.protocol import MailboxAction
 from aiomqtt.message import Message
 
 
-from mcubridge.services.base import BridgeContext
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.transport.mqtt import MqttTransport
 
 
 @pytest.fixture
 def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxComponent:
-    ctx = MagicMock(spec=BridgeContext)
-    ctx.serial_flow = MagicMock(spec=SerialFlowController)
-    ctx.serial_flow.send = AsyncMock()
-    ctx.mqtt_flow = MagicMock(spec=MqttTransport)
-    ctx.mqtt_flow.publish = AsyncMock()
-    return MailboxComponent(runtime_config, runtime_state, ctx)
+    serial_flow = MagicMock(spec=SerialFlowController)
+    serial_flow.send = AsyncMock()
+    mqtt_flow = MagicMock(spec=MqttTransport)
+    mqtt_flow.publish = AsyncMock()
+    return MailboxComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
 
 @pytest.mark.asyncio
@@ -37,14 +35,14 @@ async def test_handle_push_stores_in_incoming_queue(mailbox_component: MailboxCo
 async def test_handle_available_replies_if_not_empty(mailbox_component: MailboxComponent, runtime_state: Any):
     runtime_state.mailbox_queue.append(b"msg1")
     await mailbox_component.handle_available(1, b"")
-    assert mailbox_component.ctx.serial_flow.send.called
+    assert mailbox_component.serial_flow.send.called
 
 
 @pytest.mark.asyncio
 async def test_handle_read_sends_pop(mailbox_component: MailboxComponent, runtime_state: Any):
     runtime_state.mailbox_queue.append(b"msg1")
     await mailbox_component.handle_read(1, b"")
-    assert mailbox_component.ctx.serial_flow.send.called
+    assert mailbox_component.serial_flow.send.called
 
 
 @pytest.mark.asyncio
@@ -62,4 +60,4 @@ async def test_handle_mqtt_logic(mailbox_component: MailboxComponent, runtime_st
     msg_read = Message(Topic.MAILBOX.value, b"", 0, False, False, None)
     runtime_state.mailbox_incoming_queue.append(b"mcu-reply")
     await mailbox_component.handle_mqtt(route_read, msg_read)
-    assert mailbox_component.ctx.mqtt_flow.publish.called
+    assert mailbox_component.mqtt_flow.publish.called

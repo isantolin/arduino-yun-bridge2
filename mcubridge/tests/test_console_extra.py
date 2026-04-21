@@ -21,27 +21,26 @@ async def test_console_handle_write_edge_cases() -> None:
     )
     state = create_runtime_state(config)
     try:
-        ctx = MagicMock()
-        ctx.serial_flow = MagicMock()
-        ctx.serial_flow.send = AsyncMock(return_value=True)
-        ctx.mqtt_flow = MagicMock()
-        ctx.mqtt_flow.publish = AsyncMock()
+        serial_flow = MagicMock()
+        serial_flow.send = AsyncMock(return_value=True)
+        mqtt_flow = MagicMock()
+        mqtt_flow.publish = AsyncMock()
 
-        comp = ConsoleComponent(config, state, ctx)
+        comp = ConsoleComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
 
         # 1. Malformed payload
         await comp.handle_write(0, b"\xff\xff")
-        assert not ctx.mqtt_flow.publish.called
+        assert not mqtt_flow.publish.called
 
         # 2. Empty data in packet
         empty_pkt = ConsoleWritePacket(data=b"").encode()
         await comp.handle_write(1, empty_pkt)
-        assert not ctx.mqtt_flow.publish.called
+        assert not mqtt_flow.publish.called
 
         # 3. Successful write
         valid_pkt = ConsoleWritePacket(data=b"hello").encode()
         await comp.handle_write(2, valid_pkt)
-        assert ctx.mqtt_flow.publish.called
+        assert mqtt_flow.publish.called
     finally:
         state.cleanup()
 
@@ -51,12 +50,12 @@ async def test_console_mqtt_input_error_paths() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     try:
-        ctx = MagicMock()
-        ctx.serial_flow = MagicMock()
+        serial_flow = MagicMock()
         # Simulate serial failure
-        ctx.serial_flow.send = AsyncMock(return_value=False)
+        serial_flow.send = AsyncMock(return_value=False)
+        mqtt_flow = MagicMock()
 
-        comp = ConsoleComponent(config, state, ctx)
+        comp = ConsoleComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
 
         # Sending input when serial fails should queue it
         await comp._handle_mqtt_input(b"lost-data")  # type: ignore[reportPrivateUsage]

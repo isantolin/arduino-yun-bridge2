@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import contextlib
 import structlog
+from typing import TYPE_CHECKING
 
 from aiomqtt.message import Message
 from ..protocol import protocol
@@ -17,24 +18,31 @@ from mcubridge.protocol.structures import (
 )
 
 from ..config.const import MQTT_EXPIRY_DATASTORE, MQTT_EXPIRY_DEFAULT
-from ..config.settings import RuntimeConfig
 from ..protocol.topics import Topic, topic_path
-from ..state.context import RuntimeState
-from .base import BaseComponent, BridgeContext
+
+if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
+    from ..state.context import RuntimeState
+    from ..config.settings import RuntimeConfig
+    from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.system")
 
 
-class SystemComponent(BaseComponent):
-    """Encapsulate MCU system information flows."""
+class SystemComponent:
+    """Encapsulate MCU system information flows. [SIL-2]"""
 
     def __init__(
         self,
         config: RuntimeConfig,
         state: RuntimeState,
-        ctx: BridgeContext,
+        serial_flow: SerialFlowController,
+        mqtt_flow: MqttTransport,
     ) -> None:
-        super().__init__(config, state, ctx)
+        self.config = config
+        self.state = state
+        self.serial_flow = serial_flow
+        self.mqtt_flow = mqtt_flow
         self._pending_free_memory: collections.deque[Message] = collections.deque()
         self._pending_version: collections.deque[Message] = collections.deque()
 
@@ -45,7 +53,7 @@ class SystemComponent(BaseComponent):
         if inbound is not None:
             self._pending_version.append(inbound)
 
-        ok = await self.ctx.serial_flow.send(Command.CMD_GET_VERSION.value, b"")
+        ok = await self.serial_flow.send(Command.CMD_GET_VERSION.value, b"")
         if ok:
             self.state.mcu_version = None
         else:
@@ -68,15 +76,15 @@ class SystemComponent(BaseComponent):
             SystemAction.VALUE,
         )
         reply_context = self._pending_free_memory.popleft() if self._pending_free_memory else None
-        # Direct call to RuntimeState.publish
-        await self.ctx.mqtt_flow.publish(
+        # Direct call to mqtt_flow.publish
+        await self.mqtt_flow.publish(
             topic=topic,
             payload=str(packet.value),
             expiry=MQTT_EXPIRY_DEFAULT,
             reply_to=None,
         )
         if reply_context is not None:
-            await self.ctx.mqtt_flow.publish(
+            await self.mqtt_flow.publish(
                 topic=topic,
                 payload=str(packet.value),
                 expiry=MQTT_EXPIRY_DEFAULT,
@@ -108,16 +116,16 @@ class SystemComponent(BaseComponent):
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
-        # Direct call to RuntimeState.publish
+        # Direct call to mqtt_flow.publish
         payload = f"{major}.{minor}.{patch}"
-        await self.ctx.mqtt_flow.publish(
+        await self.mqtt_flow.publish(
             topic=topic,
             payload=payload,
             expiry=MQTT_EXPIRY_DATASTORE,
             reply_to=None,
         )
         if reply_context is not None:
-            await self.ctx.mqtt_flow.publish(
+            await self.mqtt_flow.publish(
                 topic=topic,
                 payload=payload,
                 expiry=MQTT_EXPIRY_DATASTORE,
@@ -135,7 +143,7 @@ class SystemComponent(BaseComponent):
             case SystemAction.BOOTLOADER:
                 packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
                 logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
-                return await self.ctx.serial_flow.send(Command.CMD_ENTER_BOOTLOADER.value, packet.encode())
+                return await self.serial_flow.send(Command.CMD_ENTER_BOOTLOADER.value, packet.encode())
 
             case SystemAction.FREE_MEMORY:
                 if not (remainder and remainder[0] == SystemAction.GET):
@@ -145,10 +153,10 @@ class SystemComponent(BaseComponent):
                     return False
 
                 self._pending_free_memory.append(inbound)
-                ok = await self.ctx.serial_flow.send(Command.CMD_GET_FREE_MEMORY.value, b"")
+                ok = await self.serial_flow.send(Command.CMD_GET_FREE_MEMORY.value, b"")
                 if not ok:
-                    with contextlib.suppress(ValueError):
-                        self._pending_free_memory.append(inbound)
+                    with contextlib.suppress(ValueError, IndexError):
+                        self._pending_free_memory.pop()
                 return ok
 
             case SystemAction.VERSION:

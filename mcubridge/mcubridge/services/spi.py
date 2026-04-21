@@ -12,21 +12,30 @@ from ..protocol import structures
 from ..protocol.protocol import Command
 from ..protocol.structures import TopicRoute
 from ..protocol.topics import Topic, topic_path
-from .base import BaseComponent
 
 if TYPE_CHECKING:
-    from ..config.settings import RuntimeConfig
+    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
-    from .base import BridgeContext
+    from ..config.settings import RuntimeConfig
+    from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.service.spi")
 
 
-class SpiComponent(BaseComponent):
-    """Handles SPI bus operations."""
+class SpiComponent:
+    """Handles SPI bus operations. [SIL-2]"""
 
-    def __init__(self, config: RuntimeConfig, state: RuntimeState, ctx: BridgeContext):
-        super().__init__(config, state, ctx)
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        serial_flow: SerialFlowController,
+        mqtt_flow: MqttTransport,
+    ) -> None:
+        self.config = config
+        self.state = state
+        self.serial_flow = serial_flow
+        self.mqtt_flow = mqtt_flow
 
     async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
         """Process inbound MQTT requests for SPI operations."""
@@ -35,9 +44,9 @@ class SpiComponent(BaseComponent):
         try:
             match action:
                 case "begin":
-                    return await self.ctx.serial_flow.send(Command.CMD_SPI_BEGIN.value, b"")
+                    return await self.serial_flow.send(Command.CMD_SPI_BEGIN.value, b"")
                 case "end":
-                    return await self.ctx.serial_flow.send(Command.CMD_SPI_END.value, b"")
+                    return await self.serial_flow.send(Command.CMD_SPI_END.value, b"")
                 case "config":
                     try:
                         # Expecting JSON or MsgPack config
@@ -48,14 +57,14 @@ class SpiComponent(BaseComponent):
                             data_mode=int(data.get("data_mode", 0)),
                             frequency=int(data.get("frequency", 4000000)),
                         )
-                        return await self.ctx.serial_flow.send(Command.CMD_SPI_SET_CONFIG.value, packet.encode())
+                        return await self.serial_flow.send(Command.CMD_SPI_SET_CONFIG.value, packet.encode())
                     except (msgspec.DecodeError, ValueError, TypeError) as e:
                         logger.warning("Malformed SPI config request: %s", e)
                         return False
                 case "transfer":
                     # Simple case: raw bytes to transfer
                     packet = structures.SpiTransferPacket(data=payload)
-                    return await self.ctx.serial_flow.send(Command.CMD_SPI_TRANSFER.value, packet.encode())
+                    return await self.serial_flow.send(Command.CMD_SPI_TRANSFER.value, packet.encode())
                 case _:
                     return False
         except (ValueError, TypeError, msgspec.ValidationError) as e:
@@ -68,7 +77,7 @@ class SpiComponent(BaseComponent):
             packet = structures.SpiTransferResponsePacket.decode(payload)
             # Publish received bytes back to MQTT
             topic = topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp")
-            await self.ctx.mqtt_flow.publish(topic, packet.data)
+            await self.mqtt_flow.publish(topic, packet.data)
             return True
         except (ValueError, msgspec.MsgspecError) as e:
             logger.warning("Malformed SPI transfer response: %s", e)

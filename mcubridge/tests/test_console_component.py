@@ -3,17 +3,16 @@ from unittest.mock import MagicMock, AsyncMock
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.protocol.structures import TopicRoute, ConsoleWritePacket
 from mcubridge.protocol.topics import Topic
-from mcubridge.services.base import BridgeContext
 from typing import Any
 
 
 @pytest.fixture
 def console_component(runtime_config: Any, runtime_state: Any) -> ConsoleComponent:
-    # Use strict spec-based mocks as mandated
-    ctx = MagicMock(spec=BridgeContext)
-    ctx.serial_flow = AsyncMock()  # SerialFlow interface is dynamic but we could spec it too
-    ctx.mqtt_flow = AsyncMock()
-    return ConsoleComponent(runtime_config, runtime_state, ctx)
+    serial_flow = MagicMock()
+    serial_flow.send = AsyncMock()
+    mqtt_flow = MagicMock()
+    mqtt_flow.publish = AsyncMock()
+    return ConsoleComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
 
 @pytest.mark.asyncio
@@ -23,8 +22,8 @@ async def test_handle_write_publishes_to_mqtt(console_component: ConsoleComponen
     await console_component.handle_write(1, payload)
 
     # [SIL-2] Direct verification of library calls
-    console_component.ctx.mqtt_flow.publish.assert_called()
-    _, kwargs = console_component.ctx.mqtt_flow.publish.call_args
+    console_component.mqtt_flow.publish.assert_called()
+    _, kwargs = console_component.mqtt_flow.publish.call_args
     assert "console/out" in kwargs["topic"]
     assert kwargs["payload"] == b"hello"
 
@@ -37,7 +36,7 @@ async def test_handle_mqtt_input_chunks_and_sends(console_component: ConsoleComp
     msg = Message(Topic.CONSOLE.value, b"very long payload", 0, False, False, None)
 
     await console_component.handle_mqtt(route, msg)
-    assert console_component.ctx.serial_flow.send.called
+    assert console_component.serial_flow.send.called
 
 
 @pytest.mark.asyncio
@@ -59,7 +58,7 @@ async def test_flush_queue_sends_buffered_data(console_component: ConsoleCompone
     console_component.state.mcu_is_paused = False
 
     await console_component.flush_queue()
-    assert console_component.ctx.serial_flow.send.called
+    assert console_component.serial_flow.send.called
     assert len(console_component.state.console_to_mcu_queue) == 0
 
 

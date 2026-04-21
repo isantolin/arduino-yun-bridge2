@@ -24,13 +24,12 @@ async def test_pin_handle_read_overflow() -> None:
     state = create_runtime_state(config)
     try:
         state.pending_pin_request_limit = 1
-        ctx = MagicMock()
-        ctx.serial_flow = MagicMock()
-        ctx.serial_flow.send = AsyncMock(return_value=True)
-        ctx.mqtt_flow = MagicMock()
-        ctx.mqtt_flow.publish = AsyncMock()
+        serial_flow = MagicMock()
+        serial_flow.send = AsyncMock(return_value=True)
+        mqtt_flow = MagicMock()
+        mqtt_flow.publish = AsyncMock()
 
-        comp = PinComponent(config, state, ctx)
+        comp = PinComponent(config, state, serial_flow, mqtt_flow)
 
         # Fill queue
         state.pending_digital_reads.append(MagicMock())
@@ -41,8 +40,8 @@ async def test_pin_handle_read_overflow() -> None:
         # True because handled (rejected gracefully)
         assert result is True
         # Should publish overflow error
-        ctx.mqtt_flow.publish.assert_called_once()
-        args, kwargs = ctx.mqtt_flow.publish.call_args
+        mqtt_flow.publish.assert_called_once()
+        args, kwargs = mqtt_flow.publish.call_args
         props = kwargs.get("properties") or args[4]
         assert ("bridge-error", "pending-pin-overflow") in props
     finally:
@@ -57,41 +56,40 @@ async def test_pin_handle_mqtt_edge_cases() -> None:
     )
     state = create_runtime_state(config)
     try:
-        ctx = MagicMock()
-        ctx.serial_flow = MagicMock()
-        ctx.serial_flow.send = AsyncMock(return_value=True)
-        ctx.mqtt_flow = MagicMock()
-        ctx.mqtt_flow.publish = AsyncMock()
+        serial_flow = MagicMock()
+        serial_flow.send = AsyncMock(return_value=True)
+        mqtt_flow = MagicMock()
+        mqtt_flow.publish = AsyncMock()
 
-        comp = PinComponent(config, state, ctx)
+        comp = PinComponent(config, state, serial_flow, mqtt_flow)
 
         # 1. No segments
         route1 = TopicRoute("br/d", "br", Topic.DIGITAL, ())
         await comp.handle_mqtt(route1, make_mqtt_msg(b""))
-        ctx.serial_flow.send.assert_not_called()
+        serial_flow.send.assert_not_called()
 
         # 2. Invalid pin
         route2 = TopicRoute("br/d/invalid", "br", Topic.DIGITAL, ("invalid",))
         await comp.handle_mqtt(route2, make_mqtt_msg(b""))
-        ctx.serial_flow.send.assert_not_called()
+        serial_flow.send.assert_not_called()
 
         # 3. Unknown subtopic
         route3 = TopicRoute("br/d/13/magic", "br", Topic.DIGITAL, ("13", "magic"))
         await comp.handle_mqtt(route3, make_mqtt_msg(b""))
-        ctx.serial_flow.send.assert_not_called()
+        serial_flow.send.assert_not_called()
 
         # 4. Invalid mode
         route4 = TopicRoute("br/d/13/mode", "br", Topic.DIGITAL, ("13", "mode"))
         await comp.handle_mqtt(route4, make_mqtt_msg(b"invalid"))
-        ctx.serial_flow.send.assert_not_called()
+        serial_flow.send.assert_not_called()
 
         await comp.handle_mqtt(route4, make_mqtt_msg(b"99"))
-        ctx.serial_flow.send.assert_not_called()
+        serial_flow.send.assert_not_called()
 
         # 5. Invalid write value
         route5 = TopicRoute("br/d/13", "br", Topic.DIGITAL, ("13",))
         await comp.handle_mqtt(route5, make_mqtt_msg(b"invalid"))
-        ctx.serial_flow.send.assert_not_called()
+        serial_flow.send.assert_not_called()
 
     finally:
         state.cleanup()
@@ -105,15 +103,14 @@ async def test_pin_handle_analog_read_resp_malformed() -> None:
     )
     state = create_runtime_state(config)
     try:
-        ctx = MagicMock()
-        ctx.serial_flow = MagicMock()
-        ctx.mqtt_flow = MagicMock()
-        ctx.mqtt_flow.publish = AsyncMock()
+        serial_flow = MagicMock()
+        mqtt_flow = MagicMock()
+        mqtt_flow.publish = AsyncMock()
 
-        comp = PinComponent(config, state, ctx)
+        comp = PinComponent(config, state, serial_flow, mqtt_flow)
 
         await comp.handle_analog_read_resp(0, b"\xff\xff")
 
-        ctx.mqtt_flow.publish.assert_not_called()
+        mqtt_flow.publish.assert_not_called()
     finally:
         state.cleanup()

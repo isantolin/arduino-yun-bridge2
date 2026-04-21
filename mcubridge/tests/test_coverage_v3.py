@@ -209,9 +209,11 @@ async def test_process_run_async_limit_reached():
     state = MagicMock()
     state.process_max_concurrent = 1
     state.process_lock = asyncio.Lock()
-    ctx = MagicMock()
 
-    comp = ProcessComponent(config, state, ctx)
+    serial_flow = MagicMock()
+    mqtt_flow = MagicMock()
+
+    comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
     await comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     try:
@@ -230,8 +232,11 @@ async def test_process_run_async_os_error():
     state.process_lock = asyncio.Lock()
     # Initialize state attributes to avoid MagicMock returns
     state.next_pid = 1
-    ctx = MagicMock()
-    comp = ProcessComponent(config, state, ctx)
+
+    serial_flow = MagicMock()
+    mqtt_flow = MagicMock()
+
+    comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
 
     with patch("asyncio.create_subprocess_shell", side_effect=OSError("Not found")):
         pid = await comp.run_async("cmd")
@@ -244,7 +249,11 @@ async def test_process_stop_process_not_found():
     state = MagicMock()
     state.process_lock = asyncio.Lock()
     state.running_processes = {}
-    comp = ProcessComponent(config, state, MagicMock())
+
+    serial_flow = MagicMock()
+    mqtt_flow = MagicMock()
+
+    comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
 
     success = await comp.stop_process(999)
     assert success is False
@@ -256,7 +265,11 @@ async def test_process_finalize_process_missing_slot():
     state = MagicMock()
     state.process_lock = asyncio.Lock()
     state.running_processes = {}
-    comp = ProcessComponent(config, state, MagicMock())
+
+    serial_flow = MagicMock()
+    mqtt_flow = MagicMock()
+
+    comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
 
     # Should not raise
     await comp._finalize_process(999)  # type: ignore[reportPrivateUsage]

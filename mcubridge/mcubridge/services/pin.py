@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections
 import contextlib
 import structlog
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 from aiomqtt.message import Message
@@ -24,13 +24,30 @@ from mcubridge.protocol.structures import (
 from ..config.const import MQTT_EXPIRY_PIN
 from ..protocol.topics import Topic, topic_path
 from ..state.context import PendingPinRequest
-from .base import BaseComponent
+
+if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
+    from ..state.context import RuntimeState
+    from ..config.settings import RuntimeConfig
+    from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.pin")
 
 
-class PinComponent(BaseComponent):
-    """Encapsulate pin read/write logic."""
+class PinComponent:
+    """Encapsulate pin read/write logic. [SIL-2]"""
+
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        serial_flow: SerialFlowController,
+        mqtt_flow: MqttTransport,
+    ) -> None:
+        self.config = config
+        self.state = state
+        self.serial_flow = serial_flow
+        self.mqtt_flow = mqtt_flow
 
     async def handle_mcu_digital_read(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_DIGITAL_READ initiated by MCU."""
@@ -62,7 +79,7 @@ class PinComponent(BaseComponent):
             command.name,
             payload.hex(),
         )
-        await self.ctx.serial_flow.send(
+        await self.serial_flow.send(
             Status.NOT_IMPLEMENTED.value,
             reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
         )
@@ -97,7 +114,7 @@ class PinComponent(BaseComponent):
         pin_label = str(pin_value) if pin_value is not None else "unknown"
 
         # Special case: Pin reads require 'bridge-pin' property, so we use direct publish
-        await self.ctx.mqtt_flow.publish(
+        await self.mqtt_flow.publish(
             topic=topic,
             payload=str(value).encode("utf-8"),
             expiry=MQTT_EXPIRY_PIN,
@@ -182,7 +199,7 @@ class PinComponent(BaseComponent):
 
         # [SIL-2] Use structured packet encoding
         payload = PinModePacket(pin=pin, mode=mode).encode()
-        await self.ctx.serial_flow.send(Command.CMD_SET_PIN_MODE.value, payload)
+        await self.serial_flow.send(Command.CMD_SET_PIN_MODE.value, payload)
 
     async def _handle_read_command(
         self,
@@ -203,7 +220,7 @@ class PinComponent(BaseComponent):
         queue.append(pending_request)
 
         payload = PinReadPacket(pin=pin).encode()
-        ok = await self.ctx.serial_flow.send(command.value, payload)
+        ok = await self.serial_flow.send(command.value, payload)
         if not ok:
             with contextlib.suppress(ValueError):
                 queue.remove(pending_request)
@@ -226,7 +243,7 @@ class PinComponent(BaseComponent):
             command = Command.CMD_ANALOG_WRITE
             payload = AnalogWritePacket(pin=pin, value=value).encode()
 
-        await self.ctx.serial_flow.send(command.value, payload)
+        await self.serial_flow.send(command.value, payload)
 
     def _parse_pin_identifier(self, pin_str: str) -> int:
         s = pin_str.upper()
@@ -263,7 +280,7 @@ class PinComponent(BaseComponent):
         inbound: Message | None,
     ) -> None:
         topic = self._build_pin_topic(topic_type, pin)
-        await self.ctx.mqtt_flow.publish(
+        await self.mqtt_flow.publish(
             topic=topic,
             payload=b"",
             expiry=MQTT_EXPIRY_PIN,

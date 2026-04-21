@@ -39,12 +39,13 @@ async def test_file_refresh_storage_usage_handles_oserror() -> None:
     )
     state = create_runtime_state(config)
     try:
-        ctx = MagicMock()
-        ctx.serial_flow = MagicMock()
-        ctx.serial_flow.send = AsyncMock(return_value=True)
+        serial_flow = MagicMock()
+        serial_flow.send = AsyncMock(return_value=True)
+        mqtt_flow = MagicMock()
+        mqtt_flow.publish = AsyncMock()
 
         with patch("mcubridge.transport.mqtt.MqttTransport.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
-            comp = FileComponent(config, state, ctx)
+            comp = FileComponent(config, state, serial_flow, mqtt_flow)
 
             def boom(*_args: Any, **_kwargs: Any) -> Any:
                 raise OSError("Permission denied")
@@ -64,10 +65,10 @@ async def test_file_remove_with_tracking_not_a_file(tmp_path: Path) -> None:
     )
     state = create_runtime_state(config)
     try:
-        ctx = MagicMock()
-        ctx.serial_flow = MagicMock()
+        serial_flow = MagicMock()
+        mqtt_flow = MagicMock()
 
-        comp = FileComponent(config, state, ctx)
+        comp = FileComponent(config, state, serial_flow, mqtt_flow)
 
         # Test with directory
         d = tmp_path / "dir"
@@ -86,10 +87,10 @@ async def test_file_handle_read_response_no_pending() -> None:
     )
     state = create_runtime_state(config)
     try:
-        ctx = MagicMock()
-        ctx.serial_flow = MagicMock()
+        serial_flow = MagicMock()
+        mqtt_flow = MagicMock()
 
-        comp = FileComponent(config, state, ctx)
+        comp = FileComponent(config, state, serial_flow, mqtt_flow)
 
         # No pending request set
         result = await comp.handle_read_response(0, b"\x00")
@@ -106,10 +107,10 @@ async def test_file_handle_read_response_malformed() -> None:
     )
     state = create_runtime_state(config)
     try:
-        ctx = MagicMock()
-        ctx.serial_flow = MagicMock()
+        serial_flow = MagicMock()
+        mqtt_flow = MagicMock()
 
-        comp = FileComponent(config, state, ctx)
+        comp = FileComponent(config, state, serial_flow, mqtt_flow)
 
         import asyncio
         from mcubridge.services.file import _PendingMcuRead  # type: ignore[reportPrivateUsage]

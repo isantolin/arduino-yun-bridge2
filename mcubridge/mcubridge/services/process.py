@@ -4,8 +4,9 @@ import asyncio
 import collections
 import contextlib
 import inspect
+import structlog
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 import msgspec
 import psutil
@@ -14,9 +15,9 @@ from aiomqtt.message import Message
 from ..protocol import protocol, structures
 from ..protocol.protocol import ShellAction, Status
 from ..protocol.structures import (
+    PayloadValidationError,
     ProcessOutputBatch,
     QueuedPublish,
-    PayloadValidationError,
     ShellCommandPayload,
     ShellPidPayload,
     TopicRoute,
@@ -25,11 +26,13 @@ from ..protocol.topics import Topic, topic_path
 from ..state.context import (
     PROCESS_STATE_FINISHED,
     ManagedProcess,
-    RuntimeState,
 )
-from .base import BaseComponent, BridgeContext
 
-import structlog
+if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
+    from ..state.context import RuntimeState
+    from ..config.settings import RuntimeConfig
+    from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.services.process")
 _msgpack_enc = msgspec.msgpack.Encoder()
@@ -37,23 +40,20 @@ _msgpack_enc = msgspec.msgpack.Encoder()
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
 
-class ProcessComponent(BaseComponent):
-    """Component for managing subprocess execution and output capture.
-
-    [SIL-2] Deterministic Execution Model:
-    - Limited concurrent processes.
-    - Bounded output buffers per process.
-    - Periodic polling for status and output.
-    - Unified handling for MCU and MQTT shell requests.
-    """
+class ProcessComponent:
+    """Component for managing subprocess execution and output capture. [SIL-2]"""
 
     def __init__(
         self,
-        config: Any,
+        config: RuntimeConfig,
         state: RuntimeState,
-        ctx: BridgeContext,
+        serial_flow: SerialFlowController,
+        mqtt_flow: MqttTransport,
     ) -> None:
-        super().__init__(config, state, ctx)
+        self.config = config
+        self.state = state
+        self.serial_flow = serial_flow
+        self.mqtt_flow = mqtt_flow
 
         # [SIL-2] Ensure numeric limit for semaphore
         limit = int(state.process_max_concurrent)
@@ -121,7 +121,7 @@ class ProcessComponent(BaseComponent):
                 ShellAction.RUN_ASYNC,
                 "error",
             )
-            await self.ctx.mqtt_flow.publish(
+            await self.mqtt_flow.publish(
                 topic=response_topic,
                 payload=b"error:internal",
                 reply_to=inbound,
@@ -136,14 +136,14 @@ class ProcessComponent(BaseComponent):
         )
 
         if pid == 0:
-            await self.ctx.mqtt_flow.publish(
+            await self.mqtt_flow.publish(
                 topic=response_topic,
                 payload=b"error:not_allowed_or_limit_reached",
                 reply_to=inbound,
             )
             return
 
-        await self.ctx.mqtt_flow.publish(
+        await self.mqtt_flow.publish(
             topic=response_topic,
             payload=str(pid).encode("utf-8"),
             reply_to=inbound,
@@ -196,7 +196,7 @@ class ProcessComponent(BaseComponent):
             command = packet.command
 
             if not command:
-                await self.ctx.serial_flow.acknowledge(
+                await self.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     seq_id,
                     status=Status.MALFORMED,
@@ -206,7 +206,7 @@ class ProcessComponent(BaseComponent):
             # 2. Policy check
             if not self.state.allowed_policy.is_allowed(command):
                 logger.warning("Process execution denied by policy: %s", command)
-                await self.ctx.serial_flow.acknowledge(
+                await self.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     seq_id,
                     status=Status.ERROR,
@@ -216,24 +216,24 @@ class ProcessComponent(BaseComponent):
             # 3. Execution
             pid = await self.run_async(command)
             if pid > 0:
-                await self.ctx.serial_flow.acknowledge(
+                await self.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     seq_id,
                     status=Status.OK,
                 )
                 resp = structures.ProcessRunAsyncResponsePacket(pid=pid).encode()
-                await self.ctx.serial_flow.send(
+                await self.serial_flow.send(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
                     resp,
                 )
             else:
-                await self.ctx.serial_flow.acknowledge(
+                await self.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                     seq_id,
                     status=Status.ERROR,
                 )
         except (msgspec.ValidationError, ValueError, AttributeError):
-            await self.ctx.serial_flow.acknowledge(
+            await self.serial_flow.acknowledge(
                 protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                 seq_id,
                 status=Status.MALFORMED,
@@ -246,7 +246,7 @@ class ProcessComponent(BaseComponent):
             pid = packet.pid
 
             batch = await self.poll_process(pid)
-            await self.ctx.serial_flow.acknowledge(
+            await self.serial_flow.acknowledge(
                 protocol.Command.CMD_PROCESS_POLL.value,
                 seq_id,
                 status=Status.OK,
@@ -257,12 +257,12 @@ class ProcessComponent(BaseComponent):
                 stdout_data=batch.stdout_chunk,
                 stderr_data=batch.stderr_chunk,
             ).encode()
-            await self.ctx.serial_flow.send(
+            await self.serial_flow.send(
                 protocol.Command.CMD_PROCESS_POLL_RESP.value,
                 resp,
             )
         except (msgspec.ValidationError, ValueError, AttributeError):
-            await self.ctx.serial_flow.acknowledge(
+            await self.serial_flow.acknowledge(
                 protocol.Command.CMD_PROCESS_POLL.value,
                 seq_id,
                 status=Status.MALFORMED,
@@ -276,7 +276,7 @@ class ProcessComponent(BaseComponent):
 
             success = await self.stop_process(pid)
             if send_ack:
-                await self.ctx.serial_flow.acknowledge(
+                await self.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_KILL.value,
                     seq_id,
                     status=Status.OK if success else Status.ERROR,
@@ -284,7 +284,7 @@ class ProcessComponent(BaseComponent):
             return success
         except (msgspec.ValidationError, ValueError, AttributeError):
             if send_ack:
-                await self.ctx.serial_flow.acknowledge(
+                await self.serial_flow.acknowledge(
                     protocol.Command.CMD_PROCESS_KILL.value,
                     seq_id,
                     status=Status.MALFORMED,
@@ -483,7 +483,7 @@ class ProcessComponent(BaseComponent):
             reply_topic = getattr(inbound.properties, "ResponseTopic", None)
             correlation_data = getattr(inbound.properties, "CorrelationData", None)
 
-        await self.ctx.mqtt_flow.enqueue_mqtt(
+        await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
                 payload=_msgpack_enc.encode(batch),

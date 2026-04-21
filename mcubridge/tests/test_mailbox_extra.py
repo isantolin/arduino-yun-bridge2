@@ -6,10 +6,11 @@ from mcubridge.services.mailbox import MailboxComponent
 
 @pytest.fixture
 def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxComponent:
-    ctx = MagicMock()
-    ctx.serial_flow = AsyncMock()
-    ctx.mqtt_flow = AsyncMock()
-    return MailboxComponent(runtime_config, runtime_state, ctx)
+    serial_flow = MagicMock()
+    serial_flow.send = AsyncMock()
+    mqtt_flow = MagicMock()
+    mqtt_flow.publish = AsyncMock()
+    return MailboxComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
 
 @pytest.mark.asyncio

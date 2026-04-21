@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import structlog
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 from aiomqtt.message import Message
@@ -22,13 +22,30 @@ from mcubridge.protocol.structures import (
 
 from ..config.const import MQTT_EXPIRY_DATASTORE
 from ..protocol.topics import Topic, topic_path
-from .base import BaseComponent
+
+if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
+    from ..state.context import RuntimeState
+    from ..config.settings import RuntimeConfig
+    from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.datastore")
 
 
-class DatastoreComponent(BaseComponent):
-    """Encapsulate datastore behaviour for BridgeService."""
+class DatastoreComponent:
+    """Encapsulate datastore behaviour for BridgeService. [SIL-2]"""
+
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        serial_flow: SerialFlowController,
+        mqtt_flow: MqttTransport,
+    ) -> None:
+        self.config = config
+        self.state = state
+        self.serial_flow = serial_flow
+        self.mqtt_flow = mqtt_flow
 
     async def handle_put(self, seq_id: int, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
@@ -55,7 +72,7 @@ class DatastoreComponent(BaseComponent):
                 "Malformed DATASTORE_GET payload: %s",
                 payload.hex() if payload else "(empty)",
             )
-            await self.ctx.serial_flow.send(
+            await self.serial_flow.send(
                 Status.MALFORMED.value,
                 b"data_get_malformed",
             )
@@ -78,7 +95,7 @@ class DatastoreComponent(BaseComponent):
         # [SIL-2] Use structured response packet
         response_payload = DatastoreGetResponsePacket(value=value_bytes).encode()
 
-        send_ok = await self.ctx.serial_flow.send(
+        send_ok = await self.serial_flow.send(
             Command.CMD_DATASTORE_GET_RESP.value,
             response_payload,
         )
@@ -198,9 +215,9 @@ class DatastoreComponent(BaseComponent):
         if error_reason:
             properties.append(("bridge-error", error_reason))
 
-        # Direct call to RuntimeState.publish
+        # Direct call to mqtt_flow.publish (Zero Wrapper)
         props_tuple = tuple(properties)
-        await self.ctx.mqtt_flow.publish(
+        await self.mqtt_flow.publish(
             topic=topic_name,
             payload=value,
             expiry=MQTT_EXPIRY_DATASTORE,
@@ -208,7 +225,7 @@ class DatastoreComponent(BaseComponent):
             properties=props_tuple,
         )
         if reply_context is not None:
-            await self.ctx.mqtt_flow.publish(
+            await self.mqtt_flow.publish(
                 topic=topic_name,
                 payload=value,
                 expiry=MQTT_EXPIRY_DATASTORE,

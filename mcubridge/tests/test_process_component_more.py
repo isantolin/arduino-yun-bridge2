@@ -13,25 +13,21 @@ from mcubridge.state.context import PROCESS_STATE_FINISHED, ManagedProcess
 
 @pytest.fixture
 def process_comp(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
-    from mcubridge.services.runtime import BridgeService
+    serial_flow = MagicMock()
+    serial_flow.acknowledge = AsyncMock()
+    serial_flow.send = AsyncMock()
 
-    service = MagicMock(spec=BridgeService)
-    service.serial_flow = MagicMock()
-    service.mqtt_flow = MagicMock()
-    service.serial_flow.acknowledge = AsyncMock()
-    service.serial_flow.send = AsyncMock()
-    service.state = runtime_state
+    mqtt_flow = MagicMock()
+    mqtt_flow.publish = AsyncMock()
 
-    # Create component
-    comp = ProcessComponent(runtime_config, runtime_state, service)
+    # Create component with direct dependencies
+    comp = ProcessComponent(config=runtime_config, state=runtime_state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
     return comp
 
 
 def test_post_init_disables_slots_when_limit_zero(runtime_config: Any, runtime_state: Any):
-    from mcubridge.services.runtime import BridgeService
-
     runtime_config.process_max_concurrent = 0
-    comp = ProcessComponent(runtime_config, runtime_state, MagicMock(spec=BridgeService))
+    comp = ProcessComponent(config=runtime_config, state=runtime_state, serial_flow=MagicMock(), mqtt_flow=MagicMock())
     assert comp._process_slots is not None  # type: ignore[reportPrivateUsage]
 
 
@@ -47,7 +43,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
 
         payload = ProcessPollPacket(pid=100).encode()
         await process_comp.handle_poll(0, payload)
-        process_comp.ctx.serial_flow.acknowledge.assert_awaited()  # type: ignore[reportUnknownMemberType]
+        process_comp.serial_flow.acknowledge.assert_awaited()  # type: ignore[reportUnknownMemberType]
 
 
 @pytest.mark.asyncio
@@ -182,6 +178,6 @@ async def test_handle_run_async_validation_error_sends_error_frame(
     await process_comp.handle_run_async(0, b"")
 
     # Verify it called with correct named parameter
-    process_comp.ctx.serial_flow.acknowledge.assert_awaited()  # type: ignore[reportUnknownMemberType]
-    args, kwargs = process_comp.ctx.serial_flow.acknowledge.call_args  # type: ignore[reportUnknownVariableType]
+    process_comp.serial_flow.acknowledge.assert_awaited()  # type: ignore[reportUnknownMemberType]
+    args, kwargs = process_comp.serial_flow.acknowledge.call_args  # type: ignore[reportUnknownVariableType]
     assert kwargs.get("status") == Status.MALFORMED  # type: ignore[reportUnknownMemberType]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import structlog
+from typing import TYPE_CHECKING
 
 import msgspec
 from aiomqtt.message import Message
@@ -13,13 +14,30 @@ from mcubridge.protocol.structures import ConsoleWritePacket, TopicRoute
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..protocol.topics import Topic, topic_path
-from .base import BaseComponent
+
+if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
+    from ..state.context import RuntimeState
+    from ..config.settings import RuntimeConfig
+    from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.console")
 
 
-class ConsoleComponent(BaseComponent):
-    """Encapsulate remote console behaviour."""
+class ConsoleComponent:
+    """Encapsulate remote console behaviour. [SIL-2]"""
+
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        serial_flow: SerialFlowController,
+        mqtt_flow: MqttTransport,
+    ) -> None:
+        self.config = config
+        self.state = state
+        self.serial_flow = serial_flow
+        self.mqtt_flow = mqtt_flow
 
     async def handle_write(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
@@ -41,7 +59,7 @@ class ConsoleComponent(BaseComponent):
             Topic.CONSOLE,
             ConsoleAction.OUT,
         )
-        await self.ctx.mqtt_flow.publish(
+        await self.mqtt_flow.publish(
             topic=topic,
             payload=data,
             expiry=MQTT_EXPIRY_CONSOLE,
@@ -89,7 +107,7 @@ class ConsoleComponent(BaseComponent):
             # [SIL-2] Use structured packet encoding
             frame_payload = ConsoleWritePacket(data=chunk).encode()
 
-            send_ok = await self.ctx.serial_flow.send(
+            send_ok = await self.serial_flow.send(
                 Command.CMD_CONSOLE_WRITE.value,
                 frame_payload,
             )
@@ -116,7 +134,7 @@ class ConsoleComponent(BaseComponent):
                 # [SIL-2] Use structured packet encoding
                 frame_payload = ConsoleWritePacket(data=chunk).encode()
 
-                send_ok = await self.ctx.serial_flow.send(
+                send_ok = await self.serial_flow.send(
                     Command.CMD_CONSOLE_WRITE.value,
                     frame_payload,
                 )

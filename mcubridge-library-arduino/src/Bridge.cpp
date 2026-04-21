@@ -124,7 +124,8 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   }
 
   bridge::hal::init();
-  _fsm.begin();
+  if (!_fsm.is_started()) _fsm.start();
+  _fsm.receive(bridge::fsm::EvReset());
   _is_post_passed = rpc::security::run_cryptographic_self_tests();
   if (!_is_post_passed) enterSafeState();
 
@@ -624,7 +625,7 @@ void BridgeClass::_handleAck(uint16_t command_id) {
   if (!_fsm.isAwaitingAck() || command_id != _last_command_id) return;
   _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
   _clearPendingTxQueue();
-  _fsm.ackReceived();
+  _fsm.receive(bridge::fsm::EvAckReceived());
   _flushPendingTxQueue();
 }
 
@@ -864,8 +865,8 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     rpc::security::secure_zero(full_tag);
   }
 
-  _fsm.handshakeStart();
-  _fsm.handshakeComplete();
+  _fsm.receive(bridge::fsm::EvHandshakeStart());
+  _fsm.receive(bridge::fsm::EvHandshakeComplete());
   _sendPbResponse(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
   notify_observers(MsgBridgeSynchronized());
 }
@@ -1030,3 +1031,4 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
 
 void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
 void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
+ (void)sendFrame(rpc::CommandId::CMD_XON); }

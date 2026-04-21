@@ -38,7 +38,7 @@ class TestAccessor : public BridgeClass {
 
   bool isSynchronized() const { return BridgeClass::isSynchronized(); }
   void onAckTimeout() { _onAckTimeout(); }
-  void forceTimeout() { _fsm.timeout(); }
+  void forceTimeout() { _fsm.receive(bridge::fsm::EvTimeout()); }
   void setLastParseError(rpc::FrameError e) { _last_parse_error = e; }
   rpc::FrameError getLastParseError() const { return _last_parse_error; }
   uint8_t getAckRetryLimit() const { return _retry_limit; }
@@ -50,13 +50,14 @@ class TestAccessor : public BridgeClass {
   void markRxProcessed(const rpc::Frame& f) { _rx_history.push(f.header.sequence_id); }
 
   void setIdle() {
-    _fsm.resetFsm();
+    if (!_fsm.is_started()) _fsm.start();
+    _fsm.receive(bridge::fsm::EvReset());
   }
 
   void setSynchronized() {
-    _fsm.stabilized();
-    _fsm.handshakeStart();
-    _fsm.handshakeComplete();
+    _fsm.receive(bridge::fsm::EvStabilized());
+    _fsm.receive(bridge::fsm::EvHandshakeStart());
+    _fsm.receive(bridge::fsm::EvHandshakeComplete());
   }
 };
 

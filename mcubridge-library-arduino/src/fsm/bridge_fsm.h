@@ -106,24 +106,6 @@ class BridgeFsm : public etl::fsm {
 
   bool isSynchronized() const;
   bool isAwaitingAck() const;
-
-  // [SIL-2] Wrapper methods for backward compatibility with BridgeClass calls,
-  // but internally dispatching ETL events.
-  void begin() { 
-    if (!is_started()) start();
-    receive(EvReset()); 
-  }
-  void resetFsm() { 
-    if (!is_started()) start();
-    receive(EvReset()); 
-  }
-  void stabilized() { receive(EvStabilized()); }
-  void handshakeStart() { receive(EvHandshakeStart()); }
-  void handshakeComplete() { receive(EvHandshakeComplete()); }
-  void handshakeFailed() { receive(EvHandshakeFailed()); }
-  void sendCritical() { receive(EvSendCritical()); }
-  void ackReceived() { receive(EvAckReceived()); }
-  void timeout() { receive(EvTimeout()); }
 };
 
 } // namespace bridge::fsm

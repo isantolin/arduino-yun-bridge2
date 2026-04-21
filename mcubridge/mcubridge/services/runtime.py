@@ -66,15 +66,18 @@ class BridgeService:
             SystemComponent,
         )
         for comp_cls in _COMPONENTS:
-            self._registry.register_factory(  # type: ignore[reportUnknownMemberType]
-                comp_cls,
-                lambda c_cls=comp_cls: cast(Any, c_cls)(
+
+            def component_factory(
+                c_cls: type = comp_cls,
+            ) -> Any:
+                return cast(Any, c_cls)(
                     config=config,
                     state=state,
                     serial_flow=self.serial_flow,
                     mqtt_flow=self.mqtt_flow,
-                ),  # type: ignore[reportUnknownLambdaType]
-            )
+                )
+
+            self._registry.register_factory(comp_cls, component_factory)  # type: ignore[reportUnknownMemberType]
         self._container = svcs.Container(self._registry)
 
         self.serial_flow = SerialFlowController(

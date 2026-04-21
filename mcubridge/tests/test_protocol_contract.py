@@ -109,7 +109,7 @@ def test_mcu_registry_completeness() -> None:
     ]:
         cls = getattr(__import__("mcubridge.services", fromlist=[cls_name]), cls_name)
         mock_inst = MockComp()
-        reg.register_value(cls, mock_inst)
+        reg.register_value(cls, mock_inst)  # type: ignore[reportUnknownMemberType]
 
     container = svcs.Container(reg)
 

@@ -1,13 +1,13 @@
 """Unit tests for FileComponent MCU/MQTT behaviour (SIL-2)."""
 
 from __future__ import annotations
-import msgspec
 
 import asyncio
-from typing import Any
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
+import msgspec
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import structures
@@ -76,7 +76,7 @@ async def test_handle_mqtt_write_and_read(
     file_component: tuple[FileComponent, MagicMock, MagicMock],
     tmp_path: Path,
 ) -> None:
-    component, serial_flow, mqtt_flow = file_component
+    component, _serial_flow, mqtt_flow = file_component
     # Ensure component uses tmp_path
     component.config.file_system_root = str(tmp_path)
 
@@ -88,7 +88,7 @@ async def test_handle_mqtt_write_and_read(
         segments=("write", "dir", "file.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt(route, cast(Any, msg))
     assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
 
     msg_read = type("MockMsg", (), {"topic": "br/file/read/dir/file.txt", "payload": b"", "properties": None})()
@@ -99,7 +99,7 @@ async def test_handle_mqtt_write_and_read(
         segments=("read", "dir", "file.txt"),
     )
 
-    await component.handle_mqtt(route_read, msg_read)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt(route_read, cast(Any, msg_read))
     # Read from local FS publishes the result
     assert mqtt_flow.publish.called
     payload = _get_publish_arg(mqtt_flow.publish, 1, "payload")
@@ -158,7 +158,7 @@ async def test_handle_mqtt_remove_action(
         segments=("remove", "rm.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt(route, cast(Any, msg))
     assert not test_file.exists()
 
 
@@ -230,6 +230,7 @@ async def test_handle_read_oserror_returns_false(
         msgspec.msgpack.encode(structures.FileReadPacket(path="file.txt")),
     )
     # Filter only send_frame calls
+    # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportUnknownArgumentType]
     error_sent = any(
         call.args[0] == Status.ERROR.value
         for call in (serial_flow.send.call_args_list or [])
@@ -278,6 +279,7 @@ async def test_handle_read_large_payload_truncation_reproduction(
     # Total bytes sent in responses should match input
     total_received = b""
     # Filter for CMD_FILE_READ_RESP (0x93)
+    # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportUnknownArgumentType]
     for call in serial_flow.send.call_args_list or []:
         if call.args[0] == Command.CMD_FILE_READ_RESP.value:
             payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")
@@ -302,7 +304,7 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
         segments=("write", "mcu", "test.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt(route, cast(Any, msg))
 
     # Just check that it published the error
     assert any(
@@ -340,7 +342,7 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
         segments=("read", "mcu", "test.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt(route, cast(Any, msg))
     assert _get_publish_arg(mqtt_flow.publish, 1, "payload") == b"mcu-data"
 
 
@@ -360,7 +362,7 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
     )
 
     # Use wait_for to avoid hangs if crash happens
-    await asyncio.wait_for(component.handle_mqtt(route, msg), timeout=1.0)  # type: ignore[reportArgumentType]
+    await asyncio.wait_for(component.handle_mqtt(route, cast(Any, msg)), timeout=1.0)
 
     assert any(
         "MCU filesystem unavailable" in str(_get_publish_arg(mqtt_flow.publish, 1, "payload", i))
@@ -385,7 +387,7 @@ async def test_handle_mqtt_read_failure(
         segments=("read", "mcu", "fail.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt(route, cast(Any, msg))
     assert _get_publish_arg(mqtt_flow.publish, 1, "payload") == b"MCU filesystem read failed"
 
 
@@ -417,7 +419,7 @@ async def test_handle_mqtt_remove_from_mcu_storage_enabled(
         segments=("remove", "mcu", "test.txt"),
     )
 
-    await component.handle_mqtt(route, msg)  # type: ignore[reportArgumentType]
+    await component.handle_mqtt(route, cast(Any, msg))
     # Use positional argument match. Packet encoding for string 'test.txt' is \x91\xa8test.txt (fix for length header)
     # Command 146 = CMD_FILE_REMOVE
     assert serial_flow.send.call_args.args[0] == Command.CMD_FILE_REMOVE.value

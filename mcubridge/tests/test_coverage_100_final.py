@@ -6,7 +6,7 @@ all mcubridge modules.
 
 from __future__ import annotations
 import msgspec
-from typing import Any
+from typing import Any, cast
 
 import asyncio
 import contextlib
@@ -835,7 +835,7 @@ class TestPinComponent:
 
             payload = msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
             await comp.handle_digital_read_resp(0, payload)
-            comp.mqtt_flow.publish.assert_called_once()
+            cast(Any, comp.mqtt_flow.publish).assert_called_once()
         finally:
             state.cleanup()
 
@@ -985,7 +985,7 @@ class TestFileComponent:
                 path="/nonexistent_file_12345.txt",
             )
             await comp.handle_read(0, msgspec.msgpack.encode(payload))
-            comp.serial_flow.send.assert_called()
+            cast(Any, comp.serial_flow.send).assert_called()
         finally:
             state.cleanup()
 
@@ -1047,7 +1047,7 @@ class TestSystemComponent:
             # Provide valid encoded packet
             payload = msgspec.msgpack.encode(VersionResponsePacket(major=1, minor=2, patch=3))
             await comp.handle_get_version_resp(0, payload)
-            comp.mqtt_flow.publish.assert_called()
+            cast(Any, comp.mqtt_flow.publish).assert_called()
         finally:
             state.cleanup()
 

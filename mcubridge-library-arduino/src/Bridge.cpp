@@ -486,11 +486,11 @@ void BridgeClass::_onStartupStabilized() {
     return false;  // Continue
   });
 
-  BRIDGE_ATOMIC_BLOCK { _fsm.stabilized(); }
+  BRIDGE_ATOMIC_BLOCK { _fsm.receive(bridge::fsm::EvStabilized()); }
 }
 
 void BridgeClass::enterSafeState() {
-  BRIDGE_ATOMIC_BLOCK { _fsm.resetFsm(); }
+  BRIDGE_ATOMIC_BLOCK { _fsm.receive(bridge::fsm::EvReset()); }
   etl::for_each(_timer_ids.begin(), _timer_ids.end(),
                 [this](etl::timer::id::type id) { _timers.stop(id); });
   _pending_baudrate = 0;
@@ -598,14 +598,14 @@ void BridgeClass::_flushPendingTxQueue() {
     _retry_count = 0;
     _last_command_id = f.command_id;
     _timers.start(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
-    _fsm.sendCritical();
+    _fsm.receive(bridge::fsm::EvSendCritical());
   }
 }
 void BridgeClass::_onAckTimeout() {
   if (!_fsm.isAwaitingAck()) return;
   if (++_retry_count >= _retry_limit) {
     _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
-    _fsm.timeout();
+    _fsm.receive(bridge::fsm::EvTimeout());
     return;
   }
   _retransmitLastFrame();
@@ -854,7 +854,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
               etl::span<const uint8_t>(full_tag.data(),
                                        rpc::RPC_HANDSHAKE_TAG_LENGTH),
               etl::span<const uint8_t>(msg.tag.data(), 16))) {
-        _fsm.handshakeFailed();
+        _fsm.receive(bridge::fsm::EvHandshakeFailed());
         emitStatus<rpc::StatusCode::STATUS_ERROR>();
         return;
       }
@@ -1031,4 +1031,4 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
 
 void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
 void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
- (void)sendFrame(rpc::CommandId::CMD_XON); }
+

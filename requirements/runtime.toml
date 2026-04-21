@@ -79,12 +79,6 @@ pip = "cryptography==46.0.7"
 rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
 
 [[dependency]]
-name = "transitions"
-openwrt = "python3-transitions"
-pip = "transitions==0.9.3"
-rationale = "FSM implementation for handshake lifecycle"
-
-[[dependency]]
 name = "typer"
 openwrt = "python3-typer"
 pip = "typer[all]==0.24.1"

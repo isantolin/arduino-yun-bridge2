@@ -7,7 +7,6 @@ import logging
 import os
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 
 from .config.const import (
     DEFAULT_WATCHDOG_INTERVAL,
@@ -15,7 +14,6 @@ from .config.const import (
     WATCHDOG_TRIGGER_TOKEN,
 )
 from .state.context import RuntimeState
-from transitions import Machine
 
 import functools
 import structlog
@@ -25,12 +23,6 @@ WatchdogWrite = Callable[[bytes], None]
 
 class WatchdogKeepalive:
     """Emit keepalive pulses for the OpenWrt procd watchdog."""
-
-    if TYPE_CHECKING:
-        # FSM generated methods and attributes for static analysis
-        fsm_state: str
-        start: Callable[[], None]
-        stop: Callable[[], None]
 
     # FSM States
     STATE_INIT = "init"
@@ -53,30 +45,29 @@ class WatchdogKeepalive:
         self._logger = logger or structlog.get_logger("mcubridge.watchdog")
 
         # FSM Initialization
-        self.state_machine = Machine(
-            model=self,
-            states=[
-                self.STATE_INIT,
-                {"name": self.STATE_RUNNING, "on_enter": "_on_fsm_start"},
-                {"name": self.STATE_STOPPED, "on_enter": "_on_fsm_stop"},
-            ],
-            transitions=[
-                {
-                    "trigger": "start",
-                    "source": [self.STATE_INIT, self.STATE_STOPPED],
-                    "dest": self.STATE_RUNNING,
-                },
-                {
-                    "trigger": "stop",
-                    "source": self.STATE_RUNNING,
-                    "dest": self.STATE_STOPPED,
-                },
-            ],
-            initial=self.STATE_INIT,
-            queued=True,
-            model_attribute="fsm_state",
-            ignore_invalid_triggers=True,
-        )
+        self.fsm_state = self.STATE_INIT
+
+    def trigger(self, event: str) -> None:
+        """[SIL-2] Deterministic state transitions without FSM library overhead."""
+        old_state = self.fsm_state
+        if event == "start":
+            if self.fsm_state in (self.STATE_INIT, self.STATE_STOPPED):
+                self.fsm_state = self.STATE_RUNNING
+        elif event == "stop":
+            if self.fsm_state == self.STATE_RUNNING:
+                self.fsm_state = self.STATE_STOPPED
+
+        if old_state != self.fsm_state:
+            if self.fsm_state == self.STATE_RUNNING:
+                self._on_fsm_start()
+            elif self.fsm_state == self.STATE_STOPPED:
+                self._on_fsm_stop()
+
+    def start(self) -> None:
+        self.trigger("start")
+
+    def stop(self) -> None:
+        self.trigger("stop")
 
     def _on_fsm_start(self) -> None:
         """Callback when watchdog starts."""

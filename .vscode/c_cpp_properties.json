@@ -1,42 +1,34 @@
 {
-  "version": 4,
-  "configurations": [
-    {
-      "name": "Linux Host Tests (Recommended)",
-      "compilerPath": "/usr/bin/g++",
-      "intelliSenseMode": "linux-gcc-x64",
-      "cStandard": "c17",
-      "cppStandard": "c++17",
-      "defines": [
-        "ARDUINO=100",
-        "ARDUINO_STUB_CUSTOM_MILLIS=1",
-        "ARDUINO_STUB_CUSTOM_SERIAL=1",
-        "BRIDGE_HOST_TEST=1",
-        "ETL_NO_STL",
-        "UNITY_INCLUDE_DOUBLE",
-        "WOLFSSL_USER_SETTINGS"
-      ],
-      "includePath": [
-        "${workspaceFolder}/mcubridge-library-arduino/src",
-        "${workspaceFolder}/mcubridge-library-arduino/src/**",
-        "${workspaceFolder}/tools/arduino_stub/include",
-        "${workspaceFolder}/.dummy_libs/Embedded_Template_Library",
-        "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
-        "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
-        "${workspaceFolder}/.dummy_libs/PacketSerial",
-        "${workspaceFolder}/.dummy_libs/PacketSerial/src",
-        "${workspaceFolder}/.dummy_libs/wolfssl/src"
-      ],
-      "browse": {
-        "path": [
-          "${workspaceFolder}/mcubridge-library-arduino/src",
-          "${workspaceFolder}/tools/arduino_stub/include",
-          "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
-          "${workspaceFolder}/.dummy_libs/PacketSerial/src",
-          "${workspaceFolder}/.dummy_libs/wolfssl/src"
-        ],
-        "limitSymbolsToIncludedHeaders": true
-      }
-    }
-  ]
+    "version": 4,
+    "configurations": [
+        {
+            "name": "Linux Host Tests (Recommended)",
+            "compilerPath": "/usr/bin/g++",
+            "intelliSenseMode": "linux-gcc-x64",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "defines": [
+                "ARDUINO=100",
+                "ARDUINO_STUB_CUSTOM_MILLIS=1",
+                "ARDUINO_STUB_CUSTOM_SERIAL=1",
+                "BRIDGE_HOST_TEST=1",
+                "ETL_NO_STL",
+                "UNITY_INCLUDE_DOUBLE",
+                "WOLFSSL_USER_SETTINGS"
+            ],
+            "includePath": [
+                "/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/**"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/mcubridge-library-arduino/src",
+                    "${workspaceFolder}/tools/arduino_stub/include",
+                    "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
+                    "${workspaceFolder}/.dummy_libs/PacketSerial/src",
+                    "${workspaceFolder}/.dummy_libs/wolfssl/src"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        }
+    ]
 }

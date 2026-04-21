@@ -23,8 +23,11 @@
 #include "protocol/rle.h"
 #include "security/security.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <PacketSerial.h>
 #include <Codecs/COBS.h>
+#pragma GCC diagnostic pop
 
 #include <etl/algorithm.h>
 #include <etl/array.h>

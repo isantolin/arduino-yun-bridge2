@@ -27,27 +27,22 @@ from mcubridge.transport.mqtt import MqttTransport
 from tests._helpers import make_test_config, make_route, make_mqtt_msg
 
 # ============================================================================
-# mcubridge/util/__init__.py — lines 22, 24, 50
+# ============================================================================
+# mcubridge/protocol/structures.py — AllowedCommandPolicy
 # ============================================================================
 
 
-class TestUtilInit:
-    def test_chunk_bytes_empty(self):
-        from mcubridge.util import chunk_bytes
+class TestAllowedCommandPolicy:
+    def test_from_iterable_normalisation(self):
+        from mcubridge.protocol.structures import AllowedCommandPolicy
+        policy = AllowedCommandPolicy.from_iterable(["", "echo", ""])
+        assert "echo" in policy.entries
+        assert "" not in policy.entries
 
-        assert chunk_bytes(b"", 5) == []
-
-    def test_chunk_bytes_invalid_size(self):
-        from mcubridge.util import chunk_bytes
-
-        with pytest.raises(ValueError):
-            chunk_bytes(b"data", 0)
-
-    def test_normalise_allowed_commands_empty_strings(self):
-        from mcubridge.util import normalise_allowed_commands
-
-        result = normalise_allowed_commands(["", "echo", ""])
-        assert "echo" in result
+    def test_from_iterable_wildcard(self):
+        from mcubridge.protocol.structures import AllowedCommandPolicy
+        policy = AllowedCommandPolicy.from_iterable(["ls", "*", "echo"])
+        assert policy.as_tuple() == ("*",)
 
 
 # ============================================================================

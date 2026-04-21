@@ -8,17 +8,18 @@ from unittest.mock import MagicMock, patch
 from mcubridge.config import common
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
 
-from mcubridge.util import normalise_allowed_commands
-from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol.structures import QueuedPublish, AllowedCommandPolicy
 from mcubridge.protocol import protocol
 
 
 def test_normalise_commands():
     cmds = ["cmd1 ", "CMD2", "cmd1", "*"]
-    assert normalise_allowed_commands(cmds) == ("*",)
+    policy = AllowedCommandPolicy.from_iterable(cmds)
+    assert policy.as_tuple() == ("*",)
 
     cmds = ["cmd1", "CMD2"]
-    assert normalise_allowed_commands(cmds) == ("cmd1", "cmd2")
+    policy = AllowedCommandPolicy.from_iterable(cmds)
+    assert policy.as_tuple() == ("cmd1", "cmd2")
 
 
 def test_get_uci_config_success():

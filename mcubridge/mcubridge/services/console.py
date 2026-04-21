@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import structlog
 
 import msgspec
@@ -12,7 +13,6 @@ from mcubridge.protocol.structures import ConsoleWritePacket, TopicRoute
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..protocol.topics import Topic, topic_path
-from ..util import chunk_bytes
 from .base import BaseComponent
 
 logger = structlog.get_logger("mcubridge.console")
@@ -68,8 +68,8 @@ class ConsoleComponent(BaseComponent):
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        # [SIL-2] Ensure we chunk data to fit into frames
-        chunks = chunk_bytes(payload, protocol.MAX_PAYLOAD_SIZE)
+        # [SIL-2] Ensure we chunk data to fit into frames using Python's C core batched
+        chunks = [bytes(c) for c in itertools.batched(payload, protocol.MAX_PAYLOAD_SIZE)]
         if self.state.mcu_is_paused:
             logger.warning(
                 "MCU paused, queueing %d console chunk(s) (%d bytes), hex=%s",
@@ -108,7 +108,7 @@ class ConsoleComponent(BaseComponent):
             if not buffered:
                 break
 
-            chunks = chunk_bytes(buffered, protocol.MAX_PAYLOAD_SIZE)
+            chunks = [bytes(c) for c in itertools.batched(buffered, protocol.MAX_PAYLOAD_SIZE)]
             for index, chunk in enumerate(chunks):
                 if not chunk:
                     continue

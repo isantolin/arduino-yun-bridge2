@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -26,7 +27,6 @@ from ..protocol.structures import (
 )
 from ..protocol.topics import Topic, TopicRoute, topic_path
 from ..state.context import RuntimeState
-from ..util import chunk_bytes
 from .base import BaseComponent, BridgeContext
 import structlog
 
@@ -106,8 +106,8 @@ class FileComponent(BaseComponent):
                 response_packet = FileReadResponsePacket(content=b"")
                 await self.ctx.serial_flow.send(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
             else:
-                for chunk in chunk_bytes(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                    response_packet = FileReadResponsePacket(content=chunk)
+                for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
+                    response_packet = FileReadResponsePacket(content=bytes(chunk))
                     await self.ctx.serial_flow.send(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
         except (ValueError, OSError) as e:
             logger.error("File read failed: %s", e)

@@ -172,9 +172,19 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
         cls,
         entries: Iterable[str],
     ) -> AllowedCommandPolicy:
-        from mcubridge.util import normalise_allowed_commands
+        """Return a deduplicated, lower-cased and sorted allow-list preserving wildcards."""
+        import re
 
-        normalised = normalise_allowed_commands(entries)
+        all_tokens: list[str] = []
+        for c in entries:
+            if not c:
+                continue
+            # [SIL-2] Robust splitting by common delimiters (comma, space)
+            tokens = re.split(r"[, \s]+", c.strip().lower())
+            all_tokens.extend(t for t in tokens if t)
+
+        items: set[str] = set(all_tokens)
+        normalised = ("*",) if "*" in items else tuple(sorted(list(items)))
         return cls(entries=normalised)
 
     @classmethod

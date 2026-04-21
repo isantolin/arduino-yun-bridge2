@@ -343,6 +343,7 @@ def main(
         config = msgspec.structs.replace(config, mqtt_enabled=False)
         logger.warning("STRICT MODE: MQTT transport has been DISABLED for security.")
 
+    daemon = None
     try:
         if uvloop is None:
             raise RuntimeError("python3-uvloop is required")
@@ -364,8 +365,17 @@ def main(
         msgspec.MsgspecError,
         tenacity.RetryError,
     ) as exc:
-        logger.critical("Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError))
+        logger.critical(
+            "Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError)
+        )
         sys.exit(1)
+    except BaseException as exc:
+        # [SIL-2] Catch-all for unhandled system-level errors
+        logger.critical("Unhandled system error: %s", exc, exc_info=True)
+        sys.exit(1)
+    finally:
+        if daemon is not None:
+            daemon.state.cleanup()
 
 
 if __name__ == "__main__":

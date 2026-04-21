@@ -1,6 +1,7 @@
 """Unit tests for mcubridge.services.pin (SIL-2)."""
 
 from __future__ import annotations
+import msgspec
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -65,7 +66,7 @@ async def test_mqtt_digital_write_sends_frame(
 
     serial_flow.send.assert_called_once_with(
         Command.CMD_DIGITAL_WRITE.value,
-        structures.DigitalWritePacket(pin=13, value=1).encode(),
+        msgspec.msgpack.encode(structures.DigitalWritePacket(pin=13, value=1)),
     )
 
 
@@ -87,7 +88,7 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     assert runtime_state.pending_analog_reads[0].pin == 1
     serial_flow.send.assert_called_once_with(
         Command.CMD_ANALOG_READ.value,
-        structures.PinReadPacket(pin=1).encode(),
+        msgspec.msgpack.encode(structures.PinReadPacket(pin=1)),
     )
 
 
@@ -101,7 +102,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     component = PinComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
     # 1. MCU sends response for A0
-    payload = structures.AnalogReadResponsePacket(value=512).encode()
+    payload = msgspec.msgpack.encode(structures.AnalogReadResponsePacket(value=512))
 
     await component.handle_analog_read_resp(0, payload)
 
@@ -132,5 +133,5 @@ async def test_mqtt_analog_write_sends_frame(
 
     serial_flow.send.assert_called_once_with(
         Command.CMD_ANALOG_WRITE.value,
-        structures.AnalogWritePacket(pin=1, value=10).encode(),
+        msgspec.msgpack.encode(structures.AnalogWritePacket(pin=1, value=10)),
     )

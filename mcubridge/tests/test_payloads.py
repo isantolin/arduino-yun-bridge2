@@ -1,6 +1,7 @@
 """Tests for payload validation helpers."""
 
 from __future__ import annotations
+import msgspec
 
 import pytest
 from mcubridge.protocol.structures import (
@@ -16,7 +17,6 @@ def test_shell_command_payload_plain_text() -> None:
 
 
 def test_shell_command_payload_msgpack_body() -> None:
-    import msgspec
 
     payload = ShellCommandPayload.from_mqtt(msgspec.msgpack.encode({"command": "echo hi"}))
     assert payload.command == "echo hi"

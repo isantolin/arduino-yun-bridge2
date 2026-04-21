@@ -1,3 +1,4 @@
+import msgspec
 import pytest
 from typing import Any
 from unittest.mock import MagicMock, AsyncMock
@@ -24,7 +25,7 @@ def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxCompone
 @pytest.mark.asyncio
 async def test_handle_push_stores_in_incoming_queue(mailbox_component: MailboxComponent, runtime_state: Any):
     # Use proper encoding from the protocol structures
-    payload = MailboxPushPacket(data=b"some-data").encode()
+    payload = msgspec.msgpack.encode(MailboxPushPacket(data=b"some-data"))
     await mailbox_component.handle_push(1, payload)
     assert len(runtime_state.mailbox_incoming_queue) == 1
     popped = runtime_state.mailbox_incoming_queue.popleft()

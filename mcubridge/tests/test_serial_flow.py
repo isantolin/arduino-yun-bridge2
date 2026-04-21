@@ -1,6 +1,7 @@
 """Tests for SerialFlowController metrics integration."""
 
 from __future__ import annotations
+import msgspec
 
 import asyncio
 import logging
@@ -28,7 +29,7 @@ async def _send_ack(
     controller.on_frame_received(
         Status.ACK.value,
         0,
-        AckPacket(command_id=command_id).encode(),
+        msgspec.msgpack.encode(AckPacket(command_id=command_id)),
     )
 
 
@@ -222,7 +223,7 @@ def test_serial_flow_acknowledges_ack_only_command(
                 controller.on_frame_received,
                 Status.ACK.value,
                 0,
-                AckPacket(command_id=command_id).encode(),
+                msgspec.msgpack.encode(AckPacket(command_id=command_id)),
             )
             return True
 
@@ -253,7 +254,7 @@ def test_serial_flow_handles_response_after_ack(
                 controller.on_frame_received(
                     Status.ACK.value,
                     0,
-                    AckPacket(command_id=command_id).encode(),
+                    msgspec.msgpack.encode(AckPacket(command_id=command_id)),
                 )
                 controller.on_frame_received(
                     Command.CMD_DIGITAL_READ_RESP.value,
@@ -291,7 +292,7 @@ def test_serial_flow_retries_on_mismatched_ack(
                 controller.on_frame_received(
                     Status.ACK.value,
                     0,
-                    AckPacket(command_id=other_cmd).encode(),
+                    msgspec.msgpack.encode(AckPacket(command_id=other_cmd)),
                 )
 
             loop.call_soon(emit_wrong_ack)

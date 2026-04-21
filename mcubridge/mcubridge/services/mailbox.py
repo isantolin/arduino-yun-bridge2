@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.mailbox")
-_msgpack_enc = msgspec.msgpack.Encoder()
 
 
 class MailboxComponent:
@@ -62,13 +61,15 @@ class MailboxComponent:
         message_id: int | None = None
         if len(payload) >= 2:
             try:
-                packet = MailboxProcessedPacket.decode(payload, Command.CMD_MAILBOX_PROCESSED)
+                # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+                packet = msgspec.msgpack.decode(payload, type=MailboxProcessedPacket)
                 message_id = packet.message_id
             except ValueError as exc:
                 logger.warning("MCU > Malformed Mailbox processed payload: %s", exc)
 
         if message_id is not None:
-            body = _msgpack_enc.encode({"message_id": message_id})
+            # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+            body = msgspec.msgpack.encode({"message_id": message_id})
         else:
             body = payload
 
@@ -77,7 +78,8 @@ class MailboxComponent:
 
     async def handle_push(self, seq_id: int, payload: bytes) -> bool:
         try:
-            packet = MailboxPushPacket.decode(payload, Command.CMD_MAILBOX_PUSH)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=MailboxPushPacket)
         except ValueError:
             logger.warning("Malformed MailboxPushPacket payload: %s", payload.hex())
             return False
@@ -115,12 +117,14 @@ class MailboxComponent:
         if payload:
             await self.serial_flow.send(
                 Status.MALFORMED.value,
-                AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value).encode(),
+                # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+                msgspec.msgpack.encode(AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value)),
             )
             return False
 
         queue_len = len(self.state.mailbox_queue)
-        response = MailboxAvailableResponsePacket(count=queue_len).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        response = msgspec.msgpack.encode(MailboxAvailableResponsePacket(count=queue_len))
 
         await self.serial_flow.send(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
@@ -137,7 +141,8 @@ class MailboxComponent:
             logger.warning("Mailbox message too long (%d bytes), truncating.", len(message_payload))
             message_payload = message_payload[:max_allowed]
 
-        response_payload = MailboxReadResponsePacket(content=message_payload).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        response_payload = msgspec.msgpack.encode(MailboxReadResponsePacket(content=message_payload))
 
         send_ok = await self.serial_flow.send(
             Command.CMD_MAILBOX_READ_RESP.value,
@@ -252,7 +257,8 @@ class MailboxComponent:
             MailboxAction.ERRORS,
         )
 
-        body = _msgpack_enc.encode(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        body = msgspec.msgpack.encode(
             {
                 "event": "write_overflow",
                 "reason": protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW,

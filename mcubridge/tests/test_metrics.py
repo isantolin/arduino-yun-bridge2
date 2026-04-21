@@ -1,11 +1,11 @@
 """Tests for daemon metrics publisher."""
 
 from __future__ import annotations
+import msgspec
 
 import asyncio
 from unittest.mock import patch
 
-import msgspec
 import pytest
 from mcubridge.metrics import (
     publish_bridge_snapshots,

@@ -57,14 +57,17 @@ class SpiComponent:
                             data_mode=int(data.get("data_mode", 0)),
                             frequency=int(data.get("frequency", 4000000)),
                         )
-                        return await self.serial_flow.send(Command.CMD_SPI_SET_CONFIG.value, packet.encode())
+                        return await self.serial_flow.send(
+                            Command.CMD_SPI_SET_CONFIG.value,
+                            msgspec.msgpack.encode(packet),
+                        )
                     except (msgspec.DecodeError, ValueError, TypeError) as e:
                         logger.warning("Malformed SPI config request: %s", e)
                         return False
                 case "transfer":
                     # Simple case: raw bytes to transfer
                     packet = structures.SpiTransferPacket(data=payload)
-                    return await self.serial_flow.send(Command.CMD_SPI_TRANSFER.value, packet.encode())
+                    return await self.serial_flow.send(Command.CMD_SPI_TRANSFER.value, msgspec.msgpack.encode(packet))
                 case _:
                     return False
         except (ValueError, TypeError, msgspec.ValidationError) as e:
@@ -74,7 +77,7 @@ class SpiComponent:
     async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_SPI_TRANSFER_RESP from MCU."""
         try:
-            packet = structures.SpiTransferResponsePacket.decode(payload)
+            packet = msgspec.msgpack.decode(payload, type=structures.SpiTransferResponsePacket)
             # Publish received bytes back to MQTT
             topic = topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp")
             await self.mqtt_flow.publish(topic, packet.data)

@@ -97,7 +97,7 @@ class PinComponent:
     ) -> None:
         """Shared implementation for digital/analog read response handling."""
         try:
-            packet = packet_cls.decode(payload, command_id)
+            packet = msgspec.msgpack.decode(payload, type=packet_cls)
         except ValueError:
             logger.warning("Malformed %s payload: %s", packet_cls.__name__, payload.hex())
             return
@@ -197,8 +197,8 @@ class PinComponent:
             logger.warning("Invalid digital mode %s", mode)
             return
 
-        # [SIL-2] Use structured packet encoding
-        payload = PinModePacket(pin=pin, mode=mode).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        payload = msgspec.msgpack.encode(PinModePacket(pin=pin, mode=mode))
         await self.serial_flow.send(Command.CMD_SET_PIN_MODE.value, payload)
 
     async def _handle_read_command(
@@ -219,7 +219,8 @@ class PinComponent:
         pending_request = PendingPinRequest(pin=pin, reply_context=inbound)
         queue.append(pending_request)
 
-        payload = PinReadPacket(pin=pin).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        payload = msgspec.msgpack.encode(PinReadPacket(pin=pin))
         ok = await self.serial_flow.send(command.value, payload)
         if not ok:
             with contextlib.suppress(ValueError):
@@ -238,10 +239,10 @@ class PinComponent:
 
         if topic_type == Topic.DIGITAL:
             command = Command.CMD_DIGITAL_WRITE
-            payload = DigitalWritePacket(pin=pin, value=value).encode()
+            payload = msgspec.msgpack.encode(DigitalWritePacket(pin=pin, value=value))
         else:
             command = Command.CMD_ANALOG_WRITE
-            payload = AnalogWritePacket(pin=pin, value=value).encode()
+            payload = msgspec.msgpack.encode(AnalogWritePacket(pin=pin, value=value))
 
         await self.serial_flow.send(command.value, payload)
 

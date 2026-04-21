@@ -1,3 +1,4 @@
+import msgspec
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 from mcubridge.services.console import ConsoleComponent
@@ -18,7 +19,7 @@ def console_component(runtime_config: Any, runtime_state: Any) -> ConsoleCompone
 @pytest.mark.asyncio
 async def test_handle_write_publishes_to_mqtt(console_component: ConsoleComponent):
     # Use proper encoding from the protocol structures
-    payload = ConsoleWritePacket(data=b"hello").encode()
+    payload = msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))
     await console_component.handle_write(1, payload)
 
     # [SIL-2] Direct verification of library calls

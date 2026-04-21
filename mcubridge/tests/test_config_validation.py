@@ -1,11 +1,11 @@
 """Tests for RuntimeConfig normalization and validation."""
 
 from __future__ import annotations
+import msgspec
 
 import os
 from typing import Any
 
-import msgspec
 import pytest
 from mcubridge.config import settings
 from mcubridge.config.const import (
@@ -67,7 +67,6 @@ def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
 
     # settings.py now raises ValueError during test source for invalid topic
-    import msgspec
 
     with pytest.raises(msgspec.ValidationError, match="mqtt_topic must contain at least one segment"):
         settings.load_runtime_config()

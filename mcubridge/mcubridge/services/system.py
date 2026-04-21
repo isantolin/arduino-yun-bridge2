@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import collections
 import contextlib
+import msgspec
 import structlog
 from typing import TYPE_CHECKING
 
@@ -64,8 +65,8 @@ class SystemComponent:
 
     async def handle_get_free_memory_resp(self, seq_id: int, payload: bytes) -> None:
         try:
-            packet = FreeMemoryResponsePacket.decode(payload, Command.CMD_GET_FREE_MEMORY_RESP)
-        except ValueError:
+            packet = msgspec.msgpack.decode(payload, type=FreeMemoryResponsePacket)
+        except (ValueError, msgspec.MsgspecError):
             logger.warning("Malformed FreeMemoryResponsePacket payload: %s", payload.hex())
             return
 
@@ -93,8 +94,8 @@ class SystemComponent:
 
     async def handle_get_version_resp(self, seq_id: int, payload: bytes) -> None:
         try:
-            packet = VersionResponsePacket.decode(payload, Command.CMD_GET_VERSION_RESP)
-        except ValueError:
+            packet = msgspec.msgpack.decode(payload, type=VersionResponsePacket)
+        except (ValueError, msgspec.MsgspecError):
             logger.warning("Malformed VersionResponsePacket payload: %s", payload.hex())
             return
 
@@ -143,7 +144,7 @@ class SystemComponent:
             case SystemAction.BOOTLOADER:
                 packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
                 logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
-                return await self.serial_flow.send(Command.CMD_ENTER_BOOTLOADER.value, packet.encode())
+                return await self.serial_flow.send(Command.CMD_ENTER_BOOTLOADER.value, msgspec.msgpack.encode(packet))
 
             case SystemAction.FREE_MEMORY:
                 if not (remainder and remainder[0] == SystemAction.GET):

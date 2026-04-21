@@ -1,13 +1,13 @@
 """Focused unit tests for BridgeService (runtime)."""
 
 from __future__ import annotations
+import msgspec
 from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock
 
-import msgspec
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
@@ -99,7 +99,9 @@ async def test_serial_flow_acknowledge_sends_ack_packet() -> None:
         assert sent
         status_cmd, payload = sent[0]
         assert status_cmd == Status.MALFORMED.value
-        assert payload == structures.AckPacket(command_id=protocol.Command.CMD_GET_FREE_MEMORY.value).encode()
+        assert payload == msgspec.msgpack.encode(
+            structures.AckPacket(command_id=protocol.Command.CMD_GET_FREE_MEMORY.value)
+        )
     finally:
         state.cleanup()
 
@@ -205,7 +207,7 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
 
         pkt = structures.VersionResponsePacket(major=1, minor=2, patch=0)
         system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
-        await system.handle_get_version_resp(0, pkt.encode())
+        await system.handle_get_version_resp(0, msgspec.msgpack.encode(pkt))
 
         assert state.mcu_version == (1, 2, 0)
         queued = state.mqtt_publish_queue.get_nowait()

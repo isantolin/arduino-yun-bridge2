@@ -1,6 +1,7 @@
 """Extra edge-case tests for ConsoleComponent (SIL-2)."""
 
 from __future__ import annotations
+import msgspec
 
 import os
 import time
@@ -33,12 +34,12 @@ async def test_console_handle_write_edge_cases() -> None:
         assert not mqtt_flow.publish.called
 
         # 2. Empty data in packet
-        empty_pkt = ConsoleWritePacket(data=b"").encode()
+        empty_pkt = msgspec.msgpack.encode(ConsoleWritePacket(data=b""))
         await comp.handle_write(1, empty_pkt)
         assert not mqtt_flow.publish.called
 
         # 3. Successful write
-        valid_pkt = ConsoleWritePacket(data=b"hello").encode()
+        valid_pkt = msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))
         await comp.handle_write(2, valid_pkt)
         assert mqtt_flow.publish.called
     finally:

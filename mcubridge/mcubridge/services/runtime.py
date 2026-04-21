@@ -39,7 +39,6 @@ from .handshake import (
 from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.service")
-_msgpack_enc = msgspec.msgpack.Encoder()
 
 
 STATUS_VALUES = {status.value for status in Status}
@@ -222,7 +221,8 @@ class BridgeService:
     async def _handle_ack(self, seq_id: int, payload: bytes) -> None:
         if len(payload) >= 2:
             try:
-                packet = AckPacket.decode(payload)
+                # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+                packet = msgspec.msgpack.decode(payload, type=AckPacket)
                 command_id = packet.command_id
                 logger.debug("MCU > ACK received for 0x%02X", command_id)
             except (msgspec.ValidationError, ValueError) as exc:
@@ -245,7 +245,8 @@ class BridgeService:
         else:
             log_method("MCU > %s (seq=%d): %s", status.name, seq_id, desc)
 
-        report = _msgpack_enc.encode(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        report = msgspec.msgpack.encode(
             {
                 "status": status.value,
                 "name": status.name,
@@ -288,9 +289,10 @@ class BridgeService:
             Topic.SYSTEM,
             *topic_segments,
         )
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
         await self.mqtt_flow.publish(
             topic=topic,
-            payload=_msgpack_enc.encode(snapshot),
+            payload=msgspec.msgpack.encode(snapshot),
             content_type="application/msgpack",
             expiry=MQTT_EXPIRY_SHELL,
             properties=(("bridge-snapshot", flavor),),
@@ -304,9 +306,9 @@ class BridgeService:
     ) -> bool:
         if not action:
             return True
-        topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
+        topic_val = topic_type.value if isinstance(topic_type, Topic) else topic_type
         if self.state.topic_authorization:
-            return self.state.topic_authorization.allows(topic_value, action)
+            return self.state.topic_authorization.allows(topic_val, action)
         return False
 
     async def _reject_topic_action(
@@ -322,7 +324,8 @@ class BridgeService:
             action or "<missing>",
             str(inbound.topic),
         )
-        payload = _msgpack_enc.encode(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        payload = msgspec.msgpack.encode(
             {
                 "status": "forbidden",
                 "topic": topic_value,

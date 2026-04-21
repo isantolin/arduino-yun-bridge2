@@ -42,11 +42,9 @@ class ConsoleComponent:
     async def handle_write(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
         try:
-            packet = ConsoleWritePacket.decode(
-                payload,
-                Command.CMD_CONSOLE_WRITE,
-            )
-        except ValueError:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=ConsoleWritePacket)
+        except (ValueError, msgspec.DecodeError):
             logger.warning("Malformed ConsoleWritePacket payload: %s", payload.hex())
             return
 
@@ -104,8 +102,8 @@ class ConsoleComponent:
             if not chunk:
                 continue
 
-            # [SIL-2] Use structured packet encoding
-            frame_payload = ConsoleWritePacket(data=chunk).encode()
+            # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+            frame_payload = msgspec.msgpack.encode(ConsoleWritePacket(data=chunk))
 
             send_ok = await self.serial_flow.send(
                 Command.CMD_CONSOLE_WRITE.value,
@@ -131,8 +129,8 @@ class ConsoleComponent:
                 if not chunk:
                     continue
 
-                # [SIL-2] Use structured packet encoding
-                frame_payload = ConsoleWritePacket(data=chunk).encode()
+                # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+                frame_payload = msgspec.msgpack.encode(ConsoleWritePacket(data=chunk))
 
                 send_ok = await self.serial_flow.send(
                     Command.CMD_CONSOLE_WRITE.value,

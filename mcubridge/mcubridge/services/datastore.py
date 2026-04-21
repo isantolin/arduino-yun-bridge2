@@ -50,8 +50,9 @@ class DatastoreComponent:
     async def handle_put(self, seq_id: int, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
         try:
-            packet = DatastorePutPacket.decode(payload, Command.CMD_DATASTORE_PUT)
-        except ValueError:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=DatastorePutPacket)
+        except (ValueError, msgspec.DecodeError):
             logger.warning("Malformed DatastorePutPacket payload: %s", payload.hex())
             return False
 
@@ -66,8 +67,9 @@ class DatastoreComponent:
     async def handle_get_request(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
         try:
-            packet = DatastoreGetPacket.decode(payload, Command.CMD_DATASTORE_GET)
-        except ValueError:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=DatastoreGetPacket)
+        except (ValueError, msgspec.DecodeError):
             logger.warning(
                 "Malformed DATASTORE_GET payload: %s",
                 payload.hex() if payload else "(empty)",
@@ -92,8 +94,8 @@ class DatastoreComponent:
             )
             value_bytes = value_bytes[:255]
 
-        # [SIL-2] Use structured response packet
-        response_payload = DatastoreGetResponsePacket(value=value_bytes).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        response_payload = msgspec.msgpack.encode(DatastoreGetResponsePacket(value=value_bytes))
 
         send_ok = await self.serial_flow.send(
             Command.CMD_DATASTORE_GET_RESP.value,

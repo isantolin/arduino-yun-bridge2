@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import msgspec
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -132,7 +133,7 @@ class SerialFlowController:
             )
             return
 
-        payload = AckPacket(command_id=command_id).encode()
+        payload = msgspec.msgpack.encode(AckPacket(command_id=command_id))
         try:
             await sender(status.value, payload)
         except (OSError, RuntimeError, ValueError) as exc:
@@ -176,8 +177,8 @@ class SerialFlowController:
             ack_target = pending.command_id
             if payload:
                 try:
-                    ack_target = AckPacket.decode(payload).command_id
-                except ValueError:
+                    ack_target = msgspec.msgpack.decode(payload, type=AckPacket).command_id
+                except (ValueError, msgspec.MsgspecError):
                     pass
             if ack_target != pending.command_id:
                 return
@@ -201,8 +202,8 @@ class SerialFlowController:
                 should_reject = True
             else:
                 try:
-                    should_reject = AckPacket.decode(payload).command_id == pending.command_id
-                except ValueError:
+                    should_reject = msgspec.msgpack.decode(payload, type=AckPacket).command_id == pending.command_id
+                except (ValueError, msgspec.MsgspecError):
                     # Non-protobuf (human-readable string) → reject only if binary
                     should_reject = not all(32 <= byte < 127 for byte in payload)
 

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
+import msgspec
 from aiomqtt.message import Message
 
 from mcubridge.protocol import protocol
@@ -76,7 +77,8 @@ class FileComponent:
     async def handle_write(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_WRITE from MCU."""
         try:
-            packet = FileWritePacket.decode(payload)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileWritePacket)
             path = self._get_safe_path(packet.path)
             if not path:
                 await self.serial_flow.send(Status.ERROR.value, b"Invalid path")
@@ -89,7 +91,7 @@ class FileComponent:
             self._metadata_cache.pop(str(path), None)
             await self.serial_flow.send(Status.OK.value, b"")
             return True
-        except (ValueError, OSError) as e:
+        except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File write failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]
             await self.serial_flow.send(Status.ERROR.value, err_payload)
@@ -98,7 +100,8 @@ class FileComponent:
     async def handle_read(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_FILE_READ from MCU."""
         try:
-            packet = FileReadPacket.decode(payload)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileReadPacket)
             path = self._get_safe_path(packet.path)
             if not path or not path.is_file():
                 await self.serial_flow.send(Status.ERROR.value, b"File not found")
@@ -109,15 +112,15 @@ class FileComponent:
                 "mtime": path.stat().st_mtime,
             }
 
-            # [SIL-2] Use FileReadResponsePacket for consistent framing
+            # [SIL-2] Use direct msgspec.msgpack.encode for response
             if not data:
-                response_packet = FileReadResponsePacket(content=b"")
-                await self.serial_flow.send(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
+                response_payload = msgspec.msgpack.encode(FileReadResponsePacket(content=b""))
+                await self.serial_flow.send(Command.CMD_FILE_READ_RESP.value, response_payload)
             else:
                 for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                    response_packet = FileReadResponsePacket(content=bytes(chunk))
-                    await self.serial_flow.send(Command.CMD_FILE_READ_RESP.value, response_packet.encode())
-        except (ValueError, OSError) as e:
+                    response_payload = msgspec.msgpack.encode(FileReadResponsePacket(content=bytes(chunk)))
+                    await self.serial_flow.send(Command.CMD_FILE_READ_RESP.value, response_payload)
+        except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File read failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]
             await self.serial_flow.send(Status.ERROR.value, err_payload)
@@ -125,7 +128,8 @@ class FileComponent:
     async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_REMOVE from MCU."""
         try:
-            packet = FileRemovePacket.decode(payload)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileRemovePacket)
             path = self._get_safe_path(packet.path)
             if path and await self._remove_with_tracking(path):
                 self._metadata_cache.pop(str(path), None)
@@ -134,7 +138,7 @@ class FileComponent:
 
             await self.serial_flow.send(Status.ERROR.value, b"File not found")
             return False
-        except (ValueError, OSError) as e:
+        except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File remove failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]
             await self.serial_flow.send(Status.ERROR.value, err_payload)
@@ -148,11 +152,9 @@ class FileComponent:
             return False
 
         try:
-            packet = FileReadResponsePacket.decode(
-                payload,
-                Command.CMD_FILE_READ_RESP,
-            )
-        except ValueError:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileReadResponsePacket)
+        except (ValueError, msgspec.DecodeError):
             if not pending.future.done():
                 pending.future.set_exception(ValueError("Malformed MCU file read response"))
             return False
@@ -271,7 +273,8 @@ class FileComponent:
             )
             return False
 
-        packet = FileWritePacket(path=relative_path, data=payload).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        packet = msgspec.msgpack.encode(FileWritePacket(path=relative_path, data=payload))
         if not await self.serial_flow.send(Command.CMD_FILE_WRITE.value, packet):
             logger.error("MQTT write failed for %s: MCU rejected write", identifier)
             await self._publish_mqtt_error(
@@ -307,7 +310,8 @@ class FileComponent:
                 future=asyncio.get_running_loop().create_future(),
             )
             self._pending_mcu_read = pending
-            packet = FileReadPacket(path=relative_path).encode()
+            # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+            packet = msgspec.msgpack.encode(FileReadPacket(path=relative_path))
 
             try:
                 if not await self.serial_flow.send(Command.CMD_FILE_READ.value, packet):
@@ -364,7 +368,8 @@ class FileComponent:
             )
             return False
 
-        packet = FileRemovePacket(path=relative_path).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        packet = msgspec.msgpack.encode(FileRemovePacket(path=relative_path))
         if not await self.serial_flow.send(Command.CMD_FILE_REMOVE.value, packet):
             logger.error("MQTT remove failed for %s: MCU rejected remove", identifier)
             await self._publish_mqtt_error(

@@ -1,6 +1,6 @@
 from __future__ import annotations
-
 import msgspec
+
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
 

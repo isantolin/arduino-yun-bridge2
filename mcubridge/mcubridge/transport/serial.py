@@ -362,7 +362,8 @@ class SerialTransport:
         """Execute baudrate switch protocol."""
         logger.info("Negotiating baudrate switch to %d...", target_baud)
 
-        payload = structures.SetBaudratePacket(baudrate=target_baud).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        payload = msgspec.msgpack.encode(structures.SetBaudratePacket(baudrate=target_baud))
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(3),
             wait=tenacity.wait_exponential(

@@ -1,6 +1,7 @@
 """Unit tests for FileComponent MCU/MQTT behaviour (SIL-2)."""
 
 from __future__ import annotations
+import msgspec
 
 import asyncio
 from typing import Any
@@ -56,7 +57,7 @@ def file_component(
 
 
 def _build_write_payload(filename: str, data: bytes) -> bytes:
-    return structures.FileWritePacket(path=filename, data=data).encode()
+    return msgspec.msgpack.encode(structures.FileWritePacket(path=filename, data=data))
 
 
 def _get_publish_arg(mock_pub: Any, arg_idx: int, kw_name: str, call_idx: int = -1) -> Any:
@@ -171,7 +172,7 @@ async def test_handle_read_large_payload_chunking(
     large_data = b"X" * 128  # Exactly 2 chunks
     (tmp_path / "large.bin").write_bytes(large_data)
 
-    await component.handle_read(0, structures.FileReadPacket(path="large.bin").encode())
+    await component.handle_read(0, msgspec.msgpack.encode(structures.FileReadPacket(path="large.bin")))
 
     # Should send 2 DATA chunks and 1 final empty chunk (total 3 frames)
     assert serial_flow.send.call_count >= 2
@@ -226,7 +227,7 @@ async def test_handle_read_oserror_returns_false(
     monkeypatch.setattr(Path, "read_bytes", boom)
     await component.handle_read(
         0,
-        structures.FileReadPacket(path="file.txt").encode(),
+        msgspec.msgpack.encode(structures.FileReadPacket(path="file.txt")),
     )
     # Filter only send_frame calls
     error_sent = any(
@@ -272,7 +273,7 @@ async def test_handle_read_large_payload_truncation_reproduction(
     large_data = b"ABC" * 50  # 150 bytes
     (tmp_path / "trunc.bin").write_bytes(large_data)
 
-    await component.handle_read(0, structures.FileReadPacket(path="trunc.bin").encode())
+    await component.handle_read(0, msgspec.msgpack.encode(structures.FileReadPacket(path="trunc.bin")))
 
     # Total bytes sent in responses should match input
     total_received = b""
@@ -280,7 +281,7 @@ async def test_handle_read_large_payload_truncation_reproduction(
     for call in serial_flow.send.call_args_list or []:  # type: ignore
         if call.args[0] == Command.CMD_FILE_READ_RESP.value:  # type: ignore
             payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")  # type: ignore
-            total_received += structures.FileReadResponsePacket.decode(payload).content  # type: ignore
+            total_received += msgspec.msgpack.decode(payload, type=structures.FileReadResponsePacket).content  # type: ignore
 
     assert total_received == large_data
 
@@ -321,11 +322,11 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
         if command_id == Command.CMD_FILE_READ.value:
             await component.handle_read_response(
                 0,
-                structures.FileReadResponsePacket(content=b"mcu-data").encode(),
+                msgspec.msgpack.encode(structures.FileReadResponsePacket(content=b"mcu-data")),
             )
             await component.handle_read_response(
                 0,
-                structures.FileReadResponsePacket(content=b"").encode(),
+                msgspec.msgpack.encode(structures.FileReadResponsePacket(content=b"")),
             )
         return True
 

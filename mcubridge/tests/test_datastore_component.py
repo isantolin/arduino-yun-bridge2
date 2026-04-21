@@ -1,6 +1,7 @@
 """Unit tests for mcubridge.services.datastore (SIL-2)."""
 
 from __future__ import annotations
+import msgspec
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -59,7 +60,7 @@ async def test_handle_put_success(
     component = DatastoreComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
     key = "testkey"
     value = b"testvalue"
-    payload = structures.DatastorePutPacket(key=key, value=value).encode()
+    payload = msgspec.msgpack.encode(structures.DatastorePutPacket(key=key, value=value))
 
     await component.handle_put(0, payload)
 
@@ -76,7 +77,7 @@ async def test_handle_get_request_success(
 ) -> None:
     component = DatastoreComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
     runtime_state.datastore["mykey"] = "myvalue"
-    payload = structures.DatastoreGetPacket(key="mykey").encode()
+    payload = msgspec.msgpack.encode(structures.DatastoreGetPacket(key="mykey"))
 
     await component.handle_get_request(0, payload)
 

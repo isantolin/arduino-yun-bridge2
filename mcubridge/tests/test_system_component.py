@@ -1,6 +1,7 @@
 """Unit tests for mcubridge.services.system (SIL-2)."""
 
 from __future__ import annotations
+import msgspec
 
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -76,7 +77,7 @@ async def test_handle_get_free_memory_resp_publishes_with_pending_reply(
     serial_flow.send.assert_called_once()
 
     # 2. Simulate MCU response
-    payload = structures.FreeMemoryResponsePacket(value=1024).encode()
+    payload = msgspec.msgpack.encode(structures.FreeMemoryResponsePacket(value=1024))
     await component.handle_get_free_memory_resp(0, payload)
 
     assert mqtt_flow.publish.called
@@ -166,7 +167,9 @@ async def test_handle_get_version_resp_publishes_pending_and_updates_state(
     )
 
     # 2. Receive response
-    await component.handle_get_version_resp(0, structures.VersionResponsePacket(major=2, minor=0, patch=0).encode())
+    await component.handle_get_version_resp(
+        0, msgspec.msgpack.encode(structures.VersionResponsePacket(major=2, minor=0, patch=0))
+    )
 
     assert runtime_state.mcu_version == (2, 0, 0)
     assert mqtt_flow.publish.called

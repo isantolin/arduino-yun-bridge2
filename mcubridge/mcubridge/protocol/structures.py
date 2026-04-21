@@ -16,7 +16,6 @@ from typing import (
     Any,
     ClassVar,
     Final,
-    Type,
     TypeVar,
     cast,
 )
@@ -502,24 +501,6 @@ class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
     Encoded as MsgPack arrays (positional fields) for compact wire format.
     """
 
-    @classmethod
-    def decode(
-        cls: Type[T],
-        data: bytes | bytearray | memoryview,
-        command_id: int | None = None,
-    ) -> T:
-        try:
-            return msgspec.msgpack.decode(data if isinstance(data, bytes) else bytes(data), type=cls)
-        except (
-            msgspec.MsgspecError,
-            ValueError,
-            TypeError,
-        ) as e:
-            raise ValueError(f"Malformed {cls.__name__} payload: {bytes(data).hex()} - Error: {e}") from e
-
-    def encode(self) -> bytes:
-        return msgspec.msgpack.encode(self)
-
 
 # --- Binary Protocol Packets ---
 
@@ -710,35 +691,19 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
     arch: Annotated[int, msgspec.Meta(ge=0)]
     dig: Annotated[int, msgspec.Meta(ge=0)]
     ana: Annotated[int, msgspec.Meta(ge=0)]
-    feat: CapabilitiesFeatures
+    feat_mask: int
+
+    @property
+    def features(self) -> CapabilitiesFeatures:
+        """Expand bitmask into structured features object."""
+        feat_dict = _int_to_capabilities(self.feat_mask)
+        return msgspec.convert(feat_dict, CapabilitiesFeatures)
 
     @classmethod
-    def decode(cls, data: bytes | bytearray | memoryview, command_id: int | None = None) -> CapabilitiesPacket:
-        """Decode with bitmask→CapabilitiesFeatures conversion for feat field."""
-        try:
-            raw: list[int] = msgspec.msgpack.decode(data if isinstance(data, bytes) else bytes(data), type=list[int])
-            feat_dict = _int_to_capabilities(raw[4])
-            return cls(
-                ver=raw[0],
-                arch=raw[1],
-                dig=raw[2],
-                ana=raw[3],
-                feat=msgspec.convert(feat_dict, CapabilitiesFeatures),
-            )
-        except (msgspec.MsgspecError, ValueError, TypeError, IndexError) as e:
-            raise ValueError(f"Malformed CapabilitiesPacket payload: {bytes(data).hex()} - Error: {e}") from e
-
-    def encode(self) -> bytes:
-        """Encode with CapabilitiesFeatures→bitmask conversion for feat field."""
-        return msgspec.msgpack.encode(
-            [
-                self.ver,
-                self.arch,
-                self.dig,
-                self.ana,
-                _capabilities_to_int(msgspec.structs.asdict(self.feat)),
-            ]
-        )
+    def from_parts(cls, ver: int, arch: int, dig: int, ana: int, features: CapabilitiesFeatures) -> CapabilitiesPacket:
+        """Factory to create packet from expanded features."""
+        mask = _capabilities_to_int(msgspec.structs.asdict(features))
+        return cls(ver=ver, arch=arch, dig=dig, ana=ana, feat_mask=mask)
 
 
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.

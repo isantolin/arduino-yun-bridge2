@@ -227,55 +227,41 @@ class BridgeDaemon:
         min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF,
         max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
     ) -> None:
-        """Lightweight supervisor with Circuit Breaker logic."""
+        """Lightweight supervisor with Circuit Breaker logic (SIL 2)."""
         # [SIL-2] Circuit Breaker: Stop after 10 consecutive failures at max backoff
         # to prevent infinite CPU thrashing on persistent hardware failure.
         max_consecutive_max_backoff = 10
 
-        class _CircuitBreakerRetry(tenacity.retry_base):
-            def __init__(self) -> None:
-                self.consecutive_max_backoff = 0
-
-            def __call__(self, retry_state: tenacity.RetryCallState) -> bool:
-                if not retry_state.outcome or not retry_state.outcome.failed:
-                    return False
-
-                exc = retry_state.outcome.exception()
-                # Bypass retry on fatal exceptions and asyncio cancellation
-                if isinstance(exc, (*fatal_exceptions, asyncio.CancelledError)):
-                    return False
-
-                if retry_state.idle_for >= max_backoff:
-                    self.consecutive_max_backoff += 1
-                else:
-                    self.consecutive_max_backoff = 0
-
-                if self.consecutive_max_backoff >= max_consecutive_max_backoff:
-                    logger.critical(
-                        "CIRCUIT BREAKER: Task '%s' tripped after %d failures at max backoff. "
-                        "Marking as UNRECOVERABLE.",
-                        name,
-                        max_consecutive_max_backoff,
-                    )
-                    return False
-                return True
-
-        stop = tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never
+        def _circuit_breaker(rs: tenacity.RetryCallState) -> bool:
+            if not rs.outcome or not rs.outcome.failed:
+                return False
+            exc = rs.outcome.exception()
+            if isinstance(exc, (*fatal_exceptions, asyncio.CancelledError)):
+                return False
+            # Check for consecutive max backoff hits
+            if rs.idle_for >= max_backoff and rs.attempt_number >= max_consecutive_max_backoff:
+                logger.critical(
+                    "CIRCUIT BREAKER: Task '%s' tripped after repeated failures at max backoff.",
+                    name,
+                )
+                return False
+            return True
 
         retryer = tenacity.AsyncRetrying(
-            stop=stop,
+            stop=tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never,
             wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
-            retry=_CircuitBreakerRetry(),
+            retry=_circuit_breaker,
+            before_sleep=lambda rs: self.state.record_supervisor_failure(
+                name,
+                backoff=float(rs.next_action.sleep if rs.next_action else 0.0),
+                exc=rs.outcome.exception() if rs.outcome else None,
+            ),
             reraise=True,
         )
 
         async for attempt in retryer:
             with attempt:
-                try:
-                    await factory()
-                except SUPERVISOR_RECOVERABLE_EXCEPTIONS as exc:
-                    self.state.record_supervisor_failure(name, backoff=0.0, exc=exc)
-                    raise
+                await factory()
 
 
 app = typer.Typer(help="Arduino MCU Bridge Daemon v2", add_completion=False)

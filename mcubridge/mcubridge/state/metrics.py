@@ -17,6 +17,14 @@ class DaemonMetrics:
     def __init__(self, registry: CollectorRegistry | None = None) -> None:
         self.registry = registry or CollectorRegistry()
 
+        # Supervisor Metrics
+        self.supervisor_failures = Counter(
+            "mcubridge_supervisor_failures_total",
+            "Total task failures managed by the orchestrator",
+            ["task"],
+            registry=self.registry,
+        )
+
         # MQTT Metrics
         self.mqtt_messages_published = Counter(
             "mcubridge_mqtt_messages_published_total",

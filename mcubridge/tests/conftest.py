@@ -1,6 +1,7 @@
 """Pytest configuration for MCU Bridge tests."""
 
 from __future__ import annotations
+import msgspec
 
 import asyncio
 import importlib.util
@@ -355,7 +356,6 @@ def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
 
 @pytest.fixture
 def real_config():
-    import msgspec
     from mcubridge.config import settings
 
     raw = settings.get_default_config()

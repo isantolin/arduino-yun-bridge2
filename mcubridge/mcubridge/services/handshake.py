@@ -17,7 +17,6 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import msgspec
-import msgspec.msgpack
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.constant_time import bytes_eq
@@ -56,7 +55,6 @@ EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
 AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 
 logger = structlog.get_logger("mcubridge.service.handshake")
-_msgpack_enc = msgspec.msgpack.Encoder()
 
 
 def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
@@ -121,11 +119,14 @@ class SerialHandshakeManager:
         self._acknowledge_frame = acknowledge_frame
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
-        self._reset_payload = HandshakeConfigPacket(
-            ack_timeout_ms=self._timing.ack_timeout_ms,
-            ack_retry_limit=self._timing.retry_limit,
-            response_timeout_ms=self._timing.response_timeout_ms,
-        ).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        self._reset_payload = msgspec.msgpack.encode(
+            HandshakeConfigPacket(
+                ack_timeout_ms=self._timing.ack_timeout_ms,
+                ack_retry_limit=self._timing.retry_limit,
+                response_timeout_ms=self._timing.response_timeout_ms,
+            )
+        )
         self._capabilities_future: asyncio.Future[bytes] | None = None
         self.fsm_state = self.STATE_UNSYNCHRONIZED
 
@@ -233,7 +234,8 @@ class SerialHandshakeManager:
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
-        sync_payload = LinkSyncPacket(nonce=nonce, tag=our_tag).encode()
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        sync_payload = msgspec.msgpack.encode(LinkSyncPacket(nonce=nonce, tag=our_tag))
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
             self.clear_handshake_expectations()
@@ -297,10 +299,11 @@ class SerialHandshakeManager:
             self._state.handshake_rate_until = now + rate_limit
 
         try:
-            sync_pkt = LinkSyncPacket.decode(payload)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            sync_pkt = msgspec.msgpack.decode(payload, type=LinkSyncPacket)
             nonce = bytes(sync_pkt.nonce)
             tag_bytes = bytes(sync_pkt.tag)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, msgspec.DecodeError):
             self._logger.warning(
                 "LINK_SYNC_RESP msgpack decode failed (len=%d)",
                 len(payload),
@@ -407,16 +410,17 @@ class SerialHandshakeManager:
 
     def _parse_capabilities(self, payload: bytes) -> None:
         try:
-            cap = CapabilitiesPacket.decode(payload)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            cap = msgspec.msgpack.decode(payload, type=CapabilitiesPacket)
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
                 board_arch=cap.arch,
                 num_digital_pins=cap.dig,
                 num_analog_inputs=cap.ana,
-                features=cap.feat,
+                features=cap.features,
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
-        except (ValueError, TypeError, ValueError, KeyError) as exc:
+        except (ValueError, TypeError, msgspec.DecodeError, KeyError) as exc:
             self._logger.warning("Failed to unpack capabilities: %s", exc)
 
     async def handle_link_reset_resp(self, seq_id: int, payload: bytes) -> bool:
@@ -542,9 +546,10 @@ class SerialHandshakeManager:
         }
         if extra:
             payload |= extra
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
         message = QueuedPublish(
             topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
-            payload=_msgpack_enc.encode(payload),
+            payload=msgspec.msgpack.encode(payload),
             content_type="application/msgpack",
             user_properties=(("bridge-event", "handshake"),),
         )

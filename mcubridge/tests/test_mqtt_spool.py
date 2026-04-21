@@ -1,6 +1,7 @@
 """Tests for MQTT publish spool durability and fallback."""
 
 from __future__ import annotations
+import msgspec
 
 import logging
 from pathlib import Path
@@ -91,7 +92,6 @@ def test_spool_skips_corrupt_rows(tmp_path: Path, caplog: pytest.LogCaptureFixtu
     spool.append(first)
     spool.append(second)
 
-    import msgspec
     from typing import Any
 
     # Capture original to avoid infinite recursion

@@ -1,6 +1,7 @@
 """Extra edge-case tests for DatastoreComponent (SIL-2)."""
 
 from __future__ import annotations
+import msgspec
 
 import os
 import time
@@ -77,7 +78,7 @@ async def test_datastore_handle_get_truncation() -> None:
 
         from mcubridge.protocol.structures import DatastoreGetPacket
 
-        payload = DatastoreGetPacket(key="long_key").encode()
+        payload = msgspec.msgpack.encode(DatastoreGetPacket(key="long_key"))
 
         result = await comp.handle_get_request(0, payload)
         assert result is True

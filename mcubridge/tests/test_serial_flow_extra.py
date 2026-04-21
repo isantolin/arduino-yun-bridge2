@@ -1,12 +1,13 @@
-"""Extra coverage for mcubridge.services.serial_flow."""
-
+from __future__ import annotations
+import msgspec
 import logging
 from unittest.mock import AsyncMock, patch
-
 import pytest
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import AckPacket, PendingCommand
 from mcubridge.services.serial_flow import SerialFlowController
+
+"""Extra coverage for mcubridge.services.serial_flow."""
 
 
 @pytest.mark.asyncio
@@ -40,7 +41,7 @@ async def test_serial_flow_on_frame_ack_mismatch() -> None:
     flow._current = pending  # type: ignore[reportPrivateUsage]
 
     # ACK for different command
-    payload = AckPacket(command_id=Command.CMD_GET_FREE_MEMORY.value).encode()
+    payload = msgspec.msgpack.encode(AckPacket(command_id=Command.CMD_GET_FREE_MEMORY.value))
     flow.on_frame_received(Status.ACK.value, 0, payload)
     assert not pending.ack_received
 

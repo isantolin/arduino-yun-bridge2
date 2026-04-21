@@ -5,6 +5,7 @@ all mcubridge modules.
 """
 
 from __future__ import annotations
+import msgspec
 from typing import Any
 
 import asyncio
@@ -14,7 +15,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import psutil
-import msgspec
 import pytest
 from mcubridge.protocol.protocol import (
     Command,
@@ -744,7 +744,7 @@ class TestProcessComponent:
     async def test_handle_kill_no_ack(self: Any, _process: Any):
         from mcubridge.protocol.structures import ProcessKillPacket
 
-        payload = ProcessKillPacket(pid=999).encode()
+        payload = msgspec.msgpack.encode(ProcessKillPacket(pid=999))
         result = await _process.handle_kill(0, payload, send_ack=False)
         assert result is False
 
@@ -833,7 +833,7 @@ class TestPinComponent:
             # Test without pending requests
             from mcubridge.protocol.structures import DigitalReadResponsePacket
 
-            payload = DigitalReadResponsePacket(value=1).encode()
+            payload = msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
             await comp.handle_digital_read_resp(0, payload)
             comp.mqtt_flow.publish.assert_called_once()
         finally:
@@ -983,8 +983,8 @@ class TestFileComponent:
 
             payload = FileReadPacket(
                 path="/nonexistent_file_12345.txt",
-            ).encode()
-            await comp.handle_read(0, payload)
+            )
+            await comp.handle_read(0, msgspec.msgpack.encode(payload))
             comp.serial_flow.send.assert_called()
         finally:
             state.cleanup()
@@ -1045,7 +1045,7 @@ class TestSystemComponent:
 
             comp = SystemComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
             # Provide valid encoded packet
-            payload = VersionResponsePacket(major=1, minor=2, patch=3).encode()
+            payload = msgspec.msgpack.encode(VersionResponsePacket(major=1, minor=2, patch=3))
             await comp.handle_get_version_resp(0, payload)
             comp.mqtt_flow.publish.assert_called()
         finally:
@@ -1215,7 +1215,7 @@ class TestRuntimeStateEdges:
     def test_enqueue_mailbox_overflow(self: Any, state: Any):
         # Fill up to limit
         for i in range(state.mailbox_queue_limit + 1):
-            state.mailbox_queue.append(f"msg{i}".encode())
+            state.mailbox_queue.append(f"msg{i}")
 
     def test_pop_mailbox_message(self: Any, state: Any):
         state.mailbox_queue.append(b"message1")

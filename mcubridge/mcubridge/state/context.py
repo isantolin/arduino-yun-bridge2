@@ -387,6 +387,8 @@ class RuntimeState(msgspec.Struct):
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
     mcu_status_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})
     supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=lambda: {})
+    supervisor_failures: int = 0
+    last_supervisor_error: str | None = None
 
     # Metrics (Synchronized with Prometheus)
     mqtt_messages_published: int = 0
@@ -413,13 +415,23 @@ class RuntimeState(msgspec.Struct):
         """Return the current allowed command list from policy."""
         return self.allowed_policy.as_tuple()
 
-    def record_supervisor_failure(self, name: str, backoff: float, exc: Exception) -> None:
+    def record_supervisor_failure(self, name: str, backoff: float, exc: BaseException | None) -> None:
         """Record an internal service task failure."""
         stats = self.supervisor_stats.setdefault(name, SupervisorStats())
         stats.restarts += 1
         stats.last_failure_unix = time.time()
-        stats.last_exception = f"{exc.__class__.__name__}: {exc}"
+        stats.last_exception = f"{exc.__class__.__name__}: {exc}" if exc else "unknown"
         stats.backoff_seconds = backoff
+
+        self.supervisor_failures += 1
+        self.metrics.supervisor_failures.labels(task=name).inc()
+        self.last_supervisor_error = f"{name}: {exc}" if exc else f"{name}: unknown"
+        logger.warning(
+            "Supervisor task '%s' failed. Backoff: %.2fs. Error: %s",
+            name,
+            backoff,
+            exc,
+        )
 
     def configure(self, config: RuntimeConfig) -> None:
         # [SIL-2] Close existing persistent queues if they are being replaced

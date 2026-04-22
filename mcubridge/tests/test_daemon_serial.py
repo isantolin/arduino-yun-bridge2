@@ -64,7 +64,7 @@ async def test_serial_reader_task_reconnects():
         nonlocal sleep_count
         sleep_count += 1
         if sleep_count > 100:
-            raise asyncio.CancelledError("Break Loop")
+            raise RuntimeError("Break Loop")
         return None
 
     mock_sleep = AsyncMock(side_effect=mock_sleep_fn)
@@ -76,6 +76,7 @@ async def test_serial_reader_task_reconnects():
         ),
         patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
         patch("asyncio.sleep", mock_sleep),
+        patch.object(SerialTransport, "_toggle_dtr", AsyncMock()),
     ):
         transport = SerialTransport(config, state, service)
         try:

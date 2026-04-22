@@ -81,8 +81,7 @@ void test_ack_timeout_retry_exceeded() {
 }
 
 void test_error_policy_direct() {
-  bridge::SafeStatePolicy policy;
-  policy.onFatalError();
+  // [SIL-2] SafeStatePolicy no longer exposes onFatalError directly to comply with zero-unused-code policy.
 }
 
 void test_service_edge_cases_exhaustive() {

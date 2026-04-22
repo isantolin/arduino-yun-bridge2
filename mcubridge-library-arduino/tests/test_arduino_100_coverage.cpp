@@ -276,8 +276,8 @@ void test_bridge_api_extended() {
 
   // sendFrame variants
   uint8_t d[] = {0};
-  Bridge.sendFrame(rpc::CommandId::CMD_XOFF);
-  Bridge.sendFrame(rpc::StatusCode::STATUS_ACK, 42,
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_XOFF);
+  (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ACK, 42,
                    etl::span<const uint8_t>(d, 1));
 }
 

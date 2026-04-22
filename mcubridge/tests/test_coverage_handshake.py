@@ -114,7 +114,8 @@ async def test_handle_link_sync_resp_auth_mismatch(handshake_mgr: SerialHandshak
 @pytest.mark.asyncio
 async def test_fetch_capabilities_send_fail(handshake_mgr: SerialHandshakeManager):
     cast(AsyncMock, handshake_mgr._send_frame).return_value = False
-    ok = await handshake_mgr._fetch_capabilities()
+    with patch("asyncio.sleep", return_value=None):
+        ok = await handshake_mgr._fetch_capabilities()
     assert ok is False
 
 @pytest.mark.asyncio

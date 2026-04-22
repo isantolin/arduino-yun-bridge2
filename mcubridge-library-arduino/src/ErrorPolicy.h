@@ -16,12 +16,6 @@ class SafeStatePolicy {
  public:
   // Defined in Bridge.cpp to avoid circular dependency
   static void handle(::BridgeClass& bridge, const etl::exception& e);
-
-  void onFatalError() {
-    // [SIL-2] Deterministic safe-state entry on fatal hardware/logic failure
-    ::pinMode(13, OUTPUT);
-    ::digitalWrite(13, HIGH);
-  }
 };
 
 }  // namespace bridge

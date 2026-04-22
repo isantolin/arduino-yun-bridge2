@@ -67,7 +67,10 @@ void test_bridge_exhaustive_dispatch() {
     ba.dispatch(f);
   };
 
-  // System
+  // Fill the jump table range 0x40 - 0xBF
+  for (uint16_t i = 0x40; i <= 0xBF; ++i) dispatch_raw(i);
+
+  // Explicit system payloads
   dispatch_payload(rpc::CommandId::CMD_GET_VERSION,
                    rpc::payload::VersionResponse{2, 8, 5});
   dispatch_payload(rpc::CommandId::CMD_GET_FREE_MEMORY,
@@ -216,6 +219,68 @@ void test_bridge_compressed() {
   ba.dispatch(f);
 }
 
+void test_bridge_hal_callbacks() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+
+  // Explicitly call all timer-related internal callbacks
+  ba.onAckTimeout();
+  ba._onRxDedupe();
+  ba._onBaudrateChange();
+  ba.onStartupStabilized();
+}
+
+void test_bridge_packet_rx_exhaustive() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+
+  // 1. Corrupt Frame (Parser failure)
+  uint8_t c[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  ba._onPacketReceived(etl::span<const uint8_t>(c, 8));
+
+  // 2. Valid frame but duplicate
+  ba.setSynchronized();
+  rpc::Frame f = {};
+  f.header.command_id = (uint16_t)rpc::CommandId::CMD_GET_VERSION;
+  f.header.sequence_id = 42;
+  uint8_t buf[128];
+  size_t len = rpc::FrameParser::serialize(f, etl::span<uint8_t>(buf, 128));
+  ba._onPacketReceived(etl::span<const uint8_t>(buf, len));
+  ba._onPacketReceived(etl::span<const uint8_t>(buf, len));  // Duplicate
+}
+
+void test_bridge_dispatch_all() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  for (uint16_t i = 0x40; i <= 0xBF; ++i) {
+    rpc::Frame f = {};
+    f.header.command_id = i;
+    ba.dispatch(f);
+  }
+}
+
+void test_bridge_api_extended() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+
+  // setSharedSecret with actual data
+  uint8_t secret[] = {1, 2, 3};
+  ba.setSharedSecret(etl::span<const uint8_t>(secret, 3));
+  TEST_ASSERT(!ba.isSharedSecretEmpty());
+
+  // sendFrame variants
+  uint8_t d[] = {0};
+  Bridge.sendFrame(rpc::CommandId::CMD_XOFF);
+  Bridge.sendFrame(rpc::StatusCode::STATUS_ACK, 42,
+                   etl::span<const uint8_t>(d, 1));
+}
+
 }  // namespace
 
 void setUp(void) {}
@@ -230,5 +295,9 @@ int main(void) {
   RUN_TEST(test_services_exhaustive);
   RUN_TEST(test_bridge_error_handling);
   RUN_TEST(test_bridge_compressed);
+  RUN_TEST(test_bridge_hal_callbacks);
+  RUN_TEST(test_bridge_packet_rx_exhaustive);
+  RUN_TEST(test_bridge_dispatch_all);
+  RUN_TEST(test_bridge_api_extended);
   return UNITY_END();
 }

@@ -1,19 +1,20 @@
 #include "hal.h"
+
+#include <etl/algorithm.h>
+#include <etl/binary.h>
+#include <etl/bitset.h>
+#include <etl/iterator.h>
+#include <etl/string.h>
+#include <etl/to_string.h>
+
 #include "ArchTraits.h"
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
-#include <etl/bitset.h>
-#include <etl/string.h>
-#include <etl/algorithm.h>
-#include <etl/to_string.h>
-#include <etl/binary.h>
-#include <etl/iterator.h>
-
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" {
-  extern char *__brkval;
-  extern char __heap_start;
+extern char* __brkval;
+extern char __heap_start;
 }
 #endif
 
@@ -22,17 +23,26 @@ namespace bridge::hal {
 namespace {
 using Traits = CurrentArchTraits;
 
-constexpr uint8_t CURRENT_ARCH = (Traits::id == ArchId::ARCH_AVR) ? rpc::RPC_ARCH_AVR :
-                                 (Traits::id == ArchId::ARCH_HOST) ? rpc::RPC_ARCH_SAMD : 0;
+constexpr uint8_t CURRENT_ARCH =
+    (Traits::id == ArchId::ARCH_AVR)    ? rpc::RPC_ARCH_AVR
+    : (Traits::id == ArchId::ARCH_HOST) ? rpc::RPC_ARCH_SAMD
+                                        : 0;
 
-constexpr uint8_t DIGITAL_PINS = (Traits::id == ArchId::ARCH_AVR) ? static_cast<uint8_t>(bridge::config::DIGITAL_PINS) :
-                                 (Traits::id == ArchId::ARCH_HOST) ? static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS) :
-                                 static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS);
+constexpr uint8_t DIGITAL_PINS =
+    (Traits::id == ArchId::ARCH_AVR)
+        ? static_cast<uint8_t>(bridge::config::DIGITAL_PINS)
+    : (Traits::id == ArchId::ARCH_HOST)
+        ? static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS)
+        : static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS);
 
-constexpr uint8_t ANALOG_PINS = (Traits::id == ArchId::ARCH_AVR) ? static_cast<uint8_t>(bridge::config::ANALOG_PINS) :
-                                (Traits::id == ArchId::ARCH_HOST) ? static_cast<uint8_t>(bridge::config::SAMD_ANALOG_PINS) : 0;
+constexpr uint8_t ANALOG_PINS =
+    (Traits::id == ArchId::ARCH_AVR)
+        ? static_cast<uint8_t>(bridge::config::ANALOG_PINS)
+    : (Traits::id == ArchId::ARCH_HOST)
+        ? static_cast<uint8_t>(bridge::config::SAMD_ANALOG_PINS)
+        : 0;
 
-}
+}  // namespace
 
 bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
 
@@ -40,7 +50,7 @@ namespace {
 template <size_t I>
 void _forceSinglePin() {
   if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-    ::pinMode(static_cast<uint8_t>(I), OUTPUT); 
+    ::pinMode(static_cast<uint8_t>(I), OUTPUT);
     ::digitalWrite(static_cast<uint8_t>(I), LOW);
   } else {
     ::pinMode(static_cast<uint8_t>(I), INPUT_PULLUP);
@@ -51,13 +61,14 @@ template <size_t... Is>
 void _forceSafePins(etl::index_sequence<Is...>) {
   (_forceSinglePin<Is>(), ...);
 }
-}
+}  // namespace
 
 void forceSafeState() {
   if constexpr (Traits::id == ArchId::ARCH_AVR) {
     _forceSafePins(etl::make_index_sequence<bridge::config::DIGITAL_PINS>{});
   } else {
-    _forceSafePins(etl::make_index_sequence<bridge::config::SAMD_DIGITAL_PINS>{});
+    _forceSafePins(
+        etl::make_index_sequence<bridge::config::SAMD_DIGITAL_PINS>{});
   }
 }
 
@@ -65,7 +76,10 @@ uint16_t getFreeMemory() {
   if constexpr (Traits::id == ArchId::ARCH_AVR) {
 #if defined(ARDUINO_ARCH_AVR)
     int v;
-    return static_cast<uint16_t>(reinterpret_cast<uintptr_t>(&v) - (__brkval == 0 ? reinterpret_cast<uintptr_t>(&__heap_start) : reinterpret_cast<uintptr_t>(__brkval)));
+    return static_cast<uint16_t>(
+        reinterpret_cast<uintptr_t>(&v) -
+        (__brkval == 0 ? reinterpret_cast<uintptr_t>(&__heap_start)
+                       : reinterpret_cast<uintptr_t>(__brkval)));
 #else
     return Traits::default_free_memory;
 #endif
@@ -88,7 +102,8 @@ void init() {
 #endif
     } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
-      esp_task_wdt_init(4, true); esp_task_wdt_add(nullptr);
+      esp_task_wdt_init(4, true);
+      esp_task_wdt_add(nullptr);
 #endif
     }
   }
@@ -99,20 +114,29 @@ bool hasSD() { return false; }
 #endif
 
 #if !defined(BRIDGE_HOST_TEST)
-etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
-  (void)path; (void)data; return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+etl::expected<void, HalError> writeFile(etl::string_view path,
+                                        etl::span<const uint8_t> data) {
+  (void)path;
+  (void)data;
+  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 #endif
 
 #if !defined(BRIDGE_HOST_TEST)
-etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path, size_t offset, etl::span<uint8_t> buffer) {
-  (void)path; (void)offset; (void)buffer; return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
+                                                   size_t offset,
+                                                   etl::span<uint8_t> buffer) {
+  (void)path;
+  (void)offset;
+  (void)buffer;
+  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 #endif
 
 #if !defined(BRIDGE_HOST_TEST)
 etl::expected<void, HalError> removeFile(etl::string_view path) {
-  (void)path; return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+  (void)path;
+  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 #endif
 
@@ -140,7 +164,10 @@ uint32_t getCapabilities() {
   return static_cast<uint32_t>(caps.to_ulong());
 }
 
-void getPinCounts(uint8_t& digital, uint8_t& analog) { digital = DIGITAL_PINS; analog = ANALOG_PINS; }
+void getPinCounts(uint8_t& digital, uint8_t& analog) {
+  digital = DIGITAL_PINS;
+  analog = ANALOG_PINS;
+}
 uint8_t getArchId() { return CURRENT_ARCH; }
 
 }  // namespace bridge::hal

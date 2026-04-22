@@ -1,10 +1,10 @@
 #ifndef RLE_H
 #define RLE_H
 
+#include <etl/span.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <etl/span.h>
 #include "rpc_protocol.h"
 
 /**
@@ -20,6 +20,6 @@ constexpr uint8_t SINGLE_ESCAPE_MARKER = rpc::RPC_RLE_SINGLE_ESCAPE_MARKER;
 
 size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst);
 
-} // namespace rle
+}  // namespace rle
 
-#endif // RLE_H
+#endif  // RLE_H

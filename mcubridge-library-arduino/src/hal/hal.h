@@ -8,15 +8,14 @@
 #include <Arduino.h>
 #undef min
 #undef max
-#include <stdint.h>
-#include <etl/span.h>
-
 #include <etl/expected.h>
+#include <etl/span.h>
 #include <etl/string_view.h>
+#include <stdint.h>
 
 namespace bridge {
-  inline uint32_t now_ms() { return ::millis(); }
-}
+inline uint32_t now_ms() { return ::millis(); }
+}  // namespace bridge
 
 namespace bridge::hal {
 
@@ -44,7 +43,8 @@ struct ChunkResult {
 void forceSafeState();
 
 /**
- * @brief Get the amount of free RAM available. * @return Free bytes or UINT16_MAX if detection fails.
+ * @brief Get the amount of free RAM available. * @return Free bytes or
+ * UINT16_MAX if detection fails.
  */
 uint16_t getFreeMemory();
 
@@ -74,15 +74,15 @@ bool hasSPI();
 /**
  * @brief Write data to a file on the SD card.
  */
-etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data);
+etl::expected<void, HalError> writeFile(etl::string_view path,
+                                        etl::span<const uint8_t> data);
 
 /**
  * @brief Read a chunk from a file on the SD card.
  */
-etl::expected<ChunkResult, HalError> readFileChunk(
-    etl::string_view path,
-    size_t offset,
-    etl::span<uint8_t> buffer);
+etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
+                                                   size_t offset,
+                                                   etl::span<uint8_t> buffer);
 
 /**
  * @brief Remove a file from the SD card.

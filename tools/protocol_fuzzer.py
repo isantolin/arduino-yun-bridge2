@@ -8,7 +8,6 @@ import asyncio
 import random
 import struct
 import argparse
-import sys
 from binascii import crc32
 from cobs import cobs
 import serial_asyncio_fast
@@ -51,7 +50,7 @@ class ProtocolFuzzer:
 
     async def fuzz_iteration(self):
         self.seq_id = (self.seq_id + 1) & 0xFFFF
-        
+
         mode = random.choice([
             "valid_ping",
             "invalid_crc",
@@ -68,7 +67,7 @@ class ProtocolFuzzer:
             # CMD_PING is usually 0x0001
             frame = self._build_raw_frame(0x0001, self.seq_id, b"\x01\x02\x03")
             await self.send_raw(frame)
-        
+
         elif mode == "invalid_crc":
             frame = self._build_raw_frame(0x0001, self.seq_id, b"bad_crc", override_crc=0xDEADBEEF)
             await self.send_raw(frame)
@@ -83,7 +82,7 @@ class ProtocolFuzzer:
 
         elif mode == "malformed_cobs":
             # COBS with 0x00 inside (illegal)
-            bad_data = b"\x03\x01\x00\x02" 
+            bad_data = b"\x03\x01\x00\x02"
             await self.send_raw(bad_data + FRAME_DELIMITER)
 
         elif mode == "oversized_payload":
@@ -102,19 +101,19 @@ class ProtocolFuzzer:
 
     async def run(self, iterations: int = 100):
         await self.connect()
-        
+
         success_count = 0
         latencies = []
-        
+
         for i in range(iterations):
             # Every 10 iterations, perform a health check
             if i % 10 == 0:
                 self.seq_id = (self.seq_id + 1) & 0xFFFF
                 ping_frame = self._build_raw_frame(0x0001, self.seq_id, b"PROBE")
-                
+
                 start_time = asyncio.get_event_loop().time()
                 await self.send_raw(ping_frame)
-                
+
                 try:
                     # Wait for any response (MCU usually ACKs or echoes)
                     # For stress, we just wait a bit to see if it responds within 50ms
@@ -123,18 +122,18 @@ class ProtocolFuzzer:
                     success_count += 1
                 except asyncio.TimeoutError:
                     logger.warning("health_probe_timeout", seq=self.seq_id)
-            
+
             await self.fuzz_iteration()
             await asyncio.sleep(0.005) # 100Hz+ stress
-            
+
         if latencies:
             avg_lat = sum(latencies) / len(latencies)
             max_lat = max(latencies)
-            logger.info("fuzzing_complete", 
-                        iterations=iterations, 
-                        health_success_rate=f"{(success_count/(iterations/10 or 1))*100:.1f}%",
-                        avg_latency_ms=f"{avg_lat*1000:.2f}",
-                        max_latency_ms=f"{max_lat*1000:.2f}")
+            logger.info("fuzzing_complete",
+                        iterations=iterations,
+                        health_success_rate=f"{(success_count / (iterations / 10 or 1)) * 100:.1f}%",
+                        avg_latency_ms=f"{avg_lat * 1000:.2f}",
+                        max_latency_ms=f"{max_lat * 1000:.2f}")
         else:
             logger.info("fuzzing_complete", iterations=iterations)
 

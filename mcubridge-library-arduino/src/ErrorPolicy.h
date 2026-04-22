@@ -1,37 +1,29 @@
 #ifndef BRIDGE_ERROR_POLICY_H
 #define BRIDGE_ERROR_POLICY_H
 
+#include <Arduino.h>
 #include <etl/exception.h>
-#include <etl/array.h>
-#include <etl/algorithm.h>
+
+class BridgeClass;  // Forward declaration (global)
 
 namespace bridge {
 
-struct SafeStatePolicy {
-  template <typename TBridge>
-  static void handle(TBridge& bridge, const etl::exception& e) {
-    (void)e;
-    bridge.enterSafeState();
+/**
+ * [SIL-2] SafeStatePolicy: Defines behavior for fatal system errors.
+ * Modernized to provide deterministic recovery or safe-state entry.
+ */
+class SafeStatePolicy {
+ public:
+  // Defined in Bridge.cpp to avoid circular dependency
+  static void handle(::BridgeClass& bridge, const etl::exception& e);
+
+  void onFatalError() {
+    // [SIL-2] Deterministic safe-state entry on fatal hardware/logic failure
+    ::pinMode(13, OUTPUT);
+    ::digitalWrite(13, HIGH);
   }
 };
 
-struct ResetPolicy {
-  template <typename TBridge>
-  static void handle(TBridge& bridge, const etl::exception& e) {
-    (void)bridge; (void)e;
-#if defined(ARDUINO_ARCH_AVR)
-#include <avr/wdt.h>
-    wdt_enable(WDTO_15MS);
-    // [SIL-2] Use ETL algorithm to wait for hardware watchdog (No Raw Loops).
-    static etl::array<volatile uint8_t, 1> sentinel = {0};
-    etl::for_each(sentinel.begin(), sentinel.end(), [](volatile uint8_t&){});
-    handle(bridge, e); // Safe terminal recursion until hardware reset.
-#elif defined(ARDUINO_ARCH_ESP32)
-    ESP.restart();
-#endif
-  }
-};
-
-} // namespace bridge
+}  // namespace bridge
 
 #endif

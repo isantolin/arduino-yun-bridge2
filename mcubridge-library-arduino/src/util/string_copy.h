@@ -4,6 +4,7 @@
 #include <etl/algorithm.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
+
 #include "hal/hal.h"
 
 namespace rpc {
@@ -22,7 +23,7 @@ inline void copy_string(etl::string_view src, char* dst, size_t dst_size) {
   dst[to_copy] = rpc::RPC_NULL_TERMINATOR;
 }
 
-} // namespace util
-} // namespace rpc
+}  // namespace util
+}  // namespace rpc
 
 #endif

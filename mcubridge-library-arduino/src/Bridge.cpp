@@ -42,15 +42,15 @@ void BridgeClass::registerObserver(BridgeObserver& observer) {
 }
 
 void BridgeClass::notify_observers(const MsgBridgeSynchronized& msg) {
-  etl::for_each(_observers.begin(), _observers.end(), [&msg](BridgeObserver* observer) {
-    observer->notification(msg);
-  });
+  etl::for_each(
+      _observers.begin(), _observers.end(),
+      [&msg](BridgeObserver* observer) { observer->notification(msg); });
 }
 
 void BridgeClass::notify_observers(const MsgBridgeLost& msg) {
-  etl::for_each(_observers.begin(), _observers.end(), [&msg](BridgeObserver* observer) {
-    observer->notification(msg);
-  });
+  etl::for_each(
+      _observers.begin(), _observers.end(),
+      [&msg](BridgeObserver* observer) { observer->notification(msg); });
 }
 
 BridgeClass::BridgeClass(Stream& stream)
@@ -189,13 +189,14 @@ bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
   const uint16_t cmd_id =
       frame.header.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
-  
-  auto it = etl::find(_rx_history.begin(), _rx_history.end(), frame.header.sequence_id);
+
+  auto it = etl::find(_rx_history.begin(), _rx_history.end(),
+                      frame.header.sequence_id);
   const bool is_duplicate = (it != _rx_history.end());
 
   const bridge::router::CommandContext ctx(
-      &frame, cmd_id, frame.header.sequence_id,
-      is_duplicate, rpc::requires_ack(cmd_id));
+      &frame, cmd_id, frame.header.sequence_id, is_duplicate,
+      rpc::requires_ack(cmd_id));
 
   if (!is_duplicate) {
     if (_rx_history.full()) _rx_history.pop();
@@ -223,12 +224,9 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
        /* 0x37: STATUS_NOT_IMPLEMENTED */ &BridgeClass::onUnknownCommand,
        /* 0x38: STATUS_ACK */ &BridgeClass::_handleStatusAck,
        /* 0x39 - 0x3F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
        /* 0x40: CMD_GET_VERSION */ &BridgeClass::_handleGetVersion,
        /* 0x41: CMD_GET_VERSION_RESP */ &BridgeClass::onUnknownCommand,
        /* 0x42: CMD_GET_FREE_MEMORY */ &BridgeClass::_handleGetFreeMemory,
@@ -254,30 +252,19 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
        /* 0x55: CMD_DIGITAL_READ_RESP */ &BridgeClass::onUnknownCommand,
        /* 0x56: CMD_ANALOG_READ_RESP */ &BridgeClass::onUnknownCommand,
        /* 0x57 - 0x5F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
        /* 0x60: CMD_CONSOLE_WRITE */ &BridgeClass::_handleConsoleWriteCommand,
        /* 0x61 - 0x6F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
        /* 0x70: CMD_DATASTORE_PUT */ &BridgeClass::onUnknownCommand,
        /* 0x71: CMD_DATASTORE_GET */ &BridgeClass::onUnknownCommand,
   /* 0x72: CMD_DATASTORE_GET_RESP */
@@ -287,18 +274,12 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
        &BridgeClass::onUnknownCommand,
 #endif
        /* 0x73 - 0x7F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
        /* 0x80: CMD_MAILBOX_READ */ &BridgeClass::onUnknownCommand,
        /* 0x81: CMD_MAILBOX_PROCESSED */ &BridgeClass::onUnknownCommand,
        /* 0x82: CMD_MAILBOX_AVAILABLE */ &BridgeClass::onUnknownCommand,
@@ -321,14 +302,10 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
        &BridgeClass::onUnknownCommand,
 #endif
        /* 0x86 - 0x8F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
        &BridgeClass::onUnknownCommand,
   /* 0x90: CMD_FILE_WRITE */
 #if BRIDGE_ENABLE_FILESYSTEM
@@ -355,16 +332,11 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
        &BridgeClass::onUnknownCommand,
 #endif
        /* 0x94 - 0x9F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
        &BridgeClass::onUnknownCommand,
        /* 0xA0: CMD_PROCESS_RESERVED */ &BridgeClass::onUnknownCommand,
        /* 0xA1: CMD_PROCESS_RUN_ASYNC */ &BridgeClass::onUnknownCommand,
@@ -389,14 +361,10 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
        &BridgeClass::onUnknownCommand,
 #endif
        /* 0xA7 - 0xAF */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
   /* 0xB0: CMD_SPI_BEGIN */
 #if BRIDGE_ENABLE_SPI
        &BridgeClass::_handleSpiBegin,
@@ -423,16 +391,11 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
        &BridgeClass::onUnknownCommand,
 #endif
        /* 0xB5 - 0xBF */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand}};
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
+       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand}};
 
   if (ctx.raw_command >= RANGE_START && ctx.raw_command <= RANGE_END) {
     (this->*(jump_table[ctx.raw_command - RANGE_START]))(ctx);
@@ -1032,3 +995,9 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const {
 void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
 void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
 
+namespace bridge {
+void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception& e) {
+  (void)e;
+  bridge.enterSafeState();
+}
+}  // namespace bridge

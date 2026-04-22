@@ -18,16 +18,16 @@
 
 /* Let wolfSSL handle types using architecture hints */
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
-    #define WC_16BIT_CPU
-    #define SIZEOF_INT 2
-    #define SIZEOF_SHORT 2
-    #define SIZEOF_LONG 4
-    #define SIZEOF_LONG_LONG 8
+#define WC_16BIT_CPU
+#define SIZEOF_INT 2
+#define SIZEOF_SHORT 2
+#define SIZEOF_LONG 4
+#define SIZEOF_LONG_LONG 8
 #endif
 
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
-    #define NO_64BIT
-    #undef TIME_OVERRIDES
+#define NO_64BIT
+#undef TIME_OVERRIDES
 #endif
 
 /* Features enabled for McuBridge */

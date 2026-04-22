@@ -1,30 +1,26 @@
-#ifndef ARDUINO_STUB_SPI_H
-#define ARDUINO_STUB_SPI_H
+#ifndef SPI_STUB_H
+#define SPI_STUB_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
-#define LSBFIRST 0
 #define MSBFIRST 1
+#define LSBFIRST 0
 #define SPI_MODE0 0x00
-#define SPI_MODE1 0x04
-#define SPI_MODE2 0x08
-#define SPI_MODE3 0x0C
 
-struct SPISettings {
-    SPISettings(uint32_t freq, uint8_t bitOrder, uint8_t dataMode) {
-        (void)freq; (void)bitOrder; (void)dataMode;
-    }
-    SPISettings() {}
+class SPISettings {
+ public:
+  SPISettings(uint32_t clock, uint8_t bitOrder, uint8_t dataMode) {}
+  SPISettings() {}
 };
 
 class SPIClass {
-public:
-    void begin() {}
-    void end() {}
-    void beginTransaction(SPISettings settings) { (void)settings; }
-    void endTransaction() {}
-    uint8_t transfer(uint8_t data) { (void)data; return 0; }
+ public:
+  void begin() {}
+  void end() {}
+  void beginTransaction(SPISettings settings) {}
+  void endTransaction() {}
+  uint8_t transfer(uint8_t data) { return data; }
 };
 
 extern SPIClass SPI;

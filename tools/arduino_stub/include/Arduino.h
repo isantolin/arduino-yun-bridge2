@@ -1,10 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cstdio>
 
 // Basic types
 using boolean = bool;
@@ -12,7 +13,8 @@ using byte = uint8_t;
 using word = uint16_t;
 
 // Placement new/delete for tests that reconstruct objects in-place.
-// Protected by __GLIBCXX__ to avoid conflict with standard library <new> header.
+// Protected by __GLIBCXX__ to avoid conflict with standard library <new>
+// header.
 #ifndef __GLIBCXX__
 inline void* operator new(size_t, void* ptr) noexcept { return ptr; }
 inline void operator delete(void*, void*) noexcept {}
@@ -38,17 +40,17 @@ inline void operator delete(void*, void*) noexcept {}
 // Math macros
 template <typename T>
 inline T abs(T x) {
-    return (x > 0) ? x : -x;
+  return (x > 0) ? x : -x;
 }
 #undef min
 #undef max
-#define min(a, b) ((a) < (b) ? (a) : (b))
-#define max(a, b) ((a) > (b) ? (a) : (b))
+using std::max;
+using std::min;
 
 // Replace round macro with a template to avoid conflict with cmath
 template <typename T>
 inline long round(T x) {
-    return (x >= 0) ? static_cast<long>(x + 0.5) : static_cast<long>(x - 0.5);
+  return (x >= 0) ? static_cast<long>(x + 0.5) : static_cast<long>(x - 0.5);
 }
 
 // Stub functions
@@ -62,8 +64,8 @@ inline unsigned long millis() { return 0; }
 inline void delay(unsigned long) {}
 #endif
 // Fix: Comment out unused parameter name to avoid compiler warning
-inline void delayMicroseconds(unsigned int /*us*/) {} 
-inline void yield() {} 
+inline void delayMicroseconds(unsigned int /*us*/) {}
+inline void yield() {}
 inline void pinMode(uint8_t, uint8_t) {}
 inline void digitalWrite(uint8_t, uint8_t) {}
 inline int digitalRead(uint8_t) { return LOW; }
@@ -75,38 +77,38 @@ inline int analogRead(uint8_t) { return 0; }
 
 // Helper class for string manipulation (minimal stub)
 class String {
-public:
-    static constexpr size_t kCapacity = 64;
+ public:
+  static constexpr size_t kCapacity = 64;
 
-    String(const char* s = "") { assign(s); }
+  String(const char* s = "") { assign(s); }
 
-    String(int v) {
-        char buf[16];
-        (void)::snprintf(buf, sizeof(buf), "%d", v);
-        assign(buf);
-    }
+  String(int v) {
+    char buf[16];
+    (void)::snprintf(buf, sizeof(buf), "%d", v);
+    assign(buf);
+  }
 
-    const char* c_str() const { return data_; }
-    size_t length() const { return length_; }
+  const char* c_str() const { return data_; }
+  size_t length() const { return length_; }
 
-    bool operator==(const String& other) const {
-        return ::strcmp(data_, other.data_) == 0;
-    }
+  bool operator==(const String& other) const {
+    return ::strcmp(data_, other.data_) == 0;
+  }
 
-    bool operator==(const char* other) const {
-        return ::strcmp(data_, (other ? other : "")) == 0;
-    }
+  bool operator==(const char* other) const {
+    return ::strcmp(data_, (other ? other : "")) == 0;
+  }
 
-private:
-    void assign(const char* s) {
-        const char* src = s ? s : "";
-        ::strncpy(data_, src, kCapacity - 1);
-        data_[kCapacity - 1] = '\0';
-        length_ = ::strlen(data_);
-    }
+ private:
+  void assign(const char* s) {
+    const char* src = s ? s : "";
+    ::strncpy(data_, src, kCapacity - 1);
+    data_[kCapacity - 1] = '\0';
+    length_ = ::strlen(data_);
+  }
 
-    char data_[kCapacity] = {};
-    size_t length_ = 0;
+  char data_[kCapacity] = {};
+  size_t length_ = 0;
 };
 
 // F macro for Flash strings (no-op on host)
@@ -120,78 +122,81 @@ class __FlashStringHelper;
 #define pgm_read_word(p) (*reinterpret_cast<const uint16_t*>(p))
 
 inline size_t strnlen_P(const char* s, size_t maxlen) {
-    // Basic implementation for host stub
-    const char* end = (const char*)memchr(s, '\0', maxlen);
-    if (end == nullptr) return maxlen;
-    return end - s;
+  // Basic implementation for host stub
+  const char* end = (const char*)memchr(s, '\0', maxlen);
+  if (end == nullptr) return maxlen;
+  return end - s;
 }
 
 inline void* memcpy_P(void* dest, const void* src, size_t n) {
-    return memcpy(dest, src, n);
+  return memcpy(dest, src, n);
 }
 
 // Base classes needed for HardwareSerial
 class Print {
-public:
-    virtual ~Print() = default; // Added virtual destructor for safety
+ public:
+  virtual ~Print() = default;  // Added virtual destructor for safety
 
-    virtual size_t write(uint8_t) = 0;
-    virtual size_t write(const uint8_t *buffer, size_t size) {
-        size_t n = 0;
-        while (size--) {
-            if (write(*buffer++)) n++;
-            else break;
-        }
-        return n;
+  virtual size_t write(uint8_t) = 0;
+  virtual size_t write(const uint8_t* buffer, size_t size) {
+    size_t n = 0;
+    while (size--) {
+      if (write(*buffer++))
+        n++;
+      else
+        break;
     }
-    // Stub print methods
-    size_t print(const char[]) { return 0; }
-    size_t print(char) { return 0; }
-    size_t print(int, int = 10) { return 0; }
-    size_t println(const char[]) { return 0; }
-    size_t println(int, int = 10) { return 0; }
-    size_t println(void) { return 0; }
-    size_t print(const __FlashStringHelper *) { return 0; }
-    size_t println(const __FlashStringHelper *) { return 0; }
+    return n;
+  }
+  // Stub print methods
+  size_t print(const char[]) { return 0; }
+  size_t print(char) { return 0; }
+  size_t print(int, int = 10) { return 0; }
+  size_t println(const char[]) { return 0; }
+  size_t println(int, int = 10) { return 0; }
+  size_t println(void) { return 0; }
+  size_t print(const __FlashStringHelper*) { return 0; }
+  size_t println(const __FlashStringHelper*) { return 0; }
 };
 
 class Stream : public Print {
-public:
-    virtual ~Stream() = default; // Added virtual destructor for safety
+ public:
+  virtual ~Stream() = default;  // Added virtual destructor for safety
 
-    virtual int available() = 0;
-    virtual int read() = 0;
-    virtual int peek() = 0;
-    virtual void flush() = 0;
-    virtual void setTimeout(unsigned long) {}
+  virtual int available() = 0;
+  virtual int read() = 0;
+  virtual int peek() = 0;
+  virtual void flush() = 0;
+  virtual void setTimeout(unsigned long) {}
 };
 
 extern Stream* g_arduino_stream_delegate;
 
 // HardwareSerial stub
 class HardwareSerial : public Stream {
-public:
-    void begin(unsigned long) {}
-    void end() {}
-    
-    // Fix: Unhide base class write(const uint8_t*, size_t)
-    using Print::write;
-    
-    size_t write(uint8_t c) override { 
-        return g_arduino_stream_delegate ? g_arduino_stream_delegate->write(c) : 1; 
-    }
-    int available() override { 
-        return g_arduino_stream_delegate ? g_arduino_stream_delegate->available() : 0; 
-    }
-    int read() override { 
-        return g_arduino_stream_delegate ? g_arduino_stream_delegate->read() : -1; 
-    }
-    int peek() override { 
-        return g_arduino_stream_delegate ? g_arduino_stream_delegate->peek() : -1; 
-    }
-    void flush() override {
-        if (g_arduino_stream_delegate) g_arduino_stream_delegate->flush();
-    }
+ public:
+  void begin(unsigned long) {}
+  void end() {}
+
+  // Fix: Unhide base class write(const uint8_t*, size_t)
+  using Print::write;
+
+  size_t write(uint8_t c) override {
+    return g_arduino_stream_delegate ? g_arduino_stream_delegate->write(c) : 1;
+  }
+  int available() override {
+    return g_arduino_stream_delegate ? g_arduino_stream_delegate->available()
+                                     : 0;
+  }
+  int read() override {
+    return g_arduino_stream_delegate ? g_arduino_stream_delegate->read() : -1;
+  }
+  int peek() override {
+    return g_arduino_stream_delegate ? g_arduino_stream_delegate->peek() : -1;
+  }
+  void flush() override {
+    if (g_arduino_stream_delegate) g_arduino_stream_delegate->flush();
+  }
 };
 
 extern HardwareSerial Serial;
@@ -200,14 +205,15 @@ extern HardwareSerial Serial1;
 // C++11 compatible constexpr constrain
 template <typename T>
 constexpr T constrain(T value, T minimum, T maximum) {
-    return (value < minimum) ? minimum : ((value > maximum) ? maximum : value);
+  return (value < minimum) ? minimum : ((value > maximum) ? maximum : value);
 }
 
 // Bit manipulation macros
 #define bitRead(value, bit) (((value) >> (bit)) & 1)
 #define bitSet(value, bit) ((value) |= (1UL << (bit)))
 #define bitClear(value, bit) ((value) &= ~(1UL << (bit)))
-#define bitWrite(value, bit, bitvalue) (bitvalue ? bitSet(value, bit) : bitClear(value, bit))
+#define bitWrite(value, bit, bitvalue) \
+  (bitvalue ? bitSet(value, bit) : bitClear(value, bit))
 
 // Interrupts (Stubs for host tests)
 // In a host test environment, we generally run single-threaded logic tests,

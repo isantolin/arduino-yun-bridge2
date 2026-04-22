@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 import asyncio
@@ -5,8 +6,8 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
-import pytest
 import msgspec
+import pytest
 from mcubridge.services.file import FileComponent
 from mcubridge.state.context import create_runtime_state
 from mcubridge.protocol.protocol import Status

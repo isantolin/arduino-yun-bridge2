@@ -1,6 +1,7 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -28,7 +29,7 @@ def mailbox_comp(runtime_config: Any):
 async def test_handle_processed_malformed(mailbox_comp: MailboxComponent):
     # Short payload
     await mailbox_comp.handle_processed(0, b"\x01")
-    assert mailbox_comp.mqtt_flow.publish.called
+    assert cast(Any, mailbox_comp.mqtt_flow.publish).called
 
 @pytest.mark.asyncio
 async def test_handle_push_overflow(mailbox_comp: MailboxComponent):
@@ -39,14 +40,14 @@ async def test_handle_push_overflow(mailbox_comp: MailboxComponent):
     payload = msgspec.msgpack.encode(MailboxPushPacket(data=b"data"))
     ok = await mailbox_comp.handle_push(0, payload)
     assert ok is False
-    assert mailbox_comp.serial_flow.send.called
+    assert cast(Any, mailbox_comp.serial_flow.send).called
 
 @pytest.mark.asyncio
 async def test_handle_available_malformed(mailbox_comp: MailboxComponent):
     # Payload not empty
     ok = await mailbox_comp.handle_available(0, b"not-empty")
     assert ok is False
-    assert mailbox_comp.serial_flow.send.called
+    assert cast(Any, mailbox_comp.serial_flow.send).called
 
 @pytest.mark.asyncio
 async def test_handle_read_empty(mailbox_comp: MailboxComponent):
@@ -72,5 +73,5 @@ async def test_handle_outgoing_overflow(mailbox_comp: MailboxComponent):
     mailbox_comp.state.mailbox_outgoing_overflow_events = 0
 
     await mailbox_comp._handle_mqtt_write(b"too-much-data")
-    assert mailbox_comp.serial_flow.send.called
-    assert mailbox_comp.mqtt_flow.publish.called # Error topic
+    assert cast(Any, mailbox_comp.serial_flow.send).called
+    assert cast(Any, mailbox_comp.mqtt_flow.publish).called # Error topic

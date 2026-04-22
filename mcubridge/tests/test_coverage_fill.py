@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """
 Coverage gap filler tests for Python.
 """

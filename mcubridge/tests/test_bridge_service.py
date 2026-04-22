@@ -123,7 +123,9 @@ async def test_bridge_service_reject_topic_action(runtime_config: RuntimeConfig,
     mqtt.publish.assert_called()
 
 @pytest.mark.asyncio
-async def test_bridge_service_is_topic_action_allowed_delegation(runtime_config: RuntimeConfig, runtime_state: Any) -> None:
+async def test_bridge_service_is_topic_action_allowed_delegation(
+    runtime_config: RuntimeConfig, runtime_state: Any
+) -> None:
     # Use restrictive policy for test
     from mcubridge.protocol.structures import TopicAuthorization
     runtime_state.topic_authorization = TopicAuthorization(digital_write=False)

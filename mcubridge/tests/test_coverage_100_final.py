@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Final coverage gap tests — targeting 100% line+branch coverage.
 
 Systematically covers every remaining uncovered line and branch across

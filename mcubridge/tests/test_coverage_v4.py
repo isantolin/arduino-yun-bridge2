@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 import asyncio
 from typer.testing import CliRunner
 from mcubridge.daemon import app

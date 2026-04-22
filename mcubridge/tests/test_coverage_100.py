@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """
 Tests specifically targeting 100% coverage for critical Python modules.
 

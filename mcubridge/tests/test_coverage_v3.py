@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from typing import Any
 import asyncio
 import errno

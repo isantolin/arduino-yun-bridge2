@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 from typing import Any, cast
@@ -63,7 +64,7 @@ async def test_handshake_synchronize_success(handshake_mgr: SerialHandshakeManag
         handshake_mgr.trigger("start_sync")
         handshake_mgr.trigger("complete_handshake")
         return True
-    
+
     handshake_mgr._synchronize_attempt = AsyncMock(side_effect=mock_attempt)
     ok = await handshake_mgr.synchronize()
     assert ok is True

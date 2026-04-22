@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 from typing import Any, cast
@@ -25,7 +26,7 @@ def console_comp(runtime_config: Any):
 @pytest.mark.asyncio
 async def test_console_handle_write_malformed(console_comp: ConsoleComponent):
     await console_comp.handle_write(0, b"bad-msgpack")
-    assert not console_comp.mqtt_flow.publish.called
+    assert not cast(Any, console_comp.mqtt_flow.publish).called
 
 @pytest.mark.asyncio
 async def test_console_mqtt_input_paused(console_comp: ConsoleComponent):

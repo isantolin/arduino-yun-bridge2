@@ -360,7 +360,6 @@ class TestSpecModel:
 
 class TestMqttBuildProperties:
     def test_build_mqtt_properties_all_fields(self):
-        from mcubridge.mqtt import build_mqtt_properties
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(
@@ -373,7 +372,7 @@ class TestMqttBuildProperties:
             correlation_data=b"\x01",
             user_properties=(("key", "value"),),
         )
-        props = build_mqtt_properties(msg)
+        props = msg.to_paho_properties()
         assert props is not None
         assert props.ContentType == "application/json"
         assert props.PayloadFormatIndicator == 1
@@ -382,59 +381,52 @@ class TestMqttBuildProperties:
         assert props.CorrelationData == b"\x01"
 
     def test_build_mqtt_properties_none_when_empty(self):
-        from mcubridge.mqtt import build_mqtt_properties
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(topic_name="test", payload=b"")
-        props = build_mqtt_properties(msg)
+        props = msg.to_paho_properties()
         assert props is None
 
     def test_build_mqtt_properties_content_type_only(self):
-        from mcubridge.mqtt import build_mqtt_properties
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(topic_name="test", payload=b"", content_type="text/plain")
-        props = build_mqtt_properties(msg)
+        props = msg.to_paho_properties()
         assert props is not None
 
     def test_build_mqtt_properties_expiry_only(self):
-        from mcubridge.mqtt import build_mqtt_properties
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(topic_name="test", payload=b"", message_expiry_interval=120)
-        props = build_mqtt_properties(msg)
+        props = msg.to_paho_properties()
         assert props is not None
 
     def test_build_mqtt_properties_response_topic_only(self):
-        from mcubridge.mqtt import build_mqtt_properties
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(topic_name="test", payload=b"", response_topic="reply")
-        props = build_mqtt_properties(msg)
+        props = msg.to_paho_properties()
         assert props is not None
 
     def test_build_mqtt_properties_user_properties_only(self):
-        from mcubridge.mqtt import build_mqtt_properties
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(topic_name="test", payload=b"", user_properties=(("k", "v"),))
-        props = build_mqtt_properties(msg)
+        props = msg.to_paho_properties()
         assert props is not None
 
     def test_build_mqtt_properties_format_indicator_only(self):
-        from mcubridge.mqtt import build_mqtt_properties
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(topic_name="test", payload=b"", payload_format_indicator=0)
-        props = build_mqtt_properties(msg)
+        props = msg.to_paho_properties()
         assert props is not None
 
     def test_build_mqtt_properties_correlation_data_only(self):
-        from mcubridge.mqtt import build_mqtt_properties
         from mcubridge.protocol.structures import QueuedPublish
 
         msg = QueuedPublish(topic_name="test", payload=b"", correlation_data=b"\x00")
-        props = build_mqtt_properties(msg)
+        props = msg.to_paho_properties()
         assert props is not None
 
 

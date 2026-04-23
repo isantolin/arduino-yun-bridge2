@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 import aiomqtt
 import tenacity
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
+from mcubridge.mqtt import build_mqtt_connect_properties
 from mcubridge.protocol.topics import topic_path
 from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Topic
 from mcubridge.state.context import RuntimeState
@@ -143,7 +143,7 @@ class MqttTransport:
                 # [SIL-2] Pre-calculate properties ONCE before the retry block
                 # to avoid redundant introspection logic.
                 topic_name = message.topic_name
-                props = build_mqtt_properties(message)
+                props = message.to_paho_properties()
                 payload = message.payload
                 qos = int(message.qos)
                 retain = message.retain

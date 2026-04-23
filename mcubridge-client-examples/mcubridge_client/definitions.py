@@ -36,11 +36,8 @@ def build_mqtt_properties(message: QueuedPublish) -> Properties:
     Reuses the daemon's core property builder and extends it with
     client-specific fields (topic_alias, subscription_identifier).
     """
-    # The daemon helper returns None when no standard fields are set;
-    # the client always needs a Properties object for the extra fields.
-    import mcubridge.mqtt
-
-    props = mcubridge.mqtt.build_mqtt_properties(message) or Properties(PacketTypes.PUBLISH)
+    # Use the core property builder from the message instance.
+    props = message.to_paho_properties() or Properties(PacketTypes.PUBLISH)
 
     if message.subscription_identifier is not None:
         props.SubscriptionIdentifier = list(message.subscription_identifier)

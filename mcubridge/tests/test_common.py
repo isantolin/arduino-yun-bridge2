@@ -6,7 +6,7 @@ import importlib
 from unittest.mock import MagicMock, patch
 
 from mcubridge.config import common
-from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
+from mcubridge.mqtt import build_mqtt_connect_properties
 
 from mcubridge.protocol.structures import QueuedPublish, AllowedCommandPolicy
 from mcubridge.protocol import protocol
@@ -101,7 +101,7 @@ def test_build_mqtt_properties_returns_none_when_empty() -> None:
         topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hi",
     )
-    assert build_mqtt_properties(message) is None
+    assert message.to_paho_properties() is None
 
 
 def test_build_mqtt_properties_populates_fields() -> None:
@@ -115,7 +115,7 @@ def test_build_mqtt_properties_populates_fields() -> None:
         correlation_data=b"cid",
         user_properties=(("k", "v"),),  # type: ignore[reportArgumentType]
     )
-    props = build_mqtt_properties(message)
+    props = message.to_paho_properties()
     assert props is not None
     assert props.ContentType == "text/plain"
     assert props.PayloadFormatIndicator == 1

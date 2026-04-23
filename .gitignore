@@ -87,8 +87,8 @@ nohup.out
 mcubridge-library-arduino/src/wolfcrypt/
 mcubridge-library-arduino/src/wolfssl/
 .dummy_libs/typings/
-.dummy_libs/
-typings/
+# .dummy_libs/
+# typings/ (Removed to allow critical stubs in CI)
 .codex_tmp/
 .local_arduino_libs/
 mcubridge-library-arduino/coverage-report/

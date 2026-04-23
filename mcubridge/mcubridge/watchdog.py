@@ -24,11 +24,6 @@ WatchdogWrite = Callable[[bytes], None]
 class WatchdogKeepalive:
     """Emit keepalive pulses for the OpenWrt procd watchdog."""
 
-    # FSM States
-    STATE_INIT = "init"
-    STATE_RUNNING = "running"
-    STATE_STOPPED = "stopped"
-
     def __init__(
         self,
         *,
@@ -44,37 +39,12 @@ class WatchdogKeepalive:
         self._write = write or functools.partial(os.write, 1)
         self._logger = logger or structlog.get_logger("mcubridge.watchdog")
 
-        # FSM Initialization
-        self.fsm_state = self.STATE_INIT
-
-    def trigger(self, event: str) -> None:
-        """[SIL-2] Deterministic state transitions without FSM library overhead."""
-        old_state = self.fsm_state
-        if event == "start":
-            if self.fsm_state in (self.STATE_INIT, self.STATE_STOPPED):
-                self.fsm_state = self.STATE_RUNNING
-        elif event == "stop":
-            if self.fsm_state == self.STATE_RUNNING:
-                self.fsm_state = self.STATE_STOPPED
-
-        if old_state != self.fsm_state:
-            if self.fsm_state == self.STATE_RUNNING:
-                self._on_fsm_start()
-            elif self.fsm_state == self.STATE_STOPPED:
-                self._on_fsm_stop()
-
     def start(self) -> None:
-        self.trigger("start")
-
-    def stop(self) -> None:
-        self.trigger("stop")
-
-    def _on_fsm_start(self) -> None:
-        """Callback when watchdog starts."""
+        """Log watchdog start."""
         self._logger.info("Watchdog keepalive started (interval=%.2fs)", self._interval)
 
-    def _on_fsm_stop(self) -> None:
-        """Callback when watchdog stops."""
+    def stop(self) -> None:
+        """Log watchdog stop."""
         self._logger.info("Watchdog keepalive stopped")
 
     @property

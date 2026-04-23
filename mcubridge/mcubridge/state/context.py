@@ -77,14 +77,6 @@ __all__: Final[tuple[str, ...]] = (
     "BridgeSnapshot",
 )
 
-# FSM States for ManagedProcess
-PROCESS_STATE_STARTING = "STARTING"
-PROCESS_STATE_RUNNING = "RUNNING"
-PROCESS_STATE_DRAINING = "DRAINING"
-PROCESS_STATE_FINISHED = "FINISHED"
-PROCESS_STATE_ZOMBIE = "ZOMBIE"
-
-
 @functools.lru_cache(maxsize=256)
 def resolve_command_id(command_id: int) -> str:
     """Resolve command/status ID to human-readable name."""
@@ -114,30 +106,19 @@ class ManagedProcess:
 
     pid: int
     command: str = ""
-    handle: Any | None = None
+    handle: asyncio.subprocess.Process | None = None
     exit_code: int | None = None
     io_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    fsm_state: str = PROCESS_STATE_STARTING
-
-    def trigger(self, event: str) -> None:
-        """[SIL-2] Deterministic state transitions without FSM library overhead."""
-        if event == "start":
-            self.fsm_state = PROCESS_STATE_RUNNING
-        elif event == "sigchld":
-            self.fsm_state = PROCESS_STATE_DRAINING
-        elif event == "io_complete":
-            self.fsm_state = PROCESS_STATE_FINISHED
-        elif event == "finalize":
-            self.fsm_state = PROCESS_STATE_ZOMBIE
-        elif event == "force_kill":
-            self.fsm_state = PROCESS_STATE_ZOMBIE
 
     def is_drained(self) -> bool:
-        # [FSM] Must be in FINISHED/ZOMBIE state to be drained
-        if self.fsm_state not in (PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE):
-            return False
+        """[SIL-2] Non-blocking EOF check using native library state."""
         if not self.handle:
             return True
+
+        # Process is considered drained only if it's finished and IO is EOF
+        if self.handle.returncode is None:
+            return False
+
         out_eof = getattr(self.handle.stdout, "at_eof", lambda: True)()
         err_eof = getattr(self.handle.stderr, "at_eof", lambda: True)()
         return out_eof and err_eof
@@ -225,15 +206,6 @@ class RuntimeState(msgspec.Struct):
         self.metrics.link_state.state("synchronized")
         if self.link_sync_event:
             self.link_sync_event.set()
-
-    def trigger(self, event: str) -> None:
-        """[SIL-2] Direct lifecycle triggers."""
-        if event == "connect":
-            self.mark_transport_connected()
-        elif event == "synchronize":
-            self.mark_synchronized()
-        elif event == "disconnect":
-            self.mark_transport_disconnected()
 
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
         default_factory=lambda: asyncio.Queue[QueuedPublish](),  # noqa: PLW0108

@@ -23,7 +23,6 @@ from ..protocol.structures import (
 )
 from ..protocol.topics import Topic, topic_path
 from ..state.context import (
-    PROCESS_STATE_FINISHED,
     ManagedProcess,
 )
 
@@ -323,7 +322,6 @@ class ProcessComponent:
             async with self.state.process_lock:
                 self.state.running_processes[pid] = managed
 
-            managed.trigger("start")
 
             # Spawn monitor task for completion/timeout only
             asyncio.create_task(self._monitor_process(pid))
@@ -351,10 +349,6 @@ class ProcessComponent:
                     with contextlib.suppress(OSError):
                         proc.handle.kill()
                     proc.exit_code = -1
-
-                async with proc.io_lock:
-                    proc.trigger("sigchld")
-                    proc.trigger("io_complete")
         finally:
             self._finalize_process_internal(pid)
 
@@ -386,7 +380,7 @@ class ProcessComponent:
                 if proc.handle:
                     stdout_chunk, t_out = await _read_stream(proc.handle.stdout)
                     stderr_chunk, t_err = await _read_stream(proc.handle.stderr)
-                is_finished = proc.fsm_state == PROCESS_STATE_FINISHED
+                is_finished = proc.handle.returncode is not None if proc.handle else True
 
                 batch = ProcessOutputBatch(
                     Status.OK.value,
@@ -503,8 +497,6 @@ class ProcessComponent:
     def _finalize_process_internal(self, pid: int) -> None:
         proc = self.state.running_processes.pop(pid, None)
         if proc:
-            with contextlib.suppress(AttributeError, ValueError):
-                proc.trigger("finalize")
             self._process_slots.release()
 
 

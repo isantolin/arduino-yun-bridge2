@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -47,13 +47,23 @@ def test_mcu_capabilities_properties() -> None:
 
 def test_managed_process_is_drained() -> None:
     proc = ManagedProcess(pid=1, command="echo")
-    # Must be in FINISHED/ZOMBIE to be drained
-    proc.trigger("start")  # STARTING -> RUNNING
+    # No handle means drained
+    assert proc.is_drained() is True
+
+    mock_handle = MagicMock()
+    mock_handle.returncode = None  # Still running
+    proc.handle = mock_handle
     assert proc.is_drained() is False
 
-    proc.trigger("sigchld")  # RUNNING -> DRAINING
-    proc.trigger("io_complete")  # DRAINING -> FINISHED
+    mock_handle.returncode = 0  # Finished
+    # Mock streams at EOF
+    mock_handle.stdout.at_eof.return_value = True
+    mock_handle.stderr.at_eof.return_value = True
     assert proc.is_drained() is True
+
+    # Not EOF means not drained even if finished
+    mock_handle.stdout.at_eof.return_value = False
+    assert proc.is_drained() is False
 
 
 def test_serial_stats_recording() -> None:

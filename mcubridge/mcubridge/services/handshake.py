@@ -130,44 +130,19 @@ class SerialHandshakeManager:
         self._capabilities_future: asyncio.Future[bytes] | None = None
         self.fsm_state = self.STATE_UNSYNCHRONIZED
 
-    def trigger(self, event: str) -> None:
-        """[SIL-2] Deterministic state transitions without FSM library overhead."""
+    def _set_fsm_state(self, new_state: str) -> None:
+        """Update FSM state and associated metrics."""
         old_state = self.fsm_state
+        if old_state == new_state:
+            return
 
-        if event == "reset_fsm":
-            self.fsm_state = self.STATE_UNSYNCHRONIZED
-        elif event == "start_reset":
-            self.fsm_state = self.STATE_RESETTING
-        elif event == "start_sync":
-            if self.fsm_state == self.STATE_RESETTING:
-                self.fsm_state = self.STATE_SYNCING
-        elif event == "start_confirm":
-            if self.fsm_state == self.STATE_SYNCING:
-                self.fsm_state = self.STATE_CONFIRMING
-        elif event == "complete_handshake":
-            if self.fsm_state in (self.STATE_SYNCING, self.STATE_CONFIRMING):
-                self.fsm_state = self.STATE_SYNCHRONIZED
-        elif event == "fail_handshake":
-            self.fsm_state = self.STATE_FAULT
+        self.fsm_state = new_state
+        self._state.metrics.handshake_state.state(new_state)
 
-        if old_state != self.fsm_state:
-            self._on_fsm_state_change()
-            if self.fsm_state == self.STATE_SYNCHRONIZED:
-                self._on_fsm_synchronized()
-            elif old_state == self.STATE_SYNCHRONIZED:
-                self._on_fsm_unsynchronized()
-
-    def _on_fsm_state_change(self) -> None:
-        """Update Prometheus Enum metric on every FSM transition."""
-        self._state.metrics.handshake_state.state(self.fsm_state)
-
-    def _on_fsm_synchronized(self) -> None:
-        """Callback when entering synchronized state."""
-        self._state.mark_synchronized()
-
-    def _on_fsm_unsynchronized(self) -> None:
-        """Callback when leaving synchronized state."""
-        self._state.mark_transport_connected()
+        if new_state == self.STATE_SYNCHRONIZED:
+            self._state.mark_synchronized()
+        elif old_state == self.STATE_SYNCHRONIZED:
+            self._state.mark_transport_connected()
 
     async def synchronize(self) -> bool:
         # [SIL-2] Unified Retry Strategy for Link Synchronisation
@@ -189,7 +164,7 @@ class SerialHandshakeManager:
             self._state._handshake_last_started = time.monotonic()  # type: ignore[reportPrivateUsage]
             self._state.handshake_attempts += 1
             self._state.metrics.handshake_attempts.inc()
-            self.trigger("reset_fsm")  # Ensure clean slate
+            self._set_fsm_state(self.STATE_UNSYNCHRONIZED)  # Ensure clean slate
             return await self._synchronize_attempt()
 
         try:
@@ -197,14 +172,14 @@ class SerialHandshakeManager:
             self._logger.debug("Handshake stats: %s", retryer.statistics)
             return ok
         except tenacity.RetryError:
-            self.trigger("fail_handshake")
+            self._set_fsm_state(self.STATE_FAULT)
             return False
 
     async def _synchronize_attempt(self) -> bool:
         nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
 
         # Transition to RESETTING
-        self.trigger("start_reset")
+        self._set_fsm_state(self.STATE_RESETTING)
         self._state.link_sync_event.clear()
 
         # [MIL-SPEC] Generate nonce with anti-replay counter
@@ -229,7 +204,7 @@ class SerialHandshakeManager:
         await asyncio.sleep(0.5)
 
         # Transition to SYNCING
-        self.trigger("start_sync")
+        self._set_fsm_state(self.STATE_SYNCING)
         await asyncio.sleep(0.05)
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
@@ -249,7 +224,7 @@ class SerialHandshakeManager:
         # Transition to CONFIRMING only if we are still in SYNCING.
         # High-speed emulators may have already triggered complete_handshake().
         if self.fsm_state == self.STATE_SYNCING:
-            self.trigger("start_confirm")
+            self._set_fsm_state(self.STATE_CONFIRMING)
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
         if not confirmed:
@@ -265,7 +240,7 @@ class SerialHandshakeManager:
 
         # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
         if self.fsm_state != self.STATE_SYNCHRONIZED and self.fsm_state != self.STATE_FAULT:
-            self.trigger("complete_handshake")
+            self._set_fsm_state(self.STATE_SYNCHRONIZED)
 
         return self.fsm_state == self.STATE_SYNCHRONIZED
 
@@ -353,7 +328,7 @@ class SerialHandshakeManager:
         payload = nonce
 
         # FSM Transition to SYNCHRONIZED
-        self.trigger("complete_handshake")
+        self._set_fsm_state(self.STATE_SYNCHRONIZED)
 
         self.clear_handshake_expectations()
         await self._handle_handshake_success()
@@ -434,7 +409,7 @@ class SerialHandshakeManager:
         detail: str | None = None,
     ) -> None:
         # [SIL-2] Native state transition to FAULT
-        self.trigger("fail_handshake")
+        self._set_fsm_state(self.STATE_FAULT)
 
         # [SIL-2] Direct metrics recording (No Wrapper)
         self._state.handshake_failure_streak += 1
@@ -618,3 +593,6 @@ class SerialHandshakeManager:
             reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
             or self._state.handshake_failure_streak >= self._fatal_threshold  # noqa: W503
         )
+
+
+__all__ = ["SerialHandshakeManager", "SerialHandshakeFatal", "derive_serial_timing"]

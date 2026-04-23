@@ -7,7 +7,6 @@ from mcubridge.protocol.protocol import Status
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import (
-    PROCESS_STATE_FINISHED,
     ManagedProcess,
 )
 
@@ -36,10 +35,8 @@ async def test_poll_process_flushes_stored_buffers(
     mock_handle.stderr = MagicMock()
     mock_handle.stderr.read = AsyncMock(return_value=b"world")
     mock_handle.stderr.at_eof.side_effect = [False, True, True]
+    mock_handle.returncode = 3
     slot.handle = mock_handle
-
-    # [FSM] Set state to FINISHED so poll_process knows it's done
-    slot.fsm_state = PROCESS_STATE_FINISHED
 
     async with state.process_lock:
         state.running_processes[pid] = slot
@@ -94,8 +91,6 @@ async def test_monitor_process_releases_slot(
         "/bin/true",
     )
     slot.handle = mock_handle
-    # [FSM] Transition to RUNNING
-    slot.trigger("start")
 
     async with state.process_lock:
         state.running_processes[77] = slot

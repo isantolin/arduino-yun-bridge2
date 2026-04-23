@@ -3,13 +3,14 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import asyncio
 from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Status
 from mcubridge.protocol.structures import (
     ProcessOutputBatch,
 )
 from mcubridge.services.process import ProcessComponent
-from mcubridge.state.context import PROCESS_STATE_FINISHED, ManagedProcess
+from mcubridge.state.context import ManagedProcess
 
 
 @pytest.fixture
@@ -66,7 +67,12 @@ async def test_poll_process_finishing_process_releases_slot(
 ) -> None:
     pid = 10
     slot = ManagedProcess(pid=pid, command="echo hi")
-    slot.fsm_state = PROCESS_STATE_FINISHED
+
+    mock_handle = MagicMock()
+    mock_handle.returncode = 7
+    mock_handle.stdout.at_eof.return_value = True
+    mock_handle.stderr.at_eof.return_value = True
+    slot.handle = mock_handle
     slot.exit_code = 7
 
     async with process_comp.state.process_lock:
@@ -93,8 +99,9 @@ async def test_finalize_callback_async_handles_wait_exception(
     pid = 1
 
     slot = ManagedProcess(pid=pid, command="test")
-    # [FSM] Transition to RUNNING
-    slot.trigger("start")
+    # Native handle must be None or have returncode for finalize
+    slot.handle = MagicMock(spec=asyncio.subprocess.Process)
+    slot.handle.returncode = 0
 
     async with process_comp.state.process_lock:
         process_comp.state.running_processes[pid] = slot

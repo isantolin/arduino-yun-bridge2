@@ -1,19 +1,20 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+import aiomqtt
+from unittest.mock import AsyncMock, MagicMock
 from mcubridge_client import Bridge
-from aiomqtt import Message
 
 
 @pytest.fixture
 def mock_client(monkeypatch):
-    mock = MagicMock()
-    # Ensure subscribe and publish are AsyncMocks
-    mock_instance = mock.return_value
+    # [SIL-2] Use MagicMock for class and AsyncMock for instance to correctly support context manager
+    mock_instance = AsyncMock(spec=aiomqtt.Client)
     mock_instance.subscribe = AsyncMock()
     mock_instance.unsubscribe = AsyncMock()
     mock_instance.publish = AsyncMock()
-    monkeypatch.setattr("mcubridge_client.Client", mock)
-    return mock
+
+    mock_cls = MagicMock(return_value=mock_instance)
+    monkeypatch.setattr("mcubridge_client.Client", mock_cls)
+    return mock_cls
 
 
 @pytest.mark.asyncio
@@ -67,10 +68,11 @@ async def test_client_datastore_put(mock_client) -> None:
             props = kwargs.get("properties")
             correlation = getattr(props, "CorrelationData", None)
 
-            msg = MagicMock(spec=Message)
+            # [SIL-2] Use spec=aiomqtt.Message
+            msg = AsyncMock(spec=aiomqtt.Message)
             msg.topic = resp_topic
             msg.payload = b"OK"
-            msg.properties = MagicMock()
+            msg.properties = AsyncMock()
             msg.properties.CorrelationData = correlation
 
             if correlation in bridge._correlation_routes:

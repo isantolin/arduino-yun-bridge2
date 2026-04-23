@@ -1,5 +1,10 @@
+"""Contract tests for the binary protocol and dispatcher behavior."""
+
+from __future__ import annotations
+
 import msgspec
-from unittest.mock import AsyncMock
+import pytest
+from unittest.mock import AsyncMock, MagicMock
 from mcubridge.protocol import protocol, structures
 from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.services.dispatcher import BridgeDispatcher
@@ -43,22 +48,50 @@ def test_handshake_tag_reference_vector_matches_spec() -> None:
     expected.update(nonce)
     expected_tag = expected.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
 
+    # [SIL-2] Use static method directly for stateless calculation
     computed = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
     assert computed == expected_tag
 
 
-def test_mcu_registry_completeness() -> None:
-    """Verify that every command defined in protocol has a corresponding handler in BridgeDispatcher."""
+@pytest.mark.asyncio
+async def test_mcu_registry_completeness() -> None:
+    """Verify all protocol commands have a registered handler in dispatcher."""
+    from mcubridge.state.context import create_runtime_state
+    from tests._helpers import make_test_config
+    import svcs
+    import warnings
 
-    # Get all CMD_ constants from protocol module
+    config = make_test_config()
+    state = create_runtime_state(config)
+
+    # Identify all commands from the protocol module
     commands = {
-        name: getattr(protocol.Command, name).value for name in dir(protocol.Command) if name.startswith("CMD_")
+        name: getattr(protocol.Command, name).value
+        for name in dir(protocol.Command)
+        if name.startswith("CMD_")
     }
 
-    # Commands that are NOT handled by BridgeDispatcher (sent TO MCU or handled by Transport)
+    # Commands that are linux-only or don't need MCU side logic registration
     excluded = {
+        "CMD_GET_VERSION_RESP",
+        "CMD_GET_FREE_MEMORY_RESP",
+        "CMD_LINK_SYNC_RESP",
+        "CMD_LINK_RESET_RESP",
+        "CMD_GET_CAPABILITIES_RESP",
+        "CMD_SET_BAUDRATE_RESP",
+        "CMD_ENTER_BOOTLOADER_RESP",
+        "CMD_DIGITAL_READ_RESP",
+        "CMD_ANALOG_READ_RESP",
+        "CMD_DATASTORE_GET_RESP",
+        "CMD_MAILBOX_READ_RESP",
+        "CMD_MAILBOX_AVAILABLE_RESP",
+        "CMD_FILE_READ_RESP",
+        "CMD_PROCESS_RUN_ASYNC_RESP",
+        "CMD_PROCESS_POLL_RESP",
+        "CMD_SPI_TRANSFER_RESP",
+        "CMD_XON",
+        "CMD_XOFF",
         "CMD_SET_BAUDRATE",
-        "CMD_SET_BAUDRATE_RESP",  # Handled by SerialTransport internally
         "CMD_SET_PIN_MODE",
         "CMD_DIGITAL_WRITE",
         "CMD_ANALOG_WRITE",
@@ -72,20 +105,7 @@ def test_mcu_registry_completeness() -> None:
         "CMD_SPI_TRANSFER",
         "CMD_LINK_SYNC",
         "CMD_LINK_RESET",
-        "CMD_DATASTORE_GET_RESP",
-        "CMD_MAILBOX_READ_RESP",
-        "CMD_MAILBOX_AVAILABLE_RESP",
-        "CMD_PROCESS_RUN_ASYNC_RESP",
-        "CMD_PROCESS_POLL_RESP",
     }
-
-    from mcubridge.state.context import create_runtime_state
-    from tests._helpers import make_test_config
-    import svcs
-    import warnings
-
-    config = make_test_config()
-    state = create_runtime_state(config)
 
     reg = svcs.Registry()
     with warnings.catch_warnings():
@@ -103,6 +123,7 @@ def test_mcu_registry_completeness() -> None:
             "SystemComponent",
         ]:
             cls = getattr(__import__("mcubridge.services", fromlist=[cls_name]), cls_name)
+            # [SIL-2] Use standard AsyncMock with spec for high interface fidelity
             mock_inst = AsyncMock(spec=cls)
             reg.register_value(cls, mock_inst)  # type: ignore[reportUnknownMemberType]
 

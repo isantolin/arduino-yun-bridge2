@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -13,7 +13,9 @@ from mcubridge.protocol.protocol import ShellAction, Status
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.process import ProcessComponent
+from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
+from mcubridge.transport.mqtt import MqttTransport
 from tests._helpers import make_mqtt_msg, make_route
 
 
@@ -42,12 +44,13 @@ def _extract_enqueued_publish(mqtt_flow: AsyncMock, index: int = -1) -> tuple[Qu
 async def test_shell_run_async_success(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = MagicMock(spec=RuntimeState)
+    # [SIL-2] Use AsyncMock(spec=Interface) for all component mocks
+    state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
@@ -77,12 +80,12 @@ async def test_shell_run_async_success(
 async def test_shell_run_async_exception_returns_error(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = MagicMock(spec=RuntimeState)
+    state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
@@ -103,12 +106,12 @@ async def test_shell_run_async_exception_returns_error(
 async def test_shell_run_async_not_allowed_returns_error_payload(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = MagicMock(spec=RuntimeState)
+    state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
@@ -128,12 +131,12 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
 async def test_shell_poll_calls_process_helpers(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = MagicMock(spec=RuntimeState)
+    state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
@@ -158,12 +161,12 @@ async def test_shell_poll_calls_process_helpers(
 async def test_shell_kill_invokes_stop_process(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = MagicMock(spec=RuntimeState)
+    state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
@@ -181,11 +184,11 @@ async def test_shell_kill_invokes_stop_process(
 async def test_shell_ignores_invalid_payloads_and_actions(
     runtime_config: RuntimeConfig,
 ) -> None:
-    state = MagicMock(spec=RuntimeState)
+    state = AsyncMock(spec=RuntimeState)
 
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
     component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)

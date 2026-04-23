@@ -1,5 +1,5 @@
 from mcubridge.transport.mqtt import MqttTransport
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import asyncio
 import pytest
@@ -88,11 +88,18 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport = SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
 
-        mock_writer = MagicMock(spec=asyncio.StreamWriter)
+        # [SIL-2] Use AsyncMock for StreamWriter to avoid unawaited coroutine warnings
+        mock_writer = AsyncMock(spec=asyncio.StreamWriter)
         mock_writer.is_closing.return_value = False
-        serial_port = MagicMock()
-        serial_port.baudrate = config.serial_safe_baud
-        mock_writer.transport = MagicMock(serial=serial_port)
+
+        # [SIL-2] High-fidelity mock for pyserial transport
+        mock_serial = AsyncMock()
+        mock_serial.baudrate = config.serial_safe_baud
+
+        mock_transport = AsyncMock()
+        mock_transport.serial = mock_serial
+        mock_writer.transport = mock_transport
+
         transport.writer = mock_writer
 
         transport._negotiating = True  # type: ignore[reportPrivateUsage]
@@ -108,7 +115,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
         assert await transport._negotiation_future is True  # type: ignore[reportPrivateUsage]
-        assert serial_port.baudrate == config.serial_baud
+        assert mock_serial.baudrate == config.serial_baud
     finally:
         state.cleanup()
 
@@ -124,7 +131,7 @@ async def test_write_frame_debug_logs_unknown_command(
         import mcubridge.transport.serial
 
         transport = SerialTransport(config, state, service)
-        mock_writer = MagicMock(spec=asyncio.StreamWriter)
+        mock_writer = AsyncMock(spec=asyncio.StreamWriter)
         mock_writer.is_closing.return_value = False
         transport.writer = mock_writer
 
@@ -162,7 +169,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         service = BridgeService(config, state, MqttTransport(config, state))
 
         transport = SerialTransport(config, state, service)
-        mock_writer = MagicMock(spec=asyncio.StreamWriter)
+        mock_writer = AsyncMock(spec=asyncio.StreamWriter)
         mock_writer.is_closing.return_value = False
         mock_writer.write.side_effect = OSError("boom")
         transport.writer = mock_writer

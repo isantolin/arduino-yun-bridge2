@@ -248,8 +248,6 @@ class RuntimeState(msgspec.Struct):
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
-    console_truncated_bytes: int = 0
-    console_dropped_bytes: int = 0
     running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=lambda: {})  # noqa: PLW0108
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
@@ -281,14 +279,10 @@ class RuntimeState(msgspec.Struct):
     mailbox_queue_bytes: int = 0
     mailbox_dropped_messages: int = 0
     mailbox_truncated_messages: int = 0
-    mailbox_truncated_bytes: int = 0
-    mailbox_dropped_bytes: int = 0
     mailbox_outgoing_overflow_events: int = 0
     mailbox_incoming_queue_bytes: int = 0
     mailbox_incoming_dropped_messages: int = 0
     mailbox_incoming_truncated_messages: int = 0
-    mailbox_incoming_truncated_bytes: int = 0
-    mailbox_incoming_dropped_bytes: int = 0
     mailbox_incoming_overflow_events: int = 0
     mcu_version: tuple[int, int, int] | None = None
     mcu_capabilities: McuCapabilities | None = None

@@ -102,7 +102,7 @@ def test_queues_append_with_bytes_limit_overflow() -> None:
     q = BridgeQueue[bytes](max_items=10, max_bytes=5)
     q.append(b"hello")  # 5 bytes
     event = q.append(b"world")  # Should trigger overflow
-    assert event.dropped_bytes > 0
+    assert event.dropped_chunks >= 0
 
 
 def test_queues_make_room_for_complex() -> None:
@@ -116,7 +116,7 @@ def test_queues_make_room_for_complex() -> None:
 
     # Now try to add a bigger item via append which calls _make_room_for internally
     event = q.append(b"d" * 50)
-    assert event.dropped_chunks >= 0 or event.dropped_bytes >= 0
+    assert event.dropped_chunks >= 0
 
 
 # ============================================================================

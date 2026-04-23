@@ -42,20 +42,14 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             state.mailbox_queue_bytes = 3
             state.mailbox_dropped_messages = 1
             state.mailbox_truncated_messages = 1
-            state.mailbox_truncated_bytes = 2
-            state.mailbox_dropped_bytes = 3
             state.mailbox_incoming_queue.append(b"xyz")
             state.mailbox_incoming_queue_bytes = 3
             state.mailbox_incoming_dropped_messages = 1
             state.mailbox_incoming_truncated_messages = 2
-            state.mailbox_incoming_truncated_bytes = 5
-            state.mailbox_incoming_dropped_bytes = 4
             state.console_to_mcu_queue.append(b"1")
             state.console_queue_bytes = 1
             state.console_dropped_chunks = 2
-            state.console_dropped_bytes = 8
             state.console_truncated_chunks = 1
-            state.console_truncated_bytes = 4
             state.mcu_is_paused = True
             state.mark_transport_connected()
             state.mark_synchronized()
@@ -120,19 +114,13 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             assert payload["mailbox_bytes"] == 3
             assert payload["mailbox_dropped_messages"] == 1
             assert payload["mailbox_truncated_messages"] == 1
-            assert payload["mailbox_truncated_bytes"] == 2
-            assert payload["mailbox_dropped_bytes"] == 3
             assert payload["mailbox_incoming_dropped_messages"] == 1
             assert payload["mailbox_incoming_truncated_messages"] == 2
-            assert payload["mailbox_incoming_truncated_bytes"] == 5
-            assert payload["mailbox_incoming_dropped_bytes"] == 4
             assert payload["mcu_paused"] is True
             assert payload["console_queue_size"] == 1
             assert payload["console_queue_bytes"] == 1
             assert payload["console_dropped_chunks"] == 2
-            assert payload["console_dropped_bytes"] == 8
             assert payload["console_truncated_chunks"] == 1
-            assert payload["console_truncated_bytes"] == 4
             assert payload["allowed_commands"] == ["ls"]
             assert payload["link_synchronised"] is False
             assert payload["mcu_version"] == {"major": 2, "minor": 5, "patch": 0}

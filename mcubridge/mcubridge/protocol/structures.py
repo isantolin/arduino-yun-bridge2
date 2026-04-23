@@ -1203,19 +1203,13 @@ class BridgeStatus(msgspec.Struct, kw_only=True):
     mailbox_size: Annotated[int, msgspec.Meta(ge=0)]
     mailbox_bytes: Annotated[int, msgspec.Meta(ge=0)]
     mailbox_dropped_messages: Annotated[int, msgspec.Meta(ge=0)]
-    mailbox_dropped_bytes: Annotated[int, msgspec.Meta(ge=0)]
     mailbox_truncated_messages: Annotated[int, msgspec.Meta(ge=0)]
-    mailbox_truncated_bytes: Annotated[int, msgspec.Meta(ge=0)]
     mailbox_incoming_dropped_messages: Annotated[int, msgspec.Meta(ge=0)]
-    mailbox_incoming_dropped_bytes: Annotated[int, msgspec.Meta(ge=0)]
     mailbox_incoming_truncated_messages: Annotated[int, msgspec.Meta(ge=0)]
-    mailbox_incoming_truncated_bytes: Annotated[int, msgspec.Meta(ge=0)]
     console_queue_size: Annotated[int, msgspec.Meta(ge=0)]
     console_queue_bytes: Annotated[int, msgspec.Meta(ge=0)]
     console_dropped_chunks: Annotated[int, msgspec.Meta(ge=0)]
-    console_dropped_bytes: Annotated[int, msgspec.Meta(ge=0)]
     console_truncated_chunks: Annotated[int, msgspec.Meta(ge=0)]
-    console_truncated_bytes: Annotated[int, msgspec.Meta(ge=0)]
 
     # System
     mcu_paused: bool

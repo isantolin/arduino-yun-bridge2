@@ -208,198 +208,68 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     return;
   }
 
-  using Handler = void (BridgeClass::*)(const bridge::router::CommandContext&);
-  static constexpr uint16_t RANGE_START = 0x30;
-  static constexpr uint16_t RANGE_END = 0xBF;
-  static constexpr size_t TABLE_SIZE = RANGE_END - RANGE_START + 1;
+  // [SIL-2] Static Command Router: Zero-overhead, memory-safe dispatch.
+  // Eliminates function pointer tables in RAM/Flash.
+  bool handled = false;
 
-  static constexpr etl::array<Handler, TABLE_SIZE> jump_table = {
-      {/* 0x30: STATUS_OK */ &BridgeClass::_handleStatusOk,
-       /* 0x31: STATUS_ERROR */ &BridgeClass::onUnknownCommand,
-       /* 0x32: STATUS_CMD_UNKNOWN */ &BridgeClass::onUnknownCommand,
-       /* 0x33: STATUS_MALFORMED */ &BridgeClass::_handleStatusMalformed,
-       /* 0x34: STATUS_OVERFLOW */ &BridgeClass::onUnknownCommand,
-       /* 0x35: STATUS_CRC_MISMATCH */ &BridgeClass::onUnknownCommand,
-       /* 0x36: STATUS_TIMEOUT */ &BridgeClass::onUnknownCommand,
-       /* 0x37: STATUS_NOT_IMPLEMENTED */ &BridgeClass::onUnknownCommand,
-       /* 0x38: STATUS_ACK */ &BridgeClass::_handleStatusAck,
-       /* 0x39 - 0x3F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       /* 0x40: CMD_GET_VERSION */ &BridgeClass::_handleGetVersion,
-       /* 0x41: CMD_GET_VERSION_RESP */ &BridgeClass::onUnknownCommand,
-       /* 0x42: CMD_GET_FREE_MEMORY */ &BridgeClass::_handleGetFreeMemory,
-       /* 0x43: CMD_GET_FREE_MEMORY_RESP */ &BridgeClass::onUnknownCommand,
-       /* 0x44: CMD_LINK_SYNC */ &BridgeClass::_handleLinkSync,
-       /* 0x45: CMD_LINK_SYNC_RESP */ &BridgeClass::onUnknownCommand,
-       /* 0x46: CMD_LINK_RESET */ &BridgeClass::_handleLinkReset,
-       /* 0x47: CMD_LINK_RESET_RESP */ &BridgeClass::onUnknownCommand,
-       /* 0x48: CMD_GET_CAPABILITIES */ &BridgeClass::_handleGetCapabilities,
-       /* 0x49: CMD_GET_CAPABILITIES_RESP */ &BridgeClass::onUnknownCommand,
-       /* 0x4A: CMD_SET_BAUDRATE */ &BridgeClass::_handleSetBaudrateCommand,
-       /* 0x4B: CMD_SET_BAUDRATE_RESP */ &BridgeClass::onUnknownCommand,
-       /* 0x4C: CMD_ENTER_BOOTLOADER */
-       &BridgeClass::_handleEnterBootloaderCommand,
-       /* 0x4D: CMD_ENTER_BOOTLOADER_RESP */ &BridgeClass::onUnknownCommand,
-       /* 0x4E: CMD_XOFF */ &BridgeClass::_handleXoff,
-       /* 0x4F: CMD_XON */ &BridgeClass::_handleXon,
-       /* 0x50: CMD_SET_PIN_MODE */ &BridgeClass::_handleSetPinModeCommand,
-       /* 0x51: CMD_DIGITAL_WRITE */ &BridgeClass::_handleDigitalWriteCommand,
-       /* 0x52: CMD_ANALOG_WRITE */ &BridgeClass::_handleAnalogWriteCommand,
-       /* 0x53: CMD_DIGITAL_READ */ &BridgeClass::_handleDigitalReadCommand,
-       /* 0x54: CMD_ANALOG_READ */ &BridgeClass::_handleAnalogReadCommand,
-       /* 0x55: CMD_DIGITAL_READ_RESP */ &BridgeClass::onUnknownCommand,
-       /* 0x56: CMD_ANALOG_READ_RESP */ &BridgeClass::onUnknownCommand,
-       /* 0x57 - 0x5F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       /* 0x60: CMD_CONSOLE_WRITE */ &BridgeClass::_handleConsoleWriteCommand,
-       /* 0x61 - 0x6F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       /* 0x70: CMD_DATASTORE_PUT */ &BridgeClass::onUnknownCommand,
-       /* 0x71: CMD_DATASTORE_GET */ &BridgeClass::onUnknownCommand,
-  /* 0x72: CMD_DATASTORE_GET_RESP */
+  const uint16_t raw_cmd = ctx.raw_command;
+
+  switch (raw_cmd) {
+    case rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION): _handleGetVersion(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY): _handleGetFreeMemory(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC): _handleLinkSync(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET): _handleLinkReset(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES): _handleGetCapabilities(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE): _handleSetBaudrateCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER): _handleEnterBootloaderCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_XOFF): _handleXoff(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_XON): _handleXon(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE): _handleSetPinModeCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE): _handleDigitalWriteCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE): _handleAnalogWriteCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ): _handleDigitalReadCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ): _handleAnalogReadCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE): _handleConsoleWriteCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::StatusCode::STATUS_OK): _handleStatusOk(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED): _handleStatusMalformed(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::StatusCode::STATUS_ACK): _handleStatusAck(ctx); handled = true; break;
+
 #if BRIDGE_ENABLE_DATASTORE
-       &BridgeClass::_handleDataStoreGetResponseCommand,
-#else
-       &BridgeClass::onUnknownCommand,
+    case rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP): _handleDataStoreGetResponseCommand(ctx); handled = true; break;
 #endif
-       /* 0x73 - 0x7F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       /* 0x80: CMD_MAILBOX_READ */ &BridgeClass::onUnknownCommand,
-       /* 0x81: CMD_MAILBOX_PROCESSED */ &BridgeClass::onUnknownCommand,
-       /* 0x82: CMD_MAILBOX_AVAILABLE */ &BridgeClass::onUnknownCommand,
-  /* 0x83: CMD_MAILBOX_PUSH */
-#if BRIDGE_ENABLE_MAILBOX
-       &BridgeClass::_handleMailboxPushCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-  /* 0x84: CMD_MAILBOX_READ_RESP */
-#if BRIDGE_ENABLE_MAILBOX
-       &BridgeClass::_handleMailboxReadResponseCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-  /* 0x85: CMD_MAILBOX_AVAILABLE_RESP */
-#if BRIDGE_ENABLE_MAILBOX
-       &BridgeClass::_handleMailboxAvailableResponseCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-       /* 0x86 - 0x8F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-  /* 0x90: CMD_FILE_WRITE */
-#if BRIDGE_ENABLE_FILESYSTEM
-       &BridgeClass::_handleFileWriteCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-  /* 0x91: CMD_FILE_READ */
-#if BRIDGE_ENABLE_FILESYSTEM
-       &BridgeClass::_handleFileReadCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-  /* 0x92: CMD_FILE_REMOVE */
-#if BRIDGE_ENABLE_FILESYSTEM
-       &BridgeClass::_handleFileRemoveCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-  /* 0x93: CMD_FILE_READ_RESP */
-#if BRIDGE_ENABLE_FILESYSTEM
-       &BridgeClass::_handleFileReadResponseCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-       /* 0x94 - 0x9F */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand,
-       /* 0xA0: CMD_PROCESS_RESERVED */ &BridgeClass::onUnknownCommand,
-       /* 0xA1: CMD_PROCESS_RUN_ASYNC */ &BridgeClass::onUnknownCommand,
-       /* 0xA2: CMD_PROCESS_POLL */ &BridgeClass::onUnknownCommand,
-  /* 0xA3: CMD_PROCESS_KILL */
-#if BRIDGE_ENABLE_PROCESS
-       &BridgeClass::_handleProcessKillCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-       /* 0xA4: CMD_PROCESS_RESERVED */ &BridgeClass::onUnknownCommand,
-  /* 0xA5: CMD_PROCESS_RUN_ASYNC_RESP */
-#if BRIDGE_ENABLE_PROCESS
-       &BridgeClass::_handleProcessRunAsyncResponseCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-  /* 0xA6: CMD_PROCESS_POLL_RESP */
-#if BRIDGE_ENABLE_PROCESS
-       &BridgeClass::_handleProcessPollResponseCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-       /* 0xA7 - 0xAF */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-  /* 0xB0: CMD_SPI_BEGIN */
-#if BRIDGE_ENABLE_SPI
-       &BridgeClass::_handleSpiBegin,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-  /* 0xB1: CMD_SPI_TRANSFER */
-#if BRIDGE_ENABLE_SPI
-       &BridgeClass::_handleSpiTransfer,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-       /* 0xB2: CMD_SPI_TRANSFER_RESP */ &BridgeClass::onUnknownCommand,
-  /* 0xB3: CMD_SPI_END */
-#if BRIDGE_ENABLE_SPI
-       &BridgeClass::_handleSpiEnd,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-  /* 0xB4: CMD_SPI_SET_CONFIG */
-#if BRIDGE_ENABLE_SPI
-       &BridgeClass::_handleSpiSetConfigCommand,
-#else
-       &BridgeClass::onUnknownCommand,
-#endif
-       /* 0xB5 - 0xBF */ &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand,
-       &BridgeClass::onUnknownCommand, &BridgeClass::onUnknownCommand}};
 
-  if (ctx.raw_command >= RANGE_START && ctx.raw_command <= RANGE_END) {
-    (this->*(jump_table[ctx.raw_command - RANGE_START]))(ctx);
-  } else {
+#if BRIDGE_ENABLE_MAILBOX
+    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH): _handleMailboxPushCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP): _handleMailboxReadResponseCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP): _handleMailboxAvailableResponseCommand(ctx); handled = true; break;
+#endif
+
+#if BRIDGE_ENABLE_FILESYSTEM
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE): _handleFileWriteCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ): _handleFileReadCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE): _handleFileRemoveCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP): _handleFileReadResponseCommand(ctx); handled = true; break;
+#endif
+
+#if BRIDGE_ENABLE_PROCESS
+    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL): _handleProcessKillCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP): _handleProcessRunAsyncResponseCommand(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP): _handleProcessPollResponseCommand(ctx); handled = true; break;
+#endif
+
+#if BRIDGE_ENABLE_SPI
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN): _handleSpiBegin(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER): _handleSpiTransfer(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_END): _handleSpiEnd(ctx); handled = true; break;
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG): _handleSpiSetConfigCommand(ctx); handled = true; break;
+#endif
+
+    default:
+      handled = false;
+      break;
+  }
+
+  if (!handled) {
     onUnknownCommand(ctx);
   }
 }

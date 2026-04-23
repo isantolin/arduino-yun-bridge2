@@ -6,7 +6,7 @@ from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -113,13 +113,13 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
     try:
         msg = QueuedPublish(topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello")
 
-        mock_props = MagicMock()
+        # [SIL-2] Use AsyncMock(spec=...) for properties and inbound message
+        from aiomqtt.message import Message
+        mock_props = AsyncMock()
         mock_props.ResponseTopic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
         mock_props.CorrelationData = b"cid"
 
-        from aiomqtt.message import Message
-
-        mock_inbound = MagicMock(spec=Message)
+        mock_inbound = AsyncMock(spec=Message)
         mock_inbound.topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/origin"
         mock_inbound.properties = mock_props
 
@@ -157,7 +157,8 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
 
         from mcubridge.mqtt.spool import MQTTPublishSpool
 
-        mock_spool = MagicMock(spec=MQTTPublishSpool)
+        # [SIL-2] Use spec=MQTTPublishSpool for high fidelity
+        mock_spool = AsyncMock(spec=MQTTPublishSpool)
         mock_spool.pending = 3
         state.mqtt_spool = mock_spool
 
@@ -225,7 +226,8 @@ async def test_reject_topic_action_enqueues_status() -> None:
 
         from aiomqtt.message import Message
 
-        mock_inbound = MagicMock(spec=Message)
+        # [SIL-2] Use spec=Message
+        mock_inbound = AsyncMock(spec=Message)
         mock_inbound.topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret"
         mock_inbound.properties = None
 
@@ -249,7 +251,8 @@ async def test_publish_bridge_snapshot_handshake_flavor() -> None:
 
         from aiomqtt.message import Message
 
-        mock_inbound = MagicMock(spec=Message)
+        # [SIL-2] Use spec=Message
+        mock_inbound = AsyncMock(spec=Message)
         mock_inbound.topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get"
         mock_inbound.properties = None
 

@@ -27,8 +27,8 @@ def runtime_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
         mqtt_topic="br",
-        file_system_root=tempfile.mkdtemp(prefix="mcubridge-test-fs-"),
-        mqtt_spool_dir=tempfile.mkdtemp(prefix="mcubridge-test-spool-"),
+        file_system_root=tempfile.mkdtemp(prefix="mcubridge-test-fs-", dir="/tmp"),
+        mqtt_spool_dir=tempfile.mkdtemp(prefix="mcubridge-test-spool-", dir="/tmp"),
         serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
 

@@ -38,6 +38,7 @@
 #include <etl/string_view.h>
 #include <etl/variant.h>
 #include <etl/vector.h>
+#include <etl/flat_map.h>
 
 namespace rpc {
   class Serializable {
@@ -213,6 +214,9 @@ class BridgeClass {
   void _handleSpiTransfer(const bridge::router::CommandContext& ctx);
   void _handleReceivedFrame(etl::span<const uint8_t> p);
   void onUnknownCommand(const bridge::router::CommandContext& ctx);
+
+  using DispatchHandler = void (BridgeClass::*)(const bridge::router::CommandContext&);
+  etl::flat_map<uint16_t, DispatchHandler, 48> _dispatch_table;
 
   template <typename T, typename F> void _withPayload(const bridge::router::CommandContext& ctx, F handler) { auto res = rpc::Payload::parse<T>(*ctx.frame); if (res) handler(res.value()); }
   template <typename T, typename F> void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {

@@ -19,7 +19,8 @@ def make_test_config(**overrides: object) -> RuntimeConfig:
     raw = get_default_config()
 
     # [SIL-2] Ensure unique paths for every test instance to avoid SQLite race conditions
-    tmp_root = tempfile.mkdtemp(prefix="mcubridge-test-")
+    # FLASH PROTECTION: Must be in /tmp (RAMFS)
+    tmp_root = tempfile.mkdtemp(prefix="mcubridge-test-", dir="/tmp")
     spool_dir = os.path.join(tmp_root, "spool")
     fs_root = os.path.join(tmp_root, "fs")
     os.makedirs(spool_dir, exist_ok=True)

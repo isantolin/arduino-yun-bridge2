@@ -1,5 +1,4 @@
 from mcubridge.transport.mqtt import MqttTransport
-import structlog.testing
 from typing import Any
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -171,7 +170,7 @@ async def test_transport_run_handshake_fatal() -> None:
 
 
 @pytest.mark.asyncio
-async def test_serial_disconnected_hook_error() -> None:
+async def test_serial_disconnected_hook_error(capsys: pytest.CaptureFixture[str]) -> None:
     """Test on_serial_disconnected hook error is logged and handled."""
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
     # Return EOF immediately to terminate loop
@@ -200,7 +199,6 @@ async def test_serial_disconnected_hook_error() -> None:
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
                 patch.object(service, "on_serial_connected", new_callable=AsyncMock),
                 patch.object(service, "on_serial_disconnected", side_effect=_raise_error),
-                structlog.testing.capture_logs() as captured,
             ):
                 try:
                     # Use a timeout to ensure the test doesn't block forever
@@ -211,13 +209,16 @@ async def test_serial_disconnected_hook_error() -> None:
                 except (ConnectionError, asyncio.TimeoutError, RuntimeError):
                     pass
 
-                assert any("error" in log["event"].lower() for log in captured)
+                captured = capsys.readouterr()
+                assert "Error" in captured.out or "Error" in captured.err
+                assert "disconnected hook error" in captured.out or "disconnected hook error" in captured.err
+
         finally:
             state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_async_process_packet_os_error() -> None:
+async def test_async_process_packet_os_error(capsys: pytest.CaptureFixture[str]) -> None:
     """Test _async_process_packet handles OSError gracefully."""
     config = _make_config()
     state = create_runtime_state(config)
@@ -239,11 +240,11 @@ async def test_async_process_packet_os_error() -> None:
         frame = Frame(command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00").build()
         encoded = cobs.encode(frame)
 
-        with structlog.testing.capture_logs() as captured:
-            await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
+        await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
-        # [SIL-2] Check for the structured error tag within the event string
-        assert any("ERR" in log["event"] for log in captured)
-        assert any("transport" in log["event"].lower() for log in captured)
+        captured = capsys.readouterr()
+        # [SIL-2] Check for the structured error tag within the output
+        assert "ERR" in captured.out or "ERR" in captured.err
+        assert "transport" in captured.out.lower() or "transport" in captured.err.lower()
     finally:
         state.cleanup()

@@ -94,3 +94,4 @@ mcubridge-library-arduino/src/protocol/rpc_protocol.h
 mcubridge-library-arduino/src/protocol/rpc_hw_config.h
 mcubridge-library-arduino/src/protocol/rpc_structs.h
 mcubridge-client-examples/mcubridge_client/protocol.py
+.tmp_tests/

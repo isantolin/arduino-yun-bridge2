@@ -22,8 +22,11 @@ import msgspec
 from cobs import cobs
 import serial
 import serial_asyncio_fast
+import time
+from serial import SerialException
 import tenacity
 
+from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.config.const import (
     MAX_SERIAL_FRAME_BYTES,
     DEFAULT_RECONNECT_DELAY,
@@ -90,8 +93,9 @@ class SerialTransport:
         # [SIL-2] Single consolidated retry loop using native tenacity policies
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
-            retry=tenacity.retry_if_not_exception_type(asyncio.CancelledError)
-            & tenacity.retry_if_exception(lambda e: "SerialHandshakeFatal" not in type(e).__name__),
+            retry=tenacity.retry_if_not_exception_type(
+                (asyncio.CancelledError, SerialHandshakeFatal)
+            ),
             before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
@@ -101,9 +105,10 @@ class SerialTransport:
                 await retryer(self._connect_and_run)
             except asyncio.CancelledError:
                 break
+            except SerialHandshakeFatal as exc:
+                logger.error("Fatal serial handshake error: %s", exc)
+                raise
             except Exception as exc:
-                if "SerialHandshakeFatal" in type(exc).__name__:
-                    raise
                 logger.error("Transport fatal error: %s", exc)
                 await asyncio.sleep(DEFAULT_RECONNECT_DELAY)
 
@@ -158,7 +163,8 @@ class SerialTransport:
             try:
                 await self.service.on_serial_disconnected()
             except Exception as e:
-                logger.error("Error in on_serial_disconnected hook: %s", e)
+                logger.error("Error in on_serial_disconnected hook: %02X", id(e))
+                logger.debug("on_serial_disconnected stacktrace:", exc_info=True)
             if self.writer:
                 self.writer.close()
 
@@ -169,13 +175,11 @@ class SerialTransport:
             def _pulse():
                 with serial.Serial(self.config.serial_port) as s:
                     s.dtr = False
-                    import time
-
                     time.sleep(0.1)
                     s.dtr = True
 
             await self.loop.run_in_executor(None, _pulse)  # type: ignore
-        except Exception as exc:
+        except (SerialException, OSError) as exc:
             logger.debug("DTR toggle failed: %s", exc)
 
     async def stop(self) -> None:

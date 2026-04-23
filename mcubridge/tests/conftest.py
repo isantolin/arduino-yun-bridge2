@@ -154,19 +154,32 @@ def force_gc_cleanup():
         gc.collect()
 
 
+# [TEST FIX] Global absolute path for temporary test data.
+# This ensures all tests use the same base directory and avoids 'Disk quota exceeded'
+# on restricted environments by allowing the user to redirect it.
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+TMP_TESTS_DIR = os.path.join(PROJECT_ROOT, ".tmp_tests")
+os.makedirs(TMP_TESTS_DIR, exist_ok=True)
+
+
 @pytest.fixture(autouse=True)
-def _isolate_test_paths(tmp_path: Path) -> Iterator[None]:  # type: ignore[reportUnusedFunction]
-    """Give each test unique file_system_root and mqtt_spool_dir to prevent cross-test interference."""
+def _isolate_test_paths() -> Iterator[None]:  # type: ignore[reportUnusedFunction]
+    """Give each test unique file_system_root and mqtt_spool_dir to prevent cross-test interference.
+    [SIL-2] FLASH PROTECTION: Always use /tmp (RAMFS) or verified .tmp_tests.
+    """
     import mcubridge.config.const
+    import tempfile
 
     original_fs = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
     original_spool = mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR
 
-    mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = str(tmp_path / "yun_files")
-    mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = str(tmp_path / "spool")
+    tmp_base = tempfile.mkdtemp(prefix="mcubridge-pytest-", dir=TMP_TESTS_DIR)
+    mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = str(Path(tmp_base) / "yun_files")
+    mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = str(Path(tmp_base) / "spool")
     yield
     mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
     mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = original_spool
+    shutil.rmtree(tmp_base, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
@@ -198,13 +211,13 @@ def _remove_persistent_test_path(path: Path) -> None:
 @pytest.fixture(autouse=True)
 def isolate_persistent_runtime_paths() -> Iterator[None]:
     shared_paths = (
-        Path("/tmp/yun_files/console"),
-        Path("/tmp/yun_files/mailbox_out"),
-        Path("/tmp/yun_files/mailbox_in"),
-        Path("/tmp/yun_files"),
-        Path("/tmp/mcubridge"),
-        Path("/tmp/mcubridge-tests-spool"),
-        Path("/tmp/spool_v3"),
+        Path(TMP_TESTS_DIR) / "yun_files/console",
+        Path(TMP_TESTS_DIR) / "yun_files/mailbox_out",
+        Path(TMP_TESTS_DIR) / "yun_files/mailbox_in",
+        Path(TMP_TESTS_DIR) / "yun_files",
+        Path(TMP_TESTS_DIR) / "mcubridge",
+        Path(TMP_TESTS_DIR) / "mcubridge-tests-spool",
+        Path(TMP_TESTS_DIR) / "spool_v3",
     )
     for path in shared_paths:
         _remove_persistent_test_path(path)
@@ -312,7 +325,7 @@ def runtime_config() -> RuntimeConfig:
     import time
 
     # [TEST FIX] Ensure each test worker has its own unique FS root to avoid SQLite locking
-    unique_root = f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}"
+    unique_root = os.path.join(TMP_TESTS_DIR, f"mcubridge-test-fs-{os.getpid()}-{time.time_ns()}")
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_BAUDRATE,
@@ -322,7 +335,7 @@ def runtime_config() -> RuntimeConfig:
         mqtt_user=None,
         mqtt_pass=None,
         mqtt_tls=True,
-        mqtt_cafile="/tmp/test-ca.pem",
+        mqtt_cafile=os.path.join(TMP_TESTS_DIR, "test-ca.pem"),
         mqtt_certfile=None,
         mqtt_keyfile=None,
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
@@ -340,7 +353,7 @@ def runtime_config() -> RuntimeConfig:
         serial_response_timeout=0.1,
         serial_retry_attempts=1,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
-        mqtt_spool_dir=f"/tmp/mcubridge-tests-spool-{os.getpid()}",
+        mqtt_spool_dir=os.path.join(TMP_TESTS_DIR, f"mcubridge-test-spool-{os.getpid()}"),
     )
 
 

@@ -84,8 +84,59 @@ BridgeClass::BridgeClass(Stream& stream)
       _tx_payload_pool(),
       _pending_tx_queue(),
       _rx_history() {
-  _shared_secret.clear();
-  _rx_storage.fill(0);
+      _shared_secret.clear();
+      _rx_storage.fill(0);
+
+      // [SIL-2] Initialize O(log N) Dispatch Table (RAM-efficient)
+      // Eradicates 'switch' statements as per mission critical requirements.
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)] = &BridgeClass::_handleGetVersion;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY)] = &BridgeClass::_handleGetFreeMemory;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC)] = &BridgeClass::_handleLinkSync;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET)] = &BridgeClass::_handleLinkReset;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES)] = &BridgeClass::_handleGetCapabilities;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE)] = &BridgeClass::_handleSetBaudrateCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER)] = &BridgeClass::_handleEnterBootloaderCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_XOFF)] = &BridgeClass::_handleXoff;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_XON)] = &BridgeClass::_handleXon;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE)] = &BridgeClass::_handleSetPinModeCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE)] = &BridgeClass::_handleDigitalWriteCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE)] = &BridgeClass::_handleAnalogWriteCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)] = &BridgeClass::_handleDigitalReadCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ)] = &BridgeClass::_handleAnalogReadCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)] = &BridgeClass::_handleConsoleWriteCommand;
+      _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_OK)] = &BridgeClass::_handleStatusOk;
+      _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED)] = &BridgeClass::_handleStatusMalformed;
+      _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_ACK)] = &BridgeClass::_handleStatusAck;
+
+      #if BRIDGE_ENABLE_DATASTORE
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)] = &BridgeClass::_handleDataStoreGetResponseCommand;
+      #endif
+
+      #if BRIDGE_ENABLE_MAILBOX
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)] = &BridgeClass::_handleMailboxPushCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP)] = &BridgeClass::_handleMailboxReadResponseCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)] = &BridgeClass::_handleMailboxAvailableResponseCommand;
+      #endif
+
+      #if BRIDGE_ENABLE_FILESYSTEM
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)] = &BridgeClass::_handleFileWriteCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ)] = &BridgeClass::_handleFileReadCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE)] = &BridgeClass::_handleFileRemoveCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP)] = &BridgeClass::_handleFileReadResponseCommand;
+      #endif
+
+      #if BRIDGE_ENABLE_PROCESS
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL)] = &BridgeClass::_handleProcessKillCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP)] = &BridgeClass::_handleProcessRunAsyncResponseCommand;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)] = &BridgeClass::_handleProcessPollResponseCommand;
+      #endif
+
+      #if BRIDGE_ENABLE_SPI
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)] = &BridgeClass::_handleSpiBegin;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER)] = &BridgeClass::_handleSpiTransfer;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_END)] = &BridgeClass::_handleSpiEnd;
+      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)] = &BridgeClass::_handleSpiSetConfigCommand;
+      #endif
 
   // [SIL-2] Register service observers
 #if BRIDGE_ENABLE_CONSOLE
@@ -208,65 +259,14 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     return;
   }
 
-  // [SIL-2] Static Command Router: Zero-overhead, memory-safe dispatch.
-  // Eliminates function pointer tables in RAM/Flash.
-  bool handled = false;
-
+  // [SIL-2] Deterministic Dispatcher: O(log N) search in RAM-efficient structure.
+  // Eradicates 'switch' statements as per mission critical requirements.
   const uint16_t raw_cmd = ctx.raw_command;
+  auto it = _dispatch_table.find(raw_cmd);
 
-  switch (raw_cmd) {
-    case rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION): _handleGetVersion(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY): _handleGetFreeMemory(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC): _handleLinkSync(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET): _handleLinkReset(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES): _handleGetCapabilities(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE): _handleSetBaudrateCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER): _handleEnterBootloaderCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_XOFF): _handleXoff(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_XON): _handleXon(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE): _handleSetPinModeCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE): _handleDigitalWriteCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE): _handleAnalogWriteCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ): _handleDigitalReadCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ): _handleAnalogReadCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE): _handleConsoleWriteCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::StatusCode::STATUS_OK): _handleStatusOk(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED): _handleStatusMalformed(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::StatusCode::STATUS_ACK): _handleStatusAck(ctx); handled = true; break;
-
-#if BRIDGE_ENABLE_DATASTORE
-    case rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP): _handleDataStoreGetResponseCommand(ctx); handled = true; break;
-#endif
-
-#if BRIDGE_ENABLE_MAILBOX
-    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH): _handleMailboxPushCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP): _handleMailboxReadResponseCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP): _handleMailboxAvailableResponseCommand(ctx); handled = true; break;
-#endif
-
-#if BRIDGE_ENABLE_FILESYSTEM
-    case rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE): _handleFileWriteCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ): _handleFileReadCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE): _handleFileRemoveCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP): _handleFileReadResponseCommand(ctx); handled = true; break;
-#endif
-
-#if BRIDGE_ENABLE_PROCESS
-    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL): _handleProcessKillCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP): _handleProcessRunAsyncResponseCommand(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP): _handleProcessPollResponseCommand(ctx); handled = true; break;
-#endif
-
-#if BRIDGE_ENABLE_SPI
-    case rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN): _handleSpiBegin(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER): _handleSpiTransfer(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_SPI_END): _handleSpiEnd(ctx); handled = true; break;
-    case rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG): _handleSpiSetConfigCommand(ctx); handled = true; break;
-#endif
-
-    default:
-      handled = false;
-      break;
+  if (it != _dispatch_table.end()) {
+    (this->*(it->second))(ctx);
+    handled = true;
   }
 
   if (!handled) {

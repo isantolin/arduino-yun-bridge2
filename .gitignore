@@ -79,3 +79,10 @@ nohup.out
 
 # Hygiene
 *.pyi.unused
+
+# External Dependencies (Downloadable)
+mcubridge-library-arduino/tests/Unity/
+
+# Compiled Emulator Binaries
+mcubridge-library-arduino/tests/bridge_emulator
+mcubridge-library-arduino/tests/bridge_control_emulator

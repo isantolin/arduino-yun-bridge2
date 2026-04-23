@@ -55,14 +55,14 @@ class TestFlashProtection(unittest.TestCase):
                 load_runtime_config()
 
     def test_override_flag_allows_unsafe_fs_root(self):
-        """Ensure allow_non_tmp_paths=1 bypasses check for file_system_root."""
+        """Ensure allow_non_tmp_paths=True bypasses check for file_system_root."""
         from mcubridge.config import common
 
         unsafe_conf = common.get_default_config()
         unsafe_conf.update(
             {
                 "file_system_root": "/etc/custom",
-                "allow_non_tmp_paths": "1",
+                "allow_non_tmp_paths": True,
                 "serial_shared_secret": "secure_secret_1234",
                 "serial_baud": 57600,
                 "serial_safe_baud": 9600,
@@ -71,6 +71,7 @@ class TestFlashProtection(unittest.TestCase):
                 "mqtt_port": 1883,
                 "mqtt_topic": "bridge",
                 "mqtt_tls": True,
+                "mqtt_spool_dir": ".tmp_tests/spool",
             }
         )
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):

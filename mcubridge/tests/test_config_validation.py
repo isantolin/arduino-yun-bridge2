@@ -26,12 +26,12 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
         "mqtt_user": None,
         "mqtt_pass": None,
         "mqtt_tls": True,
-        "mqtt_cafile": "/tmp/test-ca.pem",
+        "mqtt_cafile": ".tmp_tests/test-ca.pem",
         "mqtt_certfile": None,
         "mqtt_keyfile": None,
         "mqtt_topic": "mcubridge",
         "allowed_commands": (),
-        "file_system_root": "/tmp",
+        "file_system_root": ".tmp_tests",
         "process_timeout": DEFAULT_PROCESS_TIMEOUT,
         "serial_shared_secret": b"abcd1234",
     }
@@ -42,9 +42,9 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
 def test_runtime_config_normalizes_topic_and_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    spool_absolute = "/tmp/relative/spool"
+    spool_absolute = ".tmp_tests/relative/spool"
     expected_spool = os.path.abspath(spool_absolute)
-    root_input = "/tmp//bridge/test/.."
+    root_input = ".tmp_tests//bridge/test/.."
     expected_root = os.path.abspath(root_input)
 
     raw = _config_kwargs(

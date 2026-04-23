@@ -170,7 +170,7 @@ async def test_transport_run_handshake_fatal() -> None:
 
 
 @pytest.mark.asyncio
-async def test_serial_disconnected_hook_error(capsys: pytest.CaptureFixture[str]) -> None:
+async def test_serial_disconnected_hook_error() -> None:
     """Test on_serial_disconnected hook error is logged and handled."""
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
     # Return EOF immediately to terminate loop
@@ -199,6 +199,7 @@ async def test_serial_disconnected_hook_error(capsys: pytest.CaptureFixture[str]
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
                 patch.object(service, "on_serial_connected", new_callable=AsyncMock),
                 patch.object(service, "on_serial_disconnected", side_effect=_raise_error),
+                patch("mcubridge.transport.serial.logger") as mock_logger,
             ):
                 try:
                     # Use a timeout to ensure the test doesn't block forever
@@ -209,16 +210,18 @@ async def test_serial_disconnected_hook_error(capsys: pytest.CaptureFixture[str]
                 except (ConnectionError, asyncio.TimeoutError, RuntimeError):
                     pass
 
-                captured = capsys.readouterr()
-                assert "Error" in captured.out or "Error" in captured.err
-                assert "disconnected hook error" in captured.out or "disconnected hook error" in captured.err
+                # Verify logger.error was called with the hook error message
+                error_calls = [
+                    c for c in mock_logger.error.call_args_list if "on_serial_disconnected" in str(c)
+                ]
+                assert error_calls
 
         finally:
             state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_async_process_packet_os_error(capsys: pytest.CaptureFixture[str]) -> None:
+async def test_async_process_packet_os_error() -> None:
     """Test _async_process_packet handles OSError gracefully."""
     config = _make_config()
     state = create_runtime_state(config)
@@ -240,11 +243,10 @@ async def test_async_process_packet_os_error(capsys: pytest.CaptureFixture[str])
         frame = Frame(command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00").build()
         encoded = cobs.encode(frame)
 
-        await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
-
-        captured = capsys.readouterr()
-        # [SIL-2] Check for the structured error tag within the output
-        assert "ERR" in captured.out or "ERR" in captured.err
-        assert "transport" in captured.out.lower() or "transport" in captured.err.lower()
+        with patch("mcubridge.transport.serial.logger") as mock_logger:
+            await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
+            # Verify logger.error was called with TRANSPORT error
+            error_calls = [call for call in mock_logger.error.call_args_list if "TRANSPORT" in str(call)]
+            assert error_calls
     finally:
         state.cleanup()

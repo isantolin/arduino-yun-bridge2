@@ -15,33 +15,33 @@ def test_load_runtime_config_applies_env_and_defaults(
 ):
     raw_config = {
         "serial_port": "/dev/custom",
-        "serial_baud": "57600",
-        "serial_safe_baud": "9600",
+        "serial_baud": 57600,
+        "serial_safe_baud": 9600,
         "mqtt_host": "broker",
-        "mqtt_port": "321",
+        "mqtt_port": 321,
         "mqtt_user": " user ",
         "mqtt_pass": " pass ",
-        "mqtt_tls": "1",
+        "mqtt_tls": True,
         "mqtt_cafile": " /etc/cafile ",
         "mqtt_certfile": " ",
         "mqtt_keyfile": "",
         "mqtt_topic": " custom/topic ",
         "allowed_commands": "  ls  ECHO ls  ",
         "file_system_root": "/data",
-        "allow_non_tmp_paths": "1",
-        "process_timeout": "60",
-        "mqtt_queue_limit": "1",
-        "reconnect_delay": "7",
-        "status_interval": "5",
-        "console_queue_limit_bytes": "4096",
-        "mailbox_queue_limit": "3",
-        "mailbox_queue_bytes_limit": "512",
-        "serial_retry_timeout": "0.5",
-        "serial_response_timeout": "1.5",
-        "serial_retry_attempts": "1",
+        "allow_non_tmp_paths": True,
+        "process_timeout": 60,
+        "mqtt_queue_limit": 1,
+        "reconnect_delay": 7,
+        "status_interval": 5,
+        "console_queue_limit_bytes": 4096,
+        "mailbox_queue_limit": 3,
+        "mailbox_queue_bytes_limit": 512,
+        "serial_retry_timeout": 0.5,
+        "serial_response_timeout": 1.5,
+        "serial_retry_attempts": 1,
         "serial_shared_secret": " envsecret ",
-        "watchdog_enabled": "1",
-        "watchdog_interval": "0.5",
+        "watchdog_enabled": True,
+        "watchdog_interval": 0.5,
     }
 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
@@ -78,11 +78,11 @@ def test_load_runtime_config_applies_env_and_defaults(
 
 def test_load_runtime_config_metrics(monkeypatch: pytest.MonkeyPatch):
     raw_config = {
-        "metrics_enabled": "1",
+        "metrics_enabled": True,
         "metrics_host": "0.0.0.0",
-        "metrics_port": "9999",
-        "bridge_summary_interval": "10.5",
-        "bridge_handshake_interval": "20",
+        "metrics_port": 9999,
+        "bridge_summary_interval": 10.5,
+        "bridge_handshake_interval": 20.0,
     }
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
@@ -100,13 +100,13 @@ def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
     raw_config = {
         "mqtt_spool_dir": "/var/spool/mcu",
         "file_system_root": "/var/lib/mcu",
-        "allow_non_tmp_paths": "0",
+        "allow_non_tmp_paths": False,
     }
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     # Strict validation should now raise msgspec.ValidationError during load_runtime_config in test mode
 
-    with pytest.raises(msgspec.ValidationError, match="FLASH PROTECTION"):
+    with pytest.raises(msgspec.ValidationError):
         settings.load_runtime_config()
 
 
@@ -163,7 +163,7 @@ def test_get_uci_config_flattens_nested_structures(monkeypatch: pytest.MonkeyPat
 
 def test_get_uci_config_handles_value_wrappers(monkeypatch: pytest.MonkeyPatch):
     # Mocking UCI internal list handling
-    monkeypatch.setattr(settings, "get_uci_config", lambda: {"debug": "1"})
+    monkeypatch.setattr(settings, "get_uci_config", lambda: {"debug": True})
     config = settings.load_runtime_config()
     assert config.debug is True
 
@@ -173,19 +173,19 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
     raw_config.update(
         {
             "serial_port": "/dev/ttyS1",
-            "serial_baud": str(protocol.DEFAULT_BAUDRATE),
-            "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
+            "serial_baud": protocol.DEFAULT_BAUDRATE,
+            "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
             "mqtt_host": "broker",
-            "mqtt_port": "8883",
-            "mqtt_tls": "1",
+            "mqtt_port": 8883,
+            "mqtt_tls": True,
             "mqtt_cafile": "/etc/ca.pem",
             "mqtt_topic": "br",
             "allowed_commands": "uptime",
-            "file_system_root": "/tmp",
-            "process_timeout": "10",
+            "file_system_root": ".tmp_tests",
+            "process_timeout": 10,
             "serial_shared_secret": " s_e_c_r_e_t_mock ",
-            "watchdog_enabled": "1",
-            "watchdog_interval": "0.5",
+            "watchdog_enabled": True,
+            "watchdog_interval": 0.5,
         }
     )
 

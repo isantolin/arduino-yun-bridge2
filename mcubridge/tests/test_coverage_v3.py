@@ -28,7 +28,7 @@ def create_real_config():
         {
             "serial_port": "/dev/ttyFake",
             "serial_shared_secret": b"valid_secret_1234",
-            "mqtt_spool_dir": "/tmp/spool_v3",
+            "mqtt_spool_dir": ".tmp_tests/spool_v3",
         }
     )
     return msgspec.convert(raw_cfg, RuntimeConfig)

@@ -44,7 +44,7 @@ async def test_file_write_with_quota_large_warning(tmp_path: Path) -> None:
 async def test_file_refresh_storage_usage_handles_oserror() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
@@ -92,7 +92,7 @@ async def test_file_remove_with_tracking_not_a_file(tmp_path: Path) -> None:
 async def test_file_handle_read_response_no_pending() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
@@ -112,7 +112,7 @@ async def test_file_handle_read_response_no_pending() -> None:
 async def test_file_handle_read_response_malformed() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:

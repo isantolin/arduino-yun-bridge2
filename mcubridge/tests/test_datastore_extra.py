@@ -21,7 +21,7 @@ from tests._helpers import make_mqtt_msg, make_route
 async def test_datastore_handle_put_malformed() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
@@ -42,7 +42,7 @@ async def test_datastore_handle_put_malformed() -> None:
 async def test_datastore_handle_get_malformed() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
@@ -64,7 +64,7 @@ async def test_datastore_handle_get_malformed() -> None:
 async def test_datastore_handle_get_truncation() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
@@ -96,7 +96,7 @@ async def test_datastore_handle_get_truncation() -> None:
 async def test_datastore_handle_mqtt_edge_cases() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
@@ -141,7 +141,7 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
 async def test_datastore_mqtt_put_too_large() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
@@ -171,7 +171,7 @@ async def test_datastore_mqtt_put_too_large() -> None:
 async def test_datastore_mqtt_get_too_large() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f"/tmp/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:

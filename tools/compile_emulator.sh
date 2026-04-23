@@ -14,7 +14,8 @@ STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 
 # Find library paths (local or system)
 if [ -z "${DUMMY_ARDUINO_LIBS:-}" ]; then
-    DUMMY_ARDUINO_LIBS=$(mktemp -d)
+    DUMMY_ARDUINO_LIBS="${ROOT_DIR}/.tmp_tests/arduino_libs"
+    mkdir -p "${DUMMY_ARDUINO_LIBS}"
 fi
 ARDUINO_LIBS="${DUMMY_ARDUINO_LIBS}"
 

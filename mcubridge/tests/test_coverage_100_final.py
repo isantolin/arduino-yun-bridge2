@@ -451,7 +451,7 @@ class TestShellMqttLogic:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
 
@@ -516,7 +516,7 @@ class TestStatusWriter:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
 
@@ -763,7 +763,7 @@ class TestConsoleComponent:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -819,7 +819,7 @@ class TestPinComponent:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -852,7 +852,7 @@ class TestDatastoreComponent:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -888,7 +888,7 @@ class TestDispatcherEdgeCases:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -968,7 +968,7 @@ class TestFileComponent:
     async def test_file_handle_read_nonexistent(self):
         from mcubridge.services.file import FileComponent
 
-        config = make_test_config(file_system_root="/tmp")
+        config = make_test_config(file_system_root=".tmp_tests")
         state = create_runtime_state(config)
         try:
             serial_flow = MagicMock()
@@ -1004,7 +1004,7 @@ class TestWatchdog:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -1033,7 +1033,7 @@ class TestSystemComponent:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -1094,7 +1094,7 @@ class TestHandshakeEdgeCases:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         timing = derive_serial_timing(config)
@@ -1241,7 +1241,7 @@ class TestBridgeServiceEdges:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         svc = BridgeService(config, state, MqttTransport(config, state))
@@ -1276,7 +1276,7 @@ class TestMqttTransport:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -1299,7 +1299,7 @@ class TestMetrics:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -1320,7 +1320,7 @@ class TestMetrics:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -1343,7 +1343,7 @@ class TestMetrics:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -1366,7 +1366,7 @@ class TestMetrics:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
@@ -1396,7 +1396,7 @@ class TestSerialTransport:
         import time
         import os
 
-        unique_root = f"/tmp/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:

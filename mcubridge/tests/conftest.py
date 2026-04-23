@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 
 import svcs
 import structlog
+import mcubridge.config.const
 
 import pytest
 
@@ -160,6 +161,11 @@ def force_gc_cleanup():
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 TMP_TESTS_DIR = os.path.join(PROJECT_ROOT, ".tmp_tests")
 os.makedirs(TMP_TESTS_DIR, exist_ok=True)
+
+# [TEST FIX] Global injection is needed before any tests run to ensure Settings validation passes.
+mcubridge.config.const.VOLATILE_STORAGE_PATHS = frozenset(
+    list(mcubridge.config.const.VOLATILE_STORAGE_PATHS) + [TMP_TESTS_DIR, "/var/tmp"]
+)
 
 
 @pytest.fixture(autouse=True)

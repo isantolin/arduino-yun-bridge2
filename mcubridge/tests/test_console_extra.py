@@ -18,7 +18,7 @@ from mcubridge.state.context import create_runtime_state
 async def test_console_handle_write_edge_cases() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        mqtt_spool_dir=f"/tmp/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",
+        mqtt_spool_dir=f".tmp_tests/mcubridge-test-console-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:

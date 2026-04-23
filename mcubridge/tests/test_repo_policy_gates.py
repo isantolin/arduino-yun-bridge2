@@ -278,6 +278,7 @@ def test_no_print_repo_wide() -> None:
             and "nanopb" not in str(path)
             and ".dummy_libs" not in str(path)
             and ".local_arduino_libs" not in str(path)
+            and ".tmp_tests" not in str(path)
         )
     ]
     hits = _find_print_calls(py_files)

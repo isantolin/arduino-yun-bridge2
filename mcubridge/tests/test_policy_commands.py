@@ -17,7 +17,7 @@ FORBIDDEN_SUBSTRINGS = ("$(", "${", "&&", "||")
     [
         (["ls", "-la"], "", ""),
         (["echo", "hello"], "  ", "  "),
-        (["cat", "/tmp/file.txt"], "\t", ""),
+        (["cat", ".tmp_tests/file.txt"], "\t", ""),
         (["grep", "foo", "bar"], "", "\n"),
     ],
 )

@@ -10,8 +10,7 @@ not used.
 from __future__ import annotations
 
 import structlog
-from typing import Any, cast
-from collections.abc import Iterable
+from typing import Any
 from pathlib import Path
 
 import msgspec
@@ -123,16 +122,10 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
     # [SIL-2] Pre-conversion Normalization
     normalized_values = _normalize_raw_config(raw_values)
 
-    def dec_hook(target_type: type[Any], obj: Any) -> Any:
-        """[SIL-2] Handle UCI-specific type coersion (lists-to-strings)."""
-        if target_type is str and isinstance(obj, (list, tuple)):
-            return " ".join(map(str, cast(Iterable[Any], obj)))
-        return obj
-
     try:
         # [SIL-2] Holistic Validation via msgspec.Struct.
-        # strict=False allows some flexibility during test/migration phases (e.g. string to bytes)
-        return msgspec.convert(normalized_values, RuntimeConfig, strict=False, dec_hook=dec_hook)
+        # strict=True ensures configuration integrity.
+        return msgspec.convert(normalized_values, RuntimeConfig, strict=True)
     except (msgspec.ValidationError, ValueError) as e:
         if source == "uci":
             # [SIL-2] Deterministic Failure: If UCI is present but invalid, abort.

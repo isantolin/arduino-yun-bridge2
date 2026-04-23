@@ -261,11 +261,12 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
 
   // [SIL-2] Deterministic Dispatcher: O(log N) search in RAM-efficient structure.
   // Eradicates 'switch' statements as per mission critical requirements.
+  bool handled = false;
   const uint16_t raw_cmd = ctx.raw_command;
-  auto it = _dispatch_table.find(raw_cmd);
+  auto dispatch_it = _dispatch_table.find(raw_cmd);
 
-  if (it != _dispatch_table.end()) {
-    (this->*(it->second))(ctx);
+  if (dispatch_it != _dispatch_table.end()) {
+    (this->*(dispatch_it->second))(ctx);
     handled = true;
   }
 

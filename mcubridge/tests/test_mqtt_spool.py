@@ -125,7 +125,7 @@ def test_spool_fallback_on_init_failure(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr(Path, "mkdir", _fail_mkdir)
 
-    spool = MQTTPublishSpool("/tmp/protected", limit=5)
+    spool = MQTTPublishSpool(".tmp_tests/protected", limit=5)
 
     assert spool.is_degraded
     spool.append(_make_message("topic/fallback"))

@@ -28,7 +28,7 @@ def _make_config(
     *,
     tls: bool,
     cafile: str | None,
-    spool_dir: str = "/tmp/mcubridge-test-transport-spool",
+    spool_dir: str = ".tmp_tests/mcubridge-test-transport-spool",
 ) -> RuntimeConfig:
     return make_test_config(
         mqtt_user="user",

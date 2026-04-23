@@ -27,8 +27,8 @@ def runtime_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
         mqtt_topic="br",
-        file_system_root=tempfile.mkdtemp(prefix="mcubridge-test-fs-", dir="/tmp"),
-        mqtt_spool_dir=tempfile.mkdtemp(prefix="mcubridge-test-spool-", dir="/tmp"),
+        file_system_root=tempfile.mkdtemp(prefix="mcubridge-test-fs-", dir=".tmp_tests"),
+        mqtt_spool_dir=tempfile.mkdtemp(prefix="mcubridge-test-spool-", dir=".tmp_tests"),
         serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
 
@@ -166,9 +166,14 @@ async def test_handle_mqtt_remove_action(
 @pytest.mark.asyncio
 async def test_handle_read_large_payload_chunking(
     file_component: tuple[FileComponent, AsyncMock, AsyncMock],
-    tmp_path: Path,
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
+    import os
+    import time
+    from pathlib import Path
+    tmp_tests_dir = os.path.join(os.getcwd(), ".tmp_tests")
+    tmp_path = Path(tmp_tests_dir) / f"mcubridge-test-{os.getpid()}-{time.time_ns()}"
+    tmp_path.mkdir(parents=True, exist_ok=True)
     component.config.file_system_root = str(tmp_path)
     large_data = b"X" * 128  # Exactly 2 chunks
     (tmp_path / "large.bin").write_bytes(large_data)
@@ -264,10 +269,15 @@ def test_get_safe_path_confines_to_root(
 @pytest.mark.asyncio
 async def test_handle_read_large_payload_truncation_reproduction(
     file_component: tuple[FileComponent, AsyncMock, AsyncMock],
-    tmp_path: Path,
 ) -> None:
     """Reproduction test for a bug where large file reads were incorrectly truncated."""
     component, serial_flow, _mqtt_flow = file_component
+    import os
+    import time
+    from pathlib import Path
+    tmp_tests_dir = os.path.join(os.getcwd(), ".tmp_tests")
+    tmp_path = Path(tmp_tests_dir) / f"mcubridge-test-{os.getpid()}-{time.time_ns()}"
+    tmp_path.mkdir(parents=True, exist_ok=True)
     component.config.file_system_root = str(tmp_path)
     large_data = b"ABC" * 50  # 150 bytes
     (tmp_path / "trunc.bin").write_bytes(large_data)

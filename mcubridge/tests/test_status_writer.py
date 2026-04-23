@@ -66,7 +66,7 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
 
             state.allowed_policy = AllowedCommandPolicy.from_iterable(["ls"])
             state.mcu_version = (2, 5, 0)
-            state.file_system_root = "/tmp/bridge"
+            state.file_system_root = ".tmp_tests/bridge"
             state.file_storage_bytes_used = 2048
             state.file_storage_quota_bytes = 4096
             state.file_write_max_bytes = 512
@@ -136,7 +136,7 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             assert payload["allowed_commands"] == ["ls"]
             assert payload["link_synchronised"] is False
             assert payload["mcu_version"] == {"major": 2, "minor": 5, "patch": 0}
-            assert payload["file_storage_root"] == "/tmp/bridge"
+            assert payload["file_storage_root"] == ".tmp_tests/bridge"
             assert payload["file_storage_bytes_used"] == 2048
             assert payload["file_storage_quota_bytes"] == 4096
             assert payload["file_write_max_bytes"] == 512

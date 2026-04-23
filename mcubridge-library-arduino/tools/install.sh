@@ -73,7 +73,7 @@ install_dependency() {
 
     echo "[WARN] $name missing. Installing..."
     local tmp_dir
-    tmp_dir=$(mktemp -d)
+    tmp_dir=$(mktemp -d -p "$LIB_DIR")
     local zip_path="$tmp_dir/$name.zip"
 
     if ! download_zip "$name" "$url" "$zip_path"; then

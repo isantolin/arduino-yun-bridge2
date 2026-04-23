@@ -5,6 +5,7 @@
 #include <etl/iterator.h>
 
 #include "hal/ArchTraits.h"
+#include "hal/progmem_compat.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
@@ -496,9 +497,8 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code,
     return;
   }
   constexpr size_t max_len = rpc::MAX_PAYLOAD_SIZE - 1U;
-  bridge::hal::CurrentArchTraits::copy_string(
-      reinterpret_cast<char*>(_transient_buffer.data()),
-      reinterpret_cast<const char*>(message), max_len);
+  bridge::hal::copy_string(reinterpret_cast<char*>(_transient_buffer.data()),
+                           reinterpret_cast<const char*>(message), max_len);
   _transient_buffer[max_len] = rpc::RPC_NULL_TERMINATOR;
   const size_t actual_len =
       etl::string_view(reinterpret_cast<const char*>(_transient_buffer.data()))
@@ -802,16 +802,16 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     hmac_engine.update(msg.nonce);
     hmac_engine.finalizeHMAC(full_tag);
 
-    const char* DEBUG_SECRET_P = BRIDGE_PSTR("DEBUG_INSECURE");
-    bridge::hal::CurrentArchTraits::copy_string(
-        reinterpret_cast<char*>(_transient_buffer.data()), DEBUG_SECRET_P, 16);
+    const char* DEBUG_SECRET_P = PSTR("DEBUG_INSECURE");
+    bridge::hal::copy_string(reinterpret_cast<char*>(_transient_buffer.data()),
+                             DEBUG_SECRET_P, 16);
     if (etl::string_view(
             reinterpret_cast<const char*>(_transient_buffer.data())) ==
         etl::string_view(reinterpret_cast<const char*>(_shared_secret.data()),
                          _shared_secret.size())) {
-      const char* DEBUG_TAG_P = BRIDGE_PSTR("DEBUG_TAG_UNUSED");
-      bridge::hal::CurrentArchTraits::copy_string(
-          reinterpret_cast<char*>(resp.tag.data()), DEBUG_TAG_P, 16);
+      const char* DEBUG_TAG_P = PSTR("DEBUG_TAG_UNUSED");
+      bridge::hal::copy_string(reinterpret_cast<char*>(resp.tag.data()),
+                               DEBUG_TAG_P, 16);
     } else {
       if (!rpc::security::timing_safe_equal(
               etl::span<const uint8_t>(full_tag.data(),

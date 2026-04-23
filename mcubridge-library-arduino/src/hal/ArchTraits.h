@@ -16,24 +16,16 @@ enum class ArchId : uint8_t {
   ARCH_HOST = 4
 };
 
-#if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
-#include <avr/pgmspace.h>
+#if defined(ARDUINO_ARCH_AVR)
+#include <avr/wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_AVR
-#define BRIDGE_PROGMEM PROGMEM
-#define BRIDGE_PSTR(s) PSTR(s)
 #elif defined(ARDUINO_ARCH_ESP32)
 #include <esp_task_wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ESP32
-#define BRIDGE_PROGMEM
-#define BRIDGE_PSTR(s) (s)
 #elif defined(BRIDGE_HOST_TEST)
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_HOST
-#define BRIDGE_PROGMEM
-#define BRIDGE_PSTR(s) (s)
 #else
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_UNKNOWN
-#define BRIDGE_PROGMEM
-#define BRIDGE_PSTR(s) (s)
 #endif
 
 template <ArchId Id>
@@ -60,56 +52,6 @@ struct ArchTraits {
       ESP.restart();
 #endif
     }
-  }
-
-  /**
-   * @brief Zero-cost abstraction for reading from Flash (PROGMEM) or RAM.
-   */
-  static uint8_t read_byte(const uint8_t* addr) {
-    if constexpr (Id == ArchId::ARCH_AVR) {
-#if defined(ARDUINO_ARCH_AVR)
-      return pgm_read_byte(addr);
-#else
-      return *addr;
-#endif
-    } else {
-      return *addr;
-    }
-  }
-
-  /**
-   * @brief Safely copy memory from Flash (PROGMEM) or RAM to RAM.
-   */
-  static void memcpy_to_ram(void* dest, const void* src, size_t n) {
-    if constexpr (Id == ArchId::ARCH_AVR) {
-#if defined(ARDUINO_ARCH_AVR)
-      memcpy_P(dest, src, n);
-#else
-      memcpy(dest, src, n);
-#endif
-    } else {
-      memcpy(dest, src, n);
-    }
-  }
-
-  /**
-   * @brief Safely copy a string from Flash (PROGMEM) or RAM into a RAM buffer.
-   */
-  static void copy_string(char* dest, const char* src, size_t n) {
-    if (n == 0 || dest == nullptr || src == nullptr) return;
-    struct {
-      const char* s;
-      bool done;
-    } ctx = {src, false};
-    etl::for_each(dest, dest + n, [&ctx](char& d) {
-      if (ctx.done) {
-        d = '\0';
-        return;
-      }
-      d = static_cast<char>(
-          read_byte(reinterpret_cast<const uint8_t*>(ctx.s++)));
-      if (d == '\0') ctx.done = true;
-    });
   }
 };
 

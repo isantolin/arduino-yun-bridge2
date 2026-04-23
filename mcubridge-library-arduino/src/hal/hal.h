@@ -124,7 +124,7 @@ struct BridgeAtomicGuard {
 #define BRIDGE_ATOMIC_BLOCK if (BridgeAtomicGuard _guard{}; true)
 #endif
 
-// --- Architecture Traits ---
-#include "ArchTraits.h"
+// --- PROGMEM portability shim (centralized) ---
+#include "progmem_compat.h"
 
 #endif  // BRIDGE_HAL_H

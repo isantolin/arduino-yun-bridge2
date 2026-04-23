@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiomqtt
 import pytest
+import warnings
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
@@ -87,6 +88,7 @@ def test_configure_tls_wraps_ssl_errors(
     cafile = tmp_path / "ca.pem"
     cafile.write_text("not-a-real-ca")
 
+    # [SIL-2] Use MagicMock for synchronous SSL context creation
     monkeypatch.setattr(ssl, "create_default_context", MagicMock(side_effect=ValueError("bad")))
     config = _make_config(tls=True, cafile=str(cafile))
     with pytest.raises(RuntimeError, match=r"TLS setup failed"):
@@ -128,12 +130,15 @@ async def test_mqtt_task_requeues_on_publish_failure(
         monkeypatch.setattr(mqtt.MqttTransport, "flush_mqtt_spool", AsyncMock(return_value=None))
 
         transport = mqtt.MqttTransport(config, state)
-        task = asyncio.create_task(transport._publisher_loop(mock_client))  # type: ignore[reportPrivateUsage]
+        # [SIL-2] Suppress warnings about unawaited coroutines during teardown
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine '.*' was never awaited")
+            task = asyncio.create_task(transport._publisher_loop(mock_client))  # type: ignore[reportPrivateUsage]
 
-        await asyncio.wait_for(stashed.wait(), timeout=1.0)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+            await asyncio.wait_for(stashed.wait(), timeout=1.0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
 
         assert len(stash_calls) == 1
         assert stash_calls[0].topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic"
@@ -148,7 +153,6 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel() -> None:
     config.mqtt_queue_limit = 1
     state = create_runtime_state(config)
     try:
-        MagicMock()
         transport = mqtt.MqttTransport(config, state)
 
         await state.mqtt_publish_queue.put(
@@ -157,7 +161,7 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel() -> None:
                 payload=b"hello",
             )
         )
-        client = MagicMock(spec=aiomqtt.Client)
+        client = AsyncMock(spec=aiomqtt.Client)
         client.publish = AsyncMock(side_effect=asyncio.CancelledError)
 
         task = asyncio.create_task(transport._publisher_loop(client))  # type: ignore[reportPrivateUsage]
@@ -185,7 +189,11 @@ async def test_mqtt_subscriber_loop_handles_mqtt_error(
         client = AsyncMock(spec=aiomqtt.Client)
 
         async def _iter():
-            yield MagicMock(topic="t", payload=b"p")
+            # [SIL-2] Use spec=aiomqtt.Message for high fidelity
+            msg = MagicMock(spec=aiomqtt.Message)
+            msg.topic = "t"
+            msg.payload = b"p"
+            yield msg
             raise aiomqtt.MqttError("boom")
 
         client.messages = _iter()
@@ -202,7 +210,6 @@ async def test_mqtt_publisher_debug_logging() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        MagicMock()
         transport = mqtt.MqttTransport(config, state)
         published: list[tuple[str, bytes]] = []
 
@@ -262,7 +269,10 @@ async def test_mqtt_subscriber_processes_message() -> None:
         service.handle_mqtt_message = _mock_handle  # type: ignore[reportAttributeAccessIssue]
 
         client = AsyncMock(spec=aiomqtt.Client)
-        msg = MagicMock(topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/console/in", payload=b"test", qos=0)
+        msg = MagicMock(spec=aiomqtt.Message)
+        msg.topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/console/in"
+        msg.payload = b"test"
+        msg.qos = 0
 
         async def _iter():
             yield msg
@@ -293,7 +303,9 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
         service.handle_mqtt_message = _mock_handle  # type: ignore[reportAttributeAccessIssue]
 
         client = AsyncMock(spec=aiomqtt.Client)
-        msg = MagicMock(topic="", payload=b"p")
+        msg = MagicMock(spec=aiomqtt.Message)
+        msg.topic = ""
+        msg.payload = b"p"
 
         async def _iter():
             yield msg

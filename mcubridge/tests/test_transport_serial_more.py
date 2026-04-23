@@ -242,7 +242,8 @@ async def test_async_process_packet_os_error() -> None:
         with structlog.testing.capture_logs() as captured:
             await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
-        assert any("error" in log["event"].lower() for log in captured)
+        # [SIL-2] Check for the structured error tag within the event string
+        assert any("ERR" in log["event"] for log in captured)
         assert any("transport" in log["event"].lower() for log in captured)
     finally:
         state.cleanup()

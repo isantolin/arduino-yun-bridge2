@@ -86,3 +86,11 @@ mcubridge-library-arduino/tests/Unity/
 # Compiled Emulator Binaries
 mcubridge-library-arduino/tests/bridge_emulator
 mcubridge-library-arduino/tests/bridge_control_emulator
+
+# Auto-generated Protocol bindings
+mcubridge/mcubridge/protocol/protocol.py
+mcubridge/mcubridge/protocol/structures.py
+mcubridge-library-arduino/src/protocol/rpc_protocol.h
+mcubridge-library-arduino/src/protocol/rpc_hw_config.h
+mcubridge-library-arduino/src/protocol/rpc_structs.h
+mcubridge-client-examples/mcubridge_client/protocol.py

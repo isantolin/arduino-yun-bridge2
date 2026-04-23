@@ -1,5 +1,5 @@
 import msgspec
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock
 from mcubridge.protocol import protocol, structures
 from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.services.dispatcher import BridgeDispatcher
@@ -82,58 +82,53 @@ def test_mcu_registry_completeness() -> None:
     from mcubridge.state.context import create_runtime_state
     from tests._helpers import make_test_config
     import svcs
+    import warnings
 
     config = make_test_config()
     state = create_runtime_state(config)
 
-    # Mock components for registration
-    class MockComp:
-        __aenter__ = None
-        __aexit__ = None
-
-        def __getattr__(self, name: str):
-            if name.startswith("handle_") or name == "on_serial_disconnected":
-                return AsyncMock()
-            raise AttributeError(name)
-
     reg = svcs.Registry()
-    for cls_name in [
-        "ConsoleComponent",
-        "DatastoreComponent",
-        "FileComponent",
-        "MailboxComponent",
-        "PinComponent",
-        "ProcessComponent",
-        "SpiComponent",
-        "SystemComponent",
-    ]:
-        cls = getattr(__import__("mcubridge.services", fromlist=[cls_name]), cls_name)
-        mock_inst = MockComp()
-        reg.register_value(cls, mock_inst)  # type: ignore[reportUnknownMemberType]
+    with warnings.catch_warnings():
+        # [SIL-2] Suppress unawaited coroutine warnings for registration-only mocks
+        warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine '.*' was never awaited")
 
-    container = svcs.Container(reg)
+        for cls_name in [
+            "ConsoleComponent",
+            "DatastoreComponent",
+            "FileComponent",
+            "MailboxComponent",
+            "PinComponent",
+            "ProcessComponent",
+            "SpiComponent",
+            "SystemComponent",
+        ]:
+            cls = getattr(__import__("mcubridge.services", fromlist=[cls_name]), cls_name)
+            mock_inst = AsyncMock(spec=cls)
+            reg.register_value(cls, mock_inst)  # type: ignore[reportUnknownMemberType]
 
-    dispatcher = BridgeDispatcher(
-        mcu_registry={},
-        mqtt_router=MagicMock(),
-        state=state,
-        send_frame=AsyncMock(),
-        acknowledge_frame=AsyncMock(),
-        is_topic_action_allowed=lambda t, a: True,
-        reject_topic_action=AsyncMock(),
-        publish_bridge_snapshot=AsyncMock(),
-    )
+        container = svcs.Container(reg)
 
-    dispatcher.register_components(container)
-    # Register system handlers too
-    dispatcher.register_system_handlers(
-        handle_link_sync_resp=AsyncMock(),
-        handle_link_reset_resp=AsyncMock(),
-        handle_get_capabilities_resp=AsyncMock(),
-        handle_ack=AsyncMock(),
-        status_handler_factory=lambda status: AsyncMock(),
-        handle_process_kill=AsyncMock(),
-    )
+        dispatcher = BridgeDispatcher(
+            mcu_registry={},
+            mqtt_router=AsyncMock(),
+            state=state,
+            send_frame=AsyncMock(return_value=True),
+            acknowledge_frame=AsyncMock(return_value=True),
+            is_topic_action_allowed=lambda t, a: True,
+            reject_topic_action=AsyncMock(return_value=True),
+            publish_bridge_snapshot=AsyncMock(return_value=True),
+        )
+
+        dispatcher.register_components(container)
+        # Register system handlers too
+        dispatcher.register_system_handlers(
+            handle_link_sync_resp=AsyncMock(return_value=True),
+            handle_link_reset_resp=AsyncMock(return_value=True),
+            handle_get_capabilities_resp=AsyncMock(return_value=True),
+            handle_ack=AsyncMock(return_value=True),
+            status_handler_factory=lambda status: AsyncMock(return_value=True),
+            handle_process_kill=AsyncMock(return_value=True),
+        )
 
     for name, cmd_id in commands.items():
         if name in excluded or name == "CMD_UNKNOWN":

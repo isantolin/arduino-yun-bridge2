@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
@@ -26,14 +26,15 @@ from tests._helpers import make_mqtt_msg, make_route, make_test_config
 @pytest.fixture
 def system_component() -> SystemComponent:
     config = make_test_config()
-    state = MagicMock(spec=RuntimeState)
+    # [SIL-2] Use AsyncMock(spec=Interface) for all component mocks
+    state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
     state.mcu_version = None
 
-    serial_flow = MagicMock(spec=SerialFlowController)
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock(return_value=True)
-    mqtt_flow = MagicMock(spec=MqttTransport)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
 
     return SystemComponent(

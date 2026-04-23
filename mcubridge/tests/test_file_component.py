@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
@@ -43,12 +43,13 @@ def runtime_state(runtime_config: RuntimeConfig) -> RuntimeState:
 def file_component(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
-) -> tuple[FileComponent, MagicMock, MagicMock]:
-    serial_flow = MagicMock(spec=SerialFlowController)
+) -> tuple[FileComponent, AsyncMock, AsyncMock]:
+    # [SIL-2] Use AsyncMock(spec=Interface) for all component mocks
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
     serial_flow.acknowledge = AsyncMock()
 
-    mqtt_flow = MagicMock(spec=MqttTransport)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -73,7 +74,7 @@ def _get_publish_arg(mock_pub: Any, arg_idx: int, kw_name: str, call_idx: int = 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_write_and_read(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
     tmp_path: Path,
 ) -> None:
     component, _serial_flow, mqtt_flow = file_component
@@ -108,7 +109,7 @@ async def test_handle_mqtt_write_and_read(
 
 @pytest.mark.asyncio
 async def test_handle_write_rejects_absolute_path(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
     await component.handle_write(0, _build_write_payload("/etc/passwd", b"boom"))
@@ -118,7 +119,7 @@ async def test_handle_write_rejects_absolute_path(
 
 @pytest.mark.asyncio
 async def test_handle_write_rejects_parent_dir(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
     await component.handle_write(0, _build_write_payload("../secret.txt", b"boom"))
@@ -127,7 +128,7 @@ async def test_handle_write_rejects_parent_dir(
 
 @pytest.mark.asyncio
 async def test_handle_write_failure_sends_error(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
@@ -142,7 +143,7 @@ async def test_handle_write_failure_sends_error(
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_remove_action(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
     tmp_path: Path,
 ) -> None:
     component, _serial_flow, _mqtt_flow = file_component
@@ -164,7 +165,7 @@ async def test_handle_mqtt_remove_action(
 
 @pytest.mark.asyncio
 async def test_handle_read_large_payload_chunking(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
     tmp_path: Path,
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
@@ -180,7 +181,7 @@ async def test_handle_read_large_payload_chunking(
 
 @pytest.mark.asyncio
 async def test_handle_read_rejects_invalid_payloads(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
     await component.handle_read(0, b"\xff\xff\xff")
@@ -191,7 +192,7 @@ async def test_handle_read_rejects_invalid_payloads(
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_missing_filename_is_ignored(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, _serial_flow, mqtt_flow = file_component
     route = TopicRoute(raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",))
@@ -201,7 +202,7 @@ async def test_handle_mqtt_missing_filename_is_ignored(
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_unknown_action_is_ignored(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, _serial_flow, mqtt_flow = file_component
     route = TopicRoute(
@@ -216,7 +217,7 @@ async def test_handle_mqtt_unknown_action_is_ignored(
 
 @pytest.mark.asyncio
 async def test_handle_read_oserror_returns_false(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
@@ -252,7 +253,7 @@ def test_normalise_filename_rejects_bad_inputs() -> None:
     ],
 )
 def test_get_safe_path_confines_to_root(
-    file_component: tuple[FileComponent, MagicMock, MagicMock], input_path: str
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock], input_path: str
 ) -> None:
     component, _serial_flow, _mqtt_flow = file_component
     safe = component._get_safe_path(input_path)  # type: ignore[reportPrivateUsage]
@@ -262,7 +263,7 @@ def test_get_safe_path_confines_to_root(
 
 @pytest.mark.asyncio
 async def test_handle_read_large_payload_truncation_reproduction(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
     tmp_path: Path,
 ) -> None:
     """Reproduction test for a bug where large file reads were incorrectly truncated."""
@@ -287,7 +288,7 @@ async def test_handle_read_large_payload_truncation_reproduction(
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_write_to_mcu_storage_disabled(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, _serial_flow, mqtt_flow = file_component
     # Disable MCU backend
@@ -312,7 +313,7 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_read_from_mcu_storage_enabled(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, serial_flow, mqtt_flow = file_component
     component._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]
@@ -345,7 +346,7 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_read_from_mcu_storage_disabled(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, _serial_flow, mqtt_flow = file_component
     component._mcu_backend_enabled = False  # type: ignore[reportPrivateUsage]
@@ -369,7 +370,7 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_read_failure(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, serial_flow, mqtt_flow = file_component
     component._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]
@@ -390,7 +391,7 @@ async def test_handle_mqtt_read_failure(
 
 @pytest.mark.asyncio
 async def test_get_safe_path_none_base_dir(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, _serial_flow, _mqtt_flow = file_component
     # Set to something that will fail path joining
@@ -403,7 +404,7 @@ async def test_get_safe_path_none_base_dir(
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_remove_from_mcu_storage_enabled(
-    file_component: tuple[FileComponent, MagicMock, MagicMock],
+    file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
     component._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]

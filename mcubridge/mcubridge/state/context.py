@@ -519,9 +519,7 @@ class RuntimeState(msgspec.Struct):
             self.serial_pipeline_inflight = None
 
             if "duration" in payload:
-                from typing import cast as t_cast
-
-                duration_val = float(t_cast(float, payload["duration"]))
+                duration_val = float(cast(float, payload["duration"]))
                 self.metrics.serial_latency_ms.observe(duration_val * 1000.0)
 
     def build_serial_pipeline_snapshot(self) -> SerialPipelineSnapshot:

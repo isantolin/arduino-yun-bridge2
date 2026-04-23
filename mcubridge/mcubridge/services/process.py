@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import collections
 import contextlib
 import inspect
 import structlog
@@ -304,18 +303,21 @@ class ProcessComponent:
         # [SIL-2] Wait for an available process slot
         await self._process_slots.acquire()
 
-        pid = 0
         try:
             # [SIL-2] Use native asyncio subprocess for zero-thread execution
             # and deterministic lifecycle.
-            process = await asyncio.create_subprocess_shell(
-                command,
+            import shlex
+
+            args = shlex.split(command)
+            process = await asyncio.create_subprocess_exec(
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
             )
 
-            pid = await self._allocate_pid()
+            # Use OS PID directly (guaranteed < 65536 on OpenWrt/standard Linux)
+            pid = process.pid & 0xFFFF
             managed = ManagedProcess(pid=pid, command=command, handle=process)
 
             async with self.state.process_lock:
@@ -323,7 +325,7 @@ class ProcessComponent:
 
             managed.trigger("start")
 
-            # Spawn lightweight reader tasks
+            # Spawn monitor task for completion/timeout only
             asyncio.create_task(self._monitor_process(pid))
             return pid
 
@@ -332,13 +334,6 @@ class ProcessComponent:
             self._process_slots.release()
             return 0
 
-    async def _allocate_pid(self) -> int:
-        """Atomically allocate a unique protocol-compliant PID (uint16)."""
-        async with self.state.process_lock:
-            pid = self.state.next_pid
-            self.state.next_pid = (pid % 65535) + 1
-            return pid
-
     async def _monitor_process(self, pid: int) -> None:
         """Monitor process lifecycle with safety timeouts to prevent slot deadlocks."""
         try:
@@ -346,29 +341,16 @@ class ProcessComponent:
                 proc = self.state.running_processes.get(pid)
 
             if proc and proc.handle:
-                # [SIL-2] Delegate stream reading with global safety timeout
-                async def _read(reader: asyncio.StreamReader | None, buffer: collections.deque[int]) -> None:
-                    if not reader:
-                        return
-                    try:
-                        # Timeout per chunk to avoid infinite waiting on broken pipes
-                        while True:
-                            chunk = await asyncio.wait_for(reader.read(4096), timeout=2.0)
-                            if not chunk:
-                                break
-                            buffer.extend(chunk)
-                    except (OSError, asyncio.CancelledError, asyncio.TimeoutError):
-                        pass
-
-                # [SIL-2] Non-blocking wait for process exit and I/O completion
+                # [SIL-2] Non-blocking wait for process exit
                 try:
-                    async with asyncio.timeout(5.0):
-                        async with asyncio.TaskGroup() as tg:
-                            tg.create_task(_read(proc.handle.stdout, proc.stdout_buffer))
-                            tg.create_task(_read(proc.handle.stderr, proc.stderr_buffer))
-                        proc.exit_code = await proc.handle.wait()
+                    proc.exit_code = await asyncio.wait_for(
+                        proc.handle.wait(), timeout=float(self.state.process_timeout)
+                    )
                 except asyncio.TimeoutError:
                     logger.warning("Process %d monitor timed out; forcing finalization", pid)
+                    with contextlib.suppress(OSError):
+                        proc.handle.kill()
+                    proc.exit_code = -1
 
                 async with proc.io_lock:
                     proc.trigger("sigchld")
@@ -384,14 +366,33 @@ class ProcessComponent:
                 return ProcessOutputBatch(Status.ERROR.value, 1, b"", b"", True, False, False)
 
             async with proc.io_lock:
-                stdout, stderr, t_out, t_err = proc.pop_payload(protocol.MAX_PAYLOAD_SIZE - 32)
+                budget = protocol.MAX_PAYLOAD_SIZE - 32
+
+                async def _read_stream(stream: asyncio.StreamReader | None) -> tuple[bytes, bool]:
+                    if not stream or stream.at_eof():
+                        return b"", False
+                    try:
+                        # Use direct read natively instead of intermediate deque
+                        chunk = await asyncio.wait_for(stream.read(budget), timeout=0.01)
+                        return chunk, not stream.at_eof()
+                    except asyncio.TimeoutError:
+                        return b"", True
+
+                stdout_chunk = b""
+                stderr_chunk = b""
+                t_out = False
+                t_err = False
+
+                if proc.handle:
+                    stdout_chunk, t_out = await _read_stream(proc.handle.stdout)
+                    stderr_chunk, t_err = await _read_stream(proc.handle.stderr)
                 is_finished = proc.fsm_state == PROCESS_STATE_FINISHED
 
                 batch = ProcessOutputBatch(
                     Status.OK.value,
                     proc.exit_code or 0,
-                    stdout,
-                    stderr,
+                    stdout_chunk,
+                    stderr_chunk,
                     is_finished,
                     t_out,
                     t_err,

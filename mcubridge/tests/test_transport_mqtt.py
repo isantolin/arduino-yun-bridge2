@@ -219,7 +219,7 @@ async def test_mqtt_publisher_debug_logging() -> None:
             )
         )
         with patch("mcubridge.transport.mqtt.logger") as mock_logger:
-            mock_logger.isEnabledFor.return_value = True
+            mock_logger.is_enabled_for.return_value = True
 
             async def wait_publish():
                 for _ in range(20):

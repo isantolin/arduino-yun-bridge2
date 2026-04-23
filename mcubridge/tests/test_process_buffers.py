@@ -28,8 +28,15 @@ async def test_poll_process_flushes_stored_buffers(
     state = runtime_service.state
     slot = ManagedProcess(pid, "noop")
     slot.exit_code = 3
-    slot.stdout_buffer.extend(b"hello")
-    slot.stderr_buffer.extend(b"world")
+
+    mock_handle = MagicMock()
+    mock_handle.stdout = MagicMock()
+    mock_handle.stdout.read = AsyncMock(return_value=b"hello")
+    mock_handle.stdout.at_eof.side_effect = [False, True, True]
+    mock_handle.stderr = MagicMock()
+    mock_handle.stderr.read = AsyncMock(return_value=b"world")
+    mock_handle.stderr.at_eof.side_effect = [False, True, True]
+    slot.handle = mock_handle
 
     # [FSM] Set state to FINISHED so poll_process knows it's done
     slot.fsm_state = PROCESS_STATE_FINISHED

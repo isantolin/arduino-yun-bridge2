@@ -81,7 +81,7 @@ rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
 [[dependency]]
 name = "typer"
 openwrt = "python3-typer"
-pip = "typer[all]==0.24.1"
+pip = "typer[all]==0.24.2"
 rationale = "Modern CLI generation library for tools and examples"
 
 [[dependency]]
@@ -129,7 +129,7 @@ rationale = "Structured service locator for component lifecycle management"
 [[dependency]]
 name = "click"
 openwrt = "python3-click"
-pip = "click==8.3.2"
+pip = "click==8.3.3"
 rationale = "Sub-dependency for typer"
 
 [[dependency]]

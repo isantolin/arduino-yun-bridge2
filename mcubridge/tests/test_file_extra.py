@@ -15,20 +15,29 @@ from mcubridge.state.context import create_runtime_state
 
 
 @pytest.mark.asyncio
-async def test_file_do_write_large_warning() -> None:
-    from mcubridge.services.file import _do_write_file  # type: ignore[reportPrivateUsage]
+async def test_file_write_with_quota_large_warning(tmp_path: Path) -> None:
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        file_system_root=str(tmp_path),
+        file_storage_quota_bytes=2 * 1024 * 1024,
+        file_write_max_bytes=2 * 1024 * 1024,
+    )
+    state = create_runtime_state(config)
+    try:
+        serial_flow = MagicMock()
+        mqtt_flow = MagicMock()
+        comp = FileComponent(config, state, serial_flow, mqtt_flow)
 
-    import tempfile
-
-    # We use a real temp dir to avoid quota issues with large files
-    with tempfile.TemporaryDirectory(prefix="mcubridge-test-large-") as tmpdir:
-        path = Path(tmpdir) / "large.bin"
+        path = tmp_path / "large.bin"
         # 1MB + 1 byte
         data = b"\x00" * (1024 * 1024 + 1)
 
-        # Should log a warning, but we just verify it doesn't crash
-        _do_write_file(path, data)
+        # Should log a warning, but we just verify it doesn't crash and writes correctly
+        result = await comp._write_with_quota(path, data)  # type: ignore[reportPrivateUsage]
+        assert result is True
         assert path.stat().st_size > 1024 * 1024
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio

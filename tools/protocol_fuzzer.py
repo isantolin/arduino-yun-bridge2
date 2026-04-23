@@ -21,21 +21,20 @@ FRAME_DELIMITER: Final[bytes] = b"\x00"
 logger = structlog.get_logger("fuzzer")
 
 class ProtocolFuzzer:
-    def __init__(self, port: str, baudrate: int):
+    def __init__(self, port: str, baudrate: int) -> None:
         self.port = port
         self.baudrate = baudrate
-        self.reader = None
-        self.writer = None
+        self.reader: asyncio.StreamReader | None = None
+        self.writer: asyncio.StreamWriter | None = None
         self.seq_id = 0
 
-    async def connect(self):
+    async def connect(self) -> None:
         self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
             url=self.port, baudrate=self.baudrate
         )
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
-    def _build_raw_frame(self, cmd: int, seq: int, payload: bytes, override_crc: int = None) -> bytes:
-        header = struct.pack(">BHII", PROTOCOL_VERSION, len(payload), cmd, seq)[:7]
+    def _build_raw_frame(self, cmd: int, seq: int, payload: bytes, override_crc: int | None = None) -> bytes:
         # Re-packing header properly based on frame.py: version(8), len(16), cmd(16), seq(16)
         header = struct.pack(">BHHH", PROTOCOL_VERSION, len(payload), cmd, seq)
         body = header + payload
@@ -43,12 +42,12 @@ class ProtocolFuzzer:
         full = body + struct.pack(">I", crc)
         return cobs.encode(full) + FRAME_DELIMITER
 
-    async def send_raw(self, data: bytes):
+    async def send_raw(self, data: bytes) -> None:
         if self.writer:
             self.writer.write(data)
             await self.writer.drain()
 
-    async def fuzz_iteration(self):
+    async def fuzz_iteration(self) -> None:
         self.seq_id = (self.seq_id + 1) & 0xFFFF
 
         mode = random.choice([
@@ -64,7 +63,6 @@ class ProtocolFuzzer:
         logger.info("fuzz_step", mode=mode, seq=self.seq_id)
 
         if mode == "valid_ping":
-            # CMD_PING is usually 0x0001
             frame = self._build_raw_frame(0x0001, self.seq_id, b"\x01\x02\x03")
             await self.send_raw(frame)
 
@@ -73,7 +71,6 @@ class ProtocolFuzzer:
             await self.send_raw(frame)
 
         elif mode == "invalid_version":
-            # Manual build with version 0xFF
             header = struct.pack(">BHHH", 0xFF, 3, 0x0001, self.seq_id)
             body = header + b"VER"
             crc = crc32(body) & 0xFFFFFFFF
@@ -81,12 +78,10 @@ class ProtocolFuzzer:
             await self.send_raw(frame)
 
         elif mode == "malformed_cobs":
-            # COBS with 0x00 inside (illegal)
             bad_data = b"\x03\x01\x00\x02"
             await self.send_raw(bad_data + FRAME_DELIMITER)
 
         elif mode == "oversized_payload":
-            # Length claim 4096 but only 10 bytes sent
             header = struct.pack(">BHHH", PROTOCOL_VERSION, 4096, 0x0001, self.seq_id)
             await self.send_raw(cobs.encode(header + b"SHORT") + FRAME_DELIMITER)
 
@@ -95,18 +90,16 @@ class ProtocolFuzzer:
             await self.send_raw(garbage + FRAME_DELIMITER)
 
         elif mode == "unknown_command":
-            # 0x7FFF is usually unassigned
             frame = self._build_raw_frame(0x7FFF, self.seq_id, b"WHOAMI")
             await self.send_raw(frame)
 
-    async def run(self, iterations: int = 100):
+    async def run(self, iterations: int = 100) -> None:
         await self.connect()
 
         success_count = 0
-        latencies = []
+        latencies: list[float] = []
 
         for i in range(iterations):
-            # Every 10 iterations, perform a health check
             if i % 10 == 0:
                 self.seq_id = (self.seq_id + 1) & 0xFFFF
                 ping_frame = self._build_raw_frame(0x0001, self.seq_id, b"PROBE")
@@ -115,16 +108,15 @@ class ProtocolFuzzer:
                 await self.send_raw(ping_frame)
 
                 try:
-                    # Wait for any response (MCU usually ACKs or echoes)
-                    # For stress, we just wait a bit to see if it responds within 50ms
-                    await asyncio.wait_for(self.reader.readuntil(FRAME_DELIMITER), timeout=0.05)
-                    latencies.append(asyncio.get_event_loop().time() - start_time)
-                    success_count += 1
-                except asyncio.TimeoutError:
+                    if self.reader:
+                        await asyncio.wait_for(self.reader.readuntil(FRAME_DELIMITER), timeout=0.05)
+                        latencies.append(asyncio.get_event_loop().time() - start_time)
+                        success_count += 1
+                except (asyncio.TimeoutError, asyncio.IncompleteReadError):
                     logger.warning("health_probe_timeout", seq=self.seq_id)
 
             await self.fuzz_iteration()
-            await asyncio.sleep(0.005) # 100Hz+ stress
+            await asyncio.sleep(0.005)
 
         if latencies:
             avg_lat = sum(latencies) / len(latencies)

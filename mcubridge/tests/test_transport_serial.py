@@ -130,7 +130,7 @@ async def test_write_frame_debug_logs_unknown_command(
 
         monkeypatch.setattr(
             mcubridge.transport.serial.logger,
-            "isEnabledFor",
+            "is_enabled_for",
             lambda _lvl: True,  # type: ignore[reportUnknownLambdaType]
         )
         seen: dict[str, str] = {}

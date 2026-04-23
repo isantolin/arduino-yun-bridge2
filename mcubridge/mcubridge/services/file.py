@@ -45,14 +45,6 @@ class _PendingMcuRead:
     chunks: list[bytes] = field(default_factory=list)  # type: ignore[reportUnknownVariableType]
 
 
-def _do_write_file(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # [SIL-2] Atomic delegation to Path.write_bytes (C-backed)
-    path.write_bytes(data)
-    if path.stat().st_size > FILE_LARGE_WARNING_BYTES:
-        logger.warning("File %s is growing large (>1MB) in RAM!", path)
-
-
 class FileComponent:
     """Encapsulate file read/write/remove logic. [SIL-2]"""
 
@@ -489,7 +481,13 @@ class FileComponent:
                 self.state.file_storage_limit_rejections += 1
                 return False
 
-            await asyncio.to_thread(_do_write_file, path, data)
+            def _atomic_write() -> None:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                if path.stat().st_size > FILE_LARGE_WARNING_BYTES:
+                    logger.warning("File %s is growing large (>1MB) in RAM!", path)
+
+            await asyncio.to_thread(_atomic_write)
             self.state.file_storage_bytes_used = projected_usage
             return True
 
@@ -513,22 +511,18 @@ class FileComponent:
             self._usage_seeded = True
 
     async def _refresh_storage_usage(self) -> None:
-        # [SIL-2] Use native Python scanning to calculate directory size.
-        # This avoids multi-threading issues with os.fork() in libraries like 'sh'.
+        # [SIL-2] Use native pathlib to calculate directory size via generator expression.
         try:
             root_path = Path(self.config.file_system_root)
+            if not root_path.exists():
+                self.state.file_storage_bytes_used = 0
+                return
 
-            def _get_size():
-                size = 0
-                if root_path.exists():
-                    for fp in root_path.rglob("*"):
-                        if fp.is_file() and not fp.is_symlink():
-                            size += fp.stat().st_size
-                return size
+            def _calculate() -> int:
+                return sum(f.stat().st_size for f in root_path.rglob("*") if f.is_file() and not f.is_symlink())
 
-            usage = await asyncio.to_thread(_get_size)
-            self.state.file_storage_bytes_used = usage
-        except (ValueError, IndexError, OSError):
+            self.state.file_storage_bytes_used = await asyncio.to_thread(_calculate)
+        except (OSError, RuntimeError):
             self.state.file_storage_bytes_used = 0
 
 

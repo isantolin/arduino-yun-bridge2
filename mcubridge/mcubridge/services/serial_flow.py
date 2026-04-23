@@ -109,13 +109,50 @@ class SerialFlowController:
             await self._condition.wait_for(lambda: self._current is None)
             self._current = pending
 
+        from mcubridge.config.const import (
+            SERIAL_HANDSHAKE_BACKOFF_BASE,
+            SERIAL_HANDSHAKE_BACKOFF_MAX,
+        )
+
         try:
-            return await self._execute_with_retries(pending, payload, sender, command_id)
+            # [SIL-2] Single consolidated retry loop using native tenacity policies.
+            # Zero-Wrapper: Using AsyncRetrying as an async iterator directly.
+            async for attempt in tenacity.AsyncRetrying(
+                stop=tenacity.stop_after_attempt(self._max_attempts),
+                wait=tenacity.wait_exponential(
+                    multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                    max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+                ),
+                retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
+                before_sleep=self._on_retry_sleep,
+                reraise=True,
+            ):
+                with attempt:
+                    pending.attempts = (pending.attempts or 0) + 1
+                    self._notify_pipeline("start", pending)
+                    self._reset_pending_state(pending)
+
+                    # Low-level send and wait logic
+                    await self._send_and_wait(pending, payload, sender, command_id)
+
+                    self._emit_metric("ack")
+                    self._notify_pipeline("success", pending)
+            return True
+
+        except self._RetryableSerialError:
+            pending.mark_failure(Status.TIMEOUT.value)
+            self._notify_pipeline("failure", pending, status=Status.TIMEOUT.value)
+        except self._FatalSerialError as exc:
+            pending.mark_failure(exc.status)
+            self._notify_pipeline("failure", pending, status=exc.status)
         finally:
             async with self._condition:
                 if self._current is pending:
                     self._current = None
                     self._condition.notify_all()
+
+        self._emit_metric("failure")
+        return False
 
     async def acknowledge(
         self,
@@ -216,69 +253,6 @@ class SerialFlowController:
 
     def _should_track(self, command_id: int) -> bool:
         return bool(expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS
-
-    def _build_retryer(self) -> tenacity.AsyncRetrying:
-        """Build tenacity retryer with configured limits."""
-        from mcubridge.config.const import (
-            SERIAL_HANDSHAKE_BACKOFF_BASE,
-            SERIAL_HANDSHAKE_BACKOFF_MAX,
-        )
-
-        return tenacity.AsyncRetrying(
-            stop=tenacity.stop_after_attempt(self._max_attempts),
-            wait=tenacity.wait_exponential(
-                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
-            ),
-            retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
-            before_sleep=self._on_retry_sleep,
-            reraise=True,
-        )
-
-    async def _single_attempt(
-        self,
-        pending: PendingCommand,
-        payload: bytes,
-        sender: SendFrameCallable,
-        cmd_to_send: int,
-    ) -> bool:
-        """Execute a single send attempt. Raises on retryable/fatal errors."""
-        # [SIL-2] Extract attempt number from tenacity context if available
-        # otherwise fallback to manual tracking.
-        try:
-            # [SIL-2] Manual attempt tracking for determinism
-            pending.attempts = (pending.attempts or 0) + 1
-        except AttributeError:
-            pending.attempts = (pending.attempts or 0) + 1
-
-        self._notify_pipeline("start", pending)
-        self._reset_pending_state(pending)
-        await self._send_and_wait(pending, payload, sender, cmd_to_send)
-        self._emit_metric("ack")
-        self._notify_pipeline("success", pending)
-        return True
-
-    async def _execute_with_retries(
-        self,
-        pending: PendingCommand,
-        payload: bytes,
-        sender: SendFrameCallable,
-        actual_cmd_id: int | None = None,
-    ) -> bool:
-        cmd_to_send = actual_cmd_id if actual_cmd_id is not None else pending.command_id
-
-        try:
-            retryer = self._build_retryer()
-            return await retryer(self._single_attempt, pending, payload, sender, cmd_to_send)
-        except self._RetryableSerialError:
-            pending.mark_failure(Status.TIMEOUT.value)
-            self._notify_pipeline("failure", pending, status=Status.TIMEOUT.value)
-        except self._FatalSerialError as exc:
-            pending.mark_failure(exc.status)
-            self._notify_pipeline("failure", pending, status=exc.status)
-
-        self._emit_metric("failure")
-        return False
 
     def _on_retry_sleep(self, retry_state: tenacity.RetryCallState) -> None:
         self._emit_metric("retry")

@@ -64,7 +64,7 @@ def get_default_config() -> dict[str, Any]:
         "mqtt_spool_dir": const.DEFAULT_MQTT_SPOOL_DIR,
         "mqtt_spool_limit": const.DEFAULT_MQTT_QUEUE_LIMIT,
         "file_system_root": const.DEFAULT_FILE_SYSTEM_ROOT,
-        "debug": const.DEFAULT_DEBUG_LOGGING,
+        "debug": const.DEFAULT_DEBUG,
         "status_interval": const.DEFAULT_STATUS_INTERVAL,
         "process_timeout": const.DEFAULT_PROCESS_TIMEOUT,
     }

@@ -42,10 +42,6 @@ def build_mqtt_properties(message: QueuedPublish) -> Properties:
 
     props = mcubridge.mqtt.build_mqtt_properties(message) or Properties(PacketTypes.PUBLISH)
 
-    # Client-specific MQTT v5 properties not used by the daemon
-    if message.topic_alias is not None:
-        props.TopicAlias = message.topic_alias
-
     if message.subscription_identifier is not None:
         props.SubscriptionIdentifier = list(message.subscription_identifier)
 

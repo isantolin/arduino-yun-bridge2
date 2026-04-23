@@ -526,10 +526,6 @@ description = "Analog write"
 name = "ANALOG_READ"
 value = "read"
 description = "Analog read"
-[[actions]]
-name = "CONSOLE_INPUT"
-value = "input"
-description = "Console input action"
 
 # --- STATUS CODES REASSIGNED TO SAFE RANGE 0x30-0x3F ---
 [[statuses]]

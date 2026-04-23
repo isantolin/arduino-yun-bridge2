@@ -195,7 +195,7 @@ class SerialTransport:
                 packet_view = memoryview(packet_with_sep)[:-1]  # remove delimiter (Zero-copy)
 
                 if packet_view:
-                    if logger.isEnabledFor(logging.DEBUG):
+                    if logger.is_enabled_for(logging.DEBUG):
                         logger.debug("[SERIAL <- MCU] [RAW]: [%s]", packet_view.hex(" ").upper())
                     self._process_packet(packet_view)
 
@@ -252,7 +252,7 @@ class SerialTransport:
             frame = Frame.parse(decoded)
             cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
-            if logger.isEnabledFor(logging.DEBUG):
+            if logger.is_enabled_for(logging.DEBUG):
                 # [SIL-2] Mandatory HEXADECIMAL logging for binary traffic.
                 raw_hex = packet_bytes.hex(" ").upper()
                 logger.debug("[MCU -> SERIAL] [SEQ:%04X] [RAW]: [%s]", seq_id, raw_hex)
@@ -334,7 +334,7 @@ class SerialTransport:
             frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)
             encoded = cobs.encode(frame.build()) + protocol.FRAME_DELIMITER
 
-            if logger.isEnabledFor(logging.DEBUG):
+            if logger.is_enabled_for(logging.DEBUG):
                 logger.log(
                     logging.DEBUG,
                     "[SERIAL -> MCU] [SEQ:%04X] [RAW]: [%s]",

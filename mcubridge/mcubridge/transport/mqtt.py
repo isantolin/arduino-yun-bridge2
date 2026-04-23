@@ -148,7 +148,7 @@ class MqttTransport:
                 qos = int(message.qos)
                 retain = message.retain
 
-                if logger.isEnabledFor(logging.DEBUG):
+                if logger.is_enabled_for(logging.DEBUG):
                     logger.log(
                         logging.DEBUG,
                         "[HEXDUMP] MQTT PUB > %s: %s",
@@ -213,7 +213,7 @@ class MqttTransport:
                 if not topic_str:
                     continue
 
-                if logger.isEnabledFor(logging.DEBUG):
+                if logger.is_enabled_for(logging.DEBUG):
                     payload_bytes = bytes(message.payload) if message.payload else b""
                     logger.log(
                         logging.DEBUG,

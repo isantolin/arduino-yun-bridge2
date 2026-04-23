@@ -110,13 +110,11 @@ def _status_label(code: int | None) -> str:
 
 @dataclass
 class ManagedProcess:
-    """Managed subprocess with output buffers."""
+    """Managed subprocess with direct stream access."""
 
     pid: int
     command: str = ""
     handle: Any | None = None
-    stdout_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
-    stderr_buffer: collections.deque[int] = field(default_factory=lambda: collections.deque(maxlen=4096))
     exit_code: int | None = None
     io_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     fsm_state: str = PROCESS_STATE_STARTING
@@ -134,47 +132,15 @@ class ManagedProcess:
         elif event == "force_kill":
             self.fsm_state = PROCESS_STATE_ZOMBIE
 
-    def append_output(
-        self,
-        stdout_chunk: bytes,
-        stderr_chunk: bytes,
-        *,
-        limit: int,
-    ) -> tuple[bool, bool]:
-        if stdout_chunk:
-            self.stdout_buffer.extend(stdout_chunk)
-        if stderr_chunk:
-            self.stderr_buffer.extend(stderr_chunk)
-        return False, False
-
-    def pop_payload(self, budget: int) -> tuple[bytes, bytes, bool, bool]:
-        out_bytes = bytes(self.stdout_buffer)
-        err_bytes = bytes(self.stderr_buffer)
-
-        out_len = min(len(out_bytes), budget)
-        stdout_chunk = out_bytes[:out_len]
-
-        remaining = budget - out_len
-        err_len = min(len(err_bytes), remaining)
-        stderr_chunk = err_bytes[:err_len]
-
-        for _ in range(out_len):
-            self.stdout_buffer.popleft()
-        for _ in range(err_len):
-            self.stderr_buffer.popleft()
-
-        return (
-            stdout_chunk,
-            stderr_chunk,
-            bool(self.stdout_buffer),
-            bool(self.stderr_buffer),
-        )
-
     def is_drained(self) -> bool:
         # [FSM] Must be in FINISHED/ZOMBIE state to be drained
         if self.fsm_state not in (PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE):
             return False
-        return not self.stdout_buffer and not self.stderr_buffer
+        if not self.handle:
+            return True
+        out_eof = getattr(self.handle.stdout, "at_eof", lambda: True)()
+        err_eof = getattr(self.handle.stderr, "at_eof", lambda: True)()
+        return out_eof and err_eof
 
 
 def collect_system_metrics() -> dict[str, Any]:

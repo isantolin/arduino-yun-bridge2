@@ -296,7 +296,7 @@ def main(
     if non_interactive:
         overrides["non_interactive"] = True
     if debug:
-        overrides["debug_logging"] = True
+        overrides["debug"] = True
     if allowed_commands:
         overrides["allowed_commands"] = allowed_commands.split(",") if allowed_commands != "*" else "*"
 

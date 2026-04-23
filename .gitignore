@@ -92,3 +92,19 @@ typings/
 .codex_tmp/
 .local_arduino_libs/
 mcubridge-library-arduino/coverage-report/
+# Modern Tool Caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Database artifacts (diskcache/sqlite)
+*.db
+*.db-shm
+*.db-wal
+
+# Arduino Memory & Emulation Reports
+*.mem_report.json
+arduino-logs/
+
+# Typing and Stubs Hygiene
+*.pyi.unused

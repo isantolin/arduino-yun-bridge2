@@ -165,7 +165,7 @@ def test_get_uci_config_handles_value_wrappers(monkeypatch: pytest.MonkeyPatch):
     # Mocking UCI internal list handling
     monkeypatch.setattr(settings, "get_uci_config", lambda: {"debug": "1"})
     config = settings.load_runtime_config()
-    assert config.debug_logging is True
+    assert config.debug is True
 
 
 def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):

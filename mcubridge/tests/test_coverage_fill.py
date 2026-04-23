@@ -43,7 +43,7 @@ def runtime_config() -> RuntimeConfig:
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
-        debug_logging=False,
+        debug=False,
         process_max_concurrent=2,
         serial_shared_secret=b"secret",
     )

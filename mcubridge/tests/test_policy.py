@@ -54,7 +54,7 @@ class TestTopicAuthorization:
             (Topic.SHELL.value, "run_async"),
             (Topic.SHELL.value, "poll"),
             (Topic.SHELL.value, "kill"),
-            (Topic.CONSOLE.value, "input"),
+            (Topic.CONSOLE.value, "in"),
             (Topic.DIGITAL.value, "write"),
             (Topic.DIGITAL.value, "read"),
             (Topic.DIGITAL.value, "mode"),

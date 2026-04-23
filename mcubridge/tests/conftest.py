@@ -70,16 +70,18 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 
 mcubridge.config.logging.SYSLOG_SOCKET = Path("/dev/null/no-syslog-in-tests")
 
-# [TEST FIX] Configure structlog to use stdlib backend so pytest's caplog works.
+# [TEST FIX] Configure structlog purely natively but route to logging for caplog compatibility.
 structlog.configure(
     processors=[
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.TimeStamper(fmt="iso", key="ts"),
         structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
     ],
-    wrapper_class=structlog.stdlib.BoundLogger,
     logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.make_filtering_bound_logger(logging.NOTSET),
     cache_logger_on_first_use=False,
 )
 
@@ -330,7 +332,7 @@ def runtime_config() -> RuntimeConfig:
         mqtt_queue_limit=8,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
-        debug_logging=False,
+        debug=False,
         console_queue_limit_bytes=64,
         mailbox_queue_limit=2,
         mailbox_queue_bytes_limit=32,

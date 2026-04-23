@@ -2,7 +2,6 @@
 from typing import Any
 import asyncio
 import errno
-import logging.handlers
 import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,6 +11,7 @@ import psutil
 import pytest
 from mcubridge import daemon
 import logging
+import structlog
 import mcubridge.config.logging
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.process import ProcessComponent
@@ -41,13 +41,11 @@ def test_configure_logging_stream_env():
     config = create_real_config()
     with patch.dict(os.environ, {"MCUBRIDGE_LOG_STREAM": "1"}):
         mcubridge.config.logging.configure_logging(config)
-
-        root = logging.getLogger()
-        assert len(root.handlers) == 1
-        assert isinstance(root.handlers[0], logging.StreamHandler)
-        assert not isinstance(
-            root.handlers[0],
-            logging.handlers.SysLogHandler,  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        sl_config = structlog.get_config()
+        assert isinstance(sl_config["logger_factory"], structlog.PrintLoggerFactory)
+        # In stream mode, should use ConsoleRenderer
+        assert any(
+            isinstance(p, structlog.dev.ConsoleRenderer) for p in sl_config["processors"]
         )
 
 
@@ -59,22 +57,22 @@ def test_configure_logging_syslog_fallback(tmp_path: Any):
     with (
         patch("mcubridge.config.logging.SYSLOG_SOCKET", Path("/non/existent/dev/log")),
         patch("mcubridge.config.logging.SYSLOG_SOCKET_FALLBACK", fake_fallback),
-        patch("logging.handlers.SysLogHandler", autospec=True) as mock_cls,
     ):
         mcubridge.config.logging.configure_logging(config)
-        mock_cls.assert_called_once_with(
-            address=str(fake_fallback),
-            facility=logging.handlers.SysLogHandler.LOG_DAEMON,
+        sl_config = structlog.get_config()
+        # Syslog mode should use JSONRenderer
+        assert any(
+            isinstance(p, structlog.processors.JSONRenderer) for p in sl_config["processors"]
         )
 
 
 def test_configure_logging_debug():
     config = create_real_config()
-    config.debug_logging = True
+    config.debug = True
     mcubridge.config.logging.configure_logging(config)
-
-    root = logging.getLogger()
-    assert root.level == logging.DEBUG
+    # Check that FilteringBoundLogger is configured with DEBUG
+    logger = structlog.get_logger()
+    assert logger.is_enabled_for(logging.DEBUG)
 
 
 # --- mcubridge.daemon ---
@@ -239,7 +237,7 @@ async def test_process_run_async_os_error():
 
     comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
 
-    with patch("asyncio.create_subprocess_shell", side_effect=OSError("Not found")):
+    with patch("asyncio.create_subprocess_exec", side_effect=OSError("Not found")):
         pid = await comp.run_async("cmd")
         assert pid == 0
 

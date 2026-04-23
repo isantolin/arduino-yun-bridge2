@@ -86,7 +86,7 @@ define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) -r ./mcubridge $(PKG_BUILD_DIR)/
-	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "__pycache__" \) -prune -exec rm -rf {} + || true
+	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "stubs" -o -name "__pycache__" \) -prune -exec rm -rf {} + || true
 	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
 	$(CP) ./mcubridge.files $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/95-mcubridge-silence-kernel-console $(PKG_BUILD_DIR)/

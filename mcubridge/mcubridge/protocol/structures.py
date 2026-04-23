@@ -109,7 +109,7 @@ class TopicRoute(msgspec.Struct, frozen=True):
 
 
 class RLEPayload(msgspec.Struct, frozen=True):
-    """Encapsulates RLE-compressed data with a msgspec-compatible interface (Refactor)."""
+    """Encapsulates RLE-compressed data."""
 
     data: bytes
 
@@ -253,7 +253,6 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
             (Topic.SHELL.value, ShellAction.POLL.value): "shell_poll",
             (Topic.SHELL.value, ShellAction.KILL.value): "shell_kill",
             (Topic.CONSOLE.value, ConsoleAction.IN.value): "console_input",
-            (Topic.CONSOLE.value, ConsoleAction.INPUT.value): "console_input",
             (Topic.DIGITAL.value, DigitalAction.WRITE.value): "digital_write",
             (Topic.DIGITAL.value, DigitalAction.READ.value): "digital_read",
             (Topic.DIGITAL.value, DigitalAction.MODE.value): "digital_mode",
@@ -291,7 +290,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
         DEFAULT_BRIDGE_SUMMARY_INTERVAL,
         DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-        DEFAULT_DEBUG_LOGGING,
+        DEFAULT_DEBUG,
         DEFAULT_FILE_STORAGE_QUOTA_BYTES,
         DEFAULT_FILE_SYSTEM_ROOT,
         DEFAULT_FILE_WRITE_MAX_BYTES,
@@ -357,7 +356,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
     status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
-    debug_logging: bool = msgspec.field(default=DEFAULT_DEBUG_LOGGING, name="debug")
+    debug: bool = DEFAULT_DEBUG
     console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
@@ -850,7 +849,6 @@ class QueuedPublish(msgspec.Struct, frozen=True):
     content_type: str | None = None
     payload_format_indicator: int | None = None
     message_expiry_interval: int | None = None
-    topic_alias: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
     user_properties: tuple[UserProperty, ...] = ()

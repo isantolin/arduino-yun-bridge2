@@ -50,7 +50,7 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
-        debug_logging=False,
+        debug=False,
         process_max_concurrent=2,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
@@ -87,7 +87,7 @@ async def test_run_async_success(process_comp: ProcessComponent) -> None:
     mock_process.stderr = AsyncMock()
     mock_process.stderr.read.return_value = b""
 
-    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
         pid = await process_comp.run_async("echo hello")
         assert pid > 0
         assert pid in process_comp.state.running_processes
@@ -118,26 +118,27 @@ async def test_poll_process_not_found(process_comp: ProcessComponent) -> None:
 
 @pytest.mark.asyncio
 async def test_poll_process_running(process_comp: ProcessComponent) -> None:
-    mock_process = AsyncMock()
+    mock_process = MagicMock()
     mock_process.pid = 123
     mock_process.wait = AsyncMock(return_value=0)
-    mock_process.stdout = AsyncMock()
-    mock_process.stdout.read.return_value = b""
-    mock_process.stderr = AsyncMock()
-    mock_process.stderr.read.return_value = b""
+    mock_process.stdout = MagicMock()
+    mock_process.stdout.read = AsyncMock(return_value=b"hello")
+    mock_process.stdout.at_eof.side_effect = [False, True, True]
+    mock_process.stderr = MagicMock()
+    mock_process.stderr.read = AsyncMock(return_value=b"")
+    mock_process.stderr.at_eof.side_effect = [True, True, True]
 
-    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
         pid = await process_comp.run_async("echo hello")
 
-    proc = process_comp.state.running_processes[pid]
-    proc.stdout_buffer.extend(b"hello")
-
+    process_comp.state.running_processes[pid]
     batch = await process_comp.poll_process(pid)
+
     assert batch.status_byte == Status.OK.value
     assert batch.stdout_chunk == b"hello"
-    assert not proc.stdout_buffer  # Should be drained
 
 
+# --- Poll & Kill ---
 @pytest.mark.asyncio
 async def test_stop_process_success(process_comp: ProcessComponent) -> None:
     mock_process = AsyncMock()
@@ -155,7 +156,7 @@ async def test_stop_process_success(process_comp: ProcessComponent) -> None:
     with (
         patch("psutil.Process", return_value=mock_psutil_instance),
         patch("psutil.wait_procs", return_value=([mock_psutil_instance], [])),
-        patch("asyncio.create_subprocess_shell", return_value=mock_process),
+        patch("asyncio.create_subprocess_exec", return_value=mock_process),
     ):
         mock_process.pid = 123
         pid = await process_comp.run_async("echo hello")
@@ -177,7 +178,7 @@ async def test_monitor_process_finishes(process_comp: ProcessComponent) -> None:
     mock_process.stderr = AsyncMock()
     mock_process.stderr.read.return_value = b""
 
-    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
         pid = await process_comp.run_async("echo hello")
 
     async with process_comp.state.process_lock:
@@ -198,7 +199,7 @@ async def test_finalize_process(process_comp: ProcessComponent) -> None:
     mock_process.returncode = 0
     mock_process.kill = MagicMock()
 
-    with patch("asyncio.create_subprocess_shell", return_value=mock_process):
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
         pid = await process_comp.run_async("echo hello")
 
     assert pid in process_comp.state.running_processes

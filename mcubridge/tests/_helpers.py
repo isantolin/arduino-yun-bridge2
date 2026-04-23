@@ -5,7 +5,7 @@ import msgspec
 
 import os
 import tempfile
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 
 from mcubridge.config.common import get_default_config
@@ -19,8 +19,7 @@ def make_test_config(**overrides: object) -> RuntimeConfig:
     raw = get_default_config()
 
     # [SIL-2] Ensure unique paths for every test instance to avoid SQLite race conditions
-    # [FLASH PROTECTION] Use /var/tmp for volatile storage
-    tmp_root = tempfile.mkdtemp(prefix="mcubridge-test-", dir="/var/tmp")
+    tmp_root = tempfile.mkdtemp(prefix="mcubridge-test-")
     spool_dir = os.path.join(tmp_root, "spool")
     fs_root = os.path.join(tmp_root, "fs")
     os.makedirs(spool_dir, exist_ok=True)
@@ -46,14 +45,8 @@ def make_route(
     return TopicRoute(raw=raw, prefix=prefix, topic=topic, segments=tuple(segments))
 
 
-def make_mqtt_msg(payload: bytes | str = b"") -> AsyncMock:
+def make_mqtt_msg(payload: bytes | str = b"") -> MagicMock:
     """Build a minimal MQTT Message mock for tests."""
-    from aiomqtt.message import Message
-
-    # [SIL-2] Use AsyncMock(spec=Message) for high interface fidelity
-    msg = AsyncMock(spec=Message)
+    msg = MagicMock()
     msg.payload = payload.encode("utf-8") if isinstance(payload, str) else payload
-    msg.topic = ""
-    msg.qos = 0
-    msg.properties = None
     return msg

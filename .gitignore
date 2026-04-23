@@ -24,87 +24,58 @@ coverage/
 coverage.xml
 *.gcda
 *.gcno
-# Python venvs
+
+# Python environments & temporary scaffolding
 pyenv/
 .venv/
 .venv_test/
 venv/
+.tox/
+.dummy_libs/
+
+# Generated type stubs (dynamic)
+typings/diskcache/
+
+# Persist static mission-critical stubs
+!typings/stubs/
+
 # Editor/OS files
 .DS_Store
 *.bak
 *~
-# Exclude OpenWRT build output
+
+# Build outputs
 mcubridge-library-arduino/build-coverage/
 mcubridge-library-arduino/build-host-local/
-# Python dist folders
-openwrt-mcu-client-python/dist/
-McuBridge-v2/dist/
-Bridge-v2/dist/
-luci-app-mcubridge/dist/
+mcubridge-library-arduino/coverage-report/
 **/dist/
-# Exclude any .apk or .deb anywhere
+
+# Artifacts & Reports
 **/*.apk
 **/*.deb
 **/*.whl
 *.csv
-.hypothesis/
-.tox/
+*.mem_report.json
+arduino-logs/
 pyright-output.json
-test_bridge_components
-test_bridge_core
-test_bridge_refactor
-*.txt
 PHASE_3_REPORT.md
 .gemini/
 gha-creds-*.json
 .tmp/
-feeds/luci-app-mcubridge
-feeds/mcubridge
-feeds/mcubridge
-test_protocol_bin
-.VSCodeCounter/
-# Auto-generated Protocol bindings
-mcubridge/mcubridge/protocol/protocol.py
-mcubridge-library-arduino/src/protocol/rpc_protocol.h
-mcubridge-library-arduino/src/protocol/rpc_hw_config.h
-mcubridge-library-arduino/src/protocol/rpc_structs.h
-mcubridge-library-arduino/src/etl
-mcubridge-library-arduino/src/nanopb
-# Auto-generated Protobuf / Nanopb bindings
-mcubridge/mcubridge/protocol/mcubridge_pb2.py
-mcubridge/mcubridge/protocol/mcubridge_pb2.pyi
-mcubridge/mcubridge/protocol/nanopb_pb2.py
-mcubridge/mcubridge/protocol/nanopb_pb2.pyi
-mcubridge-library-arduino/src/protocol/mcubridge.pb.h
-mcubridge-library-arduino/src/protocol/mcubridge.pb.c
-# Auto-generated Client Protocol
-mcubridge-client-examples/mcubridge_client/protocol.py
-mcubridge-library-arduino/tests/bridge_emulator
-.gitignore
-mcubridge-library-arduino/tests/bridge_control_emulator
-mcubridge-library-arduino/tests/Unity
 nohup.out
-mcubridge-library-arduino/src/wolfcrypt/
-mcubridge-library-arduino/src/wolfssl/
-.dummy_libs/typings/
-# .dummy_libs/
-# typings/ (Removed to allow critical stubs in CI)
-.codex_tmp/
-.local_arduino_libs/
-mcubridge-library-arduino/coverage-report/
-# Modern Tool Caches
+
+# Auto-generated Protocol bindings (Exempt for CI reproducibility)
+# mcubridge/mcubridge/protocol/protocol.py
+
+# Tool Caches
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
 
-# Database artifacts (diskcache/sqlite)
+# Database artifacts
 *.db
 *.db-shm
 *.db-wal
 
-# Arduino Memory & Emulation Reports
-*.mem_report.json
-arduino-logs/
-
-# Typing and Stubs Hygiene
+# Hygiene
 *.pyi.unused

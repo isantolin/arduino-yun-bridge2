@@ -132,7 +132,7 @@ class RLEPayload(msgspec.Struct, frozen=True):
 
         try:
             parsed: Any = RLE_DECODER.parse(self.data)
-            return b"".join(parsed.chunks)
+            return b"".join(parsed)
         except ConstructError as e:
             # Fallback or raise for protocol integrity
             raise ValueError(f"RLE decompression failed: {e}") from e

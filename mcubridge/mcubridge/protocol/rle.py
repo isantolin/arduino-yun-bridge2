@@ -42,48 +42,45 @@ class RleAdapter(Adapter):
         if not obj:
             return b""
         try:
-            parsed = RLE_DECODER.parse(obj)
-            return b"".join(parsed.chunks)
+            # [SIL-2] Optimized: result is a list of byte chunks
+            chunks = RLE_DECODER.parse(obj)
+            return b"".join(chunks)
         except (ConstructError, ValueError, TypeError) as e:
             raise ValueError(f"RLE decode failed: {e}") from e
 
     def _encode(self, obj: bytes, context: Any, path: Any) -> bytes:
-        """Compress data using itertools grouping and declarative chunks."""
+        """Compress data using batch construction (High Performance)."""
         if not obj:
             return b""
 
-        # [SIL-2] Transform raw bytes into a list of declarative chunks
-        # This list can then be built using a Construct if we wanted to be 100%
-        # declarative, but for performance and clarity, we build chunks directly.
-        compressed = bytearray()
+        # [SIL-2] High Performance: Pre-calculate chunks and build in ONE pass
+        # This drastically reduces the overhead of Construct's context initialization.
+        chunks: list[Any] = []
         for byte_val, group in itertools.groupby(obj):
-            run_len = sum(1 for _ in group)
+            run_len = len(list(group))
             while run_len > 0:
                 if byte_val == protocol.RLE_ESCAPE_BYTE:
                     chunk_len = 1
-                    compressed.extend(
-                        RLE_ESCAPE.build(
-                            {
-                                "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,
-                                "value": byte_val,
-                            }
-                        )
+                    chunks.append(
+                        {
+                            "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,
+                            "value": byte_val,
+                        }
                     )
                 elif run_len >= protocol.RLE_MIN_RUN_LENGTH:
                     chunk_len = min(run_len, 256)
-                    compressed.extend(
-                        RLE_ESCAPE.build(
-                            {
-                                "count_m2": chunk_len - protocol.RLE_OFFSET,
-                                "value": byte_val,
-                            }
-                        )
+                    chunks.append(
+                        {
+                            "count_m2": chunk_len - protocol.RLE_OFFSET,
+                            "value": byte_val,
+                        }
                     )
                 else:
                     chunk_len = run_len
-                    compressed.extend(bytes([byte_val]) * chunk_len)
+                    # Literals are stored as raw integers for Int8ub build
+                    chunks.extend([byte_val] * chunk_len)
                 run_len -= chunk_len
-        return bytes(compressed)
+        return RLE_BATCH_BUILDER.build(chunks)
 
 
 def _rle_decode_chunk(obj: Any, ctx: Any) -> bytes:
@@ -94,53 +91,44 @@ def _rle_decode_chunk(obj: Any, ctx: Any) -> bytes:
     return bytes([obj.value]) * count
 
 
-# [SIL-2] Declarative RLE Escape Structure: [Escape(B), Count-2(B), Value(B)]
-RLE_ESCAPE: Construct = Struct(
+# [SIL-2] Highly Optimized RLE Structures
+RLE_ESCAPE_STRUCT: Construct = Struct(
     "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),
     "count_m2" / Int8ub,
     "value" / Int8ub,
 )
 
+# [SIL-2] Batch builder for RLE sequences.
+RLE_BATCH_BUILDER: Construct = GreedyRange(
+    Select(
+        # Literal: Int8ub will match if the item is an integer (0-255)
+        Int8ub,
+        # Escape: Struct will match if the item is a dictionary
+        RLE_ESCAPE_STRUCT,
+    )
+)
 
-def _rle_encode_chunk_nop(obj: Any, ctx: Any) -> None:
-    """SIL-2: NOP encoder for RLE escape."""
-    return None
-
-
-def _literal_check(ctx: Any) -> bool:
-    """SIL-2: Check if current byte is not the protocol escape byte."""
-    return int(ctx.value) != protocol.RLE_ESCAPE_BYTE
-
-
-def _literal_decode_val(obj: int, ctx: Any) -> bytes:
-    """SIL-2: Decode a literal byte into bytes."""
-    return bytes([obj])
-
-
-def _literal_encode_val(obj: bytes, ctx: Any) -> int:
-    """SIL-2: Encode bytes into an integer."""
-    return int(obj[0])
-
-
-# [SIL-2] Internal Decoder Schema
-RLE_DECODER: Construct = Struct(
+# [SIL-2] Optimized Decoder Schema
+RLE_DECODER: Construct = FocusedSeq(
+    "chunks",
     "chunks"
     / GreedyRange(
         Select(
+            # Escape sequence: Try this first. It starts with the escape byte.
             ExprAdapter(
-                RLE_ESCAPE,
+                RLE_ESCAPE_STRUCT,
                 decoder=_rle_decode_chunk,
-                encoder=_rle_encode_chunk_nop,
+                encoder=lambda obj, ctx: None,
             ),
-            # Literal byte (MUST NOT be the escape byte)
+            # Literal: Any byte that is NOT the escape byte
             ExprAdapter(
                 FocusedSeq(
-                    "value",
-                    "value" / Int8ub,
-                    "_" / Check(_literal_check),
+                    "val",
+                    "val" / Int8ub,
+                    "_" / Check(lambda ctx: ctx.val != protocol.RLE_ESCAPE_BYTE),
                 ),
-                decoder=_literal_decode_val,
-                encoder=_literal_encode_val,
+                decoder=lambda obj, ctx: bytes([obj]),
+                encoder=lambda obj, ctx: obj[0],
             ),
         )
     ),
@@ -159,3 +147,6 @@ def should_compress(payload: bytes) -> bool:
         if sum(1 for _ in group) >= protocol.RLE_MIN_RUN_LENGTH:
             return True
     return False
+
+
+__all__ = ["RLE_TRANSFORM", "should_compress"]

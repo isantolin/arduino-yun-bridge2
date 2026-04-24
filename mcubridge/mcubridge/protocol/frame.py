@@ -20,10 +20,8 @@ from construct import (
     BitStruct,
     BitsInteger,
     Bytes,
-    Check,
     Checksum,
     Construct,
-    Enum,
     Flag,
     Int8ub,
     Int16ub,
@@ -39,11 +37,6 @@ from . import protocol
 T = TypeVar("T")
 
 
-def _check_version(ctx: Any) -> bool:
-    """SIL-2: Strictly validate protocol version in frame header."""
-    return int(getattr(ctx, "version", 0)) == protocol.PROTOCOL_VERSION
-
-
 def _calculate_crc32(data: Any) -> int:
     """SIL-2: Ensure 32-bit unsigned CRC calculation."""
     return crc32(cast(bytes, data)) & 0xFFFFFFFF
@@ -55,14 +48,12 @@ COMMAND_ID_CODEC: Construct = BitStruct(
     "raw_id" / BitsInteger(15),
 )
 
-# [SIL-2] Declarative Frame Structure using Construct
-# This ensures big-endian encoding and automatic length/CRC validation.
+# [SIL-2] Declarative Frame Header Structure
 RPC_FRAME_HEADER: Construct = Struct(
     "version" / Int8ub,
     "payload_len" / Int16ub,
-    "command_id" / Enum(Int16ub, protocol.Command, protocol.Status),
+    "command_id" / Int16ub,
     "sequence_id" / Int16ub,
-    "version_check" / Check(_check_version),
 )
 
 
@@ -70,6 +61,7 @@ class FrameAdapter(Adapter):
     """Transparently handles RLE compression encoding and decoding within Construct."""
 
     def _decode(self, obj: Any, context: Any, path: Any) -> Any:
+        # [SIL-2] Decompression logic (Bit 15 Check)
         if int(obj.header.command_id) & protocol.CMD_FLAG_COMPRESSED:
             from .rle import RLE_TRANSFORM
 
@@ -83,22 +75,20 @@ class FrameAdapter(Adapter):
 
         payload = obj.get("payload", b"")
         header = obj.get("header", {})
-        command_id = header.get("command_id", 0)
+        command_id = int(header.get("command_id", 0))
 
         if payload and rle.should_compress(payload):
-            try:
-                compressed = rle.RLE_TRANSFORM.build(payload)
-                if len(compressed) < len(payload):
-                    new_header = dict(header)
-                    new_header["command_id"] = command_id | protocol.CMD_FLAG_COMPRESSED
-                    new_header["payload_len"] = len(compressed)
-                    return {"header": new_header, "payload": compressed}
-            except (ValueError, TypeError, OverflowError):
-                pass
+            compressed = rle.RLE_TRANSFORM.build(payload)
+            if len(compressed) < len(payload):
+                new_header = dict(header)
+                new_header["command_id"] = command_id | protocol.CMD_FLAG_COMPRESSED
+                new_header["payload_len"] = len(compressed)
+                return {"header": new_header, "payload": compressed}
 
-        new_header = dict(header)
-        new_header["payload_len"] = len(payload)
-        return {"header": new_header, "payload": payload}
+        # Ensure payload_len is correct even if not compressed
+        if "header" in obj:
+            obj["header"]["payload_len"] = len(payload)
+        return obj
 
 
 # [SIL-2] Inner container for CRC calculation with transparent RLE Adapter
@@ -109,8 +99,7 @@ RPC_PAYLOAD_CONTAINER: Construct = FrameAdapter(
     )
 )
 
-# [SIL-2] Full Frame with Checksum (Sustitución Drástica)
-# Uses RawCopy to capture the bytes for CRC calculation without manual slicing.
+# [SIL-2] Full Frame with Checksum
 RPC_FRAME: Construct = Struct(
     "header_payload" / RawCopy(RPC_PAYLOAD_CONTAINER),
     "crc" / Checksum(Int32ub, _calculate_crc32, this.header_payload.data),
@@ -118,16 +107,7 @@ RPC_FRAME: Construct = Struct(
 
 
 class Frame(msgspec.Struct, frozen=True):
-    """Represents an RPC frame for MCU-Linux communication.
-
-    This class provides both object-oriented and static methods for
-    frame construction and parsing.
-
-    Attributes:
-        command_id: The RPC command or status code (16-bit).
-        sequence_id: The RPC sequence ID (16-bit) for deduplication.
-        payload: The frame payload (0 to MAX_PAYLOAD_SIZE bytes).
-    """
+    """Represents an RPC frame for MCU-Linux communication."""
 
     command_id: int | protocol.Command | protocol.Status
     sequence_id: int
@@ -154,14 +134,13 @@ class Frame(msgspec.Struct, frozen=True):
         if len(self.payload) > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}")
         try:
-            # Use simple dictionary for building
+            # [SIL-2] Optimized build with required nesting for RPC_FRAME
             return RPC_FRAME.build(
                 {
                     "header_payload": {
                         "value": {
                             "header": {
                                 "version": protocol.PROTOCOL_VERSION,
-                                "payload_len": len(self.payload),
                                 "command_id": int(self.command_id),
                                 "sequence_id": self.sequence_id,
                             },
@@ -178,10 +157,12 @@ class Frame(msgspec.Struct, frozen=True):
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
         try:
             obj: Any = RPC_FRAME.parse(raw_frame_buffer)
+            # The structure is nested due to RawCopy and FrameAdapter
+            inner = obj.header_payload.value
             return cls(
-                command_id=int(obj.header_payload.value.header.command_id),
-                sequence_id=int(obj.header_payload.value.header.sequence_id),
-                payload=obj.header_payload.value.payload,
+                command_id=int(inner.header.command_id),
+                sequence_id=int(inner.header.sequence_id),
+                payload=inner.payload,
             )
         except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:
             raise ValueError(f"Incomplete or malformed frame: {e}") from e

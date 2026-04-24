@@ -7,7 +7,7 @@
 
 #include "config/bridge_config.h"
 
-#if defined(ARDUINO_ARCH_AVR) && !defined(BRIDGE_HOST_TEST)
+#if defined(ARDUINO_ARCH_AVR)
 #include <avr/pgmspace.h>
 #else
 #ifndef PGM_P

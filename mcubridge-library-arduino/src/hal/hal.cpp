@@ -109,21 +109,16 @@ void init() {
   }
 }
 
-#if !defined(BRIDGE_HOST_TEST)
-bool hasSD() { return false; }
-#endif
+__attribute__((weak)) bool hasSD() { return false; }
 
-#if !defined(BRIDGE_HOST_TEST)
-etl::expected<void, HalError> writeFile(etl::string_view path,
+__attribute__((weak)) etl::expected<void, HalError> writeFile(etl::string_view path,
                                         etl::span<const uint8_t> data) {
   (void)path;
   (void)data;
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
-#endif
 
-#if !defined(BRIDGE_HOST_TEST)
-etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
+__attribute__((weak)) etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
                                                    size_t offset,
                                                    etl::span<uint8_t> buffer) {
   (void)path;
@@ -131,14 +126,11 @@ etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
   (void)buffer;
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
-#endif
 
-#if !defined(BRIDGE_HOST_TEST)
-etl::expected<void, HalError> removeFile(etl::string_view path) {
+__attribute__((weak)) etl::expected<void, HalError> removeFile(etl::string_view path) {
   (void)path;
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
-#endif
 
 uint32_t getCapabilities() {
   etl::bitset<32> caps;

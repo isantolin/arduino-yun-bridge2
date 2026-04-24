@@ -66,7 +66,16 @@ class TestRLEEncode:
         """Multiple runs in sequence."""
         # AAAABBBB = run(4,A) + run(4,B)
         data = b"AAAABBBB"
-        expected = bytes([protocol.RLE_ESCAPE_BYTE, 2, ord("A"), protocol.RLE_ESCAPE_BYTE, 2, ord("B")])
+        expected = bytes(
+            [
+                protocol.RLE_ESCAPE_BYTE,
+                2,
+                ord("A"),
+                protocol.RLE_ESCAPE_BYTE,
+                2,
+                ord("B"),
+            ]
+        )
         assert RLE_TRANSFORM.build(data) == expected
 
     def test_null_bytes(self) -> None:
@@ -164,7 +173,9 @@ class TestShouldCompress:
 
     def test_many_escapes(self) -> None:
         """Data with many escape bytes and no runs should not compress."""
-        data = bytes([protocol.RLE_ESCAPE_BYTE if i % 2 == 0 else (i & 0xFE) for i in range(50)])
+        data = bytes(
+            [protocol.RLE_ESCAPE_BYTE if i % 2 == 0 else (i & 0xFE) for i in range(50)]
+        )
         assert should_compress(data) is False
 
 

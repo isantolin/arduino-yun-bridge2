@@ -27,7 +27,9 @@ async def test_console_handle_write_edge_cases() -> None:
         mqtt_flow = MagicMock()
         mqtt_flow.publish = AsyncMock()
 
-        comp = ConsoleComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+        comp = ConsoleComponent(
+            config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+        )
 
         # 1. Malformed payload
         await comp.handle_write(0, b"\xff\xff")
@@ -56,7 +58,9 @@ async def test_console_mqtt_input_error_paths() -> None:
         serial_flow.send = AsyncMock(return_value=False)
         mqtt_flow = MagicMock()
 
-        comp = ConsoleComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+        comp = ConsoleComponent(
+            config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+        )
 
         # Sending input when serial fails should queue it
         await comp._handle_mqtt_input(b"lost-data")  # type: ignore[reportPrivateUsage]

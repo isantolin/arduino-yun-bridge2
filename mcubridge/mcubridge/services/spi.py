@@ -67,7 +67,9 @@ class SpiComponent:
                 case "transfer":
                     # Simple case: raw bytes to transfer
                     packet = structures.SpiTransferPacket(data=payload)
-                    return await self.serial_flow.send(Command.CMD_SPI_TRANSFER.value, msgspec.msgpack.encode(packet))
+                    return await self.serial_flow.send(
+                        Command.CMD_SPI_TRANSFER.value, msgspec.msgpack.encode(packet)
+                    )
                 case _:
                     return False
         except (ValueError, TypeError, msgspec.ValidationError) as e:
@@ -77,9 +79,13 @@ class SpiComponent:
     async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_SPI_TRANSFER_RESP from MCU."""
         try:
-            packet = msgspec.msgpack.decode(payload, type=structures.SpiTransferResponsePacket)
+            packet = msgspec.msgpack.decode(
+                payload, type=structures.SpiTransferResponsePacket
+            )
             # Publish received bytes back to MQTT
-            topic = topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp")
+            topic = topic_path(
+                self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"
+            )
             await self.mqtt_flow.publish(topic, packet.data)
             return True
         except (ValueError, msgspec.MsgspecError) as e:

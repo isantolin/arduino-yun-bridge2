@@ -38,8 +38,12 @@ def runtime_config() -> RuntimeConfig:
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_topic="bridge",
         allowed_commands=("true",),
-        file_system_root=tempfile.mkdtemp(prefix="mcubridge-test-fs-", dir=".tmp_tests"),
-        mqtt_spool_dir=tempfile.mkdtemp(prefix="mcubridge-test-spool-", dir=".tmp_tests"),
+        file_system_root=tempfile.mkdtemp(
+            prefix="mcubridge-test-fs-", dir=".tmp_tests"
+        ),
+        mqtt_spool_dir=tempfile.mkdtemp(
+            prefix="mcubridge-test-spool-", dir=".tmp_tests"
+        ),
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
@@ -149,9 +153,13 @@ async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
     msg.topic = "bridge/system/test"
     msg.payload = b""
 
-    route = TopicRoute(raw=str(msg.topic), prefix="bridge", topic=Topic.SYSTEM, segments=("test",))
+    route = TopicRoute(
+        raw=str(msg.topic), prefix="bridge", topic=Topic.SYSTEM, segments=("test",)
+    )
 
-    with patch.object(dispatcher.mqtt_router, "dispatch", side_effect=RuntimeError("mqtt bug")):
+    with patch.object(
+        dispatcher.mqtt_router, "dispatch", side_effect=RuntimeError("mqtt bug")
+    ):
         with pytest.raises(RuntimeError, match="mqtt bug"):
             await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
 
@@ -164,7 +172,9 @@ async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDisp
     assert dispatcher._get_topic_action(route1) is None  # type: ignore[reportPrivateUsage]
 
     # Line 319: len(segments) > 1 but segments[1] is empty
-    route2 = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("1", ""))
+    route2 = TopicRoute(
+        raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("1", "")
+    )
     assert dispatcher._get_topic_action(route2) is None  # type: ignore[reportPrivateUsage]
 
 
@@ -174,7 +184,9 @@ async def test_dispatcher_handle_system_topic_no_component(
 ):
     """Cover line 347 in dispatcher.py."""
     dispatcher._container = None  # type: ignore[reportPrivateUsage]
-    route = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",))
+    route = TopicRoute(
+        raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",)
+    )
     result = await dispatcher._handle_system_topic(route, MagicMock())  # type: ignore[reportPrivateUsage]
     assert result is False
 
@@ -182,7 +194,9 @@ async def test_dispatcher_handle_system_topic_no_component(
 @pytest.mark.asyncio
 async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDispatcher):
     """Cover lines 360-361 in dispatcher.py."""
-    route = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("bridge",))
+    route = TopicRoute(
+        raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("bridge",)
+    )
     result = await dispatcher._handle_bridge_topic(route, MagicMock())  # type: ignore[reportPrivateUsage]
     assert result is False
 
@@ -191,13 +205,20 @@ async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDisp
 
 
 @pytest.mark.asyncio
-async def test_datastore_publish_value_error_reason(runtime_config: Any, runtime_state: Any):
+async def test_datastore_publish_value_error_reason(
+    runtime_config: Any, runtime_state: Any
+):
     """Cover logic in _publish_datastore_value."""
     serial_flow = MagicMock()
     mqtt_flow = MagicMock()
     mqtt_flow.publish = AsyncMock()
 
-    ds = DatastoreComponent(config=runtime_config, state=runtime_state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    ds = DatastoreComponent(
+        config=runtime_config,
+        state=runtime_state,
+        serial_flow=serial_flow,
+        mqtt_flow=mqtt_flow,
+    )
     await ds._publish_datastore_value(  # type: ignore[reportPrivateUsage]
         key="key",
         value=b"val",
@@ -210,13 +231,20 @@ async def test_datastore_publish_value_error_reason(runtime_config: Any, runtime
 
 
 @pytest.mark.asyncio
-async def test_datastore_handle_get_request_fail_send(runtime_config: Any, runtime_state: Any):
+async def test_datastore_handle_get_request_fail_send(
+    runtime_config: Any, runtime_state: Any
+):
     """Cover line 86->88 in datastore.py."""
     serial_flow = MagicMock()
     serial_flow.send = AsyncMock(return_value=False)
     mqtt_flow = MagicMock()
 
-    ds = DatastoreComponent(config=runtime_config, state=runtime_state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    ds = DatastoreComponent(
+        config=runtime_config,
+        state=runtime_state,
+        serial_flow=serial_flow,
+        mqtt_flow=mqtt_flow,
+    )
     from mcubridge.protocol.structures import DatastoreGetPacket
 
     payload = msgspec.msgpack.encode(DatastoreGetPacket(key="test"))

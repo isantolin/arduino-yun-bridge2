@@ -37,7 +37,9 @@ async def push_file(topic: str, data: bytes) -> None:
 
 @app.command()
 def main(
-    source: Annotated[Path, typer.Argument(help="Source file to push", exists=True, dir_okay=False)],
+    source: Annotated[
+        Path, typer.Argument(help="Source file to push", exists=True, dir_okay=False)
+    ],
     target: Annotated[str, typer.Argument(help="Target path on the bridge")],
     mcu: Annotated[bool, typer.Option(help="Target MCU storage")] = False,
 ) -> None:

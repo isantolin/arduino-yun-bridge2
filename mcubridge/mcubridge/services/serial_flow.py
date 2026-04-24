@@ -69,7 +69,9 @@ class SerialFlowController:
     def set_metrics_callback(self, callback: Callable[[str], None] | None) -> None:
         self._metrics_callback = callback
 
-    def set_pipeline_observer(self, observer: Callable[[dict[str, Any]], None] | None) -> None:
+    def set_pipeline_observer(
+        self, observer: Callable[[dict[str, Any]], None] | None
+    ) -> None:
         self._pipeline_observer = observer
 
     async def reset(self) -> None:
@@ -88,7 +90,9 @@ class SerialFlowController:
             self._current = None
             self._condition.notify_all()
 
-    async def send(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def send(
+        self, command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
         sender = self._sender
         if sender is None:
             self._logger.error(
@@ -205,7 +209,9 @@ class SerialFlowController:
         }
         self._pipeline_observer(payload)
 
-    def on_frame_received(self, command_id: int, sequence_id: int, payload: bytes) -> None:
+    def on_frame_received(
+        self, command_id: int, sequence_id: int, payload: bytes
+    ) -> None:
         pending = self._current
         if pending is None:
             return
@@ -214,7 +220,9 @@ class SerialFlowController:
             ack_target = pending.command_id
             if payload:
                 try:
-                    ack_target = msgspec.msgpack.decode(payload, type=AckPacket).command_id
+                    ack_target = msgspec.msgpack.decode(
+                        payload, type=AckPacket
+                    ).command_id
                 except (ValueError, msgspec.MsgspecError):
                     pass
             if ack_target != pending.command_id:
@@ -239,7 +247,10 @@ class SerialFlowController:
                 should_reject = True
             else:
                 try:
-                    should_reject = msgspec.msgpack.decode(payload, type=AckPacket).command_id == pending.command_id
+                    should_reject = (
+                        msgspec.msgpack.decode(payload, type=AckPacket).command_id
+                        == pending.command_id
+                    )
                 except (ValueError, msgspec.MsgspecError):
                     # Non-protobuf (human-readable string) → reject only if binary
                     should_reject = not all(32 <= byte < 127 for byte in payload)
@@ -272,7 +283,9 @@ class SerialFlowController:
         actual_cmd_id: int,
     ) -> None:
         if not await sender(actual_cmd_id, payload):
-            self._logger.error("Serial write failed for command 0x%02X", pending.command_id)
+            self._logger.error(
+                "Serial write failed for command 0x%02X", pending.command_id
+            )
             pending.mark_failure(None)
             raise self._FatalSerialError(None)
 

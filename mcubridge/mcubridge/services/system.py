@@ -67,7 +67,9 @@ class SystemComponent:
         try:
             packet = msgspec.msgpack.decode(payload, type=FreeMemoryResponsePacket)
         except (ValueError, msgspec.MsgspecError):
-            logger.warning("Malformed FreeMemoryResponsePacket payload: %s", payload.hex())
+            logger.warning(
+                "Malformed FreeMemoryResponsePacket payload: %s", payload.hex()
+            )
             return
 
         topic = topic_path(
@@ -76,7 +78,9 @@ class SystemComponent:
             SystemAction.FREE_MEMORY,
             SystemAction.VALUE,
         )
-        reply_context = self._pending_free_memory.popleft() if self._pending_free_memory else None
+        reply_context = (
+            self._pending_free_memory.popleft() if self._pending_free_memory else None
+        )
         # Direct call to mqtt_flow.publish
         await self.mqtt_flow.publish(
             topic=topic,
@@ -101,7 +105,9 @@ class SystemComponent:
 
         major, minor, patch = packet.major, packet.minor, packet.patch
         self.state.mcu_version = (major, minor, patch)
-        reply_context = self._pending_version.popleft() if self._pending_version else None
+        reply_context = (
+            self._pending_version.popleft() if self._pending_version else None
+        )
         await self._publish_version((major, minor, patch), reply_context)
         logger.info("MCU firmware version reported as %d.%d.%d", major, minor, patch)
 
@@ -144,7 +150,9 @@ class SystemComponent:
             case SystemAction.BOOTLOADER:
                 packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
                 logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
-                return await self.serial_flow.send(Command.CMD_ENTER_BOOTLOADER.value, msgspec.msgpack.encode(packet))
+                return await self.serial_flow.send(
+                    Command.CMD_ENTER_BOOTLOADER.value, msgspec.msgpack.encode(packet)
+                )
 
             case SystemAction.FREE_MEMORY:
                 if not (remainder and remainder[0] == SystemAction.GET):

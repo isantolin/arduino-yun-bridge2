@@ -15,7 +15,9 @@ def test_protocol_constants_match_spec() -> None:
 def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
     # Validate encode/decode round-trip for HandshakeConfig payload
     # Using direct msgspec.msgpack (Zero Wrapper)
-    sample = structures.HandshakeConfigPacket(ack_timeout_ms=750, ack_retry_limit=3, response_timeout_ms=120000)
+    sample = structures.HandshakeConfigPacket(
+        ack_timeout_ms=750, ack_retry_limit=3, response_timeout_ms=120000
+    )
     encoded = msgspec.msgpack.encode(sample)
     assert len(encoded) > 0
     decoded = msgspec.msgpack.decode(encoded, type=structures.HandshakeConfigPacket)
@@ -52,7 +54,9 @@ def test_mcu_registry_completeness() -> None:
 
     # Get all CMD_ constants from protocol module
     commands = {
-        name: getattr(protocol.Command, name).value for name in dir(protocol.Command) if name.startswith("CMD_")
+        name: getattr(protocol.Command, name).value
+        for name in dir(protocol.Command)
+        if name.startswith("CMD_")
     }
 
     # Commands that are NOT handled by BridgeDispatcher (sent TO MCU or handled by Transport)
@@ -90,7 +94,11 @@ def test_mcu_registry_completeness() -> None:
     reg = svcs.Registry()
     with warnings.catch_warnings():
         # [SIL-2] Suppress unawaited coroutine warnings for registration-only mocks
-        warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine '.*' was never awaited")
+        warnings.filterwarnings(
+            "ignore",
+            category=RuntimeWarning,
+            message="coroutine '.*' was never awaited",
+        )
 
         for cls_name in [
             "ConsoleComponent",
@@ -102,7 +110,9 @@ def test_mcu_registry_completeness() -> None:
             "SpiComponent",
             "SystemComponent",
         ]:
-            cls = getattr(__import__("mcubridge.services", fromlist=[cls_name]), cls_name)
+            cls = getattr(
+                __import__("mcubridge.services", fromlist=[cls_name]), cls_name
+            )
             mock_inst = AsyncMock(spec=cls)
             reg.register_value(cls, mock_inst)  # type: ignore[reportUnknownMemberType]
 
@@ -135,4 +145,6 @@ def test_mcu_registry_completeness() -> None:
             continue
 
         # Check if cmd_id exists in mcu_registry
-        assert cmd_id in dispatcher.mcu_registry, f"BridgeDispatcher missing handler for {name} (ID: 0x{cmd_id:02X})"
+        assert (
+            cmd_id in dispatcher.mcu_registry
+        ), f"BridgeDispatcher missing handler for {name} (ID: 0x{cmd_id:02X})"

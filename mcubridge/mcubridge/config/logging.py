@@ -15,7 +15,9 @@ SYSLOG_SOCKET = Path("/dev/log")
 SYSLOG_SOCKET_FALLBACK = Path("/var/run/log")
 
 
-def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) -> structlog.types.EventDict:
+def hexdump_processor(
+    _: Any, __: str, event_dict: structlog.types.EventDict
+) -> structlog.types.EventDict:
     """Format binary fields as standardized hex strings [DE AD BE EF]."""
     for key, value in event_dict.items():
         if isinstance(value, (bytes, bytearray, memoryview)):
@@ -29,7 +31,9 @@ def configure_logging(config: RuntimeConfig) -> None:
 
     level = logging.DEBUG if getattr(config, "debug", False) else logging.INFO
     force_stream = bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
-    use_syslog = not force_stream and (SYSLOG_SOCKET.exists() or SYSLOG_SOCKET_FALLBACK.exists())
+    use_syslog = not force_stream and (
+        SYSLOG_SOCKET.exists() or SYSLOG_SOCKET_FALLBACK.exists()
+    )
 
     # [SIL-2] Native processors for high-performance zero-wrapper logging
     processors: list[Any] = [
@@ -45,7 +49,11 @@ def configure_logging(config: RuntimeConfig) -> None:
     structlog.configure(
         processors=[
             *processors,
-            structlog.processors.JSONRenderer() if use_syslog else structlog.dev.ConsoleRenderer(),
+            (
+                structlog.processors.JSONRenderer()
+                if use_syslog
+                else structlog.dev.ConsoleRenderer()
+            ),
         ],
         logger_factory=structlog.PrintLoggerFactory(),
         wrapper_class=structlog.make_filtering_bound_logger(level),

@@ -66,7 +66,9 @@ class FrameAdapter(Adapter):
             from .rle import RLE_TRANSFORM
 
             obj.payload = RLE_TRANSFORM.parse(obj.payload)
-            obj.header.command_id = int(obj.header.command_id) & ~protocol.CMD_FLAG_COMPRESSED
+            obj.header.command_id = (
+                int(obj.header.command_id) & ~protocol.CMD_FLAG_COMPRESSED
+            )
             obj.header.payload_len = len(obj.payload)
         return obj
 
@@ -127,12 +129,16 @@ class Frame(msgspec.Struct, frozen=True):
     @property
     def raw_command_id(self) -> int:
         """Get the raw 15-bit command ID without the compression flag."""
-        return int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
+        return (
+            int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
+        )
 
     def build(self) -> bytes:
         """Build the binary frame representation."""
         if len(self.payload) > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}")
+            raise ValueError(
+                f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}"
+            )
         try:
             # [SIL-2] Optimized build with required nesting for RPC_FRAME
             return RPC_FRAME.build(

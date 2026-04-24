@@ -14,6 +14,7 @@ from mcubridge.transport.mqtt import MqttTransport
 from mcubridge.services import SystemComponent, ConsoleComponent
 from tests._helpers import make_test_config
 
+
 @pytest.mark.asyncio
 async def test_bridge_service_lifecycle_full_sync() -> None:
     """Refactored lifecycle test ensuring full execution of connection hooks without orchestration hangs."""
@@ -27,42 +28,47 @@ async def test_bridge_service_lifecycle_full_sync() -> None:
         service.handshake_manager.synchronize = AsyncMock(return_value=True)
         service.handshake_manager.raise_if_handshake_fatal = MagicMock()
 
-        system = service._container.get(SystemComponent) # type: ignore[reportPrivateUsage]
-        console = service._container.get(ConsoleComponent) # type: ignore[reportPrivateUsage]
+        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
+        console = service._container.get(ConsoleComponent)  # type: ignore[reportPrivateUsage]
 
         # Mocking logic after sync
         system.request_mcu_version = AsyncMock(return_value=True)
         console.flush_queue = AsyncMock()
 
-        async def mock_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def mock_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             return True
 
         service.register_serial_sender(mock_sender)
 
         async with service:
-             # Manually execute connection hook logic - this exercises the same paths as on_serial_connected
-             state.mark_transport_connected()
+            # Manually execute connection hook logic - this exercises the same paths as on_serial_connected
+            state.mark_transport_connected()
 
-             # 1. Sync
-             await service.handshake_manager.synchronize()
-             # Logic inside on_serial_connected expects synchronized state to proceed
-             state.mark_synchronized()
+            # 1. Sync
+            await service.handshake_manager.synchronize()
+            # Logic inside on_serial_connected expects synchronized state to proceed
+            state.mark_synchronized()
 
-             # 2. Get Version
-             await system.request_mcu_version()
+            # 2. Get Version
+            await system.request_mcu_version()
 
-             # 3. Console flush
-             await console.flush_queue()
+            # 3. Console flush
+            await console.flush_queue()
 
-             assert state.is_synchronized is True
-             assert system.request_mcu_version.called
-             assert console.flush_queue.called
+            assert state.is_synchronized is True
+            assert system.request_mcu_version.called
+            assert console.flush_queue.called
 
     finally:
         state.cleanup()
 
+
 @pytest.mark.asyncio
-async def test_bridge_service_handle_status_reporting(runtime_config: RuntimeConfig, runtime_state: Any) -> None:
+async def test_bridge_service_handle_status_reporting(
+    runtime_config: RuntimeConfig, runtime_state: Any
+) -> None:
     mqtt = MagicMock()
     mqtt.publish = AsyncMock()
     service = BridgeService(runtime_config, runtime_state, mqtt)
@@ -78,6 +84,7 @@ async def test_bridge_service_handle_status_reporting(runtime_config: RuntimeCon
     assert report["name"] == "ERROR"
     assert report["message"] == "some error"
 
+
 @pytest.mark.asyncio
 async def test_serial_flow_acknowledge_no_sender_is_noop():
     from mcubridge.services.serial_flow import SerialFlowController
@@ -86,13 +93,16 @@ async def test_serial_flow_acknowledge_no_sender_is_noop():
         ack_timeout=1.0,
         response_timeout=2.0,
         max_attempts=3,
-        logger=logging.getLogger("test")
+        logger=logging.getLogger("test"),
     )
     # No sender registered
     await ctrl.acknowledge(0x01, 1)
 
+
 @pytest.mark.asyncio
-async def test_enqueue_mqtt_spool_unavailable_logs(runtime_config: RuntimeConfig, runtime_state: Any):
+async def test_enqueue_mqtt_spool_unavailable_logs(
+    runtime_config: RuntimeConfig, runtime_state: Any
+):
     from mcubridge.transport.mqtt import MqttTransport
 
     # No spool configured
@@ -101,8 +111,11 @@ async def test_enqueue_mqtt_spool_unavailable_logs(runtime_config: RuntimeConfig
     await transport.enqueue_mqtt(msg)
     assert runtime_state.mqtt_publish_queue.qsize() == 1
 
+
 @pytest.mark.asyncio
-async def test_bridge_service_publish_snapshot(runtime_config: RuntimeConfig, runtime_state: Any) -> None:
+async def test_bridge_service_publish_snapshot(
+    runtime_config: RuntimeConfig, runtime_state: Any
+) -> None:
     mqtt = MagicMock()
     mqtt.publish = AsyncMock()
     service = BridgeService(runtime_config, runtime_state, mqtt)
@@ -110,17 +123,22 @@ async def test_bridge_service_publish_snapshot(runtime_config: RuntimeConfig, ru
     await service._publish_bridge_snapshot("summary", None)  # type: ignore[reportPrivateUsage]
     mqtt.publish.assert_called()
 
+
 @pytest.mark.asyncio
-async def test_bridge_service_reject_topic_action(runtime_config: RuntimeConfig, runtime_state: Any) -> None:
+async def test_bridge_service_reject_topic_action(
+    runtime_config: RuntimeConfig, runtime_state: Any
+) -> None:
     mqtt = MagicMock()
     mqtt.publish = AsyncMock()
     service = BridgeService(runtime_config, runtime_state, mqtt)
 
     from aiomqtt.message import Message
+
     msg = Message("test", b"", 0, False, False, None)
 
     await service._reject_topic_action(msg, Topic.DIGITAL, "write")  # type: ignore[reportPrivateUsage]
     mqtt.publish.assert_called()
+
 
 @pytest.mark.asyncio
 async def test_bridge_service_is_topic_action_allowed_delegation(
@@ -128,6 +146,7 @@ async def test_bridge_service_is_topic_action_allowed_delegation(
 ) -> None:
     # Use restrictive policy for test
     from mcubridge.protocol.structures import TopicAuthorization
+
     runtime_state.topic_authorization = TopicAuthorization(digital_write=False)
 
     service = BridgeService(runtime_config, runtime_state, MagicMock())

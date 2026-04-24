@@ -107,7 +107,9 @@ class MailboxComponent:
         await self.mqtt_flow.publish(topic=topic, payload=data)
 
         await self.mqtt_flow.publish(
-            topic=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"),
+            topic=topic_path(
+                self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
+            ),
             payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
         )
         return True
@@ -118,13 +120,17 @@ class MailboxComponent:
             await self.serial_flow.send(
                 Status.MALFORMED.value,
                 # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-                msgspec.msgpack.encode(AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value)),
+                msgspec.msgpack.encode(
+                    AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value)
+                ),
             )
             return False
 
         queue_len = len(self.state.mailbox_queue)
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        response = msgspec.msgpack.encode(MailboxAvailableResponsePacket(count=queue_len))
+        response = msgspec.msgpack.encode(
+            MailboxAvailableResponsePacket(count=queue_len)
+        )
 
         await self.serial_flow.send(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
@@ -134,15 +140,21 @@ class MailboxComponent:
 
     async def handle_read(self, seq_id: int, _: bytes) -> bool:
         original_payload = self.state.mailbox_queue.popleft()
-        message_payload: bytes = original_payload if original_payload is not None else b""
+        message_payload: bytes = (
+            original_payload if original_payload is not None else b""
+        )
 
         max_allowed = protocol.MAX_PAYLOAD_SIZE - 3
         if len(message_payload) > max_allowed:
-            logger.warning("Mailbox message too long (%d bytes), truncating.", len(message_payload))
+            logger.warning(
+                "Mailbox message too long (%d bytes), truncating.", len(message_payload)
+            )
             message_payload = message_payload[:max_allowed]
 
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        response_payload = msgspec.msgpack.encode(MailboxReadResponsePacket(content=message_payload))
+        response_payload = msgspec.msgpack.encode(
+            MailboxReadResponsePacket(content=message_payload)
+        )
 
         send_ok = await self.serial_flow.send(
             Command.CMD_MAILBOX_READ_RESP.value,
@@ -154,7 +166,9 @@ class MailboxComponent:
                 self.state.mailbox_queue.appendleft(original_payload)
             return False
 
-        await self._publish_available("outgoing_available", len(self.state.mailbox_queue))
+        await self._publish_available(
+            "outgoing_available", len(self.state.mailbox_queue)
+        )
         return True
 
     async def handle_mqtt(
@@ -214,7 +228,9 @@ class MailboxComponent:
                     reply_to=inbound,
                 )
             finally:
-                await self._publish_available("incoming_available", len(self.state.mailbox_incoming_queue))
+                await self._publish_available(
+                    "incoming_available", len(self.state.mailbox_incoming_queue)
+                )
             return
 
         message_payload = self.state.mailbox_queue.popleft()
@@ -228,7 +244,9 @@ class MailboxComponent:
                 reply_to=inbound,
             )
         finally:
-            await self._publish_available("outgoing_available", len(self.state.mailbox_queue))
+            await self._publish_available(
+                "outgoing_available", len(self.state.mailbox_queue)
+            )
 
     async def _handle_outgoing_overflow(
         self,

@@ -14,7 +14,9 @@ def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxCompone
 
 
 @pytest.mark.asyncio
-async def test_mailbox_handle_push_large_data(mailbox_component: MailboxComponent, runtime_state: Any):
+async def test_mailbox_handle_push_large_data(
+    mailbox_component: MailboxComponent, runtime_state: Any
+):
     large_data = b"x" * 1024
     # Directly use the queue for tests
     runtime_state.mailbox_incoming_queue.append(large_data)
@@ -22,7 +24,9 @@ async def test_mailbox_handle_push_large_data(mailbox_component: MailboxComponen
 
 
 @pytest.mark.asyncio
-async def test_mailbox_handle_mqtt_push_limit(mailbox_component: MailboxComponent, runtime_state: Any):
+async def test_mailbox_handle_mqtt_push_limit(
+    mailbox_component: MailboxComponent, runtime_state: Any
+):
     # Directly set the limit on the queue object
     runtime_state.mailbox_queue.max_items = 1
     data = b"data"

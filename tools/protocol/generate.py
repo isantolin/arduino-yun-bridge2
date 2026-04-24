@@ -29,7 +29,9 @@ MISSING_DEPS = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep) is
 
 if MISSING_DEPS:
     sys.stderr.write("\n" + "!" * 80 + "\n")
-    sys.stderr.write("ERROR: Missing Python dependencies required for protocol generation:\n")
+    sys.stderr.write(
+        "ERROR: Missing Python dependencies required for protocol generation:\n"
+    )
     for dep in MISSING_DEPS:
         sys.stderr.write(f"  - {dep}\n")
     sys.stderr.write("\nTo fix this, run:\n")
@@ -43,9 +45,15 @@ if TYPE_CHECKING:
     from mcubridge.protocol.spec_model import ProtocolSpec
 else:
     _SPEC_MODEL_PATH = (
-        Path(__file__).resolve().parent.parent.parent / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"  # noqa: W503
+        Path(__file__).resolve().parent.parent.parent
+        / "mcubridge"
+        / "mcubridge"
+        / "protocol"
+        / "spec_model.py"  # noqa: W503
     )
-    _loader_spec = importlib.util.spec_from_file_location("spec_model", str(_SPEC_MODEL_PATH))
+    _loader_spec = importlib.util.spec_from_file_location(
+        "spec_model", str(_SPEC_MODEL_PATH)
+    )
     assert _loader_spec is not None and _loader_spec.loader is not None
     _spec_mod = importlib.util.module_from_spec(_loader_spec)
     _loader_spec.loader.exec_module(_spec_mod)
@@ -129,7 +137,9 @@ def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
         for f in msg.fields:
             kind = TOML_CPP_KIND_MAP.get(f.type)
             if kind is None:
-                sys.stderr.write(f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}\n")
+                sys.stderr.write(
+                    f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}\n"
+                )
                 kind = "uint32"
 
             if kind == "bin_fixed":
@@ -178,7 +188,9 @@ class JinjaGenerator:
         result = "'".join(reversed(parts))
         return f"-{result}" if value < 0 else result
 
-    def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path, version: str) -> None:
+    def generate_cpp_header(
+        self, spec: ProtocolSpec, out_path: Path, version: str
+    ) -> None:
         template = self.env.get_template("rpc_protocol.h.j2")
 
         v_major, v_minor, v_patch = map(int, version.split("."))
@@ -575,7 +587,9 @@ class JinjaGenerator:
             "hkdf_salt_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_salt"]),
             "hkdf_salt_len": len(hs["hkdf_salt"]),
             "hkdf_info_auth": hs["hkdf_info_auth"],
-            "hkdf_info_auth_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"]),
+            "hkdf_info_auth_bytes": ", ".join(
+                f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"]
+            ),
             "hkdf_info_auth_len": len(hs["hkdf_info_auth"]),
         }
 
@@ -898,7 +912,11 @@ class JinjaGenerator:
             )
 
         for prefix, items in action_map.items():
-            cls_name = "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action"
+            cls_name = (
+                "DatastoreAction"
+                if prefix == "DATASTORE"
+                else f"{prefix.lower().title()}Action"
+            )
             grouped_actions.append({"class_name": cls_name, "action_items": items})
 
         # Process subscriptions
@@ -923,9 +941,16 @@ class JinjaGenerator:
                         "SYSTEM",
                         "FILE",
                     ]:
-                        c_name = "DatastoreAction" if topic_str == "DATASTORE" else f"{topic_str.lower().title()}Action"
+                        c_name = (
+                            "DatastoreAction"
+                            if topic_str == "DATASTORE"
+                            else f"{topic_str.lower().title()}Action"
+                        )
                         for act in spec.actions:
-                            if act["name"].startswith(f"{topic_str}_") and act["value"] == s:
+                            if (
+                                act["name"].startswith(f"{topic_str}_")
+                                and act["value"] == s
+                            ):
                                 sfx = act["name"].split("_", 1)[1]
                                 segments.append(f"{c_name}.{sfx}.value")
                                 mapped = True
@@ -957,7 +982,9 @@ class JinjaGenerator:
             statuses=spec.statuses,
             commands=spec.commands,
             ack_commands=[c for c in spec.commands if c.requires_ack],
-            response_only_commands=[c for c in spec.commands if c.expects_direct_response],
+            response_only_commands=[
+                c for c in spec.commands if c.expects_direct_response
+            ],
             topics=spec.topics,
             grouped_actions=grouped_actions,
             subscriptions=subscriptions,
@@ -988,7 +1015,9 @@ class JinjaGenerator:
                     reverse[cmd.name] = req_name
         return reverse
 
-    def generate_structures_packets(self, spec: ProtocolSpec, structures_path: Path) -> None:
+    def generate_structures_packets(
+        self, spec: ProtocolSpec, structures_path: Path
+    ) -> None:
         """Generate Packet classes from spec.toml messages and splice into structures.py."""
         packet_messages = [m for m in spec.messages if m.name not in PACKET_EXCLUDE]
 
@@ -998,7 +1027,9 @@ class JinjaGenerator:
             for f in msg.fields:
                 py_type = TOML_PYTHON_TYPE_MAP.get(f.type)
                 if py_type is None:
-                    sys.stderr.write(f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}, skipping field\n")
+                    sys.stderr.write(
+                        f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}, skipping field\n"
+                    )
                     continue
                 fields.append({"name": f.name, "python_type": py_type})
             packets.append(
@@ -1065,7 +1096,9 @@ class JinjaGenerator:
 
 def read_version() -> str:
     if not VERSION_PATH.exists():
-        sys.stderr.write(f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n")
+        sys.stderr.write(
+            f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n"
+        )
         return "0.0.0"
     return VERSION_PATH.read_text(encoding="utf-8").strip()
 
@@ -1075,7 +1108,9 @@ def update_metadata(version: str):
     pyproj = REPO_ROOT / "pyproject.toml"
     if pyproj.exists():
         content = pyproj.read_text(encoding="utf-8")
-        content = re.sub(r'version\s*=\s*"[^"]+"', f'version = "{version}"', content, count=1)
+        content = re.sub(
+            r'version\s*=\s*"[^"]+"', f'version = "{version}"', content, count=1
+        )
         pyproj.write_text(content, encoding="utf-8")
         sys.stderr.write(f"Updated {pyproj} to version {version}\n")
 
@@ -1098,14 +1133,24 @@ def update_metadata(version: str):
 
 @app.command()
 def main(
-    spec_path: Annotated[Path, typer.Option("--spec", help="Protocol specification file")],
-    cpp: Annotated[Optional[Path], typer.Option("--cpp", help="C++ header output")] = None,
-    cpp_structs: Annotated[Optional[Path], typer.Option("--cpp-structs", help="C++ structs output")] = None,
+    spec_path: Annotated[
+        Path, typer.Option("--spec", help="Protocol specification file")
+    ],
+    cpp: Annotated[
+        Optional[Path], typer.Option("--cpp", help="C++ header output")
+    ] = None,
+    cpp_structs: Annotated[
+        Optional[Path], typer.Option("--cpp-structs", help="C++ structs output")
+    ] = None,
     py: Annotated[Optional[Path], typer.Option("--py", help="Python output")] = None,
-    py_client: Annotated[Optional[Path], typer.Option("--py-client", help="Python client output")] = None,
+    py_client: Annotated[
+        Optional[Path], typer.Option("--py-client", help="Python client output")
+    ] = None,
     structures: Annotated[
         Optional[Path],
-        typer.Option("--structures", help="Splice generated Packets into structures.py"),
+        typer.Option(
+            "--structures", help="Splice generated Packets into structures.py"
+        ),
     ] = None,
 ) -> None:
     spec = ProtocolSpec.load(spec_path)

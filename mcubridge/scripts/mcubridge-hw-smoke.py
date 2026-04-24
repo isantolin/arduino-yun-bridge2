@@ -30,7 +30,9 @@ class SmokeTester:
                 password=self.config.mqtt_pass or None,
                 tls_context=tls_context,
             ) as client:
-                typer.echo(f"[*] Testing MCU Bridge on {self.config.mqtt_host}:{self.config.mqtt_port}")
+                typer.echo(
+                    f"[*] Testing MCU Bridge on {self.config.mqtt_host}:{self.config.mqtt_port}"
+                )
 
                 # 1. Connectivity & Version
                 version_topic = f"{self.prefix}/system/version/get"
@@ -43,7 +45,11 @@ class SmokeTester:
                     async with asyncio.timeout(timeout):
                         async for msg in client.messages:
                             payload_raw: Any = msg.payload
-                            payload_str = payload_raw.decode() if isinstance(payload_raw, bytes) else str(payload_raw)
+                            payload_str = (
+                                payload_raw.decode()
+                                if isinstance(payload_raw, bytes)
+                                else str(payload_raw)
+                            )
                             typer.echo(f"[+] Version received: {payload_str}")
                             self.results["connectivity"] = True
                             break

@@ -275,7 +275,9 @@ async def test_publish_snapshots_task_handles_error(runtime_state: Any) -> None:
     enqueue = AsyncMock(side_effect=RuntimeError("snapshot-fail"))
     # Should catch error and log it
     task = asyncio.create_task(
-        publish_bridge_snapshots(runtime_state, enqueue, summary_interval=0.1, handshake_interval=0.1)
+        publish_bridge_snapshots(
+            runtime_state, enqueue, summary_interval=0.1, handshake_interval=0.1
+        )
     )
     await asyncio.sleep(0.2)
     task.cancel()

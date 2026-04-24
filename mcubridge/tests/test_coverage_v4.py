@@ -16,7 +16,9 @@ def test_daemon_cli_help():
 
 def test_daemon_cli_invalid_config():
     """Verify CLI error handling for invalid config."""
-    with patch("mcubridge.daemon.load_runtime_config", side_effect=ValueError("Invalid config")):
+    with patch(
+        "mcubridge.daemon.load_runtime_config", side_effect=ValueError("Invalid config")
+    ):
         result = runner.invoke(app, ["--serial-port", "/dev/null"])
         assert result.exit_code == 1
 
@@ -69,16 +71,25 @@ def test_spi_service_coverage():
     serial_flow = AsyncMock()
     mqtt_flow = AsyncMock()
 
-    service = SpiComponent(config=mock_config, state=mock_state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    service = SpiComponent(
+        config=mock_config,
+        state=mock_state,
+        serial_flow=serial_flow,
+        mqtt_flow=mqtt_flow,
+    )
 
     # Test handle_mqtt for 'begin'
-    route = TopicRoute(raw="br/spi/begin", prefix="br", topic=Topic.SPI, segments=("begin",))
+    route = TopicRoute(
+        raw="br/spi/begin", prefix="br", topic=Topic.SPI, segments=("begin",)
+    )
     msg = Message(Topic.SPI.value, b"", 0, False, False, None)
     asyncio.run(service.handle_mqtt(route, msg))
     serial_flow.send.assert_called()
 
     # Test handle_mqtt for 'config'
-    route_cfg = TopicRoute(raw="br/spi/config", prefix="br", topic=Topic.SPI, segments=("config",))
+    route_cfg = TopicRoute(
+        raw="br/spi/config", prefix="br", topic=Topic.SPI, segments=("config",)
+    )
     import msgspec
 
     payload = msgspec.json.encode({"frequency": 1000000})

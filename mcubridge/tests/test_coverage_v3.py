@@ -45,7 +45,8 @@ def test_configure_logging_stream_env():
         assert isinstance(sl_config["logger_factory"], structlog.PrintLoggerFactory)
         # In stream mode, should use ConsoleRenderer
         assert any(
-            isinstance(p, structlog.dev.ConsoleRenderer) for p in sl_config["processors"]
+            isinstance(p, structlog.dev.ConsoleRenderer)
+            for p in sl_config["processors"]
         )
 
 
@@ -62,7 +63,8 @@ def test_configure_logging_syslog_fallback(tmp_path: Any):
         sl_config = structlog.get_config()
         # Syslog mode should use JSONRenderer
         assert any(
-            isinstance(p, structlog.processors.JSONRenderer) for p in sl_config["processors"]
+            isinstance(p, structlog.processors.JSONRenderer)
+            for p in sl_config["processors"]
         )
 
 
@@ -212,7 +214,9 @@ async def test_process_run_async_limit_reached():
     serial_flow = MagicMock()
     mqtt_flow = MagicMock()
 
-    comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    comp = ProcessComponent(
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
     await comp._process_slots.acquire()  # type: ignore[reportPrivateUsage]
 
     try:
@@ -235,7 +239,9 @@ async def test_process_run_async_os_error():
     serial_flow = MagicMock()
     mqtt_flow = MagicMock()
 
-    comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    comp = ProcessComponent(
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
 
     with patch("asyncio.create_subprocess_exec", side_effect=OSError("Not found")):
         pid = await comp.run_async("cmd")
@@ -252,7 +258,9 @@ async def test_process_stop_process_not_found():
     serial_flow = MagicMock()
     mqtt_flow = MagicMock()
 
-    comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    comp = ProcessComponent(
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
 
     success = await comp.stop_process(999)
     assert success is False
@@ -268,7 +276,9 @@ async def test_process_finalize_process_missing_slot():
     serial_flow = MagicMock()
     mqtt_flow = MagicMock()
 
-    comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    comp = ProcessComponent(
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
 
     # Should not raise
     await comp._finalize_process(999)  # type: ignore[reportPrivateUsage]
@@ -299,7 +309,9 @@ async def test_serial_transport_run_fatal():
 
     from mcubridge.services.handshake import SerialHandshakeFatal
 
-    with patch.object(transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal")):
+    with patch.object(
+        transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal")
+    ):
         with pytest.raises(SerialHandshakeFatal):
             await transport.run()
 

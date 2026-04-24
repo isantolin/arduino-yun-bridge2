@@ -165,7 +165,9 @@ def _iter_counts(count: int) -> Iterable[int]:
         yield from range(count)
 
 
-app = typer.Typer(add_completion=False, help="Inspect and optionally send MCU Bridge RPC frames.")
+app = typer.Typer(
+    add_completion=False, help="Inspect and optionally send MCU Bridge RPC frames."
+)
 
 
 @app.command()
@@ -173,13 +175,23 @@ def main_cmd(
     command: Annotated[
         str, typer.Option("--command", "-c", help="Command or Status name/value")
     ] = "CMD_GET_FREE_MEMORY",
-    payload: Annotated[str | None, typer.Option("--payload", "-p", help="Payload in hex format")] = None,
+    payload: Annotated[
+        str | None, typer.Option("--payload", "-p", help="Payload in hex format")
+    ] = None,
     port: Annotated[str | None, typer.Option(help="Serial port device path")] = None,
     baud: Annotated[int, typer.Option(help="Serial baud rate")] = DEFAULT_BAUDRATE,
-    interval: Annotated[float, typer.Option(help="Interval between frames in seconds")] = 5.0,
-    count: Annotated[int, typer.Option(help="Number of frames to send (0 for infinite)")] = 1,
-    read_response: Annotated[bool, typer.Option(help="Wait for and print the next frame received")] = False,
-    read_timeout: Annotated[float, typer.Option(help="Timeout for reading responses")] = 2.0,
+    interval: Annotated[
+        float, typer.Option(help="Interval between frames in seconds")
+    ] = 5.0,
+    count: Annotated[
+        int, typer.Option(help="Number of frames to send (0 for infinite)")
+    ] = 1,
+    read_response: Annotated[
+        bool, typer.Option(help="Wait for and print the next frame received")
+    ] = False,
+    read_timeout: Annotated[
+        float, typer.Option(help="Timeout for reading responses")
+    ] = 2.0,
 ):
     try:
         cmd_id = _resolve_command(command)
@@ -207,7 +219,12 @@ def main_cmd(
                     else:
                         try:
                             _print_response(_decode_frame(resp))
-                        except (ValueError, KeyError, TypeError, construct.ConstructError) as e:
+                        except (
+                            ValueError,
+                            KeyError,
+                            TypeError,
+                            construct.ConstructError,
+                        ) as e:
                             sys.stderr.write(f"[FrameDebug] Failed to decode: {e}\n")
             if count == 0 or iteration + 1 < count:
                 time.sleep(interval)

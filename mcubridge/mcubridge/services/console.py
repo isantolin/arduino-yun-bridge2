@@ -85,7 +85,9 @@ class ConsoleComponent:
         inbound: Message | None = None,
     ) -> None:
         # [SIL-2] Ensure we chunk data to fit into frames using Python's C core batched
-        chunks = [bytes(c) for c in itertools.batched(payload, protocol.MAX_PAYLOAD_SIZE)]
+        chunks = [
+            bytes(c) for c in itertools.batched(payload, protocol.MAX_PAYLOAD_SIZE)
+        ]
         if self.state.mcu_is_paused:
             logger.warning(
                 "MCU paused, queueing %d console chunk(s) (%d bytes), hex=%s",
@@ -124,7 +126,9 @@ class ConsoleComponent:
             if not buffered:
                 break
 
-            chunks = [bytes(c) for c in itertools.batched(buffered, protocol.MAX_PAYLOAD_SIZE)]
+            chunks = [
+                bytes(c) for c in itertools.batched(buffered, protocol.MAX_PAYLOAD_SIZE)
+            ]
             for index, chunk in enumerate(chunks):
                 if not chunk:
                     continue

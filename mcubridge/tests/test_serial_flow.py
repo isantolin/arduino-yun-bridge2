@@ -46,7 +46,9 @@ def test_serial_flow_records_success_metrics(
             metrics_callback=runtime_state.record_serial_flow_event,
         )
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             asyncio.create_task(_send_ack(controller, command_id))
             return True
 
@@ -80,7 +82,9 @@ def test_serial_flow_records_retry_metrics(
 
         attempts = 0
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             nonlocal attempts
             attempts += 1
             if attempts == 2:
@@ -115,7 +119,9 @@ def test_serial_flow_records_failure_metrics(
             metrics_callback=runtime_state.record_serial_flow_event,
         )
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             return False
 
         controller.set_sender(fake_sender)
@@ -161,13 +167,17 @@ def test_serial_flow_reset_abandons_pending(
 
         sender_called = asyncio.Event()
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             sender_called.set()
             return True
 
         controller.set_sender(fake_sender)
 
-        send_task = asyncio.create_task(controller.send(Command.CMD_DIGITAL_READ.value, b""))
+        send_task = asyncio.create_task(
+            controller.send(Command.CMD_DIGITAL_READ.value, b"")
+        )
         await asyncio.wait_for(sender_called.wait(), timeout=1)
         await controller.reset()
         assert await send_task is False
@@ -188,7 +198,9 @@ def test_serial_flow_handles_failure_status(
 
         loop = asyncio.get_running_loop()
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             loop.call_soon(
                 controller.on_frame_received,
                 Status.ERROR.value,
@@ -218,7 +230,9 @@ def test_serial_flow_acknowledges_ack_only_command(
 
         loop = asyncio.get_running_loop()
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             loop.call_soon(
                 controller.on_frame_received,
                 Status.ACK.value,
@@ -249,7 +263,9 @@ def test_serial_flow_handles_response_after_ack(
         loop = asyncio.get_running_loop()
         command_id = Command.CMD_DIGITAL_READ.value
 
-        async def fake_sender(_cid: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            _cid: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             def emit_frames() -> None:
                 controller.on_frame_received(
                     Status.ACK.value,
@@ -286,7 +302,9 @@ def test_serial_flow_retries_on_mismatched_ack(
 
         loop = asyncio.get_running_loop()
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             def emit_wrong_ack() -> None:
                 other_cmd = Command.CMD_DIGITAL_WRITE.value
                 controller.on_frame_received(
@@ -320,7 +338,9 @@ def test_serial_flow_emits_pipeline_events(
         )
         controller.set_pipeline_observer(events.append)
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             asyncio.create_task(_send_ack(controller, command_id))
             return True
 
@@ -349,7 +369,9 @@ def test_serial_flow_pipeline_failure_event(
         )
         controller.set_pipeline_observer(events.append)
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             return False
 
         controller.set_sender(fake_sender)
@@ -377,13 +399,17 @@ def test_serial_flow_pipeline_abandoned_on_reset(
 
         sender_called = asyncio.Event()
 
-        async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def fake_sender(
+            command_id: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             sender_called.set()
             return True
 
         controller.set_sender(fake_sender)
 
-        send_task = asyncio.create_task(controller.send(Command.CMD_DIGITAL_READ.value, b""))
+        send_task = asyncio.create_task(
+            controller.send(Command.CMD_DIGITAL_READ.value, b"")
+        )
         await asyncio.wait_for(sender_called.wait(), timeout=1)
         await controller.reset()
         assert await send_task is False

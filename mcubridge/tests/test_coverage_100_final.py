@@ -339,7 +339,9 @@ class TestSpecModel:
     def test_load_spec(self):
         from mcubridge.protocol.spec_model import ProtocolSpec
 
-        spec_path = Path(__file__).resolve().parents[2] / "tools" / "protocol" / "spec.toml"
+        spec_path = (
+            Path(__file__).resolve().parents[2] / "tools" / "protocol" / "spec.toml"
+        )
         if spec_path.exists():
             spec = ProtocolSpec.load(spec_path)
             assert len(spec.commands) > 0
@@ -404,7 +406,9 @@ class TestMqttBuildProperties:
     def test_build_mqtt_properties_user_properties_only(self):
         from mcubridge.protocol.structures import QueuedPublish
 
-        msg = QueuedPublish(topic_name="test", payload=b"", user_properties=(("k", "v"),))
+        msg = QueuedPublish(
+            topic_name="test", payload=b"", user_properties=(("k", "v"),)
+        )
         props = msg.to_paho_properties()
         assert props is not None
 
@@ -448,7 +452,9 @@ class TestShellMqttLogic:
         mqtt_flow.publish = AsyncMock()
         mqtt_flow.enqueue_mqtt = AsyncMock()
 
-        comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+        comp = ProcessComponent(
+            config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+        )
         comp.poll_process = AsyncMock()
         comp.stop_process = AsyncMock(return_value=True)
         comp.publish_poll_result = AsyncMock()
@@ -459,17 +465,23 @@ class TestShellMqttLogic:
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_poll(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(make_route(Topic.SHELL, "poll", "42"), make_mqtt_msg(b""))
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "poll", "42"), make_mqtt_msg(b"")
+        )
         shell_comp.poll_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_kill(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(make_route(Topic.SHELL, "kill", "42"), make_mqtt_msg(b""))
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "kill", "42"), make_mqtt_msg(b"")
+        )
         shell_comp.stop_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b""))
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b"")
+        )
         shell_comp.mqtt_flow.publish.assert_not_called()
 
     @pytest.mark.asyncio
@@ -609,7 +621,9 @@ class TestProtocolFrame:
     def test_decode_rpc_frame_bad_crc(self):
         from mcubridge.protocol.frame import Frame
 
-        frame = bytearray(Frame(command_id=0x01, sequence_id=0, payload=b"test").build())
+        frame = bytearray(
+            Frame(command_id=0x01, sequence_id=0, payload=b"test").build()
+        )
         frame[-1] ^= 0xFF  # Corrupt CRC
         with pytest.raises(ValueError):
             Frame.parse(bytes(frame))
@@ -659,7 +673,9 @@ class TestConfigSettings:
         assert config.serial_port == "/dev/null"
 
     def test_runtime_config_shared_secret_too_short(self):
-        with pytest.raises((ValueError, msgspec.ValidationError), match="serial_shared_secret"):
+        with pytest.raises(
+            (ValueError, msgspec.ValidationError), match="serial_shared_secret"
+        ):
             make_test_config(serial_shared_secret=b"abc")
 
     def test_runtime_config_changeme_secret(self):
@@ -687,7 +703,9 @@ class TestProcessComponent:
         mqtt_flow = MagicMock()
         mqtt_flow.publish = AsyncMock()
 
-        comp = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+        comp = ProcessComponent(
+            config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+        )
         try:
             yield comp
         finally:
@@ -759,7 +777,9 @@ class TestConsoleComponent:
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
-            comp = ConsoleComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+            comp = ConsoleComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
             # Flush when empty should be fine
             await comp.flush_queue()
         finally:
@@ -784,8 +804,12 @@ class TestMailboxComponent:
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
-            comp = MailboxComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
-            await comp.handle_mqtt(make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello"))
+            comp = MailboxComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
+            await comp.handle_mqtt(
+                make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
+            )
             assert len(state.mailbox_queue) == 1
         finally:
             state.cleanup()
@@ -815,7 +839,9 @@ class TestPinComponent:
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
-            comp = PinComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+            comp = PinComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
             # Test without pending requests
             from mcubridge.protocol.structures import DigitalReadResponsePacket
 
@@ -899,7 +925,9 @@ class TestDispatcherEdgeCases:
                     system=MagicMock(),
                 )
             )
-            route = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())
+            route = TopicRoute(
+                raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
+            )
             result = d._get_topic_action(route)  # type: ignore[reportPrivateUsage]
             assert result is None
         finally:
@@ -939,7 +967,9 @@ class TestDaemon:
     async def test_cleanup_status_file_missing(self):
         from mcubridge.state.status import STATUS_FILE
 
-        with patch("mcubridge.state.status.STATUS_FILE", Path("/nonexistent/status.json")):
+        with patch(
+            "mcubridge.state.status.STATUS_FILE", Path("/nonexistent/status.json")
+        ):
             STATUS_FILE.unlink(missing_ok=True)  # Should not raise
 
 
@@ -963,7 +993,9 @@ class TestFileComponent:
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
-            comp = FileComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+            comp = FileComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
             # This tests the error path when file is not found
             from mcubridge.protocol.structures import FileReadPacket
 
@@ -1029,9 +1061,13 @@ class TestSystemComponent:
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
-            comp = SystemComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+            comp = SystemComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
             # Provide valid encoded packet
-            payload = msgspec.msgpack.encode(VersionResponsePacket(major=1, minor=2, patch=3))
+            payload = msgspec.msgpack.encode(
+                VersionResponsePacket(major=1, minor=2, patch=3)
+            )
             await comp.handle_get_version_resp(0, payload)
             cast(Any, comp.mqtt_flow.publish).assert_called()
         finally:
@@ -1312,7 +1348,9 @@ class TestMetrics:
             enqueue = AsyncMock()
 
             task = asyncio.create_task(
-                publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0)
+                publish_bridge_snapshots(
+                    state, enqueue, summary_interval=0, handshake_interval=0
+                )
             )
             await asyncio.sleep(0.1)
             task.cancel()
@@ -1335,7 +1373,9 @@ class TestMetrics:
             enqueue = AsyncMock(side_effect=OSError("summary fail"))
 
             task = asyncio.create_task(
-                publish_bridge_snapshots(state, enqueue, summary_interval=0.05, handshake_interval=0)
+                publish_bridge_snapshots(
+                    state, enqueue, summary_interval=0.05, handshake_interval=0
+                )
             )
             await asyncio.sleep(0.15)
             task.cancel()
@@ -1358,7 +1398,9 @@ class TestMetrics:
             enqueue = AsyncMock(side_effect=OSError("handshake fail"))
 
             task = asyncio.create_task(
-                publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0.05)
+                publish_bridge_snapshots(
+                    state, enqueue, summary_interval=0, handshake_interval=0.05
+                )
             )
             await asyncio.sleep(0.15)
             task.cancel()
@@ -1401,7 +1443,9 @@ class TestMqttHelpers:
     def test_make_inbound_message_with_response_topic(self):
         from tests.mqtt_helpers import make_inbound_message
 
-        msg = make_inbound_message("test/topic", b"payload", response_topic="reply/topic")
+        msg = make_inbound_message(
+            "test/topic", b"payload", response_topic="reply/topic"
+        )
         assert msg.properties is not None
 
     def test_make_inbound_message_with_correlation_data(self):
@@ -1413,7 +1457,9 @@ class TestMqttHelpers:
     def test_make_inbound_message_with_both(self):
         from tests.mqtt_helpers import make_inbound_message
 
-        msg = make_inbound_message("test/topic", b"payload", response_topic="r", correlation_data=b"\x02")
+        msg = make_inbound_message(
+            "test/topic", b"payload", response_topic="r", correlation_data=b"\x02"
+        )
         assert msg.properties is not None
 
     def test_make_inbound_message_no_properties(self):

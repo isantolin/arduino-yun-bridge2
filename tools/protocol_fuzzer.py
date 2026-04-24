@@ -20,6 +20,7 @@ FRAME_DELIMITER: Final[bytes] = b"\x00"
 
 logger = structlog.get_logger("fuzzer")
 
+
 class ProtocolFuzzer:
     def __init__(self, port: str, baudrate: int) -> None:
         self.port = port
@@ -34,7 +35,9 @@ class ProtocolFuzzer:
         )
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
-    def _build_raw_frame(self, cmd: int, seq: int, payload: bytes, override_crc: int | None = None) -> bytes:
+    def _build_raw_frame(
+        self, cmd: int, seq: int, payload: bytes, override_crc: int | None = None
+    ) -> bytes:
         # Re-packing header properly based on frame.py: version(8), len(16), cmd(16), seq(16)
         header = struct.pack(">BHHH", PROTOCOL_VERSION, len(payload), cmd, seq)
         body = header + payload
@@ -50,15 +53,17 @@ class ProtocolFuzzer:
     async def fuzz_iteration(self) -> None:
         self.seq_id = (self.seq_id + 1) & 0xFFFF
 
-        mode = random.choice([
-            "valid_ping",
-            "invalid_crc",
-            "invalid_version",
-            "malformed_cobs",
-            "oversized_payload",
-            "random_garbage",
-            "unknown_command"
-        ])
+        mode = random.choice(
+            [
+                "valid_ping",
+                "invalid_crc",
+                "invalid_version",
+                "malformed_cobs",
+                "oversized_payload",
+                "random_garbage",
+                "unknown_command",
+            ]
+        )
 
         logger.info("fuzz_step", mode=mode, seq=self.seq_id)
 
@@ -67,7 +72,9 @@ class ProtocolFuzzer:
             await self.send_raw(frame)
 
         elif mode == "invalid_crc":
-            frame = self._build_raw_frame(0x0001, self.seq_id, b"bad_crc", override_crc=0xDEADBEEF)
+            frame = self._build_raw_frame(
+                0x0001, self.seq_id, b"bad_crc", override_crc=0xDEADBEEF
+            )
             await self.send_raw(frame)
 
         elif mode == "invalid_version":
@@ -86,7 +93,9 @@ class ProtocolFuzzer:
             await self.send_raw(cobs.encode(header + b"SHORT") + FRAME_DELIMITER)
 
         elif mode == "random_garbage":
-            garbage = bytes([random.getrandbits(8) for _ in range(random.randint(1, 32))])
+            garbage = bytes(
+                [random.getrandbits(8) for _ in range(random.randint(1, 32))]
+            )
             await self.send_raw(garbage + FRAME_DELIMITER)
 
         elif mode == "unknown_command":
@@ -109,7 +118,9 @@ class ProtocolFuzzer:
 
                 try:
                     if self.reader:
-                        await asyncio.wait_for(self.reader.readuntil(FRAME_DELIMITER), timeout=0.05)
+                        await asyncio.wait_for(
+                            self.reader.readuntil(FRAME_DELIMITER), timeout=0.05
+                        )
                         latencies.append(asyncio.get_event_loop().time() - start_time)
                         success_count += 1
                 except (asyncio.TimeoutError, asyncio.IncompleteReadError):
@@ -121,13 +132,16 @@ class ProtocolFuzzer:
         if latencies:
             avg_lat = sum(latencies) / len(latencies)
             max_lat = max(latencies)
-            logger.info("fuzzing_complete",
-                        iterations=iterations,
-                        health_success_rate=f"{(success_count / (iterations / 10 or 1)) * 100:.1f}%",
-                        avg_latency_ms=f"{avg_lat * 1000:.2f}",
-                        max_latency_ms=f"{max_lat * 1000:.2f}")
+            logger.info(
+                "fuzzing_complete",
+                iterations=iterations,
+                health_success_rate=f"{(success_count / (iterations / 10 or 1)) * 100:.1f}%",
+                avg_latency_ms=f"{avg_lat * 1000:.2f}",
+                max_latency_ms=f"{max_lat * 1000:.2f}",
+            )
         else:
             logger.info("fuzzing_complete", iterations=iterations)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

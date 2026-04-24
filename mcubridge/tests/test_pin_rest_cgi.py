@@ -36,7 +36,10 @@ def test_publish_sync_configures_tls(
 
         # Mock get_ssl_context using patch at class level
         mock_ctx = MagicMock()
-        with patch("mcubridge.protocol.structures.RuntimeConfig.get_ssl_context", return_value=mock_ctx):
+        with patch(
+            "mcubridge.protocol.structures.RuntimeConfig.get_ssl_context",
+            return_value=mock_ctx,
+        ):
             pin_rest_module.publish_sync("topic", "1", runtime_config)
 
         mock_publish.assert_called_once()

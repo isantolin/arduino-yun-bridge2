@@ -38,15 +38,14 @@ def system_component() -> SystemComponent:
     mqtt_flow.publish = AsyncMock()
 
     return SystemComponent(
-        config=config,
-        state=state,
-        serial_flow=serial_flow,
-        mqtt_flow=mqtt_flow
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
     )
 
 
 @pytest.mark.asyncio
-async def test_system_handle_get_version_resp(system_component: SystemComponent) -> None:
+async def test_system_handle_get_version_resp(
+    system_component: SystemComponent,
+) -> None:
     payload = msgspec.msgpack.encode(VersionResponsePacket(major=1, minor=2, patch=3))
     await system_component.handle_get_version_resp(0, payload)
 
@@ -55,7 +54,9 @@ async def test_system_handle_get_version_resp(system_component: SystemComponent)
 
 
 @pytest.mark.asyncio
-async def test_system_handle_get_free_memory_resp(system_component: SystemComponent) -> None:
+async def test_system_handle_get_free_memory_resp(
+    system_component: SystemComponent,
+) -> None:
     payload = msgspec.msgpack.encode(FreeMemoryResponsePacket(value=2048))
     await system_component.handle_get_free_memory_resp(0, payload)
 
@@ -70,12 +71,17 @@ async def test_system_handle_mqtt_bootloader(system_component: SystemComponent) 
     await system_component.handle_mqtt(route, msg)
 
     cast(Any, system_component.serial_flow.send).assert_called()
-    assert cast(Any, system_component.serial_flow.send).call_args[0][0] == Command.CMD_ENTER_BOOTLOADER.value
+    assert (
+        cast(Any, system_component.serial_flow.send).call_args[0][0]
+        == Command.CMD_ENTER_BOOTLOADER.value
+    )
 
 
 @pytest.mark.asyncio
 async def test_system_request_mcu_version(system_component: SystemComponent) -> None:
     await system_component.request_mcu_version()
 
-    cast(Any, system_component.serial_flow.send).assert_called_with(Command.CMD_GET_VERSION.value, b"")
+    cast(Any, system_component.serial_flow.send).assert_called_with(
+        Command.CMD_GET_VERSION.value, b""
+    )
     assert system_component.state.mcu_version is None

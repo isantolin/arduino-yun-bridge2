@@ -23,13 +23,25 @@ def process_comp(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
     mqtt_flow.publish = AsyncMock()
 
     # Create component with direct dependencies
-    comp = ProcessComponent(config=runtime_config, state=runtime_state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    comp = ProcessComponent(
+        config=runtime_config,
+        state=runtime_state,
+        serial_flow=serial_flow,
+        mqtt_flow=mqtt_flow,
+    )
     return comp
 
 
-def test_post_init_disables_slots_when_limit_zero(runtime_config: Any, runtime_state: Any):
+def test_post_init_disables_slots_when_limit_zero(
+    runtime_config: Any, runtime_state: Any
+):
     runtime_config.process_max_concurrent = 0
-    comp = ProcessComponent(config=runtime_config, state=runtime_state, serial_flow=MagicMock(), mqtt_flow=MagicMock())
+    comp = ProcessComponent(
+        config=runtime_config,
+        state=runtime_state,
+        serial_flow=MagicMock(),
+        mqtt_flow=MagicMock(),
+    )
     assert comp._process_slots is not None  # type: ignore[reportPrivateUsage]
 
 
@@ -148,7 +160,9 @@ async def test_handle_kill_timeout_releases_slot(
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
         mock_psutil_instance.terminate = MagicMock()
-        ok = await process_comp.handle_kill(0, msgspec.msgpack.encode(structures.ProcessKillPacket(pid=pid)))
+        ok = await process_comp.handle_kill(
+            0, msgspec.msgpack.encode(structures.ProcessKillPacket(pid=pid))
+        )
     assert ok is True
     mock_psutil_instance.terminate.assert_called_once()
 
@@ -173,7 +187,9 @@ async def test_handle_kill_process_lookup_error_is_handled(
     ):
         mock_psutil_instance = mock_psutil_cls.return_value
         mock_psutil_instance.children.return_value = []
-        ok = await process_comp.handle_kill(0, msgspec.msgpack.encode(structures.ProcessKillPacket(pid=pid)))
+        ok = await process_comp.handle_kill(
+            0, msgspec.msgpack.encode(structures.ProcessKillPacket(pid=pid))
+        )
     # Should return True as we attempted termination
     assert ok is True
 

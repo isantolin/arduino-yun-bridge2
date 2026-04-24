@@ -9,7 +9,9 @@ from typing import Annotated
 import typer
 from mcubridge_client import Bridge
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -57,7 +59,9 @@ def main(
     port: Annotated[int, typer.Option(help="MQTT Broker Port")] = 1883,
     user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
     password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
-    tls_insecure: Annotated[bool, typer.Option(help="Disable TLS certificate verification")] = True,
+    tls_insecure: Annotated[
+        bool, typer.Option(help="Disable TLS certificate verification")
+    ] = True,
 ) -> None:
     asyncio.run(run_test(host, port, user, password, tls_insecure))
 

@@ -36,10 +36,7 @@ def datastore_component() -> DatastoreComponent:
     mqtt_flow.publish = AsyncMock()
 
     return DatastoreComponent(
-        config=config,
-        state=state,
-        serial_flow=serial_flow,
-        mqtt_flow=mqtt_flow
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
     )
 
 
@@ -53,7 +50,9 @@ async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> 
 
 
 @pytest.mark.asyncio
-async def test_datastore_handle_get_request(datastore_component: DatastoreComponent) -> None:
+async def test_datastore_handle_get_request(
+    datastore_component: DatastoreComponent,
+) -> None:
     datastore_component.state.datastore["version"] = "1.0.0"
     payload = msgspec.msgpack.encode(DatastoreGetPacket(key="version"))
 
@@ -64,7 +63,9 @@ async def test_datastore_handle_get_request(datastore_component: DatastoreCompon
 
 
 @pytest.mark.asyncio
-async def test_datastore_handle_mqtt_put(datastore_component: DatastoreComponent) -> None:
+async def test_datastore_handle_mqtt_put(
+    datastore_component: DatastoreComponent,
+) -> None:
     route = make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "sys", "uptime")
     msg = make_mqtt_msg(b"3600")
 
@@ -75,7 +76,9 @@ async def test_datastore_handle_mqtt_put(datastore_component: DatastoreComponent
 
 
 @pytest.mark.asyncio
-async def test_datastore_handle_mqtt_get(datastore_component: DatastoreComponent) -> None:
+async def test_datastore_handle_mqtt_get(
+    datastore_component: DatastoreComponent,
+) -> None:
     datastore_component.state.datastore["status"] = "OK"
     route = make_route(Topic.DATASTORE, DatastoreAction.GET.value, "status")
     msg = make_mqtt_msg(b"")

@@ -44,7 +44,9 @@ if TYPE_CHECKING:
 logger = structlog.get_logger("mcubridge.serial")
 
 _RAW_FRAME_MIN_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.CRC_SIZE
-_RAW_FRAME_MAX_SIZE: Final[int] = protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE
+_RAW_FRAME_MAX_SIZE: Final[int] = (
+    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE
+)
 
 
 class SerialTransport:
@@ -76,7 +78,9 @@ class SerialTransport:
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         if self.writer is None or self.writer.is_closing():
-            raise RuntimeError("Cannot switch local UART baudrate without an active serial writer")
+            raise RuntimeError(
+                "Cannot switch local UART baudrate without an active serial writer"
+            )
 
         try:
             # [SIL-2] Direct access to transport implementation to switch baudrate
@@ -84,7 +88,9 @@ class SerialTransport:
             serial_port.baudrate = target_baud
             logger.info("Local UART switched to %d baud", target_baud)
         except (AttributeError, ValueError) as e:
-            raise RuntimeError(f"Serial transport does not expose the underlying UART: {e}") from e
+            raise RuntimeError(
+                f"Serial transport does not expose the underlying UART: {e}"
+            ) from e
 
     async def run(self) -> None:
         """Main transport entry point with auto-reconnect."""
@@ -196,11 +202,15 @@ class SerialTransport:
             try:
                 # readuntil delegates the delimiter search to C, saving CPU
                 packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
-                packet_view = memoryview(packet_with_sep)[:-1]  # remove delimiter (Zero-copy)
+                packet_view = memoryview(packet_with_sep)[
+                    :-1
+                ]  # remove delimiter (Zero-copy)
 
                 if packet_view:
                     if logger.is_enabled_for(logging.DEBUG):
-                        logger.debug("[SERIAL <- MCU] [RAW]: [%s]", packet_view.hex(" ").upper())
+                        logger.debug(
+                            "[SERIAL <- MCU] [RAW]: [%s]", packet_view.hex(" ").upper()
+                        )
                     self._process_packet(packet_view)
 
             except asyncio.LimitOverrunError:
@@ -228,7 +238,11 @@ class SerialTransport:
 
     def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Dispatcher for decoded packets."""
-        if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
+        if (
+            self._negotiating
+            and self._negotiation_future
+            and not self._negotiation_future.done()
+        ):
             try:
                 frame = Frame.parse(cobs.decode(encoded_packet))
                 if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
@@ -241,14 +255,20 @@ class SerialTransport:
         if self.loop:
             self.loop.create_task(self._async_process_packet_with_limit(encoded_packet))
 
-    async def _async_process_packet_with_limit(self, encoded_packet: bytes | memoryview) -> None:
+    async def _async_process_packet_with_limit(
+        self, encoded_packet: bytes | memoryview
+    ) -> None:
         """Async packet processing logic with backpressure limit."""
         async with self._packet_semaphore:
             await self._async_process_packet(encoded_packet)
 
     async def _async_process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Async packet processing logic (SIL-2)."""
-        packet_bytes = encoded_packet if isinstance(encoded_packet, bytes) else encoded_packet.tobytes()
+        packet_bytes = (
+            encoded_packet
+            if isinstance(encoded_packet, bytes)
+            else encoded_packet.tobytes()
+        )
 
         try:
             # [SIL-2] Deterministic COBS decode and Frame parse.
@@ -290,7 +310,12 @@ class SerialTransport:
             # [SIL-2] Boundary Guard: Catch-all for unexpected logic errors,
             # ensuring they are typed and sent to syslog.
             raw_hex = packet_bytes.hex(" ").upper()
-            logger.critical("[SERIAL <- MCU] [FATAL LOGIC (ERR: %s)]: [%s]", exc, raw_hex, exc_info=True)
+            logger.critical(
+                "[SERIAL <- MCU] [FATAL LOGIC (ERR: %s)]: [%s]",
+                exc,
+                raw_hex,
+                exc_info=True,
+            )
             # [SIL-2] Direct metrics recording (No Wrapper)
             self.state.serial_decode_errors += 1
             self.state.metrics.serial_decode_errors.inc()
@@ -321,11 +346,15 @@ class SerialTransport:
         # We use a safety timeout to avoid permanent deadlocks if MCU fails to send XON.
         if not self.state.serial_tx_allowed.is_set():
             try:
-                logger.debug("Serial TX paused by MCU; waiting for XON (timeout=30s)...")
+                logger.debug(
+                    "Serial TX paused by MCU; waiting for XON (timeout=30s)..."
+                )
                 async with asyncio.timeout(30.0):
                     await self.state.serial_tx_allowed.wait()
             except (asyncio.TimeoutError, TimeoutError):
-                logger.error("Flow control deadlock detected: MCU stayed in XOFF for >30s. Forcing re-sync.")
+                logger.error(
+                    "Flow control deadlock detected: MCU stayed in XOFF for >30s. Forcing re-sync."
+                )
                 raise ConnectionError("Flow control timeout (MCU XOFF deadlock)")
             except (asyncio.CancelledError, RuntimeError):
                 return False
@@ -367,7 +396,9 @@ class SerialTransport:
         logger.info("Negotiating baudrate switch to %d...", target_baud)
 
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        payload = msgspec.msgpack.encode(structures.SetBaudratePacket(baudrate=target_baud))
+        payload = msgspec.msgpack.encode(
+            structures.SetBaudratePacket(baudrate=target_baud)
+        )
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(3),
             wait=tenacity.wait_exponential(

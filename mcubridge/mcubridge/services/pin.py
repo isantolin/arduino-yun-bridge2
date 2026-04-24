@@ -51,11 +51,15 @@ class PinComponent:
 
     async def handle_mcu_digital_read(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_DIGITAL_READ initiated by MCU."""
-        return await self.handle_unexpected_mcu_request(seq_id, Command.CMD_DIGITAL_READ, payload)
+        return await self.handle_unexpected_mcu_request(
+            seq_id, Command.CMD_DIGITAL_READ, payload
+        )
 
     async def handle_mcu_analog_read(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_ANALOG_READ initiated by MCU."""
-        return await self.handle_unexpected_mcu_request(seq_id, Command.CMD_ANALOG_READ, payload)
+        return await self.handle_unexpected_mcu_request(
+            seq_id, Command.CMD_ANALOG_READ, payload
+        )
 
     async def handle_unexpected_mcu_request(
         self,
@@ -99,7 +103,9 @@ class PinComponent:
         try:
             packet = msgspec.msgpack.decode(payload, type=packet_cls)
         except ValueError:
-            logger.warning("Malformed %s payload: %s", packet_cls.__name__, payload.hex())
+            logger.warning(
+                "Malformed %s payload: %s", packet_cls.__name__, payload.hex()
+            )
             return
 
         value = packet.value
@@ -163,7 +169,11 @@ class PinComponent:
         if pin < 0:
             return True
 
-        is_analog_read = len(segments) == 2 and segments[1] == PinAction.READ and topic_enum == Topic.ANALOG
+        is_analog_read = (
+            len(segments) == 2
+            and segments[1] == PinAction.READ
+            and topic_enum == Topic.ANALOG
+        )
 
         if not self._validate_pin_access(pin, is_analog_read):
             return True
@@ -186,7 +196,9 @@ class PinComponent:
             )
         return True
 
-    async def _handle_mode_command(self, pin: int, pin_str: str, payload_str: str) -> None:
+    async def _handle_mode_command(
+        self, pin: int, pin_str: str, payload_str: str
+    ) -> None:
         try:
             mode = int(payload_str)
         except ValueError:
@@ -207,9 +219,15 @@ class PinComponent:
         pin: int,
         inbound: Message | None = None,
     ) -> bool:
-        command = Command.CMD_DIGITAL_READ if topic_type == Topic.DIGITAL else Command.CMD_ANALOG_READ
+        command = (
+            Command.CMD_DIGITAL_READ
+            if topic_type == Topic.DIGITAL
+            else Command.CMD_ANALOG_READ
+        )
         queue = (
-            self.state.pending_digital_reads if command == Command.CMD_DIGITAL_READ else self.state.pending_analog_reads
+            self.state.pending_digital_reads
+            if command == Command.CMD_DIGITAL_READ
+            else self.state.pending_analog_reads
         )
 
         if len(queue) >= self.state.pending_pin_request_limit:
@@ -227,7 +245,9 @@ class PinComponent:
                 queue.remove(pending_request)
         return ok
 
-    async def _handle_write_command(self, topic_type: Topic, pin: int, payload_str: str) -> None:
+    async def _handle_write_command(
+        self, topic_type: Topic, pin: int, payload_str: str
+    ) -> None:
         value = self._parse_pin_value(topic_type, payload_str)
         if value is None:
             logger.warning(
@@ -257,7 +277,9 @@ class PinComponent:
             return 0
         try:
             val = int(payload_str)
-            if (topic_type == Topic.DIGITAL and val in (0, 1)) or (topic_type == Topic.ANALOG and 0 <= val <= 255):
+            if (topic_type == Topic.DIGITAL and val in (0, 1)) or (
+                topic_type == Topic.ANALOG and 0 <= val <= 255
+            ):
                 return val
         except ValueError:
             pass
@@ -301,7 +323,9 @@ class PinComponent:
         # Basic bounds check.
         # Note: Arduino pins are 0-indexed, so count=20 means 0..19.
         if pin >= limit:
-            logger.warning("Security Block: Pin %d exceeds hardware limit (%d).", pin, limit)
+            logger.warning(
+                "Security Block: Pin %d exceeds hardware limit (%d).", pin, limit
+            )
             return False
         return True
 

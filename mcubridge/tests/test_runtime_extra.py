@@ -67,7 +67,9 @@ async def test_runtime_handle_mqtt_message_dispatch_error() -> None:
         msg = make_inbound_message("br/system/status", b"{}")
 
         # Mock dispatcher.dispatch_mqtt_message to see if it's called
-        service.dispatcher.dispatch_mqtt_message = AsyncMock(side_effect=IndexError("bad dispatch"))
+        service.dispatcher.dispatch_mqtt_message = AsyncMock(
+            side_effect=IndexError("bad dispatch")
+        )
 
         with pytest.raises(IndexError, match="bad dispatch"):
             await service.handle_mqtt_message(msg)

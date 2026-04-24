@@ -23,7 +23,6 @@ from mcubridge.services.dispatcher import BridgeDispatcher
 
 from .conftest import make_component_container
 
-
 _MQTT_PREFIX = "br"
 
 
@@ -206,6 +205,8 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             if mcu_registry.get(status.value) is None:
                 missing_status.append(status.name)
 
-        assert not missing_status, f"Missing status handler registrations: {missing_status}"
+        assert (
+            not missing_status
+        ), f"Missing status handler registrations: {missing_status}"
     finally:
         state.cleanup()

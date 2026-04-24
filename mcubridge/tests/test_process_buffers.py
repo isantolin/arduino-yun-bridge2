@@ -13,7 +13,9 @@ from mcubridge.state.context import (
 
 @pytest.fixture
 def runtime_service(runtime_config: Any, runtime_state: Any) -> BridgeService:
-    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
+    service = BridgeService(
+        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+    )
     return service
 
 

@@ -89,7 +89,9 @@ def _load_raw_config() -> tuple[dict[str, Any], str]:
             source = "uci"
     except (OSError, ValueError, RuntimeError, ImportError) as err:
         # [SIL-2] UCI is optional for system survival. Log error and continue with defaults.
-        logger.warning("UCI configuration unavailable or locked (using safe defaults): %s", err)
+        logger.warning(
+            "UCI configuration unavailable or locked (using safe defaults): %s", err
+        )
 
     return config, source
 

@@ -109,17 +109,17 @@ RLE_BATCH_BUILDER: Construct = GreedyRange(
 )
 
 
-def _is_not_esc_peek(ctx: Any) -> bool:
-    """SIL-2: Peek to verify the next byte is not the escape byte."""
-    return ctx._io.peek(1) != bytes([protocol.RLE_ESCAPE_BYTE])
+def _is_not_esc_byte(ctx: Any) -> bool:
+    """SIL-2: Verify the current byte is not the escape byte."""
+    return ctx.val != protocol.RLE_ESCAPE_BYTE
 
 
-def _decode_literal(obj: int, ctx: Any) -> bytes:
+def _decode_literal(obj: int, _ctx: Any) -> bytes:
     """SIL-2: Convert literal integer byte to bytes object."""
     return bytes([obj])
 
 
-def _encode_literal(obj: bytes, ctx: Any) -> int:
+def _encode_literal(obj: bytes, _ctx: Any) -> int:
     """SIL-2: Convert literal bytes object to integer byte."""
     return int(obj[0])
 
@@ -146,7 +146,7 @@ RLE_DECODER: Construct = FocusedSeq(
                 FocusedSeq(
                     "val",
                     "val" / Int8ub,
-                    "_" / Check(_is_not_esc_peek),
+                    "_" / Check(_is_not_esc_byte),
                 ),
                 decoder=_decode_literal,
                 encoder=_encode_literal,

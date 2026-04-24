@@ -34,7 +34,12 @@ async def test_pin_handle_read_overflow() -> None:
         # Fill queue
         state.pending_digital_reads.append(MagicMock())
 
-        route = TopicRoute(f"br/d/13/{PinAction.READ.value}", "br", Topic.DIGITAL, ("13", PinAction.READ.value))
+        route = TopicRoute(
+            f"br/d/13/{PinAction.READ.value}",
+            "br",
+            Topic.DIGITAL,
+            ("13", PinAction.READ.value),
+        )
         result = await comp.handle_mqtt(route, make_mqtt_msg(b""))
 
         # True because handled (rejected gracefully)

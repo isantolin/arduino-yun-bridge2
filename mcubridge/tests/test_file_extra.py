@@ -124,7 +124,9 @@ async def test_file_handle_read_response_malformed() -> None:
         import asyncio
         from mcubridge.services.file import _PendingMcuRead  # type: ignore[reportPrivateUsage]
 
-        pending = _PendingMcuRead(identifier="test", future=asyncio.get_running_loop().create_future())
+        pending = _PendingMcuRead(
+            identifier="test", future=asyncio.get_running_loop().create_future()
+        )
         comp._pending_mcu_read = pending  # type: ignore[reportPrivateUsage]
 
         result = await comp.handle_read_response(0, b"\xff\xff")

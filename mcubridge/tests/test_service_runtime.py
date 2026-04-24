@@ -36,7 +36,9 @@ async def test_send_frame_without_serial_sender_returns_false() -> None:
         service = BridgeService(config, state, MqttTransport(config, state))
 
         # Testing direct serial flow via service property
-        ok = await service.serial_flow.send(protocol.Command.CMD_GET_VERSION.value, b"x")
+        ok = await service.serial_flow.send(
+            protocol.Command.CMD_GET_VERSION.value, b"x"
+        )
         assert ok is False
     finally:
         state.cleanup()
@@ -69,7 +71,9 @@ async def test_serial_flow_acknowledge_no_sender_is_noop() -> None:
     try:
         service = BridgeService(config, state, MqttTransport(config, state))
 
-        await service.serial_flow.acknowledge(protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK)
+        await service.serial_flow.acknowledge(
+            protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK
+        )
     finally:
         state.cleanup()
 
@@ -83,7 +87,9 @@ async def test_serial_flow_acknowledge_sends_ack_packet() -> None:
 
         sent: list[tuple[int, bytes]] = []
 
-        async def _sender_side_effect(cmd: int, payload: bytes, seq_id: int | None = None) -> bool:
+        async def _sender_side_effect(
+            cmd: int, payload: bytes, seq_id: int | None = None
+        ) -> bool:
             sent.append((cmd, payload))
             return True
 
@@ -111,10 +117,13 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        msg = QueuedPublish(topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello")
+        msg = QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello"
+        )
 
         # [SIL-2] Use AsyncMock(spec=...) for properties and inbound message
         from aiomqtt.message import Message
+
         mock_props = AsyncMock()
         mock_props.ResponseTopic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
         mock_props.CorrelationData = b"cid"
@@ -253,7 +262,9 @@ async def test_publish_bridge_snapshot_handshake_flavor() -> None:
 
         # [SIL-2] Use spec=Message
         mock_inbound = AsyncMock(spec=Message)
-        mock_inbound.topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get"
+        mock_inbound.topic = (
+            f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get"
+        )
         mock_inbound.properties = None
 
         await service._publish_bridge_snapshot("handshake", mock_inbound)  # type: ignore[reportPrivateUsage]

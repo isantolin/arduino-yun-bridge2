@@ -95,7 +95,9 @@ class DatastoreComponent:
             value_bytes = value_bytes[:255]
 
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        response_payload = msgspec.msgpack.encode(DatastoreGetResponsePacket(value=value_bytes))
+        response_payload = msgspec.msgpack.encode(
+            DatastoreGetResponsePacket(value=value_bytes)
+        )
 
         send_ok = await self.serial_flow.send(
             Command.CMD_DATASTORE_GET_RESP.value,
@@ -115,7 +117,11 @@ class DatastoreComponent:
         payload = msgspec.convert(inbound.payload, bytes)
         payload_str = payload.decode("utf-8", errors="ignore")
 
-        is_request = identifier == DatastoreAction.GET and bool(remainder) and remainder[-1] == "request"
+        is_request = (
+            identifier == DatastoreAction.GET
+            and bool(remainder)
+            and remainder[-1] == "request"
+        )
         parts = remainder[:-1] if is_request else remainder
 
         key = "/".join(parts)
@@ -185,7 +191,11 @@ class DatastoreComponent:
 
         # [SIL-2] Handle potential type drift during testing/injection
         val_to_check: Any = cached_value
-        val_bytes = val_to_check.encode("utf-8") if isinstance(val_to_check, str) else bytes(val_to_check)
+        val_bytes = (
+            val_to_check.encode("utf-8")
+            if isinstance(val_to_check, str)
+            else bytes(val_to_check)
+        )
 
         # Ignore echoes: if it's not an explicit /request and it has a payload,
         # it is an echo of a published value, so we do not republish.

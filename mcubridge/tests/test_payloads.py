@@ -18,7 +18,9 @@ def test_shell_command_payload_plain_text() -> None:
 
 def test_shell_command_payload_msgpack_body() -> None:
 
-    payload = ShellCommandPayload.from_mqtt(msgspec.msgpack.encode({"command": "echo hi"}))
+    payload = ShellCommandPayload.from_mqtt(
+        msgspec.msgpack.encode({"command": "echo hi"})
+    )
     assert payload.command == "echo hi"
 
 

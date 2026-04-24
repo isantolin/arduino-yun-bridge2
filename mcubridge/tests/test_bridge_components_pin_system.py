@@ -42,17 +42,23 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
+    service = BridgeService(
+        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+    )
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def fake_sender(
+        command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
     service.register_serial_sender(fake_sender)
 
-    runtime_state.pending_digital_reads.append(PendingPinRequest(pin=7, reply_context=None))
+    runtime_state.pending_digital_reads.append(
+        PendingPinRequest(pin=7, reply_context=None)
+    )
 
     payload = msgspec.msgpack.encode(structures.DigitalReadResponsePacket(value=1))
     await service.handle_mcu_frame(Command.CMD_DIGITAL_READ_RESP.value, 0, payload)
@@ -71,7 +77,9 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == msgspec.msgpack.encode(structures.AckPacket(command_id=Command.CMD_DIGITAL_READ_RESP.value))
+    assert ack_payload == msgspec.msgpack.encode(
+        structures.AckPacket(command_id=Command.CMD_DIGITAL_READ_RESP.value)
+    )
 
 
 @pytest.mark.asyncio
@@ -79,20 +87,28 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
+    service = BridgeService(
+        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+    )
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def fake_sender(
+        command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
     service.register_serial_sender(fake_sender)
 
-    runtime_state.pending_analog_reads.append(PendingPinRequest(pin=3, reply_context=None))
+    runtime_state.pending_analog_reads.append(
+        PendingPinRequest(pin=3, reply_context=None)
+    )
 
     TEST_EXIT_CODE = 0x7F
-    payload = msgspec.msgpack.encode(structures.AnalogReadResponsePacket(value=TEST_EXIT_CODE))
+    payload = msgspec.msgpack.encode(
+        structures.AnalogReadResponsePacket(value=TEST_EXIT_CODE)
+    )
     await service.handle_mcu_frame(Command.CMD_ANALOG_READ_RESP.value, 0, payload)
 
     queued = runtime_state.mqtt_publish_queue.get_nowait()
@@ -109,7 +125,9 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == msgspec.msgpack.encode(structures.AckPacket(command_id=Command.CMD_ANALOG_READ_RESP.value))
+    assert ack_payload == msgspec.msgpack.encode(
+        structures.AckPacket(command_id=Command.CMD_ANALOG_READ_RESP.value)
+    )
 
 
 @pytest.mark.asyncio
@@ -117,12 +135,16 @@ async def test_mqtt_digital_write_sends_frame(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
+    service = BridgeService(
+        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+    )
 
     sent_frames: list[tuple[int, bytes]] = []
     flow = service.serial_flow
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def fake_sender(
+        command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
         sent_frames.append((command_id, payload))
         flow.on_frame_received(
             Status.ACK.value,
@@ -147,7 +169,9 @@ async def test_mqtt_digital_write_sends_frame(
     assert sent_frames
     command_id, payload = sent_frames[0]
     assert command_id == Command.CMD_DIGITAL_WRITE.value
-    assert payload == msgspec.msgpack.encode(structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_HIGH))
+    assert payload == msgspec.msgpack.encode(
+        structures.DigitalWritePacket(pin=5, value=protocol.DIGITAL_HIGH)
+    )
 
 
 @pytest.mark.asyncio
@@ -155,12 +179,16 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
+    service = BridgeService(
+        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+    )
 
     sent_frames: list[tuple[int, bytes]] = []
     flow = service.serial_flow
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def fake_sender(
+        command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
         sent_frames.append((command_id, payload))
         flow.on_frame_received(
             Command.CMD_ANALOG_READ_RESP.value,
@@ -196,11 +224,15 @@ async def test_mcu_digital_read_request_yields_not_implemented(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
+    service = BridgeService(
+        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+    )
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def fake_sender(
+        command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
@@ -220,11 +252,15 @@ async def test_mcu_free_memory_response_enqueues_value(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
+    service = BridgeService(
+        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+    )
 
     sent_frames: list[tuple[int, bytes]] = []
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def fake_sender(
+        command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
         sent_frames.append((command_id, payload))
         return True
 
@@ -257,14 +293,18 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
+    service = BridgeService(
+        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+    )
 
     runtime_state.mcu_version = (1, 2, 0)
 
     sent_frames: list[tuple[int, bytes]] = []
     flow = service.serial_flow
 
-    async def fake_sender(command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def fake_sender(
+        command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
         sent_frames.append((command_id, payload))
         flow.on_frame_received(
             Command.CMD_GET_VERSION_RESP.value,
@@ -308,7 +348,9 @@ async def test_mqtt_shell_kill_invokes_processonent(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state))
+    service = BridgeService(
+        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+    )
     process = service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
 
     with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:

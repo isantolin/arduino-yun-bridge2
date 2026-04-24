@@ -19,7 +19,9 @@ from mcubridge.transport.mqtt import MqttTransport
 from tests._helpers import make_mqtt_msg, make_route
 
 
-def _extract_enqueued_publish(mqtt_flow: AsyncMock, index: int = -1) -> tuple[QueuedPublish, Any]:
+def _extract_enqueued_publish(
+    mqtt_flow: AsyncMock, index: int = -1
+) -> tuple[QueuedPublish, Any]:
     """Helper to extract QueuedPublish and reply_context from AsyncMock.publish calls."""
     call = mqtt_flow.publish.call_args_list[index]
     topic = call.kwargs.get("topic", call.args[0] if call.args else "")
@@ -53,7 +55,9 @@ async def test_shell_run_async_success(
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
-    component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    component = ProcessComponent(
+        config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
 
     # Mock low-level execution but use real component logic for MQTT
     component.run_async = AsyncMock(return_value=1234)
@@ -88,7 +92,9 @@ async def test_shell_run_async_exception_returns_error(
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
-    component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    component = ProcessComponent(
+        config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
     component.run_async = AsyncMock(side_effect=RuntimeError("crash"))
 
     inbound = make_mqtt_msg(b"echo hi")
@@ -114,7 +120,9 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
-    component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    component = ProcessComponent(
+        config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
     component.run_async = AsyncMock(return_value=0)
 
     await component.handle_mqtt(
@@ -139,7 +147,9 @@ async def test_shell_poll_calls_process_helpers(
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
-    component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    component = ProcessComponent(
+        config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
 
     from mcubridge.protocol.structures import ProcessOutputBatch
 
@@ -169,7 +179,9 @@ async def test_shell_kill_invokes_stop_process(
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
-    component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    component = ProcessComponent(
+        config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
     component.stop_process = AsyncMock(return_value=True)
 
     await component.handle_mqtt(
@@ -191,7 +203,9 @@ async def test_shell_ignores_invalid_payloads_and_actions(
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
-    component = ProcessComponent(config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    component = ProcessComponent(
+        config=runtime_config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
 
     # Empty segments
     await component.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))

@@ -30,15 +30,14 @@ def console_component() -> ConsoleComponent:
     mqtt_flow.publish = AsyncMock()
 
     return ConsoleComponent(
-        config=config,
-        state=state,
-        serial_flow=serial_flow,
-        mqtt_flow=mqtt_flow
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
     )
 
 
 @pytest.mark.asyncio
-async def test_console_handle_write_success(console_component: ConsoleComponent) -> None:
+async def test_console_handle_write_success(
+    console_component: ConsoleComponent,
+) -> None:
     # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
     payload = msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))
 
@@ -57,7 +56,9 @@ async def test_console_xoff_xon(console_component: ConsoleComponent) -> None:
 
 
 @pytest.mark.asyncio
-async def test_console_on_serial_disconnected(console_component: ConsoleComponent) -> None:
+async def test_console_on_serial_disconnected(
+    console_component: ConsoleComponent,
+) -> None:
     console_component.state.mcu_is_paused = True
     console_component.on_serial_disconnected()
     assert console_component.state.mcu_is_paused is False

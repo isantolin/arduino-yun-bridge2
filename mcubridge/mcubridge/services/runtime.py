@@ -47,7 +47,9 @@ STATUS_VALUES = {status.value for status in Status}
 class BridgeService:
     """Service façade orchestrating MCU and MQTT interactions. [SIL-2]"""
 
-    def __init__(self, config: RuntimeConfig, state: RuntimeState, mqtt_transport: Any) -> None:
+    def __init__(
+        self, config: RuntimeConfig, state: RuntimeState, mqtt_transport: Any
+    ) -> None:
         self.config = config
         self.state = state
         self.mqtt_flow = mqtt_transport
@@ -60,35 +62,75 @@ class BridgeService:
         # Eradicates the indirect factory loop to improve type traceability.
         self._registry.register_factory(
             ConsoleComponent,
-            lambda: ConsoleComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+            lambda: ConsoleComponent(
+                config=config,
+                state=state,
+                serial_flow=self.serial_flow,
+                mqtt_flow=self.mqtt_flow,
+            ),
         )
         self._registry.register_factory(
             DatastoreComponent,
-            lambda: DatastoreComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+            lambda: DatastoreComponent(
+                config=config,
+                state=state,
+                serial_flow=self.serial_flow,
+                mqtt_flow=self.mqtt_flow,
+            ),
         )
         self._registry.register_factory(
             FileComponent,
-            lambda: FileComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+            lambda: FileComponent(
+                config=config,
+                state=state,
+                serial_flow=self.serial_flow,
+                mqtt_flow=self.mqtt_flow,
+            ),
         )
         self._registry.register_factory(
             MailboxComponent,
-            lambda: MailboxComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+            lambda: MailboxComponent(
+                config=config,
+                state=state,
+                serial_flow=self.serial_flow,
+                mqtt_flow=self.mqtt_flow,
+            ),
         )
         self._registry.register_factory(
             PinComponent,
-            lambda: PinComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+            lambda: PinComponent(
+                config=config,
+                state=state,
+                serial_flow=self.serial_flow,
+                mqtt_flow=self.mqtt_flow,
+            ),
         )
         self._registry.register_factory(
             ProcessComponent,
-            lambda: ProcessComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+            lambda: ProcessComponent(
+                config=config,
+                state=state,
+                serial_flow=self.serial_flow,
+                mqtt_flow=self.mqtt_flow,
+            ),
         )
         self._registry.register_factory(
             SpiComponent,
-            lambda: SpiComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+            lambda: SpiComponent(
+                config=config,
+                state=state,
+                serial_flow=self.serial_flow,
+                mqtt_flow=self.mqtt_flow,
+            ),
         )
         self._registry.register_factory(
             SystemComponent,
-            lambda: SystemComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+            lambda: SystemComponent(
+                config=config,
+                state=state,
+                serial_flow=self.serial_flow,
+                mqtt_flow=self.mqtt_flow,
+            ),
         )
 
         self._container = svcs.Container(self._registry)
@@ -134,7 +176,9 @@ class BridgeService:
             handle_link_reset_resp=self.handshake_manager.handle_link_reset_resp,
             handle_get_capabilities_resp=self.handshake_manager.handle_capabilities_resp,
             handle_ack=self._handle_ack,
-            status_handler_factory=lambda status: lambda s, p: self.handle_status(s, status, p),
+            status_handler_factory=lambda status: lambda s, p: self.handle_status(
+                s, status, p
+            ),
             handle_process_kill=self._container.get(ProcessComponent).handle_kill,
         )
 
@@ -180,12 +224,16 @@ class BridgeService:
 
         # [SIL-2] Boundary Guard: Do not proceed if synchronization failed.
         if not self.state.is_synchronized:
-            logger.warning("Link synchronization failed; aborting post-connection initialization")
+            logger.warning(
+                "Link synchronization failed; aborting post-connection initialization"
+            )
             self.handshake_manager.raise_if_handshake_fatal()
             return
 
         try:
-            version_ok = await self._container.get(SystemComponent).request_mcu_version()
+            version_ok = await self._container.get(
+                SystemComponent
+            ).request_mcu_version()
             if not version_ok:
                 logger.warning("Failed to dispatch MCU version request after reconnect")
         except (OSError, ValueError, RuntimeError) as e:
@@ -221,7 +269,9 @@ class BridgeService:
         await self.serial_flow.reset()
         self.handshake_manager.clear_handshake_expectations()
 
-    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
+    async def handle_mcu_frame(
+        self, command_id: int, sequence_id: int, payload: bytes
+    ) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
         await self.dispatcher.dispatch_mcu_frame(command_id, sequence_id, payload)
 
@@ -248,14 +298,18 @@ class BridgeService:
 
     async def handle_status(self, seq_id: int, status: Status, payload: bytes) -> None:
         # [SIL-2] Direct metrics recording (No Wrapper)
-        self.state.mcu_status_counts[status.name] = self.state.mcu_status_counts.get(status.name, 0) + 1
+        self.state.mcu_status_counts[status.name] = (
+            self.state.mcu_status_counts.get(status.name, 0) + 1
+        )
         self.state.metrics.mcu_status_counts.labels(status=status.name).inc()
 
         # [SIL-2] Improved status reporting with descriptive names from protocol
         desc = status.description
         text = payload.decode("utf-8", errors="ignore") if payload else ""
 
-        log_method = logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
+        log_method = (
+            logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
+        )
         if text:
             log_method("MCU > %s (seq=%d): %s (%s)", status.name, seq_id, desc, text)
         else:

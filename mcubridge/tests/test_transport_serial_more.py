@@ -198,7 +198,9 @@ async def test_serial_disconnected_hook_error() -> None:
             with (
                 patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
                 patch.object(service, "on_serial_connected", new_callable=AsyncMock),
-                patch.object(service, "on_serial_disconnected", side_effect=_raise_error),
+                patch.object(
+                    service, "on_serial_disconnected", side_effect=_raise_error
+                ),
                 patch("mcubridge.transport.serial.logger") as mock_logger,
             ):
                 try:
@@ -212,7 +214,9 @@ async def test_serial_disconnected_hook_error() -> None:
 
                 # Verify logger.error was called with the hook error message
                 error_calls = [
-                    c for c in mock_logger.error.call_args_list if "on_serial_disconnected" in str(c)
+                    c
+                    for c in mock_logger.error.call_args_list
+                    if "on_serial_disconnected" in str(c)
                 ]
                 assert error_calls
 
@@ -240,13 +244,19 @@ async def test_async_process_packet_os_error() -> None:
         from mcubridge.protocol.frame import Frame
         from mcubridge.protocol.protocol import Command
 
-        frame = Frame(command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00").build()
+        frame = Frame(
+            command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00"
+        ).build()
         encoded = cobs.encode(frame)
 
         with patch("mcubridge.transport.serial.logger") as mock_logger:
             await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
             # Verify logger.error was called with TRANSPORT error
-            error_calls = [call for call in mock_logger.error.call_args_list if "TRANSPORT" in str(call)]
+            error_calls = [
+                call
+                for call in mock_logger.error.call_args_list
+                if "TRANSPORT" in str(call)
+            ]
             assert error_calls
     finally:
         state.cleanup()

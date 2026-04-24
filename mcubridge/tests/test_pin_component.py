@@ -43,10 +43,7 @@ def pin_component() -> PinComponent:
     mqtt_flow.publish = AsyncMock()
 
     return PinComponent(
-        config=config,
-        state=state,
-        serial_flow=serial_flow,
-        mqtt_flow=mqtt_flow
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
     )
 
 
@@ -54,7 +51,9 @@ def pin_component() -> PinComponent:
 async def test_pin_handle_digital_read_resp(pin_component: PinComponent) -> None:
     from mcubridge.state.context import PendingPinRequest
 
-    pin_component.state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
+    pin_component.state.pending_digital_reads.append(
+        PendingPinRequest(pin=13, reply_context=None)
+    )
     payload = msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
 
     await pin_component.handle_digital_read_resp(0, payload)

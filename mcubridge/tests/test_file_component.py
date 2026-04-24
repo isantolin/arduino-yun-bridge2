@@ -27,8 +27,12 @@ def runtime_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
         mqtt_topic="br",
-        file_system_root=tempfile.mkdtemp(prefix="mcubridge-test-fs-", dir=".tmp_tests"),
-        mqtt_spool_dir=tempfile.mkdtemp(prefix="mcubridge-test-spool-", dir=".tmp_tests"),
+        file_system_root=tempfile.mkdtemp(
+            prefix="mcubridge-test-fs-", dir=".tmp_tests"
+        ),
+        mqtt_spool_dir=tempfile.mkdtemp(
+            prefix="mcubridge-test-spool-", dir=".tmp_tests"
+        ),
         serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
 
@@ -61,7 +65,9 @@ def _build_write_payload(filename: str, data: bytes) -> bytes:
     return msgspec.msgpack.encode(structures.FileWritePacket(path=filename, data=data))
 
 
-def _get_publish_arg(mock_pub: Any, arg_idx: int, kw_name: str, call_idx: int = -1) -> Any:
+def _get_publish_arg(
+    mock_pub: Any, arg_idx: int, kw_name: str, call_idx: int = -1
+) -> Any:
     """Robustly extract argument from mock call."""
     if not mock_pub.called:
         return None
@@ -81,7 +87,15 @@ async def test_handle_mqtt_write_and_read(
     # Ensure component uses tmp_path
     component.config.file_system_root = str(tmp_path)
 
-    msg = type("MockMsg", (), {"topic": "br/file/write/dir/file.txt", "payload": b"payload", "properties": None})()
+    msg = type(
+        "MockMsg",
+        (),
+        {
+            "topic": "br/file/write/dir/file.txt",
+            "payload": b"payload",
+            "properties": None,
+        },
+    )()
     route = TopicRoute(
         raw="br/file/write/dir/file.txt",
         prefix="br",
@@ -92,7 +106,11 @@ async def test_handle_mqtt_write_and_read(
     await component.handle_mqtt(route, cast(Any, msg))
     assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
 
-    msg_read = type("MockMsg", (), {"topic": "br/file/read/dir/file.txt", "payload": b"", "properties": None})()
+    msg_read = type(
+        "MockMsg",
+        (),
+        {"topic": "br/file/read/dir/file.txt", "payload": b"", "properties": None},
+    )()
     route_read = TopicRoute(
         raw="br/file/read/dir/file.txt",
         prefix="br",
@@ -151,7 +169,11 @@ async def test_handle_mqtt_remove_action(
     test_file = tmp_path / "rm.txt"
     test_file.write_bytes(b"bye")
 
-    msg = type("MockMsg", (), {"topic": "br/file/remove/rm.txt", "payload": b"", "properties": None})()
+    msg = type(
+        "MockMsg",
+        (),
+        {"topic": "br/file/remove/rm.txt", "payload": b"", "properties": None},
+    )()
     route = TopicRoute(
         raw="br/file/remove/rm.txt",
         prefix="br",
@@ -171,6 +193,7 @@ async def test_handle_read_large_payload_chunking(
     import os
     import time
     from pathlib import Path
+
     tmp_tests_dir = os.path.join(os.getcwd(), ".tmp_tests")
     tmp_path = Path(tmp_tests_dir) / f"mcubridge-test-{os.getpid()}-{time.time_ns()}"
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -178,7 +201,9 @@ async def test_handle_read_large_payload_chunking(
     large_data = b"X" * 128  # Exactly 2 chunks
     (tmp_path / "large.bin").write_bytes(large_data)
 
-    await component.handle_read(0, msgspec.msgpack.encode(structures.FileReadPacket(path="large.bin")))
+    await component.handle_read(
+        0, msgspec.msgpack.encode(structures.FileReadPacket(path="large.bin"))
+    )
 
     # Should send 2 DATA chunks and 1 final empty chunk (total 3 frames)
     assert serial_flow.send.call_count >= 2
@@ -200,7 +225,9 @@ async def test_handle_mqtt_missing_filename_is_ignored(
     file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, _serial_flow, mqtt_flow = file_component
-    route = TopicRoute(raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",))
+    route = TopicRoute(
+        raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",)
+    )
     await component.handle_mqtt(route, make_mqtt_msg(""))
     assert not mqtt_flow.publish.called
 
@@ -275,6 +302,7 @@ async def test_handle_read_large_payload_truncation_reproduction(
     import os
     import time
     from pathlib import Path
+
     tmp_tests_dir = os.path.join(os.getcwd(), ".tmp_tests")
     tmp_path = Path(tmp_tests_dir) / f"mcubridge-test-{os.getpid()}-{time.time_ns()}"
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -282,7 +310,9 @@ async def test_handle_read_large_payload_truncation_reproduction(
     large_data = b"ABC" * 50  # 150 bytes
     (tmp_path / "trunc.bin").write_bytes(large_data)
 
-    await component.handle_read(0, msgspec.msgpack.encode(structures.FileReadPacket(path="trunc.bin")))
+    await component.handle_read(
+        0, msgspec.msgpack.encode(structures.FileReadPacket(path="trunc.bin"))
+    )
 
     # Total bytes sent in responses should match input
     total_received = b""
@@ -290,8 +320,12 @@ async def test_handle_read_large_payload_truncation_reproduction(
     calls = cast(list[Any], serial_flow.send.call_args_list)
     for call in calls:
         if call.args[0] == Command.CMD_FILE_READ_RESP.value:
-            payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")
-            total_received += msgspec.msgpack.decode(payload, type=structures.FileReadResponsePacket).content
+            payload = call.kwargs.get(
+                "payload", call.args[1] if len(call.args) > 1 else b""
+            )
+            total_received += msgspec.msgpack.decode(
+                payload, type=structures.FileReadResponsePacket
+            ).content
 
     assert total_received == large_data
 
@@ -304,7 +338,11 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
     # Disable MCU backend
     component._mcu_backend_enabled = False  # type: ignore[reportPrivateUsage]
 
-    msg = type("MockMsg", (), {"topic": "br/file/write/mcu/test.txt", "payload": b"x", "properties": None})()
+    msg = type(
+        "MockMsg",
+        (),
+        {"topic": "br/file/write/mcu/test.txt", "payload": b"x", "properties": None},
+    )()
     route = TopicRoute(
         raw="br/file/write/mcu/test.txt",
         prefix="br",
@@ -316,7 +354,8 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
 
     # Just check that it published the error
     assert any(
-        "MCU filesystem unavailable" in str(_get_publish_arg(mqtt_flow.publish, 1, "payload", i))
+        "MCU filesystem unavailable"
+        in str(_get_publish_arg(mqtt_flow.publish, 1, "payload", i))
         for i in range(len(mqtt_flow.publish.call_args_list))
     )
 
@@ -328,11 +367,15 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
     component, serial_flow, mqtt_flow = file_component
     component._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]
 
-    async def _send_frame(command_id: int, payload: bytes = b"", seq_id: int | None = None) -> bool:
+    async def _send_frame(
+        command_id: int, payload: bytes = b"", seq_id: int | None = None
+    ) -> bool:
         if command_id == Command.CMD_FILE_READ.value:
             await component.handle_read_response(
                 0,
-                msgspec.msgpack.encode(structures.FileReadResponsePacket(content=b"mcu-data")),
+                msgspec.msgpack.encode(
+                    structures.FileReadResponsePacket(content=b"mcu-data")
+                ),
             )
             await component.handle_read_response(
                 0,
@@ -342,7 +385,11 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
 
     serial_flow.send.side_effect = _send_frame
 
-    msg = type("MockMsg", (), {"topic": "br/file/read/mcu/test.txt", "payload": b"", "properties": None})()
+    msg = type(
+        "MockMsg",
+        (),
+        {"topic": "br/file/read/mcu/test.txt", "payload": b"", "properties": None},
+    )()
     route = TopicRoute(
         raw="br/file/read/mcu/test.txt",
         prefix="br",
@@ -361,7 +408,11 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
     component, _serial_flow, mqtt_flow = file_component
     component._mcu_backend_enabled = False  # type: ignore[reportPrivateUsage]
 
-    msg = type("MockMsg", (), {"topic": "br/file/read/mcu/test.txt", "payload": b"", "properties": None})()
+    msg = type(
+        "MockMsg",
+        (),
+        {"topic": "br/file/read/mcu/test.txt", "payload": b"", "properties": None},
+    )()
     route = TopicRoute(
         raw="br/file/read/mcu/test.txt",
         prefix="br",
@@ -373,7 +424,8 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
     await asyncio.wait_for(component.handle_mqtt(route, cast(Any, msg)), timeout=1.0)
 
     assert any(
-        "MCU filesystem unavailable" in str(_get_publish_arg(mqtt_flow.publish, 1, "payload", i))
+        "MCU filesystem unavailable"
+        in str(_get_publish_arg(mqtt_flow.publish, 1, "payload", i))
         for i in range(len(mqtt_flow.publish.call_args_list))
     )
 
@@ -387,7 +439,11 @@ async def test_handle_mqtt_read_failure(
     # Mock send_frame returning error status immediately
     serial_flow.send.return_value = False
 
-    msg = type("MockMsg", (), {"topic": "br/file/read/mcu/fail.txt", "payload": b"", "properties": None})()
+    msg = type(
+        "MockMsg",
+        (),
+        {"topic": "br/file/read/mcu/fail.txt", "payload": b"", "properties": None},
+    )()
     route = TopicRoute(
         raw="br/file/read/mcu/fail.txt",
         prefix="br",
@@ -396,7 +452,10 @@ async def test_handle_mqtt_read_failure(
     )
 
     await component.handle_mqtt(route, cast(Any, msg))
-    assert _get_publish_arg(mqtt_flow.publish, 1, "payload") == b"MCU filesystem read failed"
+    assert (
+        _get_publish_arg(mqtt_flow.publish, 1, "payload")
+        == b"MCU filesystem read failed"
+    )
 
 
 @pytest.mark.asyncio
@@ -419,7 +478,11 @@ async def test_handle_mqtt_remove_from_mcu_storage_enabled(
     component, serial_flow, _mqtt_flow = file_component
     component._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]
 
-    msg = type("MockMsg", (), {"topic": "br/file/remove/mcu/test.txt", "payload": b"", "properties": None})()
+    msg = type(
+        "MockMsg",
+        (),
+        {"topic": "br/file/remove/mcu/test.txt", "payload": b"", "properties": None},
+    )()
     route = TopicRoute(
         raw="br/file/remove/mcu/test.txt",
         prefix="br",

@@ -31,7 +31,9 @@ class BridgeQueue(Generic[T]):
         self,
         directory: str | Path | None = None,
         max_items: int | None = None,
-        max_bytes: int | None = None,  # Kept for signature compatibility but mostly ignored in RAM
+        max_bytes: (
+            int | None
+        ) = None,  # Kept for signature compatibility but mostly ignored in RAM
     ) -> None:
         self.max_items = max_items
         self._closed = False
@@ -49,7 +51,9 @@ class BridgeQueue(Generic[T]):
                 self.directory.mkdir(parents=True, exist_ok=True)
                 # [SIL-2] Use native Cache limits if applicable
                 size_limit = max_bytes if max_bytes is not None else 1024 * 1024 * 1024
-                self._cache = diskcache.Cache(str(self.directory), size_limit=size_limit)
+                self._cache = diskcache.Cache(
+                    str(self.directory), size_limit=size_limit
+                )
                 self._deque = diskcache.Deque.fromcache(self._cache)  # type: ignore[reportUnknownMemberType]
             except (OSError, RuntimeError, AttributeError, sqlite3.Error) as exc:
                 # [SIL-2] Resilient fallback to RAM if SQLite fails

@@ -24,7 +24,9 @@ def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxCompone
 
 
 @pytest.mark.asyncio
-async def test_handle_push_stores_in_incoming_queue(mailbox_component: MailboxComponent, runtime_state: Any):
+async def test_handle_push_stores_in_incoming_queue(
+    mailbox_component: MailboxComponent, runtime_state: Any
+):
     # Use proper encoding from the protocol structures
     payload = msgspec.msgpack.encode(MailboxPushPacket(data=b"some-data"))
     await mailbox_component.handle_push(1, payload)
@@ -34,30 +36,44 @@ async def test_handle_push_stores_in_incoming_queue(mailbox_component: MailboxCo
 
 
 @pytest.mark.asyncio
-async def test_handle_available_replies_if_not_empty(mailbox_component: MailboxComponent, runtime_state: Any):
+async def test_handle_available_replies_if_not_empty(
+    mailbox_component: MailboxComponent, runtime_state: Any
+):
     runtime_state.mailbox_queue.append(b"msg1")
     await mailbox_component.handle_available(1, b"")
     assert cast(Any, mailbox_component.serial_flow.send).called
 
 
 @pytest.mark.asyncio
-async def test_handle_read_sends_pop(mailbox_component: MailboxComponent, runtime_state: Any):
+async def test_handle_read_sends_pop(
+    mailbox_component: MailboxComponent, runtime_state: Any
+):
     runtime_state.mailbox_queue.append(b"msg1")
     await mailbox_component.handle_read(1, b"")
     assert cast(Any, mailbox_component.serial_flow.send).called
 
 
 @pytest.mark.asyncio
-async def test_handle_mqtt_logic(mailbox_component: MailboxComponent, runtime_state: Any):
+async def test_handle_mqtt_logic(
+    mailbox_component: MailboxComponent, runtime_state: Any
+):
     # Test write via MQTT (Must use MailboxAction.WRITE.value)
-    route = TopicRoute(raw="br/mailbox/write", prefix="br", topic=Topic.MAILBOX, segments=(MailboxAction.WRITE.value,))
+    route = TopicRoute(
+        raw="br/mailbox/write",
+        prefix="br",
+        topic=Topic.MAILBOX,
+        segments=(MailboxAction.WRITE.value,),
+    )
     msg = Message(Topic.MAILBOX.value, b"mcu-data", 0, False, False, None)
     await mailbox_component.handle_mqtt(route, msg)
     assert len(runtime_state.mailbox_queue) == 1
 
     # Test read via MQTT
     route_read = TopicRoute(
-        raw="br/mailbox/read", prefix="br", topic=Topic.MAILBOX, segments=(MailboxAction.READ.value,)
+        raw="br/mailbox/read",
+        prefix="br",
+        topic=Topic.MAILBOX,
+        segments=(MailboxAction.READ.value,),
     )
     msg_read = Message(Topic.MAILBOX.value, b"", 0, False, False, None)
     runtime_state.mailbox_incoming_queue.append(b"mcu-reply")

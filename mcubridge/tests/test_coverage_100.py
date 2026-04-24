@@ -36,7 +36,9 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
     serial_flow.acknowledge = AsyncMock()
     mqtt_flow = MagicMock()
 
-    component = ProcessComponent(config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow)
+    component = ProcessComponent(
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
     try:
         yield component
     finally:

@@ -147,12 +147,16 @@ class ProcessComponent:
             reply_to=inbound,
         )
 
-    async def _handle_mqtt_poll(self, pid_model: ShellPidPayload, inbound: Message | None = None) -> None:
+    async def _handle_mqtt_poll(
+        self, pid_model: ShellPidPayload, inbound: Message | None = None
+    ) -> None:
         pid = pid_model.pid
         batch = await self.poll_process(pid)
         await self.publish_poll_result(pid, batch, inbound)
 
-    async def _handle_mqtt_kill(self, pid_model: ShellPidPayload, inbound: Message | None = None) -> None:
+    async def _handle_mqtt_kill(
+        self, pid_model: ShellPidPayload, inbound: Message | None = None
+    ) -> None:
         await self.stop_process(pid_model.pid)
 
     def _parse_shell_command(
@@ -190,7 +194,9 @@ class ProcessComponent:
     async def handle_run_async(self, seq_id: int, payload: bytes) -> None:
         """Handle async process execution request from MCU."""
         try:
-            packet = msgspec.msgpack.decode(payload, type=structures.ProcessRunAsyncPacket)
+            packet = msgspec.msgpack.decode(
+                payload, type=structures.ProcessRunAsyncPacket
+            )
             command = packet.command
 
             if not command:
@@ -219,7 +225,9 @@ class ProcessComponent:
                     seq_id,
                     status=Status.OK,
                 )
-                resp = msgspec.msgpack.encode(structures.ProcessRunAsyncResponsePacket(pid=pid))
+                resp = msgspec.msgpack.encode(
+                    structures.ProcessRunAsyncResponsePacket(pid=pid)
+                )
                 await self.serial_flow.send(
                     protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
                     resp,
@@ -230,7 +238,12 @@ class ProcessComponent:
                     seq_id,
                     status=Status.ERROR,
                 )
-        except (msgspec.ValidationError, msgspec.DecodeError, ValueError, AttributeError):
+        except (
+            msgspec.ValidationError,
+            msgspec.DecodeError,
+            ValueError,
+            AttributeError,
+        ):
             await self.serial_flow.acknowledge(
                 protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                 seq_id,
@@ -268,7 +281,9 @@ class ProcessComponent:
                 status=Status.MALFORMED,
             )
 
-    async def handle_kill(self, seq_id: int, payload: bytes, *, send_ack: bool = True) -> bool:
+    async def handle_kill(
+        self, seq_id: int, payload: bytes, *, send_ack: bool = True
+    ) -> bool:
         """Handle process termination request."""
         try:
             packet = msgspec.msgpack.decode(payload, type=structures.ProcessKillPacket)
@@ -322,7 +337,6 @@ class ProcessComponent:
             async with self.state.process_lock:
                 self.state.running_processes[pid] = managed
 
-
             # Spawn monitor task for completion/timeout only
             asyncio.create_task(self._monitor_process(pid))
             return pid
@@ -345,7 +359,9 @@ class ProcessComponent:
                         proc.handle.wait(), timeout=float(self.state.process_timeout)
                     )
                 except asyncio.TimeoutError:
-                    logger.warning("Process %d monitor timed out; forcing finalization", pid)
+                    logger.warning(
+                        "Process %d monitor timed out; forcing finalization", pid
+                    )
                     with contextlib.suppress(OSError):
                         proc.handle.kill()
                     proc.exit_code = -1
@@ -357,17 +373,23 @@ class ProcessComponent:
         async with self.state.process_lock:
             proc = self.state.running_processes.get(pid)
             if not proc:
-                return ProcessOutputBatch(Status.ERROR.value, 1, b"", b"", True, False, False)
+                return ProcessOutputBatch(
+                    Status.ERROR.value, 1, b"", b"", True, False, False
+                )
 
             async with proc.io_lock:
                 budget = protocol.MAX_PAYLOAD_SIZE - 32
 
-                async def _read_stream(stream: asyncio.StreamReader | None) -> tuple[bytes, bool]:
+                async def _read_stream(
+                    stream: asyncio.StreamReader | None,
+                ) -> tuple[bytes, bool]:
                     if not stream or stream.at_eof():
                         return b"", False
                     try:
                         # Use direct read natively instead of intermediate deque
-                        chunk = await asyncio.wait_for(stream.read(budget), timeout=0.01)
+                        chunk = await asyncio.wait_for(
+                            stream.read(budget), timeout=0.01
+                        )
                         return chunk, not stream.at_eof()
                     except asyncio.TimeoutError:
                         return b"", True
@@ -380,7 +402,9 @@ class ProcessComponent:
                 if proc.handle:
                     stdout_chunk, t_out = await _read_stream(proc.handle.stdout)
                     stderr_chunk, t_err = await _read_stream(proc.handle.stderr)
-                is_finished = proc.handle.returncode is not None if proc.handle else True
+                is_finished = (
+                    proc.handle.returncode is not None if proc.handle else True
+                )
 
                 batch = ProcessOutputBatch(
                     Status.OK.value,
@@ -419,7 +443,9 @@ class ProcessComponent:
                     logger.warning("Force killing zombie child process %d", p.pid)
                     p.kill()
 
-            with contextlib.suppress(ProcessLookupError, OSError, RuntimeError, AttributeError):
+            with contextlib.suppress(
+                ProcessLookupError, OSError, RuntimeError, AttributeError
+            ):
                 handle.terminate()
         except (psutil.NoSuchProcess, ProcessLookupError):
             pass
@@ -434,7 +460,9 @@ class ProcessComponent:
                 if inspect.isawaitable(wait_result):
                     await asyncio.wait_for(wait_result, timeout=1.0)
             except asyncio.TimeoutError:
-                with contextlib.suppress(ProcessLookupError, OSError, RuntimeError, AttributeError):
+                with contextlib.suppress(
+                    ProcessLookupError, OSError, RuntimeError, AttributeError
+                ):
                     handle.kill()
                 try:
                     wait_result = wait_fn()
@@ -447,7 +475,9 @@ class ProcessComponent:
                     RuntimeError,
                     ValueError,
                 ):
-                    logger.warning("Timed out waiting for process %d to exit cleanly", pid)
+                    logger.warning(
+                        "Timed out waiting for process %d to exit cleanly", pid
+                    )
             except (ProcessLookupError, OSError, RuntimeError, ValueError):
                 pass
 

@@ -70,7 +70,9 @@ def _start_worker_thread(target: Any, name: str, *args: Any) -> threading.Thread
     return thread
 
 
-def _mcu_stderr_worker(mcu_proc: subprocess.Popen[bytes], state: EmulationState) -> None:
+def _mcu_stderr_worker(
+    mcu_proc: subprocess.Popen[bytes], state: EmulationState
+) -> None:
     if mcu_proc.stderr:
         for line in iter(mcu_proc.stderr.readline, b""):
             if not line:
@@ -88,9 +90,15 @@ def _daemon_worker(daemon_proc: subprocess.Popen[str], state: EmulationState) ->
 
 
 def main(
-    firmware_path: Annotated[Path, typer.Option("--firmware", help="Path to MCU firmware binary")],
-    package_root: Annotated[Path, typer.Option("--package-root", help="Root of mcubridge package")] = Path("."),
-    run_scripts: Annotated[list[str] | None, typer.Argument(help="Client scripts to run")] = None,
+    firmware_path: Annotated[
+        Path, typer.Option("--firmware", help="Path to MCU firmware binary")
+    ],
+    package_root: Annotated[
+        Path, typer.Option("--package-root", help="Root of mcubridge package")
+    ] = Path("."),
+    run_scripts: Annotated[
+        list[str] | None, typer.Argument(help="Client scripts to run")
+    ] = None,
 ):
     state = EmulationState()
     mqtt = MqttVerifier(MQTT_HOST, MQTT_PORT)
@@ -114,7 +122,9 @@ def main(
         try:
             shutil.rmtree(emulator_fs_root)
         except OSError as exc:
-            logger.error("Failed to clean emulator FS root %s: %s", emulator_fs_root, exc)
+            logger.error(
+                "Failed to clean emulator FS root %s: %s", emulator_fs_root, exc
+            )
     emulator_fs_root.mkdir(parents=True, exist_ok=True)
 
     logger.info("Starting Unified MCU Emulator via socat EXEC...")
@@ -207,7 +217,9 @@ def main(
 
                 try:
                     # Run with captured output but echoing to parent stdout/stderr
-                    subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
+                    subprocess.run(
+                        [sys.executable, script], env=daemon_env, check=True, timeout=60
+                    )
                     logger.info("Script %s PASSED.", script)
                 except (
                     subprocess.CalledProcessError,

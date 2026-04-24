@@ -85,7 +85,9 @@ class FileComponent:
             return True
         except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File write failed: %s", e)
-            err_payload = str(e).encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]
+            err_payload = str(e).encode("utf-8", errors="ignore")[
+                : protocol.MAX_PAYLOAD_SIZE
+            ]
             await self.serial_flow.send(Status.ERROR.value, err_payload)
             return False
 
@@ -106,15 +108,25 @@ class FileComponent:
 
             # [SIL-2] Use direct msgspec.msgpack.encode for response
             if not data:
-                response_payload = msgspec.msgpack.encode(FileReadResponsePacket(content=b""))
-                await self.serial_flow.send(Command.CMD_FILE_READ_RESP.value, response_payload)
+                response_payload = msgspec.msgpack.encode(
+                    FileReadResponsePacket(content=b"")
+                )
+                await self.serial_flow.send(
+                    Command.CMD_FILE_READ_RESP.value, response_payload
+                )
             else:
                 for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                    response_payload = msgspec.msgpack.encode(FileReadResponsePacket(content=bytes(chunk)))
-                    await self.serial_flow.send(Command.CMD_FILE_READ_RESP.value, response_payload)
+                    response_payload = msgspec.msgpack.encode(
+                        FileReadResponsePacket(content=bytes(chunk))
+                    )
+                    await self.serial_flow.send(
+                        Command.CMD_FILE_READ_RESP.value, response_payload
+                    )
         except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File read failed: %s", e)
-            err_payload = str(e).encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]
+            err_payload = str(e).encode("utf-8", errors="ignore")[
+                : protocol.MAX_PAYLOAD_SIZE
+            ]
             await self.serial_flow.send(Status.ERROR.value, err_payload)
 
     async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
@@ -132,7 +144,9 @@ class FileComponent:
             return False
         except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File remove failed: %s", e)
-            err_payload = str(e).encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]
+            err_payload = str(e).encode("utf-8", errors="ignore")[
+                : protocol.MAX_PAYLOAD_SIZE
+            ]
             await self.serial_flow.send(Status.ERROR.value, err_payload)
             return False
 
@@ -148,7 +162,9 @@ class FileComponent:
             packet = msgspec.msgpack.decode(payload, type=FileReadResponsePacket)
         except (ValueError, msgspec.DecodeError):
             if not pending.future.done():
-                pending.future.set_exception(ValueError("Malformed MCU file read response"))
+                pending.future.set_exception(
+                    ValueError("Malformed MCU file read response")
+                )
             return False
 
         if packet.content:
@@ -182,13 +198,17 @@ class FileComponent:
             case _:
                 return False
 
-    async def _handle_mqtt_write(self, inbound: Message, identifier: str, payload: bytes) -> bool:
+    async def _handle_mqtt_write(
+        self, inbound: Message, identifier: str, payload: bytes
+    ) -> bool:
         if self._is_mcu_identifier(identifier):
             return await self._handle_mcu_write(inbound, identifier, payload)
 
         path = self._get_safe_path(identifier)
         if not path:
-            await self._publish_mqtt_error(inbound, FileAction.WRITE, identifier, "Invalid path")
+            await self._publish_mqtt_error(
+                inbound, FileAction.WRITE, identifier, "Invalid path"
+            )
             return False
 
         # Quota check
@@ -211,7 +231,9 @@ class FileComponent:
 
         path = self._get_safe_path(identifier)
         if not path or not path.is_file():
-            await self._publish_mqtt_error(inbound, FileAction.READ, identifier, "File not found")
+            await self._publish_mqtt_error(
+                inbound, FileAction.READ, identifier, "File not found"
+            )
             return True
 
         try:
@@ -247,10 +269,14 @@ class FileComponent:
             )
             return False
 
-    async def _handle_mcu_write(self, inbound: Message, identifier: str, payload: bytes) -> bool:
+    async def _handle_mcu_write(
+        self, inbound: Message, identifier: str, payload: bytes
+    ) -> bool:
         relative_path = self._normalise_mcu_identifier(identifier)
         if relative_path is None:
-            await self._publish_mqtt_error(inbound, FileAction.WRITE, identifier, "Invalid path")
+            await self._publish_mqtt_error(
+                inbound, FileAction.WRITE, identifier, "Invalid path"
+            )
             return False
         if not self._mcu_backend_enabled:
             logger.error(
@@ -266,7 +292,9 @@ class FileComponent:
             return False
 
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        packet = msgspec.msgpack.encode(FileWritePacket(path=relative_path, data=payload))
+        packet = msgspec.msgpack.encode(
+            FileWritePacket(path=relative_path, data=payload)
+        )
         if not await self.serial_flow.send(Command.CMD_FILE_WRITE.value, packet):
             logger.error("MQTT write failed for %s: MCU rejected write", identifier)
             await self._publish_mqtt_error(
@@ -281,7 +309,9 @@ class FileComponent:
     async def _handle_mcu_read(self, inbound: Message, identifier: str) -> bool:
         relative_path = self._normalise_mcu_identifier(identifier)
         if relative_path is None:
-            await self._publish_mqtt_error(inbound, FileAction.READ, identifier, "Invalid path")
+            await self._publish_mqtt_error(
+                inbound, FileAction.READ, identifier, "Invalid path"
+            )
             return False
         if not self._mcu_backend_enabled:
             logger.error(
@@ -307,7 +337,9 @@ class FileComponent:
 
             try:
                 if not await self.serial_flow.send(Command.CMD_FILE_READ.value, packet):
-                    logger.error("MQTT read failed for %s: MCU rejected read", identifier)
+                    logger.error(
+                        "MQTT read failed for %s: MCU rejected read", identifier
+                    )
                     await self._publish_mqtt_error(
                         inbound,
                         FileAction.READ,
@@ -329,7 +361,9 @@ class FileComponent:
                 return False
             except ValueError as exc:
                 logger.error("MQTT read failed for %s: %s", identifier, exc)
-                await self._publish_mqtt_error(inbound, FileAction.READ, identifier, str(exc))
+                await self._publish_mqtt_error(
+                    inbound, FileAction.READ, identifier, str(exc)
+                )
                 return False
             finally:
                 if self._pending_mcu_read is pending:
@@ -345,7 +379,9 @@ class FileComponent:
     async def _handle_mcu_remove(self, inbound: Message, identifier: str) -> bool:
         relative_path = self._normalise_mcu_identifier(identifier)
         if relative_path is None:
-            await self._publish_mqtt_error(inbound, FileAction.REMOVE, identifier, "Invalid path")
+            await self._publish_mqtt_error(
+                inbound, FileAction.REMOVE, identifier, "Invalid path"
+            )
             return False
         if not self._mcu_backend_enabled:
             logger.error(
@@ -396,7 +432,9 @@ class FileComponent:
         root = Path(self.config.file_system_root)
         if not self.config.allow_non_tmp_paths:
             if not any(str(root).startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                logger.error("FLASH PROTECTION: file_system_root %s is not in RAM!", root)
+                logger.error(
+                    "FLASH PROTECTION: file_system_root %s is not in RAM!", root
+                )
                 return None
         try:
             root.mkdir(parents=True, exist_ok=True)
@@ -451,7 +489,9 @@ class FileComponent:
     ) -> None:
         await self.mqtt_flow.publish(
             topic=self._mqtt_response_topic(action, identifier),
-            payload=reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
+            payload=reason.encode("utf-8", errors="ignore")[
+                : protocol.MAX_PAYLOAD_SIZE
+            ],
             reply_to=inbound,
         )
 
@@ -498,7 +538,9 @@ class FileComponent:
 
             size = path.stat().st_size
             await asyncio.to_thread(path.unlink)
-            self.state.file_storage_bytes_used = max(0, self.state.file_storage_bytes_used - size)
+            self.state.file_storage_bytes_used = max(
+                0, self.state.file_storage_bytes_used - size
+            )
             return True
 
     async def _get_storage_usage(self) -> int:
@@ -519,7 +561,11 @@ class FileComponent:
                 return
 
             def _calculate() -> int:
-                return sum(f.stat().st_size for f in root_path.rglob("*") if f.is_file() and not f.is_symlink())
+                return sum(
+                    f.stat().st_size
+                    for f in root_path.rglob("*")
+                    if f.is_file() and not f.is_symlink()
+                )
 
             self.state.file_storage_bytes_used = await asyncio.to_thread(_calculate)
         except (OSError, RuntimeError):

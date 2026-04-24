@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import aiomqtt
+
 import asyncio
 from pathlib import Path
 from typing import Any, cast
@@ -87,15 +89,12 @@ async def test_handle_mqtt_write_and_read(
     # Ensure component uses tmp_path
     component.config.file_system_root = str(tmp_path)
 
-    msg = type(
-        "MockMsg",
-        (),
-        {
-            "topic": "br/file/write/dir/file.txt",
-            "payload": b"payload",
-            "properties": None,
-        },
-    )()
+    msg = AsyncMock(
+        spec=aiomqtt.Message,
+        topic="br/file/write/dir/file.txt",
+        payload=b"payload",
+        properties=None,
+    )
     route = TopicRoute(
         raw="br/file/write/dir/file.txt",
         prefix="br",
@@ -106,11 +105,12 @@ async def test_handle_mqtt_write_and_read(
     await component.handle_mqtt(route, cast(Any, msg))
     assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
 
-    msg_read = type(
-        "MockMsg",
-        (),
-        {"topic": "br/file/read/dir/file.txt", "payload": b"", "properties": None},
-    )()
+    msg_read = AsyncMock(
+        spec=aiomqtt.Message,
+        topic="br/file/read/dir/file.txt",
+        payload=b"",
+        properties=None,
+    )
     route_read = TopicRoute(
         raw="br/file/read/dir/file.txt",
         prefix="br",
@@ -169,11 +169,12 @@ async def test_handle_mqtt_remove_action(
     test_file = tmp_path / "rm.txt"
     test_file.write_bytes(b"bye")
 
-    msg = type(
-        "MockMsg",
-        (),
-        {"topic": "br/file/remove/rm.txt", "payload": b"", "properties": None},
-    )()
+    msg = AsyncMock(
+        spec=aiomqtt.Message,
+        topic="br/file/remove/rm.txt",
+        payload=b"",
+        properties=None,
+    )
     route = TopicRoute(
         raw="br/file/remove/rm.txt",
         prefix="br",
@@ -338,11 +339,12 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
     # Disable MCU backend
     component._mcu_backend_enabled = False  # type: ignore[reportPrivateUsage]
 
-    msg = type(
-        "MockMsg",
-        (),
-        {"topic": "br/file/write/mcu/test.txt", "payload": b"x", "properties": None},
-    )()
+    msg = AsyncMock(
+        spec=aiomqtt.Message,
+        topic="br/file/write/mcu/test.txt",
+        payload=b"x",
+        properties=None,
+    )
     route = TopicRoute(
         raw="br/file/write/mcu/test.txt",
         prefix="br",
@@ -385,11 +387,12 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
 
     serial_flow.send.side_effect = _send_frame
 
-    msg = type(
-        "MockMsg",
-        (),
-        {"topic": "br/file/read/mcu/test.txt", "payload": b"", "properties": None},
-    )()
+    msg = AsyncMock(
+        spec=aiomqtt.Message,
+        topic="br/file/read/mcu/test.txt",
+        payload=b"",
+        properties=None,
+    )
     route = TopicRoute(
         raw="br/file/read/mcu/test.txt",
         prefix="br",
@@ -408,11 +411,12 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
     component, _serial_flow, mqtt_flow = file_component
     component._mcu_backend_enabled = False  # type: ignore[reportPrivateUsage]
 
-    msg = type(
-        "MockMsg",
-        (),
-        {"topic": "br/file/read/mcu/test.txt", "payload": b"", "properties": None},
-    )()
+    msg = AsyncMock(
+        spec=aiomqtt.Message,
+        topic="br/file/read/mcu/test.txt",
+        payload=b"",
+        properties=None,
+    )
     route = TopicRoute(
         raw="br/file/read/mcu/test.txt",
         prefix="br",
@@ -439,11 +443,12 @@ async def test_handle_mqtt_read_failure(
     # Mock send_frame returning error status immediately
     serial_flow.send.return_value = False
 
-    msg = type(
-        "MockMsg",
-        (),
-        {"topic": "br/file/read/mcu/fail.txt", "payload": b"", "properties": None},
-    )()
+    msg = AsyncMock(
+        spec=aiomqtt.Message,
+        topic="br/file/read/mcu/fail.txt",
+        payload=b"",
+        properties=None,
+    )
     route = TopicRoute(
         raw="br/file/read/mcu/fail.txt",
         prefix="br",
@@ -478,11 +483,12 @@ async def test_handle_mqtt_remove_from_mcu_storage_enabled(
     component, serial_flow, _mqtt_flow = file_component
     component._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]
 
-    msg = type(
-        "MockMsg",
-        (),
-        {"topic": "br/file/remove/mcu/test.txt", "payload": b"", "properties": None},
-    )()
+    msg = AsyncMock(
+        spec=aiomqtt.Message,
+        topic="br/file/remove/mcu/test.txt",
+        payload=b"",
+        properties=None,
+    )
     route = TopicRoute(
         raw="br/file/remove/mcu/test.txt",
         prefix="br",

@@ -73,9 +73,7 @@ async def test_handle_mqtt_unknown_action(mailbox_comp: MailboxComponent):
 async def test_handle_outgoing_overflow(mailbox_comp: MailboxComponent):
     # Mock queue to fail append
     mailbox_comp.state.mailbox_queue = MagicMock()
-    mailbox_comp.state.mailbox_queue.append.return_value = type(
-        "Event", (), {"success": False}
-    )()
+    mailbox_comp.state.mailbox_queue.append.return_value = AsyncMock(success=False)
     mailbox_comp.state.mailbox_queue_limit = 10
     mailbox_comp.state.mailbox_queue_bytes_limit = 100
     mailbox_comp.state.mailbox_queue_bytes = 0

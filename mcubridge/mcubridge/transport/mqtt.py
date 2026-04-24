@@ -93,7 +93,10 @@ class MqttTransport:
         except asyncio.CancelledError:
             logger.info("MQTT transport stopping.")
             raise
-        except ExceptionGroup as eg:
+        except (ConnectionError, OSError, asyncio.TimeoutError) as exc:
+            logger.critical("MQTT transport fatal error: %s", exc)
+            raise
+        except BaseExceptionGroup as eg:
             # Flatten final fatal errors for logging
             for exc in eg.exceptions:
                 logger.critical("MQTT transport fatal error: %s", exc)

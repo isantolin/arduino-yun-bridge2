@@ -27,13 +27,12 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import os
 import sys
 from collections.abc import Awaitable, Callable
 from typing import Any, Annotated
 
 import msgspec
-import psutil
 import tenacity
 import typer
 
@@ -68,6 +67,8 @@ from mcubridge.transport import (
 )
 from mcubridge.watchdog import WatchdogKeepalive
 
+from .util.process import cleanup_process_tree
+
 logger = structlog.get_logger("mcubridge")
 SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
     ConnectionError,
@@ -78,27 +79,9 @@ SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
     msgspec.MsgspecError,
 )
 
-
 def _cleanup_child_processes() -> None:
     """Terminates all child processes spawned by this daemon using direct psutil delegation."""
-    try:
-        children = psutil.Process().children(recursive=True)
-        if not children:
-            return
-
-        logger.info("Cleaning up %d child processes...", len(children))
-        for child in children:
-            with contextlib.suppress(psutil.NoSuchProcess):
-                child.terminate()
-
-        # [SIL-2] Direct library delegation for process waiting and signal mapping
-        _, alive = psutil.wait_procs(children, timeout=3.0)
-        for child in alive:
-            with contextlib.suppress(psutil.NoSuchProcess):
-                logger.warning("Force killing zombie process %d", child.pid)
-                child.kill()
-    except psutil.Error as e:
-        logger.error("Error during process cleanup: %s", e)
+    cleanup_process_tree(os.getpid())
 
 
 class BridgeDaemon:

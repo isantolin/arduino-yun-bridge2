@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import inspect
 import structlog
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 import msgspec
-import psutil
 from aiomqtt.message import Message
 
 from ..protocol import protocol, structures
@@ -421,70 +419,23 @@ class ProcessComponent:
 
     async def stop_process(self, pid: int) -> bool:
         """Terminate a running process and its children recursively."""
+        from ..util.process import cleanup_process_tree
+
         async with self.state.process_lock:
             proc_entry = self.state.running_processes.get(pid)
             if not proc_entry or not proc_entry.handle:
                 return False
             handle = proc_entry.handle
 
-        try:
-            # [SIL-2] Use psutil to kill the entire process tree reliably
-            parent = psutil.Process(handle.pid)
-            procs = parent.children(recursive=True) + [parent]
+        cleanup_process_tree(handle.pid)
 
-            for p in procs:
-                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
-                    p.terminate()
-
-            # [SIL-2] Unified wait and force-kill delegation
-            _, alive = psutil.wait_procs(procs, timeout=0.5)
-            for p in alive:
-                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
-                    logger.warning("Force killing zombie child process %d", p.pid)
-                    p.kill()
-
-            with contextlib.suppress(
-                ProcessLookupError, OSError, RuntimeError, AttributeError
-            ):
-                handle.terminate()
-        except (psutil.NoSuchProcess, ProcessLookupError):
-            pass
-        except (psutil.AccessDenied, OSError, RuntimeError, ValueError) as e:
-            logger.error("Error stopping process %d: %s", pid, e)
-            return False
-
-        wait_fn = getattr(handle, "wait", None)
-        if callable(wait_fn):
-            try:
-                wait_result = wait_fn()
-                if inspect.isawaitable(wait_result):
-                    await asyncio.wait_for(wait_result, timeout=1.0)
-            except asyncio.TimeoutError:
-                with contextlib.suppress(
-                    ProcessLookupError, OSError, RuntimeError, AttributeError
-                ):
-                    handle.kill()
-                try:
-                    wait_result = wait_fn()
-                    if inspect.isawaitable(wait_result):
-                        await asyncio.wait_for(wait_result, timeout=1.0)
-                except (
-                    asyncio.TimeoutError,
-                    ProcessLookupError,
-                    OSError,
-                    RuntimeError,
-                    ValueError,
-                ):
-                    logger.warning(
-                        "Timed out waiting for process %d to exit cleanly", pid
-                    )
-            except (ProcessLookupError, OSError, RuntimeError, ValueError):
-                pass
-
+        # Update exit code manually since cleanup_process_tree is synchronous
+        # but the actual process object (handle) might still need its state updated
+        # in the asyncio loop.
         async with self.state.process_lock:
             current = self.state.running_processes.get(pid)
             if current is not None and current is proc_entry:
-                current.exit_code = getattr(handle, "returncode", None)
+                current.exit_code = getattr(handle, "returncode", -1)
 
         await self._finalize_process(pid)
         return True

@@ -55,31 +55,42 @@ class BridgeService:
         self._task_group: asyncio.TaskGroup | None = None
 
         self._registry = svcs.Registry()
-        _COMPONENTS: tuple[type[Any], ...] = (
+
+        # [SIL-2] Explicit component registration (Direct Access)
+        # Eradicates the indirect factory loop to improve type traceability.
+        self._registry.register_factory(
             ConsoleComponent,
-            DatastoreComponent,
-            FileComponent,
-            MailboxComponent,
-            PinComponent,
-            ProcessComponent,
-            SpiComponent,
-            SystemComponent,
+            lambda: ConsoleComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
         )
-        for comp_cls in _COMPONENTS:
+        self._registry.register_factory(
+            DatastoreComponent,
+            lambda: DatastoreComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+        )
+        self._registry.register_factory(
+            FileComponent,
+            lambda: FileComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+        )
+        self._registry.register_factory(
+            MailboxComponent,
+            lambda: MailboxComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+        )
+        self._registry.register_factory(
+            PinComponent,
+            lambda: PinComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+        )
+        self._registry.register_factory(
+            ProcessComponent,
+            lambda: ProcessComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+        )
+        self._registry.register_factory(
+            SpiComponent,
+            lambda: SpiComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+        )
+        self._registry.register_factory(
+            SystemComponent,
+            lambda: SystemComponent(config=config, state=state, serial_flow=self.serial_flow, mqtt_flow=self.mqtt_flow),
+        )
 
-            def component_factory(
-                *args: Any,
-                c_cls: type[Any] = comp_cls,
-                **kwargs: Any,
-            ) -> Any:
-                return c_cls(
-                    config=config,
-                    state=state,
-                    serial_flow=self.serial_flow,
-                    mqtt_flow=self.mqtt_flow,
-                )
-
-            self._registry.register_factory(comp_cls, component_factory)  # type: ignore[reportUnknownMemberType]
         self._container = svcs.Container(self._registry)
 
         self.serial_flow = SerialFlowController(

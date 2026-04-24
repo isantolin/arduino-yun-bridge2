@@ -108,6 +108,27 @@ RLE_BATCH_BUILDER: Construct = GreedyRange(
     )
 )
 
+
+def _is_not_esc_peek(ctx: Any) -> bool:
+    """SIL-2: Peek to verify the next byte is not the escape byte."""
+    return ctx._io.peek(1) != bytes([protocol.RLE_ESCAPE_BYTE])
+
+
+def _decode_literal(obj: int, ctx: Any) -> bytes:
+    """SIL-2: Convert literal integer byte to bytes object."""
+    return bytes([obj])
+
+
+def _encode_literal(obj: bytes, ctx: Any) -> int:
+    """SIL-2: Convert literal bytes object to integer byte."""
+    return int(obj[0])
+
+
+def _rle_encode_chunk_nop(_obj: Any, _ctx: Any) -> None:
+    """SIL-2: NOP encoder for RLE escape."""
+    return None
+
+
 # [SIL-2] Optimized Decoder Schema
 RLE_DECODER: Construct = FocusedSeq(
     "chunks",
@@ -118,17 +139,17 @@ RLE_DECODER: Construct = FocusedSeq(
             ExprAdapter(
                 RLE_ESCAPE_STRUCT,
                 decoder=_rle_decode_chunk,
-                encoder=lambda obj, ctx: None,
+                encoder=_rle_encode_chunk_nop,
             ),
             # Literal: Any byte that is NOT the escape byte
             ExprAdapter(
                 FocusedSeq(
                     "val",
                     "val" / Int8ub,
-                    "_" / Check(lambda ctx: ctx.val != protocol.RLE_ESCAPE_BYTE),
+                    "_" / Check(_is_not_esc_peek),
                 ),
-                decoder=lambda obj, ctx: bytes([obj]),
-                encoder=lambda obj, ctx: obj[0],
+                decoder=_decode_literal,
+                encoder=_encode_literal,
             ),
         )
     ),

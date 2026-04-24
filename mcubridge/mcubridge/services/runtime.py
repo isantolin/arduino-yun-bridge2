@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import structlog
 from collections.abc import Coroutine
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import msgspec
 import svcs
@@ -60,7 +60,8 @@ class BridgeService:
 
         # [SIL-2] Explicit component registration (Direct Access)
         # Eradicates the indirect factory loop to improve type traceability.
-        self._registry.register_factory(
+        reg = cast(Any, self._registry)
+        reg.register_factory(
             ConsoleComponent,
             lambda: ConsoleComponent(
                 config=config,
@@ -68,8 +69,8 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )  # type: ignore[reportUnknownMemberType]
-        self._registry.register_factory(
+        )
+        reg.register_factory(
             DatastoreComponent,
             lambda: DatastoreComponent(
                 config=config,
@@ -77,8 +78,8 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )  # type: ignore[reportUnknownMemberType]
-        self._registry.register_factory(
+        )
+        reg.register_factory(
             FileComponent,
             lambda: FileComponent(
                 config=config,
@@ -86,8 +87,8 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )  # type: ignore[reportUnknownMemberType]
-        self._registry.register_factory(
+        )
+        reg.register_factory(
             MailboxComponent,
             lambda: MailboxComponent(
                 config=config,
@@ -95,8 +96,8 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )  # type: ignore[reportUnknownMemberType]
-        self._registry.register_factory(
+        )
+        reg.register_factory(
             PinComponent,
             lambda: PinComponent(
                 config=config,
@@ -104,8 +105,8 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )  # type: ignore[reportUnknownMemberType]
-        self._registry.register_factory(
+        )
+        reg.register_factory(
             ProcessComponent,
             lambda: ProcessComponent(
                 config=config,
@@ -113,8 +114,8 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )  # type: ignore[reportUnknownMemberType]
-        self._registry.register_factory(
+        )
+        reg.register_factory(
             SpiComponent,
             lambda: SpiComponent(
                 config=config,
@@ -122,8 +123,8 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )  # type: ignore[reportUnknownMemberType]
-        self._registry.register_factory(
+        )
+        reg.register_factory(
             SystemComponent,
             lambda: SystemComponent(
                 config=config,
@@ -131,7 +132,7 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )  # type: ignore[reportUnknownMemberType]
+        )
 
         self._container = svcs.Container(self._registry)
 

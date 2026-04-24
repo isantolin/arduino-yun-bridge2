@@ -13,7 +13,7 @@ from aiomqtt.message import Message
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from mcubridge.config.const import SPOOL_BACKOFF_MIN_SECONDS, SPOOL_BACKOFF_MAX_SECONDS
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import aiomqtt
 import tenacity
@@ -69,11 +69,11 @@ class MqttTransport:
 
             retryable = (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
 
-            def _is_retryable(e: BaseException) -> bool:
+            def _is_retryable(e: Any) -> bool:
                 if isinstance(e, retryable):
                     return True
                 if isinstance(e, ExceptionGroup):
-                    return any(_is_retryable(se) for se in e.exceptions)
+                    return any(_is_retryable(se) for se in cast(Any, e).exceptions)
                 return False
 
             return _is_retryable(exc)

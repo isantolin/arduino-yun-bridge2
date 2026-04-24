@@ -12,12 +12,9 @@ from .structures import TopicRoute
 
 
 def topic_path(prefix: str, topic: Topic, *segments: str | int) -> str:
-    """Join prefix, topic and optional sub-segments into a topic path."""
-    parts = [prefix.strip("/"), str(topic).strip("/")]
-    for s in segments:
-        val = str(s).strip("/")
-        if val:
-            parts.append(val)
+    """[SIL-2] Construct topic path using direct join/filter delegation."""
+    # Eradicate manual part.append() loops in favor of a single generator.
+    parts = (str(s).strip("/") for s in (prefix, topic, *segments))
     return "/".join(filter(None, parts))
 
 

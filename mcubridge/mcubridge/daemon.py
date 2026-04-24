@@ -79,6 +79,7 @@ SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
     msgspec.MsgspecError,
 )
 
+
 def _cleanup_child_processes() -> None:
     """Terminates all child processes spawned by this daemon using direct psutil delegation."""
     cleanup_process_tree(os.getpid())

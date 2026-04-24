@@ -1,13 +1,13 @@
 #pragma once
 
 #include <etl/algorithm.h>
+#include <etl/crc32.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <etl/crc32.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "unity.h"
@@ -20,7 +20,7 @@ static inline uint32_t crc32_ieee(const void* data, size_t len) {
 }
 
 /* Legacy convenience macros – map to Unity assertions. */
-#define TEST_ASSERT_EQ_UINT(actual, expected)     \
+#define TEST_ASSERT_EQ_UINT(actual, expected) \
   TEST_ASSERT_EQUAL_UINT32((unsigned long)(expected), (unsigned long)(actual))
 
 static inline void test_memfill(uint8_t* buf, size_t len, uint8_t value) {
@@ -28,7 +28,9 @@ static inline void test_memfill(uint8_t* buf, size_t len, uint8_t value) {
 }
 
 static inline int test_memeq(const void* a, const void* b, size_t len) {
-  return memcmp(a, b, len) == 0;
+  const uint8_t* ptr_a = static_cast<const uint8_t*>(a);
+  const uint8_t* ptr_b = static_cast<const uint8_t*>(b);
+  return etl::equal(ptr_a, ptr_a + len, ptr_b);
 }
 
 template <size_t N>
@@ -214,7 +216,8 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
     if (decoded_len >= rpc::MIN_FRAME_SIZE) {
       etl::crc32 calc;
       calc.reset();
-      calc.add(decoded_buf, decoded_buf + (decoded_len - rpc::CRC_TRAILER_SIZE));
+      calc.add(decoded_buf,
+               decoded_buf + (decoded_len - rpc::CRC_TRAILER_SIZE));
       uint32_t cv = calc.value();
       etl::byte_stream_writer w(
           decoded_buf + decoded_len - rpc::CRC_TRAILER_SIZE,

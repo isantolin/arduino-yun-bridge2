@@ -25,9 +25,6 @@
 #ifndef memcpy_P
 #define memcpy_P(dest, src, n) memcpy((dest), (src), (n))
 #endif
-#ifndef memcmp_P
-#define memcmp_P(s1, s2, n) memcmp((s1), (s2), (n))
-#endif
 #endif
 
 namespace bridge::hal {

@@ -59,12 +59,29 @@ class MqttTransport:
             _log_cb(retry_state)
             self.state.metrics.retries.labels(component="mqtt_connect").inc()
 
+        def _retry_predicate(retry_state: tenacity.RetryCallState) -> bool:
+            """[SIL-2] Check if the exception or any exception in the group is retryable."""
+            if not retry_state.outcome or not retry_state.outcome.failed:
+                return False
+            exc = retry_state.outcome.exception()
+            if not exc:
+                return False
+
+            retryable = (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
+
+            def _is_retryable(e: BaseException) -> bool:
+                if isinstance(e, retryable):
+                    return True
+                if isinstance(e, ExceptionGroup):
+                    return any(_is_retryable(se) for se in e.exceptions)
+                return False
+
+            return _is_retryable(exc)
+
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
             + tenacity.wait_random(0, 2),
-            retry=tenacity.retry_if_exception_type(
-                (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
-            ),
+            retry=_retry_predicate,
             before_sleep=_before_sleep,
             reraise=True,
         )
@@ -72,21 +89,14 @@ class MqttTransport:
         try:
             async for attempt in retryer:
                 with attempt:
-                    try:
-                        await self._connect_session(tls_context)
-                    except* (
-                        aiomqtt.MqttError,
-                        OSError,
-                        asyncio.TimeoutError,
-                    ) as exc_group:
-                        # Unwrap exception group to allow tenacity to retry
-                        for exc in exc_group.exceptions:
-                            logger.error("MQTT connection error: %s", exc)
-                        if len(exc_group.exceptions) >= 1:
-                            raise exc_group.exceptions[0]
-                        raise
+                    await self._connect_session(tls_context)
         except asyncio.CancelledError:
             logger.info("MQTT transport stopping.")
+            raise
+        except ExceptionGroup as eg:
+            # Flatten final fatal errors for logging
+            for exc in eg.exceptions:
+                logger.critical("MQTT transport fatal error: %s", exc)
             raise
 
     async def _connect_session(self, tls_context: Any) -> None:

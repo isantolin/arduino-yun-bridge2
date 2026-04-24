@@ -17,12 +17,9 @@ from typing import Any, TypeVar, cast
 import msgspec
 from construct import (
     Adapter,
-    BitStruct,
-    BitsInteger,
     Bytes,
     Checksum,
     Construct,
-    Flag,
     Int8ub,
     Int16ub,
     Int32ub,
@@ -41,12 +38,6 @@ def _calculate_crc32(data: Any) -> int:
     """SIL-2: Ensure 32-bit unsigned CRC calculation."""
     return crc32(cast(bytes, data)) & 0xFFFFFFFF
 
-
-# [SIL-2] Declarative Command ID Codec: Handles Bit 15 (Compression Flag)
-COMMAND_ID_CODEC: Construct = BitStruct(
-    "is_compressed" / Flag,
-    "raw_id" / BitsInteger(15),
-)
 
 # [SIL-2] Declarative Frame Header Structure
 RPC_FRAME_HEADER: Construct = Struct(
@@ -102,6 +93,8 @@ RPC_PAYLOAD_CONTAINER: Construct = FrameAdapter(
 )
 
 # [SIL-2] Full Frame with Checksum
+# Uses RawCopy to capture the bytes for CRC calculation.
+# 'header_payload' name is mandatory for compatibility with white-box tests.
 RPC_FRAME: Construct = Struct(
     "header_payload" / RawCopy(RPC_PAYLOAD_CONTAINER),
     "crc" / Checksum(Int32ub, _calculate_crc32, this.header_payload.data),
@@ -140,7 +133,7 @@ class Frame(msgspec.Struct, frozen=True):
                 f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}"
             )
         try:
-            # [SIL-2] Optimized build with required nesting for RPC_FRAME
+            # [SIL-2] Optimized build with required 'value' nesting for RawCopy compatibility.
             return RPC_FRAME.build(
                 {
                     "header_payload": {
@@ -149,6 +142,7 @@ class Frame(msgspec.Struct, frozen=True):
                                 "version": protocol.PROTOCOL_VERSION,
                                 "command_id": int(self.command_id),
                                 "sequence_id": self.sequence_id,
+                                "payload_len": 0,  # Calculated in Adapter
                             },
                             "payload": self.payload,
                         }
@@ -163,7 +157,7 @@ class Frame(msgspec.Struct, frozen=True):
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
         try:
             obj: Any = RPC_FRAME.parse(raw_frame_buffer)
-            # The structure is nested due to RawCopy and FrameAdapter
+            # Access built inner value from RawCopy container.
             inner = obj.header_payload.value
             return cls(
                 command_id=int(inner.header.command_id),

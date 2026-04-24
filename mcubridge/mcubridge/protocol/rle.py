@@ -49,41 +49,54 @@ class RleAdapter(Adapter):
             raise ValueError(f"RLE decode failed: {e}") from e
 
     def _encode(self, obj: bytes, context: Any, path: Any) -> bytes:
-        """Compress data using batch construction (High Performance)."""
+        """Compress data using efficient hybrid construction (High Performance)."""
         if not obj:
             return b""
 
-        # [SIL-2] High Performance: Pre-calculate chunks and build in ONE pass
-        # This drastically reduces the overhead of Construct's context initialization.
-        chunks: list[Any] = []
+        # [SIL-2] High Performance: Use bytearray for concatenation and
+        # direct structural builds for escape sequences.
+        res = bytearray()
+
         for byte_val, group in itertools.groupby(obj):
-            run_len = len(list(group))
-            while run_len > 0:
-                if byte_val == protocol.RLE_ESCAPE_BYTE:
-                    chunk_len = 1
-                    chunks.append(
-                        {
-                            "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,
-                            "value": byte_val,
-                        }
+            g_list = list(group)
+            run_len = len(g_list)
+
+            if byte_val == protocol.RLE_ESCAPE_BYTE:
+                # Escape byte must ALWAYS be escaped
+                while run_len > 0:
+                    res.extend(
+                        RLE_ESCAPE_STRUCT.build(
+                            {
+                                "count_m2": protocol.RLE_SINGLE_ESCAPE_MARKER,
+                                "value": byte_val,
+                            }
+                        )
                     )
-                elif run_len >= protocol.RLE_MIN_RUN_LENGTH:
+                    run_len -= 1
+            elif run_len >= protocol.RLE_MIN_RUN_LENGTH:
+                # Long run of non-escape bytes
+                while run_len >= protocol.RLE_MIN_RUN_LENGTH:
                     chunk_len = min(run_len, 256)
-                    chunks.append(
-                        {
-                            "count_m2": chunk_len - protocol.RLE_OFFSET,
-                            "value": byte_val,
-                        }
+                    res.extend(
+                        RLE_ESCAPE_STRUCT.build(
+                            {
+                                "count_m2": chunk_len - protocol.RLE_OFFSET,
+                                "value": byte_val,
+                            }
+                        )
                     )
-                else:
-                    chunk_len = run_len
-                    # Literals are stored as raw integers for Int8ub build
-                    chunks.extend([byte_val] * chunk_len)
-                run_len -= chunk_len
-        return RLE_BATCH_BUILDER.build(chunks)
+                    run_len -= chunk_len
+                # Handle remaining few bytes as literals
+                if run_len > 0:
+                    res.extend(bytes([byte_val] * run_len))
+            else:
+                # Direct literal addition for short runs
+                res.extend(g_list)
+
+        return bytes(res)
 
 
-def _rle_decode_chunk(obj: Any, ctx: Any) -> bytes:
+def _rle_decode_chunk(obj: Any, _ctx: Any) -> bytes:
     """Decode an RLE escape sequence chunk."""
     if obj.count_m2 == protocol.RLE_SINGLE_ESCAPE_MARKER:
         return bytes([protocol.RLE_ESCAPE_BYTE])
@@ -91,21 +104,16 @@ def _rle_decode_chunk(obj: Any, ctx: Any) -> bytes:
     return bytes([obj.value]) * count
 
 
+def _rle_encode_chunk_nop(_obj: Any, _ctx: Any) -> None:
+    """SIL-2: NOP encoder for RLE escape."""
+    return None
+
+
 # [SIL-2] Highly Optimized RLE Structures
 RLE_ESCAPE_STRUCT: Construct = Struct(
     "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),
     "count_m2" / Int8ub,
     "value" / Int8ub,
-)
-
-# [SIL-2] Batch builder for RLE sequences.
-RLE_BATCH_BUILDER: Construct = GreedyRange(
-    Select(
-        # Literal: Int8ub will match if the item is an integer (0-255)
-        Int8ub,
-        # Escape: Struct will match if the item is a dictionary
-        RLE_ESCAPE_STRUCT,
-    )
 )
 
 
@@ -124,12 +132,9 @@ def _encode_literal(obj: bytes, _ctx: Any) -> int:
     return int(obj[0])
 
 
-def _rle_encode_chunk_nop(_obj: Any, _ctx: Any) -> None:
-    """SIL-2: NOP encoder for RLE escape."""
-    return None
-
-
 # [SIL-2] Optimized Decoder Schema
+# Pre-compilation and Select-ordering minimize overhead.
+# Terminated ensures full stream consumption and detects malformed trailing data.
 RLE_DECODER: Construct = FocusedSeq(
     "chunks",
     "chunks"

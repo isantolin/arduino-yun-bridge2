@@ -28,32 +28,25 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
     if not topic_name or not prefix:
         return None
 
-    prefix_segments = tuple(filter(None, prefix.split("/")))
-    topic_segments = tuple(filter(None, topic_name.split("/")))
+    # [SIL-2] Holistic topic decomposition using library-native filter/split.
+    prefix_segs = tuple(filter(None, prefix.split("/")))
+    topic_segs = tuple(filter(None, topic_name.split("/")))
 
-    # Topic must have at least all prefix segments plus one for the service topic
-    if len(topic_segments) < len(prefix_segments) + 1:
+    # Validation: must contain prefix + at least one service segment
+    if (
+        len(topic_segs) <= len(prefix_segs)
+        or topic_segs[: len(prefix_segs)] != prefix_segs
+    ):
         return None
 
-    # Prefix match check
-    if topic_segments[: len(prefix_segments)] != prefix_segments:
-        return None
-
-    # Identify the service topic (e.g. 'd', 'a', 'sh')
-    topic_segment = topic_segments[len(prefix_segments)]
     try:
-        topic_enum = Topic(topic_segment)
+        # Identify service topic and extract remainder segments
+        topic_enum = Topic(topic_segs[len(prefix_segs)])
+        return TopicRoute(
+            raw=topic_name,
+            prefix="/".join(prefix_segs),
+            topic=topic_enum,
+            segments=topic_segs[len(prefix_segs) + 1 :],
+        )
     except ValueError:
-        # Unknown service topic
         return None
-
-    remainder_start = len(prefix_segments) + 1
-    remainder = topic_segments[remainder_start:]
-    normalized_prefix = "/".join(prefix_segments)
-
-    return TopicRoute(
-        raw=topic_name,
-        prefix=normalized_prefix,
-        topic=topic_enum,
-        segments=remainder,
-    )

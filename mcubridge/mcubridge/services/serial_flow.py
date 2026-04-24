@@ -253,7 +253,8 @@ class SerialFlowController:
                     )
                 except (ValueError, msgspec.MsgspecError):
                     # Non-protobuf (human-readable string) → reject only if binary
-                    should_reject = not all(32 <= byte < 127 for byte in payload)
+                    # [SIL-2] Use native .isascii() for optimized validation.
+                    should_reject = not payload.isascii()
 
             if should_reject:
                 pending.mark_failure(command_id)

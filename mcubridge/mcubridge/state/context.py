@@ -159,10 +159,16 @@ def collect_system_metrics() -> dict[str, Any]:
 
             if hasattr(psutil, "sensors_temperatures"):
                 temps = psutil.sensors_temperatures()
-                for n in ("cpu_thermal", "coretemp", "soc_thermal"):
-                    if n in temps and temps[n]:
-                        result["temperature_celsius"] = temps[n][0].current
-                        break
+                # [SIL-2] Functional lookup for first available thermal sensor.
+                sensor_name = next(
+                    filter(
+                        lambda n: n in temps and temps[n],
+                        ("cpu_thermal", "coretemp", "soc_thermal"),
+                    ),
+                    None,
+                )
+                if sensor_name:
+                    result["temperature_celsius"] = temps[sensor_name][0].current
 
             if tmp_disk:
                 result.update(

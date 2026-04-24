@@ -12,7 +12,7 @@ dependencies = [
     "click==8.3.3",
     "cobs==1.2.2",
     "construct==2.10.70",
-    "cryptography==46.0.7",
+    "cryptography==47.0.0",
     "diskcache==5.6.3",
     "markdown-it-py==4.0.0",
     "mdurl==0.1.2",

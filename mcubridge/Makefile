@@ -44,30 +44,30 @@ define Package/$(PKG_NAME)
 	PROVIDES:=mcubridge
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
-		+python3 \
-		+python3-aiomqtt \
-		+python3-paho-mqtt \
-		+python3-cobs \
-		+python3-construct \
-		+python3-msgspec \
-		+python3-psutil \
-		+python3-prometheus-client \
-		+python3-pyserial-asyncio-fast \
-		+python3-tenacity \
-		+python3-uvloop \
-		+python3-cryptography \
-		+python3-typer \
-		+python3-structlog \
-		+python3-rich \
-		+python3-sh \
-		+python3-diskcache \
-		+mosquitto-client \
-		+python3-svcs \
-		+python3-click \
-		+python3-markdown-it-py \
-		+python3-mdurl \
-		+python3-pygments \
-		+python3-shellingham
+		python3 \
+		python3-aiomqtt \
+		python3-paho-mqtt \
+		python3-cobs \
+		python3-construct \
+		python3-msgspec \
+		python3-psutil \
+		python3-prometheus-client \
+		python3-pyserial-asyncio-fast \
+		python3-tenacity \
+		python3-uvloop \
+		python3-cryptography \
+		python3-typer \
+		python3-structlog \
+		python3-rich \
+		python3-sh \
+		python3-diskcache \
+		mosquitto-client \
+		python3-svcs \
+		python3-click \
+		python3-markdown-it-py \
+		python3-mdurl \
+		python3-pygments \
+		python3-shellingham
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
@@ -77,9 +77,9 @@ define Package/$(PKG_NAME)/description
 endef
 
 define Build/Compile
-	$(PYTHON3) -O -m compileall -b -f -q $(PKG_BUILD_DIR)/mcubridge
-	[ ! -d $(PKG_BUILD_DIR)/scripts ] || $(PYTHON3) -m compileall -q -b $(PKG_BUILD_DIR)/scripts
-	[ ! -d $(PKG_BUILD_DIR)/scripts ] || find $(PKG_BUILD_DIR)/scripts -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf
+	python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge
+	[ ! -d $(PKG_BUILD_DIR)/scripts ] || python3 -m compileall -j 0 -q -b $(PKG_BUILD_DIR)/scripts
+	find /tmp -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
 endef
 
 define Build/Prepare

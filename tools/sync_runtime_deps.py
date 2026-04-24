@@ -166,7 +166,7 @@ def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool
         raise ManifestError(
             "Makefile is missing dependency markers; cannot inject dependencies"
         )
-    tokens = [f"+{pkg}" for pkg in collect_openwrt_packages(deps)]
+    tokens = [f"{pkg}" for pkg in collect_openwrt_packages(deps)]
     if tokens:
         block_lines = ["\tDEPENDS+= \\"]
         block_lines.extend(format_openwrt_lines(tokens))

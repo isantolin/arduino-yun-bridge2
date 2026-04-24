@@ -68,7 +68,7 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )
+        )  # type: ignore[reportUnknownMemberType]
         self._registry.register_factory(
             DatastoreComponent,
             lambda: DatastoreComponent(
@@ -77,7 +77,7 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )
+        )  # type: ignore[reportUnknownMemberType]
         self._registry.register_factory(
             FileComponent,
             lambda: FileComponent(
@@ -86,7 +86,7 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )
+        )  # type: ignore[reportUnknownMemberType]
         self._registry.register_factory(
             MailboxComponent,
             lambda: MailboxComponent(
@@ -95,7 +95,7 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )
+        )  # type: ignore[reportUnknownMemberType]
         self._registry.register_factory(
             PinComponent,
             lambda: PinComponent(
@@ -104,7 +104,7 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )
+        )  # type: ignore[reportUnknownMemberType]
         self._registry.register_factory(
             ProcessComponent,
             lambda: ProcessComponent(
@@ -113,7 +113,7 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )
+        )  # type: ignore[reportUnknownMemberType]
         self._registry.register_factory(
             SpiComponent,
             lambda: SpiComponent(
@@ -122,7 +122,7 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )
+        )  # type: ignore[reportUnknownMemberType]
         self._registry.register_factory(
             SystemComponent,
             lambda: SystemComponent(
@@ -131,7 +131,7 @@ class BridgeService:
                 serial_flow=self.serial_flow,
                 mqtt_flow=self.mqtt_flow,
             ),
-        )
+        )  # type: ignore[reportUnknownMemberType]
 
         self._container = svcs.Container(self._registry)
 

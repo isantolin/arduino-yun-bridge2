@@ -11,6 +11,8 @@
 #include <stdint.h>
 #include <etl/array.h>
 #include <etl/type_traits.h>
+#include <etl/algorithm.h>
+#include <etl/iterator.h>
 
 namespace rpc {
 
@@ -60,12 +62,17 @@ constexpr etl::underlying_type_t<E> to_underlying(E value) {
 }
 
 constexpr bool requires_ack(CommandId command_id) {
-    return
+{%- if ack_commands %}
+    static constexpr CommandId ACK_COMMANDS[] = {
 {%- for cmd in ack_commands %}
-        (command_id == CommandId::{{ cmd.name }}){{ " ||" if not loop.last else ";" }}
-{%- else %}
-        false;
+        CommandId::{{ cmd.name }}{{ "," if not loop.last }}
 {%- endfor %}
+    };
+    return etl::find(etl::begin(ACK_COMMANDS), etl::end(ACK_COMMANDS), command_id) != etl::end(ACK_COMMANDS);
+{%- else %}
+    (void)command_id;
+    return false;
+{%- endif %}
 }
 
 constexpr bool requires_ack(uint16_t command_id) {

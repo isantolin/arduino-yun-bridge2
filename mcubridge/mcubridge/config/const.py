@@ -59,7 +59,6 @@ DEFAULT_MQTT_QUEUE_LIMIT: int = 256
 MQTT_TLS_MIN_VERSION: TLSVersion = TLSVersion.TLSv1_2
 # [CRITICAL] Spool directory in RAM to prevent Flash wear
 DEFAULT_MQTT_SPOOL_DIR: str = "/tmp/mcubridge/spool"
-DEFAULT_MQTT_SPOOL_LIMIT: int = 1000
 MQTT_USER_PROP_FILE_PATH: str = "bridge-file-path"
 
 # -- MQTT Message Expiry Intervals (seconds) --
@@ -199,7 +198,6 @@ __all__ = [
     "SERIAL_FAILURE_STATUS_CODES",
     "SERIAL_SUCCESS_STATUS_CODES",
     "DEFAULT_MQTT_SPOOL_DIR",
-    "DEFAULT_MQTT_SPOOL_LIMIT",
     "MQTT_USER_PROP_FILE_PATH",
     "MQTT_EXPIRY_PIN",
     "MQTT_EXPIRY_CONSOLE",

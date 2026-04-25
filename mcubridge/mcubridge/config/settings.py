@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import structlog
 from typing import Any
+from pathlib import Path
 
 import msgspec
 
@@ -21,6 +22,54 @@ from ..config.common import (
 from mcubridge.protocol.structures import RuntimeConfig
 
 logger = structlog.get_logger(__name__)
+
+
+def _normalize_raw_config(values: dict[str, Any]) -> dict[str, Any]:
+    """[SIL-2] Normalize raw configuration values before schema validation."""
+    normalized = values.copy()
+
+    # 1. String Stripping & Optional normalization
+    str_keys = (
+        "serial_port",
+        "mqtt_host",
+        "mqtt_user",
+        "mqtt_pass",
+        "mqtt_cafile",
+        "mqtt_certfile",
+        "mqtt_keyfile",
+    )
+    for key in str_keys:
+        if key in normalized and isinstance(normalized[key], str):
+            normalized[key] = normalized[key].strip() or None
+
+    # 2. Path Resolution (Atomic expansion)
+    path_keys = ("file_system_root", "mqtt_spool_dir")
+    for key in path_keys:
+        if key in normalized and isinstance(normalized[key], str):
+            normalized[key] = str(Path(normalized[key]).expanduser().resolve())
+
+    # 3. Secret Coercion
+    if "serial_shared_secret" in normalized:
+        secret = normalized["serial_shared_secret"]
+        if isinstance(secret, str):
+            normalized["serial_shared_secret"] = secret.strip().encode("utf-8")
+
+    # 4. MQTT Topic Normalization
+    if "mqtt_topic" in normalized:
+        raw_topic = str(normalized["mqtt_topic"]).strip()
+        segments = tuple(filter(None, raw_topic.split("/")))
+        if segments:
+            normalized["mqtt_topic"] = "/".join(segments)
+
+    # 5. Allowed Commands Normalization (Atomic coercion)
+    if "allowed_commands" in normalized:
+        cmds = normalized["allowed_commands"]
+        if isinstance(cmds, str):
+            normalized["allowed_commands"] = tuple(cmds.split())
+        elif cmds is None:
+            normalized["allowed_commands"] = ()
+
+    return normalized
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
@@ -63,9 +112,6 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
     This is the primary entry point for configuration loading. It ensures that
     the returned RuntimeConfig is valid and follows all flash protection rules.
 
-    Normalization (Path resolution, secret coercion, etc.) is handled automatically
-    by the RuntimeConfig.__post_init__ method.
-
     Args:
         overrides: Optional dictionary of configuration overrides (e.g. from CLI).
     """
@@ -75,16 +121,20 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
         source = "cli"
     _ConfigState.source = source
 
+    # [SIL-2] Pre-conversion Normalization
+    normalized_values = _normalize_raw_config(raw_values)
+
     try:
         # [SIL-2] Holistic Validation via msgspec.Struct.
-        # Normalization occurs inside RuntimeConfig.__post_init__
-        return msgspec.convert(raw_values, RuntimeConfig, strict=True)
+        # strict=True ensures configuration integrity.
+        return msgspec.convert(normalized_values, RuntimeConfig, strict=True)
     except (msgspec.ValidationError, ValueError) as e:
         if source == "uci":
             # [SIL-2] Deterministic Failure: If UCI is present but invalid, abort.
+            # This prevents running with a partially invalid security config.
             logger.critical("FATAL: UCI configuration is invalid: %s", e)
             raise RuntimeError(f"Invalid system configuration: {e}") from e
 
-        # During tests or fallback, let the error propagate
+        # During tests or fallback, let the error propagate if it's a structural/logic error
         logger.critical("Configuration validation failed: %s", e)
         raise

@@ -437,8 +437,6 @@ class RuntimeState(msgspec.Struct):
         self.mailbox_queue_limit = config.mailbox_queue_limit
         self.mailbox_queue_bytes_limit = config.mailbox_queue_bytes_limit
         self.mqtt_queue_limit = config.mqtt_queue_limit
-        self.mqtt_spool_dir = config.mqtt_spool_dir
-        self.mqtt_spool_limit = config.mqtt_spool_limit
         self.watchdog_enabled = config.watchdog_enabled
         self.watchdog_interval = config.watchdog_interval
         self.pending_pin_request_limit = config.pending_pin_request_limit
@@ -707,5 +705,12 @@ def create_runtime_state(
     )
     state.serial_tx_allowed.set()
     state.configure(cfg)
+
+    from ..transport.mqtt import MqttTransport
+
+    transport = MqttTransport(cfg, state)
+    transport.configure_spool(cfg.mqtt_spool_dir, cfg.mqtt_queue_limit * 4)
+    if initialize_spool:
+        transport.initialize_spool()
 
     return state

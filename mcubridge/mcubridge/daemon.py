@@ -61,9 +61,10 @@ from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.state.status import STATUS_FILE, status_writer
-from mcubridge.mqtt.spool_manager import MqttSpoolManager
-from mcubridge.transport.mqtt import run_mqtt_client
-from mcubridge.transport.serial import SerialTransport
+from mcubridge.transport import (
+    MqttTransport,
+    SerialTransport,
+)
 from mcubridge.watchdog import WatchdogKeepalive
 
 from .util.process import cleanup_process_tree
@@ -100,15 +101,22 @@ class BridgeDaemon:
     """
 
     def __init__(self, config: RuntimeConfig):
+        """Initialize the daemon with configuration.
+
+        Args:
+            config: Validated RuntimeConfig from UCI/defaults.
+        """
         self.config = config
         self.state = create_runtime_state(config)
         self.state.config_source = get_config_source()
-
-        # [SIL-2] Direct spool management
-        self.spool_manager = MqttSpoolManager(self.state)
-        self.spool_manager.initialize()
-
-        self.service = BridgeService(config, self.state, self.spool_manager)
+        self.mqtt_transport = MqttTransport(self.config, self.state)
+        self.mqtt_transport.configure_spool(
+            self.config.mqtt_spool_dir, self.config.mqtt_queue_limit * 4
+        )
+        self.mqtt_transport.initialize_spool()
+        self.service = BridgeService(config, self.state, self.mqtt_transport)
+        self.mqtt_transport.set_service(self.service)
+        # Initialize dependencies
 
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
@@ -134,25 +142,15 @@ class BridgeDaemon:
                         )
                     )
 
-                    # 2. MQTT Client (Zero-Wrapper)
+                    # 2. MQTT Link
                     tg.create_task(
                         self._supervise(
                             "mqtt-link",
-                            lambda: run_mqtt_client(
-                                self.config, self.state, self.service
-                            ),
+                            self.mqtt_transport.run,
                         )
                     )
 
-                    # 3. Spool Maintenance
-                    tg.create_task(
-                        self._supervise(
-                            "mqtt-spool-flush",
-                            self.spool_manager.flush,
-                        )
-                    )
-
-                    # 4. Status & Metrics (Periodic)
+                    # 3. Status & Metrics (Periodic)
                     tg.create_task(
                         self._supervise(
                             "status-writer",
@@ -166,13 +164,13 @@ class BridgeDaemon:
                             "metrics-publisher",
                             lambda: publish_metrics(
                                 self.state,
-                                self.service.enqueue_mqtt,
+                                self.mqtt_transport.enqueue_mqtt,
                                 float(self.config.status_interval),
                             ),
                         )
                     )
 
-                    # 5. Optional Features
+                    # 4. Optional Features
                     if (
                         self.config.bridge_summary_interval > 0.0
                         or self.config.bridge_handshake_interval > 0.0
@@ -182,7 +180,7 @@ class BridgeDaemon:
                                 "bridge-snapshots",
                                 lambda: publish_bridge_snapshots(
                                     self.state,
-                                    self.service.enqueue_mqtt,
+                                    self.mqtt_transport.enqueue_mqtt,
                                     summary_interval=float(
                                         self.config.bridge_summary_interval
                                     ),

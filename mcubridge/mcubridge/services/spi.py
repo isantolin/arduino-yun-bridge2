@@ -14,7 +14,7 @@ from ..protocol.structures import TopicRoute
 from ..protocol.topics import Topic, topic_path
 
 if TYPE_CHECKING:
-    from .base import MqttFlow
+    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
@@ -30,7 +30,7 @@ class SpiComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        mqtt_flow: MqttFlow,
+        mqtt_flow: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state

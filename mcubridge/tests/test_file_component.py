@@ -8,7 +8,6 @@ import asyncio
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock
-from mcubridge.services.base import MqttFlow
 
 import msgspec
 import pytest
@@ -18,6 +17,7 @@ from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.services.file import FileComponent
 from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from tests._helpers import make_mqtt_msg
 
@@ -55,7 +55,7 @@ def file_component(
     serial_flow.send = AsyncMock(return_value=True)
     serial_flow.acknowledge = AsyncMock()
 
-    mqtt_flow = AsyncMock(spec=MqttFlow)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     mqtt_flow.enqueue_mqtt = AsyncMock()
 

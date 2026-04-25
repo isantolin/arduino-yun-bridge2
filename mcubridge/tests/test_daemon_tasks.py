@@ -14,6 +14,7 @@ from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import FRAME_DELIMITER, Command
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.transport import SerialTransport
+from mcubridge.transport.mqtt import MqttTransport
 from mcubridge.services.runtime import BridgeService
 
 
@@ -237,10 +238,18 @@ async def test_mqtt_task_handles_incoming_message(
 
     with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_client):
         runtime_config.mqtt_tls = False
+        transport = MqttTransport(runtime_config, state)
+        transport.set_service(cast(Any, service))
+        task = asyncio.create_task(transport.run())
 
-        # Test direct dispatch via service
-        await service.handle_mqtt_message(fake_msg)
-        assert service.handled.is_set()
+        try:
+            await asyncio.wait_for(service.handled.wait(), timeout=1)
+        finally:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
 
 @pytest.mark.asyncio

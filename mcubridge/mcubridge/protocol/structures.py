@@ -306,7 +306,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         DEFAULT_MQTT_PORT,
         DEFAULT_MQTT_QUEUE_LIMIT,
         DEFAULT_MQTT_SPOOL_DIR,
-        DEFAULT_MQTT_SPOOL_LIMIT,
         DEFAULT_MQTT_TLS_INSECURE,
         DEFAULT_PENDING_PIN_REQUESTS,
         DEFAULT_PROCESS_MAX_CONCURRENT,
@@ -382,7 +381,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_shared_secret: Any = DEFAULT_SERIAL_SHARED_SECRET
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    mqtt_spool_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_SPOOL_LIMIT
     process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
     metrics_enabled: bool = DEFAULT_METRICS_ENABLED
@@ -434,46 +432,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             VOLATILE_STORAGE_PATHS,
         )
 
-        # 0. String Stripping & Optional normalization
-        from types import NoneType
-        for field in msgspec.structs.fields(self.__class__):
-            val = getattr(self, field.name)
-            if isinstance(val, str):
-                stripped = val.strip()
-                
-                # Check if field allows None (is optional)
-                # Unwrap Annotated if necessary
-                f_type = field.type
-                if hasattr(f_type, "__metadata__"): # Annotated
-                    f_type = f_type.__origin__
-                
-                allows_none = False
-                if f_type is NoneType:
-                    allows_none = True
-                elif hasattr(f_type, "__args__"): # Union / Optional
-                    allows_none = NoneType in f_type.__args__
-                
-                if not stripped and allows_none:
-                    setattr(self, field.name, None)
-                else:
-                    setattr(self, field.name, stripped)
-
-        # 1. Secret Normalization (Atomic Coercion)
-        if isinstance(self.serial_shared_secret, str):
-            self.serial_shared_secret = self.serial_shared_secret.strip().encode("utf-8")
-
-        # 2. Policy Derivation
-        if not isinstance(self.allowed_commands, AllowedCommandPolicy):
-            # Coerce string to tuple of tokens if necessary
-            input_cmds = self.allowed_commands
-            if isinstance(input_cmds, str):
-                input_cmds = input_cmds.strip().split()
-            
-            self.allowed_policy = AllowedCommandPolicy.from_iterable(input_cmds)
-            self.allowed_commands = self.allowed_policy.entries
-        else:
-            self.allowed_policy = self.allowed_commands
-            self.allowed_commands = self.allowed_policy.entries
+        # [SIL-2] Semantic Policy Derivation
+        self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
+        self.allowed_commands = self.allowed_policy.entries if self.allowed_policy else ()
 
         if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
             self.topic_authorization = (
@@ -482,29 +443,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                 else TopicAuthorization()
             )
 
-        # 4. MQTT Topic Normalization
-        if self.mqtt_topic:
-            raw_topic = str(self.mqtt_topic).strip()
-            segments = tuple(filter(None, raw_topic.split("/")))
-            if segments:
-                self.mqtt_topic = "/".join(segments)
-
-        # 5. Strict Semantic Validations
-        if not self.allow_non_tmp_paths:
-            if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                raise ValueError(
-                    f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
-                )
-
-            if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                raise ValueError(
-                    f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
-                )
-
-        # 6. Final Path Resolution
-        self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).expanduser().resolve())
-        self.file_system_root = str(Path(self.file_system_root).expanduser().resolve())
-
+        # [SIL-2] Strict Semantic Validations
         if not self.mqtt_topic or not any(filter(None, self.mqtt_topic.split("/"))):
             raise ValueError("mqtt_topic must contain at least one segment")
 
@@ -534,12 +473,12 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
         # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
-        if not self.allow_non_tmp_paths:
-            if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                raise ValueError(
-                    f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
-                )
+        if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            raise ValueError(
+                f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
+            )
 
+        if not self.allow_non_tmp_paths:
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
                 raise ValueError(
                     f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"

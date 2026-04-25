@@ -10,6 +10,7 @@ from mcubridge.protocol import structures
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
+from mcubridge.transport.mqtt import MqttTransport
 from mcubridge.services import SystemComponent, ConsoleComponent
 from tests._helpers import make_test_config
 
@@ -20,10 +21,8 @@ async def test_bridge_service_lifecycle_full_sync() -> None:
     config = make_test_config()
     state = create_runtime_state(config)
     try:
-        from mcubridge.mqtt.spool_manager import MqttSpoolManager
-
-        spool = MagicMock(spec=MqttSpoolManager)
-        service = BridgeService(config, state, spool)
+        mqtt = MqttTransport(config, state)
+        service = BridgeService(config, state, mqtt)
 
         # [SIL-2] Isolate handshake and system components
         service.handshake_manager.synchronize = AsyncMock(return_value=True)
@@ -70,18 +69,18 @@ async def test_bridge_service_lifecycle_full_sync() -> None:
 async def test_bridge_service_handle_status_reporting(
     runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
-    from mcubridge.mqtt.spool_manager import MqttSpoolManager
-
-    spool = MagicMock(spec=MqttSpoolManager)
-    service = BridgeService(runtime_config, runtime_state, spool)
+    mqtt = MagicMock()
+    mqtt.publish = AsyncMock()
+    service = BridgeService(runtime_config, runtime_state, mqtt)
 
     await service.handle_status(1, Status.ERROR, b"some error")
 
-    # Check that message was queued
-    assert runtime_state.mqtt_publish_queue.qsize() == 1
-    msg = runtime_state.mqtt_publish_queue.get_nowait()
-    assert "status" in msg.topic_name
-    report = msgspec.msgpack.decode(msg.payload)
+    # Check that MQTT publish was called
+    mqtt.publish.assert_called()
+    _, kwargs = mqtt.publish.call_args
+    assert "status" in kwargs["topic"]
+    # Payload is msgpacked
+    report = msgspec.msgpack.decode(kwargs["payload"])
     assert report["name"] == "ERROR"
     assert report["message"] == "some error"
 
@@ -104,14 +103,12 @@ async def test_serial_flow_acknowledge_no_sender_is_noop():
 async def test_enqueue_mqtt_spool_unavailable_logs(
     runtime_config: RuntimeConfig, runtime_state: Any
 ):
+    from mcubridge.transport.mqtt import MqttTransport
+
     # No spool configured
-    from mcubridge.mqtt.spool_manager import MqttSpoolManager
-
-    spool = MagicMock(spec=MqttSpoolManager)
-    service = BridgeService(runtime_config, runtime_state, spool)
-
+    transport = MqttTransport(runtime_config, runtime_state)
     msg = structures.QueuedPublish(topic_name="test", payload=b"data")
-    await service.enqueue_mqtt(msg)
+    await transport.enqueue_mqtt(msg)
     assert runtime_state.mqtt_publish_queue.qsize() == 1
 
 
@@ -119,30 +116,28 @@ async def test_enqueue_mqtt_spool_unavailable_logs(
 async def test_bridge_service_publish_snapshot(
     runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
-    from mcubridge.mqtt.spool_manager import MqttSpoolManager
-
-    spool = MagicMock(spec=MqttSpoolManager)
-    service = BridgeService(runtime_config, runtime_state, spool)
+    mqtt = MagicMock()
+    mqtt.publish = AsyncMock()
+    service = BridgeService(runtime_config, runtime_state, mqtt)
 
     await service._publish_bridge_snapshot("summary", None)  # type: ignore[reportPrivateUsage]
-    assert runtime_state.mqtt_publish_queue.qsize() == 1
+    mqtt.publish.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_bridge_service_reject_topic_action(
     runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
-    from mcubridge.mqtt.spool_manager import MqttSpoolManager
-
-    spool = MagicMock(spec=MqttSpoolManager)
-    service = BridgeService(runtime_config, runtime_state, spool)
+    mqtt = MagicMock()
+    mqtt.publish = AsyncMock()
+    service = BridgeService(runtime_config, runtime_state, mqtt)
 
     from aiomqtt.message import Message
 
     msg = Message("test", b"", 0, False, False, None)
 
     await service._reject_topic_action(msg, Topic.DIGITAL, "write")  # type: ignore[reportPrivateUsage]
-    assert runtime_state.mqtt_publish_queue.qsize() == 1
+    mqtt.publish.assert_called()
 
 
 @pytest.mark.asyncio

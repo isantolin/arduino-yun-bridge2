@@ -1,4 +1,4 @@
-"""Minimalistic Async MQTT Client for MCU Bridge. [Zero-Boilerplate]"""
+"""Minimalistic Async MQTT Client for MCU Bridge."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Iterable
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import TypedDict, cast, Any
+from typing import TypedDict, cast
 
 import msgspec
 from aiomqtt import Client, MqttError, ProtocolVersion
@@ -31,7 +31,7 @@ from .definitions import (
     build_mqtt_properties,
 )
 from .env import dump_client_env, read_uci_general
-from .protocol import Command, Topic, Status
+from .protocol import Command, Topic
 from .spi import SpiDevice
 
 __all__ = [
@@ -45,7 +45,6 @@ __all__ = [
     "QOSLevel",
     "Command",
     "Topic",
-    "Status",
 ]
 
 logger = logging.getLogger(__name__)
@@ -177,33 +176,25 @@ class Bridge:
                     queue := self._correlation_routes.pop(correlation, None)
                 ):
                     queue.put_nowait(message)
-                elif Topic.matches(self._console_topic, str(message.topic)):
+
+                elif Topic.matches(self._console_topic, message.topic.value):
                     self._console_queue.put_nowait(
                         bytes(message.payload) if message.payload else b""
                     )
+                else:
+                    logger.debug("Orphaned or broadcast message on %s", message.topic)
         except MqttError:
+            # Expected during shutdown or reconnect
             pass
 
-    async def _publish(self, topic: str, payload: Any, qos: int = 0) -> None:
-        """Atomic publish helper (Zero-Wrapper)."""
-        if not self._client:
-            raise ConnectionError("Not connected")
-        payload_bytes = (
-            payload
-            if isinstance(payload, (bytes, bytearray))
-            else str(payload).encode()
-        )
-        await self._client.publish(topic, payload_bytes, qos=qos)
-
-    async def _request(
+    async def _publish_and_wait(
         self,
         topic: str,
-        payload: Any = b"",
+        payload: bytes | str,
         *,
         resp_topic: str | Iterable[str] | None = None,
         timeout: float = 15,
     ) -> bytes:
-        """Atomic request-response helper (Zero-Wrapper)."""
         if not self._client:
             raise ConnectionError("Not connected")
 
@@ -218,14 +209,9 @@ class Bridge:
             await self._client.subscribe(t)
 
         try:
-            payload_bytes = (
-                payload
-                if isinstance(payload, (bytes, bytearray))
-                else str(payload).encode()
-            )
             msg = QueuedPublish(
                 topic_name=topic,
-                payload=payload_bytes,
+                payload=payload.encode() if isinstance(payload, str) else payload,
                 response_topic=self._reply_topic,
                 correlation_data=correlation,
             )
@@ -233,16 +219,17 @@ class Bridge:
                 msg.topic_name, msg.payload, properties=build_mqtt_properties(msg)
             )
             delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
-            return bytes(delivered.payload) if delivered.payload else b""
+            return msgspec.convert(delivered.payload, bytes)
         finally:
             self._correlation_routes.pop(correlation, None)
             for t in resp_topics:
                 await self._client.unsubscribe(t)
 
-    # --- Convenience methods (refactored to Zero-Boilerplate) ---
-
     async def console_write(self, data: str | bytes) -> None:
-        await self._publish(Topic.build(Topic.CONSOLE, "in"), data)
+        if not self._client:
+            raise ConnectionError("Not connected")
+        payload = data if isinstance(data, bytes) else data.encode()
+        await self._client.publish(Topic.build(Topic.CONSOLE, "in"), payload)
 
     async def console_read_async(self) -> str | None:
         try:
@@ -252,10 +239,12 @@ class Bridge:
             return None
 
     async def digital_write(self, pin: int, value: int) -> None:
-        await self._publish(Topic.build(Topic.DIGITAL, pin), value)
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(Topic.build(Topic.DIGITAL, pin), str(value))
 
     async def digital_read(self, pin: int, timeout: float = 15) -> int:
-        res = await self._request(
+        res = await self._publish_and_wait(
             Topic.build(Topic.DIGITAL, pin, "read"),
             b"",
             resp_topic=Topic.build(Topic.DIGITAL, pin, "value"),
@@ -264,7 +253,7 @@ class Bridge:
         return int(res.decode())
 
     async def analog_read(self, pin: int, timeout: float = 15) -> int:
-        res = await self._request(
+        res = await self._publish_and_wait(
             Topic.build(Topic.ANALOG, pin, "read"),
             b"",
             resp_topic=Topic.build(Topic.ANALOG, pin, "value"),
@@ -273,13 +262,17 @@ class Bridge:
         return int(res.decode())
 
     async def analog_write(self, pin: int, value: int) -> None:
-        await self._publish(Topic.build(Topic.ANALOG, pin), value)
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(Topic.build(Topic.ANALOG, pin), str(value))
 
     async def set_digital_mode(self, pin: int, mode: int) -> None:
-        await self._publish(Topic.build(Topic.DIGITAL, pin, "mode"), mode)
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(Topic.build(Topic.DIGITAL, pin, "mode"), str(mode))
 
     async def put(self, key: str, value: str, timeout: float = 15) -> None:
-        await self._request(
+        await self._publish_and_wait(
             Topic.build(Topic.DATASTORE, "put", key),
             value,
             resp_topic=Topic.build(Topic.DATASTORE, "get", key),
@@ -287,7 +280,7 @@ class Bridge:
         )
 
     async def get(self, key: str, timeout: float = 15) -> str:
-        res = await self._request(
+        res = await self._publish_and_wait(
             Topic.build(Topic.DATASTORE, "get", key, "request"),
             b"",
             resp_topic=Topic.build(Topic.DATASTORE, "get", key),
@@ -296,7 +289,7 @@ class Bridge:
         return res.decode()
 
     async def get_free_memory(self, timeout: float = 15) -> int:
-        res = await self._request(
+        res = await self._publish_and_wait(
             Topic.build(Topic.SYSTEM, "free_memory", "get"),
             b"",
             resp_topic=Topic.build(Topic.SYSTEM, "free_memory", "value"),
@@ -307,7 +300,7 @@ class Bridge:
     async def run_shell_command_async(
         self, parts: list[str], timeout: float = 15
     ) -> int:
-        res = await self._request(
+        res = await self._publish_and_wait(
             Topic.build(Topic.SHELL, "run_async"),
             shlex.join(parts),
             resp_topic=Topic.build(Topic.SHELL, "run_async", "response"),
@@ -318,7 +311,7 @@ class Bridge:
     async def poll_shell_process(
         self, pid: int, timeout: float = 15
     ) -> ShellPollResponse:
-        res = await self._request(
+        res = await self._publish_and_wait(
             Topic.build(Topic.SHELL, "poll", pid),
             b"",
             resp_topic=Topic.build(Topic.SHELL, "poll", pid, "response"),
@@ -327,25 +320,31 @@ class Bridge:
         return cast(ShellPollResponse, msgspec.msgpack.decode(res))
 
     async def spi_begin(self) -> None:
-        await self._publish(Topic.build(Topic.SPI, "begin"), b"")
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(Topic.build(Topic.SPI, "begin"), b"")
 
     async def spi_end(self) -> None:
-        await self._publish(Topic.build(Topic.SPI, "end"), b"")
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(Topic.build(Topic.SPI, "end"), b"")
 
     async def spi_config(
         self, frequency: int = 4000000, bit_order: int = 1, data_mode: int = 0
     ) -> None:
+        if not self._client:
+            raise ConnectionError("Not connected")
         config = {
             "frequency": frequency,
             "bit_order": bit_order,
             "data_mode": data_mode,
         }
-        await self._publish(
+        await self._client.publish(
             Topic.build(Topic.SPI, "config"), msgspec.json.encode(config)
         )
 
     async def spi_transfer(self, data: bytes, timeout: float = 15) -> bytes:
-        return await self._request(
+        return await self._publish_and_wait(
             Topic.build(Topic.SPI, "transfer"),
             data,
             resp_topic=Topic.build(Topic.SPI, "transfer", "resp"),
@@ -353,12 +352,14 @@ class Bridge:
         )
 
     async def file_write(self, filename: str, content: str | bytes) -> None:
-        await self._publish(
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(
             Topic.build(Topic.FILE, "write", filename.lstrip("/")), content
         )
 
     async def file_read(self, filename: str, timeout: float = 15) -> bytes:
-        return await self._request(
+        return await self._publish_and_wait(
             Topic.build(Topic.FILE, "read", filename.lstrip("/")),
             b"",
             resp_topic=Topic.build(
@@ -368,16 +369,20 @@ class Bridge:
         )
 
     async def file_remove(self, filename: str) -> None:
-        await self._publish(
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(
             Topic.build(Topic.FILE, "remove", filename.lstrip("/")), b""
         )
 
     async def mailbox_write(self, message: str | bytes) -> None:
-        await self._publish(Topic.build(Topic.MAILBOX, "write"), message)
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(Topic.build(Topic.MAILBOX, "write"), message)
 
     async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
-            return await self._request(
+            return await self._publish_and_wait(
                 Topic.build(Topic.MAILBOX, "read"),
                 b"",
                 resp_topic=Topic.build(Topic.MAILBOX, "incoming"),

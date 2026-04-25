@@ -5,7 +5,6 @@ from __future__ import annotations
 import collections
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
-from mcubridge.services.base import MqttFlow
 
 import msgspec
 import pytest
@@ -13,6 +12,7 @@ from mcubridge.protocol.structures import ConsoleWritePacket
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
+from mcubridge.transport.mqtt import MqttTransport
 from tests._helpers import make_test_config
 
 
@@ -26,7 +26,7 @@ def console_component() -> ConsoleComponent:
 
     serial_flow = MagicMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
-    mqtt_flow = MagicMock(spec=MqttFlow)
+    mqtt_flow = MagicMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
 
     return ConsoleComponent(

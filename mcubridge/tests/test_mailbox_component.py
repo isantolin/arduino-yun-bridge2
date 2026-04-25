@@ -2,7 +2,6 @@ import msgspec
 import pytest
 from typing import Any, cast
 from unittest.mock import AsyncMock
-from mcubridge.services.base import MqttFlow
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.protocol.structures import TopicRoute, MailboxPushPacket
 from mcubridge.protocol.topics import Topic
@@ -11,6 +10,7 @@ from aiomqtt.message import Message
 
 
 from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxCompone
     # [SIL-2] Use AsyncMock(spec=Interface) for all component mocks
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock()
-    mqtt_flow = AsyncMock(spec=MqttFlow)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     return MailboxComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 

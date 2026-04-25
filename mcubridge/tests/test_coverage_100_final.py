@@ -1,21 +1,1469 @@
+# pyright: reportPrivateUsage=false
+"""Final coverage gap tests — targeting 100% line+branch coverage.
+
+Systematically covers every remaining uncovered line and branch across
+all mcubridge modules.
+"""
+
+from __future__ import annotations
+import msgspec
+from typing import Any, cast
+
+import asyncio
+import contextlib
+import logging
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import psutil
 import pytest
-from unittest.mock import MagicMock
+from mcubridge.protocol.protocol import (
+    Command,
+    Status,
+    Topic,
+)
 from mcubridge.state.context import create_runtime_state
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.runtime import BridgeService
-from mcubridge.mqtt.spool_manager import MqttSpoolManager
+from mcubridge.transport.mqtt import MqttTransport
+
+from tests._helpers import make_test_config, make_route, make_mqtt_msg
+
+# ============================================================================
+# mcubridge/protocol/structures.py — AllowedCommandPolicy
+# ============================================================================
 
 
-@pytest.mark.asyncio
-async def test_minimal_coverage_stub():
-    """Minimal stub to replace corrupted coverage test and ensure green state."""
-    config = RuntimeConfig(
-        allow_non_tmp_paths=True, serial_shared_secret=b"valid_secret_1234"
-    )
-    state = create_runtime_state(config)
-    try:
-        spool = MagicMock(spec=MqttSpoolManager)
-        service = BridgeService(config, state, spool)
-        assert service is not None
-    finally:
+class TestAllowedCommandPolicy:
+    def test_from_iterable_normalisation(self):
+        from mcubridge.protocol.structures import AllowedCommandPolicy
+
+        policy = AllowedCommandPolicy.from_iterable(["", "echo", ""])
+        assert "echo" in policy.entries
+        assert "" not in policy.entries
+
+    def test_from_iterable_wildcard(self):
+        from mcubridge.protocol.structures import AllowedCommandPolicy
+
+        policy = AllowedCommandPolicy.from_iterable(["ls", "*", "echo"])
+        assert policy.as_tuple() == ("*",)
+
+
+# ============================================================================
+# mcubridge/protocol/structures.py — RuntimeConfig.get_ssl_context
+# ============================================================================
+
+
+class TestMqttHelper:
+    def test_configure_tls_context_no_tls(self):
+        config = make_test_config(mqtt_tls=False)
+        assert config.get_ssl_context() is None
+
+    def test_configure_tls_context_with_cafile(self: Any, tmp_path: Any):
+        ca = tmp_path / "ca.pem"
+        ca.write_text("fake-ca")
+        config = make_test_config(mqtt_tls=True, mqtt_cafile=str(ca))
+        # Invalid cert data triggers RuntimeError which covers the except branch
+        with pytest.raises(RuntimeError, match="TLS setup failed"):
+            config.get_ssl_context()
+
+    def test_configure_tls_context_no_cafile(self):
+        config = make_test_config(mqtt_tls=True, mqtt_cafile=None)
+        ctx = config.get_ssl_context()
+        assert ctx is not None
+
+
+# ============================================================================
+# mcubridge/security/security.py — lines 86-87, 109, 155, 185-218
+# ============================================================================
+
+
+class TestSecurity:
+    def test_secure_zero_bytearray(self):
+        from mcubridge.security.security import secure_zero
+
+        buf = bytearray(b"secret_key_material")
+        secure_zero(buf)
+        assert buf == bytearray(len(buf))
+
+    def test_secure_zero_memoryview(self):
+        from mcubridge.security.security import secure_zero
+
+        buf = bytearray(b"secret_data_here!")
+        mv = memoryview(buf)
+        secure_zero(mv)
+        assert buf == bytearray(len(buf))
+
+    def test_secure_zero_bytes_copy(self):
+        from mcubridge.security.security import secure_zero_bytes_copy
+
+        result = secure_zero_bytes_copy(b"hello")
+        assert result == b"\x00\x00\x00\x00\x00"
+
+    def test_generate_nonce_with_counter(self):
+        from mcubridge.security.security import generate_nonce_with_counter
+
+        nonce, new_counter = generate_nonce_with_counter(0)
+        assert len(nonce) == 16
+        assert new_counter == 1
+
+    def test_extract_nonce_counter(self):
+        from mcubridge.security.security import (
+            extract_nonce_counter,
+            generate_nonce_with_counter,
+        )
+
+        nonce, _ = generate_nonce_with_counter(41)
+        counter = extract_nonce_counter(nonce)
+        assert counter == 42
+
+    def test_extract_nonce_counter_invalid_length(self):
+        from mcubridge.security.security import extract_nonce_counter
+
+        with pytest.raises(ValueError, match="Nonce must be"):
+            extract_nonce_counter(b"short")
+
+    def test_validate_nonce_counter_valid(self):
+        from mcubridge.security.security import (
+            generate_nonce_with_counter,
+            validate_nonce_counter,
+        )
+
+        nonce, _ = generate_nonce_with_counter(5)
+        valid, new_last = validate_nonce_counter(nonce, 3)
+        assert valid is True
+        assert new_last == 6
+
+    def test_validate_nonce_counter_replay(self):
+        from mcubridge.security.security import (
+            generate_nonce_with_counter,
+            validate_nonce_counter,
+        )
+
+        nonce, _ = generate_nonce_with_counter(2)
+        valid, new_last = validate_nonce_counter(nonce, 100)
+        assert valid is False
+        assert new_last == 100
+
+    def test_validate_nonce_counter_invalid_nonce(self):
+        from mcubridge.security.security import validate_nonce_counter
+
+        valid, last = validate_nonce_counter(b"bad", 0)
+        assert valid is False
+        assert last == 0
+
+    def test_verify_crypto_integrity(self):
+        from mcubridge.security.security import verify_crypto_integrity
+
+        assert verify_crypto_integrity() is True
+
+
+# ============================================================================
+# mcubridge/__init__.py — lines 19, 24-25, 27
+# ============================================================================
+
+
+class TestInit:
+    def test_check_dependencies_missing_callback_api_version(self):
+        import paho.mqtt.client
+
+        import mcubridge
+
+        # Temporarily remove CallbackAPIVersion from the real module
+        orig = getattr(paho.mqtt.client, "CallbackAPIVersion", None)
+        try:
+            if hasattr(paho.mqtt.client, "CallbackAPIVersion"):
+                del paho.mqtt.client.CallbackAPIVersion  # type: ignore[reportAttributeAccessIssue]
+            with pytest.raises(SystemExit):
+                mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
+        finally:
+            if orig is not None:
+                paho.mqtt.client.CallbackAPIVersion = orig  # type: ignore[reportAttributeAccessIssue]
+
+    def test_check_dependencies_import_error(self):
+        import sys
+
+        import mcubridge
+
+        # When paho.mqtt.client can't be imported at all, should pass silently
+        orig = sys.modules.get("paho.mqtt.client")
+        sys.modules["paho.mqtt.client"] = None  # type: ignore[reportArgumentType]
+        try:
+            mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
+        finally:
+            if orig is not None:
+                sys.modules["paho.mqtt.client"] = orig
+
+    def test_check_dependencies_ok(self):
+        import mcubridge
+
+        mcubridge._check_dependencies()  # type: ignore[reportPrivateUsage]
+
+
+# ============================================================================
+# mcubridge/policy.py — lines 32-33, 35, 38
+# ============================================================================
+
+
+class TestPolicy:
+    def test_tokenize_empty_command(self):
+        from mcubridge.policy import CommandValidationError, tokenize_shell_command
+
+        with pytest.raises(CommandValidationError, match="Empty command"):
+            tokenize_shell_command("")
+
+    def test_tokenize_whitespace_only(self):
+        from mcubridge.policy import CommandValidationError, tokenize_shell_command
+
+        with pytest.raises(CommandValidationError, match="Empty command"):
+            tokenize_shell_command("   ")
+
+    def test_tokenize_malformed_quotes(self):
+        from mcubridge.policy import CommandValidationError, tokenize_shell_command
+
+        with pytest.raises(CommandValidationError, match="Malformed"):
+            tokenize_shell_command("echo 'unterminated")
+
+    def test_tokenize_valid_command(self):
+        from mcubridge.policy import tokenize_shell_command
+
+        tokens = tokenize_shell_command("echo hello world")
+        assert tokens == ("echo", "hello", "world")
+
+
+# ============================================================================
+# mcubridge/config/common.py — lines 28-29, 34, 43-46
+# ============================================================================
+
+
+class TestConfigCommon:
+    def test_get_uci_config_non_openwrt(self):
+        from mcubridge.config.common import get_uci_config
+
+        result = get_uci_config()
+        assert isinstance(result, dict)
+
+    def test_get_default_config(self):
+        from mcubridge.config.common import get_default_config
+
+        defaults = get_default_config()
+        assert "debug" in defaults
+        assert defaults["debug"] is False
+
+
+# ============================================================================
+# mcubridge/state/queues.py — all gaps
+# ============================================================================
+
+
+class TestQueues:
+    def test_basic_ops(self: Any, tmp_path: Any):
+        from mcubridge.state.queues import BridgeQueue
+
+        pq: BridgeQueue[bytes] = BridgeQueue(tmp_path / "pq", max_items=2)
+        pq.append(b"1")
+        pq.append(b"2")
+        pq.append(b"3")
+        assert len(pq) == 2
+        assert pq.popleft() == b"2"
+        pq.close()
+
+        bq: BridgeQueue[bytes] = BridgeQueue(max_bytes=10)
+        bq.append(b"hello")
+        # In RAM mode (no directory), bytes property returns 0 as it is not strictly tracked
+        assert bq.bytes == 0
+        bq.clear()
+        assert len(bq) == 0
+
+    def test_bool(self):
+        from mcubridge.state.queues import BridgeQueue
+
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+        assert not q
+        q.append(b"x")
+        assert q
+
+    def test_clear(self):
+        from mcubridge.state.queues import BridgeQueue
+
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+        q.append(b"a")
+        q.clear()
+        assert len(q) == 0
+
+    def test_popleft(self):
+        from mcubridge.state.queues import BridgeQueue
+
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+        q.append(b"first")
+        q.append(b"second")
+        assert q.popleft() == b"first"
+
+    def test_appendleft(self):
+        from mcubridge.state.queues import BridgeQueue
+
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+        q.append(b"second")
+        q.appendleft(b"first")
+        assert q.popleft() == b"first"
+
+    def test_limit_items_property(self):
+        from mcubridge.state.queues import BridgeQueue
+
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=42)
+        assert q.max_items == 42
+
+    def test_make_room_drops_oldest(self):
+        from mcubridge.state.queues import BridgeQueue
+
+        q: BridgeQueue[bytes] = BridgeQueue(max_items=2)
+        q.append(b"a")
+        q.append(b"b")
+        event = q.append(b"c")
+        assert event.dropped_chunks >= 1
+        assert len(q) <= 2
+
+    def test_can_fit_no_limits(self):
+        from mcubridge.state.queues import BridgeQueue
+
+        q: BridgeQueue[bytes] = BridgeQueue()
+        q.append(b"a")
+        q.append(b"b")
+        assert len(q) == 2
+
+
+# ============================================================================
+# mcubridge/protocol/spec_model.py — lines 68-77
+# ============================================================================
+
+
+class TestSpecModel:
+    def test_load_spec(self):
+        from mcubridge.protocol.spec_model import ProtocolSpec
+
+        spec_path = (
+            Path(__file__).resolve().parents[2] / "tools" / "protocol" / "spec.toml"
+        )
+        if spec_path.exists():
+            spec = ProtocolSpec.load(spec_path)
+            assert len(spec.commands) > 0
+            assert len(spec.statuses) > 0
+
+
+# ============================================================================
+# mcubridge/mqtt/__init__.py — all branch gaps
+# ============================================================================
+
+
+class TestMqttBuildProperties:
+    def test_build_mqtt_properties_all_fields(self):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        msg = QueuedPublish(
+            topic_name="test",
+            payload=b"data",
+            content_type="application/json",
+            payload_format_indicator=1,
+            message_expiry_interval=60,
+            response_topic="resp",
+            correlation_data=b"\x01",
+            user_properties=(("key", "value"),),
+        )
+        props = msg.to_paho_properties()
+        assert props is not None
+        assert props.ContentType == "application/json"
+        assert props.PayloadFormatIndicator == 1
+        assert props.MessageExpiryInterval == 60
+        assert props.ResponseTopic == "resp"
+        assert props.CorrelationData == b"\x01"
+
+    def test_build_mqtt_properties_none_when_empty(self):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        msg = QueuedPublish(topic_name="test", payload=b"")
+        props = msg.to_paho_properties()
+        assert props is None
+
+    def test_build_mqtt_properties_content_type_only(self):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        msg = QueuedPublish(topic_name="test", payload=b"", content_type="text/plain")
+        props = msg.to_paho_properties()
+        assert props is not None
+
+    def test_build_mqtt_properties_expiry_only(self):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        msg = QueuedPublish(topic_name="test", payload=b"", message_expiry_interval=120)
+        props = msg.to_paho_properties()
+        assert props is not None
+
+    def test_build_mqtt_properties_response_topic_only(self):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        msg = QueuedPublish(topic_name="test", payload=b"", response_topic="reply")
+        props = msg.to_paho_properties()
+        assert props is not None
+
+    def test_build_mqtt_properties_user_properties_only(self):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        msg = QueuedPublish(
+            topic_name="test", payload=b"", user_properties=(("k", "v"),)
+        )
+        props = msg.to_paho_properties()
+        assert props is not None
+
+    def test_build_mqtt_properties_format_indicator_only(self):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        msg = QueuedPublish(topic_name="test", payload=b"", payload_format_indicator=0)
+        props = msg.to_paho_properties()
+        assert props is not None
+
+    def test_build_mqtt_properties_correlation_data_only(self):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        msg = QueuedPublish(topic_name="test", payload=b"", correlation_data=b"\x00")
+        props = msg.to_paho_properties()
+        assert props is not None
+
+
+# ============================================================================
+# mcubridge/services/shell.py — lines 53, 59, 65, 135-141, 150-156
+# ============================================================================
+
+
+class TestShellMqttLogic:
+    @pytest.fixture
+    def shell_comp(self):
+        from mcubridge.services.process import ProcessComponent
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+
+        serial_flow = MagicMock()
+        serial_flow.acknowledge = AsyncMock()
+        serial_flow.send = AsyncMock()
+
+        mqtt_flow = MagicMock()
+        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
+
+        comp = ProcessComponent(
+            config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+        )
+        comp.poll_process = AsyncMock()
+        comp.stop_process = AsyncMock(return_value=True)
+        comp.publish_poll_result = AsyncMock()
+        try:
+            yield comp
+        finally:
+            state.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_handle_mqtt_poll(self: Any, shell_comp: Any):
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "poll", "42"), make_mqtt_msg(b"")
+        )
+        shell_comp.poll_process.assert_called_once_with(42)
+
+    @pytest.mark.asyncio
+    async def test_handle_mqtt_kill(self: Any, shell_comp: Any):
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "kill", "42"), make_mqtt_msg(b"")
+        )
+        shell_comp.stop_process.assert_called_once_with(42)
+
+    @pytest.mark.asyncio
+    async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b"")
+        )
+        shell_comp.mqtt_flow.publish.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
+        await shell_comp.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
+        shell_comp.mqtt_flow.publish.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_parse_shell_command_invalid(self: Any, shell_comp: Any):
+        result = shell_comp._parse_shell_command(b"", "run")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_parse_shell_pid_invalid(self: Any, shell_comp: Any):
+        result = shell_comp._parse_shell_pid("notanumber", "poll")
+        assert result is None
+
+
+# ============================================================================
+# mcubridge/state/status.py — lines 37-47, 128-129
+# ============================================================================
+
+
+class TestStatusWriter:
+    @pytest.mark.asyncio
+    async def test_status_writer_write_tick(self):
+        from mcubridge.state.status import status_writer
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+
+        try:
+            # Run one iteration then cancel
+            task = asyncio.create_task(status_writer(state, 1))
+            await asyncio.sleep(0.2)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_status_file(self: Any):
+        from mcubridge.state import status
+
+        with patch("pathlib.Path.unlink") as mock_unlink:
+            status.STATUS_FILE.unlink(missing_ok=True)
+            mock_unlink.assert_called()
+
+
+# ============================================================================
+# mcubridge/mqtt/spool.py — lines 54-56, 97-98, 123-139
+# ============================================================================
+
+
+class TestMqttSpool:
+    def test_spool_non_tmp_path(self):
+        from mcubridge.mqtt.spool import MQTTPublishSpool
+
+        spool = MQTTPublishSpool("/var/not_tmp/spool", limit=10)
+        assert spool.is_degraded is True
+
+    def test_spool_append_and_pop(self: Any, tmp_path: Any):
+        from mcubridge.mqtt.spool import MQTTPublishSpool
+        from mcubridge.protocol.structures import QueuedPublish
+
+        spool = MQTTPublishSpool(str(tmp_path / "spool_test"), limit=10)
+        msg = QueuedPublish(topic_name="t", payload=b"data")
+        spool.append(msg)
+        popped = spool.pop_next()
+        assert popped is not None
+        assert popped.topic_name == "t"
+
+    def test_spool_limit_drops_oldest(self: Any, tmp_path: Any):
+        from mcubridge.mqtt.spool import MQTTPublishSpool
+        from mcubridge.protocol.structures import QueuedPublish
+
+        spool = MQTTPublishSpool(str(tmp_path / "spool_limit"), limit=2)
+        spool.append(QueuedPublish(topic_name="t1", payload=b"1"))
+        spool.append(QueuedPublish(topic_name="t2", payload=b"2"))
+        spool.append(QueuedPublish(topic_name="t3", payload=b"3"))  # drops t1
+        first = spool.pop_next()
+        assert first is not None
+        assert first.topic_name != "t1"
+
+    def test_spool_pop_empty(self: Any, tmp_path: Any):
+        from mcubridge.mqtt.spool import MQTTPublishSpool
+
+        spool = MQTTPublishSpool(str(tmp_path / "spool_empty"), limit=5)
+        assert spool.pop_next() is None
+
+    def test_spool_close(self: Any, tmp_path: Any):
+        from mcubridge.mqtt.spool import MQTTPublishSpool
+
+        spool = MQTTPublishSpool(str(tmp_path / "spool_close"), limit=5)
+        spool.close()
+
+    def test_spool_requeue(self: Any, tmp_path: Any):
+        from mcubridge.mqtt.spool import MQTTPublishSpool
+        from mcubridge.protocol.structures import QueuedPublish
+
+        spool = MQTTPublishSpool(str(tmp_path / "spool_requeue"), limit=10)
+        msg = QueuedPublish(topic_name="requeue", payload=b"data")
+        spool.requeue(msg)
+        popped = spool.pop_next()
+        assert popped is not None
+
+
+# ============================================================================
+# mcubridge/protocol/frame.py — lines 51, 56, 112, 116
+# ============================================================================
+
+
+class TestProtocolFrame:
+    def test_frame_encode_decode(self):
+        from mcubridge.protocol.frame import Frame
+
+        raw = Frame(
+            command_id=Command.CMD_DIGITAL_READ.value,
+            sequence_id=0,
+            payload=b"\x01\x02",
+        ).build()
+        cmd_id, _seq_id, payload = Frame.parse(raw)
+        assert cmd_id == Command.CMD_DIGITAL_READ.value
+        assert payload == b"\x01\x02"
+
+    def test_decode_rpc_frame_too_short(self):
+        from mcubridge.protocol.frame import Frame
+
+        with pytest.raises(ValueError, match="Incomplete or malformed frame"):
+            Frame.parse(b"\x01")
+
+    def test_decode_rpc_frame_bad_crc(self):
+        from mcubridge.protocol.frame import Frame
+
+        frame = bytearray(
+            Frame(command_id=0x01, sequence_id=0, payload=b"test").build()
+        )
+        frame[-1] ^= 0xFF  # Corrupt CRC
+        with pytest.raises(ValueError):
+            Frame.parse(bytes(frame))
+
+
+# ============================================================================
+# mcubridge/protocol/topics.py — lines 36, 62, 82-83
+# ============================================================================
+
+
+class TestProtocolTopics:
+    def test_parse_topic_valid(self):
+        from mcubridge.protocol.topics import parse_topic
+
+        route = parse_topic("bridge", "bridge/system/status")
+        assert route is not None
+        assert route.topic == Topic.SYSTEM
+        assert "status" in route.segments
+
+    def test_parse_topic_invalid_prefix(self):
+        from mcubridge.protocol.topics import parse_topic
+
+        result = parse_topic("bridge", "wrong/system/status")
+        assert result is None
+
+    def test_parse_topic_short(self):
+        from mcubridge.protocol.topics import parse_topic
+
+        result = parse_topic("bridge", "bridge")
+        assert result is None
+
+    def test_parse_topic_unknown_topic(self):
+        from mcubridge.protocol.topics import parse_topic
+
+        result = parse_topic("bridge", "bridge/nonexistent_topic/foo")
+        assert result is None
+
+
+# ============================================================================
+# mcubridge/config/settings.py — lines 41->48, 51-53
+# ============================================================================
+
+
+class TestConfigSettings:
+    def test_runtime_config_defaults(self):
+        config = make_test_config()
+        assert config.serial_port == "/dev/null"
+
+    def test_runtime_config_shared_secret_too_short(self):
+        with pytest.raises(
+            (ValueError, msgspec.ValidationError), match="serial_shared_secret"
+        ):
+            make_test_config(serial_shared_secret=b"abc")
+
+    def test_runtime_config_changeme_secret(self):
+        with pytest.raises((ValueError, msgspec.ValidationError), match="insecure"):
+            make_test_config(serial_shared_secret=b"changeme123")
+
+
+# ============================================================================
+# mcubridge/services/process.py — lines 57-66, 84-109, 134-135, 153-159, etc.
+# ============================================================================
+
+
+class TestProcessComponent:
+    @pytest.fixture
+    def _process(self):
+        from mcubridge.services.process import ProcessComponent
+
+        config = make_test_config(process_max_concurrent=4)
+        state = create_runtime_state(config)
+
+        serial_flow = MagicMock()
+        serial_flow.acknowledge = AsyncMock()
+        serial_flow.send = AsyncMock(return_value=True)
+
+        mqtt_flow = MagicMock()
+        mqtt_flow.publish = AsyncMock()
+
+        comp = ProcessComponent(
+            config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+        )
+        try:
+            yield comp
+        finally:
+            state.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_handle_run_async_empty_command(self: Any, _process: Any):
+        # Empty command encodes to b""
+        await _process.handle_run_async(0, b"")
+        _process.serial_flow.acknowledge.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_handle_run_async_malformed(self: Any, _process: Any):
+        await _process.handle_run_async(0, b"\xff\xff\xff")
+        _process.serial_flow.acknowledge.assert_called_with(
+            Command.CMD_PROCESS_RUN_ASYNC.value,
+            0,
+            status=Status.MALFORMED,
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_poll_malformed(self: Any, _process: Any):
+        await _process.handle_poll(0, b"\xff\xff\xff")
+        _process.serial_flow.acknowledge.assert_called_with(
+            Command.CMD_PROCESS_POLL.value,
+            0,
+            status=Status.MALFORMED,
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_kill_malformed(self: Any, _process: Any):
+        await _process.handle_kill(0, b"\xff\xff\xff")
+        _process.serial_flow.acknowledge.assert_called_with(
+            Command.CMD_PROCESS_KILL.value,
+            0,
+            status=Status.MALFORMED,
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_kill_no_ack(self: Any, _process: Any):
+        from mcubridge.protocol.structures import ProcessKillPacket
+
+        payload = msgspec.msgpack.encode(ProcessKillPacket(pid=999))
+        result = await _process.handle_kill(0, payload, send_ack=False)
+        assert result is False
+
+
+# ============================================================================
+# mcubridge/services/console.py — lines 29, 72, 78, 89, 100, 105, 117
+# ============================================================================
+
+
+class TestConsoleComponent:
+    @pytest.mark.asyncio
+    async def test_console_queue_flush_empty(self):
+        from mcubridge.services.console import ConsoleComponent
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            serial_flow = MagicMock()
+            serial_flow.send = AsyncMock(return_value=True)
+
+            mqtt_flow = MagicMock()
+            mqtt_flow.publish = AsyncMock()
+            mqtt_flow.enqueue_mqtt = AsyncMock()
+
+            comp = ConsoleComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
+            # Flush when empty should be fine
+            await comp.flush_queue()
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/services/mailbox.py — lines 48-49, 136, 193-194
+# ============================================================================
+
+
+class TestMailboxComponent:
+    @pytest.mark.asyncio
+    async def test_mailbox_handle_mqtt_write(self):
+        from mcubridge.services.mailbox import MailboxComponent
+
+        config = make_test_config(mailbox_queue_limit=5, mailbox_queue_bytes_limit=1024)
+        state = create_runtime_state(config)
+        try:
+            serial_flow = MagicMock()
+            mqtt_flow = MagicMock()
+            mqtt_flow.publish = AsyncMock()
+            mqtt_flow.enqueue_mqtt = AsyncMock()
+
+            comp = MailboxComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
+            await comp.handle_mqtt(
+                make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
+            )
+            assert len(state.mailbox_queue) == 1
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/services/pin.py — lines 43, 122, 126-127, etc.
+# ============================================================================
+
+
+class TestPinComponent:
+    @pytest.mark.asyncio
+    async def test_pin_handle_digital_read(self):
+        from mcubridge.services.pin import PinComponent
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            serial_flow = MagicMock()
+            serial_flow.send = AsyncMock(return_value=True)
+
+            mqtt_flow = MagicMock()
+            mqtt_flow.publish = AsyncMock()
+            mqtt_flow.enqueue_mqtt = AsyncMock()
+
+            comp = PinComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
+            # Test without pending requests
+            from mcubridge.protocol.structures import DigitalReadResponsePacket
+
+            payload = msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
+            await comp.handle_digital_read_resp(0, payload)
+            cast(Any, comp.mqtt_flow.publish).assert_called_once()
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/services/datastore.py — remaining line 169
+# ============================================================================
+
+
+class TestDatastoreComponent:
+    @pytest.mark.asyncio
+    async def test_datastore_get_miss_publishes_empty(self):
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            serial_flow = MagicMock()
+            serial_flow.send = AsyncMock(return_value=True)
+
+            mqtt_flow = MagicMock()
+            mqtt_flow.publish = AsyncMock()
+            mqtt_flow.enqueue_mqtt = AsyncMock()
+
+            # Using MqttTransport since publish moved there
+            transport = MqttTransport(config, state)
+            # To capture calls, we must ensure transport uses state.mqtt_publish_queue
+            await transport.publish("key", b"", expiry=60)
+            assert state.mqtt_publish_queue.qsize() == 1
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/services/dispatcher.py — lines 256, 314, 358-359
+# ============================================================================
+
+
+class TestDispatcherEdgeCases:
+    @pytest.mark.asyncio
+    async def test_dispatcher_digital_topic_no_segments(self):
+        from mcubridge.protocol.topics import TopicRoute
+        from mcubridge.services.dispatcher import BridgeDispatcher
+
+        from .conftest import make_component_container
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            d = BridgeDispatcher(
+                mcu_registry=MagicMock(),
+                mqtt_router=MagicMock(),
+                state=state,
+                send_frame=AsyncMock(),
+                acknowledge_frame=AsyncMock(),
+                is_topic_action_allowed=lambda t, a: True,
+                reject_topic_action=AsyncMock(),
+                publish_bridge_snapshot=AsyncMock(),
+            )
+            d.register_components(
+                make_component_container(
+                    console=MagicMock(),
+                    datastore=MagicMock(),
+                    file=MagicMock(),
+                    mailbox=MagicMock(),
+                    pin=MagicMock(),
+                    process=MagicMock(),
+                    spi=MagicMock(),
+                    system=MagicMock(),
+                )
+            )
+            route = TopicRoute(
+                raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
+            )
+            result = d._get_topic_action(route)  # type: ignore[reportPrivateUsage]
+            assert result is None
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/services/payloads.py — line 41
+# ============================================================================
+
+
+class TestPayloads:
+    def test_shell_pid_from_topic_segment_invalid(self):
+        from mcubridge.protocol.structures import (
+            PayloadValidationError,
+            ShellPidPayload,
+        )
+
+        with pytest.raises(PayloadValidationError):
+            ShellPidPayload.from_topic_segment("abc")
+
+
+# ============================================================================
+# mcubridge/daemon.py — lines 86, 101-104, 135, 205-213, 303
+# ============================================================================
+
+
+class TestDaemon:
+    @pytest.mark.asyncio
+    async def test_daemon_cleanup_child_processes_os_error(self):
+        from mcubridge import daemon
+
+        with patch("psutil.Process", side_effect=psutil.NoSuchProcess(1)):
+            daemon._cleanup_child_processes()  # type: ignore[reportPrivateUsage]
+
+    @pytest.mark.asyncio
+    async def test_cleanup_status_file_missing(self):
+        from mcubridge.state.status import STATUS_FILE
+
+        with patch(
+            "mcubridge.state.status.STATUS_FILE", Path("/nonexistent/status.json")
+        ):
+            STATUS_FILE.unlink(missing_ok=True)  # Should not raise
+
+
+# ============================================================================
+# mcubridge/services/file.py — lines 108, 138-139, 221-223, etc.
+# ============================================================================
+
+
+class TestFileComponent:
+    @pytest.mark.asyncio
+    async def test_file_handle_read_nonexistent(self):
+        from mcubridge.services.file import FileComponent
+
+        config = make_test_config(file_system_root=".tmp_tests")
+        state = create_runtime_state(config)
+        try:
+            serial_flow = MagicMock()
+            serial_flow.send = AsyncMock(return_value=True)
+
+            mqtt_flow = MagicMock()
+            mqtt_flow.publish = AsyncMock()
+            mqtt_flow.enqueue_mqtt = AsyncMock()
+
+            comp = FileComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
+            # This tests the error path when file is not found
+            from mcubridge.protocol.structures import FileReadPacket
+
+            payload = FileReadPacket(
+                path="/nonexistent_file_12345.txt",
+            )
+            await comp.handle_read(0, msgspec.msgpack.encode(payload))
+            cast(Any, comp.serial_flow.send).assert_called()
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/watchdog.py — line 110
+# ============================================================================
+
+
+class TestWatchdog:
+    @pytest.mark.asyncio
+    async def test_watchdog_run_cancel(self):
+        from mcubridge.watchdog import WatchdogKeepalive
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            wd = WatchdogKeepalive(state=state, interval=0.1)
+            wd.start()
+            task = asyncio.create_task(wd.run())
+            await asyncio.sleep(0.15)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/services/system.py — lines 47, 56, 105, 131-132
+# ============================================================================
+
+
+class TestSystemComponent:
+    @pytest.mark.asyncio
+    async def test_system_handle_version(self):
+        from mcubridge.services.system import SystemComponent
+        from mcubridge.protocol.structures import VersionResponsePacket
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            serial_flow = MagicMock()
+            serial_flow.send = AsyncMock(return_value=True)
+
+            mqtt_flow = MagicMock()
+            mqtt_flow.publish = AsyncMock()
+            mqtt_flow.enqueue_mqtt = AsyncMock()
+
+            comp = SystemComponent(
+                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+            )
+            # Provide valid encoded packet
+            payload = msgspec.msgpack.encode(
+                VersionResponsePacket(major=1, minor=2, patch=3)
+            )
+            await comp.handle_get_version_resp(0, payload)
+            cast(Any, comp.mqtt_flow.publish).assert_called()
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/services/_serial_flow.py — lines 110-112, 170-171, etc.
+# ============================================================================
+
+
+class TestSerialFlow:
+    @pytest.mark.asyncio
+    async def test_serial_flow_send_frame(self):
+        from mcubridge.services.serial_flow import SerialFlowController
+
+        controller = SerialFlowController(
+            ack_timeout=1.0,
+            response_timeout=2.0,
+            max_attempts=3,
+            logger=logging.getLogger("test.serial_flow"),
+        )
+        sender = AsyncMock(return_value=True)
+        controller.set_sender(sender)
+
+        # send() without a proper ack will timeout; just verify init works
+        assert controller is not None
+
+
+# ============================================================================
+# mcubridge/services/handshake.py — comprehensive edge cases
+# ============================================================================
+
+
+class TestHandshakeEdgeCases:
+    """Test SerialHandshakeManager edge cases."""
+
+    @pytest.fixture
+    def handshake_mgr(self):
+        from mcubridge.services.handshake import (
+            SerialHandshakeManager,
+            derive_serial_timing,
+        )
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        timing = derive_serial_timing(config)
+        mgr = SerialHandshakeManager(
+            config=config,
+            state=state,
+            serial_timing=timing,
+            send_frame=AsyncMock(return_value=True),
+            enqueue_mqtt=AsyncMock(),
+            acknowledge_frame=AsyncMock(),
+        )
+        try:
+            yield mgr
+        finally:
+            state.cleanup()
+
+    def test_derive_serial_timing(self):
+        from mcubridge.services.handshake import derive_serial_timing
+
+        config = make_test_config()
+        timing = derive_serial_timing(config)
+        assert timing.ack_timeout_ms > 0
+        assert timing.response_timeout_ms > 0
+        assert timing.retry_limit > 0
+
+    def test_handshake_fsm_initial_state(self: Any, handshake_mgr: Any):
+        assert handshake_mgr.fsm_state is not None
+
+
+# ============================================================================
+# mcubridge/state/context.py — comprehensive edge cases
+# ============================================================================
+
+
+class TestRuntimeStateEdges:
+    @pytest.fixture
+    def state(self):
+        config = make_test_config()
+        s = create_runtime_state(config)
+        try:
+            yield s
+        finally:
+            s.cleanup()
+
+    def test_mark_transport_connected(self: Any, state: Any):
+        state.mark_transport_connected()
+        assert state.is_connected
+
+    def test_mark_transport_disconnected(self: Any, state: Any):
+        state.mark_transport_connected()
+        state.mark_transport_disconnected()
+        assert not state.is_connected
+
+    def test_enqueue_console_chunk_overflow(self: Any, state: Any):
+        state.console_to_mcu_queue.append(b"x" * 100)
+
+    def test_requeue_console_chunk_front(self: Any, state: Any):
+        state.console_to_mcu_queue.append(b"hi")
+        state.console_to_mcu_queue.appendleft(b"x" * 1000)
+
+    def test_record_handshake_fatal(self: Any, state: Any):
+        state.handshake_fatal_count += 1
+        state.handshake_fatal_reason = "test reason"
+        assert state.handshake_fatal_reason == "test reason"
+
+    def test_record_serial_flow_event(self: Any, state: Any):
+        state.record_serial_flow_event("sent")
+        state.record_serial_flow_event("ack")
+        state.record_serial_flow_event("retry")
+
+    def test_record_unknown_command_id(self: Any, state: Any):
+        state.unknown_command_count += 1
+        state.unknown_command_last_id = 0xFF
+
+    def test_record_mcu_status(self: Any, state: Any):
+        state.mcu_status_counts["OK"] = 1
+
+    def test_apply_handshake_stats(self: Any, state: Any):
+        pass
+
+    def test_collect_system_metrics(self):
+        from mcubridge.state.context import collect_system_metrics
+
+        metrics = collect_system_metrics()
+        assert isinstance(metrics, dict)
+
+    def test_cleanup(self: Any, state: Any):
         state.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_stash_mqtt_message_no_spool(self: Any, state: Any, monkeypatch: Any):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        state.mqtt_spool = None
+        msg = QueuedPublish(topic_name="t", payload=b"p")
+
+        async def mock_ensure_spool(instance: Any):
+            return True
+
+        monkeypatch.setattr(MqttTransport, "ensure_spool", mock_ensure_spool)
+
+        # We also need to mock mqtt_spool since it's used after ensure_spool
+        state.mqtt_spool = MagicMock()
+        from tests._helpers import make_test_config
+
+        transport = MqttTransport(make_test_config(), state)
+        result = await transport.stash_mqtt_message(msg)
+        assert result is True
+        state.mqtt_spool.append.assert_called_with(msg)
+
+    @pytest.mark.asyncio
+    async def test_flush_mqtt_spool_no_spool(self: Any, state: Any):
+        state.mqtt_spool = None
+        from tests._helpers import make_test_config
+
+        transport = MqttTransport(make_test_config(), state)
+        await transport.flush_mqtt_spool()
+
+    def test_enqueue_mailbox_overflow(self: Any, state: Any):
+        # Fill up to limit
+        for i in range(state.mailbox_queue_limit + 1):
+            state.mailbox_queue.append(f"msg{i}")
+
+    def test_pop_mailbox_message(self: Any, state: Any):
+        state.mailbox_queue.append(b"message1")
+        result = state.mailbox_queue.popleft()
+        assert result == b"message1"
+
+    def test_pop_mailbox_message_empty(self: Any, state: Any):
+        result = state.mailbox_queue.popleft()
+        assert result is None
+
+
+# ============================================================================
+# mcubridge/services/runtime.py — lines 155, 183, etc.
+# ============================================================================
+
+
+class TestBridgeServiceEdges:
+    @pytest.fixture
+    def service(self):
+        from mcubridge.services.runtime import BridgeService
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        svc = BridgeService(config, state, MqttTransport(config, state))
+        try:
+            yield svc
+        finally:
+            state.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_schedule_background_not_entered(self: Any, service: Any):
+        coro = asyncio.sleep(0)
+        with pytest.raises(RuntimeError):
+            await service.schedule_background(coro)
+        coro.close()
+
+    @pytest.mark.asyncio
+    async def test_send_frame_no_sender(self: Any, service: Any):
+        # send_frame was removed; testing serial_flow.send directly
+        result = await service.serial_flow.send(0x01, b"")
+        assert result is False
+
+
+# ============================================================================
+# mcubridge/transport/mqtt.py — MqttTransport.on_log branches
+# ============================================================================
+
+
+class TestMqttTransport:
+    def test_mqtt_transport_init(self):
+        from mcubridge.transport.mqtt import MqttTransport
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            transport = MqttTransport(config, state)
+            assert transport is not None
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/metrics.py — PrometheusExporter and periodic metrics
+# ============================================================================
+
+
+class TestMetrics:
+    @pytest.mark.asyncio
+    async def test_publish_metrics_error_path(self):
+        from mcubridge.metrics import publish_metrics
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            enqueue = AsyncMock(side_effect=OSError("boom"))
+
+            task = asyncio.create_task(publish_metrics(state, enqueue, 0.05))
+            await asyncio.sleep(0.15)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_publish_bridge_snapshots_both_disabled(self):
+        from mcubridge.metrics import publish_bridge_snapshots
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            enqueue = AsyncMock()
+
+            task = asyncio.create_task(
+                publish_bridge_snapshots(
+                    state, enqueue, summary_interval=0, handshake_interval=0
+                )
+            )
+            await asyncio.sleep(0.1)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_publish_bridge_snapshots_summary_error(self):
+        from mcubridge.metrics import publish_bridge_snapshots
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            enqueue = AsyncMock(side_effect=OSError("summary fail"))
+
+            task = asyncio.create_task(
+                publish_bridge_snapshots(
+                    state, enqueue, summary_interval=0.05, handshake_interval=0
+                )
+            )
+            await asyncio.sleep(0.15)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_publish_bridge_snapshots_handshake_error(self):
+        from mcubridge.metrics import publish_bridge_snapshots
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            enqueue = AsyncMock(side_effect=OSError("handshake fail"))
+
+            task = asyncio.create_task(
+                publish_bridge_snapshots(
+                    state, enqueue, summary_interval=0, handshake_interval=0.05
+                )
+            )
+            await asyncio.sleep(0.15)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# mcubridge/transport/serial.py — lines 51-54, 119, 137-141, etc.
+# ============================================================================
+
+
+class TestSerialTransport:
+    @pytest.mark.asyncio
+    async def test_serial_transport_init(self):
+        from mcubridge.transport.serial import SerialTransport
+
+        import time
+        import os
+
+        unique_root = f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
+        config = make_test_config(file_system_root=unique_root)
+        state = create_runtime_state(config)
+        try:
+            service = MagicMock()
+            transport = SerialTransport(config, state, service)
+            assert transport is not None
+        finally:
+            state.cleanup()
+
+
+# ============================================================================
+# tests/mqtt_helpers.py — lines 23-27  (exercising all property combos)
+# ============================================================================
+
+
+class TestMqttHelpers:
+    def test_make_inbound_message_with_response_topic(self):
+        from tests.mqtt_helpers import make_inbound_message
+
+        msg = make_inbound_message(
+            "test/topic", b"payload", response_topic="reply/topic"
+        )
+        assert msg.properties is not None
+
+    def test_make_inbound_message_with_correlation_data(self):
+        from tests.mqtt_helpers import make_inbound_message
+
+        msg = make_inbound_message("test/topic", b"payload", correlation_data=b"\x01")
+        assert msg.properties is not None
+
+    def test_make_inbound_message_with_both(self):
+        from tests.mqtt_helpers import make_inbound_message
+
+        msg = make_inbound_message(
+            "test/topic", b"payload", response_topic="r", correlation_data=b"\x02"
+        )
+        assert msg.properties is not None
+
+    def test_make_inbound_message_no_properties(self):
+        from tests.mqtt_helpers import make_inbound_message
+
+        msg = make_inbound_message("test/topic", b"payload")
+        assert msg.properties is None

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 from unittest.mock import AsyncMock
-from mcubridge.services.base import MqttFlow
 
 import pytest
 
@@ -16,6 +15,7 @@ from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
+from mcubridge.transport.mqtt import MqttTransport
 from tests._helpers import make_mqtt_msg, make_route
 
 
@@ -50,7 +50,7 @@ async def test_shell_run_async_success(
     state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = AsyncMock(spec=MqttFlow)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
@@ -87,7 +87,7 @@ async def test_shell_run_async_exception_returns_error(
     state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = AsyncMock(spec=MqttFlow)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
@@ -115,7 +115,7 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
     state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = AsyncMock(spec=MqttFlow)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
@@ -142,7 +142,7 @@ async def test_shell_poll_calls_process_helpers(
     state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = AsyncMock(spec=MqttFlow)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
@@ -174,7 +174,7 @@ async def test_shell_kill_invokes_stop_process(
     state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
 
-    mqtt_flow = AsyncMock(spec=MqttFlow)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
@@ -198,7 +198,7 @@ async def test_shell_ignores_invalid_payloads_and_actions(
 ) -> None:
     state = AsyncMock(spec=RuntimeState)
 
-    mqtt_flow = AsyncMock(spec=MqttFlow)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)

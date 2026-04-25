@@ -37,7 +37,7 @@ async def test_client_digital_write(mock_client) -> None:
     assert client_instance.publish.called
     last_call = client_instance.publish.call_args_list[-1]
     assert "br/d/13" in last_call.args[0]
-    assert last_call.args[1] == "1"
+    assert last_call.args[1] == b"1"
 
 
 @pytest.mark.asyncio
@@ -51,7 +51,7 @@ async def test_client_analog_write(mock_client) -> None:
     assert client_instance.publish.called
     last_call = client_instance.publish.call_args_list[-1]
     assert "br/a/3" in last_call.args[0]
-    assert last_call.args[1] == "128"
+    assert last_call.args[1] == b"128"
 
 
 @pytest.mark.asyncio
@@ -94,7 +94,7 @@ async def test_client_file_write(mock_client) -> None:
     assert client_instance.publish.called
     last_call = client_instance.publish.call_args_list[-1]
     assert "br/file/write/test.txt" in last_call.args[0]
-    assert last_call.args[1] == "content"
+    assert last_call.args[1] == b"content"
 
 
 @pytest.mark.asyncio

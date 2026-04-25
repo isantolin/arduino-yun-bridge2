@@ -251,7 +251,9 @@ class SerialHandshakeManager:
 
         return self.fsm_state == self.STATE_SYNCHRONIZED
 
-    async def handle_link_sync_resp(self, seq_id: int, payload: bytes) -> bool:
+    async def handle_link_sync_resp(
+        self, seq_id: int, packet: LinkSyncPacket | bytes
+    ) -> bool:
         expected = self._state.link_handshake_nonce
         if expected is None:
             self._logger.warning("Unexpected LINK_SYNC_RESP without pending nonce")
@@ -280,24 +282,31 @@ class SerialHandshakeManager:
                 return False
             self._state.handshake_rate_until = now + rate_limit
 
-        try:
-            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
-            sync_pkt = msgspec.msgpack.decode(payload, type=LinkSyncPacket)
-            nonce = bytes(sync_pkt.nonce)
-            tag_bytes = bytes(sync_pkt.tag)
-        except (ValueError, TypeError, msgspec.DecodeError):
-            self._logger.warning(
-                "LINK_SYNC_RESP msgpack decode failed (len=%d)",
-                len(payload),
-            )
-            await self._acknowledge_frame(
-                Command.CMD_LINK_SYNC_RESP.value,
-                seq_id,
-                status=Status.MALFORMED,
-            )
-            self.clear_handshake_expectations()
-            await self.handle_handshake_failure("sync_decode_failed")
-            return False
+        nonce: bytes
+        tag_bytes: bytes
+
+        if isinstance(packet, LinkSyncPacket):
+            nonce = bytes(packet.nonce)
+            tag_bytes = bytes(packet.tag)
+        else:
+            try:
+                # [SIL-2] Fallback for cases where auto-decoding might not apply
+                sync_pkt = msgspec.msgpack.decode(packet, type=LinkSyncPacket)
+                nonce = bytes(sync_pkt.nonce)
+                tag_bytes = bytes(sync_pkt.tag)
+            except (ValueError, TypeError, msgspec.DecodeError):
+                self._logger.warning(
+                    "LINK_SYNC_RESP msgpack decode failed (len=%d)",
+                    len(packet),
+                )
+                await self._acknowledge_frame(
+                    Command.CMD_LINK_SYNC_RESP.value,
+                    seq_id,
+                    status=Status.MALFORMED,
+                )
+                self.clear_handshake_expectations()
+                await self.handle_handshake_failure("sync_decode_failed")
+                return False
 
         expected_tag = self._state.link_expected_tag
         recalculated_tag = self.calculate_handshake_tag(
@@ -396,15 +405,27 @@ class SerialHandshakeManager:
         except tenacity.RetryError:
             return False
 
-    async def handle_capabilities_resp(self, seq_id: int, payload: bytes) -> bool:
+    async def handle_capabilities_resp(
+        self, seq_id: int, packet: CapabilitiesPacket | bytes
+    ) -> bool:
         if self._capabilities_future and not self._capabilities_future.done():
-            self._capabilities_future.set_result(payload)
+            # If it was already decoded by dispatcher, we re-encode it for the future
+            # or update the future to accept Any.
+            # For simplicity, we just pass the raw bytes if it was bytes, or re-encode if it was a packet.
+            if isinstance(packet, bytes):
+                self._capabilities_future.set_result(packet)
+            else:
+                self._capabilities_future.set_result(msgspec.msgpack.encode(packet))
         return True
 
-    def _parse_capabilities(self, payload: bytes) -> None:
+    def _parse_capabilities(self, packet: CapabilitiesPacket | bytes) -> None:
         try:
-            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
-            cap = msgspec.msgpack.decode(payload, type=CapabilitiesPacket)
+            if isinstance(packet, CapabilitiesPacket):
+                cap = packet
+            else:
+                # [SIL-2] Fallback for cases where auto-decoding might not apply
+                cap = msgspec.msgpack.decode(packet, type=CapabilitiesPacket)
+
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
                 board_arch=cap.arch,
@@ -416,8 +437,8 @@ class SerialHandshakeManager:
         except (ValueError, TypeError, msgspec.DecodeError, KeyError) as exc:
             self._logger.warning("Failed to unpack capabilities: %s", exc)
 
-    async def handle_link_reset_resp(self, seq_id: int, payload: bytes) -> bool:
-        self._logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())
+    async def handle_link_reset_resp(self, seq_id: int, packet: Any) -> bool:
+        self._logger.info("MCU link reset acknowledged (packet=%s)", packet)
         return True
 
     async def handle_handshake_failure(

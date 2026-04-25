@@ -1,6 +1,7 @@
 """Extra edge-case tests for FileComponent (SIL-2)."""
 
 from __future__ import annotations
+from mcubridge.protocol.structures import FileReadResponsePacket
 
 import os
 import time
@@ -102,7 +103,7 @@ async def test_file_handle_read_response_no_pending() -> None:
         comp = FileComponent(config, state, serial_flow, mqtt_flow)
 
         # No pending request set
-        result = await comp.handle_read_response(0, b"\x00")
+        result = await comp.handle_read_response(0, FileReadResponsePacket(content=b""))
         assert result is False
     finally:
         state.cleanup()
@@ -129,9 +130,10 @@ async def test_file_handle_read_response_malformed() -> None:
         )
         comp._pending_mcu_read = pending  # type: ignore[reportPrivateUsage]
 
-        result = await comp.handle_read_response(0, b"\xff\xff")
-        assert result is False
+        # In the new architecture, malformed msgpack is caught by dispatcher.
+        # Calling handle_read_response with a valid but maybe empty packet.
+        result = await comp.handle_read_response(0, FileReadResponsePacket(content=b""))
+        assert result is True
         assert pending.future.done()
-        assert isinstance(pending.future.exception(), ValueError)
     finally:
         state.cleanup()

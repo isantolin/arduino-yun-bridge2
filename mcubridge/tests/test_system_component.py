@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
-import msgspec
 import pytest
 from mcubridge.protocol.protocol import (
     Command,
@@ -46,8 +45,8 @@ def system_component() -> SystemComponent:
 async def test_system_handle_get_version_resp(
     system_component: SystemComponent,
 ) -> None:
-    payload = msgspec.msgpack.encode(VersionResponsePacket(major=1, minor=2, patch=3))
-    await system_component.handle_get_version_resp(0, payload)
+    packet = VersionResponsePacket(major=1, minor=2, patch=3)
+    await system_component.handle_get_version_resp(0, packet)
 
     assert system_component.state.mcu_version == (1, 2, 3)
     cast(Any, system_component.mqtt_flow.publish).assert_called()
@@ -57,8 +56,8 @@ async def test_system_handle_get_version_resp(
 async def test_system_handle_get_free_memory_resp(
     system_component: SystemComponent,
 ) -> None:
-    payload = msgspec.msgpack.encode(FreeMemoryResponsePacket(value=2048))
-    await system_component.handle_get_free_memory_resp(0, payload)
+    packet = FreeMemoryResponsePacket(value=2048)
+    await system_component.handle_get_free_memory_resp(0, packet)
 
     cast(Any, system_component.mqtt_flow.publish).assert_called()
 

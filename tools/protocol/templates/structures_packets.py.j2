@@ -7,4 +7,10 @@ class {{ packet.class_name }}(BaseStruct, frozen=True):
 {%- endfor %}
 
 {% endfor %}
+
+COMMAND_TO_PACKET: dict[int, type[BaseStruct]] = {
+{%- for cmd_name, packet_cls in command_to_packet.items() %}
+    Command.{{ cmd_name }}.value: {{ packet_cls }},
+{%- endfor %}
+}
 # --- END GENERATED PACKETS ---

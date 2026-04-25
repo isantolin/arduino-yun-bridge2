@@ -13,6 +13,9 @@ import msgspec
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import structures
+from mcubridge.protocol.structures import (
+    FileWritePacket,
+)
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.services.file import FileComponent
@@ -63,8 +66,8 @@ def file_component(
     return component, serial_flow, mqtt_flow
 
 
-def _build_write_payload(filename: str, data: bytes) -> bytes:
-    return msgspec.msgpack.encode(structures.FileWritePacket(path=filename, data=data))
+def _build_write_packet(filename: str, data: bytes) -> FileWritePacket:
+    return FileWritePacket(path=filename, data=data)
 
 
 def _get_publish_arg(
@@ -130,7 +133,7 @@ async def test_handle_write_rejects_absolute_path(
     file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
-    await component.handle_write(0, _build_write_payload("/etc/passwd", b"boom"))
+    await component.handle_write(0, _build_write_packet("/etc/passwd", b"boom"))
     assert serial_flow.send.called
     assert serial_flow.send.call_args.args[0] == Status.ERROR.value
 
@@ -140,7 +143,7 @@ async def test_handle_write_rejects_parent_dir(
     file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
-    await component.handle_write(0, _build_write_payload("../secret.txt", b"boom"))
+    await component.handle_write(0, _build_write_packet("../secret.txt", b"boom"))
     assert serial_flow.send.call_args.args[0] == Status.ERROR.value
 
 
@@ -155,7 +158,7 @@ async def test_handle_write_failure_sends_error(
         raise OSError("Disk full")
 
     monkeypatch.setattr(Path, "write_bytes", boom)
-    await component.handle_write(0, _build_write_payload("err.txt", b"data"))
+    await component.handle_write(0, _build_write_packet("err.txt", b"data"))
     assert serial_flow.send.call_args.args[0] == Status.ERROR.value
 
 
@@ -202,9 +205,7 @@ async def test_handle_read_large_payload_chunking(
     large_data = b"X" * 128  # Exactly 2 chunks
     (tmp_path / "large.bin").write_bytes(large_data)
 
-    await component.handle_read(
-        0, msgspec.msgpack.encode(structures.FileReadPacket(path="large.bin"))
-    )
+    await component.handle_read(0, structures.FileReadPacket(path="large.bin"))
 
     # Should send 2 DATA chunks and 1 final empty chunk (total 3 frames)
     assert serial_flow.send.call_count >= 2
@@ -215,7 +216,21 @@ async def test_handle_read_rejects_invalid_payloads(
     file_component: tuple[FileComponent, AsyncMock, AsyncMock],
 ) -> None:
     component, serial_flow, _mqtt_flow = file_component
-    await component.handle_read(0, b"\xff\xff\xff")
+    # Malformed payloads are now caught by the Dispatcher layer
+    from mcubridge.services.dispatcher import BridgeDispatcher
+
+    dispatcher = BridgeDispatcher(
+        mcu_registry={Command.CMD_FILE_READ.value: component.handle_read},
+        mqtt_router=AsyncMock(),
+        state=component.state,
+        send_frame=serial_flow.send,
+        acknowledge_frame=AsyncMock(),
+        is_topic_action_allowed=AsyncMock(),
+        reject_topic_action=AsyncMock(),
+        publish_bridge_snapshot=AsyncMock(),
+    )
+    component.state.mark_synchronized()
+    await dispatcher.dispatch_mcu_frame(Command.CMD_FILE_READ.value, 0, b"\xff\xff\xff")
     assert serial_flow.send.called
     # Check Status.MALFORMED (0x33 = 51) or Status.ERROR (0x31 = 49)
     assert serial_flow.send.call_args.args[0] in (49, 51)
@@ -261,7 +276,7 @@ async def test_handle_read_oserror_returns_false(
     monkeypatch.setattr(Path, "read_bytes", boom)
     await component.handle_read(
         0,
-        msgspec.msgpack.encode(structures.FileReadPacket(path="file.txt")),
+        structures.FileReadPacket(path="file.txt"),
     )
     # Filter only send_frame calls
     calls = cast(list[Any], serial_flow.send.call_args_list)
@@ -311,9 +326,7 @@ async def test_handle_read_large_payload_truncation_reproduction(
     large_data = b"ABC" * 50  # 150 bytes
     (tmp_path / "trunc.bin").write_bytes(large_data)
 
-    await component.handle_read(
-        0, msgspec.msgpack.encode(structures.FileReadPacket(path="trunc.bin"))
-    )
+    await component.handle_read(0, structures.FileReadPacket(path="trunc.bin"))
 
     # Total bytes sent in responses should match input
     total_received = b""
@@ -374,14 +387,10 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
     ) -> bool:
         if command_id == Command.CMD_FILE_READ.value:
             await component.handle_read_response(
-                0,
-                msgspec.msgpack.encode(
-                    structures.FileReadResponsePacket(content=b"mcu-data")
-                ),
+                0, structures.FileReadResponsePacket(content=b"mcu-data")
             )
             await component.handle_read_response(
-                0,
-                msgspec.msgpack.encode(structures.FileReadResponsePacket(content=b"")),
+                0, structures.FileReadResponsePacket(content=b"")
             )
         return True
 

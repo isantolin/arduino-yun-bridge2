@@ -189,120 +189,95 @@ class ProcessComponent:
 
     # --- MCU Handlers (Required by Dispatcher) ---
 
-    async def handle_run_async(self, seq_id: int, payload: bytes) -> None:
+    async def handle_run_async(
+        self, seq_id: int, packet: structures.ProcessRunAsyncPacket
+    ) -> None:
         """Handle async process execution request from MCU."""
-        try:
-            packet = msgspec.msgpack.decode(
-                payload, type=structures.ProcessRunAsyncPacket
-            )
-            command = packet.command
+        command = packet.command
 
-            if not command:
-                await self.serial_flow.acknowledge(
-                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
-                    seq_id,
-                    status=Status.MALFORMED,
-                )
-                return
-
-            # 2. Policy check
-            if not self.state.allowed_policy.is_allowed(command):
-                logger.warning("Process execution denied by policy: %s", command)
-                await self.serial_flow.acknowledge(
-                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
-                    seq_id,
-                    status=Status.ERROR,
-                )
-                return
-
-            # 3. Execution
-            pid = await self.run_async(command)
-            if pid > 0:
-                await self.serial_flow.acknowledge(
-                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
-                    seq_id,
-                    status=Status.OK,
-                )
-                resp = msgspec.msgpack.encode(
-                    structures.ProcessRunAsyncResponsePacket(pid=pid)
-                )
-                await self.serial_flow.send(
-                    protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
-                    resp,
-                )
-            else:
-                await self.serial_flow.acknowledge(
-                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
-                    seq_id,
-                    status=Status.ERROR,
-                )
-        except (
-            msgspec.ValidationError,
-            msgspec.DecodeError,
-            ValueError,
-            AttributeError,
-        ):
+        if not command:
             await self.serial_flow.acknowledge(
                 protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                 seq_id,
                 status=Status.MALFORMED,
             )
+            return
 
-    async def handle_poll(self, seq_id: int, payload: bytes) -> None:
-        """Handle process poll request from MCU."""
-        try:
-            packet = msgspec.msgpack.decode(payload, type=structures.ProcessPollPacket)
-            pid = packet.pid
-
-            batch = await self.poll_process(pid)
+        # 2. Policy check
+        if not self.state.allowed_policy.is_allowed(command):
+            logger.warning("Process execution denied by policy: %s", command)
             await self.serial_flow.acknowledge(
-                protocol.Command.CMD_PROCESS_POLL.value,
+                protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                seq_id,
+                status=Status.ERROR,
+            )
+            return
+
+        # 3. Execution
+        pid = await self.run_async(command)
+        if pid > 0:
+            await self.serial_flow.acknowledge(
+                protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                 seq_id,
                 status=Status.OK,
             )
             resp = msgspec.msgpack.encode(
-                structures.ProcessPollResponsePacket(
-                    status=batch.status_byte,
-                    exit_code=batch.exit_code,
-                    stdout_data=batch.stdout_chunk,
-                    stderr_data=batch.stderr_chunk,
-                )
+                structures.ProcessRunAsyncResponsePacket(pid=pid)
             )
             await self.serial_flow.send(
-                protocol.Command.CMD_PROCESS_POLL_RESP.value,
+                protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
                 resp,
             )
-        except (msgspec.ValidationError, ValueError, AttributeError):
+        else:
             await self.serial_flow.acknowledge(
-                protocol.Command.CMD_PROCESS_POLL.value,
+                protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
                 seq_id,
-                status=Status.MALFORMED,
+                status=Status.ERROR,
             )
 
+    async def handle_poll(
+        self, seq_id: int, packet: structures.ProcessPollPacket
+    ) -> None:
+        """Handle process poll request from MCU."""
+        pid = packet.pid
+
+        batch = await self.poll_process(pid)
+        await self.serial_flow.acknowledge(
+            protocol.Command.CMD_PROCESS_POLL.value,
+            seq_id,
+            status=Status.OK,
+        )
+        resp = msgspec.msgpack.encode(
+            structures.ProcessPollResponsePacket(
+                status=batch.status_byte,
+                exit_code=batch.exit_code,
+                stdout_data=batch.stdout_chunk,
+                stderr_data=batch.stderr_chunk,
+            )
+        )
+        await self.serial_flow.send(
+            protocol.Command.CMD_PROCESS_POLL_RESP.value,
+            resp,
+        )
+
     async def handle_kill(
-        self, seq_id: int, payload: bytes, *, send_ack: bool = True
+        self,
+        seq_id: int,
+        packet: structures.ProcessKillPacket,
+        *,
+        send_ack: bool = True,
     ) -> bool:
         """Handle process termination request."""
-        try:
-            packet = msgspec.msgpack.decode(payload, type=structures.ProcessKillPacket)
-            pid = packet.pid
+        pid = packet.pid
 
-            success = await self.stop_process(pid)
-            if send_ack:
-                await self.serial_flow.acknowledge(
-                    protocol.Command.CMD_PROCESS_KILL.value,
-                    seq_id,
-                    status=Status.OK if success else Status.ERROR,
-                )
-            return success
-        except (msgspec.ValidationError, ValueError, AttributeError):
-            if send_ack:
-                await self.serial_flow.acknowledge(
-                    protocol.Command.CMD_PROCESS_KILL.value,
-                    seq_id,
-                    status=Status.MALFORMED,
-                )
-            return False
+        success = await self.stop_process(pid)
+        if send_ack:
+            await self.serial_flow.acknowledge(
+                protocol.Command.CMD_PROCESS_KILL.value,
+                seq_id,
+                status=Status.OK if success else Status.ERROR,
+            )
+        return success
 
     # --- Core Logic ---
 

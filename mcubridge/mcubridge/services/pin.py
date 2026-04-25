@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections
 import contextlib
 import structlog
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import msgspec
 from aiomqtt.message import Message
@@ -92,22 +92,12 @@ class PinComponent:
     async def _handle_pin_read_resp(
         self,
         *,
-        payload: bytes,
+        packet: DigitalReadResponsePacket | AnalogReadResponsePacket,
         resp_name: str,
         topic_type: Topic,
-        packet_cls: Any,
-        command_id: Command,
         pending_queue: collections.deque[PendingPinRequest],
     ) -> None:
         """Shared implementation for digital/analog read response handling."""
-        try:
-            packet = msgspec.msgpack.decode(payload, type=packet_cls)
-        except ValueError:
-            logger.warning(
-                "Malformed %s payload: %s", packet_cls.__name__, payload.hex()
-            )
-            return
-
         value = packet.value
         request: PendingPinRequest | None = None
         if pending_queue:
@@ -128,23 +118,23 @@ class PinComponent:
             reply_to=request.reply_context if request else None,
         )
 
-    async def handle_digital_read_resp(self, seq_id: int, payload: bytes) -> None:
+    async def handle_digital_read_resp(
+        self, seq_id: int, packet: DigitalReadResponsePacket
+    ) -> None:
         await self._handle_pin_read_resp(
-            payload=payload,
+            packet=packet,
             resp_name="DIGITAL_READ_RESP",
             topic_type=Topic.DIGITAL,
-            packet_cls=DigitalReadResponsePacket,
-            command_id=Command.CMD_DIGITAL_READ_RESP,
             pending_queue=self.state.pending_digital_reads,
         )
 
-    async def handle_analog_read_resp(self, seq_id: int, payload: bytes) -> None:
+    async def handle_analog_read_resp(
+        self, seq_id: int, packet: AnalogReadResponsePacket
+    ) -> None:
         await self._handle_pin_read_resp(
-            payload=payload,
+            packet=packet,
             resp_name="ANALOG_READ_RESP",
             topic_type=Topic.ANALOG,
-            packet_cls=AnalogReadResponsePacket,
-            command_id=Command.CMD_ANALOG_READ_RESP,
             pending_queue=self.state.pending_analog_reads,
         )
 

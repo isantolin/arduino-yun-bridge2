@@ -4,7 +4,6 @@ Coverage gap filler tests for Python.
 """
 
 from __future__ import annotations
-import msgspec
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -247,6 +246,5 @@ async def test_datastore_handle_get_request_fail_send(
     )
     from mcubridge.protocol.structures import DatastoreGetPacket
 
-    payload = msgspec.msgpack.encode(DatastoreGetPacket(key="test"))
-    result = await ds.handle_get_request(0, payload)
+    result = await ds.handle_get_request(0, DatastoreGetPacket(key="test"))
     assert result is False

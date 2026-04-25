@@ -76,18 +76,11 @@ class SpiComponent:
             logger.error("Error handling SPI MQTT action %s: %s", action, e)
             return False
 
-    async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
+    async def handle_transfer_resp(
+        self, seq_id: int, packet: structures.SpiTransferResponsePacket
+    ) -> bool:
         """Handle CMD_SPI_TRANSFER_RESP from MCU."""
-        try:
-            packet = msgspec.msgpack.decode(
-                payload, type=structures.SpiTransferResponsePacket
-            )
-            # Publish received bytes back to MQTT
-            topic = topic_path(
-                self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"
-            )
-            await self.mqtt_flow.publish(topic, packet.data)
-            return True
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed SPI transfer response: %s", e)
-            return False
+        # Publish received bytes back to MQTT
+        topic = topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp")
+        await self.mqtt_flow.publish(topic, packet.data)
+        return True

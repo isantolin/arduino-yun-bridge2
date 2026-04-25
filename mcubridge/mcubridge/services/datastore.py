@@ -11,7 +11,6 @@ from aiomqtt.message import Message
 from mcubridge.protocol.protocol import (
     Command,
     DatastoreAction,
-    Status,
 )
 from mcubridge.protocol.structures import (
     DatastoreGetPacket,
@@ -47,15 +46,8 @@ class DatastoreComponent:
         self.serial_flow = serial_flow
         self.mqtt_flow = mqtt_flow
 
-    async def handle_put(self, seq_id: int, payload: bytes) -> bool:
+    async def handle_put(self, seq_id: int, packet: DatastorePutPacket) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
-        try:
-            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
-            packet = msgspec.msgpack.decode(payload, type=DatastorePutPacket)
-        except (ValueError, msgspec.DecodeError):
-            logger.warning("Malformed DatastorePutPacket payload: %s", payload.hex())
-            return False
-
         key = packet.key
         value_bytes = packet.value
         value = value_bytes.decode("utf-8", errors="ignore")
@@ -64,22 +56,8 @@ class DatastoreComponent:
         await self._publish_datastore_value(key, value_bytes)
         return True
 
-    async def handle_get_request(self, seq_id: int, payload: bytes) -> bool:
+    async def handle_get_request(self, seq_id: int, packet: DatastoreGetPacket) -> bool:
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
-        try:
-            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
-            packet = msgspec.msgpack.decode(payload, type=DatastoreGetPacket)
-        except (ValueError, msgspec.DecodeError):
-            logger.warning(
-                "Malformed DATASTORE_GET payload: %s",
-                payload.hex() if payload else "(empty)",
-            )
-            await self.serial_flow.send(
-                Status.MALFORMED.value,
-                b"data_get_malformed",
-            )
-            return False
-
         key = packet.key
         val: Any = self.state.datastore.get(key, "")
 

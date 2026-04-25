@@ -7,17 +7,22 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 import svcs
-
 from mcubridge.protocol.protocol import (
     Command,
     Status,
+    Topic,
     response_to_request,
 )
-from mcubridge.protocol.topics import Topic, TopicRoute
+from mcubridge.protocol.structures import (
+    COMMAND_TO_PACKET,
+    TopicRoute,
+)
 from mcubridge.state.context import RuntimeState, resolve_command_id
 
 from ..router.routers import MQTTRouter
+import msgspec.msgpack
 import structlog
+from typing import Any
 
 if TYPE_CHECKING:
     from aiomqtt import Message
@@ -130,14 +135,14 @@ class BridgeDispatcher:
 
     def register_system_handlers(
         self,
-        handle_link_sync_resp: Callable[[int, bytes], Awaitable[bool]],
-        handle_link_reset_resp: Callable[[int, bytes], Awaitable[bool]],
-        handle_get_capabilities_resp: Callable[[int, bytes], Awaitable[bool]],
-        handle_ack: Callable[[int, bytes], Awaitable[None]],
+        handle_link_sync_resp: Callable[[int, Any], Awaitable[bool]],
+        handle_link_reset_resp: Callable[[int, Any], Awaitable[bool]],
+        handle_get_capabilities_resp: Callable[[int, Any], Awaitable[bool]],
+        handle_ack: Callable[[int, Any], Awaitable[None]],
         status_handler_factory: Callable[
-            [Status], Callable[[int, bytes], Awaitable[None]]
+            [Status], Callable[[int, Any], Awaitable[None]]
         ],
-        handle_process_kill: Callable[[int, bytes], Awaitable[bool | None]],
+        handle_process_kill: Callable[[int, Any], Awaitable[bool | None]],
     ) -> None:
         self.mcu_registry[Command.CMD_LINK_SYNC_RESP.value] = handle_link_sync_resp
         self.mcu_registry[Command.CMD_LINK_RESET_RESP.value] = handle_link_reset_resp
@@ -181,8 +186,22 @@ class BridgeDispatcher:
                     sequence_id,
                     len(payload),
                 )
+                # [SIL-2] Dynamic Packet Decoding (Zero Boilerplate)
+                decoded_payload: Any = payload
+                if packet_cls := COMMAND_TO_PACKET.get(command_id):
+                    try:
+                        decoded_payload = msgspec.msgpack.decode(
+                            payload, type=packet_cls
+                        )
+                    except (msgspec.DecodeError, msgspec.ValidationError) as exc:
+                        logger.warning(
+                            "Protocol: Malformed payload for %s: %s", command_name, exc
+                        )
+                        await self.send_frame(Status.MALFORMED.value, b"")
+                        return
+
                 handled_successfully = (
-                    await handler(sequence_id, payload)
+                    await handler(sequence_id, decoded_payload)
                 ) is not False
 
             elif response_to_request(command_id) is None:

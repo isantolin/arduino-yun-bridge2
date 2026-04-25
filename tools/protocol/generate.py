@@ -1040,8 +1040,51 @@ class JinjaGenerator:
                 }
             )
 
+        # Build command-to-packet mapping for automated dispatching
+        cmd_to_packet: dict[str, str] = {}
+        message_names = {m.name for m in spec.messages}
+
+        for cmd in spec.commands:
+            pure_name = cmd.name[4:] if cmd.name.startswith("CMD_") else cmd.name
+            # Remove _RESP for lookup if it exists
+            lookup_name = pure_name[:-5] if pure_name.endswith("_RESP") else pure_name
+            camel = "".join(x.title() for x in lookup_name.split("_"))
+
+            # Logic for matching messages
+            camel_resp = (
+                (camel[3:] + "Response")
+                if camel.startswith("Get")
+                else (camel + "Response")
+            )
+
+            target_msg = None
+            if pure_name.endswith("_RESP"):
+                # Looking for response message
+                if camel_resp in message_names:
+                    target_msg = camel_resp
+                elif (camel + "Response") in message_names:
+                    target_msg = camel + "Response"
+                elif camel in message_names:  # Fallback
+                    target_msg = camel
+            else:
+                # Looking for request message
+                if camel in message_names:
+                    target_msg = camel
+
+            # Manual overrides / Fixes
+            if cmd.name == "CMD_SET_BAUDRATE" and "SetBaudratePacket" in message_names:
+                target_msg = "SetBaudratePacket"
+            elif (
+                cmd.name == "CMD_ENTER_BOOTLOADER"
+                and "EnterBootloader" in message_names
+            ):
+                target_msg = "EnterBootloader"
+
+            if target_msg:
+                cmd_to_packet[cmd.name] = packet_class_name(target_msg)
+
         template = self.env.get_template("structures_packets.py.j2")
-        generated = template.render(packets=packets)
+        generated = template.render(packets=packets, command_to_packet=cmd_to_packet)
         # Normalize to exactly 2 blank lines between top-level defs (PEP 8)
         generated = re.sub(r"\n{4,}", "\n\n\n", generated)
 

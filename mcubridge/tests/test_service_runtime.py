@@ -12,9 +12,11 @@ import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
-from mcubridge.protocol.protocol import Status
+from mcubridge.protocol.protocol import Command
+from mcubridge.protocol.protocol import Status, Command
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
+from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
@@ -198,11 +200,26 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
 async def test_handle_get_free_memory_resp_malformed_no_publish() -> None:
     config = _make_config()
     state = create_runtime_state(config)
+    state.mark_synchronized()
     try:
         service = BridgeService(config, state, MqttTransport(config, state))
-
         system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
-        await system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)
+        dispatcher = BridgeDispatcher(
+            mcu_registry={
+                Command.CMD_GET_FREE_MEMORY_RESP.value: system.handle_get_free_memory_resp
+            },
+            mqtt_router=AsyncMock(),
+            state=state,
+            send_frame=AsyncMock(),
+            acknowledge_frame=AsyncMock(),
+            is_topic_action_allowed=AsyncMock(),
+            reject_topic_action=AsyncMock(),
+            publish_bridge_snapshot=AsyncMock(),
+        )
+
+        await dispatcher.dispatch_mcu_frame(
+            Command.CMD_GET_FREE_MEMORY_RESP.value, 0, b"\xff"
+        )
         assert state.mqtt_publish_queue.qsize() == 0
     finally:
         state.cleanup()
@@ -217,7 +234,7 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
 
         pkt = structures.VersionResponsePacket(major=1, minor=2, patch=0)
         system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
-        await system.handle_get_version_resp(0, msgspec.msgpack.encode(pkt))
+        await system.handle_get_version_resp(0, pkt)
 
         assert state.mcu_version == (1, 2, 0)
         queued = state.mqtt_publish_queue.get_nowait()

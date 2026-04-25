@@ -1,6 +1,8 @@
 """Extra edge-case tests for PinComponent (SIL-2)."""
 
 from __future__ import annotations
+from mcubridge.services.dispatcher import BridgeDispatcher
+from mcubridge.protocol.protocol import Command
 
 import os
 import time
@@ -107,14 +109,30 @@ async def test_pin_handle_analog_read_resp_malformed() -> None:
         file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
+    state.mark_synchronized()
     try:
         serial_flow = MagicMock()
+        serial_flow.send = AsyncMock(return_value=True)
         mqtt_flow = MagicMock()
         mqtt_flow.publish = AsyncMock()
 
         comp = PinComponent(config, state, serial_flow, mqtt_flow)
+        dispatcher = BridgeDispatcher(
+            mcu_registry={
+                Command.CMD_ANALOG_READ_RESP.value: comp.handle_analog_read_resp
+            },
+            mqtt_router=AsyncMock(),
+            state=state,
+            send_frame=serial_flow.send,
+            acknowledge_frame=AsyncMock(),
+            is_topic_action_allowed=AsyncMock(),
+            reject_topic_action=AsyncMock(),
+            publish_bridge_snapshot=AsyncMock(),
+        )
 
-        await comp.handle_analog_read_resp(0, b"\xff\xff")
+        await dispatcher.dispatch_mcu_frame(
+            Command.CMD_ANALOG_READ_RESP.value, 0, b"\xff\xff"
+        )
 
         mqtt_flow.publish.assert_not_called()
     finally:

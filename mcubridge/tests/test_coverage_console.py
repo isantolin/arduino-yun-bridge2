@@ -6,8 +6,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 from mcubridge.services.console import ConsoleComponent
+from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.state.context import create_runtime_state
-from mcubridge.protocol.protocol import ConsoleAction
+from mcubridge.protocol.protocol import Command, ConsoleAction, Status
 from mcubridge.protocol.structures import TopicRoute
 from mcubridge.protocol.topics import Topic
 from aiomqtt.message import Message
@@ -27,7 +28,28 @@ def console_comp(runtime_config: Any):
 
 @pytest.mark.asyncio
 async def test_console_handle_write_malformed(console_comp: ConsoleComponent):
-    await console_comp.handle_write(0, b"bad-msgpack")
+    # Setup dispatcher to test malformed payload handling at the routing layer
+    dispatcher = BridgeDispatcher(
+        mcu_registry={Command.CMD_CONSOLE_WRITE.value: console_comp.handle_write},
+        mqtt_router=AsyncMock(),
+        state=console_comp.state,
+        send_frame=console_comp.serial_flow.send,
+        acknowledge_frame=AsyncMock(),
+        is_topic_action_allowed=AsyncMock(),
+        reject_topic_action=AsyncMock(),
+        publish_bridge_snapshot=AsyncMock(),
+    )
+    # Ensure link is synchronized to allow frame processing
+    console_comp.state.mark_synchronized()
+
+    await dispatcher.dispatch_mcu_frame(
+        Command.CMD_CONSOLE_WRITE.value, 0, b"bad-msgpack"
+    )
+
+    # Verify Status.MALFORMED was sent via serial_flow.send
+    cast(AsyncMock, console_comp.serial_flow.send).assert_called_with(
+        Status.MALFORMED.value, b""
+    )
     assert not cast(Any, console_comp.mqtt_flow.publish).called
 
 

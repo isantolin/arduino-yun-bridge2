@@ -18,14 +18,14 @@ class TestAccessor : public BridgeClass {
 
   bool isAwaitingAck() const { return _fsm.isAwaitingAck(); }
   bool isFault() const {
-    return _fsm.get_state_id() == bridge::fsm::State::FAULT;
+    return _fsm.get_state_id() == static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::FAULT);
   }
   etl::fsm_state_id_t get_state_id() const { return _fsm.get_state_id(); }
   bool isUnsynchronized() const {
-    return _fsm.get_state_id() == bridge::fsm::State::UNSYNCHRONIZED;
+    return _fsm.get_state_id() == static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::UNSYNCHRONIZED);
   }
   bool getStartupStabilizing() const {
-    return _fsm.get_state_id() == bridge::fsm::State::STARTUP;
+    return _fsm.get_state_id() == static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::STARTUP);
   }
 
   void onStartupStabilized() { _onStartupStabilized(); }

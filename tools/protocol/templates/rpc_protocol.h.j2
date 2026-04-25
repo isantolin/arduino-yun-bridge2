@@ -63,7 +63,7 @@ constexpr etl::underlying_type_t<E> to_underlying(E value) {
 
 constexpr bool requires_ack(CommandId command_id) {
 {%- if ack_commands %}
-    static constexpr CommandId ACK_COMMANDS[] = {
+    constexpr CommandId ACK_COMMANDS[] = {
 {%- for cmd in ack_commands %}
         CommandId::{{ cmd.name }}{{ "," if not loop.last }}
 {%- endfor %}

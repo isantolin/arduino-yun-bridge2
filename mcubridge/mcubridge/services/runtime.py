@@ -44,95 +44,50 @@ logger = structlog.get_logger("mcubridge.service")
 STATUS_VALUES = {status.value for status in Status}
 
 
+from ..protocol.structures import QueuedPublish
+from ..mqtt.spool_manager import MqttSpoolManager
+
+...
+
+
 class BridgeService:
     """Service façade orchestrating MCU and MQTT interactions. [SIL-2]"""
 
     def __init__(
-        self, config: RuntimeConfig, state: RuntimeState, mqtt_transport: Any
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        spool_manager: MqttSpoolManager,
     ) -> None:
         self.config = config
         self.state = state
-        self.mqtt_flow = mqtt_transport
+        self.spool_manager = spool_manager
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_group: asyncio.TaskGroup | None = None
 
         self._registry = svcs.Registry()
 
         # [SIL-2] Explicit component registration (Direct Access)
-        # Eradicates the indirect factory loop to improve type traceability.
         reg = cast(Any, self._registry)
-        reg.register_factory(
+        for comp_type in (
             ConsoleComponent,
-            lambda: ConsoleComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
             DatastoreComponent,
-            lambda: DatastoreComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
             FileComponent,
-            lambda: FileComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
             MailboxComponent,
-            lambda: MailboxComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
             PinComponent,
-            lambda: PinComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
             ProcessComponent,
-            lambda: ProcessComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
             SpiComponent,
-            lambda: SpiComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
             SystemComponent,
-            lambda: SystemComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
+        ):
+            reg.register_factory(
+                comp_type,
+                lambda c=comp_type: c(
+                    config=config,
+                    state=state,
+                    serial_flow=self.serial_flow,
+                    mqtt_flow=self,  # Components now call BridgeService for MQTT
+                ),
+            )
 
         self._container = svcs.Container(self._registry)
 
@@ -150,7 +105,7 @@ class BridgeService:
             state=state,
             serial_timing=self._serial_timing,
             send_frame=self.serial_flow.send,
-            enqueue_mqtt=mqtt_transport.enqueue_mqtt,
+            enqueue_mqtt=self.enqueue_mqtt,
             acknowledge_frame=self.serial_flow.acknowledge,
             logger_=logger,
         )
@@ -283,6 +238,72 @@ class BridgeService:
             lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
         )
 
+    async def enqueue_mqtt(
+        self,
+        message: QueuedPublish,
+        *,
+        reply_context: Message | None = None,
+    ) -> None:
+        """Enqueues an MQTT message for publishing with a Zero-Wrapper strategy."""
+        target_message = message
+
+        if reply_context is not None and reply_context.properties:
+            props = reply_context.properties
+            target_topic = getattr(props, "ResponseTopic", None) or message.topic_name
+            correlation = getattr(props, "CorrelationData", None)
+
+            updates: dict[str, Any] = {}
+            if target_topic != message.topic_name:
+                updates["topic_name"] = target_topic
+            if correlation is not None:
+                updates["correlation_data"] = correlation
+
+            user_props = list(message.user_properties)
+            user_props.append(("bridge-request-topic", str(reply_context.topic)))
+            updates["user_properties"] = tuple(user_props)
+
+            if updates:
+                target_message = msgspec.structs.replace(message, **updates)
+
+        try:
+            self.state.mqtt_publish_queue.put_nowait(target_message)
+        except asyncio.QueueFull:
+            try:
+                dropped = self.state.mqtt_publish_queue.get_nowait()
+                self.state.mqtt_publish_queue.task_done()
+                self.state.mqtt_dropped_messages += 1
+                self.state.metrics.mqtt_messages_dropped.inc()
+                await self.spool_manager.stash(dropped)
+                self.state.mqtt_publish_queue.put_nowait(target_message)
+                logger.warning("MQTT publish queue full; spooled oldest message")
+            except asyncio.QueueEmpty:
+                self.state.mqtt_publish_queue.put_nowait(target_message)
+
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes | str,
+        *,
+        qos: int = 0,
+        retain: bool = False,
+        expiry: int | None = None,
+        properties: tuple[tuple[str, str], ...] = (),
+        content_type: str | None = None,
+        reply_to: Message | None = None,
+    ) -> None:
+        """Convenience method for publishing without manual QueuedPublish instantiation."""
+        payload_bytes = payload.encode("utf-8") if isinstance(payload, str) else payload
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=payload_bytes,
+            qos=qos,
+            retain=retain,
+            content_type=content_type,
+            message_expiry_interval=expiry,
+            user_properties=tuple(properties or ()),
+        )
+        await self.enqueue_mqtt(message, reply_context=reply_to)
+
     # --- MCU command handlers ---
 
     async def _handle_ack(self, seq_id: int, payload: bytes) -> None:
@@ -336,7 +357,7 @@ class BridgeService:
         ]
         if text:
             properties.append(("bridge-status-message", text))
-        await self.mqtt_flow.publish(
+        await self.publish(
             topic=status_topic,
             payload=report,
             content_type="application/msgpack",
@@ -361,7 +382,7 @@ class BridgeService:
             *topic_segments,
         )
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        await self.mqtt_flow.publish(
+        await self.publish(
             topic=topic,
             payload=msgspec.msgpack.encode(snapshot),
             content_type="application/msgpack",
@@ -408,7 +429,7 @@ class BridgeService:
             Topic.SYSTEM,
             Topic.STATUS,
         )
-        await self.mqtt_flow.publish(
+        await self.publish(
             topic=status_topic,
             payload=payload,
             content_type="application/msgpack",

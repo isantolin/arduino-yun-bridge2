@@ -1,18 +1,9 @@
-"""Shared test helpers — importable from any test module."""
-
-from __future__ import annotations
-import msgspec
-
 import os
 import tempfile
-from unittest.mock import MagicMock
-
-
-from mcubridge.config.common import get_default_config
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.structures import TopicRoute
-from mcubridge.protocol.topics import Topic
-
+import msgspec
+from typing import Any
+from mcubridge.config.settings import RuntimeConfig, get_default_config
+from mcubridge.protocol.topics import Topic, TopicRoute
 
 def make_test_config(**overrides: object) -> RuntimeConfig:
     """Shared test config factory — avoids duplicated boilerplate across test modules."""
@@ -31,23 +22,19 @@ def make_test_config(**overrides: object) -> RuntimeConfig:
         serial_shared_secret=b"s_e_c_r_e_t_mock",
         mqtt_spool_dir=spool_dir,
         file_system_root=fs_root,
+        allow_non_tmp_paths=True,
     )
     raw.update(overrides)
     return msgspec.convert(raw, RuntimeConfig, strict=False)
 
-
 def make_route(
     topic: Topic | str,
-    *segments: str,
-    prefix: str = "br",
+    identifier: str,
+    remainder: tuple[str, ...] = (),
 ) -> TopicRoute:
-    """Build a TopicRoute for tests."""
-    raw = f"{prefix}/{topic}/{'/'.join(segments)}"
-    return TopicRoute(raw=raw, prefix=prefix, topic=topic, segments=tuple(segments))
-
-
-def make_mqtt_msg(payload: bytes | str = b"") -> MagicMock:
-    """Build a minimal MQTT Message mock for tests."""
-    msg = MagicMock()
-    msg.payload = payload.encode("utf-8") if isinstance(payload, str) else payload
-    return msg
+    """Helper to create a TopicRoute for testing."""
+    return TopicRoute(
+        topic=Topic(topic) if isinstance(topic, str) else topic,
+        identifier=identifier,
+        remainder=remainder,
+    )

@@ -306,6 +306,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         DEFAULT_MQTT_PORT,
         DEFAULT_MQTT_QUEUE_LIMIT,
         DEFAULT_MQTT_SPOOL_DIR,
+        DEFAULT_MQTT_SPOOL_LIMIT,
         DEFAULT_MQTT_TLS_INSECURE,
         DEFAULT_PENDING_PIN_REQUESTS,
         DEFAULT_PROCESS_MAX_CONCURRENT,
@@ -381,6 +382,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_shared_secret: Any = DEFAULT_SERIAL_SHARED_SECRET
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
+    mqtt_spool_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_SPOOL_LIMIT
     process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
     metrics_enabled: bool = DEFAULT_METRICS_ENABLED
@@ -473,12 +475,12 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
         # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
-        if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-            raise ValueError(
-                f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
-            )
-
         if not self.allow_non_tmp_paths:
+            if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                raise ValueError(
+                    f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
+                )
+
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
                 raise ValueError(
                     f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"

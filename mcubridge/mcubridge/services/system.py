@@ -9,6 +9,7 @@ import structlog
 from typing import TYPE_CHECKING
 
 from aiomqtt.message import Message
+from .base import BridgeComponent, MqttFlow
 from ..protocol import protocol
 from mcubridge.protocol.protocol import Command, SystemAction
 from mcubridge.protocol.structures import (
@@ -22,7 +23,6 @@ from ..config.const import MQTT_EXPIRY_DATASTORE, MQTT_EXPIRY_DEFAULT
 from ..protocol.topics import Topic, topic_path
 
 if TYPE_CHECKING:
-    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger("mcubridge.system")
 
 
-class SystemComponent:
+class SystemComponent(BridgeComponent):
     """Encapsulate MCU system information flows. [SIL-2]"""
 
     def __init__(
@@ -38,12 +38,9 @@ class SystemComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        mqtt_flow: MqttTransport,
+        mqtt_flow: MqttFlow,
     ) -> None:
-        self.config = config
-        self.state = state
-        self.serial_flow = serial_flow
-        self.mqtt_flow = mqtt_flow
+        super().__init__(config, state, serial_flow, mqtt_flow)
         self._pending_free_memory: collections.deque[Message] = collections.deque()
         self._pending_version: collections.deque[Message] = collections.deque()
 
@@ -146,46 +143,44 @@ class SystemComponent:
     ) -> bool:
         identifier = route.identifier
         remainder = list(route.remainder)
-        match identifier:
-            case SystemAction.BOOTLOADER:
-                packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
-                logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
-                return await self.serial_flow.send(
-                    Command.CMD_ENTER_BOOTLOADER.value, msgspec.msgpack.encode(packet)
-                )
+        if identifier == SystemAction.BOOTLOADER:
+            packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
+            logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
+            return await self.serial_flow.send(
+                Command.CMD_ENTER_BOOTLOADER.value, msgspec.msgpack.encode(packet)
+            )
 
-            case SystemAction.FREE_MEMORY:
-                if not (remainder and remainder[0] == SystemAction.GET):
-                    return False
-
-                if len(self._pending_free_memory) >= 10:
-                    return False
-
-                self._pending_free_memory.append(inbound)
-                ok = await self.serial_flow.send(Command.CMD_GET_FREE_MEMORY.value, b"")
-                if not ok:
-                    with contextlib.suppress(ValueError, IndexError):
-                        self._pending_free_memory.pop()
-                return ok
-
-            case SystemAction.VERSION:
-                if not (remainder and remainder[0] == SystemAction.GET):
-                    return False
-                cached_version = self.state.mcu_version
-                if cached_version is not None:
-                    await self._publish_version(cached_version, inbound)
-
-                # Always request fresh version to sync cache
-                send_ok = await self.request_mcu_version(inbound)
-
-                if cached_version is not None:
-                    # Also broadcast current cached value
-                    await self._publish_version(cached_version)
-
-                return send_ok
-
-            case _:
+        elif identifier == SystemAction.FREE_MEMORY:
+            if not (remainder and remainder[0] == SystemAction.GET):
                 return False
+
+            if len(self._pending_free_memory) >= 10:
+                return False
+
+            self._pending_free_memory.append(inbound)
+            ok = await self.serial_flow.send(Command.CMD_GET_FREE_MEMORY.value, b"")
+            if not ok:
+                with contextlib.suppress(ValueError, IndexError):
+                    self._pending_free_memory.pop()
+            return ok
+
+        elif identifier == SystemAction.VERSION:
+            if not (remainder and remainder[0] == SystemAction.GET):
+                return False
+            cached_version = self.state.mcu_version
+            if cached_version is not None:
+                await self._publish_version(cached_version, inbound)
+
+            # Always request fresh version to sync cache
+            send_ok = await self.request_mcu_version(inbound)
+
+            if cached_version is not None:
+                # Also broadcast current cached value
+                await self._publish_version(cached_version)
+
+            return send_ok
+
+        return False
 
 
 __all__ = ["SystemComponent"]

@@ -184,6 +184,34 @@ def collect_system_metrics() -> dict[str, Any]:
         return {}
 
 
+def _make_mqtt_queue() -> asyncio.Queue[QueuedPublish]:
+    return asyncio.Queue[QueuedPublish]()
+
+
+def _make_str_int_dict() -> dict[str, int]:
+    return {}
+
+
+def _make_snapshot_dict() -> SpoolSnapshot:
+    return {}
+
+
+def _make_str_str_dict() -> dict[str, str]:
+    return {}
+
+
+def _make_bytes_bridge_queue() -> BridgeQueue[bytes]:
+    return BridgeQueue[bytes]()
+
+
+def _make_int_process_dict() -> dict[int, ManagedProcess]:
+    return {}
+
+
+def _make_pin_request_deque() -> collections.deque[PendingPinRequest]:
+    return collections.deque[PendingPinRequest]()
+
+
 class RuntimeState(msgspec.Struct):
     """Aggregated mutable state shared across the daemon layers."""
 
@@ -219,12 +247,10 @@ class RuntimeState(msgspec.Struct):
             self.link_sync_event.set()
 
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=lambda: asyncio.Queue[QueuedPublish](),  # noqa: PLW0108
+        default_factory=_make_mqtt_queue,
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    mqtt_drop_counts: dict[str, int] = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=_make_str_int_dict)
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_replayed: int = 0
     mqtt_spool_degraded: bool = False
@@ -241,24 +267,22 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
-    datastore: dict[str, str] = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+        default_factory=_make_snapshot_dict
+    )
+    datastore: dict[str, str] = msgspec.field(default_factory=_make_str_str_dict)
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
     mailbox_queue: BridgeQueue[bytes] = msgspec.field(
-        default_factory=lambda: BridgeQueue[bytes](),  # noqa: PLW0108
+        default_factory=_make_bytes_bridge_queue,
     )
     mailbox_incoming_queue: BridgeQueue[bytes] = msgspec.field(
-        default_factory=lambda: BridgeQueue[bytes](),  # noqa: PLW0108
+        default_factory=_make_bytes_bridge_queue,
     )
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     console_to_mcu_queue: BridgeQueue[bytes] = msgspec.field(
-        default_factory=lambda: BridgeQueue[bytes](),  # noqa: PLW0108
+        default_factory=_make_bytes_bridge_queue,
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
 
@@ -266,12 +290,12 @@ class RuntimeState(msgspec.Struct):
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
     running_processes: dict[int, ManagedProcess] = msgspec.field(
-        default_factory=lambda: {}
-    )  # noqa: PLW0108
+        default_factory=_make_int_process_dict
+    )
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
-        default_factory=lambda: AllowedCommandPolicy.create_empty(),  # noqa: PLW0108
+        default_factory=AllowedCommandPolicy.create_empty,
     )
     topic_authorization: TopicAuthorization | None = None
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
@@ -286,10 +310,10 @@ class RuntimeState(msgspec.Struct):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: collections.deque[PendingPinRequest](),  # noqa: PLW0108
+        default_factory=_make_pin_request_deque,
     )
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: collections.deque[PendingPinRequest](),  # noqa: PLW0108
+        default_factory=_make_pin_request_deque,
     )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT

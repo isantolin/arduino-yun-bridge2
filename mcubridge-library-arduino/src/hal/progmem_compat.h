@@ -3,7 +3,6 @@
 #include <etl/algorithm.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "config/bridge_config.h"
 
@@ -23,7 +22,7 @@
 #define pgm_read_byte(addr) (*reinterpret_cast<const uint8_t*>(addr))
 #endif
 #ifndef memcpy_P
-#define memcpy_P(dest, src, n) memcpy((dest), (src), (n))
+#define memcpy_P(dest, src, n) etl::copy_n(reinterpret_cast<const uint8_t*>(src), (n), reinterpret_cast<uint8_t*>(dest))
 #endif
 #endif
 

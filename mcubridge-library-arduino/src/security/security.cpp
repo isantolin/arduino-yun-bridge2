@@ -13,7 +13,7 @@
 #include <Arduino.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <string.h>
+#include "hal/progmem_compat.h"
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>

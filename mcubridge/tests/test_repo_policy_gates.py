@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import fnmatch
+import typing
 import re
 from os import walk
 from pathlib import Path
@@ -168,11 +169,17 @@ class _ShadowVisitor(ast.NodeVisitor):
             for elt in target.elts:
                 self._check_target(elt, lineno, context)
 
-    def visit_Global(self, node: ast.Global) -> None:  # noqa: N802
+    def visit(self, node: ast.AST) -> typing.Any:
+        method = getattr(self, f"_visit_{node.__class__.__name__.lower()}", None)
+        if method is not None:
+            return method(node)
+        return self.generic_visit(node)
+
+    def _visit_global(self, node: ast.Global) -> None:
         self.hits.append((self.path, node.lineno, "global statement"))
         self.generic_visit(node)
 
-    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:  # noqa: N802
+    def _visit_nonlocal(self, node: ast.Nonlocal) -> None:
         self.hits.append((self.path, node.lineno, "nonlocal statement"))
         self.generic_visit(node)
 
@@ -189,46 +196,46 @@ class _ShadowVisitor(ast.NodeVisitor):
             self._check_name(node.args.kwarg.arg, node.lineno, "**kwargs")
         self.generic_visit(node)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def _visit_functiondef(self, node: ast.FunctionDef) -> None:
         self._visit_function(node)
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+    def _visit_asyncfunctiondef(self, node: ast.AsyncFunctionDef) -> None:
         self._visit_function(node)
 
-    def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
+    def _visit_assign(self, node: ast.Assign) -> None:
         for t in node.targets:
             self._check_target(t, node.lineno, "assignment")
         self.generic_visit(node)
 
-    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:  # noqa: N802
+    def _visit_annassign(self, node: ast.AnnAssign) -> None:
         self._check_target(node.target, node.lineno, "annotated assignment")
         self.generic_visit(node)
 
-    def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+    def _visit_augassign(self, node: ast.AugAssign) -> None:
         self._check_target(node.target, node.lineno, "augmented assignment")
         self.generic_visit(node)
 
-    def visit_For(self, node: ast.For) -> None:  # noqa: N802
+    def _visit_for(self, node: ast.For) -> None:
         self._check_target(node.target, node.lineno, "for target")
         self.generic_visit(node)
 
-    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
+    def _visit_asyncfor(self, node: ast.AsyncFor) -> None:
         self._check_target(node.target, node.lineno, "async for target")
         self.generic_visit(node)
 
-    def visit_With(self, node: ast.With) -> None:  # noqa: N802
+    def _visit_with(self, node: ast.With) -> None:
         for item in node.items:
             if item.optional_vars is not None:
                 self._check_target(item.optional_vars, node.lineno, "with as")
         self.generic_visit(node)
 
-    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # noqa: N802
+    def _visit_asyncwith(self, node: ast.AsyncWith) -> None:
         for item in node.items:
             if item.optional_vars is not None:
                 self._check_target(item.optional_vars, node.lineno, "async with as")
         self.generic_visit(node)
 
-    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
+    def _visit_excepthandler(self, node: ast.ExceptHandler) -> None:
         if node.name:
             self._check_name(node.name, node.lineno, "except as")
         self.generic_visit(node)

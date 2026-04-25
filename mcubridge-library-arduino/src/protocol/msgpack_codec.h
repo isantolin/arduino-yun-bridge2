@@ -15,7 +15,6 @@
 #include <etl/span.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "rpc_protocol.h"
 

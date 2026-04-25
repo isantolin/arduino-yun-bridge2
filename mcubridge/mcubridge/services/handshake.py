@@ -309,9 +309,8 @@ class SerialHandshakeManager:
         bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
         tag_mismatch = (
             not bytes_eq(tag_bytes, recalculated_tag)
-            and self._config.serial_shared_secret != b"DEBUG_INSECURE"  # noqa: W503
+            and self._config.serial_shared_secret != b"DEBUG_INSECURE"
         )
-
         if not nonce_mismatch and not missing_expected_tag:
             is_valid, _ = validate_nonce_counter(
                 nonce, self._state.link_last_nonce_counter
@@ -615,8 +614,7 @@ class SerialHandshakeManager:
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         return (
             reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
-            or self._state.handshake_failure_streak
-            >= self._fatal_threshold  # noqa: W503
+            or self._state.handshake_failure_streak >= self._fatal_threshold
         )
 
 

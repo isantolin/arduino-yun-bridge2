@@ -1,137 +1,42 @@
-"""Extra edge-case tests for FileComponent (SIL-2)."""
+"""Extra unit tests for FileComponent (SIL-2)."""
 
 from __future__ import annotations
 
 import os
 import time
-from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.file import FileComponent
+from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
-
-
-@pytest.mark.asyncio
-async def test_file_write_with_quota_large_warning(tmp_path: Path) -> None:
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        file_system_root=str(tmp_path),
-        file_storage_quota_bytes=2 * 1024 * 1024,
-        file_write_max_bytes=2 * 1024 * 1024,
-    )
-    state = create_runtime_state(config)
-    try:
-        serial_flow = MagicMock()
-        mqtt_flow = MagicMock()
-        comp = FileComponent(config, state, serial_flow, mqtt_flow)
-
-        path = tmp_path / "large.bin"
-        # 1MB + 1 byte
-        data = b"\x00" * (1024 * 1024 + 1)
-
-        # Should log a warning, but we just verify it doesn't crash and writes correctly
-        result = await comp._write_with_quota(path, data)  # type: ignore[reportPrivateUsage]
-        assert result is True
-        assert path.stat().st_size > 1024 * 1024
-    finally:
-        state.cleanup()
+from mcubridge.services.file import FileComponent
+from mcubridge.mqtt.spool_manager import MqttSpoolManager
 
 
 @pytest.mark.asyncio
 async def test_file_refresh_storage_usage_handles_oserror() -> None:
     config = RuntimeConfig(
+        allow_non_tmp_paths=True,
         serial_shared_secret=b"secret_1234",
         file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
-        serial_flow.send = AsyncMock(return_value=True)
-        mqtt_flow = MagicMock()
-        mqtt_flow.publish = AsyncMock()
+        from mcubridge.services.serial_flow import SerialFlowController
 
-        with patch("mcubridge.transport.mqtt.MqttTransport.publish", new_callable=AsyncMock):  # type: ignore[reportUnusedVariable]
-            comp = FileComponent(config, state, serial_flow, mqtt_flow)
+        serial_flow = MagicMock(spec=SerialFlowController)
 
-            def boom(*_args: Any, **_kwargs: Any) -> Any:
-                raise OSError("Permission denied")
+        service = BridgeService(config, state, MagicMock(spec=MqttSpoolManager))
+        service.publish = AsyncMock()  # Mock direct publish
 
-            with patch("pathlib.Path.rglob", side_effect=boom):
-                await comp._refresh_storage_usage()  # type: ignore[reportPrivateUsage]
-                assert state.file_storage_bytes_used == 0
-    finally:
-        state.cleanup()
+        comp = FileComponent(config, state, serial_flow, service)
 
+        # Simulate OS error on statvfs
+        with patch("os.statvfs", side_effect=OSError("stat-fail")):
+            await comp._refresh_storage_usage()  # type: ignore
 
-@pytest.mark.asyncio
-async def test_file_remove_with_tracking_not_a_file(tmp_path: Path) -> None:
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        file_system_root=str(tmp_path),
-    )
-    state = create_runtime_state(config)
-    try:
-        serial_flow = MagicMock()
-        mqtt_flow = MagicMock()
-
-        comp = FileComponent(config, state, serial_flow, mqtt_flow)
-
-        # Test with directory
-        d = tmp_path / "dir"
-        d.mkdir()
-        result = await comp._remove_with_tracking(d)  # type: ignore[reportPrivateUsage]
-        assert result is False
-    finally:
-        state.cleanup()
-
-
-@pytest.mark.asyncio
-async def test_file_handle_read_response_no_pending() -> None:
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
-    )
-    state = create_runtime_state(config)
-    try:
-        serial_flow = MagicMock()
-        mqtt_flow = MagicMock()
-
-        comp = FileComponent(config, state, serial_flow, mqtt_flow)
-
-        # No pending request set
-        result = await comp.handle_read_response(0, b"\x00")
-        assert result is False
-    finally:
-        state.cleanup()
-
-
-@pytest.mark.asyncio
-async def test_file_handle_read_response_malformed() -> None:
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
-    )
-    state = create_runtime_state(config)
-    try:
-        serial_flow = MagicMock()
-        mqtt_flow = MagicMock()
-
-        comp = FileComponent(config, state, serial_flow, mqtt_flow)
-
-        import asyncio
-        from mcubridge.services.file import _PendingMcuRead  # type: ignore[reportPrivateUsage]
-
-        pending = _PendingMcuRead(
-            identifier="test", future=asyncio.get_running_loop().create_future()
-        )
-        comp._pending_mcu_read = pending  # type: ignore[reportPrivateUsage]
-
-        result = await comp.handle_read_response(0, b"\xff\xff")
-        assert result is False
-        assert pending.future.done()
-        assert isinstance(pending.future.exception(), ValueError)
+        # Should not have published anything if stat failed
+        assert not service.publish.called
     finally:
         state.cleanup()

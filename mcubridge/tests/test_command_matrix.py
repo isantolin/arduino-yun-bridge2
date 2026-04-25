@@ -65,7 +65,7 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             publish_bridge_snapshot=AsyncMock(),
         )
 
-        dispatcher.register_components(
+        await dispatcher.register_components(
             make_component_container(
                 console=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
                 datastore=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
@@ -77,7 +77,6 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
                 system=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
             )
         )
-
         for topic_enum, pattern, _qos in MQTT_COMMAND_SUBSCRIPTIONS:
             concrete = _materialize_subscription_segments(pattern)
             topic = topic_path(_MQTT_PREFIX, topic_enum, *concrete)
@@ -124,7 +123,7 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             publish_bridge_snapshot=AsyncMock(),
         )
 
-        dispatcher.register_components(
+        await dispatcher.register_components(
             make_component_container(
                 console=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
                 datastore=MagicMock(handle_mqtt=AsyncMock(return_value=True)),

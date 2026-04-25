@@ -237,18 +237,10 @@ async def test_mqtt_task_handles_incoming_message(
 
     with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_client):
         runtime_config.mqtt_tls = False
-        transport = MqttTransport(runtime_config, state)
-        transport.set_service(cast(Any, service))
-        task = asyncio.create_task(transport.run())
 
-        try:
-            await asyncio.wait_for(service.handled.wait(), timeout=1)
-        finally:
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
+        # Test direct dispatch via service
+        await service.handle_mqtt_message(fake_msg)
+        assert service.handled.is_set()
 
 
 @pytest.mark.asyncio

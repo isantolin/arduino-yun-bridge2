@@ -51,6 +51,7 @@ def test_runtime_config_normalizes_topic_and_paths(
         mqtt_topic="/demo//prefix/",
         file_system_root=root_input,
         mqtt_spool_dir=spool_absolute,
+        allow_non_tmp_paths=True,
     )
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
 

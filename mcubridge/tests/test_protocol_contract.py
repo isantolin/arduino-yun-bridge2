@@ -74,6 +74,8 @@ def test_mcu_registry_completeness() -> None:
         "CMD_SPI_END",
         "CMD_SPI_SET_CONFIG",
         "CMD_SPI_TRANSFER",
+        "CMD_ANALOG_READ",
+        "CMD_DIGITAL_READ",
         "CMD_LINK_SYNC",
         "CMD_LINK_RESET",
         "CMD_DATASTORE_GET_RESP",
@@ -84,7 +86,7 @@ def test_mcu_registry_completeness() -> None:
     }
 
     from mcubridge.state.context import create_runtime_state
-    from tests._helpers import make_test_config
+    from .conftest import make_test_config
     import svcs
     import warnings
 

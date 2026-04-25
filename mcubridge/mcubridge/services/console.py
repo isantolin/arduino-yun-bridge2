@@ -39,8 +39,15 @@ class ConsoleComponent:
         self.serial_flow = serial_flow
         self.mqtt_flow = mqtt_flow
 
-    async def handle_write(self, seq_id: int, packet: ConsoleWritePacket) -> None:
+    async def handle_write(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
+        try:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=ConsoleWritePacket)
+        except (ValueError, msgspec.DecodeError):
+            logger.warning("Malformed ConsoleWritePacket payload: %s", payload.hex())
+            return
+
         data = packet.data
         if not data:
             return

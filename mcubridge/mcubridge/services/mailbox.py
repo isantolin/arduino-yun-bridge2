@@ -52,22 +52,18 @@ class MailboxComponent:
         self.serial_flow = serial_flow
         self.mqtt_flow = mqtt_flow
 
-    async def handle_processed(
-        self, seq_id: int, packet: MailboxProcessedPacket | bytes
-    ) -> bool:
+    async def handle_processed(self, seq_id: int, payload: bytes) -> bool:
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
             MailboxAction.PROCESSED,
         )
         message_id: int | None = None
-        if isinstance(packet, MailboxProcessedPacket):
-            message_id = packet.message_id
-        elif len(packet) >= 2:
+        if len(payload) >= 2:
             try:
-                # [SIL-2] Fallback for cases where auto-decoding might not apply
-                packet_obj = msgspec.msgpack.decode(packet, type=MailboxProcessedPacket)
-                message_id = packet_obj.message_id
+                # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+                packet = msgspec.msgpack.decode(payload, type=MailboxProcessedPacket)
+                message_id = packet.message_id
             except ValueError as exc:
                 logger.warning("MCU > Malformed Mailbox processed payload: %s", exc)
 
@@ -75,12 +71,19 @@ class MailboxComponent:
             # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
             body = msgspec.msgpack.encode({"message_id": message_id})
         else:
-            body = packet if isinstance(packet, bytes) else b""
+            body = payload
 
         await self.mqtt_flow.publish(topic=topic_name, payload=body)
         return True
 
-    async def handle_push(self, seq_id: int, packet: MailboxPushPacket) -> bool:
+    async def handle_push(self, seq_id: int, payload: bytes) -> bool:
+        try:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=MailboxPushPacket)
+        except ValueError:
+            logger.warning("Malformed MailboxPushPacket payload: %s", payload.hex())
+            return False
+
         data = packet.data
 
         stored = self.state.mailbox_incoming_queue.append(data).success

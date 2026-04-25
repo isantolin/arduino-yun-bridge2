@@ -21,7 +21,6 @@ from typing import (
 )
 
 import msgspec
-from .protocol import Command
 import msgspec.msgpack
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
@@ -656,37 +655,6 @@ class SpiConfigPacket(BaseStruct, frozen=True):
     frequency: Annotated[int, msgspec.Meta(ge=0)]
 
 
-COMMAND_TO_PACKET: dict[int, type[BaseStruct]] = {
-    Command.CMD_GET_VERSION_RESP.value: VersionResponsePacket,
-    Command.CMD_GET_FREE_MEMORY_RESP.value: FreeMemoryResponsePacket,
-    Command.CMD_LINK_SYNC.value: LinkSyncPacket,
-    Command.CMD_LINK_SYNC_RESP.value: LinkSyncPacket,
-    Command.CMD_SET_BAUDRATE.value: SetBaudratePacket,
-    Command.CMD_ENTER_BOOTLOADER.value: EnterBootloaderPacket,
-    Command.CMD_DIGITAL_WRITE.value: DigitalWritePacket,
-    Command.CMD_ANALOG_WRITE.value: AnalogWritePacket,
-    Command.CMD_DIGITAL_READ_RESP.value: DigitalReadResponsePacket,
-    Command.CMD_ANALOG_READ_RESP.value: AnalogReadResponsePacket,
-    Command.CMD_CONSOLE_WRITE.value: ConsoleWritePacket,
-    Command.CMD_DATASTORE_PUT.value: DatastorePutPacket,
-    Command.CMD_DATASTORE_GET.value: DatastoreGetPacket,
-    Command.CMD_DATASTORE_GET_RESP.value: DatastoreGetResponsePacket,
-    Command.CMD_MAILBOX_PROCESSED.value: MailboxProcessedPacket,
-    Command.CMD_MAILBOX_PUSH.value: MailboxPushPacket,
-    Command.CMD_MAILBOX_READ_RESP.value: MailboxReadResponsePacket,
-    Command.CMD_MAILBOX_AVAILABLE_RESP.value: MailboxAvailableResponsePacket,
-    Command.CMD_FILE_WRITE.value: FileWritePacket,
-    Command.CMD_FILE_READ.value: FileReadPacket,
-    Command.CMD_FILE_REMOVE.value: FileRemovePacket,
-    Command.CMD_FILE_READ_RESP.value: FileReadResponsePacket,
-    Command.CMD_PROCESS_RUN_ASYNC.value: ProcessRunAsyncPacket,
-    Command.CMD_PROCESS_POLL.value: ProcessPollPacket,
-    Command.CMD_PROCESS_KILL.value: ProcessKillPacket,
-    Command.CMD_PROCESS_RUN_ASYNC_RESP.value: ProcessRunAsyncResponsePacket,
-    Command.CMD_PROCESS_POLL_RESP.value: ProcessPollResponsePacket,
-    Command.CMD_SPI_TRANSFER.value: SpiTransferPacket,
-    Command.CMD_SPI_TRANSFER_RESP.value: SpiTransferResponsePacket,
-}
 # --- END GENERATED PACKETS ---
 
 

@@ -17,13 +17,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import psutil
 import pytest
-from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import (
     Command,
     Status,
     Topic,
 )
-from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.mqtt import MqttTransport
 
@@ -716,13 +714,12 @@ class TestProcessComponent:
     @pytest.mark.asyncio
     async def test_handle_run_async_empty_command(self: Any, _process: Any):
         # Empty command encodes to b""
-        await _process.handle_run_async(0, structures.ProcessRunAsyncPacket(command=""))
+        await _process.handle_run_async(0, b"")
         _process.serial_flow.acknowledge.assert_called()
 
     @pytest.mark.asyncio
     async def test_handle_run_async_malformed(self: Any, _process: Any):
-        # Tested via dispatcher in other tests, here we just pass a valid but empty-command packet
-        await _process.handle_run_async(0, structures.ProcessRunAsyncPacket(command=""))
+        await _process.handle_run_async(0, b"\xff\xff\xff")
         _process.serial_flow.acknowledge.assert_called_with(
             Command.CMD_PROCESS_RUN_ASYNC.value,
             0,
@@ -731,47 +728,27 @@ class TestProcessComponent:
 
     @pytest.mark.asyncio
     async def test_handle_poll_malformed(self: Any, _process: Any):
-        dispatcher = BridgeDispatcher(
-            mcu_registry={Command.CMD_PROCESS_POLL.value: _process.handle_poll},
-            mqtt_router=MagicMock(),
-            state=_process.state,
-            send_frame=_process.serial_flow.send,
-            acknowledge_frame=_process.serial_flow.acknowledge,
-            is_topic_action_allowed=MagicMock(),
-            reject_topic_action=MagicMock(),
-            publish_bridge_snapshot=AsyncMock(),
+        await _process.handle_poll(0, b"\xff\xff\xff")
+        _process.serial_flow.acknowledge.assert_called_with(
+            Command.CMD_PROCESS_POLL.value,
+            0,
+            status=Status.MALFORMED,
         )
-        _process.state.mark_synchronized()
-        # Passing malformed msgpack
-        await dispatcher.dispatch_mcu_frame(
-            Command.CMD_PROCESS_POLL.value, 0, b"\xff\xff"
-        )
-        _process.serial_flow.send.assert_called_with(Status.MALFORMED.value, b"")
 
     @pytest.mark.asyncio
     async def test_handle_kill_malformed(self: Any, _process: Any):
-        dispatcher = BridgeDispatcher(
-            mcu_registry={Command.CMD_PROCESS_KILL.value: _process.handle_kill},
-            mqtt_router=MagicMock(),
-            state=_process.state,
-            send_frame=_process.serial_flow.send,
-            acknowledge_frame=_process.serial_flow.acknowledge,
-            is_topic_action_allowed=MagicMock(),
-            reject_topic_action=MagicMock(),
-            publish_bridge_snapshot=AsyncMock(),
+        await _process.handle_kill(0, b"\xff\xff\xff")
+        _process.serial_flow.acknowledge.assert_called_with(
+            Command.CMD_PROCESS_KILL.value,
+            0,
+            status=Status.MALFORMED,
         )
-        _process.state.mark_synchronized()
-        # Passing malformed msgpack
-        await dispatcher.dispatch_mcu_frame(
-            Command.CMD_PROCESS_KILL.value, 0, b"\xff\xff"
-        )
-        _process.serial_flow.send.assert_called_with(Status.MALFORMED.value, b"")
 
     @pytest.mark.asyncio
     async def test_handle_kill_no_ack(self: Any, _process: Any):
         from mcubridge.protocol.structures import ProcessKillPacket
 
-        payload = ProcessKillPacket(pid=999)
+        payload = msgspec.msgpack.encode(ProcessKillPacket(pid=999))
         result = await _process.handle_kill(0, payload, send_ack=False)
         assert result is False
 
@@ -868,7 +845,7 @@ class TestPinComponent:
             # Test without pending requests
             from mcubridge.protocol.structures import DigitalReadResponsePacket
 
-            payload = DigitalReadResponsePacket(value=1)
+            payload = msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
             await comp.handle_digital_read_resp(0, payload)
             cast(Any, comp.mqtt_flow.publish).assert_called_once()
         finally:
@@ -1025,7 +1002,7 @@ class TestFileComponent:
             payload = FileReadPacket(
                 path="/nonexistent_file_12345.txt",
             )
-            await comp.handle_read(0, payload)
+            await comp.handle_read(0, msgspec.msgpack.encode(payload))
             cast(Any, comp.serial_flow.send).assert_called()
         finally:
             state.cleanup()
@@ -1088,7 +1065,9 @@ class TestSystemComponent:
                 config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
             )
             # Provide valid encoded packet
-            payload = VersionResponsePacket(major=1, minor=2, patch=3)
+            payload = msgspec.msgpack.encode(
+                VersionResponsePacket(major=1, minor=2, patch=3)
+            )
             await comp.handle_get_version_resp(0, payload)
             cast(Any, comp.mqtt_flow.publish).assert_called()
         finally:

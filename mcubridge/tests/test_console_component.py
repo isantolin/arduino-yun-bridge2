@@ -6,6 +6,7 @@ import collections
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
+import msgspec
 import pytest
 from mcubridge.protocol.structures import ConsoleWritePacket
 from mcubridge.services.console import ConsoleComponent
@@ -37,10 +38,10 @@ def console_component() -> ConsoleComponent:
 async def test_console_handle_write_success(
     console_component: ConsoleComponent,
 ) -> None:
-    # [SIL-2] Use direct Packet object
-    packet = ConsoleWritePacket(data=b"hello")
+    # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+    payload = msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))
 
-    await console_component.handle_write(0, packet)
+    await console_component.handle_write(0, payload)
 
     cast(Any, console_component.mqtt_flow.publish).assert_called()
 

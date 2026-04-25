@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from typing import Any
-
 from aiomqtt.message import Message
 from mcubridge.protocol.topics import Topic, TopicRoute
 
-McuHandler = Callable[[int, Any], Awaitable[bool | None]]
+McuHandler = Callable[[int, bytes], Awaitable[bool | None]]
 MqttHandler = Callable[[TopicRoute, Message], Awaitable[bool]]
 
 

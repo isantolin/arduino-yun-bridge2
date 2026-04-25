@@ -285,20 +285,15 @@ class BridgeService:
 
     # --- MCU command handlers ---
 
-    async def _handle_ack(self, seq_id: int, packet: AckPacket | bytes) -> None:
-        command_id: int | None = None
-        if isinstance(packet, AckPacket):
-            command_id = packet.command_id
-        elif len(packet) >= 2:
+    async def _handle_ack(self, seq_id: int, payload: bytes) -> None:
+        if len(payload) >= 2:
             try:
-                # [SIL-2] Fallback for cases where auto-decoding might not apply
-                packet_obj = msgspec.msgpack.decode(packet, type=AckPacket)
-                command_id = packet_obj.command_id
+                # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+                packet = msgspec.msgpack.decode(payload, type=AckPacket)
+                command_id = packet.command_id
+                logger.debug("MCU > ACK received for 0x%02X", command_id)
             except (msgspec.ValidationError, ValueError) as exc:
                 logger.warning("MCU > Malformed ACK payload: %s", exc)
-
-        if command_id is not None:
-            logger.debug("MCU > ACK received for 0x%02X", command_id)
         else:
             logger.debug("MCU > ACK received")
 

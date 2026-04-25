@@ -9,6 +9,7 @@ from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_t
 from mcubridge.state.context import create_runtime_state
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import LinkSyncPacket
+import msgspec
 
 
 @pytest.fixture
@@ -119,7 +120,7 @@ async def test_handle_link_sync_resp_auth_mismatch(
     handshake_mgr._state.link_expected_tag = b"expected"
 
     # Send different nonce
-    sync_pkt = LinkSyncPacket(nonce=b"B" * 16, tag=b"tag")
+    sync_pkt = msgspec.msgpack.encode(LinkSyncPacket(nonce=b"B" * 16, tag=b"tag"))
     ok = await handshake_mgr.handle_link_sync_resp(0, sync_pkt)
     assert ok is False
 

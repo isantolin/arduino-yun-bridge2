@@ -5,13 +5,10 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import msgspec
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.state.context import create_runtime_state
-from mcubridge.protocol.structures import (
-    MailboxPushPacket,
-    TopicRoute,
-    MailboxProcessedPacket,
-)
+from mcubridge.protocol.structures import MailboxPushPacket, TopicRoute
 from mcubridge.protocol.topics import Topic
 from aiomqtt.message import Message
 
@@ -31,7 +28,7 @@ def mailbox_comp(runtime_config: Any):
 @pytest.mark.asyncio
 async def test_handle_processed_malformed(mailbox_comp: MailboxComponent):
     # Short payload
-    await mailbox_comp.handle_processed(0, MailboxProcessedPacket(message_id=0))
+    await mailbox_comp.handle_processed(0, b"\x01")
     assert cast(Any, mailbox_comp.mqtt_flow.publish).called
 
 
@@ -43,8 +40,8 @@ async def test_handle_push_overflow(mailbox_comp: MailboxComponent):
         "Event", (), {"success": False}
     )()
 
-    packet = MailboxPushPacket(data=b"data")
-    ok = await mailbox_comp.handle_push(0, packet)
+    payload = msgspec.msgpack.encode(MailboxPushPacket(data=b"data"))
+    ok = await mailbox_comp.handle_push(0, payload)
     assert ok is False
     assert cast(Any, mailbox_comp.serial_flow.send).called
 

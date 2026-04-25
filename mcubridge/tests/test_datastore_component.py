@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
+import msgspec
 import pytest
 from mcubridge.protocol.protocol import (
     DatastoreAction,
@@ -41,8 +42,8 @@ def datastore_component() -> DatastoreComponent:
 
 @pytest.mark.asyncio
 async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> None:
-    packet = DatastorePutPacket(key="temp", value=b"25.5")
-    await datastore_component.handle_put(0, packet)
+    payload = msgspec.msgpack.encode(DatastorePutPacket(key="temp", value=b"25.5"))
+    await datastore_component.handle_put(0, payload)
 
     assert datastore_component.state.datastore["temp"] == "25.5"
     cast(Any, datastore_component.mqtt_flow.publish).assert_called()
@@ -53,9 +54,9 @@ async def test_datastore_handle_get_request(
     datastore_component: DatastoreComponent,
 ) -> None:
     datastore_component.state.datastore["version"] = "1.0.0"
-    packet = DatastoreGetPacket(key="version")
+    payload = msgspec.msgpack.encode(DatastoreGetPacket(key="version"))
 
-    await datastore_component.handle_get_request(0, packet)
+    await datastore_component.handle_get_request(0, payload)
 
     cast(Any, datastore_component.serial_flow.send).assert_called()
     cast(Any, datastore_component.mqtt_flow.publish).assert_called()

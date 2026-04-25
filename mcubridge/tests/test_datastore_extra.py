@@ -1,6 +1,7 @@
 """Extra edge-case tests for DatastoreComponent (SIL-2)."""
 
 from __future__ import annotations
+import msgspec
 
 import os
 import time
@@ -16,10 +17,6 @@ from mcubridge.protocol.protocol import DatastoreAction
 from tests._helpers import make_mqtt_msg, make_route
 
 
-from mcubridge.services.dispatcher import BridgeDispatcher
-from mcubridge.protocol.protocol import Command
-
-
 @pytest.mark.asyncio
 async def test_datastore_handle_put_malformed() -> None:
     config = RuntimeConfig(
@@ -27,7 +24,6 @@ async def test_datastore_handle_put_malformed() -> None:
         file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
-    state.mark_synchronized()
     try:
         serial_flow = MagicMock()
         serial_flow.send = AsyncMock(return_value=True)
@@ -35,25 +31,9 @@ async def test_datastore_handle_put_malformed() -> None:
         mqtt_flow.publish = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
-        dispatcher = BridgeDispatcher(
-            mcu_registry={
-                Command.CMD_DATASTORE_PUT.value: comp.handle_put,
-                Command.CMD_DATASTORE_GET.value: comp.handle_get_request,
-            },
-            mqtt_router=AsyncMock(),
-            state=state,
-            send_frame=serial_flow.send,
-            acknowledge_frame=AsyncMock(),
-            is_topic_action_allowed=AsyncMock(),
-            reject_topic_action=AsyncMock(),
-            publish_bridge_snapshot=AsyncMock(),
-        )
-        dispatcher.mcu_registry[Command.CMD_DATASTORE_PUT.value] = comp.handle_put
-
-        await dispatcher.dispatch_mcu_frame(
-            Command.CMD_DATASTORE_PUT.value, 0, b"\xff\xff"
-        )
-        serial_flow.send.assert_called_with(Status.MALFORMED.value, b"")
+        result = await comp.handle_put(0, b"\xff\xff")
+        assert result is False
+        assert not mqtt_flow.publish.called
     finally:
         state.cleanup()
 
@@ -65,7 +45,6 @@ async def test_datastore_handle_get_malformed() -> None:
         file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
     )
     state = create_runtime_state(config)
-    state.mark_synchronized()
     try:
         serial_flow = MagicMock()
         serial_flow.send = AsyncMock(return_value=True)
@@ -73,27 +52,12 @@ async def test_datastore_handle_get_malformed() -> None:
         mqtt_flow.publish = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
-        dispatcher = BridgeDispatcher(
-            mcu_registry={
-                Command.CMD_DATASTORE_PUT.value: comp.handle_put,
-                Command.CMD_DATASTORE_GET.value: comp.handle_get_request,
-            },
-            mqtt_router=AsyncMock(),
-            state=state,
-            send_frame=serial_flow.send,
-            acknowledge_frame=AsyncMock(),
-            is_topic_action_allowed=AsyncMock(),
-            reject_topic_action=AsyncMock(),
-            publish_bridge_snapshot=AsyncMock(),
+        result = await comp.handle_get_request(0, b"\xff\xff")
+        assert result is False
+        serial_flow.send.assert_called_once_with(
+            Status.MALFORMED.value, b"data_get_malformed"
         )
-        dispatcher.mcu_registry[Command.CMD_DATASTORE_GET.value] = (
-            comp.handle_get_request
-        )
-
-        await dispatcher.dispatch_mcu_frame(
-            Command.CMD_DATASTORE_GET.value, 0, b"\xff\xff"
-        )
-        serial_flow.send.assert_called_with(Status.MALFORMED.value, b"")
+        assert not mqtt_flow.publish.called
     finally:
         state.cleanup()
 
@@ -116,9 +80,9 @@ async def test_datastore_handle_get_truncation() -> None:
 
         from mcubridge.protocol.structures import DatastoreGetPacket
 
-        packet = DatastoreGetPacket(key="long_key")
+        payload = msgspec.msgpack.encode(DatastoreGetPacket(key="long_key"))
 
-        result = await comp.handle_get_request(0, packet)
+        result = await comp.handle_get_request(0, payload)
         assert result is True
         serial_flow.send.assert_called_once()
         assert mqtt_flow.publish.called

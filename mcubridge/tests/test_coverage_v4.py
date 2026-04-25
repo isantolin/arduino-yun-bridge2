@@ -1,5 +1,3 @@
-from mcubridge.protocol.structures import SpiTransferResponsePacket
-
 # pyright: reportPrivateUsage=false
 import asyncio
 from typer.testing import CliRunner
@@ -99,8 +97,5 @@ def test_spi_service_coverage():
     asyncio.run(service.handle_mqtt(route_cfg, msg_cfg))
 
     # Test handle_transfer_resp
-
-    asyncio.run(
-        service.handle_transfer_resp(1, SpiTransferResponsePacket(data=b"data"))
-    )
+    asyncio.run(service.handle_transfer_resp(1, b"\x91\xc4\x04data"))
     mqtt_flow.publish.assert_called()

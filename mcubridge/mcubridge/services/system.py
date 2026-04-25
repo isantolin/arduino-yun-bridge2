@@ -63,9 +63,15 @@ class SystemComponent:
                     self._pending_version.remove(inbound)
         return ok
 
-    async def handle_get_free_memory_resp(
-        self, seq_id: int, packet: FreeMemoryResponsePacket
-    ) -> None:
+    async def handle_get_free_memory_resp(self, seq_id: int, payload: bytes) -> None:
+        try:
+            packet = msgspec.msgpack.decode(payload, type=FreeMemoryResponsePacket)
+        except (ValueError, msgspec.MsgspecError):
+            logger.warning(
+                "Malformed FreeMemoryResponsePacket payload: %s", payload.hex()
+            )
+            return
+
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SYSTEM,
@@ -90,9 +96,13 @@ class SystemComponent:
                 reply_to=reply_context,
             )
 
-    async def handle_get_version_resp(
-        self, seq_id: int, packet: VersionResponsePacket
-    ) -> None:
+    async def handle_get_version_resp(self, seq_id: int, payload: bytes) -> None:
+        try:
+            packet = msgspec.msgpack.decode(payload, type=VersionResponsePacket)
+        except (ValueError, msgspec.MsgspecError):
+            logger.warning("Malformed VersionResponsePacket payload: %s", payload.hex())
+            return
+
         major, minor, patch = packet.major, packet.minor, packet.patch
         self.state.mcu_version = (major, minor, patch)
         reply_context = (

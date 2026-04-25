@@ -54,9 +54,9 @@ async def test_pin_handle_digital_read_resp(pin_component: PinComponent) -> None
     pin_component.state.pending_digital_reads.append(
         PendingPinRequest(pin=13, reply_context=None)
     )
-    packet = DigitalReadResponsePacket(value=1)
+    payload = msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
 
-    await pin_component.handle_digital_read_resp(0, packet)
+    await pin_component.handle_digital_read_resp(0, payload)
 
     cast(Any, pin_component.mqtt_flow.publish).assert_called()
 

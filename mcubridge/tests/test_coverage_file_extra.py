@@ -1,21 +1,19 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
-from aiomqtt.message import Message
 
 import asyncio
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
+import msgspec
 import pytest
 from mcubridge.services.file import FileComponent
 from mcubridge.state.context import create_runtime_state
-from mcubridge.protocol.protocol import Status, Topic
-from mcubridge.protocol.structures import (
-    FileWritePacket,
-    TopicRoute,
-    FileReadResponsePacket,
-)
+from mcubridge.protocol.protocol import Status
+from mcubridge.protocol.structures import FileWritePacket, TopicRoute
+from mcubridge.protocol.topics import Topic
+from aiomqtt.message import Message
 
 
 @pytest.fixture
@@ -34,8 +32,8 @@ def file_comp(runtime_config: Any, tmp_path: Path):
 @pytest.mark.asyncio
 async def test_handle_write_quota_exceeded(file_comp: FileComponent):
     file_comp.config.file_write_max_bytes = 5
-    packet = FileWritePacket(path="test.txt", data=b"too-long")
-    ok = await file_comp.handle_write(0, packet)
+    payload = msgspec.msgpack.encode(FileWritePacket(path="test.txt", data=b"too-long"))
+    ok = await file_comp.handle_write(0, payload)
     assert ok is False
     cast(AsyncMock, file_comp.serial_flow.send).assert_called_with(
         Status.ERROR.value, b"Quota exceeded"
@@ -44,7 +42,7 @@ async def test_handle_write_quota_exceeded(file_comp: FileComponent):
 
 @pytest.mark.asyncio
 async def test_handle_read_response_no_pending(file_comp: FileComponent):
-    ok = await file_comp.handle_read_response(0, FileReadResponsePacket(content=b""))
+    ok = await file_comp.handle_read_response(0, b"")
     assert ok is False
 
 

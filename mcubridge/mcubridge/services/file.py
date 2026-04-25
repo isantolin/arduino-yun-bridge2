@@ -66,9 +66,11 @@ class FileComponent:
         self._pending_mcu_read: _PendingMcuRead | None = None
         self._mcu_backend_enabled = True
 
-    async def handle_write(self, seq_id: int, packet: FileWritePacket) -> bool:
+    async def handle_write(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_WRITE from MCU."""
         try:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileWritePacket)
             path = self._get_safe_path(packet.path)
             if not path:
                 await self.serial_flow.send(Status.ERROR.value, b"Invalid path")
@@ -81,7 +83,7 @@ class FileComponent:
             self._metadata_cache.pop(str(path), None)
             await self.serial_flow.send(Status.OK.value, b"")
             return True
-        except (ValueError, OSError) as e:
+        except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File write failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
@@ -89,9 +91,11 @@ class FileComponent:
             await self.serial_flow.send(Status.ERROR.value, err_payload)
             return False
 
-    async def handle_read(self, seq_id: int, packet: FileReadPacket) -> None:
+    async def handle_read(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_FILE_READ from MCU."""
         try:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileReadPacket)
             path = self._get_safe_path(packet.path)
             if not path or not path.is_file():
                 await self.serial_flow.send(Status.ERROR.value, b"File not found")
@@ -118,16 +122,18 @@ class FileComponent:
                     await self.serial_flow.send(
                         Command.CMD_FILE_READ_RESP.value, response_payload
                     )
-        except (ValueError, OSError) as e:
+        except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File read failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
             ]
             await self.serial_flow.send(Status.ERROR.value, err_payload)
 
-    async def handle_remove(self, seq_id: int, packet: FileRemovePacket) -> bool:
+    async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_REMOVE from MCU."""
         try:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileRemovePacket)
             path = self._get_safe_path(packet.path)
             if path and await self._remove_with_tracking(path):
                 self._metadata_cache.pop(str(path), None)
@@ -136,7 +142,7 @@ class FileComponent:
 
             await self.serial_flow.send(Status.ERROR.value, b"File not found")
             return False
-        except (ValueError, OSError) as e:
+        except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File remove failed: %s", e)
             err_payload = str(e).encode("utf-8", errors="ignore")[
                 : protocol.MAX_PAYLOAD_SIZE
@@ -144,13 +150,21 @@ class FileComponent:
             await self.serial_flow.send(Status.ERROR.value, err_payload)
             return False
 
-    async def handle_read_response(
-        self, seq_id: int, packet: FileReadResponsePacket
-    ) -> bool:
+    async def handle_read_response(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_READ_RESP from MCU for MQTT-originated mcu/ reads."""
         pending = self._pending_mcu_read
         if pending is None:
             logger.warning("Received MCU file read response without pending request")
+            return False
+
+        try:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileReadResponsePacket)
+        except (ValueError, msgspec.DecodeError):
+            if not pending.future.done():
+                pending.future.set_exception(
+                    ValueError("Malformed MCU file read response")
+                )
             return False
 
         if packet.content:

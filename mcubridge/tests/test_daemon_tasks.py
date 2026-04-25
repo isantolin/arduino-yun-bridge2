@@ -14,7 +14,6 @@ from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import FRAME_DELIMITER, Command
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.transport import SerialTransport
-from mcubridge.transport.mqtt import MqttTransport
 from mcubridge.services.runtime import BridgeService
 
 

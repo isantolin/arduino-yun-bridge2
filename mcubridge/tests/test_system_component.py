@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 from unittest.mock import AsyncMock
+from mcubridge.services.base import MqttFlow
 
 import msgspec
 import pytest
@@ -19,7 +20,6 @@ from mcubridge.protocol.topics import Topic
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState
-from mcubridge.transport.mqtt import MqttTransport
 from tests._helpers import make_mqtt_msg, make_route, make_test_config
 
 
@@ -34,7 +34,7 @@ def system_component() -> SystemComponent:
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock(return_value=True)
-    mqtt_flow = AsyncMock(spec=MqttTransport)
+    mqtt_flow = AsyncMock(spec=MqttFlow)
     mqtt_flow.publish = AsyncMock()
 
     return SystemComponent(

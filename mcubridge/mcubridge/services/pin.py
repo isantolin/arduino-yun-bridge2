@@ -26,7 +26,7 @@ from ..protocol.topics import Topic, topic_path
 from ..state.context import PendingPinRequest
 
 if TYPE_CHECKING:
-    from ..transport.mqtt import MqttTransport
+    from .base import MqttFlow
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
@@ -42,7 +42,7 @@ class PinComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        mqtt_flow: MqttTransport,
+        mqtt_flow: MqttFlow,
     ) -> None:
         self.config = config
         self.state = state

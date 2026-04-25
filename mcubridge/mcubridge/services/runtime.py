@@ -62,7 +62,7 @@ class BridgeService:
         self.config = config
         self.state = state
         self.spool_manager = spool_manager
-        self.mqtt_flow = self # Alias for compatibility with components and tests
+        self.mqtt_flow = self  # Alias for compatibility with components and tests
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_group: asyncio.TaskGroup | None = None
 

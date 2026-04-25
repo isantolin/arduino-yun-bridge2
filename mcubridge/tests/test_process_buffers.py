@@ -1,6 +1,6 @@
-from mcubridge.transport.mqtt import MqttTransport
+from unittest.mock import AsyncMock
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from mcubridge.protocol.protocol import Status
@@ -13,9 +13,7 @@ from mcubridge.state.context import (
 
 @pytest.fixture
 def runtime_service(runtime_config: Any, runtime_state: Any) -> BridgeService:
-    service = BridgeService(
-        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
-    )
+    service = BridgeService(runtime_config, runtime_state, AsyncMock())
     return service
 
 

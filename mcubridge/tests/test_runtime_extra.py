@@ -62,7 +62,7 @@ async def test_runtime_handle_mqtt_message_dispatch_error() -> None:
 
         service = BridgeService(config, state, mqtt_mock)
 
-        from tests.mqtt_helpers import make_inbound_message
+        from tests._helpers import make_inbound_message
 
         msg = make_inbound_message("br/system/status", b"{}")
 
@@ -89,7 +89,7 @@ async def test_runtime_reject_topic_action_properties() -> None:
 
         service = BridgeService(config, state, mqtt_mock)
         from mcubridge.protocol.topics import Topic
-        from tests.mqtt_helpers import make_inbound_message
+        from tests._helpers import make_inbound_message
 
         inbound = make_inbound_message("br/system/cmd", b"")
         inbound.properties = MagicMock()
@@ -118,7 +118,7 @@ async def test_runtime_publish_bridge_snapshot_handshake() -> None:
 
         service = BridgeService(config, state, mqtt_mock)
 
-        from tests.mqtt_helpers import make_inbound_message
+        from tests._helpers import make_inbound_message
 
         inbound = make_inbound_message("br/s/b/h/get", b"")
         inbound.properties = MagicMock()

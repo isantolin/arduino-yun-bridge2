@@ -74,6 +74,11 @@ BridgeClass::BridgeClass(Stream& stream)
           etl::span<uint8_t>(_ps_work_buffer.data(), _ps_work_buffer.size())),
       _shared_secret(),
       _fsm(),
+      _watchdog_task(),
+      _serial_task(*this),
+      _timer_task(*this),
+      _tasks(),
+      _scheduler_policy(),
       _timers(),
       _timer_ids(),
       _transient_buffer(),
@@ -87,56 +92,94 @@ BridgeClass::BridgeClass(Stream& stream)
       _shared_secret.clear();
       _rx_storage.fill(0);
 
-      // [SIL-2] Initialize O(log N) Dispatch Table (RAM-efficient)
-      // Eradicates 'switch' statements as per mission critical requirements.
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)] = &BridgeClass::_handleGetVersion;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY)] = &BridgeClass::_handleGetFreeMemory;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC)] = &BridgeClass::_handleLinkSync;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET)] = &BridgeClass::_handleLinkReset;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES)] = &BridgeClass::_handleGetCapabilities;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE)] = &BridgeClass::_handleSetBaudrateCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER)] = &BridgeClass::_handleEnterBootloaderCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_XOFF)] = &BridgeClass::_handleXoff;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_XON)] = &BridgeClass::_handleXon;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE)] = &BridgeClass::_handleSetPinModeCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE)] = &BridgeClass::_handleDigitalWriteCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE)] = &BridgeClass::_handleAnalogWriteCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)] = &BridgeClass::_handleDigitalReadCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ)] = &BridgeClass::_handleAnalogReadCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)] = &BridgeClass::_handleConsoleWriteCommand;
-      _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_OK)] = &BridgeClass::_handleStatusOk;
-      _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED)] = &BridgeClass::_handleStatusMalformed;
-      _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_ACK)] = &BridgeClass::_handleStatusAck;
+      _tasks.push_back(&_watchdog_task);
+      _tasks.push_back(&_serial_task);
+      _tasks.push_back(&_timer_task);
 
-      #if BRIDGE_ENABLE_DATASTORE
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)] = &BridgeClass::_handleDataStoreGetResponseCommand;
-      #endif
+      // [SIL-2] Initialize O(log N) Dispatch Table (RAM-efficient)  // Eradicates 'switch' statements as per mission critical requirements.
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)] =
+      &BridgeClass::_handleGetVersion;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY)] =
+      &BridgeClass::_handleGetFreeMemory;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC)] =
+      &BridgeClass::_handleLinkSync;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET)] =
+      &BridgeClass::_handleLinkReset;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES)] =
+      &BridgeClass::_handleGetCapabilities;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE)] =
+      &BridgeClass::_handleSetBaudrateCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER)] =
+      &BridgeClass::_handleEnterBootloaderCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_XOFF)] =
+      &BridgeClass::_handleXoff;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_XON)] =
+      &BridgeClass::_handleXon;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE)] =
+      &BridgeClass::_handleSetPinModeCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE)] =
+      &BridgeClass::_handleDigitalWriteCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE)] =
+      &BridgeClass::_handleAnalogWriteCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)] =
+      &BridgeClass::_handleDigitalReadCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ)] =
+      &BridgeClass::_handleAnalogReadCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)] =
+      &BridgeClass::_handleConsoleWriteCommand;
+  _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_OK)] =
+      &BridgeClass::_handleStatusOk;
+  _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED)] =
+      &BridgeClass::_handleStatusMalformed;
+  _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_ACK)] =
+      &BridgeClass::_handleStatusAck;
 
-      #if BRIDGE_ENABLE_MAILBOX
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)] = &BridgeClass::_handleMailboxPushCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP)] = &BridgeClass::_handleMailboxReadResponseCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)] = &BridgeClass::_handleMailboxAvailableResponseCommand;
-      #endif
+#if BRIDGE_ENABLE_DATASTORE
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)] =
+      &BridgeClass::_handleDataStoreGetResponseCommand;
+#endif
 
-      #if BRIDGE_ENABLE_FILESYSTEM
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)] = &BridgeClass::_handleFileWriteCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ)] = &BridgeClass::_handleFileReadCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE)] = &BridgeClass::_handleFileRemoveCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP)] = &BridgeClass::_handleFileReadResponseCommand;
-      #endif
+#if BRIDGE_ENABLE_MAILBOX
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)] =
+      &BridgeClass::_handleMailboxPushCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP)] =
+      &BridgeClass::_handleMailboxReadResponseCommand;
+  _dispatch_table[rpc::to_underlying(
+      rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)] =
+      &BridgeClass::_handleMailboxAvailableResponseCommand;
+#endif
 
-      #if BRIDGE_ENABLE_PROCESS
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL)] = &BridgeClass::_handleProcessKillCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP)] = &BridgeClass::_handleProcessRunAsyncResponseCommand;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)] = &BridgeClass::_handleProcessPollResponseCommand;
-      #endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)] =
+      &BridgeClass::_handleFileWriteCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ)] =
+      &BridgeClass::_handleFileReadCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE)] =
+      &BridgeClass::_handleFileRemoveCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP)] =
+      &BridgeClass::_handleFileReadResponseCommand;
+#endif
 
-      #if BRIDGE_ENABLE_SPI
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)] = &BridgeClass::_handleSpiBegin;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER)] = &BridgeClass::_handleSpiTransfer;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_END)] = &BridgeClass::_handleSpiEnd;
-      _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)] = &BridgeClass::_handleSpiSetConfigCommand;
-      #endif
+#if BRIDGE_ENABLE_PROCESS
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL)] =
+      &BridgeClass::_handleProcessKillCommand;
+  _dispatch_table[rpc::to_underlying(
+      rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP)] =
+      &BridgeClass::_handleProcessRunAsyncResponseCommand;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)] =
+      &BridgeClass::_handleProcessPollResponseCommand;
+#endif
+
+#if BRIDGE_ENABLE_SPI
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)] =
+      &BridgeClass::_handleSpiBegin;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER)] =
+      &BridgeClass::_handleSpiTransfer;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_END)] =
+      &BridgeClass::_handleSpiEnd;
+  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)] =
+      &BridgeClass::_handleSpiSetConfigCommand;
+#endif
 
   // [SIL-2] Register service observers
 #if BRIDGE_ENABLE_CONSOLE
@@ -210,28 +253,34 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
           BridgeClass, &BridgeClass::_onPacketReceived>(*this));
 }
 
-void BridgeClass::process() {
+void BridgeClass::process() { (void)_scheduler_policy.schedule_tasks(_tasks); }
+
+void BridgeClass::WatchdogTask::task_process_work() {
 #if defined(ARDUINO_ARCH_AVR)
   wdt_reset();
 #endif
-  uint32_t now = bridge::now_ms();
-  static uint32_t _last_tick_ms = 0;
-  if (_last_tick_ms == 0) _last_tick_ms = now;
-  uint32_t elapsed = now - _last_tick_ms;
-  if (elapsed > 0) {
-    _timers.tick(elapsed);
-    _last_tick_ms = now;
-  }
-  _packet_serial.update(_stream);
+}
 
-  static bool xoff_sent = false;
-  int available_bytes = _stream.available();
+void BridgeClass::SerialTask::task_process_work() {
+  bridge._packet_serial.update(bridge._stream);
+
+  int available_bytes = bridge._stream.available();
   if (!xoff_sent && available_bytes > 48) {
-    signalXoff();
+    bridge.signalXoff();
     xoff_sent = true;
   } else if (xoff_sent && available_bytes < 16) {
-    signalXon();
+    bridge.signalXon();
     xoff_sent = false;
+  }
+}
+
+void BridgeClass::TimerTask::task_process_work() {
+  uint32_t now = bridge::now_ms();
+  if (last_tick_ms == 0) last_tick_ms = now;
+  uint32_t elapsed = now - last_tick_ms;
+  if (elapsed > 0) {
+    bridge._timers.tick(elapsed);
+    last_tick_ms = now;
   }
 }
 
@@ -259,8 +308,9 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     return;
   }
 
-  // [SIL-2] Deterministic Dispatcher: O(log N) search in RAM-efficient structure.
-  // Eradicates 'switch' statements as per mission critical requirements.
+  // [SIL-2] Deterministic Dispatcher: O(log N) search in RAM-efficient
+  // structure. Eradicates 'switch' statements as per mission critical
+  // requirements.
   bool handled = false;
   const uint16_t raw_cmd = ctx.raw_command;
   auto dispatch_it = _dispatch_table.find(raw_cmd);

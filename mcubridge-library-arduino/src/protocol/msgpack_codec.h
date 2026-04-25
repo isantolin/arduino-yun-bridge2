@@ -31,7 +31,7 @@ class Encoder {
   size_t size() const { return _writer.size_bytes(); }
   etl::span<const uint8_t> result() const {
     auto d = _writer.used_data();
-    return {reinterpret_cast<const uint8_t*>(d.data()), d.size()};
+    return {static_cast<const uint8_t*>(static_cast<const void*>(d.data())), d.size()};
   }
 
   void write_array(uint8_t count) {
@@ -98,7 +98,7 @@ class Encoder {
       put(0xDB);  // str32
       put_multi(static_cast<uint32_t>(len));
     }
-    write_bytes(reinterpret_cast<const uint8_t*>(s), len);
+    write_bytes(static_cast<const uint8_t*>(static_cast<const void*>(s)), len);
   }
 
  private:
@@ -196,7 +196,7 @@ class Decoder {
       _ok = false;
       return {};
     }
-    return {reinterpret_cast<const char*>(view.value().data()),
+    return {static_cast<const char*>(static_cast<const void*>(view.value().data())),
             view.value().size()};
   }
 

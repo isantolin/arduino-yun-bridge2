@@ -213,8 +213,8 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   if (secret != nullptr) {
     const etl::string_view s(secret);
     const size_t len = etl::min(s.size(), _shared_secret.capacity());
-    _shared_secret.assign(reinterpret_cast<const uint8_t*>(s.data()),
-                          reinterpret_cast<const uint8_t*>(s.data()) + len);
+    const auto data_ptr = static_cast<const uint8_t*>(static_cast<const void*>(s.data()));
+    _shared_secret.assign(data_ptr, data_ptr + len);
   }
 
   bridge::hal::init();
@@ -418,11 +418,11 @@ void BridgeClass::emitStatus(rpc::StatusCode status_code,
     return;
   }
   constexpr size_t max_len = rpc::MAX_PAYLOAD_SIZE - 1U;
-  bridge::hal::copy_string(reinterpret_cast<char*>(_transient_buffer.data()),
-                           reinterpret_cast<const char*>(message), max_len);
+  bridge::hal::copy_string(static_cast<char*>(static_cast<void*>(_transient_buffer.data())),
+                           static_cast<const char*>(static_cast<const void*>(message)), max_len);
   _transient_buffer[max_len] = rpc::RPC_NULL_TERMINATOR;
   const size_t actual_len =
-      etl::string_view(reinterpret_cast<const char*>(_transient_buffer.data()))
+      etl::string_view(static_cast<const char*>(static_cast<const void*>(_transient_buffer.data())))
           .length();
   emitStatus(status_code,
              etl::span<const uint8_t>(_transient_buffer.data(), actual_len));
@@ -724,14 +724,14 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     hmac_engine.finalizeHMAC(full_tag);
 
     const char* DEBUG_SECRET_P = PSTR("DEBUG_INSECURE");
-    bridge::hal::copy_string(reinterpret_cast<char*>(_transient_buffer.data()),
+    bridge::hal::copy_string(static_cast<char*>(static_cast<void*>(_transient_buffer.data())),
                              DEBUG_SECRET_P, 16);
     if (etl::string_view(
-            reinterpret_cast<const char*>(_transient_buffer.data())) ==
-        etl::string_view(reinterpret_cast<const char*>(_shared_secret.data()),
+            static_cast<const char*>(static_cast<const void*>(_transient_buffer.data()))) ==
+        etl::string_view(static_cast<const char*>(static_cast<const void*>(_shared_secret.data())),
                          _shared_secret.size())) {
       const char* DEBUG_TAG_P = PSTR("DEBUG_TAG_UNUSED");
-      bridge::hal::copy_string(reinterpret_cast<char*>(resp.tag.data()),
+      bridge::hal::copy_string(static_cast<char*>(static_cast<void*>(resp.tag.data())),
                                DEBUG_TAG_P, 16);
     } else {
       if (!rpc::security::timing_safe_equal(

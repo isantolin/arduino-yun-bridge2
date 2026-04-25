@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
 
   g_arduino_stream_delegate = &MySerial;
   fprintf(stderr, "[emulator] Simulated SD card at: /tmp/mcubridge-host-fs\n");
-  Bridge.begin(115200, "DEBUG_INSECURE");
+  Bridge.begin(115200, "0123456789ABCDEF");
 
   while (true) {
     Bridge.process();

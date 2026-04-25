@@ -502,8 +502,6 @@ sequenceDiagram
     end
 ```
 
-**Security Bypass:** Durante el desarrollo o emulación en host, el uso del secreto `DEBUG_INSECURE` permite que el MCU acepte cualquier tag de 16 bytes, manteniendo la compatibilidad de longitud del protocolo pero relajando la validación matemática (necesaria debido a diferencias en librerías criptográficas entre arquitecturas).
-
 #### Handshake Frame Example (Hex Dump)
 
 ```

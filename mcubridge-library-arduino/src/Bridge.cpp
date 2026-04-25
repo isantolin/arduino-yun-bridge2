@@ -723,28 +723,16 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     hmac_engine.update(msg.nonce);
     hmac_engine.finalizeHMAC(full_tag);
 
-    const char* DEBUG_SECRET_P = PSTR("DEBUG_INSECURE");
-    bridge::hal::copy_string(reinterpret_cast<char*>(_transient_buffer.data()),
-                             DEBUG_SECRET_P, 16);
-    if (etl::string_view(
-            reinterpret_cast<const char*>(_transient_buffer.data())) ==
-        etl::string_view(reinterpret_cast<const char*>(_shared_secret.data()),
-                         _shared_secret.size())) {
-      const char* DEBUG_TAG_P = PSTR("DEBUG_TAG_UNUSED");
-      bridge::hal::copy_string(reinterpret_cast<char*>(resp.tag.data()),
-                               DEBUG_TAG_P, 16);
-    } else {
-      if (!rpc::security::timing_safe_equal(
-              etl::span<const uint8_t>(full_tag.data(),
-                                       rpc::RPC_HANDSHAKE_TAG_LENGTH),
-              etl::span<const uint8_t>(msg.tag.data(), 16))) {
-        _fsm.receive(bridge::fsm::EvHandshakeFailed());
-        emitStatus<rpc::StatusCode::STATUS_ERROR>();
-        return;
-      }
-      etl::copy_n(full_tag.begin(), rpc::RPC_HANDSHAKE_TAG_LENGTH,
-                  resp.tag.begin());
+    if (!rpc::security::timing_safe_equal(
+            etl::span<const uint8_t>(full_tag.data(),
+                                     rpc::RPC_HANDSHAKE_TAG_LENGTH),
+            etl::span<const uint8_t>(msg.tag.data(), 16))) {
+      _fsm.receive(bridge::fsm::EvHandshakeFailed());
+      emitStatus<rpc::StatusCode::STATUS_ERROR>();
+      return;
     }
+    etl::copy_n(full_tag.begin(), rpc::RPC_HANDSHAKE_TAG_LENGTH,
+                resp.tag.begin());
     rpc::security::secure_zero(handshake_key);
     rpc::security::secure_zero(full_tag);
   }

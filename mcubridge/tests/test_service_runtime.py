@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
 import pytest
@@ -12,10 +11,10 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Status
-from mcubridge.protocol.topics import Topic, topic_path
+from mcubridge.protocol.topics import Topic
 from mcubridge.services.runtime import BridgeService
 from mcubridge.services.system import SystemComponent
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.state.context import create_runtime_state
 from mcubridge.mqtt.spool_manager import MqttSpoolManager
 
 from tests._helpers import make_test_config
@@ -101,12 +100,13 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
     try:
         spool = MagicMock(spec=MqttSpoolManager)
         service = BridgeService(config, state, spool)
-        
+
         msg = QueuedPublish(
             topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello"
         )
 
         from aiomqtt.message import Message
+
         mock_props = MagicMock()
         mock_props.ResponseTopic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
         mock_props.CorrelationData = b"cid"
@@ -197,6 +197,7 @@ async def test_reject_topic_action_enqueues_status() -> None:
         service = BridgeService(config, state, spool)
 
         from aiomqtt.message import Message
+
         mock_inbound = MagicMock(spec=Message)
         mock_inbound.topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret"
         mock_inbound.properties = None

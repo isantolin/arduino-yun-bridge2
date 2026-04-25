@@ -1,7 +1,6 @@
 import sys
 import asyncio
 import os
-import time
 from unittest.mock import MagicMock, AsyncMock
 
 # Add current dir to path for imports
@@ -40,7 +39,6 @@ if "serial_asyncio_fast" not in sys.modules:
 
 # [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
 # and interference with Python 3.13 representation during cleanup.
-from mcubridge.config import common
 import mcubridge.config.logging
 from mcubridge.config import settings
 
@@ -57,6 +55,7 @@ from mcubridge.state.context import create_runtime_state
 def runtime_config() -> RuntimeConfig:
     """Provides a fresh RuntimeConfig for each test."""
     from tests._helpers import make_test_config
+
     return make_test_config(
         serial_port="/dev/null",
         serial_baud=115200,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import asyncio
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 from mcubridge.mqtt.spool import MQTTPublishSpool
 from mcubridge.mqtt.spool_manager import MqttSpoolManager

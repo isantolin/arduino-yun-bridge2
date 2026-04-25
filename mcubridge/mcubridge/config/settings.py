@@ -63,7 +63,7 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
     This is the primary entry point for configuration loading. It ensures that
     the returned RuntimeConfig is valid and follows all flash protection rules.
 
-    Normalization (Path resolution, secret coercion, etc.) is handled automatically 
+    Normalization (Path resolution, secret coercion, etc.) is handled automatically
     by the RuntimeConfig.__post_init__ method.
 
     Args:

@@ -462,11 +462,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         if isinstance(self.serial_shared_secret, str):
             self.serial_shared_secret = self.serial_shared_secret.strip().encode("utf-8")
 
-        # 2. Path Normalization (Atomic Resolution)
-        self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).expanduser().resolve())
-        self.file_system_root = str(Path(self.file_system_root).expanduser().resolve())
-
-        # 3. Policy Derivation
+        # 2. Policy Derivation
         if not isinstance(self.allowed_commands, AllowedCommandPolicy):
             # Coerce string to tuple of tokens if necessary
             input_cmds = self.allowed_commands
@@ -494,6 +490,21 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                 self.mqtt_topic = "/".join(segments)
 
         # 5. Strict Semantic Validations
+        if not self.allow_non_tmp_paths:
+            if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                raise ValueError(
+                    f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
+                )
+
+            if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                raise ValueError(
+                    f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
+                )
+
+        # 6. Final Path Resolution
+        self.mqtt_spool_dir = str(Path(self.mqtt_spool_dir).expanduser().resolve())
+        self.file_system_root = str(Path(self.file_system_root).expanduser().resolve())
+
         if not self.mqtt_topic or not any(filter(None, self.mqtt_topic.split("/"))):
             raise ValueError("mqtt_topic must contain at least one segment")
 

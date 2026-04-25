@@ -184,7 +184,8 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
             "file_system_root": ".tmp_tests",
             "allow_non_tmp_paths": True,
             "process_timeout": 10,
-            "serial_shared_secret": " s_e_c_r_e_t_mock ",            "watchdog_enabled": True,
+            "serial_shared_secret": " s_e_c_r_e_t_mock ",
+            "watchdog_enabled": True,
             "watchdog_interval": 0.5,
         }
     )

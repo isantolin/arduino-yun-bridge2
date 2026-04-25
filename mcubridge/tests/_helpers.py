@@ -1,9 +1,41 @@
 import os
 import tempfile
 import msgspec
-from typing import Any
 from mcubridge.config.settings import RuntimeConfig, get_default_config
 from mcubridge.protocol.topics import Topic, TopicRoute
+
+from aiomqtt.message import Message
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
+
+
+def make_inbound_message(
+    topic: str,
+    payload: bytes = b"",
+    *,
+    qos: int = 0,
+    retain: bool = False,
+    response_topic: str | None = None,
+    correlation_data: bytes | None = None,
+) -> Message:
+    """Build a minimal aiomqtt Message with optional v5 metadata."""
+    properties: Properties | None = None
+    if response_topic is not None or correlation_data is not None:
+        properties = Properties(PacketTypes.PUBLISH)
+        if response_topic is not None:
+            properties.ResponseTopic = response_topic
+        if correlation_data is not None:
+            properties.CorrelationData = correlation_data
+
+    return Message(
+        topic=topic,
+        payload=payload,
+        qos=qos,
+        retain=retain,
+        mid=1,
+        properties=properties,
+    )
+
 
 def make_test_config(**overrides: object) -> RuntimeConfig:
     """Shared test config factory — avoids duplicated boilerplate across test modules."""
@@ -26,6 +58,7 @@ def make_test_config(**overrides: object) -> RuntimeConfig:
     )
     raw.update(overrides)
     return msgspec.convert(raw, RuntimeConfig, strict=False)
+
 
 def make_route(
     topic: Topic | str,

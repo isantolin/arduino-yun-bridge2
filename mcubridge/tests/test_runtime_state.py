@@ -85,7 +85,8 @@ async def test_initialize_spool_handles_creation_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from mcubridge.mqtt.spool_manager import MqttSpoolManager
-    runtime_config.mqtt_spool_limit = 100 # Ensure limit > 0
+
+    runtime_config.mqtt_spool_limit = 100  # Ensure limit > 0
     state = create_runtime_state(runtime_config)
     manager = MqttSpoolManager(state)
 
@@ -93,6 +94,7 @@ async def test_initialize_spool_handles_creation_failure(
         raise OSError("Permission denied")
 
     from mcubridge.mqtt.spool import MQTTPublishSpool
+
     monkeypatch.setattr(MQTTPublishSpool, "__init__", mock_init_fail)
 
     try:
@@ -109,6 +111,7 @@ async def test_spool_fallback_updates_state(
     runtime_config: RuntimeConfig,
 ) -> None:
     from mcubridge.mqtt.spool_manager import MqttSpoolManager
+
     state = create_runtime_state(runtime_config)
     manager = MqttSpoolManager(state)
 

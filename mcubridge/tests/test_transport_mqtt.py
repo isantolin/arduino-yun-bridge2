@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
-from mcubridge.services.base import MqttFlow
 
 import aiomqtt
 import pytest
@@ -99,7 +98,7 @@ async def test_mqtt_subscriber_loop_dispatches_to_service() -> None:
 @pytest.mark.asyncio
 async def test_spool_manager_stash_and_flush() -> None:
     config = _make_config(tls=False, cafile=None)
-    config.mqtt_spool_limit = 100 # Ensure limit > 0
+    config.mqtt_spool_limit = 100  # Ensure limit > 0
     state = create_runtime_state(config)
     try:
         manager = MqttSpoolManager(state)

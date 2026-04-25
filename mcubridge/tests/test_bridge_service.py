@@ -10,7 +10,6 @@ from mcubridge.protocol import structures
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
-from mcubridge.services.base import MqttFlow
 from mcubridge.services import SystemComponent, ConsoleComponent
 from tests._helpers import make_test_config
 
@@ -22,6 +21,7 @@ async def test_bridge_service_lifecycle_full_sync() -> None:
     state = create_runtime_state(config)
     try:
         from mcubridge.mqtt.spool_manager import MqttSpoolManager
+
         spool = MagicMock(spec=MqttSpoolManager)
         service = BridgeService(config, state, spool)
 
@@ -71,6 +71,7 @@ async def test_bridge_service_handle_status_reporting(
     runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
     from mcubridge.mqtt.spool_manager import MqttSpoolManager
+
     spool = MagicMock(spec=MqttSpoolManager)
     service = BridgeService(runtime_config, runtime_state, spool)
 
@@ -105,9 +106,10 @@ async def test_enqueue_mqtt_spool_unavailable_logs(
 ):
     # No spool configured
     from mcubridge.mqtt.spool_manager import MqttSpoolManager
+
     spool = MagicMock(spec=MqttSpoolManager)
     service = BridgeService(runtime_config, runtime_state, spool)
-    
+
     msg = structures.QueuedPublish(topic_name="test", payload=b"data")
     await service.enqueue_mqtt(msg)
     assert runtime_state.mqtt_publish_queue.qsize() == 1
@@ -118,6 +120,7 @@ async def test_bridge_service_publish_snapshot(
     runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
     from mcubridge.mqtt.spool_manager import MqttSpoolManager
+
     spool = MagicMock(spec=MqttSpoolManager)
     service = BridgeService(runtime_config, runtime_state, spool)
 
@@ -130,10 +133,12 @@ async def test_bridge_service_reject_topic_action(
     runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
     from mcubridge.mqtt.spool_manager import MqttSpoolManager
+
     spool = MagicMock(spec=MqttSpoolManager)
     service = BridgeService(runtime_config, runtime_state, spool)
 
     from aiomqtt.message import Message
+
     msg = Message("test", b"", 0, False, False, None)
 
     await service._reject_topic_action(msg, Topic.DIGITAL, "write")  # type: ignore[reportPrivateUsage]

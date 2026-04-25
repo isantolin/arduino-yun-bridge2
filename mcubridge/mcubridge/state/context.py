@@ -444,9 +444,7 @@ class RuntimeState(msgspec.Struct):
         self.process_output_limit = config.process_max_output_bytes
         self.process_max_concurrent = config.process_max_concurrent
 
-        self.console_to_mcu_queue = BridgeQueue[bytes](
-            max_bytes=self.console_queue_limit_bytes,
-        )
+        self.console_to_mcu_queue = BridgeQueue[bytes]()
 
         def _create_spool(subdir: str) -> BridgeQueue[bytes]:
             directory = None

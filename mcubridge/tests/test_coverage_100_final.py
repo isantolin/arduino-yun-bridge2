@@ -266,7 +266,7 @@ class TestQueues:
         assert pq.popleft() == b"2"
         pq.close()
 
-        bq: BridgeQueue[bytes] = BridgeQueue(max_bytes=10)
+        bq: BridgeQueue[bytes] = BridgeQueue(max_items=10)
         bq.append(b"hello")
         # In RAM mode (no directory), bytes property returns 0 as it is not strictly tracked
         assert bq.bytes == 0

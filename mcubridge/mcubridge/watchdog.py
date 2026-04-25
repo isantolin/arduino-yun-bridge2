@@ -51,6 +51,18 @@ class WatchdogKeepalive:
     def interval(self) -> float:
         return self._interval
 
+    def update_interval(self, interval: float) -> None:
+        """Update the keepalive interval at runtime.
+
+        This method is primarily exposed for testing scenarios where the
+        watchdog timing needs to be adjusted dynamically. In production,
+        the interval is typically set once at instantiation.
+
+        Args:
+            interval: New interval in seconds (clamped to WATCHDOG_MIN_INTERVAL).
+        """
+        self._interval = max(WATCHDOG_MIN_INTERVAL, interval)
+
     def kick(self) -> None:
         """Send a single watchdog pulse immediately."""
         try:

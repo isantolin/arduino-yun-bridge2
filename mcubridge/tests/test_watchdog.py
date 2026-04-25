@@ -45,11 +45,12 @@ def test_watchdog_keepalive_emits_pulses(
         state.cleanup()
 
 
-def test_watchdog_interval_initialization(runtime_state: RuntimeState) -> None:
-    keepalive = WatchdogKeepalive(state=runtime_state, interval=3.5)
+def test_watchdog_interval_updates(runtime_state: RuntimeState) -> None:
+    keepalive = WatchdogKeepalive(state=runtime_state)
+    keepalive.update_interval(3.5)
     assert keepalive.interval == 3.5
-    keepalive2 = WatchdogKeepalive(state=runtime_state, interval=0.2)
-    assert keepalive2.interval == 0.5
+    keepalive.update_interval(0.2)
+    assert keepalive.interval == 0.5
 
 
 def test_watchdog_kick_handles_write_errors(runtime_state: RuntimeState) -> None:

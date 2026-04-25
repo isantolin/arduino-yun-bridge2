@@ -1,21 +1,24 @@
 """Tests for various edge cases and coverage gaps (v2)."""
 
-from unittest.mock import MagicMock, patch
+from __future__ import annotations
+
+from typing import Any, cast
+from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 from mcubridge.state.queues import BridgeQueue
 from mcubridge.services.process import ProcessComponent
 
 
-def test_queues_append_with_bytes_limit_overflow():
+def test_queues_append_with_bytes_limit_overflow() -> None:
     # max_bytes logic is removed, testing basic append
-    q = BridgeQueue[bytes](max_items=10)
+    q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
     q.append(b"hello")
     assert len(q) == 1
 
 
-def test_queues_make_room_for_complex():
-    q = BridgeQueue[bytes](max_items=3)
+def test_queues_make_room_for_complex() -> None:
+    q: BridgeQueue[bytes] = BridgeQueue(max_items=3)
     q.append(b"1")
     q.append(b"2")
     q.append(b"3")
@@ -25,26 +28,30 @@ def test_queues_make_room_for_complex():
 
 
 @pytest.mark.asyncio
-async def test_poll_process_not_found_explicit():
+async def test_poll_process_not_found_explicit() -> None:
     # Test for coverage of poll_process when slot is missing
     state = MagicMock()
-    comp = ProcessComponent(MagicMock(), state, MagicMock())
-    comp._process_slots = {}
-    await comp.handle_poll(MagicMock(pid=999))
-    # Should just return without error
+    serial_flow = MagicMock()
+    serial_flow.acknowledge = AsyncMock()
+
+    comp = ProcessComponent(MagicMock(), state, serial_flow, MagicMock())
+    # handle_poll requires pid and payload in original code
+    # We pass a proper seq_id as int to avoid further type errors in internals
+    await comp.handle_poll(1, b"")
 
 
 @pytest.mark.asyncio
-async def test_finalize_process_slot_gone():
-    comp = ProcessComponent(MagicMock(), MagicMock(), MagicMock())
-    comp._process_slots = {}
-    await comp._finalize_process(999, MagicMock())
-    # Should handle missing slot gracefully
+async def test_finalize_process_slot_gone() -> None:
+    comp = ProcessComponent(MagicMock(), MagicMock(), MagicMock(), MagicMock())
+    # Signature is (self, pid) in original code
+    await cast(Any, comp)._finalize_process(999)
 
 
 @pytest.mark.asyncio
-async def test_start_async_subprocess_unexpected_exception():
+async def test_start_async_subprocess_unexpected_exception() -> None:
     with patch("asyncio.create_subprocess_shell", side_effect=RuntimeError("fail")):
-        comp = ProcessComponent(MagicMock(), MagicMock(), MagicMock())
-        await comp.handle_run_async(MagicMock(command="ls"))
-        # Should catch and log
+        serial_flow = MagicMock()
+        serial_flow.acknowledge = AsyncMock()
+        comp = ProcessComponent(MagicMock(), MagicMock(), serial_flow, MagicMock())
+        # handle_run_async signature is (self, seq_id, payload)
+        await comp.handle_run_async(1, b"")

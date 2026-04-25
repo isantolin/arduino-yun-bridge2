@@ -504,6 +504,12 @@ class FileComponent:
     async def _write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:
             if len(data) > self.config.file_write_max_bytes:
+                logger.warning(
+                    "File write rejected: size limit exceeded",
+                    path=str(path),
+                    size=len(data),
+                    limit=self.config.file_write_max_bytes,
+                )
                 self.state.file_write_limit_rejections += 1
                 return False
 

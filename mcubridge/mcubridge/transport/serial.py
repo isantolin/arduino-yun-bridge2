@@ -114,7 +114,7 @@ class SerialTransport:
             except SerialHandshakeFatal as exc:
                 logger.error("Fatal serial handshake error: %s", exc)
                 raise
-            except Exception as exc:
+            except (OSError, ConnectionError, RuntimeError) as exc:
                 logger.error("Transport fatal error: %s", exc)
                 await asyncio.sleep(DEFAULT_RECONNECT_DELAY)
 

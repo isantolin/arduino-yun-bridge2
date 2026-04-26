@@ -20,5 +20,5 @@ shellingham==1.5.4
 structlog==25.5.0
 svcs==25.1.0
 tenacity==9.1.4
-typer[all]==0.24.2
+typer[all]==0.25.0
 uvloop==0.22.1

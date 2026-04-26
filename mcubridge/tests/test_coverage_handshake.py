@@ -29,23 +29,23 @@ def handshake_mgr(runtime_config: Any):
 
 @pytest.mark.asyncio
 async def test_handshake_trigger_all_states(handshake_mgr: SerialHandshakeManager):
-    handshake_mgr._set_fsm_state("unsynchronized")
+    await handshake_mgr.reset_state()
     assert handshake_mgr.fsm_state == "unsynchronized"
 
-    handshake_mgr._set_fsm_state("resetting")
+    await handshake_mgr.start()
     assert handshake_mgr.fsm_state == "resetting"
 
-    handshake_mgr._set_fsm_state("syncing")
+    await handshake_mgr.send_sync()
     assert handshake_mgr.fsm_state == "syncing"
 
-    handshake_mgr._set_fsm_state("confirming")
+    await handshake_mgr.wait_confirm()
     assert handshake_mgr.fsm_state == "confirming"
 
-    handshake_mgr._set_fsm_state("synchronized")
+    await handshake_mgr.sync_complete()
     assert handshake_mgr.fsm_state == "synchronized"
 
-    handshake_mgr._set_fsm_state("unsynchronized")
-    handshake_mgr._set_fsm_state("fault")
+    await handshake_mgr.reset_state()
+    await handshake_mgr.fail()
     assert handshake_mgr.fsm_state == "fault"
 
 
@@ -65,10 +65,10 @@ async def test_handshake_synchronize_retry_exhaustion(
 @pytest.mark.asyncio
 async def test_handshake_synchronize_success(handshake_mgr: SerialHandshakeManager):
     async def mock_attempt():
-        # manually transition for test
-        handshake_mgr._set_fsm_state("resetting")
-        handshake_mgr._set_fsm_state("syncing")
-        handshake_mgr._set_fsm_state("synchronized")
+        # manually transition via FSM triggers for test
+        await handshake_mgr.start()
+        await handshake_mgr.send_sync()
+        await handshake_mgr.sync_complete()
         return True
 
     handshake_mgr._synchronize_attempt = AsyncMock(side_effect=mock_attempt)

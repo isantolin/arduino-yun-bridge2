@@ -33,7 +33,6 @@ async def test_publish_metrics_publishes_snapshot(
         "cpu": 99.0,
         "mem": {"free": 1024},
         "mqtt_spool_degraded": True,
-        "mqtt_spool_failure_reason": "disk-full",
         "watchdog_enabled": True,
         "watchdog_interval": 7.5,
         "file_storage_limit_rejections": 1,

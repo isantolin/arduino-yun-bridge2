@@ -77,11 +77,6 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             state.metrics.mqtt_spool_errors.inc(2)
 
             state.mqtt_spool_degraded = True
-            state.mqtt_spool_failure_reason = "disk-full"
-            state.mqtt_spool_retry_attempts = 3
-            state.mqtt_spool_backoff_until = 42.0
-            state.mqtt_spool_last_error = "append_failed"
-            state.mqtt_spool_recoveries = 1
             state.mqtt_spool = cast(
                 MQTTPublishSpool,
                 SimpleNamespace(pending=7, limit=32),
@@ -140,11 +135,6 @@ def test_status_writer_publishes_metrics(monkeypatch: Any, tmp_path: Any):
             assert isinstance(payload["mqtt_spool_errors"], int)
             assert payload["mqtt_spool_errors"] >= 2
             assert payload["mqtt_spool_degraded"] is True
-            assert payload["mqtt_spool_failure_reason"] == "disk-full"
-            assert payload["mqtt_spool_retry_attempts"] == 3
-            assert payload["mqtt_spool_backoff_until"] == 42.0
-            assert payload["mqtt_spool_last_error"] == "append_failed"
-            assert payload["mqtt_spool_recoveries"] == 1
             assert payload["mqtt_spool_pending"] == 7
             assert payload["watchdog_enabled"] is True
             assert payload["watchdog_interval"] == 7.5

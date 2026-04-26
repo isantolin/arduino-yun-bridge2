@@ -254,14 +254,9 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_replayed: int = 0
     mqtt_spool_degraded: bool = False
-    mqtt_spool_failure_reason: str | None = None
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     mqtt_spool_limit: int = 0
     allow_non_tmp_paths: bool = False
-    mqtt_spool_retry_attempts: int = 0
-    mqtt_spool_backoff_until: float = 0.0
-    mqtt_spool_last_error: str | None = None
-    mqtt_spool_recoveries: int = 0
     mqtt_spool_last_trim_unix: float = 0.0
     mqtt_spool_dropped_limit: int = 0
     mqtt_spool_trim_events: int = 0

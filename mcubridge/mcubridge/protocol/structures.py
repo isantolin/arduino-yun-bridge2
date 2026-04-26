@@ -49,7 +49,6 @@ FEATURES_STRUCT: Final = cast(
     ),
 )
 
-
 def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
     """Convert a capability feature dict to its integer bitmask using Construct."""
     try:
@@ -59,7 +58,6 @@ def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
         return int(Int16ul.parse(FEATURES_STRUCT.build(feat_dict)))
     except (ImportError, AttributeError, msgspec.MsgspecError, ValueError):
         return 0
-
 
 def _int_to_capabilities(val: int) -> dict[str, bool]:
     """Convert an integer bitmask to a capability feature dict using Construct."""
@@ -73,7 +71,6 @@ def _int_to_capabilities(val: int) -> dict[str, bool]:
         return {str(k): bool(v) for k, v in dict(res).items() if not str(k).startswith("_")}
     except (ImportError, AttributeError, msgspec.MsgspecError, ValueError):
         return {}
-
 
 class TopicRoute(msgspec.Struct, frozen=True):
     """Parsed representation of an MQTT topic targeting the daemon."""
@@ -109,7 +106,6 @@ class TopicRoute(msgspec.Struct, frozen=True):
     def remainder(self) -> tuple[str, ...]:
         return self.segments[1:] if len(self.segments) > 1 else ()
 
-
 class RLEPayload(msgspec.Struct, frozen=True):
     """Encapsulates RLE-compressed data."""
 
@@ -137,11 +133,9 @@ class RLEPayload(msgspec.Struct, frozen=True):
             # Fallback or raise for protocol integrity
             raise ValueError(f"RLE decompression failed: {e}") from e
 
-
 # =============================================================================
 # 2. Security and Policy Structures (msgspec)
 # =============================================================================
-
 
 class AllowedCommandPolicy(msgspec.Struct, frozen=True):
     """Normalised allow-list for shell/process commands."""
@@ -192,7 +186,6 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
     def create_empty(cls) -> AllowedCommandPolicy:
         """Create an empty policy with no allowed commands."""
         return cls(entries=())
-
 
 class TopicAuthorization(msgspec.Struct, frozen=True):
     """Per-topic allow flags for MQTT-driven actions.
@@ -276,11 +269,9 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
         """Check if action is allowed on topic. O(1) complexity."""
         return (topic.lower(), action.lower()) in self._allowed_cache
 
-
 # =============================================================================
 # 3. Runtime Configuration Structures (msgspec)
 # =============================================================================
-
 
 class RuntimeConfig(msgspec.Struct, kw_only=True):
     """Strongly typed configuration for the daemon."""
@@ -484,7 +475,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                     f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
                 )
 
-
 # =============================================================================
 # 3. Operational Structures
 # =============================================================================
@@ -495,13 +485,11 @@ T = TypeVar("T", bound="BaseStruct")
 _msgpack_encoder = msgspec.msgpack.Encoder()
 _msgpack_decoder = msgspec.msgpack.Decoder()
 
-
 class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
     """Base class for all serial payload packets.
 
     Encoded as MsgPack arrays (positional fields) for compact wire format.
     """
-
 
 # --- Binary Protocol Packets ---
 
@@ -665,9 +653,7 @@ class GenericResponsePacket(msgspec.Struct, frozen=True):
     message: str | None = None
     data: dict[str, Any] | None = None
 
-
 # --- Manual Packet Classes (require special handling) ---
-
 
 class CapabilitiesFeatures(msgspec.Struct, frozen=True):
     """Features bitmask parsed via BitStruct."""
@@ -685,7 +671,6 @@ class CapabilitiesFeatures(msgspec.Struct, frozen=True):
     i2c: bool
     spi: bool
     sd: bool
-
 
 class CapabilitiesPacket(BaseStruct, frozen=True):
     ver: Annotated[int, msgspec.Meta(ge=0)]
@@ -706,14 +691,12 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
         mask = _capabilities_to_int(msgspec.structs.asdict(features))
         return cls(ver=ver, arch=arch, dig=dig, ana=ana, feat_mask=mask)
 
-
 # [SIL-2] Payload Schema Map: Centralized registry for all command payloads.
 # This eliminates manual if/elif dispatching across components.
 
 # --- Operational Constants ---
 
 MAX_COMMAND_LEN: Final[int] = 512
-
 
 class PayloadValidationError(ValueError):
     """Raised when an inbound MQTT payload cannot be validated."""
@@ -722,9 +705,7 @@ class PayloadValidationError(ValueError):
         super().__init__(message)
         self.message = message
 
-
 # --- High-Level Structure (Msgspec Only) ---
-
 
 class ShellCommandPayload(msgspec.Struct, frozen=True):
     """Represents a shell command request coming from MQTT.
@@ -759,7 +740,6 @@ class ShellCommandPayload(msgspec.Struct, frozen=True):
             raise PayloadValidationError("Command cannot exceed 512 characters")
         return cls(command=text)
 
-
 class ShellPidPayload(msgspec.Struct, frozen=True):
     """MQTT payload specifying an async shell PID to operate on."""
 
@@ -773,7 +753,6 @@ class ShellPidPayload(msgspec.Struct, frozen=True):
             return msgspec.convert({"pid": value}, cls, strict=True)
         except (ValueError, msgspec.ValidationError) as exc:
             raise PayloadValidationError(f"Invalid PID segment: {exc}") from exc
-
 
 class SerialTimingWindow(msgspec.Struct, frozen=True):
     """Derived serial retry/response windows used by both MCU and MPU."""
@@ -790,7 +769,6 @@ class SerialTimingWindow(msgspec.Struct, frozen=True):
     def response_timeout_seconds(self) -> float:
         return self.response_timeout_ms / 1000.0
 
-
 class MqttPayload(msgspec.Struct, frozen=True):
     topic: str
     payload: bytes
@@ -798,18 +776,15 @@ class MqttPayload(msgspec.Struct, frozen=True):
     retain: bool = False
     properties: dict[str, Any] = {}
 
-
 class PinRequest(msgspec.Struct, frozen=True):
     pin: int
     state: str
-
 
 class PendingPinRequest(msgspec.Struct):
     """Pending pin read request."""
 
     pin: int
     reply_context: Any | None = None  # Message | None
-
 
 class ServiceHealth(msgspec.Struct, frozen=True):
     name: str
@@ -818,7 +793,6 @@ class ServiceHealth(msgspec.Struct, frozen=True):
     last_failure_unix: float
     last_exception: str | None = None
 
-
 class SystemStatus(msgspec.Struct, frozen=True):
     cpu_percent: float | None
     memory_total_bytes: int | None
@@ -826,9 +800,7 @@ class SystemStatus(msgspec.Struct, frozen=True):
     load_avg_1m: float | None
     uptime_seconds: float
 
-
 # --- MQTT Spool Structures ---
-
 
 class QOSLevel(IntEnum):
     """MQTT Quality-of-Service levels."""
@@ -837,9 +809,7 @@ class QOSLevel(IntEnum):
     QOS_1 = 1
     QOS_2 = 2
 
-
 UserProperty = tuple[str, str]
-
 
 class QueuedPublish(msgspec.Struct, frozen=True):
     """Serializable MQTT publish packet used by the durable spool."""
@@ -886,9 +856,7 @@ class QueuedPublish(msgspec.Struct, frozen=True):
 
         return props
 
-
 # --- Process Service Structures ---
-
 
 class ProcessOutputBatch(msgspec.Struct):
     """Structured payload describing PROCESS_POLL results."""
@@ -901,9 +869,7 @@ class ProcessOutputBatch(msgspec.Struct):
     stdout_truncated: bool
     stderr_truncated: bool
 
-
 # --- Serial Flow Structures ---
-
 
 class PendingCommand(msgspec.Struct):
     """Book-keeping for a tracked command in flight."""
@@ -929,12 +895,9 @@ class PendingCommand(msgspec.Struct):
         if not self.completion.is_set():
             self.completion.set()
 
-
 # --- Status Structures ---
 
-
 _SnapshotT = TypeVar("_SnapshotT", bound=msgspec.Struct)
-
 
 class BaseStats(msgspec.Struct):
     """Base for statistics containers providing standard dict conversion.
@@ -956,14 +919,12 @@ class BaseStats(msgspec.Struct):
             raise NotImplementedError(f"{self.__class__.__name__} has no SNAPSHOT_TYPE")
         return cast(msgspec.Struct, msgspec.convert(msgspec.structs.asdict(self), snap_cls))
 
-
 class SupervisorSnapshot(msgspec.Struct):
     restarts: Annotated[int, msgspec.Meta(ge=0)]
     last_failure_unix: float
     last_exception: str | None
     backoff_seconds: Annotated[float, msgspec.Meta(ge=0.0)]
     fatal: bool
-
 
 class SupervisorStats(BaseStats):
     """Task supervisor statistics."""
@@ -979,7 +940,6 @@ class SupervisorStats(BaseStats):
     def as_snapshot(self) -> SupervisorSnapshot:
         return cast(SupervisorSnapshot, super().as_snapshot())
 
-
 class McuCapabilities(msgspec.Struct):
     """Hardware capabilities reported by the MCU."""
 
@@ -994,7 +954,6 @@ class McuCapabilities(msgspec.Struct):
         from .protocol import ARCHITECTURE_DISPLAY_NAMES
 
         return ARCHITECTURE_DISPLAY_NAMES.get(self.board_arch, f"Unknown (0x{self.board_arch:02X})")
-
 
 class SerialThroughputStats(BaseStats):
     """Serial link throughput counters."""
@@ -1016,7 +975,6 @@ class SerialThroughputStats(BaseStats):
         self.frames_received += 1
         self.last_rx_unix = time.time()
 
-
 # [EXTENDED METRICS] Latency histogram bucket boundaries in milliseconds
 LATENCY_BUCKETS_MS: tuple[float, ...] = (
     5.0,
@@ -1029,7 +987,6 @@ LATENCY_BUCKETS_MS: tuple[float, ...] = (
     1000.0,
     2500.0,
 )
-
 
 class SerialLatencyStats(msgspec.Struct):
     """RPC command latency histogram."""
@@ -1080,23 +1037,19 @@ class SerialLatencyStats(msgspec.Struct):
             "max_ms": self.max_latency_ms,
         }
 
-
 class McuVersion(msgspec.Struct):
     major: Annotated[int, msgspec.Meta(ge=0)]
     minor: Annotated[int, msgspec.Meta(ge=0)]
     patch: Annotated[int, msgspec.Meta(ge=0)] = 0
 
-
 class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     inflight: dict[str, Any] | None = None
     last_completion: dict[str, Any] | None = None
-
 
 class SerialLinkSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     connected: bool = False
     writer_attached: bool = False
     synchronised: bool = False
-
 
 class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     synchronised: bool = False
@@ -1116,7 +1069,6 @@ class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     pending_nonce: bool = False
     nonce_length: Annotated[int, msgspec.Meta(ge=0)] = 0
 
-
 class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     serial_link: SerialLinkSnapshot
     handshake: HandshakeSnapshot
@@ -1124,7 +1076,6 @@ class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     serial_flow: SerialFlowSnapshot
     mcu_version: McuVersion | None = None
     capabilities: dict[str, Any] | None = None
-
 
 class SerialFlowSnapshot(msgspec.Struct):
     """Serial flow control statistics snapshot."""
@@ -1134,7 +1085,6 @@ class SerialFlowSnapshot(msgspec.Struct):
     retries: Annotated[int, msgspec.Meta(ge=0)]
     failures: Annotated[int, msgspec.Meta(ge=0)]
     last_event_unix: float
-
 
 class SerialFlowStats(BaseStats):
     """Serial flow control statistics (Mutable)."""
@@ -1150,14 +1100,12 @@ class SerialFlowStats(BaseStats):
     def as_snapshot(self) -> SerialFlowSnapshot:
         return cast(SerialFlowSnapshot, super().as_snapshot())
 
-
 class ProcessStats(msgspec.Struct):
     """Resource usage statistics for a single process."""
 
     name: str
     cpu_percent: Annotated[float, msgspec.Meta(ge=0.0)]
     memory_rss_bytes: Annotated[int, msgspec.Meta(ge=0)]
-
 
 class BridgeStatus(msgspec.Struct, kw_only=True):
     """Root structure for the daemon status file."""
@@ -1183,11 +1131,8 @@ class BridgeStatus(msgspec.Struct, kw_only=True):
     mqtt_spooled_replayed: Annotated[int, msgspec.Meta(ge=0)]
     mqtt_spool_errors: Annotated[int, msgspec.Meta(ge=0)]
     mqtt_spool_degraded: bool
-    mqtt_spool_failure_reason: str | None
-    mqtt_spool_retry_attempts: Annotated[int, msgspec.Meta(ge=0)]
-    mqtt_spool_backoff_until: float
-    mqtt_spool_last_error: str | None
-    mqtt_spool_recoveries: Annotated[int, msgspec.Meta(ge=0)]
+
+
     mqtt_spool_pending: Annotated[int, msgspec.Meta(ge=0)]
 
     # Storage

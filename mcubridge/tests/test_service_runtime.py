@@ -5,7 +5,6 @@ import msgspec
 from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
-import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -300,9 +299,6 @@ async def test_enqueue_mqtt_spool_unavailable_logs(
             return False
 
         monkeypatch.setattr(MqttTransport, "stash_mqtt_message", _stash_fail)
-
-        state.mqtt_spool_failure_reason = "disabled"
-        state.mqtt_spool_backoff_until = time.monotonic() + 5
 
         state.mqtt_publish_queue.put_nowait(
             QueuedPublish(

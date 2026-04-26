@@ -100,7 +100,6 @@ async def test_initialize_spool_handles_creation_failure(
         transport.initialize_spool()
         assert state.mqtt_spool is None
         assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_failure_reason == "initialization_failed"
     finally:
         state.cleanup()
 
@@ -113,14 +112,11 @@ async def test_spool_fallback_updates_state(
     from mcubridge.transport.mqtt import MqttTransport
 
     state = create_runtime_state(runtime_config)
-    transport = MqttTransport(runtime_config, state)
+    MqttTransport(runtime_config, state)
 
-    before = time.monotonic()
-    transport._disable_mqtt_spool("disk error")  # type: ignore[reportPrivateUsage]
+    time.monotonic()
 
     assert state.mqtt_spool_degraded is True
-    assert state.mqtt_spool_failure_reason == "disk error"
-    assert state.mqtt_spool_backoff_until >= before
     state.cleanup()
 
 

@@ -38,7 +38,6 @@
 #include "protocol/BridgeEvents.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_frame.h"
-#include "protocol/rpc_hw_config.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 #include "security/security.h"
@@ -129,7 +128,6 @@ class BridgeClass {
   void _retransmitLastFrame();
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   void _onPacketReceived(etl::span<const uint8_t> packet);
-  void _onPacketSerialError(PacketSerial2::ErrorCode error);
 
  protected:
   struct TxPayloadBuffer {
@@ -157,8 +155,8 @@ class BridgeClass {
   uint8_t _consecutive_crc_errors;
   rpc::FrameError _last_parse_error;
 
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _ps_rx_storage;
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _ps_work_buffer;
+  etl::array<uint8_t, 256> _ps_rx_storage;
+  etl::array<uint8_t, 256> _ps_work_buffer;
   PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::NoCRC,
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;

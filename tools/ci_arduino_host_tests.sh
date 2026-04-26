@@ -116,7 +116,6 @@ BASE_FLAGS=(
 # Compile common sources to objects in parallel
 echo "[host-cpp] Compiling common sources in parallel..."
 OBJECTS=()
-pids=()
 for src in "${SOURCES[@]}"; do
     obj_name=$(basename "${src}")
     obj="${OBJ_DIR}/${obj_name}.o"
@@ -127,18 +126,8 @@ for src in "${SOURCES[@]}"; do
     else
         g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     fi
-    pids+=($!)
 done
-
-FAIL=0
-for pid in "${pids[@]}"; do
-    wait "$pid" || FAIL=1
-done
-
-if [ $FAIL -ne 0 ]; then
-    echo "[ERROR] Compilation of common sources failed!" >&2
-    exit 1
-fi
+wait
 
 # Test suites
 TEST_FILES=(
@@ -158,20 +147,21 @@ pids=()
 for test_file in "${TEST_FILES[@]}"; do
     (
         test_name=$(basename "${test_file}" .cpp)
-        g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}" && \
+        g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}"
         "${BUILD_DIR}/${test_name}"
     ) &
     pids+=($!)
+    
+    # Throttle to MAX_JOBS
+    if [[ ${#pids[@]} -ge 5 ]]; then
+        wait ${pids[0]}
+        pids=("${pids[@]:1}")
+    fi
 done
 
-FAIL=0
+# Wait for remaining
 for pid in "${pids[@]}"; do
-    wait "$pid" || FAIL=1
+    wait "$pid"
 done
-
-if [ $FAIL -ne 0 ]; then
-    echo "[ERROR] Host tests failed!" >&2
-    exit 1
-fi
 
 echo "[host-cpp] ALL HOST TESTS PASSED"

@@ -125,6 +125,16 @@ class FrameParser {
     reader.skip<uint8_t>(result.header.payload_length);
     auto crc_opt = reader.read<uint32_t>();
 
+#if BRIDGE_HOST_TEST
+    if (!crc_opt || *crc_opt != crc_calc.value()) {
+        fprintf(stderr, "[PARSE] CRC MISMATCH! Size: %zu, Calc: %08X, Recv: %08X\\n", 
+                buffer.size(), (unsigned int)crc_calc.value(), (unsigned int)(crc_opt ? *crc_opt : 0));
+        fprintf(stderr, "[PARSE] Data: ");
+        for(size_t i=0; i < (buffer.size() < 16 ? buffer.size() : 16); ++i) fprintf(stderr, "%02X ", buffer[i]);
+        fprintf(stderr, "\\n");
+    }
+#endif
+
     if (!crc_opt || *crc_opt != crc_calc.value())
       return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
     result.crc = crc_calc.value();

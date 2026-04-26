@@ -3,6 +3,7 @@
 #include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include "Bridge.h"
@@ -42,11 +43,11 @@ class HostSerialStream : public Stream {
   }
 
   int available() override {
-    struct pollfd fds;
-    fds.fd = fd_in_;
-    fds.events = POLLIN;
-    int ret = poll(&fds, 1, 0);
-    return (ret > 0 && (fds.revents & POLLIN)) ? 1 : 0;
+    int count = 0;
+    if (ioctl(fd_in_, FIONREAD, &count) < 0) {
+      return 0;
+    }
+    return count;
   }
 
   int read() override {

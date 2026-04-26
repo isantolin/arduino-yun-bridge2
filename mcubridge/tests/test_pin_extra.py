@@ -19,7 +19,9 @@ from tests._helpers import make_mqtt_msg
 async def test_pin_handle_read_overflow() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=os.path.abspath(
+            f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:
@@ -57,7 +59,9 @@ async def test_pin_handle_read_overflow() -> None:
 async def test_pin_handle_mqtt_edge_cases() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=os.path.abspath(
+            f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:
@@ -104,7 +108,9 @@ async def test_pin_handle_mqtt_edge_cases() -> None:
 async def test_pin_handle_analog_read_resp_malformed() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=os.path.abspath(
+            f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:

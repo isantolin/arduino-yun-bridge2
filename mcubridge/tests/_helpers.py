@@ -6,6 +6,7 @@ import msgspec
 import os
 import tempfile
 from unittest.mock import MagicMock
+from .conftest import TMP_TESTS_DIR
 
 
 from mcubridge.config.common import get_default_config
@@ -20,9 +21,9 @@ def make_test_config(**overrides: object) -> RuntimeConfig:
 
     # [SIL-2] Ensure unique paths for every test instance to avoid SQLite race conditions
     # FLASH PROTECTION: Must be in /tmp (RAMFS)
-    tmp_root = tempfile.mkdtemp(prefix="mcubridge-test-", dir=".tmp_tests")
-    spool_dir = os.path.join(tmp_root, "spool")
-    fs_root = os.path.join(tmp_root, "fs")
+    tmp_root = tempfile.mkdtemp(prefix="mcubridge-test-", dir=TMP_TESTS_DIR)
+    spool_dir = os.path.abspath(os.path.join(tmp_root, "spool"))
+    fs_root = os.path.abspath(os.path.join(tmp_root, "fs"))
     os.makedirs(spool_dir, exist_ok=True)
     os.makedirs(fs_root, exist_ok=True)
 

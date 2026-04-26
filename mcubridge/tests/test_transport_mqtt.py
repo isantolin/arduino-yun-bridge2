@@ -3,6 +3,7 @@
 from __future__ import annotations
 from mcubridge.transport.mqtt import MqttTransport
 
+import os
 import asyncio
 import contextlib
 import ssl
@@ -28,7 +29,7 @@ def _make_config(
     *,
     tls: bool,
     cafile: str | None,
-    spool_dir: str = ".tmp_tests/mcubridge-test-transport-spool",
+    spool_dir: str = os.path.abspath(".tmp_tests/mcubridge-test-transport-spool"),
 ) -> RuntimeConfig:
     return make_test_config(
         mqtt_user="user",

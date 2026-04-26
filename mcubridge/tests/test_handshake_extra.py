@@ -23,7 +23,9 @@ async def test_handshake_sync_resp_rate_limit() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         serial_handshake_min_interval=10.0,
-        mqtt_spool_dir=f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",
+        mqtt_spool_dir=os.path.abspath(
+            f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:
@@ -53,7 +55,9 @@ async def test_handshake_sync_resp_replay_detected() -> None:
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        mqtt_spool_dir=f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",
+        mqtt_spool_dir=os.path.abspath(
+            f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:
@@ -92,7 +96,9 @@ async def test_handshake_fetch_capabilities_timeout_and_retry() -> None:
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        mqtt_spool_dir=f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",
+        mqtt_spool_dir=os.path.abspath(
+            f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:
@@ -128,7 +134,9 @@ async def test_handshake_handle_capabilities_resp() -> None:
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        mqtt_spool_dir=f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",
+        mqtt_spool_dir=os.path.abspath(
+            f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:
@@ -158,7 +166,9 @@ async def test_handshake_failure_detail_non_immediate() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
         serial_handshake_fatal_failures=2,
-        mqtt_spool_dir=f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",
+        mqtt_spool_dir=os.path.abspath(
+            f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:
@@ -191,7 +201,9 @@ async def test_handshake_clear_expectations_with_data() -> None:
 
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        mqtt_spool_dir=f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}",
+        mqtt_spool_dir=os.path.abspath(
+            f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:

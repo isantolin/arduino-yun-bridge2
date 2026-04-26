@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import os
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,7 +31,7 @@ async def test_serial_reader_task_reconnects():
         mqtt_keyfile=None,
         mqtt_topic="br",
         allowed_commands=(),
-        file_system_root=".tmp_tests",
+        file_system_root=os.path.abspath(".tmp_tests"),
         process_timeout=5,
         reconnect_delay=1,
         serial_shared_secret=b"s_e_c_r_e_t_mock",

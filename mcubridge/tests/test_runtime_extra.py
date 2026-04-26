@@ -18,7 +18,9 @@ from mcubridge.state.context import create_runtime_state
 async def test_runtime_on_serial_connected_errors() -> None:
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234",
-        file_system_root=f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}",
+        file_system_root=os.path.abspath(
+            f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}"
+        ),
     )
     state = create_runtime_state(config)
     try:

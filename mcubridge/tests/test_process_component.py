@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import os
 import pytest
 import pytest_asyncio
 from mcubridge.config.const import (
@@ -46,7 +47,7 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
         mqtt_keyfile=None,
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=("echo", "ls"),
-        file_system_root=".tmp_tests",
+        file_system_root=os.path.abspath(".tmp_tests"),
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,

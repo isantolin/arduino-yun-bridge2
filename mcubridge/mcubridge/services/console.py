@@ -3,23 +3,22 @@
 from __future__ import annotations
 
 import itertools
-from typing import TYPE_CHECKING, Any
+import structlog
+from typing import TYPE_CHECKING
 
 import msgspec
-import structlog
 from aiomqtt.message import Message
-
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, ConsoleAction
 from mcubridge.protocol.structures import ConsoleWritePacket, TopicRoute
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
-from ..mqtt import atomic_publish
 from ..protocol.topics import Topic, topic_path
 
 if TYPE_CHECKING:
-    from ..config.settings import RuntimeConfig
+    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
+    from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.console")
@@ -33,12 +32,12 @@ class ConsoleComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        mqtt_flow: Any | None = None,  # Kept for compatibility during migration
+        mqtt_flow: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state
         self.serial_flow = serial_flow
-        # mqtt_flow is no longer used, we use self.state + atomic_publish directly
+        self.mqtt_flow = mqtt_flow
 
     async def handle_write(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
@@ -58,9 +57,7 @@ class ConsoleComponent:
             Topic.CONSOLE,
             ConsoleAction.OUT,
         )
-        # [SIL-2] Direct call to atomic utility (Eradicates MqttTransport wrapper)
-        await atomic_publish(
-            self.state,
+        await self.mqtt_flow.publish(
             topic=topic,
             payload=data,
             expiry=MQTT_EXPIRY_CONSOLE,

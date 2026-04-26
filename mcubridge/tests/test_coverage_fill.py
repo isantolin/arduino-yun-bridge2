@@ -197,3 +197,56 @@ async def test_dispatcher_handle_bridge_topic_no_segments(dispatcher: BridgeDisp
     route = TopicRoute(
         raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("bridge",)
     )
+    result = await dispatcher._handle_bridge_topic(route, MagicMock())  # type: ignore[reportPrivateUsage]
+    assert result is False
+
+
+# --- Datastore Gaps ---
+
+
+@pytest.mark.asyncio
+async def test_datastore_publish_value_error_reason(
+    runtime_config: Any, runtime_state: Any
+):
+    """Cover logic in _publish_datastore_value."""
+    serial_flow = MagicMock()
+    mqtt_flow = MagicMock()
+    mqtt_flow.publish = AsyncMock()
+
+    ds = DatastoreComponent(
+        config=runtime_config,
+        state=runtime_state,
+        serial_flow=serial_flow,
+        mqtt_flow=mqtt_flow,
+    )
+    await ds._publish_datastore_value(  # type: ignore[reportPrivateUsage]
+        key="key",
+        value=b"val",
+        error_reason="testing",
+    )
+    # Check mqtt_flow.publish instead of state.publish
+    _args, kwargs = mqtt_flow.publish.call_args
+    props = kwargs.get("properties", ())
+    assert any(k == "bridge-error" and v == "testing" for k, v in props)
+
+
+@pytest.mark.asyncio
+async def test_datastore_handle_get_request_fail_send(
+    runtime_config: Any, runtime_state: Any
+):
+    """Cover line 86->88 in datastore.py."""
+    serial_flow = MagicMock()
+    serial_flow.send = AsyncMock(return_value=False)
+    mqtt_flow = MagicMock()
+
+    ds = DatastoreComponent(
+        config=runtime_config,
+        state=runtime_state,
+        serial_flow=serial_flow,
+        mqtt_flow=mqtt_flow,
+    )
+    from mcubridge.protocol.structures import DatastoreGetPacket
+
+    payload = msgspec.msgpack.encode(DatastoreGetPacket(key="test"))
+    result = await ds.handle_get_request(0, payload)
+    assert result is False

@@ -1,50 +1,88 @@
-"""Tests for the DatastoreComponent."""
+"""Unit tests for the DatastoreComponent."""
 
 from __future__ import annotations
 
+from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
+
 import msgspec
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from mcubridge.protocol.protocol import (
+    DatastoreAction,
+)
+from mcubridge.protocol.structures import (
+    DatastoreGetPacket,
+    DatastorePutPacket,
+)
+from mcubridge.protocol.topics import Topic
 from mcubridge.services.datastore import DatastoreComponent
-from mcubridge.protocol.protocol import Command, DatastoreAction
-from mcubridge.protocol.structures import DatastorePutPacket, DatastoreGetPacket, TopicRoute
-from mcubridge.protocol.topics import Topic, topic_path
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.state.context import RuntimeState
+from mcubridge.transport.mqtt import MqttTransport
+from tests._helpers import make_mqtt_msg, make_route, make_test_config
+
 
 @pytest.fixture
-def datastore_comp(runtime_config, runtime_state):
-    serial_flow = MagicMock()
+def datastore_component() -> DatastoreComponent:
+    config = make_test_config()
+    state = MagicMock(spec=RuntimeState)
+    state.datastore = {}
+    state.mqtt_topic_prefix = "br"
+
+    serial_flow = MagicMock(spec=SerialFlowController)
+    serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock(return_value=True)
-    return DatastoreComponent(runtime_config, runtime_state, serial_flow)
+    mqtt_flow = MagicMock(spec=MqttTransport)
+    mqtt_flow.publish = AsyncMock()
+
+    return DatastoreComponent(
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
+
 
 @pytest.mark.asyncio
-async def test_datastore_handle_put(datastore_comp):
+async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> None:
     payload = msgspec.msgpack.encode(DatastorePutPacket(key="temp", value=b"25.5"))
-    with patch("mcubridge.services.datastore.atomic_publish", new_callable=AsyncMock) as mock_publish:
-        await datastore_comp.handle_put(0, payload)
-        assert datastore_comp.state.datastore["temp"] == "25.5"
-        mock_publish.assert_called_once()
+    await datastore_component.handle_put(0, payload)
+
+    assert datastore_component.state.datastore["temp"] == "25.5"
+    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
+
 
 @pytest.mark.asyncio
-async def test_datastore_handle_get_request(datastore_comp):
-    datastore_comp.state.datastore["version"] = "1.0.0"
+async def test_datastore_handle_get_request(
+    datastore_component: DatastoreComponent,
+) -> None:
+    datastore_component.state.datastore["version"] = "1.0.0"
     payload = msgspec.msgpack.encode(DatastoreGetPacket(key="version"))
-    await datastore_comp.handle_get_request(0, payload)
-    datastore_comp.serial_flow.send.assert_called_once()
+
+    await datastore_component.handle_get_request(0, payload)
+
+    cast(Any, datastore_component.serial_flow.send).assert_called()
+    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
+
 
 @pytest.mark.asyncio
-async def test_datastore_handle_mqtt_put(datastore_comp):
-    route = TopicRoute("br/datastore/put/sys/uptime", "br", Topic.DATASTORE, ("put", "sys", "uptime"))
-    msg = MagicMock()
-    msg.payload = b"3600"
-    await datastore_comp.handle_mqtt(route, msg)
-    assert datastore_comp.state.datastore["sys/uptime"] == "3600"
-    datastore_comp.serial_flow.send.assert_called_once()
+async def test_datastore_handle_mqtt_put(
+    datastore_component: DatastoreComponent,
+) -> None:
+    route = make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "sys", "uptime")
+    msg = make_mqtt_msg(b"3600")
+
+    await datastore_component.handle_mqtt(route, msg)
+
+    assert datastore_component.state.datastore["sys/uptime"] == "3600"
+    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
+
 
 @pytest.mark.asyncio
-async def test_datastore_handle_mqtt_get(datastore_comp):
-    datastore_comp.state.datastore["status"] = "OK"
-    route = TopicRoute("br/datastore/get/status", "br", Topic.DATASTORE, ("get", "status"))
-    msg = MagicMock()
-    with patch("mcubridge.services.datastore.atomic_publish", new_callable=AsyncMock) as mock_publish:
-        await datastore_comp.handle_mqtt(route, msg)
-        mock_publish.assert_called_once()
+async def test_datastore_handle_mqtt_get(
+    datastore_component: DatastoreComponent,
+) -> None:
+    datastore_component.state.datastore["status"] = "OK"
+    route = make_route(Topic.DATASTORE, DatastoreAction.GET.value, "status")
+    msg = make_mqtt_msg(b"")
+
+    await datastore_component.handle_mqtt(route, msg)
+
+    cast(Any, datastore_component.mqtt_flow.publish).assert_called()

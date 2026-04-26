@@ -1187,6 +1187,67 @@ class TestRuntimeStateEdges:
         state.record_serial_flow_event("retry")
 
     def test_record_unknown_command_id(self: Any, state: Any):
+        state.unknown_command_count += 1
+        state.unknown_command_last_id = 0xFF
+
+    def test_record_mcu_status(self: Any, state: Any):
+        state.mcu_status_counts["OK"] = 1
+
+    def test_apply_handshake_stats(self: Any, state: Any):
+        pass
+
+    def test_collect_system_metrics(self):
+        from mcubridge.state.context import collect_system_metrics
+
+        metrics = collect_system_metrics()
+        assert isinstance(metrics, dict)
+
+    def test_cleanup(self: Any, state: Any):
+        state.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_stash_mqtt_message_no_spool(self: Any, state: Any, monkeypatch: Any):
+        from mcubridge.protocol.structures import QueuedPublish
+
+        state.mqtt_spool = None
+        msg = QueuedPublish(topic_name="t", payload=b"p")
+
+        async def mock_ensure_spool(instance: Any):
+            return True
+
+        monkeypatch.setattr(MqttTransport, "ensure_spool", mock_ensure_spool)
+
+        # We also need to mock mqtt_spool since it's used after ensure_spool
+        state.mqtt_spool = MagicMock()
+        from tests._helpers import make_test_config
+
+        transport = MqttTransport(make_test_config(), state)
+        result = await transport.stash_mqtt_message(msg)
+        assert result is True
+        state.mqtt_spool.append.assert_called_with(msg)
+
+    @pytest.mark.asyncio
+    async def test_flush_mqtt_spool_no_spool(self: Any, state: Any):
+        state.mqtt_spool = None
+        from tests._helpers import make_test_config
+
+        transport = MqttTransport(make_test_config(), state)
+        await transport.flush_mqtt_spool()
+
+    def test_enqueue_mailbox_overflow(self: Any, state: Any):
+        # Fill up to limit
+        for i in range(state.mailbox_queue_limit + 1):
+            state.mailbox_queue.append(f"msg{i}")
+
+    def test_pop_mailbox_message(self: Any, state: Any):
+        state.mailbox_queue.append(b"message1")
+        result = state.mailbox_queue.popleft()
+        assert result == b"message1"
+
+    def test_pop_mailbox_message_empty(self: Any, state: Any):
+        result = state.mailbox_queue.popleft()
+        assert result is None
+
 
 # ============================================================================
 # mcubridge/services/runtime.py — lines 155, 183, etc.

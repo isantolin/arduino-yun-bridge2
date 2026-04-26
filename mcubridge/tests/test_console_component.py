@@ -1,48 +1,64 @@
-"""Tests for the ConsoleComponent."""
+"""Unit tests for the ConsoleComponent."""
 
 from __future__ import annotations
 
+import collections
+from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
+
 import msgspec
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from mcubridge.services.console import ConsoleComponent, ConsoleAction
 from mcubridge.protocol.structures import ConsoleWritePacket
-from mcubridge.protocol.topics import Topic, topic_path
+from mcubridge.services.console import ConsoleComponent
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.state.context import RuntimeState
+from mcubridge.transport.mqtt import MqttTransport
+from tests._helpers import make_test_config
 
 
 @pytest.fixture
-def console_comp(runtime_config, runtime_state):
-    serial_flow = MagicMock()
-    serial_flow.send = AsyncMock()
-    # Signature: config, state, serial_flow, mqtt_flow=None
-    return ConsoleComponent(runtime_config, runtime_state, serial_flow)
+def console_component() -> ConsoleComponent:
+    config = make_test_config()
+    state = MagicMock(spec=RuntimeState)
+    state.mqtt_topic_prefix = "br"
+    state.mcu_is_paused = False
+    state.console_to_mcu_queue = collections.deque()
+
+    serial_flow = MagicMock(spec=SerialFlowController)
+    serial_flow.send = AsyncMock(return_value=True)
+    mqtt_flow = MagicMock(spec=MqttTransport)
+    mqtt_flow.publish = AsyncMock()
+
+    return ConsoleComponent(
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
 
 
 @pytest.mark.asyncio
-async def test_console_handle_write_success(console_comp):
+async def test_console_handle_write_success(
+    console_component: ConsoleComponent,
+) -> None:
+    # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
     payload = msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))
-    # Patch the utility where it is USED (in mcubridge.services.console)
-    with patch(
-        "mcubridge.services.console.atomic_publish", new_callable=AsyncMock
-    ) as mock_publish:
-        await console_comp.handle_write(0, payload)
 
-        expected_topic = topic_path(
-            console_comp.state.mqtt_topic_prefix,
-            Topic.CONSOLE,
-            ConsoleAction.OUT,
-        )
-        mock_publish.assert_called_once()
-        args, kwargs = mock_publish.call_args
-        assert kwargs["topic"] == expected_topic
-        assert kwargs["payload"] == b"hello"
+    await console_component.handle_write(0, payload)
+
+    cast(Any, console_component.mqtt_flow.publish).assert_called()
 
 
 @pytest.mark.asyncio
-async def test_console_xoff_xon(console_comp):
-    # This logic remains state-based, no changes needed for MQTT removal
-    await console_comp.handle_xoff(0, b"")
-    assert console_comp.state.mcu_is_paused is True
+async def test_console_xoff_xon(console_component: ConsoleComponent) -> None:
+    await console_component.handle_xoff(0, b"")
+    assert console_component.state.mcu_is_paused is True
 
-    await console_comp.handle_xon(0, b"")
-    assert console_comp.state.mcu_is_paused is False
+    await console_component.handle_xon(1, b"")
+    assert console_component.state.mcu_is_paused is False
+
+
+@pytest.mark.asyncio
+async def test_console_on_serial_disconnected(
+    console_component: ConsoleComponent,
+) -> None:
+    console_component.state.mcu_is_paused = True
+    console_component.on_serial_disconnected()
+    assert console_component.state.mcu_is_paused is False

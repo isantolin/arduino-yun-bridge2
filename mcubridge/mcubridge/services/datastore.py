@@ -21,7 +21,6 @@ from mcubridge.protocol.structures import (
 )
 
 from ..config.const import MQTT_EXPIRY_DATASTORE
-from ..mqtt import atomic_publish
 from ..protocol.topics import Topic, topic_path
 
 if TYPE_CHECKING:
@@ -41,11 +40,12 @@ class DatastoreComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        mqtt_flow: Any | None = None,  # Kept for compatibility
+        mqtt_flow: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state
         self.serial_flow = serial_flow
+        self.mqtt_flow = mqtt_flow
 
     async def handle_put(self, seq_id: int, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
@@ -99,76 +99,151 @@ class DatastoreComponent:
             DatastoreGetResponsePacket(value=value_bytes)
         )
 
-        await self.serial_flow.send(
+        send_ok = await self.serial_flow.send(
             Command.CMD_DATASTORE_GET_RESP.value,
             response_payload,
         )
+        if send_ok:
+            await self._publish_datastore_value(key, value_bytes)
+        return send_ok
+
+    async def handle_mqtt(
+        self,
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        identifier = route.identifier
+        remainder = list(route.remainder)
+        payload = msgspec.convert(inbound.payload, bytes)
+        payload_str = payload.decode("utf-8", errors="ignore")
+
+        is_request = (
+            identifier == DatastoreAction.GET
+            and bool(remainder)
+            and remainder[-1] == "request"
+        )
+        parts = remainder[:-1] if is_request else remainder
+
+        key = "/".join(parts)
+        if not key:
+            logger.debug("Ignoring datastore action '%s' without key", identifier)
+            return True
+
+        match identifier:
+            case DatastoreAction.PUT:
+                await self._handle_mqtt_put(key, payload_str, inbound)
+            case DatastoreAction.GET:
+                await self._handle_mqtt_get(key, is_request, inbound)
+            case _:
+                logger.debug("Unknown datastore action '%s'", identifier)
         return True
 
-    async def _publish_datastore_value(self, key: str, value: bytes) -> None:
-        topic = topic_path(
+    async def _handle_mqtt_put(
+        self,
+        key: str,
+        value_text: str,
+        inbound: Message | None,
+    ) -> None:
+        key_bytes = key.encode("utf-8")
+        value_bytes = value_text.encode("utf-8")
+
+        if len(key_bytes) > 255 or len(value_bytes) > 255:
+            logger.warning(
+                "Datastore payload too large. key=%d value=%d",
+                len(key_bytes),
+                len(value_bytes),
+            )
+            return
+
+        self.state.datastore[key] = value_text
+        await self._publish_datastore_value(
+            key,
+            value_bytes,
+            reply_context=inbound,
+        )
+
+    async def _handle_mqtt_get(
+        self,
+        key: str,
+        is_request: bool,
+        inbound: Message | None,
+    ) -> None:
+        key_bytes = key.encode("utf-8")
+        if len(key_bytes) > 255:
+            logger.warning(
+                "Datastore key too large for GET request (%d bytes)",
+                len(key_bytes),
+            )
+            return
+
+        cached_value = self.state.datastore.get(key)
+        if cached_value is None:
+            if is_request:
+                await self._publish_datastore_value(
+                    key,
+                    b"",
+                    reply_context=inbound,
+                    error_reason="datastore-miss",
+                )
+            else:
+                logger.debug("Datastore GET for '%s' has no cached value", key)
+            return
+
+        # [SIL-2] Handle potential type drift during testing/injection
+        val_to_check: Any = cached_value
+        val_bytes = (
+            val_to_check.encode("utf-8")
+            if isinstance(val_to_check, str)
+            else bytes(val_to_check)
+        )
+
+        # Ignore echoes: if it's not an explicit /request and it has a payload,
+        # it is an echo of a published value, so we do not republish.
+        if not is_request and inbound and inbound.payload:
+            return
+
+        await self._publish_datastore_value(
+            key,
+            val_bytes,
+            reply_context=inbound,
+        )
+
+    async def _publish_datastore_value(
+        self,
+        key: str,
+        value: bytes,
+        *,
+        reply_context: Message | None = None,
+        error_reason: str | None = None,
+    ) -> None:
+        key_segments = tuple(filter(None, key.split("/")))
+        topic_name = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.DATASTORE,
-            key,
-            "value",
+            DatastoreAction.GET,
+            *key_segments,
         )
-        # [SIL-2] Direct publication (Eradicates MqttTransport wrapper)
-        await atomic_publish(
-            self.state,
-            topic=topic,
+        properties: list[tuple[str, str]] = [("bridge-datastore-key", key)]
+        if error_reason:
+            properties.append(("bridge-error", error_reason))
+
+        # Direct call to mqtt_flow.publish (Zero Wrapper)
+        props_tuple = tuple(properties)
+        await self.mqtt_flow.publish(
+            topic=topic_name,
             payload=value,
             expiry=MQTT_EXPIRY_DATASTORE,
+            reply_to=None,
+            properties=props_tuple,
         )
-
-    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        if not route.segments:
-            return False
-
-        action = route.action
-        # [SIL-2] Extract key by joining all segments except the first one (action)
-        key = "/".join(route.segments[1:]) if len(route.segments) > 1 else ""
-
-        if action == DatastoreAction.PUT.value:
-            if not key:
-                return False
-            
-            payload = msgspec.convert(inbound.payload, bytes)
-            self.state.datastore[key] = payload.decode("utf-8", errors="ignore")
-
-            # Forward to MCU
-            frame_payload = msgspec.msgpack.encode(
-                DatastorePutPacket(key=key, value=payload)
-            )
-            await self.serial_flow.send(
-                Command.CMD_DATASTORE_PUT.value,
-                frame_payload,
-            )
-            return True
-
-        if action == DatastoreAction.GET.value:
-            if not key:
-                return False
-
-            val: Any = self.state.datastore.get(key, "")
-            value_bytes = val.encode("utf-8") if isinstance(val, str) else bytes(val)
-
-            topic = topic_path(
-                self.state.mqtt_topic_prefix,
-                Topic.DATASTORE,
-                key,
-                "value",
-            )
-            # Response to GET request
-            await atomic_publish(
-                self.state,
-                topic=topic,
-                payload=value_bytes,
+        if reply_context is not None:
+            await self.mqtt_flow.publish(
+                topic=topic_name,
+                payload=value,
                 expiry=MQTT_EXPIRY_DATASTORE,
-                reply_to=inbound,
+                reply_to=reply_context,
+                properties=props_tuple,
             )
-            return True
-
-        return False
 
 
 __all__ = ["DatastoreComponent"]

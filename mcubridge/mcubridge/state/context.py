@@ -219,29 +219,6 @@ class RuntimeState(msgspec.Struct):
     serial_writer: asyncio.BaseTransport | None = None
     state: str = "disconnected"
 
-    # --- MQTT State [SIL-2] ---
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=asyncio.Queue
-    )
-    mqtt_topic_prefix: str = "br"
-    mqtt_messages_published: int = 0
-    mqtt_messages_received: int = 0
-    mqtt_dropped_messages: int = 0
-    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=dict)
-
-    # --- Spool State [SIL-2] ---
-    mqtt_spool: Any | None = None
-    mqtt_spool_dir: str = "/tmp/mcubridge-spool"
-    mqtt_spool_limit: int = 1000
-    mqtt_spool_degraded: bool = False
-    mqtt_spool_failure_reason: str | None = None
-    mqtt_spool_last_error: str | None = None
-    mqtt_spool_errors: int = 0
-    mqtt_spool_recoveries: int = 0
-    mqtt_spooled_messages: int = 0
-    mqtt_spool_backoff_until: float = 0.0
-    mqtt_spool_retry_attempts: int = 0
-
     @property
     def is_connected(self) -> bool:
         return self.state in {"connected", "synchronized"}

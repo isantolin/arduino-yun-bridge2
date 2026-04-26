@@ -202,7 +202,7 @@ class HardwareSerial : public Stream {
 extern HardwareSerial Serial;
 extern HardwareSerial Serial1;
 
-// C++11 compatible constexpr constrain
+// C++17 constexpr constrain
 template <typename T>
 constexpr T constrain(T value, T minimum, T maximum) {
   return (value < minimum) ? minimum : ((value > maximum) ? maximum : value);

@@ -253,6 +253,9 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _packet_serial.setPacketHandler(
       etl::delegate<void(etl::span<const uint8_t>)>::create<
           BridgeClass, &BridgeClass::_onPacketReceived>(*this));
+  _packet_serial.setErrorHandler(
+      etl::delegate<void(PacketSerial2::ErrorCode)>::create<
+          BridgeClass, &BridgeClass::_onPacketSerialError>(*this));
 }
 
 void BridgeClass::process() { (void)_scheduler_policy.schedule_tasks(_tasks); }
@@ -454,7 +457,7 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
   size_t len = rpc::FrameParser::serialize(
       f, etl::span<uint8_t>(buffer.data(), buffer.size()));
   if (len > 0)
-    _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
+    (void)_packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
 }
 
 bool BridgeClass::_sendFrame(uint16_t command_id, uint16_t sequence_id,
@@ -851,6 +854,16 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
 
 void BridgeClass::_onPacketReceived(etl::span<const uint8_t> p) {
   _handleReceivedFrame(p);
+}
+
+void BridgeClass::_onPacketSerialError(PacketSerial2::ErrorCode error) {
+  (void)error;
+  _last_parse_error = rpc::FrameError::MALFORMED;
+  _consecutive_crc_errors++;
+  if (_consecutive_crc_errors >= rpc::MAX_CONSECUTIVE_CRC_ERRORS) {
+    _fsm.receive(bridge::fsm::EvReset());
+    emitStatus<rpc::StatusCode::STATUS_ERROR>();
+  }
 }
 
 etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(

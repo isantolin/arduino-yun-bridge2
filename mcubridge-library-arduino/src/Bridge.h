@@ -128,6 +128,7 @@ class BridgeClass {
   void _retransmitLastFrame();
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   void _onPacketReceived(etl::span<const uint8_t> packet);
+  void _onPacketSerialError(PacketSerial2::ErrorCode error);
 
  protected:
   struct TxPayloadBuffer {

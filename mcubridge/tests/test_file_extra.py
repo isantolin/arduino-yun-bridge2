@@ -10,17 +10,24 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import RuntimeState
 from mcubridge.services.file import FileComponent
 
+
 @pytest.fixture
-def file_comp(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> FileComponent:
+def file_comp(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> FileComponent:
     serial_flow = MagicMock()
     # In original code, FileComponent requires mqtt_flow
     return FileComponent(runtime_config, runtime_state, serial_flow, MagicMock())
 
+
 @pytest.mark.asyncio
-async def test_file_refresh_storage_usage_handles_oserror(file_comp: FileComponent) -> None:
+async def test_file_refresh_storage_usage_handles_oserror(
+    file_comp: FileComponent,
+) -> None:
     with patch("shutil.disk_usage", side_effect=OSError("disk error")):
         # Accessing protected member for coverage validation
         await cast(Any, file_comp)._refresh_storage_usage()
+
 
 @pytest.mark.asyncio
 async def test_file_write_with_quota_large_warning(file_comp: FileComponent) -> None:

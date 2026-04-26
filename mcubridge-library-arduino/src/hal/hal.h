@@ -61,6 +61,16 @@ bool isValidPin(uint8_t pin);
 void init();
 
 /**
+ * @brief Reset the hardware watchdog timer.
+ */
+void wdt_reset();
+
+/**
+ * @brief Enable the hardware watchdog with a 4-second timeout.
+ */
+void wdt_enable_4s();
+
+/**
  * @brief Check if a functional SD card is present and initialized.
  * @return true if SD is available, false otherwise.
  */

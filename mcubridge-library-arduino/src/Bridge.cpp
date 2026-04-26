@@ -385,7 +385,7 @@ void BridgeClass::enterSafeState() {
   if constexpr (bridge::hal::CurrentArchTraits::is_harvard) {
     Serial.println(F("[FATAL] SAFE STATE"));
   }
-}
+
   _rx_history.clear();
   _tx_enabled = true;
   rpc::security::secure_zero(
@@ -394,7 +394,6 @@ void BridgeClass::enterSafeState() {
 #if BRIDGE_ENABLE_PROCESS
   Process.reset();
 #endif
-  bridge::hal::forceSafeState();
   notify_observers(MsgBridgeLost());
 }
 

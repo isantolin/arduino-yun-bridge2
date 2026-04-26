@@ -24,6 +24,67 @@ log_err() {
     echo "[ERROR] $1"
 }
 
+# [SIL-2] Robust UUID extraction with multiple fallbacks
+get_device_uuid() {
+    local dev="$1"
+    local uuid=""
+
+    # Method 1: OpenWrt 'block info'
+    if command -v block >/dev/null 2>&1; then
+        uuid=$(block info "$dev" | grep -o 'UUID="[^"]*"' | sed 's/UUID="//;s/"//')
+    fi
+
+    # Method 2: Standard 'blkid'
+    if [ -z "$uuid" ] && command -v blkid >/dev/null 2>&1; then
+        uuid=$(blkid -s UUID -o value "$dev")
+    fi
+
+    # Method 3: tune2fs (often available with e2fsprogs)
+    if [ -z "$uuid" ] && command -v tune2fs >/dev/null 2>&1; then
+        uuid=$(tune2fs -l "$dev" | grep "Filesystem UUID" | awk '{print $3}')
+    fi
+
+    # Method 4: /dev/disk/by-uuid (if procd/udev populated it)
+    if [ -z "$uuid" ] && [ -d /dev/disk/by-uuid ]; then
+        uuid=$(ls -l /dev/disk/by-uuid | grep "$(basename "$dev")" | awk '{print $9}')
+    fi
+
+    echo "$uuid"
+}
+
+# [SIL-2] Robust package installation with local cache support
+install_pkg() {
+    local pkg="$1"
+    
+    if apk info -e "$pkg" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # Check for local bundled APK in common mount points/dirs
+    # 1. /mnt/bin (where Smoke Test mounts APK disk)
+    # 2. ./bin (relative to script)
+    # 3. /root/deploy/bin (where 3_install.sh works)
+    for dir in "/mnt/bin" "./bin" "/root/deploy/bin" "/tmp/bin"; do
+        for candidate in "${dir}/${pkg}"[_-]*.apk; do
+            if [ -f "$candidate" ]; then
+                log_info "Installing $pkg from local bundle: $candidate"
+                if apk add --allow-untrusted --force-overwrite "$candidate"; then
+                    return 0
+                fi
+            fi
+        done
+    done
+
+    # Fallback to online feeds
+    log_info "Attempting to install $pkg from feeds..."
+    if apk add "$pkg"; then
+        return 0
+    fi
+
+    log_warn "Failed to install $pkg. System might be unstable or missing features."
+    return 1
+}
+
 # --- Argument Parsing ---
 
 if [ -n "$1" ]; then
@@ -73,7 +134,7 @@ case "$DEVICE" in
         # Check if fdisk is available
         if ! command -v fdisk >/dev/null; then
             echo "Installing partitioning tools..."
-            apk update && apk add fdisk || true
+            install_pkg fdisk
         fi
         
         if command -v fdisk >/dev/null; then
@@ -101,13 +162,9 @@ esac
 # --- 1. Dependencies ---
 
 echo "1. Checking and installing required packages..."
-if apk info | grep -q "e2fsprogs"; then
-    echo "   [OK] Required packages (e2fsprogs) are already installed."
-else
-    echo "   Installing e2fsprogs, block-mount, fdisk..."
-    apk update || true
-    apk add e2fsprogs block-mount fdisk || true
-fi
+install_pkg e2fsprogs
+install_pkg block-mount
+install_pkg fdisk
 
 # --- 2. Extroot Configuration ---
 
@@ -115,9 +172,9 @@ echo "2. Verifying Extroot configuration..."
 
 # Check if extroot is already active on this device
 CURRENT_OVERLAY=$(mount | grep "on /overlay type" | awk '{print $1}')
-TARGET_UUID=$(block info "$DEVICE" | grep -o 'UUID="[^"]*"' | sed 's/UUID="//;s/"//')
+TARGET_UUID=$(get_device_uuid "$DEVICE")
 
-if [ -n "$TARGET_UUID" ] && block info | grep "/overlay" | grep -q "$TARGET_UUID"; then
+if [ -n "$TARGET_UUID" ] && command -v block >/dev/null && block info | grep "/overlay" | grep -q "$TARGET_UUID"; then
     echo "   [OK] Extroot is already active on $DEVICE."
     SKIP_EXTROOT=1
 else
@@ -148,7 +205,7 @@ if [ "$SKIP_EXTROOT" -eq 0 ]; then
     mkfs.ext4 -F -L extroot "$DEVICE" >/dev/null
     
     echo "   2.3 Configuring /etc/config/fstab for the new overlay..."
-    eval $(block info "$DEVICE" | grep -o -e "UUID=\S*")
+    UUID=$(get_device_uuid "$DEVICE")
     echo "   Extracted UUID: '$UUID'"
     
     if [ -z "$UUID" ]; then

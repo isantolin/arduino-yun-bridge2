@@ -313,7 +313,7 @@ fi
 stop_daemon
 
 echo "[STEP 3/6] Updating system packages..."
-apk update
+apk update || echo "[WARN] Failed to update package feeds. Continuing with local packages..."
 
 # [FIX] Removed 'apk upgrade' option entirely to prevent SELinux breakage on RCs
 echo "[INFO] Skipping system upgrade to maintain stability."

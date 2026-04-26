@@ -142,11 +142,11 @@ def build_qemu_cmd(apk_disk: str, extroot_disk: str) -> list[str]:
         "mon:stdio",
         "-m",
         "256",
-        # NAT network for apk update
+        # [SIL-2] Improved QEMU networking for Malta (pcnet is more native than virtio)
         "-netdev",
         "user,id=net0",
         "-device",
-        "virtio-net-pci,netdev=net0",
+        "pcnet,netdev=net0",
     ]
 
 
@@ -178,7 +178,8 @@ def phase_expand(child: Any) -> None:
     # Copy script to writable location
     send_and_wait(child, "cp /mnt/2_expand.sh /root/2_expand.sh", timeout=5)
     send_and_wait(child, "chmod +x /root/2_expand.sh", timeout=5)
-    send_and_wait(child, "umount /mnt", timeout=5)
+    # [SIL-2] Keep /mnt mounted during expansion so script can use local APKs
+    # send_and_wait(child, "umount /mnt", timeout=5)
 
     # Pre-set UCI to skip interactive confirmation and enable internet
     send_and_wait(
@@ -191,11 +192,14 @@ def phase_expand(child: Any) -> None:
     )
 
     # Bring up network for apk update via udhcpc
-    # Detect first non-loopback interface
+    # Detect first non-loopback interface and log it
+    send_and_wait(child, "ip link show", timeout=5)
     send_and_wait(
         child,
         "NET_IF=$(ip -o link show | awk -F': ' '$2 != \"lo\" {print $2; exit}'); "
-        'if [ -n "$NET_IF" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true',
+        'if [ -n "$NET_IF" ]; then '
+        'echo "Found interface: $NET_IF"; ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; '
+        'else echo "NO NETWORK INTERFACE FOUND"; fi || true',
         timeout=20,
     )
 

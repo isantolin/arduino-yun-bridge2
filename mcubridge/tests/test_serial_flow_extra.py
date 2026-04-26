@@ -67,35 +67,38 @@ async def test_serial_flow_on_frame_failure_human_readable() -> None:
 
 
 @pytest.mark.asyncio
-async def test_serial_flow_send_and_wait_write_fail() -> None:
+async def test_serial_flow_send_write_fail() -> None:
     flow = SerialFlowController(
         ack_timeout=0.1,
         response_timeout=0.2,
         max_attempts=1,
         logger=logging.getLogger("test"),
     )
-    pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
-    sender = AsyncMock(return_value=False)
+    flow.set_sender(AsyncMock(return_value=False))
 
-    with pytest.raises(SerialFlowController._FatalSerialError):  # type: ignore[reportPrivateUsage]
-        await flow._send_and_wait(  # type: ignore[reportPrivateUsage]
-            pending, b"p", sender, Command.CMD_GET_VERSION.value
-        )
+    # Should return False on write failure
+    ok = await flow.send(Command.CMD_GET_VERSION.value, b"p")
+    assert ok is False
 
 
 @pytest.mark.asyncio
-async def test_serial_flow_send_and_wait_completion_set_during_timeout() -> None:
+async def test_serial_flow_send_success_after_early_completion() -> None:
     flow = SerialFlowController(
         ack_timeout=0.1,
         response_timeout=0.2,
         max_attempts=1,
         logger=logging.getLogger("test"),
     )
-    pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
-    sender = AsyncMock(return_value=True)
 
-    # Set completion and success manually to simulate race/early success
-    pending.completion.set()
-    pending.success = True
-    await flow._send_and_wait(pending, b"p", sender, Command.CMD_GET_VERSION.value)  # type: ignore[reportPrivateUsage]
-    # Should return without raising TimeoutError
+    command_id = Command.CMD_CONSOLE_WRITE.value
+
+    async def mock_sender(cid: int, p: bytes) -> bool:
+        # Simulate background response immediately
+        flow.on_frame_received(Status.ACK.value, 0, b"")
+        return True
+
+    flow.set_sender(mock_sender)
+
+    # Use a command that only requires ACK
+    ok = await flow.send(command_id, b"p")
+    assert ok is True

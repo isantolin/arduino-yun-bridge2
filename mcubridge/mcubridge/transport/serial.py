@@ -168,8 +168,8 @@ class SerialTransport:
                 await read_task
             try:
                 await self.service.on_serial_disconnected()
-            except (ConnectionError, OSError, RuntimeError) as e:
-                logger.error("Error in on_serial_disconnected hook: %02X", id(e))
+            except (ConnectionError, OSError, RuntimeError, AttributeError) as e:
+                logger.error("Error in on_serial_disconnected hook: %s", e)
                 logger.debug("on_serial_disconnected stacktrace:", exc_info=True)
             if self.writer:
                 self.writer.close()
@@ -436,6 +436,3 @@ class SerialTransport:
         finally:
             self._negotiating = False
             self._negotiation_future = None
-
-
-_future = None

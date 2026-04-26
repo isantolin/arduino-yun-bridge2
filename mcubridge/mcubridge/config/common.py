@@ -20,13 +20,19 @@ def get_uci_config() -> dict[str, Any]:
     try:
         import uci
 
-        # [SIL-2] Verify this is the real OpenWrt UCI library and not a host collision
-        if not hasattr(uci, "Uci") and not hasattr(uci, "UCI"):
+        # [SIL-2] Dynamic class detection to handle library variations
+        UciClass = getattr(uci, "Uci", None) or getattr(uci, "UCI", None)
+        if UciClass is None:
             return get_default_config()
 
-        # [SIL-2] Dynamic class detection to handle library variations
-        UciClass = getattr(uci, "Uci", None) or getattr(uci, "UCI")
-        with UciClass() as cursor:
+        # Try to instantiate the cursor. If it requires arguments (like the 'fake' UCI),
+        # it will raise a TypeError which we catch below.
+        try:
+            cursor_obj = UciClass()
+        except (TypeError, ValueError):
+            return get_default_config()
+
+        with cursor_obj as cursor:
             # Verify it's a real cursor with get_all method
             if not hasattr(cursor, "get_all"):
                 return get_default_config()

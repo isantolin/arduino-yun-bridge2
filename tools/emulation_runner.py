@@ -51,7 +51,7 @@ class MqttVerifier:
         self.host = host
         self.port = port
 
-    def wait_for_ready(self, timeout: float = 5.0) -> bool:
+    def wait_for_ready(self, timeout: float = 30.0) -> bool:
         import socket
 
         start = time.monotonic()

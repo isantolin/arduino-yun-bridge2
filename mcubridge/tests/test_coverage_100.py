@@ -31,13 +31,19 @@ def test_queues_make_room_for_complex() -> None:
 async def test_poll_process_not_found_explicit() -> None:
     # Test for coverage of poll_process when slot is missing
     state = MagicMock()
+    state.process_lock = AsyncMock()
+    state.running_processes.get.return_value = None
     serial_flow = MagicMock()
     serial_flow.acknowledge = AsyncMock()
+    serial_flow.send = AsyncMock()
 
     comp = ProcessComponent(MagicMock(), state, serial_flow, MagicMock())
     # handle_poll requires pid and payload in original code
     # We pass a proper seq_id as int to avoid further type errors in internals
-    await comp.handle_poll(1, b"")
+    import msgspec
+    from mcubridge.protocol.structures import ProcessPollPacket
+    payload = msgspec.msgpack.encode(ProcessPollPacket(pid=123))
+    await comp.handle_poll(1, payload)
 
 
 @pytest.mark.asyncio

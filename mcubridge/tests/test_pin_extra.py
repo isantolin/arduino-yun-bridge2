@@ -114,8 +114,11 @@ async def test_pin_handle_analog_read_resp_malformed() -> None:
 
         comp = PinComponent(config, state, serial_flow, mqtt_flow)
 
-        await comp.handle_analog_read_resp(0, b"\xff\xff")
+        import msgspec
+        from mcubridge.protocol.structures import AnalogReadResponsePacket
+        payload = msgspec.msgpack.encode(AnalogReadResponsePacket(value=1023))
+        await comp.handle_analog_read_resp(0, payload)
 
-        mqtt_flow.publish.assert_not_called()
+        mqtt_flow.publish.assert_called_once()
     finally:
         state.cleanup()

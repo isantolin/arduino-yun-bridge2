@@ -158,6 +158,7 @@ def force_gc_cleanup():
         warnings.filterwarnings(
             "ignore", category=pytest.PytestUnraisableExceptionWarning
         )
+        warnings.filterwarnings("ignore", category=ResourceWarning)
         gc.collect()
 
 

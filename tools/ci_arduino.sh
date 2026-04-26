@@ -22,23 +22,9 @@ if [ ! -d "$USER_LIB_DIR" ]; then
     USER_LIB_DIR="$HOME/Documents/Arduino/libraries"
 fi
 
-# Search for actual installation directories (case-insensitive)
-WOLF_DIR=$(find "$USER_LIB_DIR" -maxdepth 1 -iname "wolfssl" | head -n 1)
-ETL_DIR=$(find "$USER_LIB_DIR" -maxdepth 1 -iname "Embedded_Template_Library*" | head -n 1)
-
-if [ -z "$WOLF_DIR" ]; then
-    echo "Warning: wolfSSL directory not found in $USER_LIB_DIR. Using default."
-    WOLF_DIR="$USER_LIB_DIR/wolfssl"
-fi
-
-if [ -z "$ETL_DIR" ]; then
-    echo "Warning: ETL directory not found in $USER_LIB_DIR. Using default."
-    ETL_DIR="$USER_LIB_DIR/Embedded_Template_Library"
-fi
-
 # Define explicit include paths for official libraries
-ETL_INC="$ETL_DIR/include"
-WOLF_INC="$WOLF_DIR/src"
+ETL_INC="$USER_LIB_DIR/Embedded_Template_Library/include"
+WOLF_INC="$USER_LIB_DIR/wolfssl/src"
 
 # Update core index
 echo "Updating core index..."
@@ -52,9 +38,8 @@ arduino-cli core install arduino:avr || { echo "Failed to install arduino:avr co
 echo "Installing official wolfSSL library..."
 arduino-cli lib install wolfSSL || { echo "Failed to install wolfSSL"; exit 1; }
 
-# Refresh paths after installation
-WOLF_DIR=$(find "$USER_LIB_DIR" -maxdepth 1 -iname "wolfssl" | head -n 1)
-WOLF_INC="$WOLF_DIR/src"
+# echo "Installing official Embedded Template Library..."
+# arduino-cli lib install "Embedded Template Library ETL"
 
 # Install dependencies
 echo "Generating protocol bindings..."
@@ -70,10 +55,6 @@ echo "Installing libraries..."
 # We pass USER_LIB_DIR to install.sh to ensure it installs there
 ./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
 
-# Refresh ETL path after install.sh
-ETL_DIR=$(find "$USER_LIB_DIR" -maxdepth 1 -iname "Embedded_Template_Library*" | head -n 1)
-ETL_INC="$ETL_DIR/include"
-
 # [HOT-PATCH] Force official wolfSSL to use our settings by overwriting its user_settings.h
 echo "Patching official wolfSSL at $WOLF_INC with our user_settings.h..."
 # Ensure the directory exists (it should if install was successful)
@@ -82,12 +63,7 @@ cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$WOLF_INC/user_settings
 
 # [HOT-PATCH] Fix gmtime_r conflict in wc_port.c
 echo "Patching wc_port.c to avoid gmtime_r conflict..."
-WCPORT_FILE=$(find "$WOLF_DIR" -name "wc_port.c" | head -n 1)
-if [ -f "$WCPORT_FILE" ]; then
-    sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$WCPORT_FILE"
-else
-    echo "[WARN] wc_port.c not found for patching."
-fi
+sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$USER_LIB_DIR/wolfssl/src/wolfcrypt/src/wc_port.c"
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"
@@ -129,9 +105,12 @@ compile_sketch() {
     LOG_FILE="${_LOG_DIR}/${BOARD_NAME}_${sketch_name}.log"
 
     COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS"
-    local BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--warnings" "default"
-                 "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -I$ETL_INC -I$WOLF_INC"
-                 "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS -I$ETL_INC -I$WOLF_INC")
+    local BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--libraries" "$PWD/.dummy_libs" "--warnings" "default"
+                 "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -I$USER_LIB_DIR/Embedded_Template_Library/include"
+                 "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS -I$USER_LIB_DIR/Embedded_Template_Library/include"
+                 "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+                 "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+                 "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch")
 
     BUILD_FLAGS+=("${EXTRA_PROPS[@]}")
 

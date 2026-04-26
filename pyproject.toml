@@ -52,7 +52,7 @@ markers = [
 ]
 filterwarnings = [
     "error",
-    "ignore:Exception ignored in.*sqlite3\\.Connection:pytest.PytestUnraisableExceptionWarning",
+    "ignore:Exception ignored .*finalizing database connection:pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.pyright]

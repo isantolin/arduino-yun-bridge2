@@ -25,6 +25,10 @@ def test_normalise_commands():
 def test_get_uci_config_success():
     """Test successful UCI read."""
     mock_module = MagicMock()
+    # Explicitly remove attributes that are checked to detect fake libraries
+    del mock_module.nltk
+    del mock_module.vocab
+
     mock_module.UciException = Exception
     mock_module.UCI = mock_module.Uci
     mock_cursor = MagicMock()
@@ -50,6 +54,9 @@ def test_get_uci_config_success():
 
 def test_get_uci_config_missing_section_returns_defaults() -> None:
     mock_module = MagicMock()
+    del mock_module.nltk
+    del mock_module.vocab
+
     mock_module.UciException = Exception
     mock_module.UCI = mock_module.Uci
     mock_cursor = MagicMock()
@@ -67,6 +74,9 @@ def test_get_uci_config_missing_section_returns_defaults() -> None:
 
 def test_get_uci_config_skips_internal_keys() -> None:
     mock_module = MagicMock()
+    del mock_module.nltk
+    del mock_module.vocab
+
     mock_module.UciException = Exception
     mock_module.UCI = mock_module.Uci
     mock_cursor = MagicMock()

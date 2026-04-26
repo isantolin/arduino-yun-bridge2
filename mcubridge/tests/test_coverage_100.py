@@ -42,6 +42,7 @@ async def test_poll_process_not_found_explicit() -> None:
     # We pass a proper seq_id as int to avoid further type errors in internals
     import msgspec
     from mcubridge.protocol.structures import ProcessPollPacket
+
     payload = msgspec.msgpack.encode(ProcessPollPacket(pid=123))
     await comp.handle_poll(1, payload)
 

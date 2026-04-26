@@ -116,6 +116,7 @@ async def test_pin_handle_analog_read_resp_malformed() -> None:
 
         import msgspec
         from mcubridge.protocol.structures import AnalogReadResponsePacket
+
         payload = msgspec.msgpack.encode(AnalogReadResponsePacket(value=1023))
         await comp.handle_analog_read_resp(0, payload)
 

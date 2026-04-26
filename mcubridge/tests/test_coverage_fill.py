@@ -66,6 +66,7 @@ def runtime_state(runtime_config: RuntimeConfig):
 def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
     mcu_registry: dict[int, Any] = {}
     mqtt_router = MagicMock()
+    mqtt_router.dispatch = AsyncMock(return_value=True)
     d = BridgeDispatcher(
         mcu_registry=mcu_registry,
         mqtt_router=mqtt_router,

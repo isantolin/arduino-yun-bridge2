@@ -38,6 +38,7 @@
 #include "protocol/BridgeEvents.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_frame.h"
+#include "protocol/rpc_hw_config.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 #include "security/security.h"

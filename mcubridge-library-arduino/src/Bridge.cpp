@@ -860,7 +860,7 @@ void BridgeClass::_onPacketSerialError(PacketSerial2::ErrorCode error) {
   (void)error;
   _last_parse_error = rpc::FrameError::MALFORMED;
   _consecutive_crc_errors++;
-  if (_consecutive_crc_errors >= rpc::MAX_CONSECUTIVE_CRC_ERRORS) {
+  if (_consecutive_crc_errors >= bridge::config::MAX_CONSECUTIVE_CRC_ERRORS) {
     _fsm.receive(bridge::fsm::EvReset());
     emitStatus<rpc::StatusCode::STATUS_ERROR>();
   }

@@ -199,7 +199,6 @@ class SerialTransport:
     async def _read_loop(self, reader: asyncio.StreamReader) -> None:
         """Main loop reading complete frames directly from the C-backed Stream."""
         while not self._stop_event.is_set():
-            packet_view: memoryview | None = None
             try:
                 # readuntil delegates the delimiter search to C, saving CPU
                 packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
@@ -216,18 +215,25 @@ class SerialTransport:
 
             except asyncio.LimitOverrunError:
                 logger.warning("Serial packet too large, flushing.")
+                # [SIL-2] Direct metrics recording (No Wrapper)
                 self.state.serial_decode_errors += 1
                 self.state.metrics.serial_decode_errors.inc()
+                # Drain the overrun data
                 await reader.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError as e:
+                # EOF reached, connection closed
                 logger.info(
                     "Serial connection closed (EOF). Partial data: %s",
                     e.partial.hex(" ") if e.partial else "None",
                 )
                 break
-            except Exception as exc:
-                raw_hex = packet_view.hex(" ").upper() if packet_view else "EMPTY"
-                logger.error("Error in _read_loop [RAW: %s]: %s", raw_hex, exc)
+            except (
+                OSError,
+                serial.SerialException,
+                asyncio.TimeoutError,
+                RuntimeError,
+            ) as exc:
+                logger.error("Error in _read_loop: %s", exc)
                 break
 
     def _process_packet(self, encoded_packet: bytes | memoryview) -> None:

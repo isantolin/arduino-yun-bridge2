@@ -223,9 +223,9 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _is_post_passed = rpc::security::run_cryptographic_self_tests();
   if (!_is_post_passed) enterSafeState();
 
-  if constexpr (bridge::hal::CurrentArchTraits::has_wdt) {
-    bridge::hal::wdt_enable_4s();
-  }
+#if defined(ARDUINO_ARCH_AVR)
+  wdt_enable(WDTO_4S);
+#endif
 
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR) {
@@ -256,9 +256,9 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 void BridgeClass::process() { (void)_scheduler_policy.schedule_tasks(_tasks); }
 
 void BridgeClass::WatchdogTask::task_process_work() {
-  if constexpr (bridge::hal::CurrentArchTraits::has_wdt) {
-    bridge::hal::wdt_reset();
-  }
+#if defined(ARDUINO_ARCH_AVR)
+  wdt_reset();
+#endif
 }
 
 void BridgeClass::SerialTask::task_process_work() {
@@ -372,20 +372,14 @@ void BridgeClass::_onStartupStabilized() {
 
   BRIDGE_ATOMIC_BLOCK { _fsm.receive(bridge::fsm::EvStabilized()); }
 }
+
 void BridgeClass::enterSafeState() {
-  BRIDGE_ATOMIC_BLOCK {
-    _fsm.receive(bridge::fsm::EvReset());
-    bridge::hal::forceSafeState();
-  }
+  BRIDGE_ATOMIC_BLOCK { _fsm.receive(bridge::fsm::EvReset()); }
   etl::for_each(_timer_ids.begin(), _timer_ids.end(),
                 [this](etl::timer::id::type id) { _timers.stop(id); });
   _pending_baudrate = 0;
   _retry_count = 0;
-
-  if constexpr (bridge::hal::CurrentArchTraits::is_harvard) {
-    Serial.println(F("[FATAL] SAFE STATE"));
-  }
-
+  _clearPendingTxQueue();
   _rx_history.clear();
   _tx_enabled = true;
   rpc::security::secure_zero(
@@ -394,6 +388,7 @@ void BridgeClass::enterSafeState() {
 #if BRIDGE_ENABLE_PROCESS
   Process.reset();
 #endif
+  bridge::hal::forceSafeState();
   notify_observers(MsgBridgeLost());
 }
 

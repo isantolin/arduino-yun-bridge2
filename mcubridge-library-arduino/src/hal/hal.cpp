@@ -96,32 +96,16 @@ uint16_t getFreeMemory() {
 void init() {
   forceSafeState();
   if constexpr (bridge::config::ENABLE_WATCHDOG) {
-    wdt_enable_4s();
-  }
-}
-
-void wdt_reset() {
-  if constexpr (Traits::id == ArchId::ARCH_AVR) {
+    if constexpr (Traits::id == ArchId::ARCH_AVR) {
 #if defined(ARDUINO_ARCH_AVR)
-    ::wdt_reset();
+      wdt_enable(WDTO_4S);
 #endif
-  } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
+    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
-    esp_task_wdt_reset();
+      esp_task_wdt_init(4, true);
+      esp_task_wdt_add(nullptr);
 #endif
-  }
-}
-
-void wdt_enable_4s() {
-  if constexpr (Traits::id == ArchId::ARCH_AVR) {
-#if defined(ARDUINO_ARCH_AVR)
-    ::wdt_enable(WDTO_4S);
-#endif
-  } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
-#if defined(ARDUINO_ARCH_ESP32)
-    esp_task_wdt_init(4, true);
-    esp_task_wdt_add(nullptr);
-#endif
+    }
   }
 }
 

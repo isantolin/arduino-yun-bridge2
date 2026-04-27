@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import structlog
+from typing import Any
 
 import msgspec
 
@@ -34,7 +35,10 @@ class MQTTPublishSpool:
         self,
         directory: str,
         limit: int,
+        *,
+        on_fallback: Any | None = None,
     ) -> None:
+        self._on_fallback = on_fallback
         self._records = BridgeQueue[bytes](
             directory=directory,
             max_items=limit,

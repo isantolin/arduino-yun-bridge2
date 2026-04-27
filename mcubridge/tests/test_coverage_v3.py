@@ -25,15 +25,13 @@ from .conftest import TMP_TESTS_DIR
 
 def create_real_config():
     from mcubridge.config.common import get_default_config
-    import time
 
     raw_cfg = get_default_config()
-    unique_dir = f"spool_v3_{time.time_ns()}_{os.getpid()}"
     raw_cfg.update(
         {
             "serial_port": "/dev/ttyFake",
             "serial_shared_secret": b"valid_secret_1234",
-            "mqtt_spool_dir": os.path.abspath(os.path.join(TMP_TESTS_DIR, unique_dir)),
+            "mqtt_spool_dir": os.path.abspath(os.path.join(TMP_TESTS_DIR, "spool_v3")),
         }
     )
     return msgspec.convert(raw_cfg, RuntimeConfig)

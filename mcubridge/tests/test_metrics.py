@@ -33,6 +33,7 @@ async def test_publish_metrics_publishes_snapshot(
         "cpu": 99.0,
         "mem": {"free": 1024},
         "mqtt_spool_degraded": True,
+        "mqtt_spool_failure_reason": "disk-full",
         "watchdog_enabled": True,
         "watchdog_interval": 7.5,
         "file_storage_limit_rejections": 1,
@@ -65,7 +66,7 @@ async def test_publish_metrics_publishes_snapshot(
     assert message.topic_name == expected_topic
     assert msgspec.msgpack.decode(message.payload) == fake_snapshot
     assert message.content_type == "application/msgpack"
-    assert ("bridge-spool", "degraded") in message.user_properties
+    assert ("bridge-spool", "disk-full") in message.user_properties
     assert ("bridge-files", "quota-blocked") in message.user_properties
     assert ("bridge-watchdog-enabled", "1") in message.user_properties
     assert ("bridge-watchdog-interval", "7.5") in message.user_properties
@@ -107,7 +108,7 @@ async def test_publish_metrics_marks_unknown_spool_reason(
             await task
 
     message = captured["message"]
-    assert ("bridge-spool", "degraded") in message.user_properties
+    assert ("bridge-spool", "unknown") in message.user_properties
     assert any(key == "bridge-watchdog-enabled" for key, _ in message.user_properties)
 
 

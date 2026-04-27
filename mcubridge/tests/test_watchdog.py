@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import structlog.testing
-import contextlib
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -83,9 +82,8 @@ def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
             task = asyncio.create_task(keepalive.run())
             await asyncio.sleep(0.02)
             task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+            with pytest.raises(asyncio.CancelledError):
                 await task
 
         asyncio.run(_runner())
-    # [SIL-2] Use case-insensitive search for flexibility
-    assert any("keepalive cancelled" in log["event"].lower() for log in captured)
+    assert any("keepalive cancelled" in log["event"] for log in captured)

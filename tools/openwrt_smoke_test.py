@@ -144,7 +144,7 @@ def build_qemu_cmd(apk_disk: str, extroot_disk: str) -> list[str]:
         "256",
         # [SIL-2] Improved QEMU networking for Malta (pcnet is more native than virtio)
         "-netdev",
-        "user,id=net0",
+        "user,id=net0,ipv6=off",
         "-device",
         "pcnet,netdev=net0",
     ]
@@ -203,6 +203,12 @@ def phase_expand(child: Any) -> None:
         timeout=20,
     )
 
+    # [SIL-2] Strong Network Fix: DNS + Time + Force IPv4 for wget
+    send_and_wait(child, "echo 'nameserver 8.8.8.8' > /etc/resolv.conf", timeout=5)
+    send_and_wait(child, "date -s '2026-01-01 12:00:00'", timeout=5)
+    send_and_wait(child, "echo 'alias wget=\"wget -4\"' >> /etc/profile", timeout=5)
+    send_and_wait(child, "ping -c 2 8.8.8.8 || true", timeout=15)
+
     # Wait for network to establish
     child.sendline("sleep 10")
     wait_for_prompt(child, timeout=15)
@@ -242,6 +248,12 @@ def phase_install(child: Any) -> None:
         'if [ -n "$NET_IF" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true',
         timeout=20,
     )
+
+    # [SIL-2] Strong Network Fix: DNS + Time + Force IPv4 for wget
+    send_and_wait(child, "echo 'nameserver 8.8.8.8' > /etc/resolv.conf", timeout=5)
+    send_and_wait(child, "date -s '2026-01-01 12:00:00'", timeout=5)
+    send_and_wait(child, "echo 'alias wget=\"wget -4\"' >> /etc/profile", timeout=5)
+    send_and_wait(child, "ping -c 2 8.8.8.8 || true", timeout=15)
 
     # Wait for network to establish
     child.sendline("sleep 10")

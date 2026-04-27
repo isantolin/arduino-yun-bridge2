@@ -55,7 +55,6 @@ if "serial_asyncio_fast" not in sys.modules:
 # [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
 # and interference with Python 3.13 representation during cleanup.
 from mcubridge.config import common
-import mcubridge.config.logging
 from mcubridge.config import settings
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
@@ -70,8 +69,6 @@ from mcubridge.protocol.protocol import (
     DEFAULT_SAFE_BAUDRATE,
 )
 from mcubridge.state.context import RuntimeState, create_runtime_state
-
-mcubridge.config.logging.SYSLOG_SOCKET = Path("/dev/null/no-syslog-in-tests")
 
 # [TEST FIX] Configure structlog purely natively but route to logging for caplog compatibility.
 structlog.configure(
@@ -237,27 +234,6 @@ def isolate_persistent_runtime_paths() -> Iterator[None]:
     yield
     for path in shared_paths:
         _remove_persistent_test_path(path)
-
-
-@pytest.fixture(autouse=True)
-def logging_mock_level_fix():
-    """Ensure all handlers have a numeric level to avoid comparisons with MagicMock."""
-    original_handlers = []
-    # Capture existing loggers
-    loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
-    loggers.append(logging.getLogger())  # Root logger
-
-    for logger in loggers:
-        for handler in logger.handlers:
-            if isinstance(handler.level, MagicMock):
-                original_handlers.append((handler, handler.level))  # type: ignore[reportUnknownMemberType]
-                handler.level = logging.NOTSET
-
-    yield
-
-    # Restore (though usually not necessary for tests)
-    for handler, level in original_handlers:  # type: ignore[reportUnknownVariableType]
-        handler.level = level
 
 
 @pytest.fixture(autouse=True)

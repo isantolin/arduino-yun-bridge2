@@ -55,12 +55,12 @@ def test_configure_logging_stream_env():
 
 def test_configure_logging_syslog_fallback(tmp_path: Any):
     config = create_real_config()
-    fake_fallback = tmp_path / "log_fallback"
-    fake_fallback.touch()
 
-    with (
-        patch("mcubridge.config.logging.SYSLOG_SOCKET", Path("/non/existent/dev/log")),
-        patch("mcubridge.config.logging.SYSLOG_SOCKET_FALLBACK", fake_fallback),
+    def fake_exists(self: Path) -> bool:
+        return str(self) == "/var/run/log"
+
+    with patch(
+        "mcubridge.config.logging.Path.exists", side_effect=fake_exists, autospec=True
     ):
         mcubridge.config.logging.configure_logging(config)
         sl_config = structlog.get_config()

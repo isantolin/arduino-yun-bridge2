@@ -11,9 +11,6 @@ import structlog
 
 from .settings import RuntimeConfig
 
-SYSLOG_SOCKET = Path("/dev/log")
-SYSLOG_SOCKET_FALLBACK = Path("/var/run/log")
-
 
 def hexdump_processor(
     _: Any, __: str, event_dict: structlog.types.EventDict
@@ -31,8 +28,12 @@ def configure_logging(config: RuntimeConfig) -> None:
 
     level = logging.DEBUG if getattr(config, "debug", False) else logging.INFO
     force_stream = bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
+
+    # Check for syslog sockets
+    syslog_socket = Path("/dev/log")
+    syslog_fallback = Path("/var/run/log")
     use_syslog = not force_stream and (
-        SYSLOG_SOCKET.exists() or SYSLOG_SOCKET_FALLBACK.exists()
+        syslog_socket.exists() or syslog_fallback.exists()
     )
 
     # [SIL-2] Native processors for high-performance zero-wrapper logging

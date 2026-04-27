@@ -26,7 +26,8 @@ from mcubridge.protocol.protocol import (
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.mqtt import MqttTransport
 
-from tests._helpers import make_test_config, make_route, make_mqtt_msg
+from tests._helpers import make_test_config, make_route
+from tests.mqtt_helpers import make_inbound_message
 
 # ============================================================================
 # mcubridge/protocol/structures.py — AllowedCommandPolicy
@@ -469,27 +470,32 @@ class TestShellMqttLogic:
     @pytest.mark.asyncio
     async def test_handle_mqtt_poll(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(
-            make_route(Topic.SHELL, "poll", "42"), make_mqtt_msg(b"")
+            make_route(Topic.SHELL, "poll", "42"),
+            make_inbound_message("test/topic", b""),
         )
         shell_comp.poll_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_kill(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(
-            make_route(Topic.SHELL, "kill", "42"), make_mqtt_msg(b"")
+            make_route(Topic.SHELL, "kill", "42"),
+            make_inbound_message("test/topic", b""),
         )
         shell_comp.stop_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(
-            make_route(Topic.SHELL, "unknown_action"), make_mqtt_msg(b"")
+            make_route(Topic.SHELL, "unknown_action"),
+            make_inbound_message("test/topic", b""),
         )
         shell_comp.mqtt_flow.publish.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
-        await shell_comp.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
+        await shell_comp.handle_mqtt(
+            make_route(Topic.SHELL), make_inbound_message("test/topic", b"")
+        )
         shell_comp.mqtt_flow.publish.assert_not_called()
 
     @pytest.mark.asyncio
@@ -815,7 +821,8 @@ class TestMailboxComponent:
                 config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
             )
             await comp.handle_mqtt(
-                make_route(Topic.MAILBOX, "write"), make_mqtt_msg(b"hello")
+                make_route(Topic.MAILBOX, "write"),
+                make_inbound_message("test/topic", b"hello"),
             )
             assert len(state.mailbox_queue) == 1
         finally:

@@ -22,7 +22,8 @@ from mcubridge.services.pin import PinComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.mqtt import MqttTransport
-from tests._helpers import make_mqtt_msg, make_route, make_test_config
+from tests._helpers import make_route, make_test_config
+from tests.mqtt_helpers import make_inbound_message
 
 
 @pytest.fixture
@@ -64,7 +65,7 @@ async def test_pin_handle_digital_read_resp(pin_component: PinComponent) -> None
 @pytest.mark.asyncio
 async def test_pin_handle_mqtt_mode(pin_component: PinComponent) -> None:
     route = make_route(Topic.DIGITAL, "13", PinAction.MODE.value)
-    msg = make_mqtt_msg(b"1")  # OUTPUT
+    msg = make_inbound_message("test/topic", b"1")  # OUTPUT
 
     await pin_component.handle_mqtt(route, msg)
 
@@ -77,7 +78,7 @@ async def test_pin_handle_mqtt_mode(pin_component: PinComponent) -> None:
 @pytest.mark.asyncio
 async def test_pin_handle_mqtt_read(pin_component: PinComponent) -> None:
     route = make_route(Topic.DIGITAL, "13", PinAction.READ.value)
-    msg = make_mqtt_msg(b"")
+    msg = make_inbound_message("test/topic", b"")
 
     await pin_component.handle_mqtt(route, msg)
 

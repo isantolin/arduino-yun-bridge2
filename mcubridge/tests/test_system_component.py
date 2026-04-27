@@ -20,7 +20,8 @@ from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.mqtt import MqttTransport
-from tests._helpers import make_mqtt_msg, make_route, make_test_config
+from tests._helpers import make_route, make_test_config
+from tests.mqtt_helpers import make_inbound_message
 
 
 @pytest.fixture
@@ -66,7 +67,7 @@ async def test_system_handle_get_free_memory_resp(
 @pytest.mark.asyncio
 async def test_system_handle_mqtt_bootloader(system_component: SystemComponent) -> None:
     route = make_route(Topic.SYSTEM, SystemAction.BOOTLOADER.value)
-    msg = make_mqtt_msg(b"")
+    msg = make_inbound_message("test/topic", b"")
 
     await system_component.handle_mqtt(route, msg)
 

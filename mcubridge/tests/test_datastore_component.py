@@ -19,7 +19,8 @@ from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.mqtt import MqttTransport
-from tests._helpers import make_mqtt_msg, make_route, make_test_config
+from tests._helpers import make_route, make_test_config
+from tests.mqtt_helpers import make_inbound_message
 
 
 @pytest.fixture
@@ -67,7 +68,7 @@ async def test_datastore_handle_mqtt_put(
     datastore_component: DatastoreComponent,
 ) -> None:
     route = make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "sys", "uptime")
-    msg = make_mqtt_msg(b"3600")
+    msg = make_inbound_message("test/topic", b"3600")
 
     await datastore_component.handle_mqtt(route, msg)
 
@@ -81,7 +82,7 @@ async def test_datastore_handle_mqtt_get(
 ) -> None:
     datastore_component.state.datastore["status"] = "OK"
     route = make_route(Topic.DATASTORE, DatastoreAction.GET.value, "status")
-    msg = make_mqtt_msg(b"")
+    msg = make_inbound_message("test/topic", b"")
 
     await datastore_component.handle_mqtt(route, msg)
 

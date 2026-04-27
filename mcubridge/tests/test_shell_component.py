@@ -16,7 +16,8 @@ from mcubridge.services.process import ProcessComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.mqtt import MqttTransport
-from tests._helpers import make_mqtt_msg, make_route
+from tests._helpers import make_route
+from tests.mqtt_helpers import make_inbound_message
 
 
 def _extract_enqueued_publish(
@@ -62,7 +63,7 @@ async def test_shell_run_async_success(
     # Mock low-level execution but use real component logic for MQTT
     component.run_async = AsyncMock(return_value=1234)
 
-    inbound = make_mqtt_msg(b"echo hello")
+    inbound = make_inbound_message("test/topic", b"echo hello")
     await component.handle_mqtt(
         make_route(Topic.SHELL, ShellAction.RUN_ASYNC.value),
         inbound,
@@ -97,7 +98,7 @@ async def test_shell_run_async_exception_returns_error(
     )
     component.run_async = AsyncMock(side_effect=RuntimeError("crash"))
 
-    inbound = make_mqtt_msg(b"echo hi")
+    inbound = make_inbound_message("test/topic", b"echo hi")
     await component.handle_mqtt(
         make_route(Topic.SHELL, ShellAction.RUN_ASYNC.value),
         inbound,
@@ -127,7 +128,7 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
 
     await component.handle_mqtt(
         make_route(Topic.SHELL, ShellAction.RUN_ASYNC.value),
-        make_mqtt_msg(b"echo hi"),
+        make_inbound_message("test/topic", b"echo hi"),
     )
 
     mqtt_flow.publish.assert_awaited_once()
@@ -157,7 +158,7 @@ async def test_shell_poll_calls_process_helpers(
     component.poll_process = AsyncMock(return_value=batch)
     component.publish_poll_result = AsyncMock()
 
-    inbound = make_mqtt_msg(b"")
+    inbound = make_inbound_message("test/topic", b"")
     await component.handle_mqtt(
         make_route(Topic.SHELL, ShellAction.POLL.value, "123"),
         inbound,
@@ -186,7 +187,7 @@ async def test_shell_kill_invokes_stop_process(
 
     await component.handle_mqtt(
         make_route(Topic.SHELL, ShellAction.KILL.value, "42"),
-        make_mqtt_msg(b""),
+        make_inbound_message("test/topic", b""),
     )
 
     component.stop_process.assert_awaited_once_with(42)
@@ -208,10 +209,14 @@ async def test_shell_ignores_invalid_payloads_and_actions(
     )
 
     # Empty segments
-    await component.handle_mqtt(make_route(Topic.SHELL), make_mqtt_msg(b""))
+    await component.handle_mqtt(
+        make_route(Topic.SHELL), make_inbound_message("test/topic", b"")
+    )
 
     # Unknown action
-    await component.handle_mqtt(make_route(Topic.SHELL, "unknown"), make_mqtt_msg(b""))
+    await component.handle_mqtt(
+        make_route(Topic.SHELL, "unknown"), make_inbound_message("test/topic", b"")
+    )
 
     mqtt_flow.publish.assert_not_called()
     serial_flow.send.assert_not_called()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tests.mqtt_helpers import make_inbound_message
 import aiomqtt
 
 import asyncio
@@ -19,7 +20,6 @@ from mcubridge.services.file import FileComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.transport.mqtt import MqttTransport
 from mcubridge.state.context import RuntimeState, create_runtime_state
-from tests._helpers import make_mqtt_msg
 
 
 @pytest.fixture
@@ -229,7 +229,7 @@ async def test_handle_mqtt_missing_filename_is_ignored(
     route = TopicRoute(
         raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",)
     )
-    await component.handle_mqtt(route, make_mqtt_msg(""))
+    await component.handle_mqtt(route, make_inbound_message("test/topic", b""))
     assert not mqtt_flow.publish.called
 
 
@@ -244,7 +244,7 @@ async def test_handle_mqtt_unknown_action_is_ignored(
         topic=Topic.FILE,
         segments=("magic", "file.txt"),
     )
-    await component.handle_mqtt(route, make_mqtt_msg(""))
+    await component.handle_mqtt(route, make_inbound_message("test/topic", b""))
     assert not mqtt_flow.publish.called
 
 

@@ -5,7 +5,6 @@ import msgspec
 
 import os
 import tempfile
-from unittest.mock import MagicMock
 from .conftest import TMP_TESTS_DIR
 
 
@@ -45,10 +44,3 @@ def make_route(
     """Build a TopicRoute for tests."""
     raw = f"{prefix}/{topic}/{'/'.join(segments)}"
     return TopicRoute(raw=raw, prefix=prefix, topic=topic, segments=tuple(segments))
-
-
-def make_mqtt_msg(payload: bytes | str = b"") -> MagicMock:
-    """Build a minimal MQTT Message mock for tests."""
-    msg = MagicMock()
-    msg.payload = payload.encode("utf-8") if isinstance(payload, str) else payload
-    return msg

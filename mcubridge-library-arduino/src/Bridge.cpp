@@ -835,8 +835,8 @@ void BridgeClass::_handleSpiTransfer(
 void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
 #if BRIDGE_HOST_TEST
   fprintf(stderr, "[MCU FSM] Decoded size: %zu, data: ", p.size());
-  for(size_t i=0; i < p.size(); ++i) fprintf(stderr, "%02X ", p[i]);
-  fprintf(stderr, "\\n");
+  etl::for_each(p.begin(), p.end(), [](uint8_t byte) { fprintf(stderr, "%02X ", byte); });
+  fprintf(stderr, "\n");
 #endif
   auto res = _frame_parser.parse(p);
   if (!res) {

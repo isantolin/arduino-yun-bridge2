@@ -7,6 +7,7 @@
 
 #undef min
 #undef max
+#include <etl/algorithm.h>
 #include <etl/byte_stream.h>
 #include <etl/crc32.h>
 #include <etl/expected.h>
@@ -127,11 +128,12 @@ class FrameParser {
 
 #if BRIDGE_HOST_TEST
     if (!crc_opt || *crc_opt != crc_calc.value()) {
-        fprintf(stderr, "[PARSE] CRC MISMATCH! Size: %zu, Calc: %08X, Recv: %08X\\n", 
+        fprintf(stderr, "[PARSE] CRC MISMATCH! Size: %zu, Calc: %08X, Recv: %08X\n",
                 buffer.size(), (unsigned int)crc_calc.value(), (unsigned int)(crc_opt ? *crc_opt : 0));
         fprintf(stderr, "[PARSE] Data: ");
-        for(size_t i=0; i < (buffer.size() < 16 ? buffer.size() : 16); ++i) fprintf(stderr, "%02X ", buffer[i]);
-        fprintf(stderr, "\\n");
+        auto end_iter = buffer.begin() + (buffer.size() < 16 ? buffer.size() : 16);
+        etl::for_each(buffer.begin(), end_iter, [](uint8_t byte) { fprintf(stderr, "%02X ", byte); });
+        fprintf(stderr, "\n");
     }
 #endif
 

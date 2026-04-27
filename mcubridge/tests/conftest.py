@@ -20,40 +20,6 @@ import mcubridge.config.const
 
 import pytest
 
-# [TEST FIX] Mock 'uci' module strictly before importing mcubridge.common.
-# This simulates the OpenWrt environment where 'uci' is available.
-# We use the stub from stubs/uci/ which provides proper UciException and Uci classes.
-if "uci" not in sys.modules:
-    # Add stubs to path and import the real stub
-    _stubs_path = str(Path(__file__).parent.parent / "stubs")
-    if _stubs_path not in sys.path:
-        sys.path.insert(0, _stubs_path)
-    import uci  # This imports from mcubridge/stubs/uci/
-
-    sys.modules["uci"] = uci
-
-
-# [TEST FIX] Mock 'pyserial-asyncio-fast' as it is a compiled extension not available in dev env.
-if "serial_asyncio_fast" not in sys.modules:
-    from unittest.mock import AsyncMock
-
-    mock_saf = MagicMock()
-    # Mock open_serial_connection to return (StreamReader, StreamWriter)
-    mock_saf.open_serial_connection = AsyncMock(
-        return_value=(
-            AsyncMock(spec=asyncio.StreamReader),
-            AsyncMock(spec=asyncio.StreamWriter),
-        )
-    )
-    # Maintain create_serial_connection for older tests that haven't been migrated yet
-    mock_saf.create_serial_connection = AsyncMock(
-        return_value=(AsyncMock(), AsyncMock())
-    )
-    sys.modules["serial_asyncio_fast"] = mock_saf
-
-
-# [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
-# and interference with Python 3.13 representation during cleanup.
 from mcubridge.config import common
 from mcubridge.config import settings
 from mcubridge.config.const import (
@@ -69,6 +35,19 @@ from mcubridge.protocol.protocol import (
     DEFAULT_SAFE_BAUDRATE,
 )
 from mcubridge.state.context import RuntimeState, create_runtime_state
+
+# [TEST FIX] We use the stub from stubs/uci/ which provides proper UciException and Uci classes.
+# The stub is placed in sys.path so 'import uci' will succeed naturally without sys.modules hack.
+_stubs_path = str(Path(__file__).parent.parent / "stubs")
+if _stubs_path not in sys.path:
+    sys.path.insert(0, _stubs_path)
+
+
+# No longer injecting serial_asyncio_fast into sys.modules.
+# Tests MUST mock mcubridge.transport.serial components instead.
+
+# [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
+# and interference with Python 3.13 representation during cleanup.
 
 # [TEST FIX] Configure structlog purely natively but route to logging for caplog compatibility.
 structlog.configure(

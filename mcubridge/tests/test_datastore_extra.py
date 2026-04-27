@@ -1,11 +1,13 @@
 """Extra edge-case tests for DatastoreComponent (SIL-2)."""
 
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 import msgspec
 
 import os
 import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -28,9 +30,9 @@ async def test_datastore_handle_put_malformed() -> None:
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
-        mqtt_flow = MagicMock()
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
@@ -51,9 +53,9 @@ async def test_datastore_handle_get_malformed() -> None:
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
-        mqtt_flow = MagicMock()
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
@@ -77,9 +79,9 @@ async def test_datastore_handle_get_truncation() -> None:
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
-        mqtt_flow = MagicMock()
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
@@ -111,8 +113,8 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
-        mqtt_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
@@ -171,8 +173,8 @@ async def test_datastore_mqtt_put_too_large() -> None:
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
-        mqtt_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
@@ -209,8 +211,8 @@ async def test_datastore_mqtt_get_too_large() -> None:
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
-        mqtt_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)

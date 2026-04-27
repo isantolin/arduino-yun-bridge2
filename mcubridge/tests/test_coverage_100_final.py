@@ -6,6 +6,17 @@ all mcubridge modules.
 """
 
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.services.console import ConsoleComponent
+from mcubridge.services.datastore import DatastoreComponent
+from mcubridge.services.file import FileComponent
+from mcubridge.services.mailbox import MailboxComponent
+from mcubridge.services.pin import PinComponent
+from mcubridge.services.process import ProcessComponent
+from mcubridge.services.spi import SpiComponent
+from mcubridge.services.system import SystemComponent
+from mcubridge.router.routers import MQTTRouter
+from mcubridge.services.runtime import BridgeService
 import msgspec
 from typing import Any, cast
 
@@ -448,11 +459,11 @@ class TestShellMqttLogic:
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
 
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.acknowledge = AsyncMock()
         serial_flow.send = AsyncMock()
 
-        mqtt_flow = MagicMock()
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
         mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -707,11 +718,11 @@ class TestProcessComponent:
         config = make_test_config(process_max_concurrent=4)
         state = create_runtime_state(config)
 
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.acknowledge = AsyncMock()
         serial_flow.send = AsyncMock(return_value=True)
 
-        mqtt_flow = MagicMock()
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = ProcessComponent(
@@ -783,10 +794,10 @@ class TestConsoleComponent:
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
-            serial_flow = MagicMock()
+            serial_flow = AsyncMock(spec=SerialFlowController)
             serial_flow.send = AsyncMock(return_value=True)
 
-            mqtt_flow = MagicMock()
+            mqtt_flow = AsyncMock(spec=MqttTransport)
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -812,8 +823,8 @@ class TestMailboxComponent:
         config = make_test_config(mailbox_queue_limit=5, mailbox_queue_bytes_limit=1024)
         state = create_runtime_state(config)
         try:
-            serial_flow = MagicMock()
-            mqtt_flow = MagicMock()
+            serial_flow = AsyncMock(spec=SerialFlowController)
+            mqtt_flow = AsyncMock(spec=MqttTransport)
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -848,10 +859,10 @@ class TestPinComponent:
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
-            serial_flow = MagicMock()
+            serial_flow = AsyncMock(spec=SerialFlowController)
             serial_flow.send = AsyncMock(return_value=True)
 
-            mqtt_flow = MagicMock()
+            mqtt_flow = AsyncMock(spec=MqttTransport)
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -885,10 +896,10 @@ class TestDatastoreComponent:
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
-            serial_flow = MagicMock()
+            serial_flow = AsyncMock(spec=SerialFlowController)
             serial_flow.send = AsyncMock(return_value=True)
 
-            mqtt_flow = MagicMock()
+            mqtt_flow = AsyncMock(spec=MqttTransport)
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -925,7 +936,7 @@ class TestDispatcherEdgeCases:
         try:
             d = BridgeDispatcher(
                 mcu_registry=MagicMock(),
-                mqtt_router=MagicMock(),
+                mqtt_router=AsyncMock(spec=MQTTRouter),
                 state=state,
                 send_frame=AsyncMock(),
                 acknowledge_frame=AsyncMock(),
@@ -935,14 +946,14 @@ class TestDispatcherEdgeCases:
             )
             d.register_components(
                 make_component_container(
-                    console=MagicMock(),
-                    datastore=MagicMock(),
-                    file=MagicMock(),
-                    mailbox=MagicMock(),
-                    pin=MagicMock(),
-                    process=MagicMock(),
-                    spi=MagicMock(),
-                    system=MagicMock(),
+                    console=AsyncMock(spec=ConsoleComponent),
+                    datastore=AsyncMock(spec=DatastoreComponent),
+                    file=AsyncMock(spec=FileComponent),
+                    mailbox=AsyncMock(spec=MailboxComponent),
+                    pin=AsyncMock(spec=PinComponent),
+                    process=AsyncMock(spec=ProcessComponent),
+                    spi=AsyncMock(spec=SpiComponent),
+                    system=AsyncMock(spec=SystemComponent),
                 )
             )
             route = TopicRoute(
@@ -1006,10 +1017,10 @@ class TestFileComponent:
         config = make_test_config(file_system_root=os.path.abspath(".tmp_tests"))
         state = create_runtime_state(config)
         try:
-            serial_flow = MagicMock()
+            serial_flow = AsyncMock(spec=SerialFlowController)
             serial_flow.send = AsyncMock(return_value=True)
 
-            mqtt_flow = MagicMock()
+            mqtt_flow = AsyncMock(spec=MqttTransport)
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -1078,10 +1089,10 @@ class TestSystemComponent:
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
-            serial_flow = MagicMock()
+            serial_flow = AsyncMock(spec=SerialFlowController)
             serial_flow.send = AsyncMock(return_value=True)
 
-            mqtt_flow = MagicMock()
+            mqtt_flow = AsyncMock(spec=MqttTransport)
             mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -1467,7 +1478,7 @@ class TestSerialTransport:
         config = make_test_config(file_system_root=unique_root)
         state = create_runtime_state(config)
         try:
-            service = MagicMock()
+            service = AsyncMock(spec=BridgeService)
             transport = SerialTransport(config, state, service)
             assert transport is not None
         finally:

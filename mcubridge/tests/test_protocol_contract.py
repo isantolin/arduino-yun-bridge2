@@ -1,4 +1,5 @@
 import msgspec
+from mcubridge.router.routers import MQTTRouter
 from unittest.mock import AsyncMock
 from mcubridge.protocol import protocol, structures
 from mcubridge.services.handshake import SerialHandshakeManager
@@ -120,7 +121,7 @@ def test_mcu_registry_completeness() -> None:
 
         dispatcher = BridgeDispatcher(
             mcu_registry={},
-            mqtt_router=AsyncMock(),
+            mqtt_router=AsyncMock(spec=MQTTRouter),
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(return_value=True),

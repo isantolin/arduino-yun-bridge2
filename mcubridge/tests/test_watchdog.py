@@ -80,7 +80,7 @@ def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
                 state=runtime_state,
             )
             task = asyncio.create_task(keepalive.run())
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(0.05)
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task

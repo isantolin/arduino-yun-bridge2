@@ -1,6 +1,8 @@
 """Tests for various edge cases and coverage gaps (v2)."""
 
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.state.context import RuntimeState
 
 from typing import Any, cast
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -30,10 +32,10 @@ def test_queues_make_room_for_complex() -> None:
 @pytest.mark.asyncio
 async def test_poll_process_not_found_explicit() -> None:
     # Test for coverage of poll_process when slot is missing
-    state = MagicMock()
+    state = MagicMock(spec=RuntimeState)
     state.process_lock = AsyncMock()
     state.running_processes.get.return_value = None
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock()
 
@@ -57,7 +59,7 @@ async def test_finalize_process_slot_gone() -> None:
 @pytest.mark.asyncio
 async def test_start_async_subprocess_unexpected_exception() -> None:
     with patch("asyncio.create_subprocess_shell", side_effect=RuntimeError("fail")):
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.acknowledge = AsyncMock()
         comp = ProcessComponent(MagicMock(), MagicMock(), serial_flow, MagicMock())
         # handle_run_async signature is (self, seq_id, payload)

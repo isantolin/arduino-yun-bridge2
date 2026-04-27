@@ -1,6 +1,9 @@
 """Tests for the ProcessComponent."""
 
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
+from asyncio.subprocess import Process
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -57,10 +60,10 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
     )
     state = create_runtime_state(config)
     # Correct initialization with specific mocks for flows
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock(return_value=True)
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -80,7 +83,7 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
 
 @pytest.mark.asyncio
 async def test_run_async_success(process_comp: ProcessComponent) -> None:
-    mock_process = AsyncMock()
+    mock_process = AsyncMock(spec=Process)
     mock_process.pid = 123
     mock_process.wait = AsyncMock(return_value=0)
     mock_process.stdout = AsyncMock()
@@ -119,7 +122,7 @@ async def test_poll_process_not_found(process_comp: ProcessComponent) -> None:
 
 @pytest.mark.asyncio
 async def test_poll_process_running(process_comp: ProcessComponent) -> None:
-    mock_process = MagicMock()
+    mock_process = AsyncMock(spec=Process)
     mock_process.pid = 123
     mock_process.wait = AsyncMock(return_value=0)
     mock_process.stdout = MagicMock()
@@ -142,7 +145,7 @@ async def test_poll_process_running(process_comp: ProcessComponent) -> None:
 # --- Poll & Kill ---
 @pytest.mark.asyncio
 async def test_stop_process_success(process_comp: ProcessComponent) -> None:
-    mock_process = AsyncMock()
+    mock_process = AsyncMock(spec=Process)
     mock_process.terminate = MagicMock()
     mock_process.stdout = AsyncMock()
     mock_process.stdout.read.return_value = b""
@@ -171,7 +174,7 @@ async def test_stop_process_success(process_comp: ProcessComponent) -> None:
 
 @pytest.mark.asyncio
 async def test_monitor_process_finishes(process_comp: ProcessComponent) -> None:
-    mock_process = AsyncMock()
+    mock_process = AsyncMock(spec=Process)
     mock_process.pid = 123
     mock_process.wait = AsyncMock(return_value=0)
     mock_process.stdout = AsyncMock()
@@ -190,7 +193,7 @@ async def test_monitor_process_finishes(process_comp: ProcessComponent) -> None:
 
 @pytest.mark.asyncio
 async def test_finalize_process(process_comp: ProcessComponent) -> None:
-    mock_process = AsyncMock()
+    mock_process = AsyncMock(spec=Process)
     mock_process.pid = 42
     mock_process.stdout = AsyncMock()
     mock_process.stdout.read = AsyncMock(return_value=b"")

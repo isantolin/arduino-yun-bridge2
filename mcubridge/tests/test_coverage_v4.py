@@ -1,4 +1,6 @@
 # pyright: reportPrivateUsage=false
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 import asyncio
 from typer.testing import CliRunner
 from mcubridge.daemon import app
@@ -68,8 +70,8 @@ def test_spi_service_coverage():
     mock_state = MagicMock()
     mock_state.mqtt_topic_prefix = "br"
 
-    serial_flow = AsyncMock()
-    mqtt_flow = AsyncMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
 
     service = SpiComponent(
         config=mock_config,

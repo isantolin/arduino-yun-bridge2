@@ -1,6 +1,8 @@
 """Extra edge-case tests for PinComponent (SIL-2)."""
 
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 
 from tests.mqtt_helpers import make_inbound_message
 import os
@@ -26,9 +28,9 @@ async def test_pin_handle_read_overflow() -> None:
     state = create_runtime_state(config)
     try:
         state.pending_pin_request_limit = 1
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
-        mqtt_flow = MagicMock()
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = PinComponent(config, state, serial_flow, mqtt_flow)
@@ -65,9 +67,9 @@ async def test_pin_handle_mqtt_edge_cases() -> None:
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
-        mqtt_flow = MagicMock()
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = PinComponent(config, state, serial_flow, mqtt_flow)
@@ -114,8 +116,8 @@ async def test_pin_handle_analog_read_resp_malformed() -> None:
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
-        mqtt_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = PinComponent(config, state, serial_flow, mqtt_flow)

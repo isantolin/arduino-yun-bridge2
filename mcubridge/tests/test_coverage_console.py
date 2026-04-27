@@ -1,5 +1,7 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -19,8 +21,8 @@ def console_comp(runtime_config: Any):
     comp = ConsoleComponent(
         config=runtime_config,
         state=state,
-        serial_flow=AsyncMock(),
-        mqtt_flow=AsyncMock(),
+        serial_flow=AsyncMock(spec=SerialFlowController),
+        mqtt_flow=AsyncMock(spec=MqttTransport),
     )
     return comp
 

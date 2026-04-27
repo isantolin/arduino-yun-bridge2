@@ -1,14 +1,16 @@
 import pytest
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 from typing import Any
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock
 from mcubridge.services.mailbox import MailboxComponent
 
 
 @pytest.fixture
 def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxComponent:
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock()
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
     return MailboxComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 

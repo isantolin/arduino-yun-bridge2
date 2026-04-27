@@ -1,4 +1,7 @@
 import msgspec
+from asyncio.subprocess import Process
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,11 +18,11 @@ from mcubridge.state.context import ManagedProcess
 
 @pytest.fixture
 def process_comp(runtime_state: Any, runtime_config: Any) -> ProcessComponent:
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock()
 
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
 
     # Create component with direct dependencies
@@ -39,8 +42,8 @@ def test_post_init_disables_slots_when_limit_zero(
     comp = ProcessComponent(
         config=runtime_config,
         state=runtime_state,
-        serial_flow=MagicMock(),
-        mqtt_flow=MagicMock(),
+        serial_flow=AsyncMock(spec=SerialFlowController),
+        mqtt_flow=AsyncMock(spec=MqttTransport),
     )
     assert comp._process_slots is not None  # type: ignore[reportPrivateUsage]
 
@@ -173,7 +176,7 @@ async def test_handle_kill_process_lookup_error_is_handled(
 ) -> None:
     pid = 12
     mock_handle = MagicMock()
-    mock_handle.process = MagicMock()
+    mock_handle.process = AsyncMock(spec=Process)
     mock_handle.process.terminate.side_effect = Exception("Lookup Fail")
 
     slot = ManagedProcess(pid=pid, command="hi")

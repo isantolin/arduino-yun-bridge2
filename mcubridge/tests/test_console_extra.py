@@ -1,11 +1,13 @@
 """Extra edge-case tests for ConsoleComponent (SIL-2)."""
 
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 import msgspec
 
 import os
 import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -24,9 +26,9 @@ async def test_console_handle_write_edge_cases() -> None:
     )
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
-        mqtt_flow = MagicMock()
+        mqtt_flow = AsyncMock(spec=MqttTransport)
         mqtt_flow.publish = AsyncMock()
 
         comp = ConsoleComponent(
@@ -55,10 +57,10 @@ async def test_console_mqtt_input_error_paths() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     try:
-        serial_flow = MagicMock()
+        serial_flow = AsyncMock(spec=SerialFlowController)
         # Simulate serial failure
         serial_flow.send = AsyncMock(return_value=False)
-        mqtt_flow = MagicMock()
+        mqtt_flow = AsyncMock(spec=MqttTransport)
 
         comp = ConsoleComponent(
             config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow

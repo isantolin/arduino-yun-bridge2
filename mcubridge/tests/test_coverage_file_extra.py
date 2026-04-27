@@ -1,5 +1,7 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
 from pathlib import Path
@@ -23,8 +25,8 @@ def file_comp(runtime_config: Any, tmp_path: Path):
     comp = FileComponent(
         config=runtime_config,
         state=state,
-        serial_flow=AsyncMock(),
-        mqtt_flow=AsyncMock(),
+        serial_flow=AsyncMock(spec=SerialFlowController),
+        mqtt_flow=AsyncMock(spec=MqttTransport),
     )
     return comp
 

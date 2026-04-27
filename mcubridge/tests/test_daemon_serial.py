@@ -1,5 +1,7 @@
 """Tests for serial transport resiliency."""
 
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import RuntimeState
 from typing import Any
 
 import os
@@ -36,8 +38,8 @@ async def test_serial_reader_task_reconnects():
         reconnect_delay=1,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
-    state = MagicMock()
-    service = MagicMock()
+    state = MagicMock(spec=RuntimeState)
+    service = AsyncMock(spec=BridgeService)
     service.on_serial_connected = AsyncMock()
     service.on_serial_disconnected = AsyncMock()
     service.register_serial_sender = MagicMock()

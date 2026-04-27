@@ -1,10 +1,11 @@
 """Extra tests for FileComponent coverage."""
 
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
 
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import RuntimeState
@@ -15,7 +16,7 @@ from mcubridge.services.file import FileComponent
 def file_comp(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> FileComponent:
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     # In original code, FileComponent requires mqtt_flow
     return FileComponent(runtime_config, runtime_state, serial_flow, MagicMock())
 

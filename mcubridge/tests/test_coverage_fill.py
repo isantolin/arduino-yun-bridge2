@@ -4,6 +4,16 @@ Coverage gap filler tests for Python.
 """
 
 from __future__ import annotations
+from mcubridge.services.pin import PinComponent
+from mcubridge.transport.mqtt import MqttTransport
+from mcubridge.router.routers import MQTTRouter
+from mcubridge.services.process import ProcessComponent
+from mcubridge.services.system import SystemComponent
+from mcubridge.services.file import FileComponent
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.services.console import ConsoleComponent
+from mcubridge.services.spi import SpiComponent
+from mcubridge.services.mailbox import MailboxComponent
 import msgspec
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -65,7 +75,7 @@ def runtime_state(runtime_config: RuntimeConfig):
 @pytest.fixture
 def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
     mcu_registry: dict[int, Any] = {}
-    mqtt_router = MagicMock()
+    mqtt_router = AsyncMock(spec=MQTTRouter)
     mqtt_router.dispatch = AsyncMock(return_value=True)
     d = BridgeDispatcher(
         mcu_registry=mcu_registry,
@@ -78,16 +88,16 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
         publish_bridge_snapshot=AsyncMock(),
     )
     # Register components with mocks
-    console = MagicMock()
-    datastore = MagicMock()
-    file = MagicMock()
-    mailbox = MagicMock()
-    pin = MagicMock()
+    console = AsyncMock(spec=ConsoleComponent)
+    datastore = AsyncMock(spec=DatastoreComponent)
+    file = AsyncMock(spec=FileComponent)
+    mailbox = AsyncMock(spec=MailboxComponent)
+    pin = AsyncMock(spec=PinComponent)
     pin.handle_mcu_digital_read = AsyncMock(return_value=False)
     pin.handle_mcu_analog_read = AsyncMock(return_value=False)
-    process = MagicMock()
-    spi = MagicMock()
-    system = MagicMock()
+    process = AsyncMock(spec=ProcessComponent)
+    spi = AsyncMock(spec=SpiComponent)
+    system = AsyncMock(spec=SystemComponent)
 
     d.register_components(
         make_component_container(
@@ -210,8 +220,8 @@ async def test_datastore_publish_value_error_reason(
     runtime_config: Any, runtime_state: Any
 ):
     """Cover logic in _publish_datastore_value."""
-    serial_flow = MagicMock()
-    mqtt_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.publish = AsyncMock()
 
     ds = DatastoreComponent(
@@ -236,9 +246,9 @@ async def test_datastore_handle_get_request_fail_send(
     runtime_config: Any, runtime_state: Any
 ):
     """Cover line 86->88 in datastore.py."""
-    serial_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=False)
-    mqtt_flow = MagicMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
 
     ds = DatastoreComponent(
         config=runtime_config,

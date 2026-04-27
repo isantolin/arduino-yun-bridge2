@@ -1,4 +1,8 @@
 # pyright: reportPrivateUsage=false
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import RuntimeState
 from typing import Any
 import asyncio
 import errno
@@ -210,12 +214,12 @@ async def test_cleanup_child_processes_alive():
 async def test_process_run_async_limit_reached():
     config = create_real_config()
     config.process_max_concurrent = 1
-    state = MagicMock()
+    state = MagicMock(spec=RuntimeState)
     state.process_max_concurrent = 1
     state.process_lock = asyncio.Lock()
 
-    serial_flow = MagicMock()
-    mqtt_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
 
     comp = ProcessComponent(
         config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
@@ -233,14 +237,14 @@ async def test_process_run_async_limit_reached():
 @pytest.mark.asyncio
 async def test_process_run_async_os_error():
     config = create_real_config()
-    state = MagicMock()
+    state = MagicMock(spec=RuntimeState)
     state.process_max_concurrent = 2
     state.process_lock = asyncio.Lock()
     # Initialize state attributes to avoid MagicMock returns
     state.next_pid = 1
 
-    serial_flow = MagicMock()
-    mqtt_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
 
     comp = ProcessComponent(
         config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
@@ -254,12 +258,12 @@ async def test_process_run_async_os_error():
 @pytest.mark.asyncio
 async def test_process_stop_process_not_found():
     config = create_real_config()
-    state = MagicMock()
+    state = MagicMock(spec=RuntimeState)
     state.process_lock = asyncio.Lock()
     state.running_processes = {}
 
-    serial_flow = MagicMock()
-    mqtt_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
 
     comp = ProcessComponent(
         config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
@@ -272,12 +276,12 @@ async def test_process_stop_process_not_found():
 @pytest.mark.asyncio
 async def test_process_finalize_process_missing_slot():
     config = create_real_config()
-    state = MagicMock()
+    state = MagicMock(spec=RuntimeState)
     state.process_lock = asyncio.Lock()
     state.running_processes = {}
 
-    serial_flow = MagicMock()
-    mqtt_flow = MagicMock()
+    serial_flow = AsyncMock(spec=SerialFlowController)
+    mqtt_flow = AsyncMock(spec=MqttTransport)
 
     comp = ProcessComponent(
         config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
@@ -293,8 +297,8 @@ async def test_process_finalize_process_missing_slot():
 @pytest.mark.asyncio
 async def test_serial_transport_toggle_dtr_error():
     config = create_real_config()
-    state = MagicMock()
-    service = MagicMock()
+    state = MagicMock(spec=RuntimeState)
+    service = AsyncMock(spec=BridgeService)
     transport = SerialTransport(config, state, service)
     transport.loop = asyncio.get_running_loop()
 
@@ -306,8 +310,8 @@ async def test_serial_transport_toggle_dtr_error():
 async def test_serial_transport_run_fatal():
     config = create_real_config()
     config.reconnect_delay = 0.01  # type: ignore[reportAttributeAccessIssue]
-    state = MagicMock()
-    service = MagicMock()
+    state = MagicMock(spec=RuntimeState)
+    service = AsyncMock(spec=BridgeService)
     transport = SerialTransport(config, state, service)
 
     from mcubridge.services.handshake import SerialHandshakeFatal
@@ -322,8 +326,8 @@ async def test_serial_transport_run_fatal():
 @pytest.mark.asyncio
 async def test_serial_transport_on_disconnected_hook_error():
     config = create_real_config()
-    state = MagicMock()
-    service = MagicMock()
+    state = MagicMock(spec=RuntimeState)
+    service = AsyncMock(spec=BridgeService)
     service.on_serial_connected = AsyncMock()
     service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("Hook fail"))
     transport = SerialTransport(config, state, service)

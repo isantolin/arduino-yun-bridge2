@@ -1231,11 +1231,6 @@ class TestRuntimeStateEdges:
         state.mqtt_spool = None
         msg = QueuedPublish(topic_name="t", payload=b"p")
 
-        async def mock_ensure_spool(instance: Any):
-            return True
-
-        monkeypatch.setattr(MqttTransport, "ensure_spool", mock_ensure_spool)
-
         # We also need to mock mqtt_spool since it's used after ensure_spool
         state.mqtt_spool = MagicMock()
         from tests._helpers import make_test_config

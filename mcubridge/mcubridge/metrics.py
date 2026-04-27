@@ -47,7 +47,7 @@ def _build_metrics_message(
         user_properties=(),
     )
 
-    mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
+    mqtt_spool_failure = "degraded" if snapshot.get("mqtt_spool_degraded") else None
     if snapshot.get("mqtt_spool_degraded"):
         message = _with_user_property(
             message,

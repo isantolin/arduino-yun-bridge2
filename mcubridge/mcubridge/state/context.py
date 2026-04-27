@@ -703,7 +703,5 @@ def create_runtime_state(
 
     transport = MqttTransport(cfg, state)
     transport.configure_spool(cfg.mqtt_spool_dir, cfg.mqtt_queue_limit * 4)
-    if initialize_spool:
-        transport.initialize_spool()
 
     return state

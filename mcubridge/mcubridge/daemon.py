@@ -113,7 +113,7 @@ class BridgeDaemon:
         self.mqtt_transport.configure_spool(
             self.config.mqtt_spool_dir, self.config.mqtt_queue_limit * 4
         )
-        self.mqtt_transport.initialize_spool()
+
         self.service = BridgeService(config, self.state, self.mqtt_transport)
         self.mqtt_transport.set_service(self.service)
         # Initialize dependencies
@@ -125,6 +125,8 @@ class BridgeDaemon:
             logger.info("Security check passed: Shared secret is configured.")
 
     async def run(self) -> None:
+        # [SIL-2] Initialize durable storage before starting transport loops
+        await self.mqtt_transport.initialize_spool()
         """Main entry point for daemon execution using native TaskGroup orchestration."""
         log = structlog.get_logger("mcubridge.daemon")
 

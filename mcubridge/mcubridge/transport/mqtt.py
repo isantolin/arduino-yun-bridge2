@@ -1,22 +1,22 @@
-"""MQTT transport helpers for the MCU Bridge daemon (SIL-2)."""
+"""Simplified and robust MQTT transport (SIL-2)."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
-import structlog
 from typing import TYPE_CHECKING, Any, cast
 
 import aiomqtt
 import msgspec
+import structlog
 import tenacity
 
-from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt import build_mqtt_connect_properties
-from mcubridge.protocol.topics import topic_path
+from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Topic
+from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol.topics import topic_path
 
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
@@ -27,8 +27,6 @@ logger = structlog.get_logger("mcubridge.transport.mqtt")
 
 
 class MqttTransport:
-    """Simplified and robust MQTT transport (SIL-2)."""
-
     """Simplified and robust MQTT transport (SIL-2)."""
 
     def __init__(
@@ -197,12 +195,12 @@ class MqttTransport:
         self,
         message: QueuedPublish,
         *,
-        reply_context: aiomqtt.aiomqtt.Message | None = None,
+        reply_context: Any | None = None,
     ) -> None:
         """Enqueues message with direct spool fallback if RAM queue is full (SIL-2)."""
         if reply_context:
             # Handle reply-to and correlation context
-            props = reply_context.properties
+            props = getattr(reply_context, "properties", None)
             resp_topic = getattr(props, "ResponseTopic", None) if props else None
             corr_data = getattr(props, "CorrelationData", None) if props else None
 
@@ -210,6 +208,17 @@ class MqttTransport:
                 message = msgspec.structs.replace(message, topic_name=resp_topic)
             if corr_data:
                 message = msgspec.structs.replace(message, correlation_data=corr_data)
+
+        # [SIL-2] Inject request context metadata for traceability
+        user_props = list(message.user_properties)
+        if reply_context:
+            user_props.append(
+                (
+                    "bridge-request-topic",
+                    str(getattr(reply_context, "topic", "unknown")),
+                )
+            )
+        message = msgspec.structs.replace(message, user_properties=tuple(user_props))
 
         try:
             self.state.mqtt_publish_queue.put_nowait(message)

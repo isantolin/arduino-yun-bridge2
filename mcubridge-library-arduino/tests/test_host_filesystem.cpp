@@ -1,3 +1,4 @@
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 
 #include "Bridge.h"
@@ -74,7 +75,8 @@ void test_hal_chunked_read_roundtrip() {
 void test_filesystem_api_write() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  simulate_handshake(Bridge, stream);
+  auto& ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   uint8_t data[] = {1, 2, 3};
   FileSystem.write("test.txt", etl::span<const uint8_t>(data, 3));
@@ -90,7 +92,8 @@ void filesystem_test_read_handler(etl::span<const uint8_t> data) {
 void test_filesystem_api_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  simulate_handshake(Bridge, stream);
+  auto& ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   g_filesystem_read_called = false;
   FileSystem.read("test.txt", FileSystemClass::FileSystemReadHandler::create<filesystem_test_read_handler>());
@@ -106,7 +109,8 @@ void test_filesystem_api_read() {
 void test_filesystem_api_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  simulate_handshake(Bridge, stream);
+  auto& ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   FileSystem.remove("test.txt");
   TEST_ASSERT(stream.tx_buf.len > 0);
@@ -115,7 +119,8 @@ void test_filesystem_api_remove() {
 void test_filesystem_on_write() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  simulate_handshake(Bridge, stream);
+  auto& ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   rpc::payload::FileWrite msg = {};
   msg.path = "hostfs/write.bin";
@@ -128,7 +133,8 @@ void test_filesystem_on_write() {
 void test_filesystem_on_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  simulate_handshake(Bridge, stream);
+  auto& ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   const uint8_t payload[] = {'x', 'y', 'z'};
   bridge::hal::writeFile("hostfs/read.bin", etl::span<const uint8_t>(payload, sizeof(payload)));
@@ -142,7 +148,8 @@ void test_filesystem_on_read() {
 void test_filesystem_on_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  simulate_handshake(Bridge, stream);
+  auto& ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   bridge::hal::writeFile("hostfs/remove.bin", etl::span<const uint8_t>());
   

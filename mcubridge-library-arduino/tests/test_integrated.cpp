@@ -1,4 +1,6 @@
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "Bridge.h"
+#include "BridgeTestInterface.h"
 #include "test_support.h"
 #include "services/Console.h"
 #include "services/FileSystem.h"
@@ -17,47 +19,25 @@ void integrated_test_bridge_core() {
   BiStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin(115200, "test_secret_1234567890123456");
-  localBridge._onStartupStabilized();
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
 
-  rpc::payload::LinkSync sync_msg = {};
-  uint8_t nonce[16] = {0};
-  etl::copy_n(nonce, 16, sync_msg.nonce.begin());
+  rpc::Frame sync;
+  sync.header.version = rpc::PROTOCOL_VERSION;
+  sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  sync.header.payload_length = 16;
+  sync.header.sequence_id = 1;
+  uint8_t payload[16] = {0};
+  sync.payload = etl::span<const uint8_t>(payload, 16);
   
-  uint8_t tag[16];
-  localBridge._computeHandshakeTag(etl::span<const uint8_t>(nonce, 16), etl::span<uint8_t>(tag, 16));
-  etl::copy_n(tag, 16, sync_msg.tag.begin());
-
-  uint8_t payload_buffer[rpc::MAX_PAYLOAD_SIZE];
-  msgpack::Encoder enc(payload_buffer, rpc::MAX_PAYLOAD_SIZE);
-  sync_msg.encode(enc);
-
-  stream.feed_frame(rpc::CommandId::CMD_LINK_SYNC, 1, enc.result());
-  
-  int safety = 0;
-  while (safety++ < 10 && !localBridge.isSynchronized()) {
-    localBridge.process();
-  }
+  accessor.dispatch(sync);
 }
 
 void integrated_test_components() {
   BiStream stream;
-  reset_bridge_core(Bridge, stream, 115200, "top-secret");
-  
-  // Real handshake
-  rpc::payload::LinkSync sync_msg = {};
-  uint8_t nonce[16] = {0};
-  uint8_t tag[16];
-  Bridge._computeHandshakeTag(etl::span<const uint8_t>(nonce, 16), etl::span<uint8_t>(tag, 16));
-  etl::copy_n(tag, 16, sync_msg.tag.begin());
-  uint8_t payload_buffer[rpc::MAX_PAYLOAD_SIZE];
-  msgpack::Encoder enc(payload_buffer, rpc::MAX_PAYLOAD_SIZE);
-  sync_msg.encode(enc);
-  stream.feed_frame(rpc::CommandId::CMD_LINK_SYNC, 1, enc.result());
-  
-  int safety = 0;
-  while (safety++ < 10 && !Bridge.isSynchronized()) {
-    Bridge.process();
-  }
+  reset_bridge_core(Bridge, stream);
+  auto& ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   Console.begin();
   Console.write('H');

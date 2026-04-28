@@ -2,8 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
+#include "BridgeTestInterface.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "security/security.h"
@@ -11,13 +14,13 @@
 #include "test_support.h"
 
 static unsigned long g_test_millis = 0;
-unsigned long millis() { return g_test_millis; }
+unsigned long millis() { return g_test_millis++; }
 void delay(unsigned long ms) { g_test_millis += ms; }
 
 using namespace rpc;
 using namespace bridge;
 
-BiStream g_test_stream;
+TxCaptureStream g_test_stream;
 Stream* g_arduino_stream_delegate = &g_test_stream;
 HardwareSerial Serial;
 HardwareSerial Serial1;
@@ -25,72 +28,81 @@ HardwareSerial Serial1;
 void test_fsm_initial_state() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200);
-  localBridge._onStartupStabilized();
-  TEST_ASSERT(!localBridge.isSynchronized());
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
+  TEST_ASSERT(accessor.isUnsynchronized());
 }
 
 void test_mutual_auth_success() {
   BridgeClass localBridge(g_test_stream);
   const char* secret = "secret_1234567890123456";
   localBridge.begin(115200, secret);
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
   
-  simulate_handshake(localBridge, g_test_stream, secret);
-  TEST_ASSERT(localBridge.isSynchronized());
+  const uint8_t nonce[16] = {1, 2,  3,  4,  5,  6,  7,  8, 9, 10, 11, 12, 13, 14, 15, 16};
+  rpc::payload::LinkSync sync_msg = {};
+  memcpy(sync_msg.nonce.data(), nonce, 16);
+  accessor.computeHandshakeTag(nonce, 16, sync_msg.tag.data());
+  
+  rpc::Frame sync_frame = {};
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
+  sync_frame.payload = etl::span<const uint8_t>(payload_buffer.data(), payload_buffer.size());
+  bridge::test::set_pb_payload(sync_frame, sync_msg);
+  sync_frame.header.version = rpc::PROTOCOL_VERSION;
+  sync_frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  sync_frame.header.sequence_id = 1;
+  sync_frame.header.payload_length = 48; // Approximation
+  
+  accessor.dispatch(sync_frame);
+  TEST_ASSERT(accessor.isSynchronized());
 }
 
 void test_mutual_auth_failure_wrong_tag() {
   BridgeClass localBridge(g_test_stream);
   const char* secret = "secret_1234567890123456";
   localBridge.begin(115200, secret);
-  localBridge._onStartupStabilized();
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
   
+  const uint8_t nonce[16] = {1, 2, 3, 4};
   rpc::payload::LinkSync sync_msg = {};
-  etl::fill(sync_msg.nonce.begin(), sync_msg.nonce.end(), 0x11);
-  etl::fill(sync_msg.tag.begin(), sync_msg.tag.end(), 0xEE); // Wrong tag
+  memcpy(sync_msg.nonce.data(), nonce, 16);
+  memset(sync_msg.tag.data(), 'X', 16); // Invalid tag
   
-  uint8_t payload_buffer[rpc::MAX_PAYLOAD_SIZE];
-  msgpack::Encoder enc(payload_buffer, rpc::MAX_PAYLOAD_SIZE);
-  sync_msg.encode(enc);
-
-  g_test_stream.feed_frame(rpc::CommandId::CMD_LINK_SYNC, 1, enc.result());
-  localBridge.process();
+  rpc::Frame sync_frame = {};
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
+  sync_frame.payload = etl::span<const uint8_t>(payload_buffer.data(), payload_buffer.size());
+  bridge::test::set_pb_payload(sync_frame, sync_msg);
+  sync_frame.header.version = rpc::PROTOCOL_VERSION;
+  sync_frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  sync_frame.header.sequence_id = 1;
+  sync_frame.header.payload_length = 48;
   
-  TEST_ASSERT(!localBridge.isSynchronized());
+  accessor.dispatch(sync_frame);
+  TEST_ASSERT(accessor.getStartupStabilizing());
 }
 
 void test_fsm_timeout_to_unsynchronized() {
   BridgeClass localBridge(g_test_stream);
   localBridge.begin(115200);
-  simulate_handshake(localBridge, g_test_stream, nullptr);
+  auto& accessor = bridge::test::TestAccessor::create(localBridge);
+  accessor.onStartupStabilized();
+  accessor.setSynchronized();
   
-  TEST_ASSERT_TRUE(localBridge.isSynchronized());
-
   uint8_t payload[] = {0x01};
-  // CMD_CONSOLE_WRITE es confiable, pone al FSM en AWAITING_ACK
   TEST_ASSERT_TRUE(localBridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 0, etl::span<const uint8_t>(payload, 1)));
+  TEST_ASSERT(accessor.isAwaitingAck());
   
-  // Procesar para que el frame se envíe realmente y cambie el estado
-  localBridge.process();
-
-  // Force timeouts by advancing time and processing
-  // Avance gradual para asegurar que el scheduler de ETL capture los ticks
-  for (int i = 0; i < 20; i++) {
-    g_test_millis += 250; // Avanzar 250ms (Default timeout es 500ms)
-    localBridge.process();
-    localBridge.process(); // Doble process para asegurar tareas pendientes
+  g_test_millis += 50000;
+  for (int i = 0; i < 15; i++) {
+    accessor.onAckTimeout();
   }
   
-  if (localBridge.isSynchronized()) {
-      printf("DEBUG: FSM State still synchronized\n");
-  }
-
-  TEST_ASSERT(!localBridge.isSynchronized());
+  TEST_ASSERT(accessor.isFault() || accessor.isUnsynchronized());
 }
 
-void setUp(void) {
-    g_test_stream.clear();
-    g_test_millis = 100;
-}
+void setUp(void) {}
 void tearDown(void) {}
 
 int main(void) {

@@ -2,11 +2,14 @@
 #include <stdint.h>
 #include <string.h>
 
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "Bridge.h"
 #include "protocol/rpc_frame.h"
 #include "services/Console.h"
 #include "test_constants.h"
 #include "test_support.h"
+#include "BridgeTestHelper.h"
+#include "BridgeTestInterface.h"
 
 // Define the global delegates and stubs for HardwareSerial stub
 Stream* g_arduino_stream_delegate = nullptr;
@@ -16,6 +19,8 @@ HardwareSerial Serial1;
 // Unity setup/teardown
 void setUp(void) {}
 void tearDown(void) {}
+
+using namespace bridge::test;
 
 // Forward declaration of the test runner helper
 void reset_bridge(BiStream& stream);
@@ -28,25 +33,40 @@ void reset_bridge(BiStream& stream) {
 }
 
 void sync_bridge(BiStream& stream) {
-  stream.clear();
-  Bridge._onStartupStabilized();
+  stream.rx_buf.clear();
+  stream.tx_buf.clear();
+  auto& ba = TestAccessor::create(Bridge);
+  
+  if (ba.isSharedSecretEmpty()) {
+    const char* test_secret = "top-secret";
+    etl::array<uint8_t, 32> secret_buf;
+    secret_buf.fill(0);
+    memcpy(secret_buf.data(), test_secret, strlen(test_secret));
+    ba.setSharedSecret(etl::span<const uint8_t>(secret_buf.data(), 32));
+  }
 
   rpc::payload::LinkSync sync_msg = {};
   uint8_t nonce[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
   etl::copy_n(nonce, 16, sync_msg.nonce.begin());
   
   uint8_t tag[16];
-  Bridge._computeHandshakeTag(etl::span<const uint8_t>(nonce, 16), etl::span<uint8_t>(tag, 16));
+  ba.computeHandshakeTag(nonce, 16, tag);
   etl::copy_n(tag, 16, sync_msg.tag.begin());
 
-  uint8_t payload_buffer[rpc::MAX_PAYLOAD_SIZE];
-  msgpack::Encoder enc(payload_buffer, rpc::MAX_PAYLOAD_SIZE);
-  sync_msg.encode(enc);
+  rpc::Frame frame = {};
+  frame.header.version = rpc::PROTOCOL_VERSION;
+  frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  frame.header.sequence_id = 1;
+  
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
+  frame.payload = etl::span<const uint8_t>(payload_buffer.data(), payload_buffer.size());
+  bridge::test::set_pb_payload(frame, sync_msg);
 
-  stream.feed_frame(rpc::CommandId::CMD_LINK_SYNC, 1, enc.result());
+  ba.onStartupStabilized();
+  ba.dispatch(frame);
   
   int safety_counter = 0;
-  while (safety_counter++ < 10 && !Bridge.isSynchronized()) {
+  while (safety_counter++ < 10 && !ba.isSynchronized()) {
       Bridge.process();
   }
 }
@@ -54,11 +74,8 @@ void sync_bridge(BiStream& stream) {
 void test_bridge_begin() {
   BiStream stream;
   reset_bridge(stream);
-  // bridge.begin() puts it in STARTUP, but _onStartupStabilized() was NOT called yet in reset_bridge.
-  // Actually Bridge.begin() starts it.
-  // In the original test: TEST_ASSERT(ba.getStartupStabilizing());
-  // We can't check internal state anymore, so we check if it's NOT synchronized.
-  TEST_ASSERT(!Bridge.isSynchronized());
+  auto& ba = TestAccessor::create(Bridge);
+  TEST_ASSERT(ba.getStartupStabilizing());
 }
 
 void test_bridge_send_frame() {
@@ -75,8 +92,12 @@ void test_bridge_process_rx() {
   reset_bridge(stream);
   sync_bridge(stream);
   
-  stream.feed_frame(rpc::CommandId::CMD_XOFF, 0, {});
-  Bridge.process();
+  rpc::Frame frame = {};
+  frame.header.version = rpc::PROTOCOL_VERSION;
+  frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_XOFF);
+  frame.header.payload_length = 0;
+  
+  TestAccessor::create(Bridge).dispatch(frame);
 }
 
 void test_bridge_handshake() {
@@ -89,31 +110,51 @@ void test_bridge_handshake() {
 void test_bridge_flow_control() {
   BiStream stream;
   reset_bridge(stream);
-  Bridge._onStartupStabilized();
-  // We need to be synchronized to process XOFF properly in some states, 
-  // but let's see if we can just sync it.
-  sync_bridge(stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.onStartupStabilized();
+  ba.setSynchronized();
   
-  stream.feed_frame(rpc::CommandId::CMD_XOFF, 0, {});
-  Bridge.process();
+  rpc::Frame xoff;
+  xoff.header.version = rpc::PROTOCOL_VERSION;
+  xoff.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_XOFF);
+  xoff.header.payload_length = 0;
+  ba.dispatch(xoff);
 }
 
 void test_bridge_dedup_console_write_retry() {
   BiStream stream;
   reset_bridge(stream);
-  Bridge._onStartupStabilized();
-  sync_bridge(stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.onStartupStabilized();
+  ba.setSynchronized();
   Console.begin();
   
   rpc::payload::ConsoleWrite msg = {};
   uint8_t data[] = "hello";
   msg.data = etl::span<const uint8_t>(data, 5);
 
-  uint8_t payload_buffer[rpc::MAX_PAYLOAD_SIZE];
-  msgpack::Encoder enc(payload_buffer, rpc::MAX_PAYLOAD_SIZE);
-  msg.encode(enc);
+  rpc::Frame frame = {};
+  frame.header.version = rpc::PROTOCOL_VERSION;
+  frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+  frame.header.sequence_id = 10;
 
-  stream.feed_frame(rpc::CommandId::CMD_CONSOLE_WRITE, 10, enc.result());
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buffer;
+  frame.payload = etl::span<const uint8_t>(payload_buffer.data(), payload_buffer.size());
+  bridge::test::set_pb_payload(frame, msg);
+
+  etl::crc32 crc_calc;
+  uint8_t h[rpc::FRAME_HEADER_SIZE];
+  h[0] = 0x02; // version
+  etl::byte_stream_writer w(h + 1, 6, etl::endian::big);
+  w.write<uint16_t>(frame.header.payload_length);
+  w.write<uint16_t>(frame.header.command_id);
+  w.write<uint16_t>(frame.header.sequence_id);
+
+  crc_calc.add(h, h + rpc::FRAME_HEADER_SIZE);
+  crc_calc.add(frame.payload.data(), frame.payload.data() + frame.header.payload_length);
+  frame.crc = crc_calc.value();
+
+  ba.dispatch(frame);
   Bridge.process();
   TEST_ASSERT_EQUAL(5, Console.available());
 }

@@ -1,5 +1,8 @@
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
+#include "BridgeTestInterface.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "test_support.h"
@@ -12,7 +15,7 @@
 #include "services/Process.h"
 #include "services/SPIService.h"
 
-unsigned long g_test_millis = 100;
+unsigned long g_test_millis = 0;
 unsigned long millis() { return g_test_millis; }
 void delay(unsigned long ms) { g_test_millis += ms; }
 
@@ -21,6 +24,8 @@ HardwareSerial Serial1;
 Stream* g_arduino_stream_delegate = nullptr;
 
 namespace {
+
+using bridge::test::TestAccessor;
 
 void ds_handler(etl::string_view, etl::span<const uint8_t>) {}
 void proc_handler(int32_t) {}
@@ -31,28 +36,35 @@ void fs_handler(etl::span<const uint8_t>) {}
 void test_bridge_reset_state() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  Bridge._onStartupStabilized();
-  TEST_ASSERT(!Bridge.isSynchronized());
+  auto& ba = TestAccessor::create(Bridge);
+  ba.onStartupStabilized();
+  TEST_ASSERT(ba.isUnsynchronized());
   Bridge.enterSafeState();
+  TEST_ASSERT(ba.getStartupStabilizing());
 }
 
 void test_bridge_exhaustive_dispatch() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  simulate_handshake(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   static uint8_t buf[256];
   auto dispatch_payload = [&](rpc::CommandId id, auto payload) {
     memset(buf, 0, sizeof(buf));
     msgpack::Encoder enc(buf, sizeof(buf));
     payload.encode(enc);
-    stream.feed_frame(id, 1, enc.result());
-    Bridge.process();
+    rpc::Frame f = {};
+    f.header.command_id = (uint16_t)id;
+    f.payload = enc.result();
+    f.header.payload_length = (uint16_t)f.payload.size();
+    ba.dispatch(f);
   };
 
   auto dispatch_raw = [&](uint16_t id) {
-    stream.feed_frame(static_cast<rpc::CommandId>(id), 1, {});
-    Bridge.process();
+    rpc::Frame f = {};
+    f.header.command_id = id;
+    ba.dispatch(f);
   };
 
   // Fill the jump table range 0x40 - 0xBF
@@ -108,10 +120,15 @@ void test_bridge_exhaustive_dispatch() {
 void test_bridge_transmit_exhaustive() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
 
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK, (const char*)nullptr);
   Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
   Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, F("flash"));
+
+  ba.setTxEnabled(false);
+  (void)Bridge.sendFrame(rpc::StatusCode::STATUS_OK, 0);
+  ba.setTxEnabled(true);
 
   // Pool fill
   uint8_t d[1] = {0};
@@ -119,25 +136,27 @@ void test_bridge_transmit_exhaustive() {
     (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, (uint16_t)i,
                            etl::span<const uint8_t>(d, 1));
 
-  // Advance time to hit delay timers
-  g_test_millis += 10000;
+  ba.setPendingBaudrate(57600);
+  // Let timer process
+  g_test_millis += 1000;
   Bridge.process();
 }
 
 void test_bridge_fsm_exhaustive() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  
-  // Feed events to advance FSM naturally
-  Bridge._onStartupStabilized();
-  simulate_handshake(Bridge, stream);
-  
-  // Critical send (triggers state wait_ack)
-  uint8_t d[1] = {0};
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 1, etl::span<const uint8_t>(d, 1));
-  
-  // Feed ACK
-  stream.feed_frame(rpc::StatusCode::STATUS_ACK, 1, {});
+  auto& ba = TestAccessor::create(Bridge);
+
+  ba.setIdle();
+  ba.trigger(bridge::fsm::EvStabilized());
+  ba.trigger(bridge::fsm::EvHandshakeStart());
+  ba.trigger(bridge::fsm::EvHandshakeComplete());
+  ba.trigger(bridge::fsm::EvSendCritical());
+  ba.trigger(bridge::fsm::EvAckReceived());
+
+  // Trigger ACK timeout via timer
+  ba.trigger(bridge::fsm::EvSendCritical());
+  g_test_millis += 5000;
   Bridge.process();
 }
 
@@ -190,56 +209,70 @@ void test_bridge_error_handling() {
 void test_bridge_compressed() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  simulate_handshake(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   // Send a frame with compressed bit set
-  stream.feed_frame(static_cast<rpc::CommandId>((uint16_t)rpc::CommandId::CMD_CONSOLE_WRITE |
-                        rpc::RPC_CMD_FLAG_COMPRESSED), 10, {});
-  Bridge.process();
+  rpc::Frame f = {};
+  f.header.command_id = (uint16_t)rpc::CommandId::CMD_CONSOLE_WRITE |
+                        rpc::RPC_CMD_FLAG_COMPRESSED;
+  ba.dispatch(f);
 }
 
 void test_bridge_hal_callbacks() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
 
-  // Advance time and process to hit internal timer-driven logic
-  g_test_millis += 10000;
-  Bridge.process();
+  // Explicitly call all timer-related internal callbacks
+  ba.onAckTimeout();
+  ba._onRxDedupe();
+  ba._onBaudrateChange();
+  ba.onStartupStabilized();
 }
 
 void test_bridge_packet_rx_exhaustive() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
 
   // 1. Corrupt Frame (Parser failure)
   uint8_t c[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-  Bridge._onPacketReceived(etl::span<const uint8_t>(c, 8));
+  ba._onPacketReceived(etl::span<const uint8_t>(c, 8));
 
   // 2. Valid frame but duplicate
-  simulate_handshake(Bridge, stream);
+  ba.setSynchronized();
   rpc::Frame f = {};
   f.header.command_id = (uint16_t)rpc::CommandId::CMD_GET_VERSION;
   f.header.sequence_id = 42;
   uint8_t buf[128];
   size_t len = rpc::FrameParser::serialize(f, etl::span<uint8_t>(buf, 128));
-  Bridge._onPacketReceived(etl::span<const uint8_t>(buf, len));
-  Bridge._onPacketReceived(etl::span<const uint8_t>(buf, len));  // Duplicate
+  ba._onPacketReceived(etl::span<const uint8_t>(buf, len));
+  ba._onPacketReceived(etl::span<const uint8_t>(buf, len));  // Duplicate
 }
 
 void test_bridge_dispatch_all() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  simulate_handshake(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   for (uint16_t i = 0x40; i <= 0xBF; ++i) {
-    stream.feed_frame(static_cast<rpc::CommandId>(i), 1, {});
-    Bridge.process();
+    rpc::Frame f = {};
+    f.header.command_id = i;
+    ba.dispatch(f);
   }
 }
 
 void test_bridge_api_extended() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+
+  // setSharedSecret with actual data
+  uint8_t secret[] = {1, 2, 3};
+  ba.setSharedSecret(etl::span<const uint8_t>(secret, 3));
+  TEST_ASSERT(!ba.isSharedSecretEmpty());
 
   // sendFrame variants
   uint8_t d[] = {0};

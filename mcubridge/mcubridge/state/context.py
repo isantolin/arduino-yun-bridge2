@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, Protocol, TypeVar, cast
 
-import diskcache  # type: ignore[import-untyped]
+import diskcache
 import msgspec
 import psutil
 import structlog

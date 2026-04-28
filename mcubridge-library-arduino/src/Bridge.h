@@ -173,7 +173,7 @@ class BridgeClass {
   struct SerialTask : public etl::task {
     BridgeClass& bridge;
     bool xoff_sent;
-    explicit SerialTask(BridgeClass& b) : etl::task(1), bridge(b), xoff_sent(false) {}
+    SerialTask(BridgeClass& b) : etl::task(1), bridge(b), xoff_sent(false) {}
     uint32_t task_request_work() const override { return 1; }
     void task_process_work() override;
   } _serial_task;
@@ -181,7 +181,7 @@ class BridgeClass {
   struct TimerTask : public etl::task {
     BridgeClass& bridge;
     uint32_t last_tick_ms;
-    explicit TimerTask(BridgeClass& b) : etl::task(2), bridge(b), last_tick_ms(0) {}
+    TimerTask(BridgeClass& b) : etl::task(2), bridge(b), last_tick_ms(0) {}
     uint32_t task_request_work() const override { return 1; }
     void task_process_work() override;
   } _timer_task;

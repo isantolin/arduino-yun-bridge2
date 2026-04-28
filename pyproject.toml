@@ -40,9 +40,9 @@ package-dir = {"" = "mcubridge"}
 minversion = "7.0"
 addopts = "-ra --timeout=10 --timeout_method=thread"
 asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
 log_cli = true
 log_cli_level = "INFO"
-asyncio_default_fixture_loop_scope = "function"
 testpaths = ["mcubridge/tests", "mcubridge-client-examples/client_tests"]
 pythonpath = [".", "mcubridge"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*"]

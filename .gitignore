@@ -63,7 +63,7 @@ PHASE_3_REPORT.md
 gha-creds-*.json
 .tmp/
 nohup.out
-lib/
+
 # Auto-generated Protocol bindings (Exempt for CI reproducibility)
 # mcubridge/mcubridge/protocol/protocol.py
 

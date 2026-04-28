@@ -74,101 +74,6 @@ struct ByteBuffer {
 };
 
 // ---------------------------------------------------------------------------
-// Reusable mock Stream classes for test binaries.
-// ---------------------------------------------------------------------------
-
-/**
- * Tx-only capture stream – records writes, no readable data.
- */
-class TxCaptureStream : public Stream {
- public:
-  ByteBuffer<4096> tx;
-
-  size_t write(uint8_t c) override {
-    tx.push(c);
-    return 1;
-  }
-  size_t write(const uint8_t* b, size_t s) override {
-    tx.append(b, s);
-    return s;
-  }
-  int available() override { return 0; }
-  int read() override { return -1; }
-  int peek() override { return -1; }
-  void flush() override {}
-};
-
-/**
- * Bidirectional mock stream – captures writes and feeds reads via feed().
- */
-class BiStream : public Stream {
- public:
-  ByteBuffer<8192> rx_buf;
-  ByteBuffer<8192> tx_buf;
-
-  int available() override { return rx_buf.remaining(); }
-  int read() override { return rx_buf.read_byte(); }
-  int peek() override { return rx_buf.peek_byte(); }
-  size_t write(uint8_t b) override {
-    tx_buf.push(b);
-    return 1;
-  }
-  size_t write(const uint8_t* b, size_t s) override {
-    tx_buf.append(b, s);
-    return s;
-  }
-  void flush() override {}
-
-  void feed(const uint8_t* data, size_t len) { rx_buf.append(data, len); }
-  void feed_frame(rpc::CommandId cmd, uint16_t seq, const etl::span<const uint8_t>& payload) {
-    uint8_t raw[rpc::MAX_FRAME_SIZE];
-    uint8_t encoded[rpc::MAX_FRAME_SIZE + 2];
-    
-    raw[0] = rpc::PROTOCOL_VERSION;
-    etl::byte_stream_writer w(raw + 1, 6, etl::endian::big);
-    w.write<uint16_t>(static_cast<uint16_t>(payload.size()));
-    w.write<uint16_t>(rpc::to_underlying(cmd));
-    w.write<uint16_t>(seq);
-    
-    if (!payload.empty()) {
-        etl::copy_n(payload.data(), payload.size(), raw + rpc::FRAME_HEADER_SIZE);
-    }
-    
-    etl::crc32 crc;
-    crc.add(raw, raw + rpc::FRAME_HEADER_SIZE + payload.size());
-    uint32_t cv = crc.value();
-    etl::byte_stream_writer w_crc(raw + rpc::FRAME_HEADER_SIZE + payload.size(), 4, etl::endian::big);
-    w_crc.write<uint32_t>(cv);
-    
-    size_t encoded_len = TestCOBS::encode(raw, rpc::FRAME_HEADER_SIZE + payload.size() + 4, encoded);
-    feed(encoded, encoded_len);
-    uint8_t delim = rpc::RPC_FRAME_DELIMITER;
-    feed(&delim, 1);
-  }
-  void clear() {
-    rx_buf.clear();
-    tx_buf.clear();
-  }
-};
-
-/**
- * Perform a full LinkSync handshake on the given bridge instance.
- */
-static inline void simulate_handshake(BridgeClass& bridge, BiStream& stream) {
-  // 1. Enter Startup (Stabilized)
-  bridge._onStartupStabilized();
-
-  // 2. Feed CMD_LINK_SYNC
-  etl::array<uint8_t, 16> nonce;
-  etl::fill(nonce.begin(), nonce.end(), 0xAA);
-  stream.feed_frame(rpc::CommandId::CMD_LINK_SYNC, 1,
-                    etl::span<const uint8_t>(nonce.data(), 16));
-
-  // 3. Process handshake
-  bridge.process();
-}
-
-// ---------------------------------------------------------------------------
 // COBS encoder/decoder for building test frames.
 // [SIL-2] Mirrors the PacketSerial2::COBS codec used in production.
 // Validated by roundtrip tests in test_protocol.cpp and test_bridge_core.cpp.
@@ -219,6 +124,134 @@ struct TestCOBS {
     return static_cast<size_t>(out - destination);
   }
 };
+
+// ---------------------------------------------------------------------------
+// Reusable mock Stream classes for test binaries.
+// ---------------------------------------------------------------------------
+
+/**
+ * Tx-only capture stream – records writes, no readable data.
+ */
+class TxCaptureStream : public Stream {
+ public:
+  ByteBuffer<4096> tx;
+
+  size_t write(uint8_t c) override {
+    tx.push(c);
+    return 1;
+  }
+  size_t write(const uint8_t* b, size_t s) override {
+    tx.append(b, s);
+    return s;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+};
+
+/**
+ * Bidirectional mock stream – captures writes and feeds reads via feed().
+ */
+class BiStream : public Stream {
+ public:
+  ByteBuffer<8192> rx_buf;
+  ByteBuffer<8192> tx_buf;
+
+  int available() override { return rx_buf.remaining(); }
+  int read() override { return rx_buf.read_byte(); }
+  int peek() override { return rx_buf.peek_byte(); }
+  size_t write(uint8_t b) override {
+    tx_buf.push(b);
+    return 1;
+  }
+  size_t write(const uint8_t* b, size_t s) override {
+    tx_buf.append(b, s);
+    return s;
+  }
+  void flush() override {}
+
+  void feed(const uint8_t* data, size_t len) { rx_buf.append(data, len); }
+  
+  void feed_raw_frame(uint16_t cmd_val, uint16_t seq, const etl::span<const uint8_t>& payload) {
+    uint8_t raw[rpc::MAX_FRAME_SIZE];
+    uint8_t encoded[rpc::MAX_FRAME_SIZE + 2];
+    
+    raw[0] = rpc::PROTOCOL_VERSION;
+    etl::byte_stream_writer w(raw + 1, 6, etl::endian::big);
+    w.write<uint16_t>(static_cast<uint16_t>(payload.size()));
+    w.write<uint16_t>(cmd_val);
+    w.write<uint16_t>(seq);
+    
+    if (!payload.empty()) {
+        etl::copy_n(payload.data(), payload.size(), raw + rpc::FRAME_HEADER_SIZE);
+    }
+    
+    etl::crc32 crc;
+    crc.add(raw, raw + rpc::FRAME_HEADER_SIZE + payload.size());
+    uint32_t cv = crc.value();
+    etl::byte_stream_writer w_crc(raw + rpc::FRAME_HEADER_SIZE + payload.size(), 4, etl::endian::big);
+    w_crc.write<uint32_t>(cv);
+    
+    size_t encoded_len = TestCOBS::encode(raw, rpc::FRAME_HEADER_SIZE + payload.size() + 4, encoded);
+    feed(encoded, encoded_len);
+    uint8_t delim = rpc::RPC_FRAME_DELIMITER;
+    feed(&delim, 1);
+  }
+
+  void feed_frame(rpc::CommandId cmd, uint16_t seq, const etl::span<const uint8_t>& payload) {
+    feed_raw_frame(rpc::to_underlying(cmd), seq, payload);
+  }
+
+  void feed_frame(rpc::StatusCode status, uint16_t seq, const etl::span<const uint8_t>& payload) {
+    feed_raw_frame(rpc::to_underlying(status), seq, payload);
+  }
+
+  void clear() {
+    rx_buf.clear();
+    tx_buf.clear();
+  }
+};
+
+/**
+ * Perform a full LinkSync handshake on the given bridge instance.
+ */
+static inline void simulate_handshake(BridgeClass& bridge, BiStream& stream, const char* secret = "top-secret") {
+  // 1. Enter Startup (Stabilized)
+  bridge._onStartupStabilized();
+
+  // 2. Feed CMD_LINK_SYNC
+  rpc::payload::LinkSync sync_msg = {};
+  etl::fill(sync_msg.nonce.begin(), sync_msg.nonce.end(), 0xAA);
+  
+  if (secret != nullptr) {
+    etl::array<uint8_t, 32> handshake_key;
+    rpc::security::hkdf_sha256(
+        etl::span<uint8_t>(handshake_key),
+        etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(secret), strlen(secret)),
+        etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
+        etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
+
+    etl::array<uint8_t, 32> full_tag;
+    Hmac hmac_engine;
+    wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(), 32);
+    wc_HmacUpdate(&hmac_engine, sync_msg.nonce.data(), 16);
+    wc_HmacFinal(&hmac_engine, full_tag.data());
+    
+    etl::copy_n(full_tag.begin(), 16, sync_msg.tag.begin());
+  } else {
+    etl::fill(sync_msg.tag.begin(), sync_msg.tag.end(), 0);
+  }
+
+  uint8_t buf[rpc::MAX_PAYLOAD_SIZE];
+  msgpack::Encoder enc(buf, sizeof(buf));
+  sync_msg.encode(enc);
+
+  stream.feed_frame(rpc::CommandId::CMD_LINK_SYNC, 1, enc.result());
+
+  // 3. Process handshake
+  bridge.process();
+}
 
 // ---------------------------------------------------------------------------
 // Frame extraction helper – decodes COBS segments and validates CRC.

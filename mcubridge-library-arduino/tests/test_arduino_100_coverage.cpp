@@ -12,7 +12,7 @@
 #include "services/Process.h"
 #include "services/SPIService.h"
 
-unsigned long g_test_millis = 0;
+unsigned long g_test_millis = 100;
 unsigned long millis() { return g_test_millis; }
 void delay(unsigned long ms) { g_test_millis += ms; }
 

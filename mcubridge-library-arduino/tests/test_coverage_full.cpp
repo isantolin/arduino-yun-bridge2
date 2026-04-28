@@ -10,8 +10,8 @@
 #include "services/FileSystem.h"
 #include "services/SPIService.h"
 
-unsigned long g_test_millis = 0;
-unsigned long millis() { return g_test_millis++; }
+unsigned long g_test_millis = 100;
+unsigned long millis() { return g_test_millis; }
 void delay(unsigned long ms) { g_test_millis += ms; }
 
 HardwareSerial Serial;
@@ -26,7 +26,7 @@ void test_fsm_timeout_fault() {
   localBridge.begin(115200);
 
   localBridge._onStartupStabilized();
-  simulate_handshake(localBridge, stream);
+  simulate_handshake(localBridge, stream, nullptr);
 
   TEST_ASSERT(localBridge.isSynchronized());
 
@@ -56,7 +56,7 @@ void test_ack_timeout_retry_exceeded() {
   BridgeClass localBridge(stream);
   localBridge.begin(115200);
 
-  simulate_handshake(localBridge, stream);
+  simulate_handshake(localBridge, stream, nullptr);
 
   uint8_t payload[] = {0x00};
   (void)localBridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 1,
@@ -78,7 +78,7 @@ void test_service_edge_cases_exhaustive() {
   BiStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin(115200);
-  simulate_handshake(localBridge, stream);
+  simulate_handshake(localBridge, stream, nullptr);
 
   // 1. Console write null
   Console.write(nullptr, 0);
@@ -99,7 +99,7 @@ void test_spi_real_logic_exhaustive() {
   BiStream stream;
   BridgeClass localBridge(stream);
   localBridge.begin(115200);
-  simulate_handshake(localBridge, stream);
+  simulate_handshake(localBridge, stream, nullptr);
 
   uint8_t spidata[4] = {1, 2, 3, 4};
 

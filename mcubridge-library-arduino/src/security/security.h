@@ -28,42 +28,6 @@ namespace rpc {
 namespace security {
 
 /**
- * @brief Wrapper class for wolfSSL SHA-256 and HMAC.
- */
-class McuBridgeSha256 {
- public:
-  static constexpr size_t HASH_SIZE = 32;
-  static constexpr size_t BLOCK_SIZE = 64;
-
-  McuBridgeSha256();
-
-  void reset();
-  void update(etl::span<const uint8_t> data);
-
-  template <size_t N>
-  void finalize(etl::array<uint8_t, N>& hash) {
-    static_assert(N >= HASH_SIZE, "Digest buffer too small");
-    _finalize_impl(hash.data(), N);
-  }
-
-  void resetHMAC(etl::span<const uint8_t> key);
-
-  template <size_t N>
-  void finalizeHMAC(etl::array<uint8_t, N>& hash) {
-    static_assert(N >= HASH_SIZE, "HMAC buffer too small");
-    _finalize_hmac_impl(hash.data(), N);
-  }
-
- private:
-  void _finalize_impl(uint8_t* hash, size_t len);
-  void _finalize_hmac_impl(uint8_t* hash, size_t len);
-
-  Sha256 sha_;
-  Hmac hmac_;
-  bool is_hmac_active_;
-};
-
-/**
  * @brief HKDF (RFC 5869) wrapping wolfCrypt wc_HKDF.
  */
 void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,

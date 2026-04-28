@@ -277,7 +277,7 @@ void BridgeClass::SerialTask::task_process_work() {
 }
 
 void BridgeClass::TimerTask::task_process_work() {
-  uint32_t now = bridge::now_ms();
+  uint32_t now = millis();
   if (last_tick_ms == 0) last_tick_ms = now;
   uint32_t elapsed = now - last_tick_ms;
   if (elapsed > 0) {
@@ -340,7 +340,7 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_onStartupStabilized() {
-  uint32_t start_ms = bridge::now_ms();
+  uint32_t start_ms = millis();
   // [SIL-2] Deterministic drain via ETL algorithm (No Raw Loops).
   // We simulate a loop using a recursive structure that avoids deep stack if
   // needed, or a counting iterator if available. Given AVR limits, we use a
@@ -365,7 +365,7 @@ void BridgeClass::_onStartupStabilized() {
 
   (void)etl::find_if(it_begin, it_end, [this, start_ms](uint16_t) {
     if (_stream.available() <= 0 ||
-        (bridge::now_ms() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
+        (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
       return true;  // Stop condition
     }
     (void)_stream.read();
@@ -722,10 +722,13 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
     etl::array<uint8_t, 32> full_tag;
     full_tag.fill(0);
-    rpc::security::McuBridgeSha256 hmac_engine;
-    hmac_engine.resetHMAC(handshake_key);
-    hmac_engine.update(msg.nonce);
-    hmac_engine.finalizeHMAC(full_tag);
+
+    Hmac hmac_engine;
+    wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
+                  static_cast<word32>(handshake_key.size()));
+    wc_HmacUpdate(&hmac_engine, msg.nonce.data(),
+                  static_cast<word32>(msg.nonce.size()));
+    wc_HmacFinal(&hmac_engine, full_tag.data());
 
     if (!rpc::security::timing_safe_equal(
             etl::span<const uint8_t>(full_tag.data(),
@@ -835,7 +838,8 @@ void BridgeClass::_handleSpiTransfer(
 void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
 #if BRIDGE_HOST_TEST
   fprintf(stderr, "[MCU FSM] Decoded size: %zu, data: ", p.size());
-  etl::for_each(p.begin(), p.end(), [](uint8_t byte) { fprintf(stderr, "%02X ", byte); });
+  etl::for_each(p.begin(), p.end(),
+                [](uint8_t byte) { fprintf(stderr, "%02X ", byte); });
   fprintf(stderr, "\n");
 #endif
   auto res = _frame_parser.parse(p);
@@ -848,7 +852,9 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
     return;
   }
 #if BRIDGE_HOST_TEST
-  fprintf(stderr, "[MCU FSM] CMD: %d (seq: %d)\\n", (int)res.value().header.command_id, (int)res.value().header.sequence_id);
+  fprintf(stderr, "[MCU FSM] CMD: %d (seq: %d)\\n",
+          (int)res.value().header.command_id,
+          (int)res.value().header.sequence_id);
 #endif
   rpc::Frame eff;
   auto dec = _decompressFrame(res.value(), eff);
@@ -893,10 +899,12 @@ etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(
 
   etl::array<uint8_t, 32> full_tag;
   full_tag.fill(0);
-  rpc::security::McuBridgeSha256 hmac_engine;
-  hmac_engine.resetHMAC(handshake_key);
-  hmac_engine.update(nonce);
-  hmac_engine.finalizeHMAC(full_tag);
+
+  Hmac hmac_engine;
+  wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
+                static_cast<word32>(handshake_key.size()));
+  wc_HmacUpdate(&hmac_engine, nonce.data(), static_cast<word32>(nonce.size()));
+  wc_HmacFinal(&hmac_engine, full_tag.data());
 
   etl::copy_n(full_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH, tag.data());
   rpc::security::secure_zero(handshake_key);

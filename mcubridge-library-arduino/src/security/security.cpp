@@ -23,48 +23,6 @@
 namespace rpc {
 namespace security {
 
-McuBridgeSha256::McuBridgeSha256() : is_hmac_active_(false) { reset(); }
-
-void McuBridgeSha256::reset() {
-  wc_InitSha256(&sha_);
-  is_hmac_active_ = false;
-}
-
-void McuBridgeSha256::update(etl::span<const uint8_t> data) {
-  if (is_hmac_active_) {
-    wc_HmacUpdate(&hmac_, static_cast<const byte*>(data.data()),
-                  static_cast<word32>(data.size()));
-  } else {
-    wc_Sha256Update(&sha_, static_cast<const byte*>(data.data()),
-                    static_cast<word32>(data.size()));
-  }
-}
-
-void McuBridgeSha256::_finalize_impl(uint8_t* hash, size_t len) {
-  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> full_digest;
-  wc_Sha256Final(&sha_, full_digest.data());
-  etl::copy(full_digest.begin(),
-            full_digest.begin() +
-                etl::min(len, static_cast<size_t>(rpc::RPC_SHA256_DIGEST_SIZE)),
-            hash);
-}
-
-void McuBridgeSha256::resetHMAC(etl::span<const uint8_t> key) {
-  wc_HmacSetKey(&hmac_, WC_SHA256, static_cast<const byte*>(key.data()),
-                static_cast<word32>(key.size()));
-  is_hmac_active_ = true;
-}
-
-void McuBridgeSha256::_finalize_hmac_impl(uint8_t* hash, size_t len) {
-  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> full_digest;
-  wc_HmacFinal(&hmac_, full_digest.data());
-  etl::copy(full_digest.begin(),
-            full_digest.begin() +
-                etl::min(len, static_cast<size_t>(rpc::RPC_SHA256_DIGEST_SIZE)),
-            hash);
-  is_hmac_active_ = false;
-}
-
 // --- HKDF Implementation ---
 
 void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
@@ -96,16 +54,16 @@ static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
      0x17, 0x59, 0x97, 0x47, 0x9D, 0xBC, 0x2D, 0x1A, 0x3C, 0xD8}};
 
 bool run_cryptographic_self_tests() {
-  McuBridgeSha256 sha256;
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> actual;
   etl::array<uint8_t, rpc::RPC_SHA256_KAT_BUFFER_SIZE> buffer;
 
   // 1. SHA256 KAT
-  sha256.reset();
+  Sha256 sha;
+  wc_InitSha256(&sha);
   size_t msg_len = kat_sha256_msg.size();
   memcpy_P(buffer.data(), kat_sha256_msg.data(), msg_len);
-  sha256.update(etl::span<const uint8_t>(buffer.data(), msg_len));
-  sha256.finalize(actual);
+  wc_Sha256Update(&sha, buffer.data(), static_cast<word32>(msg_len));
+  wc_Sha256Final(&sha, actual.data());
 
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
   memcpy_P(expected_buf.data(), kat_sha256_expected.data(),
@@ -114,16 +72,17 @@ bool run_cryptographic_self_tests() {
     return false;
 
   // 2. HMAC-SHA256 KAT
+  Hmac hmac;
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> key_buf;
   size_t key_len = kat_hmac_key.size();
   memcpy_P(key_buf.data(), kat_hmac_key.data(), key_len);
 
-  sha256.resetHMAC(etl::span<const uint8_t>(key_buf.data(), key_len));
+  wc_HmacSetKey(&hmac, WC_SHA256, key_buf.data(), static_cast<word32>(key_len));
 
   size_t data_len = kat_hmac_data.size();
   memcpy_P(buffer.data(), kat_hmac_data.data(), data_len);
-  sha256.update(etl::span<const uint8_t>(buffer.data(), data_len));
-  sha256.finalizeHMAC(actual);
+  wc_HmacUpdate(&hmac, buffer.data(), static_cast<word32>(data_len));
+  wc_HmacFinal(&hmac, actual.data());
 
   memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);

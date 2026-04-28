@@ -14,7 +14,7 @@ from mcubridge.protocol.protocol import (
     response_to_request,
 )
 from mcubridge.protocol.topics import Topic, TopicRoute
-from mcubridge.state.context import RuntimeState, resolve_command_id
+from mcubridge.state.context import RuntimeState
 
 from ..router.routers import MQTTRouter
 import structlog
@@ -171,7 +171,13 @@ class BridgeDispatcher:
                 return
 
             handler = self.mcu_registry.get(command_id)
-            command_name = resolve_command_id(command_id)
+
+            # [SIL-2] Direct Enum resolution for high-signal logging
+            try:
+                command_name = Command(command_id).name
+            except ValueError:
+                command_name = f"0x{command_id:02X}"
+
             handled_successfully = False
 
             if handler:

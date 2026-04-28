@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
-import functools
 import sqlite3
 import time
 from collections.abc import Mapping
@@ -92,30 +91,8 @@ __all__: Final[tuple[str, ...]] = (
     "McuVersion",
     "SerialPipelineSnapshot",
     "BridgeSnapshot",
+    "Status",
 )
-
-
-@functools.lru_cache(maxsize=256)
-def resolve_command_id(command_id: int) -> str:
-    """Resolve command/status ID to human-readable name."""
-    try:
-        return Command(command_id).name
-    except ValueError:
-        pass
-    try:
-        return Status(command_id).name
-    except ValueError:
-        return f"0x{command_id:02X}"
-
-
-def _status_label(code: int | None) -> str:
-    """Resolve status code to human-readable label using optimized Enum lookup."""
-    if code is None:
-        return "unknown"
-    try:
-        return Status(code).name
-    except ValueError:
-        return f"0x{code:02X}"
 
 
 @dataclass
@@ -515,10 +492,20 @@ class RuntimeState(msgspec.Struct):
         acked = bool(event.get("ack_received"))
         status_code = event.get("status")
 
+        # [SIL-2] Direct Enum resolution to avoid wrapper overhead
+        def _res_cmd(cid: int) -> str:
+            try:
+                return Command(cid).name
+            except ValueError:
+                try:
+                    return Status(cid).name
+                except ValueError:
+                    return f"0x{cid:02X}"
+
         if name == "start":
             self.serial_pipeline_inflight = {
                 "command_id": command_id,
-                "command_name": resolve_command_id(command_id),
+                "command_name": _res_cmd(command_id),
                 "attempt": attempt,
                 "started_unix": timestamp,
                 "acknowledged": False,
@@ -540,14 +527,22 @@ class RuntimeState(msgspec.Struct):
             return
 
         if name in {"success", "failure", "abandoned"}:
+            # [SIL-2] Direct Status resolution
+            s_name = "unknown"
+            if status_code is not None:
+                try:
+                    s_name = Status(cast(int, status_code)).name
+                except ValueError:
+                    s_name = f"0x{status_code:02X}"
+
             payload = {
                 "command_id": command_id,
-                "command_name": resolve_command_id(command_id),
+                "command_name": _res_cmd(command_id),
                 "attempt": attempt,
                 "event": name,
                 "completed_unix": timestamp,
                 "status_code": status_code,
-                "status_name": _status_label(cast(int, status_code)),
+                "status_name": s_name,
                 "acknowledged": acked or bool(inf and inf.get("acknowledged")),
             }
             if inf:

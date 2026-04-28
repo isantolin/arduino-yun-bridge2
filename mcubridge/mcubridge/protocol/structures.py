@@ -475,9 +475,8 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
         if not self.allow_non_tmp_paths:
             if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                raise ValueError(
-                    f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
-                )
+                msg = f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location"
+                raise ValueError(msg)
 
         if not self.allow_non_tmp_paths:
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):

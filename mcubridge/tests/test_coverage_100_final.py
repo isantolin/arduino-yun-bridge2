@@ -1383,7 +1383,7 @@ class TestRuntimeStateEdges:
         state = create_runtime_state(config)
         try:
             # Fill up to limit
-            for i in range(state.mailbox_queue_limit + 1):
+            for _ in range(state.mailbox_queue_limit + 1):
                 # [SIL-2] Manual FIFO eviction to maintain deterministic queue size
                 if len(state.mailbox_queue) >= state.mailbox_queue_limit:
                     state.mailbox_queue.popleft()

@@ -127,37 +127,82 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
         # 1. Empty route
         await comp.handle_mqtt(
             TopicRoute("br/d", "br", Topic.DATASTORE, ()),
-            Message(topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None),
+            Message(
+                topic="test/topic",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
 
         # 2. Unknown action
         await comp.handle_mqtt(
             TopicRoute("br/d/unknown/key", "br", Topic.DATASTORE, ("unknown", "key")),
-            Message(topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None),
+            Message(
+                topic="test/topic",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
 
         # 3. Missing key
         await comp.handle_mqtt(
             TopicRoute("br/d/put", "br", Topic.DATASTORE, (DatastoreAction.PUT.value,)),
-            Message(topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None),
+            Message(
+                topic="test/topic",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
 
         # 4. Echo suppression on GET
         state.datastore["echo_key"] = "val"
         await comp.handle_mqtt(
-            TopicRoute("br/d/get/echo_key", "br", Topic.DATASTORE, (DatastoreAction.GET.value, "echo_key")),
-            Message(topic="br/d/get/echo_key", payload=b"val", qos=0, retain=False, mid=1, properties=None),
+            TopicRoute(
+                "br/d/get/echo_key",
+                "br",
+                Topic.DATASTORE,
+                (DatastoreAction.GET.value, "echo_key"),
+            ),
+            Message(
+                topic="br/d/get/echo_key",
+                payload=b"val",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
 
         # 5. Type coercion from int
         state.datastore["int_key"] = 42  # type: ignore
         await comp.handle_mqtt(
-            TopicRoute("br/d/get/int_key/request", "br", Topic.DATASTORE, (DatastoreAction.GET.value, "int_key", "request")),
-            Message(topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None),
+            TopicRoute(
+                "br/d/get/int_key/request",
+                "br",
+                Topic.DATASTORE,
+                (DatastoreAction.GET.value, "int_key", "request"),
+            ),
+            Message(
+                topic="test/topic",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         # _publish_datastore_value publishes twice when reply_context is provided
         assert mqtt_flow.enqueue_mqtt.call_count == 2
@@ -186,8 +231,20 @@ async def test_datastore_mqtt_put_too_large() -> None:
         # Key too large
         long_key = "k" * 300
         await comp.handle_mqtt(
-            TopicRoute(f"br/d/put/{long_key}", "br", Topic.DATASTORE, (DatastoreAction.PUT.value, long_key)),
-            Message(topic="test/topic", payload=b"val", qos=0, retain=False, mid=1, properties=None),
+            TopicRoute(
+                f"br/d/put/{long_key}",
+                "br",
+                Topic.DATASTORE,
+                (DatastoreAction.PUT.value, long_key),
+            ),
+            Message(
+                topic="test/topic",
+                payload=b"val",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
         assert long_key not in state.datastore
@@ -195,8 +252,20 @@ async def test_datastore_mqtt_put_too_large() -> None:
         # Value too large
         long_val = b"v" * 300
         await comp.handle_mqtt(
-            TopicRoute("br/d/put/key", "br", Topic.DATASTORE, (DatastoreAction.PUT.value, "key")),
-            Message(topic="test/topic", payload=long_val, qos=0, retain=False, mid=1, properties=None),
+            TopicRoute(
+                "br/d/put/key",
+                "br",
+                Topic.DATASTORE,
+                (DatastoreAction.PUT.value, "key"),
+            ),
+            Message(
+                topic="test/topic",
+                payload=long_val,
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
         assert "key" not in state.datastore
@@ -224,8 +293,20 @@ async def test_datastore_mqtt_get_too_large() -> None:
 
         long_key = "k" * 300
         await comp.handle_mqtt(
-            TopicRoute(f"br/d/get/{long_key}/request", "br", Topic.DATASTORE, (DatastoreAction.GET.value, long_key, "request")),
-            Message(topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None),
+            TopicRoute(
+                f"br/d/get/{long_key}/request",
+                "br",
+                Topic.DATASTORE,
+                (DatastoreAction.GET.value, long_key, "request"),
+            ),
+            Message(
+                topic="test/topic",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
 

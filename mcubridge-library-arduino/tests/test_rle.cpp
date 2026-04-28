@@ -1,3 +1,4 @@
+#include <etl/array.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -16,26 +17,27 @@ void setUp(void) {}
 void tearDown(void) {}
 
 void test_rle_empty_src() {
-  uint8_t dst_buf[10];
+  etl::array<uint8_t, 10> dst_buf;
   etl::span<uint8_t> dst(dst_buf);
-  uint8_t src_buf[1] = {0};
-  etl::span<const uint8_t> src(src_buf, 0); 
+  etl::array<uint8_t, 1> src_buf = {0};
+  etl::span<const uint8_t> src(src_buf.data(), 0); 
   
   TEST_ASSERT_EQUAL(0, rle::decode(src, dst));
 }
 
 void test_rle_empty_dst() {
-  uint8_t src_buf[] = {0x01, 0x02};
+  etl::array<uint8_t, 2> src_buf = {0x01, 0x02};
   etl::span<const uint8_t> src(src_buf);
-  uint8_t dst_buf[1] = {0};
-  etl::span<uint8_t> dst(dst_buf, 0);
+  etl::array<uint8_t, 1> dst_buf = {0};
+  etl::span<uint8_t> dst(dst_buf.data(), 0);
   
   TEST_ASSERT_EQUAL(0, rle::decode(src, dst));
 }
 
 void test_rle_literal_no_escape() {
-  uint8_t src_buf[] = {0x01, 0x02, 0x03};
-  uint8_t dst_buf[10] = {0};
+  etl::array<uint8_t, 3> src_buf = {0x01, 0x02, 0x03};
+  etl::array<uint8_t, 10> dst_buf;
+  dst_buf.fill(0);
   
   size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
   
@@ -47,8 +49,9 @@ void test_rle_literal_no_escape() {
 
 void test_rle_single_escape() {
   // ESCAPE_BYTE, SINGLE_ESCAPE_MARKER, VALUE
-  uint8_t src_buf[] = {rle::ESCAPE_BYTE, rle::SINGLE_ESCAPE_MARKER, 0xAA};
-  uint8_t dst_buf[10] = {0};
+  etl::array<uint8_t, 3> src_buf = {rle::ESCAPE_BYTE, rle::SINGLE_ESCAPE_MARKER, 0xAA};
+  etl::array<uint8_t, 10> dst_buf;
+  dst_buf.fill(0);
   
   size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
   
@@ -59,8 +62,9 @@ void test_rle_single_escape() {
 void test_rle_run_escape() {
   // Run of 5: ESCAPE_BYTE, (5 - OFFSET), VALUE
   uint8_t count = 5 - rpc::RPC_RLE_OFFSET;
-  uint8_t src_buf[] = {rle::ESCAPE_BYTE, count, 0xBB};
-  uint8_t dst_buf[10] = {0};
+  etl::array<uint8_t, 3> src_buf = {rle::ESCAPE_BYTE, count, 0xBB};
+  etl::array<uint8_t, 10> dst_buf;
+  dst_buf.fill(0);
   
   size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
   
@@ -71,26 +75,26 @@ void test_rle_run_escape() {
 }
 
 void test_rle_dst_overflow_literal() {
-  uint8_t src_buf[] = {0x01, 0x02};
-  uint8_t dst_buf[1]; 
+  etl::array<uint8_t, 2> src_buf = {0x01, 0x02};
+  etl::array<uint8_t, 1> dst_buf; 
   
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf, 1));
+  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf.data(), 1));
   
   TEST_ASSERT_EQUAL(0, written);
 }
 
 void test_rle_dst_overflow_run() {
-  uint8_t src_buf[] = {rle::ESCAPE_BYTE, 0x05, 0xCC}; 
-  uint8_t dst_buf[2]; 
+  etl::array<uint8_t, 3> src_buf = {rle::ESCAPE_BYTE, 0x05, 0xCC}; 
+  etl::array<uint8_t, 2> dst_buf; 
   
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf, 2));
+  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf.data(), 2));
   
   TEST_ASSERT_EQUAL(0, written);
 }
 
 void test_rle_incomplete_escape_marker() {
-  uint8_t src_buf[] = {rle::ESCAPE_BYTE};
-  uint8_t dst_buf[10];
+  etl::array<uint8_t, 1> src_buf = {rle::ESCAPE_BYTE};
+  etl::array<uint8_t, 10> dst_buf;
   
   size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
   
@@ -98,8 +102,8 @@ void test_rle_incomplete_escape_marker() {
 }
 
 void test_rle_incomplete_escape_val() {
-  uint8_t src_buf[] = {rle::ESCAPE_BYTE, 0x01};
-  uint8_t dst_buf[10];
+  etl::array<uint8_t, 2> src_buf = {rle::ESCAPE_BYTE, 0x01};
+  etl::array<uint8_t, 10> dst_buf;
   
   size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
   
@@ -113,9 +117,9 @@ void test_rle_complex_sequence() {
   // Run of 2+2=4 0xFF (4 bytes)
   // Literal 0x03 (1 byte)
   // Total: 2 + 1 + 4 + 1 = 8 bytes
-  uint8_t src_buf[] = {0x01, 0x02, rle::ESCAPE_BYTE, rle::SINGLE_ESCAPE_MARKER, 0xEE, 
+  etl::array<uint8_t, 9> src_buf = {0x01, 0x02, rle::ESCAPE_BYTE, rle::SINGLE_ESCAPE_MARKER, 0xEE, 
                        rle::ESCAPE_BYTE, 0x02, 0xFF, 0x03};
-  uint8_t dst_buf[20];
+  etl::array<uint8_t, 20> dst_buf;
   
   size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
   
@@ -128,8 +132,8 @@ void test_rle_complex_sequence() {
 }
 
 void test_rle_on_event_unknown() {
-  uint8_t src_buf[] = {0x01};
-  uint8_t dst_buf[10];
+  etl::array<uint8_t, 1> src_buf = {0x01};
+  etl::array<uint8_t, 10> dst_buf;
   
   // We can't easily send an unknown message via rle::decode,
   // but we can test if it handles it by mocking or just knowing

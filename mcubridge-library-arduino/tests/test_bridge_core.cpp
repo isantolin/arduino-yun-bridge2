@@ -1,3 +1,4 @@
+#include <etl/array.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -46,12 +47,12 @@ void sync_bridge(BiStream& stream) {
   }
 
   rpc::payload::LinkSync sync_msg = {};
-  uint8_t nonce[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-  etl::copy_n(nonce, 16, sync_msg.nonce.begin());
+  etl::array<uint8_t, 16> nonce = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+  etl::copy_n(nonce.data(), 16, sync_msg.nonce.begin());
   
-  uint8_t tag[16];
-  ba.computeHandshakeTag(nonce, 16, tag);
-  etl::copy_n(tag, 16, sync_msg.tag.begin());
+  etl::array<uint8_t, 16> tag;
+  ba.computeHandshakeTag(nonce.data(), 16, tag.data());
+  etl::copy_n(tag.data(), 16, sync_msg.tag.begin());
 
   rpc::Frame frame = {};
   frame.header.version = rpc::PROTOCOL_VERSION;
@@ -83,8 +84,8 @@ void test_bridge_send_frame() {
   reset_bridge(stream);
   sync_bridge(stream);
   
-  const uint8_t payload[] = {0xAA, 0xBB};
-  TEST_ASSERT(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 123, etl::span<const uint8_t>(payload, 2)));
+  const etl::array<uint8_t, 2> payload = {0xAA, 0xBB};
+  TEST_ASSERT(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 123, etl::span<const uint8_t>(payload.data(), 2)));
 }
 
 void test_bridge_process_rx() {
@@ -130,8 +131,8 @@ void test_bridge_dedup_console_write_retry() {
   Console.begin();
   
   rpc::payload::ConsoleWrite msg = {};
-  uint8_t data[] = "hello";
-  msg.data = etl::span<const uint8_t>(data, 5);
+  etl::array<uint8_t, 5> data = {'h', 'e', 'l', 'l', 'o'};
+  msg.data = etl::span<const uint8_t>(data.data(), 5);
 
   rpc::Frame frame = {};
   frame.header.version = rpc::PROTOCOL_VERSION;
@@ -143,14 +144,14 @@ void test_bridge_dedup_console_write_retry() {
   bridge::test::set_pb_payload(frame, msg);
 
   etl::crc32 crc_calc;
-  uint8_t h[rpc::FRAME_HEADER_SIZE];
+  etl::array<uint8_t, rpc::FRAME_HEADER_SIZE> h;
   h[0] = 0x02; // version
-  etl::byte_stream_writer w(h + 1, 6, etl::endian::big);
+  etl::byte_stream_writer w(h.data() + 1, 6, etl::endian::big);
   w.write<uint16_t>(frame.header.payload_length);
   w.write<uint16_t>(frame.header.command_id);
   w.write<uint16_t>(frame.header.sequence_id);
 
-  crc_calc.add(h, h + rpc::FRAME_HEADER_SIZE);
+  crc_calc.add(h.begin(), h.end());
   crc_calc.add(frame.payload.data(), frame.payload.data() + frame.header.payload_length);
   frame.crc = crc_calc.value();
 
@@ -163,8 +164,8 @@ void test_bridge_ack_malformed_timeout_paths() {
   BiStream stream;
   reset_bridge(stream);
   sync_bridge(stream);
-  const uint8_t payload[] = {'X'};
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 0, etl::span<const uint8_t>(payload, 1));
+  etl::array<uint8_t, 1> payload = {'X'};
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 0, etl::span<const uint8_t>(payload.data(), 1));
   Bridge.process();
 }
 

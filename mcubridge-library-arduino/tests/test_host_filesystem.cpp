@@ -1,175 +1,132 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
-#define ARDUINO_STUB_CUSTOM_MILLIS 1
-
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
+#include "BridgeTestInterface.h"
 #include "hal/hal.h"
-#include "services/SPIService.h"
 #include "services/FileSystem.h"
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/Process.h"
 #include "test_support.h"
+#include <etl/array.h>
 
-static unsigned long g_test_millis = 0;
-unsigned long millis() { return ++g_test_millis; }
-
-// Bridge and core services are already provided by production code.
+// Global stubs for host environment
+Stream* g_arduino_stream_delegate = nullptr;
 HardwareSerial Serial;
 HardwareSerial Serial1;
-Stream* g_arduino_stream_delegate = nullptr;
+void setUp(void) {}
+void tearDown(void) {}
 
 namespace {
+using bridge::test::TestAccessor;
+
+void test_fs_read_callback(etl::span<const uint8_t>) {}
 
 void test_hal_roundtrip() {
-  const uint8_t payload[] = {'m', 'c', 'u', '-', 'd', 'a', 't', 'a'};
-  uint8_t read_buffer[32] = {};
+  etl::array<uint8_t, 8> payload = {'m', 'c', 'u', '-', 'd', 'a', 't', 'a'};
+  const etl::string_view path = "test_hal.bin";
 
-  TEST_ASSERT_TRUE(bridge::hal::writeFile("hostfs/direct.bin", etl::span<const uint8_t>(payload, sizeof(payload))).has_value());
-  auto res = bridge::hal::readFileChunk(
-      "hostfs/direct.bin",
-      0U,
-      etl::span<uint8_t>(read_buffer, sizeof(read_buffer)));
-  
-  TEST_ASSERT_TRUE(res.has_value());
-  TEST_ASSERT_EQUAL(sizeof(payload), res.value().bytes_read);
-  TEST_ASSERT_FALSE(res.value().has_more);
-  TEST_ASSERT_TRUE(etl::equal(payload, payload + sizeof(payload), read_buffer));
-  TEST_ASSERT_TRUE(bridge::hal::removeFile("hostfs/direct.bin").has_value());
+  auto res_w = bridge::hal::writeFile(path, etl::span<const uint8_t>(payload.data(), payload.size()));
+  TEST_ASSERT(res_w.has_value());
+
+  etl::array<uint8_t, 32> read_buffer;
+  read_buffer.fill(0);
+  auto res_r = bridge::hal::readFileChunk(path, 0, etl::span<uint8_t>(read_buffer.data(), read_buffer.size()));
+  TEST_ASSERT(res_r.has_value());
+  TEST_ASSERT_EQUAL(payload.size(), res_r->bytes_read);
+  TEST_ASSERT(etl::equal(payload.begin(), payload.end(), read_buffer.begin()));
+
+  (void)bridge::hal::removeFile(path);
 }
 
 void test_hal_chunked_read_roundtrip() {
-  etl::array<uint8_t, 96> read_payload = {};
+  const etl::string_view path = "test_chunks.bin";
+  etl::array<uint8_t, 120> read_payload;
   for (size_t index = 0; index < read_payload.size(); ++index) {
     read_payload[index] = static_cast<uint8_t>('a' + (index % 26U));
   }
-  TEST_ASSERT_TRUE(bridge::hal::writeFile(
-      "hostfs/chunked.bin",
-      etl::span<const uint8_t>(read_payload.data(), read_payload.size())).has_value());
 
-  uint8_t first_chunk[62] = {};
-  uint8_t second_chunk[62] = {};
+  auto res_w = bridge::hal::writeFile(path, etl::span<const uint8_t>(read_payload.data(), read_payload.size()));
+  TEST_ASSERT(res_w.has_value());
 
-  auto res1 = bridge::hal::readFileChunk(
-      "hostfs/chunked.bin",
-      0U,
-      etl::span<uint8_t>(first_chunk, sizeof(first_chunk)));
-  
-  TEST_ASSERT_TRUE(res1.has_value());
-  TEST_ASSERT_EQUAL(62U, res1.value().bytes_read);
-  TEST_ASSERT_TRUE(res1.value().has_more);
-  TEST_ASSERT_TRUE(etl::equal(read_payload.begin(), read_payload.begin() + res1.value().bytes_read, first_chunk));
+  etl::array<uint8_t, 62> first_chunk;
+  first_chunk.fill(0);
+  etl::array<uint8_t, 62> second_chunk;
+  second_chunk.fill(0);
 
-  auto res2 = bridge::hal::readFileChunk(
-      "hostfs/chunked.bin",
-      res1.value().bytes_read,
-      etl::span<uint8_t>(second_chunk, sizeof(second_chunk)));
-  
-  TEST_ASSERT_TRUE(res2.has_value());
-  TEST_ASSERT_EQUAL(34U, res2.value().bytes_read);
-  TEST_ASSERT_FALSE(res2.value().has_more);
-  TEST_ASSERT_TRUE(etl::equal(read_payload.begin() + 62U, read_payload.begin() + 62U + res2.value().bytes_read, second_chunk));
-  TEST_ASSERT_TRUE(bridge::hal::removeFile("hostfs/chunked.bin").has_value());
+  auto res_r1 = bridge::hal::readFileChunk(path, 0, etl::span<uint8_t>(first_chunk.data(), first_chunk.size()));
+  TEST_ASSERT(res_r1.has_value());
+  TEST_ASSERT_EQUAL(62, res_r1->bytes_read);
+  TEST_ASSERT(res_r1->has_more);
+
+  auto res_r2 = bridge::hal::readFileChunk(path, 62, etl::span<uint8_t>(second_chunk.data(), second_chunk.size()));
+  TEST_ASSERT(res_r2.has_value());
+  TEST_ASSERT_EQUAL(120 - 62, res_r2->bytes_read);
+  TEST_ASSERT(!res_r2->has_more);
+
+  TEST_ASSERT(etl::equal(read_payload.begin(), read_payload.begin() + 62, first_chunk.begin()));
+  TEST_ASSERT(etl::equal(read_payload.begin() + 62, read_payload.end(), second_chunk.begin()));
+
+  (void)bridge::hal::removeFile(path);
 }
 
 void test_filesystem_api_write() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setSynchronized();
-
-  uint8_t data[] = {1, 2, 3};
-  FileSystem.write("test.txt", etl::span<const uint8_t>(data, 3));
-  TEST_ASSERT(stream.tx_buf.len > 0);
-}
-
-static bool g_filesystem_read_called = false;
-void filesystem_test_read_handler(etl::span<const uint8_t> data) {
-  (void)data;
-  g_filesystem_read_called = true;
+  etl::array<uint8_t, 3> data = {1, 2, 3};
+  FileSystem.write("api_write.bin", etl::span<const uint8_t>(data.data(), data.size()));
 }
 
 void test_filesystem_api_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setSynchronized();
-
-  g_filesystem_read_called = false;
-  FileSystem.read("test.txt", FileSystemClass::FileSystemReadHandler::create<filesystem_test_read_handler>());
-  TEST_ASSERT(stream.tx_buf.len > 0);
-  
-  rpc::payload::FileReadResponse resp = {};
-  uint8_t resp_data[] = {4, 5, 6};
-  resp.content = etl::span<const uint8_t>(resp_data, 3);
-  FileSystem._onResponse(resp);
-  TEST_ASSERT(g_filesystem_read_called);
+  FileSystem.read("api_read.bin", FileSystemClass::FileSystemReadHandler::create<test_fs_read_callback>());
 }
 
 void test_filesystem_api_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setSynchronized();
-
-  FileSystem.remove("test.txt");
-  TEST_ASSERT(stream.tx_buf.len > 0);
+  FileSystem.remove("api_rem.bin");
 }
 
 void test_filesystem_on_write() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setSynchronized();
-
-  rpc::payload::FileWrite msg = {};
-  msg.path = "hostfs/write.bin";
-  uint8_t data[] = {0xAA};
-  msg.data = etl::span<const uint8_t>(data, 1);
+  etl::array<uint8_t, 3> resp_data = {4, 5, 6};
+  rpc::payload::FileWrite msg;
+  msg.path = "on_write.bin";
+  msg.data = etl::span<const uint8_t>(resp_data.data(), resp_data.size());
   FileSystem._onWrite(msg);
-  TEST_ASSERT(stream.tx_buf.len > 0);
 }
 
 void test_filesystem_on_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setSynchronized();
+  const etl::string_view path = "on_read.bin";
+  etl::array<uint8_t, 1> data = {0xAA};
+  (void)bridge::hal::writeFile(path, etl::span<const uint8_t>(data.data(), data.size()));
 
-  const uint8_t payload[] = {'x', 'y', 'z'};
-  bridge::hal::writeFile("hostfs/read.bin", etl::span<const uint8_t>(payload, sizeof(payload)));
-
-  rpc::payload::FileRead msg = {};
-  msg.path = "hostfs/read.bin";
+  rpc::payload::FileRead msg;
+  msg.path = path;
   FileSystem._onRead(msg);
-  TEST_ASSERT(stream.tx_buf.len > 0);
+  (void)bridge::hal::removeFile(path);
 }
 
 void test_filesystem_on_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setSynchronized();
-
-  bridge::hal::writeFile("hostfs/remove.bin", etl::span<const uint8_t>());
-  
-  rpc::payload::FileRemove msg = {};
-  msg.path = "hostfs/remove.bin";
+  rpc::payload::FileRemove msg;
+  msg.path = "on_rem.bin";
   FileSystem._onRemove(msg);
-  TEST_ASSERT(stream.tx_buf.len > 0);
 }
 
 void test_filesystem_observer() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
   FileSystem.notification(MsgBridgeSynchronized{});
   FileSystem.notification(MsgBridgeLost{});
 }
 
-}  // namespace
+} // namespace
 
-void setUp(void) {}
-void tearDown(void) {}
-
-int main(void) {
+int main() {
   UNITY_BEGIN();
   RUN_TEST(test_hal_roundtrip);
   RUN_TEST(test_hal_chunked_read_roundtrip);

@@ -1,4 +1,5 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include <etl/array.h>
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "test_support.h"
@@ -27,8 +28,8 @@ void integrated_test_bridge_core() {
   sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   sync.header.payload_length = 16;
   sync.header.sequence_id = 1;
-  uint8_t payload[16] = {0};
-  sync.payload = etl::span<const uint8_t>(payload, 16);
+  etl::array<uint8_t, 16> payload = {0};
+  sync.payload = etl::span<const uint8_t>(payload.data(), 16);
   
   accessor.dispatch(sync);
 }
@@ -47,8 +48,8 @@ void integrated_test_components() {
   FileSystem.remove("test.txt");
   
 #if BRIDGE_ENABLE_DATASTORE
-  uint8_t val[] = {1};
-  DataStore.set("k", etl::span<const uint8_t>(val, 1));
+  etl::array<uint8_t, 1> val = {1};
+  DataStore.set("k", etl::span<const uint8_t>(val.data(), 1));
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX

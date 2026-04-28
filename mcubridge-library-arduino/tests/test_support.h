@@ -1,6 +1,7 @@
 #pragma once
 
 #include <etl/algorithm.h>
+#include <etl/array.h>
 #include <etl/crc32.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -20,16 +21,15 @@ static inline uint32_t crc32_ieee(const void* data, size_t len) {
 }
 
 /* Legacy convenience macros – map to Unity assertions. */
-#define TEST_ASSERT_EQ_UINT(actual, expected) \
-  TEST_ASSERT_EQUAL_UINT32((unsigned long)(expected), (unsigned long)(actual))
+#define TEST_ASSERT_EQ_UINT(actual, expected)   TEST_ASSERT_EQUAL_UINT32((unsigned long)(expected), (unsigned long)(actual))
 
 template <size_t N>
 struct ByteBuffer {
-  uint8_t data[N];
+  etl::array<uint8_t, N> data;
   size_t len;
   size_t pos;
 
-  ByteBuffer() : len(0), pos(0) { etl::fill_n(data, N, uint8_t{0}); }
+  ByteBuffer() : len(0), pos(0) { data.fill(0); }
 
   void clear() {
     len = 0;
@@ -53,7 +53,7 @@ struct ByteBuffer {
     if (len + n > N) {
       return false;
     }
-    etl::copy_n(src, n, data + len);
+    etl::copy_n(src, n, data.begin() + len);
     len += n;
     return true;
   }
@@ -186,7 +186,7 @@ template <size_t N>
 static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
                                      size_t& cursor, rpc::Frame& out_frame) {
   rpc::FrameParser parser;
-  uint8_t decoded_buf[1024];
+  etl::array<uint8_t, 1024> decoded_buf;
 
   while (cursor < buffer.len) {
     if (buffer.data[cursor] == rpc::RPC_FRAME_DELIMITER) {
@@ -201,21 +201,21 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
     const size_t segment_len =
         (end < buffer.len) ? (end - cursor + 1) : (end - cursor);
     size_t decoded_len =
-        TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf);
+        TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf.data());
 
     if (decoded_len >= rpc::MIN_FRAME_SIZE) {
       etl::crc32 calc;
       calc.reset();
-      calc.add(decoded_buf,
-               decoded_buf + (decoded_len - rpc::CRC_TRAILER_SIZE));
+      calc.add(decoded_buf.data(),
+               decoded_buf.data() + (decoded_len - rpc::CRC_TRAILER_SIZE));
       uint32_t cv = calc.value();
       etl::byte_stream_writer w(
-          decoded_buf + decoded_len - rpc::CRC_TRAILER_SIZE,
+          decoded_buf.data() + decoded_len - rpc::CRC_TRAILER_SIZE,
           rpc::CRC_TRAILER_SIZE, etl::endian::big);
       w.write<uint32_t>(cv);
 
       auto result =
-          parser.parse(etl::span<const uint8_t>(decoded_buf, decoded_len));
+          parser.parse(etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
       if (result) {
         out_frame = result.value();
         cursor = end;

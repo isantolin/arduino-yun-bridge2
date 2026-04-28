@@ -1,5 +1,6 @@
 #define BRIDGE_HOST_TEST 1
 #include <Arduino.h>
+#include <etl/array.h>
 #include <unity.h>
 
 #include "protocol/rpc_frame.h"
@@ -23,49 +24,49 @@ void test_protocol_frame_logic_exhaustive() {
   TEST_ASSERT(!is_compressed(0x0001));
 
   // 3. FrameParser::serialize error paths (buffer too small)
-  uint8_t small_buf[4];
+  etl::array<uint8_t, 4> small_buf;
   Frame f = {};
   f.payload = etl::span<const uint8_t>();
   TEST_ASSERT_EQUAL(
-      0, FrameParser::serialize(f, etl::span<uint8_t>(small_buf, 4)));
+      0, FrameParser::serialize(f, etl::span<uint8_t>(small_buf.data(), 4)));
 
   // 4. FrameParser::parse error paths
   FrameParser parser;
-  uint8_t raw[32];
+  etl::array<uint8_t, 32> raw;
 
   // Malformed: too short
-  TEST_ASSERT(!parser.parse(etl::span<const uint8_t>(raw, 2)).has_value());
+  TEST_ASSERT(!parser.parse(etl::span<const uint8_t>(raw.data(), 2)).has_value());
 
   // Malformed: wrong version
-  memset(raw, 0, 32);
+  raw.fill(0);
   raw[0] = 0xFF;  // Bad version
   TEST_ASSERT(
-      !parser.parse(etl::span<const uint8_t>(raw, MIN_FRAME_SIZE)).has_value());
+      !parser.parse(etl::span<const uint8_t>(raw.data(), MIN_FRAME_SIZE)).has_value());
 
   // Malformed: payload length mismatch
-  memset(raw, 0, 32);
+  raw.fill(0);
   raw[0] = PROTOCOL_VERSION;
   raw[1] = 0;
   raw[2] = 10;  // Length 10 but buffer only MIN_FRAME_SIZE
   TEST_ASSERT(
-      !parser.parse(etl::span<const uint8_t>(raw, MIN_FRAME_SIZE)).has_value());
+      !parser.parse(etl::span<const uint8_t>(raw.data(), MIN_FRAME_SIZE)).has_value());
 }
 
 void test_protocol_builder_exhaustive() {
   using namespace rpc;
-  uint8_t buf[128];
-  uint8_t payload[] = {1, 2, 3};
+  etl::array<uint8_t, 128> buf;
+  etl::array<uint8_t, 3> payload = {1, 2, 3};
 
   // Success path
-  size_t len = FrameBuilder::build(etl::span<uint8_t>(buf, 128),
+  size_t len = FrameBuilder::build(etl::span<uint8_t>(buf.data(), 128),
                                    (uint16_t)CommandId::CMD_GET_VERSION, 1,
-                                   etl::span<const uint8_t>(payload, 3));
+                                   etl::span<const uint8_t>(payload.data(), 3));
   TEST_ASSERT(len > 0);
 
   // Buffer too small
-  len = FrameBuilder::build(etl::span<uint8_t>(buf, 5),
+  len = FrameBuilder::build(etl::span<uint8_t>(buf.data(), 5),
                             (uint16_t)CommandId::CMD_GET_VERSION, 1,
-                            etl::span<const uint8_t>(payload, 3));
+                            etl::span<const uint8_t>(payload.data(), 3));
   TEST_ASSERT_EQUAL(0, len);
 }
 

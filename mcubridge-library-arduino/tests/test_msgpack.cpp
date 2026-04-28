@@ -1,3 +1,4 @@
+#include <etl/array.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -15,14 +16,14 @@ void setUp(void) {}
 void tearDown(void) {}
 
 void test_msgpack_encode_decode_int() {
-  uint8_t buffer[20];
-  msgpack::Encoder encoder(buffer, 20);
+  etl::array<uint8_t, 20> buffer;
+  msgpack::Encoder encoder(buffer.data(), buffer.size());
   
   encoder.write_uint8(42);
   encoder.write_uint16(1000);
   encoder.write_uint32(1000000);
   
-  msgpack::Decoder decoder(buffer, encoder.size());
+  msgpack::Decoder decoder(buffer.data(), encoder.size());
   
   TEST_ASSERT_EQUAL(42, decoder.read_uint8());
   TEST_ASSERT_EQUAL(1000, decoder.read_uint16());
@@ -31,18 +32,18 @@ void test_msgpack_encode_decode_int() {
 }
 
 void test_msgpack_encode_decode_string() {
-  uint8_t buffer[200];
-  msgpack::Encoder encoder(buffer, sizeof(buffer));
+  etl::array<uint8_t, 200> buffer;
+  msgpack::Encoder encoder(buffer.data(), buffer.size());
   
   const char* test_str = "hello";
   encoder.write_str(test_str, strlen(test_str));
   
-  char str32[33];
-  memset(str32, 'A', 32);
+  etl::array<char, 33> str32;
+  str32.fill('A');
   str32[32] = '\0';
-  encoder.write_str(str32, 32);
+  encoder.write_str(str32.data(), 32);
   
-  msgpack::Decoder decoder(buffer, encoder.size());
+  msgpack::Decoder decoder(buffer.data(), encoder.size());
   
   auto view1 = decoder.read_str_view();
   TEST_ASSERT_EQUAL(5, view1.size());
@@ -50,127 +51,127 @@ void test_msgpack_encode_decode_string() {
   
   auto view2 = decoder.read_str_view();
   TEST_ASSERT_EQUAL(32, view2.size());
-  TEST_ASSERT_EQUAL_MEMORY(str32, view2.data(), 32);
+  TEST_ASSERT_EQUAL_MEMORY(str32.data(), view2.data(), 32);
   TEST_ASSERT(decoder.ok());
 }
 
 void test_msgpack_encode_decode_bytes() {
-  uint8_t buffer[300];
-  msgpack::Encoder encoder(buffer, sizeof(buffer));
+  etl::array<uint8_t, 300> buffer;
+  msgpack::Encoder encoder(buffer.data(), buffer.size());
   
-  uint8_t test_bytes[] = {0xDE, 0xAD, 0xBE, 0xEF};
-  encoder.write_bin(etl::span<const uint8_t>(test_bytes));
+  etl::array<uint8_t, 4> test_bytes = {0xDE, 0xAD, 0xBE, 0xEF};
+  encoder.write_bin(etl::span<const uint8_t>(test_bytes.data(), 4));
   
-  uint8_t large_bytes[260];
-  memset(large_bytes, 0xCC, 260);
-  encoder.write_bin(etl::span<const uint8_t>(large_bytes, 260));
+  etl::array<uint8_t, 260> large_bytes;
+  large_bytes.fill(0xCC);
+  encoder.write_bin(etl::span<const uint8_t>(large_bytes.data(), 260));
   
-  msgpack::Decoder decoder(buffer, encoder.size());
+  msgpack::Decoder decoder(buffer.data(), encoder.size());
   
   auto view1 = decoder.read_bin_view();
   TEST_ASSERT_EQUAL(4, view1.size());
-  TEST_ASSERT_EQUAL_HEX8_ARRAY(test_bytes, view1.data(), 4);
+  TEST_ASSERT_EQUAL_HEX8_ARRAY(test_bytes.data(), view1.data(), 4);
   
   auto view2 = decoder.read_bin_view();
   TEST_ASSERT_EQUAL(260, view2.size());
-  TEST_ASSERT_EQUAL_HEX8_ARRAY(large_bytes, view2.data(), 260);
+  TEST_ASSERT_EQUAL_HEX8_ARRAY(large_bytes.data(), view2.data(), 260);
   TEST_ASSERT(decoder.ok());
 }
 
 void test_msgpack_decode_error_overflow() {
-  uint8_t buffer[] = {0x92}; 
-  msgpack::Decoder decoder(buffer, 1);
+  etl::array<uint8_t, 1> buffer = {0x92}; 
+  msgpack::Decoder decoder(buffer.data(), 1);
   decoder.read_uint32();
   TEST_ASSERT(!decoder.ok());
 }
 
 void test_msgpack_array_fix_and_16() {
-  uint8_t buffer[50];
-  msgpack::Encoder encoder(buffer, sizeof(buffer));
+  etl::array<uint8_t, 50> buffer;
+  msgpack::Encoder encoder(buffer.data(), buffer.size());
   encoder.write_array(3);
   encoder.write_array(20); 
   
-  msgpack::Decoder decoder(buffer, encoder.size());
+  msgpack::Decoder decoder(buffer.data(), encoder.size());
   TEST_ASSERT_EQUAL(3, decoder.read_array());
   TEST_ASSERT_EQUAL(20, decoder.read_array());
   TEST_ASSERT(decoder.ok());
 }
 
 void test_msgpack_encoder_error_overflow() {
-  uint8_t buffer[1];
-  msgpack::Encoder encoder(buffer, 1);
+  etl::array<uint8_t, 1> buffer;
+  msgpack::Encoder encoder(buffer.data(), 1);
   encoder.write_uint32(1000000); 
   TEST_ASSERT(!encoder.ok());
 }
 
 void test_msgpack_decoder_error_paths() {
-  uint8_t buffer[] = {0xCE}; 
-  msgpack::Decoder decoder(buffer, 1);
+  etl::array<uint8_t, 1> buffer = {0xCE}; 
+  msgpack::Decoder decoder(buffer.data(), 1);
   TEST_ASSERT_EQUAL(0, decoder.read_uint32());
   TEST_ASSERT(!decoder.ok());
 }
 
 void test_msgpack_large_headers() {
-  uint8_t buffer[100];
-  msgpack::Encoder encoder(buffer, sizeof(buffer));
+  etl::array<uint8_t, 100> buffer;
+  msgpack::Encoder encoder(buffer.data(), buffer.size());
   encoder.write_array(16);
   
-  msgpack::Decoder decoder(buffer, encoder.size());
+  msgpack::Decoder decoder(buffer.data(), encoder.size());
   TEST_ASSERT_EQUAL(16, decoder.read_array());
   TEST_ASSERT(decoder.ok());
 }
 
 void test_msgpack_int_edge_cases() {
-    uint8_t buffer[50];
-    msgpack::Encoder encoder(buffer, sizeof(buffer));
+    etl::array<uint8_t, 50> buffer;
+    msgpack::Encoder encoder(buffer.data(), buffer.size());
     encoder.write_uint16(200); 
     encoder.write_uint32(70000); 
     
-    msgpack::Decoder decoder(buffer, encoder.size());
+    msgpack::Decoder decoder(buffer.data(), encoder.size());
     TEST_ASSERT_EQUAL(200, decoder.read_uint16());
     TEST_ASSERT_EQUAL(70000, decoder.read_uint32());
     TEST_ASSERT(decoder.ok());
 }
 
 void test_msgpack_large_data_formats() {
-    uint8_t buffer[1000];
-    msgpack::Encoder encoder(buffer, sizeof(buffer));
-    char str256[257];
-    memset(str256, 'B', 256);
+    etl::array<uint8_t, 1000> buffer;
+    msgpack::Encoder encoder(buffer.data(), buffer.size());
+    etl::array<char, 257> str256;
+    str256.fill('B');
     str256[256] = '\0';
-    encoder.write_str(str256, 256);
+    encoder.write_str(str256.data(), 256);
     
-    msgpack::Decoder decoder(buffer, encoder.size());
+    msgpack::Decoder decoder(buffer.data(), encoder.size());
     auto view = decoder.read_str_view();
     TEST_ASSERT_EQUAL(256, view.size());
     TEST_ASSERT(decoder.ok());
 }
 
 void test_msgpack_error_mismatches() {
-    uint8_t buffer[10];
-    msgpack::Encoder enc(buffer, 10);
+    etl::array<uint8_t, 10> buffer;
+    msgpack::Encoder enc(buffer.data(), 10);
     enc.write_uint8(1);
     
     {
-        msgpack::Decoder dec(buffer, 1);
+        msgpack::Decoder dec(buffer.data(), 1);
         (void)dec.read_str_view(); 
         TEST_ASSERT(!dec.ok());
     }
     {
-        msgpack::Decoder dec(buffer, 1);
+        msgpack::Decoder dec(buffer.data(), 1);
         (void)dec.read_bin_view(); 
         TEST_ASSERT(!dec.ok());
     }
 }
 
 void test_msgpack_32bit_formats() {
-    static uint8_t buffer[70000];
-    msgpack::Encoder encoder(buffer, sizeof(buffer));
-    static uint8_t large_bin[66000];
-    memset(large_bin, 0xDD, 66000);
-    encoder.write_bin(etl::span<const uint8_t>(large_bin, 66000));
+    static etl::array<uint8_t, 70000> buffer;
+    msgpack::Encoder encoder(buffer.data(), buffer.size());
+    static etl::array<uint8_t, 66000> large_bin;
+    large_bin.fill(0xDD);
+    encoder.write_bin(etl::span<const uint8_t>(large_bin.data(), 66000));
     
-    msgpack::Decoder decoder(buffer, encoder.size());
+    msgpack::Decoder decoder(buffer.data(), encoder.size());
     auto view = decoder.read_bin_view();
     TEST_ASSERT_EQUAL(66000, view.size());
     TEST_ASSERT(decoder.ok());

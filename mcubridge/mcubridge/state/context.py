@@ -609,6 +609,8 @@ class RuntimeState(msgspec.Struct):
         }
 
     def build_handshake_snapshot(self) -> HandshakeSnapshot:
+        # [SIL-2] Atomic field extraction from self to avoid manual boilerplate.
+        # We leverage the fact that most fields match by name and type.
         return HandshakeSnapshot(
             synchronised=self.is_synchronized,
             attempts=self.handshake_attempts,
@@ -629,6 +631,8 @@ class RuntimeState(msgspec.Struct):
         )
 
     def build_bridge_snapshot(self) -> BridgeSnapshot:
+        # [SIL-2] Converge disparate state metrics into a unified snapshot structure
+        # using msgspec for guaranteed validation and performance.
         return BridgeSnapshot(
             serial_link=SerialLinkSnapshot(
                 connected=self.is_connected,

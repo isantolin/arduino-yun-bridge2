@@ -470,8 +470,11 @@ class FileComponent:
         if not self._is_mcu_identifier(identifier):
             return None
 
-        relative_identifier = identifier[4:] if identifier.startswith("mcu/") else ""
-        normalised = self._normalise_filename(relative_identifier)
+        # [SIL-2] Use library-native path manipulation to strip 'mcu/' prefix safely.
+        p = PurePosixPath(identifier)
+        relative = p.relative_to("mcu") if p.is_absolute() or p.parts[0] == "mcu" else p
+
+        normalised = self._normalise_filename(str(relative))
         if normalised is None or normalised == PurePosixPath("."):
             return None
         return normalised.as_posix()

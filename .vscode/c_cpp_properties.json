@@ -20,7 +20,7 @@
                 "ETL_NO_STL",
                 "UNITY_INCLUDE_DOUBLE"
             ],
-            "cStandard": "c17",
+            "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "linux-gcc-x64"
         }

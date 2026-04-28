@@ -1,35 +1,29 @@
 {
-    "version": 4,
     "configurations": [
         {
-            "name": "Linux Host Tests (Recommended)",
-            "compilerPath": "/usr/bin/g++",
-            "intelliSenseMode": "linux-gcc-x64",
+            "name": "Linux",
+            "includePath": [
+                "${default}",
+                "${workspaceFolder}/mcubridge-library-arduino/src",
+                "${workspaceFolder}/mcubridge-library-arduino/src/config",
+                "${workspaceFolder}/mcubridge-library-arduino/src/protocol",
+                "${workspaceFolder}/mcubridge-library-arduino/tests/Unity/src",
+                "${workspaceFolder}/tools/arduino_stub/include",
+                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
+                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
+                "${workspaceFolder}/.dummy_libs/wolfssl",
+                "${workspaceFolder}/.dummy_libs/PacketSerial/src"
+            ],
+            "defines": [
+                "BRIDGE_HOST_TEST=1",
+                "WOLFSSL_USER_SETTINGS",
+                "ETL_NO_STL",
+                "UNITY_INCLUDE_DOUBLE"
+            ],
             "cStandard": "c17",
             "cppStandard": "c++17",
-            "defines": [
-                "ARDUINO=100",
-                "ARDUINO_STUB_CUSTOM_MILLIS=1",
-                "ARDUINO_STUB_CUSTOM_SERIAL=1",
-                "BRIDGE_HOST_TEST=1",
-                "ETL_NO_STL",
-                "UNITY_INCLUDE_DOUBLE",
-                "WOLFSSL_USER_SETTINGS"
-            ],
-            "includePath": [
-                "/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/**",
-                "${workspaceFolder}/tools/arduino_stub/include"
-            ],
-            "browse": {
-                "path": [
-                    "${workspaceFolder}/mcubridge-library-arduino/src",
-                    "${workspaceFolder}/tools/arduino_stub/include",
-                    "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
-                    "${workspaceFolder}/.dummy_libs/PacketSerial/src",
-                    "${workspaceFolder}/.dummy_libs/wolfssl/src"
-                ],
-                "limitSymbolsToIncludedHeaders": true
-            }
+            "intelliSenseMode": "linux-gcc-x64"
         }
-    ]
+    ],
+    "version": 4
 }

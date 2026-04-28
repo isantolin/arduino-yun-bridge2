@@ -31,7 +31,8 @@ ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --structures "${ROOT_DIR}/mcubridge/mcubridge/protocol/structures.py"
 
 echo "[host-cpp] Installing library dependencies..."
-DUMMY_ARDUINO_LIBS=${DUMMY_ARDUINO_LIBS:-$(mktemp -d)}
+DUMMY_ARDUINO_LIBS="${ROOT_DIR}/.dummy_libs"
+mkdir -p "${DUMMY_ARDUINO_LIBS}"
 "${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
 
 # Get standard library path

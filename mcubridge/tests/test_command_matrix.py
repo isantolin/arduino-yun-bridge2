@@ -20,8 +20,17 @@ from mcubridge.protocol.protocol import (
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
 from mcubridge.router.routers import MQTTRouter, McuHandler
 from mcubridge.services.dispatcher import BridgeDispatcher
-
-from .conftest import make_component_container
+from mcubridge.services import (
+    ConsoleComponent,
+    DatastoreComponent,
+    FileComponent,
+    MailboxComponent,
+    PinComponent,
+    ProcessComponent,
+    SpiComponent,
+    SystemComponent,
+)
+import svcs
 
 _MQTT_PREFIX = "br"
 
@@ -65,18 +74,24 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             publish_bridge_snapshot=AsyncMock(),
         )
 
-        dispatcher.register_components(
-            make_component_container(
-                console=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                datastore=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                file=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                mailbox=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                pin=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                process=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                spi=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                system=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-            )
-        )
+        registry = svcs.Registry()
+        components = {
+            ConsoleComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            DatastoreComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            FileComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            MailboxComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            PinComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            ProcessComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            SpiComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            SystemComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+        }
+        for svc_type, inst in components.items():
+            for attr in ("__aenter__", "__aexit__"):
+                if hasattr(inst, attr):
+                    delattr(inst, attr)
+            registry.register_value(svc_type, inst)  # type: ignore
+
+        dispatcher.register_components(svcs.Container(registry))
 
         for topic_enum, pattern, _qos in MQTT_COMMAND_SUBSCRIPTIONS:
             concrete = _materialize_subscription_segments(pattern)
@@ -124,18 +139,25 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             publish_bridge_snapshot=AsyncMock(),
         )
 
-        dispatcher.register_components(
-            make_component_container(
-                console=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                datastore=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                file=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                mailbox=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                pin=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                process=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                spi=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-                system=MagicMock(handle_mqtt=AsyncMock(return_value=True)),
-            )
-        )
+        registry = svcs.Registry()
+        components = {
+            ConsoleComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            DatastoreComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            FileComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            MailboxComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            PinComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            ProcessComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            SpiComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+            SystemComponent: MagicMock(handle_mqtt=AsyncMock(return_value=True)),
+        }
+        for svc_type, inst in components.items():
+            for attr in ("__aenter__", "__aexit__"):
+                if hasattr(inst, attr):
+                    delattr(inst, attr)
+            registry.register_value(svc_type, inst)  # type: ignore
+
+        dispatcher.register_components(svcs.Container(registry))
+
         dispatcher.register_system_handlers(
             handle_link_sync_resp=AsyncMock(return_value=True),
             handle_link_reset_resp=AsyncMock(return_value=True),

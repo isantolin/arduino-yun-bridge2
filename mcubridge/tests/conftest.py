@@ -12,9 +12,7 @@ import shutil
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import MagicMock
 
-import svcs
 import structlog
 import mcubridge.config.const
 
@@ -235,57 +233,6 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:  # type: ig
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
-
-
-def make_component_container(
-    *,
-    console: object = None,
-    datastore: object = None,
-    file: object = None,
-    mailbox: object = None,
-    pin: object = None,
-    process: object = None,
-    spi: object = None,
-    system: object = None,
-) -> "svcs.Container":
-    """Build a ``svcs.Container`` pre-loaded with component instances (or mocks).
-
-    MagicMock objects have auto-generated ``__aenter__``/``__aexit__`` which
-    makes ``svcs.Container.get()`` wrongly detect them as async context
-    managers.  We strip those attributes so ``get()`` works synchronously.
-    """
-    from mcubridge.services import (
-        ConsoleComponent,
-        DatastoreComponent,
-        FileComponent,
-        MailboxComponent,
-        PinComponent,
-        ProcessComponent,
-        SpiComponent,
-        SystemComponent,
-    )
-
-    registry = svcs.Registry()
-    for svc_type, inst in (
-        (ConsoleComponent, console),
-        (DatastoreComponent, datastore),
-        (FileComponent, file),
-        (MailboxComponent, mailbox),
-        (PinComponent, pin),
-        (ProcessComponent, process),
-        (SpiComponent, spi),
-        (SystemComponent, system),
-    ):
-        if inst is not None:
-            # Prevent svcs from detecting MagicMock as an async CM.
-            if isinstance(inst, MagicMock):
-                for attr in ("__aenter__", "__aexit__"):
-                    try:
-                        delattr(inst, attr)
-                    except AttributeError:
-                        pass
-            registry.register_value(svc_type, inst)  # type: ignore[reportUnknownMemberType]
-    return svcs.Container(registry)
 
 
 @pytest.fixture()

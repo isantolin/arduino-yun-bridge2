@@ -25,8 +25,7 @@ from mcubridge.protocol.topics import TopicRoute
 from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.state.context import create_runtime_state
 from aiomqtt.message import Message
-
-from .conftest import make_component_container
+import svcs
 
 
 @pytest.fixture
@@ -100,18 +99,31 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
     spi = AsyncMock(spec=SpiComponent)
     system = AsyncMock(spec=SystemComponent)
 
-    d.register_components(
-        make_component_container(
-            console=console,
-            datastore=datastore,
-            file=file,
-            mailbox=mailbox,
-            pin=pin,
-            process=process,
-            spi=spi,
-            system=system,
-        )
-    )
+    registry = svcs.Registry()
+    for mock_obj in (
+        console,
+        datastore,
+        file,
+        mailbox,
+        pin,
+        process,
+        spi,
+        system,
+    ):
+        for attr in ("__aenter__", "__aexit__"):
+            if hasattr(mock_obj, attr):
+                delattr(mock_obj, attr)
+
+    registry.register_value(ConsoleComponent, console)  # type: ignore
+    registry.register_value(DatastoreComponent, datastore)  # type: ignore
+    registry.register_value(FileComponent, file)  # type: ignore
+    registry.register_value(MailboxComponent, mailbox)  # type: ignore
+    registry.register_value(PinComponent, pin)  # type: ignore
+    registry.register_value(ProcessComponent, process)  # type: ignore
+    registry.register_value(SpiComponent, spi)  # type: ignore
+    registry.register_value(SystemComponent, system)  # type: ignore
+
+    d.register_components(svcs.Container(registry))
     return d
 
 

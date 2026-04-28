@@ -68,28 +68,6 @@ def _build_write_payload(filename: str, data: bytes) -> bytes:
     return msgspec.msgpack.encode(structures.FileWritePacket(path=filename, data=data))
 
 
-def _get_enqueue_mqtt_arg(
-    mock_pub: Any, arg_idx: int, kw_name: str, call_idx: int = -1
-) -> Any:
-    """Robustly extract argument from mock call."""
-    if not mock_pub.called:
-        return None
-    call = mock_pub.call_args_list[call_idx]
-
-    # [SIL-2] Handle direct QueuedPublish object in enqueue_mqtt(message, ...)
-    if len(call.args) > 0 and hasattr(call.args[0], "payload"):
-        msg = call.args[0]
-        if kw_name == "payload":
-            return msg.payload
-        if kw_name == "topic":
-            return msg.topic_name
-
-    # Handle both args and kwargs
-    if len(call.args) > arg_idx:
-        return call.args[arg_idx]
-    return call.kwargs.get(kw_name)
-
-
 @pytest.mark.asyncio
 async def test_handle_mqtt_write_and_read(
     file_component: tuple[FileComponent, AsyncMock, AsyncMock],
@@ -131,8 +109,7 @@ async def test_handle_mqtt_write_and_read(
     await component.handle_mqtt(route_read, cast(Any, msg_read))
     # Read from local FS enqueue_mqttes the result
     assert mqtt_flow.enqueue_mqtt.called
-    payload = _get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload")
-    assert payload == b"payload"
+    assert mqtt_flow.enqueue_mqtt.call_args.args[0].payload == b"payload"
 
 
 @pytest.mark.asyncio
@@ -376,9 +353,8 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
 
     # Just check that it enqueue_mqtted the error
     assert any(
-        "MCU filesystem unavailable"
-        in str(_get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload", i))
-        for i in range(len(mqtt_flow.enqueue_mqtt.call_args_list))
+        "MCU filesystem unavailable" in str(call.args[0].payload)
+        for call in mqtt_flow.enqueue_mqtt.call_args_list
     )
 
 
@@ -421,7 +397,7 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
     )
 
     await component.handle_mqtt(route, cast(Any, msg))
-    assert _get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload") == b"mcu-data"
+    assert mqtt_flow.enqueue_mqtt.call_args.args[0].payload == b"mcu-data"
 
 
 @pytest.mark.asyncio
@@ -448,9 +424,8 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
     await asyncio.wait_for(component.handle_mqtt(route, cast(Any, msg)), timeout=1.0)
 
     assert any(
-        "MCU filesystem unavailable"
-        in str(_get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload", i))
-        for i in range(len(mqtt_flow.enqueue_mqtt.call_args_list))
+        "MCU filesystem unavailable" in str(call.args[0].payload)
+        for call in mqtt_flow.enqueue_mqtt.call_args_list
     )
 
 
@@ -478,7 +453,7 @@ async def test_handle_mqtt_read_failure(
 
     await component.handle_mqtt(route, cast(Any, msg))
     assert (
-        _get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload")
+        mqtt_flow.enqueue_mqtt.call_args.args[0].payload
         == b"MCU filesystem read failed"
     )
 

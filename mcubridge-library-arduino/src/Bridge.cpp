@@ -342,28 +342,11 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 void BridgeClass::_onStartupStabilized() {
   uint32_t start_ms = millis();
   // [SIL-2] Deterministic drain via ETL algorithm (No Raw Loops).
-  // We simulate a loop using a recursive structure that avoids deep stack if
-  // needed, or a counting iterator if available. Given AVR limits, we use a
-  // simple functional approach using etl::find_if on a counting range.
-  struct Counter {
-    uint16_t current = 0;
-    bool operator==(const Counter& other) const {
-      return current == other.current;
-    }
-    bool operator!=(const Counter& other) const {
-      return current != other.current;
-    }
-    Counter& operator++() {
-      ++current;
-      return *this;
-    }
-    uint16_t operator*() const { return current; }
-  };
+  // Using etl::counting_iterator for idiomatic range simulation.
+  auto it_begin = etl::make_counting_iterator(0);
+  auto it_end = etl::make_counting_iterator(bridge::config::STARTUP_DRAIN_FINAL);
 
-  Counter it_begin{0};
-  Counter it_end{bridge::config::STARTUP_DRAIN_FINAL};
-
-  (void)etl::find_if(it_begin, it_end, [this, start_ms](uint16_t) {
+  (void)etl::find_if(it_begin, it_end, [this, start_ms](int) {
     if (_stream.available() <= 0 ||
         (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
       return true;  // Stop condition

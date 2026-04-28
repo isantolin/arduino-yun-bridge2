@@ -53,36 +53,28 @@ class MqttTransport:
         tls_context = self.config.get_ssl_context()
         reconnect_delay = max(1, self.config.reconnect_delay)
 
-        _log_cb = tenacity.before_sleep_log(logger, logging.WARNING)
+        _retryable_excs = (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
 
-        def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
-            _log_cb(retry_state)
-            self.state.metrics.retries.labels(component="mqtt_connect").inc()
+        def _is_retryable(e: Any) -> bool:
+            if isinstance(e, _retryable_excs):
+                return True
+            if isinstance(e, ExceptionGroup):
+                return any(_is_retryable(se) for se in e.exceptions)
+            return False
 
         def _retry_predicate(retry_state: tenacity.RetryCallState) -> bool:
-            """[SIL-2] Check if the exception or any exception in the group is retryable."""
+            """[SIL-2] Check if the exception is retryable."""
             if not retry_state.outcome or not retry_state.outcome.failed:
                 return False
             exc = retry_state.outcome.exception()
-            if not exc:
-                return False
-
-            retryable = (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
-
-            def _is_retryable(e: Any) -> bool:
-                if isinstance(e, retryable):
-                    return True
-                if isinstance(e, ExceptionGroup):
-                    return any(_is_retryable(se) for se in cast(Any, e).exceptions)
-                return False
-
-            return _is_retryable(exc)
+            return _is_retryable(exc) if exc else False
 
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
             + tenacity.wait_random(0, 2),
             retry=_retry_predicate,
-            before_sleep=_before_sleep,
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            after=lambda rs: self.state.metrics.retries.labels(component="mqtt_connect").inc(),
             reraise=True,
         )
 

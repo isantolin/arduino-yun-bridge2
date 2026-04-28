@@ -23,16 +23,6 @@ static inline uint32_t crc32_ieee(const void* data, size_t len) {
 #define TEST_ASSERT_EQ_UINT(actual, expected) \
   TEST_ASSERT_EQUAL_UINT32((unsigned long)(expected), (unsigned long)(actual))
 
-static inline void test_memfill(uint8_t* buf, size_t len, uint8_t value) {
-  etl::fill_n(buf, len, value);
-}
-
-static inline int test_memeq(const void* a, const void* b, size_t len) {
-  const uint8_t* ptr_a = static_cast<const uint8_t*>(a);
-  const uint8_t* ptr_b = static_cast<const uint8_t*>(b);
-  return etl::equal(ptr_a, ptr_a + len, ptr_b);
-}
-
 template <size_t N>
 struct ByteBuffer {
   uint8_t data[N];

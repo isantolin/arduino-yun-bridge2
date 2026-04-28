@@ -34,7 +34,7 @@ void test_hal_roundtrip() {
   TEST_ASSERT_TRUE(res.has_value());
   TEST_ASSERT_EQUAL(sizeof(payload), res.value().bytes_read);
   TEST_ASSERT_FALSE(res.value().has_more);
-  TEST_ASSERT_TRUE(test_memeq(payload, read_buffer, sizeof(payload)));
+  TEST_ASSERT_TRUE(etl::equal(payload, payload + sizeof(payload), read_buffer));
   TEST_ASSERT_TRUE(bridge::hal::removeFile("hostfs/direct.bin").has_value());
 }
 
@@ -58,7 +58,7 @@ void test_hal_chunked_read_roundtrip() {
   TEST_ASSERT_TRUE(res1.has_value());
   TEST_ASSERT_EQUAL(62U, res1.value().bytes_read);
   TEST_ASSERT_TRUE(res1.value().has_more);
-  TEST_ASSERT_TRUE(test_memeq(read_payload.data(), first_chunk, res1.value().bytes_read));
+  TEST_ASSERT_TRUE(etl::equal(read_payload.begin(), read_payload.begin() + res1.value().bytes_read, first_chunk));
 
   auto res2 = bridge::hal::readFileChunk(
       "hostfs/chunked.bin",
@@ -68,7 +68,7 @@ void test_hal_chunked_read_roundtrip() {
   TEST_ASSERT_TRUE(res2.has_value());
   TEST_ASSERT_EQUAL(34U, res2.value().bytes_read);
   TEST_ASSERT_FALSE(res2.value().has_more);
-  TEST_ASSERT_TRUE(test_memeq(read_payload.data() + 62U, second_chunk, res2.value().bytes_read));
+  TEST_ASSERT_TRUE(etl::equal(read_payload.begin() + 62U, read_payload.begin() + 62U + res2.value().bytes_read, second_chunk));
   TEST_ASSERT_TRUE(bridge::hal::removeFile("hostfs/chunked.bin").has_value());
 }
 

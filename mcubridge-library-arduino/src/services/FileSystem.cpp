@@ -48,8 +48,9 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   etl::array<uint8_t, kReadChunkSize> buffer;
   uint32_t start_ms = millis();
   etl::string_view path(msg.path.data(), msg.path.size());
-  etl::array<uint8_t, bridge::config::FILE_MAX_READ_CHUNKS> chunks = {};
-  (void)etl::find_if(chunks.begin(), chunks.end(), [&](uint8_t) {
+
+  etl::array<uint16_t, bridge::config::FILE_MAX_READ_CHUNKS> chunks;
+  (void)etl::find_if(chunks.begin(), chunks.end(), [&](uint16_t) {
     if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) return true;
 
     auto res = bridge::hal::readFileChunk(path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));

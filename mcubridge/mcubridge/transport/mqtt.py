@@ -13,7 +13,7 @@ from aiomqtt.message import Message
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from mcubridge.config.const import SPOOL_BACKOFF_MIN_SECONDS, SPOOL_BACKOFF_MAX_SECONDS
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import aiomqtt
 import tenacity
@@ -55,11 +55,14 @@ class MqttTransport:
 
         _retryable_excs = (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
 
-        def _is_retryable(e: Any) -> bool:
+        def _is_retryable(e: BaseException) -> bool:
             if isinstance(e, _retryable_excs):
                 return True
             if isinstance(e, ExceptionGroup):
-                return any(_is_retryable(se) for se in e.exceptions)
+                # [SIL-2] Iterate through group (ignoring strict typing for the recursive structure)
+                for sub in e.exceptions:  # type: ignore # pyright: ignore [reportUnknownMemberType, reportUnknownVariableType]
+                    if _is_retryable(sub):  # type: ignore # pyright: ignore [reportUnknownArgumentType]
+                        return True
             return False
 
         def _retry_predicate(retry_state: tenacity.RetryCallState) -> bool:
@@ -74,7 +77,9 @@ class MqttTransport:
             + tenacity.wait_random(0, 2),
             retry=_retry_predicate,
             before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-            after=lambda rs: self.state.metrics.retries.labels(component="mqtt_connect").inc(),
+            after=lambda rs: self.state.metrics.retries.labels(
+                component="mqtt_connect"
+            ).inc(),
             reraise=True,
         )
 

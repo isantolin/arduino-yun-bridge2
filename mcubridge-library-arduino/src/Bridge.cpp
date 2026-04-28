@@ -341,12 +341,13 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_onStartupStabilized() {
   uint32_t start_ms = millis();
-  // [SIL-2] Deterministic drain via ETL algorithm (No Raw Loops).
-  // Using etl::counting_iterator for idiomatic range simulation.
-  auto it_begin = etl::make_counting_iterator(0);
-  auto it_end = etl::make_counting_iterator(bridge::config::STARTUP_DRAIN_FINAL);
-
-  (void)etl::find_if(it_begin, it_end, [this, start_ms](int) {
+  // [SIL-2] Deterministic drain via ETL algorithm using a fixed sequence.
+  // Eradicates manual while/for loops for safety compliance.
+  struct Iteration {
+    uint16_t id;
+  };
+  etl::array<Iteration, bridge::config::STARTUP_DRAIN_FINAL> iterations;
+  (void)etl::find_if(iterations.begin(), iterations.end(), [this, start_ms](const Iteration&) {
     if (_stream.available() <= 0 ||
         (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
       return true;  // Stop condition
@@ -502,8 +503,8 @@ void BridgeClass::_handleAck(uint16_t command_id) {
 
 void BridgeClass::_clearPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
-    etl::array<uint8_t, bridge::config::TX_QUEUE_CAPACITY> dummy = {};
-    (void)etl::find_if(dummy.begin(), dummy.end(), [&](uint8_t) {
+    etl::array<uint8_t, bridge::config::TX_QUEUE_CAPACITY> items;
+    (void)etl::find_if(items.begin(), items.end(), [&](uint8_t) {
       if (_pending_tx_queue.empty()) return true;
       TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
       if (buf) _tx_payload_pool.release(buf);

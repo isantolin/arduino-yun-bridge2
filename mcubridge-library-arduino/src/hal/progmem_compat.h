@@ -50,18 +50,23 @@ namespace bridge::hal {
  */
 inline void copy_string(char* dest, const char* src, size_t n) {
   if (n == 0 || dest == nullptr || src == nullptr) return;
+
   struct {
     const char* s;
     bool done;
   } ctx = {src, false};
+
   etl::for_each(dest, dest + n, [&ctx](char& d) {
     if (ctx.done) {
       d = '\0';
-      return;
+    } else {
+      d = static_cast<char>(read_byte(reinterpret_cast<const uint8_t*>(ctx.s++)));
+      if (d == '\0') ctx.done = true;
     }
-    d = static_cast<char>(read_byte(reinterpret_cast<const uint8_t*>(ctx.s++)));
-    if (d == '\0') ctx.done = true;
   });
+
+  // Strict enforcement of null termination
+  dest[n - 1] = '\0';
 }
 
 }  // namespace bridge::hal

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.mqtt_helpers import make_inbound_message
+from aiomqtt.message import Message
 import aiomqtt
 
 import asyncio
@@ -36,6 +36,7 @@ def runtime_config() -> RuntimeConfig:
             prefix="mcubridge-test-spool-", dir=".tmp_tests"
         ),
         serial_shared_secret=b"s_e_c_r_e_t_mock",
+        allow_non_tmp_paths=True,
     )
 
 
@@ -238,7 +239,12 @@ async def test_handle_mqtt_missing_filename_is_ignored(
     route = TopicRoute(
         raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",)
     )
-    await component.handle_mqtt(route, make_inbound_message("test/topic", b""))
+    await component.handle_mqtt(
+        route,
+        Message(
+            topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None
+        ),
+    )
     assert not mqtt_flow.enqueue_mqtt.called
 
 
@@ -253,7 +259,12 @@ async def test_handle_mqtt_unknown_action_is_ignored(
         topic=Topic.FILE,
         segments=("magic", "file.txt"),
     )
-    await component.handle_mqtt(route, make_inbound_message("test/topic", b""))
+    await component.handle_mqtt(
+        route,
+        Message(
+            topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None
+        ),
+    )
     assert not mqtt_flow.enqueue_mqtt.called
 
 

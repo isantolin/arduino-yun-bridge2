@@ -7,25 +7,27 @@ from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
 import pytest
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import (
     DatastoreAction,
 )
 from mcubridge.protocol.structures import (
     DatastoreGetPacket,
     DatastorePutPacket,
+    TopicRoute,
 )
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.mqtt import MqttTransport
-from tests._helpers import make_route, make_test_config
-from tests.mqtt_helpers import make_inbound_message
+from aiomqtt.message import Message
 
 
 @pytest.fixture
-def datastore_component() -> DatastoreComponent:
-    config = make_test_config()
+def datastore_component(runtime_config: RuntimeConfig) -> DatastoreComponent:
+    config = runtime_config
+    config.allow_non_tmp_paths = True
     state = MagicMock(spec=RuntimeState)
     state.datastore = {}
     state.mqtt_topic_prefix = "br"
@@ -67,8 +69,15 @@ async def test_datastore_handle_get_request(
 async def test_datastore_handle_mqtt_put(
     datastore_component: DatastoreComponent,
 ) -> None:
-    route = make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "sys", "uptime")
-    msg = make_inbound_message("test/topic", b"3600")
+    route = TopicRoute(
+        "br/d/put/sys/uptime",
+        "br",
+        Topic.DATASTORE,
+        (DatastoreAction.PUT.value, "sys", "uptime"),
+    )
+    msg = Message(
+        topic="test/topic", payload=b"3600", qos=0, retain=False, mid=1, properties=None
+    )
 
     await datastore_component.handle_mqtt(route, msg)
 
@@ -81,8 +90,12 @@ async def test_datastore_handle_mqtt_get(
     datastore_component: DatastoreComponent,
 ) -> None:
     datastore_component.state.datastore["status"] = "OK"
-    route = make_route(Topic.DATASTORE, DatastoreAction.GET.value, "status")
-    msg = make_inbound_message("test/topic", b"")
+    route = TopicRoute(
+        "br/d/get/status", "br", Topic.DATASTORE, (DatastoreAction.GET.value, "status")
+    )
+    msg = Message(
+        topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None
+    )
 
     await datastore_component.handle_mqtt(route, msg)
 

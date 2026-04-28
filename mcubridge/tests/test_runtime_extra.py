@@ -21,6 +21,7 @@ async def test_runtime_on_serial_connected_errors() -> None:
         file_system_root=os.path.abspath(
             f".tmp_tests/mcubridge-test-{os.getpid()}-{time.time_ns()}"
         ),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     try:
@@ -55,7 +56,9 @@ async def test_runtime_on_serial_connected_errors() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_handle_mqtt_message_dispatch_error() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
+    )
     state = create_runtime_state(config)
     try:
         mqtt_mock = MagicMock()
@@ -64,9 +67,16 @@ async def test_runtime_handle_mqtt_message_dispatch_error() -> None:
 
         service = BridgeService(config, state, mqtt_mock)
 
-        from tests.mqtt_helpers import make_inbound_message
+        from aiomqtt.message import Message
 
-        msg = make_inbound_message("br/system/status", b"{}")
+        msg = Message(
+            topic="br/system/status",
+            payload=b"{}",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
+        )
 
         # Mock dispatcher.dispatch_mqtt_message to see if it's called
         service.dispatcher.dispatch_mqtt_message = AsyncMock(
@@ -82,7 +92,9 @@ async def test_runtime_handle_mqtt_message_dispatch_error() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_reject_topic_action_properties() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
+    )
     state = create_runtime_state(config)
     try:
         mqtt_mock = MagicMock()
@@ -91,12 +103,21 @@ async def test_runtime_reject_topic_action_properties() -> None:
 
         service = BridgeService(config, state, mqtt_mock)
         from mcubridge.protocol.topics import Topic
-        from tests.mqtt_helpers import make_inbound_message
+        from aiomqtt.message import Message
+        from paho.mqtt.properties import Properties
+        from paho.mqtt.packettypes import PacketTypes
 
-        inbound = make_inbound_message("br/system/cmd", b"")
-        inbound.properties = MagicMock()
-        inbound.properties.ResponseTopic = "resp"
-        inbound.properties.CorrelationData = b"cid"
+        props = Properties(PacketTypes.PUBLISH)
+        props.ResponseTopic = "resp"
+        props.CorrelationData = b"cid"
+        inbound = Message(
+            topic="br/system/cmd",
+            payload=b"",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=props,
+        )
 
         await service._reject_topic_action(inbound, Topic.SYSTEM, "action")  # type: ignore[reportPrivateUsage]
 
@@ -111,7 +132,9 @@ async def test_runtime_reject_topic_action_properties() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_publish_bridge_snapshot_handshake() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
+    )
     state = create_runtime_state(config)
     try:
         mqtt_mock = MagicMock()
@@ -120,11 +143,20 @@ async def test_runtime_publish_bridge_snapshot_handshake() -> None:
 
         service = BridgeService(config, state, mqtt_mock)
 
-        from tests.mqtt_helpers import make_inbound_message
+        from aiomqtt.message import Message
+        from paho.mqtt.properties import Properties
+        from paho.mqtt.packettypes import PacketTypes
 
-        inbound = make_inbound_message("br/s/b/h/get", b"")
-        inbound.properties = MagicMock()
-        inbound.properties.ResponseTopic = "reply"
+        props = Properties(PacketTypes.PUBLISH)
+        props.ResponseTopic = "reply"
+        inbound = Message(
+            topic="br/s/b/h/get",
+            payload=b"",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=props,
+        )
 
         await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[reportPrivateUsage]
 

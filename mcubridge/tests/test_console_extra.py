@@ -23,6 +23,7 @@ async def test_console_handle_write_edge_cases() -> None:
         mqtt_spool_dir=os.path.abspath(
             f".tmp_tests/mcubridge-test-console-{os.getpid()}-{time.time_ns()}"
         ),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     try:
@@ -54,7 +55,9 @@ async def test_console_handle_write_edge_cases() -> None:
 
 @pytest.mark.asyncio
 async def test_console_mqtt_input_error_paths() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
+    )
     state = create_runtime_state(config)
     try:
         serial_flow = AsyncMock(spec=SerialFlowController)

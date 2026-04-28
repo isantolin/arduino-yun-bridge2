@@ -22,8 +22,6 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import mqtt
 
-from tests._helpers import make_test_config
-
 
 def _make_config(
     *,
@@ -31,7 +29,7 @@ def _make_config(
     cafile: str | None,
     spool_dir: str = os.path.abspath(".tmp_tests/mcubridge-test-transport-spool"),
 ) -> RuntimeConfig:
-    return make_test_config(
+    return RuntimeConfig(
         mqtt_user="user",
         mqtt_pass="pass",
         mqtt_tls=tls,
@@ -39,6 +37,10 @@ def _make_config(
         allowed_commands=(),
         mqtt_queue_limit=10,
         mqtt_spool_dir=spool_dir,
+        serial_port="/dev/null",
+        serial_shared_secret=b"s_e_c_r_e_t_mock",
+        file_system_root=os.path.abspath(".tmp_tests/mcubridge-test-transport-fs"),
+        allow_non_tmp_paths=True,
     )
 
 

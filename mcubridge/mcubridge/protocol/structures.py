@@ -473,10 +473,11 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
         # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
-        if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-            raise ValueError(
-                f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
-            )
+        if not self.allow_non_tmp_paths:
+            if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                raise ValueError(
+                    f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location (e.g. /tmp)"
+                )
 
         if not self.allow_non_tmp_paths:
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):

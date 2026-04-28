@@ -7,12 +7,14 @@ from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import (
     Command,
     SystemAction,
 )
 from mcubridge.protocol.structures import (
     FreeMemoryResponsePacket,
+    TopicRoute,
     VersionResponsePacket,
 )
 from mcubridge.protocol.topics import Topic
@@ -20,13 +22,12 @@ from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.mqtt import MqttTransport
-from tests._helpers import make_route, make_test_config
-from tests.mqtt_helpers import make_inbound_message
+from aiomqtt.message import Message
 
 
 @pytest.fixture
-def system_component() -> SystemComponent:
-    config = make_test_config()
+def system_component(runtime_config: RuntimeConfig) -> SystemComponent:
+    config = runtime_config
     # [SIL-2] Use AsyncMock(spec=Interface) for all component mocks
     state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
@@ -66,8 +67,15 @@ async def test_system_handle_get_free_memory_resp(
 
 @pytest.mark.asyncio
 async def test_system_handle_mqtt_bootloader(system_component: SystemComponent) -> None:
-    route = make_route(Topic.SYSTEM, SystemAction.BOOTLOADER.value)
-    msg = make_inbound_message("test/topic", b"")
+    route = TopicRoute(
+        raw=f"br/{Topic.SYSTEM}/{SystemAction.BOOTLOADER.value}",
+        prefix="br",
+        topic=Topic.SYSTEM,
+        segments=(SystemAction.BOOTLOADER.value,),
+    )
+    msg = Message(
+        topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None
+    )
 
     await system_component.handle_mqtt(route, msg)
 

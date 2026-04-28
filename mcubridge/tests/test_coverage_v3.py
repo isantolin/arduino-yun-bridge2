@@ -355,6 +355,7 @@ def test_runtime_config_post_init_errors():
             serial_port="/dev/ttyS0",
             serial_shared_secret=b"valid_secret_1234",
             watchdog_interval=0.1,
+            allow_non_tmp_paths=True,
         )
 
     with pytest.raises(ValueError, match="serial_response_timeout must be at least 2x"):
@@ -363,4 +364,5 @@ def test_runtime_config_post_init_errors():
             serial_shared_secret=b"valid_secret_1234",
             serial_retry_timeout=5.0,
             serial_response_timeout=1.0,
+            allow_non_tmp_paths=True,
         )

@@ -57,6 +57,7 @@ async def process_comp(mock_enqueue: AsyncMock) -> AsyncIterator[ProcessComponen
         debug=False,
         process_max_concurrent=2,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     # Correct initialization with specific mocks for flows

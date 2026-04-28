@@ -19,23 +19,6 @@ from mcubridge.state.context import (
     RuntimeState,
 )
 
-from .mqtt_helpers import make_inbound_message
-
-
-def _make_inbound(
-    topic: str,
-    payload: bytes = b"",
-    *,
-    qos: int = 0,
-    retain: bool = False,
-) -> Message:
-    return make_inbound_message(
-        topic,
-        payload,
-        qos=qos,
-        retain=retain,
-    )
-
 
 @pytest.mark.asyncio
 async def test_mcu_digital_read_response_publishes_to_mqtt(
@@ -156,13 +139,17 @@ async def test_mqtt_digital_write_sends_frame(
     service.register_serial_sender(fake_sender)
 
     await service.handle_mqtt_message(
-        _make_inbound(
-            topic_path(
+        Message(
+            topic=topic_path(
                 runtime_state.mqtt_topic_prefix,
                 Topic.DIGITAL,
                 "5",
             ),
-            b"1",
+            payload=b"1",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
         )
     )
 
@@ -200,14 +187,18 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     service.register_serial_sender(fake_sender)
 
     await service.handle_mqtt_message(
-        _make_inbound(
-            topic_path(
+        Message(
+            topic=topic_path(
                 runtime_state.mqtt_topic_prefix,
                 Topic.ANALOG,
                 "2",
                 "read",
             ),
-            b"",
+            payload=b"",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
         )
     )
 
@@ -316,14 +307,18 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     service.register_serial_sender(fake_sender)
 
     await service.handle_mqtt_message(
-        _make_inbound(
-            topic_path(
+        Message(
+            topic=topic_path(
                 runtime_state.mqtt_topic_prefix,
                 Topic.SYSTEM,
                 "version",
                 "get",
             ),
-            b"",
+            payload=b"",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
         )
     )
 
@@ -358,14 +353,18 @@ async def test_mqtt_shell_kill_invokes_processonent(
         service.dispatcher.mqtt_router.register(Topic.SHELL, mock_mqtt)
         pid = 21
         await service.handle_mqtt_message(
-            _make_inbound(
-                topic_path(
+            Message(
+                topic=topic_path(
                     runtime_state.mqtt_topic_prefix,
                     Topic.SHELL,
                     "kill",
                     str(pid),
                 ),
-                b"",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
             )
         )
         # ProcessComponent handles shell topics

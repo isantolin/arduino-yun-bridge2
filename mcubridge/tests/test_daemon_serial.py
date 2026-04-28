@@ -37,6 +37,7 @@ async def test_serial_reader_task_reconnects():
         process_timeout=5,
         reconnect_delay=1,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
+        allow_non_tmp_paths=True,
     )
     state = MagicMock(spec=RuntimeState)
     service = AsyncMock(spec=BridgeService)

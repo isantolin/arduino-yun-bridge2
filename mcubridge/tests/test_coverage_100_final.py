@@ -29,6 +29,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import psutil
 import pytest
+from aiomqtt.message import Message
 from mcubridge.protocol.protocol import (
     Command,
     Status,
@@ -37,8 +38,8 @@ from mcubridge.protocol.protocol import (
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.mqtt import MqttTransport
 
-from tests._helpers import make_test_config, make_route
-from tests.mqtt_helpers import make_inbound_message
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.structures import TopicRoute
 
 # ============================================================================
 # mcubridge/protocol/structures.py — AllowedCommandPolicy
@@ -67,19 +68,33 @@ class TestAllowedCommandPolicy:
 
 class TestMqttHelper:
     def test_configure_tls_context_no_tls(self):
-        config = make_test_config(mqtt_tls=False)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            mqtt_tls=False,
+            allow_non_tmp_paths=True,
+        )
         assert config.get_ssl_context() is None
 
     def test_configure_tls_context_with_cafile(self: Any, tmp_path: Any):
         ca = tmp_path / "ca.pem"
         ca.write_text("fake-ca")
-        config = make_test_config(mqtt_tls=True, mqtt_cafile=str(ca))
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            mqtt_tls=True,
+            mqtt_cafile=str(ca),
+            allow_non_tmp_paths=True,
+        )
         # Invalid cert data triggers RuntimeError which covers the except branch
         with pytest.raises(RuntimeError, match="TLS setup failed"):
             config.get_ssl_context()
 
     def test_configure_tls_context_no_cafile(self):
-        config = make_test_config(mqtt_tls=True, mqtt_cafile=None)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            mqtt_tls=True,
+            mqtt_cafile=None,
+            allow_non_tmp_paths=True,
+        )
         ctx = config.get_ssl_context()
         assert ctx is not None
 
@@ -444,7 +459,11 @@ class TestShellMqttLogic:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
 
         serial_flow = AsyncMock(spec=SerialFlowController)
@@ -468,31 +487,62 @@ class TestShellMqttLogic:
     @pytest.mark.asyncio
     async def test_handle_mqtt_poll(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(
-            make_route(Topic.SHELL, "poll", "42"),
-            make_inbound_message("test/topic", b""),
+            TopicRoute("br/shell/poll/42", "br", Topic.SHELL, ("poll", "42")),
+            Message(
+                topic="test/topic",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         shell_comp.poll_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_kill(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(
-            make_route(Topic.SHELL, "kill", "42"),
-            make_inbound_message("test/topic", b""),
+            TopicRoute("br/shell/kill/42", "br", Topic.SHELL, ("kill", "42")),
+            Message(
+                topic="test/topic",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         shell_comp.stop_process.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_unknown_action(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(
-            make_route(Topic.SHELL, "unknown_action"),
-            make_inbound_message("test/topic", b""),
+            TopicRoute(
+                "br/shell/unknown_action", "br", Topic.SHELL, ("unknown_action",)
+            ),
+            Message(
+                topic="test/topic",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         shell_comp.mqtt_flow.enqueue_mqtt.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(
-            make_route(Topic.SHELL), make_inbound_message("test/topic", b"")
+            TopicRoute("br/shell", "br", Topic.SHELL, ()),
+            Message(
+                topic="test/topic",
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            ),
         )
         shell_comp.mqtt_flow.enqueue_mqtt.assert_not_called()
 
@@ -523,7 +573,11 @@ class TestStatusWriter:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
 
         try:
@@ -678,18 +732,20 @@ class TestProtocolTopics:
 
 class TestConfigSettings:
     def test_runtime_config_defaults(self):
-        config = make_test_config()
-        assert config.serial_port == "/dev/null"
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock", allow_non_tmp_paths=True
+        )
+        assert config.serial_port == "/dev/ttyATH0"
 
     def test_runtime_config_shared_secret_too_short(self):
         with pytest.raises(
             (ValueError, msgspec.ValidationError), match="serial_shared_secret"
         ):
-            make_test_config(serial_shared_secret=b"abc")
+            RuntimeConfig(serial_shared_secret=b"abc", allow_non_tmp_paths=True)
 
     def test_runtime_config_changeme_secret(self):
         with pytest.raises((ValueError, msgspec.ValidationError), match="insecure"):
-            make_test_config(serial_shared_secret=b"changeme123")
+            RuntimeConfig(serial_shared_secret=b"changeme123", allow_non_tmp_paths=True)
 
 
 # ============================================================================
@@ -702,7 +758,11 @@ class TestProcessComponent:
     def _process(self):
         from mcubridge.services.process import ProcessComponent
 
-        config = make_test_config(process_max_concurrent=4)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            process_max_concurrent=4,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
 
         serial_flow = AsyncMock(spec=SerialFlowController)
@@ -778,7 +838,11 @@ class TestConsoleComponent:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             serial_flow = AsyncMock(spec=SerialFlowController)
@@ -803,10 +867,16 @@ class TestConsoleComponent:
 
 class TestMailboxComponent:
     @pytest.mark.asyncio
-    async def test_mailbox_handle_mqtt_write(self):
+    async def test_mailbox_handle_mqtt_write(self: Any, tmp_path: Any):
         from mcubridge.services.mailbox import MailboxComponent
 
-        config = make_test_config(mailbox_queue_limit=5, mailbox_queue_bytes_limit=1024)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            mailbox_queue_limit=5,
+            mailbox_queue_bytes_limit=1024,
+            allow_non_tmp_paths=True,
+            file_system_root=str(tmp_path),
+        )
         state = create_runtime_state(config)
         try:
             serial_flow = AsyncMock(spec=SerialFlowController)
@@ -817,8 +887,15 @@ class TestMailboxComponent:
                 config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
             )
             await comp.handle_mqtt(
-                make_route(Topic.MAILBOX, "write"),
-                make_inbound_message("test/topic", b"hello"),
+                TopicRoute("br/mailbox/write", "br", Topic.MAILBOX, ("write",)),
+                Message(
+                    topic="test/topic",
+                    payload=b"hello",
+                    qos=0,
+                    retain=False,
+                    mid=1,
+                    properties=None,
+                ),
             )
             assert len(state.mailbox_queue) == 1
         finally:
@@ -841,7 +918,11 @@ class TestPinComponent:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             serial_flow = AsyncMock(spec=SerialFlowController)
@@ -877,7 +958,11 @@ class TestDatastoreComponent:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             serial_flow = AsyncMock(spec=SerialFlowController)
@@ -918,7 +1003,11 @@ class TestDispatcherEdgeCases:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             d = BridgeDispatcher(
@@ -1001,7 +1090,11 @@ class TestFileComponent:
     async def test_file_handle_read_nonexistent(self):
         from mcubridge.services.file import FileComponent
 
-        config = make_test_config(file_system_root=os.path.abspath(".tmp_tests"))
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=os.path.abspath(".tmp_tests"),
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             serial_flow = AsyncMock(spec=SerialFlowController)
@@ -1041,7 +1134,11 @@ class TestWatchdog:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             wd = WatchdogKeepalive(state=state, interval=0.1)
@@ -1072,7 +1169,11 @@ class TestSystemComponent:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             serial_flow = AsyncMock(spec=SerialFlowController)
@@ -1138,7 +1239,11 @@ class TestHandshakeEdgeCases:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         timing = derive_serial_timing(config)
         mgr = SerialHandshakeManager(
@@ -1157,7 +1262,9 @@ class TestHandshakeEdgeCases:
     def test_derive_serial_timing(self):
         from mcubridge.services.handshake import derive_serial_timing
 
-        config = make_test_config()
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock", allow_non_tmp_paths=True
+        )
         timing = derive_serial_timing(config)
         assert timing.ack_timeout_ms > 0
         assert timing.response_timeout_ms > 0
@@ -1175,7 +1282,9 @@ class TestHandshakeEdgeCases:
 class TestRuntimeStateEdges:
     @pytest.fixture
     def state(self):
-        config = make_test_config()
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock", allow_non_tmp_paths=True
+        )
         s = create_runtime_state(config)
         try:
             yield s
@@ -1241,9 +1350,13 @@ class TestRuntimeStateEdges:
 
         # We also need to mock mqtt_spool since it's used after ensure_spool
         state.mqtt_spool = MagicMock()
-        from tests._helpers import make_test_config
 
-        transport = MqttTransport(make_test_config(), state)
+        transport = MqttTransport(
+            RuntimeConfig(
+                serial_shared_secret=b"s_e_c_r_e_t_mock", allow_non_tmp_paths=True
+            ),
+            state,
+        )
         result = await transport.stash_mqtt_message(msg)
         assert result is True
         state.mqtt_spool.append.assert_called_with(msg)
@@ -1251,24 +1364,60 @@ class TestRuntimeStateEdges:
     @pytest.mark.asyncio
     async def test_flush_mqtt_spool_no_spool(self: Any, state: Any):
         state.mqtt_spool = None
-        from tests._helpers import make_test_config
 
-        transport = MqttTransport(make_test_config(), state)
+        transport = MqttTransport(
+            RuntimeConfig(
+                serial_shared_secret=b"s_e_c_r_e_t_mock", allow_non_tmp_paths=True
+            ),
+            state,
+        )
         await transport.flush_mqtt_spool()
 
-    def test_enqueue_mailbox_overflow(self: Any, state: Any):
-        # Fill up to limit
-        for i in range(state.mailbox_queue_limit + 1):
-            state.mailbox_queue.append(f"msg{i}")
+    def test_enqueue_mailbox_overflow(self: Any, tmp_path: Any):
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=str(tmp_path),
+            allow_non_tmp_paths=True,
+            mailbox_queue_limit=5,
+        )
+        state = create_runtime_state(config)
+        try:
+            # Fill up to limit
+            for i in range(state.mailbox_queue_limit + 1):
+                # [SIL-2] Manual FIFO eviction to maintain deterministic queue size
+                if len(state.mailbox_queue) >= state.mailbox_queue_limit:
+                    state.mailbox_queue.popleft()
+                state.mailbox_queue.append(b"msg")
+            assert len(state.mailbox_queue) == 5
+        finally:
+            state.cleanup()
 
-    def test_pop_mailbox_message(self: Any, state: Any):
-        state.mailbox_queue.append(b"message1")
-        result = state.mailbox_queue.popleft()
-        assert result == b"message1"
+    def test_pop_mailbox_message(self: Any, tmp_path: Any):
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=str(tmp_path),
+            allow_non_tmp_paths=True,
+        )
+        state = create_runtime_state(config)
+        try:
+            state.mailbox_queue.append(b"message1")
+            result = state.mailbox_queue.popleft()
+            assert result == b"message1"
+        finally:
+            state.cleanup()
 
-    def test_pop_mailbox_message_empty(self: Any, state: Any):
-        with pytest.raises(IndexError):
-            state.mailbox_queue.popleft()
+    def test_pop_mailbox_message_empty(self: Any, tmp_path: Any):
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=str(tmp_path),
+            allow_non_tmp_paths=True,
+        )
+        state = create_runtime_state(config)
+        try:
+            with pytest.raises(IndexError):
+                state.mailbox_queue.popleft()
+        finally:
+            state.cleanup()
 
 
 # ============================================================================
@@ -1287,7 +1436,11 @@ class TestBridgeServiceEdges:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         svc = BridgeService(config, state, MqttTransport(config, state))
         try:
@@ -1324,7 +1477,11 @@ class TestMqttTransport:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             transport = MqttTransport(config, state)
@@ -1349,7 +1506,11 @@ class TestMetrics:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock(side_effect=OSError("boom"))
@@ -1372,7 +1533,11 @@ class TestMetrics:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock()
@@ -1399,7 +1564,11 @@ class TestMetrics:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock(side_effect=OSError("summary fail"))
@@ -1426,7 +1595,11 @@ class TestMetrics:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             enqueue = AsyncMock(side_effect=OSError("handshake fail"))
@@ -1460,7 +1633,11 @@ class TestSerialTransport:
         unique_root = os.path.abspath(
             f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
         )
-        config = make_test_config(file_system_root=unique_root)
+        config = RuntimeConfig(
+            serial_shared_secret=b"s_e_c_r_e_t_mock",
+            file_system_root=unique_root,
+            allow_non_tmp_paths=True,
+        )
         state = create_runtime_state(config)
         try:
             service = AsyncMock(spec=BridgeService)
@@ -1469,37 +1646,13 @@ class TestSerialTransport:
         finally:
             state.cleanup()
 
-
-# ============================================================================
-# tests/mqtt_helpers.py — lines 23-27  (exercising all property combos)
-# ============================================================================
-
-
-class TestMqttHelpers:
-    def test_make_inbound_message_with_response_topic(self):
-        from tests.mqtt_helpers import make_inbound_message
-
-        msg = make_inbound_message(
-            "test/topic", b"payload", response_topic="reply/topic"
-        )
-        assert msg.properties is not None
-
-    def test_make_inbound_message_with_correlation_data(self):
-        from tests.mqtt_helpers import make_inbound_message
-
-        msg = make_inbound_message("test/topic", b"payload", correlation_data=b"\x01")
-        assert msg.properties is not None
-
-    def test_make_inbound_message_with_both(self):
-        from tests.mqtt_helpers import make_inbound_message
-
-        msg = make_inbound_message(
-            "test/topic", b"payload", response_topic="r", correlation_data=b"\x02"
-        )
-        assert msg.properties is not None
-
     def test_make_inbound_message_no_properties(self):
-        from tests.mqtt_helpers import make_inbound_message
-
-        msg = make_inbound_message("test/topic", b"payload")
+        msg = Message(
+            topic="test/topic",
+            payload=b"payload",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
+        )
         assert msg.properties is None

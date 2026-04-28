@@ -11,7 +11,7 @@ def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxCompone
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock()
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
     return MailboxComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
 
@@ -33,20 +33,34 @@ async def test_mailbox_handle_mqtt_push_limit(
     runtime_state.mailbox_queue_limit = 1
 
     # We need to use the component to trigger the drop logic
-    from tests.mqtt_helpers import make_inbound_message
+    from aiomqtt.message import Message
     from mcubridge.protocol.protocol import Topic
-    from tests._helpers import make_route
+    from mcubridge.protocol.structures import TopicRoute
 
     await mailbox_component.handle_mqtt(
-        make_route(Topic.MAILBOX, "write"),
-        make_inbound_message("test/topic", b"data1"),
+        TopicRoute("br/mailbox/write", "br", Topic.MAILBOX, ("write",)),
+        Message(
+            topic="test/topic",
+            payload=b"data1",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
+        ),
     )
     assert len(runtime_state.mailbox_queue) == 1
 
     # Adding another should trigger drop logic in MailboxComponent
     await mailbox_component.handle_mqtt(
-        make_route(Topic.MAILBOX, "write"),
-        make_inbound_message("test/topic", b"data2"),
+        TopicRoute("br/mailbox/write", "br", Topic.MAILBOX, ("write",)),
+        Message(
+            topic="test/topic",
+            payload=b"data2",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
+        ),
     )
     assert len(runtime_state.mailbox_queue) == 1
     assert runtime_state.mailbox_dropped_messages >= 1

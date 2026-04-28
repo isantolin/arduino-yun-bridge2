@@ -8,17 +8,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
 import pytest
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import ConsoleWritePacket
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.mqtt import MqttTransport
-from tests._helpers import make_test_config
 
 
 @pytest.fixture
-def console_component() -> ConsoleComponent:
-    config = make_test_config()
+def console_component(runtime_config: RuntimeConfig) -> ConsoleComponent:
+    config = runtime_config
     state = MagicMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
     state.mcu_is_paused = False

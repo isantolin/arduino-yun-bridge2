@@ -26,7 +26,9 @@ async def test_disable_mqtt_spool_handles_close_error_and_schedules_retry(
     from mcubridge.transport.mqtt import MqttTransport
     from mcubridge.config.settings import RuntimeConfig
 
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
+    )
     transport = MqttTransport(config, runtime_state)
 
     mock_spool = MagicMock(spec=MQTTPublishSpool)
@@ -66,7 +68,9 @@ async def test_ensure_spool_returns_false_while_backoff_active(
     from mcubridge.transport.mqtt import MqttTransport
     from mcubridge.config.settings import RuntimeConfig
 
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
+    )
     transport = MqttTransport(config, runtime_state)
 
     runtime_state.mqtt_spool = None  # Ensure it's None so it checks backoff
@@ -81,7 +85,9 @@ async def test_stash_mqtt_message_returns_false_when_spool_disabled(
     from mcubridge.transport.mqtt import MqttTransport
     from mcubridge.config.settings import RuntimeConfig
 
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
+    )
     transport = MqttTransport(config, runtime_state)
 
     runtime_state.mqtt_spool = None
@@ -101,7 +107,9 @@ async def test_flush_mqtt_spool_queue_full_requeue_failure_disables_spool(
     from mcubridge.transport.mqtt import MqttTransport
     from mcubridge.config.settings import RuntimeConfig
 
-    config = RuntimeConfig(serial_shared_secret=b"secret_1234")
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
+    )
     transport = MqttTransport(config, runtime_state)
 
     msg = QueuedPublish(topic_name="t", payload=b"p")

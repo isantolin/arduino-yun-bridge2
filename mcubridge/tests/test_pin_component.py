@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import (
     Command,
     PinAction,
@@ -16,19 +17,19 @@ from mcubridge.protocol.structures import (
     DigitalReadResponsePacket,
     PinModePacket,
     PinReadPacket,
+    TopicRoute,
 )
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.pin import PinComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.mqtt import MqttTransport
-from tests._helpers import make_route, make_test_config
-from tests.mqtt_helpers import make_inbound_message
+from aiomqtt.message import Message
 
 
 @pytest.fixture
-def pin_component() -> PinComponent:
-    config = make_test_config()
+def pin_component(runtime_config: RuntimeConfig) -> PinComponent:
+    config = runtime_config
     # [SIL-2] Use AsyncMock(spec=Interface) for all component mocks
     state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
@@ -64,8 +65,15 @@ async def test_pin_handle_digital_read_resp(pin_component: PinComponent) -> None
 
 @pytest.mark.asyncio
 async def test_pin_handle_mqtt_mode(pin_component: PinComponent) -> None:
-    route = make_route(Topic.DIGITAL, "13", PinAction.MODE.value)
-    msg = make_inbound_message("test/topic", b"1")  # OUTPUT
+    route = TopicRoute(
+        raw=f"br/{Topic.DIGITAL}/13/{PinAction.MODE.value}",
+        prefix="br",
+        topic=Topic.DIGITAL,
+        segments=("13", PinAction.MODE.value),
+    )
+    msg = Message(
+        topic="test/topic", payload=b"1", qos=0, retain=False, mid=1, properties=None
+    )  # OUTPUT
 
     await pin_component.handle_mqtt(route, msg)
 
@@ -77,8 +85,15 @@ async def test_pin_handle_mqtt_mode(pin_component: PinComponent) -> None:
 
 @pytest.mark.asyncio
 async def test_pin_handle_mqtt_read(pin_component: PinComponent) -> None:
-    route = make_route(Topic.DIGITAL, "13", PinAction.READ.value)
-    msg = make_inbound_message("test/topic", b"")
+    route = TopicRoute(
+        raw=f"br/{Topic.DIGITAL}/13/{PinAction.READ.value}",
+        prefix="br",
+        topic=Topic.DIGITAL,
+        segments=("13", PinAction.READ.value),
+    )
+    msg = Message(
+        topic="test/topic", payload=b"1", qos=0, retain=False, mid=1, properties=None
+    )
 
     await pin_component.handle_mqtt(route, msg)
 

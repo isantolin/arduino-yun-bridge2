@@ -12,13 +12,14 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.mqtt import MqttTransport
 from mcubridge.services import SystemComponent, ConsoleComponent
-from tests._helpers import make_test_config
 
 
 @pytest.mark.asyncio
-async def test_bridge_service_lifecycle_full_sync() -> None:
+async def test_bridge_service_lifecycle_full_sync(
+    runtime_config: RuntimeConfig,
+) -> None:
     """Refactored lifecycle test ensuring full execution of connection hooks without orchestration hangs."""
-    config = make_test_config()
+    config = runtime_config
     state = create_runtime_state(config)
     try:
         mqtt = MqttTransport(config, state)

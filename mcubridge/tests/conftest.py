@@ -326,6 +326,7 @@ def runtime_config() -> RuntimeConfig:
         mqtt_spool_dir=os.path.join(
             TMP_TESTS_DIR, f"mcubridge-test-spool-{os.getpid()}"
         ),
+        allow_non_tmp_paths=True,
     )
 
 
@@ -351,5 +352,6 @@ def real_config():
     raw["serial_response_timeout"] = 2.0
     raw["serial_handshake_fatal_failures"] = 15
     raw["process_max_concurrent"] = 4
+    raw["allow_non_tmp_paths"] = True
     config = msgspec.convert(raw, settings.RuntimeConfig, strict=False)
     return config

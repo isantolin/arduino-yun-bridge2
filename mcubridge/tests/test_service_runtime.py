@@ -18,13 +18,19 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
-from tests._helpers import make_test_config
-
 
 def _make_config() -> RuntimeConfig:
-    return make_test_config(
+    import os
+    import time
+
+    fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
+    spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
+    return RuntimeConfig(
         allowed_commands=("echo", "ls"),
         serial_shared_secret=b"testshared",
+        file_system_root=fs_root,
+        mqtt_spool_dir=spool_dir,
+        allow_non_tmp_paths=True,
     )
 
 

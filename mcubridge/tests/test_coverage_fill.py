@@ -60,6 +60,7 @@ def runtime_config() -> RuntimeConfig:
         debug=False,
         process_max_concurrent=2,
         serial_shared_secret=b"secret",
+        allow_non_tmp_paths=True,
     )
 
 

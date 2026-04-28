@@ -114,7 +114,9 @@ async def test_status_writer_with_version() -> None:
     from mcubridge.state.status import status_writer
 
     # Need 4 distinct bytes in secret
-    config = RuntimeConfig(serial_shared_secret=b"abcd12345678")
+    config = RuntimeConfig(
+        serial_shared_secret=b"abcd12345678", allow_non_tmp_paths=True
+    )
     state = create_runtime_state(config)
     state.mcu_version = (2, 3, 4)
     try:

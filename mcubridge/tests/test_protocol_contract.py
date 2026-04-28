@@ -85,11 +85,13 @@ def test_mcu_registry_completeness() -> None:
     }
 
     from mcubridge.state.context import create_runtime_state
-    from tests._helpers import make_test_config
+    from mcubridge.config.settings import RuntimeConfig
     import svcs
     import warnings
 
-    config = make_test_config()
+    config = RuntimeConfig(
+        serial_shared_secret=b"s_e_c_r_e_t_mock", allow_non_tmp_paths=True
+    )
     state = create_runtime_state(config)
 
     reg = svcs.Registry()

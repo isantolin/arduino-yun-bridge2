@@ -26,6 +26,7 @@ async def test_handshake_sync_resp_rate_limit() -> None:
         mqtt_spool_dir=os.path.abspath(
             f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
         ),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     try:
@@ -58,6 +59,7 @@ async def test_handshake_sync_resp_replay_detected() -> None:
         mqtt_spool_dir=os.path.abspath(
             f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
         ),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     try:
@@ -99,6 +101,7 @@ async def test_handshake_fetch_capabilities_timeout_and_retry() -> None:
         mqtt_spool_dir=os.path.abspath(
             f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
         ),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     try:
@@ -137,6 +140,7 @@ async def test_handshake_handle_capabilities_resp() -> None:
         mqtt_spool_dir=os.path.abspath(
             f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
         ),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     try:
@@ -169,6 +173,7 @@ async def test_handshake_failure_detail_non_immediate() -> None:
         mqtt_spool_dir=os.path.abspath(
             f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
         ),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     try:
@@ -204,6 +209,7 @@ async def test_handshake_clear_expectations_with_data() -> None:
         mqtt_spool_dir=os.path.abspath(
             f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
         ),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     try:

@@ -29,7 +29,7 @@ async def test_console_handle_write_edge_cases() -> None:
         serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = ConsoleComponent(
             config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
@@ -37,17 +37,17 @@ async def test_console_handle_write_edge_cases() -> None:
 
         # 1. Malformed payload
         await comp.handle_write(0, b"\xff\xff")
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
 
         # 2. Empty data in packet
         empty_pkt = msgspec.msgpack.encode(ConsoleWritePacket(data=b""))
         await comp.handle_write(1, empty_pkt)
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
 
         # 3. Successful write
         valid_pkt = msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))
         await comp.handle_write(2, valid_pkt)
-        assert mqtt_flow.publish.called
+        assert mqtt_flow.enqueue_mqtt.called
     finally:
         state.cleanup()
 

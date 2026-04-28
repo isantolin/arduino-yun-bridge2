@@ -330,35 +330,6 @@ class MqttTransport:
                 # Race condition: someone else emptied it? Just retry insertion
                 self.state.mqtt_publish_queue.put_nowait(message_to_queue)
 
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes | str,
-        *,
-        qos: int = 0,
-        retain: bool = False,
-        expiry: int | None = None,
-        properties: tuple[tuple[str, str], ...] = (),
-        content_type: str | None = None,
-        reply_to: Message | None = None,
-    ) -> None:
-        """Helper to enqueue an MQTT message without manually creating QueuedPublish."""
-        if isinstance(payload, str):
-            payload_bytes = payload.encode("utf-8")
-        else:
-            payload_bytes = payload
-
-        message = QueuedPublish(
-            topic_name=topic,
-            payload=payload_bytes,
-            qos=qos,
-            retain=retain,
-            content_type=content_type,
-            message_expiry_interval=expiry,
-            user_properties=tuple(properties or ()),
-        )
-        await self.enqueue_mqtt(message, reply_context=reply_to)
-
     def configure_spool(self, directory: str, limit: int) -> None:
         if self.state.mqtt_spool:
             self.state.mqtt_spool.close()

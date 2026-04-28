@@ -464,7 +464,6 @@ class TestShellMqttLogic:
         serial_flow.send = AsyncMock()
 
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
         mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = ProcessComponent(
@@ -500,14 +499,14 @@ class TestShellMqttLogic:
             make_route(Topic.SHELL, "unknown_action"),
             make_inbound_message("test/topic", b""),
         )
-        shell_comp.mqtt_flow.publish.assert_not_called()
+        shell_comp.mqtt_flow.enqueue_mqtt.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_mqtt_empty_segments(self: Any, shell_comp: Any):
         await shell_comp.handle_mqtt(
             make_route(Topic.SHELL), make_inbound_message("test/topic", b"")
         )
-        shell_comp.mqtt_flow.publish.assert_not_called()
+        shell_comp.mqtt_flow.enqueue_mqtt.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_parse_shell_command_invalid(self: Any, shell_comp: Any):
@@ -723,7 +722,7 @@ class TestProcessComponent:
         serial_flow.send = AsyncMock(return_value=True)
 
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = ProcessComponent(
             config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
@@ -798,7 +797,6 @@ class TestConsoleComponent:
             serial_flow.send = AsyncMock(return_value=True)
 
             mqtt_flow = AsyncMock(spec=MqttTransport)
-            mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
             comp = ConsoleComponent(
@@ -825,7 +823,6 @@ class TestMailboxComponent:
         try:
             serial_flow = AsyncMock(spec=SerialFlowController)
             mqtt_flow = AsyncMock(spec=MqttTransport)
-            mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
             comp = MailboxComponent(
@@ -863,7 +860,6 @@ class TestPinComponent:
             serial_flow.send = AsyncMock(return_value=True)
 
             mqtt_flow = AsyncMock(spec=MqttTransport)
-            mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
             comp = PinComponent(
@@ -874,7 +870,7 @@ class TestPinComponent:
 
             payload = msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
             await comp.handle_digital_read_resp(0, payload)
-            cast(Any, comp.mqtt_flow.publish).assert_called_once()
+            cast(Any, comp.mqtt_flow.enqueue_mqtt).assert_called_once()
         finally:
             state.cleanup()
 
@@ -900,13 +896,16 @@ class TestDatastoreComponent:
             serial_flow.send = AsyncMock(return_value=True)
 
             mqtt_flow = AsyncMock(spec=MqttTransport)
-            mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
+
+            from mcubridge.protocol.structures import QueuedPublish
 
             # Using MqttTransport since publish moved there
             transport = MqttTransport(config, state)
             # To capture calls, we must ensure transport uses state.mqtt_publish_queue
-            await transport.publish("key", b"", expiry=60)
+            await transport.enqueue_mqtt(
+                QueuedPublish(topic_name="key", payload=b"", message_expiry_interval=60)
+            )
             assert state.mqtt_publish_queue.qsize() == 1
         finally:
             state.cleanup()
@@ -1021,7 +1020,6 @@ class TestFileComponent:
             serial_flow.send = AsyncMock(return_value=True)
 
             mqtt_flow = AsyncMock(spec=MqttTransport)
-            mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
             comp = FileComponent(
@@ -1093,7 +1091,6 @@ class TestSystemComponent:
             serial_flow.send = AsyncMock(return_value=True)
 
             mqtt_flow = AsyncMock(spec=MqttTransport)
-            mqtt_flow.publish = AsyncMock()
             mqtt_flow.enqueue_mqtt = AsyncMock()
 
             comp = SystemComponent(
@@ -1104,7 +1101,7 @@ class TestSystemComponent:
                 VersionResponsePacket(major=1, minor=2, patch=3)
             )
             await comp.handle_get_version_resp(0, payload)
-            cast(Any, comp.mqtt_flow.publish).assert_called()
+            cast(Any, comp.mqtt_flow.enqueue_mqtt).assert_called()
         finally:
             state.cleanup()
 

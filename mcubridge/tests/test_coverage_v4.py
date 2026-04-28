@@ -100,4 +100,4 @@ def test_spi_service_coverage():
 
     # Test handle_transfer_resp
     asyncio.run(service.handle_transfer_resp(1, b"\x91\xc4\x04data"))
-    mqtt_flow.publish.assert_called()
+    mqtt_flow.enqueue_mqtt.assert_called()

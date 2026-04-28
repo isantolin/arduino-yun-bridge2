@@ -69,18 +69,19 @@ async def test_bridge_service_lifecycle_full_sync() -> None:
 async def test_bridge_service_handle_status_reporting(
     runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
-    mqtt = MagicMock()
-    mqtt.publish = AsyncMock()
+    mqtt = MagicMock(spec=MqttTransport)
+    mqtt.enqueue_mqtt = AsyncMock()
     service = BridgeService(runtime_config, runtime_state, mqtt)
 
     await service.handle_status(1, Status.ERROR, b"some error")
 
     # Check that MQTT publish was called
-    mqtt.publish.assert_called()
-    _, kwargs = mqtt.publish.call_args
-    assert "status" in kwargs["topic"]
+    mqtt.enqueue_mqtt.assert_called()
+    args, kwargs = mqtt.enqueue_mqtt.call_args
+    msg = args[0] if args else kwargs.get("message")
+    assert "status" in msg.topic_name
     # Payload is msgpacked
-    report = msgspec.msgpack.decode(kwargs["payload"])
+    report = msgspec.msgpack.decode(msg.payload)
     assert report["name"] == "ERROR"
     assert report["message"] == "some error"
 
@@ -116,20 +117,20 @@ async def test_enqueue_mqtt_spool_unavailable_logs(
 async def test_bridge_service_publish_snapshot(
     runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
-    mqtt = MagicMock()
-    mqtt.publish = AsyncMock()
+    mqtt = MagicMock(spec=MqttTransport)
+    mqtt.enqueue_mqtt = AsyncMock()
     service = BridgeService(runtime_config, runtime_state, mqtt)
 
     await service._publish_bridge_snapshot("summary", None)  # type: ignore[reportPrivateUsage]
-    mqtt.publish.assert_called()
+    mqtt.enqueue_mqtt.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_bridge_service_reject_topic_action(
     runtime_config: RuntimeConfig, runtime_state: Any
 ) -> None:
-    mqtt = MagicMock()
-    mqtt.publish = AsyncMock()
+    mqtt = MagicMock(spec=MqttTransport)
+    mqtt.enqueue_mqtt = AsyncMock()
     service = BridgeService(runtime_config, runtime_state, mqtt)
 
     from aiomqtt.message import Message
@@ -137,7 +138,7 @@ async def test_bridge_service_reject_topic_action(
     msg = Message("test", b"", 0, False, False, None)
 
     await service._reject_topic_action(msg, Topic.DIGITAL, "write")  # type: ignore[reportPrivateUsage]
-    mqtt.publish.assert_called()
+    mqtt.enqueue_mqtt.assert_called()
 
 
 @pytest.mark.asyncio

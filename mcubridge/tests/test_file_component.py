@@ -56,7 +56,7 @@ def file_component(
     serial_flow.acknowledge = AsyncMock()
 
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
     mqtt_flow.enqueue_mqtt = AsyncMock()
 
     component = FileComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
@@ -67,13 +67,22 @@ def _build_write_payload(filename: str, data: bytes) -> bytes:
     return msgspec.msgpack.encode(structures.FileWritePacket(path=filename, data=data))
 
 
-def _get_publish_arg(
+def _get_enqueue_mqtt_arg(
     mock_pub: Any, arg_idx: int, kw_name: str, call_idx: int = -1
 ) -> Any:
     """Robustly extract argument from mock call."""
     if not mock_pub.called:
         return None
     call = mock_pub.call_args_list[call_idx]
+
+    # [SIL-2] Handle direct QueuedPublish object in enqueue_mqtt(message, ...)
+    if len(call.args) > 0 and hasattr(call.args[0], "payload"):
+        msg = call.args[0]
+        if kw_name == "payload":
+            return msg.payload
+        if kw_name == "topic":
+            return msg.topic_name
+
     # Handle both args and kwargs
     if len(call.args) > arg_idx:
         return call.args[arg_idx]
@@ -119,9 +128,9 @@ async def test_handle_mqtt_write_and_read(
     )
 
     await component.handle_mqtt(route_read, cast(Any, msg_read))
-    # Read from local FS publishes the result
-    assert mqtt_flow.publish.called
-    payload = _get_publish_arg(mqtt_flow.publish, 1, "payload")
+    # Read from local FS enqueue_mqttes the result
+    assert mqtt_flow.enqueue_mqtt.called
+    payload = _get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload")
     assert payload == b"payload"
 
 
@@ -230,7 +239,7 @@ async def test_handle_mqtt_missing_filename_is_ignored(
         raw="br/file/read", prefix="br", topic=Topic.FILE, segments=("read",)
     )
     await component.handle_mqtt(route, make_inbound_message("test/topic", b""))
-    assert not mqtt_flow.publish.called
+    assert not mqtt_flow.enqueue_mqtt.called
 
 
 @pytest.mark.asyncio
@@ -245,7 +254,7 @@ async def test_handle_mqtt_unknown_action_is_ignored(
         segments=("magic", "file.txt"),
     )
     await component.handle_mqtt(route, make_inbound_message("test/topic", b""))
-    assert not mqtt_flow.publish.called
+    assert not mqtt_flow.enqueue_mqtt.called
 
 
 @pytest.mark.asyncio
@@ -354,11 +363,11 @@ async def test_handle_mqtt_write_to_mcu_storage_disabled(
 
     await component.handle_mqtt(route, cast(Any, msg))
 
-    # Just check that it published the error
+    # Just check that it enqueue_mqtted the error
     assert any(
         "MCU filesystem unavailable"
-        in str(_get_publish_arg(mqtt_flow.publish, 1, "payload", i))
-        for i in range(len(mqtt_flow.publish.call_args_list))
+        in str(_get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload", i))
+        for i in range(len(mqtt_flow.enqueue_mqtt.call_args_list))
     )
 
 
@@ -401,7 +410,7 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
     )
 
     await component.handle_mqtt(route, cast(Any, msg))
-    assert _get_publish_arg(mqtt_flow.publish, 1, "payload") == b"mcu-data"
+    assert _get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload") == b"mcu-data"
 
 
 @pytest.mark.asyncio
@@ -429,8 +438,8 @@ async def test_handle_mqtt_read_from_mcu_storage_disabled(
 
     assert any(
         "MCU filesystem unavailable"
-        in str(_get_publish_arg(mqtt_flow.publish, 1, "payload", i))
-        for i in range(len(mqtt_flow.publish.call_args_list))
+        in str(_get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload", i))
+        for i in range(len(mqtt_flow.enqueue_mqtt.call_args_list))
     )
 
 
@@ -458,7 +467,7 @@ async def test_handle_mqtt_read_failure(
 
     await component.handle_mqtt(route, cast(Any, msg))
     assert (
-        _get_publish_arg(mqtt_flow.publish, 1, "payload")
+        _get_enqueue_mqtt_arg(mqtt_flow.enqueue_mqtt, 1, "payload")
         == b"MCU filesystem read failed"
     )
 

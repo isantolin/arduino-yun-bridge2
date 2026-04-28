@@ -23,24 +23,11 @@ from tests.mqtt_helpers import make_inbound_message
 def _extract_enqueued_publish(
     mqtt_flow: AsyncMock, index: int = -1
 ) -> tuple[QueuedPublish, Any]:
-    """Helper to extract QueuedPublish and reply_context from AsyncMock.publish calls."""
-    call = mqtt_flow.publish.call_args_list[index]
-    topic = call.kwargs.get("topic", call.args[0] if call.args else "")
-    payload = call.kwargs.get("payload", call.args[1] if len(call.args) > 1 else b"")
-
-    if isinstance(payload, str):
-        payload = payload.encode("utf-8")
-
-    msg = QueuedPublish(
-        topic_name=topic,
-        payload=payload,
-        qos=call.kwargs.get("qos", 0),
-        retain=call.kwargs.get("retain", False),
-        content_type=call.kwargs.get("content_type"),
-        message_expiry_interval=call.kwargs.get("expiry"),
-        user_properties=call.kwargs.get("properties", ()),
-    )
-    return msg, call.kwargs.get("reply_to")
+    """Helper to extract QueuedPublish and reply_context from AsyncMock.enqueue_mqtt calls."""
+    call = mqtt_flow.enqueue_mqtt.call_args_list[index]
+    msg = call.args[0] if call.args else call.kwargs.get("message")
+    reply_to = call.kwargs.get("reply_context")
+    return msg, reply_to
 
 
 @pytest.mark.asyncio
@@ -52,7 +39,7 @@ async def test_shell_run_async_success(
     state.mqtt_topic_prefix = "br"
 
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
@@ -69,7 +56,7 @@ async def test_shell_run_async_success(
         inbound,
     )
 
-    mqtt_flow.publish.assert_awaited_once()
+    mqtt_flow.enqueue_mqtt.assert_awaited_once()
     msg, reply_to = _extract_enqueued_publish(mqtt_flow)
     assert reply_to is inbound
     assert msg.topic_name == topic_path(
@@ -89,7 +76,7 @@ async def test_shell_run_async_exception_returns_error(
     state.mqtt_topic_prefix = "br"
 
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
@@ -104,7 +91,7 @@ async def test_shell_run_async_exception_returns_error(
         inbound,
     )
 
-    mqtt_flow.publish.assert_awaited_once()
+    mqtt_flow.enqueue_mqtt.assert_awaited_once()
     msg, _ = _extract_enqueued_publish(mqtt_flow)
     assert msg.payload == b"error:internal"
 
@@ -117,7 +104,7 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
     state.mqtt_topic_prefix = "br"
 
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
@@ -131,7 +118,7 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
         make_inbound_message("test/topic", b"echo hi"),
     )
 
-    mqtt_flow.publish.assert_awaited_once()
+    mqtt_flow.enqueue_mqtt.assert_awaited_once()
     msg, _ = _extract_enqueued_publish(mqtt_flow)
     assert msg.payload == b"error:not_allowed_or_limit_reached"
 
@@ -144,7 +131,7 @@ async def test_shell_poll_calls_process_helpers(
     state.mqtt_topic_prefix = "br"
 
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
@@ -176,7 +163,7 @@ async def test_shell_kill_invokes_stop_process(
     state.mqtt_topic_prefix = "br"
 
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
@@ -200,7 +187,7 @@ async def test_shell_ignores_invalid_payloads_and_actions(
     state = AsyncMock(spec=RuntimeState)
 
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
 
@@ -218,5 +205,5 @@ async def test_shell_ignores_invalid_payloads_and_actions(
         make_route(Topic.SHELL, "unknown"), make_inbound_message("test/topic", b"")
     )
 
-    mqtt_flow.publish.assert_not_called()
+    mqtt_flow.enqueue_mqtt.assert_not_called()
     serial_flow.send.assert_not_called()

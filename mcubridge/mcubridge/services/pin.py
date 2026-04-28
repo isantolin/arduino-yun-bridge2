@@ -18,6 +18,7 @@ from mcubridge.protocol.structures import (
     DigitalWritePacket,
     PinModePacket,
     PinReadPacket,
+    QueuedPublish,
     TopicRoute,
 )
 
@@ -119,13 +120,15 @@ class PinComponent:
         topic = self._build_pin_topic(topic_type, pin_value)
         pin_label = str(pin_value) if pin_value is not None else "unknown"
 
-        # Special case: Pin reads require 'bridge-pin' property, so we use direct publish
-        await self.mqtt_flow.publish(
-            topic=topic,
-            payload=str(value).encode("utf-8"),
-            expiry=MQTT_EXPIRY_PIN,
-            properties=(("bridge-pin", pin_label),),
-            reply_to=request.reply_context if request else None,
+        # Special case: Pin reads require 'bridge-pin' property, so we use direct enqueue_mqtt
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic,
+                payload=str(value).encode("utf-8"),
+                message_expiry_interval=MQTT_EXPIRY_PIN,
+                user_properties=(("bridge-pin", pin_label),),
+            ),
+            reply_context=request.reply_context if request else None,
         )
 
     async def handle_digital_read_resp(self, seq_id: int, payload: bytes) -> None:
@@ -303,15 +306,17 @@ class PinComponent:
         inbound: Message | None,
     ) -> None:
         topic = self._build_pin_topic(topic_type, pin)
-        await self.mqtt_flow.publish(
-            topic=topic,
-            payload=b"",
-            expiry=MQTT_EXPIRY_PIN,
-            properties=(
-                ("bridge-pin", str(pin)),
-                ("bridge-error", "pending-pin-overflow"),
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic,
+                payload=b"",
+                message_expiry_interval=MQTT_EXPIRY_PIN,
+                user_properties=(
+                    ("bridge-pin", str(pin)),
+                    ("bridge-error", "pending-pin-overflow"),
+                ),
             ),
-            reply_to=inbound,
+            reply_context=inbound,
         )
 
     def _validate_pin_access(self, pin: int, is_analog_input: bool) -> bool:

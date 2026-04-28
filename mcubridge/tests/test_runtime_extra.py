@@ -26,7 +26,7 @@ async def test_runtime_on_serial_connected_errors() -> None:
     try:
         mqtt_mock = MagicMock()
         mqtt_mock.enqueue_mqtt = AsyncMock()
-        mqtt_mock.publish = AsyncMock()
+        mqtt_mock.enqueue_mqtt = AsyncMock()
 
         service = BridgeService(config, state, mqtt_mock)
 
@@ -60,7 +60,7 @@ async def test_runtime_handle_mqtt_message_dispatch_error() -> None:
     try:
         mqtt_mock = MagicMock()
         mqtt_mock.enqueue_mqtt = AsyncMock()
-        mqtt_mock.publish = AsyncMock()
+        mqtt_mock.enqueue_mqtt = AsyncMock()
 
         service = BridgeService(config, state, mqtt_mock)
 
@@ -87,7 +87,7 @@ async def test_runtime_reject_topic_action_properties() -> None:
     try:
         mqtt_mock = MagicMock()
         mqtt_mock.enqueue_mqtt = AsyncMock()
-        mqtt_mock.publish = AsyncMock()
+        mqtt_mock.enqueue_mqtt = AsyncMock()
 
         service = BridgeService(config, state, mqtt_mock)
         from mcubridge.protocol.topics import Topic
@@ -100,11 +100,11 @@ async def test_runtime_reject_topic_action_properties() -> None:
 
         await service._reject_topic_action(inbound, Topic.SYSTEM, "action")  # type: ignore[reportPrivateUsage]
 
-        # Should have called publish
-        assert service.mqtt_flow.publish.called
+        # Should have called enqueue_mqtt
+        assert service.mqtt_flow.enqueue_mqtt.called
         # Fix: checking kwargs accurately
-        _, kwargs = service.mqtt_flow.publish.call_args
-        assert kwargs.get("reply_to") is inbound
+        _, kwargs = service.mqtt_flow.enqueue_mqtt.call_args
+        assert kwargs.get("reply_context") is inbound
     finally:
         state.cleanup()
 
@@ -116,7 +116,7 @@ async def test_runtime_publish_bridge_snapshot_handshake() -> None:
     try:
         mqtt_mock = MagicMock()
         mqtt_mock.enqueue_mqtt = AsyncMock()
-        mqtt_mock.publish = AsyncMock()
+        mqtt_mock.enqueue_mqtt = AsyncMock()
 
         service = BridgeService(config, state, mqtt_mock)
 
@@ -128,6 +128,6 @@ async def test_runtime_publish_bridge_snapshot_handshake() -> None:
 
         await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[reportPrivateUsage]
 
-        assert service.mqtt_flow.publish.called
+        assert service.mqtt_flow.enqueue_mqtt.called
     finally:
         state.cleanup()

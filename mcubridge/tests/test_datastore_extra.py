@@ -33,12 +33,12 @@ async def test_datastore_handle_put_malformed() -> None:
         serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
         result = await comp.handle_put(0, b"\xff\xff")
         assert result is False
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
     finally:
         state.cleanup()
 
@@ -56,7 +56,7 @@ async def test_datastore_handle_get_malformed() -> None:
         serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
         result = await comp.handle_get_request(0, b"\xff\xff")
@@ -64,7 +64,7 @@ async def test_datastore_handle_get_malformed() -> None:
         serial_flow.send.assert_called_once_with(
             Status.MALFORMED.value, b"data_get_malformed"
         )
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
     finally:
         state.cleanup()
 
@@ -82,7 +82,7 @@ async def test_datastore_handle_get_truncation() -> None:
         serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
         state.datastore["long_key"] = "a" * 300
@@ -94,10 +94,11 @@ async def test_datastore_handle_get_truncation() -> None:
         result = await comp.handle_get_request(0, payload)
         assert result is True
         serial_flow.send.assert_called_once()
-        assert mqtt_flow.publish.called
+        assert mqtt_flow.enqueue_mqtt.called
 
-        args, kwargs = mqtt_flow.publish.call_args
-        pub_payload = kwargs.get("payload") or args[1]
+        args, kwargs = mqtt_flow.enqueue_mqtt.call_args
+        msg = args[0] if args else kwargs.get("message")
+        pub_payload = msg.payload
         assert len(pub_payload) == 255
     finally:
         state.cleanup()
@@ -115,7 +116,7 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
     try:
         serial_flow = AsyncMock(spec=SerialFlowController)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
 
@@ -124,21 +125,21 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
             TopicRoute("br/d", "br", Topic.DATASTORE, ()),
             make_inbound_message("test/topic", b""),
         )
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
 
         # 2. Unknown action
         await comp.handle_mqtt(
             make_route(Topic.DATASTORE, "unknown", "key"),
             make_inbound_message("test/topic", b""),
         )
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
 
         # 3. Missing key
         await comp.handle_mqtt(
             make_route(Topic.DATASTORE, DatastoreAction.PUT.value),
             make_inbound_message("test/topic", b""),
         )
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
 
         # 4. Echo suppression on GET
         state.datastore["echo_key"] = "val"
@@ -146,7 +147,7 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
             make_route(Topic.DATASTORE, DatastoreAction.GET.value, "echo_key"),
             make_inbound_message("test/topic", b"val"),
         )
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
 
         # 5. Type coercion from int
         state.datastore["int_key"] = 42  # type: ignore
@@ -157,7 +158,7 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
             make_inbound_message("test/topic", b""),
         )
         # _publish_datastore_value publishes twice when reply_context is provided
-        assert mqtt_flow.publish.call_count == 2
+        assert mqtt_flow.enqueue_mqtt.call_count == 2
 
     finally:
         state.cleanup()
@@ -175,7 +176,7 @@ async def test_datastore_mqtt_put_too_large() -> None:
     try:
         serial_flow = AsyncMock(spec=SerialFlowController)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
 
@@ -185,7 +186,7 @@ async def test_datastore_mqtt_put_too_large() -> None:
             make_route(Topic.DATASTORE, DatastoreAction.PUT.value, long_key),
             make_inbound_message("test/topic", b"val"),
         )
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
         assert long_key not in state.datastore
 
         # Value too large
@@ -194,7 +195,7 @@ async def test_datastore_mqtt_put_too_large() -> None:
             make_route(Topic.DATASTORE, DatastoreAction.PUT.value, "key"),
             make_inbound_message("test/topic", long_val),
         )
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
         assert "key" not in state.datastore
 
     finally:
@@ -213,7 +214,7 @@ async def test_datastore_mqtt_get_too_large() -> None:
     try:
         serial_flow = AsyncMock(spec=SerialFlowController)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
 
@@ -222,7 +223,7 @@ async def test_datastore_mqtt_get_too_large() -> None:
             make_route(Topic.DATASTORE, DatastoreAction.GET.value, long_key, "request"),
             make_inbound_message("test/topic", b""),
         )
-        assert not mqtt_flow.publish.called
+        assert not mqtt_flow.enqueue_mqtt.called
 
     finally:
         state.cleanup()

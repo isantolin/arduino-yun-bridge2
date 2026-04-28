@@ -31,7 +31,7 @@ def mailbox_comp(runtime_config: Any):
 async def test_handle_processed_malformed(mailbox_comp: MailboxComponent):
     # Short payload
     await mailbox_comp.handle_processed(0, b"\x01")
-    assert cast(Any, mailbox_comp.mqtt_flow.publish).called
+    assert cast(Any, mailbox_comp.mqtt_flow.enqueue_mqtt).called
 
 
 @pytest.mark.asyncio
@@ -83,4 +83,4 @@ async def test_handle_outgoing_overflow(mailbox_comp: MailboxComponent):
 
     await mailbox_comp._handle_mqtt_write(b"too-much-data")
     assert cast(Any, mailbox_comp.serial_flow.send).called
-    assert cast(Any, mailbox_comp.mqtt_flow.publish).called  # Error topic
+    assert cast(Any, mailbox_comp.mqtt_flow.enqueue_mqtt).called  # Error topic

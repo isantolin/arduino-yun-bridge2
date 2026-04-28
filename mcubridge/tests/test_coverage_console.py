@@ -30,7 +30,7 @@ def console_comp(runtime_config: Any):
 @pytest.mark.asyncio
 async def test_console_handle_write_malformed(console_comp: ConsoleComponent):
     await console_comp.handle_write(0, b"bad-msgpack")
-    assert not cast(Any, console_comp.mqtt_flow.publish).called
+    assert not cast(Any, console_comp.mqtt_flow.enqueue_mqtt).called
 
 
 @pytest.mark.asyncio

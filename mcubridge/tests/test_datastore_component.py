@@ -34,7 +34,7 @@ def datastore_component() -> DatastoreComponent:
     serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock(return_value=True)
     mqtt_flow = MagicMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
 
     return DatastoreComponent(
         config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
@@ -47,7 +47,7 @@ async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> 
     await datastore_component.handle_put(0, payload)
 
     assert datastore_component.state.datastore["temp"] == "25.5"
-    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
+    cast(Any, datastore_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
 @pytest.mark.asyncio
@@ -60,7 +60,7 @@ async def test_datastore_handle_get_request(
     await datastore_component.handle_get_request(0, payload)
 
     cast(Any, datastore_component.serial_flow.send).assert_called()
-    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
+    cast(Any, datastore_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
 @pytest.mark.asyncio
@@ -73,7 +73,7 @@ async def test_datastore_handle_mqtt_put(
     await datastore_component.handle_mqtt(route, msg)
 
     assert datastore_component.state.datastore["sys/uptime"] == "3600"
-    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
+    cast(Any, datastore_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
 @pytest.mark.asyncio
@@ -86,4 +86,4 @@ async def test_datastore_handle_mqtt_get(
 
     await datastore_component.handle_mqtt(route, msg)
 
-    cast(Any, datastore_component.mqtt_flow.publish).assert_called()
+    cast(Any, datastore_component.mqtt_flow.enqueue_mqtt).assert_called()

@@ -27,7 +27,7 @@ def console_component() -> ConsoleComponent:
     serial_flow = MagicMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
     mqtt_flow = MagicMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
 
     return ConsoleComponent(
         config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
@@ -43,7 +43,7 @@ async def test_console_handle_write_success(
 
     await console_component.handle_write(0, payload)
 
-    cast(Any, console_component.mqtt_flow.publish).assert_called()
+    cast(Any, console_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
 @pytest.mark.asyncio

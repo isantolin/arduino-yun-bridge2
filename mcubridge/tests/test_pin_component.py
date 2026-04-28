@@ -41,7 +41,7 @@ def pin_component() -> PinComponent:
     serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock(return_value=True)
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
 
     return PinComponent(
         config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
@@ -59,7 +59,7 @@ async def test_pin_handle_digital_read_resp(pin_component: PinComponent) -> None
 
     await pin_component.handle_digital_read_resp(0, payload)
 
-    cast(Any, pin_component.mqtt_flow.publish).assert_called()
+    cast(Any, pin_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
 @pytest.mark.asyncio

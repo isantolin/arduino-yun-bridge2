@@ -25,6 +25,7 @@ from ..protocol.structures import (
     FileReadResponsePacket,
     FileRemovePacket,
     FileWritePacket,
+    QueuedPublish,
 )
 from ..protocol.topics import Topic, TopicRoute, topic_path
 
@@ -242,10 +243,12 @@ class FileComponent:
                 "size": len(data),
                 "mtime": path.stat().st_mtime,
             }
-            await self.mqtt_flow.publish(
-                topic=self._mqtt_response_topic(FileAction.READ, identifier),
-                payload=data,
-                reply_to=inbound,
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=self._mqtt_response_topic(FileAction.READ, identifier),
+                    payload=data,
+                ),
+                reply_context=inbound,
             )
             return True
         except OSError:
@@ -369,10 +372,12 @@ class FileComponent:
                 if self._pending_mcu_read is pending:
                     self._pending_mcu_read = None
 
-        await self.mqtt_flow.publish(
-            topic=self._mqtt_response_topic(FileAction.READ, identifier),
-            payload=data,
-            reply_to=inbound,
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=self._mqtt_response_topic(FileAction.READ, identifier),
+                payload=data,
+            ),
+            reply_context=inbound,
         )
         return True
 
@@ -487,12 +492,14 @@ class FileComponent:
         identifier: str,
         reason: str,
     ) -> None:
-        await self.mqtt_flow.publish(
-            topic=self._mqtt_response_topic(action, identifier),
-            payload=reason.encode("utf-8", errors="ignore")[
-                : protocol.MAX_PAYLOAD_SIZE
-            ],
-            reply_to=inbound,
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=self._mqtt_response_topic(action, identifier),
+                payload=reason.encode("utf-8", errors="ignore")[
+                    : protocol.MAX_PAYLOAD_SIZE
+                ],
+            ),
+            reply_context=inbound,
         )
 
     def _mcu_read_timeout_seconds(self) -> float:

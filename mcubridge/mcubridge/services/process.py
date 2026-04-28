@@ -117,10 +117,12 @@ class ProcessComponent:
                 ShellAction.RUN_ASYNC,
                 "error",
             )
-            await self.mqtt_flow.publish(
-                topic=response_topic,
-                payload=b"error:internal",
-                reply_to=inbound,
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=response_topic,
+                    payload=b"error:internal",
+                ),
+                reply_context=inbound,
             )
             return
 
@@ -132,17 +134,21 @@ class ProcessComponent:
         )
 
         if pid == 0:
-            await self.mqtt_flow.publish(
-                topic=response_topic,
-                payload=b"error:not_allowed_or_limit_reached",
-                reply_to=inbound,
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=response_topic,
+                    payload=b"error:not_allowed_or_limit_reached",
+                ),
+                reply_context=inbound,
             )
             return
 
-        await self.mqtt_flow.publish(
-            topic=response_topic,
-            payload=str(pid).encode("utf-8"),
-            reply_to=inbound,
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=response_topic,
+                payload=str(pid).encode("utf-8"),
+            ),
+            reply_context=inbound,
         )
 
     async def _handle_mqtt_poll(

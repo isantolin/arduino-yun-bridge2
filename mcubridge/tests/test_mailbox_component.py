@@ -19,7 +19,7 @@ def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxCompone
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock()
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
     return MailboxComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
 
@@ -78,4 +78,4 @@ async def test_handle_mqtt_logic(
     msg_read = Message(Topic.MAILBOX.value, b"", 0, False, False, None)
     runtime_state.mailbox_incoming_queue.append(b"mcu-reply")
     await mailbox_component.handle_mqtt(route_read, msg_read)
-    assert cast(Any, mailbox_component.mqtt_flow.publish).called
+    assert cast(Any, mailbox_component.mqtt_flow.enqueue_mqtt).called

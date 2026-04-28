@@ -31,7 +31,7 @@ async def test_pin_handle_read_overflow() -> None:
         serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = PinComponent(config, state, serial_flow, mqtt_flow)
 
@@ -49,9 +49,10 @@ async def test_pin_handle_read_overflow() -> None:
         # True because handled (rejected gracefully)
         assert result is True
         # Should publish overflow error
-        mqtt_flow.publish.assert_called_once()
-        args, kwargs = mqtt_flow.publish.call_args
-        props = kwargs.get("properties") or args[4]
+        mqtt_flow.enqueue_mqtt.assert_called_once()
+        args, kwargs = mqtt_flow.enqueue_mqtt.call_args
+        msg = args[0] if args else kwargs.get("message")
+        props = msg.user_properties
         assert ("bridge-error", "pending-pin-overflow") in props
     finally:
         state.cleanup()
@@ -70,7 +71,7 @@ async def test_pin_handle_mqtt_edge_cases() -> None:
         serial_flow = AsyncMock(spec=SerialFlowController)
         serial_flow.send = AsyncMock(return_value=True)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = PinComponent(config, state, serial_flow, mqtt_flow)
 
@@ -118,7 +119,7 @@ async def test_pin_handle_analog_read_resp_malformed() -> None:
     try:
         serial_flow = AsyncMock(spec=SerialFlowController)
         mqtt_flow = AsyncMock(spec=MqttTransport)
-        mqtt_flow.publish = AsyncMock()
+        mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = PinComponent(config, state, serial_flow, mqtt_flow)
 
@@ -128,6 +129,6 @@ async def test_pin_handle_analog_read_resp_malformed() -> None:
         payload = msgspec.msgpack.encode(AnalogReadResponsePacket(value=1023))
         await comp.handle_analog_read_resp(0, payload)
 
-        mqtt_flow.publish.assert_called_once()
+        mqtt_flow.enqueue_mqtt.assert_called_once()
     finally:
         state.cleanup()

@@ -14,6 +14,7 @@ from mcubridge.protocol.protocol import Command, SystemAction
 from mcubridge.protocol.structures import (
     EnterBootloaderPacket,
     FreeMemoryResponsePacket,
+    QueuedPublish,
     TopicRoute,
     VersionResponsePacket,
 )
@@ -81,19 +82,22 @@ class SystemComponent:
         reply_context = (
             self._pending_free_memory.popleft() if self._pending_free_memory else None
         )
-        # Direct call to mqtt_flow.publish
-        await self.mqtt_flow.publish(
-            topic=topic,
-            payload=str(packet.value),
-            expiry=MQTT_EXPIRY_DEFAULT,
-            reply_to=None,
+        # Direct call to mqtt_flow.enqueue_mqtt
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic,
+                payload=str(packet.value).encode("utf-8"),
+                message_expiry_interval=MQTT_EXPIRY_DEFAULT,
+            )
         )
         if reply_context is not None:
-            await self.mqtt_flow.publish(
-                topic=topic,
-                payload=str(packet.value),
-                expiry=MQTT_EXPIRY_DEFAULT,
-                reply_to=reply_context,
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=topic,
+                    payload=str(packet.value).encode("utf-8"),
+                    message_expiry_interval=MQTT_EXPIRY_DEFAULT,
+                ),
+                reply_context=reply_context,
             )
 
     async def handle_get_version_resp(self, seq_id: int, payload: bytes) -> None:
@@ -123,20 +127,23 @@ class SystemComponent:
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
-        # Direct call to mqtt_flow.publish
-        payload = f"{major}.{minor}.{patch}"
-        await self.mqtt_flow.publish(
-            topic=topic,
-            payload=payload,
-            expiry=MQTT_EXPIRY_DATASTORE,
-            reply_to=None,
+        # Direct call to mqtt_flow.enqueue_mqtt
+        payload_bytes = f"{major}.{minor}.{patch}".encode("utf-8")
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic,
+                payload=payload_bytes,
+                message_expiry_interval=MQTT_EXPIRY_DATASTORE,
+            )
         )
         if reply_context is not None:
-            await self.mqtt_flow.publish(
-                topic=topic,
-                payload=payload,
-                expiry=MQTT_EXPIRY_DATASTORE,
-                reply_to=reply_context,
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=topic,
+                    payload=payload_bytes,
+                    message_expiry_interval=MQTT_EXPIRY_DATASTORE,
+                ),
+                reply_context=reply_context,
             )
 
     async def handle_mqtt(

@@ -10,7 +10,7 @@ import msgspec
 from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, ConsoleAction
-from mcubridge.protocol.structures import ConsoleWritePacket, TopicRoute
+from mcubridge.protocol.structures import ConsoleWritePacket, QueuedPublish, TopicRoute
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..protocol.topics import Topic, topic_path
@@ -57,10 +57,12 @@ class ConsoleComponent:
             Topic.CONSOLE,
             ConsoleAction.OUT,
         )
-        await self.mqtt_flow.publish(
-            topic=topic,
-            payload=data,
-            expiry=MQTT_EXPIRY_CONSOLE,
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic,
+                payload=data,
+                message_expiry_interval=MQTT_EXPIRY_CONSOLE,
+            )
         )
 
     async def handle_xoff(self, seq_id: int, _: bytes) -> None:

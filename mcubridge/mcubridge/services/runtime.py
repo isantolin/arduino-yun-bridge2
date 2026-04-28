@@ -12,7 +12,7 @@ from aiomqtt.message import Message
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
 from ..config.settings import RuntimeConfig
 from ..protocol.protocol import Status
-from ..protocol.structures import AckPacket
+from ..protocol.structures import AckPacket, QueuedPublish
 from ..protocol.topics import Topic, parse_topic, topic_path
 from ..router.routers import MQTTRouter
 from ..state.context import RuntimeState
@@ -336,12 +336,14 @@ class BridgeService:
         ]
         if text:
             properties.append(("bridge-status-message", text))
-        await self.mqtt_flow.publish(
-            topic=status_topic,
-            payload=report,
-            content_type="application/msgpack",
-            expiry=MQTT_EXPIRY_SHELL,
-            properties=tuple(properties),
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=status_topic,
+                payload=report,
+                content_type="application/msgpack",
+                message_expiry_interval=MQTT_EXPIRY_SHELL,
+                user_properties=tuple(properties),
+            )
         )
 
     async def _publish_bridge_snapshot(
@@ -361,13 +363,15 @@ class BridgeService:
             *topic_segments,
         )
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        await self.mqtt_flow.publish(
-            topic=topic,
-            payload=msgspec.msgpack.encode(snapshot),
-            content_type="application/msgpack",
-            expiry=MQTT_EXPIRY_SHELL,
-            properties=(("bridge-snapshot", flavor),),
-            reply_to=inbound,
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic,
+                payload=msgspec.msgpack.encode(snapshot),
+                content_type="application/msgpack",
+                message_expiry_interval=MQTT_EXPIRY_SHELL,
+                user_properties=(("bridge-snapshot", flavor),),
+            ),
+            reply_context=inbound,
         )
 
     def _is_topic_action_allowed(
@@ -408,11 +412,13 @@ class BridgeService:
             Topic.SYSTEM,
             Topic.STATUS,
         )
-        await self.mqtt_flow.publish(
-            topic=status_topic,
-            payload=payload,
-            content_type="application/msgpack",
-            expiry=MQTT_EXPIRY_SHELL,
-            properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
-            reply_to=inbound,
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=status_topic,
+                payload=payload,
+                content_type="application/msgpack",
+                message_expiry_interval=MQTT_EXPIRY_SHELL,
+                user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
+            ),
+            reply_context=inbound,
         )

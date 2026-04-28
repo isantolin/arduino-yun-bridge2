@@ -222,7 +222,7 @@ async def test_datastore_publish_value_error_reason(
     """Cover logic in _publish_datastore_value."""
     serial_flow = AsyncMock(spec=SerialFlowController)
     mqtt_flow = AsyncMock(spec=MqttTransport)
-    mqtt_flow.publish = AsyncMock()
+    mqtt_flow.enqueue_mqtt = AsyncMock()
 
     ds = DatastoreComponent(
         config=runtime_config,
@@ -235,9 +235,10 @@ async def test_datastore_publish_value_error_reason(
         value=b"val",
         error_reason="testing",
     )
-    # Check mqtt_flow.publish instead of state.publish
-    _args, kwargs = mqtt_flow.publish.call_args
-    props = kwargs.get("properties", ())
+    # Check mqtt_flow.enqueue_mqtt instead of state.publish
+    _args, _kwargs = mqtt_flow.enqueue_mqtt.call_args
+    msg = _args[0]
+    props = msg.user_properties
     assert any(k == "bridge-error" and v == "testing" for k, v in props)
 
 

@@ -17,6 +17,7 @@ from mcubridge.protocol.structures import (
     DatastoreGetPacket,
     DatastoreGetResponsePacket,
     DatastorePutPacket,
+    QueuedPublish,
     TopicRoute,
 )
 
@@ -227,22 +228,25 @@ class DatastoreComponent:
         if error_reason:
             properties.append(("bridge-error", error_reason))
 
-        # Direct call to mqtt_flow.publish (Zero Wrapper)
+        # Direct call to mqtt_flow.enqueue_mqtt (Zero Wrapper)
         props_tuple = tuple(properties)
-        await self.mqtt_flow.publish(
-            topic=topic_name,
-            payload=value,
-            expiry=MQTT_EXPIRY_DATASTORE,
-            reply_to=None,
-            properties=props_tuple,
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic_name,
+                payload=value,
+                message_expiry_interval=MQTT_EXPIRY_DATASTORE,
+                user_properties=props_tuple,
+            )
         )
         if reply_context is not None:
-            await self.mqtt_flow.publish(
-                topic=topic_name,
-                payload=value,
-                expiry=MQTT_EXPIRY_DATASTORE,
-                reply_to=reply_context,
-                properties=props_tuple,
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=topic_name,
+                    payload=value,
+                    message_expiry_interval=MQTT_EXPIRY_DATASTORE,
+                    user_properties=props_tuple,
+                ),
+                reply_context=reply_context,
             )
 
 

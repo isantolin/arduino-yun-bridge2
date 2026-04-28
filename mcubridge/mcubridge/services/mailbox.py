@@ -20,6 +20,7 @@ from mcubridge.protocol.structures import (
     MailboxProcessedPacket,
     MailboxPushPacket,
     MailboxReadResponsePacket,
+    QueuedPublish,
     TopicRoute,
 )
 
@@ -73,7 +74,9 @@ class MailboxComponent:
         else:
             body = payload
 
-        await self.mqtt_flow.publish(topic=topic_name, payload=body)
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(topic_name=topic_name, payload=body)
+        )
         return True
 
     async def handle_push(self, seq_id: int, payload: bytes) -> bool:
@@ -104,13 +107,15 @@ class MailboxComponent:
             Topic.MAILBOX,
             MailboxAction.INCOMING,
         )
-        await self.mqtt_flow.publish(topic=topic, payload=data)
+        await self.mqtt_flow.enqueue_mqtt(QueuedPublish(topic_name=topic, payload=data))
 
-        await self.mqtt_flow.publish(
-            topic=topic_path(
-                self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
-            ),
-            payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic_path(
+                    self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
+                ),
+                payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
+            )
         )
         return True
 
@@ -222,10 +227,12 @@ class MailboxComponent:
                 return
 
             try:
-                await self.mqtt_flow.publish(
-                    topic=topic,
-                    payload=message_payload,
-                    reply_to=inbound,
+                await self.mqtt_flow.enqueue_mqtt(
+                    QueuedPublish(
+                        topic_name=topic,
+                        payload=message_payload,
+                    ),
+                    reply_context=inbound,
                 )
             finally:
                 await self._publish_available(
@@ -238,10 +245,12 @@ class MailboxComponent:
             return
 
         try:
-            await self.mqtt_flow.publish(
-                topic=topic,
-                payload=message_payload,
-                reply_to=inbound,
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=topic,
+                    payload=message_payload,
+                ),
+                reply_context=inbound,
             )
         finally:
             await self._publish_available(
@@ -294,12 +303,14 @@ class MailboxComponent:
         else:
             properties = ()
 
-        await self.mqtt_flow.publish(
-            topic=overflow_topic,
-            payload=body,
-            content_type="application/msgpack",
-            properties=properties,
-            reply_to=inbound,
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=overflow_topic,
+                payload=body,
+                content_type="application/msgpack",
+                user_properties=properties,
+            ),
+            reply_context=inbound,
         )
 
     async def _publish_available(
@@ -312,9 +323,11 @@ class MailboxComponent:
             Topic.MAILBOX,
             suffix,
         )
-        await self.mqtt_flow.publish(
-            topic=topic_name,
-            payload=str(count).encode("utf-8"),
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic_name,
+                payload=str(count).encode("utf-8"),
+            )
         )
 
 

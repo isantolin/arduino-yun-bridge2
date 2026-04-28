@@ -73,10 +73,11 @@ void test_fsm_timeout_to_unsynchronized() {
   localBridge.process();
 
   // Force timeouts by advancing time and processing
-  // Necesitamos múltiples llamadas a process() para que los timers de ETL y la lógica de reintento avancen
-  for (int i = 0; i < 10; i++) {
-    g_test_millis += 1000; // Avanzar 1s (Default timeout es 500ms)
-    for(int j=0; j<5; j++) localBridge.process();
+  // Avance gradual para asegurar que el scheduler de ETL capture los ticks
+  for (int i = 0; i < 20; i++) {
+    g_test_millis += 250; // Avanzar 250ms (Default timeout es 500ms)
+    localBridge.process();
+    localBridge.process(); // Doble process para asegurar tareas pendientes
   }
   
   if (localBridge.isSynchronized()) {

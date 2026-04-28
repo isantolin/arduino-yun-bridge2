@@ -134,7 +134,7 @@ class AwaitingAckState
     : public etl::fsm_state<
           BridgeFsm, AwaitingAckState,
           static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK),
-          EvAckReceived, EvTimeout, EvReset, EvHandshakeFailed> {
+          EvAckReceived, EvTimeout, EvReset, EvHandshakeFailed, EvSendCritical> {
  public:
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvAckReceived&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
@@ -147,6 +147,9 @@ class AwaitingAckState
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
+  }
+  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvSendCritical&) {
+    return get_state_id(); // Already in AWAITING_ACK
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();

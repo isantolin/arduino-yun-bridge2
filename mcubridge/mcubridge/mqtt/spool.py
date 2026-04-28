@@ -6,7 +6,7 @@ import sqlite3
 from collections import deque
 from typing import Any
 
-import diskcache
+import diskcache  # type: ignore[import-untyped]
 import msgspec
 import structlog
 

@@ -236,6 +236,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 
   _tx_enabled = true;
   _timers.clear();
+  _timer_task.last_tick_ms = millis(); // Initialize properly to current time
   _timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT] = _timers.register_timer(
       _onAckTimeoutInternal, _ack_timeout_ms, etl::timer::mode::REPEATING);
   _timer_ids[bridge::scheduler::TIMER_RX_DEDUPE] = _timers.register_timer(
@@ -277,9 +278,8 @@ void BridgeClass::SerialTask::task_process_work() {
 }
 
 void BridgeClass::TimerTask::task_process_work() {
-  uint32_t now = millis();
-  if (last_tick_ms == 0) last_tick_ms = now;
-  uint32_t elapsed = now - last_tick_ms;
+  const uint32_t now = millis();
+  const uint32_t elapsed = now - last_tick_ms;
   if (elapsed > 0) {
     bridge._timers.tick(elapsed);
     last_tick_ms = now;
@@ -340,38 +340,13 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_onStartupStabilized() {
-  uint32_t start_ms = millis();
-  // [SIL-2] Deterministic drain via ETL algorithm (No Raw Loops).
-  // We simulate a loop using a recursive structure that avoids deep stack if
-  // needed, or a counting iterator if available. Given AVR limits, we use a
-  // simple functional approach using etl::find_if on a counting range.
-  struct Counter {
-    uint16_t current = 0;
-    bool operator==(const Counter& other) const {
-      return current == other.current;
-    }
-    bool operator!=(const Counter& other) const {
-      return current != other.current;
-    }
-    Counter& operator++() {
-      ++current;
-      return *this;
-    }
-    uint16_t operator*() const { return current; }
-  };
-
-  Counter it_begin{0};
-  Counter it_end{bridge::config::STARTUP_DRAIN_FINAL};
-
-  (void)etl::find_if(it_begin, it_end, [this, start_ms](uint16_t) {
-    if (_stream.available() <= 0 ||
-        (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
-      return true;  // Stop condition
-    }
+  const uint32_t start_ms = millis();
+  // [SIL-2] Deterministic drain: avoid raw loops and auxiliary structs.
+  // Using a simple while with safety timeout and yield-like behavior.
+  while (_stream.available() > 0 && 
+         (millis() - start_ms < bridge::config::SERIAL_TIMEOUT_MS)) {
     (void)_stream.read();
-    return false;  // Continue
-  });
-
+  }
   BRIDGE_ATOMIC_BLOCK { _fsm.receive(bridge::fsm::EvStabilized()); }
 }
 

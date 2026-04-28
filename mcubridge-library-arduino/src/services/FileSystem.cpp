@@ -1,6 +1,5 @@
 #include "services/FileSystem.h"
 #include "Bridge.h"
-#include "util/string_copy.h"
 
 #if BRIDGE_ENABLE_FILESYSTEM
 

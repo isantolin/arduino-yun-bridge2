@@ -1,6 +1,5 @@
 #include "services/DataStore.h"
 #include "Bridge.h"
-#include "util/string_copy.h"
 #include <etl/algorithm.h>
 
 #if BRIDGE_ENABLE_DATASTORE
@@ -20,7 +19,9 @@ void DataStoreClass::get(etl::string_view key, etl::delegate<void(etl::string_vi
   msg.key = key;
   if (Bridge.send(rpc::CommandId::CMD_DATASTORE_GET, 0, msg)) {
     PendingGet pg;
-    rpc::util::copy_string(key, pg.key.data(), pg.key.size());
+    const size_t to_copy = etl::min(key.length(), pg.key.size() - 1);
+    etl::copy_n(key.data(), to_copy, pg.key.begin());
+    pg.key[to_copy] = '\0';
     _pending_gets.push(pg);
   }
 }

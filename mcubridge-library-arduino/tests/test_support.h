@@ -120,11 +120,53 @@ class BiStream : public Stream {
   void flush() override {}
 
   void feed(const uint8_t* data, size_t len) { rx_buf.append(data, len); }
+  void feed_frame(rpc::CommandId cmd, uint16_t seq, const etl::span<const uint8_t>& payload) {
+    uint8_t raw[rpc::MAX_FRAME_SIZE];
+    uint8_t encoded[rpc::MAX_FRAME_SIZE + 2];
+    
+    raw[0] = rpc::PROTOCOL_VERSION;
+    etl::byte_stream_writer w(raw + 1, 6, etl::endian::big);
+    w.write<uint16_t>(static_cast<uint16_t>(payload.size()));
+    w.write<uint16_t>(rpc::to_underlying(cmd));
+    w.write<uint16_t>(seq);
+    
+    if (!payload.empty()) {
+        etl::copy_n(payload.data(), payload.size(), raw + rpc::FRAME_HEADER_SIZE);
+    }
+    
+    etl::crc32 crc;
+    crc.add(raw, raw + rpc::FRAME_HEADER_SIZE + payload.size());
+    uint32_t cv = crc.value();
+    etl::byte_stream_writer w_crc(raw + rpc::FRAME_HEADER_SIZE + payload.size(), 4, etl::endian::big);
+    w_crc.write<uint32_t>(cv);
+    
+    size_t encoded_len = TestCOBS::encode(raw, rpc::FRAME_HEADER_SIZE + payload.size() + 4, encoded);
+    feed(encoded, encoded_len);
+    uint8_t delim = rpc::RPC_FRAME_DELIMITER;
+    feed(&delim, 1);
+  }
   void clear() {
     rx_buf.clear();
     tx_buf.clear();
   }
 };
+
+/**
+ * Perform a full LinkSync handshake on the given bridge instance.
+ */
+static inline void simulate_handshake(BridgeClass& bridge, BiStream& stream) {
+  // 1. Enter Startup (Stabilized)
+  bridge._onStartupStabilized();
+
+  // 2. Feed CMD_LINK_SYNC
+  etl::array<uint8_t, 16> nonce;
+  etl::fill(nonce.begin(), nonce.end(), 0xAA);
+  stream.feed_frame(rpc::CommandId::CMD_LINK_SYNC, 1,
+                    etl::span<const uint8_t>(nonce.data(), 16));
+
+  // 3. Process handshake
+  bridge.process();
+}
 
 // ---------------------------------------------------------------------------
 // COBS encoder/decoder for building test frames.
@@ -228,12 +270,8 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
 }
 
 // ---------------------------------------------------------------------------
-// Canonical bridge reset helper – available when BRIDGE_ENABLE_TEST_INTERFACE
-// is defined (all test files except test_protocol.cpp).
+// Canonical bridge reset helper – available for test binaries.
 // ---------------------------------------------------------------------------
-
-#ifdef BRIDGE_ENABLE_TEST_INTERFACE
-#include "BridgeTestInterface.h"
 
 static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
                                      unsigned long baudrate = 0,
@@ -245,8 +283,5 @@ static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
   } else {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
   }
-  auto& ba = bridge::test::TestAccessor::create(bridge);
-  ba.onStartupStabilized();
-  ba.setIdle();
+  bridge._onStartupStabilized();
 }
-#endif

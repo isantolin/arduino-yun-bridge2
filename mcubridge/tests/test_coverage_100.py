@@ -6,21 +6,21 @@ from mcubridge.state.context import RuntimeState
 
 from typing import Any, cast
 from unittest.mock import MagicMock, AsyncMock, patch
+import collections
 
 import pytest
-from mcubridge.state.queues import BridgeQueue
 from mcubridge.services.process import ProcessComponent
 
 
-def test_queues_append_with_bytes_limit_overflow() -> None:
-    # max_bytes logic is removed, testing basic append
-    q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+def test_queues_append_basic() -> None:
+    # Testing basic append on deque which is now used for RAM queues
+    q: collections.deque[bytes] = collections.deque(maxlen=10)
     q.append(b"hello")
     assert len(q) == 1
 
 
-def test_queues_make_room_for_complex() -> None:
-    q: BridgeQueue[bytes] = BridgeQueue(max_items=3)
+def test_queues_maxlen_behavior() -> None:
+    q: collections.deque[bytes] = collections.deque(maxlen=3)
     q.append(b"1")
     q.append(b"2")
     q.append(b"3")

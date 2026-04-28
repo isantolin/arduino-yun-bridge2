@@ -29,10 +29,24 @@ async def test_mailbox_handle_push_large_data(
 async def test_mailbox_handle_mqtt_push_limit(
     mailbox_component: MailboxComponent, runtime_state: Any
 ):
-    # Directly set the limit on the queue object
-    runtime_state.mailbox_queue.max_items = 1
-    data = b"data"
-    runtime_state.mailbox_queue.append(data)
-    # Adding another should trigger Native metrics aggregation in BridgeQueue
-    runtime_state.mailbox_queue.append(b"data2")
-    assert runtime_state.mailbox_queue.dropped_chunks >= 1
+    # Set the limit in state
+    runtime_state.mailbox_queue_limit = 1
+
+    # We need to use the component to trigger the drop logic
+    from tests.mqtt_helpers import make_inbound_message
+    from mcubridge.protocol.protocol import Topic
+    from tests._helpers import make_route
+
+    await mailbox_component.handle_mqtt(
+        make_route(Topic.MAILBOX, "write"),
+        make_inbound_message("test/topic", b"data1"),
+    )
+    assert len(runtime_state.mailbox_queue) == 1
+
+    # Adding another should trigger drop logic in MailboxComponent
+    await mailbox_component.handle_mqtt(
+        make_route(Topic.MAILBOX, "write"),
+        make_inbound_message("test/topic", b"data2"),
+    )
+    assert len(runtime_state.mailbox_queue) == 1
+    assert runtime_state.mailbox_dropped_messages >= 1

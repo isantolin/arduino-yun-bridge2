@@ -4,7 +4,7 @@ from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.transport.mqtt import MqttTransport
 
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 import msgspec
@@ -36,16 +36,16 @@ async def test_handle_processed_malformed(mailbox_comp: MailboxComponent):
 
 @pytest.mark.asyncio
 async def test_handle_push_overflow(mailbox_comp: MailboxComponent):
-    # Mock queue to fail append
-    mailbox_comp.state.mailbox_incoming_queue = MagicMock()
-    mailbox_comp.state.mailbox_incoming_queue.append.return_value = type(
-        "Event", (), {"success": False}
-    )()
+    # Set limit and fill queue
+    mailbox_comp.state.mailbox_queue_limit = 1
+    mailbox_comp.state.mailbox_incoming_queue.append(b"old-data")
 
-    payload = msgspec.msgpack.encode(MailboxPushPacket(data=b"data"))
+    payload = msgspec.msgpack.encode(MailboxPushPacket(data=b"new-data"))
     ok = await mailbox_comp.handle_push(0, payload)
-    assert ok is False
-    assert cast(Any, mailbox_comp.serial_flow.send).called
+    assert ok is True
+    assert len(mailbox_comp.state.mailbox_incoming_queue) == 1
+    assert mailbox_comp.state.mailbox_incoming_queue[0] == b"new-data"
+    assert mailbox_comp.state.mailbox_incoming_dropped_messages == 1
 
 
 @pytest.mark.asyncio
@@ -73,14 +73,15 @@ async def test_handle_mqtt_unknown_action(mailbox_comp: MailboxComponent):
 
 @pytest.mark.asyncio
 async def test_handle_outgoing_overflow(mailbox_comp: MailboxComponent):
-    # Mock queue to fail append
-    mailbox_comp.state.mailbox_queue = MagicMock()
-    mailbox_comp.state.mailbox_queue.append.return_value = AsyncMock(success=False)
-    mailbox_comp.state.mailbox_queue_limit = 10
-    mailbox_comp.state.mailbox_queue_bytes_limit = 100
-    mailbox_comp.state.mailbox_queue_bytes = 0
+    # Set limit and fill queue
+    mailbox_comp.state.mailbox_queue_limit = 1
+    mailbox_comp.state.mailbox_queue.append(b"old-payload")
+    mailbox_comp.state.mailbox_dropped_messages = 0
     mailbox_comp.state.mailbox_outgoing_overflow_events = 0
 
-    await mailbox_comp._handle_mqtt_write(b"too-much-data")
-    assert cast(Any, mailbox_comp.serial_flow.send).called
+    await mailbox_comp._handle_mqtt_write(b"new-payload")
+    assert len(mailbox_comp.state.mailbox_queue) == 1
+    assert mailbox_comp.state.mailbox_queue[0] == b"new-payload"
+    assert mailbox_comp.state.mailbox_dropped_messages == 1
+    assert mailbox_comp.state.mailbox_outgoing_overflow_events == 1
     assert cast(Any, mailbox_comp.mqtt_flow.enqueue_mqtt).called  # Error topic

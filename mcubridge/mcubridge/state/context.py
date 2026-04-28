@@ -6,15 +6,17 @@ import asyncio
 import collections
 import contextlib
 import functools
-import structlog
+import sqlite3
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Any, Final, Protocol, TypeVar, cast
 
+import diskcache
 import msgspec
 import psutil
+import structlog
 
 from ..config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -57,7 +59,22 @@ from ..protocol.structures import (
     SupervisorStats,
 )
 from .metrics import DaemonMetrics
-from .queues import BridgeQueue
+
+T = TypeVar("T")
+
+
+class DequeLike(Protocol[T]):
+    """Protocol for deque-like objects (collections.deque, diskcache.Deque)."""
+
+    def append(self, __x: T) -> None: ...
+    def appendleft(self, __x: T) -> None: ...
+    def pop(self) -> T: ...
+    def popleft(self) -> T: ...
+    def clear(self) -> None: ...
+    def __len__(self) -> int: ...
+    def __getitem__(self, __i: int) -> T: ...
+    def __setitem__(self, __i: int, __v: T) -> None: ...
+
 
 logger = structlog.get_logger("mcubridge.state")
 
@@ -196,12 +213,8 @@ def _make_snapshot_dict() -> SpoolSnapshot:
     return {}
 
 
-def _make_str_str_dict() -> dict[str, str]:
-    return {}
-
-
-def _make_bytes_bridge_queue() -> BridgeQueue[bytes]:
-    return BridgeQueue[bytes]()
+def _make_bytes_deque() -> DequeLike[bytes]:
+    return cast(DequeLike[bytes], collections.deque[bytes]())
 
 
 def _make_int_process_dict() -> dict[int, ManagedProcess]:
@@ -269,20 +282,23 @@ class RuntimeState(msgspec.Struct):
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(
         default_factory=_make_snapshot_dict
     )
-    datastore: dict[str, str] = msgspec.field(default_factory=_make_str_str_dict)
+    datastore: dict[str, str] = msgspec.field(default_factory=dict)  # type: ignore
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
-    mailbox_queue: BridgeQueue[bytes] = msgspec.field(
-        default_factory=_make_bytes_bridge_queue,
+    mailbox_queue: DequeLike[bytes] = msgspec.field(
+        default_factory=_make_bytes_deque,
     )
-    mailbox_incoming_queue: BridgeQueue[bytes] = msgspec.field(
-        default_factory=_make_bytes_bridge_queue,
+    mailbox_incoming_queue: DequeLike[bytes] = msgspec.field(
+        default_factory=_make_bytes_deque,
     )
+
+    _mailbox_queue_cache: diskcache.Cache | None = None
+    _mailbox_incoming_queue_cache: diskcache.Cache | None = None
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    console_to_mcu_queue: BridgeQueue[bytes] = msgspec.field(
-        default_factory=_make_bytes_bridge_queue,
+    console_to_mcu_queue: DequeLike[bytes] = msgspec.field(
+        default_factory=_make_bytes_deque,
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
 
@@ -421,9 +437,12 @@ class RuntimeState(msgspec.Struct):
     def configure(self, config: RuntimeConfig) -> None:
         # [SIL-2] Close existing persistent queues if they are being replaced
         # to ensure that resources (like diskcache files) are released.
-        self.mailbox_queue.close()
-        self.mailbox_incoming_queue.close()
-        self.console_to_mcu_queue.close()
+        if self._mailbox_queue_cache:
+            self._mailbox_queue_cache.close()  # type: ignore
+            self._mailbox_queue_cache = None
+        if self._mailbox_incoming_queue_cache:
+            self._mailbox_incoming_queue_cache.close()  # type: ignore
+            self._mailbox_incoming_queue_cache = None
 
         if config.allowed_policy is not None:
             self.allowed_policy = config.allowed_policy
@@ -444,20 +463,44 @@ class RuntimeState(msgspec.Struct):
         self.process_output_limit = config.process_max_output_bytes
         self.process_max_concurrent = config.process_max_concurrent
 
-        self.console_to_mcu_queue = BridgeQueue[bytes]()
+        self.console_to_mcu_queue = cast(
+            DequeLike[bytes],
+            collections.deque[bytes](maxlen=self.mailbox_queue_limit),
+        )
 
-        def _create_spool(subdir: str) -> BridgeQueue[bytes]:
+        def _create_spool(
+            subdir: str,
+        ) -> tuple[DequeLike[bytes], diskcache.Cache | None]:
             directory = None
             if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
                 directory = Path(self.file_system_root) / subdir
 
-            return BridgeQueue[bytes](
-                directory=directory,
-                max_items=self.mailbox_queue_limit,
+            if directory:
+                try:
+                    directory.mkdir(parents=True, exist_ok=True)
+                    cache = diskcache.Cache(str(directory))
+                    return (
+                        cast(
+                            DequeLike[bytes],
+                            diskcache.Deque.fromcache(cache),  # type: ignore
+                        ),
+                        cache,
+                    )
+                except (OSError, RuntimeError, sqlite3.Error):
+                    logger.warning("Spool '%s' falling back to RAM", subdir)
+
+            return (
+                cast(
+                    DequeLike[bytes],
+                    collections.deque[bytes](maxlen=self.mailbox_queue_limit),
+                ),
+                None,
             )
 
-        self.mailbox_queue = _create_spool("mailbox_out")
-        self.mailbox_incoming_queue = _create_spool("mailbox_in")
+        self.mailbox_queue, self._mailbox_queue_cache = _create_spool("mailbox_out")
+        self.mailbox_incoming_queue, self._mailbox_incoming_queue_cache = _create_spool(
+            "mailbox_in"
+        )
 
     def mark_supervisor_healthy(self, name: str) -> None:
         """Reset backoff status for a healthy supervisor."""
@@ -595,7 +638,7 @@ class RuntimeState(msgspec.Struct):
             "mqtt_drop_counts": dict(self.mqtt_drop_counts),
             "queue_depths": {
                 "mqtt": self.mqtt_publish_queue.qsize(),
-                "console": self.console_to_mcu_queue.bytes,
+                "console": len(self.console_to_mcu_queue),
                 "mailbox_outgoing": len(self.mailbox_queue),
                 "mailbox_incoming": len(self.mailbox_incoming_queue),
                 "running_processes": len(self.running_processes),
@@ -660,10 +703,15 @@ class RuntimeState(msgspec.Struct):
                 self.mqtt_spool = None
 
         # [SIL-2] Close persistent queues to release file handles
-        with _sup:
-            self.mailbox_queue.close()
-        with _sup:
-            self.mailbox_incoming_queue.close()
+        if self._mailbox_queue_cache:
+            with _sup:
+                self._mailbox_queue_cache.close()  # type: ignore
+            self._mailbox_queue_cache = None
+
+        if self._mailbox_incoming_queue_cache:
+            with _sup:
+                self._mailbox_incoming_queue_cache.close()  # type: ignore
+            self._mailbox_incoming_queue_cache = None
 
         with _sup:
             # Drain the MQTT queue instead of nullifying

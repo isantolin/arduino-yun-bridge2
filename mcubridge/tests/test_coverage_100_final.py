@@ -268,79 +268,67 @@ class TestConfigCommon:
 
 
 class TestQueues:
-    def test_basic_ops(self: Any, tmp_path: Any):
-        from mcubridge.state.queues import BridgeQueue
+    def test_basic_ram_ops(self):
+        import collections
 
-        pq: BridgeQueue[bytes] = BridgeQueue(tmp_path / "pq", max_items=2)
-        pq.append(b"1")
-        pq.append(b"2")
-        pq.append(b"3")
-        assert len(pq) == 2
-        assert pq.popleft() == b"2"
-        pq.close()
-
-        bq: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+        bq: collections.deque[bytes] = collections.deque(maxlen=10)
         bq.append(b"hello")
-        # In RAM mode (no directory), bytes property returns 0 as it is not strictly tracked
-        assert bq.bytes == 0
+        assert len(bq) == 1
         bq.clear()
         assert len(bq) == 0
 
-    def test_bool(self):
-        from mcubridge.state.queues import BridgeQueue
+    def test_persistent_ops(self: Any, tmp_path: Any):
+        import diskcache
 
-        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+        cache = diskcache.Cache(str(tmp_path / "pq"))  # type: ignore
+        pq = diskcache.Deque.fromcache(cache)  # type: ignore
+        pq.append(b"1")  # type: ignore
+        pq.append(b"2")  # type: ignore
+        assert len(pq) == 2  # type: ignore
+        assert pq.popleft() == b"1"  # type: ignore
+        cache.close()  # type: ignore
+
+    def test_bool(self):
+        import collections
+
+        q: collections.deque[bytes] = collections.deque(maxlen=10)
         assert not q
         q.append(b"x")
         assert q
 
     def test_clear(self):
-        from mcubridge.state.queues import BridgeQueue
+        import collections
 
-        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+        q: collections.deque[bytes] = collections.deque(maxlen=10)
         q.append(b"a")
         q.clear()
         assert len(q) == 0
 
     def test_popleft(self):
-        from mcubridge.state.queues import BridgeQueue
+        import collections
 
-        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+        q: collections.deque[bytes] = collections.deque(maxlen=10)
         q.append(b"first")
         q.append(b"second")
         assert q.popleft() == b"first"
 
     def test_appendleft(self):
-        from mcubridge.state.queues import BridgeQueue
+        import collections
 
-        q: BridgeQueue[bytes] = BridgeQueue(max_items=10)
+        q: collections.deque[bytes] = collections.deque(maxlen=10)
         q.append(b"second")
         q.appendleft(b"first")
         assert q.popleft() == b"first"
 
-    def test_limit_items_property(self):
-        from mcubridge.state.queues import BridgeQueue
+    def test_limit_behavior(self):
+        import collections
 
-        q: BridgeQueue[bytes] = BridgeQueue(max_items=42)
-        assert q.max_items == 42
-
-    def test_make_room_drops_oldest(self):
-        from mcubridge.state.queues import BridgeQueue
-
-        q: BridgeQueue[bytes] = BridgeQueue(max_items=2)
+        q: collections.deque[bytes] = collections.deque(maxlen=2)
         q.append(b"a")
         q.append(b"b")
-        event = q.append(b"c")
-        assert event.dropped_chunks >= 1
-        assert len(q) <= 2
-
-    def test_can_fit_no_limits(self):
-        from mcubridge.state.queues import BridgeQueue
-
-        q: BridgeQueue[bytes] = BridgeQueue()
-        q.append(b"a")
-        q.append(b"b")
+        q.append(b"c")
         assert len(q) == 2
+        assert q.popleft() == b"b"
 
 
 # ============================================================================
@@ -1279,8 +1267,8 @@ class TestRuntimeStateEdges:
         assert result == b"message1"
 
     def test_pop_mailbox_message_empty(self: Any, state: Any):
-        result = state.mailbox_queue.popleft()
-        assert result is None
+        with pytest.raises(IndexError):
+            state.mailbox_queue.popleft()
 
 
 # ============================================================================

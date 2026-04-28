@@ -89,18 +89,16 @@ class MailboxComponent:
 
         data = packet.data
 
-        stored = self.state.mailbox_incoming_queue.append(data).success
-        if not stored:
-            logger.error(
-                "Dropping incoming mailbox message (%d bytes) due to queue limits.",
-                len(data),
-            )
-            reason = protocol.STATUS_REASON_MAILBOX_INCOMING_OVERFLOW
-            await self.serial_flow.send(
-                Status.ERROR.value,
-                reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
-            )
-            return False
+        queue = self.state.mailbox_incoming_queue
+        limit = self.state.mailbox_queue_limit
+
+        if limit > 0 and len(queue) >= limit:
+            # [SIL-2] Manual FIFO eviction to maintain deterministic queue size
+            queue.popleft()
+            self.state.mailbox_incoming_dropped_messages += 1
+            self.state.mailbox_incoming_overflow_events += 1
+
+        queue.append(data)
 
         topic = self.state.mailbox_incoming_topic or topic_path(
             self.state.mqtt_topic_prefix,
@@ -144,10 +142,16 @@ class MailboxComponent:
         return True
 
     async def handle_read(self, seq_id: int, _: bytes) -> bool:
-        original_payload = self.state.mailbox_queue.popleft()
-        message_payload: bytes = (
-            original_payload if original_payload is not None else b""
-        )
+        if not self.state.mailbox_queue:
+            message_payload = b""
+            original_payload = None
+        else:
+            try:
+                original_payload = self.state.mailbox_queue.popleft()
+                message_payload = original_payload
+            except IndexError:
+                message_payload = b""
+                original_payload = None
 
         max_allowed = protocol.MAX_PAYLOAD_SIZE - 3
         if len(message_payload) > max_allowed:
@@ -197,15 +201,23 @@ class MailboxComponent:
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        if not self.state.mailbox_queue.append(payload).success:
-            await self._handle_outgoing_overflow(len(payload), inbound)
-            return
-        queue_len = len(self.state.mailbox_queue)
+        queue = self.state.mailbox_queue
+        limit = self.state.mailbox_queue_limit
+
+        if limit > 0 and len(queue) >= limit:
+            # [SIL-2] Manual FIFO eviction to maintain deterministic queue size
+            queue.popleft()
+            self.state.mailbox_dropped_messages += 1
+            self.state.mailbox_outgoing_overflow_events += 1
+
+        queue.append(payload)
+
+        queue_len = len(queue)
         logger.info(
             "Added message to mailbox queue. Size=%d",
             queue_len,
             queue_len=queue_len,
-            queue_limit=self.state.mailbox_queue_limit,
+            queue_limit=limit,
             queue_bytes_used=self.state.mailbox_queue_bytes,
         )
         await self._publish_available("outgoing_available", queue_len)
@@ -221,11 +233,11 @@ class MailboxComponent:
         )
 
         if self.state.mailbox_incoming_queue:
-            message_payload = self.state.mailbox_incoming_queue.popleft()
-            if message_payload is None:
+            try:
+                message_payload = self.state.mailbox_incoming_queue.popleft()
+            except IndexError:
                 await self._publish_available("incoming_available", 0)
                 return
-
             try:
                 await self.mqtt_flow.enqueue_mqtt(
                     QueuedPublish(
@@ -240,8 +252,12 @@ class MailboxComponent:
                 )
             return
 
-        message_payload = self.state.mailbox_queue.popleft()
-        if message_payload is None:
+        if not self.state.mailbox_queue:
+            return
+
+        try:
+            message_payload = self.state.mailbox_queue.popleft()
+        except IndexError:
             return
 
         try:

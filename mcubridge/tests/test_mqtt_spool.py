@@ -1,6 +1,7 @@
 """Tests for MQTT publish spool durability and fallback."""
 
 from __future__ import annotations
+from typing import Any
 import msgspec
 
 import logging
@@ -94,8 +95,6 @@ def test_spool_skips_corrupt_rows(
     spool.append(first)
     spool.append(second)
 
-    from typing import Any
-
     # Capture original to avoid infinite recursion
     original_decode = msgspec.json.decode
     call_count = 0
@@ -121,11 +120,12 @@ def test_spool_skips_corrupt_rows(
 
 
 def test_spool_fallback_on_init_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fail_mkdir(self: Path, parents: bool = False, exist_ok: bool = False) -> None:
-        del self, parents, exist_ok
+    def _fail_init(*args: Any, **kwargs: Any) -> None:
         raise PermissionError("No access")
 
-    monkeypatch.setattr(Path, "mkdir", _fail_mkdir)
+    import diskcache
+
+    monkeypatch.setattr(diskcache, "Cache", _fail_init)
 
     spool = MQTTPublishSpool(".tmp_tests/protected", limit=5)
 

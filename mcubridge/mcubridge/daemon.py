@@ -67,22 +67,36 @@ from mcubridge.transport import (
 )
 from mcubridge.watchdog import WatchdogKeepalive
 
-from .util.process import cleanup_process_tree
-
 logger = structlog.get_logger("mcubridge")
-SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
-    ConnectionError,
-    OSError,
-    RuntimeError,
-    TimeoutError,
-    ValueError,
-    msgspec.MsgspecError,
-)
 
 
 def _cleanup_child_processes() -> None:
     """Terminates all child processes spawned by this daemon using direct psutil delegation."""
-    cleanup_process_tree(os.getpid())
+    import psutil
+    import contextlib
+
+    try:
+        parent = psutil.Process(os.getpid())
+        children = parent.children(recursive=True)
+
+        # 1. Terminate all
+        for p in children:
+            with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                p.terminate()
+
+        # 2. Wait for termination
+        _, alive = psutil.wait_procs(children, timeout=3.0)
+
+        # 3. Force kill survivors
+        for p in alive:
+            with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                logger.warning("Force killing zombie process %d", p.pid)
+                p.kill()
+
+    except (psutil.NoSuchProcess, ProcessLookupError):
+        pass
+    except psutil.Error as e:
+        logger.error("Error during process tree cleanup: %s", e)
 
 
 class BridgeDaemon:

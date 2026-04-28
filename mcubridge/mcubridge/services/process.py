@@ -425,7 +425,7 @@ class ProcessComponent:
 
     async def stop_process(self, pid: int) -> bool:
         """Terminate a running process and its children recursively."""
-        from ..util.process import cleanup_process_tree
+        import psutil
 
         async with self.state.process_lock:
             proc_entry = self.state.running_processes.get(pid)
@@ -433,9 +433,35 @@ class ProcessComponent:
                 return False
             handle = proc_entry.handle
 
-        cleanup_process_tree(handle.pid)
+        # [SIL-2] Reliably terminate a process and all its children.
+        # Uses psutil directly for atomic tree traversal and signal mapping.
+        try:
+            parent = psutil.Process(handle.pid)
+            children = parent.children(recursive=True)
+            all_procs = children + [parent]
 
-        # Update exit code manually since cleanup_process_tree is synchronous
+            # 1. Terminate all
+            for p in all_procs:
+                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                    p.terminate()
+
+            # 2. Wait for termination
+            _, alive = psutil.wait_procs(all_procs, timeout=3.0)
+
+            # 3. Force kill survivors
+            for p in alive:
+                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                    logger.warning("Force killing zombie process %d", p.pid)
+                    p.kill()
+
+        except (psutil.NoSuchProcess, ProcessLookupError):
+            pass
+        except psutil.Error as e:
+            logger.error(
+                "Error during process tree cleanup (pid=%d): %s", handle.pid, e
+            )
+
+        # Update exit code manually since psutil logic above is synchronous
         # but the actual process object (handle) might still need its state updated
         # in the asyncio loop.
         async with self.state.process_lock:

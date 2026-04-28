@@ -8,7 +8,6 @@ import contextlib
 import sqlite3
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Protocol, TypeVar, cast
 
@@ -84,7 +83,6 @@ __all__: Final[tuple[str, ...]] = (
     "McuCapabilities",
     "RuntimeState",
     "PendingPinRequest",
-    "ManagedProcess",
     "create_runtime_state",
     "HandshakeSnapshot",
     "SerialLinkSnapshot",
@@ -93,30 +91,6 @@ __all__: Final[tuple[str, ...]] = (
     "BridgeSnapshot",
     "Status",
 )
-
-
-@dataclass
-class ManagedProcess:
-    """Managed subprocess with direct stream access."""
-
-    pid: int
-    command: str = ""
-    handle: asyncio.subprocess.Process | None = None
-    exit_code: int | None = None
-    io_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-
-    def is_drained(self) -> bool:
-        """[SIL-2] Non-blocking EOF check using native library state."""
-        if not self.handle:
-            return True
-
-        # Process is considered drained only if it's finished and IO is EOF
-        if self.handle.returncode is None:
-            return False
-
-        out_eof = getattr(self.handle.stdout, "at_eof", lambda: True)()
-        err_eof = getattr(self.handle.stderr, "at_eof", lambda: True)()
-        return out_eof and err_eof
 
 
 def collect_system_metrics() -> dict[str, Any]:
@@ -262,7 +236,13 @@ class RuntimeState(msgspec.Struct):
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
-    running_processes: dict[int, ManagedProcess] = msgspec.field(
+    running_processes: dict[int, asyncio.subprocess.Process] = msgspec.field(
+        default_factory=cast(Any, dict)
+    )  # type: ignore
+    process_io_locks: dict[int, asyncio.Lock] = msgspec.field(
+        default_factory=cast(Any, dict)
+    )  # type: ignore
+    process_exit_codes: dict[int, int] = msgspec.field(
         default_factory=cast(Any, dict)
     )  # type: ignore
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
@@ -701,8 +681,7 @@ class RuntimeState(msgspec.Struct):
         # [SIL-2] Terminate all running processes to release pipes/sockets
         with _sup:
             if self.running_processes:
-                for slot in list(self.running_processes.values()):
-                    handle = getattr(slot, "handle", None)
+                for handle in list(self.running_processes.values()):
                     if handle:
                         with contextlib.suppress(OSError, ProcessLookupError):
                             handle.terminate()
@@ -711,6 +690,8 @@ class RuntimeState(msgspec.Struct):
             self.serial_tx_allowed.clear()
             self.link_sync_event.clear()
             self.running_processes.clear()
+            self.process_io_locks.clear()
+            self.process_exit_codes.clear()
 
 
 def create_runtime_state(

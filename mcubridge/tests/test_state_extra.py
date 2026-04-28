@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import (
-    ManagedProcess,
     RuntimeState,
     create_runtime_state,
 )
@@ -43,27 +42,6 @@ def test_mcu_capabilities_properties() -> None:
     assert caps.num_digital_pins == 20
     assert caps.features is not None
     assert caps.features.hw_serial1 is True
-
-
-def test_managed_process_is_drained() -> None:
-    proc = ManagedProcess(pid=1, command="echo")
-    # No handle means drained
-    assert proc.is_drained() is True
-
-    mock_handle = MagicMock()
-    mock_handle.returncode = None  # Still running
-    proc.handle = mock_handle
-    assert proc.is_drained() is False
-
-    mock_handle.returncode = 0  # Finished
-    # Mock streams at EOF
-    mock_handle.stdout.at_eof.return_value = True
-    mock_handle.stderr.at_eof.return_value = True
-    assert proc.is_drained() is True
-
-    # Not EOF means not drained even if finished
-    mock_handle.stdout.at_eof.return_value = False
-    assert proc.is_drained() is False
 
 
 def test_serial_stats_recording() -> None:

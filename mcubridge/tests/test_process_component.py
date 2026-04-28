@@ -96,7 +96,6 @@ async def test_run_async_success(process_comp: ProcessComponent) -> None:
         pid = await process_comp.run_async("echo hello")
         assert pid > 0
         assert pid in process_comp.state.running_processes
-        assert process_comp.state.running_processes[pid].command == "echo hello"
 
 
 @pytest.mark.asyncio
@@ -189,7 +188,7 @@ async def test_monitor_process_finishes(process_comp: ProcessComponent) -> None:
     async with process_comp.state.process_lock:
         if pid in process_comp.state.running_processes:
             proc = process_comp.state.running_processes[pid]
-            assert proc.command == "echo hello"
+            assert proc is mock_process
 
 
 @pytest.mark.asyncio

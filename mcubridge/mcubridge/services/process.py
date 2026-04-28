@@ -21,7 +21,7 @@ from ..protocol.structures import (
 )
 from ..protocol.topics import Topic, topic_path
 from ..state.context import (
-    ManagedProcess,
+    RuntimeState,
 )
 
 if TYPE_CHECKING:
@@ -336,10 +336,11 @@ class ProcessComponent:
 
             # Use OS PID directly (guaranteed < 65536 on OpenWrt/standard Linux)
             pid = process.pid & 0xFFFF
-            managed = ManagedProcess(pid=pid, command=command, handle=process)
 
             async with self.state.process_lock:
-                self.state.running_processes[pid] = managed
+                self.state.running_processes[pid] = process
+                self.state.process_io_locks[pid] = asyncio.Lock()
+                self.state.process_exit_codes[pid] = 0
 
             # Spawn monitor task for completion/timeout only
             asyncio.create_task(self._monitor_process(pid))
@@ -354,34 +355,51 @@ class ProcessComponent:
         """Monitor process lifecycle with safety timeouts to prevent slot deadlocks."""
         try:
             async with self.state.process_lock:
-                proc = self.state.running_processes.get(pid)
+                handle = self.state.running_processes.get(pid)
 
-            if proc and proc.handle:
+            if handle:
                 # [SIL-2] Non-blocking wait for process exit
                 try:
-                    proc.exit_code = await asyncio.wait_for(
-                        proc.handle.wait(), timeout=float(self.state.process_timeout)
+                    exit_code = await asyncio.wait_for(
+                        handle.wait(), timeout=float(self.state.process_timeout)
                     )
+                    self.state.process_exit_codes[pid] = exit_code
                 except asyncio.TimeoutError:
                     logger.warning(
                         "Process %d monitor timed out; forcing finalization", pid
                     )
                     with contextlib.suppress(OSError):
-                        proc.handle.kill()
-                    proc.exit_code = -1
+                        handle.kill()
+                    self.state.process_exit_codes[pid] = -1
         finally:
             self._finalize_process_internal(pid)
+
+    def _is_drained(self, handle: asyncio.subprocess.Process | None) -> bool:
+        """[SIL-2] Non-blocking EOF check using native library state."""
+        if not handle:
+            return True
+
+        # Process is considered drained only if it's finished and IO is EOF
+        if handle.returncode is None:
+            return False
+
+        out_eof = getattr(handle.stdout, "at_eof", lambda: True)()
+        err_eof = getattr(handle.stderr, "at_eof", lambda: True)()
+        return out_eof and err_eof
 
     async def poll_process(self, pid: int) -> ProcessOutputBatch:
         """Fetch pending output and status for a running process."""
         async with self.state.process_lock:
-            proc = self.state.running_processes.get(pid)
-            if not proc:
+            handle = self.state.running_processes.get(pid)
+            io_lock = self.state.process_io_locks.get(pid)
+            exit_code = self.state.process_exit_codes.get(pid, 0)
+
+            if not handle or not io_lock:
                 return ProcessOutputBatch(
                     Status.ERROR.value, 1, b"", b"", True, False, False
                 )
 
-            async with proc.io_lock:
+            async with io_lock:
                 budget = protocol.MAX_PAYLOAD_SIZE - 32
 
                 async def _read_stream(
@@ -398,28 +416,21 @@ class ProcessComponent:
                     except asyncio.TimeoutError:
                         return b"", True
 
-                stdout_chunk = b""
-                stderr_chunk = b""
-                t_out = False
-                t_err = False
+                stdout_chunk, t_out = await _read_stream(handle.stdout)
+                stderr_chunk, t_err = await _read_stream(handle.stderr)
 
-                if proc.handle:
-                    stdout_chunk, t_out = await _read_stream(proc.handle.stdout)
-                    stderr_chunk, t_err = await _read_stream(proc.handle.stderr)
-                is_finished = (
-                    proc.handle.returncode is not None if proc.handle else True
-                )
+                is_finished = handle.returncode is not None
 
                 batch = ProcessOutputBatch(
                     Status.OK.value,
-                    proc.exit_code or 0,
+                    exit_code,
                     stdout_chunk,
                     stderr_chunk,
                     is_finished,
                     t_out,
                     t_err,
                 )
-                if is_finished and proc.is_drained():
+                if is_finished and self._is_drained(handle):
                     self._finalize_process_internal(pid)
                 return batch
 
@@ -428,10 +439,9 @@ class ProcessComponent:
         import psutil
 
         async with self.state.process_lock:
-            proc_entry = self.state.running_processes.get(pid)
-            if not proc_entry or not proc_entry.handle:
+            handle = self.state.running_processes.get(pid)
+            if not handle:
                 return False
-            handle = proc_entry.handle
 
         # [SIL-2] Reliably terminate a process and all its children.
         # Uses psutil directly for atomic tree traversal and signal mapping.
@@ -456,18 +466,20 @@ class ProcessComponent:
 
         except (psutil.NoSuchProcess, ProcessLookupError):
             pass
-        except psutil.Error as e:
+        except Exception as e:
             logger.error(
-                "Error during process tree cleanup (pid=%d): %s", handle.pid, e
+                "Error during process tree cleanup (pid=%d): %s",
+                handle.pid,
+                e,
+                exc_info=True,
             )
 
         # Update exit code manually since psutil logic above is synchronous
         # but the actual process object (handle) might still need its state updated
         # in the asyncio loop.
         async with self.state.process_lock:
-            current = self.state.running_processes.get(pid)
-            if current is not None and current is proc_entry:
-                current.exit_code = getattr(handle, "returncode", -1)
+            if pid in self.state.running_processes:
+                self.state.process_exit_codes[pid] = getattr(handle, "returncode", -1)
 
         await self._finalize_process(pid)
         return True
@@ -508,8 +520,12 @@ class ProcessComponent:
             self._finalize_process_internal(pid)
 
     def _finalize_process_internal(self, pid: int) -> None:
-        proc = self.state.running_processes.pop(pid, None)
-        if proc:
+        handle = self.state.running_processes.pop(pid, None)
+        self.state.process_io_locks.pop(pid, None)
+        # Note: We keep the exit code in self.state.process_exit_codes until
+        # specifically cleared or overwritten, allowing asynchronous status
+        # retrieval after process termination.
+        if handle:
             self._process_slots.release()
 
 

@@ -1,4 +1,5 @@
 import msgspec
+import psutil
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.transport.mqtt import MqttTransport
 from typing import Any
@@ -191,7 +192,7 @@ async def test_handle_kill_process_lookup_error_is_handled(
         state.running_processes[pid] = mock_handle
         state.process_io_locks[pid] = asyncio.Lock()
 
-    with (patch("psutil.Process", side_effect=Exception("Lookup Fail")),):
+    with (patch("psutil.Process", side_effect=psutil.NoSuchProcess(pid)),):
         ok = await process_comp.handle_kill(
             0, msgspec.msgpack.encode(structures.ProcessKillPacket(pid=pid))
         )

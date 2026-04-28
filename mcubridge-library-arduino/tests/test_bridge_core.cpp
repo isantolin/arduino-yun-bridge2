@@ -42,7 +42,7 @@ void sync_bridge(BiStream& stream) {
     const char* test_secret = "top-secret";
     etl::array<uint8_t, 32> secret_buf;
     secret_buf.fill(0);
-    memcpy(secret_buf.data(), test_secret, strlen(test_secret));
+    etl::copy_n(test_secret, strlen(test_secret), secret_buf.data());
     ba.setSharedSecret(etl::span<const uint8_t>(secret_buf.data(), 32));
   }
 

@@ -466,7 +466,7 @@ class ProcessComponent:
 
         except (psutil.NoSuchProcess, ProcessLookupError):
             pass
-        except Exception as e:
+        except (psutil.Error, RuntimeError) as e:
             logger.error(
                 "Error during process tree cleanup (pid=%d): %s",
                 handle.pid,

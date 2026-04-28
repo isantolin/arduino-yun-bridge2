@@ -201,30 +201,6 @@ def collect_system_metrics() -> dict[str, Any]:
         return {}
 
 
-def _make_mqtt_queue() -> asyncio.Queue[QueuedPublish]:
-    return asyncio.Queue[QueuedPublish]()
-
-
-def _make_str_int_dict() -> dict[str, int]:
-    return {}
-
-
-def _make_snapshot_dict() -> SpoolSnapshot:
-    return {}
-
-
-def _make_bytes_deque() -> DequeLike[bytes]:
-    return cast(DequeLike[bytes], collections.deque[bytes]())
-
-
-def _make_int_process_dict() -> dict[int, ManagedProcess]:
-    return {}
-
-
-def _make_pin_request_deque() -> collections.deque[PendingPinRequest]:
-    return collections.deque[PendingPinRequest]()
-
-
 class RuntimeState(msgspec.Struct):
     """Aggregated mutable state shared across the daemon layers."""
 
@@ -260,10 +236,12 @@ class RuntimeState(msgspec.Struct):
             self.link_sync_event.set()
 
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=_make_mqtt_queue,
-    )
+        default_factory=cast(Any, asyncio.Queue)
+    )  # type: ignore
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=_make_str_int_dict)
+    mqtt_drop_counts: dict[str, int] = msgspec.field(
+        default_factory=cast(Any, dict)
+    )  # type: ignore
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_replayed: int = 0
     mqtt_spool_degraded: bool = False
@@ -280,16 +258,18 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(
-        default_factory=_make_snapshot_dict
-    )
-    datastore: dict[str, str] = msgspec.field(default_factory=dict)  # type: ignore
+        default_factory=cast(Any, dict)
+    )  # type: ignore
+    datastore: dict[str, Any] = msgspec.field(
+        default_factory=cast(Any, dict)
+    )  # type: ignore
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
     mailbox_queue: DequeLike[bytes] = msgspec.field(
-        default_factory=_make_bytes_deque,
+        default_factory=lambda: cast(DequeLike[bytes], collections.deque[bytes]()),
     )
     mailbox_incoming_queue: DequeLike[bytes] = msgspec.field(
-        default_factory=_make_bytes_deque,
+        default_factory=lambda: cast(DequeLike[bytes], collections.deque[bytes]()),
     )
 
     _mailbox_queue_cache: diskcache.Cache | None = None
@@ -298,7 +278,7 @@ class RuntimeState(msgspec.Struct):
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     console_to_mcu_queue: DequeLike[bytes] = msgspec.field(
-        default_factory=_make_bytes_deque,
+        default_factory=lambda: cast(DequeLike[bytes], collections.deque[bytes]()),
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
 
@@ -306,8 +286,8 @@ class RuntimeState(msgspec.Struct):
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
     running_processes: dict[int, ManagedProcess] = msgspec.field(
-        default_factory=_make_int_process_dict
-    )
+        default_factory=cast(Any, dict)
+    )  # type: ignore
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
@@ -326,11 +306,11 @@ class RuntimeState(msgspec.Struct):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=_make_pin_request_deque,
-    )
+        default_factory=cast(Any, collections.deque),
+    )  # type: ignore
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=_make_pin_request_deque,
-    )
+        default_factory=cast(Any, collections.deque),
+    )  # type: ignore
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
@@ -382,10 +362,12 @@ class RuntimeState(msgspec.Struct):
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counts: dict[str, int] = msgspec.field(default_factory=lambda: {})
+    mcu_status_counts: dict[str, int] = msgspec.field(
+        default_factory=cast(Any, dict)
+    )  # type: ignore
     supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
-        default_factory=lambda: {}
-    )
+        default_factory=cast(Any, dict)
+    )  # type: ignore
     supervisor_failures: int = 0
     last_supervisor_error: str | None = None
 

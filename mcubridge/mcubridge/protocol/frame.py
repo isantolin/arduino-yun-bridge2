@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from binascii import crc32
 import msgspec
-from typing import TypeVar
+from typing import TypeVar, Any, cast
+import construct
 from construct import (
     Bytes,
     Int8ub,
@@ -24,7 +25,6 @@ from construct import (
     this,
     Checksum,
     RawCopy,
-    ChecksumError,
 )
 from construct.core import ConstructError
 
@@ -50,7 +50,11 @@ RPC_FRAME_BODY = Struct(
 RPC_FRAME = Struct(
     "body" / RawCopy(RPC_FRAME_BODY),
     "crc"
-    / Checksum(Int32ub, lambda data: crc32(bytes(data)) & 0xFFFFFFFF, this.body.data),
+    / Checksum(
+        Int32ub,
+        lambda data: crc32(bytes(cast(Any, data))) & 0xFFFFFFFF,  # type: ignore
+        this.body.data,
+    ),
 )
 
 
@@ -141,7 +145,7 @@ class Frame(msgspec.Struct, frozen=True):
                 sequence_id=int(body.header.sequence_id),
                 payload=payload,
             )
-        except ChecksumError as e:
+        except getattr(construct, "ChecksumError", ConstructError) as e:
             raise ValueError(f"CRC mismatch: {e}") from e
         except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:
             raise ValueError(f"Incomplete or malformed frame: {e}") from e

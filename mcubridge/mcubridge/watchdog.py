@@ -86,7 +86,7 @@ class WatchdogKeepalive:
                 await asyncio.sleep(self._interval)
         except asyncio.CancelledError:
             self.stop()
-            self._logger.debug("Watchdog keepalive cancelled")
+            self._logger.info("Watchdog keepalive cancelled")
             raise
 
 

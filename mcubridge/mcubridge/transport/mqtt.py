@@ -293,10 +293,11 @@ class MqttTransport:
                 )
 
             origin_topic = str(reply_context.topic)
-            user_properties = list(message_to_queue.user_properties)
-            user_properties.append(("bridge-request-topic", origin_topic))
+            new_props = message_to_queue.user_properties + (
+                ("bridge-request-topic", origin_topic),
+            )
             message_to_queue = msgspec.structs.replace(
-                message_to_queue, user_properties=tuple(user_properties)
+                message_to_queue, user_properties=new_props
             )
 
         try:

@@ -12,7 +12,6 @@ from aiomqtt.message import Message
 from ..protocol import protocol, structures
 from ..protocol.protocol import ShellAction, Status
 from ..protocol.structures import (
-    PayloadValidationError,
     ProcessOutputBatch,
     QueuedPublish,
     ShellCommandPayload,
@@ -76,22 +75,57 @@ class ProcessComponent:
 
         match action:
             case ShellAction.RUN_ASYNC:
-                payload_model = self._parse_shell_command(payload, action)
-                if payload_model is None:
-                    return True
-                await self._handle_mqtt_run_async(payload_model, inbound)
+                try:
+                    if not payload:
+                        raise ValueError("Shell command payload is empty")
+                    try:
+                        payload_model = msgspec.msgpack.decode(
+                            payload, type=ShellCommandPayload
+                        )
+                        if not payload_model.command.strip():
+                            raise ValueError("Shell command payload is empty")
+                    except (msgspec.DecodeError, msgspec.ValidationError):
+                        text = payload.decode("utf-8", errors="ignore").strip()
+                        if not text:
+                            raise ValueError("Shell command payload is empty")
+                        payload_model = msgspec.convert(
+                            {"command": text}, ShellCommandPayload
+                        )
+                    await self._handle_mqtt_run_async(payload_model, inbound)
+                except (ValueError, msgspec.ValidationError) as exc:
+                    logger.warning(
+                        "Invalid shell/%s payload: %s",
+                        action,
+                        exc,
+                    )
 
             case ShellAction.POLL if len(segments) == 2:
-                pid_model = self._parse_shell_pid(segments[1], action)
-                if pid_model is None:
-                    return True
-                await self._handle_mqtt_poll(pid_model, inbound)
+                try:
+                    pid = int(segments[1], 10)
+                    pid_model = msgspec.convert(
+                        {"pid": pid}, ShellPidPayload, strict=True
+                    )
+                    await self._handle_mqtt_poll(pid_model, inbound)
+                except (ValueError, msgspec.ValidationError) as exc:
+                    logger.warning(
+                        "Invalid shell/%s PID: %s",
+                        action,
+                        exc,
+                    )
 
             case ShellAction.KILL if len(segments) == 2:
-                pid_model = self._parse_shell_pid(segments[1], action)
-                if pid_model is None:
-                    return True
-                await self._handle_mqtt_kill(pid_model, inbound)
+                try:
+                    pid = int(segments[1], 10)
+                    pid_model = msgspec.convert(
+                        {"pid": pid}, ShellPidPayload, strict=True
+                    )
+                    await self._handle_mqtt_kill(pid_model, inbound)
+                except (ValueError, msgspec.ValidationError) as exc:
+                    logger.warning(
+                        "Invalid shell/%s PID: %s",
+                        action,
+                        exc,
+                    )
 
             case _:
                 logger.debug(
@@ -162,36 +196,6 @@ class ProcessComponent:
         self, pid_model: ShellPidPayload, inbound: Message | None = None
     ) -> None:
         await self.stop_process(pid_model.pid)
-
-    def _parse_shell_command(
-        self,
-        payload: bytes,
-        action: str,
-    ) -> ShellCommandPayload | None:
-        try:
-            return ShellCommandPayload.from_mqtt(payload)
-        except PayloadValidationError as exc:
-            logger.warning(
-                "Invalid shell/%s payload: %s",
-                action,
-                exc.message,
-            )
-            return None
-
-    def _parse_shell_pid(
-        self,
-        segment: str,
-        action: str,
-    ) -> ShellPidPayload | None:
-        try:
-            return ShellPidPayload.from_topic_segment(segment)
-        except PayloadValidationError as exc:
-            logger.warning(
-                "Invalid shell/%s PID: %s",
-                action,
-                exc.message,
-            )
-            return None
 
     # --- MCU Handlers (Required by Dispatcher) ---
 

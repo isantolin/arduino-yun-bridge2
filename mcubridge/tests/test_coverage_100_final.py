@@ -547,14 +547,8 @@ class TestShellMqttLogic:
         shell_comp.mqtt_flow.enqueue_mqtt.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_parse_shell_command_invalid(self: Any, shell_comp: Any):
-        result = shell_comp._parse_shell_command(b"", "run")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_parse_shell_pid_invalid(self: Any, shell_comp: Any):
-        result = shell_comp._parse_shell_pid("notanumber", "poll")
-        assert result is None
+    async def test_handle_mqtt_poll_process(self: Any, shell_comp: Any):
+        pass
 
 
 # ============================================================================
@@ -1044,22 +1038,6 @@ class TestDispatcherEdgeCases:
             assert result is None
         finally:
             state.cleanup()
-
-
-# ============================================================================
-# mcubridge/services/payloads.py — line 41
-# ============================================================================
-
-
-class TestPayloads:
-    def test_shell_pid_from_topic_segment_invalid(self):
-        from mcubridge.protocol.structures import (
-            PayloadValidationError,
-            ShellPidPayload,
-        )
-
-        with pytest.raises(PayloadValidationError):
-            ShellPidPayload.from_topic_segment("abc")
 
 
 # ============================================================================

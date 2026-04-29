@@ -29,7 +29,6 @@ import tenacity
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.config.const import (
     MAX_SERIAL_FRAME_BYTES,
-    DEFAULT_RECONNECT_DELAY,
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
@@ -106,17 +105,13 @@ class SerialTransport:
             reraise=True,
         )
 
-        while not self._stop_event.is_set():
-            try:
-                await retryer(self._connect_and_run)
-            except asyncio.CancelledError:
-                break
-            except SerialHandshakeFatal as exc:
-                logger.error("Fatal serial handshake error: %s", exc)
-                raise
-            except (OSError, ConnectionError, RuntimeError) as exc:
-                logger.error("Transport fatal error: %s", exc)
-                await asyncio.sleep(DEFAULT_RECONNECT_DELAY)
+        try:
+            await retryer(self._connect_and_run)
+        except asyncio.CancelledError:
+            pass
+        except SerialHandshakeFatal as exc:
+            logger.error("Fatal serial handshake error: %s", exc)
+            raise
 
     async def _connect_and_run(self) -> None:
         """Single connection attempt and execution."""

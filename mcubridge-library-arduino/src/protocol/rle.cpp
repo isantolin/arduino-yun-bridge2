@@ -119,8 +119,8 @@ size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
     }
   });
 
-  if (fsm.error || fsm.get_state_id() !=
-                       static_cast<etl::fsm_state_id_t>(StateId::LITERAL))
+  if (fsm.error ||
+      fsm.get_state_id() != static_cast<etl::fsm_state_id_t>(StateId::LITERAL))
     return 0;
   return static_cast<size_t>(etl::distance(dst.begin(), fsm.it));
 }

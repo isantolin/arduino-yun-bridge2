@@ -345,14 +345,15 @@ void BridgeClass::_onStartupStabilized() {
   // Eradicates manual while/for loops for safety compliance.
   struct Iteration {};
   etl::array<Iteration, bridge::config::STARTUP_DRAIN_FINAL> iterations;
-  (void)etl::find_if(iterations.begin(), iterations.end(), [this, start_ms](const Iteration&) {
-    if (_stream.available() <= 0 ||
-        (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
-      return true;  // Stop condition
-    }
-    (void)_stream.read();
-    return false;  // Continue
-  });
+  (void)etl::find_if(
+      iterations.begin(), iterations.end(), [this, start_ms](const Iteration&) {
+        if (_stream.available() <= 0 ||
+            (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
+          return true;  // Stop condition
+        }
+        (void)_stream.read();
+        return false;  // Continue
+      });
 
   BRIDGE_ATOMIC_BLOCK { _fsm.receive(bridge::fsm::EvStabilized()); }
 }

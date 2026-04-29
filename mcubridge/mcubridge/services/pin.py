@@ -289,10 +289,7 @@ class PinComponent:
         return None
 
     def _build_pin_topic(self, topic_type: Topic, pin: int | None) -> str:
-        segments: list[str] = []
-        if pin is not None:
-            segments.append(str(pin))
-        segments.append("value")
+        segments = (str(pin), "value") if pin is not None else ("value",)
         return topic_path(
             self.state.mqtt_topic_prefix,
             topic_type,

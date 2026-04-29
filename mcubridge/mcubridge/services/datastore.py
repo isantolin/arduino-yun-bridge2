@@ -224,12 +224,13 @@ class DatastoreComponent:
             DatastoreAction.GET,
             *key_segments,
         )
-        properties: list[tuple[str, str]] = [("bridge-datastore-key", key)]
-        if error_reason:
-            properties.append(("bridge-error", error_reason))
+        props_tuple = (
+            (("bridge-datastore-key", key), ("bridge-error", error_reason))
+            if error_reason
+            else (("bridge-datastore-key", key),)
+        )
 
         # Direct call to mqtt_flow.enqueue_mqtt (Zero Wrapper)
-        props_tuple = tuple(properties)
         await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=topic_name,

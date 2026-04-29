@@ -13,8 +13,6 @@ The frame format is strictly defined to ensure:
 from __future__ import annotations
 
 from binascii import crc32
-from typing import TypeVar
-import msgspec
 from construct import (
     Bytes,
     Int8ub,
@@ -22,6 +20,9 @@ from construct import (
     Int32ub,
     Struct,
     this,
+    Checksum,
+    RawCopy,
+    ChecksumError,
 )
 from construct.core import ConstructError
 
@@ -43,13 +44,15 @@ RPC_FRAME_BODY = Struct(
     "payload" / Bytes(this.header.payload_len),
 )
 
-# [SIL-2] Full Frame (Not compiled due to dynamic payload size via 'this')
+# [SIL-2] Full Frame using native Checksum (Zero-Boilerplate)
 RPC_FRAME = Struct(
-    "body" / RPC_FRAME_BODY,
-    "crc" / Int32ub,
+    "body" / RawCopy(RPC_FRAME_BODY),
+    "crc" / Checksum(
+        Int32ub,
+        lambda data: crc32(bytes(data)) & 0xFFFFFFFF,
+        this.body.data
+    )
 )
-
-
 class Frame(msgspec.Struct, frozen=True):
     """Represents an RPC frame for MCU-Linux communication."""
 
@@ -95,21 +98,21 @@ class Frame(msgspec.Struct, frozen=True):
                 cmd_id |= protocol.CMD_FLAG_COMPRESSED
 
         try:
-            # Build body for CRC calculation
-            body_bytes = RPC_FRAME_BODY.build(
+            return RPC_FRAME.build(
                 {
-                    "header": {
-                        "version": protocol.PROTOCOL_VERSION,
-                        "payload_len": len(working_payload),
-                        "command_id": cmd_id,
-                        "sequence_id": self.sequence_id,
-                    },
-                    "payload": working_payload,
+                    "body": {
+                        "value": {
+                            "header": {
+                                "version": protocol.PROTOCOL_VERSION,
+                                "payload_len": len(working_payload),
+                                "command_id": cmd_id,
+                                "sequence_id": self.sequence_id,
+                            },
+                            "payload": working_payload,
+                        }
+                    }
                 }
             )
-            # Append CRC32
-            crc_val = crc32(body_bytes) & 0xFFFFFFFF
-            return body_bytes + Int32ub.build(crc_val)
         except (ConstructError, ValueError, TypeError) as e:
             raise ValueError(f"Failed to build frame: {e}") from e
 
@@ -117,23 +120,13 @@ class Frame(msgspec.Struct, frozen=True):
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
         """Parse *raw_frame_buffer* and create a :class:`Frame` with explicit RLE decompression."""
         try:
-            # Explicit split for CRC validation
             if len(raw_frame_buffer) < 11:  # Header(7) + CRC(4)
                 raise ValueError("Frame too short")
 
-            raw_bytes = bytes(raw_frame_buffer)
-            body_bytes = raw_bytes[:-4]
-            expected_crc = Int32ub.parse(raw_bytes[-4:])
-            actual_crc = crc32(body_bytes) & 0xFFFFFFFF
-
-            if actual_crc != expected_crc:
-                raise ValueError(
-                    f"CRC mismatch: {actual_crc:08X} != {expected_crc:08X}"
-                )
-
-            obj = RPC_FRAME_BODY.parse(body_bytes)
-            cmd_id = int(obj.header.command_id)
-            payload = obj.payload
+            obj = RPC_FRAME.parse(raw_frame_buffer)
+            body = obj.body.value
+            cmd_id = int(body.header.command_id)
+            payload = body.payload
 
             # [SIL-2] Explicit Decompression Logic
             if cmd_id & protocol.CMD_FLAG_COMPRESSED:
@@ -144,8 +137,10 @@ class Frame(msgspec.Struct, frozen=True):
 
             return cls(
                 command_id=cmd_id,
-                sequence_id=int(obj.header.sequence_id),
+                sequence_id=int(body.header.sequence_id),
                 payload=payload,
             )
+        except ChecksumError as e:
+            raise ValueError(f"CRC mismatch: {e}") from e
         except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:
             raise ValueError(f"Incomplete or malformed frame: {e}") from e

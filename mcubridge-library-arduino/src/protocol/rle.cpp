@@ -21,7 +21,7 @@ struct LiteralState
     : public etl::fsm_state<RleFsm, LiteralState,
                             static_cast<etl::fsm_state_id_t>(StateId::LITERAL),
                             ByteMsg> {
-  etl::fsm_state_id_t on_event(const ByteMsg& msg);
+  etl::fsm_state_id_t on_event(const etl::imessage& msg);
   etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();
   }
@@ -31,7 +31,7 @@ struct EscMarkerState
     : public etl::fsm_state<
           RleFsm, EscMarkerState,
           static_cast<etl::fsm_state_id_t>(StateId::ESC_MARKER), ByteMsg> {
-  etl::fsm_state_id_t on_event(const ByteMsg& msg);
+  etl::fsm_state_id_t on_event(const etl::imessage& msg);
   etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();
   }
@@ -41,7 +41,7 @@ struct EscValState
     : public etl::fsm_state<RleFsm, EscValState,
                             static_cast<etl::fsm_state_id_t>(StateId::ESC_VAL),
                             ByteMsg> {
-  etl::fsm_state_id_t on_event(const ByteMsg& msg);
+  etl::fsm_state_id_t on_event(const etl::imessage& msg);
   etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();
   }
@@ -71,7 +71,8 @@ class RleFsm : public etl::fsm {
   }
 };
 
-etl::fsm_state_id_t LiteralState::on_event(const ByteMsg& msg) {
+etl::fsm_state_id_t LiteralState::on_event(const etl::imessage& imsg) {
+  const auto& msg = static_cast<const ByteMsg&>(imsg);
   auto& m = get_fsm_context();
   if (msg.b == ESCAPE_BYTE)
     return static_cast<etl::fsm_state_id_t>(StateId::ESC_MARKER);
@@ -83,13 +84,15 @@ etl::fsm_state_id_t LiteralState::on_event(const ByteMsg& msg) {
   return static_cast<etl::fsm_state_id_t>(StateId::LITERAL);
 }
 
-etl::fsm_state_id_t EscMarkerState::on_event(const ByteMsg& msg) {
+etl::fsm_state_id_t EscMarkerState::on_event(const etl::imessage& imsg) {
+  const auto& msg = static_cast<const ByteMsg&>(imsg);
   auto& m = get_fsm_context();
   m.esc_count = msg.b;
   return static_cast<etl::fsm_state_id_t>(StateId::ESC_VAL);
 }
 
-etl::fsm_state_id_t EscValState::on_event(const ByteMsg& msg) {
+etl::fsm_state_id_t EscValState::on_event(const etl::imessage& imsg) {
+  const auto& msg = static_cast<const ByteMsg&>(imsg);
   auto& m = get_fsm_context();
   size_t run_len = (m.esc_count == SINGLE_ESCAPE_MARKER)
                        ? 1

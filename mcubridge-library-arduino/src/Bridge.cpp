@@ -343,9 +343,7 @@ void BridgeClass::_onStartupStabilized() {
   uint32_t start_ms = millis();
   // [SIL-2] Deterministic drain via ETL algorithm using a fixed sequence.
   // Eradicates manual while/for loops for safety compliance.
-  struct Iteration {
-    uint16_t id;
-  };
+  struct Iteration {};
   etl::array<Iteration, bridge::config::STARTUP_DRAIN_FINAL> iterations;
   (void)etl::find_if(iterations.begin(), iterations.end(), [this, start_ms](const Iteration&) {
     if (_stream.available() <= 0 ||

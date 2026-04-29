@@ -13,6 +13,8 @@ The frame format is strictly defined to ensure:
 from __future__ import annotations
 
 from binascii import crc32
+import msgspec
+from typing import TypeVar
 from construct import (
     Bytes,
     Int8ub,
@@ -47,12 +49,11 @@ RPC_FRAME_BODY = Struct(
 # [SIL-2] Full Frame using native Checksum (Zero-Boilerplate)
 RPC_FRAME = Struct(
     "body" / RawCopy(RPC_FRAME_BODY),
-    "crc" / Checksum(
-        Int32ub,
-        lambda data: crc32(bytes(data)) & 0xFFFFFFFF,
-        this.body.data
-    )
+    "crc"
+    / Checksum(Int32ub, lambda data: crc32(bytes(data)) & 0xFFFFFFFF, this.body.data),
 )
+
+
 class Frame(msgspec.Struct, frozen=True):
     """Represents an RPC frame for MCU-Linux communication."""
 

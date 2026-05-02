@@ -1,6 +1,7 @@
 """Tests for SerialFlowController metrics integration."""
 
 from __future__ import annotations
+
 import msgspec
 
 import asyncio

@@ -1,13 +1,11 @@
-"""Transport abstractions (serial, MQTT) for the MCU Bridge daemon."""
+"""Transport abstractions (serial) for the MCU Bridge daemon."""
 
-from .mqtt import MqttTransport
-from .serial import (
-    MAX_SERIAL_FRAME_BYTES,
-    SerialTransport,
+from .serial_link import (
+    write_frame,
+    open_serial_link,
 )
 
 __all__ = [
-    "MAX_SERIAL_FRAME_BYTES",
-    "MqttTransport",
-    "SerialTransport",
+    "write_frame",
+    "open_serial_link",
 ]

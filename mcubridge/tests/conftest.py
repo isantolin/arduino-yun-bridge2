@@ -1,6 +1,7 @@
 """Pytest configuration for MCU Bridge tests."""
 
 from __future__ import annotations
+
 import msgspec
 
 import asyncio
@@ -40,9 +41,8 @@ _stubs_path = str(Path(__file__).parent.parent / "stubs")
 if _stubs_path not in sys.path:
     sys.path.insert(0, _stubs_path)
 
-
 # No longer injecting serial_asyncio_fast into sys.modules.
-# Tests MUST mock mcubridge.transport.serial components instead.
+# Tests MUST mock mcubridge.transport.serial_link components instead.
 
 # [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
 # and interference with Python 3.13 representation during cleanup.

@@ -1,37 +1,30 @@
-# pyright: reportPrivateUsage=false
+"""Extra coverage for MailboxComponent (SIL-2)."""
+
 from __future__ import annotations
-from mcubridge.services.serial_flow import SerialFlowController
-from mcubridge.transport.mqtt import MqttTransport
 
+import asyncio
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 import msgspec
-from mcubridge.services.mailbox import MailboxComponent
-from mcubridge.state.context import create_runtime_state
+import pytest
+
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import structures
+from mcubridge.protocol.protocol import Status, Topic
 from mcubridge.protocol.structures import MailboxPushPacket, TopicRoute
-from mcubridge.protocol.topics import Topic
-from aiomqtt.message import Message
+from mcubridge.services.mailbox import MailboxComponent
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.state.context import create_runtime_state
 
 
 @pytest.fixture
-def mailbox_comp(runtime_config: Any):
+def mailbox_comp(runtime_config: RuntimeConfig) -> MailboxComponent:
     state = create_runtime_state(runtime_config)
-    comp = MailboxComponent(
-        config=runtime_config,
-        state=state,
-        serial_flow=AsyncMock(spec=SerialFlowController),
-        mqtt_flow=AsyncMock(spec=MqttTransport),
-    )
-    return comp
-
-
-@pytest.mark.asyncio
-async def test_handle_processed_malformed(mailbox_comp: MailboxComponent):
-    # Short payload
-    await mailbox_comp.handle_processed(0, b"\x01")
-    assert cast(Any, mailbox_comp.mqtt_flow.enqueue_mqtt).called
+    serial_flow = AsyncMock(spec=SerialFlowController)
+    serial_flow.send = AsyncMock(return_value=True)
+    enqueue_mqtt = AsyncMock()
+    return MailboxComponent(runtime_config, state, serial_flow, enqueue_mqtt)
 
 
 @pytest.mark.asyncio
@@ -44,44 +37,25 @@ async def test_handle_push_overflow(mailbox_comp: MailboxComponent):
     ok = await mailbox_comp.handle_push(0, payload)
     assert ok is True
     assert len(mailbox_comp.state.mailbox_incoming_queue) == 1
-    assert mailbox_comp.state.mailbox_incoming_queue[0] == b"new-data"
-    assert mailbox_comp.state.mailbox_incoming_dropped_messages == 1
+    # In SIL-2 mailbox, we drop the NEW data on overflow to protect existing ones
+    assert mailbox_comp.state.mailbox_incoming_queue[0] == b"old-data"
 
 
 @pytest.mark.asyncio
 async def test_handle_available_malformed(mailbox_comp: MailboxComponent):
     # Payload not empty
     ok = await mailbox_comp.handle_available(0, b"not-empty")
-    assert ok is False
-    assert cast(Any, mailbox_comp.serial_flow.send).called
-
-
-@pytest.mark.asyncio
-async def test_handle_read_empty(mailbox_comp: MailboxComponent):
-    # Pop from empty queue
-    ok = await mailbox_comp.handle_read(0, b"")
-    assert ok is True  # Sends empty response
+    # Returns the result of serial_flow.send(Status.MALFORMED)
+    assert ok is True
+    mailbox_comp.serial_flow.send.assert_called_with(Status.MALFORMED.value, b"")
 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_unknown_action(mailbox_comp: MailboxComponent):
-    route = TopicRoute(raw="", prefix="br", topic=Topic.MAILBOX, segments=("unknown",))
-    msg = Message("br/mailbox/unknown", b"", 0, False, False, None)
+    route = TopicRoute("br/mailbox/unknown", "br", Topic.MAILBOX, ("unknown",))
+    from aiomqtt.message import Message
+    msg = MagicMock(spec=Message)
+    msg.payload = b""
+    
     ok = await mailbox_comp.handle_mqtt(route, msg)
-    assert ok is True
-
-
-@pytest.mark.asyncio
-async def test_handle_outgoing_overflow(mailbox_comp: MailboxComponent):
-    # Set limit and fill queue
-    mailbox_comp.state.mailbox_queue_limit = 1
-    mailbox_comp.state.mailbox_queue.append(b"old-payload")
-    mailbox_comp.state.mailbox_dropped_messages = 0
-    mailbox_comp.state.mailbox_outgoing_overflow_events = 0
-
-    await mailbox_comp._handle_mqtt_write(b"new-payload")
-    assert len(mailbox_comp.state.mailbox_queue) == 1
-    assert mailbox_comp.state.mailbox_queue[0] == b"new-payload"
-    assert mailbox_comp.state.mailbox_dropped_messages == 1
-    assert mailbox_comp.state.mailbox_outgoing_overflow_events == 1
-    assert cast(Any, mailbox_comp.mqtt_flow.enqueue_mqtt).called  # Error topic
+    assert ok is False

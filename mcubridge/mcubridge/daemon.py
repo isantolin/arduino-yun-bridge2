@@ -12,16 +12,6 @@ The daemon implements robust error handling:
 - Fatal exception handling for unrecoverable serial errors
 - Graceful shutdown on SIGTERM/SIGINT
 - Status file cleanup on exit
-
-Architecture:
-    main() -> BridgeDaemon -> TaskGroup
-        ├── serial-link (SerialTransport)
-        ├── mqtt-link (mqtt_task)
-        ├── status-writer (status_writer)
-        ├── metrics-publisher (publish_metrics)
-        ├── bridge-snapshots (optional)
-        ├── watchdog (optional)
-        ├── prometheus-exporter (optional)
 """
 
 from __future__ import annotations
@@ -30,18 +20,18 @@ import asyncio
 import os
 import sys
 from collections.abc import Awaitable, Callable
-from typing import Any, Annotated
+from typing import Any, cast
 
-import msgspec
 import tenacity
-import typer
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
 import structlog
 import uvloop
+import aiomqtt
+from functools import partial
+import logging
 
 from mcubridge.config.const import (
-    DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
 )
@@ -53,7 +43,6 @@ from mcubridge.config.settings import (
 )
 from mcubridge.metrics import (
     PrometheusExporter,
-    publish_bridge_snapshots,
     publish_metrics,
 )
 from mcubridge.security.security import verify_crypto_integrity
@@ -61,11 +50,15 @@ from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.state.status import STATUS_FILE, status_writer
-from mcubridge.transport import (
-    MqttTransport,
-    SerialTransport,
-)
+from mcubridge.transport import serial_link
 from mcubridge.watchdog import WatchdogKeepalive
+from mcubridge.mqtt.queue import (
+    configure_spool,
+    initialize_spool,
+    enqueue_mqtt,
+    stash_mqtt_message,
+    flush_mqtt_spool,
+)
 
 logger = structlog.get_logger("mcubridge")
 
@@ -100,37 +93,22 @@ def _cleanup_child_processes() -> None:
 
 
 class BridgeDaemon:
-    """Main orchestrator for the MCU Bridge daemon services.
-
-    This class manages the lifecycle of all daemon components including
-    serial communication, MQTT publishing, metrics, and optional features
-    like watchdog and Prometheus exporter.
-
-    Attributes:
-        config: Runtime configuration loaded from UCI.
-        state: Shared runtime state for all components.
-        service: BridgeService instance handling RPC dispatch.
-        watchdog: Optional watchdog keepalive task.
-        exporter: Optional Prometheus metrics exporter.
-    """
+    """Main orchestrator for the MCU Bridge daemon services."""
 
     def __init__(self, config: RuntimeConfig):
-        """Initialize the daemon with configuration.
-
-        Args:
-            config: Validated RuntimeConfig from UCI/defaults.
-        """
         self.config = config
         self.state = create_runtime_state(config)
         self.state.config_source = get_config_source()
-        self.mqtt_transport = MqttTransport(self.config, self.state)
-        self.mqtt_transport.configure_spool(
-            self.config.mqtt_spool_dir, self.config.mqtt_queue_limit * 4
+
+        configure_spool(
+            self.state, self.config.mqtt_spool_dir, self.config.mqtt_queue_limit * 4
         )
-        self.mqtt_transport.initialize_spool()
-        self.service = BridgeService(config, self.state, self.mqtt_transport)
-        self.mqtt_transport.set_service(self.service)
-        # Initialize dependencies
+        initialize_spool(self.state)
+
+        # [SIL-2] Direct partial binding of state to the queue function
+        enqueue_func = partial(enqueue_mqtt, self.state)
+
+        self.service = BridgeService(config, self.state, enqueue_func)
 
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
@@ -145,22 +123,20 @@ class BridgeDaemon:
         try:
             async with self.service:
                 async with asyncio.TaskGroup() as tg:
-                    # 1. Serial Link (Critical)
+                    # 1. Serial Link (Zero-Wrapper)
                     tg.create_task(
                         self._supervise(
                             "serial-link",
-                            lambda: SerialTransport(
-                                self.config, self.state, self.service
-                            ).run(),
+                            self._run_serial_link,
                             (SerialHandshakeFatal,),
                         )
                     )
 
-                    # 2. MQTT Link
+                    # 2. MQTT Link (Zero-Wrapper)
                     tg.create_task(
                         self._supervise(
                             "mqtt-link",
-                            self.mqtt_transport.run,
+                            self._run_mqtt_link,
                         )
                     )
 
@@ -178,32 +154,11 @@ class BridgeDaemon:
                             "metrics-publisher",
                             lambda: publish_metrics(
                                 self.state,
-                                self.mqtt_transport.enqueue_mqtt,
+                                partial(enqueue_mqtt, self.state),
                                 float(self.config.status_interval),
                             ),
                         )
                     )
-
-                    # 4. Optional Features
-                    if (
-                        self.config.bridge_summary_interval > 0.0
-                        or self.config.bridge_handshake_interval > 0.0
-                    ):
-                        tg.create_task(
-                            self._supervise(
-                                "bridge-snapshots",
-                                lambda: publish_bridge_snapshots(
-                                    self.state,
-                                    self.mqtt_transport.enqueue_mqtt,
-                                    summary_interval=float(
-                                        self.config.bridge_summary_interval
-                                    ),
-                                    handshake_interval=float(
-                                        self.config.bridge_handshake_interval
-                                    ),
-                                ),
-                            )
-                        )
 
                     if self.config.watchdog_enabled:
                         self.watchdog = WatchdogKeepalive(
@@ -233,6 +188,102 @@ class BridgeDaemon:
             STATUS_FILE.unlink(missing_ok=True)
             log.info("MCU Bridge daemon stopped.")
 
+    async def _run_serial_link(self) -> None:
+        """Main serial run loop with reconnection and handshake logic."""
+        from mcubridge.protocol.frame import Frame
+        from cobs import cobs
+        import contextlib
+
+        log = structlog.get_logger("mcubridge.serial")
+        log.info("Connecting to MCU on %s...", self.config.serial_port)
+        await serial_link.toggle_dtr(self.config.serial_port)
+
+        connect_baud = self.config.serial_safe_baud or 115200
+
+        reader, writer = await serial_link.open_serial_link(
+            self.config.serial_port, connect_baud
+        )
+        self.state.serial_writer = cast(asyncio.BaseTransport, writer)
+
+        # [SIL-2] Bind sender directly to service's flow controller
+        self.service.serial_flow.set_sender(
+            partial(serial_link.write_frame, writer, self.state)
+        )
+
+        stop_event = asyncio.Event()
+        negotiation_future: asyncio.Future[bool] = (
+            asyncio.get_running_loop().create_future()
+        )
+        is_negotiating = False
+
+        def on_packet(encoded_packet: bytes | memoryview) -> None:
+            nonlocal is_negotiating
+            if is_negotiating and not negotiation_future.done():
+                try:
+                    frame = Frame.parse(cobs.decode(bytes(encoded_packet)))
+                    if (
+                        frame.command_id == 0x4B
+                    ):  # CMD_SET_BAUDRATE_RESP (Manually verified)
+                        serial_link.switch_local_baudrate(
+                            writer, self.config.serial_baud
+                        )
+                        negotiation_future.set_result(True)
+                        return
+                except (ValueError, Exception):
+                    pass
+
+            try:
+                frame = Frame.parse(cobs.decode(bytes(encoded_packet)))
+                asyncio.get_running_loop().create_task(
+                    self.service.handle_mcu_frame(
+                        frame.command_id, frame.sequence_id, frame.payload
+                    )
+                )
+            except (ValueError, Exception) as e:
+                log.warning("Discarding malformed serial packet: %s", e)
+                return
+
+            # [SIL-2] Direct metrics for RX
+            nbytes = len(encoded_packet)
+            self.state.serial_bytes_received += nbytes
+            self.state.serial_frames_received += 1
+            self.state.metrics.serial_bytes_received.inc(nbytes)
+            self.state.metrics.serial_frames_received.inc()
+            self.state.serial_throughput_stats.record_rx(nbytes)
+
+        # Start reader loop
+        read_task = asyncio.get_running_loop().create_task(
+            serial_link.read_loop(
+                reader, self.state, self.service, stop_event, cast(Any, on_packet)
+            )
+        )
+
+        try:
+            # 1. Negotiate baudrate if needed
+            if self.config.serial_baud != connect_baud:
+                is_negotiating = True
+                if not await serial_link.negotiate_baudrate(
+                    writer, self.state, self.config.serial_baud, negotiation_future
+                ):
+                    raise ConnectionError("Baudrate negotiation failed")
+                is_negotiating = False
+
+            # 2. Complete handshake via service
+            await self.service.on_serial_connected()
+
+            # 3. Keep running until read task fails or we stop
+            await read_task
+
+        finally:
+            stop_event.set()
+            read_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await read_task
+            await self.service.on_serial_disconnected()
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+
     async def _supervise(
         self,
         name: str,
@@ -243,8 +294,6 @@ class BridgeDaemon:
         max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
     ) -> None:
         """Lightweight supervisor with Circuit Breaker logic (SIL 2)."""
-        # [SIL-2] Circuit Breaker: Stop after 10 consecutive failures at max backoff
-        # to prevent infinite CPU thrashing on persistent hardware failure.
         max_consecutive_max_backoff = 10
 
         def _circuit_breaker(rs: tenacity.RetryCallState) -> bool:
@@ -253,7 +302,6 @@ class BridgeDaemon:
             exc = rs.outcome.exception()
             if isinstance(exc, (*fatal_exceptions, asyncio.CancelledError)):
                 return False
-            # Check for consecutive max backoff hits
             if (
                 rs.idle_for >= max_backoff
                 and rs.attempt_number >= max_consecutive_max_backoff
@@ -285,112 +333,246 @@ class BridgeDaemon:
             with attempt:
                 await factory()
 
+    async def _run_mqtt_link(self) -> None:
+        """Main MQTT run loop with reconnection logic."""
+        if not self.config.mqtt_enabled:
+            logger.info("MQTT transport is DISABLED in configuration.")
+            return
 
-app = typer.Typer(help="Arduino MCU Bridge Daemon v2", add_completion=False)
+        tls_context = self.config.get_ssl_context()
+        reconnect_delay = max(1, self.config.reconnect_delay)
+
+        _retryable_excs = (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
+
+        def _is_retryable(e: BaseException) -> bool:
+            if isinstance(e, _retryable_excs):
+                return True
+            if isinstance(e, BaseExceptionGroup):
+                return any(
+                    _is_retryable(cast(BaseException, sub))
+                    for sub in cast(Any, e).exceptions
+                )
+            return False
+
+        def _retry_predicate(retry_state: tenacity.RetryCallState) -> bool:
+            if not retry_state.outcome or not retry_state.outcome.failed:
+                return False
+            exc = retry_state.outcome.exception()
+            return _is_retryable(exc) if exc else False
+
+        retryer = tenacity.AsyncRetrying(
+            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
+            + tenacity.wait_random(0, 2),
+            retry=_retry_predicate,
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            after=lambda rs: self.state.metrics.retries.labels(
+                component="mqtt_connect"
+            ).inc(),
+            reraise=True,
+        )
+
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    await self._connect_mqtt_session(tls_context)
+        except asyncio.CancelledError:
+            logger.info("MQTT transport stopping.")
+            raise
+        except (ConnectionError, OSError, asyncio.TimeoutError) as exc:
+            logger.critical("MQTT transport fatal error: %s", exc)
+            raise
+        except BaseExceptionGroup as eg:
+            for exc in eg.exceptions:
+                logger.critical("MQTT transport fatal error: %s", exc)
+            raise
+
+    async def _connect_mqtt_session(self, tls_context: Any) -> None:
+        from mcubridge.mqtt import build_mqtt_connect_properties
+        from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Topic
+        from mcubridge.protocol.topics import topic_path
+
+        connect_props = build_mqtt_connect_properties()
+
+        will_topic = topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "status")
+        will_payload = b'{"status": "offline", "reason": "unexpected_disconnect"}'
+        will = aiomqtt.Will(topic=will_topic, payload=will_payload, qos=1, retain=True)
+
+        async with aiomqtt.Client(
+            hostname=self.config.mqtt_host,
+            port=self.config.mqtt_port,
+            username=self.config.mqtt_user or None,
+            password=self.config.mqtt_pass or None,
+            tls_context=tls_context,
+            logger=logging.getLogger("mcubridge.mqtt.client"),
+            protocol=aiomqtt.ProtocolVersion.V5,
+            clean_session=None,
+            will=will,
+            properties=connect_props,
+        ) as client:
+            logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
+
+            topics = [
+                (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
+                for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
+            ]
+            await client.subscribe(topics)
+            logger.info("Subscribed to %d command topics.", len(topics))
+
+            await client.publish(
+                will_topic, b'{"status": "online"}', qos=1, retain=True
+            )
+
+            async with asyncio.TaskGroup() as task_group:
+                task_group.create_task(self._mqtt_publisher_loop(client))
+                task_group.create_task(self._mqtt_subscriber_loop(client))
+
+    async def _mqtt_publisher_loop(self, client: aiomqtt.Client) -> None:
+        try:
+            while True:
+                await flush_mqtt_spool(self.state)
+                message = await self.state.mqtt_publish_queue.get()
+
+                topic_name = message.topic_name
+                props = message.to_paho_properties()
+                payload = message.payload
+                qos = int(message.qos)
+                retain = message.retain
+
+                @tenacity.retry(
+                    wait=tenacity.wait_exponential(multiplier=0.1, max=10),
+                    retry=tenacity.retry_if_exception_type(aiomqtt.MqttError),
+                    before_sleep=tenacity.before_sleep_log(logger, logging.DEBUG),
+                )
+                async def _reliable_publish() -> None:
+                    await client.publish(
+                        topic_name,
+                        payload,
+                        qos=qos,
+                        retain=retain,
+                        properties=props,
+                    )
+
+                published = False
+                should_requeue = False
+                try:
+                    await _reliable_publish()
+                    self.state.mqtt_messages_published += 1
+                    self.state.metrics.mqtt_messages_published.inc()
+                    published = True
+                except aiomqtt.MqttError as exc:
+                    logger.warning("MQTT persistent publish failure: %s", exc)
+                    should_requeue = not await stash_mqtt_message(self.state, message)
+                except asyncio.CancelledError:
+                    should_requeue = True
+                    raise
+                except (OSError, RuntimeError, ValueError, TypeError) as exc:
+                    logger.error("Unexpected error in MQTT publisher: %s", exc)
+                    should_requeue = not await stash_mqtt_message(self.state, message)
+                finally:
+                    if not published and should_requeue:
+                        try:
+                            self.state.mqtt_publish_queue.put_nowait(message)
+                        except asyncio.QueueFull:
+                            await stash_mqtt_message(self.state, message)
+                    self.state.mqtt_publish_queue.task_done()
+
+        except asyncio.CancelledError:
+            logger.debug("MQTT publisher loop cancelled.")
+            raise
+
+    async def _mqtt_subscriber_loop(self, client: aiomqtt.Client) -> None:
+        import contextlib
+
+        try:
+            async for message in client.messages:
+                try:
+                    topic_str = str(message.topic)
+                except (TypeError, ValueError):
+                    continue
+
+                if not topic_str:
+                    continue
+
+                try:
+                    await self.service.handle_mqtt_message(message)
+                except (
+                    AttributeError,
+                    IndexError,
+                    KeyError,
+                    OSError,
+                    RuntimeError,
+                    TypeError,
+                    ValueError,
+                ) as e:
+                    logger.error(
+                        "Error processing MQTT message on topic %s: %s", topic_str, e
+                    )
+        except asyncio.CancelledError:
+            with contextlib.suppress(asyncio.CancelledError):
+                raise
+        except aiomqtt.MqttError as exc:
+            logger.warning("MQTT subscriber loop interrupted: %s", exc)
+            raise
 
 
-@app.command()
-def main(
-    serial_port: Annotated[str | None, typer.Option(help="Serial port to use")] = None,
-    serial_baud: Annotated[int | None, typer.Option(help="Serial baud rate")] = None,
-    mqtt_host: Annotated[str | None, typer.Option(help="MQTT host")] = None,
-    mqtt_port: Annotated[int | None, typer.Option(help="MQTT port")] = None,
-    mqtt_tls: Annotated[
-        int | None, typer.Option(help="Use TLS for MQTT (0 or 1)")
-    ] = None,
-    serial_shared_secret: Annotated[
-        str | None, typer.Option(help="Shared secret for serial link")
-    ] = None,
-    allowed_commands: Annotated[
-        str | None, typer.Option(help="Comma-separated list of allowed shell commands")
-    ] = None,
-    non_interactive: Annotated[
-        bool, typer.Option(help="Enable non-interactive mode")
-    ] = False,
-    debug: Annotated[
-        bool, typer.Option("--debug", help="Enable debug logging")
-    ] = False,
-) -> None:
+def main() -> None:
     """Main entry point for the MCU Bridge daemon."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Arduino MCU Bridge Daemon v2")
+    parser.add_argument("--serial-port", help="Serial port to use")
+    parser.add_argument("--serial-baud", type=int, help="Serial baud rate")
+    parser.add_argument("--mqtt-host", help="MQTT host")
+    parser.add_argument("--mqtt-port", type=int, help="MQTT port")
+    parser.add_argument("--mqtt-tls", type=int, help="Use TLS for MQTT (0 or 1)")
+    parser.add_argument("--serial-shared-secret", help="Shared secret for serial link")
+    parser.add_argument(
+        "--allowed-commands", help="Comma-separated list of allowed shell commands"
+    )
+    parser.add_argument(
+        "--non-interactive", action="store_true", help="Enable non-interactive mode"
+    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+
+    args = parser.parse_args()
+
     overrides: dict[str, Any] = {}
-    if serial_port:
-        overrides["serial_port"] = serial_port
-    if serial_baud:
-        overrides["serial_baud"] = serial_baud
-    if mqtt_host:
-        overrides["mqtt_host"] = mqtt_host
-    if mqtt_port:
-        overrides["mqtt_port"] = mqtt_port
-    if mqtt_tls is not None:
-        overrides["mqtt_tls"] = bool(mqtt_tls)
-    if serial_shared_secret:
-        overrides["serial_shared_secret"] = serial_shared_secret
-    if non_interactive:
+    if args.serial_port:
+        overrides["serial_port"] = args.serial_port
+    if args.serial_baud:
+        overrides["serial_baud"] = args.serial_baud
+    if args.mqtt_host:
+        overrides["mqtt_host"] = args.mqtt_host
+    if args.mqtt_port:
+        overrides["mqtt_port"] = args.mqtt_port
+    if args.mqtt_tls is not None:
+        overrides["mqtt_tls"] = bool(args.mqtt_tls)
+    if args.serial_shared_secret:
+        overrides["serial_shared_secret"] = args.serial_shared_secret
+    if args.non_interactive:
         overrides["non_interactive"] = True
-    if debug:
+    if args.debug:
         overrides["debug"] = True
-    if allowed_commands:
+    if args.allowed_commands:
         overrides["allowed_commands"] = (
-            allowed_commands.split(",") if allowed_commands != "*" else "*"
+            args.allowed_commands.split(",") if args.allowed_commands != "*" else "*"
         )
 
     config = load_runtime_config(overrides)
     configure_logging(config)
 
-    # [MIL-SPEC] FIPS 140-3 Power-On Self-Tests (POST)
     if not verify_crypto_integrity():
         logger.critical("CRYPTOGRAPHIC INTEGRITY CHECK FAILED! Aborting for security.")
         sys.exit(1)
 
-    logger.info(
-        "Starting MCU Bridge daemon. Serial: %s@%d MQTT: %s:%d",
-        config.serial_port,
-        config.serial_baud,
-        config.mqtt_host,
-        config.mqtt_port,
-    )
-
-    if config.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
-        logger.critical(
-            "****************************************************************\n"
-            " SECURITY CRITICAL: Using default serial shared secret!\n"
-            " This device is VULNERABLE to local attacks.\n"
-            " [STRICT PROVISIONING] Network services (MQTT) are BLOCKED.\n"
-            " Please run 'mcubridge-rotate-credentials' IMMEDIATELY.\n"
-            "****************************************************************"
-        )
-        # In strict mode, we force the MQTT config to disabled if secret is default
-        config = msgspec.structs.replace(config, mqtt_enabled=False)
-        logger.warning("STRICT MODE: MQTT transport has been DISABLED for security.")
-
     daemon = None
     try:
-        if uvloop is None:
-            raise RuntimeError("python3-uvloop is required")
         daemon = BridgeDaemon(config)
-
-        # [SIL-2] Unified entry point via asyncio.Runner (Python 3.11+)
-        # This handles signal registration and loop lifecycle deterministically.
         with asyncio.Runner(loop_factory=uvloop.new_event_loop) as runner:
             runner.run(daemon.run())
-
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user.")
-    except (
-        OSError,
-        RuntimeError,
-        ValueError,
-        TypeError,
-        asyncio.TimeoutError,
-        msgspec.MsgspecError,
-        tenacity.RetryError,
-    ) as exc:
-        logger.critical(
-            "Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError)
-        )
-        sys.exit(1)
-    except BaseException as exc:
-        # [SIL-2] Catch-all for unhandled system-level errors
+    except Exception as exc:
         logger.critical("Unhandled system error: %s", exc, exc_info=True)
         sys.exit(1)
     finally:
@@ -399,4 +581,4 @@ def main(
 
 
 if __name__ == "__main__":
-    app()
+    main()

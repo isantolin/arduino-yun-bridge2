@@ -5,12 +5,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Annotated
-
-import typer
+import argparse
 from mcubridge_client import Bridge, dump_client_env
-
-app = typer.Typer(help="Minimal connectivity smoke test for the bridge client.")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,34 +19,61 @@ async def run_test(
     port: int | None,
     user: str | None,
     password: str | None,
-) -> None:
-    dump_client_env(logging.getLogger(__name__))
+    topic: str,
+) -> bool:
+    """Connect, get version, then exit."""
+    logging.info("Starting smoke test for %s:%s", host or "localhost", port or 1883)
+    bridge = Bridge(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        base_topic=topic,
+    )
 
-    bridge_args = {}
-    if host:
-        bridge_args["host"] = host
-    if port:
-        bridge_args["port"] = port
-    if user:
-        bridge_args["username"] = user
-    if password:
-        bridge_args["password"] = password
-
-    bridge = Bridge(**bridge_args)
-    await bridge.connect()
-    logging.info("Bridge connected")
-    await bridge.disconnect()
+    try:
+        async with bridge:
+            version = await bridge.system.get_version()
+            logging.info("Success! MCU Version: %s", version)
+            return True
+    except Exception as e:
+        logging.error("Smoke test FAILED: %s", e)
+        return False
 
 
-@app.command()
-def main(
-    host: Annotated[str | None, typer.Option(help="MQTT Broker Host")] = None,
-    port: Annotated[int | None, typer.Option(help="MQTT Broker Port")] = None,
-    user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
-    password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
-) -> None:
-    asyncio.run(run_test(host, port, user, password))
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Minimal connectivity smoke test for the bridge client."
+    )
+    parser.add_argument("--host", help="MQTT host")
+    parser.add_argument("--port", type=int, help="MQTT port")
+    parser.add_argument("--user", help="MQTT user")
+    parser.add_argument("--password", help="MQTT password")
+    parser.add_argument("--topic", default="bridge", help="Base topic")
+    parser.add_argument(
+        "--env", action="store_true", help="Dump client environment and exit"
+    )
+
+    args = parser.parse_args()
+
+    if args.env:
+        dump_client_env()
+        return
+
+    success = asyncio.run(
+        run_test(
+            host=args.host,
+            port=args.port,
+            user=args.user,
+            password=args.password,
+            topic=args.topic,
+        )
+    )
+    if not success:
+        import sys
+
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    app()
+    main()

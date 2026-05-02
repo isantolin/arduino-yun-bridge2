@@ -1,4 +1,7 @@
+"""Verify that QueuedPublish correctly roundtrips via direct JSON serialization."""
+
 from __future__ import annotations
+
 import msgspec
 
 from mcubridge.protocol.structures import QueuedPublish
@@ -6,7 +9,7 @@ from mcubridge.protocol import protocol
 
 
 def test_queued_publish_json_roundtrip() -> None:
-    """Verify that QueuedPublish correctly roundtrips via direct JSON serialization."""
+
     message = QueuedPublish(
         topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hello",

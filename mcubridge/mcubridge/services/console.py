@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
-import itertools
 import structlog
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 from aiomqtt.message import Message
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command, ConsoleAction
-from mcubridge.protocol.structures import ConsoleWritePacket, QueuedPublish, TopicRoute
+from ..protocol.protocol import (
+    Command,
+    ConsoleAction,
+)
+from ..protocol.structures import (
+    ConsoleWritePacket,
+    QueuedPublish,
+    TopicRoute,
+)
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..protocol.topics import Topic, topic_path
 
 if TYPE_CHECKING:
-    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
@@ -32,24 +36,21 @@ class ConsoleComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        mqtt_flow: MqttTransport,
+        enqueue_mqtt: Any,
     ) -> None:
         self.config = config
         self.state = state
         self.serial_flow = serial_flow
-        self.mqtt_flow = mqtt_flow
+        self.enqueue_mqtt = enqueue_mqtt
 
     async def handle_write(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
         try:
             # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
             packet = msgspec.msgpack.decode(payload, type=ConsoleWritePacket)
-        except (ValueError, msgspec.DecodeError):
-            logger.warning("Malformed ConsoleWritePacket payload: %s", payload.hex())
-            return
-
-        data = packet.data
-        if not data:
+            data = packet.data
+        except (ValueError, msgspec.MsgspecError) as e:
+            logger.warning("Malformed console write from MCU: %s", e)
             return
 
         topic = topic_path(
@@ -57,7 +58,7 @@ class ConsoleComponent:
             Topic.CONSOLE,
             ConsoleAction.OUT,
         )
-        await self.mqtt_flow.enqueue_mqtt(
+        await self.enqueue_mqtt(
             QueuedPublish(
                 topic_name=topic,
                 payload=data,
@@ -74,87 +75,53 @@ class ConsoleComponent:
         logger.info("MCU > XON received (seq=%d), resuming serial output.", seq_id)
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
-        await self.flush_queue()
 
     async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        payload = msgspec.convert(inbound.payload, bytes)
-        await self._handle_mqtt_input(payload, inbound)
-        return True
+        """Process inbound MQTT requests for console operations."""
+        action = route.identifier
+        match action:
+            case ConsoleAction.IN:
+                payload = msgspec.convert(inbound.payload, bytes)
+                return await self._handle_mqtt_input(payload)
+            case _:
+                return False
+        return False
 
-    async def _handle_mqtt_input(
-        self,
-        payload: bytes,
-        inbound: Message | None = None,
-    ) -> None:
-        # [SIL-2] Ensure we chunk data to fit into frames using Python's C core batched
-        chunks = [
-            bytes(c) for c in itertools.batched(payload, protocol.MAX_PAYLOAD_SIZE)
-        ]
+    async def _handle_mqtt_input(self, payload: bytes) -> bool:
+        """Process characters sent from MQTT to the MCU console."""
         if self.state.mcu_is_paused:
-            logger.warning(
-                "MCU paused, queueing %d console chunk(s) (%d bytes), hex=%s",
-                len(chunks),
-                len(payload),
-                payload[:32].hex() if len(payload) > 32 else payload.hex(),
-            )
-            for chunk in chunks:
-                if chunk:
-                    self.state.console_to_mcu_queue.append(chunk)
-            return
+            self.state.console_to_mcu_queue.append(payload)
+            return True
 
-        for index, chunk in enumerate(chunks):
-            if not chunk:
-                continue
-
-            # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-            frame_payload = msgspec.msgpack.encode(ConsoleWritePacket(data=chunk))
-
-            send_ok = await self.serial_flow.send(
-                Command.CMD_CONSOLE_WRITE.value,
-                frame_payload,
-            )
-            if not send_ok:
-                remaining = b"".join(chunks[index:])
-                if remaining:
-                    self.state.console_to_mcu_queue.append(remaining)
-                logger.warning(
-                    "Serial send failed for console input; payload queued for retry",
-                )
-                break
+        # [SIL-2] Protocol: Wrap console input in a Packet for consistency.
+        packet = ConsoleWritePacket(data=payload)
+        return await self.serial_flow.send(
+            Command.CMD_CONSOLE_WRITE.value, msgspec.msgpack.encode(packet)
+        )
 
     async def flush_queue(self) -> None:
-        while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
-            buffered = self.state.console_to_mcu_queue.popleft()
-            if not buffered:
-                break
-
-            chunks = [
-                bytes(c) for c in itertools.batched(buffered, protocol.MAX_PAYLOAD_SIZE)
-            ]
-            for index, chunk in enumerate(chunks):
-                if not chunk:
-                    continue
-
-                # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-                frame_payload = msgspec.msgpack.encode(ConsoleWritePacket(data=chunk))
-
-                send_ok = await self.serial_flow.send(
-                    Command.CMD_CONSOLE_WRITE.value,
-                    frame_payload,
-                )
-                if send_ok:
-                    continue
-                unsent = b"".join(chunks[index:])
-                if unsent:
-                    self.state.console_to_mcu_queue.appendleft(unsent)
-                logger.warning(
-                    "Serial send failed while flushing console; chunk requeued",
+        """Attempt to send any buffered console output to the MCU."""
+        # This implementation uses state.console_to_mcu_queue directly.
+        # It's called by BridgeService upon reconnection.
+        queue = self.state.console_to_mcu_queue
+        while queue and not self.state.mcu_is_paused:
+            chunk = queue.popleft()
+            packet = ConsoleWritePacket(data=chunk)
+            ok = await self.serial_flow.send(
+                Command.CMD_CONSOLE_WRITE.value, msgspec.msgpack.encode(packet)
+            )
+            if not ok:
+                queue.appendleft(chunk)
+                logger.debug(
+                    "Serial link saturated while flushing console; chunk requeued",
                 )
                 return
 
-    def on_serial_disconnected(self) -> None:
+    async def on_serial_disconnected(self) -> None:
+        """Force-resume MCU and clear buffers on disconnect. [SIL-2]"""
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
+        self.state.console_to_mcu_queue.clear()
 
 
 __all__ = ["ConsoleComponent"]

@@ -16,7 +16,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import argparse
 from jinja2 import Environment, FileSystemLoader
@@ -1130,14 +1130,27 @@ def update_metadata(version: str):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
-    parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file")
+    parser = argparse.ArgumentParser(
+        description="Protocol binding generator for MCU Bridge v2."
+    )
+    parser.add_argument(
+        "--spec", type=Path, required=True, help="Protocol specification file"
+    )
     parser.add_argument("--cpp", type=Path, default=None, help="C++ header output")
-    parser.add_argument("--cpp-structs", type=Path, default=None, help="C++ structs output")
+    parser.add_argument(
+        "--cpp-structs", type=Path, default=None, help="C++ structs output"
+    )
     parser.add_argument("--py", type=Path, default=None, help="Python output")
-    parser.add_argument("--py-client", type=Path, default=None, help="Python client output")
-    parser.add_argument("--structures", type=Path, default=None, help="Splice generated Packets into structures.py")
-    
+    parser.add_argument(
+        "--py-client", type=Path, default=None, help="Python client output"
+    )
+    parser.add_argument(
+        "--structures",
+        type=Path,
+        default=None,
+        help="Splice generated Packets into structures.py",
+    )
+
     args = parser.parse_args()
 
     spec = ProtocolSpec.load(args.spec)

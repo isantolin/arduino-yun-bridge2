@@ -1,6 +1,7 @@
 """Tests for MQTT publish spool durability and fallback."""
 
 from __future__ import annotations
+
 from typing import Any
 import msgspec
 

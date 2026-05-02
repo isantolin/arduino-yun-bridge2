@@ -76,6 +76,18 @@ class Frame(msgspec.Struct, frozen=True):
         yield self.sequence_id
         yield self.payload
 
+    def as_tuple(self) -> tuple[int, int, bytes]:
+        """Convert frame to tuple (command_id, sequence_id, payload)."""
+        return int(self.command_id), int(self.sequence_id), self.payload
+
+    def as_dict(self) -> dict[str, Any]:
+        """Convert frame to dictionary representation."""
+        return {
+            "command_id": int(self.command_id),
+            "sequence_id": int(self.sequence_id),
+            "payload": self.payload,
+        }
+
     @property
     def is_compressed(self) -> bool:
         """Check if the frame payload is compressed (bit 15)."""

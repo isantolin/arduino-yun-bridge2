@@ -31,6 +31,11 @@ class DaemonMetrics:
             "Total MQTT messages published",
             registry=self.registry,
         )
+        self.mqtt_messages_received = Counter(
+            "mcubridge_mqtt_messages_received_total",
+            "Total MQTT messages received",
+            registry=self.registry,
+        )
         self.mqtt_messages_dropped = Counter(
             "mcubridge_mqtt_messages_dropped_total",
             "Total MQTT messages dropped due to queue overflow",

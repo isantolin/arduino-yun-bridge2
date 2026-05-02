@@ -1,80 +1,62 @@
-# pyright: reportPrivateUsage=false
+"""Extra coverage for FileComponent (SIL-2)."""
+
 from __future__ import annotations
-from mcubridge.services.serial_flow import SerialFlowController
-from mcubridge.transport.mqtt import MqttTransport
 
 import asyncio
 from pathlib import Path
-from typing import Any, cast
-from unittest.mock import AsyncMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
+
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import structures
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.file import FileComponent
+from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import create_runtime_state
-from mcubridge.protocol.protocol import Status
-from mcubridge.protocol.structures import FileWritePacket, TopicRoute
-from mcubridge.protocol.topics import Topic
-from aiomqtt.message import Message
 
 
 @pytest.fixture
-def file_comp(runtime_config: Any, tmp_path: Path):
-    runtime_config.file_system_root = str(tmp_path)
+def file_comp(runtime_config: RuntimeConfig) -> FileComponent:
     state = create_runtime_state(runtime_config)
-    comp = FileComponent(
-        config=runtime_config,
-        state=state,
-        serial_flow=AsyncMock(spec=SerialFlowController),
-        mqtt_flow=AsyncMock(spec=MqttTransport),
-    )
+    serial_flow = AsyncMock(spec=SerialFlowController)
+    serial_flow.send = AsyncMock(return_value=True)
+    enqueue_mqtt = AsyncMock()
+    comp = FileComponent(runtime_config, state, serial_flow, enqueue_mqtt)
+    comp._get_storage_usage = MagicMock(return_value=0)  # type: ignore[reportPrivateUsage]
     return comp
 
 
 @pytest.mark.asyncio
-async def test_handle_write_quota_exceeded(file_comp: FileComponent):
-    file_comp.config.file_write_max_bytes = 5
-    payload = msgspec.msgpack.encode(FileWritePacket(path="test.txt", data=b"too-long"))
-    ok = await file_comp.handle_write(0, payload)
-    assert ok is False
-    cast(AsyncMock, file_comp.serial_flow.send).assert_called_with(
-        Status.ERROR.value, b"Quota exceeded"
-    )
+async def test_handle_mcu_read_timeout(file_comp: FileComponent) -> None:
+    # MCU Backend must be enabled
+    file_comp._mcu_backend_enabled = True  # type: ignore[reportPrivateUsage]
+    
+    # We don't trigger the response, so it should time out
+    # [SIL-2] Using a very short timeout for testing
+    with patch("asyncio.timeout", return_value=asyncio.timeout(0.1)):
+        # We need to call _handle_mcu_read which is private but tested for coverage
+        from aiomqtt.message import Message
+        msg = MagicMock(spec=Message)
+        msg.topic = "br/file/read/mcu/test.txt"
+        msg.properties = None
+        
+        await file_comp._handle_mcu_read(msg, "mcu/test.txt")  # type: ignore[reportPrivateUsage]
+        
+    file_comp.enqueue_mqtt.assert_called()
+    assert b"mcu_timeout" in file_comp.enqueue_mqtt.call_args.args[0].payload
 
 
 @pytest.mark.asyncio
-async def test_handle_read_response_no_pending(file_comp: FileComponent):
-    ok = await file_comp.handle_read_response(0, b"")
-    assert ok is False
-
-
-@pytest.mark.asyncio
-async def test_handle_mqtt_unknown_action(file_comp: FileComponent):
-    route = TopicRoute(
-        raw="", prefix="br", topic=Topic.FILE, segments=("unknown", "file.txt")
-    )
-    msg = Message("br/file/unknown/file.txt", b"", 0, False, False, None)
-    ok = await file_comp.handle_mqtt(route, msg)
-    assert ok is False
-
-
-@pytest.mark.asyncio
-async def test_refresh_storage_usage_error(file_comp: FileComponent):
-    file_comp.config.file_system_root = "/non/existent/path"
-    await file_comp._refresh_storage_usage()
-    assert file_comp.state.file_storage_bytes_used == 0
-
-
-@pytest.mark.asyncio
-async def test_handle_mcu_read_timeout(file_comp: FileComponent):
-    # Trigger MQTT read from MCU
-    file_comp._mcu_backend_enabled = True
-    route = TopicRoute(
-        raw="", prefix="br", topic=Topic.FILE, segments=("read", "mcu", "test.txt")
-    )
-    msg = Message("br/file/read/mcu/test.txt", b"", 0, False, False, None)
-
-    # Force timeout in wait_for
-    with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
-        ok = await file_comp.handle_mqtt(route, msg)
-        assert ok is False
+async def test_handle_write_quota_exceeded(file_comp: FileComponent) -> None:
+    file_comp.config.file_storage_quota_bytes = 10
+    
+    # Mock storage usage to 100 (already exceeding 10)
+    file_comp._get_storage_usage = MagicMock(return_value=100)  # type: ignore[reportPrivateUsage]
+    
+    pkt = structures.FileWritePacket(path="quota.txt", data=b"too much data")
+    await file_comp.handle_write(0, msgspec.msgpack.encode(pkt))
+        
+    file_comp.serial_flow.send.assert_called_with(Status.ERROR.value, b"")

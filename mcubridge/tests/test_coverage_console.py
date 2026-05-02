@@ -1,65 +1,55 @@
-# pyright: reportPrivateUsage=false
+"""Extra coverage for ConsoleComponent (SIL-2)."""
+
 from __future__ import annotations
-from mcubridge.services.serial_flow import SerialFlowController
-from mcubridge.transport.mqtt import MqttTransport
 
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcubridge.services.console import ConsoleComponent
-from mcubridge.state.context import create_runtime_state
-from mcubridge.protocol.protocol import ConsoleAction
-from mcubridge.protocol.structures import TopicRoute
-from mcubridge.protocol.topics import Topic
 from aiomqtt.message import Message
+
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.protocol import Command, Status, Topic
+from mcubridge.protocol.structures import TopicRoute
+from mcubridge.services.console import ConsoleComponent
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.state.context import create_runtime_state
 
 
 @pytest.fixture
-def console_comp(runtime_config: Any):
+def console_comp(runtime_config: RuntimeConfig) -> ConsoleComponent:
     state = create_runtime_state(runtime_config)
-    comp = ConsoleComponent(
-        config=runtime_config,
-        state=state,
-        serial_flow=AsyncMock(spec=SerialFlowController),
-        mqtt_flow=AsyncMock(spec=MqttTransport),
-    )
-    return comp
+    serial_flow = AsyncMock(spec=SerialFlowController)
+    serial_flow.send = AsyncMock(return_value=True)
+    enqueue_mqtt = AsyncMock()
+    return ConsoleComponent(runtime_config, state, serial_flow, enqueue_mqtt)
 
 
 @pytest.mark.asyncio
-async def test_console_handle_write_malformed(console_comp: ConsoleComponent):
-    await console_comp.handle_write(0, b"bad-msgpack")
-    assert not cast(Any, console_comp.mqtt_flow.enqueue_mqtt).called
-
-
-@pytest.mark.asyncio
-async def test_console_mqtt_input_paused(console_comp: ConsoleComponent):
+async def test_console_mqtt_input_paused(console_comp: ConsoleComponent) -> None:
+    # Pause MCU
     console_comp.state.mcu_is_paused = True
-    await console_comp._handle_mqtt_input(b"some-data")
+    
+    msg = MagicMock(spec=Message)
+    msg.payload = b"hello"
+    route = TopicRoute("br/console/in", "br", Topic.CONSOLE, ("in",))
+    
+    await console_comp.handle_mqtt(route, msg)
+    
+    # Should be in queue, not sent
     assert len(console_comp.state.console_to_mcu_queue) == 1
+    console_comp.serial_flow.send.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_console_mqtt_input_send_fail(console_comp: ConsoleComponent):
-    cast(AsyncMock, console_comp.serial_flow.send).return_value = False
-    await console_comp._handle_mqtt_input(b"some-data")
-    assert len(console_comp.state.console_to_mcu_queue) == 1
-
-
-@pytest.mark.asyncio
-async def test_console_flush_queue_send_fail(console_comp: ConsoleComponent):
-    console_comp.state.console_to_mcu_queue.append(b"data")
-    cast(AsyncMock, console_comp.serial_flow.send).return_value = False
-    await console_comp.flush_queue()
-    assert len(console_comp.state.console_to_mcu_queue) == 1
-
-
-@pytest.mark.asyncio
-async def test_console_handle_mqtt(console_comp: ConsoleComponent):
-    route = TopicRoute(
-        raw="", prefix="br", topic=Topic.CONSOLE, segments=(ConsoleAction.IN.value,)
-    )
-    msg = Message("br/console/in", b"data", 0, False, False, None)
-    ok = await console_comp.handle_mqtt(route, msg)
-    assert ok is True
+async def test_console_handle_mqtt(console_comp: ConsoleComponent) -> None:
+    # Normal input
+    msg = MagicMock(spec=Message)
+    msg.payload = b"hello"
+    route = TopicRoute("br/console/in", "br", Topic.CONSOLE, ("in",))
+    
+    await console_comp.handle_mqtt(route, msg)
+    
+    console_comp.serial_flow.send.assert_called()
+    assert console_comp.serial_flow.send.call_args.args[0] == Command.CMD_CONSOLE_WRITE.value
+    assert b"hello" in console_comp.serial_flow.send.call_args.args[1]

@@ -18,7 +18,6 @@ from mcubridge.protocol.protocol import (
     expected_responses,
 )
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
-from mcubridge.router.routers import MQTTRouter, McuHandler
 from mcubridge.services.dispatcher import BridgeDispatcher
 
 _MQTT_PREFIX = "br"
@@ -44,8 +43,8 @@ def _materialize_subscription_segments(pattern: tuple[str, ...]) -> tuple[str, .
 async def test_mqtt_subscriptions_are_dispatched() -> None:
     """Every subscribed MQTT topic pattern is accepted by the dispatcher."""
 
-    mcu_registry: dict[int, McuHandler] = {}
-    mqtt_router = MQTTRouter()
+    mcu_registry: dict[int] = {}
+    mqtt_router = AsyncMock()
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
@@ -54,7 +53,7 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
     try:
         dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
-            mqtt_router=mqtt_router,
+            
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(),
@@ -103,8 +102,8 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     protocol enum should require a corresponding dispatcher/handler update.
     """
 
-    mcu_registry: dict[int, McuHandler] = {}
-    mqtt_router = MQTTRouter()
+    mcu_registry: dict[int] = {}
+    mqtt_router = AsyncMock()
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
@@ -113,7 +112,7 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     try:
         dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
-            mqtt_router=mqtt_router,
+            
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(),

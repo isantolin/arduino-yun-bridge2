@@ -1,5 +1,6 @@
-# pyright: reportPrivateUsage=false
 from __future__ import annotations
+
+# pyright: reportPrivateUsage=false
 
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch

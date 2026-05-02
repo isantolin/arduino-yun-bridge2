@@ -244,12 +244,11 @@ class BridgeDispatcher:
 
         # 3. Router Dispatch
         try:
-            dispatched = False
             for handler in self.mqtt_handlers.get(route.topic, []):
                 if handler is None:
                     continue
                 if await handler(route, inbound):
-                    dispatched = True
+                    pass
 
         except asyncio.CancelledError:
             raise

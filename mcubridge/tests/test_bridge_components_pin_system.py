@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
@@ -303,7 +303,9 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     assert runtime_state.mcu_version is None
 
     # Simulate response
-    payload = msgspec.msgpack.encode(structures.VersionResponsePacket(major=1, minor=2, patch=0))
+    payload = msgspec.msgpack.encode(
+        structures.VersionResponsePacket(major=1, minor=2, patch=0)
+    )
     await service.handle_mcu_frame(Command.CMD_GET_VERSION_RESP.value, 0, payload)
 
     enqueue_mqtt.assert_called()
@@ -330,7 +332,7 @@ async def test_mqtt_shell_kill_invokes_processonent(
     with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:
         # Re-register mock in dispatcher manually
         service.dispatcher.mqtt_handlers[Topic.SHELL] = [mock_mqtt]
-        
+
         pid = 21
         await service.handle_mqtt_message(
             Message(

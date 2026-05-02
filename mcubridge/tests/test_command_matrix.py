@@ -53,7 +53,6 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
     try:
         dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
-            
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(),
@@ -103,7 +102,7 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     """
 
     mcu_registry: dict[int] = {}
-    mqtt_router = AsyncMock()
+    AsyncMock()
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
@@ -112,7 +111,6 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     try:
         dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
-            
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(),

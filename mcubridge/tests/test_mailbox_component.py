@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
+from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
@@ -11,11 +11,11 @@ from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Command, MailboxAction, Status, Topic
+from mcubridge.protocol.protocol import Command, MailboxAction, Topic
 from mcubridge.protocol.structures import TopicRoute
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.services.serial_flow import SerialFlowController
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.state.context import create_runtime_state
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ async def test_handle_push_success(mailbox_component: MailboxComponent) -> None:
 
     assert len(mailbox_component.state.mailbox_incoming_queue) == 1
     assert mailbox_component.state.mailbox_incoming_queue[0] == b"mcu-data"
-    
+
     mailbox_component.enqueue_mqtt.assert_called()
 
 
@@ -60,7 +60,7 @@ async def test_handle_mqtt_logic(
     )
     msg = Message("test/topic", b"mcu-data", 0, False, mid=1, properties=None)
     await mailbox_component.handle_mqtt(route, msg)
-    
+
     assert len(runtime_state.mailbox_queue) == 1
     assert runtime_state.mailbox_queue[0] == b"mcu-data"
 

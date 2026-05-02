@@ -117,10 +117,8 @@ async def negotiate_baudrate(
     """Execute the baudrate switch protocol with the MCU."""
     logger.info("Negotiating baudrate switch to %d...", target_baud)
 
-    payload = msgspec.msgpack.encode(
-        structures.SetBaudratePacket(baudrate=target_baud)
-    )
-    
+    payload = msgspec.msgpack.encode(structures.SetBaudratePacket(baudrate=target_baud))
+
     retryer = tenacity.AsyncRetrying(
         stop=tenacity.stop_after_attempt(3),
         wait=tenacity.wait_exponential(
@@ -133,7 +131,9 @@ async def negotiate_baudrate(
     )
 
     async def _attempt() -> bool:
-        if not await write_frame(writer, state, protocol.Command.CMD_SET_BAUDRATE.value, payload):
+        if not await write_frame(
+            writer, state, protocol.Command.CMD_SET_BAUDRATE.value, payload
+        ):
             raise asyncio.TimeoutError("Write failed")
 
         try:
@@ -182,6 +182,11 @@ async def read_loop(
                 e.partial.hex(" ") if e.partial else "None",
             )
             break
-        except (OSError, serial.SerialException, asyncio.TimeoutError, RuntimeError) as exc:
+        except (
+            OSError,
+            serial.SerialException,
+            asyncio.TimeoutError,
+            RuntimeError,
+        ) as exc:
             logger.error("Error in serial read loop: %s", exc)
             break

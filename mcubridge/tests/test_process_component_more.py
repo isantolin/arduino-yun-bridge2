@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Status, Command
+from mcubridge.protocol.protocol import Status
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import create_runtime_state
@@ -30,13 +29,14 @@ def process_comp(runtime_config: RuntimeConfig) -> ProcessComponent:
 async def test_handle_poll_process_found(process_comp: ProcessComponent) -> None:
     pid = 123
     process_comp.state.process_exit_codes[pid] = 0
-    
+
     from mcubridge.protocol.structures import ShellPidPayload
+
     pkt = ShellPidPayload(pid=pid)
     payload = msgspec.msgpack.encode(pkt)
-    
+
     await process_comp.handle_poll(1, payload)
-    
+
     process_comp.serial_flow.send.assert_called()
 
 
@@ -57,12 +57,12 @@ async def test_handle_kill_success(process_comp: ProcessComponent) -> None:
     pid = 456
     mock_proc = MagicMock(spec=asyncio.subprocess.Process)
     process_comp.state.running_processes[pid] = mock_proc
-    
+
     pkt = structures.ShellPidPayload(pid=pid)
     payload = msgspec.msgpack.encode(pkt)
-    
+
     await process_comp.handle_kill(1, payload)
-    
+
     mock_proc.terminate.assert_called()
     process_comp.serial_flow.send.assert_called_with(Status.OK.value, b"")
 
@@ -73,6 +73,6 @@ async def test_handle_run_async_validation_error_sends_error_frame(
 ) -> None:
     # Trigger malformed via empty payload (will fail decode)
     await process_comp.handle_run_async(0, b"")
-    
+
     # Should NOT have called send, but return False to dispatcher
     process_comp.serial_flow.send.assert_not_called()

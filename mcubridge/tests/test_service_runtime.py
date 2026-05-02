@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Command, Status, Topic
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.mqtt.queue import enqueue_mqtt, QueuedPublish
 
 
@@ -81,14 +80,17 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
         inbound.properties = props
 
         msg = QueuedPublish(topic_name="original/topic", payload=b"resp")
-        
+
         await enqueue_mqtt(state, msg, reply_context=inbound)
 
         queued = state.mqtt_publish_queue.get_nowait()
         assert queued.topic_name == "reply/here"
         assert queued.correlation_data == b"corr-123"
         # Check user properties for origin topic
-        assert any(k == "bridge-request-topic" and v == "request/topic" for k, v in queued.user_properties)
+        assert any(
+            k == "bridge-request-topic" and v == "request/topic"
+            for k, v in queued.user_properties
+        )
     finally:
         state.cleanup()
 
@@ -179,7 +181,7 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
         state.mqtt_publish_queue.put_nowait(first)
 
         second = QueuedPublish(topic_name="br/new", payload=b"2")
-        
+
         await enqueue_mqtt(state, second)
 
         queued = state.mqtt_publish_queue.get_nowait()
@@ -215,7 +217,9 @@ async def test_enqueue_mqtt_spool_unavailable_logs(
 
         monkeypatch.setattr("mcubridge.mqtt.queue.stash_mqtt_message", _stash_fail)
 
-        state.mqtt_publish_queue.put_nowait(QueuedPublish(topic_name="br/old", payload=b"1"))
+        state.mqtt_publish_queue.put_nowait(
+            QueuedPublish(topic_name="br/old", payload=b"1")
+        )
 
         await enqueue_mqtt(state, QueuedPublish(topic_name="br/new", payload=b"2"))
 

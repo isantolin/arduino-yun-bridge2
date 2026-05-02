@@ -133,13 +133,19 @@ class PinComponent:
                     cmd.value, msgspec.msgpack.encode(packet)
                 )
 
-            case str() if action in ("write", "0", "1", "on", "off") or action.isdigit():
+            case str() if (
+                action in ("write", "0", "1", "on", "off") or action.isdigit()
+            ):
                 # Write operation (Digital)
                 if route.topic != Topic.DIGITAL:
                     return False
-                
+
                 try:
-                    val_str = action if (action.isdigit() or action in ("0", "1", "on", "off")) else inbound.payload.decode()
+                    val_str = (
+                        action
+                        if (action.isdigit() or action in ("0", "1", "on", "off"))
+                        else inbound.payload.decode()
+                    )
                     val = 1 if val_str in ("1", "on") else 0
                     packet = DigitalWritePacket(pin=pin, value=val)
                     return await self.serial_flow.send(

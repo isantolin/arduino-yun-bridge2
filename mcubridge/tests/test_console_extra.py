@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import collections
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
-from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Command, Status, Topic
-from mcubridge.protocol.structures import TopicRoute
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import create_runtime_state
@@ -45,15 +40,17 @@ async def test_console_handle_write_edge_cases(console_comp: ConsoleComponent) -
 
 
 @pytest.mark.asyncio
-async def test_console_flush_queue_serial_failure(console_comp: ConsoleComponent) -> None:
+async def test_console_flush_queue_serial_failure(
+    console_comp: ConsoleComponent,
+) -> None:
     # Fill queue
     console_comp.state.console_to_mcu_queue.append(b"lost")
-    
+
     # Mock send failure
     console_comp.serial_flow.send.return_value = False
-    
+
     await console_comp.flush_queue()
-    
+
     # In SIL-2 we requeue once then abort if serial is saturated.
     assert len(console_comp.state.console_to_mcu_queue) == 1
     assert console_comp.state.console_to_mcu_queue[0] == b"lost"

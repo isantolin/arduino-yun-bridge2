@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import ShellAction, Status
+from mcubridge.protocol.protocol import ShellAction
 from mcubridge.protocol.structures import QueuedPublish, TopicRoute
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.process import ProcessComponent
@@ -182,7 +182,12 @@ async def test_shell_kill_invokes_stop_process(
     await component.handle_mqtt(
         TopicRoute("br/shell/kill", "br", Topic.SHELL, ("kill",)),
         Message(
-            topic="test/topic", payload=b"42", qos=0, retain=False, mid=1, properties=None
+            topic="test/topic",
+            payload=b"42",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
         ),
     )
 

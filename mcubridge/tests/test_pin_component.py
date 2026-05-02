@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import collections
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
 from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command, PinAction, Topic
+from mcubridge.protocol.protocol import Command, Topic
 from mcubridge.protocol.structures import (
     DigitalReadResponsePacket,
     PinModePacket,
@@ -27,7 +25,7 @@ from mcubridge.state.context import create_runtime_state
 def pin_component(runtime_config: RuntimeConfig) -> PinComponent:
     state = create_runtime_state(runtime_config)
     state.mqtt_topic_prefix = "br"
-    
+
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
     enqueue_mqtt = AsyncMock()

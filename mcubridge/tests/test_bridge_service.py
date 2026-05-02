@@ -6,11 +6,9 @@ import logging
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import msgspec
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Status
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.runtime import BridgeService

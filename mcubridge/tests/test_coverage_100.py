@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import collections
-from typing import Any, cast
 from unittest.mock import MagicMock, AsyncMock, patch
 
 import msgspec
 import pytest
-from mcubridge.protocol.structures import ProcessPollPacket, ShellCommandPayload
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
@@ -41,11 +39,12 @@ async def test_poll_process_not_found_explicit() -> None:
     serial_flow.send = AsyncMock()
 
     comp = ProcessComponent(MagicMock(), state, serial_flow, MagicMock())
-    
+
     from mcubridge.protocol.structures import ShellPidPayload
+
     payload = msgspec.msgpack.encode(ShellPidPayload(pid=123))
     await comp.handle_poll(1, payload)
-    
+
     serial_flow.send.assert_called()
 
 
@@ -62,11 +61,12 @@ async def test_start_async_subprocess_unexpected_exception() -> None:
         state.next_pid = 1
 
         comp = ProcessComponent(MagicMock(), state, serial_flow, MagicMock())
-        
+
         from mcubridge.protocol.structures import ShellCommandPayload
+
         payload = msgspec.msgpack.encode(ShellCommandPayload(command="ls"))
         await comp.handle_run_async(1, payload)
         # Should proceed without crashing, errors are logged
-    
+
     # Yield control to allow loop cleanup
     await asyncio.sleep(0.01)

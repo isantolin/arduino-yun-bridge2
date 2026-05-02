@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from aiomqtt.message import Message
 
-from mcubridge.protocol.protocol import MailboxAction, Topic
+from mcubridge.protocol.protocol import Topic
 from mcubridge.protocol.structures import TopicRoute
 from mcubridge.services.mailbox import MailboxComponent
 
@@ -38,7 +38,7 @@ async def test_mailbox_handle_mqtt_push_limit(
 ):
     # Set the limit in state
     mailbox_component.state.mailbox_queue_limit = 1
-    
+
     # Fill queue
     mailbox_component.state.mailbox_queue.append(b"data-pre")
 
@@ -54,7 +54,7 @@ async def test_mailbox_handle_mqtt_push_limit(
             properties=None,
         ),
     )
-    
+
     assert len(mailbox_component.state.mailbox_queue) == 1
     # In current implementation, we drop the NEW data on overflow
     assert mailbox_component.state.mailbox_queue[0] == b"data-pre"
@@ -66,7 +66,7 @@ async def test_mailbox_handle_mqtt_read_empty(
 ):
     # Ensure queue is empty
     mailbox_component.state.mailbox_incoming_queue.clear()
-    
+
     await mailbox_component.handle_mqtt(
         TopicRoute("br/mailbox/read", "br", Topic.MAILBOX, ("read",)),
         Message(

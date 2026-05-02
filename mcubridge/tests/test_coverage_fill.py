@@ -5,7 +5,6 @@ Coverage gap filler tests for Python.
 from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
-import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -173,7 +172,9 @@ async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
         raw=str(msg.topic), prefix="bridge", topic=Topic.SYSTEM, segments=("test",)
     )
 
-    dispatcher.mqtt_handlers[Topic.SYSTEM] = [AsyncMock(side_effect=RuntimeError("mqtt bug"))]
+    dispatcher.mqtt_handlers[Topic.SYSTEM] = [
+        AsyncMock(side_effect=RuntimeError("mqtt bug"))
+    ]
 
     await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
 

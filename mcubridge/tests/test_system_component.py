@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import collections
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
@@ -37,7 +36,9 @@ async def test_system_request_mcu_version(system_component: SystemComponent) -> 
 
 
 @pytest.mark.asyncio
-async def test_system_handle_get_version_resp(system_component: SystemComponent) -> None:
+async def test_system_handle_get_version_resp(
+    system_component: SystemComponent,
+) -> None:
     pkt = structures.VersionResponsePacket(major=2, minor=0, patch=1)
     payload = msgspec.msgpack.encode(pkt)
 
@@ -64,7 +65,9 @@ async def test_system_handle_get_free_memory_resp(
 
 
 @pytest.mark.asyncio
-async def test_system_handle_mqtt_free_memory(system_component: SystemComponent) -> None:
+async def test_system_handle_mqtt_free_memory(
+    system_component: SystemComponent,
+) -> None:
     route = TopicRoute(
         raw=f"br/{Topic.SYSTEM}/{SystemAction.FREE_MEMORY.value}",
         prefix="br",
@@ -104,4 +107,7 @@ async def test_system_handle_mqtt_bootloader(system_component: SystemComponent) 
     await system_component.handle_mqtt(route, msg)
 
     cast(Any, system_component.serial_flow.send).assert_called()
-    assert cast(Any, system_component.serial_flow.send).call_args.args[0] == Command.CMD_ENTER_BOOTLOADER.value
+    assert (
+        cast(Any, system_component.serial_flow.send).call_args.args[0]
+        == Command.CMD_ENTER_BOOTLOADER.value
+    )

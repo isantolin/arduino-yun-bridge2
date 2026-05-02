@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import collections
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
-from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Command, Status, Topic
-from mcubridge.protocol.structures import TopicRoute
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import create_runtime_state
@@ -31,17 +26,17 @@ def console_component(
     serial_flow.send = AsyncMock(return_value=True)
     enqueue_mqtt = AsyncMock()
 
-    return ConsoleComponent(
-        runtime_config, state, serial_flow, enqueue_mqtt
-    )
+    return ConsoleComponent(runtime_config, state, serial_flow, enqueue_mqtt)
 
 
 @pytest.mark.asyncio
-async def test_console_handle_write_success(console_component: ConsoleComponent) -> None:
+async def test_console_handle_write_success(
+    console_component: ConsoleComponent,
+) -> None:
     # MCU writes console output - MUST be MsgPack encoded packet
     pkt = structures.ConsoleWritePacket(data=b"hello world")
     payload = msgspec.msgpack.encode(pkt)
-    
+
     await console_component.handle_write(0, payload)
 
     console_component.enqueue_mqtt.assert_called()
@@ -60,7 +55,9 @@ async def test_console_xoff_xon(console_component: ConsoleComponent) -> None:
 
 
 @pytest.mark.asyncio
-async def test_console_on_serial_disconnected(console_component: ConsoleComponent) -> None:
+async def test_console_on_serial_disconnected(
+    console_component: ConsoleComponent,
+) -> None:
     console_component.state.mcu_is_paused = True
     await console_component.on_serial_disconnected()
     assert console_component.state.mcu_is_paused is False

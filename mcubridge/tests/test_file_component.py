@@ -378,7 +378,7 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
             def _satisfy():
                 if component._pending_mcu_read:
                     component._pending_mcu_read.future.set_result(b"mcu-data")
-            
+
             asyncio.get_running_loop().call_soon(_satisfy)
         return True
 

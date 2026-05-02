@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Status, Topic
 from mcubridge.protocol.structures import MailboxPushPacket, TopicRoute
 from mcubridge.services.mailbox import MailboxComponent
@@ -54,8 +51,9 @@ async def test_handle_available_malformed(mailbox_comp: MailboxComponent):
 async def test_handle_mqtt_unknown_action(mailbox_comp: MailboxComponent):
     route = TopicRoute("br/mailbox/unknown", "br", Topic.MAILBOX, ("unknown",))
     from aiomqtt.message import Message
+
     msg = MagicMock(spec=Message)
     msg.payload = b""
-    
+
     ok = await mailbox_comp.handle_mqtt(route, msg)
     assert ok is False

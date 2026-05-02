@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import structlog
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 from aiomqtt.message import Message
@@ -129,9 +128,7 @@ class ProcessComponent:
             return True
         return False
 
-    async def run_async(
-        self, command: str, inbound: Message | None = None
-    ) -> int:
+    async def run_async(self, command: str, inbound: Message | None = None) -> int:
         if self._process_slots.locked():
             logger.warning("Concurrency limit reached; rejecting process run.")
             return 0
@@ -222,7 +219,7 @@ class ProcessComponent:
                 line = await proc.stdout.readline()
                 if not line:
                     break
-                
+
                 # [SIL-2] Using direct dict for ad-hoc async output
                 payload = msgspec.msgpack.encode({"pid": pid, "data": line})
                 await self.enqueue_mqtt(

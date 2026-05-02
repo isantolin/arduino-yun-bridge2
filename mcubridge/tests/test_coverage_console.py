@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command, Status, Topic
+from mcubridge.protocol.protocol import Command, Topic
 from mcubridge.protocol.structures import TopicRoute
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.services.serial_flow import SerialFlowController
@@ -29,13 +28,13 @@ def console_comp(runtime_config: RuntimeConfig) -> ConsoleComponent:
 async def test_console_mqtt_input_paused(console_comp: ConsoleComponent) -> None:
     # Pause MCU
     console_comp.state.mcu_is_paused = True
-    
+
     msg = MagicMock(spec=Message)
     msg.payload = b"hello"
     route = TopicRoute("br/console/in", "br", Topic.CONSOLE, ("in",))
-    
+
     await console_comp.handle_mqtt(route, msg)
-    
+
     # Should be in queue, not sent
     assert len(console_comp.state.console_to_mcu_queue) == 1
     console_comp.serial_flow.send.assert_not_called()
@@ -47,9 +46,12 @@ async def test_console_handle_mqtt(console_comp: ConsoleComponent) -> None:
     msg = MagicMock(spec=Message)
     msg.payload = b"hello"
     route = TopicRoute("br/console/in", "br", Topic.CONSOLE, ("in",))
-    
+
     await console_comp.handle_mqtt(route, msg)
-    
+
     console_comp.serial_flow.send.assert_called()
-    assert console_comp.serial_flow.send.call_args.args[0] == Command.CMD_CONSOLE_WRITE.value
+    assert (
+        console_comp.serial_flow.send.call_args.args[0]
+        == Command.CMD_CONSOLE_WRITE.value
+    )
     assert b"hello" in console_comp.serial_flow.send.call_args.args[1]

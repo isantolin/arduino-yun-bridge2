@@ -14,9 +14,6 @@ from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from ..protocol.protocol import Command, FileAction, Status
 
-from ..config.const import (
-    FILE_LARGE_WARNING_BYTES,
-)
 from ..protocol.structures import (
     FileReadPacket,
     FileReadResponsePacket,
@@ -391,6 +388,7 @@ class FileComponent:
             path.parent.mkdir(parents=True, exist_ok=True)
 
             from ..config.const import FILE_LARGE_WARNING_BYTES
+
             if len(data) > FILE_LARGE_WARNING_BYTES:
                 logger.warning("Writing large file: %s (%d bytes)", path, len(data))
 
@@ -434,4 +432,3 @@ class FileComponent:
 
 
 __all__ = ["FileComponent"]
-

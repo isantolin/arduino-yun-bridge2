@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import collections
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -12,7 +11,7 @@ from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Command, DatastoreAction, Status, Topic
+from mcubridge.protocol.protocol import Command, Topic
 from mcubridge.protocol.structures import TopicRoute
 from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.services.serial_flow import SerialFlowController
@@ -32,7 +31,10 @@ def datastore_component(
     enqueue_mqtt = AsyncMock()
 
     return DatastoreComponent(
-        config=runtime_config, state=state, serial_flow=serial_flow, enqueue_mqtt=enqueue_mqtt
+        config=runtime_config,
+        state=state,
+        serial_flow=serial_flow,
+        enqueue_mqtt=enqueue_mqtt,
     )
 
 

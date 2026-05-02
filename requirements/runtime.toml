@@ -79,28 +79,10 @@ pip = "cryptography==47.0.0"
 rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
 
 [[dependency]]
-name = "typer"
-openwrt = "python3-typer"
-pip = "typer[all]==0.25.0"
-rationale = "Modern CLI generation library for tools and examples"
-
-[[dependency]]
 name = "structlog"
 openwrt = "python3-structlog"
 pip = "structlog==25.5.0"
 rationale = "Structured logging with JSON output for production syslog"
-
-[[dependency]]
-name = "rich"
-openwrt = "python3-rich"
-pip = "rich==15.0.0"
-rationale = "Beautiful terminal formatting for tools and logs"
-
-[[dependency]]
-name = "sh"
-openwrt = "python3-sh"
-pip = "sh==2.2.2"
-rationale = "Python subprocess interface for clean command execution"
 
 [[dependency]]
 name = "diskcache"
@@ -119,39 +101,3 @@ name = "xxd"
 openwrt = "xxd"
 pip = ""
 rationale = "Hex-dump utility used by diagnostic scripts [BUILD-ONLY]"
-
-[[dependency]]
-name = "svcs"
-openwrt = "python3-svcs"
-pip = "svcs==25.1.0"
-rationale = "Structured service locator for component lifecycle management"
-
-[[dependency]]
-name = "click"
-openwrt = "python3-click"
-pip = "click==8.3.3"
-rationale = "Sub-dependency for typer"
-
-[[dependency]]
-name = "markdown-it-py"
-openwrt = "python3-markdown-it-py"
-pip = "markdown-it-py==4.0.0"
-rationale = "Sub-dependency for rich"
-
-[[dependency]]
-name = "mdurl"
-openwrt = "python3-mdurl"
-pip = "mdurl==0.1.2"
-rationale = "Sub-dependency for markdown-it-py"
-
-[[dependency]]
-name = "pygments"
-openwrt = "python3-pygments"
-pip = "pygments==2.20.0"
-rationale = "Sub-dependency for rich"
-
-[[dependency]]
-name = "shellingham"
-openwrt = "python3-shellingham"
-pip = "shellingham==1.5.4"
-rationale = "Sub-dependency for typer"

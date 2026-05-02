@@ -58,8 +58,8 @@ define Package/$(PKG_NAME)
 		python3-cryptography \
 		python3-structlog \
 		python3-diskcache \
-		mosquitto-client \
-		python3-uci
+		mosquitto-client
+	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description

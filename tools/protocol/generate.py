@@ -18,13 +18,13 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Optional
 
-import typer
+import argparse
 from jinja2 import Environment, FileSystemLoader
 
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
-REQUIRED_DEPS = ["msgspec", "typer", "jinja2"]
+REQUIRED_DEPS = ["msgspec", "jinja2"]
 MISSING_DEPS = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep) is None]
 
 if MISSING_DEPS:
@@ -58,8 +58,6 @@ else:
     _spec_mod = importlib.util.module_from_spec(_loader_spec)
     _loader_spec.loader.exec_module(_spec_mod)
     ProtocolSpec = _spec_mod.ProtocolSpec
-
-app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -1131,63 +1129,52 @@ def update_metadata(version: str):
         sys.stderr.write(f"Updated {lib_prop} to version {version}\n")
 
 
-@app.command()
-def main(
-    spec_path: Annotated[
-        Path, typer.Option("--spec", help="Protocol specification file")
-    ],
-    cpp: Annotated[
-        Optional[Path], typer.Option("--cpp", help="C++ header output")
-    ] = None,
-    cpp_structs: Annotated[
-        Optional[Path], typer.Option("--cpp-structs", help="C++ structs output")
-    ] = None,
-    py: Annotated[Optional[Path], typer.Option("--py", help="Python output")] = None,
-    py_client: Annotated[
-        Optional[Path], typer.Option("--py-client", help="Python client output")
-    ] = None,
-    structures: Annotated[
-        Optional[Path],
-        typer.Option(
-            "--structures", help="Splice generated Packets into structures.py"
-        ),
-    ] = None,
-) -> None:
-    spec = ProtocolSpec.load(spec_path)
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
+    parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file")
+    parser.add_argument("--cpp", type=Path, default=None, help="C++ header output")
+    parser.add_argument("--cpp-structs", type=Path, default=None, help="C++ structs output")
+    parser.add_argument("--py", type=Path, default=None, help="Python output")
+    parser.add_argument("--py-client", type=Path, default=None, help="Python client output")
+    parser.add_argument("--structures", type=Path, default=None, help="Splice generated Packets into structures.py")
+    
+    args = parser.parse_args()
+
+    spec = ProtocolSpec.load(args.spec)
     gen = JinjaGenerator()
     version = read_version()
 
     update_metadata(version)
 
-    if cpp:
-        cpp.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_header(spec, cpp, version)
-        sys.stderr.write(f"Generated {cpp}\n")
+    if args.cpp:
+        args.cpp.parent.mkdir(parents=True, exist_ok=True)
+        gen.generate_cpp_header(spec, args.cpp, version)
+        sys.stderr.write(f"Generated {args.cpp}\n")
 
         # Generate hardware config next to the main header
-        hw_config_path = cpp.parent / "rpc_hw_config.h"
+        hw_config_path = args.cpp.parent / "rpc_hw_config.h"
         gen.generate_cpp_hw_config(spec, hw_config_path)
         sys.stderr.write(f"Generated {hw_config_path}\n")
 
-    if cpp_structs:
-        cpp_structs.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_structs(spec, cpp_structs)
-        sys.stderr.write(f"Generated {cpp_structs}\n")
+    if args.cpp_structs:
+        args.cpp_structs.parent.mkdir(parents=True, exist_ok=True)
+        gen.generate_cpp_structs(spec, args.cpp_structs)
+        sys.stderr.write(f"Generated {args.cpp_structs}\n")
 
-    if py:
-        py.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python(spec, py)
-        sys.stderr.write(f"Generated {py}\n")
+    if args.py:
+        args.py.parent.mkdir(parents=True, exist_ok=True)
+        gen.generate_python(spec, args.py)
+        sys.stderr.write(f"Generated {args.py}\n")
 
-    if py_client:
-        py_client.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python_client(spec, py_client)
-        sys.stderr.write(f"Generated {py_client}\n")
+    if args.py_client:
+        args.py_client.parent.mkdir(parents=True, exist_ok=True)
+        gen.generate_python_client(spec, args.py_client)
+        sys.stderr.write(f"Generated {args.py_client}\n")
 
     # Generate Packet classes from spec.toml messages into structures.py
-    if structures:
-        gen.generate_structures_packets(spec, structures)
-        sys.stderr.write(f"Generated Packet classes in {structures}\n")
+    if args.structures:
+        gen.generate_structures_packets(spec, args.structures)
+        sys.stderr.write(f"Generated Packet classes in {args.structures}\n")
 
     # Step 4: Generate type stubs for untyped libraries using pyright
     untyped_libs = ["diskcache"]
@@ -1204,4 +1191,4 @@ def main(
 
 
 if __name__ == "__main__":
-    app()
+    main()

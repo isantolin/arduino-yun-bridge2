@@ -74,6 +74,7 @@ async def test_handle_read_request_success(
 
     await mailbox_component.handle_read(0, b"")
 
+    assert isinstance(mailbox_component.serial_flow.send, AsyncMock)
     mailbox_component.serial_flow.send.assert_called()
     call_args = mailbox_component.serial_flow.send.call_args
     assert call_args.args[0] == Command.CMD_MAILBOX_READ_RESP.value

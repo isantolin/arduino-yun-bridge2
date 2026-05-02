@@ -191,7 +191,7 @@ class BridgeService:
         self.state.pending_analog_reads.clear()
 
         # Ensure we do not keep the console in a paused state between links.
-        self.console.on_serial_disconnected()
+        await self.console.on_serial_disconnected()
         await self.serial_flow.reset()
         self.handshake_manager.clear_handshake_expectations()
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import msgspec
@@ -47,7 +48,7 @@ async def test_console_flush_queue_serial_failure(
     console_comp.state.console_to_mcu_queue.append(b"lost")
 
     # Mock send failure
-    console_comp.serial_flow.send.return_value = False
+    cast(Any, console_comp.serial_flow.send).return_value = False
 
     await console_comp.flush_queue()
 

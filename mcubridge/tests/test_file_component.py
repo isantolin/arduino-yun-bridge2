@@ -376,8 +376,8 @@ async def test_handle_mqtt_read_from_mcu_storage_enabled(
             # We must not call handle_read_response from here because it deadlocks on _mcu_read_lock
             # Instead, we satisfy the future after a tiny delay
             def _satisfy():
-                if component._pending_mcu_read:
-                    component._pending_mcu_read.future.set_result(b"mcu-data")
+                if component._pending_mcu_read:  # type: ignore[reportPrivateUsage]
+                    component._pending_mcu_read.future.set_result(b"mcu-data")  # type: ignore[reportPrivateUsage]
 
             asyncio.get_running_loop().call_soon(_satisfy)
         return True

@@ -47,8 +47,8 @@ async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> 
     await datastore_component.handle_put(0, payload)
 
     assert datastore_component.state.datastore["timeout"] == b"3600"
-    cast(Any, datastore_component.enqueue_mqtt).assert_called()
-    msg = cast(Any, datastore_component.enqueue_mqtt).call_args.args[0]
+    datastore_component.enqueue_mqtt.assert_called()
+    msg = datastore_component.enqueue_mqtt.call_args.args[0]
     assert msg.payload == b"3600"
     assert "timeout" in msg.topic_name
 
@@ -110,6 +110,6 @@ async def test_datastore_handle_mqtt_get(
 
     await datastore_component.handle_mqtt(route, msg)
 
-    cast(Any, datastore_component.enqueue_mqtt).assert_called()
-    msg_out = cast(Any, datastore_component.enqueue_mqtt).call_args.args[0]
+    datastore_component.enqueue_mqtt.assert_called()
+    msg_out = datastore_component.enqueue_mqtt.call_args.args[0]
     assert msg_out.payload == b"3600"

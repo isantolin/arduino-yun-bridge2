@@ -44,6 +44,7 @@ async def test_handle_available_malformed(mailbox_comp: MailboxComponent):
     ok = await mailbox_comp.handle_available(0, b"not-empty")
     # Returns the result of serial_flow.send(Status.MALFORMED)
     assert ok is True
+    assert isinstance(mailbox_comp.serial_flow.send, AsyncMock)
     mailbox_comp.serial_flow.send.assert_called_with(Status.MALFORMED.value, b"")
 
 

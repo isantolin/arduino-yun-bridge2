@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -47,8 +47,8 @@ async def test_spool_fallback_updates_state(
 ) -> None:
 
     state = create_runtime_state(runtime_config)
-    from mcubridge.mqtt.queue import _on_spool_fallback
+    from mcubridge.mqtt.queue import _on_spool_fallback  # type: ignore[reportPrivateUsage]
 
-    _on_spool_fallback(state, "disk error")
+    cast(Any, _on_spool_fallback)(state, "disk error")
     assert state.mqtt_spool_degraded is True
     assert state.mqtt_spool_failure_reason == "disk error"

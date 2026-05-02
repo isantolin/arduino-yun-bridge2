@@ -58,4 +58,5 @@ async def test_handle_write_quota_exceeded(file_comp: FileComponent) -> None:
     pkt = structures.FileWritePacket(path="quota.txt", data=b"too much data")
     await file_comp.handle_write(0, msgspec.msgpack.encode(pkt))
 
+    assert isinstance(file_comp.serial_flow.send, AsyncMock)
     file_comp.serial_flow.send.assert_called_with(Status.ERROR.value, b"")

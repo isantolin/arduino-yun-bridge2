@@ -37,6 +37,7 @@ async def test_handle_poll_process_found(process_comp: ProcessComponent) -> None
 
     await process_comp.handle_poll(1, payload)
 
+    assert isinstance(process_comp.serial_flow.send, AsyncMock)
     process_comp.serial_flow.send.assert_called()
 
 
@@ -46,7 +47,7 @@ async def test_run_async_respects_concurrency_limit(
 ) -> None:
     # Set limit to 1
     process_comp.state.process_max_concurrent = 1
-    process_comp._process_slots = asyncio.Semaphore(1)
+    process_comp._process_slots = asyncio.Semaphore(1)  # type: ignore[reportPrivateUsage]
     # [SIL-2] Ensure policy allows it
     process_comp.state.allowed_policy = MagicMock()
     process_comp.state.allowed_policy.is_allowed.return_value = True
@@ -64,6 +65,7 @@ async def test_handle_kill_success(process_comp: ProcessComponent) -> None:
     await process_comp.handle_kill(1, payload)
 
     mock_proc.terminate.assert_called()
+    assert isinstance(process_comp.serial_flow.send, AsyncMock)
     process_comp.serial_flow.send.assert_called_with(Status.OK.value, b"")
 
 
@@ -75,4 +77,5 @@ async def test_handle_run_async_validation_error_sends_error_frame(
     await process_comp.handle_run_async(0, b"")
 
     # Should NOT have called send, but return False to dispatcher
+    assert isinstance(process_comp.serial_flow.send, AsyncMock)
     process_comp.serial_flow.send.assert_not_called()

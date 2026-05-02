@@ -25,9 +25,9 @@ async def test_pin_validate_limit(
         comp = PinComponent(runtime_config, state, serial_flow, enqueue_mqtt)
 
         # 1. Valid pin
-        assert comp._validate_pin_limit(13) is True
+        assert comp._validate_pin_limit(13) is True  # type: ignore[reportPrivateUsage]
         # 2. Invalid pin
-        assert comp._validate_pin_limit(25) is False
+        assert comp._validate_pin_limit(25) is False  # type: ignore[reportPrivateUsage]
     finally:
         state.cleanup()
 

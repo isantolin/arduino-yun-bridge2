@@ -88,8 +88,8 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
         assert queued.correlation_data == b"corr-123"
         # Check user properties for origin topic
         assert any(
-            k == "bridge-request-topic" and v == "request/topic"
-            for k, v in queued.user_properties
+            k == "bridge-request-topic" and _ == "request/topic"
+            for k, _ in queued.user_properties
         )
     finally:
         state.cleanup()
@@ -134,7 +134,7 @@ async def test_reject_topic_action_enqueues_status() -> None:
         enqueue_mqtt.assert_called()
         msg = enqueue_mqtt.call_args.args[0]
         assert "response" in msg.topic_name
-        assert any(k == "bridge-error" for k, v in msg.user_properties)
+        assert any(k == "bridge-error" for k, _ in msg.user_properties)
     finally:
         state.cleanup()
 

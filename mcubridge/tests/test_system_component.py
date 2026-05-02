@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import msgspec
@@ -30,7 +29,8 @@ def system_component(runtime_config: RuntimeConfig) -> SystemComponent:
 @pytest.mark.asyncio
 async def test_system_request_mcu_version(system_component: SystemComponent) -> None:
     await system_component.request_mcu_version()
-    cast(Any, system_component.serial_flow.send).assert_called_with(
+    assert isinstance(system_component.serial_flow.send, AsyncMock)
+    system_component.serial_flow.send.assert_called_with(
         Command.CMD_GET_VERSION.value, b""
     )
 
@@ -45,8 +45,9 @@ async def test_system_handle_get_version_resp(
     await system_component.handle_get_version_resp(0, payload)
 
     assert system_component.state.mcu_version == (2, 0, 1)
-    cast(Any, system_component.enqueue_mqtt).assert_called()
-    msg = cast(Any, system_component.enqueue_mqtt).call_args.args[0]
+    assert isinstance(system_component.enqueue_mqtt, AsyncMock)
+    system_component.enqueue_mqtt.assert_called()
+    msg = system_component.enqueue_mqtt.call_args.args[0]
     assert msg.payload == b"2.0.1"
 
 
@@ -59,8 +60,9 @@ async def test_system_handle_get_free_memory_resp(
 
     await system_component.handle_get_free_memory_resp(0, payload)
 
-    cast(Any, system_component.enqueue_mqtt).assert_called()
-    msg = cast(Any, system_component.enqueue_mqtt).call_args.args[0]
+    assert isinstance(system_component.enqueue_mqtt, AsyncMock)
+    system_component.enqueue_mqtt.assert_called()
+    msg = system_component.enqueue_mqtt.call_args.args[0]
     assert msg.payload == b"1024"
 
 
@@ -80,7 +82,8 @@ async def test_system_handle_mqtt_free_memory(
 
     await system_component.handle_mqtt(route, msg)
 
-    cast(Any, system_component.serial_flow.send).assert_called_with(
+    assert isinstance(system_component.serial_flow.send, AsyncMock)
+    system_component.serial_flow.send.assert_called_with(
         Command.CMD_GET_FREE_MEMORY.value, b""
     )
 
@@ -106,8 +109,9 @@ async def test_system_handle_mqtt_bootloader(system_component: SystemComponent) 
 
     await system_component.handle_mqtt(route, msg)
 
-    cast(Any, system_component.serial_flow.send).assert_called()
+    assert isinstance(system_component.serial_flow.send, AsyncMock)
+    system_component.serial_flow.send.assert_called()
     assert (
-        cast(Any, system_component.serial_flow.send).call_args.args[0]
+        system_component.serial_flow.send.call_args.args[0]
         == Command.CMD_ENTER_BOOTLOADER.value
     )

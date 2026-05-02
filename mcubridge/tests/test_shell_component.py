@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -25,7 +25,7 @@ def _extract_enqueued_publish(
     call = enqueue_mqtt.call_args_list[index]
     msg = call.args[0] if call.args else call.kwargs.get("message")
     reply_to = call.kwargs.get("reply_context")
-    return msg, reply_to
+    return cast(QueuedPublish, msg), reply_to
 
 
 @pytest.mark.asyncio

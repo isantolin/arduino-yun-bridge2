@@ -61,6 +61,7 @@ async def test_pin_handle_mqtt_mode(pin_component: PinComponent) -> None:
 
     await pin_component.handle_mqtt(route, msg)
 
+    assert isinstance(pin_component.serial_flow.send, AsyncMock)
     pin_component.serial_flow.send.assert_called_with(
         Command.CMD_SET_PIN_MODE.value,
         msgspec.msgpack.encode(PinModePacket(pin=13, mode=1)),
@@ -81,6 +82,7 @@ async def test_pin_handle_mqtt_read(pin_component: PinComponent) -> None:
 
     await pin_component.handle_mqtt(route, msg)
 
+    assert isinstance(pin_component.serial_flow.send, AsyncMock)
     pin_component.serial_flow.send.assert_called_with(
         Command.CMD_DIGITAL_READ.value,
         msgspec.msgpack.encode(PinReadPacket(pin=13)),

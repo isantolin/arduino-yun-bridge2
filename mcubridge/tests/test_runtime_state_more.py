@@ -7,7 +7,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from mcubridge.mqtt.spool import MQTTPublishSpool
-from mcubridge.state.context import RuntimeState
 
 
 @pytest.mark.asyncio
@@ -16,10 +15,12 @@ async def test_disable_mqtt_spool_handles_close_errors(
 ) -> None:
     from mcubridge.config.settings import RuntimeConfig
 
+    from mcubridge.state.context import create_runtime_state
+
     config = RuntimeConfig(
         serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
     )
-    state = RuntimeState(config)
+    state = create_runtime_state(config)
     AsyncMock()
 
     mock_spool = MagicMock(spec=MQTTPublishSpool)

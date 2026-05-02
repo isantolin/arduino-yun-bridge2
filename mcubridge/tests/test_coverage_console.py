@@ -37,6 +37,7 @@ async def test_console_mqtt_input_paused(console_comp: ConsoleComponent) -> None
 
     # Should be in queue, not sent
     assert len(console_comp.state.console_to_mcu_queue) == 1
+    assert isinstance(console_comp.serial_flow.send, AsyncMock)
     console_comp.serial_flow.send.assert_not_called()
 
 
@@ -49,6 +50,7 @@ async def test_console_handle_mqtt(console_comp: ConsoleComponent) -> None:
 
     await console_comp.handle_mqtt(route, msg)
 
+    assert isinstance(console_comp.serial_flow.send, AsyncMock)
     console_comp.serial_flow.send.assert_called()
     assert (
         console_comp.serial_flow.send.call_args.args[0]

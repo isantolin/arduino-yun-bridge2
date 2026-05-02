@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 import msgspec
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -57,7 +58,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     assert msg.payload == b"1"
 
     assert sent_frames
-    ack_id, ack_payload = sent_frames[-1]
+    ack_id, _ = sent_frames[-1]
     assert ack_id == Status.ACK.value
 
 
@@ -102,7 +103,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     assert msg.payload == b"127"
 
     assert sent_frames
-    ack_id, ack_payload = sent_frames[-1]
+    ack_id, _ = sent_frames[-1]
     assert ack_id == Status.ACK.value
 
 
@@ -150,7 +151,7 @@ async def test_mqtt_digital_write_sends_frame(
     )
 
     assert sent_frames
-    command_id, payload = sent_frames[0]
+    command_id, _ = sent_frames[0]
     assert command_id == Command.CMD_DIGITAL_WRITE.value
 
 
@@ -250,7 +251,7 @@ async def test_mcu_free_memory_response_enqueues_value(
     assert msg.payload == b"100"
 
     assert sent_frames
-    ack_id, ack_payload = sent_frames[-1]
+    ack_id, _ = sent_frames[-1]
     assert ack_id == Status.ACK.value
 
 
@@ -294,13 +295,13 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
 
     # Wait for background task to complete (it sets version to None)
     for _ in range(200):
-        if runtime_state.mcu_version is None:
+        if cast(Any, runtime_state).mcu_version is None:
             break
         await asyncio.sleep(0.01)
 
     assert sent_frames
     assert sent_frames[0][0] == Command.CMD_GET_VERSION.value
-    assert runtime_state.mcu_version is None
+    assert cast(Any, runtime_state).mcu_version is None
 
     # Simulate response
     payload = msgspec.msgpack.encode(

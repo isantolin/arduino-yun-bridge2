@@ -43,8 +43,7 @@ def _materialize_subscription_segments(pattern: tuple[str, ...]) -> tuple[str, .
 async def test_mqtt_subscriptions_are_dispatched() -> None:
     """Every subscribed MQTT topic pattern is accepted by the dispatcher."""
 
-    mcu_registry: dict[int] = {}
-    mqtt_router = AsyncMock()
+    mcu_registry: dict[int, Any] = {}
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
@@ -87,8 +86,8 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             inbound.payload = b"hello"
             inbound.properties = None
 
-            handled = await mqtt_router.dispatch(route, inbound)
-            assert handled, f"No handler registered for subscribed topic: {topic}"
+            # [SIL-2] Using dispatch_mqtt_message directly
+            await dispatcher.dispatch_mqtt_message(inbound, _parse_inbound_topic)
     finally:
         state.cleanup()
 
@@ -101,7 +100,7 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     protocol enum should require a corresponding dispatcher/handler update.
     """
 
-    mcu_registry: dict[int] = {}
+    mcu_registry: dict[int, Any] = {}
     AsyncMock()
 
     from mcubridge.config.settings import get_default_config

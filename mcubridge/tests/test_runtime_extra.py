@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services import ConsoleComponent, SystemComponent
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 
@@ -38,8 +37,8 @@ async def test_runtime_on_serial_connected_errors() -> None:
 
         service.handshake_manager.synchronize = AsyncMock(side_effect=_mock_sync)
 
-        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
-        console = service._container.get(ConsoleComponent)  # type: ignore[reportPrivateUsage]
+        system = service.system
+        console = service.console
 
         # 1. Error requesting version
         system.request_mcu_version = AsyncMock(side_effect=RuntimeError("fail"))

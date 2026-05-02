@@ -3,10 +3,9 @@ from __future__ import annotations
 import asyncio
 import structlog
 from collections.abc import Coroutine
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import msgspec
-import svcs
 from aiomqtt.message import Message
 
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
@@ -56,86 +55,6 @@ class BridgeService:
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_group: asyncio.TaskGroup | None = None
 
-        self._registry = svcs.Registry()
-
-        # [SIL-2] Explicit component registration (Direct Access)
-        # Eradicates the indirect factory loop to improve type traceability.
-        reg = cast(Any, self._registry)
-        reg.register_factory(
-            ConsoleComponent,
-            lambda: ConsoleComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
-            DatastoreComponent,
-            lambda: DatastoreComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
-            FileComponent,
-            lambda: FileComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
-            MailboxComponent,
-            lambda: MailboxComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
-            PinComponent,
-            lambda: PinComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
-            ProcessComponent,
-            lambda: ProcessComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
-            SpiComponent,
-            lambda: SpiComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-        reg.register_factory(
-            SystemComponent,
-            lambda: SystemComponent(
-                config=config,
-                state=state,
-                serial_flow=self.serial_flow,
-                mqtt_flow=self.mqtt_flow,
-            ),
-        )
-
-        self._container = svcs.Container(self._registry)
-
         self.serial_flow = SerialFlowController(
             ack_timeout=self._serial_timing.ack_timeout_seconds,
             response_timeout=self._serial_timing.response_timeout_seconds,
@@ -144,6 +63,18 @@ class BridgeService:
         )
         self.serial_flow.set_metrics_callback(state.record_serial_flow_event)
         self.serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
+
+        # [SIL-2] Explicit component instantiation (Zero-Wrapper)
+        self.console = ConsoleComponent(config, state, self.serial_flow, self.mqtt_flow)
+        self.datastore = DatastoreComponent(
+            config, state, self.serial_flow, self.mqtt_flow
+        )
+        self.file = FileComponent(config, state, self.serial_flow, self.mqtt_flow)
+        self.mailbox = MailboxComponent(config, state, self.serial_flow, self.mqtt_flow)
+        self.pin = PinComponent(config, state, self.serial_flow, self.mqtt_flow)
+        self.process = ProcessComponent(config, state, self.serial_flow, self.mqtt_flow)
+        self.spi = SpiComponent(config, state, self.serial_flow, self.mqtt_flow)
+        self.system = SystemComponent(config, state, self.serial_flow, self.mqtt_flow)
 
         self.handshake_manager = SerialHandshakeManager(
             config=config,
@@ -171,7 +102,16 @@ class BridgeService:
             publish_bridge_snapshot=self._publish_bridge_snapshot,
             on_frame_received=self.serial_flow.on_frame_received,
         )
-        self.dispatcher.register_components(self._container)
+        self.dispatcher.register_components(
+            console=self.console,
+            datastore=self.datastore,
+            file=self.file,
+            mailbox=self.mailbox,
+            pin=self.pin,
+            process=self.process,
+            spi=self.spi,
+            system=self.system,
+        )
         self.dispatcher.register_system_handlers(
             handle_link_sync_resp=self.handshake_manager.handle_link_sync_resp,
             handle_link_reset_resp=self.handshake_manager.handle_link_reset_resp,
@@ -180,7 +120,7 @@ class BridgeService:
             status_handler_factory=lambda status: lambda s, p: self.handle_status(
                 s, status, p
             ),
-            handle_process_kill=self._container.get(ProcessComponent).handle_kill,
+            handle_process_kill=self.process.handle_kill,
         )
 
     async def __aenter__(self) -> BridgeService:
@@ -232,16 +172,14 @@ class BridgeService:
             return
 
         try:
-            version_ok = await self._container.get(
-                SystemComponent
-            ).request_mcu_version()
+            version_ok = await self.system.request_mcu_version()
             if not version_ok:
                 logger.warning("Failed to dispatch MCU version request after reconnect")
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to request MCU version after reconnect: %s", e)
 
         try:
-            await self._container.get(ConsoleComponent).flush_queue()
+            await self.console.flush_queue()
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to flush console backlog after reconnect: %s", e)
 
@@ -266,7 +204,7 @@ class BridgeService:
         self.state.pending_analog_reads.clear()
 
         # Ensure we do not keep the console in a paused state between links.
-        self._container.get(ConsoleComponent).on_serial_disconnected()
+        self.console.on_serial_disconnected()
         await self.serial_flow.reset()
         self.handshake_manager.clear_handshake_expectations()
 

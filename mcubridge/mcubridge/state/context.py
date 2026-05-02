@@ -187,12 +187,12 @@ class RuntimeState(msgspec.Struct):
             self.link_sync_event.set()
 
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=cast(Any, asyncio.Queue)
-    )  # type: ignore
+        default_factory=lambda: cast(asyncio.Queue[QueuedPublish], asyncio.Queue())
+    )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_drop_counts: dict[str, int] = msgspec.field(
-        default_factory=cast(Any, dict)
-    )  # type: ignore
+        default_factory=lambda: cast(dict[str, int], {})
+    )
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_replayed: int = 0
     mqtt_spool_degraded: bool = False
@@ -209,18 +209,18 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(
-        default_factory=cast(Any, dict)
-    )  # type: ignore
+        default_factory=lambda: cast(SpoolSnapshot, {})
+    )
     datastore: dict[str, Any] = msgspec.field(
-        default_factory=cast(Any, dict)
-    )  # type: ignore
+        default_factory=lambda: cast(dict[str, Any], {})
+    )
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
     mailbox_queue: DequeLike[bytes] = msgspec.field(
-        default_factory=lambda: cast(DequeLike[bytes], collections.deque[bytes]()),
+        default_factory=lambda: cast(DequeLike[bytes], collections.deque()),
     )
     mailbox_incoming_queue: DequeLike[bytes] = msgspec.field(
-        default_factory=lambda: cast(DequeLike[bytes], collections.deque[bytes]()),
+        default_factory=lambda: cast(DequeLike[bytes], collections.deque()),
     )
 
     _mailbox_queue_cache: diskcache.Cache | None = None
@@ -229,7 +229,7 @@ class RuntimeState(msgspec.Struct):
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     console_to_mcu_queue: DequeLike[bytes] = msgspec.field(
-        default_factory=lambda: cast(DequeLike[bytes], collections.deque[bytes]()),
+        default_factory=lambda: cast(DequeLike[bytes], collections.deque()),
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
 
@@ -237,14 +237,14 @@ class RuntimeState(msgspec.Struct):
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
     running_processes: dict[int, asyncio.subprocess.Process] = msgspec.field(
-        default_factory=cast(Any, dict)
-    )  # type: ignore
+        default_factory=lambda: cast(dict[int, asyncio.subprocess.Process], {})
+    )
     process_io_locks: dict[int, asyncio.Lock] = msgspec.field(
-        default_factory=cast(Any, dict)
-    )  # type: ignore
+        default_factory=lambda: cast(dict[int, asyncio.Lock], {})
+    )
     process_exit_codes: dict[int, int] = msgspec.field(
-        default_factory=cast(Any, dict)
-    )  # type: ignore
+        default_factory=lambda: cast(dict[int, int], {})
+    )
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
@@ -263,11 +263,15 @@ class RuntimeState(msgspec.Struct):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=cast(Any, collections.deque),
-    )  # type: ignore
+        default_factory=lambda: cast(
+            collections.deque[PendingPinRequest], collections.deque()
+        ),
+    )
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=cast(Any, collections.deque),
-    )  # type: ignore
+        default_factory=lambda: cast(
+            collections.deque[PendingPinRequest], collections.deque()
+        ),
+    )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
@@ -298,7 +302,7 @@ class RuntimeState(msgspec.Struct):
     handshake_fatal_reason: str | None = None
     handshake_fatal_detail: str | None = None
     handshake_fatal_unix: float = 0.0
-    _handshake_last_started: float = 0.0
+    handshake_last_started: float = 0.0
     serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
     serial_throughput_stats: SerialThroughputStats = msgspec.field(
         default_factory=SerialThroughputStats
@@ -320,11 +324,11 @@ class RuntimeState(msgspec.Struct):
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
     mcu_status_counts: dict[str, int] = msgspec.field(
-        default_factory=cast(Any, dict)
-    )  # type: ignore
+        default_factory=lambda: cast(dict[str, int], {})
+    )
     supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
-        default_factory=cast(Any, dict)
-    )  # type: ignore
+        default_factory=lambda: cast(dict[str, SupervisorStats], {})
+    )
     supervisor_failures: int = 0
     last_supervisor_error: str | None = None
 
@@ -377,10 +381,10 @@ class RuntimeState(msgspec.Struct):
         # [SIL-2] Close existing persistent queues if they are being replaced
         # to ensure that resources (like diskcache files) are released.
         if self._mailbox_queue_cache:
-            self._mailbox_queue_cache.close()  # type: ignore
+            cast(Any, self._mailbox_queue_cache).close()
             self._mailbox_queue_cache = None
         if self._mailbox_incoming_queue_cache:
-            self._mailbox_incoming_queue_cache.close()  # type: ignore
+            cast(Any, self._mailbox_incoming_queue_cache).close()
             self._mailbox_incoming_queue_cache = None
 
         if config.allowed_policy is not None:
@@ -418,10 +422,12 @@ class RuntimeState(msgspec.Struct):
                 try:
                     directory.mkdir(parents=True, exist_ok=True)
                     cache = diskcache.Cache(str(directory))
+                    dc_class: Any = diskcache.Deque
+                    dq: Any = dc_class.fromcache(cache)
                     return (
                         cast(
                             DequeLike[bytes],
-                            diskcache.Deque.fromcache(cache),  # type: ignore
+                            dq,
                         ),
                         cache,
                     )
@@ -650,10 +656,10 @@ class RuntimeState(msgspec.Struct):
             ),
         )
 
-    def _handshake_duration_since_start(self) -> float:
-        if self._handshake_last_started <= 0.0:
+    def handshake_duration_since_start(self) -> float:
+        if self.handshake_last_started <= 0.0:
             return 0.0
-        return max(0.0, time.monotonic() - self._handshake_last_started)
+        return max(0.0, time.monotonic() - self.handshake_last_started)
 
     def cleanup(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
@@ -666,12 +672,12 @@ class RuntimeState(msgspec.Struct):
         # [SIL-2] Close persistent queues to release file handles
         if self._mailbox_queue_cache:
             with _sup:
-                self._mailbox_queue_cache.close()  # type: ignore
+                cast(Any, self._mailbox_queue_cache).close()
             self._mailbox_queue_cache = None
 
         if self._mailbox_incoming_queue_cache:
             with _sup:
-                self._mailbox_incoming_queue_cache.close()  # type: ignore
+                cast(Any, self._mailbox_incoming_queue_cache).close()
             self._mailbox_incoming_queue_cache = None
 
         with _sup:

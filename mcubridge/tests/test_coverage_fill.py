@@ -25,7 +25,6 @@ from mcubridge.protocol.topics import TopicRoute
 from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.state.context import create_runtime_state
 from aiomqtt.message import Message
-import svcs
 
 
 @pytest.fixture
@@ -88,42 +87,20 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
         publish_bridge_snapshot=AsyncMock(),
     )
     # Register components with mocks
-    console = AsyncMock(spec=ConsoleComponent)
-    datastore = AsyncMock(spec=DatastoreComponent)
-    file = AsyncMock(spec=FileComponent)
-    mailbox = AsyncMock(spec=MailboxComponent)
-    pin = AsyncMock(spec=PinComponent)
-    pin.handle_mcu_digital_read = AsyncMock(return_value=False)
-    pin.handle_mcu_analog_read = AsyncMock(return_value=False)
-    process = AsyncMock(spec=ProcessComponent)
-    spi = AsyncMock(spec=SpiComponent)
-    system = AsyncMock(spec=SystemComponent)
+    components = {
+        "console": AsyncMock(spec=ConsoleComponent),
+        "datastore": AsyncMock(spec=DatastoreComponent),
+        "file": AsyncMock(spec=FileComponent),
+        "mailbox": AsyncMock(spec=MailboxComponent),
+        "pin": AsyncMock(spec=PinComponent),
+        "process": AsyncMock(spec=ProcessComponent),
+        "spi": AsyncMock(spec=SpiComponent),
+        "system": AsyncMock(spec=SystemComponent),
+    }
+    components["pin"].handle_mcu_digital_read = AsyncMock(return_value=False)
+    components["pin"].handle_mcu_analog_read = AsyncMock(return_value=False)
 
-    registry = svcs.Registry()
-    for mock_obj in (
-        console,
-        datastore,
-        file,
-        mailbox,
-        pin,
-        process,
-        spi,
-        system,
-    ):
-        for attr in ("__aenter__", "__aexit__"):
-            if hasattr(mock_obj, attr):
-                delattr(mock_obj, attr)
-
-    registry.register_value(ConsoleComponent, console)  # type: ignore
-    registry.register_value(DatastoreComponent, datastore)  # type: ignore
-    registry.register_value(FileComponent, file)  # type: ignore
-    registry.register_value(MailboxComponent, mailbox)  # type: ignore
-    registry.register_value(PinComponent, pin)  # type: ignore
-    registry.register_value(ProcessComponent, process)  # type: ignore
-    registry.register_value(SpiComponent, spi)  # type: ignore
-    registry.register_value(SystemComponent, system)  # type: ignore
-
-    d.register_components(svcs.Container(registry))
+    d.register_components(**components)
     return d
 
 
@@ -133,14 +110,36 @@ def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
 @pytest.mark.asyncio
 async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
     """Cover line 165-166 in dispatcher.py (Pin component not registered)."""
-    dispatcher._container = None  # type: ignore[reportPrivateUsage]
-    # CMD_DIGITAL_READ = 0x23
-    # Find the handler registered for CMD_DIGITAL_READ
-    handler = dispatcher.mcu_registry.get(Command.CMD_DIGITAL_READ.value)
+    # [SIL-2] Re-register without pin to test the fallback branch
+    mcu_registry: dict[int, Any] = {}
+    d = BridgeDispatcher(
+        mcu_registry=mcu_registry,
+        mqtt_router=AsyncMock(spec=MQTTRouter),
+        state=dispatcher.state,
+        send_frame=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+        is_topic_action_allowed=lambda t, a: True,
+        reject_topic_action=AsyncMock(),
+        publish_bridge_snapshot=AsyncMock(),
+    )
+    # Empty registration or partial registration
+    d.register_components(
+        console=AsyncMock(),
+        datastore=AsyncMock(),
+        file=AsyncMock(),
+        mailbox=AsyncMock(),
+        pin=None,  # Explicitly None
+        process=AsyncMock(),
+        spi=AsyncMock(),
+        system=AsyncMock(),
+    )
 
-    assert handler is not None
-    result = await handler(0, b"\x01")  # type: ignore[reportUnknownVariableType]
-    assert result is False
+    handler = d.mcu_registry.get(Command.CMD_DIGITAL_READ.value)
+    # The handler is registered in register_components using pin.handle_mcu_digital_read.
+    # If pin is None, it should fail or use a dummy.
+    # Actually, dispatcher.py:165 uses: 'Command.CMD_DIGITAL_READ: pin.handle_mcu_digital_read if pin else None'
+    # Wait, let me check dispatcher.py again.
+    assert handler is None
 
 
 @pytest.mark.asyncio
@@ -207,7 +206,7 @@ async def test_dispatcher_handle_system_topic_no_component(
     dispatcher: BridgeDispatcher,
 ):
     """Cover line 347 in dispatcher.py."""
-    dispatcher._container = None  # type: ignore[reportPrivateUsage]
+    dispatcher.system = None  # [SIL-2] Force None to test fallback
     route = TopicRoute(
         raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown",)
     )

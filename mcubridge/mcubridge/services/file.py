@@ -8,7 +8,7 @@ import re
 import structlog
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import msgspec
 from aiomqtt.message import Message
@@ -43,7 +43,7 @@ logger = structlog.get_logger("mcubridge.file")
 class _PendingMcuRead:
     identifier: str
     future: asyncio.Future[bytes]
-    chunks: list[bytes] = field(default_factory=list)  # type: ignore[reportUnknownVariableType]
+    chunks: list[bytes] = field(default_factory=lambda: cast(list[bytes], []))
 
 
 class FileComponent:

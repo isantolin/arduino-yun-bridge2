@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import sqlite3
 from collections import deque
-from typing import Any
+from typing import Any, cast, TYPE_CHECKING
 
 import diskcache
 import msgspec
 import structlog
+
+if TYPE_CHECKING:
+    pass
 
 from ..protocol.structures import QueuedPublish
 
@@ -46,9 +49,12 @@ class MQTTPublishSpool:
         self._dropped_due_to_limit = 0
         self._directory = directory
 
+        self._cache: diskcache.Cache | None = None
+        self._deque: diskcache.Deque | deque[bytes]
+
         try:
-            self._cache = diskcache.Cache(directory)  # type: ignore
-            self._deque = diskcache.Deque.fromcache(self._cache)  # type: ignore
+            self._cache = diskcache.Cache(directory)
+            self._deque = cast(Any, diskcache.Deque).fromcache(self._cache)
             self._is_degraded = False
             self._last_error = None
         except (OSError, RuntimeError, sqlite3.Error) as exc:
@@ -57,27 +63,27 @@ class MQTTPublishSpool:
             self._is_degraded = True
             self._last_error = str(exc)
             self._cache = None
-            self._deque = deque(maxlen=limit)  # type: ignore
+            self._deque = deque(maxlen=limit)
 
     def close(self) -> None:
         if self._cache:
-            self._cache.close()  # type: ignore
+            cast(Any, self._cache).close()
             self._cache = None
 
     def append(self, message: QueuedPublish) -> None:
         # [SIL-2] Use msgspec.json.encode for high-performance direct serialization
         data = msgspec.json.encode(message)
 
-        if self.limit > 0 and len(self._deque) >= self.limit:  # type: ignore
-            self._deque.popleft()  # type: ignore
+        if self.limit > 0 and len(self._deque) >= self.limit:
+            cast(Any, self._deque).popleft()
             self._dropped_due_to_limit += 1
 
-        self._deque.append(data)  # type: ignore
+        cast(Any, self._deque).append(data)
 
     def pop_next(self) -> QueuedPublish | None:
-        while len(self._deque) > 0:  # type: ignore
+        while len(self._deque) > 0:
             try:
-                record_bytes = self._deque.popleft()  # type: ignore
+                record_bytes = cast(Any, self._deque).popleft()
             except (IndexError, AttributeError):
                 break
 
@@ -85,7 +91,9 @@ class MQTTPublishSpool:
                 break
             try:
                 # Direct JSON decoding into msgspec.Struct
-                return msgspec.json.decode(record_bytes, type=QueuedPublish)  # type: ignore
+                return msgspec.json.decode(
+                    cast(bytes, record_bytes), type=QueuedPublish
+                )
             except msgspec.MsgspecError as exc:
                 self._corrupt_dropped += 1
                 logger.warning("Dropping corrupt MQTT spool entry: %s", exc)
@@ -93,14 +101,14 @@ class MQTTPublishSpool:
 
     def requeue(self, message: QueuedPublish) -> None:
         data = msgspec.json.encode(message)
-        if self.limit > 0 and len(self._deque) >= self.limit:  # type: ignore
-            self._deque.pop()  # type: ignore
+        if self.limit > 0 and len(self._deque) >= self.limit:
+            cast(Any, self._deque).pop()
             self._dropped_due_to_limit += 1
-        self._deque.appendleft(data)  # type: ignore
+        cast(Any, self._deque).appendleft(data)
 
     @property
     def pending(self) -> int:
-        return len(self._deque)  # type: ignore
+        return len(self._deque)
 
     @property
     def is_degraded(self) -> bool:

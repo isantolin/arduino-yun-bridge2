@@ -163,7 +163,7 @@ class SerialHandshakeManager:
         async def _attempt() -> bool:
             # [SIL-2] Direct metrics recording (No Wrapper)
             self._state.last_handshake_unix = time.time()
-            self._state._handshake_last_started = time.monotonic()  # type: ignore[reportPrivateUsage]
+            self._state.handshake_last_started = time.monotonic()
             self._state.handshake_attempts += 1
             self._state.metrics.handshake_attempts.inc()
             self._set_fsm_state(self.STATE_UNSYNCHRONIZED)  # Ensure clean slate
@@ -433,7 +433,7 @@ class SerialHandshakeManager:
         self._state.last_handshake_error = reason
         self._state.last_handshake_unix = time.time()
         self._state.handshake_last_duration = (
-            self._state._handshake_duration_since_start()  # type: ignore[reportPrivateUsage]
+            self._state.handshake_duration_since_start()
         )
         self._state.mark_transport_connected()
 
@@ -560,7 +560,7 @@ class SerialHandshakeManager:
         self._state.last_handshake_error = None
         self._state.last_handshake_unix = time.time()
         self._state.handshake_last_duration = (
-            self._state._handshake_duration_since_start()  # type: ignore[reportPrivateUsage]
+            self._state.handshake_duration_since_start()
         )
         self._state.mark_synchronized()
         self._state.handshake_successes += 1

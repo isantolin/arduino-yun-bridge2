@@ -56,19 +56,10 @@ define Package/$(PKG_NAME)
 		python3-tenacity \
 		python3-uvloop \
 		python3-cryptography \
-		python3-typer \
 		python3-structlog \
-		python3-rich \
-		python3-sh \
 		python3-diskcache \
 		mosquitto-client \
-		python3-svcs \
-		python3-click \
-		python3-markdown-it-py \
-		python3-mdurl \
-		python3-pygments \
-		python3-shellingham
-	# AUTO-GENERATED RUNTIME DEPENDS END
+		python3-uci
 endef
 
 define Package/$(PKG_NAME)/description

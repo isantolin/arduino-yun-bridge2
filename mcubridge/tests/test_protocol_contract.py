@@ -86,7 +86,6 @@ def test_mcu_registry_completeness() -> None:
 
     from mcubridge.state.context import create_runtime_state
     from mcubridge.config.settings import RuntimeConfig
-    import svcs
     import warnings
 
     config = RuntimeConfig(
@@ -94,7 +93,6 @@ def test_mcu_registry_completeness() -> None:
     )
     state = create_runtime_state(config)
 
-    reg = svcs.Registry()
     with warnings.catch_warnings():
         # [SIL-2] Suppress unawaited coroutine warnings for registration-only mocks
         warnings.filterwarnings(
@@ -103,6 +101,7 @@ def test_mcu_registry_completeness() -> None:
             message="coroutine '.*' was never awaited",
         )
 
+        components = {}
         for cls_name in [
             "ConsoleComponent",
             "DatastoreComponent",
@@ -117,9 +116,9 @@ def test_mcu_registry_completeness() -> None:
                 __import__("mcubridge.services", fromlist=[cls_name]), cls_name
             )
             mock_inst = AsyncMock(spec=cls)
-            reg.register_value(cls, mock_inst)  # type: ignore[reportUnknownMemberType]
-
-        container = svcs.Container(reg)
+            # Map class name to lowercase key for register_components
+            key = cls_name.replace("Component", "").lower()
+            components[key] = mock_inst
 
         dispatcher = BridgeDispatcher(
             mcu_registry={},
@@ -132,7 +131,7 @@ def test_mcu_registry_completeness() -> None:
             publish_bridge_snapshot=AsyncMock(return_value=True),
         )
 
-        dispatcher.register_components(container)
+        dispatcher.register_components(**components)
         # Register system handlers too
         dispatcher.register_system_handlers(
             handle_link_sync_resp=AsyncMock(return_value=True),

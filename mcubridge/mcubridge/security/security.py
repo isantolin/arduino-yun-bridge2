@@ -16,7 +16,7 @@ import ctypes
 import hashlib
 import hmac
 import secrets
-from typing import Final, cast
+from typing import Final, cast, Any
 from construct import Bytes, Int64ub, Struct, Construct
 from construct.core import ConstructError
 
@@ -69,8 +69,9 @@ def extract_nonce_counter(nonce: bytes) -> int:
     if len(nonce) != NONCE_TOTAL_BYTES:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
     try:
-        return NONCE_STRUCT.parse(nonce).counter
-    except ConstructError as e:  # type: ignore[reportUnknownVariableType]
+        res: Any = NONCE_STRUCT.parse(nonce)
+        return int(res.counter)
+    except ConstructError as e:
         raise ValueError(f"Malformed nonce format: {e}") from e
 
 

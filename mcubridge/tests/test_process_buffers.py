@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcubridge.protocol.protocol import Status
-from mcubridge.services.process import ProcessComponent
 from mcubridge.services.runtime import BridgeService
 
 
@@ -40,7 +39,7 @@ async def test_poll_process_flushes_stored_buffers(
         state.process_io_locks[pid] = asyncio.Lock()
         state.process_exit_codes[pid] = 3
 
-    _processonent = runtime_service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
+    _processonent = runtime_service.process
     batch = await _processonent.poll_process(pid)
 
     # ProcessOutputBatch fields: status_byte, exit_code, stdout_chunk, stderr_chunk, finished, ...
@@ -58,7 +57,7 @@ async def test_poll_process_flushes_stored_buffers(
 async def test_run_async_respects_concurrency_limit(
     runtime_service: BridgeService,
 ) -> None:
-    _processonent = runtime_service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
+    _processonent = runtime_service.process
 
     # Consume all available slots
     limit = _processonent.state.process_max_concurrent
@@ -78,7 +77,7 @@ async def test_run_async_respects_concurrency_limit(
 async def test_monitor_process_releases_slot(
     runtime_service: BridgeService,
 ) -> None:
-    _processonent = runtime_service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
+    _processonent = runtime_service.process
     state = runtime_service.state
 
     pid = 77

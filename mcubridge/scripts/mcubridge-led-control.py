@@ -5,14 +5,10 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Annotated
-
+import argparse
 import aiomqtt
-import typer
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.topics import Topic, topic_path
-
-app = typer.Typer(add_completion=False, help="Control MCU LED via MQTT.")
 
 
 async def do_publish(topic: str, payload: str) -> None:
@@ -31,26 +27,27 @@ async def do_publish(topic: str, payload: str) -> None:
             await client.publish(topic, payload=payload, qos=1)
     except (aiomqtt.MqttError, OSError, RuntimeError) as e:
         sys.stderr.write(f"Error: MQTT publication failed: {e}\n")
-        raise typer.Exit(code=4)
+        sys.exit(4)
 
 
-@app.command()
-def main(
-    state: Annotated[str, typer.Argument(help="State to set (on/off)")],
-    pin: Annotated[int, typer.Argument(help="Pin number")] = 13,
-) -> None:
+def main() -> None:
     """Set the MCU pin state via MQTT bridge."""
-    state_norm = state.lower()
+    parser = argparse.ArgumentParser(description="Control MCU LED via MQTT.")
+    parser.add_argument("state", help="State to set (on/off)")
+    parser.add_argument("pin", type=int, nargs="?", default=13, help="Pin number")
+    args = parser.parse_args()
+
+    state_norm = args.state.lower()
     if state_norm not in ("on", "off"):
-        sys.stderr.write(f"Error: invalid state '{state}'. Use on|off.\n")
-        raise typer.Exit(code=2)
+        sys.stderr.write(f"Error: invalid state '{args.state}'. Use on|off.\n")
+        sys.exit(2)
 
     config = load_runtime_config()
-    topic = topic_path(config.mqtt_topic, Topic.DIGITAL, pin)
+    topic = topic_path(config.mqtt_topic, Topic.DIGITAL, args.pin)
     payload = "1" if state_norm == "on" else "0"
 
     asyncio.run(do_publish(topic, payload))
 
 
 if __name__ == "__main__":
-    app()
+    main()

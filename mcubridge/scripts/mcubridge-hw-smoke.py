@@ -4,13 +4,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated, Any
-
+import argparse
+from typing import Any
 import aiomqtt
-import typer
 from mcubridge.config.settings import load_runtime_config
-
-app = typer.Typer(add_completion=False, help="Diagnostic smoke test for MCU hardware.")
 
 
 class SmokeTester:
@@ -30,7 +27,7 @@ class SmokeTester:
                 password=self.config.mqtt_pass or None,
                 tls_context=tls_context,
             ) as client:
-                typer.echo(
+                print(
                     f"[*] Testing MCU Bridge on {self.config.mqtt_host}:{self.config.mqtt_port}"
                 )
 
@@ -50,46 +47,53 @@ class SmokeTester:
                                 if isinstance(payload_raw, bytes)
                                 else str(payload_raw)
                             )
-                            typer.echo(f"[+] Version received: {payload_str}")
+                            print(f"[+] Version received: {payload_str}")
                             self.results["connectivity"] = True
                             break
                 except asyncio.TimeoutError:
-                    typer.echo("[-] Timeout waiting for version response.")
+                    print("[-] Timeout waiting for version response.")
                     self.results["connectivity"] = False
 
                 if not self.results.get("connectivity"):
                     return
 
                 # 2. GPIO Toggle
-                typer.echo(f"[*] Toggling Pin {pin}...")
+                print(f"[*] Toggling Pin {pin}...")
                 digital_topic = f"{self.prefix}/d/{pin}"
                 await client.publish(digital_topic, payload=b"1")
                 await asyncio.sleep(0.5)
                 await client.publish(digital_topic, payload=b"0")
                 self.results["gpio"] = True
-                typer.echo(f"[+] Pin {pin} toggled.")
+                print(f"[+] Pin {pin} toggled.")
 
         except (aiomqtt.MqttError, OSError, RuntimeError) as e:
-            typer.echo(f"[!] MQTT Error: {e}", err=True)
+            print(f"[!] MQTT Error: {e}")
             self.results["connectivity"] = False
 
 
-@app.command()
-def main(
-    pin: Annotated[int, typer.Option(help="Pin to toggle during test")] = 13,
-    timeout: Annotated[float, typer.Option(help="Timeout for responses")] = 5.0,
-) -> None:
+def main() -> None:
     """Execute a suite of hardware diagnostic tests via MQTT."""
+    parser = argparse.ArgumentParser(
+        description="Diagnostic smoke test for MCU hardware."
+    )
+    parser.add_argument("--pin", type=int, default=13, help="Pin to toggle during test")
+    parser.add_argument(
+        "--timeout", type=float, default=5.0, help="Timeout for responses"
+    )
+    args = parser.parse_args()
+
     tester = SmokeTester()
-    asyncio.run(tester.run(pin, timeout))
+    asyncio.run(tester.run(args.pin, args.timeout))
 
     success = all(tester.results.values()) and bool(tester.results)
     if success:
-        typer.echo("\n[PASS] Hardware smoke test successful.")
+        print("\n[PASS] Hardware smoke test successful.")
     else:
-        typer.echo("\n[FAIL] Hardware smoke test failed.")
-        raise typer.Exit(code=1)
+        print("\n[FAIL] Hardware smoke test failed.")
+        import sys
+
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    app()
+    main()

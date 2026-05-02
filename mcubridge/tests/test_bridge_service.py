@@ -11,7 +11,6 @@ from mcubridge.protocol.topics import Topic
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.mqtt import MqttTransport
-from mcubridge.services import SystemComponent, ConsoleComponent
 
 
 @pytest.mark.asyncio
@@ -29,9 +28,8 @@ async def test_bridge_service_lifecycle_full_sync(
         service.handshake_manager.synchronize = AsyncMock(return_value=True)
         service.handshake_manager.raise_if_handshake_fatal = MagicMock()
 
-        system = service._container.get(SystemComponent)  # type: ignore[reportPrivateUsage]
-        console = service._container.get(ConsoleComponent)  # type: ignore[reportPrivateUsage]
-
+        system = service.system
+        console = service.console
         # Mocking logic after sync
         system.request_mcu_version = AsyncMock(return_value=True)
         console.flush_queue = AsyncMock()

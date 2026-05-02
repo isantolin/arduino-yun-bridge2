@@ -46,13 +46,18 @@ RPC_FRAME_BODY = Struct(
     "payload" / Bytes(this.header.payload_len),
 )
 
+
 # [SIL-2] Full Frame using native Checksum (Zero-Boilerplate)
+def _calc_crc(data: Any) -> int:
+    return crc32(cast(bytes, data)) & 0xFFFFFFFF
+
+
 RPC_FRAME = Struct(
     "body" / RawCopy(RPC_FRAME_BODY),
     "crc"
     / Checksum(
         Int32ub,
-        lambda data: crc32(bytes(cast(Any, data))) & 0xFFFFFFFF,  # type: ignore
+        _calc_crc,
         this.body.data,
     ),
 )

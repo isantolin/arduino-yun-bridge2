@@ -12,7 +12,6 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.services.process import ProcessComponent
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import (
     PendingPinRequest,
@@ -346,7 +345,7 @@ async def test_mqtt_shell_kill_invokes_processonent(
     service = BridgeService(
         runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
     )
-    process = service._container.get(ProcessComponent)  # type: ignore[reportPrivateUsage]
+    process = service.process
 
     with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:
         # Re-register mock in router because dispatcher registers methods at init time

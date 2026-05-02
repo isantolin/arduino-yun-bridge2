@@ -128,7 +128,7 @@ class SerialTransport:
         self.state.serial_writer = cast(asyncio.BaseTransport, self.writer)
 
         # Start reader loop
-        read_task = self.loop.create_task(self._read_loop(self.reader))  # type: ignore
+        read_task = asyncio.get_running_loop().create_task(self._read_loop(self.reader))
         self.is_connected = True
 
         try:
@@ -141,7 +141,8 @@ class SerialTransport:
             await self.service.on_serial_connected()
 
             # 3. Wait for reader to finish or stop event
-            stop_task = self.loop.create_task(self._stop_event.wait())  # type: ignore
+            stop_task = asyncio.get_running_loop().create_task(self._stop_event.wait())
+
             done, pending = await asyncio.wait(
                 [read_task, stop_task],
                 return_when=asyncio.FIRST_COMPLETED,
@@ -173,13 +174,13 @@ class SerialTransport:
         """Hardware reset via DTR toggle."""
         try:
 
-            def _pulse():
+            def _pulse() -> None:
                 with serial.Serial(self.config.serial_port) as s:
                     s.dtr = False
                     time.sleep(0.1)
                     s.dtr = True
 
-            await self.loop.run_in_executor(None, _pulse)  # type: ignore
+            await asyncio.get_running_loop().run_in_executor(None, _pulse)
         except (SerialException, OSError) as exc:
             logger.debug("DTR toggle failed: %s", exc)
 

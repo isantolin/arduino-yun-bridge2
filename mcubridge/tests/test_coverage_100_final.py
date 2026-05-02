@@ -988,7 +988,6 @@ class TestDispatcherEdgeCases:
     async def test_dispatcher_digital_topic_no_segments(self):
         from mcubridge.protocol.topics import TopicRoute
         from mcubridge.services.dispatcher import BridgeDispatcher
-        import svcs
 
         import time
         import os
@@ -1013,24 +1012,18 @@ class TestDispatcherEdgeCases:
                 reject_topic_action=AsyncMock(),
                 publish_bridge_snapshot=AsyncMock(),
             )
-            registry = svcs.Registry()
+            # [SIL-2] Directly pass mocked components
             components = {
-                ConsoleComponent: AsyncMock(spec=ConsoleComponent),
-                DatastoreComponent: AsyncMock(spec=DatastoreComponent),
-                FileComponent: AsyncMock(spec=FileComponent),
-                MailboxComponent: AsyncMock(spec=MailboxComponent),
-                PinComponent: AsyncMock(spec=PinComponent),
-                ProcessComponent: AsyncMock(spec=ProcessComponent),
-                SpiComponent: AsyncMock(spec=SpiComponent),
-                SystemComponent: AsyncMock(spec=SystemComponent),
+                "console": AsyncMock(spec=ConsoleComponent),
+                "datastore": AsyncMock(spec=DatastoreComponent),
+                "file": AsyncMock(spec=FileComponent),
+                "mailbox": AsyncMock(spec=MailboxComponent),
+                "pin": AsyncMock(spec=PinComponent),
+                "process": AsyncMock(spec=ProcessComponent),
+                "spi": AsyncMock(spec=SpiComponent),
+                "system": AsyncMock(spec=SystemComponent),
             }
-            for svc_type, inst in components.items():
-                for attr in ("__aenter__", "__aexit__"):
-                    if hasattr(inst, attr):
-                        delattr(inst, attr)
-                registry.register_value(svc_type, inst)  # type: ignore
-
-            d.register_components(svcs.Container(registry))
+            d.register_components(**components)
             route = TopicRoute(
                 raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
             )

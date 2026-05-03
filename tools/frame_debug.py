@@ -88,7 +88,7 @@ def _name_for_command(command_id: int) -> str:
 
 
 def _hex_with_spacing(data: bytes) -> str:
-    return " ".join(f"{byte:02X}" for byte in data)
+    return data.hex(" ").upper()
 
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:

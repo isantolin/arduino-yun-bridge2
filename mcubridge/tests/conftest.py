@@ -124,15 +124,13 @@ def force_gc_cleanup():
     if loop is not None and not loop.is_closed():
         loop.close()
     asyncio.set_event_loop(None)
-    # Collect garbage while temporarily suppressing PytestUnraisableExceptionWarning
-    # caused by diskcache sqlite3.Connection objects finalised during GC.  The
-    # connections are managed by diskcache internals and cannot be closed earlier
-    # without coupling test infrastructure to the library's threading model.
+    # Collect garbage to finalize any objects that hold OS resources.
+    # The diskcache ResourceWarning was fixed at the source (RuntimeState.__del__
+    # + cleanup() resets mailbox queues to plain deques), so no suppression needed.
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore", category=pytest.PytestUnraisableExceptionWarning
         )
-        warnings.filterwarnings("ignore", category=ResourceWarning)
         gc.collect()
 
 

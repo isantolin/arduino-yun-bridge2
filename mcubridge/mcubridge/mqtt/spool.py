@@ -66,9 +66,27 @@ class MQTTPublishSpool:
             self._deque = deque(maxlen=limit)
 
     def close(self) -> None:
-        if self._cache:
+        # NOTE: Use "is not None" — diskcache.Cache.__bool__ returns False for
+        # empty caches, so "if cache:" would skip close() on empty spools.
+        if self._cache is not None:
             cast(Any, self._cache).close()
             self._cache = None
+
+    def __del__(self) -> None:
+        """Safety net: close the sqlite3 connection if close() was never called.
+
+        [SIL-2] __del__ MUST be completely exception-proof. During interpreter
+        shutdown, module globals may be None, so we use self.__dict__ directly
+        and catch BaseException to prevent PytestUnraisableExceptionWarning
+        (treated as fatal in our test suite with filterwarnings=["error"]).
+        """
+        try:
+            cache = self.__dict__.get("_cache")
+            if cache is not None:
+                self.__dict__["_cache"] = None
+                cache.close()
+        except BaseException:  # pylint: disable=broad-except
+            pass
 
     def append(self, message: QueuedPublish) -> None:
         # [SIL-2] Use msgspec.json.encode for high-performance direct serialization

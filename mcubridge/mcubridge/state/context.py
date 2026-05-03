@@ -380,10 +380,12 @@ class RuntimeState(msgspec.Struct):
     def configure(self, config: RuntimeConfig) -> None:
         # [SIL-2] Close existing persistent queues if they are being replaced
         # to ensure that resources (like diskcache files) are released.
-        if self._mailbox_queue_cache:
+        # NOTE: Use "is not None" — diskcache.Cache.__bool__ returns False for
+        # empty caches, so "if cache:" would skip the close on empty queues.
+        if self._mailbox_queue_cache is not None:
             cast(Any, self._mailbox_queue_cache).close()
             self._mailbox_queue_cache = None
-        if self._mailbox_incoming_queue_cache:
+        if self._mailbox_incoming_queue_cache is not None:
             cast(Any, self._mailbox_incoming_queue_cache).close()
             self._mailbox_incoming_queue_cache = None
 
@@ -661,6 +663,10 @@ class RuntimeState(msgspec.Struct):
             return 0.0
         return max(0.0, time.monotonic() - self.handshake_last_started)
 
+    def __del__(self) -> None:
+        """Last-resort cleanup to prevent ResourceWarning from unclosed diskcache connections."""
+        self.cleanup()
+
     def cleanup(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
 
@@ -669,16 +675,24 @@ class RuntimeState(msgspec.Struct):
                 self.mqtt_spool.close()
                 self.mqtt_spool = None
 
-        # [SIL-2] Close persistent queues to release file handles
-        if self._mailbox_queue_cache:
+        # [SIL-2] Close persistent queues and replace with plain deques so the
+        # diskcache.Deque (which holds a reference to the sqlite3-backed Cache)
+        # is released immediately.  Without this, the Cache cannot be GC'd until
+        # the Deque is also collected, causing ResourceWarning on unclosed sqlite3
+        # connections.
+        # NOTE: Use "is not None" — diskcache.Cache.__bool__ returns False for
+        # empty caches, so "if cache:" would skip close() on empty queues.
+        if self._mailbox_queue_cache is not None:
             with _sup:
                 cast(Any, self._mailbox_queue_cache).close()
             self._mailbox_queue_cache = None
+            self.mailbox_queue = cast(DequeLike[bytes], collections.deque())
 
-        if self._mailbox_incoming_queue_cache:
+        if self._mailbox_incoming_queue_cache is not None:
             with _sup:
                 cast(Any, self._mailbox_incoming_queue_cache).close()
             self._mailbox_incoming_queue_cache = None
+            self.mailbox_incoming_queue = cast(DequeLike[bytes], collections.deque())
 
         with _sup:
             # Drain the MQTT queue instead of nullifying

@@ -372,8 +372,11 @@ class MqttTransport:
         ):
             return False
         try:
-            self.state.mqtt_spool = await asyncio.to_thread(
-                MQTTPublishSpool,
+            # NOTE: MQTTPublishSpool opens a diskcache.Cache (sqlite3 connection)
+            # in the calling thread. All diskcache operations must stay in the
+            # same thread (event loop) so that close() can reach the connection.
+            # asyncio.to_thread is intentionally NOT used here.
+            self.state.mqtt_spool = MQTTPublishSpool(
                 self.state.mqtt_spool_dir,
                 self.state.mqtt_spool_limit,
                 on_fallback=self._on_spool_fallback,
@@ -401,7 +404,7 @@ class MqttTransport:
         )
 
     def _disable_mqtt_spool(self, reason: str, schedule_retry: bool = True) -> None:
-        if self.state.mqtt_spool:
+        if self.state.mqtt_spool is not None:
             with contextlib.suppress(OSError, AttributeError):
                 self.state.mqtt_spool.close()
         self.state.mqtt_spool = None
@@ -448,8 +451,9 @@ class MqttTransport:
         if spool is None:
             return False
         try:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, spool.append, message)
+            # NOTE: diskcache append runs synchronously in the event loop thread
+            # to keep all sqlite3 access in the same thread as close().
+            spool.append(message)
             # [SIL-2] Direct metrics recording (No Wrapper)
             self.state.mqtt_spooled_messages += 1
             self.state.metrics.mqtt_spooled_messages.inc()
@@ -466,7 +470,9 @@ class MqttTransport:
             return
         while self.state.mqtt_publish_queue.qsize() < self.state.mqtt_queue_limit:
             try:
-                msg = await asyncio.to_thread(spool.pop_next)
+                # NOTE: diskcache ops run synchronously in the event loop thread
+                # so that close() can later reach the same thread's sqlite3 conn.
+                msg = spool.pop_next()
                 if not msg:
                     break
                 props = list(msg.user_properties) + [("bridge-spooled", "1")]
@@ -475,8 +481,7 @@ class MqttTransport:
                     self.state.mqtt_publish_queue.put_nowait(final_msg)
                     self.state.mqtt_spooled_replayed += 1
                 except asyncio.QueueFull:
-                    # Re-spool if queue became full between qsize check and put
-                    await asyncio.to_thread(spool.requeue, msg)
+                    spool.requeue(msg)
                     break
             except (MQTTSpoolError, OSError) as exc:
                 self._handle_mqtt_spool_failure("pop_failed", exc=exc)

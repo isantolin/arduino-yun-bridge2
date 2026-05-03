@@ -3,14 +3,12 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
-from typing import Annotated
 
-import typer
 from mcubridge_client.cli import bridge_session, configure_logging
 
-app = typer.Typer(help="Example: Test file I/O using the async McuBridge client.")
 configure_logging()
 
 
@@ -50,18 +48,29 @@ async def run_test(
     logging.info("Done.")
 
 
-@app.command()
 def main(
-    host: Annotated[str | None, typer.Option(help="MQTT Broker Host")] = None,
-    port: Annotated[int | None, typer.Option(help="MQTT Broker Port")] = None,
-    user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
-    password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
-    tls_insecure: Annotated[
-        bool, typer.Option(help="Disable TLS certificate verification")
-    ] = False,
+    host: str | None = None,
+    port: int | None = None,
+    user: str | None = None,
+    password: str | None = None,
+    tls_insecure: bool = False,
 ) -> None:
     asyncio.run(run_test(host, port, user, password, tls_insecure))
 
 
 if __name__ == "__main__":
-    app()
+    parser = argparse.ArgumentParser(
+        description="Test file I/O using the async McuBridge client."
+    )
+    parser.add_argument("--host", default=None, help="MQTT Broker Host")
+    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
+    parser.add_argument("--user", default=None, help="MQTT Username")
+    parser.add_argument("--password", default=None, help="MQTT Password")
+    parser.add_argument(
+        "--tls-insecure",
+        action="store_true",
+        default=False,
+        help="Disable TLS certificate verification",
+    )
+    _args = parser.parse_args()
+    main(_args.host, _args.port, _args.user, _args.password, _args.tls_insecure)

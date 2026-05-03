@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
-from typing import Annotated
 
-import typer
 from mcubridge_client import Bridge
 
 logging.basicConfig(
@@ -55,16 +54,28 @@ async def run_test(
 
 
 def main(
-    host: Annotated[str, typer.Option(help="MQTT Broker Host")] = "127.0.0.1",
-    port: Annotated[int, typer.Option(help="MQTT Broker Port")] = 1883,
-    user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
-    password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
-    tls_insecure: Annotated[
-        bool, typer.Option(help="Disable TLS certificate verification")
-    ] = True,
+    host: str = "127.0.0.1",
+    port: int = 1883,
+    user: str | None = None,
+    password: str | None = None,
+    tls_insecure: bool = True,
 ) -> None:
     asyncio.run(run_test(host, port, user, password, tls_insecure))
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    parser = argparse.ArgumentParser(
+        description="Test script for SPI service and Auto-Baudrate fallback."
+    )
+    parser.add_argument("--host", default="127.0.0.1", help="MQTT Broker Host")
+    parser.add_argument("--port", type=int, default=1883, help="MQTT Broker Port")
+    parser.add_argument("--user", default=None, help="MQTT Username")
+    parser.add_argument("--password", default=None, help="MQTT Password")
+    parser.add_argument(
+        "--tls-insecure",
+        action="store_true",
+        default=True,
+        help="Disable TLS certificate verification",
+    )
+    _args = parser.parse_args()
+    main(_args.host, _args.port, _args.user, _args.password, _args.tls_insecure)

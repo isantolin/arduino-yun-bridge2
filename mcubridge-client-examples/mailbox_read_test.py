@@ -3,14 +3,12 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
-from typing import Annotated
 
-import typer
 from mcubridge_client.cli import bridge_session, configure_logging
 
-app = typer.Typer(help="Example: Send a mailbox message and read back responses.")
 configure_logging()
 logger = logging.getLogger(__name__)
 
@@ -55,16 +53,13 @@ async def run_test(
     logger.info("Done.")
 
 
-@app.command()
 def main(
-    host: Annotated[str | None, typer.Option(help="MQTT Broker Host")] = None,
-    port: Annotated[int | None, typer.Option(help="MQTT Broker Port")] = None,
-    user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
-    password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
-    tls_insecure: Annotated[
-        bool, typer.Option(help="Disable TLS certificate verification")
-    ] = False,
-    max_polls: Annotated[int, typer.Option(help="Max poll cycles (0 = unlimited)")] = 1,
+    host: str | None = None,
+    port: int | None = None,
+    user: str | None = None,
+    password: str | None = None,
+    tls_insecure: bool = False,
+    max_polls: int = 1,
 ) -> None:
     try:
         asyncio.run(run_test(host, port, user, password, tls_insecure, max_polls))
@@ -73,4 +68,28 @@ def main(
 
 
 if __name__ == "__main__":
-    app()
+    parser = argparse.ArgumentParser(
+        description="Send a mailbox message and read back any MCU-forwarded responses."
+    )
+    parser.add_argument("--host", default=None, help="MQTT Broker Host")
+    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
+    parser.add_argument("--user", default=None, help="MQTT Username")
+    parser.add_argument("--password", default=None, help="MQTT Password")
+    parser.add_argument(
+        "--tls-insecure",
+        action="store_true",
+        default=False,
+        help="Disable TLS certificate verification",
+    )
+    parser.add_argument(
+        "--max-polls", type=int, default=1, help="Max poll cycles (0 = unlimited)"
+    )
+    _args = parser.parse_args()
+    main(
+        _args.host,
+        _args.port,
+        _args.user,
+        _args.password,
+        _args.tls_insecure,
+        _args.max_polls,
+    )

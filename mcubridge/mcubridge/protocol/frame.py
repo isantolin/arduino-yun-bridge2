@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from binascii import crc32
 import msgspec
-from typing import TypeVar, Any, cast
+from typing import TypeVar, Any
 import construct
 from construct import (
     Bytes,
@@ -48,16 +48,12 @@ RPC_FRAME_BODY = Struct(
 
 
 # [SIL-2] Full Frame using native Checksum (Zero-Boilerplate)
-def _calc_crc(data: Any) -> int:
-    return crc32(cast(bytes, data)) & 0xFFFFFFFF
-
-
 RPC_FRAME = Struct(
     "body" / RawCopy(RPC_FRAME_BODY),
     "crc"
     / Checksum(
         Int32ub,
-        _calc_crc,
+        lambda data: crc32(bytes(data)) & 0xFFFFFFFF,
         this.body.data,
     ),
 )

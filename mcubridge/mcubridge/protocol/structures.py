@@ -115,13 +115,6 @@ class RLEPayload(msgspec.Struct, frozen=True):
 
     data: bytes
 
-    @classmethod
-    def from_uncompressed(cls, uncompressed: bytes) -> RLEPayload:
-        """Factory to create RLEPayload from raw bytes."""
-        from .rle import RLE_TRANSFORM
-
-        return cls(data=RLE_TRANSFORM.build(uncompressed))
-
     def decode(self) -> bytes:
         """Decompress data using declarative Construct decoder."""
         from .rle import RLE_DECODER

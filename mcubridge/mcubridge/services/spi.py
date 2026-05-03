@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import structlog
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import msgspec
 from aiomqtt.message import Message
@@ -14,6 +14,7 @@ from ..protocol.structures import TopicRoute
 from ..protocol.topics import Topic, topic_path
 
 if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
@@ -29,12 +30,12 @@ class SpiComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        enqueue_mqtt: Any,
+        mqtt_flow: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state
         self.serial_flow = serial_flow
-        self.enqueue_mqtt = enqueue_mqtt
+        self.mqtt_flow = mqtt_flow
 
     async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
         """Process inbound MQTT requests for SPI operations."""
@@ -47,45 +48,48 @@ class SpiComponent:
                 case "end":
                     return await self.serial_flow.send(Command.CMD_SPI_END.value, b"")
                 case "config":
-                    # [SIL-2] Use converted bytes to match msgspec schema
-                    packet = msgspec.msgpack.decode(
-                        payload, type=structures.SpiConfigPacket
-                    )
-                    return await self.serial_flow.send(
-                        Command.CMD_SPI_SET_CONFIG.value,
-                        msgspec.msgpack.encode(packet),
-                    )
+                    try:
+                        # Expecting JSON or MsgPack config
+                        # frequency, bit_order (0:LSB, 1:MSB), data_mode (0-3)
+                        data = msgspec.json.decode(payload)
+                        packet = structures.SpiConfigPacket(
+                            bit_order=int(data.get("bit_order", 1)),
+                            data_mode=int(data.get("data_mode", 0)),
+                            frequency=int(data.get("frequency", 4000000)),
+                        )
+                        return await self.serial_flow.send(
+                            Command.CMD_SPI_SET_CONFIG.value,
+                            msgspec.msgpack.encode(packet),
+                        )
+                    except (msgspec.DecodeError, ValueError, TypeError) as e:
+                        logger.warning("Malformed SPI config request: %s", e)
+                        return False
                 case "transfer":
+                    # Simple case: raw bytes to transfer
+                    packet = structures.SpiTransferPacket(data=payload)
                     return await self.serial_flow.send(
-                        Command.CMD_SPI_TRANSFER.value, payload
+                        Command.CMD_SPI_TRANSFER.value, msgspec.msgpack.encode(packet)
                     )
                 case _:
                     return False
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed SPI request via MQTT: %s", e)
-            return True
-        return False
+        except (ValueError, TypeError, msgspec.ValidationError) as e:
+            logger.error("Error handling SPI MQTT action %s: %s", action, e)
+            return False
 
-    async def handle_transfer_resp(self, _: int, payload: bytes) -> bool:
-        """Process SPI transfer response from MCU and relay to MQTT."""
+    async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
+        """Handle CMD_SPI_TRANSFER_RESP from MCU."""
         try:
-            packet = msgspec.msgpack.decode(payload, type=structures.SpiTransferPacket)
-
-            # Log size for SIL-2 observability
-            logger.debug(
-                "SPI transfer complete: %d bytes relayed to MQTT", len(packet.data)
+            packet = msgspec.msgpack.decode(
+                payload, type=structures.SpiTransferResponsePacket
             )
             # Publish received bytes back to MQTT
             topic = topic_path(
                 self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"
             )
-            await self.enqueue_mqtt(
+            await self.mqtt_flow.enqueue_mqtt(
                 structures.QueuedPublish(topic_name=topic, payload=packet.data)
             )
             return True
         except (ValueError, msgspec.MsgspecError) as e:
             logger.warning("Malformed SPI transfer response: %s", e)
             return False
-
-
-__all__ = ["SpiComponent"]

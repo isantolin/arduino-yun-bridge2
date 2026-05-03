@@ -4,25 +4,24 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
-from ..protocol.protocol import (
+from mcubridge.protocol.protocol import (
     Command,
     Status,
     response_to_request,
 )
-from ..protocol.topics import Topic, TopicRoute
-from ..state.context import RuntimeState
+from mcubridge.protocol.topics import Topic, TopicRoute
+from mcubridge.state.context import RuntimeState
 
+from ..router.routers import MQTTRouter
 import structlog
 
 if TYPE_CHECKING:
     from aiomqtt import Message
+    from ..router.routers import McuHandler
 
 logger = structlog.get_logger("mcubridge.dispatcher")
-
-McuHandler = Callable[[int, bytes], Awaitable[Optional[bool]]]
-MqttHandler = Callable[[TopicRoute, "Message"], Awaitable[bool]]
 
 
 STATUS_VALUES = {status.value for status in Status}
@@ -38,6 +37,7 @@ class BridgeDispatcher:
     def __init__(
         self,
         mcu_registry: dict[int, McuHandler],
+        mqtt_router: MQTTRouter,
         state: RuntimeState,
         send_frame: Callable[[int, bytes], Awaitable[bool]],
         acknowledge_frame: Callable[[int, int], Awaitable[None]],
@@ -47,7 +47,7 @@ class BridgeDispatcher:
         on_frame_received: Callable[[int, int, bytes], None] | None = None,
     ) -> None:
         self.mcu_registry = mcu_registry
-        self.mqtt_handlers: dict[Topic, list[MqttHandler]] = {}
+        self.mqtt_router = mqtt_router
         self.state = state
         self.send_frame = send_frame
         self.acknowledge_frame = acknowledge_frame
@@ -133,8 +133,7 @@ class BridgeDispatcher:
         }
         for topic, handler in mqtt_map.items():
             if handler:
-                bucket = self.mqtt_handlers.setdefault(topic, [])
-                bucket.append(handler)
+                self.mqtt_router.register(topic, handler)
 
     def register_system_handlers(
         self,
@@ -152,108 +151,98 @@ class BridgeDispatcher:
         self.mcu_registry[Command.CMD_GET_CAPABILITIES_RESP.value] = (
             handle_get_capabilities_resp
         )
-        self.mcu_registry[Status.ACK.value] = handle_ack
         self.mcu_registry[Command.CMD_PROCESS_KILL.value] = handle_process_kill
 
-        for s_val in STATUS_VALUES:
-            # Using literal integer value for registration to avoid duplicate Enum lookup
-            self.mcu_registry[s_val] = status_handler_factory(Status(s_val))
+        self.mcu_registry[Status.ACK.value] = handle_ack
+        for status in Status:
+            if status == Status.ACK:
+                continue
+            self.mcu_registry[status.value] = status_handler_factory(status)
 
     async def dispatch_mcu_frame(
         self, command_id: int, sequence_id: int, payload: bytes
     ) -> None:
-        """Route an inbound frame from the MCU to its registered handler."""
-        if self.on_frame_received_callback:
-            self.on_frame_received_callback(command_id, sequence_id, payload)
-
-        start = asyncio.get_running_loop().time()
-
-        # 1. Synchronization Gate
-        if (
-            not self.state.is_synchronized
-            and command_id not in _PRE_SYNC_ALLOWED_COMMANDS
-        ):
-            logger.debug(
-                "Dropping command 0x%02X (seq=%d) - Link not synchronized.",
-                command_id,
-                sequence_id,
-            )
-            return
-
-        # 2. Handler Lookup
-        handler = self.mcu_registry.get(command_id)
-        if handler is None:
-            logger.warning(
-                "No handler registered for MCU command 0x%02X (seq=%d)",
-                command_id,
-                sequence_id,
-            )
-            self.state.unknown_command_count += 1
-            self.state.metrics.unknown_command_count.inc()
-            return
-
-        # 3. Execution & Auto-Ack
+        """
+        Route an incoming frame from the MCU to the appropriate registered handler.
+        """
+        now = asyncio.get_running_loop().time()
         try:
-            res = await handler(sequence_id, payload)
+            if self.on_frame_received_callback:
+                self.on_frame_received_callback(command_id, sequence_id, payload)
 
-            # Auto-Ack logic for commands that require it (and weren't rejected)
-            if res is not False and response_to_request(command_id) is not None:
-                await self.acknowledge_frame(command_id, sequence_id)
-
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.error(
-                "Error executing MCU handler for 0x%02X: %s",
-                command_id,
-                exc,
-                exc_info=True,
-            )
-        finally:
-            latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
-            # [SIL-2] Direct metrics recording (No Wrapper)
-            self.state.rpc_latency_stats.record(latency_ms)
-            self.state.metrics.rpc_latency_ms.observe(latency_ms)
-
-    async def dispatch_mqtt_message(
-        self, inbound: Message, parse_mock: Callable[[str], TopicRoute | None]
-    ) -> None:
-        """Route an inbound MQTT message to its registered handler."""
-        inbound_topic = str(inbound.topic)
-        route = parse_mock(inbound_topic)
-
-        start = asyncio.get_running_loop().time()
-
-        if route is None:
-            logger.debug("MQTTRouter: No route found for topic %s", inbound_topic)
-            return
-
-        # 1. Policy Authorization
-        action = self._get_topic_action(route)
-        if action:
-            if not self.is_topic_action_allowed(route.topic, action):
+            if not self._is_frame_allowed_pre_sync(command_id):
                 logger.warning(
-                    "Topic action BLOCKED by policy: %s/%s", route.topic, action
+                    "Security: Rejecting MCU frame 0x%02X (Link not synchronized)",
+                    command_id,
                 )
-                await self.reject_topic_action(inbound, route.topic, action)
                 return
 
-        # 2. Metrics recording
-        self.state.mqtt_messages_received += 1
-        self.state.metrics.mqtt_messages_received.inc()
+            handler = self.mcu_registry.get(command_id)
 
-        # 3. Router Dispatch
+            # [SIL-2] Direct Enum resolution for high-signal logging
+            try:
+                command_name = Command(command_id).name
+            except ValueError:
+                command_name = f"0x{command_id:02X}"
+
+            handled_successfully = False
+
+            if handler:
+                logger.debug(
+                    "MCU > %s (seq=%d) [%d bytes]",
+                    command_name,
+                    sequence_id,
+                    len(payload),
+                )
+                handled_successfully = (
+                    await handler(sequence_id, payload)
+                ) is not False
+
+            elif response_to_request(command_id) is None:
+                logger.warning("Protocol: Unhandled MCU command %s", command_name)
+                # [SIL-2] Direct metrics recording (No Wrapper)
+                self.state.unknown_command_count += 1
+                self.state.metrics.unknown_command_count.inc()
+                self.state.unknown_command_last_id = command_id
+                await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
+
+            if handled_successfully and command_id not in STATUS_VALUES:
+                await self.acknowledge_frame(command_id, sequence_id)
+        finally:
+            latency_ms = (asyncio.get_running_loop().time() - now) * 1000.0
+            self.state.serial_latency_stats.record(latency_ms)
+            self.state.metrics.serial_latency_ms.observe(latency_ms)
+
+    async def dispatch_mqtt_message(
+        self,
+        inbound: Message,
+        parse_topic_func: Callable[[str], TopicRoute | None],
+    ) -> None:
+        start = asyncio.get_running_loop().time()
         try:
-            for handler in self.mqtt_handlers.get(route.topic, []):
-                if handler is None:
-                    continue
-                if await handler(route, inbound):
-                    pass
+            inbound_topic = str(inbound.topic)
+            route = parse_topic_func(inbound_topic)
+            if route is None or not route.segments:
+                return
 
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.error("Error executing MQTT handler for %s: %s", inbound_topic, exc)
+            # 1. Policy Guard (Eradicated _guard_and_dispatch wrapper)
+            if action := self._get_topic_action(route):
+                if not self.is_topic_action_allowed(route.topic, action):
+                    await self.reject_topic_action(inbound, route.topic, action)
+                    return
+
+            # 2. Synchronization Guard
+            if route.topic != Topic.SYSTEM:
+                try:
+                    async with asyncio.timeout(30.0):
+                        await self.state.link_sync_event.wait()
+                except asyncio.TimeoutError:
+                    logger.warning("MQTT > Link sync timeout for %s", inbound_topic)
+                    return
+
+            # 3. Router Dispatch
+            if not await self.mqtt_router.dispatch(route, inbound):
+                logger.debug("Unhandled MQTT topic %s", inbound_topic)
         finally:
             latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
             # [SIL-2] Direct metrics recording (No Wrapper)
@@ -261,13 +250,29 @@ class BridgeDispatcher:
             self.state.metrics.rpc_latency_ms.observe(latency_ms)
 
     def _get_topic_action(self, route: TopicRoute) -> str | None:
-        """Extract logical action (identifier) from route for policy check."""
-        # Special cases based on topic structure
-        if route.topic in (Topic.DIGITAL, Topic.ANALOG):
-            if not route.segments:
+        """Deduce the action name for policy enforcement from the route."""
+        match route.topic:
+            case Topic.SYSTEM:
                 return None
-            return route.remainder[0] if len(route.segments) > 1 else "write"
-        return route.identifier
+            case Topic.DIGITAL | Topic.ANALOG:
+                if not route.segments:
+                    return None
+                return (
+                    "write"
+                    if len(route.segments) == 1
+                    else (route.segments[1].lower() or None)
+                )
+            case Topic.CONSOLE:
+                return "in" if route.identifier == "in" else None
+            case _:
+                return route.identifier or None
+
+    def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
+        return (
+            self.state.is_synchronized
+            or command_id in STATUS_VALUES
+            or command_id in _PRE_SYNC_ALLOWED_COMMANDS
+        )
 
     async def _handle_system_topic(self, route: TopicRoute, inbound: Message) -> bool:
         match route.identifier:
@@ -289,6 +294,3 @@ class BridgeDispatcher:
             case _:
                 return False
         return False
-
-
-__all__ = ["BridgeDispatcher", "McuHandler", "MqttHandler"]

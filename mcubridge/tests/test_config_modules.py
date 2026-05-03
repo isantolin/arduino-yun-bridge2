@@ -1,7 +1,6 @@
 """Tests for RuntimeConfig loader and utility functions."""
 
 from __future__ import annotations
-
 import msgspec
 
 from typing import Any

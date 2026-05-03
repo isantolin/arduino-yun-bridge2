@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
+import re
 import structlog
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -12,8 +14,12 @@ import msgspec
 from aiomqtt.message import Message
 
 from mcubridge.protocol import protocol
-from ..protocol.protocol import Command, FileAction, Status
+from mcubridge.protocol.protocol import Command, FileAction, Status
 
+from ..config.const import (
+    FILE_LARGE_WARNING_BYTES,
+    VOLATILE_STORAGE_PATHS,
+)
 from ..protocol.structures import (
     FileReadPacket,
     FileReadResponsePacket,
@@ -24,9 +30,11 @@ from ..protocol.structures import (
 from ..protocol.topics import Topic, TopicRoute, topic_path
 
 if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
+
 
 logger = structlog.get_logger("mcubridge.file")
 
@@ -46,29 +54,18 @@ class FileComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        enqueue_mqtt: Any,
+        mqtt_flow: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state
         self.serial_flow = serial_flow
-        self.enqueue_mqtt = enqueue_mqtt
+        self.mqtt_flow = mqtt_flow
         self._storage_lock = asyncio.Lock()
         self._usage_seeded = False
         self._metadata_cache: dict[str, dict[str, Any]] = {}
         self._mcu_read_lock = asyncio.Lock()
         self._pending_mcu_read: _PendingMcuRead | None = None
         self._mcu_backend_enabled = True
-
-    def _get_storage_usage(self) -> int:
-        """Calculate current storage usage in bytes."""
-        import shutil
-
-        # [SIL-2] Use shutil.disk_usage for reliable space tracking
-        try:
-            usage = shutil.disk_usage(self.config.file_system_root)
-            return usage.used
-        except (OSError, ValueError):
-            return 0
 
     async def handle_write(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_WRITE from MCU."""
@@ -81,7 +78,7 @@ class FileComponent:
                 return False
 
             if not await self._write_with_quota(path, packet.data):
-                await self.serial_flow.send(Status.ERROR.value, b"")
+                await self.serial_flow.send(Status.ERROR.value, b"Quota exceeded")
                 return False
 
             self._metadata_cache.pop(str(path), None)
@@ -102,108 +99,141 @@ class FileComponent:
             packet = msgspec.msgpack.decode(payload, type=FileReadPacket)
             path = self._get_safe_path(packet.path)
             if not path or not path.is_file():
-                await self.serial_flow.send(Status.ERROR.value, b"")
+                await self.serial_flow.send(Status.ERROR.value, b"File not found")
                 return
-
             data = await asyncio.to_thread(path.read_bytes)
             self._metadata_cache[str(path)] = {
                 "size": len(data),
                 "mtime": path.stat().st_mtime,
             }
 
-            # [SIL-2] Use O(1) byte-splitting for RLE-style transmission
-            chunk_gen = (
-                data[i : i + protocol.MAX_PAYLOAD_SIZE]
-                for i in range(0, len(data), protocol.MAX_PAYLOAD_SIZE)
-            )
-
-            for chunk in chunk_gen:
-                resp = FileReadResponsePacket(content=chunk)
-                await self.serial_flow.send(
-                    Command.CMD_FILE_READ_RESP.value, msgspec.msgpack.encode(resp)
+            # [SIL-2] Use direct msgspec.msgpack.encode for response
+            if not data:
+                response_payload = msgspec.msgpack.encode(
+                    FileReadResponsePacket(content=b"")
                 )
-
-            # EOT (End of Transmission) signalled by empty payload
-            eot = FileReadResponsePacket(content=b"")
-            await self.serial_flow.send(
-                Command.CMD_FILE_READ_RESP.value, msgspec.msgpack.encode(eot)
-            )
-
-        except (OSError, msgspec.DecodeError) as e:
+                await self.serial_flow.send(
+                    Command.CMD_FILE_READ_RESP.value, response_payload
+                )
+            else:
+                for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
+                    response_payload = msgspec.msgpack.encode(
+                        FileReadResponsePacket(content=bytes(chunk))
+                    )
+                    await self.serial_flow.send(
+                        Command.CMD_FILE_READ_RESP.value, response_payload
+                    )
+        except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File read failed: %s", e)
-            await self.serial_flow.send(Status.ERROR.value, str(e).encode())
+            err_payload = str(e).encode("utf-8", errors="ignore")[
+                : protocol.MAX_PAYLOAD_SIZE
+            ]
+            await self.serial_flow.send(Status.ERROR.value, err_payload)
 
     async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_REMOVE from MCU."""
         try:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
             packet = msgspec.msgpack.decode(payload, type=FileRemovePacket)
             path = self._get_safe_path(packet.path)
-            if not path or not path.exists():
-                await self.serial_flow.send(Status.ERROR.value, b"")
+            if path and await self._remove_with_tracking(path):
+                self._metadata_cache.pop(str(path), None)
+                await self.serial_flow.send(Status.OK.value, b"")
                 return True
 
-            await asyncio.to_thread(path.unlink)
-            self._metadata_cache.pop(str(path), None)
-            await self.serial_flow.send(Status.OK.value, b"")
-            return True
-        except (OSError, msgspec.DecodeError) as e:
+            await self.serial_flow.send(Status.ERROR.value, b"File not found")
+            return False
+        except (ValueError, OSError, msgspec.DecodeError) as e:
             logger.error("File remove failed: %s", e)
-            await self.serial_flow.send(Status.ERROR.value, str(e).encode())
+            err_payload = str(e).encode("utf-8", errors="ignore")[
+                : protocol.MAX_PAYLOAD_SIZE
+            ]
+            await self.serial_flow.send(Status.ERROR.value, err_payload)
             return False
 
     async def handle_read_response(self, seq_id: int, payload: bytes) -> bool:
-        """Handle CMD_FILE_READ_RESP from MCU."""
-        try:
-            packet = msgspec.msgpack.decode(payload, type=FileReadResponsePacket)
-        except (ValueError, msgspec.DecodeError):
+        """Handle CMD_FILE_READ_RESP from MCU for MQTT-originated mcu/ reads."""
+        pending = self._pending_mcu_read
+        if pending is None:
+            logger.warning("Received MCU file read response without pending request")
             return False
 
-        async with self._mcu_read_lock:
-            pending = self._pending_mcu_read
-            if not pending:
-                return False
-
-            if packet.content:
-                pending.chunks.append(packet.content)
-                return True
-
-            # EOF received
+        try:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileReadResponsePacket)
+        except (ValueError, msgspec.DecodeError):
             if not pending.future.done():
-                pending.future.set_result(b"".join(pending.chunks))
+                pending.future.set_exception(
+                    ValueError("Malformed MCU file read response")
+                )
+            return False
+
+        if packet.content:
+            pending.chunks.append(packet.content)
             return True
 
-    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        """Process inbound MQTT requests for file operations."""
-        action = route.identifier
-        identifier = "/".join(route.remainder)
+        if not pending.future.done():
+            pending.future.set_result(b"".join(pending.chunks))
+        return True
 
-        if not identifier:
-            await self._mqtt_respond_error(inbound, action, identifier, "missing_path")
-            return True
+    async def handle_mqtt(
+        self,
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        """Process MQTT filesystem requests."""
+        action = route.action
+        target = "/".join(route.remainder)
+        pl = bytes(inbound.payload)
+
+        if not action or not target:
+            return False
 
         match action:
-            case FileAction.READ:
-                if identifier.startswith("mcu/"):
-                    return await self._handle_mcu_read(inbound, identifier[4:])
-                return await self._handle_linux_read(inbound, identifier)
             case FileAction.WRITE:
-                if identifier.startswith("mcu/"):
-                    return await self._handle_mcu_write(inbound, identifier[4:])
-                return await self._handle_linux_write(inbound, identifier)
+                return await self._handle_mqtt_write(inbound, target, pl)
+            case FileAction.READ:
+                return await self._handle_mqtt_read(inbound, target)
             case FileAction.REMOVE:
-                if identifier.startswith("mcu/"):
-                    return await self._handle_mcu_remove(inbound, identifier[4:])
-                return await self._handle_linux_remove(inbound, identifier)
+                return await self._handle_mqtt_remove(inbound, target)
             case _:
                 return False
 
-        return False
+    async def _handle_mqtt_write(
+        self, inbound: Message, identifier: str, payload: bytes
+    ) -> bool:
+        if self._is_mcu_identifier(identifier):
+            return await self._handle_mcu_write(inbound, identifier, payload)
 
-    async def _handle_linux_read(self, inbound: Message, identifier: str) -> bool:
+        path = self._get_safe_path(identifier)
+        if not path:
+            await self._publish_mqtt_error(
+                inbound, FileAction.WRITE, identifier, "Invalid path"
+            )
+            return False
+
+        # Quota check
+        if not await self._write_with_quota(path, payload):
+            logger.error("MQTT write failed for %s: quota exceeded", identifier)
+            await self._publish_mqtt_error(
+                inbound,
+                FileAction.WRITE,
+                identifier,
+                "Quota exceeded or invalid path",
+            )
+            return False
+
+        self._metadata_cache.pop(str(path), None)
+        return True
+
+    async def _handle_mqtt_read(self, inbound: Message, identifier: str) -> bool:
+        if self._is_mcu_identifier(identifier):
+            return await self._handle_mcu_read(inbound, identifier)
+
         path = self._get_safe_path(identifier)
         if not path or not path.is_file():
-            await self._mqtt_respond_error(
-                inbound, FileAction.READ, identifier, "not_found"
+            await self._publish_mqtt_error(
+                inbound, FileAction.READ, identifier, "File not found"
             )
             return True
 
@@ -213,7 +243,7 @@ class FileComponent:
                 "size": len(data),
                 "mtime": path.stat().st_mtime,
             }
-            await self.enqueue_mqtt(
+            await self.mqtt_flow.enqueue_mqtt(
                 QueuedPublish(
                     topic_name=self._mqtt_response_topic(FileAction.READ, identifier),
                     payload=data,
@@ -221,96 +251,128 @@ class FileComponent:
                 reply_context=inbound,
             )
             return True
-        except OSError as e:
-            await self._mqtt_respond_error(inbound, FileAction.READ, identifier, str(e))
-            return True
+        except OSError:
+            return False
 
-    async def _handle_linux_write(self, inbound: Message, identifier: str) -> bool:
+    async def _handle_mqtt_remove(self, inbound: Message, identifier: str) -> bool:
+        if self._is_mcu_identifier(identifier):
+            return await self._handle_mcu_remove(inbound, identifier)
+
         path = self._get_safe_path(identifier)
-        if not path:
-            await self._mqtt_respond_error(
-                inbound, FileAction.WRITE, identifier, "invalid_path"
-            )
-            return True
-
-        payload = msgspec.convert(inbound.payload, bytes)
-        try:
-            if not await self._write_with_quota(path, payload):
-                await self._mqtt_respond_error(
-                    inbound, FileAction.WRITE, identifier, "quota_exceeded"
-                )
-                return True
-
+        if path and await self._remove_with_tracking(path):
             self._metadata_cache.pop(str(path), None)
-            await self._mqtt_respond_ok(inbound, FileAction.WRITE, identifier)
             return True
-        except OSError as e:
-            await self._mqtt_respond_error(
-                inbound, FileAction.WRITE, identifier, str(e)
+        else:
+            logger.error("MQTT remove failed for %s", identifier)
+            await self._publish_mqtt_error(
+                inbound,
+                FileAction.REMOVE,
+                identifier,
+                "File not found or protected",
             )
-            return True
+            return False
 
-    async def _handle_linux_remove(self, inbound: Message, identifier: str) -> bool:
-        path = self._get_safe_path(identifier)
-        if not path or not path.exists():
-            await self._mqtt_respond_error(
-                inbound, FileAction.REMOVE, identifier, "not_found"
+    async def _handle_mcu_write(
+        self, inbound: Message, identifier: str, payload: bytes
+    ) -> bool:
+        relative_path = self._normalise_mcu_identifier(identifier)
+        if relative_path is None:
+            await self._publish_mqtt_error(
+                inbound, FileAction.WRITE, identifier, "Invalid path"
             )
-            return True
+            return False
+        if not self._mcu_backend_enabled:
+            logger.error(
+                "MQTT write failed for %s: MCU filesystem backend is disabled",
+                identifier,
+            )
+            await self._publish_mqtt_error(
+                inbound,
+                FileAction.WRITE,
+                identifier,
+                "MCU filesystem unavailable on this target",
+            )
+            return False
 
-        try:
-            await asyncio.to_thread(path.unlink)
-            self._metadata_cache.pop(str(path), None)
-            await self._mqtt_respond_ok(inbound, FileAction.REMOVE, identifier)
-            return True
-        except OSError as e:
-            await self._mqtt_respond_error(
-                inbound, FileAction.REMOVE, identifier, str(e)
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        packet = msgspec.msgpack.encode(
+            FileWritePacket(path=relative_path, data=payload)
+        )
+        if not await self.serial_flow.send(Command.CMD_FILE_WRITE.value, packet):
+            logger.error("MQTT write failed for %s: MCU rejected write", identifier)
+            await self._publish_mqtt_error(
+                inbound,
+                FileAction.WRITE,
+                identifier,
+                "MCU filesystem write failed",
             )
-            return True
+            return False
+        return True
 
     async def _handle_mcu_read(self, inbound: Message, identifier: str) -> bool:
-        if not self._mcu_backend_enabled:
-            await self._mqtt_respond_error(
-                inbound, FileAction.READ, identifier, "mcu_disabled"
+        relative_path = self._normalise_mcu_identifier(identifier)
+        if relative_path is None:
+            await self._publish_mqtt_error(
+                inbound, FileAction.READ, identifier, "Invalid path"
             )
-            return True
+            return False
+        if not self._mcu_backend_enabled:
+            logger.error(
+                "MQTT read failed for %s: MCU filesystem backend is disabled",
+                identifier,
+            )
+            await self._publish_mqtt_error(
+                inbound,
+                FileAction.READ,
+                identifier,
+                "MCU filesystem unavailable on this target",
+            )
+            return False
 
         async with self._mcu_read_lock:
-            if self._pending_mcu_read:
-                await self._mqtt_respond_error(
-                    inbound, FileAction.READ, identifier, "mcu_busy"
-                )
-                return True
-
-            future: asyncio.Future[bytes] = asyncio.get_running_loop().create_future()
-            pending = _PendingMcuRead(identifier=identifier, future=future)
+            pending = _PendingMcuRead(
+                identifier=identifier,
+                future=asyncio.get_running_loop().create_future(),
+            )
             self._pending_mcu_read = pending
-
-            packet = FileReadPacket(path=identifier)
-            if not await self.serial_flow.send(
-                Command.CMD_FILE_READ.value, msgspec.msgpack.encode(packet)
-            ):
-                self._pending_mcu_read = None
-                await self._mqtt_respond_error(
-                    inbound, FileAction.READ, identifier, "mcu_dispatch_failed"
-                )
-                return True
+            # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+            packet = msgspec.msgpack.encode(FileReadPacket(path=relative_path))
 
             try:
-                # [SIL-2] Deterministic timeout for MCU IO
-                async with asyncio.timeout(30.0):
-                    data = await future
+                if not await self.serial_flow.send(Command.CMD_FILE_READ.value, packet):
+                    logger.error(
+                        "MQTT read failed for %s: MCU rejected read", identifier
+                    )
+                    await self._publish_mqtt_error(
+                        inbound,
+                        FileAction.READ,
+                        identifier,
+                        "MCU filesystem read failed",
+                    )
+                    return False
+
+                timeout_seconds = self._mcu_read_timeout_seconds()
+                data = await asyncio.wait_for(pending.future, timeout=timeout_seconds)
             except asyncio.TimeoutError:
-                await self._mqtt_respond_error(
-                    inbound, FileAction.READ, identifier, "mcu_timeout"
+                logger.error("MQTT read failed for %s: MCU read timed out", identifier)
+                await self._publish_mqtt_error(
+                    inbound,
+                    FileAction.READ,
+                    identifier,
+                    "MCU filesystem read timed out",
+                )
+                return False
+            except ValueError as exc:
+                logger.error("MQTT read failed for %s: %s", identifier, exc)
+                await self._publish_mqtt_error(
+                    inbound, FileAction.READ, identifier, str(exc)
                 )
                 return False
             finally:
                 if self._pending_mcu_read is pending:
                     self._pending_mcu_read = None
 
-        await self.enqueue_mqtt(
+        await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=self._mqtt_response_topic(FileAction.READ, identifier),
                 payload=data,
@@ -319,116 +381,211 @@ class FileComponent:
         )
         return True
 
-    async def _handle_mcu_write(self, inbound: Message, identifier: str) -> bool:
-        if not self._mcu_backend_enabled:
-            await self._mqtt_respond_error(
-                inbound, FileAction.WRITE, identifier, "mcu_disabled"
-            )
-            return True
-
-        payload = msgspec.convert(inbound.payload, bytes)
-        packet = FileWritePacket(path=identifier, data=payload)
-        ok = await self.serial_flow.send(
-            Command.CMD_FILE_WRITE.value, msgspec.msgpack.encode(packet)
-        )
-        if ok:
-            await self._mqtt_respond_ok(inbound, FileAction.WRITE, identifier)
-        else:
-            await self._mqtt_respond_error(
-                inbound, FileAction.WRITE, identifier, "mcu_dispatch_failed"
-            )
-        return True
-
     async def _handle_mcu_remove(self, inbound: Message, identifier: str) -> bool:
+        relative_path = self._normalise_mcu_identifier(identifier)
+        if relative_path is None:
+            await self._publish_mqtt_error(
+                inbound, FileAction.REMOVE, identifier, "Invalid path"
+            )
+            return False
         if not self._mcu_backend_enabled:
-            await self._mqtt_respond_error(
-                inbound, FileAction.REMOVE, identifier, "mcu_disabled"
+            logger.error(
+                "MQTT remove failed for %s: MCU filesystem backend is disabled",
+                identifier,
             )
-            return True
+            await self._publish_mqtt_error(
+                inbound,
+                FileAction.REMOVE,
+                identifier,
+                "MCU filesystem unavailable on this target",
+            )
+            return False
 
-        packet = FileRemovePacket(path=identifier)
-        ok = await self.serial_flow.send(
-            Command.CMD_FILE_REMOVE.value, msgspec.msgpack.encode(packet)
-        )
-        if ok:
-            await self._mqtt_respond_ok(inbound, FileAction.REMOVE, identifier)
-        else:
-            await self._mqtt_respond_error(
-                inbound, FileAction.REMOVE, identifier, "mcu_dispatch_failed"
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        packet = msgspec.msgpack.encode(FileRemovePacket(path=relative_path))
+        if not await self.serial_flow.send(Command.CMD_FILE_REMOVE.value, packet):
+            logger.error("MQTT remove failed for %s: MCU rejected remove", identifier)
+            await self._publish_mqtt_error(
+                inbound,
+                FileAction.REMOVE,
+                identifier,
+                "MCU filesystem remove failed",
             )
+            return False
         return True
 
-    def _get_safe_path(self, identifier: str) -> Path | None:
-        """[SIL-2] Strict path sanitation preventing directory traversal."""
-        root = Path(self.config.file_system_root).resolve()
-        # Handle PurePosixPath to ensure consistent path separators regardless of host OS
-        requested = PurePosixPath(identifier)
-
-        # Prevent absolute paths or backtracking
-        if requested.is_absolute() or ".." in requested.parts:
+    def _get_safe_path(self, filename: str) -> Path | None:
+        """Resolve and validate path within storage root (SIL-2)."""
+        normalised = self._normalise_filename(filename)
+        if not normalised or normalised == PurePosixPath("."):
             return None
 
-        full_path = (root / requested).resolve()
-
-        # Verify result is still within the root sandbox
-        if not str(full_path).startswith(str(root)):
+        base_dir = self._get_base_dir()
+        if not base_dir:
             return None
 
-        return full_path
+        try:
+            safe_path = (base_dir / normalised).resolve()
+            if str(safe_path).startswith(str(base_dir)):
+                return safe_path
+        except (OSError, RuntimeError) as e:
+            logger.debug("Failed to resolve safe path: %s", e)
+        return None
 
-    async def _write_with_quota(self, path: Path, data: bytes) -> bool:
-        """Write file data to disk with basic quota monitoring (best effort)."""
-        async with self._storage_lock:
-            # [SIL-2] Best-effort space tracking (shutil.disk_usage is O(1) on most OS)
-            current_usage = self._get_storage_usage()
-            if current_usage + len(data) > self.config.file_storage_quota_bytes:
-                logger.warning("Storage quota exceeded; rejecting write.")
-                return False
+    def _get_base_dir(self) -> Path | None:
+        """Return the validated base directory for file operations."""
+        root = Path(self.config.file_system_root)
+        if not self.config.allow_non_tmp_paths:
+            if not any(str(root).startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                logger.error(
+                    "FLASH PROTECTION: file_system_root %s is not in RAM!", root
+                )
+                return None
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            return root
+        except OSError:
+            return None
 
-            path.parent.mkdir(parents=True, exist_ok=True)
+    @staticmethod
+    def _normalise_filename(filename: str) -> PurePosixPath | None:
+        """Sanitize filename to prevent traversal attacks while allowing subdirectories."""
+        if not filename or not filename.strip():
+            return None
+        if ".." in filename or filename.startswith("/") or "\x00" in filename:
+            return None
+        if filename in (".", "./", "../"):
+            return None
+        # Remove any leading path separators and keep only safe characters
+        clean = re.sub(r"[^a-zA-Z0-9._/-]", "_", filename).strip(".")
+        if not clean:
+            return None
+        return PurePosixPath(clean)
 
-            from ..config.const import FILE_LARGE_WARNING_BYTES
+    @staticmethod
+    def _is_mcu_identifier(identifier: str) -> bool:
+        return identifier == "mcu" or identifier.startswith("mcu/")
 
-            if len(data) > FILE_LARGE_WARNING_BYTES:
-                logger.warning("Writing large file: %s (%d bytes)", path, len(data))
+    def _normalise_mcu_identifier(self, identifier: str) -> str | None:
+        if not self._is_mcu_identifier(identifier):
+            return None
 
-            await asyncio.to_thread(path.write_bytes, data)
-            return True
+        # [SIL-2] Use library-native path manipulation to strip 'mcu/' prefix safely.
+        p = PurePosixPath(identifier)
+        relative = p.relative_to("mcu") if p.is_absolute() or p.parts[0] == "mcu" else p
 
-    def _mqtt_response_topic(self, action: FileAction | str, identifier: str) -> str:
-        act_str = action.value if isinstance(action, FileAction) else str(action)
+        normalised = self._normalise_filename(str(relative))
+        if normalised is None or normalised == PurePosixPath("."):
+            return None
+        return normalised.as_posix()
+
+    def _mqtt_response_topic(self, action: FileAction, identifier: str) -> str:
         return topic_path(
-            self.state.mqtt_topic_prefix, Topic.FILE, act_str, "resp", identifier
+            self.state.mqtt_topic_prefix,
+            Topic.FILE,
+            action.value,
+            "response",
+            identifier,
         )
 
-    async def _mqtt_respond_error(
-        self, inbound: Message, action: FileAction | str, identifier: str, reason: str
+    async def _publish_mqtt_error(
+        self,
+        inbound: Message,
+        action: FileAction,
+        identifier: str,
+        reason: str,
     ) -> None:
-        await self.enqueue_mqtt(
+        await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=self._mqtt_response_topic(action, identifier),
                 payload=reason.encode("utf-8", errors="ignore")[
                     : protocol.MAX_PAYLOAD_SIZE
                 ],
-                user_properties=(("bridge-error", reason),),
             ),
             reply_context=inbound,
         )
 
-    async def _mqtt_respond_ok(
-        self,
-        inbound: Message,
-        action: FileAction | str,
-        identifier: str,
-        payload: bytes = b"OK",
-    ) -> None:
-        await self.enqueue_mqtt(
-            QueuedPublish(
-                topic_name=self._mqtt_response_topic(action, identifier),
-                payload=payload,
-            ),
-            reply_context=inbound,
-        )
+    def _mcu_read_timeout_seconds(self) -> float:
+        timeout_ms = self.state.serial_response_timeout_ms
+        if timeout_ms <= 0:
+            return 1.0
+        return max(timeout_ms / 1000.0, 1.0)
+
+    async def _write_with_quota(self, path: Path, data: bytes) -> bool:
+        async with self._storage_lock:
+            if len(data) > self.config.file_write_max_bytes:
+                logger.warning(
+                    "File write rejected: size limit exceeded",
+                    path=str(path),
+                    size=len(data),
+                    limit=self.config.file_write_max_bytes,
+                )
+                self.state.file_write_limit_rejections += 1
+                return False
+
+            current_usage = await self._get_storage_usage()
+            existing_size = path.stat().st_size if path.exists() else 0
+
+            # [SIL-2] If usage tracking is stale, force refresh
+            if existing_size > current_usage:
+                await self._refresh_storage_usage()
+                current_usage = self.state.file_storage_bytes_used
+
+            projected_usage = current_usage - existing_size + len(data)
+
+            if projected_usage > self.config.file_storage_quota_bytes:
+                self.state.file_storage_limit_rejections += 1
+                return False
+
+            def _atomic_write() -> None:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                if path.stat().st_size > FILE_LARGE_WARNING_BYTES:
+                    logger.warning("File %s is growing large (>1MB) in RAM!", path)
+
+            await asyncio.to_thread(_atomic_write)
+            self.state.file_storage_bytes_used = projected_usage
+            return True
+
+    async def _remove_with_tracking(self, path: Path) -> bool:
+        async with self._storage_lock:
+            if not path.is_file():
+                return False
+
+            size = path.stat().st_size
+            await asyncio.to_thread(path.unlink)
+            self.state.file_storage_bytes_used = max(
+                0, self.state.file_storage_bytes_used - size
+            )
+            return True
+
+    async def _get_storage_usage(self) -> int:
+        await self._ensure_usage_seeded()
+        return self.state.file_storage_bytes_used
+
+    async def _ensure_usage_seeded(self) -> None:
+        if not self._usage_seeded:
+            await self._refresh_storage_usage()
+            self._usage_seeded = True
+
+    async def _refresh_storage_usage(self) -> None:
+        # [SIL-2] Use native pathlib to calculate directory size via generator expression.
+        try:
+            root_path = Path(self.config.file_system_root)
+            if not root_path.exists():
+                self.state.file_storage_bytes_used = 0
+                return
+
+            def _calculate() -> int:
+                return sum(
+                    f.stat().st_size
+                    for f in root_path.rglob("*")
+                    if f.is_file() and not f.is_symlink()
+                )
+
+            self.state.file_storage_bytes_used = await asyncio.to_thread(_calculate)
+        except (OSError, RuntimeError):
+            self.state.file_storage_bytes_used = 0
 
 
 __all__ = ["FileComponent"]

@@ -18,6 +18,7 @@ from mcubridge.protocol.protocol import (
     expected_responses,
 )
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
+from mcubridge.router.routers import MQTTRouter, McuHandler
 from mcubridge.services.dispatcher import BridgeDispatcher
 
 _MQTT_PREFIX = "br"
@@ -43,7 +44,8 @@ def _materialize_subscription_segments(pattern: tuple[str, ...]) -> tuple[str, .
 async def test_mqtt_subscriptions_are_dispatched() -> None:
     """Every subscribed MQTT topic pattern is accepted by the dispatcher."""
 
-    mcu_registry: dict[int, Any] = {}
+    mcu_registry: dict[int, McuHandler] = {}
+    mqtt_router = MQTTRouter()
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
@@ -52,6 +54,7 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
     try:
         dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
+            mqtt_router=mqtt_router,
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(),
@@ -86,8 +89,8 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             inbound.payload = b"hello"
             inbound.properties = None
 
-            # [SIL-2] Using dispatch_mqtt_message directly
-            await dispatcher.dispatch_mqtt_message(inbound, _parse_inbound_topic)
+            handled = await mqtt_router.dispatch(route, inbound)
+            assert handled, f"No handler registered for subscribed topic: {topic}"
     finally:
         state.cleanup()
 
@@ -100,8 +103,8 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     protocol enum should require a corresponding dispatcher/handler update.
     """
 
-    mcu_registry: dict[int, Any] = {}
-    AsyncMock()
+    mcu_registry: dict[int, McuHandler] = {}
+    mqtt_router = MQTTRouter()
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
@@ -110,6 +113,7 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     try:
         dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
+            mqtt_router=mqtt_router,
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(),

@@ -1,5 +1,3 @@
-"""Verify that we can mock the async context manager of aiomqtt."""
-
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,7 +9,7 @@ from aiomqtt import Client
 
 @pytest.mark.asyncio
 async def test_aiomqtt_context_manager_mocking():
-
+    """Verify that we can mock the async context manager of aiomqtt."""
     mock_client_instance = AsyncMock(spec=Client)
 
     # Setup the __aenter__ to return the mock instance itself

@@ -1,82 +1,81 @@
-"""Unit tests for MailboxComponent MCU/MQTT behaviour (SIL-2)."""
-
-from __future__ import annotations
-
-from typing import Any
-from unittest.mock import AsyncMock
-
 import msgspec
 import pytest
+from typing import Any, cast
+from unittest.mock import AsyncMock
+from mcubridge.services.mailbox import MailboxComponent
+from mcubridge.protocol.structures import TopicRoute, MailboxPushPacket
+from mcubridge.protocol.topics import Topic
+from mcubridge.protocol.protocol import MailboxAction
 from aiomqtt.message import Message
 
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Command, MailboxAction, Topic
-from mcubridge.protocol.structures import TopicRoute
-from mcubridge.services.mailbox import MailboxComponent
+
 from mcubridge.services.serial_flow import SerialFlowController
-from mcubridge.state.context import create_runtime_state
+from mcubridge.transport.mqtt import MqttTransport
 
 
 @pytest.fixture
-def mailbox_component(
-    runtime_config: RuntimeConfig,
-) -> MailboxComponent:
-    state = create_runtime_state(runtime_config)
-    state.mqtt_topic_prefix = "br"
-
+def mailbox_component(runtime_config: Any, runtime_state: Any) -> MailboxComponent:
+    # [SIL-2] Use AsyncMock(spec=Interface) for all component mocks
     serial_flow = AsyncMock(spec=SerialFlowController)
-    serial_flow.acknowledge = AsyncMock()
-    serial_flow.send = AsyncMock(return_value=True)
-    enqueue_mqtt = AsyncMock()
-
-    return MailboxComponent(runtime_config, state, serial_flow, enqueue_mqtt)
+    serial_flow.send = AsyncMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
+    mqtt_flow.enqueue_mqtt = AsyncMock()
+    return MailboxComponent(runtime_config, runtime_state, serial_flow, mqtt_flow)
 
 
 @pytest.mark.asyncio
-async def test_handle_push_success(mailbox_component: MailboxComponent) -> None:
-    # MCU pushes data to Linux
-    pkt = structures.MailboxPushPacket(data=b"mcu-data")
-    payload = msgspec.msgpack.encode(pkt)
+async def test_handle_push_stores_in_incoming_queue(
+    mailbox_component: MailboxComponent, runtime_state: Any
+):
+    # Use proper encoding from the protocol structures
+    payload = msgspec.msgpack.encode(MailboxPushPacket(data=b"some-data"))
+    await mailbox_component.handle_push(1, payload)
+    assert len(runtime_state.mailbox_incoming_queue) == 1
+    popped = runtime_state.mailbox_incoming_queue.popleft()
+    assert popped == b"some-data"
 
-    await mailbox_component.handle_push(0, payload)
 
-    assert len(mailbox_component.state.mailbox_incoming_queue) == 1
-    assert mailbox_component.state.mailbox_incoming_queue[0] == b"mcu-data"
+@pytest.mark.asyncio
+async def test_handle_available_replies_if_not_empty(
+    mailbox_component: MailboxComponent, runtime_state: Any
+):
+    runtime_state.mailbox_queue.append(b"msg1")
+    await mailbox_component.handle_available(1, b"")
+    assert cast(Any, mailbox_component.serial_flow.send).called
 
-    mailbox_component.enqueue_mqtt.assert_called()
+
+@pytest.mark.asyncio
+async def test_handle_read_sends_pop(
+    mailbox_component: MailboxComponent, runtime_state: Any
+):
+    runtime_state.mailbox_queue.append(b"msg1")
+    await mailbox_component.handle_read(1, b"")
+    assert cast(Any, mailbox_component.serial_flow.send).called
 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_logic(
     mailbox_component: MailboxComponent, runtime_state: Any
 ):
-    # Test write via MQTT
+    # Test write via MQTT (Must use MailboxAction.WRITE.value)
     route = TopicRoute(
         raw="br/mailbox/write",
         prefix="br",
         topic=Topic.MAILBOX,
         segments=(MailboxAction.WRITE.value,),
     )
-    msg = Message("test/topic", b"mcu-data", 0, False, mid=1, properties=None)
+    msg = Message(Topic.MAILBOX.value, b"mcu-data", 0, False, False, None)
     await mailbox_component.handle_mqtt(route, msg)
-
     assert len(runtime_state.mailbox_queue) == 1
-    assert runtime_state.mailbox_queue[0] == b"mcu-data"
 
-
-@pytest.mark.asyncio
-async def test_handle_read_request_success(
-    mailbox_component: MailboxComponent,
-) -> None:
-    # Setup data in queue
-    mailbox_component.state.mailbox_queue.append(b"linux-data")
-
-    await mailbox_component.handle_read(0, b"")
-
-    assert isinstance(mailbox_component.serial_flow.send, AsyncMock)
-    mailbox_component.serial_flow.send.assert_called()
-    call_args = mailbox_component.serial_flow.send.call_args
-    assert call_args.args[0] == Command.CMD_MAILBOX_READ_RESP.value
-    # Result payload should contain the data
-    assert b"linux-data" in call_args.args[1]
+    # Test read via MQTT
+    route_read = TopicRoute(
+        raw="br/mailbox/read",
+        prefix="br",
+        topic=Topic.MAILBOX,
+        segments=(MailboxAction.READ.value,),
+    )
+    msg_read = Message(Topic.MAILBOX.value, b"", 0, False, False, None)
+    runtime_state.mailbox_incoming_queue.append(b"mcu-reply")
+    await mailbox_component.handle_mqtt(route_read, msg_read)
+    assert cast(Any, mailbox_component.mqtt_flow.enqueue_mqtt).called

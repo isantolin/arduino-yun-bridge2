@@ -1,5 +1,3 @@
-"""Fuzzing test to ensure Frame.parse never crashes with unhandled exceptions."""
-
 import random
 
 import pytest
@@ -14,7 +12,7 @@ FUZZ_ITERATIONS = 5000
 
 @pytest.mark.fuzz
 def test_frame_parsing_resilience_to_fuzzing():
-
+    """Fuzzing test to ensure Frame.parse never crashes with unhandled exceptions."""
     random.seed(TEST_RANDOM_SEED)
 
     for i in range(FUZZ_ITERATIONS):

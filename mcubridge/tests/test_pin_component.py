@@ -1,36 +1,52 @@
-"""Unit tests for the PinComponent (SIL-2)."""
+"""Unit tests for the PinComponent."""
 
 from __future__ import annotations
 
+import collections
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import msgspec
 import pytest
-from aiomqtt.message import Message
-
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command, Topic
+from mcubridge.protocol.protocol import (
+    Command,
+    PinAction,
+)
 from mcubridge.protocol.structures import (
     DigitalReadResponsePacket,
     PinModePacket,
     PinReadPacket,
     TopicRoute,
 )
+from mcubridge.protocol.topics import Topic
 from mcubridge.services.pin import PinComponent
 from mcubridge.services.serial_flow import SerialFlowController
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import RuntimeState
+from mcubridge.transport.mqtt import MqttTransport
+from aiomqtt.message import Message
 
 
 @pytest.fixture
 def pin_component(runtime_config: RuntimeConfig) -> PinComponent:
-    state = create_runtime_state(runtime_config)
+    config = runtime_config
+    # [SIL-2] Use AsyncMock(spec=Interface) for all component mocks
+    state = AsyncMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
+    state.pending_digital_reads = collections.deque()
+    state.pending_analog_reads = collections.deque()
+    state.pending_pin_request_limit = 10
+    state.mcu_capabilities = None
 
     serial_flow = AsyncMock(spec=SerialFlowController)
+    serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock(return_value=True)
-    enqueue_mqtt = AsyncMock()
+    mqtt_flow = AsyncMock(spec=MqttTransport)
+    mqtt_flow.enqueue_mqtt = AsyncMock()
 
-    return PinComponent(runtime_config, state, serial_flow, enqueue_mqtt)
+    return PinComponent(
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
 
 
 @pytest.mark.asyncio
@@ -44,25 +60,24 @@ async def test_pin_handle_digital_read_resp(pin_component: PinComponent) -> None
 
     await pin_component.handle_digital_read_resp(0, payload)
 
-    pin_component.enqueue_mqtt.assert_called()
+    cast(Any, pin_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
 @pytest.mark.asyncio
 async def test_pin_handle_mqtt_mode(pin_component: PinComponent) -> None:
     route = TopicRoute(
-        raw="br/d/13/mode",
+        raw=f"br/{Topic.DIGITAL}/13/{PinAction.MODE.value}",
         prefix="br",
         topic=Topic.DIGITAL,
-        segments=("13", "mode"),
+        segments=("13", PinAction.MODE.value),
     )
     msg = Message(
         topic="test/topic", payload=b"1", qos=0, retain=False, mid=1, properties=None
-    )
+    )  # OUTPUT
 
     await pin_component.handle_mqtt(route, msg)
 
-    assert isinstance(pin_component.serial_flow.send, AsyncMock)
-    pin_component.serial_flow.send.assert_called_with(
+    cast(Any, pin_component.serial_flow.send).assert_called_with(
         Command.CMD_SET_PIN_MODE.value,
         msgspec.msgpack.encode(PinModePacket(pin=13, mode=1)),
     )
@@ -71,19 +86,18 @@ async def test_pin_handle_mqtt_mode(pin_component: PinComponent) -> None:
 @pytest.mark.asyncio
 async def test_pin_handle_mqtt_read(pin_component: PinComponent) -> None:
     route = TopicRoute(
-        raw="br/d/13/read",
+        raw=f"br/{Topic.DIGITAL}/13/{PinAction.READ.value}",
         prefix="br",
         topic=Topic.DIGITAL,
-        segments=("13", "read"),
+        segments=("13", PinAction.READ.value),
     )
     msg = Message(
-        topic="test/topic", payload=b"", qos=0, retain=False, mid=1, properties=None
+        topic="test/topic", payload=b"1", qos=0, retain=False, mid=1, properties=None
     )
 
     await pin_component.handle_mqtt(route, msg)
 
-    assert isinstance(pin_component.serial_flow.send, AsyncMock)
-    pin_component.serial_flow.send.assert_called_with(
+    cast(Any, pin_component.serial_flow.send).assert_called_with(
         Command.CMD_DIGITAL_READ.value,
         msgspec.msgpack.encode(PinReadPacket(pin=13)),
     )

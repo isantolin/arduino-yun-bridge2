@@ -1,29 +1,38 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import structlog
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 import msgspec
 from aiomqtt.message import Message
 
-from ..protocol import protocol
-from ..protocol.protocol import ShellAction, Status, Command
+from ..protocol import protocol, structures
+from ..protocol.protocol import ShellAction, Status
 from ..protocol.structures import (
+    ProcessOutputBatch,
     QueuedPublish,
     ShellCommandPayload,
     ShellPidPayload,
     TopicRoute,
 )
 from ..protocol.topics import Topic, topic_path
+from ..state.context import (
+    RuntimeState,
+)
 
 if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.services.process")
 _msgpack_enc = msgspec.msgpack.Encoder()
+
+PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
 
 class ProcessComponent:
@@ -34,206 +43,123 @@ class ProcessComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        enqueue_mqtt: Any,
+        mqtt_flow: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state
         self.serial_flow = serial_flow
-        self.enqueue_mqtt = enqueue_mqtt
+        self.mqtt_flow = mqtt_flow
 
         # [SIL-2] Ensure numeric limit for semaphore
         limit = int(state.process_max_concurrent)
         self._process_slots = asyncio.Semaphore(limit)
 
-    async def handle_run_async(self, seq_id: int, payload: bytes) -> bool:
-        """Handle CMD_PROCESS_RUN_ASYNC from MCU."""
-        try:
-            packet = msgspec.msgpack.decode(payload, type=ShellCommandPayload)
-            cmd = packet.command
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed ShellCommandPayload: %s", e)
-            return False
+    @property
+    def _slots(self) -> asyncio.Semaphore:
+        return self._process_slots
 
-        pid = await self.run_async(cmd)
-        resp = ShellPidPayload(pid=pid)
-        return await self.serial_flow.send(
-            Command.CMD_PROCESS_RUN_ASYNC_RESP.value, msgspec.msgpack.encode(resp)
-        )
+    # --- MQTT Handlers ---
 
-    async def handle_poll(self, seq_id: int, payload: bytes) -> bool:
-        """Handle CMD_PROCESS_POLL from MCU."""
-        try:
-            packet = msgspec.msgpack.decode(payload, type=ShellPidPayload)
-            pid = packet.pid
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed ShellPidPayload: %s", e)
-            return False
-
-        exit_code = self.state.process_exit_codes.get(pid, -1)
-        resp = msgspec.msgpack.encode({"pid": pid, "exit_code": exit_code})
-        return await self.serial_flow.send(Command.CMD_PROCESS_POLL_RESP.value, resp)
-
-    async def handle_kill(self, seq_id: int, payload: bytes) -> bool | None:
-        """Handle CMD_PROCESS_KILL from MCU."""
-        try:
-            packet = msgspec.msgpack.decode(payload, type=ShellPidPayload)
-            pid = packet.pid
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed kill payload from MCU: %s", e)
-            return False
-
-        if await self.stop_process(pid):
-            return await self.serial_flow.send(Status.OK.value, b"")
-        return await self.serial_flow.send(Status.ERROR.value, b"")
-
-    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        """Process inbound MQTT requests for shell operations."""
-        action = route.identifier
-        try:
-            match action:
-                case ShellAction.RUN_ASYNC:
-                    try:
-                        payload = msgspec.convert(inbound.payload, bytes).decode()
-                        pid = await self.run_async(payload, inbound)
-                        await self._publish_pid(inbound, pid)
-                        return True
-                    except (ValueError, UnicodeDecodeError) as e:
-                        logger.warning("Malformed MQTT shell run request: %s", e)
-                        return True
-
-                case ShellAction.KILL:
-                    try:
-                        payload = msgspec.convert(inbound.payload, bytes).decode()
-                        pid = int(payload)
-                        await self.stop_process(pid)
-                        return True
-                    except (ValueError, UnicodeDecodeError):
-                        return False
-                case _:
-                    return False
-        except Exception as e:
-            logger.error("Error processing MQTT shell action %s: %s", action, e)
-            await self.enqueue_mqtt(
-                QueuedPublish(
-                    topic_name=topic_path(
-                        self.state.mqtt_topic_prefix,
-                        Topic.SHELL,
-                        action,
-                        protocol.MQTT_SUFFIX_RESPONSE,
-                    ),
-                    payload=b"error:internal",
-                ),
-                reply_context=inbound,
-            )
+    async def handle_mqtt(
+        self,
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        """Handle shell-related MQTT topics."""
+        segments = list(route.segments)
+        payload = msgspec.convert(inbound.payload, bytes)
+        if not segments:
             return True
-        return False
 
-    async def run_async(self, command: str, inbound: Message | None = None) -> int:
-        if self._process_slots.locked():
-            logger.warning("Concurrency limit reached; rejecting process run.")
-            return 0
+        action = segments[0]
 
-        # [SIL-2] Shell security validation
-        if not self.state.allowed_policy.is_allowed(command):
-            logger.warning("Security Block: Command not allowed by policy: %s", command)
-            return 0
+        match action:
+            case ShellAction.RUN_ASYNC:
+                try:
+                    if not payload:
+                        raise ValueError("Shell command payload is empty")
+                    try:
+                        payload_model = msgspec.msgpack.decode(
+                            payload, type=ShellCommandPayload
+                        )
+                        if not payload_model.command.strip():
+                            raise ValueError("Shell command payload is empty")
+                    except (msgspec.DecodeError, msgspec.ValidationError):
+                        text = payload.decode("utf-8", errors="ignore").strip()
+                        if not text:
+                            raise ValueError("Shell command payload is empty")
+                        payload_model = msgspec.convert(
+                            {"command": text}, ShellCommandPayload
+                        )
+                    await self._handle_mqtt_run_async(payload_model, inbound)
+                except (ValueError, msgspec.ValidationError) as exc:
+                    logger.warning(
+                        "Invalid shell/%s payload: %s",
+                        action,
+                        exc,
+                    )
 
-        await self._process_slots.acquire()
-        async with self.state.process_lock:
-            pid = self.state.next_pid
-            self.state.next_pid += 1
+            case ShellAction.POLL if len(segments) == 2:
+                try:
+                    pid = int(segments[1], 10)
+                    pid_model = msgspec.convert(
+                        {"pid": pid}, ShellPidPayload, strict=True
+                    )
+                    await self._handle_mqtt_poll(pid_model, inbound)
+                except (ValueError, msgspec.ValidationError) as exc:
+                    logger.warning(
+                        "Invalid shell/%s PID: %s",
+                        action,
+                        exc,
+                    )
 
-        asyncio.get_running_loop().create_task(
-            self._supervise_process(pid, command, inbound)
-        )
-        return pid
+            case ShellAction.KILL if len(segments) == 2:
+                try:
+                    pid = int(segments[1], 10)
+                    pid_model = msgspec.convert(
+                        {"pid": pid}, ShellPidPayload, strict=True
+                    )
+                    await self._handle_mqtt_kill(pid_model, inbound)
+                except (ValueError, msgspec.ValidationError) as exc:
+                    logger.warning(
+                        "Invalid shell/%s PID: %s",
+                        action,
+                        exc,
+                    )
 
-    async def stop_process(self, pid: int) -> bool:
-        async with self.state.process_lock:
-            proc = self.state.running_processes.get(pid)
-            if proc:
-                proc.terminate()
-                return True
-        return False
+            case _:
+                logger.debug(
+                    "Ignoring shell topic action: %s",
+                    "/".join(segments),
+                )
+        return True
 
-    async def _supervise_process(
-        self, pid: int, command: str, inbound: Message | None = None
+    async def _handle_mqtt_run_async(
+        self,
+        payload: ShellCommandPayload,
+        inbound: Message | None,
     ) -> None:
+        command = payload.command
+        logger.info("MQTT async shell command: '%s'", command)
         try:
-            import shlex
-
-            args = shlex.split(command)
-            proc = await asyncio.create_subprocess_exec(
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-
-            async with self.state.process_lock:
-                self.state.running_processes[pid] = proc
-
-            # Start IO monitoring
-            await self._monitor_output(pid, proc, inbound)
-
-            exit_code = await proc.wait()
-            async with self.state.process_lock:
-                self.state.process_exit_codes[pid] = exit_code
-                self.state.running_processes.pop(pid, None)
-
-        except (OSError, RuntimeError) as e:
-            logger.error("Failed to execute process %d: %s", pid, e)
+            pid = await self.run_async(command)
+        except (OSError, ValueError, RuntimeError) as exc:
+            logger.error("Error starting async command: %s", exc)
             response_topic = topic_path(
                 self.state.mqtt_topic_prefix,
                 Topic.SHELL,
                 ShellAction.RUN_ASYNC,
                 "error",
             )
-            await self.enqueue_mqtt(
+            await self.mqtt_flow.enqueue_mqtt(
                 QueuedPublish(
                     topic_name=response_topic,
                     payload=b"error:internal",
                 ),
                 reply_context=inbound,
             )
-
-        finally:
-            self._process_slots.release()
-
-    async def _monitor_output(
-        self, pid: int, proc: asyncio.subprocess.Process, inbound: Message | None
-    ) -> None:
-        if proc.stdout is None:
             return
 
-        batch_topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SHELL,
-            ShellAction.RUN_ASYNC,
-            "stdout",
-            str(pid),
-        )
-
-        try:
-            while True:
-                # [SIL-2] Read with limit to prevent memory exhaustion
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-
-                # [SIL-2] Using direct dict for ad-hoc async output
-                payload = msgspec.msgpack.encode({"pid": pid, "data": line})
-                await self.enqueue_mqtt(
-                    QueuedPublish(
-                        topic_name=batch_topic,
-                        payload=payload,
-                    ),
-                    reply_context=inbound,
-                )
-
-        except (OSError, RuntimeError) as e:
-            logger.error("IO error monitoring process %d: %s", pid, e)
-
-    async def _publish_pid(self, inbound: Message, pid: int) -> None:
         response_topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
@@ -242,7 +168,7 @@ class ProcessComponent:
         )
 
         if pid == 0:
-            await self.enqueue_mqtt(
+            await self.mqtt_flow.enqueue_mqtt(
                 QueuedPublish(
                     topic_name=response_topic,
                     payload=b"error:not_allowed_or_limit_reached",
@@ -251,7 +177,7 @@ class ProcessComponent:
             )
             return
 
-        await self.enqueue_mqtt(
+        await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
                 payload=str(pid).encode("utf-8"),
@@ -259,5 +185,352 @@ class ProcessComponent:
             reply_context=inbound,
         )
 
+    async def _handle_mqtt_poll(
+        self, pid_model: ShellPidPayload, inbound: Message | None = None
+    ) -> None:
+        pid = pid_model.pid
+        batch = await self.poll_process(pid)
+        await self.publish_poll_result(pid, batch, inbound)
 
-__all__ = ["ProcessComponent"]
+    async def _handle_mqtt_kill(
+        self, pid_model: ShellPidPayload, inbound: Message | None = None
+    ) -> None:
+        await self.stop_process(pid_model.pid)
+
+    # --- MCU Handlers (Required by Dispatcher) ---
+
+    async def handle_run_async(self, seq_id: int, payload: bytes) -> None:
+        """Handle async process execution request from MCU."""
+        try:
+            packet = msgspec.msgpack.decode(
+                payload, type=structures.ProcessRunAsyncPacket
+            )
+            command = packet.command
+
+            if not command:
+                await self.serial_flow.acknowledge(
+                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                    seq_id,
+                    status=Status.MALFORMED,
+                )
+                return
+
+            # 2. Policy check
+            if not self.state.allowed_policy.is_allowed(command):
+                logger.warning("Process execution denied by policy: %s", command)
+                await self.serial_flow.acknowledge(
+                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                    seq_id,
+                    status=Status.ERROR,
+                )
+                return
+
+            # 3. Execution
+            pid = await self.run_async(command)
+            if pid > 0:
+                await self.serial_flow.acknowledge(
+                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                    seq_id,
+                    status=Status.OK,
+                )
+                resp = msgspec.msgpack.encode(
+                    structures.ProcessRunAsyncResponsePacket(pid=pid)
+                )
+                await self.serial_flow.send(
+                    protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
+                    resp,
+                )
+            else:
+                await self.serial_flow.acknowledge(
+                    protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                    seq_id,
+                    status=Status.ERROR,
+                )
+        except (
+            msgspec.ValidationError,
+            msgspec.DecodeError,
+            ValueError,
+            AttributeError,
+        ):
+            await self.serial_flow.acknowledge(
+                protocol.Command.CMD_PROCESS_RUN_ASYNC.value,
+                seq_id,
+                status=Status.MALFORMED,
+            )
+
+    async def handle_poll(self, seq_id: int, payload: bytes) -> None:
+        """Handle process poll request from MCU."""
+        try:
+            packet = msgspec.msgpack.decode(payload, type=structures.ProcessPollPacket)
+            pid = packet.pid
+
+            batch = await self.poll_process(pid)
+            await self.serial_flow.acknowledge(
+                protocol.Command.CMD_PROCESS_POLL.value,
+                seq_id,
+                status=Status.OK,
+            )
+            resp = msgspec.msgpack.encode(
+                structures.ProcessPollResponsePacket(
+                    status=batch.status_byte,
+                    exit_code=batch.exit_code,
+                    stdout_data=batch.stdout_chunk,
+                    stderr_data=batch.stderr_chunk,
+                )
+            )
+            await self.serial_flow.send(
+                protocol.Command.CMD_PROCESS_POLL_RESP.value,
+                resp,
+            )
+        except (msgspec.ValidationError, ValueError, AttributeError):
+            await self.serial_flow.acknowledge(
+                protocol.Command.CMD_PROCESS_POLL.value,
+                seq_id,
+                status=Status.MALFORMED,
+            )
+
+    async def handle_kill(
+        self, seq_id: int, payload: bytes, *, send_ack: bool = True
+    ) -> bool:
+        """Handle process termination request."""
+        try:
+            packet = msgspec.msgpack.decode(payload, type=structures.ProcessKillPacket)
+            pid = packet.pid
+
+            success = await self.stop_process(pid)
+            if send_ack:
+                await self.serial_flow.acknowledge(
+                    protocol.Command.CMD_PROCESS_KILL.value,
+                    seq_id,
+                    status=Status.OK if success else Status.ERROR,
+                )
+            return success
+        except (msgspec.ValidationError, ValueError, AttributeError):
+            if send_ack:
+                await self.serial_flow.acknowledge(
+                    protocol.Command.CMD_PROCESS_KILL.value,
+                    seq_id,
+                    status=Status.MALFORMED,
+                )
+            return False
+
+    # --- Core Logic ---
+
+    async def run_async(self, command: str) -> int:
+        """Start a command asynchronously using native asyncio subprocess."""
+        if not self.state.allowed_policy.is_allowed(command):
+            logger.warning("Process execution denied by policy: %s", command)
+            return 0
+
+        # [SIL-2] Wait for an available process slot
+        await self._process_slots.acquire()
+
+        try:
+            # [SIL-2] Use native asyncio subprocess for zero-thread execution
+            # and deterministic lifecycle.
+            import shlex
+
+            args = shlex.split(command)
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+
+            # Use OS PID directly (guaranteed < 65536 on OpenWrt/standard Linux)
+            pid = process.pid & 0xFFFF
+
+            async with self.state.process_lock:
+                self.state.running_processes[pid] = process
+                self.state.process_io_locks[pid] = asyncio.Lock()
+                self.state.process_exit_codes[pid] = 0
+
+            # Spawn monitor task for completion/timeout only
+            asyncio.create_task(self._monitor_process(pid))
+            return pid
+
+        except (OSError, ValueError, RuntimeError) as exc:
+            logger.error("Failed to spawn process: %s", exc)
+            self._process_slots.release()
+            return 0
+
+    async def _monitor_process(self, pid: int) -> None:
+        """Monitor process lifecycle with safety timeouts to prevent slot deadlocks."""
+        try:
+            async with self.state.process_lock:
+                handle = self.state.running_processes.get(pid)
+
+            if handle:
+                # [SIL-2] Non-blocking wait for process exit
+                try:
+                    exit_code = await asyncio.wait_for(
+                        handle.wait(), timeout=float(self.state.process_timeout)
+                    )
+                    self.state.process_exit_codes[pid] = exit_code
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Process %d monitor timed out; forcing finalization", pid
+                    )
+                    with contextlib.suppress(OSError):
+                        handle.kill()
+                    self.state.process_exit_codes[pid] = -1
+        finally:
+            self._finalize_process_internal(pid)
+
+    def _is_drained(self, handle: asyncio.subprocess.Process | None) -> bool:
+        """[SIL-2] Non-blocking EOF check using native library state."""
+        if not handle:
+            return True
+
+        # Process is considered drained only if it's finished and IO is EOF
+        if handle.returncode is None:
+            return False
+
+        out_eof = getattr(handle.stdout, "at_eof", lambda: True)()
+        err_eof = getattr(handle.stderr, "at_eof", lambda: True)()
+        return out_eof and err_eof
+
+    async def poll_process(self, pid: int) -> ProcessOutputBatch:
+        """Fetch pending output and status for a running process."""
+        async with self.state.process_lock:
+            handle = self.state.running_processes.get(pid)
+            io_lock = self.state.process_io_locks.get(pid)
+            exit_code = self.state.process_exit_codes.get(pid, 0)
+
+            if not handle or not io_lock:
+                return ProcessOutputBatch(
+                    Status.ERROR.value, 1, b"", b"", True, False, False
+                )
+
+            async with io_lock:
+                budget = protocol.MAX_PAYLOAD_SIZE - 32
+
+                async def _read_stream(
+                    stream: asyncio.StreamReader | None,
+                ) -> tuple[bytes, bool]:
+                    if not stream or stream.at_eof():
+                        return b"", False
+                    try:
+                        # Use direct read natively instead of intermediate deque
+                        chunk = await asyncio.wait_for(
+                            stream.read(budget), timeout=0.01
+                        )
+                        return chunk, not stream.at_eof()
+                    except asyncio.TimeoutError:
+                        return b"", True
+
+                stdout_chunk, t_out = await _read_stream(handle.stdout)
+                stderr_chunk, t_err = await _read_stream(handle.stderr)
+
+                is_finished = handle.returncode is not None
+
+                batch = ProcessOutputBatch(
+                    Status.OK.value,
+                    exit_code,
+                    stdout_chunk,
+                    stderr_chunk,
+                    is_finished,
+                    t_out,
+                    t_err,
+                )
+                if is_finished and self._is_drained(handle):
+                    self._finalize_process_internal(pid)
+                return batch
+
+    async def stop_process(self, pid: int) -> bool:
+        """Terminate a running process and its children recursively."""
+        import psutil
+
+        async with self.state.process_lock:
+            handle = self.state.running_processes.get(pid)
+            if not handle:
+                return False
+
+        # [SIL-2] Reliably terminate a process and all its children.
+        # Uses psutil directly for atomic tree traversal and signal mapping.
+        try:
+            parent = psutil.Process(handle.pid)
+            children = parent.children(recursive=True)
+            all_procs = children + [parent]
+
+            # 1. Terminate all
+            for p in all_procs:
+                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                    p.terminate()
+
+            # 2. Wait for termination
+            _, alive = psutil.wait_procs(all_procs, timeout=3.0)
+
+            # 3. Force kill survivors
+            for p in alive:
+                with contextlib.suppress(psutil.NoSuchProcess, ProcessLookupError):
+                    logger.warning("Force killing zombie process %d", p.pid)
+                    p.kill()
+
+        except (psutil.NoSuchProcess, ProcessLookupError):
+            pass
+        except (psutil.Error, RuntimeError) as e:
+            logger.error(
+                "Error during process tree cleanup (pid=%d): %s",
+                handle.pid,
+                e,
+                exc_info=True,
+            )
+
+        # Update exit code manually since psutil logic above is synchronous
+        # but the actual process object (handle) might still need its state updated
+        # in the asyncio loop.
+        async with self.state.process_lock:
+            if pid in self.state.running_processes:
+                self.state.process_exit_codes[pid] = getattr(handle, "returncode", -1)
+
+        await self._finalize_process(pid)
+        return True
+
+    async def publish_poll_result(
+        self,
+        pid: int,
+        batch: ProcessOutputBatch,
+        inbound: Message | None = None,
+    ) -> None:
+        """Publish process output batch to MQTT."""
+        response_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SHELL,
+            protocol.ShellAction.POLL,
+            str(pid),
+            protocol.MQTT_SUFFIX_RESPONSE,
+        )
+
+        reply_topic = None
+        correlation_data = None
+        if inbound and inbound.properties:
+            reply_topic = getattr(inbound.properties, "ResponseTopic", None)
+            correlation_data = getattr(inbound.properties, "CorrelationData", None)
+
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=response_topic,
+                payload=_msgpack_enc.encode(batch),
+                content_type="application/msgpack",
+                response_topic=reply_topic,
+                correlation_data=correlation_data,
+            )
+        )
+
+    async def _finalize_process(self, pid: int) -> None:
+        async with self.state.process_lock:
+            self._finalize_process_internal(pid)
+
+    def _finalize_process_internal(self, pid: int) -> None:
+        handle = self.state.running_processes.pop(pid, None)
+        self.state.process_io_locks.pop(pid, None)
+        # Note: We keep the exit code in self.state.process_exit_codes until
+        # specifically cleared or overwritten, allowing asynchronous status
+        # retrieval after process termination.
+        if handle:
+            self._process_slots.release()
+
+
+__all__ = ["ProcessComponent", "ProcessOutputBatch"]

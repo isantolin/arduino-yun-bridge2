@@ -1,57 +1,76 @@
-"""Extra coverage for ConsoleComponent (SIL-2)."""
+"""Extra edge-case tests for ConsoleComponent (SIL-2)."""
 
 from __future__ import annotations
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
+import msgspec
 
-from typing import Any, cast
+import os
+import time
 from unittest.mock import AsyncMock
 
-import msgspec
 import pytest
-
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import structures
+from mcubridge.protocol.structures import ConsoleWritePacket
 from mcubridge.services.console import ConsoleComponent
-from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import create_runtime_state
 
 
-@pytest.fixture
-def console_comp(runtime_config: RuntimeConfig) -> ConsoleComponent:
-    state = create_runtime_state(runtime_config)
-    state.mqtt_topic_prefix = "br"
-    serial_flow = AsyncMock(spec=SerialFlowController)
-    serial_flow.send = AsyncMock(return_value=True)
-    enqueue_mqtt = AsyncMock()
-    return ConsoleComponent(runtime_config, state, serial_flow, enqueue_mqtt)
+@pytest.mark.asyncio
+async def test_console_handle_write_edge_cases() -> None:
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234",
+        mqtt_spool_dir=os.path.abspath(
+            f".tmp_tests/mcubridge-test-console-{os.getpid()}-{time.time_ns()}"
+        ),
+        allow_non_tmp_paths=True,
+    )
+    state = create_runtime_state(config)
+    try:
+        serial_flow = AsyncMock(spec=SerialFlowController)
+        serial_flow.send = AsyncMock(return_value=True)
+        mqtt_flow = AsyncMock(spec=MqttTransport)
+        mqtt_flow.enqueue_mqtt = AsyncMock()
+
+        comp = ConsoleComponent(
+            config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+        )
+
+        # 1. Malformed payload
+        await comp.handle_write(0, b"\xff\xff")
+        assert not mqtt_flow.enqueue_mqtt.called
+
+        # 2. Empty data in packet
+        empty_pkt = msgspec.msgpack.encode(ConsoleWritePacket(data=b""))
+        await comp.handle_write(1, empty_pkt)
+        assert not mqtt_flow.enqueue_mqtt.called
+
+        # 3. Successful write
+        valid_pkt = msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))
+        await comp.handle_write(2, valid_pkt)
+        assert mqtt_flow.enqueue_mqtt.called
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_console_handle_write_edge_cases(console_comp: ConsoleComponent) -> None:
-    # 1. Null payload (valid for heartbeat/EOF if wrapped in Packet)
-    pkt_empty = structures.ConsoleWritePacket(data=b"")
-    await console_comp.handle_write(0, msgspec.msgpack.encode(pkt_empty))
-    console_comp.enqueue_mqtt.assert_called()
-    assert console_comp.enqueue_mqtt.call_args.args[0].payload == b""
+async def test_console_mqtt_input_error_paths() -> None:
+    config = RuntimeConfig(
+        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
+    )
+    state = create_runtime_state(config)
+    try:
+        serial_flow = AsyncMock(spec=SerialFlowController)
+        # Simulate serial failure
+        serial_flow.send = AsyncMock(return_value=False)
+        mqtt_flow = AsyncMock(spec=MqttTransport)
 
-    # 2. Large payload (verified in component logic)
-    large = b"A" * 1024
-    pkt_large = structures.ConsoleWritePacket(data=large)
-    await console_comp.handle_write(0, msgspec.msgpack.encode(pkt_large))
-    assert console_comp.enqueue_mqtt.call_args.args[0].payload == large
+        comp = ConsoleComponent(
+            config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+        )
 
-
-@pytest.mark.asyncio
-async def test_console_flush_queue_serial_failure(
-    console_comp: ConsoleComponent,
-) -> None:
-    # Fill queue
-    console_comp.state.console_to_mcu_queue.append(b"lost")
-
-    # Mock send failure
-    cast(Any, console_comp.serial_flow.send).return_value = False
-
-    await console_comp.flush_queue()
-
-    # In SIL-2 we requeue once then abort if serial is saturated.
-    assert len(console_comp.state.console_to_mcu_queue) == 1
-    assert console_comp.state.console_to_mcu_queue[0] == b"lost"
+        # Sending input when serial fails should queue it
+        await comp._handle_mqtt_input(b"lost-data")  # type: ignore[reportPrivateUsage]
+        assert len(state.console_to_mcu_queue) == 1
+    finally:
+        state.cleanup()

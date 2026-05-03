@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import collections
+import contextlib
 import msgspec
 import structlog
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from aiomqtt.message import Message
-from ..protocol.protocol import Command, SystemAction
-from ..protocol.structures import (
+from ..protocol import protocol
+from mcubridge.protocol.protocol import Command, SystemAction
+from mcubridge.protocol.structures import (
     EnterBootloaderPacket,
     FreeMemoryResponsePacket,
     QueuedPublish,
@@ -21,6 +23,7 @@ from ..config.const import MQTT_EXPIRY_DATASTORE, MQTT_EXPIRY_DEFAULT
 from ..protocol.topics import Topic, topic_path
 
 if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
@@ -36,12 +39,12 @@ class SystemComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        enqueue_mqtt: Any,
+        mqtt_flow: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state
         self.serial_flow = serial_flow
-        self.enqueue_mqtt = enqueue_mqtt
+        self.mqtt_flow = mqtt_flow
         self._pending_free_memory: collections.deque[Message] = collections.deque()
         self._pending_version: collections.deque[Message] = collections.deque()
 
@@ -52,48 +55,23 @@ class SystemComponent:
         if inbound is not None:
             self._pending_version.append(inbound)
 
-        self.state.mcu_version = None
-        return await self.serial_flow.send(Command.CMD_GET_VERSION.value, b"")
+        ok = await self.serial_flow.send(Command.CMD_GET_VERSION.value, b"")
+        if ok:
+            self.state.mcu_version = None
+        else:
+            if inbound is not None:
+                with contextlib.suppress(ValueError):
+                    self._pending_version.remove(inbound)
+        return ok
 
-    async def handle_get_version_resp(self, _: int, payload: bytes) -> bool:
-        try:
-            packet = msgspec.msgpack.decode(payload, type=VersionResponsePacket)
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed VersionResponsePacket: %s", e)
-            return False
-
-        major, minor, patch = packet.major, packet.minor, packet.patch
-        self.state.mcu_version = (major, minor, patch)
-        logger.info("MCU Version confirmed: %d.%d.%d", major, minor, patch)
-
-        topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SYSTEM,
-            SystemAction.VERSION,
-            SystemAction.VALUE,
-        )
-        reply_context = (
-            self._pending_version.popleft() if self._pending_version else None
-        )
-
-        # Direct call to mqtt_flow.enqueue_mqtt
-        payload_bytes = f"{major}.{minor}.{patch}".encode("utf-8")
-        await self.enqueue_mqtt(
-            QueuedPublish(
-                topic_name=topic,
-                payload=payload_bytes,
-                message_expiry_interval=MQTT_EXPIRY_DATASTORE,
-            ),
-            reply_context=reply_context,
-        )
-        return True
-
-    async def handle_get_free_memory_resp(self, _: int, payload: bytes) -> bool:
+    async def handle_get_free_memory_resp(self, seq_id: int, payload: bytes) -> None:
         try:
             packet = msgspec.msgpack.decode(payload, type=FreeMemoryResponsePacket)
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed FreeMemoryResponsePacket: %s", e)
-            return False
+        except (ValueError, msgspec.MsgspecError):
+            logger.warning(
+                "Malformed FreeMemoryResponsePacket payload: %s", payload.hex()
+            )
+            return
 
         topic = topic_path(
             self.state.mqtt_topic_prefix,
@@ -105,43 +83,116 @@ class SystemComponent:
             self._pending_free_memory.popleft() if self._pending_free_memory else None
         )
         # Direct call to mqtt_flow.enqueue_mqtt
-        await self.enqueue_mqtt(
+        await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=topic,
                 payload=str(packet.value).encode("utf-8"),
                 message_expiry_interval=MQTT_EXPIRY_DEFAULT,
-            ),
-            reply_context=reply_context,
+            )
         )
-        return True
+        if reply_context is not None:
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=topic,
+                    payload=str(packet.value).encode("utf-8"),
+                    message_expiry_interval=MQTT_EXPIRY_DEFAULT,
+                ),
+                reply_context=reply_context,
+            )
 
-    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        action = route.identifier
-        match action:
-            case SystemAction.FREE_MEMORY:
-                if len(self._pending_free_memory) < 10:
-                    self._pending_free_memory.append(inbound)
-                    return await self.serial_flow.send(
-                        Command.CMD_GET_FREE_MEMORY.value, b""
-                    )
-                return True
-            case SystemAction.VERSION:
-                return await self.request_mcu_version(inbound)
+    async def handle_get_version_resp(self, seq_id: int, payload: bytes) -> None:
+        try:
+            packet = msgspec.msgpack.decode(payload, type=VersionResponsePacket)
+        except (ValueError, msgspec.MsgspecError):
+            logger.warning("Malformed VersionResponsePacket payload: %s", payload.hex())
+            return
+
+        major, minor, patch = packet.major, packet.minor, packet.patch
+        self.state.mcu_version = (major, minor, patch)
+        reply_context = (
+            self._pending_version.popleft() if self._pending_version else None
+        )
+        await self._publish_version((major, minor, patch), reply_context)
+        logger.info("MCU firmware version reported as %d.%d.%d", major, minor, patch)
+
+    async def _publish_version(
+        self,
+        version: tuple[int, int, int],
+        reply_context: Message | None = None,
+    ) -> None:
+        major, minor, patch = version
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            SystemAction.VERSION,
+            SystemAction.VALUE,
+        )
+        # Direct call to mqtt_flow.enqueue_mqtt
+        payload_bytes = f"{major}.{minor}.{patch}".encode("utf-8")
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic,
+                payload=payload_bytes,
+                message_expiry_interval=MQTT_EXPIRY_DATASTORE,
+            )
+        )
+        if reply_context is not None:
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=topic,
+                    payload=payload_bytes,
+                    message_expiry_interval=MQTT_EXPIRY_DATASTORE,
+                ),
+                reply_context=reply_context,
+            )
+
+    async def handle_mqtt(
+        self,
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        identifier = route.identifier
+        remainder = list(route.remainder)
+        match identifier:
             case SystemAction.BOOTLOADER:
-                try:
-                    # [SIL-2] Use converted bytes to match msgspec schema
-                    payload = msgspec.convert(inbound.payload, bytes)
-                    packet = msgspec.msgpack.decode(payload, type=EnterBootloaderPacket)
-                    return await self.serial_flow.send(
-                        Command.CMD_ENTER_BOOTLOADER.value,
-                        msgspec.msgpack.encode(packet),
-                    )
-                except (ValueError, msgspec.MsgspecError) as e:
-                    logger.warning("Malformed EnterBootloader request: %s", e)
-                    return True
+                packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
+                logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
+                return await self.serial_flow.send(
+                    Command.CMD_ENTER_BOOTLOADER.value, msgspec.msgpack.encode(packet)
+                )
+
+            case SystemAction.FREE_MEMORY:
+                if not (remainder and remainder[0] == SystemAction.GET):
+                    return False
+
+                if len(self._pending_free_memory) >= 10:
+                    return False
+
+                self._pending_free_memory.append(inbound)
+                ok = await self.serial_flow.send(Command.CMD_GET_FREE_MEMORY.value, b"")
+                if not ok:
+                    with contextlib.suppress(ValueError, IndexError):
+                        self._pending_free_memory.pop()
+                return ok
+
+            case SystemAction.VERSION:
+                if not (remainder and remainder[0] == SystemAction.GET):
+                    return False
+                cached_version = self.state.mcu_version
+                if cached_version is not None:
+                    await self._publish_version(cached_version, inbound)
+
+                # Always request fresh version to sync cache
+                send_ok = await self.request_mcu_version(inbound)
+
+                if cached_version is not None:
+                    # Also broadcast current cached value
+                    await self._publish_version(cached_version)
+
+                return send_ok
+
             case _:
                 return False
-        return False
 
 
 __all__ = ["SystemComponent"]

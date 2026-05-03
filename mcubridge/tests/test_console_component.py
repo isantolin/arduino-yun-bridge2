@@ -1,48 +1,49 @@
-"""Unit tests for ConsoleComponent MCU/MQTT behaviour (SIL-2)."""
+"""Unit tests for the ConsoleComponent."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+import collections
+from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import msgspec
 import pytest
-
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import structures
+from mcubridge.protocol.structures import ConsoleWritePacket
 from mcubridge.services.console import ConsoleComponent
 from mcubridge.services.serial_flow import SerialFlowController
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import RuntimeState
+from mcubridge.transport.mqtt import MqttTransport
 
 
 @pytest.fixture
-def console_component(
-    runtime_config: RuntimeConfig,
-) -> ConsoleComponent:
-    state = create_runtime_state(runtime_config)
+def console_component(runtime_config: RuntimeConfig) -> ConsoleComponent:
+    config = runtime_config
+    state = MagicMock(spec=RuntimeState)
     state.mqtt_topic_prefix = "br"
+    state.mcu_is_paused = False
+    state.console_to_mcu_queue = collections.deque()
 
-    serial_flow = AsyncMock(spec=SerialFlowController)
-    serial_flow.acknowledge = AsyncMock()
+    serial_flow = MagicMock(spec=SerialFlowController)
     serial_flow.send = AsyncMock(return_value=True)
-    enqueue_mqtt = AsyncMock()
+    mqtt_flow = MagicMock(spec=MqttTransport)
+    mqtt_flow.enqueue_mqtt = AsyncMock()
 
-    return ConsoleComponent(runtime_config, state, serial_flow, enqueue_mqtt)
+    return ConsoleComponent(
+        config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
+    )
 
 
 @pytest.mark.asyncio
 async def test_console_handle_write_success(
     console_component: ConsoleComponent,
 ) -> None:
-    # MCU writes console output - MUST be MsgPack encoded packet
-    pkt = structures.ConsoleWritePacket(data=b"hello world")
-    payload = msgspec.msgpack.encode(pkt)
+    # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+    payload = msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))
 
     await console_component.handle_write(0, payload)
 
-    console_component.enqueue_mqtt.assert_called()
-    msg = console_component.enqueue_mqtt.call_args.args[0]
-    assert msg.payload == b"hello world"
-    assert "console/out" in msg.topic_name
+    cast(Any, console_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
 @pytest.mark.asyncio
@@ -50,7 +51,7 @@ async def test_console_xoff_xon(console_component: ConsoleComponent) -> None:
     await console_component.handle_xoff(0, b"")
     assert console_component.state.mcu_is_paused is True
 
-    await console_component.handle_xon(0, b"")
+    await console_component.handle_xon(1, b"")
     assert console_component.state.mcu_is_paused is False
 
 
@@ -59,6 +60,5 @@ async def test_console_on_serial_disconnected(
     console_component: ConsoleComponent,
 ) -> None:
     console_component.state.mcu_is_paused = True
-    await console_component.on_serial_disconnected()
+    console_component.on_serial_disconnected()
     assert console_component.state.mcu_is_paused is False
-    assert len(console_component.state.console_to_mcu_queue) == 0

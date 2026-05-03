@@ -1,0 +1,268 @@
+from mcubridge.transport.mqtt import MqttTransport
+from typing import Any
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import create_runtime_state
+from mcubridge.transport.serial import SerialTransport
+
+
+def _make_config() -> RuntimeConfig:
+    import os
+    import time
+
+    fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
+    spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
+    return RuntimeConfig(
+        serial_port="/dev/test0",
+        mqtt_topic="br",
+        allowed_commands=(),
+        process_timeout=5,
+        reconnect_delay=1,
+        serial_shared_secret=b"valid_secret_1234",
+        file_system_root=fs_root,
+        mqtt_spool_dir=spool_dir,
+        allow_non_tmp_paths=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_negotiate_baudrate_success() -> None:
+    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection"
+    with patch(patch_path, new_callable=AsyncMock) as mock_open:
+        mock_reader = AsyncMock(spec=asyncio.StreamReader)
+        mock_writer = AsyncMock(spec=asyncio.StreamWriter)
+        mock_writer.is_closing.return_value = False
+        mock_open.return_value = (mock_reader, mock_writer)
+
+        config = _make_config()
+        state = create_runtime_state(config)
+        try:
+            service = BridgeService(config, state, MqttTransport(config, state))
+            transport = SerialTransport(config, state, service)
+
+            transport.loop = asyncio.get_running_loop()
+
+            # Mock send to avoid real I/O and return True
+            async def mock_send(cmd: Any, payload: Any):
+                neg = transport._negotiation_future  # type: ignore[reportPrivateUsage]
+                if neg and not neg.done():
+                    neg.set_result(True)
+                return True
+
+            transport.send = mock_send  # type: ignore[reportAttributeAccessIssue]
+
+            ok = await transport._negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
+            assert ok is True
+        finally:
+            state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_negotiate_baudrate_timeout() -> None:
+    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection"
+    with patch(patch_path, new_callable=AsyncMock) as mock_open:
+        mock_reader = AsyncMock(spec=asyncio.StreamReader)
+        mock_writer = AsyncMock(spec=asyncio.StreamWriter)
+        mock_writer.is_closing.return_value = False
+        mock_open.return_value = (mock_reader, mock_writer)
+
+        config = _make_config()
+        state = create_runtime_state(config)
+        try:
+            service = BridgeService(config, state, MqttTransport(config, state))
+            transport = SerialTransport(config, state, service)
+
+            transport.loop = asyncio.get_running_loop()
+
+            # Mock sender to succeed but don't resolve future
+            transport.send = AsyncMock(return_value=True)  # type: ignore[reportAttributeAccessIssue]
+
+            # Mock sleep to avoid waiting
+            with patch("asyncio.sleep", AsyncMock()):
+                ok = await transport._negotiate_baudrate(115200)  # type: ignore[reportPrivateUsage]
+                assert ok is False
+        finally:
+            state.cleanup()
+
+
+@pytest.mark.timeout(5)
+@pytest.mark.asyncio
+async def test_retryable_run_opens_uart_at_safe_baud() -> None:
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    # Immediately signal EOF to avoid waiting in _read_loop
+    mock_reader.readuntil.side_effect = asyncio.IncompleteReadError(b"", None)
+    mock_writer = AsyncMock(spec=asyncio.StreamWriter)
+    mock_writer.transport = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+
+    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection"
+    with patch(patch_path, new_callable=AsyncMock) as mock_open:
+        mock_open.return_value = (mock_reader, mock_writer)
+
+        config = _make_config()
+        config.serial_baud = 230400
+        config.serial_safe_baud = 115200
+        state = create_runtime_state(config)
+        try:
+            service = BridgeService(config, state, MqttTransport(config, state))
+            transport = SerialTransport(config, state, service)
+            transport.loop = asyncio.get_running_loop()
+
+            with (
+                patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
+                patch.object(
+                    transport,
+                    "_negotiate_baudrate",
+                    new_callable=AsyncMock,
+                    return_value=True,
+                ),
+                patch.object(service, "on_serial_connected", new_callable=AsyncMock),
+                patch.object(service, "on_serial_disconnected", new_callable=AsyncMock),
+            ):
+                # The test expects a failure due to EOF signal in mock_reader
+                with pytest.raises((ConnectionError, asyncio.TimeoutError)):
+                    # Global timeout to prevent test hanging CI
+                    await asyncio.wait_for(
+                        transport._connect_and_run(),  # type: ignore[reportPrivateUsage]
+                        timeout=2.0,
+                    )
+
+            assert mock_open.await_args is not None
+            assert mock_open.await_args.kwargs["baudrate"] == config.serial_safe_baud
+        finally:
+            state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_transport_run_handshake_fatal() -> None:
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    # Ensure read_loop terminates if it somehow starts
+    mock_reader.readuntil.side_effect = asyncio.IncompleteReadError(b"", None)
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.transport = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+
+    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection"
+    with patch(patch_path, new_callable=AsyncMock) as mock_open:
+        mock_open.return_value = (mock_reader, mock_writer)
+
+        config = _make_config()
+        state = create_runtime_state(config)
+        try:
+            service = BridgeService(config, state, MqttTransport(config, state))
+
+            # Force handshake fatal error
+            with (
+                patch.object(
+                    service,
+                    "on_serial_connected",
+                    side_effect=SerialHandshakeFatal("test"),
+                ),
+                patch.object(SerialTransport, "_toggle_dtr", new_callable=AsyncMock),
+            ):
+                transport = SerialTransport(config, state, service)
+                transport.loop = asyncio.get_running_loop()
+                # We need to mock the retry loop or it will keep retrying and eventually crash
+                # or just use _connect_and_run
+                with pytest.raises(SerialHandshakeFatal):
+                    await transport._connect_and_run()  # type: ignore[reportPrivateUsage]
+        finally:
+            state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_serial_disconnected_hook_error() -> None:
+    """Test on_serial_disconnected hook error is logged and handled."""
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    # Return EOF immediately to terminate loop
+    mock_reader.readuntil.side_effect = asyncio.IncompleteReadError(b"", None)
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.transport = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+
+    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection"
+    with patch(patch_path, new_callable=AsyncMock) as mock_open:
+        mock_open.return_value = (mock_reader, mock_writer)
+
+        config = _make_config()
+        state = create_runtime_state(config)
+        try:
+            service = BridgeService(config, state, MqttTransport(config, state))
+
+            # Make on_serial_disconnected raise
+            async def _raise_error() -> None:
+                raise RuntimeError("disconnected hook error")
+
+            transport = SerialTransport(config, state, service)
+            transport.loop = asyncio.get_running_loop()
+
+            with (
+                patch.object(transport, "_toggle_dtr", new_callable=AsyncMock),
+                patch.object(service, "on_serial_connected", new_callable=AsyncMock),
+                patch.object(
+                    service, "on_serial_disconnected", side_effect=_raise_error
+                ),
+                patch("mcubridge.transport.serial.logger") as mock_logger,
+            ):
+                try:
+                    # Use a timeout to ensure the test doesn't block forever
+                    await asyncio.wait_for(
+                        transport._connect_and_run(),  # type: ignore[reportPrivateUsage]
+                        timeout=5.0,
+                    )
+                except (ConnectionError, asyncio.TimeoutError, RuntimeError):
+                    pass
+
+                # Verify logger.error was called with the hook error message
+                error_calls = [
+                    c
+                    for c in mock_logger.error.call_args_list
+                    if "on_serial_disconnected" in str(c)
+                ]
+                assert error_calls
+
+        finally:
+            state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_async_process_packet_os_error() -> None:
+    """Test _async_process_packet handles OSError gracefully."""
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = BridgeService(config, state, MqttTransport(config, state))
+        transport = SerialTransport(config, state, service)
+
+        transport.loop = asyncio.get_running_loop()
+
+        # Mock handle_mcu_frame to raise OSError
+        async def _raise_os_error(cmd: int, seq: int, payload: bytes) -> None:
+            raise OSError("Device error")
+
+        service.handle_mcu_frame = _raise_os_error  # type: ignore[reportAttributeAccessIssue]
+        from cobs import cobs
+        from mcubridge.protocol.frame import Frame
+        from mcubridge.protocol.protocol import Command
+
+        frame = Frame(
+            command_id=Command.CMD_GET_VERSION.value, sequence_id=0, payload=b"\x00"
+        ).build()
+        encoded = cobs.encode(frame)
+
+        with patch("mcubridge.transport.serial.logger") as mock_logger:
+            await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
+            # Verify logger.error was called with TRANSPORT error
+            error_calls = [
+                call
+                for call in mock_logger.error.call_args_list
+                if "TRANSPORT" in str(call)
+            ]
+            assert error_calls
+    finally:
+        state.cleanup()

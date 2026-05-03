@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import structlog
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import msgspec
 from aiomqtt.message import Message
 
-from ..protocol.protocol import (
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import (
     Command,
+    MailboxAction,
     Status,
 )
-from ..protocol.structures import (
+from mcubridge.protocol.structures import (
+    AckPacket,
     MailboxAvailableResponsePacket,
     MailboxProcessedPacket,
     MailboxPushPacket,
@@ -27,6 +30,7 @@ from ..protocol.topics import (
 )
 
 if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
@@ -42,53 +46,68 @@ class MailboxComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        enqueue_mqtt: Any,
+        mqtt_flow: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state
         self.serial_flow = serial_flow
-        self.enqueue_mqtt = enqueue_mqtt
+        self.mqtt_flow = mqtt_flow
 
     async def handle_processed(self, seq_id: int, payload: bytes) -> bool:
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
-            "processed",
+            MailboxAction.PROCESSED,
         )
-        try:
-            packet = msgspec.msgpack.decode(payload, type=MailboxProcessedPacket)
-            message_id = packet.message_id
+        message_id: int | None = None
+        if len(payload) >= 2:
+            try:
+                # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+                packet = msgspec.msgpack.decode(payload, type=MailboxProcessedPacket)
+                message_id = packet.message_id
+            except ValueError as exc:
+                logger.warning("MCU > Malformed Mailbox processed payload: %s", exc)
+
+        if message_id is not None:
             # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
             body = msgspec.msgpack.encode({"message_id": message_id})
-        except (ValueError, msgspec.MsgspecError):
+        else:
             body = payload
 
-        await self.enqueue_mqtt(QueuedPublish(topic_name=topic_name, payload=body))
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(topic_name=topic_name, payload=body)
+        )
         return True
 
     async def handle_push(self, seq_id: int, payload: bytes) -> bool:
-        """Handle CMD_MAILBOX_PUSH from MCU."""
         try:
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
             packet = msgspec.msgpack.decode(payload, type=MailboxPushPacket)
-            data = packet.data
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed MailboxPushPacket: %s", e)
+        except ValueError:
+            logger.warning("Malformed MailboxPushPacket payload: %s", payload.hex())
             return False
 
-        if len(self.state.mailbox_incoming_queue) >= self.state.mailbox_queue_limit:
-            await self._report_overflow("incoming_overflow", data)
-            return True
+        data = packet.data
 
-        self.state.mailbox_incoming_queue.append(data)
+        queue = self.state.mailbox_incoming_queue
+        limit = self.state.mailbox_queue_limit
+
+        if limit > 0 and len(queue) >= limit:
+            # [SIL-2] Manual FIFO eviction to maintain deterministic queue size
+            queue.popleft()
+            self.state.mailbox_incoming_dropped_messages += 1
+            self.state.mailbox_incoming_overflow_events += 1
+
+        queue.append(data)
 
         topic = self.state.mailbox_incoming_topic or topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
-            "incoming",
+            MailboxAction.INCOMING,
         )
-        await self.enqueue_mqtt(QueuedPublish(topic_name=topic, payload=data))
+        await self.mqtt_flow.enqueue_mqtt(QueuedPublish(topic_name=topic, payload=data))
 
-        await self.enqueue_mqtt(
+        await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=topic_path(
                     self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming_available"
@@ -99,73 +118,128 @@ class MailboxComponent:
         return True
 
     async def handle_available(self, seq_id: int, payload: bytes) -> bool:
-        """Handle CMD_MAILBOX_AVAILABLE from MCU."""
+        """Handle CMD_MAILBOX_AVAILABLE."""
         if payload:
-            await self.serial_flow.send(Status.MALFORMED.value, b"")
-            return True
+            await self.serial_flow.send(
+                Status.MALFORMED.value,
+                # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+                msgspec.msgpack.encode(
+                    AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value)
+                ),
+            )
+            return False
 
-        count = len(self.state.mailbox_queue)
-        resp = MailboxAvailableResponsePacket(count=count)
-        return await self.serial_flow.send(
-            Command.CMD_MAILBOX_AVAILABLE_RESP.value, msgspec.msgpack.encode(resp)
+        queue_len = len(self.state.mailbox_queue)
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        response = msgspec.msgpack.encode(
+            MailboxAvailableResponsePacket(count=queue_len)
         )
+
+        await self.serial_flow.send(
+            Command.CMD_MAILBOX_AVAILABLE_RESP.value,
+            response,
+        )
+        return True
 
     async def handle_read(self, seq_id: int, _: bytes) -> bool:
-        """Handle CMD_MAILBOX_READ from MCU."""
-        try:
-            data = self.state.mailbox_queue.popleft()
-            resp = MailboxReadResponsePacket(content=data)
-            await self.serial_flow.send(
-                Command.CMD_MAILBOX_READ_RESP.value, msgspec.msgpack.encode(resp)
+        if not self.state.mailbox_queue:
+            message_payload = b""
+            original_payload = None
+        else:
+            try:
+                original_payload = self.state.mailbox_queue.popleft()
+                message_payload = original_payload
+            except IndexError:
+                message_payload = b""
+                original_payload = None
+
+        max_allowed = protocol.MAX_PAYLOAD_SIZE - 3
+        if len(message_payload) > max_allowed:
+            logger.warning(
+                "Mailbox message too long (%d bytes), truncating.", len(message_payload)
             )
-            await self._publish_available("available", len(self.state.mailbox_queue))
-            return True
-        except IndexError:
-            await self.serial_flow.send(Status.ERROR.value, b"")
-            return True
+            message_payload = message_payload[:max_allowed]
 
-    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        """Process inbound MQTT requests for mailbox operations."""
-        from ..protocol.protocol import MailboxAction
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        response_payload = msgspec.msgpack.encode(
+            MailboxReadResponsePacket(content=message_payload)
+        )
 
-        action = route.identifier
+        send_ok = await self.serial_flow.send(
+            Command.CMD_MAILBOX_READ_RESP.value,
+            response_payload,
+        )
+
+        if not send_ok:
+            if original_payload is not None:
+                self.state.mailbox_queue.appendleft(original_payload)
+            return False
+
+        await self._publish_available(
+            "outgoing_available", len(self.state.mailbox_queue)
+        )
+        return True
+
+    async def handle_mqtt(
+        self,
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
         payload = msgspec.convert(inbound.payload, bytes)
-
+        action = route.identifier
         match action:
             case MailboxAction.WRITE:
-                if len(self.state.mailbox_queue) >= self.state.mailbox_queue_limit:
-                    await self._report_overflow("overflow", payload, inbound)
-                    return True
-                self.state.mailbox_queue.append(payload)
-                await self._publish_available(
-                    "available", len(self.state.mailbox_queue)
-                )
-                return True
-
+                await self._handle_mqtt_write(payload, inbound)
             case MailboxAction.READ:
                 await self._handle_mqtt_read(inbound)
-                return True
-
-            case "incoming_available":
-                await self._publish_available(
-                    "incoming_available", len(self.state.mailbox_incoming_queue)
-                )
-                return True
             case _:
-                return False
+                logger.debug("Ignoring mailbox action '%s'", action)
+        return True
 
-    async def _handle_mqtt_read(self, inbound: Message) -> None:
-        topic = topic_path(
-            self.state.mqtt_topic_prefix, Topic.MAILBOX, "incoming", "resp"
+    async def _handle_mqtt_write(
+        self,
+        payload: bytes,
+        inbound: Message | None = None,
+    ) -> None:
+        queue = self.state.mailbox_queue
+        limit = self.state.mailbox_queue_limit
+
+        if limit > 0 and len(queue) >= limit:
+            # [SIL-2] Manual FIFO eviction to maintain deterministic queue size
+            queue.popleft()
+            self.state.mailbox_dropped_messages += 1
+            self.state.mailbox_outgoing_overflow_events += 1
+
+        queue.append(payload)
+
+        queue_len = len(queue)
+        logger.info(
+            "Added message to mailbox queue. Size=%d",
+            queue_len,
+            queue_len=queue_len,
+            queue_limit=limit,
+            queue_bytes_used=self.state.mailbox_queue_bytes,
         )
-        async with self.state.process_lock:
+        await self._publish_available("outgoing_available", queue_len)
+
+    async def _handle_mqtt_read(
+        self,
+        inbound: Message | None = None,
+    ) -> None:
+        topic = self.state.mailbox_incoming_topic or topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.MAILBOX,
+            MailboxAction.INCOMING,
+        )
+
+        if self.state.mailbox_incoming_queue:
             try:
                 message_payload = self.state.mailbox_incoming_queue.popleft()
             except IndexError:
                 await self._publish_available("incoming_available", 0)
                 return
             try:
-                await self.enqueue_mqtt(
+                await self.mqtt_flow.enqueue_mqtt(
                     QueuedPublish(
                         topic_name=topic,
                         payload=message_payload,
@@ -176,14 +250,76 @@ class MailboxComponent:
                 await self._publish_available(
                     "incoming_available", len(self.state.mailbox_incoming_queue)
                 )
+            return
 
-    async def _report_overflow(
-        self, suffix: str, body: bytes, inbound: Message | None = None
+        if not self.state.mailbox_queue:
+            return
+
+        try:
+            message_payload = self.state.mailbox_queue.popleft()
+        except IndexError:
+            return
+
+        try:
+            await self.mqtt_flow.enqueue_mqtt(
+                QueuedPublish(
+                    topic_name=topic,
+                    payload=message_payload,
+                ),
+                reply_context=inbound,
+            )
+        finally:
+            await self._publish_available(
+                "outgoing_available", len(self.state.mailbox_queue)
+            )
+
+    async def _handle_outgoing_overflow(
+        self,
+        payload_size: int,
+        inbound: Message | None,
     ) -> None:
-        overflow_topic = topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, suffix)
-        properties = (("bridge-error", Topic.MAILBOX.value),) if inbound else ()
+        queue_len = len(self.state.mailbox_queue)
+        logger.error(
+            "Mailbox outgoing queue full; rejecting MQTT payload (%d bytes)",
+            payload_size,
+            queue_len=queue_len,
+            queue_limit=self.state.mailbox_queue_limit,
+            queue_bytes_limit=self.state.mailbox_queue_bytes_limit,
+            queue_bytes_used=self.state.mailbox_queue_bytes,
+            payload_bytes=payload_size,
+        )
+        reason = protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW
+        await self.serial_flow.send(
+            Status.ERROR.value,
+            reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
+        )
+        await self._publish_available("outgoing_available", queue_len)
+        overflow_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.MAILBOX,
+            MailboxAction.ERRORS,
+        )
 
-        await self.enqueue_mqtt(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        body = msgspec.msgpack.encode(
+            {
+                "event": "write_overflow",
+                "reason": protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW,
+                "queue_size": queue_len,
+                "queue_limit": self.state.mailbox_queue_limit,
+                "queue_bytes_limit": self.state.mailbox_queue_bytes_limit,
+                "payload_bytes": payload_size,
+                "overflow_events": self.state.mailbox_outgoing_overflow_events,
+            }
+        )
+
+        properties: tuple[tuple[str, str], ...]
+        if inbound is not None:
+            properties = (("bridge-error", Topic.MAILBOX.value),)
+        else:
+            properties = ()
+
+        await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=overflow_topic,
                 payload=body,
@@ -193,13 +329,17 @@ class MailboxComponent:
             reply_context=inbound,
         )
 
-    async def _publish_available(self, suffix: str, count: int) -> None:
+    async def _publish_available(
+        self,
+        suffix: str,
+        count: int,
+    ) -> None:
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
             suffix,
         )
-        await self.enqueue_mqtt(
+        await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=topic_name,
                 payload=str(count).encode("utf-8"),

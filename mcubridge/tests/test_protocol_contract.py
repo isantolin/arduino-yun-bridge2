@@ -1,14 +1,53 @@
-"""Verify that every command defined in protocol has a corresponding handler in BridgeDispatcher."""
-
-from __future__ import annotations
-
+import msgspec
+from mcubridge.router.routers import MQTTRouter
 from unittest.mock import AsyncMock
-
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
+from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.services.dispatcher import BridgeDispatcher
-from mcubridge.state.context import create_runtime_state
-from mcubridge.config.settings import RuntimeConfig
-import warnings
+
+
+def test_protocol_constants_match_spec() -> None:
+    # Basic sanity check on constants exported via generate.py
+    assert protocol.MAX_PAYLOAD_SIZE > 0
+    assert protocol.CRC_SIZE == 4
+    assert protocol.UINT16_MAX == 65535
+
+
+def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
+    # Validate encode/decode round-trip for HandshakeConfig payload
+    # Using direct msgspec.msgpack (Zero Wrapper)
+    sample = structures.HandshakeConfigPacket(
+        ack_timeout_ms=750, ack_retry_limit=3, response_timeout_ms=120000
+    )
+    encoded = msgspec.msgpack.encode(sample)
+    assert len(encoded) > 0
+    decoded = msgspec.msgpack.decode(encoded, type=structures.HandshakeConfigPacket)
+    assert decoded == sample
+
+
+def test_handshake_tag_reference_vector_matches_spec() -> None:
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives import hashes, hmac
+
+    secret = b"mcubridge-shared"
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+
+    # [MIL-SPEC] Test must use HKDF derived key to match runtime implementation
+    # Eradicated derive_handshake_key wrapper (Llamada directa a cryptography)
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=protocol.HANDSHAKE_HKDF_OUTPUT_LENGTH,
+        salt=protocol.HANDSHAKE_HKDF_SALT,
+        info=protocol.HANDSHAKE_HKDF_INFO_AUTH,
+    )
+    auth_key = hkdf.derive(secret)
+
+    expected = hmac.HMAC(auth_key, hashes.SHA256())
+    expected.update(nonce)
+    expected_tag = expected.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
+
+    computed = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
+    assert computed == expected_tag
 
 
 def test_mcu_registry_completeness() -> None:
@@ -24,7 +63,7 @@ def test_mcu_registry_completeness() -> None:
     # Commands that are NOT handled by BridgeDispatcher (sent TO MCU or handled by Transport)
     excluded = {
         "CMD_SET_BAUDRATE",
-        "CMD_SET_BAUDRATE_RESP",
+        "CMD_SET_BAUDRATE_RESP",  # Handled by SerialTransport internally
         "CMD_SET_PIN_MODE",
         "CMD_DIGITAL_WRITE",
         "CMD_ANALOG_WRITE",
@@ -45,20 +84,45 @@ def test_mcu_registry_completeness() -> None:
         "CMD_PROCESS_POLL_RESP",
     }
 
+    from mcubridge.state.context import create_runtime_state
+    from mcubridge.config.settings import RuntimeConfig
+    import warnings
+
     config = RuntimeConfig(
         serial_shared_secret=b"s_e_c_r_e_t_mock", allow_non_tmp_paths=True
     )
     state = create_runtime_state(config)
 
     with warnings.catch_warnings():
+        # [SIL-2] Suppress unawaited coroutine warnings for registration-only mocks
         warnings.filterwarnings(
             "ignore",
             category=RuntimeWarning,
             message="coroutine '.*' was never awaited",
         )
 
+        components = {}
+        for cls_name in [
+            "ConsoleComponent",
+            "DatastoreComponent",
+            "FileComponent",
+            "MailboxComponent",
+            "PinComponent",
+            "ProcessComponent",
+            "SpiComponent",
+            "SystemComponent",
+        ]:
+            cls = getattr(
+                __import__("mcubridge.services", fromlist=[cls_name]), cls_name
+            )
+            mock_inst = AsyncMock(spec=cls)
+            # Map class name to lowercase key for register_components
+            key = cls_name.replace("Component", "").lower()
+            components[key] = mock_inst
+
         dispatcher = BridgeDispatcher(
             mcu_registry={},
+            mqtt_router=AsyncMock(spec=MQTTRouter),
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(return_value=True),
@@ -67,16 +131,7 @@ def test_mcu_registry_completeness() -> None:
             publish_bridge_snapshot=AsyncMock(return_value=True),
         )
 
-        dispatcher.register_components(
-            console=AsyncMock(),
-            datastore=AsyncMock(),
-            file=AsyncMock(),
-            mailbox=AsyncMock(),
-            pin=AsyncMock(),
-            process=AsyncMock(),
-            spi=AsyncMock(),
-            system=AsyncMock(),
-        )
+        dispatcher.register_components(**components)
         # Register system handlers too
         dispatcher.register_system_handlers(
             handle_link_sync_resp=AsyncMock(return_value=True),
@@ -91,6 +146,7 @@ def test_mcu_registry_completeness() -> None:
         if name in excluded or name == "CMD_UNKNOWN":
             continue
 
+        # Check if cmd_id exists in mcu_registry
         assert (
             cmd_id in dispatcher.mcu_registry
         ), f"BridgeDispatcher missing handler for {name} (ID: 0x{cmd_id:02X})"

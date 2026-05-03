@@ -227,7 +227,6 @@ class RuntimeState(msgspec.Struct):
     _mailbox_incoming_queue_cache: diskcache.Cache | None = None
 
     mcu_is_paused: bool = False
-    mcu_free_memory: int | None = None
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     console_to_mcu_queue: DequeLike[bytes] = msgspec.field(
         default_factory=lambda: cast(DequeLike[bytes], collections.deque()),
@@ -324,7 +323,6 @@ class RuntimeState(msgspec.Struct):
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    tx_sequence_id: int = 0
     mcu_status_counts: dict[str, int] = msgspec.field(
         default_factory=lambda: cast(dict[str, int], {})
     )
@@ -336,7 +334,6 @@ class RuntimeState(msgspec.Struct):
 
     # Metrics (Synchronized with Prometheus)
     mqtt_messages_published: int = 0
-    mqtt_messages_received: int = 0
     mqtt_dropped_messages: int = 0
     mqtt_spooled_messages: int = 0
     mqtt_spool_errors: int = 0
@@ -667,10 +664,10 @@ class RuntimeState(msgspec.Struct):
     def cleanup(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
 
-        if self.mqtt_spool is not None:
-            with _sup:
+        with _sup:
+            if self.mqtt_spool is not None:
                 self.mqtt_spool.close()
-            self.mqtt_spool = None
+                self.mqtt_spool = None
 
         # [SIL-2] Close persistent queues to release file handles
         if self._mailbox_queue_cache:
@@ -722,5 +719,12 @@ def create_runtime_state(
     )
     state.serial_tx_allowed.set()
     state.configure(cfg)
+
+    from ..transport.mqtt import MqttTransport
+
+    transport = MqttTransport(cfg, state)
+    transport.configure_spool(cfg.mqtt_spool_dir, cfg.mqtt_queue_limit * 4)
+    if initialize_spool:
+        transport.initialize_spool()
 
     return state

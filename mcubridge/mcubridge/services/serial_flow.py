@@ -16,14 +16,14 @@ from mcubridge.config.const import (
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
-from ..protocol.protocol import (
+from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
     RESPONSE_ONLY_COMMANDS,
     Status,
     expected_responses,
     response_to_request,
 )
-from ..protocol.structures import AckPacket, PendingCommand
+from mcubridge.protocol.structures import AckPacket, PendingCommand
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 

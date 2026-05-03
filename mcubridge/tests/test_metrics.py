@@ -1,7 +1,6 @@
 """Tests for daemon metrics publisher."""
 
 from __future__ import annotations
-
 import msgspec
 
 import asyncio

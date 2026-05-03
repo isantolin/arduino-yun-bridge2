@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import collections
+import contextlib
 import structlog
 from typing import TYPE_CHECKING, Any
 
 import msgspec
 from aiomqtt.message import Message
-from ..protocol.protocol import Command
-from ..protocol.structures import (
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, PinAction, Status
+from mcubridge.protocol.structures import (
     AnalogReadResponsePacket,
     AnalogWritePacket,
     DigitalReadResponsePacket,
@@ -24,6 +27,7 @@ from ..protocol.topics import Topic, topic_path
 from ..state.context import PendingPinRequest
 
 if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
     from ..state.context import RuntimeState
     from ..config.settings import RuntimeConfig
     from .serial_flow import SerialFlowController
@@ -39,12 +43,12 @@ class PinComponent:
         config: RuntimeConfig,
         state: RuntimeState,
         serial_flow: SerialFlowController,
-        enqueue_mqtt: Any,
+        mqtt_flow: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state
         self.serial_flow = serial_flow
-        self.enqueue_mqtt = enqueue_mqtt
+        self.mqtt_flow = mqtt_flow
 
     async def handle_mcu_digital_read(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_DIGITAL_READ initiated by MCU."""
@@ -58,163 +62,268 @@ class PinComponent:
             seq_id, Command.CMD_ANALOG_READ, payload
         )
 
-    async def handle_digital_read_resp(self, seq_id: int, payload: bytes) -> bool:
-        """Process digital read response from MCU."""
-        try:
-            packet = msgspec.msgpack.decode(payload, type=DigitalReadResponsePacket)
-            await self._process_pin_response(Topic.DIGITAL, packet.value)
-            return True
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed digital read response: %s", e)
-            return False
-
-    async def handle_analog_read_resp(self, seq_id: int, payload: bytes) -> bool:
-        """Process analog read response from MCU."""
-        try:
-            packet = msgspec.msgpack.decode(payload, type=AnalogReadResponsePacket)
-            await self._process_pin_response(Topic.ANALOG, packet.value)
-            return True
-        except (ValueError, msgspec.MsgspecError) as e:
-            logger.warning("Malformed analog read response: %s", e)
-            return False
-
-    async def handle_mqtt(self, route: TopicRoute, inbound: Message) -> bool:
-        """Process inbound MQTT requests for pin operations."""
-        # Identification
-        try:
-            pin = int(route.identifier)
-        except ValueError:
-            return False
-
-        if not self._validate_pin_limit(pin):
-            return True
-
-        action = route.remainder[0] if route.remainder else "get"
-        payload = msgspec.convert(inbound.payload, bytes)
-
-        match action:
-            case "mode":
-                # [SIL-2] Pin mode validation must happen on both sides.
-                # Valid modes: 0=INPUT, 1=OUTPUT, 2=INPUT_PULLUP
-                try:
-                    mode = int(payload.decode())
-                    if mode not in (0, 1, 2):
-                        raise ValueError("Invalid mode")
-                    packet = PinModePacket(pin=pin, mode=mode)
-                    return await self.serial_flow.send(
-                        Command.CMD_SET_PIN_MODE.value, msgspec.msgpack.encode(packet)
-                    )
-                except (ValueError, UnicodeDecodeError) as e:
-                    logger.warning("Invalid pin mode request for pin %d: %s", pin, e)
-                    return True
-
-            case str() if action in ("get", "read"):
-                # Digital or Analog depending on topic
-                cmd = (
-                    Command.CMD_DIGITAL_READ
-                    if route.topic == Topic.DIGITAL
-                    else Command.CMD_ANALOG_READ
-                )
-                packet = PinReadPacket(pin=pin)
-
-                # Store request for matching when response arrives
-                queue = (
-                    self.state.pending_digital_reads
-                    if route.topic == Topic.DIGITAL
-                    else self.state.pending_analog_reads
-                )
-
-                if len(queue) >= self.state.pending_pin_request_limit:
-                    queue.popleft()
-
-                queue.append(PendingPinRequest(pin=pin, reply_context=inbound))
-
-                return await self.serial_flow.send(
-                    cmd.value, msgspec.msgpack.encode(packet)
-                )
-
-            case str() if (
-                action in ("write", "0", "1", "on", "off") or action.isdigit()
-            ):
-                # Write operation (Digital)
-                if route.topic != Topic.DIGITAL:
-                    return False
-
-                try:
-                    val_str = (
-                        action
-                        if (action.isdigit() or action in ("0", "1", "on", "off"))
-                        else inbound.payload.decode()
-                    )
-                    val = 1 if val_str in ("1", "on") else 0
-                    packet = DigitalWritePacket(pin=pin, value=val)
-                    return await self.serial_flow.send(
-                        Command.CMD_DIGITAL_WRITE.value, msgspec.msgpack.encode(packet)
-                    )
-                except (ValueError, UnicodeDecodeError):
-                    return False
-
-            case str() if route.topic == Topic.ANALOG:
-                # Write operation (Analog/PWM)
-                try:
-                    val_str = action if action.isdigit() else inbound.payload.decode()
-                    val = int(val_str)
-                    packet = AnalogWritePacket(pin=pin, value=val)
-                    return await self.serial_flow.send(
-                        Command.CMD_ANALOG_WRITE.value, msgspec.msgpack.encode(packet)
-                    )
-                except (ValueError, UnicodeDecodeError):
-                    return False
-            case _:
-                return False
-
-        return False
-
     async def handle_unexpected_mcu_request(
-        self, seq_id: int, cmd: Command, payload: bytes
+        self,
+        seq_id: int,
+        command: Command,
+        payload: bytes,
     ) -> bool:
-        """Handle pin requests initiated by the MCU (unsupported by protocol design)."""
+        """Reject MCU-initiated Linux pin operations that are unsupported."""
+
+        origin = "pin-read-origin-mcu"
+        if command == Command.CMD_DIGITAL_READ:
+            detail = "linux_gpio_read_not_available"
+        elif command == Command.CMD_ANALOG_READ:
+            detail = "linux_adc_read_not_available"
+        else:
+            detail = "pin_request_not_supported"
+        reason = f"{origin}:{detail}"
+
         logger.warning(
-            "MCU initiated unexpected pin request %s (seq=%d); ignoring.",
-            cmd.name,
-            seq_id,
+            "MCU requested unsupported pin command %s payload=%s",
+            command.name,
+            payload.hex(),
+        )
+        await self.serial_flow.send(
+            Status.NOT_IMPLEMENTED.value,
+            reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
         )
         return False
 
-    async def _process_pin_response(self, topic_type: Topic, value: int) -> None:
-        queue = (
-            self.state.pending_digital_reads
-            if topic_type == Topic.DIGITAL
-            else self.state.pending_analog_reads
-        )
+    async def _handle_pin_read_resp(
+        self,
+        *,
+        payload: bytes,
+        resp_name: str,
+        topic_type: Topic,
+        packet_cls: Any,
+        command_id: Command,
+        pending_queue: collections.deque[PendingPinRequest],
+    ) -> None:
+        """Shared implementation for digital/analog read response handling."""
+        try:
+            packet = msgspec.msgpack.decode(payload, type=packet_cls)
+        except ValueError:
+            logger.warning(
+                "Malformed %s payload: %s", packet_cls.__name__, payload.hex()
+            )
+            return
 
-        request = queue.popleft() if queue else None
+        value = packet.value
+        request: PendingPinRequest | None = None
+        if pending_queue:
+            request = pending_queue.popleft()
+        else:
+            logger.warning("Received %s without pending request.", resp_name)
+
         pin_value = request.pin if request else None
         topic = self._build_pin_topic(topic_type, pin_value)
         pin_label = str(pin_value) if pin_value is not None else "unknown"
-        reply_context = request.reply_context if request else None
 
         # Special case: Pin reads require 'bridge-pin' property, so we use direct enqueue_mqtt
-        await self.enqueue_mqtt(
+        await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=topic,
                 payload=str(value).encode("utf-8"),
                 message_expiry_interval=MQTT_EXPIRY_PIN,
                 user_properties=(("bridge-pin", pin_label),),
             ),
-            reply_context=reply_context,
+            reply_context=request.reply_context if request else None,
         )
 
-    def _build_pin_topic(self, topic_type: Topic, pin: int | None) -> str:
-        segments = ["value"]
-        if pin is not None:
-            segments.append(str(pin))
-        return topic_path(self.state.mqtt_topic_prefix, topic_type, *segments)
+    async def handle_digital_read_resp(self, seq_id: int, payload: bytes) -> None:
+        await self._handle_pin_read_resp(
+            payload=payload,
+            resp_name="DIGITAL_READ_RESP",
+            topic_type=Topic.DIGITAL,
+            packet_cls=DigitalReadResponsePacket,
+            command_id=Command.CMD_DIGITAL_READ_RESP,
+            pending_queue=self.state.pending_digital_reads,
+        )
 
-    def _validate_pin_limit(self, pin: int) -> bool:
-        """Validate pin number against hardware traits."""
-        # [SIL-2] Fail-safe: digital pins 0..19.
-        limit = 20
+    async def handle_analog_read_resp(self, seq_id: int, payload: bytes) -> None:
+        await self._handle_pin_read_resp(
+            payload=payload,
+            resp_name="ANALOG_READ_RESP",
+            topic_type=Topic.ANALOG,
+            packet_cls=AnalogReadResponsePacket,
+            command_id=Command.CMD_ANALOG_READ_RESP,
+            pending_queue=self.state.pending_analog_reads,
+        )
+
+    async def handle_mqtt(
+        self,
+        route: TopicRoute,
+        inbound: Message,
+    ) -> bool:
+        segments = list(route.segments)
+        payload_bytes = msgspec.convert(inbound.payload, bytes)
+        payload_str = payload_bytes.decode("utf-8", errors="ignore")
+        if not segments:
+            return True
+
+        try:
+            topic_enum = Topic(route.topic)
+        except ValueError:
+            return True
+
+        pin_str = segments[0]
+        pin = self._parse_pin_identifier(pin_str)
+        if pin < 0:
+            return True
+
+        is_analog_read = (
+            len(segments) == 2
+            and segments[1] == PinAction.READ
+            and topic_enum == Topic.ANALOG
+        )
+
+        if not self._validate_pin_access(pin, is_analog_read):
+            return True
+
+        if len(segments) == 2:
+            subtopic = segments[1]
+            if subtopic == PinAction.MODE and topic_enum == Topic.DIGITAL:
+                await self._handle_mode_command(pin, pin_str, payload_str)
+            elif subtopic == PinAction.READ:
+                await self._handle_read_command(topic_enum, pin, inbound)
+            else:
+                logger.debug("Unknown pin subtopic for %s: %s", pin_str, subtopic)
+            return True
+
+        if len(segments) == 1:
+            await self._handle_write_command(
+                topic_enum,
+                pin,
+                payload_str,
+            )
+        return True
+
+    async def _handle_mode_command(
+        self, pin: int, pin_str: str, payload_str: str
+    ) -> None:
+        try:
+            mode = int(payload_str)
+        except ValueError:
+            logger.warning("Invalid mode payload for pin %s", pin_str)
+            return
+
+        if mode not in (0, 1, 2):
+            logger.warning("Invalid digital mode %s", mode)
+            return
+
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        payload = msgspec.msgpack.encode(PinModePacket(pin=pin, mode=mode))
+        await self.serial_flow.send(Command.CMD_SET_PIN_MODE.value, payload)
+
+    async def _handle_read_command(
+        self,
+        topic_type: Topic,
+        pin: int,
+        inbound: Message | None = None,
+    ) -> bool:
+        command = (
+            Command.CMD_DIGITAL_READ
+            if topic_type == Topic.DIGITAL
+            else Command.CMD_ANALOG_READ
+        )
+        queue = (
+            self.state.pending_digital_reads
+            if command == Command.CMD_DIGITAL_READ
+            else self.state.pending_analog_reads
+        )
+
+        if len(queue) >= self.state.pending_pin_request_limit:
+            await self._notify_pin_queue_overflow(topic_type, pin, inbound)
+            return False
+
+        pending_request = PendingPinRequest(pin=pin, reply_context=inbound)
+        queue.append(pending_request)
+
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        payload = msgspec.msgpack.encode(PinReadPacket(pin=pin))
+        ok = await self.serial_flow.send(command.value, payload)
+        if not ok:
+            with contextlib.suppress(ValueError):
+                queue.remove(pending_request)
+        return ok
+
+    async def _handle_write_command(
+        self, topic_type: Topic, pin: int, payload_str: str
+    ) -> None:
+        value = self._parse_pin_value(topic_type, payload_str)
+        if value is None:
+            logger.warning(
+                "Invalid pin value topic=%s payload=%s",
+                topic_type.value,
+                payload_str,
+            )
+            return
+
+        if topic_type == Topic.DIGITAL:
+            command = Command.CMD_DIGITAL_WRITE
+            payload = msgspec.msgpack.encode(DigitalWritePacket(pin=pin, value=value))
+        else:
+            command = Command.CMD_ANALOG_WRITE
+            payload = msgspec.msgpack.encode(AnalogWritePacket(pin=pin, value=value))
+
+        await self.serial_flow.send(command.value, payload)
+
+    def _parse_pin_identifier(self, pin_str: str) -> int:
+        s = pin_str.upper()
+        if s.startswith("A") and s[1:].isdigit():
+            return int(s[1:])
+        return int(pin_str) if pin_str.isdigit() else -1
+
+    def _parse_pin_value(self, topic_type: Topic, payload_str: str) -> int | None:
+        if not payload_str:
+            return 0
+        try:
+            val = int(payload_str)
+            if (topic_type == Topic.DIGITAL and val in (0, 1)) or (
+                topic_type == Topic.ANALOG and 0 <= val <= 255
+            ):
+                return val
+        except ValueError:
+            pass
+        return None
+
+    def _build_pin_topic(self, topic_type: Topic, pin: int | None) -> str:
+        segments = (str(pin), "value") if pin is not None else ("value",)
+        return topic_path(
+            self.state.mqtt_topic_prefix,
+            topic_type,
+            *segments,
+        )
+
+    async def _notify_pin_queue_overflow(
+        self,
+        topic_type: Topic,
+        pin: int,
+        inbound: Message | None,
+    ) -> None:
+        topic = self._build_pin_topic(topic_type, pin)
+        await self.mqtt_flow.enqueue_mqtt(
+            QueuedPublish(
+                topic_name=topic,
+                payload=b"",
+                message_expiry_interval=MQTT_EXPIRY_PIN,
+                user_properties=(
+                    ("bridge-pin", str(pin)),
+                    ("bridge-error", "pending-pin-overflow"),
+                ),
+            ),
+            reply_context=inbound,
+        )
+
+    def _validate_pin_access(self, pin: int, is_analog_input: bool) -> bool:
+        caps = self.state.mcu_capabilities
+        if caps is None:
+            return True
+
+        limit = caps.num_analog_inputs if is_analog_input else caps.num_digital_pins
+        # Basic bounds check.
+        # Note: Arduino pins are 0-indexed, so count=20 means 0..19.
         if pin >= limit:
             logger.warning(
                 "Security Block: Pin %d exceeds hardware limit (%d).", pin, limit

@@ -174,4 +174,6 @@ uint8_t getArchId() { return CURRENT_ARCH; }
   }
   // Spin until WDT fires (intentional [[noreturn]] halt — not a polling loop).
   while (true) {}  // NOLINT(cppcoreguidelines-avoid-do-while)
+}
+
 }  // namespace bridge::hal

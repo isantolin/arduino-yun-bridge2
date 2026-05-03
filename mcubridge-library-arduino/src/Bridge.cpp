@@ -15,6 +15,7 @@
 
 namespace {
 void _onStartupStabilizationTimeout() { Bridge._onStartupStabilized(); }
+void _onBootloaderDelayInternal() { Bridge._onBootloaderDelay(); }
 void _onAckTimeoutInternal() { Bridge._onAckTimeout(); }
 void _onRxDedupeTimeout() { Bridge._onRxDedupe(); }
 void _onBaudrateChangeTimeout() { Bridge._onBaudrateChange(); }
@@ -247,6 +248,10 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _timer_ids[bridge::scheduler::TIMER_STARTUP_STABILIZATION] =
       _timers.register_timer(_onStartupStabilizationTimeout,
                              bridge::config::STARTUP_STABILIZATION_MS,
+                             etl::timer::mode::SINGLE_SHOT);
+  _timer_ids[bridge::scheduler::TIMER_BOOTLOADER_DELAY] =
+      _timers.register_timer(_onBootloaderDelayInternal,
+                             bridge::config::BOOTLOADER_DELAY_MS,
                              etl::timer::mode::SINGLE_SHOT);
   _timers.start(_timer_ids[bridge::scheduler::TIMER_STARTUP_STABILIZATION]);
 
@@ -788,6 +793,8 @@ void BridgeClass::_handleEnterBootloader(
     _timers.start(_timer_ids[bridge::scheduler::TIMER_BOOTLOADER_DELAY]);
   }
 }
+
+void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
 
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
   (void)ctx;

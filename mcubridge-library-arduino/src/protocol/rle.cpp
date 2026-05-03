@@ -63,9 +63,9 @@ class RleFsm : public etl::fsm {
       : etl::fsm(static_cast<etl::fsm_state_id_t>(StateId::LITERAL)),
         it(dst.begin()),
         end(dst.end()) {
-    state_list[0] = &s_literal;
-    state_list[1] = &s_marker;
-    state_list[2] = &s_val;
+    state_list[static_cast<size_t>(StateId::LITERAL)] = &s_literal;
+    state_list[static_cast<size_t>(StateId::ESC_MARKER)] = &s_marker;
+    state_list[static_cast<size_t>(StateId::ESC_VAL)] = &s_val;
     set_states(state_list.data(), state_list.size());
     start();
   }

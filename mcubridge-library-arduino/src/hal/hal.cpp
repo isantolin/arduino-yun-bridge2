@@ -162,4 +162,16 @@ void getPinCounts(uint8_t& digital, uint8_t& analog) {
 }
 uint8_t getArchId() { return CURRENT_ARCH; }
 
+[[noreturn]] void enterBootloader() {
+  forceSafeState();
+  if constexpr (Traits::id == ArchId::ARCH_AVR) {
+#if defined(ARDUINO_ARCH_AVR)
+    // [SIL-2] Caterina/Optiboot: set magic key and trigger 15 ms WDT reset.
+    // The bootloader checks the token at 0x0800 on restart.
+    *reinterpret_cast<volatile uint16_t*>(0x0800u) = 0x7777u;
+    wdt_enable(WDTO_15MS);
+#endif
+  }
+  // Spin until WDT fires (intentional [[noreturn]] halt — not a polling loop).
+  while (true) {}  // NOLINT(cppcoreguidelines-avoid-do-while)
 }  // namespace bridge::hal

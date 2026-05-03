@@ -121,7 +121,7 @@ class BridgeClass {
 
   void _dispatchCommand(const rpc::Frame& frame);
   void _onStartupStabilized();
-  void _drainStartupRecursive(uint32_t start_ms, uint16_t iterations);
+  void _onBootloaderDelay();
   void _onAckTimeout();
   void _onRxDedupe();
   void _onBaudrateChange();
@@ -323,7 +323,6 @@ class BridgeClass {
     });
   }
   void _clearPendingTxQueue();
-  void _clearAckState();
   void _flushPendingTxQueue();
   void _handleAck(uint16_t command_id);
   void _handleMalformed(uint16_t command_id);

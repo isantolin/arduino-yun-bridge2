@@ -100,6 +100,12 @@ uint8_t getArchId();
  */
 void getPinCounts(uint8_t& digital, uint8_t& analog);
 
+/**
+ * @brief [SIL-2] Enter MCU bootloader. Flushes state and triggers a
+ * watchdog-driven reset into the bootloader. This function does not return.
+ */
+[[noreturn]] void enterBootloader();
+
 }  // namespace bridge::hal
 
 // [SIL-2] Atomic Block Abstraction

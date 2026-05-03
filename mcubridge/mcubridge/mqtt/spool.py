@@ -18,21 +18,6 @@ from ..protocol.structures import QueuedPublish
 logger = structlog.get_logger("mcubridge.mqtt.spool")
 
 
-class MQTTSpoolError(RuntimeError):
-    """Raised when the filesystem spool cannot fulfill an operation."""
-
-    def __init__(
-        self,
-        reason: str,
-        *,
-        original: BaseException | None = None,
-    ) -> None:
-        message = reason if original is None else f"{reason}:{original}"
-        super().__init__(message)
-        self.reason = reason
-        self.original = original
-
-
 class MQTTPublishSpool:
     """MQTT spool with durable FIFO persistence under /tmp."""
 
@@ -152,4 +137,4 @@ class MQTTPublishSpool:
         }
 
 
-__all__ = ["QueuedPublish", "MQTTPublishSpool", "MQTTSpoolError"]
+__all__ = ["QueuedPublish", "MQTTPublishSpool"]

@@ -11,7 +11,7 @@ import msgspec
 import time
 from aiomqtt.message import Message
 from mcubridge.protocol.structures import QueuedPublish
-from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
+from mcubridge.mqtt.spool import MQTTPublishSpool
 from mcubridge.config.const import SPOOL_BACKOFF_MIN_SECONDS, SPOOL_BACKOFF_MAX_SECONDS
 from typing import TYPE_CHECKING, Any, cast
 
@@ -359,7 +359,7 @@ class MqttTransport:
             else:
                 self.state.mqtt_spool_degraded = False
                 self.state.mqtt_spool_failure_reason = None
-        except (OSError, MQTTSpoolError) as exc:
+        except (OSError, RuntimeError) as exc:
             self._handle_mqtt_spool_failure("initialization_failed", exc=exc)
 
     async def ensure_spool(self) -> bool:
@@ -392,7 +392,7 @@ class MqttTransport:
                 self.state.mqtt_spool_failure_reason = None
             self.state.mqtt_spool_recoveries += 1
             return True
-        except (OSError, MQTTSpoolError) as exc:
+        except (OSError, RuntimeError) as exc:
             self._handle_mqtt_spool_failure("reactivation_failed", exc=exc)
             return False
 
@@ -458,7 +458,7 @@ class MqttTransport:
             self.state.mqtt_spooled_messages += 1
             self.state.metrics.mqtt_spooled_messages.inc()
             return True
-        except (MQTTSpoolError, OSError) as exc:
+        except (OSError, RuntimeError) as exc:
             self._handle_mqtt_spool_failure("append_failed", exc=exc)
             return False
 
@@ -483,6 +483,6 @@ class MqttTransport:
                 except asyncio.QueueFull:
                     spool.requeue(msg)
                     break
-            except (MQTTSpoolError, OSError) as exc:
+            except (OSError, RuntimeError) as exc:
                 self._handle_mqtt_spool_failure("pop_failed", exc=exc)
                 break

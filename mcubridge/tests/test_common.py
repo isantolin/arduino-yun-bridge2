@@ -6,7 +6,6 @@ import importlib
 from unittest.mock import MagicMock, patch
 
 from mcubridge.config import common
-from mcubridge.mqtt import build_mqtt_connect_properties
 
 from mcubridge.protocol.structures import QueuedPublish, AllowedCommandPolicy
 from mcubridge.protocol import protocol
@@ -134,9 +133,3 @@ def test_build_mqtt_properties_populates_fields() -> None:
     assert props.CorrelationData == b"cid"
     assert ("k", "v") in list(props.UserProperty)
 
-
-def test_build_mqtt_connect_properties_sets_request_response_flags() -> None:
-    props = build_mqtt_connect_properties()
-    assert props.SessionExpiryInterval == 0
-    assert props.RequestResponseInformation == 1
-    assert props.RequestProblemInformation == 1

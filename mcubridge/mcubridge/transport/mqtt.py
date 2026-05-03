@@ -10,6 +10,8 @@ import structlog
 import msgspec
 import time
 from aiomqtt.message import Message
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool
 from mcubridge.config.const import SPOOL_BACKOFF_MIN_SECONDS, SPOOL_BACKOFF_MAX_SECONDS
@@ -18,7 +20,6 @@ from typing import TYPE_CHECKING, Any, cast
 import aiomqtt
 import tenacity
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.mqtt import build_mqtt_connect_properties
 from mcubridge.protocol.topics import topic_path
 from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Topic
 from mcubridge.state.context import RuntimeState
@@ -101,7 +102,11 @@ class MqttTransport:
             raise
 
     async def _connect_session(self, tls_context: Any) -> None:
-        connect_props = build_mqtt_connect_properties()
+        # [SIL-2] Explicit property construction for mission-critical connectivity.
+        connect_props = Properties(PacketTypes.CONNECT)
+        connect_props.SessionExpiryInterval = 0
+        connect_props.RequestResponseInformation = 1
+        connect_props.RequestProblemInformation = 1
 
         # [SIL-2] Warn if connecting without authentication
         if not self.config.mqtt_user:

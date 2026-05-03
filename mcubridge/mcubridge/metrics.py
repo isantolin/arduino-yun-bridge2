@@ -54,7 +54,19 @@ def _build_metrics_message(
             user_properties=(*message.user_properties, ("bridge-spool", mqtt_spool_failure or "unknown")),
         )
 
-    file_status = _file_status_property(snapshot)
+    file_status = next(
+        (
+            label
+            for key, label in (
+                ("file_storage_limit_rejections", "quota-blocked"),
+                ("file_write_limit_rejections", "write-limit"),
+            )
+            if (val := snapshot.get(key)) is not None
+            and isinstance(val, (int, float))
+            and val > 0
+        ),
+        None,
+    )
     if file_status is not None:
         message = msgspec.structs.replace(
             message,
@@ -75,23 +87,6 @@ def _build_metrics_message(
             )
 
     return message
-
-
-def _file_status_property(snapshot: dict[str, Any]) -> str | None:
-    checks = (
-        ("file_storage_limit_rejections", "quota-blocked"),
-        ("file_write_limit_rejections", "write-limit"),
-    )
-    return next(
-        (
-            label
-            for key, label in checks
-            if (val := snapshot.get(key)) is not None
-            and isinstance(val, (int, float))
-            and val > 0
-        ),
-        None,
-    )
 
 
 async def _emit_metrics_snapshot(
@@ -154,9 +149,9 @@ async def publish_metrics(
 ) -> None:
     """Publish runtime metrics to MQTT at a fixed cadence."""
 
-    tick_seconds = _normalize_interval(interval, min_interval)
-    if tick_seconds is None:
+    if interval <= 0:
         raise ValueError("interval must be greater than zero")
+    tick_seconds = max(1, math.ceil(max(min_interval, interval)))
     expiry = float(tick_seconds * 2)
 
     async def _metrics_tick() -> None:
@@ -186,8 +181,16 @@ async def publish_bridge_snapshots(
 ) -> None:
     """Periodically publish bridge summary and handshake snapshots."""
 
-    summary_seconds = _normalize_interval(summary_interval, min_interval)
-    handshake_seconds = _normalize_interval(handshake_interval, min_interval)
+    summary_seconds = (
+        max(1, math.ceil(max(min_interval, summary_interval)))
+        if summary_interval > 0
+        else None
+    )
+    handshake_seconds = (
+        max(1, math.ceil(max(min_interval, handshake_interval)))
+        if handshake_interval > 0
+        else None
+    )
 
     if summary_seconds is None and handshake_seconds is None:
         logger.info("Bridge snapshot loops disabled; awaiting cancellation.")
@@ -397,7 +400,7 @@ class PrometheusExporter:
             if method != "GET" or path not in {"/metrics", "/"}:
                 await self._write_response(writer, 404, b"")
                 return
-            payload = self._render_metrics()
+            payload = generate_latest(self._registry)
             await self._write_response(
                 writer,
                 200,
@@ -439,10 +442,6 @@ class PrometheusExporter:
         writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
         await writer.drain()
 
-    def _render_metrics(self) -> bytes:
-        return generate_latest(self._registry)
-
-
 def _build_bridge_snapshot_message(
     state: RuntimeState,
     flavor: str,
@@ -465,11 +464,6 @@ def _build_bridge_snapshot_message(
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),
     )
-
-
-def _normalize_interval(interval: float, min_interval: float) -> int | None:
-    """Normalize interval to a positive integer or None."""
-    return max(1, math.ceil(max(min_interval, interval))) if interval > 0 else None
 
 
 __all__ = [

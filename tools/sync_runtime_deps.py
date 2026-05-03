@@ -3,17 +3,15 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 import urllib.request
 import urllib.error
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated, TypedDict
+from typing import TypedDict
 
 import msgspec
-import typer
-
-app = typer.Typer(help="Generate derived dependency files from the runtime manifest.")
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
@@ -230,36 +228,46 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
     return outdated
 
 
-@app.command()
-def main(
-    check: Annotated[
-        bool,
-        typer.Option(
-            "--check", help="Exit with status 1 if running would change any files"
-        ),
-    ] = False,
-    check_latest: Annotated[
-        bool,
-        typer.Option(
-            "--check-latest", help="Query PyPI and warn about outdated pinned versions"
-        ),
-    ] = False,
-    print_openwrt: Annotated[
-        bool,
-        typer.Option("--print-openwrt", help="Print OpenWrt package names and exit"),
-    ] = False,
-    print_pip: Annotated[
-        bool,
-        typer.Option("--print-pip", help="Print pip requirement specifiers and exit"),
-    ] = False,
-) -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Generate derived dependency files from the runtime manifest."
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        default=False,
+        help="Exit with status 1 if running would change any files",
+    )
+    parser.add_argument(
+        "--check-latest",
+        action="store_true",
+        default=False,
+        help="Query PyPI and warn about outdated pinned versions",
+    )
+    parser.add_argument(
+        "--print-openwrt",
+        action="store_true",
+        default=False,
+        help="Print OpenWrt package names and exit",
+    )
+    parser.add_argument(
+        "--print-pip",
+        action="store_true",
+        default=False,
+        help="Print pip requirement specifiers and exit",
+    )
+    args = parser.parse_args(argv)
+    check: bool = args.check
+    check_latest: bool = args.check_latest
+    print_openwrt: bool = args.print_openwrt
+    print_pip: bool = args.print_pip
     deps = load_manifest()
     if print_openwrt:
         sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
-        raise typer.Exit()
+        raise SystemExit(0)
     if print_pip:
         sys.stdout.write("\n".join(collect_pip_specs(deps)) + "\n")
-        raise typer.Exit()
+        raise SystemExit(0)
 
     updated_requirements = write_requirements(deps, dry_run=check)
     updated_makefile = update_makefile(deps, dry_run=check)
@@ -272,16 +280,16 @@ def main(
     if check_latest:
         outdated = check_latest_versions(deps)
         if outdated:
-            typer.echo("Outdated dependencies:")
+            print("Outdated dependencies:")
             for name, pinned, latest in outdated:
-                typer.echo(f"  {name}: {pinned} -> {latest}")
+                print(f"  {name}: {pinned} -> {latest}")
             fail = True
         else:
-            typer.echo("All dependencies are up to date.")
+            print("All dependencies are up to date.")
 
     if fail:
-        raise typer.Exit(code=1)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
-    app()
+    main()

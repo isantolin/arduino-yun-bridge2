@@ -1,10 +1,28 @@
 # pyright: reportPrivateUsage=false
+import contextlib
+import io
+from types import SimpleNamespace
+
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.transport.mqtt import MqttTransport
 import asyncio
-from typer.testing import CliRunner
 from mcubridge.daemon import app
 from unittest.mock import patch, MagicMock, AsyncMock
+
+
+class CliRunner:
+    def invoke(self, func, args):  # type: ignore[no-untyped-def]
+        buf = io.StringIO()
+        exit_code = 0
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                func(args)
+        except SystemExit as e:
+            exit_code = int(e.code) if isinstance(e.code, int) else 1
+        except Exception:
+            exit_code = 1
+        return SimpleNamespace(exit_code=exit_code, output=buf.getvalue())
+
 
 runner = CliRunner()
 
@@ -53,7 +71,6 @@ def test_daemon_cli_default_secret_warning():
 
         mock_load.return_value = mock_config
 
-        # Typer/CliRunner executes the function
         result = runner.invoke(app, ["--non-interactive"])
         assert "SECURITY CRITICAL" in result.output
 

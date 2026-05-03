@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import binascii
 import sys
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Annotated
 
 import serial
-import typer
 
 # [SIL-2] Use direct library functions for framing
 from cobs import cobs
@@ -165,40 +164,56 @@ def _iter_counts(count: int) -> Iterable[int]:
         yield from range(count)
 
 
-app = typer.Typer(
-    add_completion=False, help="Inspect and optionally send MCU Bridge RPC frames."
-)
-
-
-@app.command()
-def main_cmd(
-    command: Annotated[
-        str, typer.Option("--command", "-c", help="Command or Status name/value")
-    ] = "CMD_GET_FREE_MEMORY",
-    payload: Annotated[
-        str | None, typer.Option("--payload", "-p", help="Payload in hex format")
-    ] = None,
-    port: Annotated[str | None, typer.Option(help="Serial port device path")] = None,
-    baud: Annotated[int, typer.Option(help="Serial baud rate")] = DEFAULT_BAUDRATE,
-    interval: Annotated[
-        float, typer.Option(help="Interval between frames in seconds")
-    ] = 5.0,
-    count: Annotated[
-        int, typer.Option(help="Number of frames to send (0 for infinite)")
-    ] = 1,
-    read_response: Annotated[
-        bool, typer.Option(help="Wait for and print the next frame received")
-    ] = False,
-    read_timeout: Annotated[
-        float, typer.Option(help="Timeout for reading responses")
-    ] = 2.0,
-):
+def main_cmd(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Inspect and optionally send MCU Bridge RPC frames."
+    )
+    parser.add_argument(
+        "--command",
+        "-c",
+        default="CMD_GET_FREE_MEMORY",
+        help="Command or Status name/value",
+    )
+    parser.add_argument(
+        "--payload",
+        "-p",
+        default=None,
+        help="Payload in hex format",
+    )
+    parser.add_argument("--port", default=None, help="Serial port device path")
+    parser.add_argument(
+        "--baud", type=int, default=DEFAULT_BAUDRATE, help="Serial baud rate"
+    )
+    parser.add_argument(
+        "--interval", type=float, default=5.0, help="Interval between frames in seconds"
+    )
+    parser.add_argument(
+        "--count", type=int, default=1, help="Number of frames to send (0 for infinite)"
+    )
+    parser.add_argument(
+        "--read-response",
+        action="store_true",
+        default=False,
+        help="Wait for and print the next frame received",
+    )
+    parser.add_argument(
+        "--read-timeout", type=float, default=2.0, help="Timeout for reading responses"
+    )
+    args = parser.parse_args(argv)
+    command: str = args.command
+    payload: str | None = args.payload
+    port: str | None = args.port
+    baud: int = args.baud
+    interval: float = args.interval
+    count: int = args.count
+    read_response: bool = args.read_response
+    read_timeout: float = args.read_timeout
     try:
         cmd_id = _resolve_command(command)
         payload_bytes = _parse_payload(payload)
     except ValueError as exc:
-        typer.secho(str(exc), fg="red", err=True)
-        raise typer.Exit(2)
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2)
 
     ser = None
     if port:
@@ -233,18 +248,8 @@ def main_cmd(
             ser.close()
 
 
-def main(argv: list[str] | None = None):
-    if argv:
-        from typer.testing import CliRunner
-
-        runner = CliRunner()
-        result = runner.invoke(app, argv)
-        if result.exit_code != 0:
-            if result.exception:
-                raise result.exception
-            raise SystemExit(result.exit_code)
-        return 0
-    app()
+def main(argv: list[str] | None = None) -> None:
+    main_cmd(argv)
 
 
 if __name__ == "__main__":

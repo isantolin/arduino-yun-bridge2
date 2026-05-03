@@ -26,15 +26,15 @@ Architecture:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import sys
 from collections.abc import Awaitable, Callable
-from typing import Any, Annotated
+from typing import Any
 
 import msgspec
 import tenacity
-import typer
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
 import structlog
@@ -286,54 +286,72 @@ class BridgeDaemon:
                 await factory()
 
 
-app = typer.Typer(
-    name="mcubridge", help="Arduino MCU Bridge Daemon v2", add_completion=False
-)
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mcubridge",
+        description="Main entry point for the MCU Bridge daemon. Arduino MCU Bridge Daemon v2",
+        add_help=True,
+    )
+    parser.add_argument("--serial-port", default=None, help="Serial port to use")
+    parser.add_argument(
+        "--serial-baud", type=int, default=None, help="Serial baud rate"
+    )
+    parser.add_argument("--mqtt-host", default=None, help="MQTT host")
+    parser.add_argument("--mqtt-port", type=int, default=None, help="MQTT port")
+    parser.add_argument(
+        "--mqtt-tls", type=int, default=None, help="Use TLS for MQTT (0 or 1)"
+    )
+    parser.add_argument(
+        "--serial-shared-secret", default=None, help="Shared secret for serial link"
+    )
+    parser.add_argument(
+        "--allowed-commands",
+        default=None,
+        help="Comma-separated list of allowed shell commands",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        default=False,
+        help="Enable non-interactive mode",
+    )
+    parser.add_argument(
+        "--debug", action="store_true", default=False, help="Enable debug logging"
+    )
+    return parser
 
 
-@app.command()
-def main(
-    serial_port: Annotated[str | None, typer.Option(help="Serial port to use")] = None,
-    serial_baud: Annotated[int | None, typer.Option(help="Serial baud rate")] = None,
-    mqtt_host: Annotated[str | None, typer.Option(help="MQTT host")] = None,
-    mqtt_port: Annotated[int | None, typer.Option(help="MQTT port")] = None,
-    mqtt_tls: Annotated[
-        int | None, typer.Option(help="Use TLS for MQTT (0 or 1)")
-    ] = None,
-    serial_shared_secret: Annotated[
-        str | None, typer.Option(help="Shared secret for serial link")
-    ] = None,
-    allowed_commands: Annotated[
-        str | None, typer.Option(help="Comma-separated list of allowed shell commands")
-    ] = None,
-    non_interactive: Annotated[
-        bool, typer.Option(help="Enable non-interactive mode")
-    ] = False,
-    debug: Annotated[bool, typer.Option(help="Enable debug logging")] = False,
-) -> None:
-    """Main entry point for the MCU Bridge daemon."""
+def app(argv: list[str] | None = None) -> None:
+    """CLI entry point for the MCU Bridge daemon."""
+    args = _build_arg_parser().parse_args(argv)
+
     overrides: dict[str, Any] = {}
-    if serial_port:
-        overrides["serial_port"] = serial_port
-    if serial_baud:
-        overrides["serial_baud"] = serial_baud
-    if mqtt_host:
-        overrides["mqtt_host"] = mqtt_host
-    if mqtt_port:
-        overrides["mqtt_port"] = mqtt_port
-    if mqtt_tls is not None:
-        overrides["mqtt_tls"] = bool(mqtt_tls)
-    if serial_shared_secret:
-        overrides["serial_shared_secret"] = serial_shared_secret
-    if non_interactive:
+    if args.serial_port:
+        overrides["serial_port"] = args.serial_port
+    if args.serial_baud:
+        overrides["serial_baud"] = args.serial_baud
+    if args.mqtt_host:
+        overrides["mqtt_host"] = args.mqtt_host
+    if args.mqtt_port:
+        overrides["mqtt_port"] = args.mqtt_port
+    if args.mqtt_tls is not None:
+        overrides["mqtt_tls"] = bool(args.mqtt_tls)
+    if args.serial_shared_secret:
+        overrides["serial_shared_secret"] = args.serial_shared_secret
+    if args.non_interactive:
         overrides["non_interactive"] = True
-    if debug:
+    if args.debug:
         overrides["debug"] = True
-    if allowed_commands:
+    if args.allowed_commands:
         overrides["allowed_commands"] = (
-            allowed_commands.split(",") if allowed_commands != "*" else "*"
+            args.allowed_commands.split(",") if args.allowed_commands != "*" else "*"
         )
 
+    main(overrides)
+
+
+def main(overrides: dict[str, Any]) -> None:
+    """Run the MCU Bridge daemon with the given configuration overrides."""
     config = load_runtime_config(overrides)
     configure_logging(config)
 

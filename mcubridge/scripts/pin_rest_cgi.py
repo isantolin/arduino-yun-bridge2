@@ -10,15 +10,12 @@ from wsgiref.handlers import CGIHandler
 
 import msgspec
 import paho.mqtt.publish
-import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.structures import GenericResponsePacket, RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 
 logger = logging.getLogger("mcubridge.pin_rest")
-
-app = typer.Typer(add_completion=False)
 
 
 def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
@@ -107,17 +104,10 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         )
 
 
-@app.command()
 def run_cgi() -> None:
     """Entry point for CGI execution."""
     CGIHandler().run(application)
 
 
 if __name__ == "__main__":
-    # If called without arguments, assume CGI environment
-    import sys
-
-    if len(sys.argv) == 1:
-        run_cgi()
-    else:
-        app()
+    run_cgi()

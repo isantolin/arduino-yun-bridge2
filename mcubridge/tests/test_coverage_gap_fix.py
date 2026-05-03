@@ -1,8 +1,10 @@
+import contextlib
+import io
 import pytest
 from collections import deque
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import msgspec
-from typer.testing import CliRunner
 from mcubridge.daemon import app
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.services.spi import SpiComponent
@@ -11,15 +13,29 @@ from mcubridge.protocol.protocol import Command
 from mcubridge.protocol.topics import parse_topic
 
 
+class _CliRunner:
+    def invoke(self, func, args):  # type: ignore[no-untyped-def]
+        buf = io.StringIO()
+        exit_code = 0
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                func(args)
+        except SystemExit as e:
+            exit_code = int(e.code) if isinstance(e.code, int) else 1
+        except Exception:
+            exit_code = 1
+        return SimpleNamespace(exit_code=exit_code, output=buf.getvalue())
+
+
 def test_daemon_uvloop_missing():
-    runner = CliRunner()
+    runner = _CliRunner()
     with patch("mcubridge.daemon.uvloop", None):
         result = runner.invoke(app, ["--serial-port", "/dev/ttyUSB0"])
     assert result.exit_code == 1
 
 
 def test_daemon_crypto_failure():
-    runner = CliRunner()
+    runner = _CliRunner()
     with patch("mcubridge.daemon.verify_crypto_integrity", return_value=False):
         result = runner.invoke(app, ["--serial-port", "/dev/ttyUSB0"])
     assert result.exit_code == 1

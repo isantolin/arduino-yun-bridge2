@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import shlex
@@ -13,10 +14,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Annotated, cast
+from typing import Any, cast
 
 import msgspec
-import typer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SMOKE_SCRIPT = REPO_ROOT / "tools" / "hardware_smoke_test.sh"
@@ -409,114 +409,96 @@ async def main_async(
     return 0
 
 
-app = typer.Typer(
-    add_completion=False,
-    help="Run McuBridge smoke tests across multiple devices.",
-)
-
-
-@app.command("run")
-def run_command(
-    manifest: Annotated[
-        Path,
-        typer.Option(
-            "--manifest",
-            "-m",
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-            resolve_path=True,
-            help="Path to targets manifest.",
-        ),
-    ] = DEFAULT_MANIFEST,
-    target: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--target",
-            "-t",
-            help="Limit execution to the specified target name (repeatable).",
-        ),
-    ] = None,
-    tag: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--tag",
-            help="Only run targets containing the given tag (repeatable).",
-        ),
-    ] = None,
-    max_parallel: Annotated[
-        int,
-        typer.Option(
-            "--max-parallel",
-            "-p",
-            min=1,
-            help="Maximum concurrent smoke runs.",
-        ),
-    ] = 2,
-    timeout: Annotated[
-        float | None,
-        typer.Option(
-            "--timeout",
-            "-T",
-            min=0.0,
-            help="Override per-target timeout (seconds).",
-        ),
-    ] = None,
-    json_path: Annotated[
-        Path | None,
-        typer.Option(
-            "--json",
-            file_okay=True,
-            dir_okay=False,
-            writable=True,
-            resolve_path=True,
-            help="Write a JSON report to this path.",
-        ),
-    ] = None,
-    dry_run: Annotated[
-        bool,
-        typer.Option(
-            "--dry-run",
-            help="Print the commands that would run without executing them.",
-        ),
-    ] = False,
-    list_only: Annotated[
-        bool,
-        typer.Option(
-            "--list",
-            help="List targets that match the current filters and exit.",
-        ),
-    ] = False,
-) -> None:
+def run_command(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Run McuBridge smoke tests across multiple devices."
+    )
+    parser.add_argument(
+        "--manifest",
+        "-m",
+        type=Path,
+        default=DEFAULT_MANIFEST,
+        help="Path to targets manifest.",
+    )
+    parser.add_argument(
+        "--target",
+        "-t",
+        action="append",
+        dest="target",
+        default=None,
+        help="Limit execution to the specified target name (repeatable).",
+    )
+    parser.add_argument(
+        "--tag",
+        action="append",
+        dest="tag",
+        default=None,
+        help="Only run targets containing the given tag (repeatable).",
+    )
+    parser.add_argument(
+        "--max-parallel",
+        "-p",
+        type=int,
+        default=2,
+        help="Maximum concurrent smoke runs.",
+    )
+    parser.add_argument(
+        "--timeout",
+        "-T",
+        type=float,
+        default=None,
+        help="Override per-target timeout (seconds).",
+    )
+    parser.add_argument(
+        "--json",
+        dest="json_path",
+        type=Path,
+        default=None,
+        help="Write a JSON report to this path.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Print the commands that would run without executing them.",
+    )
+    parser.add_argument(
+        "--list",
+        dest="list_only",
+        action="store_true",
+        default=False,
+        help="List targets that match the current filters and exit.",
+    )
+    args = parser.parse_args(argv)
     try:
         exit_code = asyncio.run(
             main_async(
-                manifest=manifest,
-                targets_filter=target,
-                tags_filter=tag,
-                max_parallel=max_parallel,
-                timeout_override=timeout,
-                json_path=json_path,
-                dry_run=dry_run,
-                list_only=list_only,
+                manifest=args.manifest,
+                targets_filter=args.target,
+                tags_filter=args.tag,
+                max_parallel=args.max_parallel,
+                timeout_override=args.timeout,
+                json_path=args.json_path,
+                dry_run=args.dry_run,
+                list_only=args.list_only,
             )
         )
     except KeyboardInterrupt:
-        raise typer.Exit(130)
+        raise SystemExit(130)
     except FileNotFoundError as exc:
-        typer.secho(str(exc), err=True, fg=typer.colors.RED)
-        raise typer.Exit(2)
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2)
     except ValueError as exc:
-        typer.secho(str(exc), err=True, fg=typer.colors.RED)
-        raise typer.Exit(2)
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2)
     except RuntimeError as exc:
-        typer.secho(str(exc), err=True, fg=typer.colors.RED)
-        raise typer.Exit(1)
-    raise typer.Exit(exit_code)
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1)
+    raise SystemExit(exit_code)
 
 
 def main() -> None:
-    app()
+    run_command()
 
 
 if __name__ == "__main__":

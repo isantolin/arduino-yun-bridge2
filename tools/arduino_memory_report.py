@@ -3,16 +3,11 @@
 
 from __future__ import annotations
 
+import argparse
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
-
-import typer
-
-app = typer.Typer(
-    help="Parse Arduino compilation logs and generate a memory usage report."
-)
 
 BOARD_MAPPING = {
     "arduino-avr-yun": "Arduino Yún",
@@ -95,20 +90,26 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
     return "\n".join(header + rows)
 
 
-@app.command()
-def main(
-    log_dir: Annotated[
-        Path, typer.Argument(help="Directory containing build log files.")
-    ],
-    github_step_summary: Annotated[
-        Path | None,
-        typer.Option(help="Append the table to GitHub step summary output."),
-    ] = None,
-) -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Parse Arduino compilation logs and generate a memory usage report."
+    )
+    parser.add_argument(
+        "log_dir", type=Path, help="Directory containing build log files."
+    )
+    parser.add_argument(
+        "--github-step-summary",
+        type=Path,
+        default=None,
+        help="Append the table to GitHub step summary output.",
+    )
+    args = parser.parse_args(argv)
+    log_dir: Path = args.log_dir
+    github_step_summary: Path | None = args.github_step_summary
     if not log_dir.exists() or not log_dir.is_dir():
-        typer.secho(
+        print(
             f"Warning: Directory {log_dir} does not exist. Skipping memory report.",
-            fg=typer.colors.YELLOW,
+            file=sys.stderr,
         )
         return
 
@@ -119,11 +120,11 @@ def main(
             all_metrics.append(m)
 
     if not all_metrics:
-        typer.secho("No memory metrics found in logs.", fg=typer.colors.YELLOW)
+        print("No memory metrics found in logs.", file=sys.stderr)
         return
 
     md_report = render_markdown(all_metrics)
-    typer.echo(md_report)
+    print(md_report)
 
     if github_step_summary:
         with github_step_summary.open("a", encoding="utf-8") as f:
@@ -131,4 +132,4 @@ def main(
 
 
 if __name__ == "__main__":
-    app()
+    main()

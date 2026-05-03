@@ -104,11 +104,6 @@ def _rle_decode_chunk(obj: Any, _ctx: Any) -> bytes:
     return bytes([obj.value]) * count
 
 
-def _rle_encode_chunk_nop(_obj: Any, _ctx: Any) -> None:
-    """SIL-2: NOP encoder for RLE escape."""
-    return None
-
-
 # [SIL-2] Highly Optimized RLE Structures
 RLE_ESCAPE_STRUCT: Construct = Struct(
     "escape" / Const(protocol.RLE_ESCAPE_BYTE, Int8ub),
@@ -144,7 +139,7 @@ RLE_DECODER: Construct = FocusedSeq(
             ExprAdapter(
                 RLE_ESCAPE_STRUCT,
                 decoder=_rle_decode_chunk,
-                encoder=_rle_encode_chunk_nop,
+                encoder=None,
             ),
             # Literal: Any byte that is NOT the escape byte
             ExprAdapter(

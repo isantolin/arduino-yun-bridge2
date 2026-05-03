@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
 
-import typer
+import argparse
 
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
@@ -89,16 +89,10 @@ def _daemon_worker(daemon_proc: subprocess.Popen[str], state: EmulationState) ->
             state.on_line(line, "daemon")
 
 
-def main(
-    firmware_path: Annotated[
-        Path, typer.Option("--firmware", help="Path to MCU firmware binary")
-    ],
-    package_root: Annotated[
-        Path, typer.Option("--package-root", help="Root of mcubridge package")
-    ] = Path("."),
-    run_scripts: Annotated[
-        list[str] | None, typer.Argument(help="Client scripts to run")
-    ] = None,
+def run_emulation(
+    firmware_path: Path,
+    package_root: Path = Path("."),
+    run_scripts: list[str] | None = None,
 ):
     state = EmulationState()
     mqtt = MqttVerifier(MQTT_HOST, MQTT_PORT)
@@ -264,4 +258,21 @@ def main(
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    parser = argparse.ArgumentParser(description="Hardware Emulation Runner")
+    parser.add_argument(
+        "--firmware", type=Path, required=True, help="Path to MCU firmware binary"
+    )
+    parser.add_argument(
+        "--package-root",
+        type=Path,
+        default=Path("."),
+        help="Root of mcubridge package",
+    )
+    parser.add_argument("run_scripts", nargs="*", help="Client scripts to run")
+    args = parser.parse_args()
+
+    run_emulation(
+        firmware_path=args.firmware,
+        package_root=args.package_root,
+        run_scripts=args.run_scripts,
+    )

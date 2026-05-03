@@ -51,6 +51,7 @@ SOURCES=(
 
 BASE_FLAGS=(
     "-O0" "-g" "-fprofile-arcs" "-ftest-coverage" "-fPIC"
+    "-Wall" "-Wextra" "-Werror"
     "-DARDUINO=100" "-DBRIDGE_HOST_TEST=1" "-DWOLFSSL_USER_SETTINGS"
     "-DETL_NO_STL" "-DBRIDGE_DEBUG_IO=1"
     "-DBRIDGE_ENABLE_CONSOLE=1" "-DBRIDGE_ENABLE_DATASTORE=1"

@@ -273,62 +273,6 @@ class MailboxComponent:
                 "outgoing_available", len(self.state.mailbox_queue)
             )
 
-    async def _handle_outgoing_overflow(
-        self,
-        payload_size: int,
-        inbound: Message | None,
-    ) -> None:
-        queue_len = len(self.state.mailbox_queue)
-        logger.error(
-            "Mailbox outgoing queue full; rejecting MQTT payload (%d bytes)",
-            payload_size,
-            queue_len=queue_len,
-            queue_limit=self.state.mailbox_queue_limit,
-            queue_bytes_limit=self.state.mailbox_queue_bytes_limit,
-            queue_bytes_used=self.state.mailbox_queue_bytes,
-            payload_bytes=payload_size,
-        )
-        reason = protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW
-        await self.serial_flow.send(
-            Status.ERROR.value,
-            reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE],
-        )
-        await self._publish_available("outgoing_available", queue_len)
-        overflow_topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.MAILBOX,
-            MailboxAction.ERRORS,
-        )
-
-        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        body = msgspec.msgpack.encode(
-            {
-                "event": "write_overflow",
-                "reason": protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW,
-                "queue_size": queue_len,
-                "queue_limit": self.state.mailbox_queue_limit,
-                "queue_bytes_limit": self.state.mailbox_queue_bytes_limit,
-                "payload_bytes": payload_size,
-                "overflow_events": self.state.mailbox_outgoing_overflow_events,
-            }
-        )
-
-        properties: tuple[tuple[str, str], ...]
-        if inbound is not None:
-            properties = (("bridge-error", Topic.MAILBOX.value),)
-        else:
-            properties = ()
-
-        await self.mqtt_flow.enqueue_mqtt(
-            QueuedPublish(
-                topic_name=overflow_topic,
-                payload=body,
-                content_type="application/msgpack",
-                user_properties=properties,
-            ),
-            reply_context=inbound,
-        )
-
     async def _publish_available(
         self,
         suffix: str,

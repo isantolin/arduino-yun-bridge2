@@ -16,7 +16,7 @@ void setUp(void) {}
 void tearDown(void) {}
 
 void test_msgpack_encode_decode_int() {
-  etl::array<uint8_t, 20> buffer;
+  etl::array<uint8_t, 20> buffer = {};
   msgpack::Encoder encoder(buffer.data(), buffer.size());
   
   encoder.write_uint8(42);
@@ -32,7 +32,7 @@ void test_msgpack_encode_decode_int() {
 }
 
 void test_msgpack_encode_decode_string() {
-  etl::array<uint8_t, 200> buffer;
+  etl::array<uint8_t, 200> buffer = {};
   msgpack::Encoder encoder(buffer.data(), buffer.size());
   
   const char* test_str = "hello";
@@ -56,7 +56,7 @@ void test_msgpack_encode_decode_string() {
 }
 
 void test_msgpack_encode_decode_bytes() {
-  etl::array<uint8_t, 300> buffer;
+  etl::array<uint8_t, 300> buffer = {};
   msgpack::Encoder encoder(buffer.data(), buffer.size());
   
   etl::array<uint8_t, 4> test_bytes = {0xDE, 0xAD, 0xBE, 0xEF};
@@ -86,7 +86,7 @@ void test_msgpack_decode_error_overflow() {
 }
 
 void test_msgpack_array_fix_and_16() {
-  etl::array<uint8_t, 50> buffer;
+  etl::array<uint8_t, 50> buffer = {};
   msgpack::Encoder encoder(buffer.data(), buffer.size());
   encoder.write_array(3);
   encoder.write_array(20); 
@@ -98,7 +98,7 @@ void test_msgpack_array_fix_and_16() {
 }
 
 void test_msgpack_encoder_error_overflow() {
-  etl::array<uint8_t, 1> buffer;
+  etl::array<uint8_t, 1> buffer = {};
   msgpack::Encoder encoder(buffer.data(), 1);
   encoder.write_uint32(1000000); 
   TEST_ASSERT(!encoder.ok());
@@ -112,7 +112,7 @@ void test_msgpack_decoder_error_paths() {
 }
 
 void test_msgpack_large_headers() {
-  etl::array<uint8_t, 100> buffer;
+  etl::array<uint8_t, 100> buffer = {};
   msgpack::Encoder encoder(buffer.data(), buffer.size());
   encoder.write_array(16);
   
@@ -122,7 +122,7 @@ void test_msgpack_large_headers() {
 }
 
 void test_msgpack_int_edge_cases() {
-    etl::array<uint8_t, 50> buffer;
+    etl::array<uint8_t, 50> buffer = {};
     msgpack::Encoder encoder(buffer.data(), buffer.size());
     encoder.write_uint16(200); 
     encoder.write_uint32(70000); 
@@ -134,7 +134,7 @@ void test_msgpack_int_edge_cases() {
 }
 
 void test_msgpack_large_data_formats() {
-    etl::array<uint8_t, 1000> buffer;
+    etl::array<uint8_t, 1000> buffer = {};
     msgpack::Encoder encoder(buffer.data(), buffer.size());
     etl::array<char, 257> str256;
     str256.fill('B');
@@ -148,7 +148,7 @@ void test_msgpack_large_data_formats() {
 }
 
 void test_msgpack_error_mismatches() {
-    etl::array<uint8_t, 10> buffer;
+    etl::array<uint8_t, 10> buffer = {};
     msgpack::Encoder enc(buffer.data(), 10);
     enc.write_uint8(1);
     
@@ -165,7 +165,7 @@ void test_msgpack_error_mismatches() {
 }
 
 void test_msgpack_32bit_formats() {
-    static etl::array<uint8_t, 70000> buffer;
+    static etl::array<uint8_t, 70000> buffer = {};
     msgpack::Encoder encoder(buffer.data(), buffer.size());
     static etl::array<uint8_t, 66000> large_bin;
     large_bin.fill(0xDD);

@@ -63,12 +63,21 @@ constexpr etl::underlying_type_t<E> to_underlying(E value) {
 
 constexpr bool requires_ack(CommandId command_id) {
 {%- if ack_commands %}
-    constexpr CommandId ACK_COMMANDS[] = {
-{%- for cmd in ack_commands %}
-        CommandId::{{ cmd.name }}{{ "," if not loop.last }}
-{%- endfor %}
+    constexpr uint16_t MAX_CMD_ID = 256U;
+    struct AckBitset {
+        uint32_t bits[MAX_CMD_ID / 32U] = {0};
+        constexpr AckBitset() {
+            {%- for cmd in ack_commands %}
+            bits[static_cast<uint16_t>(CommandId::{{ cmd.name }}) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::{{ cmd.name }}) % 32U));
+            {%- endfor %}
+        }
+        constexpr bool test(uint16_t id) const {
+            if (id >= MAX_CMD_ID) return false;
+            return (bits[id / 32U] & (1UL << (id % 32U))) != 0;
+        }
     };
-    return etl::find(etl::begin(ACK_COMMANDS), etl::end(ACK_COMMANDS), command_id) != etl::end(ACK_COMMANDS);
+    constexpr AckBitset ACK_MAP;
+    return ACK_MAP.test(to_underlying(command_id));
 {%- else %}
     (void)command_id;
     return false;

@@ -203,20 +203,29 @@ constexpr etl::underlying_type_t<E> to_underlying(E value) {
 }
 
 constexpr bool requires_ack(CommandId command_id) {
-    constexpr CommandId ACK_COMMANDS[] = {
-        CommandId::CMD_ENTER_BOOTLOADER,
-        CommandId::CMD_SET_PIN_MODE,
-        CommandId::CMD_DIGITAL_WRITE,
-        CommandId::CMD_ANALOG_WRITE,
-        CommandId::CMD_CONSOLE_WRITE,
-        CommandId::CMD_DATASTORE_PUT,
-        CommandId::CMD_MAILBOX_PUSH,
-        CommandId::CMD_FILE_WRITE,
-        CommandId::CMD_SPI_BEGIN,
-        CommandId::CMD_SPI_END,
-        CommandId::CMD_SPI_SET_CONFIG
+    constexpr uint16_t MAX_CMD_ID = 256U;
+    struct AckBitset {
+        uint32_t bits[MAX_CMD_ID / 32U] = {0};
+        constexpr AckBitset() {
+            bits[static_cast<uint16_t>(CommandId::CMD_ENTER_BOOTLOADER) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_ENTER_BOOTLOADER) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_SET_PIN_MODE) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_SET_PIN_MODE) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_DIGITAL_WRITE) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_DIGITAL_WRITE) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_ANALOG_WRITE) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_ANALOG_WRITE) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_CONSOLE_WRITE) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_CONSOLE_WRITE) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_DATASTORE_PUT) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_DATASTORE_PUT) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_MAILBOX_PUSH) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_MAILBOX_PUSH) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_FILE_WRITE) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_FILE_WRITE) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_SPI_BEGIN) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_SPI_BEGIN) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_SPI_END) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_SPI_END) % 32U));
+            bits[static_cast<uint16_t>(CommandId::CMD_SPI_SET_CONFIG) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::CMD_SPI_SET_CONFIG) % 32U));
+        }
+        constexpr bool test(uint16_t id) const {
+            if (id >= MAX_CMD_ID) return false;
+            return (bits[id / 32U] & (1UL << (id % 32U))) != 0;
+        }
     };
-    return etl::find(etl::begin(ACK_COMMANDS), etl::end(ACK_COMMANDS), command_id) != etl::end(ACK_COMMANDS);
+    constexpr AckBitset ACK_MAP;
+    return ACK_MAP.test(to_underlying(command_id));
 }
 
 constexpr bool requires_ack(uint16_t command_id) {

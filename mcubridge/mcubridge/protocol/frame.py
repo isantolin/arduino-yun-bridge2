@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from binascii import crc32
 import msgspec
-from typing import TypeVar, Any
+from typing import TypeVar
 import construct
 from construct import (
     Bytes,
@@ -47,15 +47,15 @@ RPC_FRAME_BODY = Struct(
 )
 
 
+def _frame_crc(data: bytes) -> int:
+    """CRC32 checksum for frame integrity (SIL-2: explicit typed signature)."""
+    return crc32(data) & 0xFFFFFFFF
+
+
 # [SIL-2] Full Frame using native Checksum (Zero-Boilerplate)
 RPC_FRAME = Struct(
     "body" / RawCopy(RPC_FRAME_BODY),
-    "crc"
-    / Checksum(
-        Int32ub,
-        lambda data: crc32(bytes(data)) & 0xFFFFFFFF,
-        this.body.data,
-    ),
+    "crc" / Checksum(Int32ub, _frame_crc, this.body.data),
 )
 
 

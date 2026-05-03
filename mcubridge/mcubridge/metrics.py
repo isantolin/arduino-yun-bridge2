@@ -51,7 +51,10 @@ def _build_metrics_message(
     if snapshot.get("mqtt_spool_degraded"):
         message = msgspec.structs.replace(
             message,
-            user_properties=(*message.user_properties, ("bridge-spool", mqtt_spool_failure or "unknown")),
+            user_properties=(
+                *message.user_properties,
+                ("bridge-spool", mqtt_spool_failure or "unknown"),
+            ),
         )
 
     file_status = next(
@@ -77,13 +80,19 @@ def _build_metrics_message(
         enabled = bool(snapshot.get("watchdog_enabled"))
         message = msgspec.structs.replace(
             message,
-            user_properties=(*message.user_properties, ("bridge-watchdog-enabled", "1" if enabled else "0")),
+            user_properties=(
+                *message.user_properties,
+                ("bridge-watchdog-enabled", "1" if enabled else "0"),
+            ),
         )
         watchdog_interval = snapshot.get("watchdog_interval")
         if isinstance(watchdog_interval, (int, float)):
             message = msgspec.structs.replace(
                 message,
-                user_properties=(*message.user_properties, ("bridge-watchdog-interval", str(watchdog_interval))),
+                user_properties=(
+                    *message.user_properties,
+                    ("bridge-watchdog-interval", str(watchdog_interval)),
+                ),
             )
 
     return message
@@ -441,6 +450,7 @@ class PrometheusExporter:
         headers = f"Content-Type: {content_type}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n"
         writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
         await writer.drain()
+
 
 def _build_bridge_snapshot_message(
     state: RuntimeState,

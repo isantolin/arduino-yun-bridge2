@@ -132,4 +132,3 @@ def test_build_mqtt_properties_populates_fields() -> None:
     assert props.ResponseTopic == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response"
     assert props.CorrelationData == b"cid"
     assert ("k", "v") in list(props.UserProperty)
-

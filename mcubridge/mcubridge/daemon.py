@@ -337,7 +337,9 @@ def app(argv: list[str] | None = None) -> None:
             "serial_shared_secret": args.serial_shared_secret,
             "non_interactive": args.non_interactive or None,
             "debug": args.debug or None,
-            "allowed_commands": (_ac.split(",") if _ac != "*" else "*") if _ac else None,
+            "allowed_commands": (
+                (_ac.split(",") if _ac != "*" else "*") if _ac else None
+            ),
         }.items()
         if v is not None
     }

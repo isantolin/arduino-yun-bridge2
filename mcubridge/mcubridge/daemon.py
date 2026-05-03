@@ -325,27 +325,22 @@ def app(argv: list[str] | None = None) -> None:
     """CLI entry point for the MCU Bridge daemon."""
     args = _build_arg_parser().parse_args(argv)
 
-    overrides: dict[str, Any] = {}
-    if args.serial_port:
-        overrides["serial_port"] = args.serial_port
-    if args.serial_baud:
-        overrides["serial_baud"] = args.serial_baud
-    if args.mqtt_host:
-        overrides["mqtt_host"] = args.mqtt_host
-    if args.mqtt_port:
-        overrides["mqtt_port"] = args.mqtt_port
-    if args.mqtt_tls is not None:
-        overrides["mqtt_tls"] = bool(args.mqtt_tls)
-    if args.serial_shared_secret:
-        overrides["serial_shared_secret"] = args.serial_shared_secret
-    if args.non_interactive:
-        overrides["non_interactive"] = True
-    if args.debug:
-        overrides["debug"] = True
-    if args.allowed_commands:
-        overrides["allowed_commands"] = (
-            args.allowed_commands.split(",") if args.allowed_commands != "*" else "*"
-        )
+    _ac = args.allowed_commands
+    overrides: dict[str, Any] = {
+        k: v
+        for k, v in {
+            "serial_port": args.serial_port,
+            "serial_baud": args.serial_baud,
+            "mqtt_host": args.mqtt_host,
+            "mqtt_port": args.mqtt_port,
+            "mqtt_tls": bool(args.mqtt_tls) if args.mqtt_tls is not None else None,
+            "serial_shared_secret": args.serial_shared_secret,
+            "non_interactive": args.non_interactive or None,
+            "debug": args.debug or None,
+            "allowed_commands": (_ac.split(",") if _ac != "*" else "*") if _ac else None,
+        }.items()
+        if v is not None
+    }
 
     main(overrides)
 

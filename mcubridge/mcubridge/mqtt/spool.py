@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 from collections import deque
-from typing import Any, cast, TYPE_CHECKING
+from typing import Any, cast
 
 import diskcache
 import msgspec
 import structlog
-
-if TYPE_CHECKING:
-    pass
 
 from ..protocol.structures import QueuedPublish
 

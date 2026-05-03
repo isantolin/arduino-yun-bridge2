@@ -286,48 +286,52 @@ class BridgeDaemon:
                 await factory()
 
 
-def main(argv: list[str] | None = None) -> None:
+app = typer.Typer(
+    name="mcubridge", help="Arduino MCU Bridge Daemon v2", add_completion=False
+)
+
+
+@app.command()
+def main(
+    serial_port: Annotated[str | None, typer.Option(help="Serial port to use")] = None,
+    serial_baud: Annotated[int | None, typer.Option(help="Serial baud rate")] = None,
+    mqtt_host: Annotated[str | None, typer.Option(help="MQTT host")] = None,
+    mqtt_port: Annotated[int | None, typer.Option(help="MQTT port")] = None,
+    mqtt_tls: Annotated[
+        int | None, typer.Option(help="Use TLS for MQTT (0 or 1)")
+    ] = None,
+    serial_shared_secret: Annotated[
+        str | None, typer.Option(help="Shared secret for serial link")
+    ] = None,
+    allowed_commands: Annotated[
+        str | None, typer.Option(help="Comma-separated list of allowed shell commands")
+    ] = None,
+    non_interactive: Annotated[
+        bool, typer.Option(help="Enable non-interactive mode")
+    ] = False,
+    debug: Annotated[bool, typer.Option(help="Enable debug logging")] = False,
+) -> None:
     """Main entry point for the MCU Bridge daemon."""
-    parser = argparse.ArgumentParser(
-        description="Arduino MCU Bridge Daemon v2",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument("--serial-port", help="Serial port to use")
-    parser.add_argument("--serial-baud", type=int, help="Serial baud rate")
-    parser.add_argument("--mqtt-host", help="MQTT host")
-    parser.add_argument("--mqtt-port", type=int, help="MQTT port")
-    parser.add_argument("--mqtt-tls", type=int, help="Use TLS for MQTT (0 or 1)")
-    parser.add_argument("--serial-shared-secret", help="Shared secret for serial link")
-    parser.add_argument(
-        "--allowed-commands", help="Comma-separated list of allowed shell commands"
-    )
-    parser.add_argument(
-        "--non-interactive", action="store_true", help="Enable non-interactive mode"
-    )
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-
-    args = parser.parse_args(argv)
-
     overrides: dict[str, Any] = {}
-    if args.serial_port:
-        overrides["serial_port"] = args.serial_port
-    if args.serial_baud:
-        overrides["serial_baud"] = args.serial_baud
-    if args.mqtt_host:
-        overrides["mqtt_host"] = args.mqtt_host
-    if args.mqtt_port:
-        overrides["mqtt_port"] = args.mqtt_port
-    if args.mqtt_tls is not None:
-        overrides["mqtt_tls"] = bool(args.mqtt_tls)
-    if args.serial_shared_secret:
-        overrides["serial_shared_secret"] = args.serial_shared_secret
-    if args.non_interactive:
+    if serial_port:
+        overrides["serial_port"] = serial_port
+    if serial_baud:
+        overrides["serial_baud"] = serial_baud
+    if mqtt_host:
+        overrides["mqtt_host"] = mqtt_host
+    if mqtt_port:
+        overrides["mqtt_port"] = mqtt_port
+    if mqtt_tls is not None:
+        overrides["mqtt_tls"] = bool(mqtt_tls)
+    if serial_shared_secret:
+        overrides["serial_shared_secret"] = serial_shared_secret
+    if non_interactive:
         overrides["non_interactive"] = True
-    if args.debug:
+    if debug:
         overrides["debug"] = True
-    if args.allowed_commands:
+    if allowed_commands:
         overrides["allowed_commands"] = (
-            args.allowed_commands.split(",") if args.allowed_commands != "*" else "*"
+            allowed_commands.split(",") if allowed_commands != "*" else "*"
         )
 
     config = load_runtime_config(overrides)

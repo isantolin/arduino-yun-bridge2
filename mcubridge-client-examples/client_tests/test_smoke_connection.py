@@ -3,14 +3,11 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
-from typing import Annotated
 
-import typer
 from mcubridge_client import Bridge, dump_client_env
-
-app = typer.Typer(help="Minimal connectivity smoke test for the bridge client.")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,15 +39,17 @@ async def run_test(
     await bridge.disconnect()
 
 
-@app.command()
-def main(
-    host: Annotated[str | None, typer.Option(help="MQTT Broker Host")] = None,
-    port: Annotated[int | None, typer.Option(help="MQTT Broker Port")] = None,
-    user: Annotated[str | None, typer.Option(help="MQTT Username")] = None,
-    password: Annotated[str | None, typer.Option(help="MQTT Password")] = None,
-) -> None:
-    asyncio.run(run_test(host, port, user, password))
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Minimal connectivity smoke test for the bridge client."
+    )
+    parser.add_argument("--host", default=None, help="MQTT Broker Host")
+    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
+    parser.add_argument("--user", default=None, help="MQTT Username")
+    parser.add_argument("--password", default=None, help="MQTT Password")
+    args = parser.parse_args()
+    asyncio.run(run_test(args.host, args.port, args.user, args.password))
 
 
 if __name__ == "__main__":
-    app()
+    main()

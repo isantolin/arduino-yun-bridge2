@@ -60,7 +60,7 @@ class MQTTPublishSpool:
         except (OSError, RuntimeError, sqlite3.Error) as exc:
             # [SIL-2] Resilient fallback to RAM if SQLite fails
             if self._cache is not None:
-                self._cache.close()
+                cast(Any, self._cache).close()
             logger.warning("MQTT spool falling back to RAM: %s", exc)
             self._is_degraded = True
             self._last_error = str(exc)

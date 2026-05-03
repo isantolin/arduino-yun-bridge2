@@ -436,7 +436,7 @@ class RuntimeState(msgspec.Struct):
                     )
                 except (OSError, RuntimeError, sqlite3.Error):
                     if cache is not None:
-                        cache.close()
+                        cast(Any, cache).close()
                     logger.warning("Spool '%s' falling back to RAM", subdir)
 
             return (

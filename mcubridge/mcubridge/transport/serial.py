@@ -280,8 +280,6 @@ class SerialTransport:
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
             # [SIL-2] Direct metrics recording (No Wrapper)
             nbytes = len(encoded_packet)
-            self.state.serial_bytes_received += nbytes
-            self.state.serial_frames_received += 1
             self.state.metrics.serial_bytes_received.inc(nbytes)
             self.state.metrics.serial_frames_received.inc()
             self.state.serial_throughput_stats.record_rx(nbytes)
@@ -376,8 +374,6 @@ class SerialTransport:
 
             # [SIL-2] Direct metrics recording (No Wrapper)
             nbytes = len(encoded)
-            self.state.serial_bytes_sent += nbytes
-            self.state.serial_frames_sent += 1
             self.state.metrics.serial_bytes_sent.inc(nbytes)
             self.state.metrics.serial_frames_sent.inc()
             self.state.serial_throughput_stats.record_tx(nbytes)

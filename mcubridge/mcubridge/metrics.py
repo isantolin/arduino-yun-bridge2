@@ -49,49 +49,32 @@ def _build_metrics_message(
 
     mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
     if snapshot.get("mqtt_spool_degraded"):
-        message = _with_user_property(
+        message = msgspec.structs.replace(
             message,
-            "bridge-spool",
-            mqtt_spool_failure or "unknown",
+            user_properties=(*message.user_properties, ("bridge-spool", mqtt_spool_failure or "unknown")),
         )
 
     file_status = _file_status_property(snapshot)
     if file_status is not None:
-        message = _with_user_property(
+        message = msgspec.structs.replace(
             message,
-            "bridge-files",
-            file_status,
+            user_properties=(*message.user_properties, ("bridge-files", file_status)),
         )
 
     if snapshot.get("watchdog_enabled") is not None:
         enabled = bool(snapshot.get("watchdog_enabled"))
-        message = _with_user_property(
+        message = msgspec.structs.replace(
             message,
-            "bridge-watchdog-enabled",
-            "1" if enabled else "0",
+            user_properties=(*message.user_properties, ("bridge-watchdog-enabled", "1" if enabled else "0")),
         )
         watchdog_interval = snapshot.get("watchdog_interval")
         if isinstance(watchdog_interval, (int, float)):
-            message = _with_user_property(
+            message = msgspec.structs.replace(
                 message,
-                "bridge-watchdog-interval",
-                str(watchdog_interval),
+                user_properties=(*message.user_properties, ("bridge-watchdog-interval", str(watchdog_interval))),
             )
 
     return message
-
-
-def _with_user_property(
-    message: QueuedPublish,
-    key: str,
-    value: str,
-) -> QueuedPublish:
-    user_properties = list(message.user_properties)
-    user_properties.append((key, value))
-    return msgspec.structs.replace(
-        message,
-        user_properties=tuple(user_properties),
-    )
 
 
 def _file_status_property(snapshot: dict[str, Any]) -> str | None:

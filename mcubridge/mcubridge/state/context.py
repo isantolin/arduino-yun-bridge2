@@ -332,16 +332,8 @@ class RuntimeState(msgspec.Struct):
     supervisor_failures: int = 0
     last_supervisor_error: str | None = None
 
-    # Metrics (Synchronized with Prometheus)
-    mqtt_messages_published: int = 0
+    # Fields read by business logic / tests (Prometheus counters are the export source of truth)
     mqtt_dropped_messages: int = 0
-    mqtt_spooled_messages: int = 0
-    mqtt_spool_errors: int = 0
-    serial_bytes_sent: int = 0
-    serial_bytes_received: int = 0
-    serial_frames_sent: int = 0
-    serial_frames_received: int = 0
-    serial_crc_errors: int = 0
     serial_decode_errors: int = 0
     handshake_attempts: int = 0
     handshake_successes: int = 0

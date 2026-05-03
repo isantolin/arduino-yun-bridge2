@@ -192,7 +192,6 @@ class MqttTransport:
                 try:
                     await _reliable_publish()
                     # [SIL-2] Direct metrics recording (No Wrapper)
-                    self.state.mqtt_messages_published += 1
                     self.state.metrics.mqtt_messages_published.inc()
                     published = True
                 except aiomqtt.MqttError as exc:
@@ -429,7 +428,6 @@ class MqttTransport:
         self, reason: str, exc: BaseException | None = None
     ) -> None:
         # [SIL-2] Direct metrics recording (No Wrapper)
-        self.state.mqtt_spool_errors += 1
         self.state.metrics.mqtt_spool_errors.inc()
         if exc:
             self.state.mqtt_spool_last_error = str(exc)
@@ -441,7 +439,6 @@ class MqttTransport:
         if exc:
             self.state.mqtt_spool_last_error = str(exc)
         # [SIL-2] Direct metrics recording (No Wrapper)
-        self.state.mqtt_spool_errors += 1
         self.state.metrics.mqtt_spool_errors.inc()
 
     async def stash_mqtt_message(self, message: QueuedPublish) -> bool:
@@ -455,7 +452,6 @@ class MqttTransport:
             # to keep all sqlite3 access in the same thread as close().
             spool.append(message)
             # [SIL-2] Direct metrics recording (No Wrapper)
-            self.state.mqtt_spooled_messages += 1
             self.state.metrics.mqtt_spooled_messages.inc()
             return True
         except (OSError, RuntimeError) as exc:

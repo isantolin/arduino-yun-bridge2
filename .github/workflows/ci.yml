@@ -283,7 +283,7 @@ jobs:
 
       - name: Generate Coverage Summary
         run: |
-          pip install -r requirements/runtime.txt
+          pip install -r requirements/runtime.txt rich
           python tools/coverage_report.py \
             --output-markdown coverage/coverage-summary.md \
             --output-json coverage/coverage-summary.json \

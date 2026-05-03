@@ -421,6 +421,7 @@ class RuntimeState(msgspec.Struct):
                 directory = Path(self.file_system_root) / subdir
 
             if directory:
+                cache = None
                 try:
                     directory.mkdir(parents=True, exist_ok=True)
                     cache = diskcache.Cache(str(directory))
@@ -434,6 +435,8 @@ class RuntimeState(msgspec.Struct):
                         cache,
                     )
                 except (OSError, RuntimeError, sqlite3.Error):
+                    if cache is not None:
+                        cache.close()
                     logger.warning("Spool '%s' falling back to RAM", subdir)
 
             return (

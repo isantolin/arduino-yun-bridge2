@@ -10,8 +10,13 @@ from mcubridge.daemon import app
 from unittest.mock import patch, MagicMock, AsyncMock
 
 
+from typing import Any, Callable
+
+
 class CliRunner:
-    def invoke(self, func, args):  # type: ignore[no-untyped-def]
+    def invoke(
+        self, func: Callable[[list[str]], Any], args: list[str]
+    ) -> SimpleNamespace:
         buf = io.StringIO()
         exit_code = 0
         try:

@@ -59,6 +59,8 @@ class MQTTPublishSpool:
             self._last_error = None
         except (OSError, RuntimeError, sqlite3.Error) as exc:
             # [SIL-2] Resilient fallback to RAM if SQLite fails
+            if self._cache is not None:
+                self._cache.close()
             logger.warning("MQTT spool falling back to RAM: %s", exc)
             self._is_degraded = True
             self._last_error = str(exc)
@@ -71,6 +73,7 @@ class MQTTPublishSpool:
         if self._cache is not None:
             cast(Any, self._cache).close()
             self._cache = None
+            self._deque = deque(maxlen=self.limit)
 
     def __del__(self) -> None:
         """Safety net: close the sqlite3 connection if close() was never called.
@@ -84,6 +87,7 @@ class MQTTPublishSpool:
             cache = self.__dict__.get("_cache")
             if cache is not None:
                 self.__dict__["_cache"] = None
+                self.__dict__["_deque"] = deque()
                 cache.close()
         except BaseException:  # pylint: disable=broad-except
             pass

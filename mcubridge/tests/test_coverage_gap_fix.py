@@ -13,8 +13,13 @@ from mcubridge.protocol.protocol import Command
 from mcubridge.protocol.topics import parse_topic
 
 
+from typing import Any, Callable
+
+
 class _CliRunner:
-    def invoke(self, func, args):  # type: ignore[no-untyped-def]
+    def invoke(
+        self, func: Callable[[list[str]], Any], args: list[str]
+    ) -> SimpleNamespace:
         buf = io.StringIO()
         exit_code = 0
         try:

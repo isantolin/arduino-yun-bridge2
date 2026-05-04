@@ -529,12 +529,6 @@ class RuntimeState(msgspec.Struct):
             last_completion=self.serial_pipeline_last,
         )
 
-    def _current_spool_snapshot(self) -> SpoolSnapshot:
-        """Fetch current spool statistics or fallback to cached snapshot."""
-        if self.mqtt_spool:
-            self._last_spool_snapshot = self.mqtt_spool.snapshot()
-        return self._last_spool_snapshot
-
     def apply_handshake_stats(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from external handshake statistics."""
         # [SIL-2] Bulk conversion using msgspec to eliminate manual coercion

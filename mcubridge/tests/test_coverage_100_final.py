@@ -1018,7 +1018,6 @@ class TestWatchdog:
         state = create_runtime_state(config)
         try:
             wd = WatchdogKeepalive(state=state, interval=0.1)
-            wd.start()
             task = asyncio.create_task(wd.run())
             await asyncio.sleep(0.15)
             task.cancel()

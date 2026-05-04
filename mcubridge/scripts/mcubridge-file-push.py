@@ -8,8 +8,12 @@ import sys
 import argparse
 from pathlib import Path
 import aiomqtt
+import structlog
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.topics import Topic, topic_path
+
+# [SIL-2] Structured logging towards syslog/stderr
+logger = structlog.get_logger("mcubridge.file-push")
 
 
 async def push_file(topic: str, data: bytes) -> None:
@@ -26,8 +30,9 @@ async def push_file(topic: str, data: bytes) -> None:
             tls_context=tls_context,
         ) as client:
             await client.publish(topic, payload=data, qos=1)
+            logger.info("File push successful", topic=topic, size=len(data))
     except (aiomqtt.MqttError, OSError, RuntimeError) as e:
-        sys.stderr.write(f"Error: File push failed: {e}\n")
+        logger.error("File push failed", error=str(e), topic=topic)
         sys.exit(1)
 
 
@@ -40,9 +45,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.source.exists() or args.source.is_dir():
-        sys.stderr.write(
-            f"Error: source file '{args.source}' does not exist or is a directory.\n"
-        )
+        logger.error("Source file does not exist", source=str(args.source))
         sys.exit(2)
 
     config = load_runtime_config()
@@ -58,10 +61,20 @@ def main() -> None:
     topic = topic_path(prefix, Topic.FILE, *segments)
 
     data = args.source.read_bytes()
-    print(f"Pushing {len(data)} bytes to {topic}...")
+
+    # [SIL-2] Binary payloads must be logged in HEXADECIMAL
+    hexdump = data[:64].hex(" ").upper()
+    if len(data) > 64:
+        hexdump += "..."
+
+    logger.info(
+        "Pushing file",
+        topic=topic,
+        size=len(data),
+        payload_hex=hexdump,
+    )
 
     asyncio.run(push_file(topic, data))
-    print("Success.")
 
 
 if __name__ == "__main__":

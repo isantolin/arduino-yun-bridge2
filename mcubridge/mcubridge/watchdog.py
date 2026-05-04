@@ -1,12 +1,13 @@
-"""Watchdog keepalive utilities for McuBridge."""
+"""Watchdog keepalive utilities for McuBridge (SIL-2)."""
 
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import time
 from collections.abc import Callable
+
+import structlog
 
 from .config.const import (
     DEFAULT_WATCHDOG_INTERVAL,
@@ -15,10 +16,9 @@ from .config.const import (
 )
 from .state.context import RuntimeState
 
-import functools
-import structlog
-
 WatchdogWrite = Callable[[bytes], None]
+
+logger = structlog.get_logger("mcubridge.watchdog")
 
 
 class WatchdogKeepalive:
@@ -31,62 +31,51 @@ class WatchdogKeepalive:
         state: RuntimeState | None = None,
         token: bytes = WATCHDOG_TRIGGER_TOKEN,
         write: WatchdogWrite | None = None,
-        logger: logging.Logger | None = None,
     ) -> None:
         self._interval = max(WATCHDOG_MIN_INTERVAL, interval)
         self._state = state
         self._token = token
-        self._write = write or functools.partial(os.write, 1)
-        self._logger = logger or structlog.get_logger("mcubridge.watchdog")
 
-    def start(self) -> None:
-        """Log watchdog start."""
-        self._logger.info("Watchdog keepalive started (interval=%.2fs)", self._interval)
+        def default_write(b: bytes) -> None:
+            os.write(1, b)
 
-    def stop(self) -> None:
-        """Log watchdog stop."""
-        self._logger.info("Watchdog keepalive stopped")
+        self._write = write or default_write
 
     @property
     def interval(self) -> float:
         return self._interval
 
+    @interval.setter
+    def interval(self, value: float) -> None:
+        self._interval = max(WATCHDOG_MIN_INTERVAL, value)
+
     def update_interval(self, interval: float) -> None:
-        """Update the keepalive interval at runtime.
-
-        This method is primarily exposed for testing scenarios where the
-        watchdog timing needs to be adjusted dynamically. In production,
-        the interval is typically set once at instantiation.
-
-        Args:
-            interval: New interval in seconds (clamped to WATCHDOG_MIN_INTERVAL).
-        """
-        self._interval = max(WATCHDOG_MIN_INTERVAL, interval)
+        """Compatibility shim for tests."""
+        self.interval = interval
 
     def kick(self) -> None:
         """Send a single watchdog pulse immediately."""
         try:
             self._write(self._token)
         except OSError as exc:
-            self._logger.warning("Failed to emit watchdog trigger: %s", exc)
+            logger.warning("Failed to emit watchdog trigger: %s", exc)
         else:
             if self._state is not None:
-                # [SIL-2] Direct metrics recording (No Wrapper)
+                # [SIL-2] Direct metrics recording
                 self._state.watchdog_beats += 1
                 self._state.metrics.watchdog_beats.inc()
                 self._state.last_watchdog_beat = time.time()
 
     async def run(self) -> None:
         """Continuously emit watchdog pulses until cancelled."""
-        self.start()
+        logger.info("Watchdog keepalive started (interval=%.2fs)", self.interval)
 
         try:
             while True:
                 self.kick()
-                await asyncio.sleep(self._interval)
+                await asyncio.sleep(self.interval)
         except asyncio.CancelledError:
-            self.stop()
-            self._logger.info("Watchdog keepalive cancelled")
+            logger.info("Watchdog keepalive cancelled")
             raise
 
 

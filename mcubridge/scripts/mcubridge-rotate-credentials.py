@@ -8,6 +8,10 @@ import subprocess
 import sys
 import argparse
 import uci
+import structlog
+
+# [SIL-2] Structured logging towards syslog/stderr
+logger = structlog.get_logger("mcubridge.rotate-credentials")
 
 
 def update_uci_secret(new_secret: str) -> None:
@@ -16,8 +20,9 @@ def update_uci_secret(new_secret: str) -> None:
         u = uci.Uci()
         u.set("mcubridge", "general", "secret", new_secret)
         u.commit("mcubridge")
+        logger.info("UCI configuration updated successfully")
     except (uci.UciException, RuntimeError) as e:
-        sys.stderr.write(f"Error: Failed to update UCI: {e}\n")
+        logger.error("Failed to update UCI", error=str(e))
         sys.exit(3)
 
 
@@ -27,8 +32,11 @@ def restart_service() -> None:
         subprocess.run(
             ["/etc/init.d/mcubridge", "restart"], check=True, capture_output=True
         )
+        logger.info("Bridge service restarted successfully")
     except subprocess.CalledProcessError as e:
-        sys.stderr.write(f"Warning: Service restart failed: {e.stderr.decode()}\n")
+        logger.warning(
+            "Service restart failed", stderr=e.stderr.decode(), exit_code=e.returncode
+        )
 
 
 def main() -> None:
@@ -46,23 +54,25 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.force:
-        ans = input(
+        sys.stdout.write(
             "This will rotate the shared secret and may drop MCU connections. Continue? [y/N] "
         )
-        if ans.lower() not in ("y", "yes"):
-            print("Aborted.")
+        sys.stdout.flush()
+        ans = sys.stdin.readline()
+        if ans.lower().strip() not in ("y", "yes"):
+            logger.info("Rotation aborted by user")
             sys.exit(0)
 
     new_secret = secrets.token_hex(args.length)
-    print(f"Generated new secret: {new_secret[:4]}...{new_secret[-4:]}")
+    # [SIL-2] Sensitive data masked in logs
+    masked_secret = f"{new_secret[:4]}...{new_secret[-4:]}"
+    logger.info("Generating new shared secret", masked_secret=masked_secret)
 
     update_uci_secret(new_secret)
-    print("UCI configuration updated.")
 
     if not args.no_restart:
-        print("Restarting service...")
+        logger.info("Restarting bridge service...")
         restart_service()
-        print("Service restarted.")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import errno
 import structlog
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -182,7 +183,13 @@ class SerialTransport:
 
             await asyncio.get_running_loop().run_in_executor(None, _pulse)
         except (SerialException, OSError) as exc:
-            logger.debug("DTR toggle failed: %s", exc)
+            if getattr(
+                exc, "errno", None
+            ) == errno.ENOTTY or "Inappropriate ioctl" in str(exc):
+                # Expected on pseudo-terminals (e.g., socat in e2e tests)
+                pass
+            else:
+                logger.debug("DTR toggle failed: %s", exc)
 
     async def stop(self) -> None:
         """Gracefully stop the transport."""

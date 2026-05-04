@@ -278,7 +278,7 @@ def runtime_config() -> RuntimeConfig:
 @pytest.fixture()
 def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
     """Provide a RuntimeState instance with proper cleanup."""
-    state = create_runtime_state(runtime_config, initialize_spool=True)
+    state = create_runtime_state(runtime_config)
     state.mark_transport_connected()
     state.mark_synchronized()
     try:

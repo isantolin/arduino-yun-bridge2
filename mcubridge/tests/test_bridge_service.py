@@ -99,17 +99,6 @@ async def test_serial_flow_acknowledge_no_sender_is_noop():
     await ctrl.acknowledge(0x01, 1)
 
 
-@pytest.mark.asyncio
-async def test_enqueue_mqtt_spool_unavailable_logs(
-    runtime_config: RuntimeConfig, runtime_state: Any
-):
-    from mcubridge.transport.mqtt import MqttTransport
-
-    # No spool configured
-    transport = MqttTransport(runtime_config, runtime_state)
-    msg = structures.QueuedPublish(topic_name="test", payload=b"data")
-    await transport.enqueue_mqtt(msg)
-    assert runtime_state.mqtt_publish_queue.qsize() == 1
 
 
 @pytest.mark.asyncio

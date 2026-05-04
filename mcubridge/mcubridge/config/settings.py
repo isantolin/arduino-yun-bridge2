@@ -43,7 +43,7 @@ def _normalize_raw_config(values: dict[str, Any]) -> dict[str, Any]:
             normalized[key] = normalized[key].strip() or None
 
     # 2. Path Resolution (Atomic expansion)
-    path_keys = ("file_system_root", "mqtt_spool_dir")
+    path_keys = ("file_system_root",)
     for key in path_keys:
         if key in normalized and isinstance(normalized[key], str):
             normalized[key] = str(Path(normalized[key]).expanduser().resolve())

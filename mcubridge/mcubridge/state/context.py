@@ -35,7 +35,6 @@ from ..config.const import (
 )
 from ..config.settings import RuntimeConfig
 from ..protocol.structures import QueuedPublish
-from ..mqtt.spool import MQTTPublishSpool
 from ..policy import AllowedCommandPolicy, TopicAuthorization
 from ..protocol import protocol
 from ..protocol.protocol import (
@@ -721,19 +720,11 @@ def create_runtime_state(
     cfg = msgspec.convert(config, RuntimeConfig) if isinstance(config, dict) else config
 
     state = RuntimeState(
-        mqtt_publish_queue=asyncio.Queue(cfg.mqtt_queue_limit),
         serial_tx_allowed=asyncio.Event(),
         process_lock=asyncio.Lock(),
         link_sync_event=asyncio.Event(),
     )
     state.serial_tx_allowed.set()
     state.configure(cfg)
-
-    from ..transport.mqtt import MqttTransport
-
-    transport = MqttTransport(cfg, state)
-    transport.configure_spool(cfg.mqtt_spool_dir, cfg.mqtt_queue_limit * 4)
-    if initialize_spool:
-        transport.initialize_spool()
 
     return state

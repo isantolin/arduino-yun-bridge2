@@ -79,51 +79,6 @@ def test_record_mqtt_drop_increments_counter(runtime_config: RuntimeConfig) -> N
         state.cleanup()
 
 
-@pytest.mark.asyncio
-async def test_initialize_spool_handles_creation_failure(
-    runtime_config: RuntimeConfig,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from mcubridge.transport.mqtt import MqttTransport
-
-    state = create_runtime_state(runtime_config)
-    transport = MqttTransport(runtime_config, state)
-
-    def mock_init_fail(*args: Any, **kwargs: Any) -> Any:
-        raise OSError("Permission denied")
-
-    from mcubridge.mqtt.spool import MQTTPublishSpool
-
-    monkeypatch.setattr(MQTTPublishSpool, "__init__", mock_init_fail)
-
-    try:
-        transport.initialize_spool()
-        assert state.mqtt_spool is None
-        assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_failure_reason == "initialization_failed"
-    finally:
-        state.cleanup()
-
-
-@pytest.mark.asyncio
-async def test_spool_fallback_updates_state(
-    runtime_config: RuntimeConfig,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from mcubridge.transport.mqtt import MqttTransport
-
-    state = create_runtime_state(runtime_config)
-    transport = MqttTransport(runtime_config, state)
-
-    before = time.monotonic()
-    transport._disable_mqtt_spool("disk error")  # type: ignore[reportPrivateUsage]
-
-    assert state.mqtt_spool_degraded is True
-    assert state.mqtt_spool_failure_reason == "disk error"
-    assert state.mqtt_spool_backoff_until >= before
-    state.cleanup()
-
-
 def test_mark_supervisor_healthy_resets_backoff(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:

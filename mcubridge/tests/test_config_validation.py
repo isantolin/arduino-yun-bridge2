@@ -50,7 +50,6 @@ def test_runtime_config_normalizes_topic_and_paths(
     raw = _config_kwargs(
         mqtt_topic="/demo//prefix/",
         file_system_root=root_input,
-        mqtt_spool_dir=spool_absolute,
     )
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
 
@@ -58,7 +57,6 @@ def test_runtime_config_normalizes_topic_and_paths(
 
     assert config.mqtt_topic == "demo/prefix"
     assert config.file_system_root == expected_root
-    assert config.mqtt_spool_dir == expected_spool
 
 
 def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> None:

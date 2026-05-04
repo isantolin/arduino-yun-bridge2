@@ -24,8 +24,10 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
+    transport = MqttTransport(runtime_config, runtime_state)
+    transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(
-        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+        runtime_config, runtime_state, transport
     )
 
     sent_frames: list[tuple[int, bytes]] = []
@@ -45,7 +47,8 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     payload = msgspec.msgpack.encode(structures.DigitalReadResponsePacket(value=1))
     await service.handle_mcu_frame(Command.CMD_DIGITAL_READ_RESP.value, 0, payload)
 
-    queued = runtime_state.mqtt_publish_queue.get_nowait()
+    assert transport.enqueue_mqtt.call_count >= 1
+    queued = transport.enqueue_mqtt.call_args_list[-1][0][0]
     expected_topic = topic_path(
         runtime_state.mqtt_topic_prefix,
         Topic.DIGITAL,
@@ -54,7 +57,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     )
     assert queued.topic_name == expected_topic
     assert queued.payload == b"1"
-    runtime_state.mqtt_publish_queue.task_done()
+    # task done removed
 
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
@@ -69,8 +72,10 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
+    transport = MqttTransport(runtime_config, runtime_state)
+    transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(
-        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+        runtime_config, runtime_state, transport
     )
 
     sent_frames: list[tuple[int, bytes]] = []
@@ -93,7 +98,8 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     )
     await service.handle_mcu_frame(Command.CMD_ANALOG_READ_RESP.value, 0, payload)
 
-    queued = runtime_state.mqtt_publish_queue.get_nowait()
+    assert transport.enqueue_mqtt.call_count >= 1
+    queued = transport.enqueue_mqtt.call_args_list[-1][0][0]
     expected_topic = topic_path(
         runtime_state.mqtt_topic_prefix,
         Topic.ANALOG,
@@ -102,7 +108,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     )
     assert queued.topic_name == expected_topic
     assert queued.payload == b"127"
-    runtime_state.mqtt_publish_queue.task_done()
+    # task done removed
 
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
@@ -117,8 +123,10 @@ async def test_mqtt_digital_write_sends_frame(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
+    transport = MqttTransport(runtime_config, runtime_state)
+    transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(
-        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+        runtime_config, runtime_state, transport
     )
 
     sent_frames: list[tuple[int, bytes]] = []
@@ -165,8 +173,10 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
+    transport = MqttTransport(runtime_config, runtime_state)
+    transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(
-        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+        runtime_config, runtime_state, transport
     )
 
     sent_frames: list[tuple[int, bytes]] = []
@@ -214,8 +224,10 @@ async def test_mcu_digital_read_request_yields_not_implemented(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
+    transport = MqttTransport(runtime_config, runtime_state)
+    transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(
-        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+        runtime_config, runtime_state, transport
     )
 
     sent_frames: list[tuple[int, bytes]] = []
@@ -242,8 +254,10 @@ async def test_mcu_free_memory_response_enqueues_value(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
+    transport = MqttTransport(runtime_config, runtime_state)
+    transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(
-        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+        runtime_config, runtime_state, transport
     )
 
     sent_frames: list[tuple[int, bytes]] = []
@@ -259,7 +273,8 @@ async def test_mcu_free_memory_response_enqueues_value(
     payload = msgspec.msgpack.encode(structures.FreeMemoryResponsePacket(value=100))
     await service.handle_mcu_frame(Command.CMD_GET_FREE_MEMORY_RESP.value, 0, payload)
 
-    queued = runtime_state.mqtt_publish_queue.get_nowait()
+    assert transport.enqueue_mqtt.call_count >= 1
+    queued = transport.enqueue_mqtt.call_args_list[-1][0][0]
     expected_topic = topic_path(
         runtime_state.mqtt_topic_prefix,
         Topic.SYSTEM,
@@ -268,7 +283,7 @@ async def test_mcu_free_memory_response_enqueues_value(
     )
     assert queued.topic_name == expected_topic
     assert queued.payload == b"100"
-    runtime_state.mqtt_publish_queue.task_done()
+    # task done removed
 
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
@@ -283,8 +298,10 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
+    transport = MqttTransport(runtime_config, runtime_state)
+    transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(
-        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+        runtime_config, runtime_state, transport
     )
 
     runtime_state.mcu_version = (1, 2, 0)
@@ -325,7 +342,8 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     assert sent_frames[0][0] == Command.CMD_GET_VERSION.value
     assert runtime_state.mcu_version is None
 
-    queued = runtime_state.mqtt_publish_queue.get_nowait()
+    assert transport.enqueue_mqtt.call_count >= 1
+    queued = transport.enqueue_mqtt.call_args_list[-1][0][0]
     expected_topic = topic_path(
         runtime_state.mqtt_topic_prefix,
         Topic.SYSTEM,
@@ -334,7 +352,7 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     )
     assert queued.topic_name == expected_topic
     assert queued.payload == b"1.2.0"
-    runtime_state.mqtt_publish_queue.task_done()
+    # task done removed
 
 
 @pytest.mark.asyncio
@@ -342,8 +360,10 @@ async def test_mqtt_shell_kill_invokes_processonent(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
+    transport = MqttTransport(runtime_config, runtime_state)
+    transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(
-        runtime_config, runtime_state, MqttTransport(runtime_config, runtime_state)
+        runtime_config, runtime_state, transport
     )
     process = service.process
 

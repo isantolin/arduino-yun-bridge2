@@ -124,10 +124,6 @@ class BridgeDaemon:
         self.state = create_runtime_state(config)
         self.state.config_source = get_config_source()
         self.mqtt_transport = MqttTransport(self.config, self.state)
-        self.mqtt_transport.configure_spool(
-            self.config.mqtt_spool_dir, self.config.mqtt_queue_limit * 4
-        )
-        self.mqtt_transport.initialize_spool()
         self.service = BridgeService(config, self.state, self.mqtt_transport)
         self.mqtt_transport.set_service(self.service)
         # Initialize dependencies

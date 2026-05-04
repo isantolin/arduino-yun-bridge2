@@ -36,16 +36,6 @@ class DaemonMetrics:
             "Total MQTT messages dropped due to queue overflow",
             registry=self.registry,
         )
-        self.mqtt_spooled_messages = Counter(
-            "mcubridge_mqtt_spooled_total",
-            "Total messages written to durable spool",
-            registry=self.registry,
-        )
-        self.mqtt_spool_errors = Counter(
-            "mcubridge_mqtt_spool_errors_total",
-            "Total errors during spool operations",
-            registry=self.registry,
-        )
 
         # Serial Metrics
         self.serial_bytes_sent = Counter(

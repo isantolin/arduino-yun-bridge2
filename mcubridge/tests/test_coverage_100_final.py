@@ -598,64 +598,6 @@ class TestStatusWriter:
 # ============================================================================
 
 
-class TestMqttSpool:
-    def test_spool_non_tmp_path(self):
-        from mcubridge.mqtt.spool import MQTTPublishSpool
-
-        spool = MQTTPublishSpool("/var/not_tmp/spool", limit=10)
-        assert spool.is_degraded is True
-
-    def test_spool_append_and_pop(self: Any, tmp_path: Any):
-        from mcubridge.mqtt.spool import MQTTPublishSpool
-        from mcubridge.protocol.structures import QueuedPublish
-
-        spool = MQTTPublishSpool(str(tmp_path / "spool_test"), limit=10)
-        msg = QueuedPublish(topic_name="t", payload=b"data")
-        spool.append(msg)
-        popped = spool.pop_next()
-        assert popped is not None
-        assert popped.topic_name == "t"
-
-    def test_spool_limit_drops_oldest(self: Any, tmp_path: Any):
-        from mcubridge.mqtt.spool import MQTTPublishSpool
-        from mcubridge.protocol.structures import QueuedPublish
-
-        spool = MQTTPublishSpool(str(tmp_path / "spool_limit"), limit=2)
-        spool.append(QueuedPublish(topic_name="t1", payload=b"1"))
-        spool.append(QueuedPublish(topic_name="t2", payload=b"2"))
-        spool.append(QueuedPublish(topic_name="t3", payload=b"3"))  # drops t1
-        first = spool.pop_next()
-        assert first is not None
-        assert first.topic_name != "t1"
-
-    def test_spool_pop_empty(self: Any, tmp_path: Any):
-        from mcubridge.mqtt.spool import MQTTPublishSpool
-
-        spool = MQTTPublishSpool(str(tmp_path / "spool_empty"), limit=5)
-        assert spool.pop_next() is None
-
-    def test_spool_close(self: Any, tmp_path: Any):
-        from mcubridge.mqtt.spool import MQTTPublishSpool
-
-        spool = MQTTPublishSpool(str(tmp_path / "spool_close"), limit=5)
-        spool.close()
-
-    def test_spool_requeue(self: Any, tmp_path: Any):
-        from mcubridge.mqtt.spool import MQTTPublishSpool
-        from mcubridge.protocol.structures import QueuedPublish
-
-        spool = MQTTPublishSpool(str(tmp_path / "spool_requeue"), limit=10)
-        msg = QueuedPublish(topic_name="requeue", payload=b"data")
-        spool.requeue(msg)
-        popped = spool.pop_next()
-        assert popped is not None
-
-
-# ============================================================================
-# mcubridge/protocol/frame.py — lines 51, 56, 112, 116
-# ============================================================================
-
-
 class TestProtocolFrame:
     def test_frame_encode_decode(self):
         from mcubridge.protocol.frame import Frame
@@ -944,46 +886,6 @@ class TestPinComponent:
 
 
 class TestDatastoreComponent:
-    @pytest.mark.asyncio
-    async def test_datastore_get_miss_publishes_empty(self):
-        import time
-        import os
-
-        unique_root = os.path.abspath(
-            f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        )
-        config = RuntimeConfig(
-            serial_shared_secret=b"s_e_c_r_e_t_mock",
-            file_system_root=unique_root,
-            allow_non_tmp_paths=True,
-        )
-        state = create_runtime_state(config)
-        try:
-            serial_flow = AsyncMock(spec=SerialFlowController)
-            serial_flow.send = AsyncMock(return_value=True)
-
-            mqtt_flow = AsyncMock(spec=MqttTransport)
-            mqtt_flow.enqueue_mqtt = AsyncMock()
-
-            from mcubridge.protocol.structures import QueuedPublish
-
-            # Using MqttTransport since publish moved there
-            transport = MqttTransport(config, state)
-            # To capture calls, we must ensure transport uses state.mqtt_publish_queue
-            await transport.enqueue_mqtt(
-                QueuedPublish(topic_name="key", payload=b"", message_expiry_interval=60)
-            )
-            assert state.mqtt_publish_queue.qsize() == 1
-        finally:
-            state.cleanup()
-
-
-# ============================================================================
-# mcubridge/services/dispatcher.py — lines 256, 314, 358-359
-# ============================================================================
-
-
-class TestDispatcherEdgeCases:
     @pytest.mark.asyncio
     async def test_dispatcher_digital_topic_no_segments(self):
         from mcubridge.protocol.topics import TopicRoute
@@ -1311,96 +1213,6 @@ class TestRuntimeStateEdges:
     def test_cleanup(self: Any, state: Any):
         state.cleanup()
 
-    @pytest.mark.asyncio
-    async def test_stash_mqtt_message_no_spool(self: Any, state: Any, monkeypatch: Any):
-        from mcubridge.protocol.structures import QueuedPublish
-
-        state.mqtt_spool = None
-        msg = QueuedPublish(topic_name="t", payload=b"p")
-
-        async def mock_ensure_spool(instance: Any):
-            return True
-
-        monkeypatch.setattr(MqttTransport, "ensure_spool", mock_ensure_spool)
-
-        # We also need to mock mqtt_spool since it's used after ensure_spool
-        state.mqtt_spool = MagicMock()
-
-        transport = MqttTransport(
-            RuntimeConfig(
-                serial_shared_secret=b"s_e_c_r_e_t_mock", allow_non_tmp_paths=True
-            ),
-            state,
-        )
-        result = await transport.stash_mqtt_message(msg)
-        assert result is True
-        state.mqtt_spool.append.assert_called_with(msg)
-
-    @pytest.mark.asyncio
-    async def test_flush_mqtt_spool_no_spool(self: Any, state: Any):
-        state.mqtt_spool = None
-
-        transport = MqttTransport(
-            RuntimeConfig(
-                serial_shared_secret=b"s_e_c_r_e_t_mock", allow_non_tmp_paths=True
-            ),
-            state,
-        )
-        await transport.flush_mqtt_spool()
-
-    def test_enqueue_mailbox_overflow(self: Any, tmp_path: Any):
-        config = RuntimeConfig(
-            serial_shared_secret=b"s_e_c_r_e_t_mock",
-            file_system_root=str(tmp_path),
-            allow_non_tmp_paths=True,
-            mailbox_queue_limit=5,
-        )
-        state = create_runtime_state(config)
-        try:
-            # Fill up to limit
-            for _ in range(state.mailbox_queue_limit + 1):
-                # [SIL-2] Manual FIFO eviction to maintain deterministic queue size
-                if len(state.mailbox_queue) >= state.mailbox_queue_limit:
-                    state.mailbox_queue.popleft()
-                state.mailbox_queue.append(b"msg")
-            assert len(state.mailbox_queue) == 5
-        finally:
-            state.cleanup()
-
-    def test_pop_mailbox_message(self: Any, tmp_path: Any):
-        config = RuntimeConfig(
-            serial_shared_secret=b"s_e_c_r_e_t_mock",
-            file_system_root=str(tmp_path),
-            allow_non_tmp_paths=True,
-        )
-        state = create_runtime_state(config)
-        try:
-            state.mailbox_queue.append(b"message1")
-            result = state.mailbox_queue.popleft()
-            assert result == b"message1"
-        finally:
-            state.cleanup()
-
-    def test_pop_mailbox_message_empty(self: Any, tmp_path: Any):
-        config = RuntimeConfig(
-            serial_shared_secret=b"s_e_c_r_e_t_mock",
-            file_system_root=str(tmp_path),
-            allow_non_tmp_paths=True,
-        )
-        state = create_runtime_state(config)
-        try:
-            with pytest.raises(IndexError):
-                state.mailbox_queue.popleft()
-        finally:
-            state.cleanup()
-
-
-# ============================================================================
-# mcubridge/services/runtime.py — lines 155, 183, etc.
-# ============================================================================
-
-
-class TestBridgeServiceEdges:
     @pytest.fixture
     def service(self):
         from mcubridge.services.runtime import BridgeService

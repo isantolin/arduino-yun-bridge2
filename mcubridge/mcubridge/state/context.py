@@ -578,7 +578,6 @@ class RuntimeState(msgspec.Struct):
             "serial_latency": self.serial_latency_stats.as_dict(),
             "mqtt_drop_counts": dict(self.mqtt_drop_counts),
             "queue_depths": {
-                "mqtt": self.mqtt_publish_queue.qsize(),
                 "console": len(self.console_to_mcu_queue),
                 "mailbox_outgoing": len(self.mailbox_queue),
                 "mailbox_incoming": len(self.mailbox_incoming_queue),
@@ -587,8 +586,6 @@ class RuntimeState(msgspec.Struct):
             "handshake": self.build_handshake_snapshot(),
             "link_synchronised": self.is_synchronized,
             "system": collect_system_metrics(),
-            "spool_pending": self.mqtt_spool.pending if self.mqtt_spool else 0,
-            "spool_limit": self.mqtt_spool.limit if self.mqtt_spool else 0,
             "bridge": self.build_bridge_snapshot(),
         }
 
@@ -645,11 +642,6 @@ class RuntimeState(msgspec.Struct):
 
     def cleanup(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
-
-        with _sup:
-            if self.mqtt_spool is not None:
-                self.mqtt_spool.close()
-                self.mqtt_spool = None
 
         # [SIL-2] Close persistent queues and replace with plain deques so the
         # diskcache.Deque (which holds a reference to the sqlite3-backed Cache)

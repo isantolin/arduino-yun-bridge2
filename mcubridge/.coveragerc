@@ -4,6 +4,7 @@ source = mcubridge
 omit =
     *_pb2.py
     *_pb2.pyi
+    mcubridge/scripts/*
 
 [report]
 show_missing = True
@@ -12,3 +13,4 @@ fail_under = 90
 omit =
     *_pb2.py
     *_pb2.pyi
+    mcubridge/scripts/*

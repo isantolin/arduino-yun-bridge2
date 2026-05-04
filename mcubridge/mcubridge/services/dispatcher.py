@@ -14,15 +14,15 @@ from mcubridge.protocol.protocol import (
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.state.context import RuntimeState
 
-from ..router.routers import MQTTRouter
 import structlog
 
 if TYPE_CHECKING:
     from aiomqtt import Message
-    from ..router.routers import McuHandler
 
 logger = structlog.get_logger("mcubridge.dispatcher")
 
+McuHandler = Callable[[int, bytes], Awaitable[bool | None]]
+MqttHandler = Callable[[TopicRoute, "Message"], Awaitable[bool]]
 
 STATUS_VALUES = {status.value for status in Status}
 _PRE_SYNC_ALLOWED_COMMANDS = {
@@ -37,17 +37,16 @@ class BridgeDispatcher:
     def __init__(
         self,
         mcu_registry: dict[int, McuHandler],
-        mqtt_router: MQTTRouter,
         state: RuntimeState,
         send_frame: Callable[[int, bytes], Awaitable[bool]],
         acknowledge_frame: Callable[[int, int], Awaitable[None]],
         is_topic_action_allowed: Callable[[Topic, str], bool],
-        reject_topic_action: Callable[[Message, Topic, str], Awaitable[None]],
-        publish_bridge_snapshot: Callable[[str, Message | None], Awaitable[None]],
+        reject_topic_action: Callable[["Message", Topic, str], Awaitable[None]],
+        publish_bridge_snapshot: Callable[[str, "Message" | None], Awaitable[None]],
         on_frame_received: Callable[[int, int, bytes], None] | None = None,
     ) -> None:
         self.mcu_registry = mcu_registry
-        self.mqtt_router = mqtt_router
+        self.mqtt_handlers: dict[Topic, MqttHandler] = {}
         self.state = state
         self.send_frame = send_frame
         self.acknowledge_frame = acknowledge_frame
@@ -133,7 +132,7 @@ class BridgeDispatcher:
         }
         for topic, handler in mqtt_map.items():
             if handler:
-                self.mqtt_router.register(topic, handler)
+                self.mqtt_handlers[topic] = handler
 
     def register_system_handlers(
         self,
@@ -215,7 +214,7 @@ class BridgeDispatcher:
 
     async def dispatch_mqtt_message(
         self,
-        inbound: Message,
+        inbound: "Message",
         parse_topic_func: Callable[[str], TopicRoute | None],
     ) -> None:
         start = asyncio.get_running_loop().time()
@@ -241,7 +240,11 @@ class BridgeDispatcher:
                     return
 
             # 3. Router Dispatch
-            if not await self.mqtt_router.dispatch(route, inbound):
+            handler = self.mqtt_handlers.get(route.topic)
+            if handler:
+                if not await handler(route, inbound):
+                    logger.debug("Unhandled MQTT topic %s", inbound_topic)
+            else:
                 logger.debug("Unhandled MQTT topic %s", inbound_topic)
         finally:
             latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
@@ -274,7 +277,7 @@ class BridgeDispatcher:
             or command_id in _PRE_SYNC_ALLOWED_COMMANDS
         )
 
-    async def _handle_system_topic(self, route: TopicRoute, inbound: Message) -> bool:
+    async def _handle_system_topic(self, route: TopicRoute, inbound: "Message") -> bool:
         match route.identifier:
             case "bridge":
                 return await self._handle_bridge_topic(route, inbound)
@@ -283,7 +286,7 @@ class BridgeDispatcher:
                     return await self.system.handle_mqtt(route, inbound)
         return False
 
-    async def _handle_bridge_topic(self, route: TopicRoute, inbound: Message) -> bool:
+    async def _handle_bridge_topic(self, route: TopicRoute, inbound: "Message") -> bool:
         match list(route.remainder):
             case ["handshake", "get"]:
                 await self.publish_bridge_snapshot("handshake", inbound)

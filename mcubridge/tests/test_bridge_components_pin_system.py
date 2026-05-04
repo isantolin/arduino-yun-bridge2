@@ -349,7 +349,7 @@ async def test_mqtt_shell_kill_invokes_processonent(
 
     with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:
         # Re-register mock in router because dispatcher registers methods at init time
-        service.dispatcher.mqtt_router.register(Topic.SHELL, mock_mqtt)
+        service.dispatcher.mqtt_handlers[Topic.SHELL] = mock_mqtt
         pid = 21
         await service.handle_mqtt_message(
             Message(

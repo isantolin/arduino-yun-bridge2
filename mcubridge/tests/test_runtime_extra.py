@@ -40,14 +40,20 @@ async def test_runtime_on_serial_connected_errors() -> None:
         system = service.system
         console = service.console
 
+        import warnings
+
         # 1. Error requesting version
         system.request_mcu_version = AsyncMock(side_effect=RuntimeError("fail"))
-        await service.on_serial_connected()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            await service.on_serial_connected()
         assert system.request_mcu_version.called
 
         # 2. Error flushing console
         console.flush_queue = AsyncMock(side_effect=ValueError("boom"))
-        await service.on_serial_connected()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            await service.on_serial_connected()
         assert console.flush_queue.called
     finally:
         state.cleanup()

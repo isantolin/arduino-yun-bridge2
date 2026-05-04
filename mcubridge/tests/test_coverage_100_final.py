@@ -15,7 +15,7 @@ from mcubridge.services.pin import PinComponent
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.spi import SpiComponent
 from mcubridge.services.system import SystemComponent
-from mcubridge.router.routers import MQTTRouter
+from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.services.runtime import BridgeService
 import msgspec
 from typing import Any, cast
@@ -1004,7 +1004,6 @@ class TestDispatcherEdgeCases:
         try:
             d = BridgeDispatcher(
                 mcu_registry=MagicMock(),
-                mqtt_router=AsyncMock(spec=MQTTRouter),
                 state=state,
                 send_frame=AsyncMock(),
                 acknowledge_frame=AsyncMock(),

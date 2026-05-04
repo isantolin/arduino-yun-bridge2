@@ -6,7 +6,7 @@ Coverage gap filler tests for Python.
 from __future__ import annotations
 from mcubridge.services.pin import PinComponent
 from mcubridge.transport.mqtt import MqttTransport
-from mcubridge.router.routers import MQTTRouter
+from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.system import SystemComponent
 from mcubridge.services.file import FileComponent
@@ -74,11 +74,8 @@ def runtime_state(runtime_config: RuntimeConfig):
 @pytest.fixture
 def dispatcher(runtime_config: RuntimeConfig, runtime_state: Any):
     mcu_registry: dict[int, Any] = {}
-    mqtt_router = AsyncMock(spec=MQTTRouter)
-    mqtt_router.dispatch = AsyncMock(return_value=True)
     d = BridgeDispatcher(
         mcu_registry=mcu_registry,
-        mqtt_router=mqtt_router,
         state=runtime_state,
         send_frame=AsyncMock(),
         acknowledge_frame=AsyncMock(),
@@ -114,7 +111,6 @@ async def test_dispatcher_pin_not_registered(dispatcher: BridgeDispatcher):
     mcu_registry: dict[int, Any] = {}
     d = BridgeDispatcher(
         mcu_registry=mcu_registry,
-        mqtt_router=AsyncMock(spec=MQTTRouter),
         state=dispatcher.state,
         send_frame=AsyncMock(),
         acknowledge_frame=AsyncMock(),
@@ -180,11 +176,13 @@ async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
         raw=str(msg.topic), prefix="bridge", topic=Topic.SYSTEM, segments=("test",)
     )
 
-    with patch.object(
-        dispatcher.mqtt_router, "dispatch", side_effect=RuntimeError("mqtt bug")
-    ):
-        with pytest.raises(RuntimeError, match="mqtt bug"):
-            await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
+    async def buggy_handler(*args: Any, **kwargs: Any) -> bool:
+        raise RuntimeError("mqtt bug")
+    
+    dispatcher.mqtt_handlers[Topic.SYSTEM] = buggy_handler
+
+    with pytest.raises(RuntimeError, match="mqtt bug"):
+        await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
 
 
 @pytest.mark.asyncio

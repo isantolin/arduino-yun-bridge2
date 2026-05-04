@@ -13,11 +13,10 @@ from ..config.settings import RuntimeConfig
 from ..protocol.protocol import Status
 from ..protocol.structures import AckPacket, QueuedPublish
 from ..protocol.topics import Topic, parse_topic, topic_path
-from ..router.routers import MQTTRouter
 from ..state.context import RuntimeState
 
 if TYPE_CHECKING:
-    from ..router.routers import McuHandler
+    from .dispatcher import McuHandler
 from . import (
     ConsoleComponent,
     DatastoreComponent,
@@ -93,7 +92,6 @@ class BridgeService:
         mcu_registry: dict[int, McuHandler] = {}
         self.dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
-            mqtt_router=MQTTRouter(),
             state=state,
             send_frame=self.serial_flow.send,
             acknowledge_frame=self.serial_flow.acknowledge,

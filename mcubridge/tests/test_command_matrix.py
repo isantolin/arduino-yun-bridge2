@@ -18,7 +18,7 @@ from mcubridge.protocol.protocol import (
     expected_responses,
 )
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
-from mcubridge.router.routers import MQTTRouter, McuHandler
+from mcubridge.services.dispatcher import McuHandler
 from mcubridge.services.dispatcher import BridgeDispatcher
 
 _MQTT_PREFIX = "br"
@@ -45,7 +45,6 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
     """Every subscribed MQTT topic pattern is accepted by the dispatcher."""
 
     mcu_registry: dict[int, McuHandler] = {}
-    mqtt_router = MQTTRouter()
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
@@ -54,7 +53,6 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
     try:
         dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
-            mqtt_router=mqtt_router,
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(),
@@ -89,7 +87,8 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
             inbound.payload = b"hello"
             inbound.properties = None
 
-            handled = await mqtt_router.dispatch(route, inbound)
+            handler = dispatcher.mqtt_handlers.get(route.topic)
+            handled = await handler(route, inbound) if handler else False
             assert handled, f"No handler registered for subscribed topic: {topic}"
     finally:
         state.cleanup()
@@ -104,7 +103,6 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     """
 
     mcu_registry: dict[int, McuHandler] = {}
-    mqtt_router = MQTTRouter()
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
@@ -113,7 +111,6 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     try:
         dispatcher = BridgeDispatcher(
             mcu_registry=mcu_registry,
-            mqtt_router=mqtt_router,
             state=state,
             send_frame=AsyncMock(return_value=True),
             acknowledge_frame=AsyncMock(),

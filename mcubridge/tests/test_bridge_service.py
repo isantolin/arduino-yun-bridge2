@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Status
-from mcubridge.protocol import structures
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
@@ -97,8 +96,6 @@ async def test_serial_flow_acknowledge_no_sender_is_noop():
     )
     # No sender registered
     await ctrl.acknowledge(0x01, 1)
-
-
 
 
 @pytest.mark.asyncio

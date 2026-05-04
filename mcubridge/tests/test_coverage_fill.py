@@ -20,7 +20,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Topic
-from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.protocol.topics import TopicRoute
 from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.state.context import create_runtime_state
@@ -178,7 +177,7 @@ async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
 
     async def buggy_handler(*args: Any, **kwargs: Any) -> bool:
         raise RuntimeError("mqtt bug")
-    
+
     dispatcher.mqtt_handlers[Topic.SYSTEM] = buggy_handler
 
     with pytest.raises(RuntimeError, match="mqtt bug"):

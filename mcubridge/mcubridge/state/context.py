@@ -24,7 +24,6 @@ from ..config.const import (
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_MQTT_QUEUE_LIMIT,
-    DEFAULT_MQTT_SPOOL_DIR,
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
@@ -192,24 +191,7 @@ class RuntimeState(msgspec.Struct):
     mqtt_drop_counts: dict[str, int] = msgspec.field(
         default_factory=lambda: cast(dict[str, int], {})
     )
-    mqtt_spool: MQTTPublishSpool | None = None
-    mqtt_spooled_replayed: int = 0
-    mqtt_spool_degraded: bool = False
-    mqtt_spool_failure_reason: str | None = None
-    mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    mqtt_spool_limit: int = 0
     allow_non_tmp_paths: bool = False
-    mqtt_spool_retry_attempts: int = 0
-    mqtt_spool_backoff_until: float = 0.0
-    mqtt_spool_last_error: str | None = None
-    mqtt_spool_recoveries: int = 0
-    mqtt_spool_last_trim_unix: float = 0.0
-    mqtt_spool_dropped_limit: int = 0
-    mqtt_spool_trim_events: int = 0
-    mqtt_spool_corrupt_dropped: int = 0
-    _last_spool_snapshot: SpoolSnapshot = msgspec.field(
-        default_factory=lambda: cast(SpoolSnapshot, {})
-    )
     datastore: dict[str, Any] = msgspec.field(
         default_factory=lambda: cast(dict[str, Any], {})
     )

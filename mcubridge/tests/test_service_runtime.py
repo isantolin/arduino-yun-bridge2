@@ -4,23 +4,20 @@ from __future__ import annotations
 import msgspec
 from mcubridge.transport.mqtt import MqttTransport
 
-import asyncio
 import time
 from unittest.mock import AsyncMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Status
-from mcubridge.protocol.topics import Topic, topic_path
+from mcubridge.protocol.topics import Topic
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.state.context import create_runtime_state
 
 
 def _make_config() -> RuntimeConfig:
     import os
-    import time
 
     fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
     spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
@@ -123,7 +120,9 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_mqtt_queue_full_drops_and_spools(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_enqueue_mqtt_queue_full_drops_and_spools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     pass
 
 
@@ -189,5 +188,3 @@ def test_is_topic_action_allowed_empty_action_true() -> None:
         assert service._is_topic_action_allowed(Topic.SYSTEM, "") is True  # type: ignore[reportPrivateUsage]
     finally:
         state.cleanup()
-
-

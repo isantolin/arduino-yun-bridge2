@@ -26,9 +26,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
 ) -> None:
     transport = MqttTransport(runtime_config, runtime_state)
     transport.enqueue_mqtt = AsyncMock()
-    service = BridgeService(
-        runtime_config, runtime_state, transport
-    )
+    service = BridgeService(runtime_config, runtime_state, transport)
 
     sent_frames: list[tuple[int, bytes]] = []
 
@@ -74,9 +72,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
 ) -> None:
     transport = MqttTransport(runtime_config, runtime_state)
     transport.enqueue_mqtt = AsyncMock()
-    service = BridgeService(
-        runtime_config, runtime_state, transport
-    )
+    service = BridgeService(runtime_config, runtime_state, transport)
 
     sent_frames: list[tuple[int, bytes]] = []
 
@@ -125,9 +121,7 @@ async def test_mqtt_digital_write_sends_frame(
 ) -> None:
     transport = MqttTransport(runtime_config, runtime_state)
     transport.enqueue_mqtt = AsyncMock()
-    service = BridgeService(
-        runtime_config, runtime_state, transport
-    )
+    service = BridgeService(runtime_config, runtime_state, transport)
 
     sent_frames: list[tuple[int, bytes]] = []
     flow = service.serial_flow
@@ -175,9 +169,7 @@ async def test_mqtt_analog_read_tracks_pending_queue(
 ) -> None:
     transport = MqttTransport(runtime_config, runtime_state)
     transport.enqueue_mqtt = AsyncMock()
-    service = BridgeService(
-        runtime_config, runtime_state, transport
-    )
+    service = BridgeService(runtime_config, runtime_state, transport)
 
     sent_frames: list[tuple[int, bytes]] = []
     flow = service.serial_flow
@@ -226,9 +218,7 @@ async def test_mcu_digital_read_request_yields_not_implemented(
 ) -> None:
     transport = MqttTransport(runtime_config, runtime_state)
     transport.enqueue_mqtt = AsyncMock()
-    service = BridgeService(
-        runtime_config, runtime_state, transport
-    )
+    service = BridgeService(runtime_config, runtime_state, transport)
 
     sent_frames: list[tuple[int, bytes]] = []
 
@@ -256,9 +246,7 @@ async def test_mcu_free_memory_response_enqueues_value(
 ) -> None:
     transport = MqttTransport(runtime_config, runtime_state)
     transport.enqueue_mqtt = AsyncMock()
-    service = BridgeService(
-        runtime_config, runtime_state, transport
-    )
+    service = BridgeService(runtime_config, runtime_state, transport)
 
     sent_frames: list[tuple[int, bytes]] = []
 
@@ -300,9 +288,7 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
 ) -> None:
     transport = MqttTransport(runtime_config, runtime_state)
     transport.enqueue_mqtt = AsyncMock()
-    service = BridgeService(
-        runtime_config, runtime_state, transport
-    )
+    service = BridgeService(runtime_config, runtime_state, transport)
 
     runtime_state.mcu_version = (1, 2, 0)
 
@@ -362,9 +348,7 @@ async def test_mqtt_shell_kill_invokes_processonent(
 ) -> None:
     transport = MqttTransport(runtime_config, runtime_state)
     transport.enqueue_mqtt = AsyncMock()
-    service = BridgeService(
-        runtime_config, runtime_state, transport
-    )
+    service = BridgeService(runtime_config, runtime_state, transport)
     process = service.process
 
     with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:

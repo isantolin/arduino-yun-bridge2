@@ -3,7 +3,6 @@ from mcubridge.services.dispatcher import BridgeDispatcher
 from unittest.mock import AsyncMock
 from mcubridge.protocol import protocol, structures
 from mcubridge.services.handshake import SerialHandshakeManager
-from mcubridge.services.dispatcher import BridgeDispatcher
 
 
 def test_protocol_constants_match_spec() -> None:

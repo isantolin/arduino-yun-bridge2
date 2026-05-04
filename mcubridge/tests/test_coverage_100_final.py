@@ -889,7 +889,6 @@ class TestDatastoreComponent:
     @pytest.mark.asyncio
     async def test_dispatcher_digital_topic_no_segments(self):
         from mcubridge.protocol.topics import TopicRoute
-        from mcubridge.services.dispatcher import BridgeDispatcher
 
         import time
         import os

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
 
-import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state
 

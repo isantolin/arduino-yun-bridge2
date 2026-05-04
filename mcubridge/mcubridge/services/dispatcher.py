@@ -42,7 +42,7 @@ class BridgeDispatcher:
         acknowledge_frame: Callable[[int, int], Awaitable[None]],
         is_topic_action_allowed: Callable[[Topic, str], bool],
         reject_topic_action: Callable[["Message", Topic, str], Awaitable[None]],
-        publish_bridge_snapshot: Callable[[str, "Message" | None], Awaitable[None]],
+        publish_bridge_snapshot: Callable[[str, Any | None], Awaitable[None]],
         on_frame_received: Callable[[int, int, bytes], None] | None = None,
     ) -> None:
         self.mcu_registry = mcu_registry

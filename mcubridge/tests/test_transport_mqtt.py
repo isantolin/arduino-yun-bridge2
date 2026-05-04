@@ -5,16 +5,13 @@ from mcubridge.transport.mqtt import MqttTransport
 
 import os
 import asyncio
-import contextlib
 import ssl
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import aiomqtt
 import pytest
-import warnings
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state

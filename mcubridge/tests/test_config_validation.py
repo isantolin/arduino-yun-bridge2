@@ -43,7 +43,7 @@ def test_runtime_config_normalizes_topic_and_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     spool_absolute = ".tmp_tests/relative/spool"
-    expected_spool = os.path.abspath(spool_absolute)
+    os.path.abspath(spool_absolute)
     root_input = ".tmp_tests//bridge/test/.."
     expected_root = os.path.abspath(root_input)
 

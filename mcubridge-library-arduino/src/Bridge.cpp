@@ -92,13 +92,14 @@ BridgeClass::BridgeClass(Stream& stream)
       _rx_history() {
   _shared_secret.clear();
   _rx_storage.fill(0);
+  _dispatch_table.fill(nullptr);
 
   _tasks.push_back(&_watchdog_task);
   _tasks.push_back(&_serial_task);
   _tasks.push_back(&_timer_task);
 
-  // [SIL-2] Initialize O(log N) Dispatch Table (RAM-efficient)  // Eradicates
-  // 'switch' statements as per mission critical requirements.
+  // [SIL-2] Initialize O(1) Jump Table for absolute determinism.
+  // Eradicates 'switch' statements as per mission critical requirements.
   _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)] =
       &BridgeClass::_handleGetVersion;
   _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY)] =
@@ -315,19 +316,13 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     return;
   }
 
-  // [SIL-2] Deterministic Dispatcher: O(log N) search in RAM-efficient
-  // structure. Eradicates 'switch' statements as per mission critical
-  // requirements.
-  bool handled = false;
+  // [SIL-2] Deterministic Dispatcher: O(1) Absolute Jump Table.
+  // Eradicates 'switch' statements as per mission critical requirements.
   const uint16_t raw_cmd = ctx.raw_command;
-  auto dispatch_it = _dispatch_table.find(raw_cmd);
 
-  if (dispatch_it != _dispatch_table.end()) {
-    (this->*(dispatch_it->second))(ctx);
-    handled = true;
-  }
-
-  if (!handled) {
+  if (raw_cmd < DISPATCH_TABLE_SIZE && _dispatch_table[raw_cmd] != nullptr) {
+    (this->*(_dispatch_table[raw_cmd]))(ctx);
+  } else {
     onUnknownCommand(ctx);
   }
 }

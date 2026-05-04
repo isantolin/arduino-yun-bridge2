@@ -281,7 +281,10 @@ class BridgeClass {
 
   using DispatchHandler =
       void (BridgeClass::*)(const bridge::router::CommandContext&);
-  etl::flat_map<uint16_t, DispatchHandler, 48> _dispatch_table;
+
+  // [SIL-2] O(1) Jump Table for mission-critical determinism
+  static constexpr size_t DISPATCH_TABLE_SIZE = 128;
+  etl::array<DispatchHandler, DISPATCH_TABLE_SIZE> _dispatch_table;
 
   template <typename T, typename F>
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {

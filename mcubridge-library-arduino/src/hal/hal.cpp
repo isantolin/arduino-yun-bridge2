@@ -172,8 +172,14 @@ uint8_t getArchId() { return CURRENT_ARCH; }
     wdt_enable(WDTO_15MS);
 #endif
   }
-  // Spin until WDT fires (intentional [[noreturn]] halt — not a polling loop).
-  while (true) {}  // NOLINT(cppcoreguidelines-avoid-do-while)
+  // Spin until WDT fires (intentional [[noreturn]] halt).
+  // Includes memory fence and WDT reset attempt to ensure clean transition.
+  for (;;) {
+    bridge::hal::memory_fence();
+    if constexpr (bridge::config::ENABLE_WATCHDOG) {
+      bridge::hal::watchdog_kick();
+    }
+  }
 }
 
 }  // namespace bridge::hal

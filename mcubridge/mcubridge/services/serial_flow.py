@@ -158,6 +158,63 @@ class SerialFlowController:
         self._emit_metric("failure")
         return False
 
+    async def send_and_wait_payload(
+        self, command_id: int, payload: bytes
+    ) -> bytes | None:
+        """Sends a command and returns the response payload if successful."""
+        sender = self._sender
+        if sender is None:
+            self._logger.error(
+                "Serial writer unavailable; dropping frame 0x%02X",
+                command_id,
+            )
+            return None
+
+        pending = PendingCommand(
+            command_id=command_id,
+            expected_resp_ids=set(expected_responses(command_id)),
+        )
+
+        async with self._condition:
+            await self._condition.wait_for(lambda: self._current is None)
+            self._current = pending
+
+        from mcubridge.config.const import (
+            SERIAL_HANDSHAKE_BACKOFF_BASE,
+            SERIAL_HANDSHAKE_BACKOFF_MAX,
+        )
+
+        try:
+            async for attempt in tenacity.AsyncRetrying(
+                stop=tenacity.stop_after_attempt(self._max_attempts),
+                wait=tenacity.wait_exponential(
+                    multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                    max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+                ),
+                retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
+                before_sleep=self._on_retry_sleep,
+                reraise=True,
+            ):
+                with attempt:
+                    pending.attempts = (pending.attempts or 0) + 1
+                    self._notify_pipeline("start", pending)
+                    self._reset_pending_state(pending)
+
+                    await self._send_and_wait(pending, payload, sender, command_id)
+
+                    self._emit_metric("ack")
+                    self._notify_pipeline("success", pending)
+
+            return pending.response_payload
+
+        except (self._RetryableSerialError, self._FatalSerialError, Exception):
+            return None
+        finally:
+            async with self._condition:
+                if self._current is pending:
+                    self._current = None
+                    self._condition.notify_all()
+
     async def acknowledge(
         self,
         command_id: int,
@@ -232,13 +289,13 @@ class SerialFlowController:
                 self._notify_pipeline("ack", pending)
             if pending.expected_resp_ids:
                 return
-            pending.mark_success()
+            pending.mark_success(payload)
             return
 
         request_id = response_to_request(command_id)
         if request_id is not None:
             if request_id == pending.command_id:
-                pending.mark_success()
+                pending.mark_success(payload)
             return
 
         if command_id in SERIAL_FAILURE_STATUS_CODES:
@@ -261,7 +318,7 @@ class SerialFlowController:
             return
 
         if command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
-            pending.mark_success()
+            pending.mark_success(payload)
 
     def _should_track(self, command_id: int) -> bool:
         return bool(expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS

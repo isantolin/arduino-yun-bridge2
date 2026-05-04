@@ -36,6 +36,7 @@ def system_component(runtime_config: RuntimeConfig) -> SystemComponent:
     serial_flow = AsyncMock(spec=SerialFlowController)
     serial_flow.acknowledge = AsyncMock()
     serial_flow.send = AsyncMock(return_value=True)
+    serial_flow.send_and_wait_payload = AsyncMock(return_value=None)
     mqtt_flow = AsyncMock(spec=MqttTransport)
     mqtt_flow.enqueue_mqtt = AsyncMock()
 
@@ -45,23 +46,39 @@ def system_component(runtime_config: RuntimeConfig) -> SystemComponent:
 
 
 @pytest.mark.asyncio
-async def test_system_handle_get_version_resp(
-    system_component: SystemComponent,
-) -> None:
+async def test_system_request_mcu_version(system_component: SystemComponent) -> None:
     payload = msgspec.msgpack.encode(VersionResponsePacket(major=1, minor=2, patch=3))
-    await system_component.handle_get_version_resp(0, payload)
+    cast(Any, system_component.serial_flow.send_and_wait_payload).return_value = payload
 
+    await system_component.request_mcu_version()
+
+    cast(Any, system_component.serial_flow.send_and_wait_payload).assert_called_with(
+        Command.CMD_GET_VERSION.value, b""
+    )
     assert system_component.state.mcu_version == (1, 2, 3)
     cast(Any, system_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
 @pytest.mark.asyncio
-async def test_system_handle_get_free_memory_resp(
+async def test_system_handle_free_memory_via_mqtt(
     system_component: SystemComponent,
 ) -> None:
     payload = msgspec.msgpack.encode(FreeMemoryResponsePacket(value=2048))
-    await system_component.handle_get_free_memory_resp(0, payload)
+    cast(Any, system_component.serial_flow.send_and_wait_payload).return_value = payload
 
+    route = TopicRoute(
+        raw=f"br/{Topic.SYSTEM}/{SystemAction.FREE_MEMORY.value}/{SystemAction.GET.value}",
+        prefix="br",
+        topic=Topic.SYSTEM,
+        segments=(SystemAction.FREE_MEMORY.value, SystemAction.GET.value),
+    )
+    msg = AsyncMock(spec=Message)
+
+    await system_component.handle_mqtt(route, msg)
+
+    cast(Any, system_component.serial_flow.send_and_wait_payload).assert_called_with(
+        Command.CMD_GET_FREE_MEMORY.value, b""
+    )
     cast(Any, system_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
@@ -84,13 +101,3 @@ async def test_system_handle_mqtt_bootloader(system_component: SystemComponent) 
         cast(Any, system_component.serial_flow.send).call_args[0][0]
         == Command.CMD_ENTER_BOOTLOADER.value
     )
-
-
-@pytest.mark.asyncio
-async def test_system_request_mcu_version(system_component: SystemComponent) -> None:
-    await system_component.request_mcu_version()
-
-    cast(Any, system_component.serial_flow.send).assert_called_with(
-        Command.CMD_GET_VERSION.value, b""
-    )
-    assert system_component.state.mcu_version is None

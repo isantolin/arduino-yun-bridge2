@@ -162,6 +162,8 @@ async def test_mcu_inbound_commands_are_registered() -> None:
                 Command.CMD_SPI_END.value,
                 Command.CMD_SPI_SET_CONFIG.value,
                 Command.CMD_SET_BAUDRATE_RESP.value,
+                Command.CMD_GET_VERSION_RESP.value,
+                Command.CMD_GET_FREE_MEMORY_RESP.value,
             }
         )
         mcu_to_linux_requests: set[int] = set()

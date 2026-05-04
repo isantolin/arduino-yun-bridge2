@@ -812,6 +812,7 @@ class QueuedPublish(msgspec.Struct, frozen=True):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
+    response_payload: bytes | None = None
     user_properties: tuple[UserProperty, ...] = ()
     subscription_identifier: tuple[int, ...] | None = None
 
@@ -876,8 +877,10 @@ class PendingCommand(msgspec.Struct):
     ack_received: bool = False
     reply_topic: str | None = None
     correlation_data: bytes | None = None
+    response_payload: bytes | None = None
 
-    def mark_success(self) -> None:
+    def mark_success(self, payload: bytes | None = None) -> None:
+        self.response_payload = payload
         self.success = True
         if not self.completion.is_set():
             self.completion.set()

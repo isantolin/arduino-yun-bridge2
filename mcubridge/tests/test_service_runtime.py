@@ -127,27 +127,6 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(
 
 
 @pytest.mark.asyncio
-async def test_handle_get_free_memory_resp_malformed_no_publish() -> None:
-    config = _make_config()
-    state = create_runtime_state(config)
-    try:
-        transport = MqttTransport(config, state)
-        transport.enqueue_mqtt = AsyncMock()
-        service = BridgeService(config, state, transport)
-
-        system = service.system
-        await system.handle_get_free_memory_resp(0, protocol.FRAME_DELIMITER)
-        transport.enqueue_mqtt.assert_not_called()
-    finally:
-        state.cleanup()
-
-
-@pytest.mark.asyncio
-async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
-    pass
-
-
-@pytest.mark.asyncio
 async def test_reject_topic_action_enqueues_status() -> None:
     pass
 

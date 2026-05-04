@@ -1032,44 +1032,6 @@ class TestWatchdog:
 # ============================================================================
 
 
-class TestSystemComponent:
-    @pytest.mark.asyncio
-    async def test_system_handle_version(self):
-        from mcubridge.services.system import SystemComponent
-        from mcubridge.protocol.structures import VersionResponsePacket
-
-        import time
-        import os
-
-        unique_root = os.path.abspath(
-            f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        )
-        config = RuntimeConfig(
-            serial_shared_secret=b"s_e_c_r_e_t_mock",
-            file_system_root=unique_root,
-            allow_non_tmp_paths=True,
-        )
-        state = create_runtime_state(config)
-        try:
-            serial_flow = AsyncMock(spec=SerialFlowController)
-            serial_flow.send = AsyncMock(return_value=True)
-
-            mqtt_flow = AsyncMock(spec=MqttTransport)
-            mqtt_flow.enqueue_mqtt = AsyncMock()
-
-            comp = SystemComponent(
-                config=config, state=state, serial_flow=serial_flow, mqtt_flow=mqtt_flow
-            )
-            # Provide valid encoded packet
-            payload = msgspec.msgpack.encode(
-                VersionResponsePacket(major=1, minor=2, patch=3)
-            )
-            await comp.handle_get_version_resp(0, payload)
-            cast(Any, comp.mqtt_flow.enqueue_mqtt).assert_called()
-        finally:
-            state.cleanup()
-
-
 # ============================================================================
 # mcubridge/services/_serial_flow.py — lines 110-112, 170-171, etc.
 # ============================================================================

@@ -107,12 +107,6 @@ class BridgeDispatcher:
             Command.CMD_DIGITAL_READ: pin.handle_mcu_digital_read if pin else None,
             Command.CMD_ANALOG_READ: pin.handle_mcu_analog_read if pin else None,
             Command.CMD_SPI_TRANSFER_RESP: spi.handle_transfer_resp if spi else None,
-            Command.CMD_GET_FREE_MEMORY_RESP: (
-                system.handle_get_free_memory_resp if system else None
-            ),
-            Command.CMD_GET_VERSION_RESP: (
-                system.handle_get_version_resp if system else None
-            ),
         }
         for cmd, handler in mcu_map.items():
             if handler:

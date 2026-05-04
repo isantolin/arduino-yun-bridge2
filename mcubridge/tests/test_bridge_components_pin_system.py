@@ -240,7 +240,7 @@ async def test_mcu_digital_read_request_yields_not_implemented(
 
 
 @pytest.mark.asyncio
-async def test_mcu_free_memory_response_enqueues_value(
+async def test_mcu_free_memory_via_mqtt(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
@@ -248,18 +248,26 @@ async def test_mcu_free_memory_response_enqueues_value(
     transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(runtime_config, runtime_state, transport)
 
-    sent_frames: list[tuple[int, bytes]] = []
-
-    async def fake_sender(
-        command_id: int, payload: bytes, seq_id: int | None = None
-    ) -> bool:
-        sent_frames.append((command_id, payload))
-        return True
-
-    service.register_serial_sender(fake_sender)
-
     payload = msgspec.msgpack.encode(structures.FreeMemoryResponsePacket(value=100))
-    await service.handle_mcu_frame(Command.CMD_GET_FREE_MEMORY_RESP.value, 0, payload)
+    with patch.object(
+        service.serial_flow, "send_and_wait_payload", AsyncMock(return_value=payload)
+    ) as mock_send:
+        await service.handle_mqtt_message(
+            Message(
+                topic=topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.SYSTEM,
+                    "free_memory",
+                    "get",
+                ),
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            )
+        )
+        mock_send.assert_called_with(Command.CMD_GET_FREE_MEMORY.value, b"")
 
     assert transport.enqueue_mqtt.call_count >= 1
     queued = transport.enqueue_mqtt.call_args_list[-1][0][0]
@@ -271,14 +279,6 @@ async def test_mcu_free_memory_response_enqueues_value(
     )
     assert queued.topic_name == expected_topic
     assert queued.payload == b"100"
-    # task done removed
-
-    assert sent_frames
-    ack_id, ack_payload = sent_frames[-1]
-    assert ack_id == Status.ACK.value
-    assert ack_payload == msgspec.msgpack.encode(
-        structures.AckPacket(command_id=Command.CMD_GET_FREE_MEMORY_RESP.value)
-    )
 
 
 @pytest.mark.asyncio
@@ -291,53 +291,38 @@ async def test_mqtt_system_version_get_requests_and_publishes_cached(
     service = BridgeService(runtime_config, runtime_state, transport)
 
     runtime_state.mcu_version = (1, 2, 0)
-
-    sent_frames: list[tuple[int, bytes]] = []
-    flow = service.serial_flow
-
-    async def fake_sender(
-        command_id: int, payload: bytes, seq_id: int | None = None
-    ) -> bool:
-        sent_frames.append((command_id, payload))
-        flow.on_frame_received(
-            Command.CMD_GET_VERSION_RESP.value,
-            0,
-            bytes([1, 2]),
-        )
-        return True
-
-    service.register_serial_sender(fake_sender)
-
-    await service.handle_mqtt_message(
-        Message(
-            topic=topic_path(
-                runtime_state.mqtt_topic_prefix,
-                Topic.SYSTEM,
-                "version",
-                "get",
-            ),
-            payload=b"",
-            qos=0,
-            retain=False,
-            mid=1,
-            properties=None,
-        )
+    payload = msgspec.msgpack.encode(
+        structures.VersionResponsePacket(major=2, minor=0, patch=0)
     )
 
-    assert sent_frames
-    assert sent_frames[0][0] == Command.CMD_GET_VERSION.value
-    assert runtime_state.mcu_version is None
+    with patch.object(
+        service.serial_flow, "send_and_wait_payload", AsyncMock(return_value=payload)
+    ) as mock_send:
+        await service.handle_mqtt_message(
+            Message(
+                topic=topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.SYSTEM,
+                    "version",
+                    "get",
+                ),
+                payload=b"",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            )
+        )
+        mock_send.assert_called_with(Command.CMD_GET_VERSION.value, b"")
 
+    assert runtime_state.mcu_version == (2, 0, 0)
     assert transport.enqueue_mqtt.call_count >= 1
-    queued = transport.enqueue_mqtt.call_args_list[-1][0][0]
-    expected_topic = topic_path(
-        runtime_state.mqtt_topic_prefix,
-        Topic.SYSTEM,
-        "version",
-        "value",
-    )
-    assert queued.topic_name == expected_topic
-    assert queued.payload == b"1.2.0"
+    # Check that it published both cached (1.2.0) and new (2.0.0)
+    published_payloads = [
+        args[0][0].payload for args in transport.enqueue_mqtt.call_args_list
+    ]
+    assert b"1.2.0" in published_payloads
+    assert b"2.0.0" in published_payloads
     # task done removed
 
 

@@ -70,6 +70,8 @@ def test_mcu_registry_completeness() -> None:
         "CMD_GET_FREE_MEMORY",
         "CMD_GET_CAPABILITIES",
         "CMD_GET_VERSION",
+        "CMD_GET_VERSION_RESP",
+        "CMD_GET_FREE_MEMORY_RESP",
         "CMD_SPI_BEGIN",
         "CMD_SPI_END",
         "CMD_SPI_SET_CONFIG",

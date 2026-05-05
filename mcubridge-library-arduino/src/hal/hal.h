@@ -39,6 +39,16 @@ struct ChunkResult {
 void forceSafeState();
 
 /**
+ * @brief Portable memory fence to prevent compiler reordering in critical paths.
+ */
+void memory_fence();
+
+/**
+ * @brief Kick/reset the hardware watchdog timer.
+ */
+void watchdog_kick();
+
+/**
  * @brief Get the amount of free RAM available. * @return Free bytes or
  * UINT16_MAX if detection fails.
  */

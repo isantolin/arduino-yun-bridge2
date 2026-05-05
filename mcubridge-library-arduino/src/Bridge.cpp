@@ -90,6 +90,7 @@ BridgeClass::BridgeClass(Stream& stream)
       _tx_payload_pool(),
       _pending_tx_queue(),
       _rx_history() {
+  bridge::hal::forceSafeState();
   _shared_secret.clear();
   _rx_storage.fill(0);
   _dispatch_table.fill(nullptr);

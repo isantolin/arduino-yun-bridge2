@@ -75,7 +75,7 @@ rationale = "Ultra-fast asyncio event loop implementation (libuv)"
 [[dependency]]
 name = "cryptography"
 openwrt = "python3-cryptography"
-pip = "cryptography==47.0.0"
+pip = "cryptography==48.0.0"
 rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
 
 [[dependency]]

@@ -283,7 +283,7 @@ class BridgeClass {
       void (BridgeClass::*)(const bridge::router::CommandContext&);
 
   // [SIL-2] O(1) Jump Table for mission-critical determinism
-  static constexpr size_t DISPATCH_TABLE_SIZE = 128;
+  static constexpr size_t DISPATCH_TABLE_SIZE = 256;
   etl::array<DispatchHandler, DISPATCH_TABLE_SIZE> _dispatch_table;
 
   template <typename T, typename F>

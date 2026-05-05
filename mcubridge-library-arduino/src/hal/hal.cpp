@@ -72,6 +72,25 @@ void forceSafeState() {
   }
 }
 
+void memory_fence() {
+  // [SIL-2] Portable compiler barrier
+  asm volatile("" ::: "memory");
+}
+
+void watchdog_kick() {
+  if constexpr (bridge::config::ENABLE_WATCHDOG) {
+    if constexpr (Traits::id == ArchId::ARCH_AVR) {
+#if defined(ARDUINO_ARCH_AVR)
+      wdt_reset();
+#endif
+    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
+#if defined(ARDUINO_ARCH_ESP32)
+      esp_task_wdt_reset();
+#endif
+    }
+  }
+}
+
 uint16_t getFreeMemory() {
   if constexpr (Traits::id == ArchId::ARCH_AVR) {
 #if defined(ARDUINO_ARCH_AVR)

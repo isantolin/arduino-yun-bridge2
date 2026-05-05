@@ -24,7 +24,9 @@ class CliRunner:
                 func(args)
         except SystemExit as e:
             exit_code = int(e.code) if isinstance(e.code, int) else 1
-        except Exception:
+        except (RuntimeError, ValueError, TypeError) as e:
+            # Handle specific expected CLI failures during test coverage
+            buf.write(f"CLI Error: {e}")
             exit_code = 1
         return SimpleNamespace(exit_code=exit_code, output=buf.getvalue())
 

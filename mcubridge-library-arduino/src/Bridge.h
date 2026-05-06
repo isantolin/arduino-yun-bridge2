@@ -129,6 +129,20 @@ class BridgeClass {
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   void _onPacketReceived(etl::span<const uint8_t> packet);
 
+  // [SIL-2] Static helper for timer callbacks (public for testability)
+  static void onStartupStabilizationTimeout();
+  static void onBootloaderDelayInternal();
+  static void onAckTimeoutInternal();
+  static void onRxDedupeTimeout();
+  static void onBaudrateChangeTimeout();
+
+  static constexpr bool is_reliable_cmd(uint16_t id) {
+    return rpc::is_reliable(id);
+  }
+  static constexpr bool is_compressed_cmd(uint16_t id) {
+    return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
+  }
+
  protected:
   struct TxPayloadBuffer {
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data;

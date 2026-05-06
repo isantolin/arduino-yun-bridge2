@@ -12,12 +12,6 @@ concurrency:
   group: '${{ github.workflow }}-review-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}'
   cancel-in-progress: true
 
-permissions:
-  contents: read
-  id-token: write
-  issues: write
-  pull-requests: write
-
 defaults:
   run:
     shell: 'bash'
@@ -57,6 +51,7 @@ jobs:
           PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
           REPOSITORY: '${{ github.repository }}'
           ADDITIONAL_CONTEXT: '${{ inputs.additional_context }}'
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
         with:
           gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
           gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
@@ -71,6 +66,8 @@ jobs:
           use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
           upload_artifacts: '${{ vars.UPLOAD_ARTIFACTS }}'
           workflow_name: 'gemini-review'
+          # Explicitly set the PR number to handle `issue_comment` triggers (which GitHub treats as issues, not PRs)
+          github_pr_number: '${{ github.event.pull_request.number }}'
           settings: |-
             {
               "model": {
@@ -112,4 +109,8 @@ jobs:
                 ]
               }
             }
-          prompt: '/gemini-review'
+          extensions: |
+            [
+              "https://github.com/gemini-cli-extensions/code-review"
+            ]
+          prompt: '/pr-code-review'

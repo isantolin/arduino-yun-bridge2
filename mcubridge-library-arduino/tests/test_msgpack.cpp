@@ -109,6 +109,11 @@ void test_msgpack_decoder_error_paths() {
   msgpack::Decoder decoder(buffer.data(), 1);
   TEST_ASSERT_EQUAL(0, decoder.read_uint32());
   TEST_ASSERT(!decoder.ok());
+  
+  // get_multi error
+  msgpack::Decoder decoder2(buffer.data(), 1);
+  decoder2.read_uint16();
+  TEST_ASSERT(!decoder2.ok());
 }
 
 void test_msgpack_large_headers() {
@@ -171,10 +176,32 @@ void test_msgpack_32bit_formats() {
     large_bin.fill(0xDD);
     encoder.write_bin(etl::span<const uint8_t>(large_bin.data(), 66000));
     
+    static etl::array<char, 66000> large_str;
+    large_str.fill('S');
+    encoder.write_str(large_str.data(), 66000);
+    
     msgpack::Decoder decoder(buffer.data(), encoder.size());
     auto view = decoder.read_bin_view();
     TEST_ASSERT_EQUAL(66000, view.size());
+    
+    auto sview = decoder.read_str_view();
+    TEST_ASSERT_EQUAL(66000, sview.size());
     TEST_ASSERT(decoder.ok());
+}
+
+void test_msgpack_write_error_paths() {
+    etl::array<uint8_t, 1> buffer = {};
+    msgpack::Encoder encoder(buffer.data(), 0); // 0 capacity
+    encoder.write_uint8(1);
+    TEST_ASSERT(!encoder.ok());
+    
+    msgpack::Encoder encoder2(buffer.data(), 0);
+    encoder2.write_str("test", 4);
+    TEST_ASSERT(!encoder2.ok());
+
+    msgpack::Encoder encoder3(buffer.data(), 0);
+    encoder3.write_bin(etl::span<const uint8_t>(buffer));
+    TEST_ASSERT(!encoder3.ok());
 }
 
 int main() {
@@ -191,5 +218,6 @@ int main() {
   RUN_TEST(test_msgpack_large_data_formats);
   RUN_TEST(test_msgpack_error_mismatches);
   RUN_TEST(test_msgpack_32bit_formats);
+  RUN_TEST(test_msgpack_write_error_paths);
   return UNITY_END();
 }

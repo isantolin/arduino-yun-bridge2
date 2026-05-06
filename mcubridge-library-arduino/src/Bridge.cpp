@@ -13,21 +13,15 @@
 #include "services/Process.h"
 #include "services/SPIService.h"
 
-namespace {
-void _onStartupStabilizationTimeout() { Bridge._onStartupStabilized(); }
-void _onBootloaderDelayInternal() { Bridge._onBootloaderDelay(); }
-void _onAckTimeoutInternal() { Bridge._onAckTimeout(); }
-void _onRxDedupeTimeout() { Bridge._onRxDedupe(); }
-void _onBaudrateChangeTimeout() { Bridge._onBaudrateChange(); }
-
-constexpr bool is_reliable_cmd(uint16_t id) { return rpc::is_reliable(id); }
-
-constexpr bool is_compressed_cmd(uint16_t id) {
-  return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
-}
-}  // namespace
-
 BridgeClass Bridge(Serial);
+
+void BridgeClass::onStartupStabilizationTimeout() {
+  Bridge._onStartupStabilized();
+}
+void BridgeClass::onBootloaderDelayInternal() { Bridge._onBootloaderDelay(); }
+void BridgeClass::onAckTimeoutInternal() { Bridge._onAckTimeout(); }
+void BridgeClass::onRxDedupeTimeout() { Bridge._onRxDedupe(); }
+void BridgeClass::onBaudrateChangeTimeout() { Bridge._onBaudrateChange(); }
 
 namespace etl {
 void __attribute__((weak)) __attribute__((unused)) handle_error(
@@ -240,19 +234,19 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _tx_enabled = true;
   _timers.clear();
   _timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT] = _timers.register_timer(
-      _onAckTimeoutInternal, _ack_timeout_ms, etl::timer::mode::REPEATING);
+      onAckTimeoutInternal, _ack_timeout_ms, etl::timer::mode::REPEATING);
   _timer_ids[bridge::scheduler::TIMER_RX_DEDUPE] = _timers.register_timer(
-      _onRxDedupeTimeout, bridge::config::HANDSHAKE_RETRY_DELAY_MS,
+      onRxDedupeTimeout, bridge::config::HANDSHAKE_RETRY_DELAY_MS,
       etl::timer::mode::REPEATING);
   _timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE] = _timers.register_timer(
-      _onBaudrateChangeTimeout, bridge::config::BAUDRATE_CHANGE_DELAY_MS,
+      onBaudrateChangeTimeout, bridge::config::BAUDRATE_CHANGE_DELAY_MS,
       etl::timer::mode::SINGLE_SHOT);
   _timer_ids[bridge::scheduler::TIMER_STARTUP_STABILIZATION] =
-      _timers.register_timer(_onStartupStabilizationTimeout,
+      _timers.register_timer(onStartupStabilizationTimeout,
                              bridge::config::STARTUP_STABILIZATION_MS,
                              etl::timer::mode::SINGLE_SHOT);
   _timer_ids[bridge::scheduler::TIMER_BOOTLOADER_DELAY] =
-      _timers.register_timer(_onBootloaderDelayInternal,
+      _timers.register_timer(onBootloaderDelayInternal,
                              bridge::config::BOOTLOADER_DELAY_MS,
                              etl::timer::mode::SINGLE_SHOT);
   _timers.start(_timer_ids[bridge::scheduler::TIMER_STARTUP_STABILIZATION]);

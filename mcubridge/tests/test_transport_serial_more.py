@@ -1,7 +1,7 @@
 from mcubridge.transport.mqtt import MqttTransport
 from typing import Any
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -264,5 +264,66 @@ async def test_async_process_packet_os_error() -> None:
                 if "TRANSPORT" in str(call)
             ]
             assert error_calls
+    finally:
+        state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_toggle_dtr_error() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = BridgeService(config, state, MagicMock())
+        transport = SerialTransport(config, state, service)
+        transport.loop = asyncio.get_running_loop()
+        
+        with (
+            patch("mcubridge.transport.serial.serial.Serial") as mock_serial_class,
+            patch("mcubridge.transport.serial.logger") as mock_logger
+        ):
+            mock_serial = MagicMock()
+            mock_serial_class.return_value.__enter__.return_value = mock_serial
+            type(mock_serial).dtr = PropertyMock(side_effect=OSError("Toggle fail"))
+            
+            await transport._toggle_dtr() # type: ignore[reportPrivateUsage]
+            assert mock_logger.debug.called
+    finally:
+        state.cleanup()
+
+@pytest.mark.asyncio
+async def test_read_loop_cobs_error() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = BridgeService(config, state, MagicMock())
+        transport = SerialTransport(config, state, service)
+        transport.loop = asyncio.get_running_loop()
+        mock_reader = AsyncMock()
+        
+        with patch("mcubridge.transport.serial.logger") as mock_logger:
+            # We want to trigger _process_packet with invalid data
+            mock_reader.readuntil.side_effect = [b"invalid\x00", asyncio.IncompleteReadError(b"", 0)]
+            await transport._read_loop(mock_reader) # type: ignore[reportPrivateUsage]
+            # Process tasks
+            await asyncio.sleep(0.05)
+            assert mock_logger.warning.called
+    finally:
+        state.cleanup()
+
+@pytest.mark.asyncio
+async def test_send_failure() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = BridgeService(config, state, MagicMock())
+        transport = SerialTransport(config, state, service)
+        # Large payload
+        ok = await transport.send(1, b"x" * 5000)
+        assert not ok
+        
+        # Disconnected
+        transport.writer = None
+        ok = await transport.send(1, b"data")
+        assert not ok
     finally:
         state.cleanup()

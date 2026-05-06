@@ -83,6 +83,7 @@ python -m pytest \
   --timeout-method=thread \
   --cov=mcubridge \
   --cov-branch \
+  --cov-fail-under=90 \
   --cov-report=xml:"$COVERAGE_ROOT/coverage.xml" \
   $( [[ "$ENABLE_HTML" -eq 1 ]] && echo "--cov-report=html:$COVERAGE_ROOT/html" ) \
   --cov-report=term-missing \

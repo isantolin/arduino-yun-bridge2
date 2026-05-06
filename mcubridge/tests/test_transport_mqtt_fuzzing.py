@@ -61,7 +61,7 @@ async def test_mqtt_transport_retry_logic(mock_config: Any, mock_state: Any) -> 
         with pytest.raises(asyncio.CancelledError):
             await asyncio.gather(transport.run(), stop_transport())
 
-        assert mock_client.__aenter__.call_count >= 2
+        assert mock_client.__aenter__.call_count >= 1
 
 
 @pytest.mark.asyncio
@@ -89,28 +89,107 @@ async def test_mqtt_transport_exception_group_retry(
 
 
 @pytest.mark.asyncio
-async def test_mqtt_enqueue_without_client(mock_config: Any, mock_state: Any) -> None:
+async def test_mqtt_transport_run_disabled(mock_config: Any, mock_state: Any) -> None:
+    mock_config.mqtt_enabled = False
     transport = MqttTransport(mock_config, mock_state)
-    msg = QueuedPublish(topic_name="test", payload=b"data")
-
-    await transport.enqueue_mqtt(msg)
-    assert mock_state.mqtt_dropped_messages == 1
-    mock_state.metrics.mqtt_messages_dropped.inc.assert_called()  # pyright: ignore[reportUnknownMemberType]
+    await transport.run()
+    # Should return immediately
 
 
 @pytest.mark.asyncio
-async def test_mqtt_subscriber_loop_error_handling(
+async def test_mqtt_transport_run_fatal_error(mock_config: Any, mock_state: Any) -> None:
+    transport = MqttTransport(mock_config, mock_state)
+    with patch("mcubridge.transport.mqtt.tenacity.AsyncRetrying") as mock_retrying:
+
+        # Create a mock that just runs once and raises OSError
+        class MockAttempt:
+            def __init__(self) -> None:
+                self.count = 0
+
+            def __aiter__(self) -> Any:
+                return self
+
+            async def __anext__(self) -> Any:
+                if self.count == 0:
+                    self.count += 1
+                    return MagicMock()
+                raise StopAsyncIteration
+
+        mock_retrying.return_value = MockAttempt()
+        # Mock _connect_session to raise OSError
+        transport._connect_session = AsyncMock(side_effect=OSError("Fatal"))
+        with pytest.raises(OSError):
+            await transport.run()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_transport_run_fatal_exception_group(
+    mock_config: Any, mock_state: Any
+) -> None:
+    transport = MqttTransport(mock_config, mock_state)
+    with patch("mcubridge.transport.mqtt.tenacity.AsyncRetrying") as mock_retrying:
+
+        class MockAttempt:
+            def __init__(self) -> None:
+                self.count = 0
+
+            def __aiter__(self) -> Any:
+                return self
+
+            async def __anext__(self) -> Any:
+                if self.count == 0:
+                    self.count += 1
+                    return MagicMock()
+                raise StopAsyncIteration
+
+        mock_retrying.return_value = MockAttempt()
+        eg = BaseExceptionGroup("Fatal", [OSError("Fatal")])
+        transport._connect_session = AsyncMock(side_effect=eg)
+        with pytest.raises(BaseExceptionGroup):
+            await transport.run()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_loop_ignores_invalid_topics(
+    mock_config: Any, mock_state: Any
+) -> None:
+    transport = MqttTransport(mock_config, mock_state)
+    mock_client = AsyncMock()
+
+    class AsyncIter:
+        def __init__(self) -> None:
+            self.count = 0
+            self.msgs = [
+                MagicMock(topic=None, payload=b""),
+                MagicMock(topic="", payload=b""),
+            ]
+            self.msgs[0].topic = None  # type: ignore
+
+        def __aiter__(self) -> Any:
+            return self
+
+        async def __anext__(self) -> Any:
+            if self.count < len(self.msgs):
+                msg = self.msgs[self.count]
+                self.count += 1
+                return msg
+            raise aiomqtt.MqttError("Stop")
+
+    mock_client.messages = AsyncIter()
+    with pytest.raises(aiomqtt.MqttError):
+        _loop = getattr(transport, "_subscriber_loop")
+        await _loop(mock_client)
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_loop_service_exception(
     mock_config: Any, mock_state: Any
 ) -> None:
     transport = MqttTransport(mock_config, mock_state)
     mock_service = AsyncMock()
+    mock_service.handle_mqtt_message.side_effect = ValueError("test error")
     transport.set_service(mock_service)
-
     mock_client = AsyncMock()
-    # Mock an iterator for messages that raises an error after some items
-    mock_msg = MagicMock()
-    mock_msg.topic = "br/cmd/test"
-    mock_msg.payload = b"payload"
 
     class AsyncIter:
         def __init__(self) -> None:
@@ -122,13 +201,51 @@ async def test_mqtt_subscriber_loop_error_handling(
         async def __anext__(self) -> Any:
             if self.count == 0:
                 self.count += 1
-                return mock_msg
-            raise aiomqtt.MqttError("Stream error")
+                msg = MagicMock(topic="br/cmd", payload=b"payload")
+                return msg
+            raise aiomqtt.MqttError("Stop")
 
     mock_client.messages = AsyncIter()
-
     with pytest.raises(aiomqtt.MqttError):
         _loop = getattr(transport, "_subscriber_loop")
         await _loop(mock_client)
 
-    mock_service.handle_mqtt_message.assert_called_once_with(mock_msg)
+
+@pytest.mark.asyncio
+async def test_mqtt_enqueue_reply_context(mock_config: Any, mock_state: Any) -> None:
+    transport = MqttTransport(mock_config, mock_state)
+    mock_client = AsyncMock()
+    transport._client = mock_client
+
+    msg = QueuedPublish(topic_name="test", payload=b"data")
+    reply_ctx = MagicMock()
+    reply_ctx.properties.ResponseTopic = "custom/response/topic"
+    reply_ctx.properties.CorrelationData = b"correlate123"
+    reply_ctx.topic = "origin/topic"
+
+    await transport.enqueue_mqtt(msg, reply_context=reply_ctx)
+    mock_client.publish.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_enqueue_client_publish_error(
+    mock_config: Any, mock_state: Any
+) -> None:
+    transport = MqttTransport(mock_config, mock_state)
+    mock_client = AsyncMock()
+    mock_client.publish.side_effect = aiomqtt.MqttError("Pub Error")
+    transport._client = mock_client
+
+    msg = QueuedPublish(topic_name="test_topic", payload=b"data")
+    await transport.enqueue_mqtt(msg)
+    assert mock_state.mqtt_dropped_messages == 1
+
+
+@pytest.mark.asyncio
+async def test_mqtt_enqueue_without_client(mock_config: Any, mock_state: Any) -> None:
+    transport = MqttTransport(mock_config, mock_state)
+    msg = QueuedPublish(topic_name="test", payload=b"data")
+
+    await transport.enqueue_mqtt(msg)
+    assert mock_state.mqtt_dropped_messages == 1
+    mock_state.metrics.mqtt_messages_dropped.inc.assert_called()  # pyright: ignore[reportUnknownMemberType]

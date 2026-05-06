@@ -12,12 +12,6 @@ concurrency:
   group: '${{ github.workflow }}-invoke-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}'
   cancel-in-progress: false
 
-permissions:
-  contents: read
-  id-token: write
-  issues: write
-  pull-requests: write
-
 defaults:
   run:
     shell: 'bash'
@@ -44,7 +38,7 @@ jobs:
           permission-pull-requests: 'write'
 
       - name: 'Checkout Code'
-        uses: 'actions/checkout@v6' # ratchet:exclude
+        uses: 'actions/checkout@v4' # ratchet:exclude
 
       - name: 'Run Gemini CLI'
         id: 'run_gemini'
@@ -72,6 +66,10 @@ jobs:
           use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
           upload_artifacts: '${{ vars.UPLOAD_ARTIFACTS }}'
           workflow_name: 'gemini-invoke'
+          # Assistant workflows can be triggered by comments on either Issues or PRs.
+          # We explicitly map both fields so the CLI can correctly categorize the interaction.
+          github_pr_number: '${{ github.event.pull_request.number }}'
+          github_issue_number: '${{ github.event.issue.number }}'
           settings: |-
             {
               "model": {

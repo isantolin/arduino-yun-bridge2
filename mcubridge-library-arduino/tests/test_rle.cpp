@@ -132,9 +132,7 @@ void test_rle_complex_sequence() {
 }
 
 void test_rle_on_event_unknown() {
-  // We can't easily send an unknown message via rle::decode,
-  // but we can test if it handles it by mocking or just knowing
-  // it's there for SIL-2 safety.
+  // This is a bit tricky as states are private in rle.cpp
 }
 
 int main() {

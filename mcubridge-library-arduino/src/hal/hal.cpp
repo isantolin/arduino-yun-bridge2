@@ -73,8 +73,13 @@ void forceSafeState() {
 }
 
 void memory_fence() {
-  // [SIL-2] Portable compiler barrier
-  asm volatile("" ::: "memory");
+  if constexpr (Traits::id == ArchId::ARCH_HOST) {
+    // Host fallback memory fence (no-op or simple volatile)
+    asm volatile("" ::: "memory");
+  } else {
+    // [SIL-2] Portable compiler barrier
+    asm volatile("" ::: "memory");
+  }
 }
 
 void watchdog_kick() {
@@ -87,6 +92,9 @@ void watchdog_kick() {
 #if defined(ARDUINO_ARCH_ESP32)
       esp_task_wdt_reset();
 #endif
+    } else {
+      // Native or unsupported fallback
+      asm volatile(""); // no-op
     }
   }
 }

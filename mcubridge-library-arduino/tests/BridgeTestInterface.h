@@ -2,6 +2,7 @@
 #define BRIDGE_TEST_INTERFACE_H
 
 #include "Bridge.h"
+#include "services/Console.h"
 
 namespace bridge {
 namespace test {
@@ -59,6 +60,16 @@ class TestAccessor : public BridgeClass {
 
   bool isSynchronized() const { return BridgeClass::isSynchronized(); }
   void onAckTimeout() { _onAckTimeout(); }
+  void onBootloaderDelay() { _onBootloaderDelay(); }
+  void onRxDedupe() { _onRxDedupe(); }
+  void onBaudrateChange() { _onBaudrateChange(); }
+  void invokeWatchdog() { _watchdog_task.task_process_work(); }
+  void invokeSerialTask() { _serial_task.task_process_work(); }
+  void invokeTimerTask() { _timer_task.task_process_work(); }
+  
+  void invokeConsolePush(const rpc::payload::ConsoleWrite& msg) {
+    Console._push(msg);
+  }
   void forceTimeout() { _fsm.receive(bridge::fsm::EvTimeout()); }
   void trigger(const etl::imessage& msg) { _fsm.receive(msg); }
   void setLastParseError(rpc::FrameError e) { _last_parse_error = e; }
@@ -69,6 +80,10 @@ class TestAccessor : public BridgeClass {
   bool isRecentDuplicateRx(const rpc::Frame& f) const {
     return etl::find(_rx_history.begin(), _rx_history.end(),
                      f.header.sequence_id) != _rx_history.end();
+  }
+  uint16_t _last_rx_sequence_id() const {
+    if (_rx_history.empty()) return 0;
+    return _rx_history.back();
   }
   bool isTxEnabled() const { return _tx_enabled; }
   void setTxEnabled(bool enabled) { _tx_enabled = enabled; }

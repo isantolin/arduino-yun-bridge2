@@ -50,6 +50,19 @@ void test_protocol_frame_logic_exhaustive() {
   raw[2] = 10;  // Length 10 but buffer only MIN_FRAME_SIZE
   TEST_ASSERT(
       !parser.parse(etl::span<const uint8_t>(raw.data(), MIN_FRAME_SIZE)).has_value());
+
+  // CRC Mismatch
+  etl::array<uint8_t, MIN_FRAME_SIZE> valid;
+  valid.fill(0);
+  valid[0] = PROTOCOL_VERSION;
+  // payload_length = 0 (valid[1]=0, valid[2]=0)
+  // command_id = 0 (valid[3]=0, valid[4]=0)
+  // sequence_id = 0 (valid[5]=0, valid[6]=0)
+  // CRC trailer starts at index 7
+  valid[MIN_FRAME_SIZE - 1] = 0xFF; // Break CRC
+  auto res = parser.parse(etl::span<const uint8_t>(valid));
+  TEST_ASSERT(!res.has_value());
+  TEST_ASSERT(res.error() == FrameError::CRC_MISMATCH);
 }
 
 void test_protocol_builder_exhaustive() {

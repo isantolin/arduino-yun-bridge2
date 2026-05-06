@@ -129,13 +129,6 @@ class BridgeClass {
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   void _onPacketReceived(etl::span<const uint8_t> packet);
 
-  // [SIL-2] Static helper for timer callbacks (public for testability)
-  static void onStartupStabilizationTimeout();
-  static void onBootloaderDelayInternal();
-  static void onAckTimeoutInternal();
-  static void onRxDedupeTimeout();
-  static void onBaudrateChangeTimeout();
-
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::is_reliable(id);
   }
@@ -230,12 +223,6 @@ class BridgeClass {
       const rpc::Frame& in, rpc::Frame& out);
   [[maybe_unused]] void _applyTimingConfig(
       const rpc::payload::HandshakeConfig& msg);
-
-  template <typename T>
-  void _sendPbResponse(rpc::CommandId c, uint16_t seq, const T& packet) {
-    msgpack::Encoder enc(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (packet.encode(enc)) (void)sendFrame(c, seq, enc.result());
-  }
 
   void _handleSetBaudrateCommand(const bridge::router::CommandContext& ctx);
   void _handleEnterBootloaderCommand(const bridge::router::CommandContext& ctx);
@@ -334,7 +321,7 @@ class BridgeClass {
       auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
       if (res && valid(res->pin)) {
         T resp = {static_cast<decltype(T::value)>(read(res->pin))};
-        _sendPbResponse(resp_id, ctx.sequence_id, resp);
+        (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
       } else
         emitStatus<rpc::StatusCode::STATUS_ERROR>();
     });

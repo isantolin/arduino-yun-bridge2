@@ -38,7 +38,7 @@ class Encoder {
     if (count <= rpc::MSGPACK_FIXARRAY_VALUE_MASK) {
       put(static_cast<uint8_t>(rpc::MSGPACK_FIXARRAY_MASK | count));
     } else {
-      put(0xDC);  // array16
+      put(0xDC);  // array16 (standardized)
       put_multi(static_cast<uint16_t>(count));
     }
   }
@@ -73,10 +73,10 @@ class Encoder {
   void write_bin(etl::span<const uint8_t> data) {
     const size_t len = data.size();
     if (len <= 255) {
-      put(0xC4);  // bin8
+      put(rpc::MSGPACK_BIN8);
       put(static_cast<uint8_t>(len));
     } else if (len <= 65535) {
-      put(0xC5);  // bin16
+      put(rpc::MSGPACK_BIN16);
       put_multi(static_cast<uint16_t>(len));
     } else {
       put(0xC6);  // bin32
@@ -87,9 +87,9 @@ class Encoder {
 
   void write_str(const char* s, size_t len) {
     if (len <= 31) {
-      put(static_cast<uint8_t>(0xA0 | len));
+      put(static_cast<uint8_t>(rpc::MSGPACK_FIXSTR_MASK | len));
     } else if (len <= 255) {
-      put(0xD9);  // str8
+      put(rpc::MSGPACK_STR8);
       put(static_cast<uint8_t>(len));
     } else if (len <= 65535) {
       put(0xDA);  // str16
@@ -137,13 +137,13 @@ class Decoder {
 
   uint32_t read_array() {
     const uint8_t b = get();
-    if ((b & 0xF0) == 0x90) {
-      return b & 0x0F;
+    if ((b & rpc::MSGPACK_FIXARRAY_TYPE_MASK) == rpc::MSGPACK_FIXARRAY_MASK) {
+      return b & rpc::MSGPACK_FIXARRAY_VALUE_MASK;
     }
-    if (b == 0xDC) {
+    if (b == 0xDC) {  // array16
       return get_multi<uint16_t>();
     }
-    if (b == 0xDD) {
+    if (b == 0xDD) {  // array32
       return get_multi<uint32_t>();
     }
     _ok = false;
@@ -155,16 +155,16 @@ class Decoder {
 
   uint32_t read_uint32() {
     const uint8_t b = get();
-    if (b <= 0x7F) {
+    if (b <= rpc::MSGPACK_POSITIVE_FIXINT_MAX) {
       return b;
     }
-    if (b == 0xCC) {
+    if (b == rpc::MSGPACK_UINT8_FMT) {
       return get();
     }
-    if (b == 0xCD) {
+    if (b == rpc::MSGPACK_UINT16_FMT) {
       return get_multi<uint16_t>();
     }
-    if (b == 0xCE) {
+    if (b == rpc::MSGPACK_UINT32_FMT) {
       return get_multi<uint32_t>();
     }
     _ok = false;
@@ -224,13 +224,13 @@ class Decoder {
 
   size_t read_data_length() {
     const uint8_t b = get();
-    if ((b & 0xE0) == 0xA0) {
-      return b & 0x1F;
+    if ((b & rpc::MSGPACK_FIXSTR_TYPE_MASK) == rpc::MSGPACK_FIXSTR_MASK) {
+      return b & rpc::MSGPACK_FIXSTR_VALUE_MASK;
     }  // fixstr
-    if (b == 0xD9 || b == 0xC4) {
+    if (b == rpc::MSGPACK_STR8 || b == rpc::MSGPACK_BIN8) {
       return get();
     }  // str8, bin8
-    if (b == 0xDA || b == 0xC5) {
+    if (b == 0xDA || b == rpc::MSGPACK_BIN16) {
       return get_multi<uint16_t>();
     }  // str16, bin16
     if (b == 0xDB || b == 0xC6) {

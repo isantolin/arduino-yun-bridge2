@@ -35,12 +35,12 @@ async def test_file_write_with_quota_large_warning(file_comp: FileComponent) -> 
     # Set quota very small to trigger warning
     file_comp.config.file_write_max_bytes = 10
     with (
-        patch("mcubridge.services.file.logger.warning") as mock_warn,
+        patch("mcubridge.services.file.logger") as mock_logger,
         patch("os.replace"),
     ):
         # Pass a Path object as expected by the type hint
         await getattr(file_comp, "_write_with_quota")(Path("test.txt"), b"A" * 1000)
-        assert mock_warn.called
+        assert mock_logger.warning.called
 
 
 @pytest.mark.asyncio

@@ -62,14 +62,17 @@ inline constexpr bool is_reliable(uint16_t id) {
 namespace checksum {
 inline uint32_t compute(const Frame& f) {
   etl::crc32 crc;
-  etl::array<uint8_t, 7> h;
-  etl::byte_stream_writer writer(h.data(), h.size(), etl::endian::big);
-  writer.write<uint8_t>(f.header.version);
-  writer.write<uint16_t>(f.header.payload_length);
-  writer.write<uint16_t>(f.header.command_id);
-  writer.write<uint16_t>(f.header.sequence_id);
 
-  crc.add(h.begin(), h.end());
+  auto add_be16 = [&](uint16_t v) {
+    crc.add(static_cast<uint8_t>(v >> 8));
+    crc.add(static_cast<uint8_t>(v & 0xFF));
+  };
+
+  crc.add(f.header.version);
+  add_be16(f.header.payload_length);
+  add_be16(f.header.command_id);
+  add_be16(f.header.sequence_id);
+
   crc.add(f.payload.begin(), f.payload.end());
   return crc.value();
 }

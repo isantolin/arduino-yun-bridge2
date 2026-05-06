@@ -15,14 +15,6 @@
 
 BridgeClass Bridge(Serial);
 
-void BridgeClass::onStartupStabilizationTimeout() {
-  Bridge._onStartupStabilized();
-}
-void BridgeClass::onBootloaderDelayInternal() { Bridge._onBootloaderDelay(); }
-void BridgeClass::onAckTimeoutInternal() { Bridge._onAckTimeout(); }
-void BridgeClass::onRxDedupeTimeout() { Bridge._onRxDedupe(); }
-void BridgeClass::onBaudrateChangeTimeout() { Bridge._onBaudrateChange(); }
-
 namespace etl {
 void __attribute__((weak)) __attribute__((unused)) handle_error(
     const etl::exception& e) {
@@ -234,21 +226,21 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _tx_enabled = true;
   _timers.clear();
   _timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT] = _timers.register_timer(
-      onAckTimeoutInternal, _ack_timeout_ms, etl::timer::mode::REPEATING);
+      []() { Bridge._onAckTimeout(); }, _ack_timeout_ms,
+      etl::timer::mode::REPEATING);
   _timer_ids[bridge::scheduler::TIMER_RX_DEDUPE] = _timers.register_timer(
-      onRxDedupeTimeout, bridge::config::HANDSHAKE_RETRY_DELAY_MS,
+      []() { Bridge._onRxDedupe(); }, bridge::config::HANDSHAKE_RETRY_DELAY_MS,
       etl::timer::mode::REPEATING);
   _timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE] = _timers.register_timer(
-      onBaudrateChangeTimeout, bridge::config::BAUDRATE_CHANGE_DELAY_MS,
-      etl::timer::mode::SINGLE_SHOT);
+      []() { Bridge._onBaudrateChange(); },
+      bridge::config::BAUDRATE_CHANGE_DELAY_MS, etl::timer::mode::SINGLE_SHOT);
   _timer_ids[bridge::scheduler::TIMER_STARTUP_STABILIZATION] =
-      _timers.register_timer(onStartupStabilizationTimeout,
+      _timers.register_timer([]() { Bridge._onStartupStabilized(); },
                              bridge::config::STARTUP_STABILIZATION_MS,
                              etl::timer::mode::SINGLE_SHOT);
-  _timer_ids[bridge::scheduler::TIMER_BOOTLOADER_DELAY] =
-      _timers.register_timer(onBootloaderDelayInternal,
-                             bridge::config::BOOTLOADER_DELAY_MS,
-                             etl::timer::mode::SINGLE_SHOT);
+  _timer_ids[bridge::scheduler::TIMER_BOOTLOADER_DELAY] = _timers.register_timer(
+      []() { Bridge._onBootloaderDelay(); },
+      bridge::config::BOOTLOADER_DELAY_MS, etl::timer::mode::SINGLE_SHOT);
   _timers.start(_timer_ids[bridge::scheduler::TIMER_STARTUP_STABILIZATION]);
 
   _packet_serial.setPacketHandler(
@@ -497,13 +489,15 @@ void BridgeClass::_handleAck(uint16_t command_id) {
 
 void BridgeClass::_clearPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
-    etl::array<uint8_t, bridge::config::TX_QUEUE_CAPACITY> items;
-    (void)etl::find_if(items.begin(), items.end(), [&](uint8_t) {
-      if (_pending_tx_queue.empty()) return true;
-      TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
-      if (buf) _tx_payload_pool.release(buf);
-      _pending_tx_queue.pop();
-      return false;
+    const size_t count = _pending_tx_queue.size();
+    // [SIL-2] Use etl::for_each on a capped range to avoid raw loops.
+    etl::array<uint8_t, bridge::config::TX_QUEUE_CAPACITY> dummy;
+    etl::for_each(dummy.begin(), dummy.begin() + count, [this](uint8_t) {
+      if (!_pending_tx_queue.empty()) {
+        TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
+        if (buf) _tx_payload_pool.release(buf);
+        _pending_tx_queue.pop();
+      }
     });
   }
 }
@@ -664,7 +658,7 @@ void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
     rpc::payload::VersionResponse resp = {
         rpc::FIRMWARE_VERSION_MAJOR, rpc::FIRMWARE_VERSION_MINOR,
         static_cast<uint32_t>(rpc::FIRMWARE_VERSION_PATCH)};
-    _sendPbResponse(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id,
+    (void)send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id,
                     resp);
   });
 }
@@ -674,7 +668,7 @@ void BridgeClass::_handleGetFreeMemory(
   _withResponse(ctx, [this, &ctx]() {
     rpc::payload::FreeMemoryResponse resp = {
         static_cast<uint32_t>(bridge::hal::getFreeMemory())};
-    _sendPbResponse(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id,
+    (void)send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id,
                     resp);
   });
 }
@@ -724,7 +718,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
   _fsm.receive(bridge::fsm::EvHandshakeStart());
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
-  _sendPbResponse(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
+  (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
   notify_observers(MsgBridgeSynchronized());
 }
 
@@ -745,7 +739,7 @@ void BridgeClass::_handleGetCapabilities(
     resp.arch = bridge::hal::getArchId();
     resp.feat = bridge::hal::getCapabilities();
     bridge::hal::getPinCounts(resp.dig, resp.ana);
-    _sendPbResponse(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id,
+    (void)send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id,
                     resp);
   });
 }
@@ -809,7 +803,7 @@ void BridgeClass::_handleSpiTransfer(
       }
       rpc::payload::SpiTransferResponse resp = {};
       resp.data = etl::span<const uint8_t>(_rx_storage.data(), len);
-      _sendPbResponse(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id,
+      (void)send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id,
                       resp);
     }
   });

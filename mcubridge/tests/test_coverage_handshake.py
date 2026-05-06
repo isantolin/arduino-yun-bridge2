@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, patch
 import asyncio
 
 import pytest
-from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing, SerialHandshakeFatal
+from mcubridge.services.handshake import (
+    SerialHandshakeManager,
+    derive_serial_timing,
+    SerialHandshakeFatal,
+)
 from mcubridge.state.context import create_runtime_state
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import LinkSyncPacket
@@ -141,66 +145,89 @@ async def test_handle_handshake_failure_fatal(handshake_mgr: SerialHandshakeMana
     await handshake_mgr.handle_handshake_failure("test-reason")
     assert handshake_mgr._state.handshake_fatal_count == 1
 
+
 @pytest.mark.asyncio
-async def test_handshake_attempt_wait_for_confirmation_timeout(handshake_mgr: SerialHandshakeManager):
+async def test_handshake_attempt_wait_for_confirmation_timeout(
+    handshake_mgr: SerialHandshakeManager,
+):
     # Test _wait_for_link_sync_confirmation timeout path
     cast(AsyncMock, handshake_mgr._send_frame).return_value = True
     with patch("asyncio.sleep", return_value=None):
         ok = await handshake_mgr._synchronize_attempt()
     assert ok is False
 
+
 @pytest.mark.asyncio
-async def test_handshake_attempt_fault_transition_during_sync(handshake_mgr: SerialHandshakeManager):
-    # FSM becomes FAULT during waiting for sync 
+async def test_handshake_attempt_fault_transition_during_sync(
+    handshake_mgr: SerialHandshakeManager,
+):
+    # FSM becomes FAULT during waiting for sync
     cast(AsyncMock, handshake_mgr._send_frame).return_value = True
     handshake_mgr.fsm_state = handshake_mgr.STATE_FAULT
     with patch("asyncio.sleep", return_value=None):
         ok = await handshake_mgr._synchronize_attempt()
     assert ok is False
 
+
 @pytest.mark.asyncio
-async def test_handle_link_sync_resp_rate_limited(handshake_mgr: SerialHandshakeManager):
+async def test_handle_link_sync_resp_rate_limited(
+    handshake_mgr: SerialHandshakeManager,
+):
     handshake_mgr._state.link_handshake_nonce = b"A" * 16
     handshake_mgr._state.handshake_rate_until = 99999999999.0
     handshake_mgr._config.serial_handshake_min_interval = 1.0
     ok = await handshake_mgr.handle_link_sync_resp(0, b"")
     assert ok is False
 
+
 @pytest.mark.asyncio
-async def test_fetch_capabilities_timeout_exception(handshake_mgr: SerialHandshakeManager):
+async def test_fetch_capabilities_timeout_exception(
+    handshake_mgr: SerialHandshakeManager,
+):
     handshake_mgr._send_frame = AsyncMock(side_effect=asyncio.TimeoutError("timeout"))
     with patch("asyncio.sleep", return_value=None):
         ok = await handshake_mgr._fetch_capabilities()
     assert ok is False
 
+
 @pytest.mark.asyncio
-async def test_handle_capabilities_resp_sets_future(handshake_mgr: SerialHandshakeManager):
+async def test_handle_capabilities_resp_sets_future(
+    handshake_mgr: SerialHandshakeManager,
+):
     fut = asyncio.get_running_loop().create_future()
     handshake_mgr._capabilities_future = fut
     await handshake_mgr.handle_capabilities_resp(0, b"payload")
     assert fut.done()
     assert fut.result() == b"payload"
 
+
 @pytest.mark.asyncio
-async def test_parse_capabilities_invalid_payload(handshake_mgr: SerialHandshakeManager):
+async def test_parse_capabilities_invalid_payload(
+    handshake_mgr: SerialHandshakeManager,
+):
     handshake_mgr._parse_capabilities(b"invalid msgpack")
     # should not raise and mcu_capabilities should not be set
     assert handshake_mgr._state.mcu_capabilities is None
+
 
 @pytest.mark.asyncio
 async def test_handle_link_reset_resp(handshake_mgr: SerialHandshakeManager):
     ok = await handshake_mgr.handle_link_reset_resp(0, b"")
     assert ok is True
 
+
 def test_raise_if_handshake_fatal(handshake_mgr: SerialHandshakeManager):
     handshake_mgr._state.handshake_fatal_reason = "fatal_reason"
     with pytest.raises(SerialHandshakeFatal):
         handshake_mgr.raise_if_handshake_fatal()
 
+
 def test_handshake_backoff_remaining(handshake_mgr: SerialHandshakeManager):
     import time
+
     handshake_mgr._state.handshake_backoff_until = time.monotonic() + 10.0
     assert handshake_mgr._handshake_backoff_remaining() > 0.0
+
 
 @pytest.mark.asyncio
 async def test_publish_handshake_event_extra(handshake_mgr: SerialHandshakeManager):

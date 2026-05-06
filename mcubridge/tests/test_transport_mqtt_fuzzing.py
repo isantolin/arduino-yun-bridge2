@@ -97,7 +97,9 @@ async def test_mqtt_transport_run_disabled(mock_config: Any, mock_state: Any) ->
 
 
 @pytest.mark.asyncio
-async def test_mqtt_transport_run_fatal_error(mock_config: Any, mock_state: Any) -> None:
+async def test_mqtt_transport_run_fatal_error(
+    mock_config: Any, mock_state: Any
+) -> None:
     transport = MqttTransport(mock_config, mock_state)
     with patch("mcubridge.transport.mqtt.tenacity.AsyncRetrying") as mock_retrying:
 
@@ -117,7 +119,7 @@ async def test_mqtt_transport_run_fatal_error(mock_config: Any, mock_state: Any)
 
         mock_retrying.return_value = MockAttempt()
         # Mock _connect_session to raise OSError
-        transport._connect_session = AsyncMock(side_effect=OSError("Fatal"))
+        setattr(transport, "_connect_session", AsyncMock(side_effect=OSError("Fatal")))
         with pytest.raises(OSError):
             await transport.run()
 
@@ -144,7 +146,7 @@ async def test_mqtt_transport_run_fatal_exception_group(
 
         mock_retrying.return_value = MockAttempt()
         eg = BaseExceptionGroup("Fatal", [OSError("Fatal")])
-        transport._connect_session = AsyncMock(side_effect=eg)
+        setattr(transport, "_connect_session", AsyncMock(side_effect=eg))
         with pytest.raises(BaseExceptionGroup):
             await transport.run()
 
@@ -215,7 +217,7 @@ async def test_mqtt_subscriber_loop_service_exception(
 async def test_mqtt_enqueue_reply_context(mock_config: Any, mock_state: Any) -> None:
     transport = MqttTransport(mock_config, mock_state)
     mock_client = AsyncMock()
-    transport._client = mock_client
+    setattr(transport, "_client", mock_client)
 
     msg = QueuedPublish(topic_name="test", payload=b"data")
     reply_ctx = MagicMock()
@@ -234,7 +236,7 @@ async def test_mqtt_enqueue_client_publish_error(
     transport = MqttTransport(mock_config, mock_state)
     mock_client = AsyncMock()
     mock_client.publish.side_effect = aiomqtt.MqttError("Pub Error")
-    transport._client = mock_client
+    setattr(transport, "_client", mock_client)
 
     msg = QueuedPublish(topic_name="test_topic", payload=b"data")
     await transport.enqueue_mqtt(msg)

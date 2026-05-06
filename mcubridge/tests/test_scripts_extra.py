@@ -1,14 +1,16 @@
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from typing import Any
+from unittest.mock import AsyncMock, patch
+from typing import Any, Coroutine
 import importlib.util
 from pathlib import Path
 import sys
 
-def load_script(name: str):
+
+def load_script(name: str) -> Any:
     script_path = Path(__file__).parent.parent / "scripts" / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(name.replace("-", "_"), str(script_path))
+    spec = importlib.util.spec_from_file_location(
+        name.replace("-", "_"), str(script_path)
+    )
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load {name}.py")
     module = importlib.util.module_from_spec(spec)
@@ -16,8 +18,10 @@ def load_script(name: str):
     spec.loader.exec_module(module)
     return module
 
-def mock_asyncio_run(coro):
+
+def mock_asyncio_run(coro: Coroutine[Any, Any, Any]) -> None:
     coro.close()
+
 
 @pytest.mark.asyncio
 async def test_file_push_script(runtime_config: Any) -> None:
@@ -34,6 +38,7 @@ async def test_file_push_script(runtime_config: Any) -> None:
         mock_client_cls.return_value.__aenter__.return_value = mock_client
         script.main()
 
+
 @pytest.mark.asyncio
 async def test_led_control_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-led-control")
@@ -47,14 +52,15 @@ async def test_led_control_script(runtime_config: Any) -> None:
         mock_client_cls.return_value.__aenter__.return_value = mock_client
         script.main()
 
+
 @pytest.mark.asyncio
 async def test_rotate_credentials_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-rotate-credentials")
     with (
         patch("aiomqtt.Client") as mock_client_cls,
         patch("sys.argv", ["mcubridge-rotate-credentials", "--force", "--no-restart"]),
-        patch("subprocess.run") as mock_run,
-        patch("uci.Uci") as mock_uci,
+        patch("subprocess.run"),
+        patch("uci.Uci"),
         patch("mcubridge_rotate_credentials.update_uci_secret") as mock_update,
         patch("asyncio.run", side_effect=mock_asyncio_run),
     ):
@@ -62,6 +68,7 @@ async def test_rotate_credentials_script(runtime_config: Any) -> None:
         mock_client_cls.return_value.__aenter__.return_value = mock_client
         script.main()
         assert mock_update.called
+
 
 @pytest.mark.asyncio
 async def test_file_push_error_cases(runtime_config: Any) -> None:
@@ -74,6 +81,7 @@ async def test_file_push_error_cases(runtime_config: Any) -> None:
     ):
         script.main()
 
+
 @pytest.mark.asyncio
 async def test_led_control_invalid_state(runtime_config: Any) -> None:
     script = load_script("mcubridge-led-control")
@@ -83,6 +91,7 @@ async def test_led_control_invalid_state(runtime_config: Any) -> None:
         pytest.raises(SystemExit),
     ):
         script.main()
+
 
 @pytest.mark.asyncio
 async def test_rotate_credentials_abort(runtime_config: Any) -> None:

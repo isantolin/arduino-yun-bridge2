@@ -92,6 +92,7 @@ def test_mark_supervisor_healthy_resets_backoff(runtime_config: RuntimeConfig) -
 def test_system_snapshot_error(runtime_config: RuntimeConfig) -> None:
     from unittest.mock import patch
     from mcubridge.state.context import collect_system_metrics
+
     with patch("psutil.virtual_memory", side_effect=RuntimeError("psutil error")):
         snapshot = collect_system_metrics()
         assert snapshot == {}

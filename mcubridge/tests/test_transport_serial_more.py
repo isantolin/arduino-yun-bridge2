@@ -276,19 +276,20 @@ async def test_toggle_dtr_error() -> None:
         service = BridgeService(config, state, MagicMock())
         transport = SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
-        
+
         with (
             patch("mcubridge.transport.serial.serial.Serial") as mock_serial_class,
-            patch("mcubridge.transport.serial.logger") as mock_logger
+            patch("mcubridge.transport.serial.logger") as mock_logger,
         ):
             mock_serial = MagicMock()
             mock_serial_class.return_value.__enter__.return_value = mock_serial
             type(mock_serial).dtr = PropertyMock(side_effect=OSError("Toggle fail"))
-            
-            await transport._toggle_dtr() # type: ignore[reportPrivateUsage]
+
+            await transport._toggle_dtr()  # type: ignore[reportPrivateUsage]
             assert mock_logger.debug.called
     finally:
         state.cleanup()
+
 
 @pytest.mark.asyncio
 async def test_read_loop_cobs_error() -> None:
@@ -299,16 +300,20 @@ async def test_read_loop_cobs_error() -> None:
         transport = SerialTransport(config, state, service)
         transport.loop = asyncio.get_running_loop()
         mock_reader = AsyncMock()
-        
+
         with patch("mcubridge.transport.serial.logger") as mock_logger:
             # We want to trigger _process_packet with invalid data
-            mock_reader.readuntil.side_effect = [b"invalid\x00", asyncio.IncompleteReadError(b"", 0)]
-            await transport._read_loop(mock_reader) # type: ignore[reportPrivateUsage]
+            mock_reader.readuntil.side_effect = [
+                b"invalid\x00",
+                asyncio.IncompleteReadError(b"", 0),
+            ]
+            await transport._read_loop(mock_reader)  # type: ignore[reportPrivateUsage]
             # Process tasks
             await asyncio.sleep(0.05)
             assert mock_logger.warning.called
     finally:
         state.cleanup()
+
 
 @pytest.mark.asyncio
 async def test_send_failure() -> None:
@@ -320,7 +325,7 @@ async def test_send_failure() -> None:
         # Large payload
         ok = await transport.send(1, b"x" * 5000)
         assert not ok
-        
+
         # Disconnected
         transport.writer = None
         ok = await transport.send(1, b"data")

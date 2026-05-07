@@ -71,7 +71,7 @@ class Encoder {
   void write_uint32(uint32_t v) { write_uint(v); }
 
   void write_bin(etl::span<const uint8_t> data) {
-    const size_t len = data.size();
+    const uint32_t len = static_cast<uint32_t>(data.size());
     if (len <= 255) {
       put(rpc::MSGPACK_BIN8);
       put(static_cast<uint8_t>(len));
@@ -85,7 +85,7 @@ class Encoder {
     write_bytes(data.data(), len);
   }
 
-  void write_str(const char* s, size_t len) {
+  void write_str(const char* s, uint32_t len) {
     if (len <= 31) {
       put(static_cast<uint8_t>(rpc::MSGPACK_FIXSTR_MASK | len));
     } else if (len <= 255) {
@@ -115,7 +115,7 @@ class Encoder {
     }
   }
 
-  void write_bytes(const uint8_t* data, size_t len) {
+  void write_bytes(const uint8_t* data, uint32_t len) {
     if (!_ok || !_writer.write(etl::span<const uint8_t>(data, len))) {
       _ok = false;
     }
@@ -172,7 +172,7 @@ class Decoder {
   }
 
   [[nodiscard]] etl::span<const uint8_t> read_bin_view() {
-    const size_t len = read_data_length();
+    const uint32_t len = read_data_length();
     if (!_ok || _reader.available_bytes() < len) {
       _ok = false;
       return {};
@@ -186,7 +186,7 @@ class Decoder {
   }
 
   [[nodiscard]] etl::span<const char> read_str_view() {
-    const size_t len = read_data_length();
+    const uint32_t len = read_data_length();
     if (!_ok || _reader.available_bytes() < len) {
       _ok = false;
       return {};
@@ -197,7 +197,7 @@ class Decoder {
       return {};
     }
     return {static_cast<const char*>(static_cast<const void*>(view.value().data())),
-            view.value().size()};
+            static_cast<size_t>(view.value().size())};
   }
 
  private:
@@ -222,7 +222,7 @@ class Decoder {
     return 0;
   }
 
-  size_t read_data_length() {
+  uint32_t read_data_length() {
     const uint8_t b = get();
     if ((b & rpc::MSGPACK_FIXSTR_TYPE_MASK) == rpc::MSGPACK_FIXSTR_MASK) {
       return b & rpc::MSGPACK_FIXSTR_VALUE_MASK;

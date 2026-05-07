@@ -58,6 +58,12 @@ class TestAccessor : public BridgeClass {
     _handleGetCapabilities(ctx);
   }
 
+  void handleAck(uint16_t command_id) { _handleAck(command_id); }
+  uint16_t getLastCommandId() const { return _last_command_id; }
+  void clearSynchronized() {
+    _fsm.receive(bridge::fsm::EvReset());
+  }
+
   bool isSynchronized() const { return BridgeClass::isSynchronized(); }
   void onAckTimeout() { _onAckTimeout(); }
   void onBootloaderDelay() { _onBootloaderDelay(); }
@@ -91,6 +97,10 @@ class TestAccessor : public BridgeClass {
     if (!_fsm.is_started()) _fsm.start();
   }
   void setPendingBaudrate(uint32_t b) { _pending_baudrate = b; }
+
+  void invokePacketReceived(etl::span<const uint8_t> packet) {
+    _onPacketReceived(packet);
+  }
 
   void setIdle() {
     if (!_fsm.is_started()) _fsm.start();

@@ -4,7 +4,7 @@ from __future__ import annotations
 from mcubridge.services.serial_flow import SerialFlowController
 
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest

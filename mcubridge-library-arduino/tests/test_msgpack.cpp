@@ -170,7 +170,10 @@ void test_msgpack_error_mismatches() {
 }
 
 void test_msgpack_32bit_formats() {
-    static etl::array<uint8_t, 70000> buffer = {};
+#if defined(ARDUINO_ARCH_AVR)
+    TEST_IGNORE_MESSAGE("Skipping 32-bit MsgPack formats on AVR (limited RAM)");
+#else
+    static etl::array<uint8_t, 150000> buffer = {};
     msgpack::Encoder encoder(buffer.data(), buffer.size());
     static etl::array<uint8_t, 66000> large_bin;
     large_bin.fill(0xDD);
@@ -187,6 +190,7 @@ void test_msgpack_32bit_formats() {
     auto sview = decoder.read_str_view();
     TEST_ASSERT_EQUAL(66000, sview.size());
     TEST_ASSERT(decoder.ok());
+#endif
 }
 
 void test_msgpack_write_error_paths() {

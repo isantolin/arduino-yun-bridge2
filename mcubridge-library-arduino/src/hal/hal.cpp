@@ -199,6 +199,12 @@ uint8_t getArchId() { return CURRENT_ARCH; }
     wdt_enable(WDTO_15MS);
 #endif
   }
+
+  if constexpr (Traits::id == ArchId::ARCH_HOST) {
+    // [SIL-2] On host/test environment, exit instead of hanging CI.
+    exit(0);
+  }
+
   // Spin until WDT fires (intentional [[noreturn]] halt).
   // Includes memory fence and WDT reset attempt to ensure clean transition.
   for (;;) {

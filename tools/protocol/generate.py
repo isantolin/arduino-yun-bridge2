@@ -468,6 +468,7 @@ class JinjaGenerator:
             },
             {"name": "MSGPACK_BIN8", "type": "uint8_t", "value": c["msgpack_bin8"]},
             {"name": "MSGPACK_BIN16", "type": "uint8_t", "value": c["msgpack_bin16"]},
+            {"name": "MSGPACK_BIN32", "type": "uint8_t", "value": c["msgpack_bin32"]},
             {
                 "name": "MSGPACK_UINT8_FMT",
                 "type": "uint8_t",
@@ -484,6 +485,10 @@ class JinjaGenerator:
                 "value": c["msgpack_uint32_fmt"],
             },
             {"name": "MSGPACK_STR8", "type": "uint8_t", "value": c["msgpack_str8"]},
+            {"name": "MSGPACK_STR16", "type": "uint8_t", "value": c["msgpack_str16"]},
+            {"name": "MSGPACK_STR32", "type": "uint8_t", "value": c["msgpack_str32"]},
+            {"name": "MSGPACK_ARRAY16", "type": "uint8_t", "value": c["msgpack_array16"]},
+            {"name": "MSGPACK_ARRAY32", "type": "uint8_t", "value": c["msgpack_array32"]},
             {
                 "name": "MSGPACK_POSITIVE_FIXINT_MAX",
                 "type": "uint8_t",

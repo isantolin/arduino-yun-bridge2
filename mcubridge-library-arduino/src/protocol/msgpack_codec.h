@@ -38,7 +38,7 @@ class Encoder {
     if (count <= rpc::MSGPACK_FIXARRAY_VALUE_MASK) {
       put(static_cast<uint8_t>(rpc::MSGPACK_FIXARRAY_MASK | count));
     } else {
-      put(0xDC);  // array16 (standardized)
+      put(rpc::MSGPACK_ARRAY16);
       put_multi(static_cast<uint16_t>(count));
     }
   }
@@ -79,7 +79,7 @@ class Encoder {
       put(rpc::MSGPACK_BIN16);
       put_multi(static_cast<uint16_t>(len));
     } else {
-      put(0xC6);  // bin32
+      put(rpc::MSGPACK_BIN32);
       put_multi(static_cast<uint32_t>(len));
     }
     write_bytes(data.data(), len);
@@ -92,10 +92,10 @@ class Encoder {
       put(rpc::MSGPACK_STR8);
       put(static_cast<uint8_t>(len));
     } else if (len <= 65535) {
-      put(0xDA);  // str16
+      put(rpc::MSGPACK_STR16);
       put_multi(static_cast<uint16_t>(len));
     } else {
-      put(0xDB);  // str32
+      put(rpc::MSGPACK_STR32);
       put_multi(static_cast<uint32_t>(len));
     }
     write_bytes(static_cast<const uint8_t*>(static_cast<const void*>(s)), len);
@@ -140,10 +140,10 @@ class Decoder {
     if ((b & rpc::MSGPACK_FIXARRAY_TYPE_MASK) == rpc::MSGPACK_FIXARRAY_MASK) {
       return b & rpc::MSGPACK_FIXARRAY_VALUE_MASK;
     }
-    if (b == 0xDC) {  // array16
+    if (b == rpc::MSGPACK_ARRAY16) {
       return get_multi<uint16_t>();
     }
-    if (b == 0xDD) {  // array32
+    if (b == rpc::MSGPACK_ARRAY32) {
       return get_multi<uint32_t>();
     }
     _ok = false;
@@ -230,10 +230,10 @@ class Decoder {
     if (b == rpc::MSGPACK_STR8 || b == rpc::MSGPACK_BIN8) {
       return get();
     }  // str8, bin8
-    if (b == 0xDA || b == rpc::MSGPACK_BIN16) {
+    if (b == rpc::MSGPACK_STR16 || b == rpc::MSGPACK_BIN16) {
       return get_multi<uint16_t>();
     }  // str16, bin16
-    if (b == 0xDB || b == 0xC6) {
+    if (b == rpc::MSGPACK_STR32 || b == rpc::MSGPACK_BIN32) {
       return get_multi<uint32_t>();
     }  // str32, bin32
     _ok = false;

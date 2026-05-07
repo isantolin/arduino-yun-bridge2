@@ -19,9 +19,10 @@ void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
 
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
-    rpc::payload::ConsoleWrite msg = {};
-    msg.data = etl::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size());
-    if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, msg)) {
+    if (Bridge.send(
+            rpc::CommandId::CMD_CONSOLE_WRITE, 0,
+            rpc::payload::ConsoleWrite{etl::span<const uint8_t>(
+                _tx_buffer.data(), _tx_buffer.size())})) {
       _tx_buffer.clear();
     }
   }

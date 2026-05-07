@@ -6,9 +6,8 @@
 MailboxClass::MailboxClass() {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
-  rpc::payload::MailboxPush msg = {};
-  msg.data = data;
-  (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, msg);
+  (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0,
+                    rpc::payload::MailboxPush{data});
 }
 
 void MailboxClass::requestRead() {

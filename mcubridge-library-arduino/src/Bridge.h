@@ -34,6 +34,7 @@
 #include <etl/vector.h>
 
 #include "config/bridge_config.h"
+#include "fsm/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
 #include "protocol/BridgeEvents.h"
 #include "protocol/rle.h"
@@ -121,7 +122,7 @@ class BridgeClass {
 
   void _dispatchCommand(const rpc::Frame& frame);
   void _onStartupStabilized();
-  void _onBootloaderDelay();
+  static void _onBootloaderDelay();
   void _onAckTimeout();
   void _onRxDedupe();
   void _onBaudrateChange();
@@ -146,6 +147,11 @@ class BridgeClass {
     TxPayloadBuffer* buffer;
     size_t length;
   };
+
+  void _sendRawFrame(uint16_t command_id, uint16_t sequence_id,
+                    etl::span<const uint8_t> payload);
+  bool _sendFrame(uint16_t command_id, uint16_t sequence_id,
+                 etl::span<const uint8_t> payload);
 
   // STRICT ORDER FOR CONSTRUCTOR
   Stream& _stream;
@@ -215,10 +221,6 @@ class BridgeClass {
 
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
 
-  [[nodiscard]] bool _sendFrame(uint16_t command_id, uint16_t sequence_id,
-                                etl::span<const uint8_t> payload);
-  void _sendRawFrame(uint16_t command_id, uint16_t sequence_id,
-                     etl::span<const uint8_t> payload);
   [[nodiscard]] etl::expected<void, rpc::FrameError> _decompressFrame(
       const rpc::Frame& in, rpc::Frame& out);
   [[maybe_unused]] void _applyTimingConfig(

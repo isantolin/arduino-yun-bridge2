@@ -327,13 +327,12 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_onStartupStabilized() {
-  uint32_t start_ms = millis();
-  // [SIL-2] Deterministic drain via ETL algorithm using a fixed sequence.
-  // Eradicates manual while/for loops for safety compliance.
-  struct Iteration {};
-  etl::array<Iteration, bridge::config::STARTUP_DRAIN_FINAL> iterations;
+  const uint32_t start_ms = millis();
+  // [SIL-2] Deterministic drain via CounterIterator. Zero stack overhead.
+  using bridge::utils::CounterIterator;
   (void)etl::find_if(
-      iterations.begin(), iterations.end(), [this, start_ms](const Iteration&) {
+      CounterIterator(0), CounterIterator(bridge::config::STARTUP_DRAIN_FINAL),
+      [this, start_ms](uint32_t) {
         if (_stream.available() <= 0 ||
             (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)) {
           return true;  // Stop condition
@@ -413,12 +412,11 @@ bool BridgeClass::sendFrame(rpc::CommandId command_id, uint16_t sequence_id,
 
 void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
                                 etl::span<const uint8_t> payload) {
-  rpc::Frame f = {};
-  f.header.version = rpc::PROTOCOL_VERSION;
-  f.header.command_id = command_id;
-  f.header.sequence_id = sequence_id;
-  f.header.payload_length = static_cast<uint16_t>(payload.size());
-  f.payload = payload;
+  rpc::Frame f = {
+      {rpc::PROTOCOL_VERSION, static_cast<uint16_t>(payload.size()), command_id,
+       sequence_id},
+      payload,
+      0};
   f.crc = rpc::checksum::compute(f);
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
   size_t len = rpc::FrameParser::serialize(
@@ -436,8 +434,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, uint16_t sequence_id,
       TxPayloadBuffer* buf = _tx_payload_pool.allocate();
       if (!buf) return false;
       etl::copy_n(payload.begin(), payload.size(), buf->data.begin());
-      PendingTxFrame f = {command_id, sequence_id, buf, payload.size()};
-      _pending_tx_queue.push(f);
+      _pending_tx_queue.push({command_id, sequence_id, buf, payload.size()});
     }
     if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
     return true;
@@ -489,10 +486,10 @@ void BridgeClass::_handleAck(uint16_t command_id) {
 
 void BridgeClass::_clearPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
-    const size_t count = _pending_tx_queue.size();
-    // [SIL-2] Use etl::for_each on a capped range to avoid raw loops.
-    etl::array<uint8_t, bridge::config::TX_QUEUE_CAPACITY> dummy;
-    etl::for_each(dummy.begin(), dummy.begin() + count, [this](uint8_t) {
+    // [SIL-2] Use CounterIterator to avoid raw loops and dummy arrays.
+    using bridge::utils::CounterIterator;
+    const uint32_t count = static_cast<uint32_t>(_pending_tx_queue.size());
+    etl::for_each(CounterIterator(0), CounterIterator(count), [this](uint32_t) {
       if (!_pending_tx_queue.empty()) {
         TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
         if (buf) _tx_payload_pool.release(buf);

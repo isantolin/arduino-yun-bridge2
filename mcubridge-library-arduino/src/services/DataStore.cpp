@@ -7,17 +7,16 @@
 DataStoreClass::DataStoreClass() {}
 
 void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
-  rpc::payload::DatastorePut msg = {};
-  msg.key = key;
-  msg.value = value;
-  (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, msg);
+  (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0,
+                    rpc::payload::DatastorePut{key, value});
 }
 
-void DataStoreClass::get(etl::string_view key, etl::delegate<void(etl::string_view, etl::span<const uint8_t>)> handler) {
+void DataStoreClass::get(
+    etl::string_view key,
+    etl::delegate<void(etl::string_view, etl::span<const uint8_t>)> handler) {
   (void)handler;
-  rpc::payload::DatastoreGet msg = {};
-  msg.key = key;
-  if (Bridge.send(rpc::CommandId::CMD_DATASTORE_GET, 0, msg)) {
+  if (Bridge.send(rpc::CommandId::CMD_DATASTORE_GET, 0,
+                   rpc::payload::DatastoreGet{key})) {
     PendingGet pg;
     const size_t to_copy = etl::min(key.length(), pg.key.size() - 1);
     etl::copy_n(key.data(), to_copy, pg.key.begin());

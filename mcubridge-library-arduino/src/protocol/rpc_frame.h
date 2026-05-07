@@ -62,17 +62,17 @@ inline constexpr bool is_reliable(uint16_t id) {
 namespace checksum {
 inline uint32_t compute(const Frame& f) {
   etl::crc32 crc;
+  // [SIL-2] Use byte_stream_writer for deterministic big-endian serialization.
+  // Eradicates manual bitwise operations (>> 8, & 0xFF).
+  etl::array<uint8_t, FRAME_HEADER_SIZE> header_buf;
+  etl::byte_stream_writer writer(header_buf.data(), header_buf.size(),
+                                 etl::endian::big);
+  writer.write<uint8_t>(f.header.version);
+  writer.write<uint16_t>(f.header.payload_length);
+  writer.write<uint16_t>(f.header.command_id);
+  writer.write<uint16_t>(f.header.sequence_id);
 
-  auto add_be16 = [&](uint16_t v) {
-    crc.add(static_cast<uint8_t>(v >> 8));
-    crc.add(static_cast<uint8_t>(v & 0xFF));
-  };
-
-  crc.add(f.header.version);
-  add_be16(f.header.payload_length);
-  add_be16(f.header.command_id);
-  add_be16(f.header.sequence_id);
-
+  crc.add(header_buf.begin(), header_buf.end());
   crc.add(f.payload.begin(), f.payload.end());
   return crc.value();
 }

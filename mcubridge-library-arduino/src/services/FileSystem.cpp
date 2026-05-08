@@ -43,7 +43,8 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   size_t offset = 0;
-  etl::array<uint8_t, kReadChunkSize> buffer;
+  // [SIL-2] Borrow global transient buffer instead of allocating ~250 bytes on stack.
+  auto buffer = Bridge.borrowTransientBuffer();
   const uint32_t start_ms = millis();
   const etl::string_view path(msg.path.data(), msg.path.size());
 
@@ -56,7 +57,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
           return true;
 
         auto res = bridge::hal::readFileChunk(
-            path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
+            path, offset, etl::span<uint8_t>(buffer.data(), kReadChunkSize));
         if (!res) {
           (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
           return true;

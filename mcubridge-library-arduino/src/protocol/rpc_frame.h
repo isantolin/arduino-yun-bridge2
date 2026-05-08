@@ -105,18 +105,15 @@ class FrameParser {
     crc_calc.add(buffer.begin(), buffer.begin() + crc_offset);
 
     Frame result = {};
-    auto v_opt = reader.read<uint8_t>();
-    auto l_opt = reader.read<uint16_t>();
-    auto c_opt = reader.read<uint16_t>();
-    auto s_opt = reader.read<uint16_t>();
+    const auto v_opt = reader.read<uint8_t>();
+    const auto l_opt = reader.read<uint16_t>();
+    const auto c_opt = reader.read<uint16_t>();
+    const auto s_opt = reader.read<uint16_t>();
 
     if (!v_opt || !l_opt || !c_opt || !s_opt)
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
-    result.header.version = *v_opt;
-    result.header.payload_length = *l_opt;
-    result.header.command_id = *c_opt;
-    result.header.sequence_id = *s_opt;
+    result.header = {*v_opt, *l_opt, *c_opt, *s_opt};
 
     if (result.header.version != PROTOCOL_VERSION)
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
@@ -127,16 +124,20 @@ class FrameParser {
     result.payload =
         buffer.subspan(FRAME_HEADER_SIZE, result.header.payload_length);
     reader.skip<uint8_t>(result.header.payload_length);
-    auto crc_opt = reader.read<uint32_t>();
+    const auto crc_opt = reader.read<uint32_t>();
 
 #if BRIDGE_HOST_TEST
     if (!crc_opt || *crc_opt != crc_calc.value()) {
-        fprintf(stderr, "[PARSE] CRC MISMATCH! Size: %zu, Calc: %08X, Recv: %08X\n",
-                buffer.size(), (unsigned int)crc_calc.value(), (unsigned int)(crc_opt ? *crc_opt : 0));
-        fprintf(stderr, "[PARSE] Data: ");
-        auto end_iter = buffer.begin() + (buffer.size() < 16 ? buffer.size() : 16);
-        etl::for_each(buffer.begin(), end_iter, [](uint8_t byte) { fprintf(stderr, "%02X ", byte); });
-        fprintf(stderr, "\n");
+      fprintf(stderr,
+              "[PARSE] CRC MISMATCH! Size: %zu, Calc: %08X, Recv: %08X\n",
+              buffer.size(), (unsigned int)crc_calc.value(),
+              (unsigned int)(crc_opt ? *crc_opt : 0));
+      fprintf(stderr, "[PARSE] Data: ");
+      const auto end_iter =
+          buffer.begin() + (buffer.size() < 16 ? buffer.size() : 16);
+      etl::for_each(buffer.begin(), end_iter,
+                    [](uint8_t byte) { fprintf(stderr, "%02X ", byte); });
+      fprintf(stderr, "\n");
     }
 #endif
 

@@ -60,30 +60,32 @@ bool run_cryptographic_self_tests() {
   // 1. SHA256 KAT
   Sha256 sha;
   wc_InitSha256(&sha);
-  size_t msg_len = kat_sha256_msg.size();
-  etl::copy_n(reinterpret_cast<const uint8_t*>(kat_sha256_msg.data()), msg_len, buffer.data());
+  const size_t msg_len = kat_sha256_msg.size();
+  memcpy_P(buffer.data(), kat_sha256_msg.data(), msg_len);
   wc_Sha256Update(&sha, buffer.data(), static_cast<word32>(msg_len));
   wc_Sha256Final(&sha, actual.data());
 
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
-  etl::copy_n(reinterpret_cast<const uint8_t*>(kat_sha256_expected.data()), rpc::RPC_SHA256_DIGEST_SIZE, expected_buf.data());
+  memcpy_P(expected_buf.data(), kat_sha256_expected.data(),
+           rpc::RPC_SHA256_DIGEST_SIZE);
   if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 
   // 2. HMAC-SHA256 KAT
   Hmac hmac;
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> key_buf;
-  size_t key_len = kat_hmac_key.size();
-  etl::copy_n(reinterpret_cast<const uint8_t*>(kat_hmac_key.data()), key_len, key_buf.data());
+  const size_t key_len = kat_hmac_key.size();
+  memcpy_P(key_buf.data(), kat_hmac_key.data(), key_len);
 
   wc_HmacSetKey(&hmac, WC_SHA256, key_buf.data(), static_cast<word32>(key_len));
 
-  size_t data_len = kat_hmac_data.size();
-  etl::copy_n(reinterpret_cast<const uint8_t*>(kat_hmac_data.data()), data_len, buffer.data());
+  const size_t data_len = kat_hmac_data.size();
+  memcpy_P(buffer.data(), kat_hmac_data.data(), data_len);
   wc_HmacUpdate(&hmac, buffer.data(), static_cast<word32>(data_len));
   wc_HmacFinal(&hmac, actual.data());
 
-  etl::copy_n(reinterpret_cast<const uint8_t*>(kat_hmac_expected.data()), rpc::RPC_SHA256_DIGEST_SIZE, expected_buf.data());
+  memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
+           rpc::RPC_SHA256_DIGEST_SIZE);
   if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 

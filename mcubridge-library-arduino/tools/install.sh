@@ -117,6 +117,7 @@ else
     install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.44.2" "include/etl/algorithm.h" "" "$LIB_DIR"
     install_dependency "wolfssl" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.8.4-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
     install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "PacketSerial.h" "" "$LIB_DIR"
+    install_dependency "mpack" "https://github.com/ludocode/mpack/archive/refs/heads/develop.zip" "src/mpack/mpack.h" "" "$LIB_DIR"
 fi
 
 # Unity test framework (host tests only)

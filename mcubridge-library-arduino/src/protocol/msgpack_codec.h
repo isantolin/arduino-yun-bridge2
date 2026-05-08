@@ -2,246 +2,91 @@
  * This file is part of Arduino MCU Ecosystem v2.
  * Copyright (C) 2025-2026 Ignacio Santolin and contributors
  *
- * Minimal MsgPack encoder/decoder for embedded targets.
- * Supports only the subset used by the MCU Bridge protocol:
- *   fixarray, array16/32, fixint/uint8/uint16/uint32, bin8/16/32,
- * fixstr/str8/16/32. Header-only, no heap allocation, ETL byte-stream based.
+ * MsgPack encoder/decoder using mpack library [SIL-2].
+ * Zero-heap, static buffer based implementation.
  */
 #ifndef MSGPACK_CODEC_H
 #define MSGPACK_CODEC_H
 
-#include <etl/algorithm.h>
-#include <etl/byte_stream.h>
 #include <etl/span.h>
+#include <mpack/mpack.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#include "rpc_protocol.h"
 
 namespace msgpack {
 
 // ─── Encoder ────────────────────────────────────────────────────────────────
 class Encoder {
  public:
-  Encoder(uint8_t* buf, size_t cap)
-      : _writer(buf, buf + cap, etl::endian::big) {}
-  explicit Encoder(etl::span<uint8_t> buf) : _writer(buf, etl::endian::big) {}
+  Encoder(uint8_t* buf, size_t cap) {
+    mpack_writer_init(&_writer, reinterpret_cast<char*>(buf), cap);
+  }
+  explicit Encoder(etl::span<uint8_t> buf) : Encoder(buf.data(), buf.size()) {}
 
-  bool ok() const { return _ok; }
-  size_t size() const { return _writer.size_bytes(); }
+  bool ok() const { return mpack_writer_error(&_writer) == mpack_ok; }
+  size_t size() const { return mpack_writer_buffer_used(&_writer); }
+  
   etl::span<const uint8_t> result() const {
-    auto d = _writer.used_data();
-    return {static_cast<const uint8_t*>(static_cast<const void*>(d.data())), d.size()};
+    // In mpack_writer_t, 'buffer' is a public member pointing to the start.
+    return {reinterpret_cast<const uint8_t*>(_writer.buffer), size()};
   }
 
-  void write_array(uint8_t count) {
-    if (count <= rpc::MSGPACK_FIXARRAY_VALUE_MASK) {
-      put(static_cast<uint8_t>(rpc::MSGPACK_FIXARRAY_MASK | count));
-    } else {
-      put(rpc::MSGPACK_ARRAY16);
-      put_multi(static_cast<uint16_t>(count));
-    }
-  }
-
-  template <typename T>
-  void write_uint(T v) {
-    if (v <= rpc::MSGPACK_POSITIVE_FIXINT_MAX) {
-      put(static_cast<uint8_t>(v));
-    } else if (v <= rpc::MSGPACK_UINT8_MAX_VAL) {
-      put(rpc::MSGPACK_UINT8_FMT);
-      put(static_cast<uint8_t>(v));
-    } else if constexpr (sizeof(T) >= 2) {
-      if constexpr (sizeof(T) == 2) {
-        put(rpc::MSGPACK_UINT16_FMT);
-        put_multi(static_cast<uint16_t>(v));
-      } else {
-        if (v <= rpc::MSGPACK_UINT16_MAX_VAL) {
-          put(rpc::MSGPACK_UINT16_FMT);
-          put_multi(static_cast<uint16_t>(v));
-        } else {
-          put(rpc::MSGPACK_UINT32_FMT);
-          put_multi(static_cast<uint32_t>(v));
-        }
-      }
-    }
-  }
-
-  void write_uint8(uint8_t v) { write_uint(v); }
-  void write_uint16(uint16_t v) { write_uint(v); }
-  void write_uint32(uint32_t v) { write_uint(v); }
+  void write_array(uint32_t count) { mpack_start_array(&_writer, count); }
+  
+  void write_uint8(uint8_t v) { mpack_write_u8(&_writer, v); }
+  void write_uint16(uint16_t v) { mpack_write_u16(&_writer, v); }
+  void write_uint32(uint32_t v) { mpack_write_u32(&_writer, v); }
 
   void write_bin(etl::span<const uint8_t> data) {
-    const uint32_t len = static_cast<uint32_t>(data.size());
-    if (len <= 255) {
-      put(rpc::MSGPACK_BIN8);
-      put(static_cast<uint8_t>(len));
-    } else if (len <= 65535) {
-      put(rpc::MSGPACK_BIN16);
-      put_multi(static_cast<uint16_t>(len));
-    } else {
-      put(rpc::MSGPACK_BIN32);
-      put_multi(static_cast<uint32_t>(len));
-    }
-    write_bytes(data.data(), len);
+    mpack_write_bin(&_writer, reinterpret_cast<const char*>(data.data()), 
+                    static_cast<uint32_t>(data.size()));
   }
 
   void write_str(const char* s, uint32_t len) {
-    if (len <= 31) {
-      put(static_cast<uint8_t>(rpc::MSGPACK_FIXSTR_MASK | len));
-    } else if (len <= 255) {
-      put(rpc::MSGPACK_STR8);
-      put(static_cast<uint8_t>(len));
-    } else if (len <= 65535) {
-      put(rpc::MSGPACK_STR16);
-      put_multi(static_cast<uint16_t>(len));
-    } else {
-      put(rpc::MSGPACK_STR32);
-      put_multi(static_cast<uint32_t>(len));
-    }
-    write_bytes(static_cast<const uint8_t*>(static_cast<const void*>(s)), len);
+    mpack_write_str(&_writer, s, len);
   }
 
  private:
-  void put(uint8_t byte) {
-    if (!_ok || !_writer.write(byte)) {
-      _ok = false;
-    }
-  }
-
-  template <typename T>
-  void put_multi(T value) {
-    if (!_ok || !_writer.write(value)) {
-      _ok = false;
-    }
-  }
-
-  void write_bytes(const uint8_t* data, uint32_t len) {
-    if (!_ok || !_writer.write(etl::span<const uint8_t>(data, len))) {
-      _ok = false;
-    }
-  }
-
-  etl::byte_stream_writer _writer;
-  bool _ok = true;
+  mutable mpack_writer_t _writer;
 };
 
 // ─── Decoder ────────────────────────────────────────────────────────────────
 class Decoder {
  public:
-  Decoder(const uint8_t* buf, size_t len)
-      : _reader(buf, buf + len, etl::endian::big) {}
+  Decoder(const uint8_t* buf, size_t len) {
+    mpack_reader_init_data(&_reader, reinterpret_cast<const char*>(buf), len);
+  }
   explicit Decoder(etl::span<const uint8_t> buf)
-      : _reader(buf.data(), buf.data() + buf.size(), etl::endian::big) {}
+      : Decoder(buf.data(), buf.size()) {}
 
-  bool ok() const { return _ok; }
+  bool ok() const { return mpack_reader_error(&_reader) == mpack_ok; }
 
-  uint32_t read_array() {
-    const uint8_t b = get();
-    if ((b & rpc::MSGPACK_FIXARRAY_TYPE_MASK) == rpc::MSGPACK_FIXARRAY_MASK) {
-      return b & rpc::MSGPACK_FIXARRAY_VALUE_MASK;
-    }
-    if (b == rpc::MSGPACK_ARRAY16) {
-      return get_multi<uint16_t>();
-    }
-    if (b == rpc::MSGPACK_ARRAY32) {
-      return get_multi<uint32_t>();
-    }
-    _ok = false;
-    return 0;
-  }
+  uint32_t read_array() { return mpack_expect_array(&_reader); }
 
-  uint8_t read_uint8() { return static_cast<uint8_t>(read_uint32()); }
-  uint16_t read_uint16() { return static_cast<uint16_t>(read_uint32()); }
-
-  uint32_t read_uint32() {
-    const uint8_t b = get();
-    if (b <= rpc::MSGPACK_POSITIVE_FIXINT_MAX) {
-      return b;
-    }
-    if (b == rpc::MSGPACK_UINT8_FMT) {
-      return get();
-    }
-    if (b == rpc::MSGPACK_UINT16_FMT) {
-      return get_multi<uint16_t>();
-    }
-    if (b == rpc::MSGPACK_UINT32_FMT) {
-      return get_multi<uint32_t>();
-    }
-    _ok = false;
-    return 0;
-  }
+  uint8_t read_uint8() { return mpack_expect_u8(&_reader); }
+  uint16_t read_uint16() { return mpack_expect_u16(&_reader); }
+  uint32_t read_uint32() { return mpack_expect_u32(&_reader); }
 
   [[nodiscard]] etl::span<const uint8_t> read_bin_view() {
-    const uint32_t len = read_data_length();
-    if (!_ok || _reader.available_bytes() < len) {
-      _ok = false;
-      return {};
-    }
-    auto view = _reader.read<uint8_t>(len);
-    if (!view.has_value()) {
-      _ok = false;
-      return {};
-    }
-    return view.value();
+    uint32_t len = mpack_expect_bin(&_reader);
+    if (!ok()) return {};
+    const char* data = mpack_read_bytes_inplace(&_reader, len);
+    mpack_done_bin(&_reader);
+    if (!data) return {};
+    return {reinterpret_cast<const uint8_t*>(data), static_cast<size_t>(len)};
   }
 
   [[nodiscard]] etl::span<const char> read_str_view() {
-    const uint32_t len = read_data_length();
-    if (!_ok || _reader.available_bytes() < len) {
-      _ok = false;
-      return {};
-    }
-    auto view = _reader.read<uint8_t>(len);
-    if (!view.has_value()) {
-      _ok = false;
-      return {};
-    }
-    return {static_cast<const char*>(static_cast<const void*>(view.value().data())),
-            static_cast<size_t>(view.value().size())};
+    uint32_t len = mpack_expect_str(&_reader);
+    if (!ok()) return {};
+    const char* data = mpack_read_bytes_inplace(&_reader, len);
+    mpack_done_str(&_reader);
+    if (!data) return {};
+    return {data, static_cast<size_t>(len)};
   }
 
  private:
-  uint8_t get() {
-    if (!_ok) return 0;
-    auto opt = _reader.read<uint8_t>();
-    if (opt.has_value()) {
-      return opt.value();
-    }
-    _ok = false;
-    return 0;
-  }
-
-  template <typename T>
-  T get_multi() {
-    if (!_ok) return 0;
-    auto opt = _reader.read<T>();
-    if (opt.has_value()) {
-      return opt.value();
-    }
-    _ok = false;
-    return 0;
-  }
-
-  uint32_t read_data_length() {
-    const uint8_t b = get();
-    if ((b & rpc::MSGPACK_FIXSTR_TYPE_MASK) == rpc::MSGPACK_FIXSTR_MASK) {
-      return b & rpc::MSGPACK_FIXSTR_VALUE_MASK;
-    }  // fixstr
-    if (b == rpc::MSGPACK_STR8 || b == rpc::MSGPACK_BIN8) {
-      return get();
-    }  // str8, bin8
-    if (b == rpc::MSGPACK_STR16 || b == rpc::MSGPACK_BIN16) {
-      return get_multi<uint16_t>();
-    }  // str16, bin16
-    if (b == rpc::MSGPACK_STR32 || b == rpc::MSGPACK_BIN32) {
-      return get_multi<uint32_t>();
-    }  // str32, bin32
-    _ok = false;
-    return 0;
-  }
-
-  etl::byte_stream_reader _reader;
-  bool _ok = true;
+  mutable mpack_reader_t _reader;
 };
 
 }  // namespace msgpack

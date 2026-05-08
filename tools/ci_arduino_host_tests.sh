@@ -49,6 +49,7 @@ fi
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
+MPACK_PATH="$ARDUINO_LIBS/mpack"
 
 if [[ "${1:-}" == "--install-only" ]]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -65,6 +66,12 @@ SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
     "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
     "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
+    "$MPACK_PATH/src/mpack/mpack-common.c"
+    "$MPACK_PATH/src/mpack/mpack-writer.c"
+    "$MPACK_PATH/src/mpack/mpack-reader.c"
+    "$MPACK_PATH/src/mpack/mpack-expect.c"
+    "$MPACK_PATH/src/mpack/mpack-node.c"
+    "$MPACK_PATH/src/mpack/mpack-platform.c"
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/fsm/bridge_fsm.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
@@ -112,6 +119,7 @@ BASE_FLAGS=(
     -I"$WOLFSSL_PATH"
     -I"$PACKETSERIAL_PATH"
     -I"$PACKETSERIAL_PATH/src"
+    -I"$MPACK_PATH/src"
 )
 
 # Compile common sources to objects in parallel

@@ -58,10 +58,9 @@ class DatastoreComponent:
             return False
 
         key = packet.key
-        value_bytes = packet.value
-        value = value_bytes.decode("utf-8", errors="ignore")
+        value_bytes = bytes(packet.value)
 
-        self.state.datastore[key] = value
+        self.state.datastore[key] = value_bytes
         await self._publish_datastore_value(key, value_bytes)
         return True
 
@@ -82,7 +81,7 @@ class DatastoreComponent:
             return False
 
         key = packet.key
-        val: Any = self.state.datastore.get(key, "")
+        val: Any = self.state.datastore.get(key, b"")
 
         # [SIL-2] Type-safe value coercion
         value_bytes = val.encode("utf-8") if isinstance(val, str) else bytes(val)
@@ -97,7 +96,7 @@ class DatastoreComponent:
 
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
         response_payload = msgspec.msgpack.encode(
-            DatastoreGetResponsePacket(value=value_bytes)
+            DatastoreGetResponsePacket(value=msgspec.Raw(value_bytes))
         )
 
         send_ok = await self.serial_flow.send(
@@ -115,8 +114,7 @@ class DatastoreComponent:
     ) -> bool:
         identifier = route.identifier
         remainder = list(route.remainder)
-        payload = msgspec.convert(inbound.payload, bytes)
-        payload_str = payload.decode("utf-8", errors="ignore")
+        payload = bytes(inbound.payload) if inbound.payload else b""
 
         is_request = (
             identifier == DatastoreAction.GET
@@ -132,7 +130,7 @@ class DatastoreComponent:
 
         match identifier:
             case DatastoreAction.PUT:
-                await self._handle_mqtt_put(key, payload_str, inbound)
+                await self._handle_mqtt_put(key, payload, inbound)
             case DatastoreAction.GET:
                 await self._handle_mqtt_get(key, is_request, inbound)
             case _:
@@ -142,11 +140,10 @@ class DatastoreComponent:
     async def _handle_mqtt_put(
         self,
         key: str,
-        value_text: str,
+        value_bytes: bytes,
         inbound: Message | None,
     ) -> None:
         key_bytes = key.encode("utf-8")
-        value_bytes = value_text.encode("utf-8")
 
         if len(key_bytes) > 255 or len(value_bytes) > 255:
             logger.warning(
@@ -156,7 +153,7 @@ class DatastoreComponent:
             )
             return
 
-        self.state.datastore[key] = value_text
+        self.state.datastore[key] = value_bytes
         await self._publish_datastore_value(
             key,
             value_bytes,

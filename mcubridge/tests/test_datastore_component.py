@@ -48,7 +48,7 @@ async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> 
     payload = msgspec.msgpack.encode(DatastorePutPacket(key="temp", value=b"25.5"))
     await datastore_component.handle_put(0, payload)
 
-    assert datastore_component.state.datastore["temp"] == "25.5"
+    assert datastore_component.state.datastore["temp"] == b"25.5"
     cast(Any, datastore_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
@@ -56,7 +56,7 @@ async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> 
 async def test_datastore_handle_get_request(
     datastore_component: DatastoreComponent,
 ) -> None:
-    datastore_component.state.datastore["version"] = "1.0.0"
+    datastore_component.state.datastore["version"] = b"1.0.0"
     payload = msgspec.msgpack.encode(DatastoreGetPacket(key="version"))
 
     await datastore_component.handle_get_request(0, payload)
@@ -81,7 +81,7 @@ async def test_datastore_handle_mqtt_put(
 
     await datastore_component.handle_mqtt(route, msg)
 
-    assert datastore_component.state.datastore["sys/uptime"] == "3600"
+    assert datastore_component.state.datastore["sys/uptime"] == b"3600"
     cast(Any, datastore_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
@@ -89,7 +89,7 @@ async def test_datastore_handle_mqtt_put(
 async def test_datastore_handle_mqtt_get(
     datastore_component: DatastoreComponent,
 ) -> None:
-    datastore_component.state.datastore["status"] = "OK"
+    datastore_component.state.datastore["status"] = b"OK"
     route = TopicRoute(
         "br/d/get/status", "br", Topic.DATASTORE, (DatastoreAction.GET.value, "status")
     )

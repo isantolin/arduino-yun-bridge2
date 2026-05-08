@@ -423,6 +423,8 @@ class SerialTransport:
                     self._negotiation_future,
                     timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
                 )
+                # [SIL-2] Allow small window for MCU UART reset/stabilization
+                await asyncio.sleep(0.1)
                 return True
             except asyncio.TimeoutError:
                 raise

@@ -46,12 +46,12 @@ BRIDGE_SOURCES=(
 # Third-party sources compiled WITHOUT coverage instrumentation to prevent
 # vendor header line counts from bleeding into coverage reports.
 THIRD_PARTY_SOURCES=(
-    "${MPACK_PATH}/src/mpack/mpack-common.c"
-    "${MPACK_PATH}/src/mpack/mpack-writer.c"
-    "${MPACK_PATH}/src/mpack/mpack-reader.c"
-    "${MPACK_PATH}/src/mpack/mpack-expect.c"
-    "${MPACK_PATH}/src/mpack/mpack-node.c"
-    "${MPACK_PATH}/src/mpack/mpack-platform.c"
+    "${MPACK_PATH}/src/mpack-common.c"
+    "${MPACK_PATH}/src/mpack-writer.c"
+    "${MPACK_PATH}/src/mpack-reader.c"
+    "${MPACK_PATH}/src/mpack-expect.c"
+    "${MPACK_PATH}/src/mpack-node.c"
+    "${MPACK_PATH}/src/mpack-platform.c"
     "${WOLFSSL_PATH}/wolfcrypt/src/sha256.c"
     "${WOLFSSL_PATH}/wolfcrypt/src/hmac.c"
     "${WOLFSSL_PATH}/wolfcrypt/src/hash.c"
@@ -74,9 +74,9 @@ BASE_FLAGS=(
     "-DUNITY_INCLUDE_DOUBLE"
     "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}"
-    "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
+    "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}"
-    "-I${PACKETSERIAL_PATH}/src"
+    "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
     "-I${MPACK_PATH}/src"
     "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"
 )
@@ -88,8 +88,9 @@ TP_FLAGS=(
     "-DETL_NO_STL"
     "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}"
-    "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
+    "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}"
+    "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
     "-I${MPACK_PATH}/src"
 )
 

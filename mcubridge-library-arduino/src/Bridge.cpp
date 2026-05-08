@@ -511,9 +511,10 @@ void BridgeClass::_handleSetBaudrateCommand(
   auto res = rpc::Payload::parse<rpc::payload::SetBaudratePacket>(*ctx.frame);
   if (res) {
     _handleSetBaudrate(res.value());
+    (void)sendFrame(rpc::StatusCode::STATUS_ACK, ctx.sequence_id);
     (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, ctx.sequence_id);
   } else {
-    emitStatus<rpc::StatusCode::STATUS_ERROR>();
+    (void)sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
   }
 }
 void BridgeClass::_handleEnterBootloaderCommand(
@@ -756,6 +757,7 @@ void BridgeClass::_handleXon(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleSetBaudrate(
     const rpc::payload::SetBaudratePacket& msg) {
+  if (msg.baudrate == 0 || msg.baudrate == _pending_baudrate) return;
   _pending_baudrate = msg.baudrate;
   _timers.start(_timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE]);
 }

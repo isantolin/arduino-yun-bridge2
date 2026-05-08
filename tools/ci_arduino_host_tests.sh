@@ -66,12 +66,12 @@ SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
     "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
     "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
-    "$MPACK_PATH/src/mpack/mpack-common.c"
-    "$MPACK_PATH/src/mpack/mpack-writer.c"
-    "$MPACK_PATH/src/mpack/mpack-reader.c"
-    "$MPACK_PATH/src/mpack/mpack-expect.c"
-    "$MPACK_PATH/src/mpack/mpack-node.c"
-    "$MPACK_PATH/src/mpack/mpack-platform.c"
+    "$MPACK_PATH/src/mpack-common.c"
+    "$MPACK_PATH/src/mpack-writer.c"
+    "$MPACK_PATH/src/mpack-reader.c"
+    "$MPACK_PATH/src/mpack-expect.c"
+    "$MPACK_PATH/src/mpack-node.c"
+    "$MPACK_PATH/src/mpack-platform.c"
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/fsm/bridge_fsm.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
@@ -108,18 +108,18 @@ BASE_FLAGS=(
     -DWOLFSSL_USER_SETTINGS
     -DETL_NO_STL
     -DUNITY_INCLUDE_DOUBLE
-    -I"${SRC_DIR}"
-    -I"${SRC_DIR}/config"
-    -I"${SRC_DIR}/protocol"
-    -I"${TEST_DIR}/Unity/src"
-    -I"${STUB_DIR}"
-    -I"$ETL_PATH"
-    -I"$ETL_PATH/include"
-    -I"$ETL_PATH/arduino"
-    -I"$WOLFSSL_PATH"
-    -I"$PACKETSERIAL_PATH"
-    -I"$PACKETSERIAL_PATH/src"
-    -I"$MPACK_PATH/src"
+    -I"${SRC_DIR}" \
+    -I"${SRC_DIR}/config" \
+    -I"${SRC_DIR}/protocol" \
+    -I"${TEST_DIR}/Unity/src" \
+    -I"${STUB_DIR}" \
+    -I"$ETL_PATH" \
+    -I"$ETL_PATH/include" \
+    -I"$ETL_PATH/arduino" \
+    -I"$WOLFSSL_PATH" \
+    -I"$PACKETSERIAL_PATH" \
+    -I"$PACKETSERIAL_PATH/src" \
+    -I"$MPACK_PATH/src" \
 )
 
 # Compile common sources to objects in parallel

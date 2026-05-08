@@ -58,12 +58,12 @@ WOLF_SOURCES=(
 )
 
 MPACK_SOURCES=(
-    "$MPACK_PATH/src/mpack/mpack-common.c"
-    "$MPACK_PATH/src/mpack/mpack-writer.c"
-    "$MPACK_PATH/src/mpack/mpack-reader.c"
-    "$MPACK_PATH/src/mpack/mpack-expect.c"
-    "$MPACK_PATH/src/mpack/mpack-node.c"
-    "$MPACK_PATH/src/mpack/mpack-platform.c"
+    "$MPACK_PATH/src/mpack-common.c"
+    "$MPACK_PATH/src/mpack-writer.c"
+    "$MPACK_PATH/src/mpack-reader.c"
+    "$MPACK_PATH/src/mpack-expect.c"
+    "$MPACK_PATH/src/mpack-node.c"
+    "$MPACK_PATH/src/mpack-platform.c"
 )
 
 echo "[emulator] Compiling native bridge emulator (Base)..."

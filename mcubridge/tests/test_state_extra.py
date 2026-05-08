@@ -86,7 +86,14 @@ def test_record_serial_pipeline_event_edge_cases() -> None:
 
     state = RuntimeState()
     state.record_serial_pipeline_event(
-        PipelineEvent(event="test", command_id=0, attempt=1, ack_received=False, status=None, timestamp=0.0)
+        PipelineEvent(
+            event="test",
+            command_id=0,
+            attempt=1,
+            ack_received=False,
+            status=None,
+            timestamp=0.0,
+        )
     )
 
 

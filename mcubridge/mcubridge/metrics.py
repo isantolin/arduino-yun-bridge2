@@ -376,7 +376,9 @@ class PrometheusExporter:
     ) -> None:
         phrases = {200: "OK", 400: "Bad Request", 404: "Not Found"}
 
-        def _respond(status: int, body: bytes, *, content_type: str = "text/plain; charset=utf-8") -> None:
+        def _respond(
+            status: int, body: bytes, *, content_type: str = "text/plain; charset=utf-8"
+        ) -> None:
             status_line = f"HTTP/1.1 {status} {phrases.get(status, 'Error')}\r\n"
             headers = f"Content-Type: {content_type}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n"
             writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)

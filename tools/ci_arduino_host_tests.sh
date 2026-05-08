@@ -119,7 +119,7 @@ BASE_FLAGS=(
     -I"$WOLFSSL_PATH"
     -I"$PACKETSERIAL_PATH"
     -I"$PACKETSERIAL_PATH/src"
-    -I"$MPACK_PATH/src"
+    -I"$MPACK_PATH"
 )
 
 # Compile common sources to objects in parallel

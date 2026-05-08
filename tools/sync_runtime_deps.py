@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import urllib.request
 import urllib.error
@@ -18,6 +19,7 @@ MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
 REQUIREMENTS_PATH = ROOT / "requirements" / "runtime.txt"
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 MAKEFILE_PATH = ROOT / "mcubridge" / "Makefile"
+FEEDS_DIR = ROOT / "feeds"
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
 BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
 
@@ -228,6 +230,41 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
     return outdated
 
 
+def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+    if not FEEDS_DIR.exists():
+        return False
+
+    any_updated = False
+    for dep in deps:
+        openwrt_pkg = dep.get("openwrt", "")
+        if not openwrt_pkg or not openwrt_pkg.startswith("python3-"):
+            continue
+
+        _, version = _parse_pip_spec(dep.get("pip", ""))
+        if not version:
+            continue
+
+        makefile = FEEDS_DIR / openwrt_pkg / "Makefile"
+        if not makefile.exists():
+            continue
+
+        content = makefile.read_text(encoding="utf-8")
+        # Update PKG_VERSION
+        new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", content)
+
+        # When version changes, PKG_RELEASE should typically reset to 1
+        if new_content != content:
+            new_content = re.sub(r"PKG_RELEASE:=[^\n]+", "PKG_RELEASE:=1", new_content)
+
+        if new_content != content:
+            any_updated = True
+            if not dry_run:
+                makefile.write_text(new_content, encoding="utf-8")
+                sys.stderr.write(f"Updated {makefile} to version {version}\n")
+
+    return any_updated
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Generate derived dependency files from the runtime manifest."
@@ -272,9 +309,12 @@ def main(argv: list[str] | None = None) -> None:
     updated_requirements = write_requirements(deps, dry_run=check)
     updated_makefile = update_makefile(deps, dry_run=check)
     updated_pyproject = update_pyproject(deps, dry_run=check)
+    updated_feeds = update_feeds(deps, dry_run=check)
 
     fail = False
-    if check and (updated_requirements or updated_makefile or updated_pyproject):
+    if check and (
+        updated_requirements or updated_makefile or updated_pyproject or updated_feeds
+    ):
         fail = True
 
     if check_latest:

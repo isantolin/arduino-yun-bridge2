@@ -9,7 +9,7 @@
 #define MSGPACK_CODEC_H
 
 #include <etl/span.h>
-#include <mpack/mpack.h>
+#include <mpack.h>
 #include <stddef.h>
 #include <stdint.h>
 

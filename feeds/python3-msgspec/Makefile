@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-msgspec
-PKG_VERSION:=0.20.0
+PKG_VERSION:=0.21.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=msgspec

@@ -101,6 +101,13 @@ install_dependency() {
     mkdir -p "$target_base/$name"
     # Copy ALL contents of extracted_root to target_base/$name
     cp -a "$extracted_root/." "$target_base/$name/"
+    
+    # Flatten headers for better Arduino compatibility
+    if [ "$name" == "mpack" ]; then
+        echo "[INFO] Flattening mpack headers for Arduino compatibility..."
+        cp -a "$target_base/$name/src/mpack/." "$target_base/$name/"
+    fi
+    
     echo "[OK] $name installed."
     rm -rf "$tmp_dir"
 }

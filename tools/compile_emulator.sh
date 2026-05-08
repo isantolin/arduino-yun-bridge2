@@ -79,7 +79,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
-    -I"${MPACK_PATH}/src" \
+    -I"${MPACK_PATH}" \
     "${WOLF_SOURCES[@]}" \
     "${MPACK_SOURCES[@]}" \
     "${SRC_DIR}/security/security.cpp" \
@@ -111,7 +111,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
-    -I"${MPACK_PATH}/src" \
+    -I"${MPACK_PATH}" \
     "${WOLF_SOURCES[@]}" \
     "${MPACK_SOURCES[@]}" \
     "${SRC_DIR}/security/security.cpp" \

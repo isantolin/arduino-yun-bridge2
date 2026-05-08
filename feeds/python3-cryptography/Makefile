@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-cryptography
-PKG_VERSION:=46.0.6
+PKG_VERSION:=48.0.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=cryptography

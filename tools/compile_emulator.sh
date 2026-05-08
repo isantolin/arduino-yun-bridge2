@@ -23,7 +23,7 @@ echo "[emulator] Installing library dependencies..."
 "${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
 
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
+WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 MPACK_PATH="$ARDUINO_LIBS/mpack"
 
@@ -79,7 +79,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
-    -I"${MPACK_PATH}" \
+    -I"${MPACK_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
     "${MPACK_SOURCES[@]}" \
     "${SRC_DIR}/security/security.cpp" \
@@ -111,7 +111,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
-    -I"${MPACK_PATH}" \
+    -I"${MPACK_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
     "${MPACK_SOURCES[@]}" \
     "${SRC_DIR}/security/security.cpp" \

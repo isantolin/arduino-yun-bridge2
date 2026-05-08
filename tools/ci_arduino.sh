@@ -24,7 +24,7 @@ fi
 
 # Define explicit include paths for official libraries
 ETL_INC="$USER_LIB_DIR/Embedded_Template_Library/include"
-WOLF_INC="$USER_LIB_DIR/wolfssl/src"
+WOLF_INC="$USER_LIB_DIR/wolfSSL/src"
 
 # Update core index
 echo "Updating core index..."
@@ -63,7 +63,7 @@ cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$WOLF_INC/user_settings
 
 # [HOT-PATCH] Fix gmtime_r conflict in wc_port.c
 echo "Patching wc_port.c to avoid gmtime_r conflict..."
-sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$USER_LIB_DIR/wolfssl/src/wolfcrypt/src/wc_port.c"
+sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$USER_LIB_DIR/wolfSSL/src/wolfcrypt/src/wc_port.c"
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"
@@ -106,8 +106,8 @@ compile_sketch() {
 
     COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS"
     local BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--libraries" "$PWD/.dummy_libs" "--warnings" "default"
-                 "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -I$USER_LIB_DIR/Embedded_Template_Library/include -I$USER_LIB_DIR/mpack"
-                 "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS -I$USER_LIB_DIR/Embedded_Template_Library/include -I$USER_LIB_DIR/mpack"
+                 "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -I$USER_LIB_DIR/Embedded_Template_Library/include"
+                 "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS -I$USER_LIB_DIR/Embedded_Template_Library/include"
                  "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
                  "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
                  "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch")

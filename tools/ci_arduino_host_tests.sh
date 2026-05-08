@@ -47,7 +47,7 @@ fi
 
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
+WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 MPACK_PATH="$ARDUINO_LIBS/mpack"
 
@@ -119,7 +119,7 @@ BASE_FLAGS=(
     -I"$WOLFSSL_PATH"
     -I"$PACKETSERIAL_PATH"
     -I"$PACKETSERIAL_PATH/src"
-    -I"$MPACK_PATH"
+    -I"$MPACK_PATH/src"
 )
 
 # Compile common sources to objects in parallel

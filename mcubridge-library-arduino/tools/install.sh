@@ -106,7 +106,8 @@ install_dependency() {
     # Do NOT copy .c sources: arduino-cli would compile both root and src/mpack/, causing duplicate symbols.
     if [ "$name" == "mpack" ]; then
         echo "[INFO] Flattening mpack headers for Arduino compatibility..."
-        find "$target_base/$name/src/mpack/" -maxdepth 1 -name "*.h" -exec cp -a {} "$target_base/$name/" \;
+        mkdir -p "$target_base/$name/src"
+        find "$target_base/$name/src/mpack/" -maxdepth 1 -name "*.h" -exec cp -a {} "$target_base/$name/src/" \;
     fi
     
     echo "[OK] $name installed."
@@ -123,7 +124,7 @@ else
     # In CI/CD or when a target directory is provided, we install them.
     # ETL: We copy the whole repository to the library directory.
     install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.44.2" "include/etl/algorithm.h" "" "$LIB_DIR"
-    install_dependency "wolfssl" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.8.4-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
+    install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.8.4-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
     install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "PacketSerial.h" "" "$LIB_DIR"
     install_dependency "mpack" "https://github.com/ludocode/mpack/archive/refs/heads/develop.zip" "src/mpack/mpack.h" "" "$LIB_DIR"
     

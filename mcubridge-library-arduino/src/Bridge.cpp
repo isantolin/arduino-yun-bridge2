@@ -214,10 +214,6 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _is_post_passed = rpc::security::run_cryptographic_self_tests();
   if (!_is_post_passed) enterSafeState();
 
-#if defined(ARDUINO_ARCH_AVR)
-  wdt_enable(WDTO_4S);
-#endif
-
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR) {
     if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
@@ -251,9 +247,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 void BridgeClass::process() { (void)_scheduler_policy.schedule_tasks(_tasks); }
 
 void BridgeClass::WatchdogTask::task_process_work() {
-#if defined(ARDUINO_ARCH_AVR)
-  wdt_reset();
-#endif
+  bridge::hal::watchdog_kick();
 }
 
 void BridgeClass::SerialTask::task_process_work() {
@@ -510,8 +504,17 @@ void BridgeClass::_onBaudrateChange() {
 
 void BridgeClass::_handleSetBaudrateCommand(
     const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::SetBaudratePacket>(
-      ctx, [this](const auto& m) { _handleSetBaudrate(m); });
+  if (ctx.is_duplicate) {
+    (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, ctx.sequence_id);
+    return;
+  }
+  auto res = rpc::Payload::parse<rpc::payload::SetBaudratePacket>(*ctx.frame);
+  if (res) {
+    _handleSetBaudrate(res.value());
+    (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, ctx.sequence_id);
+  } else {
+    emitStatus<rpc::StatusCode::STATUS_ERROR>();
+  }
 }
 void BridgeClass::_handleEnterBootloaderCommand(
     const bridge::router::CommandContext& ctx) {

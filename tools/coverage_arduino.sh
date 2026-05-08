@@ -19,7 +19,7 @@ mkdir -p "${ROOT_DIR}/.dummy_libs"
 "${LIB_ROOT}/tools/install.sh" "${ROOT_DIR}/.dummy_libs"
 
 ETL_PATH="${ROOT_DIR}/.dummy_libs/Embedded_Template_Library"
-WOLFSSL_PATH="${ROOT_DIR}/.dummy_libs/wolfssl"
+WOLFSSL_PATH="${ROOT_DIR}/.dummy_libs/wolfSSL"
 PACKETSERIAL_PATH="${ROOT_DIR}/.dummy_libs/PacketSerial"
 MPACK_PATH="${ROOT_DIR}/.dummy_libs/mpack"
 
@@ -77,7 +77,7 @@ BASE_FLAGS=(
     "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}"
     "-I${PACKETSERIAL_PATH}/src"
-    "-I${MPACK_PATH}"
+    "-I${MPACK_PATH}/src"
     "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"
 )
 
@@ -90,7 +90,7 @@ TP_FLAGS=(
     "-I${STUB_INCLUDE}"
     "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}"
-    "-I${MPACK_PATH}"
+    "-I${MPACK_PATH}/src"
 )
 
 OBJECTS=()

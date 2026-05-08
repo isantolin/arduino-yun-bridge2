@@ -117,15 +117,6 @@ class BridgeClass {
   [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
-  /**
-   * @brief Secure borrow mechanism for the transient buffer.
-   * [SIL-2] Replaces stack allocation in services with protected class memory.
-   */
-  [[nodiscard]] etl::span<uint8_t> borrowTransientBuffer() {
-    return etl::span<uint8_t>(_transient_buffer.data(),
-                              _transient_buffer.size());
-  }
-
   [[maybe_unused]] void _computeHandshakeTag(
       const etl::span<const uint8_t> nonce, etl::span<uint8_t> tag);
 

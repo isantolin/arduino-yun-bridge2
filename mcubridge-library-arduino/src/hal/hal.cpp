@@ -206,12 +206,9 @@ uint8_t getArchId() { return CURRENT_ARCH; }
   }
 
   // Spin until WDT fires (intentional [[noreturn]] halt).
-  // Includes memory fence and WDT reset attempt to ensure clean transition.
+  // Includes memory fence to ensure clean transition.
   for (;;) {
     bridge::hal::memory_fence();
-    if constexpr (bridge::config::ENABLE_WATCHDOG) {
-      bridge::hal::watchdog_kick();
-    }
   }
 }
 

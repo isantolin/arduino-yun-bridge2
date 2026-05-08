@@ -26,22 +26,9 @@ MPACK_PATH="${ROOT_DIR}/.dummy_libs/mpack"
 # Clean old coverage data
 find "${BUILD_DIR}" -name "*.gcda" -delete
 
-SOURCES=(
+# First-party sources compiled with coverage instrumentation.
+BRIDGE_SOURCES=(
     "${SRC_ROOT}/security/security.cpp"
-    "${MPACK_PATH}/src/mpack/mpack-common.c"
-    "${MPACK_PATH}/src/mpack/mpack-writer.c"
-    "${MPACK_PATH}/src/mpack/mpack-reader.c"
-    "${MPACK_PATH}/src/mpack/mpack-expect.c"
-    "${MPACK_PATH}/src/mpack/mpack-node.c"
-    "${MPACK_PATH}/src/mpack/mpack-platform.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/sha256.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/hmac.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/hash.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/kdf.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/error.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/logging.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/wc_port.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/memory.c"
     "${SRC_ROOT}/hal/hal.cpp"
     "${SRC_ROOT}/fsm/bridge_fsm.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
@@ -56,6 +43,26 @@ SOURCES=(
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
 
+# Third-party sources compiled WITHOUT coverage instrumentation to prevent
+# vendor header line counts from bleeding into coverage reports.
+THIRD_PARTY_SOURCES=(
+    "${MPACK_PATH}/src/mpack/mpack-common.c"
+    "${MPACK_PATH}/src/mpack/mpack-writer.c"
+    "${MPACK_PATH}/src/mpack/mpack-reader.c"
+    "${MPACK_PATH}/src/mpack/mpack-expect.c"
+    "${MPACK_PATH}/src/mpack/mpack-node.c"
+    "${MPACK_PATH}/src/mpack/mpack-platform.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/sha256.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/hmac.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/hash.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/kdf.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/error.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/logging.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/wc_port.c"
+    "${WOLFSSL_PATH}/wolfcrypt/src/memory.c"
+)
+
+# Flags with coverage instrumentation (first-party code only).
 BASE_FLAGS=(
     "-O0" "-g" "-fprofile-arcs" "-ftest-coverage" "-fPIC"
     "-Wall" "-Wextra" "-Werror"
@@ -74,14 +81,32 @@ BASE_FLAGS=(
     "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"
 )
 
+# Flags without coverage instrumentation (vendor/third-party code).
+TP_FLAGS=(
+    "-O2" "-g" "-fPIC"
+    "-DARDUINO=100" "-DBRIDGE_HOST_TEST=1" "-DWOLFSSL_USER_SETTINGS"
+    "-DETL_NO_STL"
+    "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
+    "-I${STUB_INCLUDE}"
+    "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
+    "-I${WOLFSSL_PATH}"
+    "-I${MPACK_PATH}"
+)
+
 OBJECTS=()
-for src in "${SOURCES[@]}"; do
+for src in "${BRIDGE_SOURCES[@]}"; do
     obj="${BUILD_DIR}/objs/$(basename "${src}").o"
     if [[ "${src}" == *.cpp ]]; then
         g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}"
     else
         gcc "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}"
     fi
+    OBJECTS+=("${obj}")
+done
+
+for src in "${THIRD_PARTY_SOURCES[@]}"; do
+    obj="${BUILD_DIR}/objs/$(basename "${src}").o"
+    gcc "${TP_FLAGS[@]}" -c "${src}" -o "${obj}"
     OBJECTS+=("${obj}")
 done
 
@@ -115,7 +140,7 @@ done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
-gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --merge-mode-functions=merge-use-line-max --sort-percentage --fail-under-line 75 --fail-under-branch 40 --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
+gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line 75 --fail-under-branch 40 --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 cat "${OUTPUT_ROOT}/summary.txt"
 echo "[coverage_arduino] Proceso finalizado."

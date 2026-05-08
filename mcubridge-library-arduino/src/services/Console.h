@@ -16,19 +16,19 @@
 class ConsoleClass : public Stream, public BridgeObserver {
  public:
   ConsoleClass();
-  [[maybe_unused]] void begin();
+  void begin();
   void _push(const rpc::payload::ConsoleWrite& msg);
-  [[maybe_unused]] void process();
+  void process();
 
   void notification(MsgBridgeSynchronized) override { begin(); }
   void notification(MsgBridgeLost) override { _flags.reset(BEGUN); }
 
   // Stream implementation
-  [[maybe_unused]] size_t write(uint8_t c) override;
-  [[maybe_unused]] size_t write(const uint8_t* buffer, size_t size) override;
-  [[maybe_unused]] int available() override;
-  [[maybe_unused]] int read() override;
-  [[maybe_unused]] int peek() override;
+  size_t write(uint8_t c) override;
+  size_t write(const uint8_t* buffer, size_t size) override;
+  int available() override;
+  int read() override;
+  int peek() override;
   void flush() override {}
 
  private:

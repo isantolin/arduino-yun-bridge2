@@ -46,7 +46,7 @@ void memory_fence();
 /**
  * @brief Kick/reset the hardware watchdog timer.
  */
-[[maybe_unused]] void watchdog_kick();
+void watchdog_kick();
 
 /**
  * @brief Get the amount of free RAM available. * @return Free bytes or

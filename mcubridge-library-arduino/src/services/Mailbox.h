@@ -12,10 +12,10 @@
 class MailboxClass : public BridgeObserver {
  public:
   MailboxClass();
-  [[maybe_unused]] static void push(etl::span<const uint8_t> data);
-  [[maybe_unused]] static void requestRead();
-  [[maybe_unused]] static void requestAvailable();
-  [[maybe_unused]] static void signalProcessed();
+  static void push(etl::span<const uint8_t> data);
+  static void requestRead();
+  static void requestAvailable();
+  static void signalProcessed();
 
   void _onIncomingData(const rpc::payload::MailboxPush& msg);
   void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);

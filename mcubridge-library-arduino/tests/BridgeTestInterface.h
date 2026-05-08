@@ -58,6 +58,10 @@ class TestAccessor : public BridgeClass {
     _handleGetCapabilities(ctx);
   }
 
+  void handleDigitalWriteCommand(const bridge::router::CommandContext& ctx) {
+    _handleDigitalWriteCommand(ctx);
+  }
+
   void handleAck(uint16_t command_id) { _handleAck(command_id); }
   uint16_t getLastCommandId() const { return _last_command_id; }
   void clearSynchronized() {

@@ -32,7 +32,7 @@ SOURCES="src/security/security.cpp src/hal/hal.cpp src/protocol/rle.cpp src/Brid
 WOLF_SOURCES="$WOLFSSL_PATH/wolfcrypt/src/sha256.c $WOLFSSL_PATH/wolfcrypt/src/hmac.c $WOLFSSL_PATH/wolfcrypt/src/hash.c $WOLFSSL_PATH/wolfcrypt/src/kdf.c $WOLFSSL_PATH/wolfcrypt/src/error.c $WOLFSSL_PATH/wolfcrypt/src/logging.c $WOLFSSL_PATH/wolfcrypt/src/wc_port.c $WOLFSSL_PATH/wolfcrypt/src/memory.c"
 UNITY="build-host-local/unity.o"
 
-TESTS="test_msgpack test_protocol test_bridge_core test_bridge_components test_fsm_mutual_auth test_integrated test_host_filesystem test_arduino_100_coverage test_coverage_full"
+TESTS="test_msgpack test_protocol test_bridge_core test_bridge_components test_fsm_mutual_auth test_integrated test_host_filesystem test_arduino_100_coverage test_coverage_full test_coverage_hardened"
 
 # Unity object file
 mkdir -p build-host-local

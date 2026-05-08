@@ -118,6 +118,23 @@ else
     install_dependency "wolfssl" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.8.4-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
     install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "PacketSerial.h" "" "$LIB_DIR"
     install_dependency "mpack" "https://github.com/ludocode/mpack/archive/refs/heads/develop.zip" "src/mpack/mpack.h" "" "$LIB_DIR"
+    
+    # Ensure mpack has a library.properties for arduino-cli recognition
+    if [ ! -f "$LIB_DIR/mpack/library.properties" ]; then
+        echo "[INFO] Creating library.properties for mpack..."
+        cat > "$LIB_DIR/mpack/library.properties" <<EOF
+name=mpack
+version=1.1.0
+author=Nicholas Fraser
+maintainer=Nicholas Fraser
+sentence=A high-performance MessagePack encoder/decoder.
+paragraph=MPack is a high-performance encoder and decoder for the MessagePack serialization format.
+category=Data Storage
+url=https://github.com/ludocode/mpack
+architectures=*
+includes=mpack.h
+EOF
+    fi
 fi
 
 # Unity test framework (host tests only)

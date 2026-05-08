@@ -48,14 +48,9 @@ def _build_metrics_message(
     )
 
     mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
+    extra_props: list[tuple[str, str]] = []
     if snapshot.get("mqtt_spool_degraded"):
-        message = msgspec.structs.replace(
-            message,
-            user_properties=(
-                *message.user_properties,
-                ("bridge-spool", mqtt_spool_failure or "unknown"),
-            ),
-        )
+        extra_props.append(("bridge-spool", mqtt_spool_failure or "unknown"))
 
     file_status = next(
         (
@@ -71,29 +66,20 @@ def _build_metrics_message(
         None,
     )
     if file_status is not None:
-        message = msgspec.structs.replace(
-            message,
-            user_properties=(*message.user_properties, ("bridge-files", file_status)),
-        )
+        extra_props.append(("bridge-files", file_status))
 
     if snapshot.get("watchdog_enabled") is not None:
         enabled = bool(snapshot.get("watchdog_enabled"))
-        message = msgspec.structs.replace(
-            message,
-            user_properties=(
-                *message.user_properties,
-                ("bridge-watchdog-enabled", "1" if enabled else "0"),
-            ),
-        )
+        extra_props.append(("bridge-watchdog-enabled", "1" if enabled else "0"))
         watchdog_interval = snapshot.get("watchdog_interval")
         if isinstance(watchdog_interval, (int, float)):
-            message = msgspec.structs.replace(
-                message,
-                user_properties=(
-                    *message.user_properties,
-                    ("bridge-watchdog-interval", str(watchdog_interval)),
-                ),
-            )
+            extra_props.append(("bridge-watchdog-interval", str(watchdog_interval)))
+
+    if extra_props:
+        message = msgspec.structs.replace(
+            message,
+            user_properties=(*message.user_properties, *extra_props),
+        )
 
     return message
 
@@ -332,9 +318,6 @@ class PrometheusExporter:
         self._resolved_port: int | None = None
         self._registry = state.metrics.registry
 
-        # [OPTIMIZATION] Initialize native prometheus Summary for percentiles
-        state.serial_latency_stats.initialize_prometheus(self._registry)
-
         # [SIL-2 / Library-First] Use native ProcessCollector to get CPU/RAM/FDs for free
         ProcessCollector(registry=self._registry)
 
@@ -391,36 +374,34 @@ class PrometheusExporter:
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
+        phrases = {200: "OK", 400: "Bad Request", 404: "Not Found"}
+
+        def _respond(status: int, body: bytes, *, content_type: str = "text/plain; charset=utf-8") -> None:
+            status_line = f"HTTP/1.1 {status} {phrases.get(status, 'Error')}\r\n"
+            headers = f"Content-Type: {content_type}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n"
+            writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
+
         try:
-            request_line = await reader.readline()
-            if not request_line:
-                return
+            request_data = await reader.readuntil(b"\r\n\r\n")
+            request_line = request_data.split(b"\r\n", 1)[0]
             parts = request_line.decode("ascii", errors="ignore").split()
             if len(parts) < 2:
-                await self._write_response(writer, 400, b"")
+                _respond(400, b"")
+                await writer.drain()
                 return
             method, path = parts[0], parts[1]
-
-            # Read and discard headers until empty line
-            while line := await reader.readline():
-                if line in {b"\r\n", b"\n"}:
-                    break
-
             if method != "GET" or path not in {"/metrics", "/"}:
-                await self._write_response(writer, 404, b"")
+                _respond(404, b"")
+                await writer.drain()
                 return
             payload = generate_latest(self._registry)
-            await self._write_response(
-                writer,
-                200,
-                payload,
-                content_type=CONTENT_TYPE_LATEST,
-            )
+            _respond(200, payload, content_type=CONTENT_TYPE_LATEST)
+            await writer.drain()
         except asyncio.CancelledError:
             raise
         except (OSError, ValueError, IndexError) as e:
             logger.warning("Prometheus client request error: %s", e)
-        except (TypeError, ValueError, AttributeError, OSError, RuntimeError) as e:
+        except (TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
                 "Unexpected error in Prometheus handler: %s", e, exc_info=True
             )
@@ -430,26 +411,7 @@ class PrometheusExporter:
                 await writer.wait_closed()
             except (OSError, ValueError, RuntimeError):
                 # [SIL-2] Connection close errors are non-fatal during cleanup.
-                # Log at debug level to avoid noise during normal shutdown.
                 logger.debug("Error closing metrics client connection", exc_info=True)
-
-    async def _write_response(
-        self,
-        writer: asyncio.StreamWriter,
-        status: int,
-        body: bytes,
-        *,
-        content_type: str = "text/plain; charset=utf-8",
-    ) -> None:
-        phrases = {
-            200: "OK",
-            400: "Bad Request",
-            404: "Not Found",
-        }
-        status_line = f"HTTP/1.1 {status} {phrases.get(status, 'Error')}\r\n"
-        headers = f"Content-Type: {content_type}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n"
-        writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
-        await writer.drain()
 
 
 def _build_bridge_snapshot_message(

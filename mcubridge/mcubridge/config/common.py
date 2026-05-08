@@ -58,27 +58,16 @@ def get_uci_config() -> dict[str, Any]:
 
 
 def get_default_config() -> dict[str, Any]:
-    """Return the default configuration as a dictionary (SIL 2)."""
-    from mcubridge.config import const
-    from mcubridge.protocol import protocol
+    """Return the complete default configuration as a dictionary (SIL 2)."""
+    import msgspec
+    from mcubridge.protocol.structures import RuntimeConfig
 
     return {
-        "serial_port": const.DEFAULT_SERIAL_PORT,
-        "serial_baud": protocol.DEFAULT_BAUDRATE,
-        "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
-        "serial_retry_attempts": protocol.DEFAULT_RETRY_LIMIT,
-        "serial_retry_timeout": const.DEFAULT_SERIAL_RETRY_TIMEOUT,
-        "serial_response_timeout": const.DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-        "mqtt_host": const.DEFAULT_MQTT_HOST,
-        "mqtt_port": const.DEFAULT_MQTT_PORT,
-        "mqtt_tls": True,
-        "mqtt_topic": protocol.MQTT_DEFAULT_TOPIC_PREFIX,
-        "mqtt_spool_dir": const.DEFAULT_MQTT_SPOOL_DIR,
-        "mqtt_spool_limit": const.DEFAULT_MQTT_QUEUE_LIMIT,
-        "file_system_root": const.DEFAULT_FILE_SYSTEM_ROOT,
-        "debug": const.DEFAULT_DEBUG,
-        "status_interval": const.DEFAULT_STATUS_INTERVAL,
-        "process_timeout": const.DEFAULT_PROCESS_TIMEOUT,
+        field.name: (
+            field.default_factory() if field.default is msgspec.NODEFAULT else field.default
+        )
+        for field in msgspec.structs.fields(RuntimeConfig)
+        if field.default is not msgspec.NODEFAULT or field.default_factory is not msgspec.NODEFAULT
     }
 
 

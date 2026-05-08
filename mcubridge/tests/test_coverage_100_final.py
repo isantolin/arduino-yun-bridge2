@@ -58,7 +58,7 @@ class TestAllowedCommandPolicy:
         from mcubridge.protocol.structures import AllowedCommandPolicy
 
         policy = AllowedCommandPolicy.from_iterable(["ls", "*", "echo"])
-        assert policy.as_tuple() == ("*",)
+        assert policy.entries == ("*",)
 
 
 # ============================================================================

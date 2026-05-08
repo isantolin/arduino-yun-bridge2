@@ -49,10 +49,6 @@ class WatchdogKeepalive:
     def interval(self, value: float) -> None:
         self._interval = max(WATCHDOG_MIN_INTERVAL, value)
 
-    def update_interval(self, interval: float) -> None:
-        """Compatibility shim for tests."""
-        self.interval = interval
-
     def kick(self) -> None:
         """Send a single watchdog pulse immediately."""
         try:

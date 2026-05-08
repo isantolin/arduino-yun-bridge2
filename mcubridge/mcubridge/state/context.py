@@ -48,11 +48,11 @@ from ..protocol.structures import (
     McuVersion,
     PendingPinRequest,
     SerialFlowStats,
-    SerialLatencyStats,
     SerialLinkSnapshot,
     SerialPipelineSnapshot,
     SerialThroughputStats,
     SupervisorStats,
+    PipelineEvent,
 )
 from .metrics import DaemonMetrics
 
@@ -229,7 +229,7 @@ class RuntimeState(msgspec.Struct):
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
-        default_factory=AllowedCommandPolicy.create_empty,
+        default_factory=AllowedCommandPolicy,
     )
     topic_authorization: TopicAuthorization | None = None
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
@@ -288,12 +288,6 @@ class RuntimeState(msgspec.Struct):
     serial_throughput_stats: SerialThroughputStats = msgspec.field(
         default_factory=SerialThroughputStats
     )
-    serial_latency_stats: SerialLatencyStats = msgspec.field(
-        default_factory=SerialLatencyStats
-    )
-    rpc_latency_stats: SerialLatencyStats = msgspec.field(
-        default_factory=SerialLatencyStats
-    )
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -328,7 +322,7 @@ class RuntimeState(msgspec.Struct):
     @property
     def allowed_commands(self) -> tuple[str, ...]:
         """Return the current allowed command list from policy."""
-        return self.allowed_policy.as_tuple()
+        return self.allowed_policy.entries
 
     def record_supervisor_failure(
         self, name: str, backoff: float, exc: BaseException | None
@@ -434,27 +428,32 @@ class RuntimeState(msgspec.Struct):
 
     def record_serial_flow_event(self, event: str) -> None:
         stats = self.serial_flow_stats
-        if event == "sent":
-            stats.commands_sent += 1
-        elif event == "ack":
-            stats.commands_acked += 1
-        elif event == "retry":
-            stats.retries += 1
-            self.metrics.serial_retries.inc()
-        elif event == "failure":
-            stats.failures += 1
-            self.metrics.serial_failures.inc()
-        else:
+        _FLOW_COUNTERS: dict[str, str] = {
+            "sent": "commands_sent",
+            "ack": "commands_acked",
+            "retry": "retries",
+            "failure": "failures",
+        }
+        _FLOW_METRICS: dict[str, Any] = {
+            "retry": self.metrics.serial_retries,
+            "failure": self.metrics.serial_failures,
+        }
+        attr = _FLOW_COUNTERS.get(event)
+        if attr is None:
             return
+        setattr(stats, attr, getattr(stats, attr) + 1)
+        metric = _FLOW_METRICS.get(event)
+        if metric is not None:
+            metric.inc()
         stats.last_event_unix = time.time()
 
-    def record_serial_pipeline_event(self, event: Mapping[str, Any]) -> None:
-        name = str(event.get("event", ""))
-        command_id = int(event.get("command_id", 0))
-        attempt = int(event.get("attempt", 1) or 1)
-        timestamp = float(event.get("timestamp") or time.time())
-        acked = bool(event.get("ack_received"))
-        status_code = event.get("status")
+    def record_serial_pipeline_event(self, event: PipelineEvent) -> None:
+        name = event.event
+        command_id = event.command_id
+        attempt = event.attempt
+        timestamp = event.timestamp
+        acked = event.ack_received
+        status_code = event.status
 
         # [SIL-2] Direct Enum resolution to avoid wrapper overhead
         def _res_cmd(cid: int) -> str:
@@ -495,7 +494,7 @@ class RuntimeState(msgspec.Struct):
             s_name = "unknown"
             if status_code is not None:
                 try:
-                    s_name = Status(cast(int, status_code)).name
+                    s_name = Status(status_code).name
                 except ValueError:
                     s_name = f"0x{status_code:02X}"
 
@@ -569,7 +568,6 @@ class RuntimeState(msgspec.Struct):
         return {
             "serial": self.serial_flow_stats,
             "serial_throughput": self.serial_throughput_stats,
-            "serial_latency": self.serial_latency_stats.as_dict(),
             "mqtt_drop_counts": dict(self.mqtt_drop_counts),
             "queue_depths": {
                 "console": len(self.console_to_mcu_queue),

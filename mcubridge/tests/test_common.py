@@ -14,11 +14,11 @@ from mcubridge.protocol import protocol
 def test_normalise_commands():
     cmds = ["cmd1 ", "CMD2", "cmd1", "*"]
     policy = AllowedCommandPolicy.from_iterable(cmds)
-    assert policy.as_tuple() == ("*",)
+    assert policy.entries == ("*",)
 
     cmds = ["cmd1", "CMD2"]
     policy = AllowedCommandPolicy.from_iterable(cmds)
-    assert policy.as_tuple() == ("cmd1", "cmd2")
+    assert policy.entries == ("cmd1", "cmd2")
 
 
 def test_get_uci_config_success():

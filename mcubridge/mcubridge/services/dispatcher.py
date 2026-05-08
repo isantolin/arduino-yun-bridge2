@@ -203,7 +203,6 @@ class BridgeDispatcher:
                 await self.acknowledge_frame(command_id, sequence_id)
         finally:
             latency_ms = (asyncio.get_running_loop().time() - now) * 1000.0
-            self.state.serial_latency_stats.record(latency_ms)
             self.state.metrics.serial_latency_ms.observe(latency_ms)
 
     async def dispatch_mqtt_message(
@@ -243,7 +242,6 @@ class BridgeDispatcher:
         finally:
             latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
             # [SIL-2] Direct metrics recording (No Wrapper)
-            self.state.rpc_latency_stats.record(latency_ms)
             self.state.metrics.rpc_latency_ms.observe(latency_ms)
 
     def _get_topic_action(self, route: TopicRoute) -> str | None:

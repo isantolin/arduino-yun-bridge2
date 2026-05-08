@@ -7,7 +7,6 @@ import logging
 import time
 import msgspec
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 import tenacity
 
@@ -23,7 +22,7 @@ from mcubridge.protocol.protocol import (
     expected_responses,
     response_to_request,
 )
-from mcubridge.protocol.structures import AckPacket, PendingCommand
+from mcubridge.protocol.structures import AckPacket, PendingCommand, PipelineEvent
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
@@ -48,7 +47,7 @@ class SerialFlowController:
         self._condition = asyncio.Condition()
         self._current: PendingCommand | None = None
         self._metrics_callback = metrics_callback
-        self._pipeline_observer: Callable[[dict[str, Any]], None] | None = None
+        self._pipeline_observer: Callable[[PipelineEvent], None] | None = None
 
     #  --- Tenacity Helpers ---
     class _RetryableSerialError(Exception):
@@ -70,7 +69,7 @@ class SerialFlowController:
         self._metrics_callback = callback
 
     def set_pipeline_observer(
-        self, observer: Callable[[dict[str, Any]], None] | None
+        self, observer: Callable[[PipelineEvent], None] | None
     ) -> None:
         self._pipeline_observer = observer
 
@@ -113,24 +112,10 @@ class SerialFlowController:
             await self._condition.wait_for(lambda: self._current is None)
             self._current = pending
 
-        from mcubridge.config.const import (
-            SERIAL_HANDSHAKE_BACKOFF_BASE,
-            SERIAL_HANDSHAKE_BACKOFF_MAX,
-        )
-
         try:
             # [SIL-2] Single consolidated retry loop using native tenacity policies.
             # Zero-Wrapper: Using AsyncRetrying as an async iterator directly.
-            async for attempt in tenacity.AsyncRetrying(
-                stop=tenacity.stop_after_attempt(self._max_attempts),
-                wait=tenacity.wait_exponential(
-                    multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                    max=SERIAL_HANDSHAKE_BACKOFF_MAX,
-                ),
-                retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
-                before_sleep=self._on_retry_sleep,
-                reraise=True,
-            ):
+            async for attempt in self._make_retryer():
                 with attempt:
                     pending.attempts = (pending.attempts or 0) + 1
                     self._notify_pipeline("start", pending)
@@ -179,22 +164,8 @@ class SerialFlowController:
             await self._condition.wait_for(lambda: self._current is None)
             self._current = pending
 
-        from mcubridge.config.const import (
-            SERIAL_HANDSHAKE_BACKOFF_BASE,
-            SERIAL_HANDSHAKE_BACKOFF_MAX,
-        )
-
         try:
-            async for attempt in tenacity.AsyncRetrying(
-                stop=tenacity.stop_after_attempt(self._max_attempts),
-                wait=tenacity.wait_exponential(
-                    multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                    max=SERIAL_HANDSHAKE_BACKOFF_MAX,
-                ),
-                retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
-                before_sleep=self._on_retry_sleep,
-                reraise=True,
-            ):
+            async for attempt in self._make_retryer():
                 with attempt:
                     pending.attempts = (pending.attempts or 0) + 1
                     self._notify_pipeline("start", pending)
@@ -207,7 +178,7 @@ class SerialFlowController:
 
             return pending.response_payload
 
-        except (self._RetryableSerialError, self._FatalSerialError, Exception):
+        except (self._RetryableSerialError, self._FatalSerialError):
             return None
         finally:
             async with self._condition:
@@ -242,6 +213,24 @@ class SerialFlowController:
                 exc,
             )
 
+    def _make_retryer(self) -> tenacity.AsyncRetrying:
+        """Build a configured AsyncRetrying instance (W-10: deduplication)."""
+        from mcubridge.config.const import (
+            SERIAL_HANDSHAKE_BACKOFF_BASE,
+            SERIAL_HANDSHAKE_BACKOFF_MAX,
+        )
+
+        return tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(self._max_attempts),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
+            retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
+            before_sleep=self._on_retry_sleep,
+            reraise=True,
+        )
+
     def _emit_metric(self, event: str) -> None:
         if self._metrics_callback is None:
             return
@@ -256,15 +245,16 @@ class SerialFlowController:
     ) -> None:
         if self._pipeline_observer is None:
             return
-        payload = {
-            "event": event,
-            "command_id": pending.command_id,
-            "attempt": max(1, pending.attempts or 1),
-            "ack_received": pending.ack_received,
-            "status": status,
-            "timestamp": time.time(),
-        }
-        self._pipeline_observer(payload)
+        self._pipeline_observer(
+            PipelineEvent(
+                event=event,
+                command_id=pending.command_id,
+                attempt=max(1, pending.attempts or 1),
+                ack_received=pending.ack_received,
+                status=status,
+                timestamp=time.time(),
+            )
+        )
 
     def on_frame_received(
         self, command_id: int, sequence_id: int, payload: bytes

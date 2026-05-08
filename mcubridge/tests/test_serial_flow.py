@@ -327,7 +327,9 @@ def test_serial_flow_retries_on_mismatched_ack(
 def test_serial_flow_emits_pipeline_events(
     serial_flow_logger: logging.Logger,
 ) -> None:
-    events: list[dict[str, object]] = []
+    from mcubridge.protocol.structures import PipelineEvent
+
+    events: list[PipelineEvent] = []
 
     async def _run() -> None:
         controller = SerialFlowController(
@@ -351,14 +353,16 @@ def test_serial_flow_emits_pipeline_events(
 
     asyncio.run(_run())
 
-    names = [event["event"] for event in events]
+    names = [event.event for event in events]
     assert names == ["start", "ack", "success"]
 
 
 def test_serial_flow_pipeline_failure_event(
     serial_flow_logger: logging.Logger,
 ) -> None:
-    events: list[dict[str, object]] = []
+    from mcubridge.protocol.structures import PipelineEvent
+
+    events: list[PipelineEvent] = []
 
     async def _run() -> None:
         controller = SerialFlowController(
@@ -380,13 +384,15 @@ def test_serial_flow_pipeline_failure_event(
 
     asyncio.run(_run())
 
-    assert events[-1]["event"] == "failure"
+    assert events[-1].event == "failure"
 
 
 def test_serial_flow_pipeline_abandoned_on_reset(
     serial_flow_logger: logging.Logger,
 ) -> None:
-    events: list[dict[str, object]] = []
+    from mcubridge.protocol.structures import PipelineEvent
+
+    events: list[PipelineEvent] = []
 
     async def _run() -> None:
         controller = SerialFlowController(
@@ -416,5 +422,5 @@ def test_serial_flow_pipeline_abandoned_on_reset(
 
     asyncio.run(_run())
 
-    event_names = [event["event"] for event in events]
+    event_names = [event.event for event in events]
     assert "abandoned" in event_names

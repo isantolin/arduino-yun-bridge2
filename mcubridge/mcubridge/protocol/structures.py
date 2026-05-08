@@ -7,6 +7,9 @@ Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 from __future__ import annotations
 
 import asyncio
+import enum
+import functools
+import re
 import time
 from collections.abc import Iterable
 from enum import IntEnum
@@ -75,6 +78,19 @@ def _int_to_capabilities(val: int) -> dict[str, bool]:
         return {}
 
 
+# [SIL-2] Compiled once at module load; reused across all AllowedCommandPolicy instances.
+_TOKEN_SEP: Final = re.compile(r"[,\s]+")
+
+
+class FlowEvent(str, enum.Enum):
+    """Serial flow event types for typed dispatch."""
+
+    SENT = "sent"
+    ACK = "ack"
+    RETRY = "retry"
+    FAILURE = "failure"
+
+
 class TopicRoute(msgspec.Struct, frozen=True):
     """Parsed representation of an MQTT topic targeting the daemon."""
 
@@ -139,7 +155,7 @@ class RLEPayload(msgspec.Struct, frozen=True):
 class AllowedCommandPolicy(msgspec.Struct, frozen=True):
     """Normalised allow-list for shell/process commands."""
 
-    entries: tuple[str, ...]
+    entries: tuple[str, ...] = ()
 
     @property
     def allow_all(self) -> bool:
@@ -158,33 +174,65 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
     def __contains__(self, item: str) -> bool:
         return item.lower() in self.entries
 
-    def as_tuple(self) -> tuple[str, ...]:
-        return self.entries
-
     @classmethod
     def from_iterable(
         cls,
         entries: Iterable[str],
     ) -> AllowedCommandPolicy:
         """Return a deduplicated, lower-cased and sorted allow-list preserving wildcards."""
-        import re
-
         all_tokens: list[str] = []
         for c in entries:
             if not c:
                 continue
-            # [SIL-2] Robust splitting by common delimiters (comma, space)
-            tokens = re.split(r"[, \s]+", c.strip().lower())
+            tokens = _TOKEN_SEP.split(c.strip().lower())
             all_tokens.extend(t for t in tokens if t)
 
         items: set[str] = set(all_tokens)
-        normalised = ("*",) if "*" in items else tuple(sorted(list(items)))
+        normalised = ("*",) if "*" in items else tuple(sorted(items))
         return cls(entries=normalised)
 
-    @classmethod
-    def create_empty(cls) -> AllowedCommandPolicy:
-        """Create an empty policy with no allowed commands."""
-        return cls(entries=())
+
+@functools.lru_cache(maxsize=1)
+def _get_topic_auth_mapping() -> dict[tuple[str, str], str]:
+    """Build and cache the (topic, action) → field-name map (deferred to avoid circular imports)."""
+    from mcubridge.protocol.protocol import (
+        AnalogAction,
+        ConsoleAction,
+        DatastoreAction,
+        DigitalAction,
+        FileAction,
+        MailboxAction,
+        ShellAction,
+        SpiAction,
+        SystemAction,
+    )
+    from mcubridge.protocol.topics import Topic
+
+    return {
+        (Topic.FILE.value, FileAction.READ.value): "file_read",
+        (Topic.FILE.value, FileAction.WRITE.value): "file_write",
+        (Topic.FILE.value, FileAction.REMOVE.value): "file_remove",
+        (Topic.DATASTORE.value, DatastoreAction.GET.value): "datastore_get",
+        (Topic.DATASTORE.value, DatastoreAction.PUT.value): "datastore_put",
+        (Topic.MAILBOX.value, MailboxAction.READ.value): "mailbox_read",
+        (Topic.MAILBOX.value, MailboxAction.WRITE.value): "mailbox_write",
+        (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): "shell_run_async",
+        (Topic.SHELL.value, ShellAction.POLL.value): "shell_poll",
+        (Topic.SHELL.value, ShellAction.KILL.value): "shell_kill",
+        (Topic.CONSOLE.value, ConsoleAction.IN.value): "console_input",
+        (Topic.DIGITAL.value, DigitalAction.WRITE.value): "digital_write",
+        (Topic.DIGITAL.value, DigitalAction.READ.value): "digital_read",
+        (Topic.DIGITAL.value, DigitalAction.MODE.value): "digital_mode",
+        (Topic.ANALOG.value, AnalogAction.WRITE.value): "analog_write",
+        (Topic.ANALOG.value, AnalogAction.READ.value): "analog_read",
+        (Topic.SYSTEM.value, SystemAction.VERSION.value): "system_version",
+        (Topic.SYSTEM.value, SystemAction.FREE_MEMORY.value): "system_free_memory",
+        (Topic.SYSTEM.value, SystemAction.BOOTLOADER.value): "system_bootloader",
+        (Topic.SPI.value, SpiAction.BEGIN.value): "spi_begin",
+        (Topic.SPI.value, SpiAction.END.value): "spi_end",
+        (Topic.SPI.value, SpiAction.TRANSFER.value): "spi_transfer",
+        (Topic.SPI.value, SpiAction.CONFIG.value): "spi_config",
+    }
 
 
 class TopicAuthorization(msgspec.Struct, frozen=True):
@@ -221,48 +269,9 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
     _allowed_cache: Final[frozenset[tuple[str, str]]] = frozenset()
 
     def __post_init__(self) -> None:
-        """Build the optimized lookup cache."""
-        from mcubridge.protocol.protocol import (
-            AnalogAction,
-            ConsoleAction,
-            DatastoreAction,
-            DigitalAction,
-            FileAction,
-            MailboxAction,
-            ShellAction,
-            SpiAction,
-            SystemAction,
-        )
-        from mcubridge.protocol.topics import Topic
-
-        # Static mapping to avoid recreation in __post_init__
-        _TOPIC_AUTH_MAPPING: Final[dict[tuple[str, str], str]] = {
-            (Topic.FILE.value, FileAction.READ.value): "file_read",
-            (Topic.FILE.value, FileAction.WRITE.value): "file_write",
-            (Topic.FILE.value, FileAction.REMOVE.value): "file_remove",
-            (Topic.DATASTORE.value, DatastoreAction.GET.value): "datastore_get",
-            (Topic.DATASTORE.value, DatastoreAction.PUT.value): "datastore_put",
-            (Topic.MAILBOX.value, MailboxAction.READ.value): "mailbox_read",
-            (Topic.MAILBOX.value, MailboxAction.WRITE.value): "mailbox_write",
-            (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): "shell_run_async",
-            (Topic.SHELL.value, ShellAction.POLL.value): "shell_poll",
-            (Topic.SHELL.value, ShellAction.KILL.value): "shell_kill",
-            (Topic.CONSOLE.value, ConsoleAction.IN.value): "console_input",
-            (Topic.DIGITAL.value, DigitalAction.WRITE.value): "digital_write",
-            (Topic.DIGITAL.value, DigitalAction.READ.value): "digital_read",
-            (Topic.DIGITAL.value, DigitalAction.MODE.value): "digital_mode",
-            (Topic.ANALOG.value, AnalogAction.WRITE.value): "analog_write",
-            (Topic.ANALOG.value, AnalogAction.READ.value): "analog_read",
-            (Topic.SYSTEM.value, SystemAction.VERSION.value): "system_version",
-            (Topic.SYSTEM.value, SystemAction.FREE_MEMORY.value): "system_free_memory",
-            (Topic.SYSTEM.value, SystemAction.BOOTLOADER.value): "system_bootloader",
-            (Topic.SPI.value, SpiAction.BEGIN.value): "spi_begin",
-            (Topic.SPI.value, SpiAction.END.value): "spi_end",
-            (Topic.SPI.value, SpiAction.TRANSFER.value): "spi_transfer",
-            (Topic.SPI.value, SpiAction.CONFIG.value): "spi_config",
-        }
-
-        allowed = [k for k, a in _TOPIC_AUTH_MAPPING.items() if getattr(self, a)]
+        """Build the optimized lookup cache using the module-level cached mapping."""
+        mapping = _get_topic_auth_mapping()
+        allowed = [k for k, attr in mapping.items() if getattr(self, attr)]
         object.__setattr__(self, "_allowed_cache", frozenset(allowed))
 
     def allows(self, topic: str, action: str) -> bool:
@@ -907,10 +916,6 @@ class BaseStats(msgspec.Struct):
 
     SNAPSHOT_TYPE: ClassVar[type | None] = None
 
-    def as_dict(self) -> dict[str, Any]:
-        """Export internal state as a dictionary."""
-        return msgspec.structs.asdict(self)
-
     def as_snapshot(self) -> msgspec.Struct:
         """Convert mutable stats to a frozen snapshot struct."""
         snap_cls = self.__class__.SNAPSHOT_TYPE
@@ -979,68 +984,15 @@ class SerialThroughputStats(BaseStats):
         self.last_rx_unix = time.time()
 
 
-# [EXTENDED METRICS] Latency histogram bucket boundaries in milliseconds
-LATENCY_BUCKETS_MS: tuple[float, ...] = (
-    5.0,
-    10.0,
-    25.0,
-    50.0,
-    100.0,
-    250.0,
-    500.0,
-    1000.0,
-    2500.0,
-)
+class PipelineEvent(msgspec.Struct, frozen=True, kw_only=True):
+    """Immutable snapshot of a single serial pipeline RPC event (SIL-2)."""
 
-
-class SerialLatencyStats(msgspec.Struct):
-    """RPC command latency histogram."""
-
-    bucket_counts: list[int] = msgspec.field(default_factory=lambda: [0] * len(LATENCY_BUCKETS_MS))
-    overflow_count: int = 0
-    total_observations: int = 0
-    total_latency_ms: float = 0.0
-    min_latency_ms: float = float("inf")
-    max_latency_ms: float = 0.0
-    _summary: Any | None = None  # Prometheus Summary
-
-    def initialize_prometheus(self, registry: Any | None = None) -> None:
-        from prometheus_client import Summary
-
-        self._summary = Summary(
-            "mcubridge_rpc_latency_seconds",
-            "RPC command round-trip latency",
-            registry=registry,
-        )
-
-    def record(self, latency_ms: float) -> None:
-        self.total_observations += 1
-        self.total_latency_ms += latency_ms
-        if latency_ms < self.min_latency_ms:
-            self.min_latency_ms = latency_ms
-        if latency_ms > self.max_latency_ms:
-            self.max_latency_ms = latency_ms
-
-        for i, bucket in enumerate(LATENCY_BUCKETS_MS):
-            if latency_ms <= bucket:
-                self.bucket_counts[i] += 1
-        if latency_ms > LATENCY_BUCKETS_MS[-1]:
-            self.overflow_count += 1
-
-        if self._summary is not None:
-            self._summary.observe(latency_ms / 1000.0)
-
-    def as_dict(self) -> dict[str, Any]:
-        avg = self.total_latency_ms / self.total_observations if self.total_observations > 0 else 0.0
-        return {
-            "buckets": {f"le_{int(b)}ms": self.bucket_counts[i] for i, b in enumerate(LATENCY_BUCKETS_MS)},
-            "overflow": self.overflow_count,
-            "count": self.total_observations,
-            "sum_ms": self.total_latency_ms,
-            "avg_ms": avg,
-            "min_ms": self.min_latency_ms if self.total_observations > 0 else 0.0,
-            "max_ms": self.max_latency_ms,
-        }
+    event: str
+    command_id: int
+    attempt: int
+    ack_received: bool
+    status: int | None
+    timestamp: float
 
 
 class McuVersion(msgspec.Struct):

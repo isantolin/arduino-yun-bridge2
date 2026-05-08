@@ -47,9 +47,9 @@ def test_watchdog_keepalive_emits_pulses(
 
 def test_watchdog_interval_updates(runtime_state: RuntimeState) -> None:
     keepalive = WatchdogKeepalive(state=runtime_state)
-    keepalive.update_interval(3.5)
+    keepalive.interval = 3.5
     assert keepalive.interval == 3.5
-    keepalive.update_interval(0.2)
+    keepalive.interval = 0.2
     assert keepalive.interval == 0.5
 
 

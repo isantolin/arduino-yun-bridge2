@@ -82,9 +82,12 @@ def test_runtime_state_mailbox_requeue_front_full() -> None:
 
 
 def test_record_serial_pipeline_event_edge_cases() -> None:
+    from mcubridge.protocol.structures import PipelineEvent
+
     state = RuntimeState()
-    # record_serial_pipeline_event(self, event: Mapping[str, Any])
-    state.record_serial_pipeline_event({"event": "test"})
+    state.record_serial_pipeline_event(
+        PipelineEvent(event="test", command_id=0, attempt=1, ack_received=False, status=None, timestamp=0.0)
+    )
 
 
 @pytest.mark.asyncio

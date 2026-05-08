@@ -41,7 +41,7 @@ def configure_logging(config: RuntimeConfig) -> None:
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
+        structlog.processors.ExceptionRenderer(),
         structlog.processors.TimeStamper(fmt="iso", key="ts"),
         hexdump_processor,
     ]

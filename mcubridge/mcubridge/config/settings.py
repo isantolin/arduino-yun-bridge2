@@ -29,24 +29,19 @@ def _normalize_raw_config(values: dict[str, Any]) -> dict[str, Any]:
     normalized = values.copy()
 
     # 1. String Stripping & Optional normalization
-    str_keys = (
-        "serial_port",
-        "mqtt_host",
-        "mqtt_user",
-        "mqtt_pass",
-        "mqtt_cafile",
-        "mqtt_certfile",
-        "mqtt_keyfile",
-    )
-    for key in str_keys:
-        if key in normalized and isinstance(normalized[key], str):
-            normalized[key] = normalized[key].strip() or None
+    str_keys = frozenset({
+        "serial_port", "mqtt_host", "mqtt_user", "mqtt_pass",
+        "mqtt_cafile", "mqtt_certfile", "mqtt_keyfile",
+    })
+    normalized.update({
+        k: (normalized[k].strip() or None)
+        for k in str_keys
+        if k in normalized and isinstance(normalized[k], str)
+    })
 
     # 2. Path Resolution (Atomic expansion)
-    path_keys = ("file_system_root",)
-    for key in path_keys:
-        if key in normalized and isinstance(normalized[key], str):
-            normalized[key] = str(Path(normalized[key]).expanduser().resolve())
+    if "file_system_root" in normalized and isinstance(normalized["file_system_root"], str):
+        normalized["file_system_root"] = str(Path(normalized["file_system_root"]).expanduser().resolve())
 
     # 3. Secret Coercion
     if "serial_shared_secret" in normalized:
@@ -96,14 +91,13 @@ def _load_raw_config() -> tuple[dict[str, Any], str]:
     return config, source
 
 
-# Module-level variable to track config source for observability
-class _ConfigState:
-    source: str = "uci"
+# [SIL-2] Module-level config source for observability (no class overhead)
+_config_source: str = "uci"
 
 
 def get_config_source() -> str:
     """Return the source of the last loaded configuration ('uci' or 'defaults')."""
-    return _ConfigState.source
+    return _config_source
 
 
 def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfig:
@@ -115,11 +109,12 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
     Args:
         overrides: Optional dictionary of configuration overrides (e.g. from CLI).
     """
+    global _config_source
     raw_values, source = _load_raw_config()
     if overrides:
         raw_values.update(overrides)
         source = "cli"
-    _ConfigState.source = source
+    _config_source = source
 
     # [SIL-2] Pre-conversion Normalization
     normalized_values = _normalize_raw_config(raw_values)

@@ -102,10 +102,11 @@ install_dependency() {
     # Copy ALL contents of extracted_root to target_base/$name
     cp -a "$extracted_root/." "$target_base/$name/"
     
-    # Flatten headers for better Arduino compatibility
+    # Flatten only headers for Arduino compatibility (#include <mpack.h>)
+    # Do NOT copy .c sources: arduino-cli would compile both root and src/mpack/, causing duplicate symbols.
     if [ "$name" == "mpack" ]; then
         echo "[INFO] Flattening mpack headers for Arduino compatibility..."
-        cp -a "$target_base/$name/src/mpack/." "$target_base/$name/"
+        find "$target_base/$name/src/mpack/" -maxdepth 1 -name "*.h" -exec cp -a {} "$target_base/$name/" \;
     fi
     
     echo "[OK] $name installed."

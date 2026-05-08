@@ -21,12 +21,19 @@ mkdir -p "${ROOT_DIR}/.dummy_libs"
 ETL_PATH="${ROOT_DIR}/.dummy_libs/Embedded_Template_Library"
 WOLFSSL_PATH="${ROOT_DIR}/.dummy_libs/wolfssl"
 PACKETSERIAL_PATH="${ROOT_DIR}/.dummy_libs/PacketSerial"
+MPACK_PATH="${ROOT_DIR}/.dummy_libs/mpack"
 
 # Clean old coverage data
 find "${BUILD_DIR}" -name "*.gcda" -delete
 
 SOURCES=(
     "${SRC_ROOT}/security/security.cpp"
+    "${MPACK_PATH}/src/mpack/mpack-common.c"
+    "${MPACK_PATH}/src/mpack/mpack-writer.c"
+    "${MPACK_PATH}/src/mpack/mpack-reader.c"
+    "${MPACK_PATH}/src/mpack/mpack-expect.c"
+    "${MPACK_PATH}/src/mpack/mpack-node.c"
+    "${MPACK_PATH}/src/mpack/mpack-platform.c"
     "${WOLFSSL_PATH}/wolfcrypt/src/sha256.c"
     "${WOLFSSL_PATH}/wolfcrypt/src/hmac.c"
     "${WOLFSSL_PATH}/wolfcrypt/src/hash.c"
@@ -63,6 +70,7 @@ BASE_FLAGS=(
     "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}"
     "-I${PACKETSERIAL_PATH}/src"
+    "-I${MPACK_PATH}"
     "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"
 )
 

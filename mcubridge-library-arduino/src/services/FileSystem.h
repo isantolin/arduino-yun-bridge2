@@ -15,8 +15,8 @@ class FileSystemClass : public BridgeObserver {
   using FileSystemReadHandler = etl::delegate<void(etl::span<const uint8_t>)>;
 
   FileSystemClass();
-  static void write(etl::string_view path, etl::span<const uint8_t> data);
-  void read(etl::string_view path, FileSystemReadHandler handler);
+  [[maybe_unused]] static void write(etl::string_view path, etl::span<const uint8_t> data);
+  [[maybe_unused]] void read(etl::string_view path, FileSystemReadHandler handler);
   [[maybe_unused]] static void remove(etl::string_view path);
 
   static void _onWrite(const rpc::payload::FileWrite& msg);

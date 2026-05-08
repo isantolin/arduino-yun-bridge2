@@ -14,7 +14,7 @@
 class DataStoreClass : public BridgeObserver {
  public:
   DataStoreClass();
-  static void set(etl::string_view key, etl::span<const uint8_t> value);
+  [[maybe_unused]] static void set(etl::string_view key, etl::span<const uint8_t> value);
 
   static void _onResponse(const rpc::payload::DatastoreGetResponse& msg);
 

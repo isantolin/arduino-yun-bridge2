@@ -82,7 +82,7 @@ void memory_fence() {
   }
 }
 
-void watchdog_kick() {
+[[maybe_unused]] void watchdog_kick() {
   if constexpr (bridge::config::ENABLE_WATCHDOG) {
     if constexpr (Traits::id == ArchId::ARCH_AVR) {
 #if defined(ARDUINO_ARCH_AVR)

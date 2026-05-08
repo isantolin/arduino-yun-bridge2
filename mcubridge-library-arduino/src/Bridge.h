@@ -76,15 +76,15 @@ class BridgeClass {
   using ErrorPolicy = bridge::SafeStatePolicy;
   explicit BridgeClass(Stream& stream);
 
-  void registerObserver(BridgeObserver& observer);
+  [[maybe_unused]] void registerObserver(BridgeObserver& observer);
 
   void notify_observers(const MsgBridgeSynchronized& msg);
   void notify_observers(const MsgBridgeLost& msg);
 
-  void begin(uint32_t baudrate = 0, const char* secret = nullptr);
-  void process();
-  bool isSynchronized() const;
-  void enterSafeState();
+  [[maybe_unused]] void begin(uint32_t baudrate = 0, const char* secret = nullptr);
+  [[maybe_unused]] void process();
+  [[maybe_unused]] bool isSynchronized() const;
+  [[maybe_unused]] void enterSafeState();
 
   template <rpc::StatusCode S>
   void emitStatus() {

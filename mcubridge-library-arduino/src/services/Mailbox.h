@@ -12,7 +12,7 @@
 class MailboxClass : public BridgeObserver {
  public:
   MailboxClass();
-  static void push(etl::span<const uint8_t> data);
+  [[maybe_unused]] static void push(etl::span<const uint8_t> data);
   [[maybe_unused]] static void requestRead();
   [[maybe_unused]] static void requestAvailable();
   [[maybe_unused]] static void signalProcessed();

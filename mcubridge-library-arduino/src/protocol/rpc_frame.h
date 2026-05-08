@@ -46,52 +46,44 @@ inline constexpr bool is_any_of(uint16_t id, Args... args) {
   return ((id == static_cast<uint16_t>(args)) || ...);
 }
 
-inline constexpr bool is_reliable(uint16_t id) {
-  return is_any_of(id, CommandId::CMD_ENTER_BOOTLOADER,
-                   CommandId::CMD_SET_PIN_MODE, CommandId::CMD_DIGITAL_WRITE,
-                   CommandId::CMD_ANALOG_WRITE, CommandId::CMD_CONSOLE_WRITE,
-                   CommandId::CMD_DATASTORE_PUT, CommandId::CMD_MAILBOX_PUSH,
-                   CommandId::CMD_FILE_WRITE, CommandId::CMD_SPI_BEGIN,
-                   CommandId::CMD_SPI_END, CommandId::CMD_SPI_SET_CONFIG);
-}
-
 [[maybe_unused]] inline constexpr bool is_compressed(uint16_t id) {
   return (id & RPC_CMD_FLAG_COMPRESSED) != 0;
 }
 
 namespace checksum {
+inline void serialize_header(const FrameHeader& h, etl::span<uint8_t> buffer) {
+  etl::byte_stream_writer writer(buffer.data(), buffer.size(),
+                                 etl::endian::big);
+  writer.write<uint8_t>(h.version);
+  writer.write<uint16_t>(h.payload_length);
+  writer.write<uint16_t>(h.command_id);
+  writer.write<uint16_t>(h.sequence_id);
+}
+
 inline uint32_t compute(const Frame& f) {
   etl::crc32 crc;
-  // [SIL-2] Use byte_stream_writer for deterministic big-endian serialization.
-  // Eradicates manual bitwise operations (>> 8, & 0xFF).
   etl::array<uint8_t, FRAME_HEADER_SIZE> header_buf;
-  etl::byte_stream_writer writer(header_buf.data(), header_buf.size(),
-                                 etl::endian::big);
-  writer.write<uint8_t>(f.header.version);
-  writer.write<uint16_t>(f.header.payload_length);
-  writer.write<uint16_t>(f.header.command_id);
-  writer.write<uint16_t>(f.header.sequence_id);
-
+  serialize_header(f.header, header_buf);
   crc.add(header_buf.begin(), header_buf.end());
   crc.add(f.payload.begin(), f.payload.end());
   return crc.value();
 }
 }  // namespace checksum
+
 class FrameParser {
  public:
   static size_t serialize(const Frame& f, etl::span<uint8_t> buffer) {
     if (buffer.size() <
         (sizeof(FrameHeader) + f.payload.size() + CRC_TRAILER_SIZE))
       return 0;
-    etl::byte_stream_writer writer(buffer.data(), buffer.size(),
-                                   etl::endian::big);
-    writer.write<uint8_t>(f.header.version);
-    writer.write<uint16_t>(f.header.payload_length);
-    writer.write<uint16_t>(f.header.command_id);
-    writer.write<uint16_t>(f.header.sequence_id);
-    writer.write_unchecked(f.payload.data(), f.payload.size());
+    checksum::serialize_header(f.header, buffer.subspan(0, FRAME_HEADER_SIZE));
+    etl::copy_n(f.payload.data(), f.payload.size(),
+                buffer.begin() + FRAME_HEADER_SIZE);
+    etl::byte_stream_writer writer(buffer.data() + FRAME_HEADER_SIZE +
+                                       f.payload.size(),
+                                   CRC_TRAILER_SIZE, etl::endian::big);
     writer.write<uint32_t>(f.crc);
-    return writer.size_bytes();
+    return FRAME_HEADER_SIZE + f.payload.size() + CRC_TRAILER_SIZE;
   }
 
   etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer) {

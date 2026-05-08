@@ -15,9 +15,9 @@ void tearDown(void) {}
 void test_protocol_frame_logic_exhaustive() {
   using namespace rpc;
 
-  // 1. is_reliable exhaustive
-  TEST_ASSERT(is_reliable((uint16_t)CommandId::CMD_CONSOLE_WRITE));
-  TEST_ASSERT(!is_reliable((uint16_t)CommandId::CMD_GET_VERSION));
+  // 1. requires_ack exhaustive
+  TEST_ASSERT(requires_ack((uint16_t)CommandId::CMD_CONSOLE_WRITE));
+  TEST_ASSERT(!requires_ack((uint16_t)CommandId::CMD_GET_VERSION));
 
   // 2. is_compressed
   TEST_ASSERT(is_compressed(0x8000));

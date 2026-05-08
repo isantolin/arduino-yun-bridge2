@@ -23,7 +23,6 @@ void tearDown(void) {}
 namespace {
 using bridge::test::TestAccessor;
 
-void dummy_datastore_get(etl::string_view k, etl::span<const uint8_t> v) { (void)k; (void)v; }
 void dummy_fs_read(etl::span<const uint8_t> v) { (void)v; }
 void dummy_process_run(int32_t p) { (void)p; }
 void dummy_process_poll(rpc::StatusCode s, uint8_t n, etl::span<const uint8_t> st, etl::span<const uint8_t> se) { (void)s; (void)n; (void)st; (void)se; }
@@ -99,7 +98,6 @@ void test_bridge_coverage() {
   printf("  - Step 5: DataStore\n");
   uint8_t ds_val[] = {1, 2};
   (void)DataStore.set("key", etl::span<const uint8_t>(ds_val, 2));
-  DataStore.get("key", etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<dummy_datastore_get>());
   rpc::payload::DatastoreGetResponse ds_get;
   ds_get.value = etl::span<const uint8_t>(ds_val, 2);
   DataStore._onResponse(ds_get);

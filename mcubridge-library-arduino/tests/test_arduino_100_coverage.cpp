@@ -32,7 +32,6 @@ namespace {
 
 using bridge::test::TestAccessor;
 
-void ds_handler(etl::string_view, etl::span<const uint8_t>) {}
 void proc_handler(int32_t) {}
 void poll_handler(rpc::StatusCode, uint8_t, etl::span<const uint8_t>,
                   etl::span<const uint8_t>) {}
@@ -149,7 +148,6 @@ void test_services_exhaustive() {
   Console.process();
 
   DataStore.set("k", etl::span<const uint8_t>());
-  DataStore.get("k", etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<ds_handler>());
 
   Mailbox.push(etl::span<const uint8_t>());
   Mailbox.requestRead();

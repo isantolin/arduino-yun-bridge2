@@ -80,7 +80,8 @@ void test_filesystem_read_edge_cases() {
     ba.setSynchronized();
     
     // Trigger FileSystem read chunks with timeout/error simulation
-    rpc::payload::FileRead req = {etl::string_view("test.txt")};
+    const char* file_path_str = "test.txt";
+    rpc::payload::FileRead req = {etl::string_view(file_path_str)};
     
     // This will use the new CounterIterator in _onRead
     FileSystem._onRead(req);
@@ -142,11 +143,14 @@ void test_mailbox_and_datastore_variants() {
     BiStream stream;
     reset_bridge_core(Bridge, stream);
     
-    Mailbox.push(etl::array<uint8_t, 4>{1,2,3,4});
-    
-    // Internal handlers for coverage
-    Mailbox._onIncomingData(rpc::payload::MailboxPush{etl::array<uint8_t, 2>{0xAA, 0xBB}});
-    Mailbox._onIncomingData(rpc::payload::MailboxReadResponse{etl::array<uint8_t, 2>{0xCC, 0xDD}});
+    etl::array<uint8_t, 4> mb_data1 = {1,2,3,4};
+    Mailbox.push(mb_data1);
+
+    // Test _onIncomingData
+    etl::array<uint8_t, 2> mb_data2 = {0xAA, 0xBB};
+    Mailbox._onIncomingData(rpc::payload::MailboxPush{mb_data2});
+    etl::array<uint8_t, 2> mb_data3 = {0xCC, 0xDD};
+    Mailbox._onIncomingData(rpc::payload::MailboxReadResponse{mb_data3});
     Mailbox._onAvailableResponse({});
     
     // Coverage for observer notification
@@ -171,9 +175,10 @@ void test_bridge_fsm_resets() {
 
 void test_checksum_direct_library_path() {
     // Validates the new etl::byte_stream_writer logic in checksum::compute
+    etl::array<uint8_t, 4> null_array = {0,0,0,0};
     rpc::Frame f = {
         {rpc::PROTOCOL_VERSION, 4, static_cast<uint16_t>(rpc::CommandId::CMD_XON), 0},
-        etl::array<uint8_t, 4>{0,0,0,0},
+        null_array,
         0
     };
     uint32_t crc = rpc::checksum::compute(f);

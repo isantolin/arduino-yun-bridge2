@@ -33,6 +33,7 @@ BRIDGE_SOURCES=(
     "${SRC_ROOT}/fsm/bridge_fsm.cpp"
     "${SRC_ROOT}/protocol/rle.cpp"
     "${SRC_ROOT}/Bridge.cpp"
+    "${SRC_ROOT}/Instantiations.cpp"
     "${SRC_ROOT}/services/Console.cpp"
     "${SRC_ROOT}/services/DataStore.cpp"
     "${SRC_ROOT}/services/Mailbox.cpp"

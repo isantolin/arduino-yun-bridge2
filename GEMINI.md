@@ -11,7 +11,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 *   **Python:** Main daemon (3.13.9+), `asyncio` for high-concurrency with `uvloop` integration, `msgspec` for MsgPack.
 *   **C++:** Arduino library (C++17), **Zero-Heap** (no STL, no `malloc`), `etl::fsm` for deterministic states with **Strongly Typed FSM (StateId)**, `etl::observer` for decoupling.
 *   **Safety (SIL-2):** Static allocation only, O(1) jump tables for dispatch, rigorous validation gates.
-*   **OpenWrt:** Target OS is **OpenWrt 25.12.0** (APK based).
+*   **OpenWrt:** Target OS is **OpenWrt 25.12.3** (APK based).
 *   **Communication:** Custom binary RPC over serial (COBS + CRC32) + MQTT v5 (aiomqtt). Protocol validation uses O(1) `etl::find` logic.
 
 ## Development Conventions

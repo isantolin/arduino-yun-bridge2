@@ -23,7 +23,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
   security-check:
     name: Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v6
@@ -40,7 +40,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -51,7 +51,7 @@ jobs:
 
   cppcheck:
     name: C++ Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -62,7 +62,7 @@ jobs:
 
   typecheck:
     name: Type Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -71,7 +71,7 @@ jobs:
 
   deps-sync:
     name: Deps Sync
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v6
@@ -80,7 +80,7 @@ jobs:
 
   protocol-sync:
     name: Protocol Sync
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v6
@@ -89,7 +89,7 @@ jobs:
 
   lua-lint:
     name: Lua Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -102,7 +102,7 @@ jobs:
 
   arduino-examples:
     name: Arduino Examples Compilation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [lint, cppcheck]
     timeout-minutes: 10
     env:
@@ -135,7 +135,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
   unified-tests:
     name: Unified Host Tests & Coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [lint, typecheck, protocol-sync, deps-sync]
     timeout-minutes: 20
     env:
@@ -174,7 +174,7 @@ jobs:
 
   arduino-emulation:
     name: Arduino Emulation (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [lint, typecheck, protocol-sync]
     strategy:
       fail-fast: false
@@ -234,7 +234,7 @@ jobs:
 
   protocol-fuzzing:
     name: Protocol Stress Test (Fuzzing)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [lint, typecheck, protocol-sync]
     timeout-minutes: 10
     steps:
@@ -252,7 +252,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
   coverage-report:
     name: Final Summary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing]
     if: always()
     timeout-minutes: 3

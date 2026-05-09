@@ -18,7 +18,3 @@ namespace etl {
   template class delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
   template class delegate<void(const rpc::Frame&)>;
 }
-
-namespace rpc {
-  template class expected<Frame, FrameError>;
-}

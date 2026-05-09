@@ -1,0 +1,31 @@
+/home/ignaciosantolin/arduino-yun-bridge2/sample-build/arduino-avr-yun/FrameDebug/libraries/wolfssl/src/ssl_bn.c.o: \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/src/ssl_bn.c \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/libwolfssl_sources.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/types.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/settings.h \
+ /home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/src/user_settings.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/visibility.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/wc_port.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/oid_sum.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/memory.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/error-crypt.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/logging.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/internal.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/ssl.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/version.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/error-ssl.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/asn_public.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/random.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/sha256.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/pkcs12.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/callbacks.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfio.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/hmac.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/hash.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/ecc.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/wolfmath.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/sp_int.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/kdf.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/aes.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/wc_encrypt.h \
+ /home/ignaciosantolin/Arduino/libraries/wolfssl/src/wolfssl/wolfcrypt/hpke.h

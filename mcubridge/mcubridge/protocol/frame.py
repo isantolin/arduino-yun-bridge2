@@ -24,8 +24,6 @@ from construct import (
     Checksum,
     Const,
     Construct,
-    ExprAdapter,
-    GreedyBytes,
     Int8ub,
     Int16ub,
     Int32ub,
@@ -88,20 +86,29 @@ class FrameAdapter(Adapter):
 
 # --- DECLARATIVE STRUCTURES ---
 
+
+def _get_payload_len(ctx: Any) -> int:
+    """SIL-2: Explicitly typed payload length calculator."""
+    return len(ctx._.payload)
+
+
+RPC_FRAME_HEADER = Struct(
+    "version" / Const(protocol.PROTOCOL_VERSION, Int8ub),
+    "payload_len" / Rebuild(Int16ub, _get_payload_len),
+    "command_id" / Int16ub,
+    "sequence_id" / Int16ub,
+)
+
 RPC_FRAME_BODY = Struct(
-    "header"
-    / Struct(
-        "version" / Const(protocol.PROTOCOL_VERSION, Int8ub),
-        "payload_len" / Rebuild(Int16ub, lambda ctx: len(ctx._.payload)),
-        "command_id" / Int16ub,
-        "sequence_id" / Int16ub,
-    ),
+    "header" / RPC_FRAME_HEADER,
     "payload" / Bytes(this.header.payload_len),
 )
+
 
 def _frame_crc(data: bytes) -> int:
     """CRC32 checksum for frame integrity (SIL-2)."""
     return crc32(data) & 0xFFFFFFFF
+
 
 # [SIL-2] The Maestro: One structure to rule them all.
 RPC_FRAME_SCHEMA: Construct = FrameAdapter(

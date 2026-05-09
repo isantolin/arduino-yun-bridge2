@@ -70,6 +70,9 @@ class Enum(Adapter):
 class Const(Subconstruct):
     def __init__(self, value: Any, subcon: Optional[Any] = None) -> None: ...
 
+class Rebuild(Subconstruct):
+    def __init__(self, subcon: Any, func: Any) -> None: ...
+
 class FocusedSeq(Construct):
     def __init__(self, focus_item: Any, *subcons: Any) -> None: ...
 

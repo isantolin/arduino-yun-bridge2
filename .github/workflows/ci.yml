@@ -121,7 +121,14 @@ jobs:
           arduino-cli lib install "Embedded Template Library ETL"
       - uses: ./.github/actions/setup-python-tox
       - name: Compile Examples
-        run: tox -e arduino-examples
+        run: |
+          mkdir -p arduino-build
+          tox -e arduino-examples -- arduino-build
+      - name: Profile Memory Usage
+        if: always()
+        run: |
+          mkdir -p arduino-logs
+          python tools/arduino_symbol_profiler.py arduino-build --output arduino-logs/symbol_profile.md
       - name: Upload Arduino Logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -294,11 +301,11 @@ jobs:
           # 1. Total usage report
           python tools/arduino_memory_report.py arduino-logs \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
-
-          # 2. Advanced Symbol Profiling (from host build or emulation artifacts if available)
-          # We search for .elf files in the workspace (built during tests or emulation)
-          python tools/arduino_symbol_profiler.py . \
-            --github-step-summary "$GITHUB_STEP_SUMMARY"
+          
+          # 2. Advanced Symbol Profiling (cat pre-generated report)
+          if [ -f arduino-logs/symbol_profile.md ]; then
+            cat arduino-logs/symbol_profile.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Generate Daemon Profile
         env:

@@ -57,10 +57,14 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Profile Arduino ELF symbols.")
     parser.add_argument("build_dir", type=Path, help="Directory containing .elf files.")
     parser.add_argument("--github-step-summary", type=Path, default=None)
+    parser.add_argument(
+        "--output", type=Path, default=None, help="Save report to a file."
+    )
 
     args = parser.parse_args(argv)
     build_dir: Path = args.build_dir
     github_step_summary: Path | None = args.github_step_summary
+    output_file: Path | None = args.output
 
     if not build_dir.exists():
         print(f"Error: {build_dir} not found.", file=sys.stderr)
@@ -81,6 +85,9 @@ def main(argv: list[str] | None = None) -> None:
     if github_step_summary:
         with github_step_summary.open("a", encoding="utf-8") as f:
             f.write("\n---\n" + full_report + "\n")
+
+    if output_file:
+        output_file.write_text(full_report, encoding="utf-8")
 
 
 if __name__ == "__main__":

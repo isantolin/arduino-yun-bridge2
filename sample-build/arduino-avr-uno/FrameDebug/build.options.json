@@ -1,9 +1,0 @@
-{
-  "additionalFiles": "",
-  "compiler.optimization_flags": "",
-  "customBuildProperties": "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DETL_CRC32_USE_TABLE=0 -DETL_NO_STL -I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/include,compiler.c.extra_flags=-std=gnu11 -flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DETL_CRC32_USE_TABLE=0 -I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/include,compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch,compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch,compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch",
-  "fqbn": "arduino:avr:uno",
-  "hardwareFolders": "/home/ignaciosantolin/.arduino15/packages/arduino/hardware/avr/1.8.7,/home/ignaciosantolin/.arduino15/packages/arduino/hardware/avr/1.8.7",
-  "otherLibrariesFolders": "/home/ignaciosantolin/Arduino/libraries,/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs,/home/ignaciosantolin/Arduino/libraries",
-  "sketchLocation": "/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/examples/FrameDebug"
-}

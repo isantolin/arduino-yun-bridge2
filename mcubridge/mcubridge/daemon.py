@@ -303,7 +303,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--mqtt-tls", type=int, default=None, help="Use TLS for MQTT (0 or 1)"
     )
     parser.add_argument(
-        "--serial-shared_secret", default=None, help="Shared secret for serial link"
+        "--serial-shared-secret",
+        "--serial-shared_secret",
+        dest="serial_shared_secret",
+        default=None,
+        help="Shared secret for serial link",
     )
     parser.add_argument(
         "--allowed-commands",

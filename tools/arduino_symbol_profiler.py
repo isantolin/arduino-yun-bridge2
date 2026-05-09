@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Error: {build_dir} not found.", file=sys.stderr)
         return
 
-    reports = []
+    reports: list[str] = []
     # Search for .elf files in build directories
     for elf_file in build_dir.rglob("*.elf"):
         reports.append(profile_elf(elf_file))

@@ -15,7 +15,6 @@ permissions:
   contents: read
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
@@ -26,7 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Check for Hardcoded Secrets
         run: |
           echo "Checking for hardcoded secrets..."
@@ -43,7 +42,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
@@ -54,7 +53,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
       - name: Install Cppcheck
         run: sudo apt-get update && sudo apt-get install -y cppcheck
@@ -65,7 +64,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
       - run: tox -e typecheck
 
@@ -74,7 +73,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
       - run: tox -e deps-sync
 
@@ -83,7 +82,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
       - run: tox -e protocol
 
@@ -92,7 +91,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
@@ -106,10 +105,9 @@ jobs:
     needs: [lint, cppcheck]
     timeout-minutes: 10
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       ARDUINO_METRICS_DIR: arduino-logs
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Setup Arduino CLI
         run: |
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
@@ -146,9 +144,8 @@ jobs:
     needs: [lint, typecheck, protocol-sync, deps-sync]
     timeout-minutes: 20
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
       - name: Install Build Tools
         run: |
@@ -219,7 +216,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
       - name: Install Python Dependencies
         run: pip install -r requirements/runtime.txt
@@ -245,7 +242,7 @@ jobs:
     needs: [lint, typecheck, protocol-sync]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
       - name: Install Emulation Tools
         run: |
@@ -264,7 +261,7 @@ jobs:
     if: always()
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
 
       - name: Download Python Coverage

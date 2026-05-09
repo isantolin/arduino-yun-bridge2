@@ -2,15 +2,13 @@
 import contextlib
 import io
 from types import SimpleNamespace
-
-from mcubridge.services.serial_flow import SerialFlowController
-from mcubridge.transport.mqtt import MqttTransport
-import asyncio
-from mcubridge.daemon import app
+from typing import Any, Callable
 from unittest.mock import patch, MagicMock, AsyncMock
 
-
-from typing import Any, Callable
+import pytest
+from mcubridge.daemon import app
+from mcubridge.services.serial_flow import SerialFlowController
+from mcubridge.transport.mqtt import MqttTransport
 
 
 class CliRunner:
@@ -82,13 +80,15 @@ def test_daemon_cli_default_secret_warning():
         assert "SECURITY CRITICAL" in result.output
 
 
-def test_spi_service_coverage():
+@pytest.mark.asyncio
+async def test_spi_service_coverage():
     """Boost coverage for SPI service which is at 29%."""
     from mcubridge.services.spi import SpiComponent
     from mcubridge.config.settings import RuntimeConfig
     from mcubridge.protocol.structures import TopicRoute
     from mcubridge.protocol.topics import Topic
     from aiomqtt.message import Message
+    import msgspec
 
     mock_config = MagicMock(spec=RuntimeConfig)
     mock_state = MagicMock()
@@ -109,19 +109,17 @@ def test_spi_service_coverage():
         raw="br/spi/begin", prefix="br", topic=Topic.SPI, segments=("begin",)
     )
     msg = Message(Topic.SPI.value, b"", 0, False, False, None)
-    asyncio.run(service.handle_mqtt(route, msg))
+    await service.handle_mqtt(route, msg)
     serial_flow.send.assert_called()
 
     # Test handle_mqtt for 'config'
     route_cfg = TopicRoute(
         raw="br/spi/config", prefix="br", topic=Topic.SPI, segments=("config",)
     )
-    import msgspec
-
     payload = msgspec.json.encode({"frequency": 1000000})
     msg_cfg = Message(Topic.SPI.value, payload, 0, False, False, None)
-    asyncio.run(service.handle_mqtt(route_cfg, msg_cfg))
+    await service.handle_mqtt(route_cfg, msg_cfg)
 
     # Test handle_transfer_resp
-    asyncio.run(service.handle_transfer_resp(1, b"\x91\xc4\x04data"))
+    await service.handle_transfer_resp(1, b"\x91\xc4\x04data")
     mqtt_flow.enqueue_mqtt.assert_called()

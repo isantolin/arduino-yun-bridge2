@@ -291,7 +291,13 @@ jobs:
 
       - name: Generate Memory Summary
         run: |
+          # 1. Total usage report
           python tools/arduino_memory_report.py arduino-logs \
+            --github-step-summary "$GITHUB_STEP_SUMMARY"
+
+          # 2. Advanced Symbol Profiling (from host build or emulation artifacts if available)
+          # We search for .elf files in the workspace (built during tests or emulation)
+          python tools/arduino_symbol_profiler.py . \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
 
       - name: Generate Daemon Profile

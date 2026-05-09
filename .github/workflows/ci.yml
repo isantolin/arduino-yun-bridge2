@@ -318,14 +318,23 @@ jobs:
 
       - name: Generate Daemon Profile
         env:
-          PYTHONPATH: typings:mcubridge:mcubridge-client-examples
+          PYTHONPATH: mcubridge:mcubridge-client-examples:typings
         run: |
+          # 1. Mandatory Protocol Generation (Required for imports)
           python tools/protocol/generate.py \
             --spec tools/protocol/spec.toml \
-            --py mcubridge/mcubridge/protocol/protocol.py
+            --py mcubridge/mcubridge/protocol/protocol.py \
+            --py-client mcubridge-client-examples/mcubridge_client/protocol.py \
+            --structures mcubridge/mcubridge/protocol/structures.py
+          
+          # 2. Standard performance profile
           python tools/daemon_profile_report.py \
             --iterations 2000 \
             --json coverage/daemon-profile.json \
+            --github-step-summary "$GITHUB_STEP_SUMMARY"
+          
+          # 3. Advanced Runtime Profiling (Architecture, Memory, Time & Size)
+          python tools/python_runtime_profiler.py \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Combined Coverage

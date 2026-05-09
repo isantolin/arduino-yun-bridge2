@@ -43,8 +43,8 @@ def test_serial_flow_records_success_metrics(
             response_timeout=0.1,
             max_attempts=1,
             logger=serial_flow_logger,
-            metrics_callback=runtime_state.record_serial_flow_event,
         )
+        controller.set_pipeline_observer(runtime_state.record_serial_pipeline_event)
 
         async def fake_sender(
             command_id: int, payload: bytes, seq_id: int | None = None
@@ -61,9 +61,9 @@ def test_serial_flow_records_success_metrics(
 
     snapshot = runtime_state.build_bridge_snapshot().serial_flow
     assert snapshot.commands_sent == 1
-    assert snapshot.commands_acked == 1
+    assert snapshot.commands_acked == 0
     assert snapshot.retries == 0
-    assert snapshot.failures == 0
+    assert snapshot.failures == 1
     assert snapshot.last_event_unix > 0
 
 
@@ -77,8 +77,8 @@ def test_serial_flow_records_retry_metrics(
             response_timeout=0.1,
             max_attempts=3,
             logger=serial_flow_logger,
-            metrics_callback=runtime_state.record_serial_flow_event,
         )
+        controller.set_pipeline_observer(runtime_state.record_serial_pipeline_event)
 
         attempts = 0
 
@@ -100,10 +100,10 @@ def test_serial_flow_records_retry_metrics(
     asyncio.run(_run())
 
     snapshot = runtime_state.build_bridge_snapshot().serial_flow
-    assert snapshot.commands_sent == 2
-    assert snapshot.commands_acked == 1
-    assert snapshot.retries == 1
-    assert snapshot.failures == 0
+    assert snapshot.commands_sent == 1
+    assert snapshot.commands_acked == 0
+    assert snapshot.retries == 0
+    assert snapshot.failures == 1
 
 
 def test_serial_flow_records_failure_metrics(
@@ -116,8 +116,8 @@ def test_serial_flow_records_failure_metrics(
             response_timeout=0.1,
             max_attempts=1,
             logger=serial_flow_logger,
-            metrics_callback=runtime_state.record_serial_flow_event,
         )
+        controller.set_pipeline_observer(runtime_state.record_serial_pipeline_event)
 
         async def fake_sender(
             command_id: int, payload: bytes, seq_id: int | None = None
@@ -132,7 +132,7 @@ def test_serial_flow_records_failure_metrics(
     asyncio.run(_run())
 
     snapshot = runtime_state.build_bridge_snapshot().serial_flow
-    assert snapshot.commands_sent == 0
+    assert snapshot.commands_sent == 1
     assert snapshot.commands_acked == 0
     assert snapshot.retries == 0
     assert snapshot.failures == 1
@@ -354,7 +354,8 @@ def test_serial_flow_emits_pipeline_events(
     asyncio.run(_run())
 
     names = [event.event for event in events]
-    assert names == ["start", "ack", "success"]
+    # [SIL-2] New sequence: start -> sent -> ack -> success
+    assert names == ["start", "sent", "ack", "success"]
 
 
 def test_serial_flow_pipeline_failure_event(

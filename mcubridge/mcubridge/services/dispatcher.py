@@ -46,7 +46,6 @@ class BridgeDispatcher:
         on_frame_received: Callable[[int, int, bytes], None] | None = None,
     ) -> None:
         self.mcu_registry = mcu_registry
-        self.mqtt_handlers: dict[Topic, MqttHandler] = {}
         self.state = state
         self.send_frame = send_frame
         self.acknowledge_frame = acknowledge_frame
@@ -57,6 +56,13 @@ class BridgeDispatcher:
         self.on_frame_received_callback = on_frame_received
 
         # [SIL-2] Direct component references for zero-overhead dispatching.
+        self.console: Any | None = None
+        self.datastore: Any | None = None
+        self.file: Any | None = None
+        self.mailbox: Any | None = None
+        self.pin: Any | None = None
+        self.process: Any | None = None
+        self.spi: Any | None = None
         self.system: Any | None = None
 
     def register_components(
@@ -71,11 +77,17 @@ class BridgeDispatcher:
         spi: Any = None,
         system: Any = None,
     ) -> None:
-        """Register all component handlers with the registries."""
+        """Register all component handlers with the MCU registry and store references."""
+        self.console = console
+        self.datastore = datastore
+        self.file = file
+        self.mailbox = mailbox
+        self.pin = pin
+        self.process = process
+        self.spi = spi
         self.system = system
 
         # MCU Command Dispatch Map (Centralized for auditability)
-        # Only register handlers for components that are actually present.
         mcu_map: dict[Command, McuHandler | None] = {
             Command.CMD_XOFF: console.handle_xoff if console else None,
             Command.CMD_XON: console.handle_xon if console else None,
@@ -111,22 +123,6 @@ class BridgeDispatcher:
         for cmd, handler in mcu_map.items():
             if handler:
                 self.mcu_registry[cmd.value] = handler
-
-        # MQTT Topic Dispatch Map
-        mqtt_map = {
-            Topic.CONSOLE: console.handle_mqtt if console else None,
-            Topic.DATASTORE: datastore.handle_mqtt if datastore else None,
-            Topic.MAILBOX: mailbox.handle_mqtt if mailbox else None,
-            Topic.FILE: file.handle_mqtt if file else None,
-            Topic.SHELL: process.handle_mqtt if process else None,
-            Topic.DIGITAL: pin.handle_mqtt if pin else None,
-            Topic.ANALOG: pin.handle_mqtt if pin else None,
-            Topic.SPI: spi.handle_mqtt if spi else None,
-            Topic.SYSTEM: self._handle_system_topic,
-        }
-        for topic, handler in mqtt_map.items():
-            if handler:
-                self.mqtt_handlers[topic] = handler
 
     def register_system_handlers(
         self,
@@ -217,7 +213,7 @@ class BridgeDispatcher:
             if route is None or not route.segments:
                 return
 
-            # 1. Policy Guard (Eradicated _guard_and_dispatch wrapper)
+            # 1. Policy Guard
             if action := self._get_topic_action(route):
                 if not self.is_topic_action_allowed(route.topic, action):
                     await self.reject_topic_action(inbound, route.topic, action)
@@ -232,16 +228,39 @@ class BridgeDispatcher:
                     logger.warning("MQTT > Link sync timeout for %s", inbound_topic)
                     return
 
-            # 3. Router Dispatch
-            handler = self.mqtt_handlers.get(route.topic)
-            if handler:
-                if not await handler(route, inbound):
+            # 3. Declarative Dispatch (O(1) Pattern Matching)
+            # Eradicates the dynamic 'mqtt_handlers' registry.
+            match route.topic:
+                case Topic.CONSOLE:
+                    if self.console:
+                        await self.console.handle_mqtt(route, inbound)
+                case Topic.DATASTORE:
+                    if self.datastore:
+                        await self.datastore.handle_mqtt(route, inbound)
+                case Topic.MAILBOX:
+                    if self.mailbox:
+                        await self.mailbox.handle_mqtt(route, inbound)
+                case Topic.FILE:
+                    if self.file:
+                        await self.file.handle_mqtt(route, inbound)
+                case Topic.SHELL:
+                    if self.process:
+                        await self.process.handle_mqtt(route, inbound)
+                case Topic.DIGITAL:
+                    if self.pin:
+                        await self.pin.handle_mqtt(route, inbound)
+                case Topic.ANALOG:
+                    if self.pin:
+                        await self.pin.handle_mqtt(route, inbound)
+                case Topic.SPI:
+                    if self.spi:
+                        await self.spi.handle_mqtt(route, inbound)
+                case Topic.SYSTEM:
+                    await self._handle_system_topic(route, inbound)
+                case _:
                     logger.debug("Unhandled MQTT topic %s", inbound_topic)
-            else:
-                logger.debug("Unhandled MQTT topic %s", inbound_topic)
         finally:
             latency_ms = (asyncio.get_running_loop().time() - start) * 1000.0
-            # [SIL-2] Direct metrics recording (No Wrapper)
             self.state.metrics.rpc_latency_ms.observe(latency_ms)
 
     def _get_topic_action(self, route: TopicRoute) -> str | None:

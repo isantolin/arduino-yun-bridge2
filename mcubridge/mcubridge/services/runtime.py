@@ -60,7 +60,6 @@ class BridgeService:
             max_attempts=self._serial_timing.retry_limit,
             logger=logger,
         )
-        self.serial_flow.set_metrics_callback(state.record_serial_flow_event)
         self.serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
 
         # [SIL-2] Explicit component instantiation (Zero-Wrapper)

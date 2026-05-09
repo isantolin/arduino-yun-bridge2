@@ -37,7 +37,6 @@ class SerialFlowController:
         response_timeout: float,
         max_attempts: int,
         logger: logging.Logger,
-        metrics_callback: Callable[[str], None] | None = None,
     ) -> None:
         self._ack_timeout = max(ack_timeout, SERIAL_MIN_ACK_TIMEOUT)
         self._response_timeout = max(response_timeout, self._ack_timeout)
@@ -46,7 +45,6 @@ class SerialFlowController:
         self._sender: SendFrameCallable | None = None
         self._condition = asyncio.Condition()
         self._current: PendingCommand | None = None
-        self._metrics_callback = metrics_callback
         self._pipeline_observer: Callable[[PipelineEvent], None] | None = None
 
     #  --- Tenacity Helpers ---
@@ -64,9 +62,6 @@ class SerialFlowController:
 
     def set_sender(self, sender: SendFrameCallable) -> None:
         self._sender = sender
-
-    def set_metrics_callback(self, callback: Callable[[str], None] | None) -> None:
-        self._metrics_callback = callback
 
     def set_pipeline_observer(
         self, observer: Callable[[PipelineEvent], None] | None
@@ -124,7 +119,6 @@ class SerialFlowController:
                     # Low-level send and wait logic
                     await self._send_and_wait(pending, payload, sender, command_id)
 
-                    self._emit_metric("ack")
                     self._notify_pipeline("success", pending)
             return True
 
@@ -140,7 +134,6 @@ class SerialFlowController:
                     self._current = None
                     self._condition.notify_all()
 
-        self._emit_metric("failure")
         return False
 
     async def send_and_wait_payload(
@@ -173,7 +166,6 @@ class SerialFlowController:
 
                     await self._send_and_wait(pending, payload, sender, command_id)
 
-                    self._emit_metric("ack")
                     self._notify_pipeline("success", pending)
 
             return pending.response_payload
@@ -230,11 +222,6 @@ class SerialFlowController:
             before_sleep=self._on_retry_sleep,
             reraise=True,
         )
-
-    def _emit_metric(self, event: str) -> None:
-        if self._metrics_callback is None:
-            return
-        self._metrics_callback(event)
 
     def _notify_pipeline(
         self,
@@ -314,7 +301,7 @@ class SerialFlowController:
         return bool(expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS
 
     def _on_retry_sleep(self, retry_state: tenacity.RetryCallState) -> None:
-        self._emit_metric("retry")
+        self._notify_pipeline("retry", self._current) if self._current else None
         tenacity.before_sleep_log(self._logger, logging.WARNING)(retry_state)
 
     def _reset_pending_state(self, pending: PendingCommand) -> None:
@@ -337,7 +324,7 @@ class SerialFlowController:
             pending.mark_failure(None)
             raise self._FatalSerialError(None)
 
-        self._emit_metric("sent")
+        self._notify_pipeline("sent", pending)
 
         # [SIL-2] Precise wait logic with library-backed timeouts
         expect_ack = pending.command_id not in RESPONSE_ONLY_COMMANDS

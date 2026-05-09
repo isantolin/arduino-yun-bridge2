@@ -1,9 +1,5 @@
 """Extra coverage for mcubridge.protocol components."""
 
-import pytest
-from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import Frame
-
 
 def test_rle_encode_decode_edge_cases() -> None:
     from mcubridge.protocol import rle

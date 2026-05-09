@@ -345,10 +345,7 @@ class RuntimeState(msgspec.Struct):
         )
 
     def configure(self, config: RuntimeConfig) -> None:
-        # [SIL-2] Close existing persistent queues if they are being replaced
-        # to ensure that resources (like diskcache files) are released.
-        # NOTE: Use "is not None" — diskcache.Cache.__bool__ returns False for
-        # empty caches, so "if cache:" would skip the close on empty queues.
+        # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
         if self._mailbox_queue_cache is not None:
             cast(Any, self._mailbox_queue_cache).close()
             self._mailbox_queue_cache = None
@@ -356,25 +353,27 @@ class RuntimeState(msgspec.Struct):
             cast(Any, self._mailbox_incoming_queue_cache).close()
             self._mailbox_incoming_queue_cache = None
 
-        if config.allowed_policy is not None:
-            self.allowed_policy = config.allowed_policy
-        self.process_timeout = config.process_timeout
-        self.file_system_root = config.file_system_root
-        self.allow_non_tmp_paths = config.allow_non_tmp_paths
-        self.file_write_max_bytes = config.file_write_max_bytes
-        self.file_storage_quota_bytes = config.file_storage_quota_bytes
-        self.mqtt_topic_prefix = config.mqtt_topic
-        self.console_queue_limit_bytes = config.console_queue_limit_bytes
-        self.mailbox_queue_limit = config.mailbox_queue_limit
-        self.mailbox_queue_bytes_limit = config.mailbox_queue_bytes_limit
-        self.mqtt_queue_limit = config.mqtt_queue_limit
-        self.watchdog_enabled = config.watchdog_enabled
-        self.watchdog_interval = config.watchdog_interval
-        self.pending_pin_request_limit = config.pending_pin_request_limit
-        self.topic_authorization = config.topic_authorization
-        self.process_output_limit = config.process_max_output_bytes
-        self.process_max_concurrent = config.process_max_concurrent
+        # [SIL-2] Bulk field sync (Zero-Manual-Logic)
+        # Leverage msgspec.structs.asdict and a rename map for declarative state update.
+        _RENAMES: Final[dict[str, str]] = {
+            "mqtt_topic": "mqtt_topic_prefix",
+            "process_max_output_bytes": "process_output_limit",
+        }
+        cfg_data = {
+            _RENAMES.get(k, k): v
+            for k, v in msgspec.structs.asdict(config).items()
+            if v is not None
+        }
+        # Efficiently apply all matching fields to the current state Struct
+        # [SIL-2] Use msgspec fields metadata to avoid trying to write to read-only properties
+        state_fields = {f.name for f in msgspec.structs.fields(self)}
+        [
+            setattr(self, k, v)
+            for k, v in cfg_data.items()
+            if k in state_fields and v is not None
+        ]
 
+        # Re-initialize transient queues
         self.console_to_mcu_queue = cast(
             DequeLike[bytes],
             collections.deque[bytes](maxlen=self.mailbox_queue_limit),
@@ -426,27 +425,6 @@ class RuntimeState(msgspec.Struct):
             stats.backoff_seconds = 0.0
             stats.fatal = False
 
-    def record_serial_flow_event(self, event: str) -> None:
-        stats = self.serial_flow_stats
-        _FLOW_COUNTERS: dict[str, str] = {
-            "sent": "commands_sent",
-            "ack": "commands_acked",
-            "retry": "retries",
-            "failure": "failures",
-        }
-        _FLOW_METRICS: dict[str, Any] = {
-            "retry": self.metrics.serial_retries,
-            "failure": self.metrics.serial_failures,
-        }
-        attr = _FLOW_COUNTERS.get(event)
-        if attr is None:
-            return
-        setattr(stats, attr, getattr(stats, attr) + 1)
-        metric = _FLOW_METRICS.get(event)
-        if metric is not None:
-            metric.inc()
-        stats.last_event_unix = time.time()
-
     def record_serial_pipeline_event(self, event: PipelineEvent) -> None:
         name = event.event
         command_id = event.command_id
@@ -466,6 +444,10 @@ class RuntimeState(msgspec.Struct):
                     return f"0x{cid:02X}"
 
         if name == "start":
+            # [SIL-2] Unified metrics increment
+            self.serial_flow_stats.commands_sent += 1
+            self.serial_flow_stats.last_event_unix = timestamp
+
             self.serial_pipeline_inflight = {
                 "command_id": command_id,
                 "command_name": _res_cmd(command_id),
@@ -479,6 +461,10 @@ class RuntimeState(msgspec.Struct):
 
         inf = self.serial_pipeline_inflight
         if name == "ack" and inf:
+            # [SIL-2] Unified metrics increment
+            self.serial_flow_stats.commands_acked += 1
+            self.serial_flow_stats.last_event_unix = timestamp
+
             inf.update(
                 {
                     "acknowledged": True,
@@ -489,7 +475,17 @@ class RuntimeState(msgspec.Struct):
             )
             return
 
+        if name == "retry":
+            self.serial_flow_stats.retries += 1
+            self.metrics.serial_retries.inc()
+            self.serial_flow_stats.last_event_unix = timestamp
+
         if name in {"success", "failure", "abandoned"}:
+            if name in {"failure", "abandoned"}:
+                self.serial_flow_stats.failures += 1
+                self.metrics.serial_failures.inc()
+                self.serial_flow_stats.last_event_unix = timestamp
+
             # [SIL-2] Direct Status resolution
             s_name = "unknown"
             if status_code is not None:

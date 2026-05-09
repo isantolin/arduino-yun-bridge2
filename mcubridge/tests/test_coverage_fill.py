@@ -165,27 +165,7 @@ async def test_dispatcher_mqtt_no_segments(dispatcher: BridgeDispatcher):
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_mqtt_handler_exception(dispatcher: BridgeDispatcher):
-    """Confirm that MQTT handler exceptions bubble up directly."""
-    msg = MagicMock(spec=Message)
-    msg.topic = "bridge/system/test"
-    msg.payload = b""
-
-    route = TopicRoute(
-        raw=str(msg.topic), prefix="bridge", topic=Topic.SYSTEM, segments=("test",)
-    )
-
-    async def buggy_handler(*args: Any, **kwargs: Any) -> bool:
-        raise RuntimeError("mqtt bug")
-
-    dispatcher.mqtt_handlers[Topic.SYSTEM] = buggy_handler
-
-    with pytest.raises(RuntimeError, match="mqtt bug"):
-        await dispatcher.dispatch_mqtt_message(msg, lambda t: route)
-
-
-@pytest.mark.asyncio
-async def test_dispatcher_should_reject_topic_action_gaps(dispatcher: BridgeDispatcher):
+async def test_dispatcher_system_topic_unknown_action(dispatcher: BridgeDispatcher):
     """Cover lines 316, 319 in dispatcher.py."""
     # Line 316: Topic.DIGITAL with no segments
     route1 = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=())

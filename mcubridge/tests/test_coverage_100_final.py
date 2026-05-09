@@ -1167,10 +1167,19 @@ class TestRuntimeStateEdges:
         state.handshake_fatal_reason = "test reason"
         assert state.handshake_fatal_reason == "test reason"
 
-    def test_record_serial_flow_event(self: Any, state: Any):
-        state.record_serial_flow_event("sent")
-        state.record_serial_flow_event("ack")
-        state.record_serial_flow_event("retry")
+    def test_pipeline_event_serial_state(self, state: Any):
+        from mcubridge.protocol.structures import PipelineEvent
+
+        ev = PipelineEvent(
+            event="start",
+            command_id=0x10,
+            attempt=1,
+            ack_received=False,
+            status=None,
+            timestamp=1.0,
+        )
+        state.record_serial_pipeline_event(ev)
+        assert state.serial_flow_stats.commands_sent == 1
 
     def test_record_unknown_command_id(self: Any, state: Any):
         state.unknown_command_count += 1

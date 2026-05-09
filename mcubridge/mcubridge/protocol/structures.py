@@ -25,8 +25,6 @@ from typing import (
 
 import msgspec
 import msgspec.msgpack
-from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
 from construct import BitStruct, Flag, Padding, Construct
 
 # [SIL-2] Declarative bitmask definition for MCU capabilities.
@@ -824,36 +822,6 @@ class QueuedPublish(msgspec.Struct, frozen=True):
     response_payload: bytes | None = None
     user_properties: tuple[UserProperty, ...] = ()
     subscription_identifier: tuple[int, ...] | None = None
-
-    def to_paho_properties(self) -> Properties | None:
-        """Convert fields to native Paho MQTT v5 properties."""
-        if not any(
-            (
-                self.content_type,
-                self.payload_format_indicator is not None,
-                self.message_expiry_interval is not None,
-                self.response_topic,
-                self.correlation_data is not None,
-                self.user_properties,
-            )
-        ):
-            return None
-
-        props = Properties(PacketTypes.PUBLISH)
-        if self.content_type:
-            props.ContentType = self.content_type
-        if self.payload_format_indicator is not None:
-            props.PayloadFormatIndicator = self.payload_format_indicator
-        if self.message_expiry_interval is not None:
-            props.MessageExpiryInterval = self.message_expiry_interval
-        if self.response_topic:
-            props.ResponseTopic = self.response_topic
-        if self.correlation_data:
-            props.CorrelationData = self.correlation_data
-        if self.user_properties:
-            props.UserProperty = list(self.user_properties)
-
-        return props
 
 
 # --- Process Service Structures ---

@@ -105,15 +105,31 @@ def test_encode_status_reason_trims_to_max_payload() -> None:
     assert len(payload) == protocol.MAX_PAYLOAD_SIZE
 
 
-def test_build_mqtt_properties_returns_none_when_empty() -> None:
+def test_queued_publish_properties_empty() -> None:
+    from mcubridge_client.definitions import build_mqtt_properties
+
     message = QueuedPublish(
         topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hi",
     )
-    assert message.to_paho_properties() is None
+    # The new helper always returns a Properties object (empty or not)
+    props = build_mqtt_properties(message)
+    assert not any(
+        getattr(props, attr, None)
+        for attr in [
+            "ContentType",
+            "PayloadFormatIndicator",
+            "MessageExpiryInterval",
+            "ResponseTopic",
+            "CorrelationData",
+            "UserProperty",
+        ]
+    )
 
 
 def test_build_mqtt_properties_populates_fields() -> None:
+    from mcubridge_client.definitions import build_mqtt_properties
+
     message = QueuedPublish(
         topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hi",
@@ -124,7 +140,7 @@ def test_build_mqtt_properties_populates_fields() -> None:
         correlation_data=b"cid",
         user_properties=(("k", "v"),),  # type: ignore[reportArgumentType]
     )
-    props = message.to_paho_properties()
+    props = build_mqtt_properties(message)
     assert props is not None
     assert props.ContentType == "text/plain"
     assert props.PayloadFormatIndicator == 1

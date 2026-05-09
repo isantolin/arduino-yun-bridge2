@@ -62,6 +62,12 @@ class FrameAdapter(Adapter):
         cmd_id = int(obj.command_id)
         payload = obj.payload
 
+        # [SIL-2] Explicit size guard before orchestration
+        if len(payload) > protocol.MAX_PAYLOAD_SIZE:
+            raise ValueError(
+                f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}"
+            )
+
         # Handle implicit RLE compression
         if payload and should_compress(payload):
             compressed = RLE_TRANSFORM.build(payload)
@@ -88,8 +94,14 @@ class FrameAdapter(Adapter):
 
 
 def _get_payload_len(ctx: Any) -> int:
-    """SIL-2: Explicitly typed payload length calculator."""
-    return len(ctx._.payload)
+    """SIL-2: Robust payload length calculator for declarative building."""
+    # Check parent context first (used in RPC_FRAME_SCHEMA)
+    if hasattr(ctx, "_") and hasattr(ctx._, "payload"):
+        return len(ctx._.payload)
+    # Fallback to local context (used in isolated tests)
+    if hasattr(ctx, "payload"):
+        return len(ctx.payload)
+    return 0
 
 
 RPC_FRAME_HEADER = Struct(

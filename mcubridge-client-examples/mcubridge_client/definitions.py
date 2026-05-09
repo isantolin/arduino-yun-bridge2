@@ -31,13 +31,21 @@ class SpiMode(IntEnum):
 
 
 def build_mqtt_properties(message: QueuedPublish) -> Properties:
-    """Construct MQTT 5.0 properties object for aiomqtt/paho.
-
-    Reuses the daemon's core property builder and extends it with
-    client-specific fields (topic_alias, subscription_identifier).
-    """
-    # Use the core property builder from the message instance.
-    props = message.to_paho_properties() or Properties(PacketTypes.PUBLISH)
+    """Construct MQTT 5.0 properties object for aiomqtt/paho. [SIL-2]"""
+    props = Properties(PacketTypes.PUBLISH)
+    # Mapping table (Snake_case to PascalCase)
+    _MAP = {
+        "content_type": "ContentType",
+        "payload_format_indicator": "PayloadFormatIndicator",
+        "message_expiry_interval": "MessageExpiryInterval",
+        "response_topic": "ResponseTopic",
+        "correlation_data": "CorrelationData",
+        "user_properties": "UserProperty",
+    }
+    for field, paho_name in _MAP.items():
+        val = getattr(message, field)
+        if val is not None:
+            setattr(props, paho_name, list(val) if field == "user_properties" else val)
 
     if message.subscription_identifier is not None:
         props.SubscriptionIdentifier = list(message.subscription_identifier)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import structlog
 
@@ -97,6 +96,7 @@ class MqttTransport:
             raise
 
     async def _connect_session(self, tls_context: Any) -> None:
+        # [SIL-2] Declarative properties for MQTT v5 connection
         connect_props = Properties(PacketTypes.CONNECT)
         connect_props.SessionExpiryInterval = 0
         connect_props.RequestResponseInformation = 1
@@ -146,11 +146,7 @@ class MqttTransport:
     async def _subscriber_loop(self, client: aiomqtt.Client) -> None:
         try:
             async for message in client.messages:
-                try:
-                    topic_str = str(message.topic)
-                except (TypeError, ValueError):
-                    continue
-
+                topic_str = str(message.topic)
                 if not topic_str:
                     continue
 
@@ -166,26 +162,18 @@ class MqttTransport:
                 try:
                     if self.service is not None:
                         await self.service.handle_mqtt_message(message)
-                except (
-                    AttributeError,
-                    IndexError,
-                    KeyError,
-                    OSError,
-                    RuntimeError,
-                    TypeError,
-                    ValueError,
-                ) as e:
+                except Exception as e:
                     logger.error(
                         "Error processing MQTT message on topic %s: %s", topic_str, e
                     )
                     payload_bytes = bytes(message.payload) if message.payload else b""
-                    hexdump = payload_bytes.hex(" ").upper()
                     logger.error(
-                        "[HEXDUMP] FAILED MQTT MSG < %s: %s", topic_str, hexdump
+                        "[HEXDUMP] FAILED MQTT MSG < %s: %s",
+                        topic_str,
+                        payload_bytes.hex(" ").upper(),
                     )
         except asyncio.CancelledError:
-            with contextlib.suppress(asyncio.CancelledError):
-                raise
+            raise
         except aiomqtt.MqttError as exc:
             logger.warning("MQTT subscriber loop interrupted: %s", exc)
             raise
@@ -202,60 +190,58 @@ class MqttTransport:
             self.state.metrics.mqtt_messages_dropped.inc()
             return
 
-        message_to_send = message
+        # [SIL-2] Native context injection without manual replaces if possible
+        overrides = {}
         if reply_context is not None:
             props = reply_context.properties
             target_topic = (
                 getattr(props, "ResponseTopic", None) if props else None
             ) or message.topic_name
-            if target_topic != message_to_send.topic_name:
-                message_to_send = msgspec.structs.replace(
-                    message_to_send, topic_name=target_topic
-                )
 
-            reply_correlation = (
+            overrides["topic_name"] = target_topic
+
+            if reply_correlation := (
                 getattr(props, "CorrelationData", None) if props else None
+            ):
+                overrides["correlation_data"] = reply_correlation
+
+            overrides["user_properties"] = message.user_properties + (
+                ("bridge-request-topic", str(reply_context.topic)),
             )
-            if reply_correlation is not None:
-                message_to_send = msgspec.structs.replace(
-                    message_to_send, correlation_data=reply_correlation
+
+        msg = msgspec.structs.replace(message, **overrides) if overrides else message
+
+        # [SIL-2] Direct library mapping: Convert DTO to Paho Properties
+        props = Properties(PacketTypes.PUBLISH)
+        # Mapping table (Snake_case to PascalCase)
+        _MAP = {
+            "content_type": "ContentType",
+            "payload_format_indicator": "PayloadFormatIndicator",
+            "message_expiry_interval": "MessageExpiryInterval",
+            "response_topic": "ResponseTopic",
+            "correlation_data": "CorrelationData",
+            "user_properties": "UserProperty",
+        }
+        for field, paho_name in _MAP.items():
+            val = getattr(msg, field)
+            if val is not None:
+                setattr(
+                    props, paho_name, list(val) if field == "user_properties" else val
                 )
-
-            origin_topic = str(reply_context.topic)
-            new_props = message_to_send.user_properties + (
-                ("bridge-request-topic", origin_topic),
-            )
-            message_to_send = msgspec.structs.replace(
-                message_to_send, user_properties=new_props
-            )
-
-        topic_name = message_to_send.topic_name
-        props = message_to_send.to_paho_properties()
-        payload = message_to_send.payload
-        qos = int(message_to_send.qos)
-        retain = message_to_send.retain
-
-        if logger.is_enabled_for(logging.DEBUG):
-            logger.log(
-                logging.DEBUG,
-                "[HEXDUMP] MQTT PUB > %s: %s",
-                topic_name,
-                payload.hex(" ").upper(),
-            )
 
         try:
             await self._client.publish(
-                topic_name,
-                payload,
-                qos=qos,
-                retain=retain,
+                msg.topic_name,
+                msg.payload,
+                qos=int(msg.qos),
+                retain=msg.retain,
                 properties=props,
             )
             self.state.metrics.mqtt_messages_published.inc()
         except (aiomqtt.MqttError, OSError, RuntimeError) as exc:
             logger.warning("MQTT direct publish failure: %s", exc)
-            self.state.mqtt_drop_counts[topic_name] = (
-                self.state.mqtt_drop_counts.get(topic_name, 0) + 1
+            self.state.mqtt_drop_counts[msg.topic_name] = (
+                self.state.mqtt_drop_counts.get(msg.topic_name, 0) + 1
             )
             self.state.mqtt_dropped_messages += 1
             self.state.metrics.mqtt_messages_dropped.inc()

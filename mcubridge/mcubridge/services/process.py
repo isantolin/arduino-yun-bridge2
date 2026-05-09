@@ -503,20 +503,13 @@ class ProcessComponent:
             protocol.MQTT_SUFFIX_RESPONSE,
         )
 
-        reply_topic = None
-        correlation_data = None
-        if inbound and inbound.properties:
-            reply_topic = getattr(inbound.properties, "ResponseTopic", None)
-            correlation_data = getattr(inbound.properties, "CorrelationData", None)
-
         await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
                 payload=_msgpack_enc.encode(batch),
                 content_type="application/msgpack",
-                response_topic=reply_topic,
-                correlation_data=correlation_data,
-            )
+            ),
+            reply_context=inbound,
         )
 
     async def _finalize_process(self, pid: int) -> None:

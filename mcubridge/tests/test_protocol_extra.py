@@ -24,6 +24,7 @@ def test_frame_parse_payload_length_mismatch() -> None:
             "payload_len": claimed_len,
             "command_id": command_id,
             "sequence_id": sequence_id,
+            "payload": actual_payload,  # Added to avoid AttributeError
         }
     )
 
@@ -35,11 +36,8 @@ def test_frame_parse_payload_length_mismatch() -> None:
 
     # Construct should catch this because Bytes(this.header.payload_len) will fail
     # or the length check at line 126 will catch it if Construct somehow returns.
-    with pytest.raises(ValueError) as exc:
+    with pytest.raises(ValueError, match="Incomplete or malformed frame"):
         Frame.parse(raw_frame)
-    assert "Incomplete or malformed frame" in str(exc.value) or "parsing failed" in str(
-        exc.value
-    )
 
 
 def test_rle_encode_decode_edge_cases() -> None:

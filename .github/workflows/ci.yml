@@ -288,6 +288,15 @@ jobs:
           path: arduino-logs
         continue-on-error: true
 
+      - name: Verify Artifacts
+        run: |
+          echo "### Artifact Verification"
+          ls -R
+          if [ -d "arduino-logs" ]; then
+            echo "Contents of arduino-logs:"
+            ls -la arduino-logs/
+          fi
+
       - name: Generate Coverage Summary
         run: |
           pip install -r requirements/runtime.txt rich

@@ -12,19 +12,27 @@ from pathlib import Path
 def profile_elf(elf_path: Path) -> str:
     """Run nm on the ELF file to extract symbol sizes."""
     try:
-        # We try to use avr-nm if available, otherwise fallback to nm
-        nm_bin = (
-            "avr-nm"
-            if subprocess.run(
+        # 1. Try to find avr-nm in PATH or common arduino-cli locations
+        nm_bin = "avr-nm"
+        if (
+            subprocess.run(
                 ["which", "avr-nm"], capture_output=True, check=False
             ).returncode
-            == 0
-            else "nm"
-        )
+            != 0
+        ):
+            # Search in ~/.arduino15/packages
+            arduino_packages = Path.home() / ".arduino15" / "packages"
+            if arduino_packages.exists():
+                found_nms = list(arduino_packages.rglob("avr-nm"))
+                if found_nms:
+                    nm_bin = str(found_nms[0])
+                else:
+                    nm_bin = "nm"  # Fallback to host nm
+            else:
+                nm_bin = "nm"
 
         cmd = [nm_bin, "--size-sort", "--print-size", "-C", str(elf_path)]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
         lines = result.stdout.strip().split("\n")
         # Reverse to get largest symbols first
         lines.reverse()

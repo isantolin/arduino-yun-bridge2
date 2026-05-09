@@ -84,6 +84,12 @@ TARGET_BOARDS=("arduino:avr:yun" "arduino:avr:uno" "arduino:avr:mega")
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 
+# Convert to absolute path if not empty
+if [ -n "$BUILD_OUTPUT_DIR" ]; then
+    mkdir -p "$BUILD_OUTPUT_DIR"
+    BUILD_OUTPUT_DIR=$(cd "$BUILD_OUTPUT_DIR" && pwd)
+fi
+
 # Only shift if an argument was provided
 if [ "$#" -gt 0 ]; then
     shift

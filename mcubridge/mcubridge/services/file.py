@@ -21,8 +21,6 @@ from ..config.const import (
     VOLATILE_STORAGE_PATHS,
 )
 from ..protocol.structures import (
-    MSGPACK_DECODER,
-    MSGPACK_ENCODER,
     FileReadPacket,
     FileReadResponsePacket,
     FileRemovePacket,
@@ -51,14 +49,6 @@ class _PendingMcuRead:
 class FileComponent:
     """Encapsulate file read/write/remove logic. [SIL-2]"""
 
-    # [SIL-2] Dynamic Discovery Mapping
-    MCU_MAP: Final = {
-        Command.CMD_FILE_WRITE: "handle_write",
-        Command.CMD_FILE_READ: "handle_read",
-        Command.CMD_FILE_REMOVE: "handle_remove",
-        Command.CMD_FILE_READ_RESP: "handle_read_response",
-    }
-
     def __init__(
         self,
         config: RuntimeConfig,
@@ -80,8 +70,8 @@ class FileComponent:
     async def handle_write(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_WRITE from MCU."""
         try:
-            # [SIL-2] Use centralized shared decoder (Zero allocation)
-            packet = MSGPACK_DECODER.decode(payload, type=FileWritePacket)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileWritePacket)
             path = self._get_safe_path(packet.path)
             if not path:
                 await self.serial_flow.send(Status.ERROR.value, b"Invalid path")
@@ -105,8 +95,8 @@ class FileComponent:
     async def handle_read(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_FILE_READ from MCU."""
         try:
-            # [SIL-2] Use direct MSGPACK_DECODER.decode (Zero Wrapper)
-            packet = MSGPACK_DECODER.decode(payload, type=FileReadPacket)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileReadPacket)
             path = self._get_safe_path(packet.path)
             if not path or not path.is_file():
                 await self.serial_flow.send(Status.ERROR.value, b"File not found")
@@ -117,9 +107,9 @@ class FileComponent:
                 "mtime": path.stat().st_mtime,
             }
 
-            # [SIL-2] Use direct MSGPACK_ENCODER.encode for response
+            # [SIL-2] Use direct msgspec.msgpack.encode for response
             if not data:
-                response_payload = MSGPACK_ENCODER.encode(
+                response_payload = msgspec.msgpack.encode(
                     FileReadResponsePacket(content=b"")
                 )
                 await self.serial_flow.send(
@@ -127,7 +117,7 @@ class FileComponent:
                 )
             else:
                 for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                    response_payload = MSGPACK_ENCODER.encode(
+                    response_payload = msgspec.msgpack.encode(
                         FileReadResponsePacket(content=bytes(chunk))
                     )
                     await self.serial_flow.send(
@@ -143,8 +133,8 @@ class FileComponent:
     async def handle_remove(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_FILE_REMOVE from MCU."""
         try:
-            # [SIL-2] Use direct MSGPACK_DECODER.decode (Zero Wrapper)
-            packet = MSGPACK_DECODER.decode(payload, type=FileRemovePacket)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileRemovePacket)
             path = self._get_safe_path(packet.path)
             if path and await self._remove_with_tracking(path):
                 self._metadata_cache.pop(str(path), None)
@@ -169,8 +159,8 @@ class FileComponent:
             return False
 
         try:
-            # [SIL-2] Use direct MSGPACK_DECODER.decode (Zero Wrapper)
-            packet = MSGPACK_DECODER.decode(payload, type=FileReadResponsePacket)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=FileReadResponsePacket)
         except (ValueError, msgspec.DecodeError):
             if not pending.future.done():
                 pending.future.set_exception(
@@ -304,8 +294,8 @@ class FileComponent:
             )
             return False
 
-        # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-        packet = MSGPACK_ENCODER.encode(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        packet = msgspec.msgpack.encode(
             FileWritePacket(path=relative_path, data=payload)
         )
         if not await self.serial_flow.send(Command.CMD_FILE_WRITE.value, packet):
@@ -345,8 +335,8 @@ class FileComponent:
                 future=asyncio.get_running_loop().create_future(),
             )
             self._pending_mcu_read = pending
-            # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-            packet = MSGPACK_ENCODER.encode(FileReadPacket(path=relative_path))
+            # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+            packet = msgspec.msgpack.encode(FileReadPacket(path=relative_path))
 
             try:
                 if not await self.serial_flow.send(Command.CMD_FILE_READ.value, packet):
@@ -411,8 +401,8 @@ class FileComponent:
             )
             return False
 
-        # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-        packet = MSGPACK_ENCODER.encode(FileRemovePacket(path=relative_path))
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        packet = msgspec.msgpack.encode(FileRemovePacket(path=relative_path))
         if not await self.serial_flow.send(Command.CMD_FILE_REMOVE.value, packet):
             logger.error("MQTT remove failed for %s: MCU rejected remove", identifier)
             await self._publish_mqtt_error(

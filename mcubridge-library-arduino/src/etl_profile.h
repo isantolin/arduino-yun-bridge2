@@ -15,18 +15,6 @@
 #define ETL_CHECK_PUSH_POP
 #define ETL_CALLBACK_ON_ERROR
 
-// [SIL-2] Global Compatibility Workarounds
-#if defined(__AVR__)
-  // 1. Resolve 'round' macro collision between Arduino.h and ETL C++17
-  #if defined(round)
-    #undef round
-  #endif
-  // 2. Resolve mpack 1.1.0 C++ generic double overload issues on 8-bit targets
-  #ifndef mpack_write_double
-    #define mpack_write_double mpack_write_float
-  #endif
-#endif
-
 // [MEMORY OPT] Disable CRC32 Lookup Table (saves ~1KB - 2KB RAM)
 // Force calculation on the fly.
 #define ETL_CRC32_USE_TABLE 0

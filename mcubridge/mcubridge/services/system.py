@@ -10,8 +10,6 @@ from aiomqtt.message import Message
 from ..protocol import protocol
 from mcubridge.protocol.protocol import Command, SystemAction
 from mcubridge.protocol.structures import (
-    MSGPACK_DECODER,
-    MSGPACK_ENCODER,
     EnterBootloaderPacket,
     FreeMemoryResponsePacket,
     QueuedPublish,
@@ -55,7 +53,7 @@ class SystemComponent:
             return False
 
         try:
-            packet = MSGPACK_DECODER.decode(payload, type=VersionResponsePacket)
+            packet = msgspec.msgpack.decode(payload, type=VersionResponsePacket)
         except (ValueError, msgspec.MsgspecError):
             logger.warning("Malformed VersionResponsePacket payload: %s", payload.hex())
             return False
@@ -75,7 +73,7 @@ class SystemComponent:
             return False
 
         try:
-            packet = MSGPACK_DECODER.decode(payload, type=FreeMemoryResponsePacket)
+            packet = msgspec.msgpack.decode(payload, type=FreeMemoryResponsePacket)
         except (ValueError, msgspec.MsgspecError):
             logger.warning(
                 "Malformed FreeMemoryResponsePacket payload: %s", payload.hex()
@@ -152,7 +150,7 @@ class SystemComponent:
                 packet = EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
                 logger.warning("MCU > Sending EnterBootloader command (DEADC0DE)")
                 return await self.serial_flow.send(
-                    Command.CMD_ENTER_BOOTLOADER.value, MSGPACK_ENCODER.encode(packet)
+                    Command.CMD_ENTER_BOOTLOADER.value, msgspec.msgpack.encode(packet)
                 )
 
             case SystemAction.FREE_MEMORY:

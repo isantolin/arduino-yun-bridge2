@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import structlog
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import msgspec
 from aiomqtt.message import Message
@@ -15,8 +15,6 @@ from mcubridge.protocol.protocol import (
     Status,
 )
 from mcubridge.protocol.structures import (
-    MSGPACK_DECODER,
-    MSGPACK_ENCODER,
     AckPacket,
     MailboxAvailableResponsePacket,
     MailboxProcessedPacket,
@@ -43,14 +41,6 @@ logger = structlog.get_logger("mcubridge.mailbox")
 class MailboxComponent:
     """Handle mailbox interactions between MCU and Linux. [SIL-2]"""
 
-    # [SIL-2] Dynamic Discovery Mapping
-    MCU_MAP: Final = {
-        Command.CMD_MAILBOX_PUSH: "handle_push",
-        Command.CMD_MAILBOX_PROCESSED: "handle_processed",
-        Command.CMD_MAILBOX_AVAILABLE: "handle_available",
-        Command.CMD_MAILBOX_READ: "handle_read",
-    }
-
     def __init__(
         self,
         config: RuntimeConfig,
@@ -72,15 +62,15 @@ class MailboxComponent:
         message_id: int | None = None
         if len(payload) >= 2:
             try:
-                # [SIL-2] Use direct MSGPACK_DECODER.decode (Zero Wrapper)
-                packet = MSGPACK_DECODER.decode(payload, type=MailboxProcessedPacket)
+                # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+                packet = msgspec.msgpack.decode(payload, type=MailboxProcessedPacket)
                 message_id = packet.message_id
             except ValueError as exc:
                 logger.warning("MCU > Malformed Mailbox processed payload: %s", exc)
 
         if message_id is not None:
-            # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-            body = MSGPACK_ENCODER.encode({"message_id": message_id})
+            # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+            body = msgspec.msgpack.encode({"message_id": message_id})
         else:
             body = payload
 
@@ -91,8 +81,8 @@ class MailboxComponent:
 
     async def handle_push(self, seq_id: int, payload: bytes) -> bool:
         try:
-            # [SIL-2] Use direct MSGPACK_DECODER.decode (Zero Wrapper)
-            packet = MSGPACK_DECODER.decode(payload, type=MailboxPushPacket)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=MailboxPushPacket)
         except ValueError:
             logger.warning("Malformed MailboxPushPacket payload: %s", payload.hex())
             return False
@@ -132,16 +122,16 @@ class MailboxComponent:
         if payload:
             await self.serial_flow.send(
                 Status.MALFORMED.value,
-                # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-                MSGPACK_ENCODER.encode(
+                # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+                msgspec.msgpack.encode(
                     AckPacket(command_id=Command.CMD_MAILBOX_AVAILABLE.value)
                 ),
             )
             return False
 
         queue_len = len(self.state.mailbox_queue)
-        # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-        response = MSGPACK_ENCODER.encode(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        response = msgspec.msgpack.encode(
             MailboxAvailableResponsePacket(count=queue_len)
         )
 
@@ -170,8 +160,8 @@ class MailboxComponent:
             )
             message_payload = message_payload[:max_allowed]
 
-        # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-        response_payload = MSGPACK_ENCODER.encode(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        response_payload = msgspec.msgpack.encode(
             MailboxReadResponsePacket(content=message_payload)
         )
 

@@ -16,12 +16,13 @@ from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
 import structlog
 
-from .protocol.structures import MSGPACK_ENCODER, QueuedPublish
+from .protocol.structures import QueuedPublish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.metrics")
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
+_msgpack_enc = msgspec.msgpack.Encoder()
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
@@ -40,7 +41,7 @@ def _build_metrics_message(
     message = QueuedPublish(
         topic_name=topic,
         # [SIL-2] Fast serialization using msgspec.msgpack.encode handles Structs directly
-        payload=MSGPACK_ENCODER.encode(snapshot),
+        payload=_msgpack_enc.encode(snapshot),
         content_type="application/msgpack",
         message_expiry_interval=int(expiry_seconds),
         user_properties=(),
@@ -287,11 +288,9 @@ class RuntimeStateCollector(Collector):
             labels=["resource"],
         )
         sys_metrics = collect_system_metrics()
-        if sys_metrics is not None:
-            # [SIL-2] Use asdict for dynamic iteration over struct fields
-            for key, val in msgspec.structs.asdict(sys_metrics).items():
-                if isinstance(val, (int, float)):
-                    health.add_metric([key], float(val))
+        for key, val in sys_metrics.items():
+            if isinstance(val, (int, float)):
+                health.add_metric([key], float(val))
         yield health
 
         # 4. Supervisor Health (Dimensional)
@@ -434,7 +433,7 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=MSGPACK_ENCODER.encode(snapshot),
+        payload=_msgpack_enc.encode(snapshot),
         content_type="application/msgpack",
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),

@@ -12,8 +12,6 @@ from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, PinAction, Status
 from mcubridge.protocol.structures import (
-    MSGPACK_DECODER,
-    MSGPACK_ENCODER,
     AnalogReadResponsePacket,
     AnalogWritePacket,
     DigitalReadResponsePacket,
@@ -39,14 +37,6 @@ logger = structlog.get_logger("mcubridge.pin")
 
 class PinComponent:
     """Encapsulate pin read/write logic. [SIL-2]"""
-
-    # [SIL-2] Dynamic Discovery Mapping
-    MCU_MAP: Final = {
-        Command.CMD_DIGITAL_READ: "handle_mcu_digital_read",
-        Command.CMD_ANALOG_READ: "handle_mcu_analog_read",
-        Command.CMD_DIGITAL_READ_RESP: "handle_digital_read_resp",
-        Command.CMD_ANALOG_READ_RESP: "handle_analog_read_resp",
-    }
 
     def __init__(
         self,
@@ -112,7 +102,7 @@ class PinComponent:
     ) -> None:
         """Shared implementation for digital/analog read response handling."""
         try:
-            packet = MSGPACK_DECODER.decode(payload, type=packet_cls)
+            packet = msgspec.msgpack.decode(payload, type=packet_cls)
         except ValueError:
             logger.warning(
                 "Malformed %s payload: %s", packet_cls.__name__, payload.hex()
@@ -222,8 +212,8 @@ class PinComponent:
             logger.warning("Invalid digital mode %s", mode)
             return
 
-        # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-        payload = MSGPACK_ENCODER.encode(PinModePacket(pin=pin, mode=mode))
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        payload = msgspec.msgpack.encode(PinModePacket(pin=pin, mode=mode))
         await self.serial_flow.send(Command.CMD_SET_PIN_MODE.value, payload)
 
     async def _handle_read_command(
@@ -250,8 +240,8 @@ class PinComponent:
         pending_request = PendingPinRequest(pin=pin, reply_context=inbound)
         queue.append(pending_request)
 
-        # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-        payload = MSGPACK_ENCODER.encode(PinReadPacket(pin=pin))
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        payload = msgspec.msgpack.encode(PinReadPacket(pin=pin))
         ok = await self.serial_flow.send(command.value, payload)
         if not ok:
             with contextlib.suppress(ValueError):
@@ -272,10 +262,10 @@ class PinComponent:
 
         if topic_type == Topic.DIGITAL:
             command = Command.CMD_DIGITAL_WRITE
-            payload = MSGPACK_ENCODER.encode(DigitalWritePacket(pin=pin, value=value))
+            payload = msgspec.msgpack.encode(DigitalWritePacket(pin=pin, value=value))
         else:
             command = Command.CMD_ANALOG_WRITE
-            payload = MSGPACK_ENCODER.encode(AnalogWritePacket(pin=pin, value=value))
+            payload = msgspec.msgpack.encode(AnalogWritePacket(pin=pin, value=value))
 
         await self.serial_flow.send(command.value, payload)
 

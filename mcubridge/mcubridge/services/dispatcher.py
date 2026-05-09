@@ -59,28 +59,74 @@ class BridgeDispatcher:
         # [SIL-2] Direct component references for zero-overhead dispatching.
         self.system: Any | None = None
 
-    def register_components(self, **components: Any) -> None:
-        """Register all component handlers using Dynamic Discovery (Zero Boilerplate)."""
-        self.system = components.get("system")
+    def register_components(
+        self,
+        *,
+        console: Any = None,
+        datastore: Any = None,
+        file: Any = None,
+        mailbox: Any = None,
+        pin: Any = None,
+        process: Any = None,
+        spi: Any = None,
+        system: Any = None,
+    ) -> None:
+        """Register all component handlers with the registries."""
+        self.system = system
 
-        for name, component in components.items():
-            if not component:
-                continue
+        # MCU Command Dispatch Map (Centralized for auditability)
+        # Only register handlers for components that are actually present.
+        mcu_map: dict[Command, McuHandler | None] = {
+            Command.CMD_XOFF: console.handle_xoff if console else None,
+            Command.CMD_XON: console.handle_xon if console else None,
+            Command.CMD_CONSOLE_WRITE: console.handle_write if console else None,
+            Command.CMD_DATASTORE_PUT: datastore.handle_put if datastore else None,
+            Command.CMD_DATASTORE_GET: (
+                datastore.handle_get_request if datastore else None
+            ),
+            Command.CMD_MAILBOX_PUSH: mailbox.handle_push if mailbox else None,
+            Command.CMD_MAILBOX_AVAILABLE: (
+                mailbox.handle_available if mailbox else None
+            ),
+            Command.CMD_MAILBOX_READ: mailbox.handle_read if mailbox else None,
+            Command.CMD_MAILBOX_PROCESSED: (
+                mailbox.handle_processed if mailbox else None
+            ),
+            Command.CMD_FILE_WRITE: file.handle_write if file else None,
+            Command.CMD_FILE_READ: file.handle_read if file else None,
+            Command.CMD_FILE_REMOVE: file.handle_remove if file else None,
+            Command.CMD_FILE_READ_RESP: file.handle_read_response if file else None,
+            Command.CMD_PROCESS_RUN_ASYNC: (
+                process.handle_run_async if process else None
+            ),
+            Command.CMD_PROCESS_POLL: process.handle_poll if process else None,
+            Command.CMD_DIGITAL_READ_RESP: (
+                pin.handle_digital_read_resp if pin else None
+            ),
+            Command.CMD_ANALOG_READ_RESP: pin.handle_analog_read_resp if pin else None,
+            Command.CMD_DIGITAL_READ: pin.handle_mcu_digital_read if pin else None,
+            Command.CMD_ANALOG_READ: pin.handle_mcu_analog_read if pin else None,
+            Command.CMD_SPI_TRANSFER_RESP: spi.handle_transfer_resp if spi else None,
+        }
+        for cmd, handler in mcu_map.items():
+            if handler:
+                self.mcu_registry[cmd.value] = handler
 
-            # 1. Discover MCU Handlers via 'MCU_MAP' attribute or naming convention
-            if hasattr(component, "MCU_MAP"):
-                for cmd, handler_name in component.MCU_MAP.items():
-                    self.mcu_registry[cmd.value] = getattr(component, handler_name)
-
-            # 2. Discover MQTT Handler
-            if hasattr(component, "handle_mqtt"):
-                try:
-                    topic = Topic(name.upper())
-                    self.mqtt_handlers[topic] = component.handle_mqtt
-                except ValueError:
-                    # 'system' or other special components handled manually
-                    if name == "system":
-                        self.mqtt_handlers[Topic.SYSTEM] = self._handle_system_topic
+        # MQTT Topic Dispatch Map
+        mqtt_map = {
+            Topic.CONSOLE: console.handle_mqtt if console else None,
+            Topic.DATASTORE: datastore.handle_mqtt if datastore else None,
+            Topic.MAILBOX: mailbox.handle_mqtt if mailbox else None,
+            Topic.FILE: file.handle_mqtt if file else None,
+            Topic.SHELL: process.handle_mqtt if process else None,
+            Topic.DIGITAL: pin.handle_mqtt if pin else None,
+            Topic.ANALOG: pin.handle_mqtt if pin else None,
+            Topic.SPI: spi.handle_mqtt if spi else None,
+            Topic.SYSTEM: self._handle_system_topic,
+        }
+        for topic, handler in mqtt_map.items():
+            if handler:
+                self.mqtt_handlers[topic] = handler
 
     def register_system_handlers(
         self,
@@ -171,7 +217,7 @@ class BridgeDispatcher:
             if route is None or not route.segments:
                 return
 
-            # 1. Policy Guard
+            # 1. Policy Guard (Eradicated _guard_and_dispatch wrapper)
             if action := self._get_topic_action(route):
                 if not self.is_topic_action_allowed(route.topic, action):
                     await self.reject_topic_action(inbound, route.topic, action)

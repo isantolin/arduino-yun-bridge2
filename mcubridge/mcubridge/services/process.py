@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import structlog
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import msgspec
 from aiomqtt.message import Message
@@ -12,8 +12,6 @@ from aiomqtt.message import Message
 from ..protocol import protocol, structures
 from ..protocol.protocol import ShellAction, Status
 from ..protocol.structures import (
-    MSGPACK_DECODER,
-    MSGPACK_ENCODER,
     ProcessOutputBatch,
     QueuedPublish,
     ShellCommandPayload,
@@ -32,17 +30,12 @@ if TYPE_CHECKING:
     from .serial_flow import SerialFlowController
 
 logger = structlog.get_logger("mcubridge.services.process")
+_msgpack_enc = msgspec.msgpack.Encoder()
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
 
 class ProcessComponent:
-    # [SIL-2] Dynamic Discovery Mapping
-    MCU_MAP: Final = {
-        protocol.Command.CMD_PROCESS_RUN_ASYNC: "handle_run_async",
-        protocol.Command.CMD_PROCESS_POLL: "handle_poll",
-        protocol.Command.CMD_PROCESS_KILL: "handle_kill",
-    }
     """Component for managing subprocess execution and output capture. [SIL-2]"""
 
     def __init__(
@@ -86,7 +79,7 @@ class ProcessComponent:
                     if not payload:
                         raise ValueError("Shell command payload is empty")
                     try:
-                        payload_model = MSGPACK_DECODER.decode(
+                        payload_model = msgspec.msgpack.decode(
                             payload, type=ShellCommandPayload
                         )
                         if not payload_model.command.strip():
@@ -209,7 +202,7 @@ class ProcessComponent:
     async def handle_run_async(self, seq_id: int, payload: bytes) -> None:
         """Handle async process execution request from MCU."""
         try:
-            packet = MSGPACK_DECODER.decode(
+            packet = msgspec.msgpack.decode(
                 payload, type=structures.ProcessRunAsyncPacket
             )
             command = packet.command
@@ -240,7 +233,7 @@ class ProcessComponent:
                     seq_id,
                     status=Status.OK,
                 )
-                resp = MSGPACK_ENCODER.encode(
+                resp = msgspec.msgpack.encode(
                     structures.ProcessRunAsyncResponsePacket(pid=pid)
                 )
                 await self.serial_flow.send(
@@ -268,7 +261,7 @@ class ProcessComponent:
     async def handle_poll(self, seq_id: int, payload: bytes) -> None:
         """Handle process poll request from MCU."""
         try:
-            packet = MSGPACK_DECODER.decode(payload, type=structures.ProcessPollPacket)
+            packet = msgspec.msgpack.decode(payload, type=structures.ProcessPollPacket)
             pid = packet.pid
 
             batch = await self.poll_process(pid)
@@ -277,7 +270,7 @@ class ProcessComponent:
                 seq_id,
                 status=Status.OK,
             )
-            resp = MSGPACK_ENCODER.encode(
+            resp = msgspec.msgpack.encode(
                 structures.ProcessPollResponsePacket(
                     status=batch.status_byte,
                     exit_code=batch.exit_code,
@@ -301,7 +294,7 @@ class ProcessComponent:
     ) -> bool:
         """Handle process termination request."""
         try:
-            packet = MSGPACK_DECODER.decode(payload, type=structures.ProcessKillPacket)
+            packet = msgspec.msgpack.decode(payload, type=structures.ProcessKillPacket)
             pid = packet.pid
 
             success = await self.stop_process(pid)
@@ -519,7 +512,7 @@ class ProcessComponent:
         await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=response_topic,
-                payload=MSGPACK_ENCODER.encode(batch),
+                payload=_msgpack_enc.encode(batch),
                 content_type="application/msgpack",
                 response_topic=reply_topic,
                 correlation_data=correlation_data,

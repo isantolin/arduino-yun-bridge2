@@ -10,13 +10,7 @@ import msgspec
 from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, ConsoleAction
-from mcubridge.protocol.structures import (
-    MSGPACK_DECODER,
-    MSGPACK_ENCODER,
-    ConsoleWritePacket,
-    QueuedPublish,
-    TopicRoute,
-)
+from mcubridge.protocol.structures import ConsoleWritePacket, QueuedPublish, TopicRoute
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..protocol.topics import Topic, topic_path
@@ -33,13 +27,6 @@ logger = structlog.get_logger("mcubridge.console")
 class ConsoleComponent:
     """Encapsulate remote console behaviour. [SIL-2]"""
 
-    # [SIL-2] Dynamic Discovery Mapping
-    MCU_MAP: Final = {
-        Command.CMD_XOFF: "handle_xoff",
-        Command.CMD_XON: "handle_xon",
-        Command.CMD_CONSOLE_WRITE: "handle_write",
-    }
-
     def __init__(
         self,
         config: RuntimeConfig,
@@ -55,8 +42,8 @@ class ConsoleComponent:
     async def handle_write(self, seq_id: int, payload: bytes) -> None:
         """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
         try:
-            # [SIL-2] Use centralized shared decoder (Zero allocation)
-            packet = MSGPACK_DECODER.decode(payload, type=ConsoleWritePacket)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=ConsoleWritePacket)
         except (ValueError, msgspec.DecodeError):
             logger.warning("Malformed ConsoleWritePacket payload: %s", payload.hex())
             return
@@ -119,8 +106,8 @@ class ConsoleComponent:
             if not chunk:
                 continue
 
-            # [SIL-2] Use centralized shared encoder (Zero allocation)
-            frame_payload = MSGPACK_ENCODER.encode(ConsoleWritePacket(data=chunk))
+            # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+            frame_payload = msgspec.msgpack.encode(ConsoleWritePacket(data=chunk))
 
             send_ok = await self.serial_flow.send(
                 Command.CMD_CONSOLE_WRITE.value,

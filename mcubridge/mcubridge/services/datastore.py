@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import structlog
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 from aiomqtt.message import Message
@@ -13,8 +14,6 @@ from mcubridge.protocol.protocol import (
     Status,
 )
 from mcubridge.protocol.structures import (
-    MSGPACK_DECODER,
-    MSGPACK_ENCODER,
     DatastoreGetPacket,
     DatastoreGetResponsePacket,
     DatastorePutPacket,
@@ -22,15 +21,20 @@ from mcubridge.protocol.structures import (
     TopicRoute,
 )
 
+from ..config.const import MQTT_EXPIRY_DATASTORE
+from ..protocol.topics import Topic, topic_path
+
+if TYPE_CHECKING:
+    from ..transport.mqtt import MqttTransport
+    from ..state.context import RuntimeState
+    from ..config.settings import RuntimeConfig
+    from .serial_flow import SerialFlowController
+
+logger = structlog.get_logger("mcubridge.datastore")
+
 
 class DatastoreComponent:
     """Encapsulate datastore behaviour for BridgeService. [SIL-2]"""
-
-    # [SIL-2] Dynamic Discovery Mapping
-    MCU_MAP: Final = {
-        Command.CMD_DATASTORE_PUT: "handle_put",
-        Command.CMD_DATASTORE_GET: "handle_get_request",
-    }
 
     def __init__(
         self,
@@ -47,8 +51,8 @@ class DatastoreComponent:
     async def handle_put(self, seq_id: int, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
         try:
-            # [SIL-2] Use centralized shared decoder (Zero allocation)
-            packet = MSGPACK_DECODER.decode(payload, type=DatastorePutPacket)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=DatastorePutPacket)
         except (ValueError, msgspec.DecodeError):
             logger.warning("Malformed DatastorePutPacket payload: %s", payload.hex())
             return False
@@ -63,8 +67,8 @@ class DatastoreComponent:
     async def handle_get_request(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
         try:
-            # [SIL-2] Use centralized shared decoder (Zero allocation)
-            packet = MSGPACK_DECODER.decode(payload, type=DatastoreGetPacket)
+            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            packet = msgspec.msgpack.decode(payload, type=DatastoreGetPacket)
         except (ValueError, msgspec.DecodeError):
             logger.warning(
                 "Malformed DATASTORE_GET payload: %s",
@@ -90,8 +94,8 @@ class DatastoreComponent:
             )
             value_bytes = value_bytes[:255]
 
-        # [SIL-2] Use centralized shared encoder (Zero allocation)
-        response_payload = MSGPACK_ENCODER.encode(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        response_payload = msgspec.msgpack.encode(
             DatastoreGetResponsePacket(value=msgspec.Raw(value_bytes))
         )
 

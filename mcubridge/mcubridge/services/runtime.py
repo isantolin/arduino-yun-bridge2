@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import structlog
 from collections.abc import Coroutine
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 from aiomqtt.message import Message
@@ -11,12 +11,7 @@ from aiomqtt.message import Message
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
 from ..config.settings import RuntimeConfig
 from ..protocol.protocol import Status
-from ..protocol.structures import (
-    MSGPACK_DECODER,
-    MSGPACK_ENCODER,
-    AckPacket,
-    QueuedPublish,
-)
+from ..protocol.structures import AckPacket, QueuedPublish
 from ..protocol.topics import Topic, parse_topic, topic_path
 from ..state.context import RuntimeState
 
@@ -48,10 +43,6 @@ STATUS_VALUES = {status.value for status in Status}
 
 
 class BridgeService:
-    # [SIL-2] Dynamic Discovery Mapping
-    MCU_MAP: Final = {
-        Status.ACK: "_handle_ack",
-    }
     """Service façade orchestrating MCU and MQTT interactions. [SIL-2]"""
 
     def __init__(
@@ -123,7 +114,7 @@ class BridgeService:
             handle_link_sync_resp=self.handshake_manager.handle_link_sync_resp,
             handle_link_reset_resp=self.handshake_manager.handle_link_reset_resp,
             handle_get_capabilities_resp=self.handshake_manager.handle_capabilities_resp,
-            handle_ack=self._handle_ack,  # type: ignore
+            handle_ack=self._handle_ack,
             status_handler_factory=lambda status: lambda s, p: self.handle_status(
                 s, status, p
             ),
@@ -233,8 +224,8 @@ class BridgeService:
     async def _handle_ack(self, seq_id: int, payload: bytes) -> None:
         if len(payload) >= 2:
             try:
-                # [SIL-2] Use direct MSGPACK_DECODER.decode (Zero Wrapper)
-                packet = MSGPACK_DECODER.decode(payload, type=AckPacket)
+                # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+                packet = msgspec.msgpack.decode(payload, type=AckPacket)
                 command_id = packet.command_id
                 logger.debug("MCU > ACK received for 0x%02X", command_id)
             except (msgspec.ValidationError, ValueError) as exc:
@@ -261,8 +252,8 @@ class BridgeService:
         else:
             log_method("MCU > %s (seq=%d): %s", status.name, seq_id, desc)
 
-        # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-        report = MSGPACK_ENCODER.encode(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        report = msgspec.msgpack.encode(
             {
                 "status": status.value,
                 "name": status.name,
@@ -307,11 +298,11 @@ class BridgeService:
             Topic.SYSTEM,
             *topic_segments,
         )
-        # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
         await self.mqtt_flow.enqueue_mqtt(
             QueuedPublish(
                 topic_name=topic,
-                payload=MSGPACK_ENCODER.encode(snapshot),
+                payload=msgspec.msgpack.encode(snapshot),
                 content_type="application/msgpack",
                 message_expiry_interval=MQTT_EXPIRY_SHELL,
                 user_properties=(("bridge-snapshot", flavor),),
@@ -344,8 +335,8 @@ class BridgeService:
             action or "<missing>",
             str(inbound.topic),
         )
-        # [SIL-2] Use direct MSGPACK_ENCODER.encode (Zero Wrapper)
-        payload = MSGPACK_ENCODER.encode(
+        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        payload = msgspec.msgpack.encode(
             {
                 "status": "forbidden",
                 "topic": topic_value,

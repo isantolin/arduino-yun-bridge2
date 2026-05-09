@@ -53,7 +53,6 @@ from ..protocol.structures import (
     SerialThroughputStats,
     SupervisorStats,
     PipelineEvent,
-    SystemMetrics,
 )
 from .metrics import DaemonMetrics
 
@@ -92,7 +91,7 @@ __all__: Final[tuple[str, ...]] = (
 )
 
 
-def collect_system_metrics() -> SystemMetrics | None:
+def collect_system_metrics() -> dict[str, Any]:
     """Collect system-level metrics using native library conversions."""
     try:
         proc = psutil.Process()
@@ -108,7 +107,22 @@ def collect_system_metrics() -> SystemMetrics | None:
             with contextlib.suppress(OSError):
                 tmp_disk = psutil.disk_usage("/tmp")
 
-            temp = None
+            # [SIL-2] Direct mapping from native library structures
+            result = {
+                "cpu_percent": psutil.cpu_percent(interval=None),
+                "cpu_count": psutil.cpu_count() or 1,
+                "memory_total_bytes": mem.total,
+                "memory_available_bytes": mem.available,
+                "memory_percent": mem.percent,
+                "load_avg_1m": load[0],
+                "load_avg_5m": load[1],
+                "load_avg_15m": load[2],
+                "disk_root_total_bytes": root_disk.total,
+                "disk_root_used_bytes": root_disk.used,
+                "disk_root_free_bytes": root_disk.free,
+                "disk_root_percent": root_disk.percent,
+            }
+
             if hasattr(psutil, "sensors_temperatures"):
                 temps = psutil.sensors_temperatures()
                 # [SIL-2] Functional lookup for first available thermal sensor.
@@ -120,29 +134,20 @@ def collect_system_metrics() -> SystemMetrics | None:
                     None,
                 )
                 if sensor_name:
-                    temp = temps[sensor_name][0].current
+                    result["temperature_celsius"] = temps[sensor_name][0].current
 
-            return SystemMetrics(
-                cpu_percent=psutil.cpu_percent(interval=None),
-                cpu_count=psutil.cpu_count() or 1,
-                memory_total_bytes=mem.total,
-                memory_available_bytes=mem.available,
-                memory_percent=mem.percent,
-                load_avg_1m=load[0],
-                load_avg_5m=load[1],
-                load_avg_15m=load[2],
-                disk_root_total_bytes=root_disk.total,
-                disk_root_used_bytes=root_disk.used,
-                disk_root_free_bytes=root_disk.free,
-                disk_root_percent=root_disk.percent,
-                temperature_celsius=temp,
-                disk_tmp_total_bytes=tmp_disk.total if tmp_disk else None,
-                disk_tmp_used_bytes=tmp_disk.used if tmp_disk else None,
-                disk_tmp_free_bytes=tmp_disk.free if tmp_disk else None,
-                disk_tmp_percent=tmp_disk.percent if tmp_disk else None,
-            )
+            if tmp_disk:
+                result.update(
+                    {
+                        "disk_tmp_total_bytes": tmp_disk.total,
+                        "disk_tmp_used_bytes": tmp_disk.used,
+                        "disk_tmp_free_bytes": tmp_disk.free,
+                        "disk_tmp_percent": tmp_disk.percent,
+                    }
+                )
+            return result
     except (psutil.Error, RuntimeError, OSError):
-        return None
+        return {}
 
 
 class RuntimeState(msgspec.Struct):

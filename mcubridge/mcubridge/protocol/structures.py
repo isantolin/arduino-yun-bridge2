@@ -493,11 +493,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
 T = TypeVar("T", bound="BaseStruct")
 
-# [SIL-2] Shared encoders/decoders — reuse avoids per-call allocation overhead.
-# Exposed globally for all services to eliminate local instantiations.
-MSGPACK_ENCODER: Final = msgspec.msgpack.Encoder()
-MSGPACK_DECODER: Final = msgspec.msgpack.Decoder()
-JSON_ENCODER: Final = msgspec.json.Encoder()
+# [SIL-2] Shared encoder/decoder — reuse avoids per-call allocation overhead.
+_msgpack_encoder = msgspec.msgpack.Encoder()
+_msgpack_decoder = msgspec.msgpack.Decoder()
 
 
 class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
@@ -823,10 +821,12 @@ class QueuedPublish(msgspec.Struct, frozen=True):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
+    response_payload: bytes | None = None
     user_properties: tuple[UserProperty, ...] = ()
+    subscription_identifier: tuple[int, ...] | None = None
 
-    def paho_properties(self) -> Properties | None:
-        """Convert fields to native Paho MQTT v5 properties for libraries."""
+    def to_paho_properties(self) -> Properties | None:
+        """Convert fields to native Paho MQTT v5 properties."""
         if not any(
             (
                 self.content_type,
@@ -854,28 +854,6 @@ class QueuedPublish(msgspec.Struct, frozen=True):
             props.UserProperty = list(self.user_properties)
 
         return props
-
-
-class SystemMetrics(msgspec.Struct, frozen=True):
-    """System-level resource utilization metrics."""
-
-    cpu_percent: float
-    cpu_count: int
-    memory_total_bytes: int
-    memory_available_bytes: int
-    memory_percent: float
-    load_avg_1m: float
-    load_avg_5m: float
-    load_avg_15m: float
-    disk_root_total_bytes: int
-    disk_root_used_bytes: int
-    disk_root_free_bytes: int
-    disk_root_percent: float
-    temperature_celsius: float | None = None
-    disk_tmp_total_bytes: int | None = None
-    disk_tmp_used_bytes: int | None = None
-    disk_tmp_free_bytes: int | None = None
-    disk_tmp_percent: float | None = None
 
 
 # --- Process Service Structures ---

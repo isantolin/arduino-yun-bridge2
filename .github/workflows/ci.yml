@@ -131,7 +131,7 @@ jobs:
           python tools/arduino_symbol_profiler.py arduino-build --output arduino-logs/symbol_profile.md
       - name: Upload Arduino Logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: arduino-logs
           path: arduino-logs
@@ -166,14 +166,14 @@ jobs:
         run: tox -e coverage
       - name: Upload Python Coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-python
           path: coverage/python
           if-no-files-found: ignore
       - name: Upload Arduino Coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-arduino-host
           path: coverage/arduino
@@ -268,21 +268,21 @@ jobs:
       - uses: ./.github/actions/setup-python-tox
 
       - name: Download Python Coverage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: coverage-python
           path: coverage/python
         continue-on-error: true
 
       - name: Download Arduino Coverage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: coverage-arduino-host
           path: coverage/arduino
         continue-on-error: true
 
       - name: Download Arduino Logs
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: arduino-logs
           path: arduino-logs
@@ -320,7 +320,7 @@ jobs:
             --github-step-summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Combined Coverage
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-combined
           path: coverage/

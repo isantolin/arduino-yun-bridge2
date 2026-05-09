@@ -1,61 +1,114 @@
 """RPC frame building and parsing for Arduino-Linux serial communication.
 
 This module implements the binary frame format used over the serial link
-between the Linux daemon and the Arduino MCU.
+between the Linux daemon and the Arduino MCU using declarative Construct structures.
 
 [SIL-2 COMPLIANCE]
 The frame format is strictly defined to ensure:
 - Deterministic memory layout.
 - Explicit CRC32 validation.
-- Zero boilerplate compatibility layers.
+- Zero manual orchestration logic.
+- Native integration of RLE compression.
 """
 
 from __future__ import annotations
 
 from binascii import crc32
-import msgspec
-from typing import TypeVar
+from typing import Any
+
 import construct
+import msgspec
 from construct import (
+    Adapter,
     Bytes,
+    Checksum,
+    Const,
+    Construct,
+    ExprAdapter,
+    GreedyBytes,
     Int8ub,
     Int16ub,
     Int32ub,
+    RawCopy,
+    Rebuild,
     Struct,
     this,
-    Checksum,
-    RawCopy,
 )
 from construct.core import ConstructError
 
 from . import protocol
+from .rle import RLE_TRANSFORM, should_compress
 
-T = TypeVar("T")
 
-# [SIL-2] Declarative Frame Header Structure
-RPC_FRAME_HEADER = Struct(
-    "version" / Int8ub,
-    "payload_len" / Int16ub,
-    "command_id" / Int16ub,
-    "sequence_id" / Int16ub,
-)
+class FrameAdapter(Adapter):
+    """[SIL-2] High-level adapter to map between internal Frame object and Construct dict."""
 
-# [SIL-2] Full Frame Structure (Flat)
+    def _decode(self, obj: Any, context: Any, path: Any) -> "Frame":
+        # Extract fields from the declarative Body
+        header = obj.body.value.header
+        payload = obj.body.value.payload
+        cmd_id = int(header.command_id)
+
+        # Handle implicit RLE decompression if bit 15 is set
+        if cmd_id & protocol.CMD_FLAG_COMPRESSED:
+            payload = RLE_TRANSFORM.parse(payload)
+            cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
+
+        return Frame(
+            command_id=cmd_id,
+            sequence_id=int(header.sequence_id),
+            payload=payload,
+        )
+
+    def _encode(self, obj: "Frame", context: Any, path: Any) -> dict[str, Any]:
+        cmd_id = int(obj.command_id)
+        payload = obj.payload
+
+        # Handle implicit RLE compression
+        if payload and should_compress(payload):
+            compressed = RLE_TRANSFORM.build(payload)
+            if len(compressed) < len(payload):
+                payload = compressed
+                cmd_id |= protocol.CMD_FLAG_COMPRESSED
+
+        return {
+            "body": {
+                "value": {
+                    "header": {
+                        "version": protocol.PROTOCOL_VERSION,
+                        "payload_len": len(payload),
+                        "command_id": cmd_id,
+                        "sequence_id": obj.sequence_id,
+                    },
+                    "payload": payload,
+                }
+            }
+        }
+
+
+# --- DECLARATIVE STRUCTURES ---
+
 RPC_FRAME_BODY = Struct(
-    "header" / RPC_FRAME_HEADER,
+    "header"
+    / Struct(
+        "version" / Const(protocol.PROTOCOL_VERSION, Int8ub),
+        "payload_len" / Rebuild(Int16ub, lambda ctx: len(ctx._.payload)),
+        "command_id" / Int16ub,
+        "sequence_id" / Int16ub,
+    ),
     "payload" / Bytes(this.header.payload_len),
 )
 
-
 def _frame_crc(data: bytes) -> int:
-    """CRC32 checksum for frame integrity (SIL-2: explicit typed signature)."""
+    """CRC32 checksum for frame integrity (SIL-2)."""
     return crc32(data) & 0xFFFFFFFF
 
-
-# [SIL-2] Full Frame using native Checksum (Zero-Boilerplate)
-RPC_FRAME = Struct(
-    "body" / RawCopy(RPC_FRAME_BODY),
-    "crc" / Checksum(Int32ub, _frame_crc, this.body.data),
+# [SIL-2] The Maestro: One structure to rule them all.
+RPC_FRAME_SCHEMA: Construct = FrameAdapter(
+    Struct(
+        "body" / RawCopy(RPC_FRAME_BODY),
+        "crc" / Checksum(Int32ub, _frame_crc, this.body.data),
+    )
 )
 
 
@@ -85,67 +138,17 @@ class Frame(msgspec.Struct, frozen=True):
         )
 
     def build(self) -> bytes:
-        """Build the binary frame representation with explicit RLE compression."""
-        from . import rle
-
-        if len(self.payload) > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(
-                f"Payload too large: {len(self.payload)} > {protocol.MAX_PAYLOAD_SIZE}"
-            )
-
-        cmd_id = int(self.command_id)
-        working_payload = self.payload
-
-        # [SIL-2] Explicit Compression Logic
-        if working_payload and rle.should_compress(working_payload):
-            compressed = rle.RLE_TRANSFORM.build(working_payload)
-            if len(compressed) < len(working_payload):
-                working_payload = compressed
-                cmd_id |= protocol.CMD_FLAG_COMPRESSED
-
+        """Delegates frame building to the declarative schema."""
         try:
-            return RPC_FRAME.build(
-                {
-                    "body": {
-                        "value": {
-                            "header": {
-                                "version": protocol.PROTOCOL_VERSION,
-                                "payload_len": len(working_payload),
-                                "command_id": cmd_id,
-                                "sequence_id": self.sequence_id,
-                            },
-                            "payload": working_payload,
-                        }
-                    }
-                }
-            )
+            return RPC_FRAME_SCHEMA.build(self)
         except (ConstructError, ValueError, TypeError) as e:
             raise ValueError(f"Failed to build frame: {e}") from e
 
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
-        """Parse *raw_frame_buffer* and create a :class:`Frame` with explicit RLE decompression."""
+        """Delegates frame parsing to the declarative schema."""
         try:
-            if len(raw_frame_buffer) < 11:  # Header(7) + CRC(4)
-                raise ValueError("Frame too short")
-
-            obj = RPC_FRAME.parse(raw_frame_buffer)
-            body = obj.body.value
-            cmd_id = int(body.header.command_id)
-            payload = body.payload
-
-            # [SIL-2] Explicit Decompression Logic
-            if cmd_id & protocol.CMD_FLAG_COMPRESSED:
-                from .rle import RLE_TRANSFORM
-
-                payload = RLE_TRANSFORM.parse(payload)
-                cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
-
-            return cls(
-                command_id=cmd_id,
-                sequence_id=int(body.header.sequence_id),
-                payload=payload,
-            )
+            return RPC_FRAME_SCHEMA.parse(raw_frame_buffer)
         except getattr(construct, "ChecksumError", ConstructError) as e:
             raise ValueError(f"CRC mismatch: {e}") from e
         except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:

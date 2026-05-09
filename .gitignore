@@ -32,6 +32,7 @@ pyenv/
 venv/
 .tox/
 .dummy_libs/
+.tmp_tests/
 
 # Generated type stubs (dynamic)
 typings/diskcache/

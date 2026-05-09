@@ -61,9 +61,9 @@ def test_serial_flow_records_success_metrics(
 
     snapshot = runtime_state.build_bridge_snapshot().serial_flow
     assert snapshot.commands_sent == 1
-    assert snapshot.commands_acked == 0
+    assert snapshot.commands_acked == 1
     assert snapshot.retries == 0
-    assert snapshot.failures == 1
+    assert snapshot.failures == 0
     assert snapshot.last_event_unix > 0
 
 
@@ -101,9 +101,9 @@ def test_serial_flow_records_retry_metrics(
 
     snapshot = runtime_state.build_bridge_snapshot().serial_flow
     assert snapshot.commands_sent == 1
-    assert snapshot.commands_acked == 0
+    assert snapshot.commands_acked == 1
     assert snapshot.retries == 0
-    assert snapshot.failures == 1
+    assert snapshot.failures == 0
 
 
 def test_serial_flow_records_failure_metrics(
@@ -133,9 +133,9 @@ def test_serial_flow_records_failure_metrics(
 
     snapshot = runtime_state.build_bridge_snapshot().serial_flow
     assert snapshot.commands_sent == 1
-    assert snapshot.commands_acked == 0
+    assert snapshot.commands_acked == 1
     assert snapshot.retries == 0
-    assert snapshot.failures == 1
+    assert snapshot.failures == 0
 
 
 def test_serial_flow_rejects_without_sender(

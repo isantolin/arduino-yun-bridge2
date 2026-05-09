@@ -230,7 +230,7 @@ class MqttTransport:
             )
 
         topic_name = message_to_send.topic_name
-        props = message_to_send.to_paho_properties()
+        props = message_to_send.paho_properties()
         payload = message_to_send.payload
         qos = int(message_to_send.qos)
         retain = message_to_send.retain

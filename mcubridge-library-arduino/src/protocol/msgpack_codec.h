@@ -9,15 +9,6 @@
 #define MSGPACK_CODEC_H
 
 #include <etl/span.h>
-
-#if defined(__AVR__)
-// [HOT-PATCH] mpack 1.1.0 defines generic C++ overloads for 'double' even when
-// MPACK_DOUBLE is 0. On AVR, double is just a float, so we map the missing 
-// function to its float equivalent to satisfy the compiler without modifying 
-// the external library files.
-#define mpack_write_double mpack_write_float
-#endif
-
 #include <mpack.h>
 #include <stddef.h>
 #include <stdint.h>

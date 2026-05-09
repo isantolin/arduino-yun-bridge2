@@ -8,7 +8,6 @@
 #include <Arduino.h>
 #undef min
 #undef max
-#undef round
 #include <etl/expected.h>
 #include <etl/span.h>
 #include <etl/string_view.h>

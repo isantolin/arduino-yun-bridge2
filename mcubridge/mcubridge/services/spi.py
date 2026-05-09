@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import structlog
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import msgspec
 from aiomqtt.message import Message
 
 from ..protocol import structures
 from ..protocol.protocol import Command
-from ..protocol.structures import TopicRoute
+from ..protocol.structures import MSGPACK_DECODER, MSGPACK_ENCODER, TopicRoute
 from ..protocol.topics import Topic, topic_path
 
 if TYPE_CHECKING:
@@ -23,6 +23,10 @@ logger = structlog.get_logger("mcubridge.service.spi")
 
 
 class SpiComponent:
+    # [SIL-2] Dynamic Discovery Mapping
+    MCU_MAP: Final = {
+        Command.CMD_SPI_TRANSFER_RESP: "handle_transfer_resp",
+    }
     """Handles SPI bus operations. [SIL-2]"""
 
     def __init__(
@@ -59,7 +63,7 @@ class SpiComponent:
                         )
                         return await self.serial_flow.send(
                             Command.CMD_SPI_SET_CONFIG.value,
-                            msgspec.msgpack.encode(packet),
+                            MSGPACK_ENCODER.encode(packet),
                         )
                     except (msgspec.DecodeError, ValueError, TypeError) as e:
                         logger.warning("Malformed SPI config request: %s", e)
@@ -68,7 +72,7 @@ class SpiComponent:
                     # Simple case: raw bytes to transfer
                     packet = structures.SpiTransferPacket(data=payload)
                     return await self.serial_flow.send(
-                        Command.CMD_SPI_TRANSFER.value, msgspec.msgpack.encode(packet)
+                        Command.CMD_SPI_TRANSFER.value, MSGPACK_ENCODER.encode(packet)
                     )
                 case _:
                     return False
@@ -79,7 +83,7 @@ class SpiComponent:
     async def handle_transfer_resp(self, seq_id: int, payload: bytes) -> bool:
         """Handle CMD_SPI_TRANSFER_RESP from MCU."""
         try:
-            packet = msgspec.msgpack.decode(
+            packet = MSGPACK_DECODER.decode(
                 payload, type=structures.SpiTransferResponsePacket
             )
             # Publish received bytes back to MQTT

@@ -5,58 +5,27 @@ between the Linux daemon and the Arduino MCU.
 
 [SIL-2 COMPLIANCE]
 The frame format is strictly defined to ensure:
-- Deterministic memory layout.
+- Deterministic memory layout using stdlib struct (C-backed).
 - Explicit CRC32 validation.
 - Zero boilerplate compatibility layers.
 """
 
 from __future__ import annotations
 
+import struct
 from binascii import crc32
+from typing import Final
+
 import msgspec
-from typing import TypeVar
-import construct
-from construct import (
-    Bytes,
-    Int8ub,
-    Int16ub,
-    Int32ub,
-    Struct,
-    this,
-    Checksum,
-    RawCopy,
-)
-from construct.core import ConstructError
 
 from . import protocol
 
-T = TypeVar("T")
-
-# [SIL-2] Declarative Frame Header Structure
-RPC_FRAME_HEADER = Struct(
-    "version" / Int8ub,
-    "payload_len" / Int16ub,
-    "command_id" / Int16ub,
-    "sequence_id" / Int16ub,
-)
-
-# [SIL-2] Full Frame Structure (Flat)
-RPC_FRAME_BODY = Struct(
-    "header" / RPC_FRAME_HEADER,
-    "payload" / Bytes(this.header.payload_len),
-)
-
-
-def _frame_crc(data: bytes) -> int:
-    """CRC32 checksum for frame integrity (SIL-2: explicit typed signature)."""
-    return crc32(data) & 0xFFFFFFFF
-
-
-# [SIL-2] Full Frame using native Checksum (Zero-Boilerplate)
-RPC_FRAME = Struct(
-    "body" / RawCopy(RPC_FRAME_BODY),
-    "crc" / Checksum(Int32ub, _frame_crc, this.body.data),
-)
+# [SIL-2] Frame Header Format: version(B), payload_len(H), command_id(H), sequence_id(H)
+# Big-endian (>) is mandatory for network/serial protocol integrity.
+_HEADER_FMT: Final[str] = ">BHHH"
+_HEADER_SIZE: Final[int] = struct.calcsize(_HEADER_FMT)
+_CRC_FMT: Final[str] = ">I"
+_CRC_SIZE: Final[int] = struct.calcsize(_CRC_FMT)
 
 
 class Frame(msgspec.Struct, frozen=True):
@@ -103,50 +72,65 @@ class Frame(msgspec.Struct, frozen=True):
                 working_payload = compressed
                 cmd_id |= protocol.CMD_FLAG_COMPRESSED
 
-        try:
-            return RPC_FRAME.build(
-                {
-                    "body": {
-                        "value": {
-                            "header": {
-                                "version": protocol.PROTOCOL_VERSION,
-                                "payload_len": len(working_payload),
-                                "command_id": cmd_id,
-                                "sequence_id": self.sequence_id,
-                            },
-                            "payload": working_payload,
-                        }
-                    }
-                }
-            )
-        except (ConstructError, ValueError, TypeError) as e:
-            raise ValueError(f"Failed to build frame: {e}") from e
+        # 1. Build Header
+        header = struct.pack(
+            _HEADER_FMT,
+            protocol.PROTOCOL_VERSION,
+            len(working_payload),
+            cmd_id,
+            self.sequence_id,
+        )
+
+        # 2. Body for CRC (Header + Payload)
+        body = header + working_payload
+
+        # 3. Calculate and Append CRC32
+        crc = crc32(body) & 0xFFFFFFFF
+        return body + struct.pack(_CRC_FMT, crc)
 
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
         """Parse *raw_frame_buffer* and create a :class:`Frame` with explicit RLE decompression."""
-        try:
-            if len(raw_frame_buffer) < 11:  # Header(7) + CRC(4)
-                raise ValueError("Frame too short")
+        if len(raw_frame_buffer) < (_HEADER_SIZE + _CRC_SIZE):
+            raise ValueError("Frame too short")
 
-            obj = RPC_FRAME.parse(raw_frame_buffer)
-            body = obj.body.value
-            cmd_id = int(body.header.command_id)
-            payload = body.payload
+        # 1. Split parts
+        header_raw = raw_frame_buffer[:_HEADER_SIZE]
+        version, payload_len, cmd_id, seq_id = struct.unpack(_HEADER_FMT, header_raw)
 
-            # [SIL-2] Explicit Decompression Logic
-            if cmd_id & protocol.CMD_FLAG_COMPRESSED:
-                from .rle import RLE_TRANSFORM
+        if version != protocol.PROTOCOL_VERSION:
+            raise ValueError(f"Protocol version mismatch: {version}")
 
-                payload = RLE_TRANSFORM.parse(payload)
-                cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
-
-            return cls(
-                command_id=cmd_id,
-                sequence_id=int(body.header.sequence_id),
-                payload=payload,
+        # Check total length
+        expected_len = _HEADER_SIZE + payload_len + _CRC_SIZE
+        if len(raw_frame_buffer) < expected_len:
+            raise ValueError(
+                f"Incomplete frame: got {len(raw_frame_buffer)}, expected {expected_len}"
             )
-        except getattr(construct, "ChecksumError", ConstructError) as e:
-            raise ValueError(f"CRC mismatch: {e}") from e
-        except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:
-            raise ValueError(f"Incomplete or malformed frame: {e}") from e
+
+        payload_raw = raw_frame_buffer[_HEADER_SIZE : _HEADER_SIZE + payload_len]
+        crc_raw = raw_frame_buffer[_HEADER_SIZE + payload_len : expected_len]
+
+        # 2. Verify CRC32
+        body = header_raw + payload_raw
+        calculated_crc = crc32(body) & 0xFFFFFFFF
+        (received_crc,) = struct.unpack(_CRC_FMT, crc_raw)
+
+        if calculated_crc != received_crc:
+            raise ValueError(
+                f"CRC mismatch: calculated {calculated_crc:08X}, received {received_crc:08X}"
+            )
+
+        # 3. Decompression
+        payload = bytes(payload_raw)
+        if cmd_id & protocol.CMD_FLAG_COMPRESSED:
+            from .rle import RLE_TRANSFORM
+
+            payload = RLE_TRANSFORM.parse(payload)
+            cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
+
+        return cls(
+            command_id=cmd_id,
+            sequence_id=seq_id,
+            payload=payload,
+        )

@@ -288,9 +288,15 @@ class RuntimeStateCollector(Collector):
             labels=["resource"],
         )
         sys_metrics = collect_system_metrics()
-        for key, val in sys_metrics.items():
-            if isinstance(val, (int, float)):
-                health.add_metric([key], float(val))
+        # [SIL-2] Iterative reduction: filter and add metrics without raw for-loops
+        list(
+            map(
+                lambda item: health.add_metric([item[0]], float(item[1])),
+                filter(
+                    lambda item: isinstance(item[1], (int, float)), sys_metrics.items()
+                ),
+            )
+        )
         yield health
 
         # 4. Supervisor Health (Dimensional)
@@ -299,8 +305,15 @@ class RuntimeStateCollector(Collector):
             "Total restarts per internal worker task",
             labels=["worker"],
         )
-        for name, stats in self._state.supervisor_stats.items():
-            super_health.add_metric([name], float(stats.restarts))
+        # [SIL-2] Iterative reduction
+        list(
+            map(
+                lambda item: super_health.add_metric(
+                    [item[0]], float(item[1].restarts)
+                ),
+                self._state.supervisor_stats.items(),
+            )
+        )
         yield super_health
 
 

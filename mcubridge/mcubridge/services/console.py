@@ -97,9 +97,8 @@ class ConsoleComponent:
                 len(payload),
                 payload[:32].hex() if len(payload) > 32 else payload.hex(),
             )
-            for chunk in chunks:
-                if chunk:
-                    self.state.console_to_mcu_queue.append(chunk)
+            # [SIL-2] Iterative reduction: bulk append valid chunks
+            list(map(self.state.console_to_mcu_queue.append, filter(None, chunks)))
             return
 
         for index, chunk in enumerate(chunks):

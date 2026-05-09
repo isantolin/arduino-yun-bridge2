@@ -14,6 +14,15 @@
 #include <etl/algorithm.h>
 #include <etl/iterator.h>
 
+#ifndef RPC_PROGMEM
+#if defined(ARDUINO_ARCH_AVR)
+#include <avr/pgmspace.h>
+#define RPC_PROGMEM PROGMEM
+#else
+#define RPC_PROGMEM
+#endif
+#endif
+
 namespace rpc {
 
 {% for const in constants -%}
@@ -25,11 +34,11 @@ inline constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits
 inline constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7U;
 
 {% if handshake.hkdf_salt -%}
-inline constexpr etl::array<uint8_t, {{ handshake.hkdf_salt_len }}U> RPC_HANDSHAKE_HKDF_SALT = { {{ handshake.hkdf_salt_bytes }} };
+inline constexpr etl::array<uint8_t, {{ handshake.hkdf_salt_len }}U> RPC_HANDSHAKE_HKDF_SALT RPC_PROGMEM = { {{ handshake.hkdf_salt_bytes }} };
 {%- endif %}
 
 {% if handshake.hkdf_info_auth -%}
-inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_auth_len }}U> RPC_HANDSHAKE_HKDF_INFO_AUTH = { {{ handshake.hkdf_info_auth_bytes }} };
+inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_auth_len }}U> RPC_HANDSHAKE_HKDF_INFO_AUTH RPC_PROGMEM = { {{ handshake.hkdf_info_auth_bytes }} };
 {%- endif %}
 
 {% for cap, val in capabilities.items() -%}

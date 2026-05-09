@@ -196,7 +196,6 @@ uint8_t getArchId() { return CURRENT_ARCH; }
     // [SIL-2] Caterina/Optiboot: set magic key and trigger 15 ms WDT reset.
     // The bootloader checks the token at 0x0800 on restart.
     *reinterpret_cast<volatile uint16_t*>(0x0800u) = 0x7777u;
-    wdt_enable(WDTO_15MS);
 #endif
   }
 
@@ -204,6 +203,8 @@ uint8_t getArchId() { return CURRENT_ARCH; }
     // [SIL-2] On host/test environment, exit instead of hanging CI.
     exit(0);
   }
+
+  Traits::reset();
 
   // Spin until WDT fires (intentional [[noreturn]] halt).
   // Includes memory fence to ensure clean transition.

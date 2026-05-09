@@ -220,8 +220,13 @@ class BridgeDaemon:
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
         except* Exception as exc_group:
-            for exc in exc_group.exceptions:
-                log.critical("Fatal task error: %s", exc, exc_info=exc)
+            # [SIL-2] Iterative reduction for exception logging
+            list(
+                map(
+                    lambda e: log.critical("Fatal task error: %s", e, exc_info=e),
+                    exc_group.exceptions,
+                )
+            )
             raise
         finally:
             self.state.cleanup()
@@ -298,7 +303,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--mqtt-tls", type=int, default=None, help="Use TLS for MQTT (0 or 1)"
     )
     parser.add_argument(
-        "--serial-shared-secret", default=None, help="Shared secret for serial link"
+        "--serial-shared_secret", default=None, help="Shared secret for serial link"
     )
     parser.add_argument(
         "--allowed-commands",

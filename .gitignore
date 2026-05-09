@@ -33,6 +33,7 @@ venv/
 .tox/
 .dummy_libs/
 .tmp_tests/
+sample-build/
 
 # Generated type stubs (dynamic)
 typings/diskcache/

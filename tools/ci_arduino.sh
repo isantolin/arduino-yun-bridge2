@@ -22,10 +22,6 @@ if [ ! -d "$USER_LIB_DIR" ]; then
     USER_LIB_DIR="$HOME/Documents/Arduino/libraries"
 fi
 
-# Define explicit include paths for official libraries
-ETL_INC="$USER_LIB_DIR/Embedded_Template_Library/include"
-WOLF_INC="$USER_LIB_DIR/wolfSSL/src"
-
 # Update core index
 echo "Updating core index..."
 arduino-cli core update-index || { echo "Failed to update core index"; exit 1; }
@@ -38,8 +34,19 @@ arduino-cli core install arduino:avr || { echo "Failed to install arduino:avr co
 echo "Installing official wolfSSL library..."
 arduino-cli lib install wolfSSL || { echo "Failed to install wolfSSL"; exit 1; }
 
-# echo "Installing official Embedded Template Library..."
-# arduino-cli lib install "Embedded Template Library ETL"
+# Find actual wolfSSL installation path (casing varies)
+WOLF_ROOT=""
+if [ -d "$USER_LIB_DIR/wolfSSL" ]; then
+    WOLF_ROOT="$USER_LIB_DIR/wolfSSL"
+elif [ -d "$USER_LIB_DIR/wolfssl" ]; then
+    WOLF_ROOT="$USER_LIB_DIR/wolfssl"
+fi
+
+if [ -z "$WOLF_ROOT" ]; then
+    echo "Error: wolfSSL library not found after installation."
+    exit 1
+fi
+WOLF_INC="$WOLF_ROOT/src"
 
 # Install dependencies
 echo "Generating protocol bindings..."
@@ -63,12 +70,10 @@ cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$WOLF_INC/user_settings
 
 # [HOT-PATCH] Fix gmtime_r conflict in wc_port.c
 echo "Patching wc_port.c to avoid gmtime_r conflict..."
-if [ -f "$USER_LIB_DIR/wolfSSL/src/wolfcrypt/src/wc_port.c" ]; then
-    sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$USER_LIB_DIR/wolfSSL/src/wolfcrypt/src/wc_port.c"
-elif [ -f "$USER_LIB_DIR/wolfssl/src/wolfcrypt/src/wc_port.c" ]; then
-    sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$USER_LIB_DIR/wolfssl/src/wolfcrypt/src/wc_port.c"
+if [ -f "$WOLF_ROOT/src/wolfcrypt/src/wc_port.c" ]; then
+    sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$WOLF_ROOT/src/wolfcrypt/src/wc_port.c"
 else
-    echo "Warning: wc_port.c not found for patching."
+    echo "Warning: wc_port.c not found for patching at $WOLF_ROOT/src/wolfcrypt/src/wc_port.c"
 fi
 
 # Define library path (current repo's library folder)

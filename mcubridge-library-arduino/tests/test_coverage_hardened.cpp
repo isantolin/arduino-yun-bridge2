@@ -81,7 +81,8 @@ void test_filesystem_read_edge_cases() {
     
     // Trigger FileSystem read chunks with timeout/error simulation
     const char* file_path_str = "test.txt";
-    rpc::payload::FileRead req = {etl::string_view(file_path_str)};
+    etl::string_view path_sv(file_path_str);
+    rpc::payload::FileRead req = {etl::span<const char>(path_sv.data(), path_sv.size())};
     
     // This will use the new CounterIterator in _onRead
     FileSystem._onRead(req);

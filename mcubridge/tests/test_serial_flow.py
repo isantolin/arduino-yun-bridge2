@@ -23,8 +23,9 @@ async def _send_ack(controller: SerialFlowController, command_id: int) -> None:
 
 def test_serial_flow_success_path(
     runtime_state: RuntimeState,
-    serial_flow_logger: logging.Logger,
 ) -> None:
+    serial_flow_logger = logging.getLogger("mcubridge.test.flow")
+
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
@@ -56,8 +57,9 @@ def test_serial_flow_success_path(
 
 def test_serial_flow_records_retry_metrics(
     runtime_state: RuntimeState,
-    serial_flow_logger: logging.Logger,
 ) -> None:
+    serial_flow_logger = logging.getLogger("mcubridge.test.flow")
+
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,
@@ -96,8 +98,9 @@ def test_serial_flow_records_retry_metrics(
 
 def test_serial_flow_records_failure_metrics(
     runtime_state: RuntimeState,
-    serial_flow_logger: logging.Logger,
 ) -> None:
+    serial_flow_logger = logging.getLogger("mcubridge.test.flow")
+
     async def _run() -> None:
         controller = SerialFlowController(
             ack_timeout=0.05,

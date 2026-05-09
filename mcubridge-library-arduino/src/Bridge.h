@@ -43,6 +43,14 @@
 #include "protocol/rpc_structs.h"
 #include "security/security.h"
 
+// [SIL-2] Template De-bloating: Extern declarations
+namespace etl {
+  extern template class span<uint8_t>;
+  extern template class span<const uint8_t>;
+  extern template class span<char>;
+  extern template class span<const char>;
+}
+
 namespace rpc {
 class Serializable {
  public:
@@ -86,14 +94,14 @@ class BridgeClass {
   bool isSynchronized() const;
   void enterSafeState();
 
-  template <rpc::StatusCode S>
-  void emitStatus() {
-    emitStatus(S, etl::span<const uint8_t>());
-  }
-
-  void emitStatus(rpc::StatusCode s, etl::string_view m = {});
+  void emitStatus(rpc::StatusCode s, etl::string_view m);
   void emitStatus(rpc::StatusCode s, etl::span<const uint8_t> p);
   void emitStatus(rpc::StatusCode s, const __FlashStringHelper* m);
+
+  // Non-template wrapper to reduce bloat
+  void emitStatus(rpc::StatusCode s) {
+    emitStatus(s, etl::span<const uint8_t>());
+  }
 
   void signalXoff();
   void signalXon();
@@ -306,7 +314,7 @@ class BridgeClass {
       if (ctx.requires_ack)
         (void)sendFrame(rpc::StatusCode::STATUS_ACK, ctx.sequence_id);
     } else
-      emitStatus<rpc::StatusCode::STATUS_ERROR>();
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
   template <typename F>
   void _withResponse(const bridge::router::CommandContext& ctx, F handler) {
@@ -325,7 +333,7 @@ class BridgeClass {
         T resp = {static_cast<decltype(T::value)>(read(res->pin))};
         (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
       } else
-        emitStatus<rpc::StatusCode::STATUS_ERROR>();
+        emitStatus(rpc::StatusCode::STATUS_ERROR);
     });
   }
   void _clearPendingTxQueue();

@@ -317,7 +317,7 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   if (_command_handler.is_valid())
     _command_handler(*ctx.frame);
   else
-    emitStatus<rpc::StatusCode::STATUS_ERROR>();
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
 
 void BridgeClass::_onStartupStabilized() {
@@ -528,7 +528,7 @@ void BridgeClass::_handleSetPinModeCommand(
     if (bridge::hal::isValidPin(m.pin))
       ::pinMode(m.pin, m.mode);
     else
-      emitStatus<rpc::StatusCode::STATUS_ERROR>();
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
   });
 }
 
@@ -538,7 +538,7 @@ void BridgeClass::_handleDigitalWriteCommand(
     if (bridge::hal::isValidPin(m.pin))
       ::digitalWrite(m.pin, m.value);
     else
-      emitStatus<rpc::StatusCode::STATUS_ERROR>();
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
   });
 }
 
@@ -548,7 +548,7 @@ void BridgeClass::_handleAnalogWriteCommand(
     if (bridge::hal::isValidPin(m.pin))
       ::analogWrite(m.pin, m.value);
     else
-      emitStatus<rpc::StatusCode::STATUS_ERROR>();
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
   });
 }
 
@@ -677,7 +677,7 @@ void BridgeClass::_handleGetFreeMemory(
 void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   auto res = rpc::Payload::parse<rpc::payload::LinkSync>(*ctx.frame);
   if (!res) {
-    emitStatus<rpc::StatusCode::STATUS_ERROR>();
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
   }
   const auto& msg = res.value();
@@ -708,7 +708,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
                                      rpc::RPC_HANDSHAKE_TAG_LENGTH),
             etl::span<const uint8_t>(msg.tag.data(), 16))) {
       _fsm.receive(bridge::fsm::EvHandshakeFailed());
-      emitStatus<rpc::StatusCode::STATUS_ERROR>();
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
     }
     etl::copy_n(full_tag.begin(), rpc::RPC_HANDSHAKE_TAG_LENGTH,
@@ -800,7 +800,7 @@ void BridgeClass::_handleSpiTransfer(
       size_t transferred =
           SPIService.transfer(etl::span<uint8_t>(_rx_storage.data(), len));
       if (transferred == 0) {
-        emitStatus<rpc::StatusCode::STATUS_ERROR>();
+        emitStatus(rpc::StatusCode::STATUS_ERROR);
         return;
       }
       rpc::payload::SpiTransferResponse resp = {};
@@ -824,7 +824,7 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
     fprintf(stderr, "[MCU FSM] parse error %d\\n", (int)res.error());
 #endif
     _last_parse_error = res.error();
-    emitStatus<rpc::StatusCode::STATUS_MALFORMED>();
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     return;
   }
 #if BRIDGE_HOST_TEST
@@ -836,7 +836,7 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
   auto dec = _decompressFrame(res.value(), eff);
   if (!dec) {
     _last_parse_error = dec.error();
-    emitStatus<rpc::StatusCode::STATUS_MALFORMED>();
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     return;
   }
   _dispatchCommand(eff);

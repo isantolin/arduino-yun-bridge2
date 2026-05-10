@@ -192,9 +192,7 @@ class RuntimeState(msgspec.Struct):
         default_factory=lambda: cast(dict[str, int], {})
     )
     allow_non_tmp_paths: bool = False
-    datastore: dict[str, Any] = msgspec.field(
-        default_factory=lambda: cast(dict[str, Any], {})
-    )
+    datastore_cache: diskcache.Cache | None = None
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
     mailbox_queue: DequeLike[bytes] = msgspec.field(
@@ -345,7 +343,14 @@ class RuntimeState(msgspec.Struct):
         )
 
     def configure(self, config: RuntimeConfig) -> None:
+        _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
+        
         # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
+        if self.datastore_cache is not None:
+            with _sup:
+                cast(Any, self.datastore_cache).close()
+            self.datastore_cache = None
+
         if self._mailbox_queue_cache is not None:
             cast(Any, self._mailbox_queue_cache).close()
             self._mailbox_queue_cache = None
@@ -417,6 +422,18 @@ class RuntimeState(msgspec.Struct):
         self.mailbox_incoming_queue, self._mailbox_incoming_queue_cache = _create_spool(
             "mailbox_in"
         )
+        
+        # [SIL-2] Initialize datastore with diskcache for ACID persistence
+        ds_dir = None
+        if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
+            ds_dir = Path(self.file_system_root) / "datastore"
+        
+        if ds_dir:
+            try:
+                ds_dir.mkdir(parents=True, exist_ok=True)
+                self.datastore_cache = diskcache.Cache(str(ds_dir), size_limit=1024 * 1024)
+            except (OSError, RuntimeError) as e:
+                logger.warning("Could not initialize datastore diskcache: %s", e)
 
     def mark_supervisor_healthy(self, name: str) -> None:
         """Reset backoff status for a healthy supervisor."""
@@ -638,6 +655,11 @@ class RuntimeState(msgspec.Struct):
         # connections.
         # NOTE: Use "is not None" — diskcache.Cache.__bool__ returns False for
         # empty caches, so "if cache:" would skip close() on empty queues.
+        if self.datastore_cache is not None:
+            with _sup:
+                cast(Any, self.datastore_cache).close()
+            self.datastore_cache = None
+
         if self._mailbox_queue_cache is not None:
             with _sup:
                 cast(Any, self._mailbox_queue_cache).close()

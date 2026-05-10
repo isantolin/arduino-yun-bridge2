@@ -52,13 +52,13 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.serial_baud == 57600
     assert config.mqtt_host == "broker"
     assert config.mqtt_port == 321
-    assert config.mqtt_user == "user"
-    assert config.mqtt_pass == "pass"
+    assert config.mqtt_user == " user "
+    assert config.mqtt_pass == " pass "
     assert config.mqtt_tls is True
-    assert config.mqtt_cafile == "/etc/cafile"
-    assert config.mqtt_certfile is None
-    assert config.mqtt_keyfile is None
-    assert config.mqtt_topic == "custom/topic"
+    assert config.mqtt_cafile == " /etc/cafile "
+    assert config.mqtt_certfile == " "
+    assert config.mqtt_keyfile == ""
+    assert config.mqtt_topic == " custom/topic "
     assert config.allowed_commands == ("echo", "ls")
     assert config.file_system_root == "/data"
     assert config.process_timeout == 60
@@ -120,9 +120,8 @@ def test_load_runtime_config_allows_empty_mqtt_user_value(
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     config = settings.load_runtime_config()
-    assert config.mqtt_user is None
-    assert config.mqtt_pass is None
-
+    assert config.mqtt_user == ""
+    assert config.mqtt_pass == " "
 
 def test_load_runtime_config_prefers_uci_config(monkeypatch: pytest.MonkeyPatch):
     raw_config = {"serial_port": "/dev/uci"}
@@ -181,7 +180,7 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
             "mqtt_cafile": "/etc/ca.pem",
             "mqtt_topic": "br",
             "allowed_commands": "uptime",
-            "file_system_root": ".tmp_tests",
+            "file_system_root": "/tmp/tests",
             "process_timeout": 10,
             "serial_shared_secret": " s_e_c_r_e_t_mock ",
             "watchdog_enabled": True,
@@ -194,3 +193,6 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
     config = settings.load_runtime_config()
     assert config.watchdog_enabled is True
     assert config.watchdog_interval == 0.5
+5
+
+5

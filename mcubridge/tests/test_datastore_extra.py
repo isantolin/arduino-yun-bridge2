@@ -88,7 +88,7 @@ async def test_datastore_handle_get_truncation() -> None:
         mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
-        state.datastore["long_key"] = "a" * 300
+        state.datastore_cache["long_key"] = "a" * 300
 
         from mcubridge.protocol.structures import DatastoreGetPacket
 
@@ -167,7 +167,7 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
         assert not mqtt_flow.enqueue_mqtt.called
 
         # 4. Echo suppression on GET
-        state.datastore["echo_key"] = "val"
+        state.datastore_cache["echo_key"] = b"val"
         await comp.handle_mqtt(
             TopicRoute(
                 "br/d/get/echo_key",
@@ -187,9 +187,8 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
         assert not mqtt_flow.enqueue_mqtt.called
 
         # 5. Type coercion from int
-        state.datastore["int_key"] = 42  # type: ignore
-        await comp.handle_mqtt(
-            TopicRoute(
+        state.datastore_cache["int_key"] = b"42"
+        await comp.handle_mqtt(            TopicRoute(
                 "br/d/get/int_key/request",
                 "br",
                 Topic.DATASTORE,
@@ -247,7 +246,7 @@ async def test_datastore_mqtt_put_too_large() -> None:
             ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
-        assert long_key not in state.datastore
+        assert long_key not in state.datastore_cache
 
         # Value too large
         long_val = b"v" * 300
@@ -268,7 +267,7 @@ async def test_datastore_mqtt_put_too_large() -> None:
             ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
-        assert "key" not in state.datastore
+        assert "key" not in state.datastore_cache
 
     finally:
         state.cleanup()

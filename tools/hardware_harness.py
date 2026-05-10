@@ -90,62 +90,71 @@ def load_manifest(path: Path) -> list[Target]:
                 {hint} and edit it with your device list.
                 """).strip())
 
-    data = msgspec.toml.decode(path.read_text())
-    top = cast(dict[str, Any], data)
-    defaults = cast(dict[str, Any], top.get("defaults", {}))
+class ManifestDefaults(msgspec.Struct):
+    user: str | None = None
+    timeout: float | None = None
+    retries: int = 0
+    ssh: list[str] | str | None = None
+    tags: list[str] | str | None = None
 
-    targets_raw = top.get("targets")
-    if not targets_raw:
+class ManifestTarget(msgspec.Struct):
+    name: str
+    host: str | None = None
+    local: bool = False
+    user: str | None = None
+    ssh: list[str] | str | None = None
+    tags: list[str] | str | None = None
+    extra_args: list[str] | str | None = None
+    timeout: float | None = None
+    retries: int | None = None
+    env: dict[str, Any] = {}
+    notes: str | None = None
+
+class Manifest(msgspec.Struct):
+    targets: list[ManifestTarget]
+    defaults: ManifestDefaults = msgspec.field(default_factory=ManifestDefaults)
+
+def parse_manifest(path: Path) -> list[Target]:
+    if not path.is_file():
+        raise ValueError(
+            textwrap.dedent(f"""
+                Manifest not found at {path}
+                To create one, copy hardware/targets.example.toml to {path}
+                and edit it with your device list.
+                """).strip())
+
+    manifest = msgspec.toml.decode(path.read_bytes(), type=Manifest)
+
+    if not manifest.targets:
         raise ValueError("Manifest must define at least one [[targets]] entry")
 
-    default_user: str | None = defaults.get("user")
-    default_timeout: float | None = defaults.get("timeout")
-    default_retries = int(defaults.get("retries", 0))
-    default_ssh = _coerce_list(defaults.get("ssh"))
-    default_tags = _coerce_tags(defaults.get("tags"))
+    default_ssh = _coerce_list(manifest.defaults.ssh)
+    default_tags = _coerce_tags(manifest.defaults.tags)
 
     parsed: list[Target] = []
     seen_names: set[str] = set()
-    for raw_entry in targets_raw:
-        if not isinstance(raw_entry, dict):
-            raise ValueError("Each [[targets]] entry must be a table")
-        entry = cast(dict[str, Any], raw_entry)
-        name = str(entry.get("name")) if entry.get("name") else None
-        if not name:
+    for entry in manifest.targets:
+        if not entry.name:
             raise ValueError("Found target without a name")
-        if name in seen_names:
-            raise ValueError(f"Duplicated target name: {name}")
-        seen_names.add(name)
+        if entry.name in seen_names:
+            raise ValueError(f"Duplicated target name: {entry.name}")
+        seen_names.add(entry.name)
 
-        local = bool(entry.get("local", False))
-        host: str | None = entry.get("host")
-        if not local and not host:
-            raise ValueError(f"Target {name} must define 'host' or set local=true")
+        if not entry.local and not entry.host:
+            raise ValueError(f"Target {entry.name} must define 'host' or set local=true")
 
-        user: str | None = entry.get("user", default_user)
-        ssh_value = entry.get("ssh")
-        ssh_args = (
-            _coerce_list(ssh_value) if ssh_value is not None else list(default_ssh)
-        )
-        tags = default_tags | _coerce_tags(entry.get("tags"))
-        extra_value = entry.get("extra_args")
-        extra_args = _coerce_list(extra_value) if extra_value is not None else []
-        timeout_value = entry.get("timeout")
-        if timeout_value is None:
-            timeout_val = (
-                float(default_timeout) if default_timeout is not None else None
-            )
-        else:
-            timeout_val = float(timeout_value)
-        retries = int(entry.get("retries", default_retries))
-        env_raw = cast(dict[str, Any], entry.get("env", {}))
-        env = {str(k): str(v) for k, v in env_raw.items()}
-        notes: str | None = entry.get("notes")
+        user = entry.user if entry.user is not None else manifest.defaults.user
+        ssh_args = _coerce_list(entry.ssh) if entry.ssh is not None else list(default_ssh)
+        tags = default_tags | _coerce_tags(entry.tags)
+        extra_args = _coerce_list(entry.extra_args) if entry.extra_args is not None else []
+        timeout_val = entry.timeout if entry.timeout is not None else manifest.defaults.timeout
+        retries = entry.retries if entry.retries is not None else manifest.defaults.retries
+        env = {str(k): str(v) for k, v in entry.env.items()}
 
         parsed.append(
             Target(
-                name=name,
-                host=str(host) if host else None,
+                name=entry.name,
+                host=str(entry.host) if entry.host else None,
                 user=str(user) if user else None,
                 ssh_args=ssh_args,
                 extra_args=extra_args,

@@ -60,7 +60,9 @@ class DatastoreComponent:
         key = packet.key
         value_bytes = bytes(packet.value)
 
-        self.state.datastore[key] = value_bytes
+        if self.state.datastore_cache is not None:
+            self.state.datastore_cache[key] = value_bytes
+
         await self._publish_datastore_value(key, value_bytes)
         return True
 
@@ -81,22 +83,22 @@ class DatastoreComponent:
             return False
 
         key = packet.key
-        val: Any = self.state.datastore.get(key, b"")
+        
+        # [SIL-2] Zero Wrapper datastore get
+        val_bytes: bytes = b""
+        if self.state.datastore_cache is not None:
+            v = self.state.datastore_cache.get(key, b"")
+            if isinstance(v, bytes):
+                val_bytes = v
+            elif isinstance(v, str):
+                val_bytes = v.encode("utf-8")
 
-        # [SIL-2] Type-safe value coercion
-        value_bytes = val.encode("utf-8") if isinstance(val, str) else bytes(val)
-
-        if len(value_bytes) > 255:
-            logger.warning(
-                "Datastore value truncated for key %s (%d bytes)",
-                key,
-                len(value_bytes),
-            )
-            value_bytes = value_bytes[:255]
+        if len(val_bytes) > 255:
+            val_bytes = val_bytes[:255]
 
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
         response_payload = msgspec.msgpack.encode(
-            DatastoreGetResponsePacket(value=msgspec.Raw(value_bytes))
+            DatastoreGetResponsePacket(value=msgspec.Raw(val_bytes))
         )
 
         send_ok = await self.serial_flow.send(
@@ -104,7 +106,7 @@ class DatastoreComponent:
             response_payload,
         )
         if send_ok:
-            await self._publish_datastore_value(key, value_bytes)
+            await self._publish_datastore_value(key, val_bytes)
         return send_ok
 
     async def handle_mqtt(
@@ -153,7 +155,8 @@ class DatastoreComponent:
             )
             return
 
-        self.state.datastore[key] = value_bytes
+        if self.state.datastore_cache is not None:
+            self.state.datastore_cache[key] = value_bytes
         await self._publish_datastore_value(
             key,
             value_bytes,
@@ -174,7 +177,9 @@ class DatastoreComponent:
             )
             return
 
-        cached_value = self.state.datastore.get(key)
+        cached_value: bytes | str | None = None
+        if self.state.datastore_cache is not None:
+            cached_value = self.state.datastore_cache.get(key)
         if cached_value is None:
             if is_request:
                 await self._publish_datastore_value(

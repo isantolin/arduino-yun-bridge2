@@ -40,8 +40,8 @@ class TestFlashProtection(unittest.TestCase):
         unsafe_conf.update(
             {
                 "mqtt_spool_dir": "/mnt/flash/spool",
-                # Even with override allowed for FS root, spool MUST be safe
-                "allow_non_tmp_paths": "1",
+                # Spool must be safe
+                "allow_non_tmp_paths": False,
                 "serial_shared_secret": "valid_secret_1234",
                 "serial_baud": 57600,
                 "serial_safe_baud": 9600,

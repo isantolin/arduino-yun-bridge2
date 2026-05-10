@@ -24,61 +24,18 @@ from mcubridge.protocol.structures import RuntimeConfig
 logger = structlog.get_logger(__name__)
 
 
-def _normalize_raw_config(values: dict[str, Any]) -> dict[str, Any]:
-    """[SIL-2] Normalize raw configuration values before schema validation."""
-    normalized = values.copy()
-
-    # 1. String Stripping & Optional normalization
-    str_keys = frozenset(
-        {
-            "serial_port",
-            "mqtt_host",
-            "mqtt_user",
-            "mqtt_pass",
-            "mqtt_cafile",
-            "mqtt_certfile",
-            "mqtt_keyfile",
-        }
-    )
-    normalized.update(
-        {
-            k: (normalized[k].strip() or None)
-            for k in str_keys
-            if k in normalized and isinstance(normalized[k], str)
-        }
-    )
-
-    # 2. Path Resolution (Atomic expansion)
-    if "file_system_root" in normalized and isinstance(
-        normalized["file_system_root"], str
-    ):
-        normalized["file_system_root"] = str(
-            Path(normalized["file_system_root"]).expanduser().resolve()
-        )
-
-    # 3. Secret Coercion
-    if "serial_shared_secret" in normalized:
-        secret = normalized["serial_shared_secret"]
-        if isinstance(secret, str):
-            normalized["serial_shared_secret"] = secret.strip().encode("utf-8")
-
-    # 4. MQTT Topic Normalization
-    if "mqtt_topic" in normalized:
-        raw_topic = str(normalized["mqtt_topic"]).strip()
-        segments = tuple(filter(None, raw_topic.split("/")))
-        if segments:
-            normalized["mqtt_topic"] = "/".join(segments)
-
-    # 5. Allowed Commands Normalization (Atomic coercion)
-    if "allowed_commands" in normalized:
-        cmds = normalized["allowed_commands"]
-        if isinstance(cmds, str):
-            normalized["allowed_commands"] = tuple(cmds.split())
-        elif cmds is None:
-            normalized["allowed_commands"] = ()
-
-    return normalized
-
+def _dec_hook(type_type: Any, obj: Any) -> Any:
+    """[SIL-2] msgspec dec_hook for zero-wrapper coercion."""
+    types = getattr(type_type, "__args__", (type_type,))
+    if bytes in types and isinstance(obj, str):
+        return obj.strip().encode("utf-8")
+    if tuple in types or getattr(type_type, "__origin__", type_type) is tuple:
+        if isinstance(obj, str):
+            return tuple(obj.split())
+    if str in types and isinstance(obj, str):
+        val = obj.strip()
+        return str(Path(val).expanduser().resolve()) if ("~" in val or "/" in val) and "\n" not in val else val or None
+    raise TypeError(f"Cannot coerce {obj!r} to {type_type}")
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
     """Load configuration from defaults and UCI (SIL 2).
@@ -128,13 +85,15 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
         source = "cli"
     _config_source[0] = source
 
-    # [SIL-2] Pre-conversion Normalization
-    normalized_values = _normalize_raw_config(raw_values)
+    if isinstance(raw_values.get("allowed_commands"), str):
+        raw_values["allowed_commands"] = raw_values["allowed_commands"].split()
+
+    if isinstance(raw_values.get("serial_shared_secret"), str):
+        raw_values["serial_shared_secret"] = raw_values["serial_shared_secret"].strip().encode("utf-8")
 
     try:
         # [SIL-2] Holistic Validation via msgspec.Struct.
-        # strict=True ensures configuration integrity.
-        return msgspec.convert(normalized_values, RuntimeConfig, strict=True)
+        return msgspec.convert(raw_values, RuntimeConfig, strict=False, dec_hook=_dec_hook)
     except (msgspec.ValidationError, ValueError) as e:
         if source == "uci":
             # [SIL-2] Deterministic Failure: If UCI is present but invalid, abort.

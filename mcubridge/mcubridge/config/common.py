@@ -62,16 +62,7 @@ def get_default_config() -> dict[str, Any]:
     import msgspec
     from mcubridge.protocol.structures import RuntimeConfig
 
-    return {
-        field.name: (
-            field.default_factory()
-            if field.default is msgspec.NODEFAULT
-            else field.default
-        )
-        for field in msgspec.structs.fields(RuntimeConfig)
-        if field.default is not msgspec.NODEFAULT
-        or field.default_factory is not msgspec.NODEFAULT
-    }
+    return msgspec.structs.asdict(RuntimeConfig())
 
 
 __all__: Final[tuple[str, ...]] = (

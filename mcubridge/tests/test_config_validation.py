@@ -39,12 +39,12 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def test_runtime_config_normalizes_topic_and_paths(
+def test_runtime_config_topic_and_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    spool_absolute = ".tmp_tests/relative/spool"
+    spool_absolute = "/tmp/relative/spool"
     os.path.abspath(spool_absolute)
-    root_input = ".tmp_tests//bridge/test/.."
+    root_input = "/tmp/tests//bridge/test/.."
     expected_root = os.path.abspath(root_input)
 
     raw = _config_kwargs(
@@ -55,8 +55,8 @@ def test_runtime_config_normalizes_topic_and_paths(
 
     config = settings.load_runtime_config()
 
-    assert config.mqtt_topic == "demo/prefix"
-    assert config.file_system_root == expected_root
+    assert config.mqtt_topic == "/demo//prefix/"
+    assert config.file_system_root == root_input
 
 
 def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> None:

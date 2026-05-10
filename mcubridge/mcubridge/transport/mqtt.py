@@ -162,7 +162,7 @@ class MqttTransport:
                 try:
                     if self.service is not None:
                         await self.service.handle_mqtt_message(message)
-                except Exception as e:
+                except (msgspec.DecodeError, msgspec.ValidationError, RuntimeError, ValueError, TypeError) as e:
                     logger.error(
                         "Error processing MQTT message on topic %s: %s", topic_str, e
                     )

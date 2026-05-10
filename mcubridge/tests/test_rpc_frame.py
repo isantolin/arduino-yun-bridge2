@@ -12,7 +12,7 @@ def test_build_and_parse_round_trip() -> None:
         len(raw) == protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
     )
 
-    parsed_command, parsed_seq, parsed_payload = Frame.parse(raw)
+    parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
     assert parsed_command == TEST_CMD_ID
     assert parsed_seq == 0
     assert parsed_payload == payload
@@ -20,7 +20,7 @@ def test_build_and_parse_round_trip() -> None:
 
 def test_empty_payload_round_trip() -> None:
     raw = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=b"").build()
-    parsed_command, parsed_seq, parsed_payload = Frame.parse(raw)
+    parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
     assert parsed_command == TEST_CMD_ID
     assert parsed_seq == 0
     assert parsed_payload == b""
@@ -29,7 +29,7 @@ def test_empty_payload_round_trip() -> None:
 def test_max_payload_round_trip() -> None:
     payload = b"p" * protocol.MAX_PAYLOAD_SIZE
     raw = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=payload).build()
-    parsed_command, parsed_seq, parsed_payload = Frame.parse(raw)
+    parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
     assert parsed_command == TEST_CMD_ID
     assert parsed_seq == 0
     assert parsed_payload == payload

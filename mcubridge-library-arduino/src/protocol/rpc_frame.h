@@ -15,11 +15,15 @@
 
 namespace rpc {
 
+inline constexpr size_t AEAD_NONCE_SIZE = 12;
+inline constexpr size_t AEAD_TAG_SIZE = 16;
 inline constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 inline constexpr size_t FRAME_HEADER_SIZE = 7;
-inline constexpr size_t MIN_FRAME_SIZE = FRAME_HEADER_SIZE + CRC_TRAILER_SIZE;
+inline constexpr size_t MIN_FRAME_SIZE =
+    FRAME_HEADER_SIZE + AEAD_NONCE_SIZE + AEAD_TAG_SIZE + CRC_TRAILER_SIZE;
 inline constexpr size_t MAX_FRAME_SIZE =
-    FRAME_HEADER_SIZE + MAX_PAYLOAD_SIZE + CRC_TRAILER_SIZE;
+    FRAME_HEADER_SIZE + AEAD_NONCE_SIZE + MAX_PAYLOAD_SIZE + AEAD_TAG_SIZE +
+    CRC_TRAILER_SIZE;
 inline constexpr size_t MAX_RAW_FRAME_SIZE = MAX_FRAME_SIZE;
 
 #pragma pack(push, 1)
@@ -35,11 +39,13 @@ static_assert(sizeof(FrameHeader) == 7, "FrameHeader must be exactly 7 bytes");
 
 struct Frame {
   FrameHeader header;
+  etl::array<uint8_t, AEAD_NONCE_SIZE> nonce;
   etl::span<const uint8_t> payload;
+  etl::array<uint8_t, AEAD_TAG_SIZE> tag;
   uint32_t crc;
 };
 
-enum class FrameError { NONE = 0, CRC_MISMATCH, MALFORMED, OVERFLOW };
+enum class FrameError { NONE = 0, CRC_MISMATCH, MALFORMED, OVERFLOW, AUTH_FAIL };
 
 template <typename... Args>
 inline constexpr bool is_any_of(uint16_t id, Args... args) {
@@ -65,7 +71,9 @@ inline uint32_t compute(const Frame& f) {
   etl::array<uint8_t, FRAME_HEADER_SIZE> header_buf;
   serialize_header(f.header, header_buf);
   crc.add(header_buf.begin(), header_buf.end());
+  crc.add(f.nonce.begin(), f.nonce.end());
   crc.add(f.payload.begin(), f.payload.end());
+  crc.add(f.tag.begin(), f.tag.end());
   return crc.value();
 }
 }  // namespace checksum
@@ -73,17 +81,29 @@ inline uint32_t compute(const Frame& f) {
 class FrameParser {
  public:
   static size_t serialize(const Frame& f, etl::span<uint8_t> buffer) {
-    if (buffer.size() <
-        (sizeof(FrameHeader) + f.payload.size() + CRC_TRAILER_SIZE))
-      return 0;
+    const size_t required = FRAME_HEADER_SIZE + AEAD_NONCE_SIZE +
+                            f.payload.size() + AEAD_TAG_SIZE +
+                            CRC_TRAILER_SIZE;
+    if (buffer.size() < required) return 0;
+
     checksum::serialize_header(f.header, buffer.subspan(0, FRAME_HEADER_SIZE));
+
+    etl::copy(f.nonce.begin(), f.nonce.end(),
+              buffer.begin() + FRAME_HEADER_SIZE);
+
     etl::copy_n(f.payload.data(), f.payload.size(),
-                buffer.begin() + FRAME_HEADER_SIZE);
-    etl::byte_stream_writer writer(buffer.data() + FRAME_HEADER_SIZE +
-                                       f.payload.size(),
-                                   CRC_TRAILER_SIZE, etl::endian::big);
+                buffer.begin() + FRAME_HEADER_SIZE + AEAD_NONCE_SIZE);
+
+    etl::copy(f.tag.begin(), f.tag.end(),
+              buffer.begin() + FRAME_HEADER_SIZE + AEAD_NONCE_SIZE +
+                  f.payload.size());
+
+    etl::byte_stream_writer writer(
+        buffer.data() + FRAME_HEADER_SIZE + AEAD_NONCE_SIZE + f.payload.size() +
+            AEAD_TAG_SIZE,
+        CRC_TRAILER_SIZE, etl::endian::big);
     writer.write<uint32_t>(f.crc);
-    return FRAME_HEADER_SIZE + f.payload.size() + CRC_TRAILER_SIZE;
+    return required;
   }
 
   etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer) {
@@ -113,9 +133,22 @@ class FrameParser {
         (static_cast<size_t>(result.header.payload_length) + MIN_FRAME_SIZE))
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
+    // Read Nonce
+    etl::copy_n(buffer.begin() + FRAME_HEADER_SIZE, AEAD_NONCE_SIZE,
+                result.nonce.begin());
+
+    // Read Payload (Encrypted)
     result.payload =
-        buffer.subspan(FRAME_HEADER_SIZE, result.header.payload_length);
-    reader.skip<uint8_t>(result.header.payload_length);
+        buffer.subspan(FRAME_HEADER_SIZE + AEAD_NONCE_SIZE,
+                       static_cast<size_t>(result.header.payload_length));
+
+    // Read Tag
+    etl::copy_n(buffer.begin() + FRAME_HEADER_SIZE + AEAD_NONCE_SIZE +
+                    result.header.payload_length,
+                AEAD_TAG_SIZE, result.tag.begin());
+
+    reader.skip<uint8_t>(AEAD_NONCE_SIZE + result.header.payload_length +
+                         AEAD_TAG_SIZE);
     const auto crc_opt = reader.read<uint32_t>();
 
 #if BRIDGE_HOST_TEST
@@ -124,12 +157,6 @@ class FrameParser {
               "[PARSE] CRC MISMATCH! Size: %zu, Calc: %08X, Recv: %08X\n",
               buffer.size(), (unsigned int)crc_calc.value(),
               (unsigned int)(crc_opt ? *crc_opt : 0));
-      fprintf(stderr, "[PARSE] Data: ");
-      const auto end_iter =
-          buffer.begin() + (buffer.size() < 16 ? buffer.size() : 16);
-      etl::for_each(buffer.begin(), end_iter,
-                    [](uint8_t byte) { fprintf(stderr, "%02X ", byte); });
-      fprintf(stderr, "\n");
     }
 #endif
 
@@ -142,17 +169,22 @@ class FrameParser {
 
 class FrameBuilder {
  public:
-  [[maybe_unused]] static size_t build(etl::span<uint8_t> buffer,
-                                       uint16_t cmd_id, uint16_t seq_id,
-                                       etl::span<const uint8_t> payload) {
-    if (buffer.size() < (FRAME_HEADER_SIZE + payload.size() + CRC_TRAILER_SIZE))
-      return 0;
+  [[maybe_unused]] static size_t build(
+      etl::span<uint8_t> buffer, uint16_t cmd_id, uint16_t seq_id,
+      etl::span<const uint8_t> payload,
+      const etl::array<uint8_t, AEAD_NONCE_SIZE>& nonce,
+      const etl::array<uint8_t, AEAD_TAG_SIZE>& tag) {
+    const size_t required = FRAME_HEADER_SIZE + AEAD_NONCE_SIZE +
+                            payload.size() + AEAD_TAG_SIZE + CRC_TRAILER_SIZE;
+    if (buffer.size() < required) return 0;
     Frame f = {};
     f.header.version = PROTOCOL_VERSION;
     f.header.payload_length = static_cast<uint16_t>(payload.size());
     f.header.command_id = cmd_id;
     f.header.sequence_id = seq_id;
+    f.nonce = nonce;
     f.payload = payload;
+    f.tag = tag;
     f.crc = checksum::compute(f);
     return FrameParser::serialize(f, buffer);
   }

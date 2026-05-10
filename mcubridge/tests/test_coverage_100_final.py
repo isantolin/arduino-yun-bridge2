@@ -126,7 +126,7 @@ class TestSecurity:
         from mcubridge.security.security import generate_nonce_with_counter
 
         nonce, new_counter = generate_nonce_with_counter(0)
-        assert len(nonce) == 16
+        assert len(nonce) == 12
         assert new_counter == 1
 
     def test_extract_nonce_counter(self):
@@ -620,7 +620,7 @@ class TestProtocolFrame:
             sequence_id=0,
             payload=b"\x01\x02",
         ).build()
-        cmd_id, _seq_id, payload = Frame.parse(raw)
+        cmd_id, _seq_id, payload, _, _ = Frame.parse(raw)
         assert cmd_id == Command.CMD_DIGITAL_READ.value
         assert payload == b"\x01\x02"
 

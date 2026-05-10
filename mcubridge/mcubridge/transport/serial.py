@@ -35,7 +35,12 @@ from mcubridge.config.const import (
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from mcubridge.protocol import protocol, structures
-from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.frame import Frame, RPC_FRAME_HEADER
+from mcubridge.security.security import (
+    aead_decrypt,
+    aead_encrypt,
+    generate_nonce_with_counter,
+)
 
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
@@ -279,6 +284,27 @@ class SerialTransport:
             frame = Frame.parse(decoded)
             cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
+            if self.state.is_synchronized and self.state.link_session_key:
+                # [SIL-2] Authenticated Decryption
+                header_bytes = RPC_FRAME_HEADER.build(
+                    {
+                        "version": protocol.PROTOCOL_VERSION,
+                        "payload_len": len(payload),
+                        "command_id": cmd_id,
+                        "sequence_id": seq_id,
+                    }
+                )
+                try:
+                    # cryptograhy expects ciphertext + tag
+                    payload = aead_decrypt(
+                        self.state.link_session_key,
+                        frame.nonce,
+                        payload + frame.tag,
+                        header_bytes,
+                    )
+                except Exception as e:
+                    raise ValueError(f"AEAD Authentication Failed: {e}") from e
+
             if logger.is_enabled_for(logging.DEBUG):
                 # [SIL-2] Mandatory HEXADECIMAL logging for binary traffic.
                 raw_hex = packet_bytes.hex(" ").upper()
@@ -365,7 +391,40 @@ class SerialTransport:
                 self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
                 seq = self._tx_sequence_id
 
-            frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)
+            if self.state.is_synchronized and self.state.link_session_key:
+                # [SIL-2] Encrypt payload using session key and auto-incrementing nonce
+                nonce, new_counter = generate_nonce_with_counter(
+                    self.state.link_nonce_counter
+                )
+                self.state.link_nonce_counter = new_counter
+
+                # AD includes the frame header for integrity
+                header_bytes = RPC_FRAME_HEADER.build(
+                    {
+                        "version": protocol.PROTOCOL_VERSION,
+                        "payload_len": len(pl),
+                        "command_id": cmd,
+                        "sequence_id": seq,
+                    }
+                )
+
+                # cryptography AEAD returns ciphertext + 16B tag
+                encrypted_blob = aead_encrypt(
+                    self.state.link_session_key, nonce, pl, header_bytes
+                )
+                encrypted_payload = encrypted_blob[:-16]
+                tag = encrypted_blob[-16:]
+
+                frame = Frame(
+                    command_id=cmd,
+                    sequence_id=seq,
+                    payload=encrypted_payload,
+                    nonce=nonce,
+                    tag=tag,
+                )
+            else:
+                frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)
+
             encoded = cobs.encode(frame.build()) + protocol.FRAME_DELIMITER
 
             if logger.is_enabled_for(logging.DEBUG):

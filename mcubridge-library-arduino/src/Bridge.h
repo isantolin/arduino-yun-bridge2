@@ -183,6 +183,9 @@ class BridgeClass {
       _packet_serial;
 
   etl::vector<uint8_t, 32> _shared_secret;
+  etl::array<uint8_t, 32> _session_key;
+  uint64_t _tx_nonce_counter;
+  uint64_t _rx_nonce_counter;
   bridge::fsm::BridgeFsm _fsm;
 
   struct WatchdogTask : public etl::task {

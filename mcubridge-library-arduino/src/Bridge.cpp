@@ -406,11 +406,38 @@ bool BridgeClass::sendFrame(rpc::CommandId command_id, uint16_t sequence_id,
 
 void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
                                 etl::span<const uint8_t> payload) {
-  rpc::Frame f = {
-      {rpc::PROTOCOL_VERSION, static_cast<uint16_t>(payload.size()), command_id,
-       sequence_id},
-      payload,
-      0};
+  rpc::Frame f = {};
+  f.header = {rpc::PROTOCOL_VERSION, static_cast<uint16_t>(payload.size()),
+              command_id, sequence_id};
+
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> encrypted_payload;
+
+  if (isSynchronized() && !_shared_secret.empty()) {
+    // [SIL-2] Encrypt payload using session key and monotonic nonce
+    ++_tx_nonce_counter;
+    f.nonce.fill(0);
+    f.nonce[0] = 'M';
+    f.nonce[1] = 'C';
+    f.nonce[2] = 'U';
+    etl::byte_stream_writer n_writer(f.nonce.data() + 4, 8, etl::endian::big);
+    n_writer.write<uint64_t>(_tx_nonce_counter);
+
+    etl::array<uint8_t, rpc::FRAME_HEADER_SIZE> header_buf;
+    rpc::checksum::serialize_header(f.header, header_buf);
+
+    if (rpc::security::aead_encrypt(encrypted_payload, f.tag, payload,
+                                    _session_key, f.nonce, header_buf)) {
+      f.payload =
+          etl::span<const uint8_t>(encrypted_payload.data(), payload.size());
+    } else {
+      return;  // Fatal: Encryption failed
+    }
+  } else {
+    f.payload = payload;
+    f.nonce.fill(0);
+    f.tag.fill(0);
+  }
+
   f.crc = rpc::checksum::compute(f);
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
   size_t len = rpc::FrameParser::serialize(

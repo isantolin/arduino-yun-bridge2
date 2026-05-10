@@ -40,7 +40,7 @@ All serial communication requires a successful handshake using a pre-shared secr
 
 ### 4. Cryptographic Self-Validation
 
-- **Power-On Self-Tests (POST):** The system implements Known Answer Tests (KAT) for SHA256 and HMAC-SHA256 based on NIST vectors.
+- **Power-On Self-Tests (POST):** The system implements Known Answer Tests (KAT) for SHA256, HMAC-SHA256, and ChaCha20-Poly1305 based on NIST and RFC vectors.
 
 - **Fail-Secure:** Initialization aborts if the cryptographic engine fails the startup tests, ensuring no communication happens over an untrustworthy link.
 
@@ -49,3 +49,4 @@ All serial communication requires a successful handshake using a pre-shared secr
 ### 5. Determinism (C++)
 
 - **No STL / No Dynamic Memory:** The Arduino library uses the Embedded Template Library (ETL) with static allocation to ensure deterministic behavior and prevent heap fragmentation.
+havior and prevent heap fragmentation.

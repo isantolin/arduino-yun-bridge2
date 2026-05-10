@@ -254,6 +254,7 @@ class RuntimeState(msgspec.Struct):
     link_handshake_nonce: bytes | None = None
     link_sync_event: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     link_expected_tag: bytes | None = None
+    link_session_key: bytes | None = None
     link_nonce_length: int = 0
     link_nonce_counter: int = 0
     link_last_nonce_counter: int = 0

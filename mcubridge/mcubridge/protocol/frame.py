@@ -137,12 +137,16 @@ class Frame(msgspec.Struct, frozen=True):
     command_id: int | protocol.Command | protocol.Status
     sequence_id: int
     payload: bytes = b""
+    nonce: bytes = b"\x00" * 12
+    tag: bytes = b"\x00" * 16
 
     def __iter__(self):
         """Allow unpacking: cmd, seq, payload = frame."""
         yield self.command_id
         yield self.sequence_id
         yield self.payload
+        yield self.nonce
+        yield self.tag
 
     @property
     def is_compressed(self) -> bool:

@@ -179,6 +179,12 @@ nonce_random_bytes = 8
 nonce_counter_bytes = 8
 nonce_format_description = "random[8] || counter[8] (uint64 BE) for anti-replay"
 
+# AEAD constants
+aead_nonce_length = 12
+aead_tag_length = 16
+aead_algorithm = "ChaCha20-Poly1305"
+aead_description = "Authenticated Encryption with Associated Data (RFC 8439)"
+
 [data_formats]
 crc_covered_header_format = ">BHHH"
 crc_format = ">I"

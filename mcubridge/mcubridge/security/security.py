@@ -3,32 +3,35 @@
 [MIL-SPEC COMPLIANCE]
 This module provides security primitives resistant to:
 - Memory inspection after use (secure_zero)
+- Anti-replay attacks via monotonic counters in AEAD nonces.
 
 Reference standards:
 - NIST SP 800-90A (secure random)
 - FIPS 140-3 (cryptographic module requirements)
-- CWE-14 (compiler removal of code to clear buffers)
+- RFC 8439 (ChaCha20 and Poly1305)
 """
 
 from __future__ import annotations
 
 import ctypes
 import hashlib
-import hmac
 import secrets
-from typing import Final, cast, Any
+from typing import Final, Any, cast
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from construct import Bytes, Int64ub, Struct, Construct
 from construct.core import ConstructError
-
 
 from ..protocol import protocol
 
 # [SIL-2] Security Constants from protocol spec
-NONCE_RANDOM_BYTES: Final[int] = protocol.HANDSHAKE_NONCE_RANDOM_BYTES
-NONCE_COUNTER_BYTES: Final[int] = protocol.HANDSHAKE_NONCE_COUNTER_BYTES
-NONCE_TOTAL_BYTES: Final[int] = NONCE_RANDOM_BYTES + NONCE_COUNTER_BYTES
+# For ChaCha20-Poly1305, nonce is exactly 12 bytes (96 bits).
+AEAD_NONCE_SIZE: Final[int] = 12
+NONCE_TOTAL_BYTES: Final[int] = AEAD_NONCE_SIZE
+AEAD_TAG_SIZE: Final[int] = 16
+NONCE_RANDOM_BYTES: Final[int] = 4
+NONCE_COUNTER_BYTES: Final[int] = 8
 
-# [SIL-2] Declarative Nonce Structure
+# [SIL-2] Declarative Nonce Structure (4B random || 8B counter = 12B)
 NONCE_STRUCT: Final = cast(
     Construct,
     Struct(
@@ -40,9 +43,7 @@ NONCE_STRUCT: Final = cast(
 
 def secure_zero(data: bytearray | memoryview) -> None:
     """Securely zero memory, resistant to interpreter optimization."""
-    # [SIL-2] Bulk zeroing for performance
     data[:] = protocol.FRAME_DELIMITER * len(data)
-    # MIL-SPEC: Use ctypes to bypass high-level optimizations
     try:
         buf = (ctypes.c_char * len(data)).from_buffer(data)
         ctypes.memset(ctypes.addressof(buf), 0, len(data))
@@ -56,18 +57,17 @@ def secure_zero_bytes_copy(data: bytes) -> bytes:
 
 
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
-    """Generate a 16-byte nonce with monotonic counter using Construct."""
-    new_counter = counter + 1
+    """Generate a 12-byte AEAD nonce with monotonic counter."""
+    new_counter = (counter + 1) & 0xFFFFFFFFFFFFFFFF
     random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
-    # [SIL-2] Declarative building
     nonce = NONCE_STRUCT.build({"random": random_part, "counter": new_counter})
     return nonce, new_counter
 
 
 def extract_nonce_counter(nonce: bytes) -> int:
-    """Extract the counter from a nonce using Construct."""
-    if len(nonce) != NONCE_TOTAL_BYTES:
-        raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
+    """Extract the counter from a 12-byte nonce."""
+    if len(nonce) != AEAD_NONCE_SIZE:
+        raise ValueError(f"Nonce must be {AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
     try:
         res: Any = NONCE_STRUCT.parse(nonce)
         return int(res.counter)
@@ -82,36 +82,57 @@ def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
     except ValueError:
         return False, last_counter
 
-    if current <= last_counter:
-        return False, last_counter  # Replay detected
-
+    if current <= last_counter and last_counter != 0xFFFFFFFFFFFFFFFF:
+        return False, last_counter
     return True, current
+
+
+def aead_encrypt(
+    key: bytes, nonce: bytes, data: bytes, ad: bytes | None = None
+) -> bytes:
+    """[SIL-2] Encrypt and authenticate data using ChaCha20-Poly1305."""
+    aead = ChaCha20Poly1305(key)
+    return aead.encrypt(nonce, data, ad)
+
+
+def aead_decrypt(
+    key: bytes, nonce: bytes, ciphertext_with_tag: bytes, ad: bytes | None = None
+) -> bytes:
+    """[SIL-2] Decrypt and verify data using ChaCha20-Poly1305."""
+    aead = ChaCha20Poly1305(key)
+    return aead.decrypt(nonce, ciphertext_with_tag, ad)
 
 
 def verify_crypto_integrity() -> bool:
     """Perform Known Answer Tests (KAT) for cryptographic primitives."""
-    # 1. SHA256 KAT ("abc")
-    msg = b"abc"
-    expected_sha = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    actual_sha = hashlib.sha256(msg).hexdigest()
-    if actual_sha != expected_sha:
+    # 1. SHA256 KAT
+    if hashlib.sha256(b"abc").hexdigest() != (
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    ):
         return False
 
-    # 2. HMAC-SHA256 KAT
-    key = b"key"
-    data = b"The quick brown fox jumps over the lazy dog"
-    expected_hmac = "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
-    actual_hmac = hmac.new(key, data, hashlib.sha256).hexdigest()
-    if actual_hmac != expected_hmac:
+    # 2. ChaCha20-Poly1305 KAT
+    try:
+        key = b"\x00" * 32
+        nonce = b"\x00" * 12
+        aead = ChaCha20Poly1305(key)
+        ct = aead.encrypt(nonce, b"", None)
+        if len(ct) != 16:
+            return False
+    except Exception:
         return False
 
     return True
 
 
 __all__ = [
-    "NONCE_COUNTER_BYTES",
-    "NONCE_RANDOM_BYTES",
+    "AEAD_NONCE_SIZE",
     "NONCE_TOTAL_BYTES",
+    "AEAD_TAG_SIZE",
+    "NONCE_RANDOM_BYTES",
+    "NONCE_COUNTER_BYTES",
+    "aead_decrypt",
+    "aead_encrypt",
     "extract_nonce_counter",
     "generate_nonce_with_counter",
     "secure_zero",

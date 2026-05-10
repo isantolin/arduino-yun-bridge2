@@ -338,6 +338,12 @@ class SerialHandshakeManager:
             )
             return False
 
+        # [SIL-2] Ensure session key is derived on successful sync
+        if self._config.serial_shared_secret:
+            self._state.link_session_key = self.calculate_session_key(
+                self._config.serial_shared_secret, nonce
+            )
+
         payload = nonce
 
         # FSM Transition to SYNCHRONIZED
@@ -607,6 +613,20 @@ class SerialHandshakeManager:
         h.update(nonce)
         tag = h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
         return tag
+
+    @staticmethod
+    def calculate_session_key(secret: bytes, nonce: bytes) -> bytes:
+        """[MIL-SPEC] Derive a 32-byte session key from shared secret and nonce."""
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b"mcubridge-v2-aead",
+            info=b"session-key",
+        )
+        return hkdf.derive(secret + nonce)
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         return (

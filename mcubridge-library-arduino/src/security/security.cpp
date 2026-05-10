@@ -17,6 +17,7 @@
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
+#include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 
 #include "Bridge.h"
 
@@ -31,6 +32,30 @@ void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
           static_cast<word32>(salt.size()), info.data(),
           static_cast<word32>(info.size()), out.data(),
           static_cast<word32>(out.size()));
+}
+
+bool aead_encrypt(etl::span<uint8_t> out, etl::span<uint8_t> tag,
+                  etl::span<const uint8_t> in, etl::span<const uint8_t> key,
+                  etl::span<const uint8_t> nonce, etl::span<const uint8_t> ad) {
+  if (out.size() < in.size() || tag.size() < 16 || key.size() < 32 ||
+      nonce.size() < 12)
+    return false;
+
+  return wc_ChaCha20Poly1305_Encrypt(
+             key.data(), nonce.data(), ad.data(), static_cast<word32>(ad.size()),
+             in.data(), static_cast<word32>(in.size()), out.data(), tag.data()) == 0;
+}
+
+bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
+                  etl::span<const uint8_t> tag, etl::span<const uint8_t> key,
+                  etl::span<const uint8_t> nonce, etl::span<const uint8_t> ad) {
+  if (out.size() < in.size() || tag.size() < 16 || key.size() < 32 ||
+      nonce.size() < 12)
+    return false;
+
+  return wc_ChaCha20Poly1305_Decrypt(
+             key.data(), nonce.data(), ad.data(), static_cast<word32>(ad.size()),
+             in.data(), static_cast<word32>(in.size()), out.data(), tag.data()) == 0;
 }
 
 // --- Self-Tests Implementation ---

@@ -34,6 +34,24 @@ void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
                  etl::span<const uint8_t> salt, etl::span<const uint8_t> info);
 
 /**
+ * @brief AEAD encryption (ChaCha20-Poly1305).
+ * out must be at least in.size() + tag.size().
+ */
+bool aead_encrypt(etl::span<uint8_t> out, etl::span<uint8_t> tag,
+                  etl::span<const uint8_t> in, etl::span<const uint8_t> key,
+                  etl::span<const uint8_t> nonce,
+                  etl::span<const uint8_t> ad = {});
+
+/**
+ * @brief AEAD decryption (ChaCha20-Poly1305).
+ * out must be at least in.size().
+ */
+bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
+                  etl::span<const uint8_t> tag, etl::span<const uint8_t> key,
+                  etl::span<const uint8_t> nonce,
+                  etl::span<const uint8_t> ad = {});
+
+/**
  * @brief Securely zero memory, resistant to compiler optimization.
  */
 inline void secure_zero(etl::span<uint8_t> buf) {

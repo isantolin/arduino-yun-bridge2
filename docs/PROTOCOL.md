@@ -407,10 +407,11 @@ CRC32 (4 bytes, Big Endian) sobre cabecera+payload; CRC-32 IEEE 802.3 con polino
 
 | Componente | Función | Implementación MCU (Arduino/C++) | Implementación Daemon (Python) |
 | :--- | :--- | :--- | :--- |
-| **COBS** | Framing / Escaping | **Interna**: `PacketSerial` (v2.2, zero-heap). | **Externa**: `cobs` (paquete PyPI). |
-| **CRC32** | Integridad | **Interna**: `etl::crc32` (ETL SIL-2 certified). | **Interna**: `binascii.crc32` (IEEE 802.3 standard). |
-| **Payload Serialization** | Codificación de payloads | **MsgPack** (`msgpack_codec.h`, estático, sin heap). | **MsgPack** (`msgspec`, clases `Packet` en `structures.py`). |
-| **Endianness** | Byte Order (header/CRC) | `__builtin_bswap16/32` o macros custom. | `struct.pack('>...')` (Big Endian standard library). |
+| **Criptografía AEAD** | Cifrado y Autenticación | **wolfCrypt** (ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
+| **COBS** | Framing / Escaping | **Externa**: `PacketSerial2`. | **Externa**: `cobs` (paquete PyPI). |
+| **CRC32** | Integridad adicional | **Interna**: `etl::crc32` (ETL SIL-2 certified). | **Interna**: `binascii.crc32` (IEEE 802.3 standard). |
+| **Payload Serialization** | Codificación de payloads | **MsgPack** (`mpack`, estático, sin heap). | **MsgPack** (`msgspec`, clases `Packet` en `structures.py`). |
+| **Endianness** | Byte Order | `etl::endian::big`. | `struct.pack('>...')` (Big Endian). |
 
 ## 4. Códigos de estado (`Status`)
 
@@ -908,6 +909,23 @@ Todos los fallbacks se exponen en `/tmp/mcubridge_status.json` y métricas Prome
     summary: "MQTT spool en modo memoria-only"
 
 - alert: McuBridgeConfigFallback
+  expr: mcubridge_config_source_info{source="defaults"} == 1
+  for: 1m
+  labels:
+    severity: critical
+  annotations:
+    summary: "Daemon usando configuración por defecto"
+
+- alert: McuBridgeUnknownCommands
+  expr: rate(mcubridge_unknown_command_ids_total[5m]) > 0
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Comandos no reconocidos detectados (protocol drift)"
+```
+
+t: McuBridgeConfigFallback
   expr: mcubridge_config_source_info{source="defaults"} == 1
   for: 1m
   labels:

@@ -35,6 +35,8 @@
 #define WOLFSSL_HMAC
 #define HAVE_HKDF
 #define WOLFSSL_HKDF
+#define HAVE_CHACHA
+#define HAVE_POLY1305
 
 /* Protocol protections */
 #define NO_AES

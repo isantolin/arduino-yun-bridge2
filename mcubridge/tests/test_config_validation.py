@@ -45,7 +45,7 @@ def test_runtime_config_topic_and_paths(
     spool_absolute = "/tmp/relative/spool"
     os.path.abspath(spool_absolute)
     root_input = "/tmp/tests//bridge/test/.."
-    expected_root = os.path.abspath(root_input)
+    os.path.abspath(root_input)
 
     raw = _config_kwargs(
         mqtt_topic="/demo//prefix/",

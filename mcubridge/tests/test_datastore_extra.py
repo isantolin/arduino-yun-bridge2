@@ -188,7 +188,8 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
 
         # 5. Type coercion from int
         state.datastore_cache["int_key"] = b"42"
-        await comp.handle_mqtt(            TopicRoute(
+        await comp.handle_mqtt(
+            TopicRoute(
                 "br/d/get/int_key/request",
                 "br",
                 Topic.DATASTORE,

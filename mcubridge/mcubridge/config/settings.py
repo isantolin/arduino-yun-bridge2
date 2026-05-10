@@ -34,8 +34,13 @@ def _dec_hook(type_type: Any, obj: Any) -> Any:
             return tuple(obj.split())
     if str in types and isinstance(obj, str):
         val = obj.strip()
-        return str(Path(val).expanduser().resolve()) if ("~" in val or "/" in val) and "\n" not in val else val or None
+        return (
+            str(Path(val).expanduser().resolve())
+            if ("~" in val or "/" in val) and "\n" not in val
+            else val or None
+        )
     raise TypeError(f"Cannot coerce {obj!r} to {type_type}")
+
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
     """Load configuration from defaults and UCI (SIL 2).
@@ -89,11 +94,15 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
         raw_values["allowed_commands"] = raw_values["allowed_commands"].split()
 
     if isinstance(raw_values.get("serial_shared_secret"), str):
-        raw_values["serial_shared_secret"] = raw_values["serial_shared_secret"].strip().encode("utf-8")
+        raw_values["serial_shared_secret"] = (
+            raw_values["serial_shared_secret"].strip().encode("utf-8")
+        )
 
     try:
         # [SIL-2] Holistic Validation via msgspec.Struct.
-        return msgspec.convert(raw_values, RuntimeConfig, strict=False, dec_hook=_dec_hook)
+        return msgspec.convert(
+            raw_values, RuntimeConfig, strict=False, dec_hook=_dec_hook
+        )
     except (msgspec.ValidationError, ValueError) as e:
         if source == "uci":
             # [SIL-2] Deterministic Failure: If UCI is present but invalid, abort.

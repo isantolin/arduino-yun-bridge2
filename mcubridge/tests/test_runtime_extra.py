@@ -83,8 +83,8 @@ async def test_runtime_handle_mqtt_message_dispatch_error() -> None:
             properties=None,
         )
 
-        # Mock dispatcher.dispatch_mqtt_message to see if it's called
-        service.dispatcher.dispatch_mqtt_message = AsyncMock(
+        # Mock dispatch_mqtt_message to see if it's called
+        service.dispatch_mqtt_message = AsyncMock(
             side_effect=IndexError("bad dispatch")
         )
 

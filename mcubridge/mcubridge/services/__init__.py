@@ -2,7 +2,6 @@
 
 from .console import ConsoleComponent
 from .datastore import DatastoreComponent
-from .dispatcher import BridgeDispatcher
 from .file import FileComponent
 from .handshake import SerialHandshakeFatal, SerialHandshakeManager, SerialTimingWindow
 from .mailbox import MailboxComponent
@@ -12,7 +11,6 @@ from .spi import SpiComponent
 from .system import SystemComponent
 
 __all__ = [
-    "BridgeDispatcher",
     "ConsoleComponent",
     "DatastoreComponent",
     "FileComponent",

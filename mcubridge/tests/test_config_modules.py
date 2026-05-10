@@ -123,6 +123,7 @@ def test_load_runtime_config_allows_empty_mqtt_user_value(
     assert config.mqtt_user == ""
     assert config.mqtt_pass == " "
 
+
 def test_load_runtime_config_prefers_uci_config(monkeypatch: pytest.MonkeyPatch):
     raw_config = {"serial_port": "/dev/uci"}
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "uci"))
@@ -193,6 +194,8 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
     config = settings.load_runtime_config()
     assert config.watchdog_enabled is True
     assert config.watchdog_interval == 0.5
+
+
 5
 
 5

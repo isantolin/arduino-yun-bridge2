@@ -32,7 +32,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
 
     payload = msgspec.msgpack.encode(structures.DigitalReadResponsePacket(value))
 
-    await service.dispatcher.dispatch_mcu_frame(
+    await service.dispatch_mcu_frame(
         protocol.Command.CMD_DIGITAL_READ_RESP.value, 0, payload
     )
 
@@ -58,7 +58,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
 
     payload = msgspec.msgpack.encode(structures.AnalogReadResponsePacket(value))
 
-    await service.dispatcher.dispatch_mcu_frame(
+    await service.dispatch_mcu_frame(
         protocol.Command.CMD_ANALOG_READ_RESP.value, 0, payload
     )
 
@@ -76,7 +76,7 @@ async def test_mqtt_digital_write_sends_serial_frame(
     transport = MqttTransport(runtime_config, runtime_state)
     service = BridgeService(runtime_config, runtime_state, transport)
     service.serial_flow.send = AsyncMock(return_value=True)
-    service.dispatcher.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
+    service.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
 
     pin = 13
     # Digital write uses 1 segment: prefix/d/PIN
@@ -100,7 +100,7 @@ async def test_mqtt_analog_write_sends_serial_frame(
     transport = MqttTransport(runtime_config, runtime_state)
     service = BridgeService(runtime_config, runtime_state, transport)
     service.serial_flow.send = AsyncMock(return_value=True)
-    service.dispatcher.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
+    service.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
 
     pin = 11
     # Analog write uses 1 segment: prefix/a/PIN
@@ -124,7 +124,7 @@ async def test_mqtt_pin_mode_sends_serial_frame(
     transport = MqttTransport(runtime_config, runtime_state)
     service = BridgeService(runtime_config, runtime_state, transport)
     service.serial_flow.send = AsyncMock(return_value=True)
-    service.dispatcher.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
+    service.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
 
     pin = 7
     # Mode uses 2 segments: prefix/d/PIN/mode
@@ -150,7 +150,7 @@ async def test_mqtt_digital_read_sends_serial_frame(
     transport = MqttTransport(runtime_config, runtime_state)
     service = BridgeService(runtime_config, runtime_state, transport)
     service.serial_flow.send = AsyncMock(return_value=True)
-    service.dispatcher.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
+    service.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
 
     pin = 4
     # Read uses 2 segments: prefix/d/PIN/read
@@ -176,7 +176,7 @@ async def test_mqtt_analog_read_sends_serial_frame(
     transport = MqttTransport(runtime_config, runtime_state)
     service = BridgeService(runtime_config, runtime_state, transport)
     service.serial_flow.send = AsyncMock(return_value=True)
-    service.dispatcher.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
+    service.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
 
     pin = 0
     # Read uses 2 segments: prefix/a/PIN/read
@@ -202,12 +202,12 @@ async def test_mqtt_shell_run_invokes_process_component(
     transport = MqttTransport(runtime_config, runtime_state)
     transport.enqueue_mqtt = AsyncMock()
     service = BridgeService(runtime_config, runtime_state, transport)
-    service.dispatcher.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
+    service.is_topic_action_allowed = lambda _t, _a: True  # type: ignore
     process = service.process
 
     with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:
         # Re-register mock in dispatcher manually
-        service.dispatcher.process = MagicMock(handle_mqtt=mock_mqtt)
+        service.process = MagicMock(handle_mqtt=mock_mqtt)
 
         await service.handle_mqtt_message(
             Message(

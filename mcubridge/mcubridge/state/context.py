@@ -9,7 +9,7 @@ import sqlite3
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Final, Protocol, TypeVar, cast
+from typing import Any, Final, TypeVar, cast
 
 import diskcache
 import msgspec
@@ -57,20 +57,6 @@ from ..protocol.structures import (
 from .metrics import DaemonMetrics
 
 T = TypeVar("T")
-
-
-class DequeLike(Protocol[T]):
-    """Protocol for deque-like objects (collections.deque, diskcache.Deque)."""
-
-    def append(self, __x: T) -> None: ...
-    def appendleft(self, __x: T) -> None: ...
-    def pop(self) -> T: ...
-    def popleft(self) -> T: ...
-    def clear(self) -> None: ...
-    def __len__(self) -> int: ...
-    def __getitem__(self, __i: int) -> T: ...
-    def __setitem__(self, __i: int, __v: T) -> None: ...
-
 
 logger = structlog.get_logger("mcubridge.state")
 
@@ -195,11 +181,11 @@ class RuntimeState(msgspec.Struct):
     datastore_cache: diskcache.Cache | None = None
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
-    mailbox_queue: DequeLike[bytes] = msgspec.field(
-        default_factory=lambda: cast(DequeLike[bytes], collections.deque()),
+    mailbox_queue: Any = msgspec.field(
+        default_factory=lambda: cast(Any, collections.deque()),
     )
-    mailbox_incoming_queue: DequeLike[bytes] = msgspec.field(
-        default_factory=lambda: cast(DequeLike[bytes], collections.deque()),
+    mailbox_incoming_queue: Any = msgspec.field(
+        default_factory=lambda: cast(Any, collections.deque()),
     )
 
     _mailbox_queue_cache: diskcache.Cache | None = None
@@ -207,8 +193,8 @@ class RuntimeState(msgspec.Struct):
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    console_to_mcu_queue: DequeLike[bytes] = msgspec.field(
-        default_factory=lambda: cast(DequeLike[bytes], collections.deque()),
+    console_to_mcu_queue: Any = msgspec.field(
+        default_factory=lambda: cast(Any, collections.deque()),
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
 
@@ -344,7 +330,7 @@ class RuntimeState(msgspec.Struct):
 
     def configure(self, config: RuntimeConfig) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
-        
+
         # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
         if self.datastore_cache is not None:
             with _sup:
@@ -380,13 +366,13 @@ class RuntimeState(msgspec.Struct):
 
         # Re-initialize transient queues
         self.console_to_mcu_queue = cast(
-            DequeLike[bytes],
+            Any,
             collections.deque[bytes](maxlen=self.mailbox_queue_limit),
         )
 
         def _create_spool(
             subdir: str,
-        ) -> tuple[DequeLike[bytes], diskcache.Cache | None]:
+        ) -> tuple[Any, diskcache.Cache | None]:
             directory = None
             if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
                 directory = Path(self.file_system_root) / subdir
@@ -400,7 +386,7 @@ class RuntimeState(msgspec.Struct):
                     dq: Any = dc_class.fromcache(cache)
                     return (
                         cast(
-                            DequeLike[bytes],
+                            Any,
                             dq,
                         ),
                         cache,
@@ -412,7 +398,7 @@ class RuntimeState(msgspec.Struct):
 
             return (
                 cast(
-                    DequeLike[bytes],
+                    Any,
                     collections.deque[bytes](maxlen=self.mailbox_queue_limit),
                 ),
                 None,
@@ -422,16 +408,18 @@ class RuntimeState(msgspec.Struct):
         self.mailbox_incoming_queue, self._mailbox_incoming_queue_cache = _create_spool(
             "mailbox_in"
         )
-        
+
         # [SIL-2] Initialize datastore with diskcache for ACID persistence
         ds_dir = None
         if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
             ds_dir = Path(self.file_system_root) / "datastore"
-        
+
         if ds_dir:
             try:
                 ds_dir.mkdir(parents=True, exist_ok=True)
-                self.datastore_cache = diskcache.Cache(str(ds_dir), size_limit=1024 * 1024)
+                self.datastore_cache = diskcache.Cache(
+                    str(ds_dir), size_limit=1024 * 1024
+                )
             except (OSError, RuntimeError) as e:
                 logger.warning("Could not initialize datastore diskcache: %s", e)
 
@@ -664,13 +652,13 @@ class RuntimeState(msgspec.Struct):
             with _sup:
                 cast(Any, self._mailbox_queue_cache).close()
             self._mailbox_queue_cache = None
-            self.mailbox_queue = cast(DequeLike[bytes], collections.deque())
+            self.mailbox_queue = cast(Any, collections.deque())
 
         if self._mailbox_incoming_queue_cache is not None:
             with _sup:
                 cast(Any, self._mailbox_incoming_queue_cache).close()
             self._mailbox_incoming_queue_cache = None
-            self.mailbox_incoming_queue = cast(DequeLike[bytes], collections.deque())
+            self.mailbox_incoming_queue = cast(Any, collections.deque())
 
         with _sup:
             # Drain the MQTT queue instead of nullifying

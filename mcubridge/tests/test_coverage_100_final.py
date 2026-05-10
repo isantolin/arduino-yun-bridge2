@@ -8,14 +8,10 @@ all mcubridge modules.
 from __future__ import annotations
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.services.console import ConsoleComponent
-from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.services.file import FileComponent
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.services.pin import PinComponent
 from mcubridge.services.process import ProcessComponent
-from mcubridge.services.spi import SpiComponent
-from mcubridge.services.system import SystemComponent
-from mcubridge.services.dispatcher import BridgeDispatcher
 from mcubridge.services.runtime import BridgeService
 import msgspec
 from typing import Any, cast
@@ -25,7 +21,7 @@ import asyncio
 import contextlib
 import logging
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import psutil
 import pytest
@@ -469,7 +465,6 @@ class TestMqttBuildProperties:
 class TestShellMqttLogic:
     @pytest.fixture
     def shell_comp(self):
-        from mcubridge.services.process import ProcessComponent
 
         import time
         import os
@@ -710,7 +705,6 @@ class TestConfigSettings:
 class TestProcessComponent:
     @pytest.fixture
     def _process(self):
-        from mcubridge.services.process import ProcessComponent
 
         config = RuntimeConfig(
             serial_shared_secret=b"s_e_c_r_e_t_mock",
@@ -784,7 +778,6 @@ class TestProcessComponent:
 class TestConsoleComponent:
     @pytest.mark.asyncio
     async def test_console_queue_flush_empty(self):
-        from mcubridge.services.console import ConsoleComponent
 
         import time
         import os
@@ -822,7 +815,6 @@ class TestConsoleComponent:
 class TestMailboxComponent:
     @pytest.mark.asyncio
     async def test_mailbox_handle_mqtt_write(self: Any, tmp_path: Any):
-        from mcubridge.services.mailbox import MailboxComponent
 
         config = RuntimeConfig(
             serial_shared_secret=b"s_e_c_r_e_t_mock",
@@ -864,7 +856,6 @@ class TestMailboxComponent:
 class TestPinComponent:
     @pytest.mark.asyncio
     async def test_pin_handle_digital_read(self):
-        from mcubridge.services.pin import PinComponent
 
         import time
         import os
@@ -903,54 +894,6 @@ class TestPinComponent:
 # ============================================================================
 
 
-class TestDatastoreComponent:
-    @pytest.mark.asyncio
-    async def test_dispatcher_digital_topic_no_segments(self):
-        from mcubridge.protocol.topics import TopicRoute
-
-        import time
-        import os
-
-        unique_root = os.path.abspath(
-            f".tmp_tests/mcubridge-test-shell-{os.getpid()}-{time.time_ns()}"
-        )
-        config = RuntimeConfig(
-            serial_shared_secret=b"s_e_c_r_e_t_mock",
-            file_system_root=unique_root,
-            allow_non_tmp_paths=True,
-        )
-        state = create_runtime_state(config)
-        try:
-            d = BridgeDispatcher(
-                mcu_registry=MagicMock(),
-                state=state,
-                send_frame=AsyncMock(),
-                acknowledge_frame=AsyncMock(),
-                is_topic_action_allowed=lambda t, a: True,
-                reject_topic_action=AsyncMock(),
-                publish_bridge_snapshot=AsyncMock(),
-            )
-            # [SIL-2] Directly pass mocked components
-            components = {
-                "console": AsyncMock(spec=ConsoleComponent),
-                "datastore": AsyncMock(spec=DatastoreComponent),
-                "file": AsyncMock(spec=FileComponent),
-                "mailbox": AsyncMock(spec=MailboxComponent),
-                "pin": AsyncMock(spec=PinComponent),
-                "process": AsyncMock(spec=ProcessComponent),
-                "spi": AsyncMock(spec=SpiComponent),
-                "system": AsyncMock(spec=SystemComponent),
-            }
-            d.register_components(**components)
-            route = TopicRoute(
-                raw="", prefix="bridge", topic=Topic.DIGITAL, segments=()
-            )
-            result = d._get_topic_action(route)  # type: ignore[reportPrivateUsage]
-            assert result is None
-        finally:
-            state.cleanup()
-
-
 # ============================================================================
 # mcubridge/daemon.py — lines 86, 101-104, 135, 205-213, 303
 # ============================================================================
@@ -982,7 +925,6 @@ class TestDaemon:
 class TestFileComponent:
     @pytest.mark.asyncio
     async def test_file_handle_read_nonexistent(self):
-        from mcubridge.services.file import FileComponent
 
         config = RuntimeConfig(
             serial_shared_secret=b"s_e_c_r_e_t_mock",

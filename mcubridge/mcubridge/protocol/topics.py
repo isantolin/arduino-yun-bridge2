@@ -11,11 +11,18 @@ from .protocol import Topic
 from .structures import TopicRoute
 
 
+import posixpath
+
+
 def topic_path(prefix: str, topic: Topic, *segments: str | int) -> str:
     """[SIL-2] Construct topic path using direct join/filter delegation."""
     # Eradicate manual part.append() loops in favor of a single generator.
-    parts = (str(s).strip("/") for s in (prefix, topic, *segments))
-    return "/".join(filter(None, parts))
+    parts = [
+        str(s).strip("/")
+        for s in (prefix, topic, *segments)
+        if s is not None and str(s).strip("/")
+    ]
+    return posixpath.join(*parts) if parts else ""
 
 
 # --- Service Specific Topics ---

@@ -83,7 +83,7 @@ class DatastoreComponent:
             return False
 
         key = packet.key
-        
+
         # [SIL-2] Zero Wrapper datastore get
         val_bytes: bytes = b""
         if self.state.datastore_cache is not None:

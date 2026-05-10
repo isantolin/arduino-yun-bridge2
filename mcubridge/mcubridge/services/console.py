@@ -86,40 +86,9 @@ class ConsoleComponent:
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        # [SIL-2] Ensure we chunk data to fit into frames using Python's C core batched
-        chunks = [
-            bytes(c) for c in itertools.batched(payload, protocol.MAX_PAYLOAD_SIZE)
-        ]
-        if self.state.mcu_is_paused:
-            logger.warning(
-                "MCU paused, queueing %d console chunk(s) (%d bytes), hex=%s",
-                len(chunks),
-                len(payload),
-                payload[:32].hex() if len(payload) > 32 else payload.hex(),
-            )
-            # [SIL-2] Iterative reduction: bulk append valid chunks
-            list(map(self.state.console_to_mcu_queue.append, filter(None, chunks)))
-            return
-
-        for index, chunk in enumerate(chunks):
-            if not chunk:
-                continue
-
-            # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-            frame_payload = msgspec.msgpack.encode(ConsoleWritePacket(data=chunk))
-
-            send_ok = await self.serial_flow.send(
-                Command.CMD_CONSOLE_WRITE.value,
-                frame_payload,
-            )
-            if not send_ok:
-                remaining = b"".join(chunks[index:])
-                if remaining:
-                    self.state.console_to_mcu_queue.append(remaining)
-                logger.warning(
-                    "Serial send failed for console input; payload queued for retry",
-                )
-                break
+        if payload:
+            self.state.console_to_mcu_queue.append(payload)
+        await self.flush_queue()
 
     async def flush_queue(self) -> None:
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:

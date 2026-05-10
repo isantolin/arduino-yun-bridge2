@@ -329,11 +329,12 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
     return;
   }
   constexpr size_t max_len = rpc::MAX_PAYLOAD_SIZE - 1U;
-  bridge::hal::copy_string((char*)_transient_buffer.data(), (const char*)msg,
-                           max_len);
+  bridge::hal::copy_string(reinterpret_cast<char*>(_transient_buffer.data()),
+                           reinterpret_cast<const char*>(msg), max_len);
   _transient_buffer[max_len] = 0;
   const size_t len =
-      etl::string_view((const char*)_transient_buffer.data()).length();
+      etl::string_view(reinterpret_cast<const char*>(_transient_buffer.data()))
+          .length();
   emitStatus(code, etl::span<const uint8_t>(_transient_buffer.data(), len));
 }
 

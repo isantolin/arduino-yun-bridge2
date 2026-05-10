@@ -14,7 +14,8 @@ def test_frame_build_appends_crc_bytes() -> None:
     raw = Frame(
         command_id=protocol.Command.CMD_LINK_RESET.value, sequence_id=0, payload=payload
     ).build()
-    expected_len = protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
+    # New AEAD Frame: Header(7) + Nonce(12) + Payload + Tag(16) + CRC(4) = 39 + len
+    expected_len = 39 + len(payload)
     assert len(raw) == expected_len
 
 
@@ -26,5 +27,5 @@ def test_frame_build_uses_crc32() -> None:
     ).build()
 
     # CRC is always 4 bytes (Int32ub) via Construct Checksum
-    expected_len = protocol.CRC_COVERED_HEADER_SIZE + len(payload) + 4
+    expected_len = 39 + len(payload)
     assert len(raw) == expected_len

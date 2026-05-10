@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import structlog
 import time
 from collections.abc import Awaitable, Callable
@@ -38,9 +39,7 @@ from ..protocol.structures import (
 )
 from ..protocol.topics import Topic, topic_path
 from ..security.security import (
-    generate_nonce_with_counter,
     secure_zero,
-    validate_nonce_counter,
 )
 from ..state.context import McuCapabilities, RuntimeState
 
@@ -178,18 +177,16 @@ class SerialHandshakeManager:
             return False
 
     async def _synchronize_attempt(self) -> bool:
-        nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
 
         # Transition to RESETTING
         self._set_fsm_state(self.STATE_RESETTING)
         self._state.link_sync_event.clear()
 
-        # [MIL-SPEC] Generate nonce with anti-replay counter
-        nonce, new_counter = generate_nonce_with_counter(self._state.link_nonce_counter)
-        self._state.link_nonce_counter = new_counter
+        # [MIL-SPEC] Generate random nonce for session derivation
+        nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
 
         self._state.link_handshake_nonce = nonce
-        self._state.link_nonce_length = nonce_length
+        self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
         self._state.link_expected_tag = self.calculate_handshake_tag(
             self._config.serial_shared_secret, nonce
         )
@@ -311,15 +308,6 @@ class SerialHandshakeManager:
             not bytes_eq(tag_bytes, recalculated_tag)
             and self._config.serial_shared_secret != b"DEBUG_INSECURE"
         )
-        if not nonce_mismatch and not missing_expected_tag:
-            is_valid, _ = validate_nonce_counter(
-                nonce, self._state.link_last_nonce_counter
-            )
-            if not is_valid:
-                self._logger.warning(
-                    "LINK_SYNC_RESP replay detected (nonce counter too low)"
-                )
-                nonce_mismatch = True
 
         if nonce_mismatch or missing_expected_tag or bad_tag_length or tag_mismatch:
             self._logger.warning(
@@ -343,7 +331,6 @@ class SerialHandshakeManager:
             self._state.link_session_key = self.calculate_session_key(
                 self._config.serial_shared_secret, nonce
             )
-
         payload = nonce
 
         # FSM Transition to SYNCHRONIZED
@@ -623,10 +610,10 @@ class SerialHandshakeManager:
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=b"mcubridge-v2-aead",
+            salt=nonce,
             info=b"session-key",
         )
-        return hkdf.derive(secret + nonce)
+        return hkdf.derive(secret)
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         return (

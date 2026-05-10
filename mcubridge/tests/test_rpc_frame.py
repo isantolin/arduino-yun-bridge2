@@ -8,9 +8,8 @@ def test_build_and_parse_round_trip() -> None:
     payload = b"\x01\x02\x03"
     raw = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=payload).build()
 
-    assert (
-        len(raw) == protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
-    )
+    # New AEAD Frame: Header(7) + Nonce(12) + Payload + Tag(16) + CRC(4) = 39 + len
+    assert len(raw) == 39 + len(payload)
 
     parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
     assert parsed_command == TEST_CMD_ID

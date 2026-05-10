@@ -13,13 +13,13 @@
 #include <Arduino.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include "hal/progmem_compat.h"
+#include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
-#include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 
 #include "Bridge.h"
+#include "hal/progmem_compat.h"
 
 namespace rpc {
 namespace security {
@@ -41,9 +41,10 @@ bool aead_encrypt(etl::span<uint8_t> out, etl::span<uint8_t> tag,
       nonce.size() < 12)
     return false;
 
-  return wc_ChaCha20Poly1305_Encrypt(
-             key.data(), nonce.data(), ad.data(), static_cast<word32>(ad.size()),
-             in.data(), static_cast<word32>(in.size()), out.data(), tag.data()) == 0;
+  return wc_ChaCha20Poly1305_Encrypt(key.data(), nonce.data(), ad.data(),
+                                     static_cast<word32>(ad.size()), in.data(),
+                                     static_cast<word32>(in.size()), out.data(),
+                                     tag.data()) == 0;
 }
 
 bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
@@ -53,9 +54,10 @@ bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
       nonce.size() < 12)
     return false;
 
-  return wc_ChaCha20Poly1305_Decrypt(
-             key.data(), nonce.data(), ad.data(), static_cast<word32>(ad.size()),
-             in.data(), static_cast<word32>(in.size()), out.data(), tag.data()) == 0;
+  return wc_ChaCha20Poly1305_Decrypt(key.data(), nonce.data(), ad.data(),
+                                     static_cast<word32>(ad.size()), in.data(),
+                                     static_cast<word32>(in.size()), tag.data(),
+                                     out.data()) == 0;
 }
 
 // --- Self-Tests Implementation ---
@@ -114,7 +116,29 @@ bool run_cryptographic_self_tests() {
   if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 
-  return true;
+  // 3. ChaCha20-Poly1305 KAT (RFC 8439)
+  static constexpr etl::array<uint8_t, 32> kat_aead_key = {
+      {0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a,
+       0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95,
+       0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f}};
+  static constexpr etl::array<uint8_t, 12> kat_aead_nonce = {
+      {0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47}};
+  static constexpr etl::array<uint8_t, 12> kat_aead_ad = {
+      {0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7}};
+  static constexpr etl::array<uint8_t, 16> kat_aead_tag_expected = {
+      {0x1a, 0xda, 0x1f, 0xf0, 0x62, 0x73, 0x8a, 0xda, 0x38, 0x39, 0xb9, 0x73,
+       0x40, 0x73, 0x43, 0xac}};
+
+  etl::array<uint8_t, 16> aead_tag_actual;
+  etl::array<uint8_t, 4> aead_out;
+  if (wc_ChaCha20Poly1305_Encrypt(kat_aead_key.data(), kat_aead_nonce.data(),
+                                  kat_aead_ad.data(), 12,
+                                  reinterpret_cast<const byte*>("test"), 4,
+                                  aead_out.data(), aead_tag_actual.data()) != 0)
+    return false;
+
+  return etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
+                    kat_aead_tag_expected.begin());
 }
 
 }  // namespace security

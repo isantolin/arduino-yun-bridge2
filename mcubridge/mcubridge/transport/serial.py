@@ -284,13 +284,25 @@ class SerialTransport:
             frame = Frame.parse(decoded)
             cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
-            if self.state.is_synchronized and self.state.link_session_key:
+            # [SIL-2] Exclusion list for control and status codes (always plain)
+            is_excluded = (
+                protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX
+                or protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
+            )
+
+            if (
+                self.state.is_synchronized
+                and self.state.link_session_key
+                and not is_excluded
+            ):
                 # [SIL-2] Authenticated Decryption
+                # AD includes the raw frame header. We must use the ORIGINAL
+                # command ID (with flags) as received on the wire.
                 header_bytes = RPC_FRAME_HEADER.build(
                     {
                         "version": protocol.PROTOCOL_VERSION,
-                        "payload_len": len(payload),
-                        "command_id": cmd_id,
+                        "payload": payload,
+                        "command_id": int(frame.command_id),
                         "sequence_id": seq_id,
                     }
                 )
@@ -391,7 +403,17 @@ class SerialTransport:
                 self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
                 seq = self._tx_sequence_id
 
-            if self.state.is_synchronized and self.state.link_session_key:
+            # [SIL-2] Exclusion list for control and status codes (always plain)
+            is_excluded = (
+                protocol.STATUS_CODE_MIN <= cmd <= protocol.STATUS_CODE_MAX
+                or protocol.SYSTEM_COMMAND_MIN <= cmd <= protocol.SYSTEM_COMMAND_MAX
+            )
+
+            if (
+                self.state.is_synchronized
+                and self.state.link_session_key
+                and not is_excluded
+            ):
                 # [SIL-2] Encrypt payload using session key and auto-incrementing nonce
                 nonce, new_counter = generate_nonce_with_counter(
                     self.state.link_nonce_counter
@@ -402,7 +424,7 @@ class SerialTransport:
                 header_bytes = RPC_FRAME_HEADER.build(
                     {
                         "version": protocol.PROTOCOL_VERSION,
-                        "payload_len": len(pl),
+                        "payload": pl,
                         "command_id": cmd,
                         "sequence_id": seq,
                     }

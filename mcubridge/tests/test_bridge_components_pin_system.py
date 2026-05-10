@@ -208,6 +208,7 @@ async def test_mqtt_shell_run_invokes_process_component(
     with patch.object(process, "handle_mqtt", new_callable=AsyncMock) as mock_mqtt:
         # Re-register mock in dispatcher manually
         service.process = MagicMock(handle_mqtt=mock_mqtt)
+        service.mcu_registry[protocol.Command.CMD_PROCESS_RUN_ASYNC.value] = mock_mqtt
 
         await service.handle_mqtt_message(
             Message(

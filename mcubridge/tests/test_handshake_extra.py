@@ -50,48 +50,6 @@ async def test_handshake_sync_resp_rate_limit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handshake_sync_resp_replay_detected() -> None:
-    """Test replay detection in handle_link_sync_resp."""
-    import os
-
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234",
-        mqtt_spool_dir=os.path.abspath(
-            f".tmp_tests/mcubridge-test-handshake-{os.getpid()}-{time.time_ns()}"
-        ),
-        allow_non_tmp_paths=True,
-    )
-    state = create_runtime_state(config)
-    try:
-        timing = derive_serial_timing(config)
-        manager = SerialHandshakeManager(
-            config=config,
-            state=state,
-            serial_timing=timing,
-            send_frame=AsyncMock(),
-            enqueue_mqtt=AsyncMock(),
-            acknowledge_frame=AsyncMock(),
-        )
-        nonce = b"A" * 16
-        state.link_handshake_nonce = nonce
-        state.link_expected_tag = manager.calculate_handshake_tag(
-            config.serial_shared_secret, nonce
-        )
-
-        # Mock validate_nonce_counter to fail (replay)
-        with patch(
-            "mcubridge.services.handshake.validate_nonce_counter",
-            return_value=(False, 0),
-        ):
-            assert (
-                await manager.handle_link_sync_resp(0, nonce + state.link_expected_tag)
-                is False
-            )
-    finally:
-        state.cleanup()
-
-
-@pytest.mark.asyncio
 async def test_handshake_fetch_capabilities_timeout_and_retry() -> None:
     """Test _fetch_capabilities retry logic on timeout."""
     import os

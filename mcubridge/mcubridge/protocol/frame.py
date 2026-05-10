@@ -44,7 +44,9 @@ class FrameAdapter(Adapter):
     def _decode(self, obj: Any, context: Any, path: Any) -> "Frame":
         # Extract fields from the declarative Body
         header = obj.body.value.header
+        nonce = obj.body.value.nonce
         payload = obj.body.value.payload
+        tag = obj.body.value.tag
         cmd_id = int(header.command_id)
 
         # Handle implicit RLE decompression if bit 15 is set
@@ -56,6 +58,8 @@ class FrameAdapter(Adapter):
             command_id=cmd_id,
             sequence_id=int(header.sequence_id),
             payload=payload,
+            nonce=nonce,
+            tag=tag,
         )
 
     def _encode(self, obj: "Frame", context: Any, path: Any) -> dict[str, Any]:
@@ -68,8 +72,18 @@ class FrameAdapter(Adapter):
                 f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}"
             )
 
-        # Handle implicit RLE compression
-        if payload and should_compress(payload):
+        # Handle implicit RLE compression (Exclude handshake/control commands for safety)
+        if (
+            payload
+            and cmd_id
+            not in (
+                protocol.Command.CMD_LINK_SYNC,
+                protocol.Command.CMD_LINK_RESET,
+                protocol.Command.CMD_SET_BAUDRATE,
+                protocol.Command.CMD_GET_CAPABILITIES,
+            )
+            and should_compress(payload)
+        ):
             compressed = RLE_TRANSFORM.build(payload)
             if len(compressed) < len(payload):
                 payload = compressed
@@ -84,7 +98,9 @@ class FrameAdapter(Adapter):
                         "command_id": cmd_id,
                         "sequence_id": obj.sequence_id,
                     },
+                    "nonce": obj.nonce,
                     "payload": payload,
+                    "tag": obj.tag,
                 }
             }
         }
@@ -113,7 +129,9 @@ RPC_FRAME_HEADER = Struct(
 
 RPC_FRAME_BODY = Struct(
     "header" / RPC_FRAME_HEADER,
+    "nonce" / Bytes(12),
     "payload" / Bytes(this.header.payload_len),
+    "tag" / Bytes(16),
 )
 
 

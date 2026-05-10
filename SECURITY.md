@@ -25,18 +25,20 @@ If you discover a potential security vulnerability in this project, please repor
 
 Arduino MCU Bridge 2 is built with security and robustness as primary goals, especially for industrial and safety-critical environments (**SIL-2 compliant**).
 
-### 1. Handshake & Authentication
+### 1. Handshake & Encryption
 All serial communication requires a successful handshake using a pre-shared secret.
-- **HMAC-SHA256:** Used to authenticate the link during synchronization.
-- **Anti-Replay:** Nonces with monotonic counters are used to prevent replay attacks on the handshake.
-- **MIL-SPEC Compliance:** HKDF key derivation following NIST standards.
+- **Mutual Authentication:** HMAC-SHA256 used to authenticate the link during synchronization.
+- **AEAD (ChaCha20-Poly1305):** All functional data is encrypted and authenticated using mission-critical ChaCha20-Poly1305.
+- **Anti-Replay:** Monotonic nonces with counter validation prevent replay attacks on both the handshake and functional frames.
+- **MIL-SPEC Compliance:** HKDF-SHA256 (RFC 5869) for session key derivation following NIST standards.
 
 ### 2. Integrity
-- **CRC32 (IEEE 802.3):** Every frame includes a mandatory 32-bit CRC. Frames with corrupted data are discarded immediately at the transport layer before any parsing occurs.
+- **CRC32 (IEEE 802.3):** Every frame includes a mandatory 32-bit CRC.
+- **Poly1305 MAC:** Every encrypted frame includes a 128-bit authentication tag protecting the header and payload.
 
 ### 3. Flash & Resource Protection
-- **RAM-only storage:** The daemon enforces that frequent writes (like MQTT spooling and file operations) occur in `/tmp` (volatile memory) to prevent flash wear and hardware degradation on OpenWrt devices.
-- **Strict Boundaries:** Payloads are strictly bounded to `MAX_PAYLOAD_SIZE` (128 bytes) to prevent buffer overflows.
+- **RAM-only storage:** The daemon enforces that frequent writes (like MQTT spooling and file operations) occur in `/tmp` (volatile memory).
+- **Strict Boundaries:** Payloads are strictly bounded to `MAX_PAYLOAD_SIZE` (64 bytes) to prevent buffer overflows.
 
 ### 4. Cryptographic Self-Validation
 

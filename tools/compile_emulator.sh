@@ -55,6 +55,9 @@ WOLF_SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
     "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
     "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/chacha.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/poly1305.c"
+    "$WOLFSSL_PATH/wolfcrypt/src/chacha20_poly1305.c"
 )
 
 MPACK_SOURCES=(

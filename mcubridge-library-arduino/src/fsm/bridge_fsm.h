@@ -41,14 +41,10 @@ class FaultState;
 class StartupState
     : public etl::fsm_state<BridgeFsm, StartupState,
                             static_cast<etl::fsm_state_id_t>(StateId::STARTUP),
-                            EvStabilized, EvReset, EvHandshakeFailed,
-                            EvTimeout> {
+                            EvReset, EvHandshakeFailed, EvTimeout> {
  public:
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvStabilized&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
-  }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
+    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
@@ -71,7 +67,7 @@ class UnsynchronizedState
     return static_cast<etl::fsm_state_id_t>(StateId::HANDSHAKE);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
+    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
@@ -97,7 +93,7 @@ class HandshakeState
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
+    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvTimeout&) {
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
@@ -117,7 +113,7 @@ class SynchronizedState
     return static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
+    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
@@ -143,7 +139,7 @@ class AwaitingAckState
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
+    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
@@ -159,7 +155,7 @@ class FaultState
                             EvReset> {
  public:
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
+    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
   [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();

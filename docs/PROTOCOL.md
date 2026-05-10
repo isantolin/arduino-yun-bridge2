@@ -385,23 +385,30 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 ## 3. Formato de frame (antes de COBS)
 
 ```
-+--------------------------+---------------------+----------+
-| Cabecera (7 bytes)       | Payload (0-64)      | CRC32    |
-+--------------------------+---------------------+----------+
++----------+------------+------------+-----------+----------+-----------+----------+
+| Header   | Nonce (12) | Payload    | Tag (16)  | CRC32    |
++----------+------------+------------+-----------+----------+-----------+----------+
 ```
 
-### 3.1 Cabecera
+### 3.1 Cabecera (7 bytes)
 
 | Campo | Tipo | Descripción |
 | --- | --- | --- |
 | `version` | `uint8_t` | Versión del protocolo (actual: `0x02`). |
-| `payload_length` | `uint16_t` | Longitud del payload en bytes. |
+| `payload_length` | `uint16_t` | Longitud del payload **antes** del cifrado. |
 | `command_id` | `uint16_t` | Identificador del comando o status. |
-| `sequence_id` | `uint16_t` | Identificador de secuencia (16-bit) para deduplicación y tracking. |
+| `sequence_id` | `uint16_t` | Identificador de secuencia para deduplicación. |
+
+### 3.1.1 Seguridad AEAD (ChaCha20-Poly1305)
+
+Si el enlace está sincronizado y el comando no está en la lista de exclusión:
+- **Nonce (12 bytes):** Prefijo "MCU" o "DMN" + 8 bytes de contador monótono.
+- **Payload:** Datos cifrados.
+- **Tag (16 bytes):** Firma de autenticidad Poly1305 sobre el Header (Associated Data) + Payload.
 
 ### 3.2 CRC
 
-CRC32 (4 bytes, Big Endian) sobre cabecera+payload; CRC-32 IEEE 802.3 con polinomio reflejado `0xEDB88320`, estado inicial `0xFFFFFFFF`, XOR final `0xFFFFFFFF`.
+CRC32 (4 bytes, Big Endian) sobre Header + Nonce + Payload + Tag. Polinomio IEEE 802.3.
 
 ### 3.3 Implementación de bibliotecas (Wire Format)
 

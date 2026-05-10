@@ -45,9 +45,6 @@ _PRE_SYNC_ALLOWED_COMMANDS = {
 STATUS_VALUES = {s.value for s in Status}
 
 
-STATUS_VALUES = {status.value for status in Status}
-
-
 class BridgeService:
     """Service façade orchestrating MCU and MQTT interactions. [SIL-2]"""
 
@@ -194,8 +191,8 @@ class BridgeService:
 
             # 1. Policy Guard
             if action := self._get_topic_action(route):
-                if not self.is_topic_action_allowed(route.topic, action):
-                    await self.reject_topic_action(inbound, route.topic, action)
+                if not self._is_topic_action_allowed(route.topic, action):
+                    await self._reject_topic_action(inbound, route.topic, action)
                     return
 
             # 2. Synchronization Guard
@@ -279,10 +276,10 @@ class BridgeService:
     async def _handle_bridge_topic(self, route: TopicRoute, inbound: "Message") -> bool:
         match list(route.remainder):
             case ["handshake", "get"]:
-                await self.publish_bridge_snapshot("handshake", inbound)
+                await self._publish_bridge_snapshot("handshake", inbound)
                 return True
             case [("summary" | "state"), "get"]:
-                await self.publish_bridge_snapshot("summary", inbound)
+                await self._publish_bridge_snapshot("summary", inbound)
                 return True
             case _:
                 return False

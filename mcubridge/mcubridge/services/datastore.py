@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import structlog
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import msgspec
 from aiomqtt.message import Message
@@ -57,11 +57,12 @@ class DatastoreComponent:
             logger.warning("Malformed DatastorePutPacket payload: %s", payload.hex())
             return False
 
-        key = packet.key
-        value_bytes = bytes(packet.value)
+        key: str = packet.key
+        value_bytes: bytes = bytes(packet.value)
 
         if self.state.datastore_cache is not None:
-            self.state.datastore_cache[key] = value_bytes
+            # [SIL-2] Zero Wrapper datastore put
+            cast(Any, self.state.datastore_cache)[key] = value_bytes
 
         await self._publish_datastore_value(key, value_bytes)
         return True
@@ -82,12 +83,12 @@ class DatastoreComponent:
             )
             return False
 
-        key = packet.key
+        key: str = packet.key
 
         # [SIL-2] Zero Wrapper datastore get
         val_bytes: bytes = b""
         if self.state.datastore_cache is not None:
-            v = self.state.datastore_cache.get(key, b"")
+            v: Any = cast(Any, self.state.datastore_cache).get(key, b"")
             if isinstance(v, bytes):
                 val_bytes = v
             elif isinstance(v, str):

@@ -29,7 +29,7 @@ def datastore_component(runtime_config: RuntimeConfig) -> DatastoreComponent:
     config = runtime_config
     config.allow_non_tmp_paths = True
     state = MagicMock(spec=RuntimeState)
-    state.datastore_cache = {}
+    state.datastore_cache = cast(Any, {})
     state.mqtt_topic_prefix = "br"
 
     serial_flow = MagicMock(spec=SerialFlowController)
@@ -48,7 +48,7 @@ async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> 
     payload = msgspec.msgpack.encode(DatastorePutPacket(key="temp", value=b"25.5"))
     await datastore_component.handle_put(0, payload)
 
-    assert datastore_component.state.datastore_cache["temp"] == b"25.5"
+    assert cast(Any, datastore_component.state.datastore_cache)["temp"] == b"25.5"
     cast(Any, datastore_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
@@ -56,7 +56,7 @@ async def test_datastore_handle_put(datastore_component: DatastoreComponent) -> 
 async def test_datastore_handle_get_request(
     datastore_component: DatastoreComponent,
 ) -> None:
-    datastore_component.state.datastore_cache["version"] = b"1.0.0"
+    cast(Any, datastore_component.state.datastore_cache)["version"] = b"1.0.0"
     payload = msgspec.msgpack.encode(DatastoreGetPacket(key="version"))
 
     await datastore_component.handle_get_request(0, payload)
@@ -81,7 +81,7 @@ async def test_datastore_handle_mqtt_put(
 
     await datastore_component.handle_mqtt(route, msg)
 
-    assert datastore_component.state.datastore_cache["sys/uptime"] == b"3600"
+    assert cast(Any, datastore_component.state.datastore_cache)["sys/uptime"] == b"3600"
     cast(Any, datastore_component.mqtt_flow.enqueue_mqtt).assert_called()
 
 
@@ -89,7 +89,7 @@ async def test_datastore_handle_mqtt_put(
 async def test_datastore_handle_mqtt_get(
     datastore_component: DatastoreComponent,
 ) -> None:
-    datastore_component.state.datastore_cache["status"] = b"OK"
+    cast(Any, datastore_component.state.datastore_cache)["status"] = b"OK"
     route = TopicRoute(
         "br/d/get/status", "br", Topic.DATASTORE, (DatastoreAction.GET.value, "status")
     )

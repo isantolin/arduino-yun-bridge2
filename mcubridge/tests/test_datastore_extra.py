@@ -1,6 +1,8 @@
 """Extra edge-case tests for DatastoreComponent (SIL-2)."""
 
 from __future__ import annotations
+
+from typing import Any, cast
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.transport.mqtt import MqttTransport
 import msgspec
@@ -88,7 +90,7 @@ async def test_datastore_handle_get_truncation() -> None:
         mqtt_flow.enqueue_mqtt = AsyncMock()
 
         comp = DatastoreComponent(config, state, serial_flow, mqtt_flow)
-        state.datastore_cache["long_key"] = "a" * 300
+        cast(Any, state.datastore_cache)["long_key"] = "a" * 300
 
         from mcubridge.protocol.structures import DatastoreGetPacket
 
@@ -167,7 +169,7 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
         assert not mqtt_flow.enqueue_mqtt.called
 
         # 4. Echo suppression on GET
-        state.datastore_cache["echo_key"] = b"val"
+        cast(Any, state.datastore_cache)["echo_key"] = b"val"
         await comp.handle_mqtt(
             TopicRoute(
                 "br/d/get/echo_key",
@@ -187,7 +189,7 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
         assert not mqtt_flow.enqueue_mqtt.called
 
         # 5. Type coercion from int
-        state.datastore_cache["int_key"] = b"42"
+        cast(Any, state.datastore_cache)["int_key"] = b"42"
         await comp.handle_mqtt(
             TopicRoute(
                 "br/d/get/int_key/request",
@@ -268,7 +270,7 @@ async def test_datastore_mqtt_put_too_large() -> None:
             ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
-        assert "key" not in state.datastore_cache
+        assert "key" not in cast(Any, state.datastore_cache)
 
     finally:
         state.cleanup()

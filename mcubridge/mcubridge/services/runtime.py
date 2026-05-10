@@ -133,7 +133,7 @@ class BridgeService:
         """
         now = asyncio.get_running_loop().time()
         try:
-            if self.serial_flow.on_frame_received:
+            if True:  # [SIL-2] observer is always configured
                 self.serial_flow.on_frame_received(command_id, sequence_id, payload)
 
             if not self._is_frame_allowed_pre_sync(command_id):

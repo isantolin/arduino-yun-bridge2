@@ -334,7 +334,7 @@ class RuntimeState(msgspec.Struct):
         # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
         if self.datastore_cache is not None:
             with _sup:
-                self.datastore_cache.close()
+                cast(Any, self.datastore_cache).close()
             self.datastore_cache = None
 
         if self._mailbox_queue_cache is not None:
@@ -365,9 +365,8 @@ class RuntimeState(msgspec.Struct):
         ]
 
         # Re-initialize transient queues
-        self.console_to_mcu_queue = cast(
-            Any,
-            collections.deque[bytes](maxlen=self.mailbox_queue_limit),
+        self.console_to_mcu_queue = collections.deque[bytes](
+            maxlen=self.mailbox_queue_limit
         )
 
         def _create_spool(
@@ -385,10 +384,7 @@ class RuntimeState(msgspec.Struct):
                     dc_class: Any = diskcache.Deque
                     dq: Any = dc_class.fromcache(cache)
                     return (
-                        cast(
-                            Any,
-                            dq,
-                        ),
+                        dq,
                         cache,
                     )
                 except (OSError, RuntimeError, sqlite3.Error):
@@ -645,7 +641,7 @@ class RuntimeState(msgspec.Struct):
         # empty caches, so "if cache:" would skip close() on empty queues.
         if self.datastore_cache is not None:
             with _sup:
-                self.datastore_cache.close()
+                cast(Any, self.datastore_cache).close()
             self.datastore_cache = None
 
         if self._mailbox_queue_cache is not None:

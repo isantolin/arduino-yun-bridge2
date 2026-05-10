@@ -178,9 +178,9 @@ class DatastoreComponent:
             )
             return
 
-        cached_value: bytes | str | None = None
+        cached_value: Any = None
         if self.state.datastore_cache is not None:
-            cached_value = self.state.datastore_cache.get(key)
+            cached_value = cast(Any, self.state.datastore_cache).get(key)
         if cached_value is None:
             if is_request:
                 await self._publish_datastore_value(

@@ -249,7 +249,7 @@ async def test_datastore_mqtt_put_too_large() -> None:
             ),
         )
         assert not mqtt_flow.enqueue_mqtt.called
-        assert long_key not in state.datastore_cache
+        assert long_key not in cast(Any, state.datastore_cache)
 
         # Value too large
         long_val = b"v" * 300

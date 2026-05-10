@@ -194,8 +194,3 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
     config = settings.load_runtime_config()
     assert config.watchdog_enabled is True
     assert config.watchdog_interval == 0.5
-
-
-5
-
-5

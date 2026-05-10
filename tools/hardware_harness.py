@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 import msgspec
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -44,8 +44,7 @@ def _coerce_list(value: Any) -> list[str]:
     if value is None:
         return []
     if isinstance(value, list):
-        items: list[Any] = value if isinstance(value, list) else []
-        return [str(i) for i in items]
+        return [str(i) for i in cast(list[Any], value)]
     return [str(value)]
 
 

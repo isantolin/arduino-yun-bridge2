@@ -67,6 +67,7 @@ from ..protocol.structures import (
     ProcessPollResponsePacket,
     QueuedPublish,
     ShellCommandPayload,
+    SpiConfigPacket,
     SpiTransferResponsePacket,
     SpiTransferPacket,
     TopicRoute,
@@ -640,6 +641,8 @@ class BridgeService:
                         reply_context=inbound,
                     )
             elif action == FileAction.READ and path.is_file():
+                if inbound.topic.value.endswith(protocol.MQTT_SUFFIX_RESPONSE):
+                    return
                 await self.mqtt.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(
@@ -647,6 +650,7 @@ class BridgeService:
                             Topic.FILE,
                             FileAction.READ,
                             target,
+                            protocol.MQTT_SUFFIX_RESPONSE,
                         ),
                         await asyncio.to_thread(path.read_bytes),
                     ),

@@ -713,12 +713,8 @@ class BridgeService:
                 await self.serial.send(Command.CMD_SPI_END.value, b"")
             case SpiAction.CONFIG:
                 with contextlib.suppress(Exception):
-                    # Robust decoding for JSON payload
-                    raw = (
-                        msgspec.json.decode(inbound.payload)
-                        if isinstance(inbound.payload, (bytes, str))
-                        else inbound.payload
-                    )
+                    # Simplified raw decoding
+                    raw = msgspec.json.decode(inbound.payload)
                     p = msgspec.convert(raw, SpiConfigPacket)
                     await self.serial.send(
                         Command.CMD_SPI_SET_CONFIG.value, msgspec.msgpack.encode(p)
@@ -745,6 +741,8 @@ class BridgeService:
                             ),
                             reply_context=inbound,
                         )
+            case _:
+                logger.warning("Unsupported SPI action: %s", route.identifier)
 
     async def _handle_mqtt_pin(self, route: TopicRoute, inbound: Message) -> None:
         pin = self._parse_pin(route.segments[0])

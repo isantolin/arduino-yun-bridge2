@@ -616,6 +616,11 @@ void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
   _handleAck(ctx.raw_command);
 }
 
+void BridgeClass::_onStartupStabilized() {
+  // [SIL-2] Legacy hook preserved for test suite compatibility.
+  // Functional startup now transitions directly via begin().
+}
+
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this, &ctx]() {
     rpc::payload::VersionResponse resp = {
@@ -848,6 +853,29 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
 
 void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
 void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
+
+[[maybe_unused]] void BridgeClass::_computeHandshakeTag(
+    const etl::span<const uint8_t> nonce, etl::span<uint8_t> tag) {
+  if (_shared_secret.empty()) return;
+
+  etl::array<uint8_t, 32> handshake_key;
+  rpc::security::hkdf_sha256(
+      etl::span<uint8_t>(handshake_key),
+      etl::span<const uint8_t>(_shared_secret),
+      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
+      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
+
+  etl::array<uint8_t, 32> full_tag;
+  Hmac hmac_engine;
+  wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(), 32);
+  wc_HmacUpdate(&hmac_engine, nonce.data(),
+                static_cast<word32>(nonce.size()));
+  wc_HmacFinal(&hmac_engine, full_tag.data());
+
+  etl::copy_n(full_tag.begin(), 16, tag.begin());
+  rpc::security::secure_zero(handshake_key);
+  rpc::security::secure_zero(full_tag);
+}
 
 namespace bridge {
 void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception& e) {

@@ -176,12 +176,11 @@ void test_bridge_fsm_resets() {
 
 void test_checksum_direct_library_path() {
     // Validates the new etl::byte_stream_writer logic in checksum::compute
-    etl::array<uint8_t, 4> null_array = {0,0,0,0};
-    rpc::Frame f = {
-        {rpc::PROTOCOL_VERSION, 4, static_cast<uint16_t>(rpc::CommandId::CMD_XON), 0},
-        null_array,
-        0
-    };
+    rpc::Frame f = {};
+    f.header = {rpc::PROTOCOL_VERSION, 4, static_cast<uint16_t>(rpc::CommandId::CMD_XON), 0};
+    f.nonce.fill(0);
+    f.tag.fill(0);
+    f.payload = etl::span<const uint8_t>();
     uint32_t crc = rpc::checksum::compute(f);
     TEST_ASSERT(crc != 0);
 }
@@ -238,11 +237,11 @@ void test_bridge_duplicate_packet() {
     msgpack::Encoder enc(buf.data(), buf.size());
     msg.encode(enc);
     
-    rpc::Frame f = {
-        {rpc::PROTOCOL_VERSION, (uint16_t)enc.result().size(), (uint16_t)rpc::CommandId::CMD_DIGITAL_WRITE, 10},
-        enc.result(),
-        0
-    };
+    rpc::Frame f = {};
+    f.header = {rpc::PROTOCOL_VERSION, (uint16_t)enc.result().size(), (uint16_t)rpc::CommandId::CMD_DIGITAL_WRITE, 10};
+    f.nonce.fill(0);
+    f.tag.fill(0);
+    f.payload = enc.result();
     
     bridge::router::CommandContext ctx(&f, f.header.command_id, 10, true, true);
     
@@ -262,11 +261,11 @@ void test_bridge_exhaustive_command_handlers() {
     auto trigger = [&](rpc::CommandId id, auto payload) {
         msgpack::Encoder enc(buf.data(), buf.size());
         payload.encode(enc);
-        rpc::Frame f = {
-            {rpc::PROTOCOL_VERSION, (uint16_t)enc.result().size(), (uint16_t)id, 1},
-            enc.result(),
-            0
-        };
+        rpc::Frame f = {};
+        f.header = {rpc::PROTOCOL_VERSION, (uint16_t)enc.result().size(), (uint16_t)id, 1};
+        f.nonce.fill(0);
+        f.tag.fill(0);
+        f.payload = enc.result();
         ba.dispatch(f);
     };
 

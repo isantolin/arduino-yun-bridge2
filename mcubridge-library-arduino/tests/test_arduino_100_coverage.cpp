@@ -43,9 +43,10 @@ void test_bridge_reset_state() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.onStartupStabilized();
+  // New simplified FSM moves directly to UNSYNCHRONIZED on reset/begin
   TEST_ASSERT(ba.isUnsynchronized());
   Bridge.enterSafeState();
-  TEST_ASSERT(ba.getStartupStabilizing());
+  TEST_ASSERT(ba.isUnsynchronized());
 }
 
 void test_bridge_exhaustive_dispatch() {

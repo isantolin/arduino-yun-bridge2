@@ -69,17 +69,21 @@ void test_protocol_builder_exhaustive() {
   using namespace rpc;
   etl::array<uint8_t, 128> buf;
   etl::array<uint8_t, 3> payload = {1, 2, 3};
+  etl::array<uint8_t, 12> nonce = {};
+  etl::array<uint8_t, 16> tag = {};
 
   // Success path
   size_t len = FrameBuilder::build(etl::span<uint8_t>(buf.data(), 128),
                                    (uint16_t)CommandId::CMD_GET_VERSION, 1,
-                                   etl::span<const uint8_t>(payload.data(), 3));
+                                   etl::span<const uint8_t>(payload.data(), 3),
+                                   nonce, tag);
   TEST_ASSERT(len > 0);
 
   // Buffer too small
   len = FrameBuilder::build(etl::span<uint8_t>(buf.data(), 5),
                             (uint16_t)CommandId::CMD_GET_VERSION, 1,
-                            etl::span<const uint8_t>(payload.data(), 3));
+                            etl::span<const uint8_t>(payload.data(), 3),
+                            nonce, tag);
   TEST_ASSERT_EQUAL(0, len);
 }
 

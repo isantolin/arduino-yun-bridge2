@@ -76,7 +76,8 @@ void test_bridge_begin() {
   BiStream stream;
   reset_bridge(stream);
   auto& ba = TestAccessor::create(Bridge);
-  TEST_ASSERT(ba.getStartupStabilizing());
+  // New simplified FSM moves directly to UNSYNCHRONIZED on begin()
+  TEST_ASSERT(ba.isUnsynchronized());
 }
 
 void test_bridge_send_frame() {

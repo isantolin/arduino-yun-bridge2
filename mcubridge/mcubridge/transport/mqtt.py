@@ -227,8 +227,10 @@ class MqttTransport:
             props.MessageExpiryInterval = msg.message_expiry_interval
         if msg.response_topic is not None:
             props.ResponseTopic = msg.response_topic
-        if msg.correlation_data is not None: props.CorrelationData = msg.correlation_data
-        if msg.user_properties: props.UserProperty = list(msg.user_properties)
+        if msg.correlation_data is not None:
+            props.CorrelationData = msg.correlation_data
+
+        props.UserProperty = list(msg.user_properties)
 
         try:
             await self._client.publish(

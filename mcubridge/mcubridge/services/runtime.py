@@ -123,7 +123,7 @@ class BridgeService:
             send_frame=self.serial.send,
             enqueue_mqtt=self.mqtt.enqueue_mqtt,
             acknowledge_frame=self.serial.acknowledge,
-            logger_=cast(Any, logger),
+            logger_=logger,
         )
 
         # [SIL-2] Shared Resource Protection
@@ -306,17 +306,18 @@ class BridgeService:
     async def _handle_mcu_datastore_get(self, seq_id: int, payload: bytes) -> bool:
         with contextlib.suppress(Exception):
             key = msgspec.msgpack.decode(payload, type=DatastoreGetPacket).key
-            val = (
-                self.state.datastore_cache.get(key, b"")
-                if self.state.datastore_cache
-                else b""
-            )
+            # Use explicit cast to tell Pyright that get() returns bytes | str | None
+            cache = cast(Any, self.state.datastore_cache)
+            val = cache.get(key, b"") if cache else b""
+
             if isinstance(val, str):
                 val = val.encode()
+
+            res_payload = msgspec.convert(val, bytes)
             return await self.serial.send(
                 Command.CMD_DATASTORE_GET_RESP.value,
                 msgspec.msgpack.encode(
-                    DatastoreGetResponsePacket(value=msgspec.Raw(val[:255]))
+                    DatastoreGetResponsePacket(value=msgspec.Raw(res_payload[:255]))
                 ),
             )
         return False
@@ -568,18 +569,18 @@ class BridgeService:
                 await self._publish_datastore_value(key, pl, reply_context=inbound)
         elif route.identifier == DatastoreAction.GET:
             is_req = bool(route.remainder) and route.remainder[-1] == "request"
-            val = (
-                self.state.datastore_cache.get(key)
-                if self.state.datastore_cache
-                else None
-            )
+            cache = cast(Any, self.state.datastore_cache)
+            val = cache.get(key) if cache else None
+
             if val is not None:
                 if not is_req and inbound.payload:
                     return
+
+                res_payload = msgspec.convert(
+                    val.encode() if isinstance(val, str) else val, bytes
+                )
                 await self._publish_datastore_value(
-                    key,
-                    val.encode() if isinstance(val, str) else bytes(val),
-                    reply_context=inbound,
+                    key, res_payload, reply_context=inbound
                 )
             elif is_req:
                 await self._publish_datastore_value(
@@ -600,7 +601,7 @@ class BridgeService:
     async def _handle_mqtt_file(self, route: TopicRoute, inbound: Message) -> None:
         action = route.action
         target = "/".join(route.remainder)
-        pl = bytes(inbound.payload) if inbound.payload else b""
+        pl = msgspec.convert(inbound.payload, bytes)
         if not (action and target):
             return
         if target.startswith("mcu/"):
@@ -698,11 +699,7 @@ class BridgeService:
 
     async def _handle_mqtt_pin(self, route: TopicRoute, inbound: Message) -> None:
         pin = self._parse_pin(route.segments[0])
-        pl = (
-            inbound.payload.decode()
-            if isinstance(inbound.payload, bytes)
-            else str(inbound.payload)
-        )
+        pl = msgspec.convert(inbound.payload, bytes).decode()
         if pin < 0:
             return
         match len(route.segments):

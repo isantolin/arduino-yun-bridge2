@@ -12,6 +12,7 @@ import shutil
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import structlog
 import mcubridge.config.const
@@ -82,7 +83,7 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
 
     policy = pyfuncitem.funcargs.get("event_loop_policy")
     if policy is not None:
-        asyncio.set_event_loop_policy(policy)
+        asyncio.set_event_loop_policy(cast(asyncio.AbstractEventLoopPolicy, policy))
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

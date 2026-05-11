@@ -11,6 +11,8 @@
 #include "etl_profile.h"
 #include "hal/hal.h"
 
+namespace bridge::test { class TestAccessor; }
+
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
 #endif
@@ -178,6 +180,7 @@ class BridgeClass {
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;
 
+  friend class bridge::test::TestAccessor;
   etl::vector<uint8_t, 32> _shared_secret;
   etl::array<uint8_t, 32> _session_key;
   uint64_t _tx_nonce_counter;

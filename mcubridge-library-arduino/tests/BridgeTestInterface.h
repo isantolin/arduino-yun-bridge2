@@ -1,7 +1,10 @@
 #ifndef BRIDGE_TEST_INTERFACE_H
 #define BRIDGE_TEST_INTERFACE_H
 
+#ifndef BRIDGE_ENABLE_TEST_INTERFACE
 #define BRIDGE_ENABLE_TEST_INTERFACE
+#endif
+
 #include "Bridge.h"
 #include <etl/span.h>
 
@@ -22,7 +25,6 @@ class TestAccessor {
   }
 
   bool isSynchronized() const { return _bridge.isSynchronized(); }
-  bool isAwaitingAck() const { return _bridge.isAwaitingAck(); }
   bool isFault() const {
     return _fsm.get_state_id() == static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::FAULT);
   }

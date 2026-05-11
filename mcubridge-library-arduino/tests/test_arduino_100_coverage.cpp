@@ -128,10 +128,8 @@ void test_bridge_fsm_exhaustive() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  ba.trigger(bridge::fsm::EvHandshakeStart());
-  ba.trigger(bridge::fsm::EvHandshakeComplete());
-  ba.trigger(bridge::fsm::EvTimeout());
-  ba.trigger(bridge::fsm::EvReset());
+  ba.setIdle();
+  ba.onStartupStabilized();
 }
 
 void test_services_exhaustive() {
@@ -174,7 +172,7 @@ void test_bridge_error_handling() {
   ba.setSynchronized();
 
   etl::array<uint8_t, 8> c = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-  ba._onPacketReceived(etl::span<const uint8_t>(c.data(), c.size()));
+  ba.invokePacketReceived(etl::span<const uint8_t>(c.data(), c.size()));
 }
 
 void test_bridge_compressed() {
@@ -208,7 +206,7 @@ void test_bridge_packet_rx_exhaustive() {
   Bridge.begin(115200, reinterpret_cast<const char*>(secret.data()));
 
   etl::array<uint8_t, 1> d = {0};
-  ba._onPacketReceived(etl::span<const uint8_t>(d.data(), d.size()));
+  ba.invokePacketReceived(etl::span<const uint8_t>(d.data(), d.size()));
 }
 
 void test_bridge_dispatch_all() {

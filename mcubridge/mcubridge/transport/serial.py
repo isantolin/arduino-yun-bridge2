@@ -96,6 +96,7 @@ class SerialTransport:
         self._current: PendingCommand | None = None
         self._flow_lock = asyncio.Lock()
         self._pipeline_observer: Callable[[PipelineEvent], None] | None = None
+
         self._ack_timeout = max(
             self.config.serial_retry_timeout or 0, SERIAL_MIN_ACK_TIMEOUT
         )
@@ -175,7 +176,8 @@ class SerialTransport:
             if self.config.serial_baud != connect_baud:
                 if not await self._negotiate_baudrate(self.config.serial_baud):
                     raise ConnectionError("Baudrate negotiation failed")
-            await self.service.on_serial_connected()
+            if self.service:
+                await self.service.on_serial_connected()
             stop_task = asyncio.get_running_loop().create_task(self._stop_event.wait())
             done, pending = await asyncio.wait(
                 [read_task, stop_task], return_when=asyncio.FIRST_COMPLETED
@@ -192,7 +194,8 @@ class SerialTransport:
             with contextlib.suppress(asyncio.CancelledError):
                 await read_task
             try:
-                await self.service.on_serial_disconnected()
+                if self.service:
+                    await self.service.on_serial_disconnected()
             except Exception as e:
                 logger.error("Error in on_serial_disconnected hook: %s", e)
             if self.writer:
@@ -225,10 +228,6 @@ class SerialTransport:
                 packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
                 packet_view = memoryview(packet_with_sep)[:-1]
                 if packet_view:
-                    if logger.is_enabled_for(logging.DEBUG):
-                        logger.debug(
-                            "[SERIAL <- MCU] [RAW]: [%s]", packet_view.hex(" ").upper()
-                        )
                     self._process_packet(packet_view)
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
@@ -295,17 +294,12 @@ class SerialTransport:
                 except Exception as e:
                     raise ValueError(f"AEAD Authentication Failed: {e}") from e
 
-            if logger.is_enabled_for(logging.DEBUG):
-                logger.debug(
-                    "[MCU -> SERIAL] [SEQ:%04X] [RAW]: [%s]",
-                    seq_id,
-                    packet_bytes.hex(" ").upper(),
-                )
-
             # Correlate with flow control
             self._correlate_frame(cmd_id, payload)
 
-            await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
+            if self.service:
+                await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
+
             self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
             self.state.metrics.serial_frames_received.inc()
             self.state.serial_throughput_stats.record_rx(len(encoded_packet))
@@ -402,7 +396,7 @@ class SerialTransport:
         )
         async with self._flow_lock:
             while self._current is not None:
-                await asyncio.sleep(0.01)  # Simple serial queue
+                await asyncio.sleep(0.01)
             self._current = pending
         try:
             retryer = tenacity.AsyncRetrying(
@@ -467,7 +461,6 @@ class SerialTransport:
                 await asyncio.sleep(0.01)
             self._current = pending
         try:
-            # Reusing tracked send logic but returning payload
             ok = await self._send_tracked_internal(pending, payload)
             return pending.response_payload if ok else None
         finally:
@@ -477,7 +470,6 @@ class SerialTransport:
     async def _send_tracked_internal(
         self, pending: PendingCommand, payload: bytes
     ) -> bool:
-        # Same as _send_tracked but takes pending object
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(self._max_attempts),
             wait=tenacity.wait_exponential(
@@ -544,7 +536,6 @@ class SerialTransport:
                 self.state.link_nonce_counter
             )
             self.state.link_nonce_counter = new_counter
-            # [SIL-2] Rebuilding header for encryption AD. Preserving fields.
             from mcubridge.protocol.frame import RPC_FRAME_HEADER
 
             header_bytes = RPC_FRAME_HEADER.build(

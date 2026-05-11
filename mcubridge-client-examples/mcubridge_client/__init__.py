@@ -297,6 +297,16 @@ class Bridge:
         )
         return int(res.decode())
 
+    async def enter_bootloader(self) -> None:
+        """Trigger the MCU to enter bootloader mode."""
+        if not self._client:
+            raise ConnectionError("Not connected")
+        await self._client.publish(
+            Topic.build(Topic.SYSTEM, "bootloader"),
+            b"",
+            qos=1,
+        )
+
     async def run_shell_command_async(
         self, parts: list[str], timeout: float = 15
     ) -> int:
@@ -389,3 +399,16 @@ class Bridge:
                 timeout=timeout,
             )
         return None
+
+    def spi(
+        self,
+        frequency: int = 4000000,
+        bit_order: SpiBitOrder | int = SpiBitOrder.MSBFIRST,
+        mode: SpiMode | int = SpiMode.MODE0,
+    ) -> SpiDevice:
+        """Create a high-level SPI device interface."""
+        order = (
+            bit_order if isinstance(bit_order, SpiBitOrder) else SpiBitOrder(bit_order)
+        )
+        s_mode = mode if isinstance(mode, SpiMode) else SpiMode(mode)
+        return SpiDevice(self, frequency, order, s_mode)

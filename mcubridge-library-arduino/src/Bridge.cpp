@@ -735,10 +735,12 @@ void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
   (void)ctx;
   SPIService.begin();
+  (void)sendFrame(rpc::StatusCode::STATUS_ACK, ctx.sequence_id);
 }
 void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
   (void)ctx;
   SPIService.end();
+  (void)sendFrame(rpc::StatusCode::STATUS_ACK, ctx.sequence_id);
 }
 void BridgeClass::_handleSpiTransfer(
     const bridge::router::CommandContext& ctx) {

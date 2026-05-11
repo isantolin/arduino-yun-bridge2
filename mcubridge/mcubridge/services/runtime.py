@@ -34,6 +34,7 @@ from ..protocol.protocol import (
     MailboxAction,
     PinAction,
     ShellAction,
+    SpiAction,
     Status,
     SystemAction,
     response_to_request,
@@ -67,6 +68,7 @@ from ..protocol.structures import (
     QueuedPublish,
     ShellCommandPayload,
     SpiTransferResponsePacket,
+    SpiTransferPacket,
     TopicRoute,
     VersionResponsePacket,
 )
@@ -538,6 +540,8 @@ class BridgeService:
                     await self._handle_mqtt_file(route, inbound)
                 case Topic.SHELL:
                     await self._handle_mqtt_shell(route, inbound)
+                case Topic.SPI:
+                    await self._handle_mqtt_spi(route, inbound)
                 case Topic.DIGITAL | Topic.ANALOG:
                     await self._handle_mqtt_pin(route, inbound)
                 case Topic.SYSTEM:
@@ -696,6 +700,47 @@ class BridgeService:
                 )
             else:
                 await self._stop_process(pid)
+
+    async def _handle_mqtt_spi(self, route: TopicRoute, inbound: Message) -> None:
+        match route.identifier:
+            case SpiAction.BEGIN:
+                await self.serial.send(Command.CMD_SPI_BEGIN.value, b"")
+            case SpiAction.END:
+                await self.serial.send(Command.CMD_SPI_END.value, b"")
+            case SpiAction.CONFIG:
+                with contextlib.suppress(Exception):
+                    # Robust decoding for JSON payload
+                    raw = (
+                        msgspec.json.decode(inbound.payload)
+                        if isinstance(inbound.payload, (bytes, str))
+                        else inbound.payload
+                    )
+                    p = msgspec.convert(raw, SpiConfigPacket)
+                    await self.serial.send(
+                        Command.CMD_SPI_SET_CONFIG.value, msgspec.msgpack.encode(p)
+                    )
+            case SpiAction.TRANSFER:
+                if inbound.payload:
+                    payload = msgspec.msgpack.encode(
+                        SpiTransferPacket(data=bytes(inbound.payload))
+                    )
+                    res = await self.serial.send_and_wait_payload(
+                        Command.CMD_SPI_TRANSFER.value, payload
+                    )
+                    if res:
+                        p = msgspec.msgpack.decode(res, type=SpiTransferResponsePacket)
+                        await self.mqtt.enqueue_mqtt(
+                            QueuedPublish(
+                                topic_path(
+                                    self.state.mqtt_topic_prefix,
+                                    Topic.SPI,
+                                    SpiAction.TRANSFER,
+                                    protocol.MQTT_SUFFIX_RESPONSE,
+                                ),
+                                p.data,
+                            ),
+                            reply_context=inbound,
+                        )
 
     async def _handle_mqtt_pin(self, route: TopicRoute, inbound: Message) -> None:
         pin = self._parse_pin(route.segments[0])

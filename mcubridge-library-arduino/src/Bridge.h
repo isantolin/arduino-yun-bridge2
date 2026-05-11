@@ -125,11 +125,7 @@ class BridgeClass {
   [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
-  [[maybe_unused]] void _computeHandshakeTag(
-      const etl::span<const uint8_t> nonce, etl::span<uint8_t> tag);
-
   void _dispatchCommand(const rpc::Frame& frame);
-  void _onStartupStabilized();
   static void _onBootloaderDelay();
   void _onAckTimeout();
   void _onRxDedupe();

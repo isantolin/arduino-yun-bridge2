@@ -1,23 +1,28 @@
 #ifndef BRIDGE_TEST_INTERFACE_H
 #define BRIDGE_TEST_INTERFACE_H
 
+#define BRIDGE_ENABLE_TEST_INTERFACE
 #include "Bridge.h"
-#include "services/Console.h"
+#include <etl/span.h>
 
-namespace bridge {
-namespace test {
+namespace bridge::test {
 
-/**
- * [SIL-2] TestAccessor: Uses inheritance to expose protected BridgeClass
- * members. This eliminates the 'friend' declaration in production code.
- */
-class TestAccessor : public BridgeClass {
+class TestAccessor {
  public:
   static TestAccessor& create(BridgeClass& bridge) {
-    return static_cast<TestAccessor&>(bridge);
+    static TestAccessor accessor(bridge);
+    return accessor;
   }
 
-  bool isAwaitingAck() const { return _fsm.isAwaitingAck(); }
+  explicit TestAccessor(BridgeClass& bridge) : _bridge(bridge), _fsm(bridge._fsm) {}
+
+  void setSynchronized() {
+    _fsm.receive(bridge::fsm::EvHandshakeStart());
+    _fsm.receive(bridge::fsm::EvHandshakeComplete());
+  }
+
+  bool isSynchronized() const { return _bridge.isSynchronized(); }
+  bool isAwaitingAck() const { return _bridge.isAwaitingAck(); }
   bool isFault() const {
     return _fsm.get_state_id() == static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::FAULT);
   }
@@ -29,81 +34,47 @@ class TestAccessor : public BridgeClass {
     return _fsm.get_state_id() == static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::STARTUP);
   }
 
-  void onStartupStabilized() { _onStartupStabilized(); }
-  void dispatch(const rpc::Frame& frame) { _dispatchCommand(frame); }
-
-  bool isSharedSecretEmpty() const { return _shared_secret.empty(); }
-  void setSharedSecret(etl::span<const uint8_t> secret) {
-    _shared_secret.assign(secret.begin(), secret.end());
+  // Restored locally for test compatibility
+  void onStartupStabilized() {
+    _fsm.receive(bridge::fsm::EvStabilized());
   }
-  void computeHandshakeTag(const uint8_t* nonce, size_t len, uint8_t* tag) {
-    _computeHandshakeTag(
-        etl::span<const uint8_t>(nonce, len),
-        etl::span<uint8_t>(tag, rpc::RPC_HANDSHAKE_TAG_LENGTH));
-  }
-
-  void handleGetVersion(const bridge::router::CommandContext& ctx) {
-    _handleGetVersion(ctx);
-  }
-  void handleGetFreeMemory(const bridge::router::CommandContext& ctx) {
-    _handleGetFreeMemory(ctx);
-  }
-  void handleLinkSync(const bridge::router::CommandContext& ctx) {
-    _handleLinkSync(ctx);
-  }
-  void handleLinkReset(const bridge::router::CommandContext& ctx) {
-    _handleLinkReset(ctx);
-  }
-  void handleGetCapabilities(const bridge::router::CommandContext& ctx) {
-    _handleGetCapabilities(ctx);
-  }
-
-  void handleDigitalWriteCommand(const bridge::router::CommandContext& ctx) {
-    _handleDigitalWriteCommand(ctx);
-  }
-
-  void handleAck(uint16_t command_id) { _handleAck(command_id); }
-  uint16_t getLastCommandId() const { return _last_command_id; }
-  void clearSynchronized() {
-    _fsm.receive(bridge::fsm::EvReset());
-  }
-
-  bool isSynchronized() const { return BridgeClass::isSynchronized(); }
-  void onAckTimeout() { _onAckTimeout(); }
-  void onBootloaderDelay() { _onBootloaderDelay(); }
-  void onRxDedupe() { _onRxDedupe(); }
-  void onBaudrateChange() { _onBaudrateChange(); }
-  void invokeWatchdog() { _watchdog_task.task_process_work(); }
-  void invokeSerialTask() { _serial_task.task_process_work(); }
-  void invokeTimerTask() { _timer_task.task_process_work(); }
   
-  void invokeConsolePush(const rpc::payload::ConsoleWrite& msg) {
-    Console._push(msg);
-  }
-  void forceTimeout() { _fsm.receive(bridge::fsm::EvTimeout()); }
-  void trigger(const etl::imessage& msg) { _fsm.receive(msg); }
-  void setLastParseError(rpc::FrameError e) { _last_parse_error = e; }
-  rpc::FrameError getLastParseError() const { return _last_parse_error; }
-  uint8_t getAckRetryLimit() const { return _retry_limit; }
-  void setRetryCount(uint8_t c) { _retry_count = c; }
-  void clearRxHistory() { _rx_history.clear(); }
-  bool isRecentDuplicateRx(const rpc::Frame& f) const {
-    return etl::find(_rx_history.begin(), _rx_history.end(),
-                     f.header.sequence_id) != _rx_history.end();
-  }
-  uint16_t _last_rx_sequence_id() const {
-    if (_rx_history.empty()) return 0;
-    return _rx_history.back();
-  }
-  bool isTxEnabled() const { return _tx_enabled; }
-  void setTxEnabled(bool enabled) { _tx_enabled = enabled; }
-  void startFsm() {
-    if (!_fsm.is_started()) _fsm.start();
-  }
-  void setPendingBaudrate(uint32_t b) { _pending_baudrate = b; }
+  void dispatch(const rpc::Frame& frame) { _bridge._dispatchCommand(frame); }
 
-  void invokePacketReceived(etl::span<const uint8_t> packet) {
-    _onPacketReceived(packet);
+  bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
+  void setSharedSecret(etl::span<const uint8_t> secret) {
+    _bridge._shared_secret.assign(secret.begin(), secret.end());
+  }
+
+  void computeHandshakeTag(const uint8_t* nonce_ptr, size_t len, uint8_t* tag_out) {
+    if (_bridge._shared_secret.empty()) return;
+    etl::span<const uint8_t> nonce(nonce_ptr, len);
+    etl::array<uint8_t, 32> handshake_key;
+    rpc::security::hkdf_sha256(
+        etl::span<uint8_t>(handshake_key),
+        etl::span<const uint8_t>(_bridge._shared_secret),
+        etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
+        etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
+
+    etl::array<uint8_t, 32> full_tag;
+    Hmac hmac_engine;
+    wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(), 32);
+    wc_HmacUpdate(&hmac_engine, nonce.data(), static_cast<word32>(nonce.size()));
+    wc_HmacFinal(&hmac_engine, full_tag.data());
+
+    etl::copy_n(full_tag.begin(), 16, tag_out);
+  }
+
+  void onAckTimeout() { _bridge._onAckTimeout(); }
+  void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
+  bool sendFrame(rpc::CommandId c, uint16_t seq, etl::span<const uint8_t> p) {
+    return _bridge.sendFrame(c, seq, p);
+  }
+  void handleDigitalWriteCommand(const bridge::router::CommandContext& ctx) {
+    _bridge._handleDigitalWriteCommand(ctx);
+  }
+  void invokePacketReceived(etl::span<const uint8_t> p) {
+    _bridge._onPacketReceived(p);
   }
 
   void setIdle() {
@@ -111,14 +82,11 @@ class TestAccessor : public BridgeClass {
     _fsm.receive(bridge::fsm::EvReset());
   }
 
-  void setSynchronized() {
-    _fsm.receive(bridge::fsm::EvStabilized());
-    _fsm.receive(bridge::fsm::EvHandshakeStart());
-    _fsm.receive(bridge::fsm::EvHandshakeComplete());
-  }
+ private:
+  BridgeClass& _bridge;
+  bridge::fsm::BridgeFsm& _fsm;
 };
 
-}  // namespace test
-}  // namespace bridge
+}  // namespace bridge::test
 
 #endif

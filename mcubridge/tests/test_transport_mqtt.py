@@ -100,7 +100,7 @@ async def test_mqtt_subscriber_loop_handles_mqtt_error(
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        BridgeService(config, state, MqttTransport(config, state))
+        BridgeService(config, state, AsyncMock(), MqttTransport(config, state))
         transport = mqtt.MqttTransport(config, state)
 
         client = AsyncMock(spec=aiomqtt.Client)
@@ -132,7 +132,9 @@ async def test_mqtt_subscriber_processes_message() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, MqttTransport(config, state))
+        service = BridgeService(
+            config, state, AsyncMock(), MqttTransport(config, state)
+        )
         transport = mqtt.MqttTransport(config, state)
         transport.set_service(service)
 
@@ -161,7 +163,9 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, MqttTransport(config, state))
+        service = BridgeService(
+            config, state, AsyncMock(), MqttTransport(config, state)
+        )
         transport = mqtt.MqttTransport(config, state)
         transport.set_service(service)
 

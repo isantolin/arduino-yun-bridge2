@@ -60,6 +60,7 @@ class FrameAdapter(Adapter):
             payload=payload,
             nonce=nonce,
             tag=tag,
+            header_bytes=obj.body.data[: protocol.CRC_COVERED_HEADER_SIZE],
         )
 
     def _encode(self, obj: "Frame", context: Any, path: Any) -> dict[str, Any]:
@@ -157,6 +158,7 @@ class Frame(msgspec.Struct, frozen=True):
     payload: bytes = b""
     nonce: bytes = b"\x00" * 12
     tag: bytes = b"\x00" * 16
+    header_bytes: bytes | None = None
 
     def __iter__(self):
         """Allow unpacking: cmd, seq, payload = frame."""

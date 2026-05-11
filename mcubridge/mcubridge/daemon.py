@@ -115,18 +115,24 @@ class BridgeDaemon:
     """
 
     def __init__(self, config: RuntimeConfig):
-        """Initialize the daemon with configuration.
-
-        Args:
-            config: Validated RuntimeConfig from UCI/defaults.
-        """
+        """Initialize the daemon with configuration."""
         self.config = config
         self.state = create_runtime_state(config)
         self.state.config_source = get_config_source()
+
+        # 1. Create Transports (service=None)
         self.mqtt_transport = MqttTransport(self.config, self.state)
-        self.service = BridgeService(config, self.state, self.mqtt_transport)
+        self.serial_transport = SerialTransport(self.config, self.state, None)
+
+        # 2. Create Service with both transports
+        self.service = BridgeService(
+            config, self.state, self.serial_transport, self.mqtt_transport
+        )
+
+        # 3. Explicitly link transports to service
+        self.serial_transport.service = self.service
+        self.service.register_serial_sender(self.serial_transport.send)
         self.mqtt_transport.set_service(self.service)
-        # Initialize dependencies
 
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
@@ -145,9 +151,7 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "serial-link",
-                            lambda: SerialTransport(
-                                self.config, self.state, self.service
-                            ).run(),
+                            self.serial_transport.run,
                             (SerialHandshakeFatal,),
                         )
                     )

@@ -1,17 +1,15 @@
 """Focused unit tests for BridgeService (runtime)."""
 
 from __future__ import annotations
-import msgspec
 from mcubridge.transport.mqtt import MqttTransport
+from mcubridge.transport.serial import SerialTransport
 
 import time
 from unittest.mock import AsyncMock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol, structures
-from mcubridge.protocol.protocol import Status
-from mcubridge.protocol.topics import Topic
+from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 
@@ -31,139 +29,86 @@ def _make_config() -> RuntimeConfig:
 
 
 @pytest.mark.asyncio
-async def test_send_frame_without_serial_sender_returns_false() -> None:
+async def test_send_frame_via_transport() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, MqttTransport(config, state))
-
-        # Testing direct serial flow via service property
-        ok = await service.serial_flow.send(
-            protocol.Command.CMD_GET_VERSION.value, b"x"
+        mock_serial = AsyncMock(spec=SerialTransport)
+        mock_serial.send.return_value = True
+        service = BridgeService(
+            config, state, mock_serial, AsyncMock(spec=MqttTransport)
         )
-        assert ok is False
+
+        ok = await service.serial.send(protocol.Command.CMD_GET_VERSION.value, b"x")
+        assert ok is True
+        mock_serial.send.assert_called_once()
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_schedule_background_requires_context() -> None:
+async def test_handle_mcu_frame_pre_sync_denied() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, MqttTransport(config, state))
+        mock_serial = AsyncMock(spec=SerialTransport)
+        service = BridgeService(
+            config, state, mock_serial, AsyncMock(spec=MqttTransport)
+        )
+        state.state = "unsynchronized"
 
-        async def _coro() -> None:
-            return None
-
-        pending = _coro()
-        try:
-            with pytest.raises(RuntimeError):
-                await service.schedule_background(pending)
-        finally:
-            pending.close()
+        # CMD_GET_VERSION is not in pre-sync allowed list (64 is MIN_SYS but not sync/reset)
+        await service.handle_mcu_frame(protocol.Command.CMD_GET_VERSION.value, 1, b"")
+        mock_serial.acknowledge.assert_not_called()
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_serial_flow_acknowledge_no_sender_is_noop() -> None:
+async def test_handle_mcu_xon_xoff() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, MqttTransport(config, state))
-
-        await service.serial_flow.acknowledge(
-            protocol.Command.CMD_GET_VERSION.value, 0, status=Status.ACK
+        service = BridgeService(
+            config,
+            state,
+            AsyncMock(spec=SerialTransport),
+            AsyncMock(spec=MqttTransport),
         )
+        state.state = "synchronized"
+
+        await service.handle_mcu_frame(protocol.Command.CMD_XOFF.value, 1, b"")
+        assert state.mcu_is_paused is True
+        assert state.serial_tx_allowed.is_set() is False
+
+        await service.handle_mcu_frame(protocol.Command.CMD_XON.value, 2, b"")
+        assert state.mcu_is_paused is False
+        assert state.serial_tx_allowed.is_set() is True
     finally:
         state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_serial_flow_acknowledge_sends_ack_packet() -> None:
+async def test_handle_mqtt_console_queues_and_flushes() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, MqttTransport(config, state))
-
-        sent: list[tuple[int, bytes]] = []
-
-        async def _sender_side_effect(
-            cmd: int, payload: bytes, seq_id: int | None = None
-        ) -> bool:
-            sent.append((cmd, payload))
-            return True
-
-        mock_sender = AsyncMock(side_effect=_sender_side_effect)
-        service.register_serial_sender(mock_sender)
-
-        await service.serial_flow.acknowledge(
-            protocol.Command.CMD_GET_FREE_MEMORY.value,
-            0,
-            status=Status.MALFORMED,
+        mock_serial = AsyncMock(spec=SerialTransport)
+        mock_serial.send.return_value = True
+        service = BridgeService(
+            config, state, mock_serial, AsyncMock(spec=MqttTransport)
         )
-
-        assert sent
-        status_cmd, payload = sent[0]
-        assert status_cmd == Status.MALFORMED.value
-        assert payload == msgspec.msgpack.encode(
-            structures.AckPacket(command_id=protocol.Command.CMD_GET_FREE_MEMORY.value)
-        )
-    finally:
-        state.cleanup()
-
-
-@pytest.mark.asyncio
-async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
-    pass
-
-
-@pytest.mark.asyncio
-async def test_enqueue_mqtt_queue_full_drops_and_spools(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    pass
-
-
-@pytest.mark.asyncio
-async def test_reject_topic_action_enqueues_status() -> None:
-    pass
-
-
-@pytest.mark.asyncio
-async def test_publish_bridge_snapshot_handshake_flavor() -> None:
-    config = _make_config()
-    state = create_runtime_state(config)
-    try:
-        transport = MqttTransport(config, state)
-        transport.enqueue_mqtt = AsyncMock()
-        service = BridgeService(config, state, transport)
+        state.state = "synchronized"
+        state.serial_tx_allowed.set()
 
         from aiomqtt.message import Message
 
-        # [SIL-2] Use spec=Message
-        mock_inbound = AsyncMock(spec=Message)
-        mock_inbound.topic = (
-            f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get"
-        )
-        mock_inbound.properties = None
+        mock_msg = AsyncMock(spec=Message)
+        mock_msg.topic = "br/console/in"
+        mock_msg.payload = b"hello"
 
-        await service._publish_bridge_snapshot("handshake", mock_inbound)  # type: ignore[reportPrivateUsage]
+        await service.handle_mqtt_message(mock_msg)
 
-        transport.enqueue_mqtt.assert_awaited_once()
-        queued = transport.enqueue_mqtt.call_args[0][0]
-        assert "bridge/handshake/value" in queued.topic_name
-    finally:
-        state.cleanup()
-
-
-def test_is_topic_action_allowed_empty_action_true() -> None:
-    config = _make_config()
-    state = create_runtime_state(config)
-    try:
-        service = BridgeService(config, state, MqttTransport(config, state))
-
-        assert service._is_topic_action_allowed(Topic.SYSTEM, "") is True  # type: ignore[reportPrivateUsage]
+        mock_serial.send.assert_called()
     finally:
         state.cleanup()

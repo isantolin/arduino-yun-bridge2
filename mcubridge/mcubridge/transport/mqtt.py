@@ -219,21 +219,16 @@ class MqttTransport:
 
         # [SIL-2] Direct library mapping: Convert DTO to Paho Properties
         props = Properties(PacketTypes.PUBLISH)
-        # Mapping table (Snake_case to PascalCase)
-        _MAP = {
-            "content_type": "ContentType",
-            "payload_format_indicator": "PayloadFormatIndicator",
-            "message_expiry_interval": "MessageExpiryInterval",
-            "response_topic": "ResponseTopic",
-            "correlation_data": "CorrelationData",
-            "user_properties": "UserProperty",
-        }
-        for field, paho_name in _MAP.items():
-            val = getattr(msg, field)
-            if val is not None:
-                setattr(
-                    props, paho_name, list(val) if field == "user_properties" else val
-                )
+        if msg.content_type is not None:
+            props.ContentType = msg.content_type
+        if msg.payload_format_indicator is not None:
+            props.PayloadFormatIndicator = msg.payload_format_indicator
+        if msg.message_expiry_interval is not None:
+            props.MessageExpiryInterval = msg.message_expiry_interval
+        if msg.response_topic is not None:
+            props.ResponseTopic = msg.response_topic
+        if msg.correlation_data is not None: props.CorrelationData = msg.correlation_data
+        if msg.user_properties: props.UserProperty = list(msg.user_properties)
 
         try:
             await self._client.publish(

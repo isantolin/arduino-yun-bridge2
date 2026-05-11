@@ -81,7 +81,7 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
         return None
 
     policy = pyfuncitem.funcargs.get("event_loop_policy")
-    if isinstance(policy, asyncio.AbstractEventLoopPolicy):  # type: ignore[reportGeneralTypeIssues]
+    if policy is not None:
         asyncio.set_event_loop_policy(policy)
 
     loop = asyncio.new_event_loop()

@@ -560,6 +560,12 @@ class SerialTransport:
             frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)
 
         encoded = cobs.encode(frame.build()) + protocol.FRAME_DELIMITER
+        if logger.is_enabled_for(logging.DEBUG):
+            logger.debug(
+                "[SERIAL -> MCU] [CMD:0x%02X] [RAW]: [%s]",
+                cmd,
+                encoded.hex(" ").upper(),
+            )
         self.writer.write(encoded)
         await self.writer.drain()
         self.state.metrics.serial_bytes_sent.inc(len(encoded))

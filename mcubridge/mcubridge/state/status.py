@@ -76,9 +76,8 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
 
 def _write_status_file(payload: dict[str, Any]) -> None:
     """[SIL-2] Atomic status persistence using zero-copy library primitives."""
-    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-
     try:
+        STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
         # [SIL-2] Use library encoder for atomic generation
         data = _json_enc.encode(payload)
 

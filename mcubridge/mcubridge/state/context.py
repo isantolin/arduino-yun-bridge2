@@ -299,6 +299,12 @@ class RuntimeState(msgspec.Struct):
     handshake_successes: int = 0
     watchdog_beats: int = 0
 
+    # Spool metrics
+    mqtt_spool_corrupt_dropped: int = 0
+    mqtt_spool_dropped_limit: int = 0
+    mqtt_spool_trim_events: int = 0
+    mqtt_spool_last_trim_unix: float = 0.0
+
     @property
     def handshake_failures(self) -> int:
         """Total handshake failures (Calculated)."""

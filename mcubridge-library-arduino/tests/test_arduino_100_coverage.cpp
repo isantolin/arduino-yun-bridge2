@@ -41,7 +41,7 @@ void fs_handler(etl::span<const uint8_t>) {}
 void test_bridge_reset_state() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.onStartupStabilized();
   // New simplified FSM moves directly to UNSYNCHRONIZED on reset/begin
   TEST_ASSERT(ba.isUnsynchronized());
@@ -52,7 +52,7 @@ void test_bridge_reset_state() {
 void test_bridge_exhaustive_dispatch() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   static etl::array<uint8_t, 256> buf;
@@ -109,7 +109,7 @@ void test_bridge_exhaustive_dispatch() {
 void test_bridge_transmit_exhaustive() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK);
@@ -126,7 +126,7 @@ void test_bridge_transmit_exhaustive() {
 void test_bridge_fsm_exhaustive() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
 
   ba.setIdle();
   ba.onStartupStabilized();
@@ -135,7 +135,7 @@ void test_bridge_fsm_exhaustive() {
 void test_services_exhaustive() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   Console.begin();
@@ -168,7 +168,7 @@ void test_services_exhaustive() {
 void test_bridge_error_handling() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   etl::array<uint8_t, 8> c = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -178,7 +178,7 @@ void test_bridge_error_handling() {
 void test_bridge_compressed() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   etl::array<uint8_t, 128> buf;
@@ -199,7 +199,7 @@ void test_bridge_hal_callbacks() {
 void test_bridge_packet_rx_exhaustive() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   etl::array<uint8_t, 3> secret = {1, 2, 3};
@@ -212,7 +212,7 @@ void test_bridge_packet_rx_exhaustive() {
 void test_bridge_dispatch_all() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   bridge::router::CommandContext ctx(nullptr, 0xFFFF, 0, false, false);
   ba.handleGetVersion(ctx);

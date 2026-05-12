@@ -36,7 +36,7 @@ void reset_bridge(BiStream& stream) {
 void sync_bridge(BiStream& stream) {
   stream.rx_buf.clear();
   stream.tx_buf.clear();
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   
   if (ba.isSharedSecretEmpty()) {
     const char* test_secret = "top-secret";
@@ -75,7 +75,7 @@ void sync_bridge(BiStream& stream) {
 void test_bridge_begin() {
   BiStream stream;
   reset_bridge(stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   // New simplified FSM moves directly to UNSYNCHRONIZED on begin()
   TEST_ASSERT(ba.isUnsynchronized());
 }
@@ -112,7 +112,7 @@ void test_bridge_handshake() {
 void test_bridge_flow_control() {
   BiStream stream;
   reset_bridge(stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.onStartupStabilized();
   ba.setSynchronized();
   
@@ -126,7 +126,7 @@ void test_bridge_flow_control() {
 void test_bridge_dedup_console_write_retry() {
   BiStream stream;
   reset_bridge(stream);
-  auto& ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor::create(Bridge);
   ba.onStartupStabilized();
   ba.setSynchronized();
   Console.begin();

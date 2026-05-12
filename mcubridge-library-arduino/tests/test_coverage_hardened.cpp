@@ -51,7 +51,7 @@ void test_bridge_emit_status_variants() {
 void test_bridge_queue_full_and_retransmit() {
     BiStream stream;
     reset_bridge_core(Bridge, stream);
-    auto& ba = TestAccessor::create(Bridge);
+    auto ba = TestAccessor::create(Bridge);
     ba.setSynchronized();
     
     // Fill the TX queue with reliable commands to trigger full condition
@@ -76,7 +76,7 @@ void test_bridge_queue_full_and_retransmit() {
 void test_filesystem_read_edge_cases() {
     BiStream stream;
     reset_bridge_core(Bridge, stream);
-    auto& ba = TestAccessor::create(Bridge);
+    auto ba = TestAccessor::create(Bridge);
     ba.setSynchronized();
     
     // Trigger FileSystem read chunks with timeout/error simulation
@@ -166,7 +166,7 @@ void test_mailbox_and_datastore_variants() {
 void test_bridge_fsm_resets() {
     BiStream stream;
     reset_bridge_core(Bridge, stream);
-    auto& ba = TestAccessor::create(Bridge);
+    auto ba = TestAccessor::create(Bridge);
     
     ba.setSynchronized();
     Bridge.enterSafeState(); // Should reset FSM and stop timers
@@ -194,7 +194,7 @@ void test_bridge_timer_callbacks() {
     Bridge._onAckTimeout();
     Bridge._onRxDedupe();
     Bridge._onBaudrateChange();
-    Bridge._onStartupStabilized();
+    bridge::test::TestAccessor::create(Bridge).onStartupStabilized();
     Bridge._onBootloaderDelay();
     
     TEST_ASSERT(true);
@@ -203,7 +203,7 @@ void test_bridge_timer_callbacks() {
 void test_bridge_packet_errors() {
     BiStream stream;
     reset_bridge_core(Bridge, stream);
-    auto& ba = TestAccessor::create(Bridge);
+    auto ba = TestAccessor::create(Bridge);
     
     // Test malformed packet (length 0)
     ba.invokePacketReceived(etl::span<const uint8_t>());
@@ -229,7 +229,7 @@ void test_bridge_template_coverage() {
 void test_bridge_duplicate_packet() {
     BiStream stream;
     reset_bridge_core(Bridge, stream);
-    auto& ba = TestAccessor::create(Bridge);
+    auto ba = TestAccessor::create(Bridge);
     ba.setSynchronized();
 
     static etl::array<uint8_t, 256> buf;
@@ -254,7 +254,7 @@ void test_bridge_duplicate_packet() {
 void test_bridge_exhaustive_command_handlers() {
     BiStream stream;
     reset_bridge_core(Bridge, stream);
-    auto& ba = TestAccessor::create(Bridge);
+    auto ba = TestAccessor::create(Bridge);
     ba.setSynchronized();
 
     static etl::array<uint8_t, 256> buf;

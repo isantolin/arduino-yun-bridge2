@@ -12,9 +12,8 @@ namespace bridge::test {
 
 class TestAccessor {
  public:
-  static TestAccessor& create(BridgeClass& bridge) {
-    static TestAccessor accessor(bridge);
-    return accessor;
+  static TestAccessor create(BridgeClass& bridge) {
+    return TestAccessor(bridge);
   }
 
   explicit TestAccessor(BridgeClass& bridge) : _bridge(bridge), _fsm(bridge._fsm) {}
@@ -41,6 +40,11 @@ class TestAccessor {
     _fsm.receive(bridge::fsm::EvStabilized());
   }
   
+  template<typename TEvent>
+  void trigger(const TEvent& ev) {
+    _fsm.receive(ev);
+  }
+
   void dispatch(const rpc::Frame& frame) { _bridge._dispatchCommand(frame); }
 
   bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
@@ -81,6 +85,23 @@ class TestAccessor {
   void invokePacketReceived(etl::span<const uint8_t> p) {
     _bridge._onPacketReceived(p);
   }
+
+  void invokeConsolePush(const rpc::payload::ConsoleWrite& cmsg) {
+    (void)_bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, cmsg);
+  }
+  bool isAwaitingAck() const { 
+    return _fsm.get_state_id() == static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::AWAITING_ACK); 
+  }
+  uint16_t getLastCommandId() const { return _bridge._last_command_id; }
+  void onRxDedupe() { _bridge._onRxDedupe(); }
+  void setPendingBaudrate(uint32_t b) { _bridge._pending_baudrate = b; }
+  void onBaudrateChange() { _bridge._onBaudrateChange(); }
+  void invokeWatchdog() { _bridge._watchdog_task.task_process_work(); }
+  void invokeSerialTask() { _bridge._serial_task.task_process_work(); }
+  void clearSynchronized() {
+    _fsm.receive(bridge::fsm::EvReset());
+  }
+  void onBootloaderDelay() { _bridge._onBootloaderDelay(); }
 
   void setIdle() {
     if (!_fsm.is_started()) _fsm.start();

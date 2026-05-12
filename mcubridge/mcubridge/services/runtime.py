@@ -903,7 +903,7 @@ class BridgeService:
                 self.state.process_exit_codes[pid] = 0
             asyncio.create_task(self._monitor_process(pid))
             return pid
-        except Exception:
+        except OSError:
             self._process_slots.release()
             return 0
 

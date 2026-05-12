@@ -69,6 +69,9 @@ class TestAccessor {
 
   void onAckTimeout() { _bridge._onAckTimeout(); }
   void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
+  void handleGetVersion(const bridge::router::CommandContext& ctx) {
+    _bridge._handleGetVersion(ctx);
+  }
   bool sendFrame(rpc::CommandId c, uint16_t seq, etl::span<const uint8_t> p) {
     return _bridge.sendFrame(c, seq, p);
   }

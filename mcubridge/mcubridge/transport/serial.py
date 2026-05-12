@@ -594,7 +594,7 @@ class SerialTransport:
             )
             await asyncio.sleep(0.1)
             return True
-        except Exception:
+        except asyncio.TimeoutError:
             return False
         finally:
             self._negotiating = False

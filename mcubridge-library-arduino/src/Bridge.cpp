@@ -455,13 +455,10 @@ void BridgeClass::_handleAck(uint16_t cmd) {
 }
 void BridgeClass::_clearPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
-    const uint32_t count = static_cast<uint32_t>(_pending_tx_queue.size());
-    for (uint32_t i = 0; i < count; ++i) {
-      if (!_pending_tx_queue.empty()) {
-        TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
-        if (buf) _tx_payload_pool.release(buf);
-        _pending_tx_queue.pop();
-      }
+    while (!_pending_tx_queue.empty()) {
+      TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
+      if (buf) _tx_payload_pool.release(buf);
+      _pending_tx_queue.pop();
     }
   }
 }

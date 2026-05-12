@@ -64,7 +64,7 @@ def get_module_size(mod_name: str) -> int:
         spec = importlib.util.find_spec(mod_name)
         if spec and spec.origin:
             return os.path.getsize(spec.origin)
-    except Exception:
+    except OSError:
         pass
     return 0
 

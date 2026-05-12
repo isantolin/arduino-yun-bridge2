@@ -99,6 +99,7 @@ async def test_handle_mqtt_console_queues_and_flushes() -> None:
             config, state, mock_serial, AsyncMock(spec=MqttTransport)
         )
         state.state = "synchronized"
+        state.link_sync_event.set()
         state.serial_tx_allowed.set()
 
         from aiomqtt.message import Message

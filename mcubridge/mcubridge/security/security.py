@@ -119,7 +119,7 @@ def verify_crypto_integrity() -> bool:
         ct = aead.encrypt(nonce, b"", None)
         if len(ct) != 16:
             return False
-    except Exception:
+    except ValueError:
         return False
 
     return True

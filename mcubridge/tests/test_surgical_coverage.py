@@ -27,7 +27,9 @@ sys.modules["uci"] = MagicMock()
 
 
 @pytest.fixture
-def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
+def service_setup(
+    tmp_path: Path,
+) -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     config = RuntimeConfig(
         mqtt_topic="br", serial_port="/dev/test", file_system_root=str(tmp_path)
     )

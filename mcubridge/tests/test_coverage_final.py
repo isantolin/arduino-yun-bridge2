@@ -174,5 +174,7 @@ def test_state_context_extra_coverage() -> None:
     # For coverage tests, private access is sometimes tolerated but we can cast to Any
     # to satisfy the type checker for now while maintaining the test's intent.
     state_any = state  # type: Any
-    state_any._apply_spool_observation({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
+    state_any._apply_spool_observation(
+        {"corrupt_dropped": 1, "dropped_due_to_limit": 1}
+    )
     assert state.handshake_duration_since_start() >= 0

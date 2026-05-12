@@ -7,10 +7,9 @@ from typing import Any
 import pytest
 
 from mcubridge.protocol.spec_model import ProtocolSpec
-from mcubridge.state.status import (
-    status_writer,
-    _write_status_file,
-)  # pyright: ignore[reportPrivateUsage]
+
+# pyright: reportPrivateUsage=false
+from mcubridge.state.status import status_writer, _write_status_file
 from mcubridge.state.context import create_runtime_state
 from mcubridge.config.logging import configure_logging, hexdump_processor
 from mcubridge.config.settings import RuntimeConfig

@@ -15,6 +15,11 @@ def load_script(name: str) -> Any:
         raise ImportError(f"Could not load {name}.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name.replace("-", "_")] = module
+
+    from unittest.mock import MagicMock
+
+    sys.modules["uci"] = MagicMock()
+
     spec.loader.exec_module(module)
     return module
 

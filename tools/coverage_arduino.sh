@@ -145,7 +145,7 @@ done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
-gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line 75 --fail-under-branch 40 --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
+python -m gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line 95 --fail-under-branch 90 --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 cat "${OUTPUT_ROOT}/summary.txt"
 echo "[coverage_arduino] Proceso finalizado."

@@ -1,7 +1,10 @@
 import asyncio
-import pytest
 import time
 from unittest.mock import MagicMock, patch
+from pathlib import Path
+from typing import Any
+
+import pytest
 
 from mcubridge.protocol.spec_model import ProtocolSpec
 from mcubridge.state.status import status_writer, _write_status_file
@@ -21,7 +24,7 @@ from mcubridge.security.security import (
 )
 
 
-def test_protocol_spec_load(tmp_path):
+def test_protocol_spec_load(tmp_path: Path) -> None:
     spec_file = tmp_path / "spec.toml"
     content = """
 constants = { VERSION = 1 }
@@ -46,7 +49,7 @@ status_reasons = {}
 
 
 @pytest.mark.asyncio
-async def test_status_writer_coverage():
+async def test_status_writer_coverage() -> None:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/ttytest",
@@ -75,7 +78,7 @@ async def test_status_writer_coverage():
             pass
 
 
-def test_write_status_file_errors():
+def test_write_status_file_errors() -> None:
     with patch("mcubridge.state.status.STATUS_FILE") as mock_file:
         # Use a real path for mkdir mock to avoid confusion
         mock_file.parent = MagicMock()
@@ -85,7 +88,7 @@ def test_write_status_file_errors():
             mock_logger.error.assert_called()
 
 
-def test_logging_coverage():
+def test_logging_coverage() -> None:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/ttytest",
@@ -99,13 +102,13 @@ def test_logging_coverage():
 
     # Test hexdump processor
     # Use real bytes
-    event = {"data": b"\x01\x02", "empty": b""}
+    event: dict[str, Any] = {"data": b"\x01\x02", "empty": b""}
     processed = hexdump_processor(None, "info", event)
     assert processed["data"] == "[01 02]"
     assert processed["empty"] == "[]"
 
 
-def test_policy_coverage():
+def test_policy_coverage() -> None:
     assert tokenize_shell_command("ls -la") == ("ls", "-la")
     with pytest.raises(CommandValidationError):
         tokenize_shell_command("")
@@ -115,7 +118,7 @@ def test_policy_coverage():
         tokenize_shell_command("'unclosed quote")
 
 
-def test_security_primitives_coverage():
+def test_security_primitives_coverage() -> None:
     # secure_zero
     ba = bytearray(b"sensitive")
     secure_zero(ba)
@@ -152,7 +155,7 @@ def test_security_primitives_coverage():
     assert verify_crypto_integrity() is True
 
 
-def test_state_context_extra_coverage():
+def test_state_context_extra_coverage() -> None:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/ttytest",
@@ -167,5 +170,9 @@ def test_state_context_extra_coverage():
     state.apply_handshake_stats(
         {"attempts": 1, "successes": 1, "last_unix": time.time()}
     )
-    state._apply_spool_observation({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
+    # Use public API if available or suppress if necessary
+    # For coverage tests, private access is sometimes tolerated but we can cast to Any
+    # to satisfy the type checker for now while maintaining the test's intent.
+    state_any = state  # type: Any
+    state_any._apply_spool_observation({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
     assert state.handshake_duration_since_start() >= 0

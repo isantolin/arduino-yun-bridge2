@@ -131,6 +131,8 @@ TEST_SUITES=(
     "test_msgpack"
     "test_rpc_structs"
     "test_coverage_hardened"
+    "test_arduino_harden"
+    "test_arduino_crypto_harden"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites..."

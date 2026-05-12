@@ -515,7 +515,11 @@ class SerialTransport:
             try:
                 async with asyncio.timeout(30.0):
                     await self.state.serial_tx_allowed.wait()
-            except Exception:
+            except asyncio.TimeoutError:
+                logger.warning("Timeout waiting for serial TX allowed")
+                return False
+            except Exception as exc:
+                logger.error("Unexpected error waiting for TX: %s", exc)
                 return False
 
         if seq is None:

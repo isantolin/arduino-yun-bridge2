@@ -111,10 +111,11 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/98-mcubridge-default-serial $(1)/etc/uci-defaults/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-mcubridge-disable-askconsole $(1)/etc/uci-defaults/
 	
-	# Core scripts (install stripping .py extension so command names are unchanged)
+	# Core scripts (install stripping .py extension and ensuring hyphenated command names)
 	[ -d $(PKG_BUILD_DIR)/scripts ] && \
 		for f in $$(find $(PKG_BUILD_DIR)/scripts -type f -name '*.py'); do \
-			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$(basename $$f .py)"; \
+			cmd=$$(basename $$f .py | tr '_' '-'); \
+			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$cmd"; \
 		done || true
 endef
 

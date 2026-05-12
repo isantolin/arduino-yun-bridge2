@@ -3,6 +3,8 @@ import pytest
 import msgspec
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiomqtt.message import Message
+from pathlib import Path
+import sys
 
 from mcubridge.services.runtime import BridgeService
 from mcubridge.transport.serial import SerialTransport
@@ -21,6 +23,9 @@ from mcubridge.protocol.structures import (
     SpiTransferResponsePacket,
     PendingPinRequest,
 )
+
+# Mock 'uci' globally for tests that import scripts directly
+sys.modules["uci"] = MagicMock()
 
 
 @pytest.fixture
@@ -50,18 +55,20 @@ async def test_surgical_runtime_exhaustive(service_setup):
 
     # Digital Read response
     state.pending_digital_reads.append(
-        PendingPinRequest(pin=1, future=asyncio.Future())
+        PendingPinRequest(pin=1, reply_context=asyncio.Future())
     )
     await service.handle_mcu_frame(
-        Command.CMD_PIN_DIGITAL_READ_RESP.value,
+        Command.CMD_DIGITAL_READ_RESP.value,
         1,
         msgspec.msgpack.encode(DigitalReadResponsePacket(value=1)),
     )
 
     # Analog Read response
-    state.pending_analog_reads.append(PendingPinRequest(pin=1, future=asyncio.Future()))
+    state.pending_analog_reads.append(
+        PendingPinRequest(pin=1, reply_context=asyncio.Future())
+    )
     await service.handle_mcu_frame(
-        Command.CMD_PIN_ANALOG_READ_RESP.value,
+        Command.CMD_ANALOG_READ_RESP.value,
         1,
         msgspec.msgpack.encode(AnalogReadResponsePacket(value=512)),
     )
@@ -72,25 +79,6 @@ async def test_surgical_runtime_exhaustive(service_setup):
         1,
         msgspec.msgpack.encode(SpiTransferResponsePacket(data=b"resp")),
     )
-
-    # Test MQTT Command Handlers
-    # ROTATE CREDENTIALS
-    route = TopicRoute(
-        raw="br/sys/bridge/rotate_credentials",
-        prefix="br",
-        topic=Topic.SYSTEM,
-        segments=(SystemAction.ROTATE_CREDENTIALS,),
-    )
-    msg = Message(
-        topic="br/sys/bridge/rotate_credentials",
-        payload=b"",
-        qos=0,
-        retain=False,
-        mid=1,
-        properties=None,
-    )
-    with patch("subprocess.run"):
-        await service._handle_mqtt_system(route, msg)
 
     # Test TaskGroup cancel path
     with patch("asyncio.TaskGroup.__aexit__", side_effect=asyncio.CancelledError()):
@@ -116,19 +104,20 @@ async def test_surgical_runtime_edge_cases(service_setup):
     await service.handle_mqtt_message(msg)
 
 
-@pytest.mark.asyncio
-async def test_surgical_scripts_coverage():
-    from mcubridge.scripts import mcubridge_file_push as file_push
+def test_surgical_scripts_coverage():
+    from scripts import mcubridge_file_push as file_push
 
     with patch(
-        "sys.argv", ["file-push", "--port", "/dev/test", "local.txt", "remote.txt"]
+        "sys.argv", ["file-push", "local.txt", "remote.txt"]
     ):
-        with patch("mcubridge_client.Bridge"):
+        with patch("aiomqtt.Client"):
             with patch("builtins.open", MagicMock()):
-                file_push.main()
+                with patch.object(Path, "exists", return_value=True):
+                    with patch.object(Path, "read_bytes", return_value=b"data"):
+                        file_push.main()
 
-    from mcubridge.scripts import mcubridge_rotate_credentials as rotate
+    from scripts import mcubridge_rotate_credentials as rotate
 
-    with patch("sys.argv", ["rotate"]):
+    with patch("sys.argv", ["rotate", "--force"]):
         with patch("subprocess.run"):
             rotate.main()

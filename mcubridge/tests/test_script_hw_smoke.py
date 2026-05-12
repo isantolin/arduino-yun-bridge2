@@ -12,11 +12,11 @@ import sys
 import aiomqtt
 import pytest
 
-# Dynamically import the script since its name contains dashes
-script_path = Path(__file__).parent.parent / "scripts" / "mcubridge-hw-smoke.py"
+# Dynamically import the script since its name contains underscores (normalized)
+script_path = Path(__file__).parent.parent / "scripts" / "mcubridge_hw_smoke.py"
 spec = importlib.util.spec_from_file_location("mcubridge_hw_smoke", str(script_path))
 if spec is None or spec.loader is None:
-    raise ImportError("Could not load mcubridge-hw-smoke.py")
+    raise ImportError("Could not load mcubridge_hw_smoke.py")
 mcubridge_hw_smoke = importlib.util.module_from_spec(spec)
 sys.modules["mcubridge_hw_smoke"] = mcubridge_hw_smoke
 spec.loader.exec_module(mcubridge_hw_smoke)

@@ -967,14 +967,16 @@ class BridgeService:
             p = psutil.Process(h.pid)
             all_p = p.children(recursive=True) + [p]
             for proc in all_p:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                     proc.terminate()
             psutil.wait_procs(all_p, timeout=3.0)
             for proc in all_p:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                     proc.kill()
-        except Exception:
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
+        except Exception as exc:
+            logger.error("Unexpected error stopping process %d: %s", pid, exc)
         self._finalize_process(pid)
         return True
 

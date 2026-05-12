@@ -7,14 +7,14 @@ import sys
 
 
 def load_script(name: str) -> Any:
-    script_path = Path(__file__).parent.parent / "scripts" / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(
-        name.replace("-", "_"), str(script_path)
-    )
+    # Use underscore version for filename lookup
+    filename = name.replace("-", "_")
+    script_path = Path(__file__).parent.parent / "scripts" / f"{filename}.py"
+    spec = importlib.util.spec_from_file_location(filename, str(script_path))
     if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load {name}.py")
+        raise ImportError(f"Could not load {filename}.py")
     module = importlib.util.module_from_spec(spec)
-    sys.modules[name.replace("-", "_")] = module
+    sys.modules[filename] = module
 
     from unittest.mock import MagicMock
 

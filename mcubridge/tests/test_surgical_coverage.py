@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 import pytest
 import msgspec
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,15 +9,12 @@ import sys
 
 from mcubridge.services.runtime import BridgeService
 from mcubridge.transport.serial import SerialTransport
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import (
     Command,
-    Topic,
-    SystemAction,
 )
 from mcubridge.protocol.structures import (
-    TopicRoute,
     DatastoreGetResponsePacket,
     DigitalReadResponsePacket,
     AnalogReadResponsePacket,
@@ -29,7 +27,7 @@ sys.modules["uci"] = MagicMock()
 
 
 @pytest.fixture
-def service_setup(tmp_path):
+def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     config = RuntimeConfig(
         mqtt_topic="br", serial_port="/dev/test", file_system_root=str(tmp_path)
     )
@@ -41,8 +39,10 @@ def service_setup(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_surgical_runtime_exhaustive(service_setup):
-    service, state, serial, mqtt = service_setup
+async def test_surgical_runtime_exhaustive(
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
+) -> None:
+    service, state, _, _ = service_setup
     state.mark_synchronized()
 
     # Test all MCU frame handlers
@@ -55,7 +55,7 @@ async def test_surgical_runtime_exhaustive(service_setup):
 
     # Digital Read response
     state.pending_digital_reads.append(
-        PendingPinRequest(pin=1, reply_context=asyncio.Future())
+        PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]())
     )
     await service.handle_mcu_frame(
         Command.CMD_DIGITAL_READ_RESP.value,
@@ -65,7 +65,7 @@ async def test_surgical_runtime_exhaustive(service_setup):
 
     # Analog Read response
     state.pending_analog_reads.append(
-        PendingPinRequest(pin=1, reply_context=asyncio.Future())
+        PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]())
     )
     await service.handle_mcu_frame(
         Command.CMD_ANALOG_READ_RESP.value,
@@ -90,8 +90,10 @@ async def test_surgical_runtime_exhaustive(service_setup):
 
 
 @pytest.mark.asyncio
-async def test_surgical_runtime_edge_cases(service_setup):
-    service, state, serial, mqtt = service_setup
+async def test_surgical_runtime_edge_cases(
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
+) -> None:
+    service, _, _, _ = service_setup
 
     # on_serial_connected failure
     with patch.object(service.handshake, "synchronize", side_effect=Exception("fail")):
@@ -104,12 +106,10 @@ async def test_surgical_runtime_edge_cases(service_setup):
     await service.handle_mqtt_message(msg)
 
 
-def test_surgical_scripts_coverage():
+def test_surgical_scripts_coverage() -> None:
     from scripts import mcubridge_file_push as file_push
 
-    with patch(
-        "sys.argv", ["file-push", "local.txt", "remote.txt"]
-    ):
+    with patch("sys.argv", ["file-push", "local.txt", "remote.txt"]):
         with patch("aiomqtt.Client"):
             with patch("builtins.open", MagicMock()):
                 with patch.object(Path, "exists", return_value=True):

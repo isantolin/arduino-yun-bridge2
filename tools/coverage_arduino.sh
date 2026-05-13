@@ -133,6 +133,7 @@ TEST_SUITES=(
     "test_coverage_hardened"
     "test_arduino_harden"
     "test_arduino_crypto_harden"
+    "test_arduino_stress"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites..."

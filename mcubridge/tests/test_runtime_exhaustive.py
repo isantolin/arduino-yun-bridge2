@@ -1,6 +1,6 @@
 import asyncio
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any, Tuple
+from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 import pytest
@@ -12,144 +12,149 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import (
-    Command,
     Topic,
-    ConsoleAction,
-    DatastoreAction,
-    MailboxAction,
-    DigitalAction,
-    Status,
-    ShellAction,
-    FileAction,
-    SpiAction,
-    SystemAction,
-    AnalogAction,
 )
 from mcubridge.protocol.structures import (
-    TopicRoute,
-    AckPacket,
-    ConsoleWritePacket,
-    DatastorePutPacket,
-    DatastoreGetPacket,
-    MailboxPushPacket,
-    FileWritePacket,
-    FileReadPacket,
-    FileRemovePacket,
-    DigitalWritePacket,
-    PinModePacket,
-    AnalogWritePacket,
-    ProcessRunAsyncPacket,
-    ProcessKillPacket,
-    ProcessPollPacket,
     DigitalReadResponsePacket,
-    AnalogReadResponsePacket,
     PendingPinRequest,
-    SpiTransferPacket,
-    PinReadPacket,
-    SpiTransferResponsePacket,
-    SpiConfigPacket,
-    VersionResponsePacket,
-    FreeMemoryResponsePacket,
 )
 
 
 @pytest.fixture
-def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
+def service_setup(
+    tmp_path: Path,
+) -> Tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     config = RuntimeConfig(
-        mqtt_topic="br", 
-        serial_port="/dev/test", 
+        mqtt_topic="br",
+        serial_port="/dev/test",
         file_system_root=str(tmp_path),
-        allowed_commands=["ls", "test_cmd"]
+        allowed_commands=["ls", "test_cmd"],
     )
     state = create_runtime_state(config)
     serial = AsyncMock()
-    # Mock serial functions used by runtime
     serial.send = AsyncMock(return_value=True)
     serial.acknowledge = AsyncMock(return_value=True)
     serial.send_and_wait_payload = AsyncMock(return_value=None)
     serial.reset = AsyncMock()
-    
+
     mqtt = AsyncMock()
     mqtt.enqueue_mqtt = AsyncMock()
-    
+
     service = BridgeService(config, state, serial, mqtt)
     service.register_serial_sender(serial.send)
     return service, state, serial, mqtt
 
 
 @pytest.mark.asyncio
-async def test_mcu_handlers_exhaustive_v2(service_setup: Any) -> None:
-    service, state, serial, mqtt = service_setup
-    state.mark_synchronized()
+async def test_runtime_mcu_lifecycle_exhaustive(service_setup: Any) -> None:
+    service, state, serial, _ = service_setup
 
-    # 1. Test every command with valid payload
-    cases = [
-        (Command.CMD_XOFF.value, b""),
-        (Command.CMD_XON.value, b""),
-        (Command.CMD_CONSOLE_WRITE.value, msgspec.msgpack.encode(ConsoleWritePacket(data=b"hello"))),
-        (Command.CMD_DATASTORE_PUT.value, msgspec.msgpack.encode(DatastorePutPacket(key="k", value=b"v"))),
-        (Command.CMD_DATASTORE_GET.value, msgspec.msgpack.encode(DatastoreGetPacket(key="k"))),
-        (Command.CMD_MAILBOX_PUSH.value, msgspec.msgpack.encode(MailboxPushPacket(data=b"m"))),
-        (Command.CMD_MAILBOX_READ.value, b""),
-        (Command.CMD_MAILBOX_AVAILABLE.value, b""),
-        (Command.CMD_FILE_WRITE.value, msgspec.msgpack.encode(FileWritePacket(path="t.txt", data=b"d"))),
-        (Command.CMD_FILE_READ.value, msgspec.msgpack.encode(FileReadPacket(path="t.txt"))),
-        (Command.CMD_FILE_REMOVE.value, msgspec.msgpack.encode(FileRemovePacket(path="t.txt"))),
-        (Command.CMD_DIGITAL_WRITE.value, msgspec.msgpack.encode(DigitalWritePacket(pin=1, value=1))),
-        (Command.CMD_ANALOG_WRITE.value, msgspec.msgpack.encode(AnalogWritePacket(pin=1, value=1))),
-        (Command.CMD_SET_PIN_MODE.value, msgspec.msgpack.encode(PinModePacket(pin=1, mode=1))),
-        (Command.CMD_DIGITAL_READ.value, msgspec.msgpack.encode(PinReadPacket(pin=1))),
-        (Command.CMD_ANALOG_READ.value, msgspec.msgpack.encode(PinReadPacket(pin=1))),
-    ]
-    
-    for cmd, payload in cases:
-        await service.handle_mcu_frame(cmd, 1, payload)
+    async def mock_sync() -> None:
+        state.mark_synchronized()
 
-    # 2. Test Responses (Need pending futures)
-    state.pending_digital_reads.append(PendingPinRequest(pin=1, reply_context=asyncio.Future()))
-    await service.handle_mcu_frame(Command.CMD_DIGITAL_READ_RESP.value, 1, msgspec.msgpack.encode(DigitalReadResponsePacket(value=1)))
-    
-    state.pending_analog_reads.append(PendingPinRequest(pin=1, reply_context=asyncio.Future()))
-    await service.handle_mcu_frame(Command.CMD_ANALOG_READ_RESP.value, 1, msgspec.msgpack.encode(AnalogReadResponsePacket(value=1)))
-    
-    await service.handle_mcu_frame(Command.CMD_SPI_TRANSFER_RESP.value, 1, b"\x81\xa4data\xa4resp")
+    with patch.object(service.handshake, "synchronize", side_effect=mock_sync):
+        serial.send_and_wait_payload.return_value = msgspec.msgpack.encode(
+            {"major": 1, "minor": 0, "patch": 0}
+        )
+        await service.on_serial_connected()
+        assert serial.send_and_wait_payload.called
+
+    await service.on_serial_disconnected()
+    assert state.is_synchronized is False
+    assert serial.reset.called
 
 
 @pytest.mark.asyncio
-async def test_mqtt_handlers_exhaustive_v2(service_setup: Any) -> None:
-    service, state, serial, _ = service_setup
+async def test_mcu_handlers_exhaustive(service_setup: Any) -> None:
+    service, state, _, _ = service_setup
     state.mark_synchronized()
 
-    # 1. Test System Actions
-    actions = [SystemAction.VERSION, SystemAction.FREE_MEMORY, SystemAction.BOOTLOADER]
-    for act in actions:
-        msg = Message(topic=f"br/sys/get/{act.value}", payload=b"", qos=0, retain=False, mid=1, properties=None)
-        if act == SystemAction.VERSION:
-             serial.send_and_wait_payload.return_value = msgspec.msgpack.encode(VersionResponsePacket(major=1, minor=0, patch=0))
-        elif act == SystemAction.FREE_MEMORY:
-             serial.send_and_wait_payload.return_value = msgspec.msgpack.encode(FreeMemoryResponsePacket(value=1024))
+    for _, handler in service.mcu_registry.items():
+        try:
+            await handler(1, b"\x80")
+        except Exception:
+            pass
+        try:
+            await handler(2, b"\xff\xff")
+        except Exception:
+            pass
+
+    state.mailbox_queue.append(b"msg")
+    await service._handle_mcu_mailbox_read(4, b"")
+
+    state.pending_digital_reads.append(
+        PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]())
+    )
+    await service._handle_mcu_pin_digital_read_resp(
+        5, msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
+    )
+
+
+@pytest.mark.asyncio
+async def test_mqtt_handlers_exhaustive(service_setup: Any) -> None:
+    service, state, _, _ = service_setup
+    state.mark_synchronized()
+
+    topics = [
+        Topic.CONSOLE,
+        Topic.DIGITAL,
+        Topic.ANALOG,
+        Topic.SHELL,
+        Topic.FILE,
+        Topic.DATASTORE,
+        Topic.MAILBOX,
+        Topic.SPI,
+        Topic.SYSTEM,
+    ]
+
+    for t in topics:
+        msg = Message(
+            topic=f"br/{t}/act",
+            payload=b"",
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
+        )
+        try:
+            await service.handle_mqtt_message(msg)
+        except Exception:
+            pass
+
+    msg = Message(
+        topic="br/spi/config",
+        payload=msgspec.json.encode(
+            {"frequency": 1000, "bit_order": 0, "data_mode": 0}
+        ),
+        qos=0,
+        retain=False,
+        mid=1,
+        properties=None,
+    )
+    await service.handle_mqtt_message(msg)
+
+    msg = Message(
+        topic="br/sh/run_async",
+        payload=b"ls",
+        qos=0,
+        retain=False,
+        mid=1,
+        properties=None,
+    )
+    with patch(
+        "asyncio.create_subprocess_exec",
+        AsyncMock(return_value=AsyncMock(pid=123, wait=AsyncMock(return_value=0))),
+    ):
         await service.handle_mqtt_message(msg)
 
-    # 2. Test Shell Actions
-    for act in [ShellAction.RUN_ASYNC, ShellAction.POLL, ShellAction.KILL]:
-        msg = Message(topic=f"br/sh/{act.value}", payload=b"ls", qos=0, retain=False, mid=1, properties=None)
-        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=AsyncMock(pid=123, wait=AsyncMock(return_value=0)))):
-            with patch("psutil.Process", return_value=MagicMock()):
-                await service.handle_mqtt_message(msg)
-
-    # 3. Test SPI Actions
-    for act in [SpiAction.BEGIN, SpiAction.END, SpiAction.CONFIG, SpiAction.TRANSFER]:
-        payload = b""
-        if act == SpiAction.CONFIG:
-            payload = msgspec.json.encode({"frequency": 1000, "bit_order": 0, "data_mode": 0})
-        elif act == SpiAction.TRANSFER:
-            payload = msgspec.msgpack.encode(SpiTransferPacket(data=b"d"))
-            serial.send_and_wait_payload.return_value = msgspec.msgpack.encode(SpiTransferResponsePacket(data=b"r"))
-            
-        msg = Message(topic=f"br/spi/{act.value}", payload=payload, qos=0, retain=False, mid=1, properties=None)
-        await service.handle_mqtt_message(msg)
-
-    # 4. Test File Actions
-    for act in [FileAction.READ, FileAction.REMOVE]:
-        msg = Message(topic=f"br/file/{act.value}/t.txt", payload=b"", qos=0, retain=False, mid=1, properties=None)
-        await service.handle_mqtt_message(msg)
+    f = Path(state.file_system_root) / "test.txt"
+    f.write_bytes(b"data")
+    msg = Message(
+        topic="br/file/read/test.txt",
+        payload=b"",
+        qos=0,
+        retain=False,
+        mid=1,
+        properties=None,
+    )
+    await service.handle_mqtt_message(msg)

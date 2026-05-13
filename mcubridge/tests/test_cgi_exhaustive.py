@@ -1,15 +1,19 @@
+import importlib.util
 import sys
-from unittest.mock import MagicMock
-
-sys.modules["uci"] = MagicMock()
+import types
+from io import BytesIO
+from pathlib import Path
+from typing import Any, Callable
+from unittest.mock import MagicMock, patch
 
 import msgspec
 import pytest
-from unittest.mock import patch
-from io import BytesIO
-from pathlib import Path
-import importlib.util
-import sys
+
+from mcubridge.protocol.structures import GenericResponsePacket
+
+# Mock 'uci' before importing pin_rest_cgi
+uci_mock = types.ModuleType("uci")
+sys.modules["uci"] = uci_mock
 
 # Dynamically import pin_rest_cgi
 script_path = Path(__file__).parent.parent / "scripts" / "pin_rest_cgi.py"
@@ -21,13 +25,13 @@ sys.modules["pin_rest_cgi"] = pin_rest_cgi
 spec.loader.exec_module(pin_rest_cgi)
 application = getattr(pin_rest_cgi, "application")
 
-from mcubridge.protocol.structures import GenericResponsePacket
-
 
 @pytest.fixture
-def cgi_env():
-    def _make_env(path="/pin/13", method="POST", body=None):
-        env = {
+def cgi_env() -> Callable[..., dict[str, Any]]:
+    def _make_env(
+        path: str = "/pin/13", method: str = "POST", body: bytes | None = None
+    ) -> dict[str, Any]:
+        env: dict[str, Any] = {
             "PATH_INFO": path,
             "REQUEST_METHOD": method,
             "wsgi.input": BytesIO(body) if body else BytesIO(),
@@ -38,7 +42,7 @@ def cgi_env():
     return _make_env
 
 
-def test_cgi_success(cgi_env):
+def test_cgi_success(cgi_env: Any) -> None:
     env = cgi_env(body=msgspec.json.encode({"state": "ON"}))
     start_response = MagicMock()
 
@@ -60,28 +64,28 @@ def test_cgi_success(cgi_env):
             assert data.status == "ok"
 
 
-def test_cgi_invalid_path(cgi_env):
+def test_cgi_invalid_path(cgi_env: Any) -> None:
     env = cgi_env(path="/invalid")
     start_response = MagicMock()
     application(env, start_response)
     assert "400 Bad Request" in start_response.call_args[0][0]
 
 
-def test_cgi_invalid_method(cgi_env):
+def test_cgi_invalid_method(cgi_env: Any) -> None:
     env = cgi_env(method="GET")
     start_response = MagicMock()
     application(env, start_response)
     assert "405 Method Not Allowed" in start_response.call_args[0][0]
 
 
-def test_cgi_invalid_state(cgi_env):
+def test_cgi_invalid_state(cgi_env: Any) -> None:
     env = cgi_env(body=msgspec.json.encode({"state": "INVALID"}))
     start_response = MagicMock()
     application(env, start_response)
     assert "400 Bad Request" in start_response.call_args[0][0]
 
 
-def test_cgi_internal_error(cgi_env):
+def test_cgi_internal_error(cgi_env: Any) -> None:
     env = cgi_env(body=msgspec.json.encode({"state": "ON"}))
     start_response = MagicMock()
     with patch("pin_rest_cgi.load_runtime_config", side_effect=OSError("fail")):

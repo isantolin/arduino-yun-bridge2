@@ -200,7 +200,7 @@ class BridgeService:
             if self.state.is_synchronized:
                 await self._request_mcu_version()
                 await self._flush_console_queue()
-        except Exception as e:
+        except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as e:
             logger.exception("Sync failed: %s", e)
 
     async def on_serial_disconnected(self) -> None:
@@ -975,7 +975,7 @@ class BridgeService:
                     proc.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
-        except Exception as exc:
+        except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as exc:
             logger.error("Unexpected error stopping process %d: %s", pid, exc)
         self._finalize_process(pid)
         return True

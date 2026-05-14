@@ -196,7 +196,7 @@ class SerialTransport:
             try:
                 if self.service:
                     await self.service.on_serial_disconnected()
-            except Exception as e:
+            except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as e:
                 logger.error("Error in on_serial_disconnected hook: %s", e)
             if self.writer:
                 self.writer.close()
@@ -235,7 +235,7 @@ class SerialTransport:
                 await reader.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError:
                 break
-            except Exception as exc:
+            except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as exc:
                 logger.error("Error in _read_loop: %s", exc)
                 break
 
@@ -251,7 +251,7 @@ class SerialTransport:
                     self._switch_local_baudrate(self.config.serial_baud)
                     self._negotiation_future.set_result(True)
                     return
-            except Exception:
+            except (asyncio.CancelledError, OSError, ValueError, RuntimeError):
                 pass
         if self.loop:
             self.loop.create_task(self._async_process_packet_with_limit(encoded_packet))
@@ -291,7 +291,7 @@ class SerialTransport:
                         payload + frame.tag,
                         frame.header_bytes,
                     )
-                except Exception as e:
+                except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as e:
                     raise ValueError(f"AEAD Authentication Failed: {e}") from e
 
             # Correlate with flow control
@@ -313,7 +313,7 @@ class SerialTransport:
             self.state.serial_decode_errors += 1
             self.state.metrics.serial_decode_errors.inc()
             await self._check_baudrate_fallback()
-        except Exception as exc:
+        except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as exc:
             logger.error(
                 "[SERIAL <- MCU] [ERROR (ERR: %s)]: [%s]",
                 exc,
@@ -441,7 +441,7 @@ class SerialTransport:
                         raise self._FatalSerialError(pending.failure_status)
                     raise self._RetryableSerialError()
             return True
-        except Exception as e:
+        except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as e:
             st = getattr(e, "status", Status.TIMEOUT.value)
             pending.mark_failure(st)
             self._notify_pipeline("failure", pending, status=st)
@@ -518,7 +518,7 @@ class SerialTransport:
             except asyncio.TimeoutError:
                 logger.warning("Timeout waiting for serial TX allowed")
                 return False
-            except Exception as exc:
+            except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as exc:
                 logger.error("Unexpected error waiting for TX: %s", exc)
                 return False
 

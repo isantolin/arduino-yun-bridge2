@@ -47,7 +47,7 @@ async def test_runtime_error_branches_v6(service_setup: Any) -> None:
     for _, handler in service.mcu_registry.items():
         try:
             await handler(1, b"\xff\xff\xff")
-        except Exception:
+        except (asyncio.CancelledError, OSError, ValueError):
             pass
 
     with patch("builtins.open", side_effect=PermissionError()):

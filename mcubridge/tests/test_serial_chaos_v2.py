@@ -1,12 +1,13 @@
 import asyncio
 from typing import Any, Tuple
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 from cobs import cobs
 
 # pyright: reportPrivateUsage=false
 from mcubridge.transport.serial import SerialTransport
+from mcubridge.services.runtime import BridgeService
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.protocol.frame import Frame
@@ -22,10 +23,13 @@ def transport_setup() -> Tuple[RuntimeConfig, RuntimeState]:
 @pytest.mark.asyncio
 async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
     config, state = transport_setup
-    transport = SerialTransport(config, state, service=AsyncMock())
+    transport = SerialTransport(config, state, service=MagicMock(spec=BridgeService))
 
-    mock_reader = AsyncMock()
-    mock_writer = AsyncMock()
+    mock_reader = MagicMock(spec=asyncio.StreamReader)
+    mock_reader.feed_eof = __import__("unittest").mock.Mock()
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.write = __import__("unittest").mock.Mock()
+    mock_writer.close = __import__("unittest").mock.Mock()
     transport.writer = mock_writer
 
     frame = Frame(command_id=0x01, sequence_id=1, payload=b"ok")
@@ -56,7 +60,7 @@ async def test_serial_transport_negotiation_failure_final_v3(
     transport_setup: Any,
 ) -> None:
     config, state = transport_setup
-    transport = SerialTransport(config, state, service=AsyncMock())
+    transport = SerialTransport(config, state, service=MagicMock(spec=BridgeService))
 
     transport._negotiation_future = asyncio.Future[Any]()
 
@@ -69,5 +73,5 @@ async def test_serial_transport_negotiation_failure_final_v3(
         res = await transport._negotiate_baudrate(9600)
         assert res is False
 
-    if not transport._negotiation_future.done():
+    if transport._negotiation_future and not transport._negotiation_future.done():
         transport._negotiation_future.set_result(False)

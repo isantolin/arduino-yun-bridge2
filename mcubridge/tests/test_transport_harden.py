@@ -1,12 +1,13 @@
 import asyncio
 from typing import Any, Tuple
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
 # pyright: reportPrivateUsage=false
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.transport.mqtt import MqttTransport
+from mcubridge.services.runtime import BridgeService
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state, RuntimeState
 
@@ -21,7 +22,7 @@ def transport_setup() -> Tuple[RuntimeConfig, RuntimeState]:
 @pytest.mark.asyncio
 async def test_serial_transport_chaos(transport_setup: Any) -> None:
     config, state = transport_setup
-    transport = SerialTransport(config, state, service=AsyncMock())
+    transport = SerialTransport(config, state, service=MagicMock(spec=BridgeService))
 
     transport._process_packet(b"\x01\x02\x03")
     transport._correlate_frame(1, b"payload")

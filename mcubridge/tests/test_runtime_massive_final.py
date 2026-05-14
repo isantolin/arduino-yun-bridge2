@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Tuple
 from unittest.mock import AsyncMock
 from pathlib import Path
@@ -141,11 +142,11 @@ async def test_runtime_brute_force_handlers_v2(service_setup: Any) -> None:
     for handler, seq, payload in handlers:
         try:
             await handler(seq, payload)
-        except Exception:
+        except (asyncio.CancelledError, OSError, ValueError):
             pass
         try:
             await handler(seq, b"\xff")
-        except Exception:
+        except (asyncio.CancelledError, OSError, ValueError):
             pass
 
 
@@ -177,5 +178,5 @@ async def test_runtime_mqtt_brute_force_v2(service_setup: Any) -> None:
         args = entry[1:]
         try:
             await handler(*args)
-        except Exception:
+        except (asyncio.CancelledError, OSError, ValueError):
             pass

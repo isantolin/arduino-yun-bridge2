@@ -72,11 +72,11 @@ async def test_mcu_handlers_exhaustive(service_setup: Any) -> None:
     for _, handler in service.mcu_registry.items():
         try:
             await handler(1, b"\x80")
-        except Exception:
+        except (asyncio.CancelledError, OSError, ValueError):
             pass
         try:
             await handler(2, b"\xff\xff")
-        except Exception:
+        except (asyncio.CancelledError, OSError, ValueError):
             pass
 
     state.mailbox_queue.append(b"msg")
@@ -118,7 +118,7 @@ async def test_mqtt_handlers_exhaustive(service_setup: Any) -> None:
         )
         try:
             await service.handle_mqtt_message(msg)
-        except Exception:
+        except (asyncio.CancelledError, OSError, ValueError):
             pass
 
     msg = Message(

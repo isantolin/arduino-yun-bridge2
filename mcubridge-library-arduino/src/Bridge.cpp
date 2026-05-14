@@ -455,11 +455,16 @@ void BridgeClass::_handleAck(uint16_t cmd) {
 }
 void BridgeClass::_clearPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
-    while (!_pending_tx_queue.empty()) {
-      TxPayloadBuffer* buf = _pending_tx_queue.front().buffer;
-      if (buf) _tx_payload_pool.release(buf);
-      _pending_tx_queue.pop();
-    }
+    struct ClearQueue {
+      static void run(etl::queue<BridgeClass::PendingTxFrame, bridge::config::TX_QUEUE_CAPACITY>& q, etl::pool<TxPayloadBuffer, bridge::config::TX_QUEUE_CAPACITY>& pool) {
+        if (q.empty()) return;
+        TxPayloadBuffer* buf = q.front().buffer;
+        if (buf) pool.release(buf);
+        q.pop();
+        run(q, pool);
+      }
+    };
+    ClearQueue::run(_pending_tx_queue, _tx_payload_pool);
   }
 }
 void BridgeClass::_onRxDedupe() { _rx_history.clear(); }

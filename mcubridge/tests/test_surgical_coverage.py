@@ -111,15 +111,20 @@ async def test_surgical_runtime_edge_cases(
 def test_surgical_scripts_coverage() -> None:
     from scripts import mcubridge_file_push as file_push
 
+    mock_mqtt = MagicMock()
     with patch("sys.argv", ["file-push", "local.txt", "remote.txt"]):
-        with patch("aiomqtt.Client"):
+        with patch("aiomqtt.Client", return_value=mock_mqtt):
             with patch("builtins.open", MagicMock()):
                 with patch.object(Path, "exists", return_value=True):
                     with patch.object(Path, "read_bytes", return_value=b"data"):
                         file_push.main()
+                        assert mock_mqtt.__aenter__.called
 
     from scripts import mcubridge_rotate_credentials as rotate
 
     with patch("sys.argv", ["rotate", "--force"]):
-        with patch("subprocess.run"):
+        with patch("subprocess.run") as mock_run:
             rotate.main()
+            # Verify it tried to restart the service
+            assert any("/etc/init.d/mcubridge" in str(call) for call in mock_run.call_args_list)
+

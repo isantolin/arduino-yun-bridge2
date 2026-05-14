@@ -126,5 +126,6 @@ def test_surgical_scripts_coverage() -> None:
         with patch("subprocess.run") as mock_run:
             rotate.main()
             # Verify it tried to restart the service
-            assert any("/etc/init.d/mcubridge" in str(call) for call in mock_run.call_args_list)
-
+            assert any(
+                "/etc/init.d/mcubridge" in str(call) for call in mock_run.call_args_list
+            )

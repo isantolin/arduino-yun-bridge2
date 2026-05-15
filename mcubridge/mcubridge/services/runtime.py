@@ -1174,6 +1174,4 @@ class BridgeService:
             message_expiry_interval=MQTT_EXPIRY_DATASTORE,
             user_properties=props,
         )
-        await self.enqueue_mqtt(pub)
-        if reply_context:
-            await self.enqueue_mqtt(pub, reply_context=reply_context)
+        await self.enqueue_mqtt(pub, reply_context=reply_context)

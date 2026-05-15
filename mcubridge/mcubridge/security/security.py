@@ -62,7 +62,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
         return struct.unpack(protocol.NONCE_COUNTER_FORMAT, nonce[NONCE_RANDOM_BYTES:])[
             0
         ]
-    except Exception as e:
+    except struct.error as e:
         raise ValueError(f"Malformed nonce format: {e}") from e
 
 
@@ -73,7 +73,7 @@ def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
     except ValueError:
         return False, last_counter
 
-    if current <= last_counter and last_counter != 0xFFFFFFFFFFFFFFFF:
+    if current <= last_counter and last_counter != protocol.NONCE_COUNTER_MASK:
         return False, last_counter
     return True, current
 

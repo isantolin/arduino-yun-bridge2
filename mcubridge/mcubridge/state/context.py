@@ -308,11 +308,14 @@ class RuntimeState(msgspec.Struct):
         cfg_dict["process_output_limit"] = cfg_dict.pop(
             "process_max_output_bytes", self.process_output_limit
         )
-        
+
         # [SIL-2] Complex Policy Mapping
         if "allowed_commands" in cfg_dict:
             from ..protocol.structures import AllowedCommandPolicy
-            cfg_dict["allowed_policy"] = AllowedCommandPolicy(entries=cfg_dict.pop("allowed_commands"))
+
+            cfg_dict["allowed_policy"] = AllowedCommandPolicy(
+                entries=cfg_dict.pop("allowed_commands")
+            )
 
         # [SIL-2] Unified conversion and assignment
         # Note: We filter out None to prevent overwriting initialized defaults.

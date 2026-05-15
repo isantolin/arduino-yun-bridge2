@@ -13,6 +13,7 @@ from cobs import cobs
 import serial_asyncio_fast
 import structlog
 from typing import Final
+from mcubridge.protocol import protocol
 
 # Constants from protocol spec
 PROTOCOL_VERSION: Final[int] = 0x02
@@ -80,7 +81,7 @@ class ProtocolFuzzer:
         elif mode == "invalid_version":
             header = struct.pack(">BHHH", 0xFF, 3, 0x0001, self.seq_id)
             body = header + b"VER"
-            crc = crc32(body) & 0xFFFFFFFF
+            crc = crc32(body) & protocol.CRC32_MASK
             frame = cobs.encode(body + struct.pack(">I", crc)) + FRAME_DELIMITER
             await self.send_raw(frame)
 

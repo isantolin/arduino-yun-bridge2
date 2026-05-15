@@ -308,6 +308,11 @@ class JinjaGenerator:
             {"name": "RPC_CRC32_MASK", "type": "uint32_t", "value": c["crc32_mask"]},
             {"name": "RPC_CRC_INITIAL", "type": "uint32_t", "value": c["crc_initial"]},
             {
+                "name": "RPC_NONCE_COUNTER_MASK",
+                "type": "uint64_t",
+                "value": c["nonce_counter_mask"],
+            },
+            {
                 "name": "RPC_CRC_POLYNOMIAL",
                 "type": "uint32_t",
                 "value": c["crc_polynomial"],
@@ -750,6 +755,11 @@ class JinjaGenerator:
             },
             {"name": "CRC32_MASK", "type": "int", "value": c["crc32_mask"]},
             {"name": "CRC_INITIAL", "type": "int", "value": c["crc_initial"]},
+            {
+                "name": "NONCE_COUNTER_MASK",
+                "type": "int",
+                "value": c["nonce_counter_mask"],
+            },
             {"name": "CRC_POLYNOMIAL", "type": "int", "value": c["crc_polynomial"]},
             {
                 "name": "FRAME_DELIMITER",

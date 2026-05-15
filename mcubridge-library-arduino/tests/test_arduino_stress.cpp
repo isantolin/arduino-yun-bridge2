@@ -34,10 +34,12 @@ void test_bridge_reliable_retry_exhaustion() {
     // 3rd call: count=3, 3 >= 5 False
     // 4th call: count=4, 4 >= 5 False
     // 5th call: count=5, 5 >= 5 True -> Transition
-    for (int i = 1; i < bridge::config::DEFAULT_ACK_RETRY_LIMIT; ++i) {
+    etl::counter_iterator<int> retry_begin(1);
+    etl::counter_iterator<int> retry_end(bridge::config::DEFAULT_ACK_RETRY_LIMIT);
+    etl::for_each(retry_begin, retry_end, [&ba](int) {
         ba.onAckTimeout();
         TEST_ASSERT_TRUE(ba.isAwaitingAck());
-    }
+    });
     
     // Final call that triggers transition
     ba.onAckTimeout();

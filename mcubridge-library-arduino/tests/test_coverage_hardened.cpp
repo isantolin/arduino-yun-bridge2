@@ -55,10 +55,12 @@ void test_bridge_queue_full_and_retransmit() {
     ba.setSynchronized();
     
     // Fill the TX queue with reliable commands to trigger full condition
-    for (uint32_t i = 0; i < bridge::config::TX_QUEUE_CAPACITY; ++i) {
+    etl::counter_iterator<uint32_t> fill_begin(0);
+    etl::counter_iterator<uint32_t> fill_end(bridge::config::TX_QUEUE_CAPACITY);
+    etl::for_each(fill_begin, fill_end, [&ba](uint32_t i) {
         // Use a reliable command (e.g., CMD_CONSOLE_WRITE)
         (void)ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 100 + i, {});
-    }
+    });
     
     // Next one should return false (queue full)
     bool ok = ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 999, {});

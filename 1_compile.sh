@@ -437,20 +437,12 @@ echo "[INFO] Re-installing essential feeds..."
 ./scripts/feeds update -a
 
 # [FIX] Remove duplicate/problematic upstream packages to avoid recursion
-echo "[FIX] Removing duplicate upstream packages (click, paho-mqtt, etc)..."
-rm -rf feeds/packages/lang/python/python-click
-rm -rf feeds/packages/lang/python/python-click-log
+echo "[FIX] Removing duplicate upstream packages (paho-mqtt, etc)..."
 rm -rf feeds/packages/lang/python/python-paho-mqtt
-rm -rf feeds/packages/lang/python/python-psutil
 rm -rf feeds/packages/lang/python/python-cryptography
 
 ./scripts/feeds install mcubridge luci-app-mcubridge
 
-# 4. Break python3-click self-selection if it reappeared
-CLICK_MAKEFILE="package/feeds/mcubridge/python3-click/Makefile"
-if [ -f "$CLICK_MAKEFILE" ]; then
-    sed -i 's/select PACKAGE_python3-click//g' "$CLICK_MAKEFILE"
-fi
 # ==============================================================================
 
 # [FIX] Patch python-uci to include setuptools build dependency (Critical for Python 3.13+)
@@ -503,7 +495,7 @@ if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
     # [FIX] Eliminar conflictos de paquetes Python (System vs Local)
     # Estos paquetes existen en el feed oficial 'packages' pero necesitamos las versiones
     # optimizadas o más recientes del feed 'mcubridge'.
-    for pkg_conflict in python-paho-mqtt python-cryptography python-psutil; do
+    for pkg_conflict in python-paho-mqtt python-cryptography; do
         if [ -d "package/feeds/packages/$pkg_conflict" ]; then
             echo "[FIX] Removing upstream $pkg_conflict to prioritize local mcubridge version..."
             rm -rf "package/feeds/packages/$pkg_conflict"

@@ -35,7 +35,7 @@ Aprovecha las capacidades de **MQTT v5** para correlacionar peticiones y respues
 
 ## Dependencias empaquetadas
 
-Los scripts reutilizan las mismas dependencias instaladas en la MCU por `3_install.sh`: `aiomqtt`, `paho-mqtt`, `cobs`, `prometheus-client` y `psutil`.
+Los scripts reutilizan las mismas dependencias instaladas en la MCU por `3_install.sh`: `aiomqtt`, `paho-mqtt`, `cobs` y `prometheus-client`.
 
 Si ejecutas los ejemplos directamente desde el repositorio, instala las dependencias:
 

@@ -74,11 +74,6 @@ from mcubridge.watchdog import WatchdogKeepalive
 logger = structlog.get_logger("mcubridge")
 
 
-def _cleanup_child_processes() -> None:
-    """Terminates child processes. Delegated to procd in OpenWrt (SIL-2)."""
-    pass
-
-
 class BridgeDaemon:
     """Main orchestrator for the MCU Bridge daemon services.
 
@@ -208,8 +203,15 @@ class BridgeDaemon:
                     if message.topic:
                         try:
                             await self.service.handle_mqtt_message(message)
-                        except Exception as e:
-                            logger.error("Error processing MQTT message: %s", e)
+                        except (ValueError, RuntimeError, asyncio.QueueFull) as e:
+                            logger.error(
+                                "Error processing MQTT message",
+                                topic=str(message.topic),
+                                error=str(e),
+                                payload_hex=(
+                                    message.payload.hex() if message.payload else None
+                                ),
+                            )
             finally:
                 self.service.set_mqtt_client(None)
 
@@ -307,7 +309,6 @@ class BridgeDaemon:
             raise
         finally:
             self.state.cleanup()
-            _cleanup_child_processes()
             STATUS_FILE.unlink(missing_ok=True)
             log.info("MCU Bridge daemon stopped.")
 

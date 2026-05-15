@@ -978,6 +978,7 @@ class BridgeService:
                 except asyncio.TimeoutError:
                     import os
                     import signal
+
                     with contextlib.suppress(OSError):
                         os.killpg(h.pid, signal.SIGKILL)
                     self.state.process_exit_codes[pid] = -1

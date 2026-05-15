@@ -324,7 +324,6 @@ ESSENTIAL_PACKAGES="\
 python3 \
 python3-asyncio \
 python3-uci \
-python3-psutil \
 python3-msgspec \
 python3-pyserial-asyncio-fast \
 openssl-util \

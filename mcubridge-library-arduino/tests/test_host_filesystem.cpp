@@ -39,9 +39,10 @@ void test_hal_roundtrip() {
 void test_hal_chunked_read_roundtrip() {
   const etl::string_view path = "test_chunks.bin";
   etl::array<uint8_t, 120> read_payload;
-  for (size_t index = 0; index < read_payload.size(); ++index) {
-    read_payload[index] = static_cast<uint8_t>('a' + (index % 26U));
-  }
+  size_t idx = 0;
+  etl::generate(read_payload.begin(), read_payload.end(), [&idx]() {
+    return static_cast<uint8_t>('a' + (idx++ % 26U));
+  });
 
   auto res_w = bridge::hal::writeFile(path, etl::span<const uint8_t>(read_payload.data(), read_payload.size()));
   TEST_ASSERT(res_w.has_value());

@@ -137,20 +137,20 @@ struct TestCOBS {
     uint8_t* start = dst;
     uint8_t* code_ptr = dst++;
     uint8_t code = 1;
-    for (size_t i = 0; i < len; ++i) {
-      if (src[i] == 0) {
+    etl::for_each(src, src + len, [&](uint8_t b) {
+      if (b == 0) {
         *code_ptr = code;
         code_ptr = dst++;
         code = 1;
       } else {
-        *dst++ = src[i];
+        *dst++ = b;
         if (++code == rpc::RPC_UINT8_MASK) {
           *code_ptr = code;
           code_ptr = dst++;
           code = 1;
         }
       }
-    }
+    });
     *code_ptr = code;
     return static_cast<size_t>(dst - start);
   }

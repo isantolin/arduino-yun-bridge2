@@ -30,7 +30,7 @@ _CRC_SIZE = 4  # TODO: Move to protocol.FRAME_CRC_SIZE if needed
 
 def _frame_crc(data: bytes | bytearray | memoryview) -> int:
     """CRC32 checksum for frame integrity (SIL-2)."""
-    return crc32(data) & 0xFFFFFFFF
+    return crc32(data) & protocol.CRC32_MASK
 
 
 class Frame(msgspec.Struct, frozen=True):
@@ -97,7 +97,7 @@ class Frame(msgspec.Struct, frozen=True):
                 cmd_id,
                 self.sequence_id,
             )
-        except Exception as e:
+        except struct.error as e:
             raise ValueError(f"Failed to build frame: {e}") from e
 
         body = header + self.nonce + payload + self.tag

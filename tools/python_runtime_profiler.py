@@ -19,7 +19,6 @@ def measure_imports() -> list[tuple[str, float]]:
         "msgspec",
         "aiomqtt",
         "paho.mqtt",
-        "psutil",
         "mcubridge.protocol.frame",
         "mcubridge.protocol.structures",
     ]

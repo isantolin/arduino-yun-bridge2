@@ -1,11 +1,11 @@
 import asyncio
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 # pyright: reportPrivateUsage=false
-from mcubridge.daemon import BridgeDaemon, _cleanup_child_processes, app, main
+from mcubridge.daemon import BridgeDaemon, app, main
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.handshake import SerialHandshakeFatal
 
@@ -19,21 +19,6 @@ def daemon_setup() -> BridgeDaemon:
     )
     daemon = BridgeDaemon(config)
     return daemon
-
-
-def test_cleanup_child_processes_zombies() -> None:
-    """Test process tree cleanup with simulated zombie processes."""
-    MagicMock()
-    mock_child = MagicMock()
-    mock_child.pid = 12345
-
-    # Simulate child survives terminate
-    mock_child.terminate.assert_not_called()
-
-
-def test_cleanup_child_processes_errors() -> None:
-    """Test cleanup handles psutil errors gracefully."""
-    _cleanup_child_processes()  # Should not raise
 
 
 @pytest.mark.asyncio

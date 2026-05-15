@@ -83,7 +83,9 @@ void test_bridge_coverage() {
   printf("  - Step 4: Console\n");
   Console.begin();
   (void)Console.write('a');
-  for(int i=0; i<bridge::config::CONSOLE_TX_BUFFER_SIZE + 1; i++) (void)Console.write('x');
+  etl::counter_iterator<int> console_begin(0);
+  etl::counter_iterator<int> console_end(bridge::config::CONSOLE_TX_BUFFER_SIZE + 1);
+  etl::for_each(console_begin, console_end, [](int) { (void)Console.write('x'); });
   Console.flush();
   
   rpc::payload::ConsoleWrite cmsg;

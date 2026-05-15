@@ -90,9 +90,11 @@ void test_bridge_ack_timeout_retry_to_fault() {
     TEST_ASSERT_TRUE(ba.isAwaitingAck());
 
     // Trigger timeout 3 times (Default limit)
-    for (int i = 0; i < bridge::config::DEFAULT_ACK_RETRY_LIMIT; ++i) {
+    etl::counter_iterator<int> retry_begin(0);
+    etl::counter_iterator<int> retry_end(bridge::config::DEFAULT_ACK_RETRY_LIMIT);
+    etl::for_each(retry_begin, retry_end, [&ba](int) {
         ba.onAckTimeout();
-    }
+    });
 
     // After limit, it should transition out of Awaiting Ack
     TEST_ASSERT_FALSE(ba.isAwaitingAck());

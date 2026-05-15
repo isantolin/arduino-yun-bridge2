@@ -103,7 +103,10 @@ async def test_runtime_process_cleanup_robustness(
     service, state, _ = service_setup
 
     # Mock a running process
-    state.running_processes[123] = MagicMock()
+    mock_proc = MagicMock()
+    mock_proc.pid = 999999
+    mock_proc.returncode = None
+    state.running_processes[123] = mock_proc
 
     result = await service._stop_process(123)
     assert result is True

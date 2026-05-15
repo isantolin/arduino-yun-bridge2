@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
@@ -19,6 +20,13 @@
 #include "protocol/rpc_protocol.h"
 
 using namespace rpc;
+
+static volatile sig_atomic_t g_running = 1;
+
+void signal_handler(int signum) {
+  (void)signum;
+  g_running = 0;
+}
 
 // Global instances for the Bridge
 Stream* g_arduino_stream_delegate = nullptr;

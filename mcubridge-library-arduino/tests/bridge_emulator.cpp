@@ -6,6 +6,7 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
@@ -16,52 +17,32 @@
 // External delegate for stream
 Stream* g_arduino_stream_delegate = nullptr;
 
+static volatile sig_atomic_t g_running = 1;
+
+void signal_handler(int signum) {
+  (void)signum;
+  g_running = 0;
+}
+
 HostSerialStream<true> MySerial;
 HardwareSerial Serial;
 HardwareSerial Serial1;
 
 // --- Millis Implementation ---
-static struct timespec g_start_time;
-static bool g_timer_initialized = false;
-
 unsigned long millis() {
-  if (!g_timer_initialized) {
-    clock_gettime(CLOCK_MONOTONIC, &g_start_time);
-    g_timer_initialized = true;
-  }
-  struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
-  return (now.tv_sec - g_start_time.tv_sec) * 1000 +
-         (now.tv_nsec - g_start_time.tv_nsec) / 1000000;
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (ts.tv_sec * 1000) + (ts.tv_nsec / 1000000);
 }
 
+void delay(unsigned long ms) { usleep(ms * 1000); }
+
 int main(int argc, char** argv) {
-  if (argc > 1) {
-    // Explicit port path: open serial device directly.
-    const char* port = argv[1];
-    int fd = open(port, O_RDWR | O_NOCTTY);
-    if (fd < 0) {
-      fprintf(stderr, "Failed to open port %s\n", port);
-      return 1;
-    }
-    struct termios tty;
-    if (tcgetattr(fd, &tty) == 0) {
-      cfsetospeed(&tty, B115200); cfsetispeed(&tty, B115200);
-      tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8; tty.c_iflag &= ~IGNBRK;
-      tty.c_lflag = 0; tty.c_oflag = 0; tty.c_cc[VMIN] = 1; tty.c_cc[VTIME] = 5;
-      tty.c_cflag |= (CLOCAL | CREAD); tty.c_cflag &= ~(PARENB | PARODD);
-      tty.c_cflag &= ~CSTOPB; tty.c_cflag &= ~CRTSCTS;
-      tcsetattr(fd, TCSANOW, &tty);
-    }
-    MySerial.setFds(fd, fd);
-    fprintf(stderr, "McuBridge Emulator Started on %s\n", port);
-  } else {
-    // No port argument: use stdin/stdout (socat EXEC mode).
-    setvbuf(stdin, NULL, _IONBF, 0);
-    setvbuf(stdout, NULL, _IONBF, 0);
-    MySerial.setFds(STDIN_FILENO, STDOUT_FILENO);
-    fprintf(stderr, "McuBridge Emulator Started on stdio\n");
-  }
+  (void)argc;
+  (void)argv;
+  // Disable buffering for stdin/stdout to ensure real-time serial behavior
+  setvbuf(stdin, NULL, _IONBF, 0);
+  setvbuf(stdout, NULL, _IONBF, 0);
 
   g_arduino_stream_delegate = &MySerial;
   fprintf(stderr, "[emulator] Simulated SD card at: /tmp/mcubridge-host-fs\n");
@@ -74,6 +55,8 @@ int main(int argc, char** argv) {
   sigaction(SIGINT, &sa, NULL);
 
   Bridge.begin(115200, "DEBUG_INSECURE");
+
+  fprintf(stderr, "McuBridge Emulator Started on stdio\n");
 
   while (g_running) {
     Bridge.process();

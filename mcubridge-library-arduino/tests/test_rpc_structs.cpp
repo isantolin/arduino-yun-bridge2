@@ -23,6 +23,14 @@ void test_roundtrip(const T& p) {
     TEST_ASSERT(p2.decode(dec));
 }
 
+template <typename T>
+void test_chaos_decode() {
+    uint8_t buffer[2] = {0x91, 0xFF}; // Array of 1 with junk
+    T p = {};
+    msgpack::Decoder dec(buffer, 2);
+    (void)p.decode(dec); // Should fail many checks
+}
+
 void test_all_structs_roundtrip() {
     test_roundtrip(rpc::payload::VersionResponse{1, 2, 3});
     test_roundtrip(rpc::payload::FreeMemoryResponse{1024});
@@ -96,8 +104,8 @@ void test_all_structs_roundtrip() {
     test_roundtrip(rpc::payload::AckPacket{42});
     test_roundtrip(rpc::payload::HandshakeConfig{200, 5, 2000});
     test_roundtrip(rpc::payload::SetBaudratePacket{57600});
-    test_roundtrip(rpc::payload::LinkSync{0xAA});
-    test_roundtrip(rpc::payload::EnterBootloader{0xBB});
+    test_roundtrip(rpc::payload::LinkSync{});
+    test_roundtrip(rpc::payload::EnterBootloader{});
     
     rpc::payload::SpiTransfer st;
     st.data = etl::span<const uint8_t>((const uint8_t*)str, 4);
@@ -110,8 +118,18 @@ void test_all_structs_roundtrip() {
     test_roundtrip(rpc::payload::SpiConfig{1, 2, 3});
 }
 
+void test_all_structs_chaos() {
+    test_chaos_decode<rpc::payload::VersionResponse>();
+    test_chaos_decode<rpc::payload::Capabilities>();
+    test_chaos_decode<rpc::payload::ConsoleWrite>();
+    test_chaos_decode<rpc::payload::DatastorePut>();
+    test_chaos_decode<rpc::payload::FileWrite>();
+    test_chaos_decode<rpc::payload::ProcessPollResponse>();
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_all_structs_roundtrip);
+    RUN_TEST(test_all_structs_chaos);
     return UNITY_END();
 }

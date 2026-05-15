@@ -40,6 +40,14 @@ import tenacity
 import structlog
 import uvloop
 
+import logging
+import aiomqtt
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
+from mcubridge.protocol.topics import topic_path
+from mcubridge.protocol.protocol import Topic, MQTT_COMMAND_SUBSCRIPTIONS
+
+
 from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
@@ -61,10 +69,7 @@ from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.state.status import STATUS_FILE, status_writer
-from mcubridge.transport import (
-    MqttTransport,
-    SerialTransport,
-)
+from mcubridge.transport.serial import SerialTransport
 from mcubridge.watchdog import WatchdogKeepalive
 
 logger = structlog.get_logger("mcubridge")
@@ -120,25 +125,118 @@ class BridgeDaemon:
         self.state = create_runtime_state(config)
         self.state.config_source = get_config_source()
 
-        # 1. Create Transports (service=None)
-        self.mqtt_transport = MqttTransport(self.config, self.state)
+        # 1. Create Transports
         self.serial_transport = SerialTransport(self.config, self.state, None)
 
         # 2. Create Service with both transports
-        self.service = BridgeService(
-            config, self.state, self.serial_transport, self.mqtt_transport
-        )
+        self.service = BridgeService(config, self.state, self.serial_transport)
 
         # 3. Explicitly link transports to service
         self.serial_transport.service = self.service
         self.service.register_serial_sender(self.serial_transport.send)
-        self.mqtt_transport.set_service(self.service)
 
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
 
         if self.config.serial_shared_secret:
             logger.info("Security check passed: Shared secret is configured.")
+
+    async def _mqtt_run(self) -> None:
+        if not self.config.mqtt_enabled:
+            logger.info("MQTT transport is DISABLED in configuration.")
+            return
+
+        tls_context = self.config.get_ssl_context()
+        reconnect_delay = max(1, self.config.reconnect_delay)
+
+        def _is_retryable(e: Any) -> bool:
+            if isinstance(e, (aiomqtt.MqttError, OSError, asyncio.TimeoutError)):
+                return True
+            if isinstance(e, BaseExceptionGroup):
+                return any(_is_retryable(sub) for sub in e.exceptions)  # type: ignore
+            return False
+
+        def _retry_predicate(retry_state: tenacity.RetryCallState) -> bool:
+            if not retry_state.outcome or not retry_state.outcome.failed:
+                return False
+            exc = retry_state.outcome.exception()
+            return _is_retryable(exc) if exc else False
+
+        retryer = tenacity.AsyncRetrying(
+            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
+            + tenacity.wait_random(0, 2),
+            retry=_retry_predicate,
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            after=lambda rs: self.state.metrics.retries.labels(
+                component="mqtt_connect"
+            ).inc(),
+            reraise=True,
+        )
+
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    await self._connect_mqtt_session(tls_context)
+        except asyncio.CancelledError:
+            logger.info("MQTT transport stopping.")
+            raise
+        except (ConnectionError, OSError, asyncio.TimeoutError) as exc:
+            logger.critical("MQTT transport fatal error: %s", exc)
+            raise
+        except BaseExceptionGroup as eg:
+            for exc in eg.exceptions:
+                logger.critical("MQTT transport fatal error: %s", exc)
+            raise
+
+    async def _connect_mqtt_session(self, tls_context: Any) -> None:
+        connect_props = Properties(PacketTypes.CONNECT)
+        connect_props.SessionExpiryInterval = 0
+        connect_props.RequestResponseInformation = 1
+        connect_props.RequestProblemInformation = 1
+
+        if not self.config.mqtt_user:
+            logger.warning("MQTT connecting without authentication (anonymous)")
+
+        will_topic = topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "status")
+        will = aiomqtt.Will(
+            topic=will_topic,
+            payload=b'{"status": "offline", "reason": "unexpected_disconnect"}',
+            qos=1,
+            retain=True,
+        )
+
+        async with aiomqtt.Client(
+            hostname=self.config.mqtt_host,
+            port=self.config.mqtt_port,
+            username=self.config.mqtt_user or None,
+            password=self.config.mqtt_pass or None,
+            tls_context=tls_context,
+            logger=logging.getLogger("mcubridge.mqtt.client"),
+            protocol=aiomqtt.ProtocolVersion.V5,
+            clean_session=None,
+            will=will,
+            properties=connect_props,
+        ) as client:
+            logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
+            self.service.set_mqtt_client(client)
+            try:
+                topics = [
+                    (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
+                    for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
+                ]
+                await client.subscribe(topics)
+                await client.publish(
+                    will_topic, b'{"status": "online"}', qos=1, retain=True
+                )
+
+                async for message in client.messages:
+                    if message.topic:
+                        try:
+                            await self.service.handle_mqtt_message(message)
+                        except Exception as e:
+                            logger.error("Error processing MQTT message: %s", e)
+            finally:
+                self.service.set_mqtt_client(None)
 
     async def run(self) -> None:
         """Main entry point for daemon execution using native TaskGroup orchestration."""
@@ -160,7 +258,7 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "mqtt-link",
-                            self.mqtt_transport.run,
+                            self._mqtt_run,
                         )
                     )
 
@@ -178,7 +276,7 @@ class BridgeDaemon:
                             "metrics-publisher",
                             lambda: publish_metrics(
                                 self.state,
-                                self.mqtt_transport.enqueue_mqtt,
+                                self.service.enqueue_mqtt,
                                 float(self.config.status_interval),
                             ),
                         )
@@ -194,7 +292,7 @@ class BridgeDaemon:
                                 "bridge-snapshots",
                                 lambda: publish_bridge_snapshots(
                                     self.state,
-                                    self.mqtt_transport.enqueue_mqtt,
+                                    self.service.enqueue_mqtt,
                                     summary_interval=float(
                                         self.config.bridge_summary_interval
                                     ),

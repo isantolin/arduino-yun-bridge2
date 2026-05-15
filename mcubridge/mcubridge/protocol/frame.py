@@ -1,7 +1,7 @@
 """RPC frame building and parsing for Arduino-Linux serial communication.
 
 This module implements the binary frame format used over the serial link
-between the Linux daemon and the Arduino MCU using declarative Construct structures.
+between the Linux daemon and the Arduino MCU using declarative msgspec structures.
 
 [SIL-2 COMPLIANCE]
 The frame format is strictly defined to ensure:
@@ -13,141 +13,24 @@ The frame format is strictly defined to ensure:
 
 from __future__ import annotations
 
+import struct
 from binascii import crc32
-from typing import Any
 
-import construct
 import msgspec
-from construct import (
-    Adapter,
-    Bytes,
-    Checksum,
-    Const,
-    Construct,
-    Int8ub,
-    Int16ub,
-    Int32ub,
-    RawCopy,
-    Rebuild,
-    Struct,
-    this,
-)
-from construct.core import ConstructError
 
 from . import protocol
-from .rle import RLE_TRANSFORM, should_compress
+from .rle import rle_encode, rle_decode, should_compress
+
+_HEADER_FORMAT = ">BHHH"
+_HEADER_SIZE = struct.calcsize(_HEADER_FORMAT)
+_NONCE_SIZE = 12
+_TAG_SIZE = 16
+_CRC_SIZE = 4
 
 
-class FrameAdapter(Adapter):
-    """[SIL-2] High-level adapter to map between internal Frame object and Construct dict."""
-
-    def _decode(self, obj: Any, context: Any, path: Any) -> "Frame":
-        # Extract fields from the declarative Body
-        header = obj.body.value.header
-        nonce = obj.body.value.nonce
-        payload = obj.body.value.payload
-        tag = obj.body.value.tag
-        cmd_id = int(header.command_id)
-
-        # Handle implicit RLE decompression if bit 15 is set
-        if cmd_id & protocol.CMD_FLAG_COMPRESSED:
-            payload = RLE_TRANSFORM.parse(payload)
-            cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
-
-        return Frame(
-            command_id=cmd_id,
-            sequence_id=int(header.sequence_id),
-            payload=payload,
-            nonce=nonce,
-            tag=tag,
-            header_bytes=obj.body.data[: protocol.CRC_COVERED_HEADER_SIZE],
-        )
-
-    def _encode(self, obj: "Frame", context: Any, path: Any) -> dict[str, Any]:
-        cmd_id = int(obj.command_id)
-        payload = obj.payload
-
-        # [SIL-2] Explicit size guard before orchestration
-        if len(payload) > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(
-                f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}"
-            )
-
-        # Handle implicit RLE compression (Exclude handshake/control commands for safety)
-        if (
-            payload
-            and cmd_id
-            not in (
-                protocol.Command.CMD_LINK_SYNC,
-                protocol.Command.CMD_LINK_RESET,
-                protocol.Command.CMD_SET_BAUDRATE,
-                protocol.Command.CMD_GET_CAPABILITIES,
-            )
-            and should_compress(payload)
-        ):
-            compressed = RLE_TRANSFORM.build(payload)
-            if len(compressed) < len(payload):
-                payload = compressed
-                cmd_id |= protocol.CMD_FLAG_COMPRESSED
-
-        return {
-            "body": {
-                "value": {
-                    "header": {
-                        "version": protocol.PROTOCOL_VERSION,
-                        "payload_len": len(payload),
-                        "command_id": cmd_id,
-                        "sequence_id": obj.sequence_id,
-                    },
-                    "nonce": obj.nonce,
-                    "payload": payload,
-                    "tag": obj.tag,
-                }
-            }
-        }
-
-
-# --- DECLARATIVE STRUCTURES ---
-
-
-def _get_payload_len(ctx: Any) -> int:
-    """SIL-2: Robust payload length calculator for declarative building."""
-    # Check parent context first (used in RPC_FRAME_SCHEMA)
-    if hasattr(ctx, "_") and hasattr(ctx._, "payload"):
-        return len(ctx._.payload)
-    # Fallback to local context (used in isolated tests)
-    if hasattr(ctx, "payload"):
-        return len(ctx.payload)
-    return 0
-
-
-RPC_FRAME_HEADER = Struct(
-    "version" / Const(protocol.PROTOCOL_VERSION, Int8ub),
-    "payload_len" / Rebuild(Int16ub, _get_payload_len),
-    "command_id" / Int16ub,
-    "sequence_id" / Int16ub,
-)
-
-RPC_FRAME_BODY = Struct(
-    "header" / RPC_FRAME_HEADER,
-    "nonce" / Bytes(12),
-    "payload" / Bytes(this.header.payload_len),
-    "tag" / Bytes(16),
-)
-
-
-def _frame_crc(data: bytes) -> int:
+def _frame_crc(data: bytes | bytearray | memoryview) -> int:
     """CRC32 checksum for frame integrity (SIL-2)."""
     return crc32(data) & 0xFFFFFFFF
-
-
-# [SIL-2] The Maestro: One structure to rule them all.
-RPC_FRAME_SCHEMA: Construct = FrameAdapter(
-    Struct(
-        "body" / RawCopy(RPC_FRAME_BODY),
-        "crc" / Checksum(Int32ub, _frame_crc, this.body.data),
-    )
-)
 
 
 class Frame(msgspec.Struct, frozen=True):
@@ -156,8 +39,8 @@ class Frame(msgspec.Struct, frozen=True):
     command_id: int | protocol.Command | protocol.Status
     sequence_id: int
     payload: bytes = b""
-    nonce: bytes = b"\x00" * 12
-    tag: bytes = b"\x00" * 16
+    nonce: bytes = b"\x00" * _NONCE_SIZE
+    tag: bytes = b"\x00" * _TAG_SIZE
     header_bytes: bytes | None = None
 
     def __iter__(self):
@@ -182,17 +65,91 @@ class Frame(msgspec.Struct, frozen=True):
 
     def build(self) -> bytes:
         """Delegates frame building to the declarative schema."""
+        cmd_id = int(self.command_id)
+        payload = self.payload
+
+        if len(payload) > protocol.MAX_PAYLOAD_SIZE:
+            raise ValueError(
+                f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}"
+            )
+
+        if (
+            payload
+            and cmd_id
+            not in (
+                protocol.Command.CMD_LINK_SYNC,
+                protocol.Command.CMD_LINK_RESET,
+                protocol.Command.CMD_SET_BAUDRATE,
+                protocol.Command.CMD_GET_CAPABILITIES,
+            )
+            and should_compress(payload)
+        ):
+            compressed = rle_encode(payload)
+            if len(compressed) < len(payload):
+                payload = compressed
+                cmd_id |= protocol.CMD_FLAG_COMPRESSED
+
         try:
-            return RPC_FRAME_SCHEMA.build(self)
-        except (ConstructError, ValueError, TypeError) as e:
+            header = struct.pack(
+                _HEADER_FORMAT,
+                protocol.PROTOCOL_VERSION,
+                len(payload),
+                cmd_id,
+                self.sequence_id,
+            )
+        except Exception as e:
             raise ValueError(f"Failed to build frame: {e}") from e
+
+        body = header + self.nonce + payload + self.tag
+        crc = _frame_crc(body)
+
+        return body + struct.pack(">I", crc)
 
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
         """Delegates frame parsing to the declarative schema."""
-        try:
-            return RPC_FRAME_SCHEMA.parse(raw_frame_buffer)
-        except getattr(construct, "ChecksumError", ConstructError) as e:
-            raise ValueError(f"CRC mismatch: {e}") from e
-        except (ConstructError, ValueError, TypeError, AttributeError, KeyError) as e:
-            raise ValueError(f"Incomplete or malformed frame: {e}") from e
+        buf = memoryview(raw_frame_buffer)
+        if len(buf) < _HEADER_SIZE + _NONCE_SIZE + _TAG_SIZE + _CRC_SIZE:
+            raise ValueError("Incomplete or malformed frame: too short")
+
+        body_len = len(buf) - _CRC_SIZE
+        body = buf[:body_len]
+        expected_crc = struct.unpack(">I", buf[body_len:])[0]
+        actual_crc = _frame_crc(body)
+
+        if expected_crc != actual_crc:
+            raise ValueError(f"CRC mismatch: expected {expected_crc}, got {actual_crc}")
+
+        version, payload_len, cmd_id, seq_id = struct.unpack(
+            ">BHHH", body[:_HEADER_SIZE]
+        )
+
+        if version != protocol.PROTOCOL_VERSION:
+            raise ValueError("Incomplete or malformed frame: invalid version")
+
+        if _HEADER_SIZE + _NONCE_SIZE + payload_len + _TAG_SIZE != body_len:
+            raise ValueError("Incomplete or malformed frame: invalid length")
+
+        nonce = bytes(body[_HEADER_SIZE : _HEADER_SIZE + _NONCE_SIZE])
+        payload = bytes(
+            body[_HEADER_SIZE + _NONCE_SIZE : _HEADER_SIZE + _NONCE_SIZE + payload_len]
+        )
+        tag = bytes(body[_HEADER_SIZE + _NONCE_SIZE + payload_len : body_len])
+
+        if cmd_id & protocol.CMD_FLAG_COMPRESSED:
+            try:
+                payload = rle_decode(payload)
+                cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
+            except Exception as e:
+                raise ValueError(
+                    f"Incomplete or malformed frame: RLE decode failed: {e}"
+                ) from e
+
+        return cls(
+            command_id=cmd_id,
+            sequence_id=seq_id,
+            payload=payload,
+            nonce=nonce,
+            tag=tag,
+            header_bytes=bytes(body[:_HEADER_SIZE]),
+        )

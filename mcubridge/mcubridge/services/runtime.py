@@ -16,6 +16,11 @@ from typing import TYPE_CHECKING, Any, cast, Final
 import msgspec
 import psutil
 import structlog
+
+import aiomqtt
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
+
 from aiomqtt.message import Message
 
 from ..config.const import (
@@ -77,7 +82,6 @@ from ..protocol.topics import Topic, parse_topic, topic_path
 from ..state.context import RuntimeState
 
 if TYPE_CHECKING:
-    from ..transport.mqtt import MqttTransport
     from ..transport.serial import SerialTransport
 
 logger = structlog.get_logger("mcubridge.service")
@@ -107,12 +111,11 @@ class BridgeService:
         config: RuntimeConfig,
         state: RuntimeState,
         serial: SerialTransport,
-        mqtt: MqttTransport,
     ) -> None:
         self.config = config
         self.state = state
         self.serial = serial
-        self.mqtt = mqtt
+        self._mqtt_client: aiomqtt.Client | None = None
         self._task_group: asyncio.TaskGroup | None = None
         self._serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = None
 
@@ -124,7 +127,7 @@ class BridgeService:
             state=state,
             serial_timing=derive_serial_timing(config),
             send_frame=self.serial.send,
-            enqueue_mqtt=self.mqtt.enqueue_mqtt,
+            enqueue_mqtt=self.enqueue_mqtt,
             acknowledge_frame=self.serial.acknowledge,
             logger_=logger,
         )
@@ -176,6 +179,63 @@ class BridgeService:
     ) -> None:
         """Register the serial transport's send function."""
         self._serial_sender = sender
+
+    def set_mqtt_client(self, client: aiomqtt.Client | None) -> None:
+        self._mqtt_client = client
+
+    async def enqueue_mqtt(
+        self, message: QueuedPublish, *, reply_context: Message | None = None
+    ) -> None:
+        if not self._mqtt_client:
+            self.state.mqtt_dropped_messages += 1
+            self.state.metrics.mqtt_messages_dropped.inc()
+            return
+
+        overrides = {}
+        if reply_context is not None:
+            props = reply_context.properties
+            target_topic = (
+                getattr(props, "ResponseTopic", None) if props else None
+            ) or message.topic_name
+            overrides["topic_name"] = target_topic
+            if reply_correlation := (
+                getattr(props, "CorrelationData", None) if props else None
+            ):
+                overrides["correlation_data"] = reply_correlation
+            overrides["user_properties"] = message.user_properties + (
+                ("bridge-request-topic", str(reply_context.topic)),
+            )
+
+        msg = msgspec.structs.replace(message, **overrides) if overrides else message
+        props = Properties(PacketTypes.PUBLISH)
+        if msg.content_type is not None:
+            props.ContentType = msg.content_type
+        if msg.payload_format_indicator is not None:
+            props.PayloadFormatIndicator = msg.payload_format_indicator
+        if msg.message_expiry_interval is not None:
+            props.MessageExpiryInterval = msg.message_expiry_interval
+        if msg.response_topic is not None:
+            props.ResponseTopic = msg.response_topic
+        if msg.correlation_data is not None:
+            props.CorrelationData = msg.correlation_data
+        props.UserProperty = list(msg.user_properties)
+
+        try:
+            await self._mqtt_client.publish(
+                msg.topic_name,
+                msg.payload,
+                qos=int(msg.qos),
+                retain=msg.retain,
+                properties=props,
+            )
+            self.state.metrics.mqtt_messages_published.inc()
+        except (aiomqtt.MqttError, OSError, RuntimeError) as exc:
+            logger.warning("MQTT direct publish failure: %s", exc)
+            self.state.mqtt_drop_counts[msg.topic_name] = (
+                self.state.mqtt_drop_counts.get(msg.topic_name, 0) + 1
+            )
+            self.state.mqtt_dropped_messages += 1
+            self.state.metrics.mqtt_messages_dropped.inc()
 
     # --- Lifecycle ---
 
@@ -250,7 +310,7 @@ class BridgeService:
         else:
             logger.debug("MCU > %s: %s %s", status.name, desc, text)
 
-        await self.mqtt.enqueue_mqtt(
+        await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
                 msgspec.msgpack.encode(
@@ -285,7 +345,7 @@ class BridgeService:
         with contextlib.suppress(Exception):
             p = msgspec.msgpack.decode(payload, type=ConsoleWritePacket)
             if p.data:
-                await self.mqtt.enqueue_mqtt(
+                await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(
                             self.state.mqtt_topic_prefix,
@@ -328,7 +388,7 @@ class BridgeService:
     async def _handle_mcu_mailbox_push(self, seq_id: int, payload: bytes) -> bool:
         with contextlib.suppress(Exception):
             p = msgspec.msgpack.decode(payload, type=MailboxPushPacket)
-            await self.mqtt.enqueue_mqtt(
+            await self.enqueue_mqtt(
                 QueuedPublish(
                     topic_path(
                         self.state.mqtt_topic_prefix,
@@ -357,7 +417,7 @@ class BridgeService:
         )
 
     async def _handle_mcu_mailbox_processed(self, seq_id: int, payload: bytes) -> bool:
-        await self.mqtt.enqueue_mqtt(
+        await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(
                     self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.PROCESSED
@@ -492,7 +552,7 @@ class BridgeService:
     async def _handle_mcu_spi_resp(self, seq_id: int, payload: bytes) -> bool:
         with contextlib.suppress(Exception):
             p = msgspec.msgpack.decode(payload, type=SpiTransferResponsePacket)
-            await self.mqtt.enqueue_mqtt(
+            await self.enqueue_mqtt(
                 QueuedPublish(
                     topic_path(
                         self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"
@@ -628,7 +688,7 @@ class BridgeService:
                 return
             if action == FileAction.WRITE:
                 if await self._write_with_quota(path, pl):
-                    await self.mqtt.enqueue_mqtt(
+                    await self.enqueue_mqtt(
                         QueuedPublish(
                             topic_path(
                                 self.state.mqtt_topic_prefix,
@@ -643,7 +703,7 @@ class BridgeService:
             elif action == FileAction.READ and path.is_file():
                 if inbound.topic.value.endswith(protocol.MQTT_SUFFIX_RESPONSE):
                     return
-                await self.mqtt.enqueue_mqtt(
+                await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(
                             self.state.mqtt_topic_prefix,
@@ -670,7 +730,7 @@ class BridgeService:
                     else pl.decode().strip()
                 )
                 pid = await self._run_process(cmd)
-                await self.mqtt.enqueue_mqtt(
+                await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(
                             self.state.mqtt_topic_prefix,
@@ -688,7 +748,7 @@ class BridgeService:
             pid = int(route.segments[1])
             if action == ShellAction.POLL:
                 batch = await self._poll_process(pid)
-                await self.mqtt.enqueue_mqtt(
+                await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(
                             self.state.mqtt_topic_prefix,
@@ -729,7 +789,7 @@ class BridgeService:
                     )
                     if res:
                         p = msgspec.msgpack.decode(res, type=SpiTransferResponsePacket)
-                        await self.mqtt.enqueue_mqtt(
+                        await self.enqueue_mqtt(
                             QueuedPublish(
                                 topic_path(
                                     self.state.mqtt_topic_prefix,
@@ -805,7 +865,7 @@ class BridgeService:
                     val = str(
                         msgspec.msgpack.decode(pl, type=FreeMemoryResponsePacket).value
                     ).encode()
-                    await self.mqtt.enqueue_mqtt(
+                    await self.enqueue_mqtt(
                         QueuedPublish(
                             topic_path(
                                 self.state.mqtt_topic_prefix,
@@ -826,7 +886,7 @@ class BridgeService:
                     if flavor == "handshake"
                     else self.state.build_bridge_snapshot()
                 )
-                await self.mqtt.enqueue_mqtt(
+                await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(
                             self.state.mqtt_topic_prefix,
@@ -865,11 +925,11 @@ class BridgeService:
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
-        await self.mqtt.enqueue_mqtt(
+        await self.enqueue_mqtt(
             QueuedPublish(tp, pl, message_expiry_interval=MQTT_EXPIRY_DATASTORE)
         )
         if ctx:
-            await self.mqtt.enqueue_mqtt(
+            await self.enqueue_mqtt(
                 QueuedPublish(tp, pl, message_expiry_interval=MQTT_EXPIRY_DATASTORE),
                 reply_context=ctx,
             )
@@ -995,7 +1055,7 @@ class BridgeService:
         with contextlib.suppress(Exception):
             v = msgspec.msgpack.decode(pl, type=cls).value
             req = q.popleft() if q else None
-            await self.mqtt.enqueue_mqtt(
+            await self.enqueue_mqtt(
                 QueuedPublish(
                     topic_path(
                         self.state.mqtt_topic_prefix,
@@ -1023,7 +1083,7 @@ class BridgeService:
             ):
                 try:
                     res = await asyncio.wait_for(self._pending_mcu_read.future, 30.0)
-                    await self.mqtt.enqueue_mqtt(
+                    await self.enqueue_mqtt(
                         QueuedPublish(
                             topic_path(
                                 self.state.mqtt_topic_prefix,
@@ -1078,7 +1138,7 @@ class BridgeService:
 
     async def _reject_mqtt(self, ctx: Message, tp: Topic | str, act: str) -> None:
         val = tp.value if isinstance(tp, Topic) else tp
-        await self.mqtt.enqueue_mqtt(
+        await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
                 msgspec.msgpack.encode(
@@ -1114,6 +1174,6 @@ class BridgeService:
             message_expiry_interval=MQTT_EXPIRY_DATASTORE,
             user_properties=props,
         )
-        await self.mqtt.enqueue_mqtt(pub)
+        await self.enqueue_mqtt(pub)
         if reply_context:
-            await self.mqtt.enqueue_mqtt(pub, reply_context=reply_context)
+            await self.enqueue_mqtt(pub, reply_context=reply_context)

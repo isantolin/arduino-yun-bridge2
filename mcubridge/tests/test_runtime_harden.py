@@ -28,8 +28,8 @@ def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMoc
     serial = AsyncMock()
     # Ensure it returns bytes or None as expected by the code
     serial.send_and_wait_payload.return_value = None
-    mqtt = AsyncMock()
-    service = BridgeService(config, state, serial, mqtt)
+    AsyncMock()
+    service = BridgeService(config, state, serial)
     # Register mock sender
     service.register_serial_sender(serial.send)
     return service, state, serial

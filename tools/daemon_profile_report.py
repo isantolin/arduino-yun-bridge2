@@ -276,7 +276,7 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
     results.append(
         _benchmark(
             "RLE encode",
-            lambda: mcubridge.protocol.rle.RLE_TRANSFORM.build(rle_input),
+            lambda: mcubridge.protocol.rle.rle_encode(rle_input),
             iterations,
         )
     )

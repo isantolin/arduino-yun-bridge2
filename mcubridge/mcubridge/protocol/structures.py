@@ -25,55 +25,36 @@ from typing import (
 
 import msgspec
 import msgspec.msgpack
-from construct import BitStruct, Flag, Padding, Construct
 
 # [SIL-2] Declarative bitmask definition for MCU capabilities.
-# This ensures atomic bit-level parsing/building via Construct's C-backed engine.
+# This ensures atomic bit-level parsing/building via 's C-backed engine.
 # Order matches the protocol specification (bit 0 to bit 15).
-FEATURES_STRUCT: Final = cast(
-    Construct,
-    BitStruct(
-        "sd" / Flag,
-        "spi" / Flag,
-        "i2c" / Flag,
-        "big_buffer" / Flag,
-        "logic_3v3" / Flag,
-        "fpu" / Flag,
-        "hw_serial1" / Flag,
-        "dac" / Flag,
-        "eeprom" / Flag,
-        "debug_io" / Flag,
-        "debug_frames" / Flag,
-        "rle" / Flag,
-        "watchdog" / Flag,
-        Padding(3),
-    ),
-)
 
+_CAP_BITS = {
+    "watchdog": 0x00000001,
+    "rle": 0x00000002,
+    "debug_frames": 0x00000004,
+    "debug_io": 0x00000008,
+    "eeprom": 0x00000010,
+    "dac": 0x00000020,
+    "hw_serial1": 0x00000040,
+    "fpu": 0x00000080,
+    "logic_3v3": 0x00000100,
+    "big_buffer": 0x00000200,
+    "i2c": 0x00000400,
+    "spi": 0x00000800,
+    "sd": 0x00001000,
+}
 
 def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
-    """Convert a capability feature dict to its integer bitmask using Construct."""
-    try:
-        # Build raw bytes from dict and parse back as 16-bit integer
-        from construct import Int16ul
-
-        return int(Int16ul.parse(FEATURES_STRUCT.build(feat_dict)))
-    except (ImportError, AttributeError, msgspec.MsgspecError, ValueError):
-        return 0
-
+    val = 0
+    for k, v in feat_dict.items():
+        if v and k in _CAP_BITS:
+            val |= _CAP_BITS[k]
+    return val
 
 def _int_to_capabilities(val: int) -> dict[str, bool]:
-    """Convert an integer bitmask to a capability feature dict using Construct."""
-    try:
-        from construct import Int16ul
-
-        # Convert integer to bytes then parse via BitStruct
-        data = Int16ul.build(int(val))
-        res: Any = FEATURES_STRUCT.parse(data)
-        # Convert Container to plain dict and remove internal metadata
-        return {str(k): bool(v) for k, v in dict(res).items() if not str(k).startswith("_")}
-    except (ImportError, AttributeError, msgspec.MsgspecError, ValueError):
-        return {}
+    return {k: bool(val & bit) for k, bit in _CAP_BITS.items()}
 
 
 # [SIL-2] Compiled once at module load; reused across all AllowedCommandPolicy instances.
@@ -130,17 +111,15 @@ class RLEPayload(msgspec.Struct, frozen=True):
     data: bytes
 
     def decode(self) -> bytes:
-        """Decompress data using declarative Construct decoder."""
-        from .rle import RLE_DECODER
+        """Decompress data using native RLE decoder."""
+        from .rle import rle_decode
 
         if not self.data:
             return b""
-        from construct.core import ConstructError
 
         try:
-            parsed: Any = RLE_DECODER.parse(self.data)
-            return b"".join(parsed)
-        except ConstructError as e:
+            return rle_decode(self.data)
+        except Exception as e:
             # Fallback or raise for protocol integrity
             raise ValueError(f"RLE decompression failed: {e}") from e
 

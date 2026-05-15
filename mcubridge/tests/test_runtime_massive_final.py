@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any, cast
 from typing import Tuple, Generator
 from unittest.mock import AsyncMock
 from pathlib import Path
@@ -37,7 +38,7 @@ from mcubridge.protocol.structures import (
 @pytest.fixture
 def service_setup(
     tmp_path: Path,
-) -> Generator[Tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock], None, None]:
+) -> Generator[Tuple[BridgeService, RuntimeState, AsyncMock], None, None]:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/test",
@@ -46,9 +47,9 @@ def service_setup(
     )
     state = create_runtime_state(config)
     serial = AsyncMock()
-    mqtt = AsyncMock()
-    service = BridgeService(config, state, serial, mqtt)
-    yield service, state, serial, mqtt
+    AsyncMock()
+    service = BridgeService(config, state, serial)
+    yield service, state, serial
 
     # [SIL-2] Ensure all processes and tasks are terminated to prevent ResourceWarnings
     state.cleanup()
@@ -66,9 +67,9 @@ def service_setup(
 
 @pytest.mark.asyncio
 async def test_runtime_brute_force_handlers_v2(
-    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
+    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, _, _ = service_setup
+    service, state, _ = service_setup
     state.mark_synchronized()
 
     handlers = [
@@ -166,8 +167,8 @@ async def test_runtime_brute_force_handlers_v2(
 
     for handler, seq, payload in handlers:
         # Reset mocks to track per-handler calls
-        service.serial.send.reset_mock()
-        service.mqtt.enqueue_mqtt.reset_mock()
+        cast(Any, service.serial.send).reset_mock()
+        service.enqueue_mqtt = AsyncMock()
 
         # Test valid payload
         await handler(seq, payload)
@@ -186,7 +187,7 @@ async def test_runtime_brute_force_handlers_v2(
             "_handle_mcu_spi_resp",
         ):
             assert (
-                service.mqtt.enqueue_mqtt.called
+                service.enqueue_mqtt.called
             ), f"Handler {h_name} should have called mqtt.enqueue_mqtt"
         elif h_name in (
             "_handle_mcu_datastore_get",
@@ -198,13 +199,13 @@ async def test_runtime_brute_force_handlers_v2(
             "_handle_mcu_process_run",
             "_handle_mcu_process_poll",
         ):
-            assert (
-                service.serial.send.called
-            ), f"Handler {h_name} should have called serial.send"
+            assert cast(
+                Any, service.serial.send
+            ).called, f"Handler {h_name} should have called serial.send"
 
         # Test invalid payload (should not crash)
-        service.serial.send.reset_mock()
-        service.mqtt.enqueue_mqtt.reset_mock()
+        cast(Any, service.serial.send).reset_mock()
+        service.enqueue_mqtt = AsyncMock()
         try:
             await handler(seq, b"\xff")
         except (asyncio.CancelledError, OSError, ValueError):
@@ -213,9 +214,9 @@ async def test_runtime_brute_force_handlers_v2(
 
 @pytest.mark.asyncio
 async def test_runtime_mqtt_brute_force_v2(
-    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
+    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, _, _ = service_setup
+    service, state, _ = service_setup
     state.mark_synchronized()
 
     msg = Message(
@@ -240,6 +241,7 @@ async def test_runtime_mqtt_brute_force_v2(
         handler = entry[0]
         args = entry[1:]
         try:
-            await handler(*args)
+            # type: ignore
+            await handler(*args)  # type: ignore
         except (asyncio.CancelledError, OSError, ValueError):
             pass

@@ -51,7 +51,7 @@ async def test_daemon_run_lifecycle(daemon_setup: BridgeDaemon) -> None:
 
     # Mock transports to avoid real IO
     daemon.serial_transport.run = AsyncMock()
-    daemon.mqtt_transport.run = AsyncMock()
+    daemon._mqtt_run = AsyncMock()
 
     # Run and immediately cancel
     task = asyncio.create_task(daemon.run())

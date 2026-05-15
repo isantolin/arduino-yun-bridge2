@@ -16,10 +16,9 @@ from __future__ import annotations
 import ctypes
 import hashlib
 import secrets
-from typing import Final, Any, cast
+import struct
+from typing import Final
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from construct import Bytes, Int64ub, Struct, Construct
-from construct.core import ConstructError
 
 from ..protocol import protocol
 
@@ -30,15 +29,6 @@ NONCE_TOTAL_BYTES: Final[int] = AEAD_NONCE_SIZE
 AEAD_TAG_SIZE: Final[int] = 16
 NONCE_RANDOM_BYTES: Final[int] = 4
 NONCE_COUNTER_BYTES: Final[int] = 8
-
-# [SIL-2] Declarative Nonce Structure (4B random || 8B counter = 12B)
-NONCE_STRUCT: Final = cast(
-    Construct,
-    Struct(
-        "random" / Bytes(NONCE_RANDOM_BYTES),
-        "counter" / Int64ub,
-    ),
-)
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
@@ -60,7 +50,7 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     """Generate a 12-byte AEAD nonce with monotonic counter."""
     new_counter = (counter + 1) & 0xFFFFFFFFFFFFFFFF
     random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
-    nonce = NONCE_STRUCT.build({"random": random_part, "counter": new_counter})
+    nonce = random_part + struct.pack(">Q", new_counter)
     return nonce, new_counter
 
 
@@ -69,9 +59,8 @@ def extract_nonce_counter(nonce: bytes) -> int:
     if len(nonce) != AEAD_NONCE_SIZE:
         raise ValueError(f"Nonce must be {AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
     try:
-        res: Any = NONCE_STRUCT.parse(nonce)
-        return int(res.counter)
-    except ConstructError as e:
+        return struct.unpack(">Q", nonce[NONCE_RANDOM_BYTES:])[0]
+    except Exception as e:
         raise ValueError(f"Malformed nonce format: {e}") from e
 
 

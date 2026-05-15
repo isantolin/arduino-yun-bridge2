@@ -36,7 +36,7 @@ def service_setup(
     state = create_runtime_state(config)
     serial = AsyncMock(spec=SerialTransport)
     mqtt = AsyncMock()
-    service = BridgeService(config, state, serial, mqtt)
+    service = BridgeService(config, state, serial)
     return service, state, serial, mqtt
 
 

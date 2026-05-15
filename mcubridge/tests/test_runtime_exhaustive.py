@@ -40,7 +40,7 @@ def service_setup(
     mqtt = AsyncMock()
     mqtt.enqueue_mqtt = AsyncMock()
 
-    service = BridgeService(config, state, serial, mqtt)
+    service = BridgeService(config, state, serial)
     service.register_serial_sender(serial.send)
     return service, state, serial, mqtt
 

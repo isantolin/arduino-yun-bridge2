@@ -1,7 +1,6 @@
 """Focused unit tests for BridgeService (runtime)."""
 
 from __future__ import annotations
-from mcubridge.transport.mqtt import MqttTransport
 from mcubridge.transport.serial import SerialTransport
 
 import time
@@ -35,9 +34,7 @@ async def test_send_frame_via_transport() -> None:
     try:
         mock_serial = AsyncMock(spec=SerialTransport)
         mock_serial.send.return_value = True
-        service = BridgeService(
-            config, state, mock_serial, AsyncMock(spec=MqttTransport)
-        )
+        service = BridgeService(config, state, mock_serial)
 
         ok = await service.serial.send(protocol.Command.CMD_GET_VERSION.value, b"x")
         assert ok is True
@@ -52,9 +49,7 @@ async def test_handle_mcu_frame_pre_sync_denied() -> None:
     state = create_runtime_state(config)
     try:
         mock_serial = AsyncMock(spec=SerialTransport)
-        service = BridgeService(
-            config, state, mock_serial, AsyncMock(spec=MqttTransport)
-        )
+        service = BridgeService(config, state, mock_serial)
         state.state = "unsynchronized"
 
         # CMD_GET_VERSION is not in pre-sync allowed list (64 is MIN_SYS but not sync/reset)
@@ -73,7 +68,6 @@ async def test_handle_mcu_xon_xoff() -> None:
             config,
             state,
             AsyncMock(spec=SerialTransport),
-            AsyncMock(spec=MqttTransport),
         )
         state.state = "synchronized"
 
@@ -95,9 +89,7 @@ async def test_handle_mqtt_console_queues_and_flushes() -> None:
     try:
         mock_serial = AsyncMock(spec=SerialTransport)
         mock_serial.send.return_value = True
-        service = BridgeService(
-            config, state, mock_serial, AsyncMock(spec=MqttTransport)
-        )
+        service = BridgeService(config, state, mock_serial)
         state.state = "synchronized"
         state.link_sync_event.set()
         state.serial_tx_allowed.set()

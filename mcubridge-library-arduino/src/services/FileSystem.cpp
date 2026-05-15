@@ -53,7 +53,8 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   // [SIL-2] Use CounterIterator to avoid large stack-allocated dummy arrays.
   using bridge::utils::CounterIterator;
   (void)etl::find_if(
-      CounterIterator(0), CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
+      CounterIterator<uint16_t>(0U),
+      CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
       [&](uint32_t) {
         if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS)
           return true;

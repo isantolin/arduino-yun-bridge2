@@ -1,4 +1,5 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include "fsm/CounterIterator.h"
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
@@ -83,8 +84,8 @@ void test_bridge_coverage() {
   printf("  - Step 4: Console\n");
   Console.begin();
   (void)Console.write('a');
-  etl::counter_iterator<int> console_begin(0);
-  etl::counter_iterator<int> console_end(bridge::config::CONSOLE_TX_BUFFER_SIZE + 1);
+  bridge::utils::CounterIterator<int> console_begin(0);
+  bridge::utils::CounterIterator<int> console_end(bridge::config::CONSOLE_TX_BUFFER_SIZE + 1);
   etl::for_each(console_begin, console_end, [](int) { (void)Console.write('x'); });
   Console.flush();
   

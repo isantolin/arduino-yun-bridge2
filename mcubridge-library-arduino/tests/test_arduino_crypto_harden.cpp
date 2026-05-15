@@ -1,4 +1,5 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE
+#include "fsm/CounterIterator.h"
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
@@ -90,8 +91,8 @@ void test_bridge_ack_timeout_retry_to_fault() {
     TEST_ASSERT_TRUE(ba.isAwaitingAck());
 
     // Trigger timeout 3 times (Default limit)
-    etl::counter_iterator<int> retry_begin(0);
-    etl::counter_iterator<int> retry_end(bridge::config::DEFAULT_ACK_RETRY_LIMIT);
+    bridge::utils::CounterIterator<int> retry_begin(0);
+    bridge::utils::CounterIterator<int> retry_end(bridge::config::DEFAULT_ACK_RETRY_LIMIT);
     etl::for_each(retry_begin, retry_end, [&ba](int) {
         ba.onAckTimeout();
     });

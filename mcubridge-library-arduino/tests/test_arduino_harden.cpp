@@ -1,4 +1,5 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE
+#include "fsm/CounterIterator.h"
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
@@ -63,8 +64,8 @@ void test_bridge_tx_queue_full_force() {
     ba.setSynchronized();
     
     // Fill the queue
-    etl::counter_iterator<int> fill_begin(0);
-    etl::counter_iterator<int> fill_end(bridge::config::TX_QUEUE_CAPACITY);
+    bridge::utils::CounterIterator<int> fill_begin(0);
+    bridge::utils::CounterIterator<int> fill_end(bridge::config::TX_QUEUE_CAPACITY);
     etl::for_each(fill_begin, fill_end, [](int i) {
         bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, static_cast<uint16_t>(i), {});
         TEST_ASSERT_TRUE(ok);

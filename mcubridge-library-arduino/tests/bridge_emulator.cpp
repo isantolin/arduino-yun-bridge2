@@ -65,9 +65,17 @@ int main(int argc, char** argv) {
 
   g_arduino_stream_delegate = &MySerial;
   fprintf(stderr, "[emulator] Simulated SD card at: /tmp/mcubridge-host-fs\n");
+
+  struct sigaction sa;
+  sa.sa_handler = signal_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGTERM, &sa, NULL);
+  sigaction(SIGINT, &sa, NULL);
+
   Bridge.begin(115200, "DEBUG_INSECURE");
 
-  while (true) {
+  while (g_running) {
     Bridge.process();
     while (Console.available()) {
       int c = Console.read();
@@ -76,5 +84,6 @@ int main(int argc, char** argv) {
     Console.process();
     usleep(1000);
   }
+  fprintf(stderr, "McuBridge Emulator Terminating...\n");
   return 0;
 }

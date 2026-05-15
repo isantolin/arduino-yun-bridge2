@@ -132,13 +132,4 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
 )
 
 
-CRC_COVERED_HEADER_SIZE: Final[int] = 7
-CRC_SIZE: Final[int] = 4
-MIN_FRAME_SIZE: Final[int] = 11
-
-MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = {{ mqtt_suffixes.incoming_available|tojson }}
-MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = {{ mqtt_suffixes.outgoing_available|tojson }}
-MQTT_SUFFIX_RESPONSE: Final[str] = {{ mqtt_suffixes.response|tojson }}
-MQTT_SUFFIX_ERROR: Final[str] = {{ mqtt_suffixes.error|tojson }}
-
 MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = {{ mqtt_defaults.default_topic_prefix|tojson }}

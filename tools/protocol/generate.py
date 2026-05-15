@@ -753,6 +753,13 @@ class JinjaGenerator:
                 "type": "int",
                 "value": c["process_default_exit_code"],
             },
+            {"name": "CRC_SIZE", "type": "int", "value": c["crc_size"]},
+            {
+                "name": "CRC_COVERED_HEADER_SIZE",
+                "type": "int",
+                "value": c["crc_covered_header_size"],
+            },
+            {"name": "MIN_FRAME_SIZE", "type": "int", "value": c["min_frame_size"]},
             {"name": "CRC32_MASK", "type": "int", "value": c["crc32_mask"]},
             {"name": "CRC_INITIAL", "type": "int", "value": c["crc_initial"]},
             {
@@ -761,6 +768,26 @@ class JinjaGenerator:
                 "value": c["nonce_counter_mask"],
             },
             {"name": "CRC_POLYNOMIAL", "type": "int", "value": c["crc_polynomial"]},
+            {
+                "name": "MQTT_SUFFIX_INCOMING_AVAILABLE",
+                "type": "str",
+                "value": f'"{spec.mqtt_suffixes["incoming_available"]}"',
+            },
+            {
+                "name": "MQTT_SUFFIX_OUTGOING_AVAILABLE",
+                "type": "str",
+                "value": f'"{spec.mqtt_suffixes["outgoing_available"]}"',
+            },
+            {
+                "name": "MQTT_SUFFIX_RESPONSE",
+                "type": "str",
+                "value": f'"{spec.mqtt_suffixes["response"]}"',
+            },
+            {
+                "name": "MQTT_SUFFIX_ERROR",
+                "type": "str",
+                "value": f'"{spec.mqtt_suffixes["error"]}"',
+            },
             {
                 "name": "FRAME_DELIMITER",
                 "type": "bytes",
@@ -1256,3 +1283,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+main()

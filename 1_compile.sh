@@ -104,6 +104,12 @@ sanitize_path() {
 sanitize_path
 
 # ==============================================================================
+# [SIL-2] Sincronización Automática de Dependencias
+# ==============================================================================
+echo "[INFO] Sincronizando dependencias de runtime Python..."
+python3 ./tools/sync_runtime_deps.py
+
+# ==============================================================================
 # [FIX CRITICO] Rust/Cargo Bridge para CI (GitHub Actions)
 # ==============================================================================
 # Compilar Rust desde el SDK de OpenWrt toma >1 hora y falla en CI.

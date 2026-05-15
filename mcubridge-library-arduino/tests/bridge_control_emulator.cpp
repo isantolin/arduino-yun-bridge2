@@ -52,17 +52,25 @@ int main() {
   g_arduino_stream_delegate = &HostSerial;
   fprintf(stderr, "[emulator] Simulated SD card at: /tmp/mcubridge-host-fs\n");
 
+  struct sigaction sa;
+  sa.sa_handler = signal_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGTERM, &sa, NULL);
+  sigaction(SIGINT, &sa, NULL);
+
   // Seed the random number generator
   srand(time(NULL));
 
   // Execute Arduino Lifecycle
   setup();
 
-  while (true) {
+  while (g_running) {
     loop();
     // Small sleep to prevent 100% CPU usage while maintaining low latency
     usleep(100);
   }
 
+  fprintf(stderr, "McuBridge Control Emulator Terminating...\n");
   return 0;
 }

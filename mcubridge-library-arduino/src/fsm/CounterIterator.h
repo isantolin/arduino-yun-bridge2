@@ -13,15 +13,16 @@ namespace utils {
  * Enables using etl/algorithm without allocating dummy arrays in the stack.
  * [SIL-2] 100% STL-free implementation.
  */
+template <typename T>
 class CounterIterator {
  public:
   using iterator_category = etl::input_iterator_tag;
-  using value_type = uint32_t;
+  using value_type = T;
   using difference_type = ptrdiff_t;
-  using pointer = const uint32_t*;
-  using reference = uint32_t;
+  using pointer = const T*;
+  using reference = T;
 
-  explicit CounterIterator(uint32_t value) : _value(value) {}
+  explicit CounterIterator(T value) : _value(value) {}
 
   reference operator*() const { return _value; }
   CounterIterator& operator++() {
@@ -42,7 +43,7 @@ class CounterIterator {
   }
 
  private:
-  uint32_t _value;
+  T _value;
 };
 
 }  // namespace utils

@@ -25,7 +25,7 @@ _HEADER_FORMAT = protocol.FRAME_HEADER_FORMAT
 _HEADER_SIZE = struct.calcsize(_HEADER_FORMAT)
 _NONCE_SIZE = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE = protocol.AEAD_TAG_SIZE
-_CRC_SIZE = 4  # TODO: Move to protocol.FRAME_CRC_SIZE if needed
+_CRC_SIZE = protocol.CRC_SIZE
 
 
 def _frame_crc(data: bytes | bytearray | memoryview) -> int:

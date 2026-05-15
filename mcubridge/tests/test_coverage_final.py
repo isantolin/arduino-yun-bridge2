@@ -68,16 +68,13 @@ async def test_status_writer_coverage() -> None:
     mock_child.cpu_percent.return_value = 0.1
     mock_child.memory_info.return_value.rss = 1000
 
-    with patch("psutil.Process") as mock_proc:
-        mock_proc.return_value.children.return_value = [mock_child]
-
-        task = asyncio.create_task(status_writer(state, 1))
-        await asyncio.sleep(0.1)
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    task = asyncio.create_task(status_writer(state, 1))
+    await asyncio.sleep(0.1)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 def test_write_status_file_errors() -> None:

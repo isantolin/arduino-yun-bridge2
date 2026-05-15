@@ -58,9 +58,6 @@ async def test_runtime_error_branches_v6(service_setup: Any) -> None:
             2, msgspec.msgpack.encode(FileReadPacket(path="t"))
         )
 
-    with patch("psutil.Process", side_effect=Exception("no proc")):
-        await service._handle_mcu_process_kill(3, msgspec.msgpack.encode({"pid": 9999}))
-
 
 @pytest.mark.asyncio
 async def test_runtime_mcu_special_logic_v4(service_setup: Any) -> None:
@@ -103,19 +100,16 @@ async def test_runtime_mqtt_exhaustive_v2(service_setup: Any) -> None:
             mid=1,
             properties=None,
         )
-        with patch("psutil.Process", return_value=AsyncMock()):
+        for act2 in [SpiAction.BEGIN, SpiAction.END, SpiAction.CONFIG]:
+            msg = Message(
+                topic=f"br/spi/{act2.value}",
+                payload=b"{}",
+                qos=0,
+                retain=False,
+                mid=1,
+                properties=None,
+            )
             await service.handle_mqtt_message(msg)
-
-    for act2 in [SpiAction.BEGIN, SpiAction.END, SpiAction.CONFIG]:
-        msg = Message(
-            topic=f"br/spi/{act2.value}",
-            payload=b"{}",
-            qos=0,
-            retain=False,
-            mid=1,
-            properties=None,
-        )
-        await service.handle_mqtt_message(msg)
 
     for t in [Topic.DIGITAL, Topic.ANALOG]:
         msg = Message(

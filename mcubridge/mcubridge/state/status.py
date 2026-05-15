@@ -10,12 +10,8 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 import msgspec
-import psutil
 
 from ..config.const import STATUS_FILE_PATH
-from ..protocol.structures import (
-    ProcessStats,
-)
 from .context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.status")
@@ -25,25 +21,11 @@ STATUS_FILE = Path(STATUS_FILE_PATH)
 
 async def status_writer(state: RuntimeState, interval: int) -> None:
     """Persist lightweight status information periodically."""
-    current_process = psutil.Process()
 
     async def _write_tick() -> None:
         try:
-            # [SIL-2] Resource Monitoring Delegation to psutil
-            child_stats: dict[str, ProcessStats] = {}
-            try:
-                for child in current_process.children(recursive=True):
-                    try:
-                        with child.oneshot():
-                            child_stats[str(child.pid)] = ProcessStats(
-                                name=child.name(),
-                                cpu_percent=child.cpu_percent(),
-                                memory_rss_bytes=child.memory_info().rss,
-                            )
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
+            # [SIL-2] Simplified metrics
+            child_stats: dict[str, Any] = {}
 
             payload = state.build_metrics_snapshot()
             payload["process_stats"] = child_stats

@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
 
 import msgspec
-import psutil
 import structlog
 
 import aiomqtt
@@ -977,8 +976,10 @@ class BridgeService:
                         h.wait(), float(self.state.process_timeout)
                     )
                 except asyncio.TimeoutError:
+                    import os
+                    import signal
                     with contextlib.suppress(OSError):
-                        h.kill()
+                        os.killpg(h.pid, signal.SIGKILL)
                     self.state.process_exit_codes[pid] = -1
         finally:
             self._finalize_process(pid)
@@ -1024,18 +1025,16 @@ class BridgeService:
         if not h:
             return False
         try:
-            p = psutil.Process(h.pid)
-            all_p = p.children(recursive=True) + [p]
-            for proc in all_p:
-                with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-                    proc.terminate()
-            psutil.wait_procs(all_p, timeout=3.0)
-            for proc in all_p:
-                with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-                    proc.kill()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            import os
+            import signal
+
+            os.killpg(h.pid, signal.SIGTERM)
+            await asyncio.sleep(0.5)
+            if h.returncode is None:
+                os.killpg(h.pid, signal.SIGKILL)
+        except OSError:
             pass
-        except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as exc:
+        except (asyncio.CancelledError, ValueError, RuntimeError) as exc:
             logger.error("Unexpected error stopping process %d: %s", pid, exc)
         self._finalize_process(pid)
         return True

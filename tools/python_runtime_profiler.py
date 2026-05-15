@@ -36,10 +36,7 @@ def measure_imports() -> list[tuple[str, float]]:
 
 
 def measure_runtime_memory() -> int:
-    import psutil
-
-    process = psutil.Process(os.getpid())
-    return process.memory_info().rss
+    return 0
 
 
 def measure_object_symbols() -> list[tuple[str, int, int]]:

@@ -49,7 +49,6 @@ define Package/$(PKG_NAME)
 		python3-paho-mqtt \
 		python3-cobs \
 		python3-msgspec \
-		python3-psutil \
 		python3-prometheus-client \
 		python3-pyserial-asyncio-fast \
 		python3-tenacity \

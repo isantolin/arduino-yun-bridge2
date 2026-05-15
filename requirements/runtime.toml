@@ -37,11 +37,6 @@ openwrt = "python3-msgspec"
 pip = "msgspec==0.21.1"
 rationale = "High-performance JSON/MessagePack library"
 
-[[dependency]]
-name = "psutil"
-openwrt = "python3-psutil"
-pip = "psutil==7.2.2"
-rationale = "Process supervision and zombie cleanup"
 
 [[dependency]]
 name = "prometheus-client"

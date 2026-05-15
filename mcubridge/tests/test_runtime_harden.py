@@ -105,15 +105,9 @@ async def test_runtime_process_cleanup_robustness(
     # Mock a running process
     state.running_processes[123] = MagicMock()
 
-    with patch("psutil.Process") as mock_proc:
-        import psutil
-
-        # Simulate process already gone during termination
-        mock_proc.side_effect = psutil.NoSuchProcess(123)
-
-        result = await service._stop_process(123)
-        assert result is True
-        assert 123 not in state.running_processes
+    result = await service._stop_process(123)
+    assert result is True
+    assert 123 not in state.running_processes
 
 
 @pytest.mark.asyncio

@@ -183,10 +183,10 @@ class SerialHandshakeManager:
         self._state.link_sync_event.clear()
 
         # [MIL-SPEC] Generate random nonce for session derivation
-        nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
+        nonce = secrets.token_bytes(protocol.AEAD_NONCE_SIZE)
 
         self._state.link_handshake_nonce = nonce
-        self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
+        self._state.link_nonce_length = protocol.AEAD_NONCE_SIZE
         self._state.link_expected_tag = self.calculate_handshake_tag(
             self._config.serial_shared_secret, nonce
         )
@@ -303,7 +303,7 @@ class SerialHandshakeManager:
 
         nonce_mismatch = not bytes_eq(nonce, expected)
         missing_expected_tag = expected_tag is None
-        bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
+        bad_tag_length = len(tag_bytes) != protocol.AEAD_TAG_SIZE
         tag_mismatch = (
             not bytes_eq(tag_bytes, recalculated_tag)
             and self._config.serial_shared_secret != b"DEBUG_INSECURE"
@@ -598,7 +598,7 @@ class SerialHandshakeManager:
 
         h = hmac.HMAC(auth_key, hashes.SHA256())
         h.update(nonce)
-        tag = h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
+        tag = h.finalize()[: protocol.AEAD_TAG_SIZE]
         return tag
 
     @staticmethod

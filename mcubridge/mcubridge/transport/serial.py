@@ -540,15 +540,10 @@ class SerialTransport:
                 self.state.link_nonce_counter
             )
             self.state.link_nonce_counter = new_counter
-            from mcubridge.protocol.frame import RPC_FRAME_HEADER
+            import struct
 
-            header_bytes = RPC_FRAME_HEADER.build(
-                {
-                    "version": protocol.PROTOCOL_VERSION,
-                    "payload": pl,
-                    "command_id": cmd,
-                    "sequence_id": seq,
-                }
+            header_bytes = struct.pack(
+                ">BHHH", protocol.PROTOCOL_VERSION, len(pl), int(cmd), seq
             )
             encrypted_blob = aead_encrypt(
                 self.state.link_session_key, nonce, pl, header_bytes

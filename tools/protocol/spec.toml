@@ -2,6 +2,9 @@
 # Any modifications here should be reflected by re-running tools/protocol/generate.py.
 
 [constants]
+aead_nonce_size = 12
+aead_tag_size = 16
+aead_key_size = 32
 protocol_version = 0x02
 default_baudrate = 115200
 default_safe_baudrate = 115200
@@ -119,15 +122,15 @@ rp2040 = "Raspberry Pi RP2040"
 max_observers_avr = 4
 max_observers_other = 8
 rx_history_size = 1
-rx_buffer_size_avr = 32
+rx_buffer_size_avr = 128
 rx_buffer_size_other = 128
 max_pending_tx_frames_avr = 1
 max_pending_tx_frames_other = 2
-console_rx_buffer_size_avr = 4
+console_rx_buffer_size_avr = 32
 console_rx_buffer_size_other = 64
-console_tx_buffer_size_avr = 4
+console_tx_buffer_size_avr = 32
 console_tx_buffer_size_other = 60
-mailbox_rx_buffer_size_avr = 4
+mailbox_rx_buffer_size_avr = 64
 mailbox_rx_buffer_size_other = 128
 max_pending_datastore = 1
 max_pending_process_polls = 1
@@ -138,6 +141,8 @@ startup_stabilization_ms = 50
 baudrate_settle_ms = 50
 max_consecutive_crc_errors = 5
 rx_dedupe_interval_ms = 1000
+flow_control_xoff_threshold = 48
+flow_control_xon_threshold = 16
 hkdf_key_length = 32
 key_and_digest_buffer_size = 64
 avr_digital_pins = 14
@@ -179,9 +184,6 @@ nonce_random_bytes = 8
 nonce_counter_bytes = 8
 nonce_format_description = "random[8] || counter[8] (uint64 BE) for anti-replay"
 
-# AEAD constants
-aead_nonce_length = 12
-aead_tag_length = 16
 aead_algorithm = "ChaCha20-Poly1305"
 aead_description = "Authenticated Encryption with Associated Data (RFC 8439)"
 

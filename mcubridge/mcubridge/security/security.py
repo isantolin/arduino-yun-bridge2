@@ -24,11 +24,11 @@ from ..protocol import protocol
 
 # [SIL-2] Security Constants from protocol spec
 # For ChaCha20-Poly1305, nonce is exactly 12 bytes (96 bits).
-AEAD_NONCE_SIZE: Final[int] = 12
+AEAD_NONCE_SIZE: Final[int] = protocol.AEAD_NONCE_SIZE
 NONCE_TOTAL_BYTES: Final[int] = AEAD_NONCE_SIZE
-AEAD_TAG_SIZE: Final[int] = 16
-NONCE_RANDOM_BYTES: Final[int] = 4
-NONCE_COUNTER_BYTES: Final[int] = 8
+AEAD_TAG_SIZE: Final[int] = protocol.AEAD_TAG_SIZE
+NONCE_RANDOM_BYTES: Final[int] = 4  # Derived
+NONCE_COUNTER_BYTES: Final[int] = 8  # Derived
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
@@ -50,7 +50,7 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     """Generate a 12-byte AEAD nonce with monotonic counter."""
     new_counter = (counter + 1) & 0xFFFFFFFFFFFFFFFF
     random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
-    nonce = random_part + struct.pack(">Q", new_counter)
+    nonce = random_part + struct.pack(protocol.NONCE_COUNTER_FORMAT, new_counter)
     return nonce, new_counter
 
 
@@ -59,7 +59,9 @@ def extract_nonce_counter(nonce: bytes) -> int:
     if len(nonce) != AEAD_NONCE_SIZE:
         raise ValueError(f"Nonce must be {AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
     try:
-        return struct.unpack(">Q", nonce[NONCE_RANDOM_BYTES:])[0]
+        return struct.unpack(protocol.NONCE_COUNTER_FORMAT, nonce[NONCE_RANDOM_BYTES:])[
+            0
+        ]
     except Exception as e:
         raise ValueError(f"Malformed nonce format: {e}") from e
 

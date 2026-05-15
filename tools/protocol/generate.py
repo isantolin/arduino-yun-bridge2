@@ -633,6 +633,34 @@ class JinjaGenerator:
 
         c = spec.constants
         constants = [
+            {"name": "AEAD_NONCE_SIZE", "type": "int", "value": c["aead_nonce_size"]},
+            {"name": "AEAD_TAG_SIZE", "type": "int", "value": c["aead_tag_size"]},
+            {"name": "AEAD_KEY_SIZE", "type": "int", "value": c["aead_key_size"]},
+            {
+                "name": "FLOW_CONTROL_XOFF_THRESHOLD",
+                "type": "int",
+                "value": spec.hardware["flow_control_xoff_threshold"],
+            },
+            {
+                "name": "FLOW_CONTROL_XON_THRESHOLD",
+                "type": "int",
+                "value": spec.hardware["flow_control_xon_threshold"],
+            },
+            {
+                "name": "FRAME_HEADER_FORMAT",
+                "type": "str",
+                "value": f'"{spec.data_formats["crc_covered_header_format"]}"',
+            },
+            {
+                "name": "FRAME_CRC_FORMAT",
+                "type": "str",
+                "value": f'"{spec.data_formats["crc_format"]}"',
+            },
+            {
+                "name": "NONCE_COUNTER_FORMAT",
+                "type": "str",
+                "value": f'"{spec.data_formats["nonce_counter_format"]}"',
+            },
             {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
             {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
             {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},

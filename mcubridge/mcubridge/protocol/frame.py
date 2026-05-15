@@ -21,11 +21,11 @@ import msgspec
 from . import protocol
 from .rle import rle_encode, rle_decode, should_compress
 
-_HEADER_FORMAT = ">BHHH"
+_HEADER_FORMAT = protocol.FRAME_HEADER_FORMAT
 _HEADER_SIZE = struct.calcsize(_HEADER_FORMAT)
-_NONCE_SIZE = 12
-_TAG_SIZE = 16
-_CRC_SIZE = 4
+_NONCE_SIZE = protocol.AEAD_NONCE_SIZE
+_TAG_SIZE = protocol.AEAD_TAG_SIZE
+_CRC_SIZE = 4  # TODO: Move to protocol.FRAME_CRC_SIZE if needed
 
 
 def _frame_crc(data: bytes | bytearray | memoryview) -> int:
@@ -103,7 +103,7 @@ class Frame(msgspec.Struct, frozen=True):
         body = header + self.nonce + payload + self.tag
         crc = _frame_crc(body)
 
-        return body + struct.pack(">I", crc)
+        return body + struct.pack(protocol.FRAME_CRC_FORMAT, crc)
 
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
@@ -114,7 +114,7 @@ class Frame(msgspec.Struct, frozen=True):
 
         body_len = len(buf) - _CRC_SIZE
         body = buf[:body_len]
-        expected_crc = struct.unpack(">I", buf[body_len:])[0]
+        expected_crc = struct.unpack(protocol.FRAME_CRC_FORMAT, buf[body_len:])[0]
         actual_crc = _frame_crc(body)
 
         if expected_crc != actual_crc:

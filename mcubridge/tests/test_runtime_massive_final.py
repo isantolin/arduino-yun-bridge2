@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import patch
 from typing import Any, cast
 from typing import Tuple, Generator
 from unittest.mock import AsyncMock
@@ -171,7 +172,9 @@ async def test_runtime_brute_force_handlers_v2(
         service.enqueue_mqtt = AsyncMock()
 
         # Test valid payload
-        await handler(seq, payload)
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            mock_exec.return_value = AsyncMock()
+            await handler(seq, payload)
 
         # Determine expected behavior based on handler
         h_name = handler.__name__

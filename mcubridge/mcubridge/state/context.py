@@ -351,25 +351,30 @@ class RuntimeState(msgspec.Struct):
             cast(Any, self._mailbox_incoming_queue_cache).close()
             self._mailbox_incoming_queue_cache = None
 
-        # [SIL-2] Bulk field sync (Zero-Manual-Logic)
-        # Leverage msgspec.structs.asdict and a rename map for declarative state update.
-        _RENAMES: Final[dict[str, str]] = {
-            "mqtt_topic": "mqtt_topic_prefix",
-            "process_max_output_bytes": "process_output_limit",
-        }
-        cfg_data = {
-            _RENAMES.get(k, k): v
-            for k, v in msgspec.structs.asdict(config).items()
-            if v is not None
-        }
-        # Efficiently apply all matching fields to the current state Struct
-        # [SIL-2] Use msgspec fields metadata to avoid trying to write to read-only properties
+        # [SIL-2] Atomic field sync via msgspec.convert
+        # This replaces manual iteration/renaming with native C-backed coercion.
+        # We leverage msgspec.structs.asdict() and re-insert into self.
+        cfg_dict = msgspec.structs.asdict(config)
+
+        # Declarative renames for semantic mapping
+        cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop(
+            "mqtt_topic", self.mqtt_topic_prefix
+        )
+        cfg_dict["process_output_limit"] = cfg_dict.pop(
+            "process_max_output_bytes", self.process_output_limit
+        )
+
+        # [SIL-2] Unified conversion and assignment
+        # Note: We filter out None to prevent overwriting initialized defaults.
+        # We also filter for actual state fields to ensure structural integrity.
         state_fields = {f.name for f in msgspec.structs.fields(self)}
-        [
-            setattr(self, k, v)
-            for k, v in cfg_data.items()
-            if k in state_fields and v is not None
-        ]
+        for k, v in cfg_dict.items():
+            if v is not None and k in state_fields:
+                try:
+                    # Native coercion if types differ slightly
+                    setattr(self, k, msgspec.convert(v, type(getattr(self, k))))  # type: ignore
+                except (msgspec.MsgspecError, ValueError, TypeError):
+                    setattr(self, k, v)
 
         # Re-initialize transient queues
         self.console_to_mcu_queue = collections.deque[bytes](

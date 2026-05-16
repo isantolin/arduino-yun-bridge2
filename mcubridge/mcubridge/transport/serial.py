@@ -268,6 +268,8 @@ class SerialTransport:
             if isinstance(encoded_packet, bytes)
             else encoded_packet.tobytes()
         )
+        if logger.is_enabled_for(logging.DEBUG):
+            logger.debug("[SERIAL <- MCU] [RAW]: [%s]", packet_bytes.hex(" ").upper())
         try:
             decoded = cobs.decode(packet_bytes)
             frame = Frame.parse(decoded)

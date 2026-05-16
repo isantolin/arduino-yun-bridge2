@@ -14,6 +14,7 @@
                 "${workspaceFolder}/.dummy_libs/wolfSSL",
                 "${workspaceFolder}/.dummy_libs/PacketSerial/src",
                 "${workspaceFolder}/.dummy_libs/mpack/src",
+                "${workspaceFolder}/.dummy_libs/ArduinoJson/src",
                 "~/Arduino/libraries/**"
             ],
             "defines": [

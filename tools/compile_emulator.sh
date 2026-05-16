@@ -25,7 +25,7 @@ echo "[emulator] Installing library dependencies..."
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
-MPACK_PATH="$ARDUINO_LIBS/mpack"
+AJSON_PATH="$ARDUINO_LIBS/ArduinoJson"
 
 # Use the python from the current environment (e.g. tox virtualenv)
 PYTHON_CMD=$(command -v python || command -v python3)
@@ -60,15 +60,6 @@ WOLF_SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/chacha20_poly1305.c"
 )
 
-MPACK_SOURCES=(
-    "$MPACK_PATH/src/mpack-common.c"
-    "$MPACK_PATH/src/mpack-writer.c"
-    "$MPACK_PATH/src/mpack-reader.c"
-    "$MPACK_PATH/src/mpack-expect.c"
-    "$MPACK_PATH/src/mpack-node.c"
-    "$MPACK_PATH/src/mpack-platform.c"
-)
-
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
@@ -82,9 +73,8 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
-    -I"${MPACK_PATH}/src" \
+    -I"${AJSON_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
-    "${MPACK_SOURCES[@]}" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
@@ -114,9 +104,8 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
-    -I"${MPACK_PATH}/src" \
+    -I"${AJSON_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
-    "${MPACK_SOURCES[@]}" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \

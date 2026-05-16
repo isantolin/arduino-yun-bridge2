@@ -11,12 +11,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <etl/string_view.h>
-#include <etl/optional.h>
-#include <etl/array.h>
-#include <etl/algorithm.h>
-#include <etl/span.h>
-#include <etl/expected.h>
-#include <mpack.h>
+#include <ArduinoJson.h>
 #include "rpc_protocol.h"
 #include "rpc_frame.h"
 
@@ -40,65 +35,51 @@ struct {{ s.name }} {
 {%- endif %}
 {%- endfor %}
 
-    bool encode(mpack_writer_t* writer) const {
-        mpack_start_array(writer, {{ s.field_count }});
+    bool encode(JsonVariant target) const {
+        JsonArray arr = target.to<JsonArray>();
 {%- for f in s.fields %}
-{%- if f.kind == 'uint8' %}
-        mpack_write_u8(writer, {{ f.name }});
-{%- elif f.kind == 'uint16' %}
-        mpack_write_u16(writer, {{ f.name }});
-{%- elif f.kind == 'uint32' %}
-        mpack_write_u32(writer, {{ f.name }});
-{%- elif f.kind == 'bin_view' %}
-        mpack_write_bin(writer, reinterpret_cast<const char*>({{ f.name }}.data()), static_cast<uint32_t>({{ f.name }}.size()));
-{%- elif f.kind == 'bin_fixed' %}
-        mpack_write_bin(writer, reinterpret_cast<const char*>({{ f.name }}.data()), static_cast<uint32_t>({{ f.name }}.size()));
+{%- if f.kind == 'uint8' or f.kind == 'uint16' or f.kind == 'uint32' %}
+        arr.add({{ f.name }});
+{%- elif f.kind == 'bin_view' or f.kind == 'bin_fixed' %}
+        if ({{ f.name }}.size() > 0) arr.add(MsgPackBinary({{ f.name }}.data(), {{ f.name }}.size()));
+        else arr.add(MsgPackBinary("", 0));
 {%- elif f.kind == 'str_view' %}
-        mpack_write_str(writer, {{ f.name }}.data(), static_cast<uint32_t>({{ f.name }}.size()));
+        arr.add({{ f.name }}.data());
 {%- endif %}
 {%- endfor %}
-        mpack_finish_array(writer);
-        return mpack_writer_error(writer) == mpack_ok;
+        return true;
     }
 
-    bool decode(mpack_reader_t* reader) {
-        const uint32_t n = mpack_expect_array(reader);
-        if (mpack_reader_error(reader) != mpack_ok || n < {{ s.field_count }}) return false;
+    bool decode(JsonVariantConst source) {
+        JsonArrayConst arr = source.as<JsonArrayConst>();
+        if (arr.isNull() || arr.size() < {{ s.field_count }}) return false;
 {%- for f in s.fields %}
 {%- if f.kind == 'uint8' %}
-        {{ f.name }} = mpack_expect_u8(reader);
+        {{ f.name }} = arr[{{ loop.index0 }}].as<uint8_t>();
 {%- elif f.kind == 'uint16' %}
-        {{ f.name }} = mpack_expect_u16(reader);
+        {{ f.name }} = arr[{{ loop.index0 }}].as<uint16_t>();
 {%- elif f.kind == 'uint32' %}
-        {{ f.name }} = mpack_expect_u32(reader);
+        {{ f.name }} = arr[{{ loop.index0 }}].as<uint32_t>();
 {%- elif f.kind == 'bin_view' %}
         {
-            uint32_t _len = mpack_expect_bin(reader);
-            const char* _data = mpack_read_bytes_inplace(reader, _len);
-            mpack_done_bin(reader);
-            if (!_data && _len > 0) return false;
-            {{ f.name }} = {reinterpret_cast<const uint8_t*>(_data), static_cast<size_t>(_len)};
+            auto bin = arr[{{ loop.index0 }}].as<MsgPackBinary>();
+            {{ f.name }} = {reinterpret_cast<const uint8_t*>(bin.data()), bin.size()};
         }
 {%- elif f.kind == 'bin_fixed' %}
         {
-            uint32_t _len = mpack_expect_bin(reader);
-            const char* _data = mpack_read_bytes_inplace(reader, _len);
-            mpack_done_bin(reader);
-            if (_len == {{ f.size }} && _data) etl::copy_n(reinterpret_cast<const uint8_t*>(_data), {{ f.size }}, {{ f.name }}.data());
+            auto bin = arr[{{ loop.index0 }}].as<MsgPackBinary>();
+            if (bin.size() == {{ f.size }}) etl::copy_n(reinterpret_cast<const uint8_t*>(bin.data()), {{ f.size }}, {{ f.name }}.data());
             else return false;
         }
 {%- elif f.kind == 'str_view' %}
         {
-            uint32_t _len = mpack_expect_str(reader);
-            const char* _data = mpack_read_bytes_inplace(reader, _len);
-            mpack_done_str(reader);
-            if (!_data && _len > 0) return false;
-            {{ f.name }} = {_data, static_cast<size_t>(_len)};
+            const char* s = arr[{{ loop.index0 }}].as<const char*>();
+            if (s) {{ f.name }} = {s, strlen(s)};
+            else return false;
         }
 {%- endif %}
 {%- endfor %}
-        mpack_done_array(reader);
-        return mpack_reader_error(reader) == mpack_ok;
+        return true;
     }
 };
 {% endfor %}
@@ -108,11 +89,10 @@ struct {{ s.name }} {
 namespace rpc::Payload {
 
 template <typename T>
-inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
+inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame, JsonDocument& doc) {
     T msg = {};
-    mpack_reader_t reader;
-    mpack_reader_init_data(&reader, reinterpret_cast<const char*>(frame.payload.data()), frame.header.payload_length);
-    if (!msg.decode(&reader)) {
+    DeserializationError err = deserializeMsgPack(doc, frame.payload.data(), frame.header.payload_length);
+    if (err || !msg.decode(doc.as<JsonVariantConst>())) {
         return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
     }
     return etl::expected<T, rpc::FrameError>(msg);

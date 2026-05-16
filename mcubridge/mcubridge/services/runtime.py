@@ -384,8 +384,10 @@ class BridgeService:
         return False
 
     async def _handle_mcu_mailbox_push(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(Exception):
+        try:
             p = msgspec.msgpack.decode(payload, type=MailboxPushPacket)
+            data = bytes(p.data)
+            self.state.mailbox_incoming_queue.append(data)
             await self.enqueue_mqtt(
                 QueuedPublish(
                     topic_path(
@@ -393,11 +395,13 @@ class BridgeService:
                         Topic.MAILBOX,
                         MailboxAction.INCOMING,
                     ),
-                    bytes(p.data),
+                    data,
                 )
             )
             return True
-        return False
+        except Exception as e:
+            logger.error("Failed to process MCU mailbox push: %s", e)
+            return False
 
     async def _handle_mcu_mailbox_available(self, seq_id: int, _: bytes) -> bool:
         return await self.serial.send(
@@ -471,7 +475,7 @@ class BridgeService:
     async def _handle_mcu_file_read_resp(self, seq_id: int, payload: bytes) -> bool:
         if not self._pending_mcu_read:
             return False
-        with contextlib.suppress(Exception):
+        try:
             p = msgspec.msgpack.decode(payload, type=FileReadResponsePacket)
             if p.content:
                 self._pending_mcu_read.chunks.append(p.content)
@@ -481,7 +485,9 @@ class BridgeService:
                     b"".join(self._pending_mcu_read.chunks)
                 )
             return True
-        return False
+        except Exception as e:
+            logger.error("Failed to decode FileReadResponse: %s (payload: %s)", e, payload.hex())
+            return False
 
     async def _handle_mcu_process_run(self, seq_id: int, payload: bytes) -> None:
         with contextlib.suppress(Exception):
@@ -659,7 +665,22 @@ class BridgeService:
                 msgspec.msgpack.encode(MailboxPushPacket(data=pl)),
             )
         elif route.identifier == MailboxAction.READ:
-            await self.serial.send(Command.CMD_MAILBOX_READ.value, b"")
+            try:
+                data = self.state.mailbox_incoming_queue.popleft()
+            except (IndexError, AttributeError):
+                data = b""
+            await self.enqueue_mqtt(
+                QueuedPublish(
+                    topic_path(
+                        self.state.mqtt_topic_prefix,
+                        Topic.MAILBOX,
+                        MailboxAction.READ,
+                        protocol.MQTT_SUFFIX_RESPONSE,
+                    ),
+                    data,
+                ),
+                reply_context=inbound,
+            )
 
     async def _handle_mqtt_file(self, route: TopicRoute, inbound: Message) -> None:
         action = route.action
@@ -721,7 +742,7 @@ class BridgeService:
         action = route.segments[0] if route.segments else None
         pl = msgspec.convert(inbound.payload, bytes)
         if action == ShellAction.RUN_ASYNC:
-            with contextlib.suppress(Exception):
+            try:
                 cmd = (
                     msgspec.msgpack.decode(pl, type=ShellCommandPayload).command
                     if pl.startswith(b"\x81")
@@ -737,6 +758,20 @@ class BridgeService:
                             protocol.MQTT_SUFFIX_RESPONSE,
                         ),
                         str(pid).encode() if pid else b"error:internal",
+                    ),
+                    reply_context=inbound,
+                )
+            except Exception as e:
+                logger.error("Failed to execute shell command: %s", e)
+                await self.enqueue_mqtt(
+                    QueuedPublish(
+                        topic_path(
+                            self.state.mqtt_topic_prefix,
+                            Topic.SHELL,
+                            ShellAction.RUN_ASYNC,
+                            protocol.MQTT_SUFFIX_RESPONSE,
+                        ),
+                        f"error:{e}".encode(),
                     ),
                     reply_context=inbound,
                 )
@@ -945,8 +980,11 @@ class BridgeService:
 
     async def _run_process(self, command: str) -> int:
         if not self.state.allowed_policy.is_allowed(command):
+            logger.debug("Command not allowed by policy: %s", command)
             return 0
+        logger.debug("Acquiring process slot for command: %s", command)
         await self._process_slots.acquire()
+        logger.debug("Process slot acquired for command: %s", command)
         try:
             p = await asyncio.create_subprocess_exec(
                 *shlex.split(command),
@@ -955,13 +993,15 @@ class BridgeService:
                 start_new_session=True,
             )
             pid = p.pid & 0xFFFF
+            logger.debug("Process spawned with PID: %d", pid)
             async with self.state.process_lock:
                 self.state.running_processes[pid] = p
                 self.state.process_io_locks[pid] = asyncio.Lock()
                 self.state.process_exit_codes[pid] = 0
             asyncio.create_task(self._monitor_process(pid))
             return pid
-        except OSError:
+        except OSError as e:
+            logger.error("OSError starting process: %s", e)
             self._process_slots.release()
             return 0
 
@@ -1076,9 +1116,11 @@ class BridgeService:
             self._pending_mcu_read = _PendingMcuRead(
                 target, asyncio.get_running_loop().create_future()
             )
+            payload = msgspec.msgpack.encode(FileReadPacket(path=target[4:]))
+            logger.debug("MCU Read Payload: %s (len: %d)", payload.hex(), len(payload))
             if await self.serial.send(
                 Command.CMD_FILE_READ.value,
-                msgspec.msgpack.encode(FileReadPacket(path=target[4:])),
+                payload,
             ):
                 try:
                     res = await asyncio.wait_for(self._pending_mcu_read.future, 30.0)
@@ -1088,6 +1130,7 @@ class BridgeService:
                                 self.state.mqtt_topic_prefix,
                                 Topic.FILE,
                                 FileAction.READ,
+                                protocol.MQTT_SUFFIX_RESPONSE,
                                 target,
                             ),
                             res,

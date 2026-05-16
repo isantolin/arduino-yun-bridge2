@@ -10,6 +10,7 @@
 
 #include "etl_profile.h"
 #include "hal/hal.h"
+#include <ArduinoJson.h>
 
 namespace bridge::test { class TestAccessor; }
 
@@ -56,7 +57,7 @@ namespace etl {
 namespace rpc {
 class Serializable {
  public:
-  virtual bool encode(mpack_writer_t* writer) const = 0;
+  virtual bool encode(JsonVariant target) const = 0;
 };
 }  // namespace rpc
 
@@ -115,11 +116,10 @@ class BridgeClass {
 
   template <typename T>
   [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
-    mpack_writer_t writer;
-    mpack_writer_init(&writer, reinterpret_cast<char*>(_transient_buffer.data()),
-                      rpc::MAX_PAYLOAD_SIZE);
-    if (packet.encode(&writer)) {
-      size_t used = mpack_writer_buffer_used(&writer);
+    JsonDocument doc;
+    if (packet.encode(doc.to<JsonVariant>())) {
+      size_t used = serializeMsgPack(doc, (char*)_transient_buffer.data(),
+                                     rpc::MAX_PAYLOAD_SIZE);
       return sendFrame(c, seq,
                        etl::span<const uint8_t>(_transient_buffer.data(), used));
     }
@@ -135,12 +135,14 @@ class BridgeClass {
 
   void _dispatchCommand(const rpc::Frame& frame);
   static void _onBootloaderDelay();
+  void _onStartupStabilized();
   void _onAckTimeout();
   void _onRxDedupe();
   void _onBaudrateChange();
   void _retransmitLastFrame();
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   void _onPacketReceived(etl::span<const uint8_t> packet);
+  static void packetHandlerCallback(etl::span<const uint8_t> p);
 
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
@@ -251,6 +253,7 @@ class BridgeClass {
   void _handleAnalogReadCommand(const bridge::router::CommandContext& ctx);
   void _handleConsoleWriteCommand(const bridge::router::CommandContext& ctx);
 #if BRIDGE_ENABLE_DATASTORE
+  void _handleDataStorePutCommand(const bridge::router::CommandContext& ctx);
   void _handleDataStoreGetResponseCommand(
       const bridge::router::CommandContext& ctx);
 #endif
@@ -269,11 +272,11 @@ class BridgeClass {
       const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_PROCESS
-  void _handleProcessKillCommand(const bridge::router::CommandContext& ctx);
   void _handleProcessRunAsyncResponseCommand(
       const bridge::router::CommandContext& ctx);
   void _handleProcessPollResponseCommand(
       const bridge::router::CommandContext& ctx);
+  void _handleProcessKillCommand(const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_SPI
   void _handleSpiSetConfigCommand(const bridge::router::CommandContext& ctx);
@@ -306,7 +309,8 @@ class BridgeClass {
 
   template <typename T, typename F>
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
-    auto res = rpc::Payload::parse<T>(*ctx.frame);
+    JsonDocument doc;
+    auto res = rpc::Payload::parse<T>(*ctx.frame, doc);
     if (res) handler(res.value());
   }
   template <typename T, typename F>
@@ -315,7 +319,8 @@ class BridgeClass {
       (void)sendFrame(rpc::StatusCode::STATUS_ACK, ctx.sequence_id);
       return;
     }
-    auto res = rpc::Payload::parse<T>(*ctx.frame);
+    JsonDocument doc;
+    auto res = rpc::Payload::parse<T>(*ctx.frame, doc);
     if (res) {
       handler(res.value());
       if (ctx.requires_ack)
@@ -335,7 +340,8 @@ class BridgeClass {
   void _handlePinRead(const bridge::router::CommandContext& ctx, TID resp_id,
                       TValid valid, TRead read) {
     _withResponse(ctx, [this, &ctx, resp_id, valid, read]() {
-      auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
+      JsonDocument doc;
+      auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame, doc);
       if (res && valid(res->pin)) {
         T resp = {static_cast<decltype(T::value)>(read(res->pin))};
         (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);

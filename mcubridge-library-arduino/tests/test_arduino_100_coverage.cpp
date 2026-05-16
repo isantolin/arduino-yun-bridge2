@@ -177,8 +177,8 @@ void test_bridge_send_exhaustive() {
   strr.data = etl::span<const uint8_t>(data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, 1, strr);
 
-  // 1. Hit Queue Full (Capacity 4)
-  for(int i=0; i<4; i++) (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 100+i);
+  // 1. Hit Queue Full
+  for(int i=0; i<bridge::config::MAX_PENDING_TX_FRAMES; i++) (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 100+i);
   TEST_ASSERT(ba.isAwaitingAck());
   bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 105);
   TEST_ASSERT_FALSE(ok);

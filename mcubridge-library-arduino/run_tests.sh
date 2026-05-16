@@ -4,46 +4,39 @@ set -e
 # Mission: Provide a robust, fast, and consistent test execution environment
 # mirroring the CI (GitHub Actions) but optimized for local development.
 
-# Get the script directory and then the project root
+# Get the script and repo root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+cd "$SCRIPT_DIR"
+
+# Detect Arduino libraries directory
+ARDUINO_LIBS="$HOME/Arduino/libraries"
+if [ ! -d "$ARDUINO_LIBS" ]; then ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"; fi
+
+# 1. Embedded Template Library (ETL)
+ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
+if [ ! -d "$ETL_PATH" ]; then ETL_PATH="$REPO_ROOT/.dummy_libs/Embedded_Template_Library"; fi
+
+# 2. wolfSSL (official)
+WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
+if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"; fi
+if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$REPO_ROOT/.dummy_libs/wolfSSL"; fi
+
+# 3. PacketSerial
+PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
+if [ ! -d "$PACKETSERIAL_PATH" ]; then PACKETSERIAL_PATH="$REPO_ROOT/.dummy_libs/PacketSerial"; fi
+
+# 4. ArduinoJson
+AJSON_PATH="$ARDUINO_LIBS/ArduinoJson"
+if [ ! -d "$AJSON_PATH" ]; then AJSON_PATH="$REPO_ROOT/.dummy_libs/ArduinoJson"; fi
+
+# 5. Build Artifacts
 BUILD_DIR="build-host-local"
 OBJ_DIR="${BUILD_DIR}/objs"
 mkdir -p "${OBJ_DIR}"
 
-# Get standard library path
-ARDUINO_LIBS="$HOME/Arduino/libraries"
-if [ ! -d "$ARDUINO_LIBS" ]; then
-    ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"
-fi
-
-# Define explicit include paths for official libraries
-ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
-PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
-MPACK_PATH="$ARDUINO_LIBS/mpack"
-
-# Fallback to local .dummy_libs for CI or if standard paths are missing
-if [ ! -d "$ETL_PATH" ]; then ETL_PATH="$REPO_ROOT/.dummy_libs/Embedded_Template_Library"; fi
-if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$REPO_ROOT/.dummy_libs/wolfSSL"; fi
-if [ ! -d "$PACKETSERIAL_PATH" ]; then PACKETSERIAL_PATH="$REPO_ROOT/.dummy_libs/PacketSerial"; fi
-if [ ! -d "$MPACK_PATH" ]; then MPACK_PATH="$REPO_ROOT/.dummy_libs/mpack"; fi
-
-# [SIL-2] Robust path resolution for mpack (Divergent Arduino IDE structures)
-if [ -d "$MPACK_PATH/src/mpack" ]; then
-    MPACK_SRC_DIR="$MPACK_PATH/src/mpack"
-    MPACK_INC="-I$MPACK_PATH -I$MPACK_PATH/src -I$MPACK_PATH/src/mpack"
-elif [ -d "$MPACK_PATH/src" ]; then
-    MPACK_SRC_DIR="$MPACK_PATH/src"
-    MPACK_INC="-I$MPACK_PATH -I$MPACK_PATH/src"
-else
-    MPACK_SRC_DIR="$MPACK_PATH"
-    MPACK_INC="-I$MPACK_PATH"
-fi
-
-COMMON_FLAGS="-O2 -g -Wall -DBRIDGE_HOST_TEST=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_ENABLE_SPI=1 -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -Isrc -Isrc/config -Isrc/protocol -Itests/Unity/src -I../tools/arduino_stub/include -I$ETL_PATH -I$ETL_PATH/include -I$ETL_PATH/arduino -I$WOLFSSL_PATH -I$PACKETSERIAL_PATH -I$PACKETSERIAL_PATH/src $MPACK_INC"
+COMMON_FLAGS="-O2 -g -Wall -DBRIDGE_HOST_TEST=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_ENABLE_SPI=1 -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -Isrc -Isrc/config -Isrc/protocol -Itests/Unity/src -I../tools/arduino_stub/include -I$ETL_PATH -I$ETL_PATH/include -I$ETL_PATH/arduino -I$WOLFSSL_PATH -I$PACKETSERIAL_PATH -I$PACKETSERIAL_PATH/src -I$AJSON_PATH/src"
 
 SOURCES=(
     "src/security/security.cpp"
@@ -70,12 +63,6 @@ SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/chacha.c"
     "$WOLFSSL_PATH/wolfcrypt/src/poly1305.c"
     "$WOLFSSL_PATH/wolfcrypt/src/chacha20_poly1305.c"
-    "$MPACK_SRC_DIR/mpack-common.c"
-    "$MPACK_SRC_DIR/mpack-writer.c"
-    "$MPACK_SRC_DIR/mpack-reader.c"
-    "$MPACK_SRC_DIR/mpack-expect.c"
-    "$MPACK_SRC_DIR/mpack-node.c"
-    "$MPACK_SRC_DIR/mpack-platform.c"
 )
 
 # Unity test framework

@@ -91,6 +91,17 @@ class String {
   const char* c_str() const { return data_; }
   size_t length() const { return length_; }
 
+  bool concat(const char* s) {
+    if (!s) return true;
+    size_t slen = strlen(s);
+    if (length_ + slen < kCapacity) {
+      strcpy(data_ + length_, s);
+      length_ += slen;
+      return true;
+    }
+    return false;
+  }
+
   bool operator==(const String& other) const {
     return ::strcmp(data_, other.data_) == 0;
   }
@@ -132,6 +143,16 @@ inline void* memcpy_P(void* dest, const void* src, size_t n) {
   return memcpy(dest, src, n);
 }
 
+// Forward declarations
+class Print;
+
+// Printable interface stub
+class Printable {
+ public:
+  virtual ~Printable() = default;
+  virtual size_t printTo(Print& p) const = 0;
+};
+
 // Base classes needed for HardwareSerial
 class Print {
  public:
@@ -168,6 +189,21 @@ class Stream : public Print {
   virtual int peek() = 0;
   virtual void flush() = 0;
   virtual void setTimeout(unsigned long) {}
+
+  size_t readBytes(char* buffer, size_t length) {
+    size_t count = 0;
+    while (count < length) {
+      int c = read();
+      if (c < 0) break;
+      *buffer++ = (char)c;
+      count++;
+    }
+    return count;
+  }
+
+  size_t readBytes(uint8_t* buffer, size_t length) {
+    return readBytes((char*)buffer, length);
+  }
 };
 
 extern Stream* g_arduino_stream_delegate;

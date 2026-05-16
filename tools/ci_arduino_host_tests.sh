@@ -49,7 +49,7 @@ fi
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
-MPACK_PATH="$ARDUINO_LIBS/mpack"
+AJSON_PATH="$ARDUINO_LIBS/ArduinoJson"
 
 if [[ "${1:-}" == "--install-only" ]]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -69,12 +69,6 @@ SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/chacha.c"
     "$WOLFSSL_PATH/wolfcrypt/src/poly1305.c"
     "$WOLFSSL_PATH/wolfcrypt/src/chacha20_poly1305.c"
-    "$MPACK_PATH/src/mpack-common.c"
-    "$MPACK_PATH/src/mpack-writer.c"
-    "$MPACK_PATH/src/mpack-reader.c"
-    "$MPACK_PATH/src/mpack-expect.c"
-    "$MPACK_PATH/src/mpack-node.c"
-    "$MPACK_PATH/src/mpack-platform.c"
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/fsm/bridge_fsm.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
@@ -122,7 +116,7 @@ BASE_FLAGS=(
     -I"$WOLFSSL_PATH" \
     -I"$PACKETSERIAL_PATH" \
     -I"$PACKETSERIAL_PATH/src" \
-    -I"$MPACK_PATH/src" \
+    -I"$AJSON_PATH/src" \
 )
 
 # Compile common sources to objects in parallel

@@ -15,24 +15,24 @@ void tearDown(void) {}
 template <typename T>
 void test_roundtrip(const T& p) {
     uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-    mpack_writer_t writer;
-    mpack_writer_init(&writer, reinterpret_cast<char*>(buffer), rpc::MAX_PAYLOAD_SIZE);
-    TEST_ASSERT(p.encode(&writer));
-    size_t used = mpack_writer_buffer_used(&writer);
+    JsonDocument doc;
+    TEST_ASSERT(p.encode(doc.to<JsonVariant>()));
+    size_t used = serializeMsgPack(doc, (char*)buffer, rpc::MAX_PAYLOAD_SIZE);
     
     T p2 = {};
-    mpack_reader_t reader;
-    mpack_reader_init_data(&reader, reinterpret_cast<const char*>(buffer), used);
-    TEST_ASSERT(p2.decode(&reader));
+    JsonDocument doc2;
+    DeserializationError err = deserializeMsgPack(doc2, buffer, used);
+    TEST_ASSERT(!err);
+    TEST_ASSERT(p2.decode(doc2.as<JsonVariantConst>()));
 }
 
 template <typename T>
 void test_chaos_decode() {
     uint8_t buffer[2] = {0x91, 0xFF}; // Array of 1 with junk
     T p = {};
-    mpack_reader_t reader;
-    mpack_reader_init_data(&reader, reinterpret_cast<const char*>(buffer), 2);
-    (void)p.decode(&reader); // Should fail many checks
+    JsonDocument doc;
+    (void)deserializeMsgPack(doc, buffer, 2);
+    (void)p.decode(doc.as<JsonVariantConst>()); // Should fail many checks
 }
 
 void test_all_structs_roundtrip() {

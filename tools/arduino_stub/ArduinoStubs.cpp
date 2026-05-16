@@ -9,3 +9,10 @@ void delay(unsigned long ms) {
     (void)ms;
 }
 #endif
+
+#include <etl/exception.h>
+namespace etl {
+void handle_error(const etl::exception& e) {
+  (void)e;
+}
+}

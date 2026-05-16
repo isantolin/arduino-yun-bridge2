@@ -31,8 +31,9 @@ echo "Installing arduino:avr core..."
 arduino-cli core install arduino:avr || { echo "Failed to install arduino:avr core"; exit 1; }
 
 # Install official dependencies
-echo "Installing official wolfSSL library..."
+echo "Installing official libraries..."
 arduino-cli lib install wolfSSL || { echo "Failed to install wolfSSL"; exit 1; }
+arduino-cli lib install ArduinoJson || { echo "Failed to install ArduinoJson"; exit 1; }
 
 # Find actual wolfSSL installation path (casing varies)
 WOLF_ROOT=""

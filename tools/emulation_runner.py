@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from mcubridge.protocol import protocol
+
 import argparse
 
 # --- Constants ---

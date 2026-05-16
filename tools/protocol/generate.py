@@ -195,9 +195,21 @@ class JinjaGenerator:
 
         c = spec.constants
         constants = [
-            {"name": "RPC_AEAD_NONCE_SIZE", "type": "size_t", "value": c["aead_nonce_size"]},
-            {"name": "RPC_AEAD_TAG_SIZE", "type": "size_t", "value": c["aead_tag_size"]},
-            {"name": "RPC_AEAD_KEY_SIZE", "type": "size_t", "value": c["aead_key_size"]},
+            {
+                "name": "RPC_AEAD_NONCE_SIZE",
+                "type": "size_t",
+                "value": c["aead_nonce_size"],
+            },
+            {
+                "name": "RPC_AEAD_TAG_SIZE",
+                "type": "size_t",
+                "value": c["aead_tag_size"],
+            },
+            {
+                "name": "RPC_AEAD_KEY_SIZE",
+                "type": "size_t",
+                "value": c["aead_key_size"],
+            },
             {
                 "name": "PROTOCOL_VERSION",
                 "type": "uint8_t",
@@ -688,7 +700,11 @@ class JinjaGenerator:
             },
             {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
             {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
-            {"name": "DEFAULT_MQTT_PORT", "type": "int", "value": c["default_mqtt_port"]},
+            {
+                "name": "DEFAULT_MQTT_PORT",
+                "type": "int",
+                "value": c["default_mqtt_port"],
+            },
             {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
             {
                 "name": "DEFAULT_SAFE_BAUDRATE",
@@ -1173,7 +1189,11 @@ class JinjaGenerator:
         constants = [
             {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
             {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
-            {"name": "DEFAULT_MQTT_PORT", "type": "int", "value": c["default_mqtt_port"]},
+            {
+                "name": "DEFAULT_MQTT_PORT",
+                "type": "int",
+                "value": c["default_mqtt_port"],
+            },
             {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
             {
                 "name": "MAX_FILEPATH_LENGTH",

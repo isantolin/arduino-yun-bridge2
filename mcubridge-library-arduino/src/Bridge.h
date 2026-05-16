@@ -118,8 +118,9 @@ class BridgeClass {
   [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
     JsonDocument doc;
     if (packet.encode(doc.to<JsonVariant>())) {
-      size_t used = serializeMsgPack(doc, (char*)_transient_buffer.data(),
-                                     rpc::MAX_PAYLOAD_SIZE);
+      size_t used = serializeMsgPack(
+          doc, reinterpret_cast<char*>(_transient_buffer.data()),
+          rpc::MAX_PAYLOAD_SIZE);
       return sendFrame(c, seq,
                        etl::span<const uint8_t>(_transient_buffer.data(), used));
     }

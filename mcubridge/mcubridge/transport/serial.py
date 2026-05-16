@@ -626,4 +626,4 @@ class SerialTransport:
         self, command_id: int, seq_id: int, *, status: Status = Status.ACK
     ) -> None:
         payload = msgspec.msgpack.encode(AckPacket(command_id=command_id))
-        await self._send_raw(status.value, payload)
+        await self._send_raw(status.value, payload, seq_id)

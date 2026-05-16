@@ -159,6 +159,7 @@ class BridgeService:
             Command.CMD_DIGITAL_READ_RESP.value: self._handle_mcu_pin_digital_read_resp,
             Command.CMD_ANALOG_READ_RESP.value: self._handle_mcu_pin_analog_read_resp,
             Command.CMD_SPI_TRANSFER_RESP.value: self._handle_mcu_spi_resp,
+            Command.CMD_GET_CAPABILITIES_RESP.value: self._handle_mcu_capabilities_resp,
             Command.CMD_LINK_SYNC_RESP.value: self._handle_mcu_link_sync_resp,
             Command.CMD_LINK_RESET_RESP.value: self._handle_mcu_link_reset_resp,
             Status.ACK.value: self._handle_mcu_ack,
@@ -297,6 +298,9 @@ class BridgeService:
 
     async def _handle_mcu_link_reset_resp(self, seq_id: int, payload: bytes) -> bool:
         return await self.handshake.handle_link_reset_resp(seq_id, payload)
+
+    async def _handle_mcu_capabilities_resp(self, seq_id: int, payload: bytes) -> bool:
+        return await self.handshake.handle_capabilities_resp(seq_id, payload)
 
     async def _handle_mcu_status(
         self, seq_id: int, status: Status, payload: bytes
@@ -486,7 +490,9 @@ class BridgeService:
                 )
             return True
         except Exception as e:
-            logger.error("Failed to decode FileReadResponse: %s (payload: %s)", e, payload.hex())
+            logger.error(
+                "Failed to decode FileReadResponse: %s (payload: %s)", e, payload.hex()
+            )
             return False
 
     async def _handle_mcu_process_run(self, seq_id: int, payload: bytes) -> None:

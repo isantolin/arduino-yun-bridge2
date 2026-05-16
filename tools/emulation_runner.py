@@ -18,7 +18,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from mcubridge.protocol import protocol
+try:
+    from mcubridge.protocol import protocol
+except ModuleNotFoundError as exc:
+    # CI can invoke this script without tox's PYTHONPATH wiring.
+    if exc.name not in {"mcubridge", "mcubridge.protocol"}:
+        raise
+    repo_root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(repo_root / "mcubridge"))
+    sys.path.insert(0, str(repo_root / "mcubridge-client-examples"))
+    sys.path.insert(0, str(repo_root))
+    from mcubridge.protocol import protocol
 
 import argparse
 

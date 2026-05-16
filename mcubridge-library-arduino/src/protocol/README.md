@@ -11,9 +11,8 @@ All files in this directory should be considered **read-only artifacts** of the 
 
 ## Files
 *   `rpc_protocol.h`: Constants, command IDs, and enums generated from the TOML spec.
-*   `rpc_structs.h`: Native C++ payload structs with MsgPack `encode()`/`decode()` methods and `Payload::parse<T>()` decoder.
+*   `rpc_structs.h`: Native C++ payload structs with direct Mpack `encode()`/`decode()` methods and `Payload::parse<T>()` decoder.
 *   `rpc_frame.h`: Frame handling logic (CRC, Header, Payload).
-*   `msgpack_codec.h`: Minimal header-only MsgPack encoder/decoder (static, no heap).
 
 ## Generation
 To regenerate these files after modifying `spec.toml` or `mcubridge.proto`:

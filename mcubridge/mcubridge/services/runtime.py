@@ -6,7 +6,6 @@ import asyncio
 import collections
 import contextlib
 import itertools
-import os
 import shlex
 from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
@@ -1100,12 +1099,10 @@ class BridgeService:
             self._pending_mcu_read = None
 
     def _get_safe_path(self, p_str: str) -> Path | None:
-        p = Path(self.config.file_system_root).joinpath(p_str.lstrip("/")).resolve()
-        return (
-            p
-            if str(p).startswith(os.path.abspath(self.config.file_system_root))
-            else None
-        )
+        """Resolve and validate that a path is within the allowed filesystem root."""
+        root = Path(self.config.file_system_root).resolve()
+        p = root.joinpath(p_str.lstrip("/")).resolve()
+        return p if p.is_relative_to(root) else None
 
     async def _write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:

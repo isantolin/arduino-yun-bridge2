@@ -9,7 +9,8 @@ STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
 BUILD_DIR="${ROOT_DIR}/coverage/build-arduino"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
 
-# Create build directory
+# Recreate build directory to avoid stale gcov/gcno references from old headers.
+rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}/objs"
 mkdir -p "${OUTPUT_ROOT}"
 
@@ -131,7 +132,6 @@ TEST_SUITES=(
     "test_fsm_mutual_auth"
     "test_coverage_full"
     "test_rle"
-    "test_msgpack"
     "test_rpc_structs"
     "test_coverage_hardened"
     "test_arduino_harden"

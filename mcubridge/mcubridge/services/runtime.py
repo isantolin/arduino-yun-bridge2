@@ -403,8 +403,15 @@ class BridgeService:
                 )
             )
             return True
-        except Exception as e:
-            logger.error("Failed to process MCU mailbox push: %s", e)
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+            RuntimeError,
+            OSError,
+        ) as exc:
+            logger.error("Failed to process MCU mailbox push: %s", exc)
             return False
 
     async def _handle_mcu_mailbox_available(self, seq_id: int, _: bytes) -> bool:
@@ -489,9 +496,16 @@ class BridgeService:
                     b"".join(self._pending_mcu_read.chunks)
                 )
             return True
-        except Exception as e:
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
             logger.error(
-                "Failed to decode FileReadResponse: %s (payload: %s)", e, payload.hex()
+                "Failed to decode FileReadResponse: %s (payload: %s)",
+                exc,
+                payload.hex(),
             )
             return False
 
@@ -767,8 +781,16 @@ class BridgeService:
                     ),
                     reply_context=inbound,
                 )
-            except Exception as e:
-                logger.error("Failed to execute shell command: %s", e)
+            except (
+                msgspec.DecodeError,
+                msgspec.ValidationError,
+                UnicodeDecodeError,
+                TypeError,
+                ValueError,
+                RuntimeError,
+                OSError,
+            ) as exc:
+                logger.error("Failed to execute shell command: %s", exc)
                 await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(
@@ -777,7 +799,7 @@ class BridgeService:
                             ShellAction.RUN_ASYNC,
                             protocol.MQTT_SUFFIX_RESPONSE,
                         ),
-                        f"error:{e}".encode(),
+                        f"error:{exc}".encode(),
                     ),
                     reply_context=inbound,
                 )

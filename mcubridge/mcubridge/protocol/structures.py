@@ -119,9 +119,8 @@ class RLEPayload(msgspec.Struct, frozen=True):
 
         try:
             return rle_decode(self.data)
-        except Exception as e:
-            # Fallback or raise for protocol integrity
-            raise ValueError(f"RLE decompression failed: {e}") from e
+        except ValueError as exc:
+            raise ValueError(f"RLE decompression failed: {exc}") from exc
 
 
 # =============================================================================
@@ -1018,5 +1017,4 @@ class ProcessStats(msgspec.Struct):
     name: str
     cpu_percent: Annotated[float, msgspec.Meta(ge=0.0)]
     memory_rss_bytes: Annotated[int, msgspec.Meta(ge=0)]
-
 

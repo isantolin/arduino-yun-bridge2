@@ -36,7 +36,7 @@ void test_bridge_reliable_retry_exhaustion() {
     // 4th call: count=4, 4 >= 5 False
     // 5th call: count=5, 5 >= 5 True -> Transition
     bridge::utils::CounterIterator<int> retry_begin(1);
-    bridge::utils::CounterIterator<int> retry_end(bridge::config::DEFAULT_ACK_RETRY_LIMIT);
+    bridge::utils::CounterIterator<int> retry_end(rpc::RPC_DEFAULT_RETRY_LIMIT);
     etl::for_each(retry_begin, retry_end, [&ba](int) {
         ba.onAckTimeout();
         TEST_ASSERT_TRUE(ba.isAwaitingAck());

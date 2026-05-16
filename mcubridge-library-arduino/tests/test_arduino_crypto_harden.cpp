@@ -95,7 +95,7 @@ void test_bridge_ack_timeout_retry_to_fault() {
 
     // Trigger timeout 3 times (Default limit)
     bridge::utils::CounterIterator<int> retry_begin(0);
-    bridge::utils::CounterIterator<int> retry_end(bridge::config::DEFAULT_ACK_RETRY_LIMIT);
+    bridge::utils::CounterIterator<int> retry_end(rpc::RPC_DEFAULT_RETRY_LIMIT);
     etl::for_each(retry_begin, retry_end, [&ba](int) {
         ba.onAckTimeout();
     });

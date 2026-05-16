@@ -508,7 +508,15 @@ class SerialTransport:
                 raise self._RetryableSerialError()
         return False
 
-    async def _send_raw(self, cmd: int, pl: bytes, seq: int | None = None) -> bool:
+    async def send_raw(
+        self, command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
+        """Send a raw frame without tracking or ACK wait (e.g. system frames)."""
+        return await self._send_raw(command_id, payload, seq_id)
+
+    async def _send_raw(
+        self, command_id: int, payload: bytes, seq_id: int | None = None
+    ) -> bool:
         if not self.writer:
             return False
         if not self.state.serial_tx_allowed.is_set():
@@ -522,13 +530,13 @@ class SerialTransport:
                 logger.error("Unexpected error waiting for TX: %s", exc)
                 return False
 
-        if seq is None:
+        if seq_id is None:
             self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
-            seq = self._tx_sequence_id
+            seq_id = self._tx_sequence_id
 
         is_excluded = (
-            protocol.STATUS_CODE_MIN <= cmd <= protocol.STATUS_CODE_MAX
-            or protocol.SYSTEM_COMMAND_MIN <= cmd <= protocol.SYSTEM_COMMAND_MAX
+            protocol.STATUS_CODE_MIN <= command_id <= protocol.STATUS_CODE_MAX
+            or protocol.SYSTEM_COMMAND_MIN <= command_id <= protocol.SYSTEM_COMMAND_MAX
         )
 
         if (
@@ -542,26 +550,26 @@ class SerialTransport:
             self.state.link_nonce_counter = new_counter
 
             header_bytes = HEADER_STRUCT.pack(
-                protocol.PROTOCOL_VERSION, len(pl), int(cmd), seq
+                protocol.PROTOCOL_VERSION, len(payload), int(command_id), seq_id
             )
             encrypted_blob = aead_encrypt(
-                self.state.link_session_key, nonce, pl, header_bytes
+                self.state.link_session_key, nonce, payload, header_bytes
             )
             frame = Frame(
-                command_id=cmd,
-                sequence_id=seq,
+                command_id=command_id,
+                sequence_id=seq_id,
                 payload=encrypted_blob[:-16],
                 nonce=nonce,
                 tag=encrypted_blob[-16:],
             )
         else:
-            frame = Frame(command_id=cmd, sequence_id=seq, payload=pl)
+            frame = Frame(command_id=command_id, sequence_id=seq_id, payload=payload)
 
         encoded = cobs.encode(frame.build()) + protocol.FRAME_DELIMITER
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(
                 "[SERIAL -> MCU] [CMD:0x%02X] [RAW]: [%s]",
-                cmd,
+                command_id,
                 encoded.hex(" ").upper(),
             )
         self.writer.write(encoded)

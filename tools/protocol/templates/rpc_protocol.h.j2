@@ -41,6 +41,10 @@ inline constexpr etl::array<uint8_t, {{ handshake.hkdf_salt_len }}U> RPC_HANDSHA
 inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_auth_len }}U> RPC_HANDSHAKE_HKDF_INFO_AUTH RPC_PROGMEM = { {{ handshake.hkdf_info_auth_bytes }} };
 {%- endif %}
 
+{% if handshake.hkdf_info_session -%}
+inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_session_len }}U> RPC_HANDSHAKE_HKDF_INFO_SESSION RPC_PROGMEM = { {{ handshake.hkdf_info_session_bytes }} };
+{%- endif %}
+
 {% for cap, val in capabilities.items() -%}
 inline constexpr uint32_t RPC_CAPABILITY_{{ cap|upper }} = {{ val }}U;
 {% endfor %}

@@ -180,7 +180,11 @@ BridgeClass::BridgeClass(Stream& stream)
   bridge::hal::forceSafeState();
 }
 
+#include <wolfssl/wolfcrypt/settings.h>
+#include <wolfssl/wolfcrypt/types.h>
+
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
+  wolfCrypt_Init();
   _shared_secret.clear();
   if (secret != nullptr) {
     const etl::string_view s(secret);
@@ -651,11 +655,13 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
         etl::span<const uint8_t>(_shared_secret),
         etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
         etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
+    
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> full_tag;
     Hmac hmac_engine;
     wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(), rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH);
     wc_HmacUpdate(&hmac_engine, msg.nonce.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH);
     wc_HmacFinal(&hmac_engine, full_tag.data());
+    
     if (!rpc::security::timing_safe_equal(
             etl::span<const uint8_t>(full_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH),
             etl::span<const uint8_t>(msg.tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH))) {
@@ -663,18 +669,18 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
     }
+    
     etl::copy_n(full_tag.begin(), rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.tag.begin());
-    static constexpr etl::array<uint8_t, 11> info = {
-        {'s', 'e', 's', 's', 'i', 'o', 'n', '-', 'k', 'e', 'y'}};
     rpc::security::hkdf_sha256(etl::span<uint8_t>(_session_key),
                                etl::span<const uint8_t>(_shared_secret),
                                etl::span<const uint8_t>(msg.nonce),
-                               etl::span<const uint8_t>(info));
+                               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION));
     _tx_nonce_counter = 0;
     _rx_nonce_counter = 0;
     rpc::security::secure_zero(handshake_key);
     rpc::security::secure_zero(full_tag);
   }
+  
   _fsm.receive(bridge::fsm::EvHandshakeStart());
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
   (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);

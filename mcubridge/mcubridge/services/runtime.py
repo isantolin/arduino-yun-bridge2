@@ -125,7 +125,7 @@ class BridgeService:
             config=config,
             state=state,
             serial_timing=derive_serial_timing(config),
-            send_frame=self.serial.send,
+            send_frame=self.serial.send_raw,
             enqueue_mqtt=self.enqueue_mqtt,
             acknowledge_frame=self.serial.acknowledge,
             logger_=logger,

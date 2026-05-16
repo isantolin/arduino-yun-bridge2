@@ -11,8 +11,7 @@
 #include <etl/byte_stream.h>
 #include <etl/crc32.h>
 #include <etl/expected.h>
-#include <etl/crc32.h>
-#include "rpc_protocol.h"
+#include <etl/span.h>
 
 namespace rpc {
 
@@ -67,7 +66,7 @@ inline void serialize_header(const FrameHeader& h, etl::span<uint8_t> buffer) {
 }
 
 inline uint32_t compute(const Frame& f) {
-  etl::crc32_t4 crc;
+  etl::crc32 crc;
   etl::array<uint8_t, FRAME_HEADER_SIZE> header_buf;
   serialize_header(f.header, header_buf);
   crc.add(header_buf.begin(), header_buf.end());
@@ -113,7 +112,7 @@ class FrameParser {
     etl::byte_stream_reader reader(buffer.data(), buffer.size(),
                                    etl::endian::big);
     const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
-    etl::crc32_t4 crc_calc;
+    etl::crc32 crc_calc;
     crc_calc.add(buffer.begin(), buffer.begin() + crc_offset);
 
     Frame result = {};
@@ -148,7 +147,8 @@ class FrameParser {
                 AEAD_TAG_SIZE, result.tag.begin());
 
     reader.skip<uint8_t>(AEAD_NONCE_SIZE + result.header.payload_length +
-                         AEAD_TAG_SIZE);
+                        AEAD_TAG_SIZE);
+
     const auto crc_opt = reader.read<uint32_t>();
 
 #if BRIDGE_HOST_TEST

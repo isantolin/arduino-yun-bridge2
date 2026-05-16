@@ -309,9 +309,20 @@ class SerialHandshakeManager:
             and self._config.serial_shared_secret != b"DEBUG_INSECURE"
         )
 
-        if nonce_mismatch or missing_expected_tag or bad_tag_length or tag_mismatch:
+        if nonce_mismatch:
+            self._logger.debug(
+                "Ignoring LINK_SYNC_RESP with nonce mismatch (expected=%s, received=%s)",
+                expected.hex(),
+                nonce.hex(),
+            )
+            return False
+
+        if missing_expected_tag or bad_tag_length or tag_mismatch:
             self._logger.warning(
-                "LINK_SYNC_RESP auth mismatch (nonce=%s)",
+                "LINK_SYNC_RESP auth mismatch: missing_tag=%s, bad_len=%s, tag_mismatch=%s (nonce=%s)",
+                missing_expected_tag,
+                bad_tag_length,
+                tag_mismatch,
                 nonce.hex(),
             )
             await self._acknowledge_frame(

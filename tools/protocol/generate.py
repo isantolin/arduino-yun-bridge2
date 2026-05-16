@@ -638,6 +638,11 @@ class JinjaGenerator:
                 f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"]
             ),
             "hkdf_info_auth_len": len(hs["hkdf_info_auth"]),
+            "hkdf_info_session": hs["hkdf_info_session"],
+            "hkdf_info_session_bytes": ", ".join(
+                f"0x{ord(c):02X}" for c in hs["hkdf_info_session"]
+            ),
+            "hkdf_info_session_len": len(hs["hkdf_info_session"]),
         }
 
         render = template.render(

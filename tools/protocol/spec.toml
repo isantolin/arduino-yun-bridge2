@@ -30,7 +30,7 @@ bootloader_magic = 0xDEADC0DE
 process_default_exit_code = 0xFF
 crc_size = 4
 crc_covered_header_size = 7
-min_frame_size = 11
+min_frame_size = 39
 crc32_mask = 0xFFFFFFFF
 crc_initial = 0xFFFFFFFF
 nonce_counter_mask = 0xFFFFFFFFFFFFFFFF
@@ -129,7 +129,7 @@ max_observers_avr = 4
 max_observers_other = 8
 rx_history_size = 1
 rx_buffer_size_avr = 128
-rx_buffer_size_other = 128
+rx_buffer_size_other = 512
 max_pending_tx_frames_avr = 1
 max_pending_tx_frames_other = 2
 console_rx_buffer_size_avr = 32
@@ -183,6 +183,7 @@ retry_limit_max = 8
 hkdf_algorithm = "HKDF-SHA256"
 hkdf_salt = "mcubridge-v2"
 hkdf_info_auth = "handshake-auth"
+hkdf_info_session = "session-key"
 hkdf_output_length = 32
 
 # [MIL-SPEC] Anti-replay nonce structure

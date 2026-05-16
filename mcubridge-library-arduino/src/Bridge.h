@@ -56,7 +56,7 @@ namespace etl {
 namespace rpc {
 class Serializable {
  public:
-  virtual bool encode(msgpack::Encoder& enc) const = 0;
+  virtual bool encode(mpack_writer_t* writer) const = 0;
 };
 }  // namespace rpc
 
@@ -115,8 +115,14 @@ class BridgeClass {
 
   template <typename T>
   [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
-    msgpack::Encoder enc(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (packet.encode(enc)) return sendFrame(c, seq, enc.result());
+    mpack_writer_t writer;
+    mpack_writer_init(&writer, reinterpret_cast<char*>(_transient_buffer.data()),
+                      rpc::MAX_PAYLOAD_SIZE);
+    if (packet.encode(&writer)) {
+      size_t used = mpack_writer_buffer_used(&writer);
+      return sendFrame(c, seq,
+                       etl::span<const uint8_t>(_transient_buffer.data(), used));
+    }
     return false;
   }
 

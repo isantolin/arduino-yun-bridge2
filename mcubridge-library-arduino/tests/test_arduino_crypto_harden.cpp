@@ -50,10 +50,13 @@ void test_bridge_full_crypto_handshake_and_data() {
     rpc::Frame f_sync = {};
     f_sync.header = {rpc::PROTOCOL_VERSION, sizeof(rpc::payload::LinkSync), static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
     
-    etl::array<uint8_t, 128> pl_buf;
-    msgpack::Encoder enc(pl_buf.data(), pl_buf.size());
-    sync_req.encode(enc);
-    f_sync.payload = enc.result();
+    etl::array<uint8_t, 64> pl_buf;
+    mpack_writer_t writer;
+    mpack_writer_init(&writer, reinterpret_cast<char*>(pl_buf.data()), pl_buf.size());
+    if (sync_req.encode(&writer)) {
+        f_sync.payload = etl::span<const uint8_t>(pl_buf.data(), mpack_writer_buffer_used(&writer));
+        f_sync.header.payload_length = static_cast<uint16_t>(mpack_writer_buffer_used(&writer));
+    }
     f_sync.crc = rpc::checksum::compute(f_sync);
 
     // 2. Dispatch SYNC. 

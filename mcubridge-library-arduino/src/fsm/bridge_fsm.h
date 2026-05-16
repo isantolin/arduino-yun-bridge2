@@ -167,7 +167,18 @@ class BridgeFsm : public etl::fsm {
   BridgeFsm();
 
   bool isSynchronized() const;
+  bool isUnsynchronized() const;
   bool isAwaitingAck() const;
+
+ private:
+  StartupState _startup_state;
+  UnsynchronizedState _unsynchronized_state;
+  HandshakeState _handshake_state;
+  SynchronizedState _synchronized_state;
+  AwaitingAckState _awaiting_ack_state;
+  FaultState _fault_state;
+
+  etl::array<etl::ifsm_state*, 6> _state_table;
 };
 
 }  // namespace bridge::fsm

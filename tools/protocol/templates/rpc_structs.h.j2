@@ -16,9 +16,9 @@
 #include <etl/algorithm.h>
 #include <etl/span.h>
 #include <etl/expected.h>
+#include <mpack.h>
 #include "rpc_protocol.h"
 #include "rpc_frame.h"
-#include "msgpack_codec.h"
 
 namespace rpc::payload {
 {% for s in structs %}
@@ -40,49 +40,65 @@ struct {{ s.name }} {
 {%- endif %}
 {%- endfor %}
 
-    bool encode(msgpack::Encoder& enc) const {
-        enc.write_array({{ s.field_count }});
+    bool encode(mpack_writer_t* writer) const {
+        mpack_start_array(writer, {{ s.field_count }});
 {%- for f in s.fields %}
 {%- if f.kind == 'uint8' %}
-        enc.write_uint8({{ f.name }});
+        mpack_write_u8(writer, {{ f.name }});
 {%- elif f.kind == 'uint16' %}
-        enc.write_uint16({{ f.name }});
+        mpack_write_u16(writer, {{ f.name }});
 {%- elif f.kind == 'uint32' %}
-        enc.write_uint32({{ f.name }});
+        mpack_write_u32(writer, {{ f.name }});
 {%- elif f.kind == 'bin_view' %}
-        enc.write_bin({{ f.name }});
+        mpack_write_bin(writer, reinterpret_cast<const char*>({{ f.name }}.data()), static_cast<uint32_t>({{ f.name }}.size()));
 {%- elif f.kind == 'bin_fixed' %}
-        enc.write_bin(etl::span<const uint8_t>({{ f.name }}.data(), {{ f.name }}.size()));
+        mpack_write_bin(writer, reinterpret_cast<const char*>({{ f.name }}.data()), static_cast<uint32_t>({{ f.name }}.size()));
 {%- elif f.kind == 'str_view' %}
-        enc.write_str({{ f.name }}.data(), {{ f.name }}.size());
+        mpack_write_str(writer, {{ f.name }}.data(), static_cast<uint32_t>({{ f.name }}.size()));
 {%- endif %}
 {%- endfor %}
-        return enc.ok();
+        mpack_finish_array(writer);
+        return mpack_writer_error(writer) == mpack_ok;
     }
 
-    bool decode(msgpack::Decoder& dec) {
-        const uint8_t n = dec.read_array();
-        if (n < {{ s.field_count }}) return false;
+    bool decode(mpack_reader_t* reader) {
+        const uint32_t n = mpack_expect_array(reader);
+        if (mpack_reader_error(reader) != mpack_ok || n < {{ s.field_count }}) return false;
 {%- for f in s.fields %}
 {%- if f.kind == 'uint8' %}
-        {{ f.name }} = dec.read_uint8();
+        {{ f.name }} = mpack_expect_u8(reader);
 {%- elif f.kind == 'uint16' %}
-        {{ f.name }} = dec.read_uint16();
+        {{ f.name }} = mpack_expect_u16(reader);
 {%- elif f.kind == 'uint32' %}
-        {{ f.name }} = dec.read_uint32();
+        {{ f.name }} = mpack_expect_u32(reader);
 {%- elif f.kind == 'bin_view' %}
-        {{ f.name }} = dec.read_bin_view();
+        {
+            uint32_t _len = mpack_expect_bin(reader);
+            const char* _data = mpack_read_bytes_inplace(reader, _len);
+            mpack_done_bin(reader);
+            if (!_data && _len > 0) return false;
+            {{ f.name }} = {reinterpret_cast<const uint8_t*>(_data), static_cast<size_t>(_len)};
+        }
 {%- elif f.kind == 'bin_fixed' %}
         {
-            auto _view_{{ f.name }} = dec.read_bin_view();
-            if (_view_{{ f.name }}.size() == {{ f.size }}) etl::copy_n(_view_{{ f.name }}.data(), {{ f.size }}, {{ f.name }}.data());
-            else if (dec.ok()) return false;
+            uint32_t _len = mpack_expect_bin(reader);
+            const char* _data = mpack_read_bytes_inplace(reader, _len);
+            mpack_done_bin(reader);
+            if (_len == {{ f.size }} && _data) etl::copy_n(reinterpret_cast<const uint8_t*>(_data), {{ f.size }}, {{ f.name }}.data());
+            else return false;
         }
 {%- elif f.kind == 'str_view' %}
-        {{ f.name }} = dec.read_str_view();
+        {
+            uint32_t _len = mpack_expect_str(reader);
+            const char* _data = mpack_read_bytes_inplace(reader, _len);
+            mpack_done_str(reader);
+            if (!_data && _len > 0) return false;
+            {{ f.name }} = {_data, static_cast<size_t>(_len)};
+        }
 {%- endif %}
 {%- endfor %}
-        return dec.ok();
+        mpack_done_array(reader);
+        return mpack_reader_error(reader) == mpack_ok;
     }
 };
 {% endfor %}
@@ -94,8 +110,9 @@ namespace rpc::Payload {
 template <typename T>
 inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
     T msg = {};
-    msgpack::Decoder dec(frame.payload.data(), frame.header.payload_length);
-    if (!msg.decode(dec)) {
+    mpack_reader_t reader;
+    mpack_reader_init_data(&reader, reinterpret_cast<const char*>(frame.payload.data()), frame.header.payload_length);
+    if (!msg.decode(&reader)) {
         return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
     }
     return etl::expected<T, rpc::FrameError>(msg);

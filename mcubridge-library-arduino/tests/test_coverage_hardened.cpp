@@ -237,19 +237,19 @@ void test_bridge_duplicate_packet() {
 
     static etl::array<uint8_t, 256> buf;
     rpc::payload::DigitalWrite msg = {13, 1};
-    msgpack::Encoder enc(buf.data(), buf.size());
-    msg.encode(enc);
-    
-    rpc::Frame f = {};
-    f.header = {rpc::PROTOCOL_VERSION, (uint16_t)enc.result().size(), (uint16_t)rpc::CommandId::CMD_DIGITAL_WRITE, 10};
-    f.nonce.fill(0);
-    f.tag.fill(0);
-    f.payload = enc.result();
-    
-    bridge::router::CommandContext ctx(&f, f.header.command_id, 10, true, true);
-    
-    // This should trigger the "if (ctx.is_duplicate)" branch in _withPayloadAck
-    ba.handleDigitalWriteCommand(ctx);
+    mpack_writer_t writer;
+    mpack_writer_init(&writer, reinterpret_cast<char*>(buf.data()), buf.size());
+    if (msg.encode(&writer)) {
+        size_t used = mpack_writer_buffer_used(&writer);
+        rpc::Frame f = {};
+        f.header = {rpc::PROTOCOL_VERSION, (uint16_t)used, (uint16_t)rpc::CommandId::CMD_DIGITAL_WRITE, 10};
+        f.nonce.fill(0);
+        f.tag.fill(0);
+        f.payload = etl::span<const uint8_t>(buf.data(), used);
+        
+        bridge::router::CommandContext ctx(&f, f.header.command_id, 10, true, true);
+        ba.handleDigitalWriteCommand(ctx);
+    }
     
     TEST_ASSERT(true);
 }
@@ -262,14 +262,17 @@ void test_bridge_exhaustive_command_handlers() {
 
     static etl::array<uint8_t, 256> buf;
     auto trigger = [&](rpc::CommandId id, auto payload) {
-        msgpack::Encoder enc(buf.data(), buf.size());
-        payload.encode(enc);
-        rpc::Frame f = {};
-        f.header = {rpc::PROTOCOL_VERSION, (uint16_t)enc.result().size(), (uint16_t)id, 1};
-        f.nonce.fill(0);
-        f.tag.fill(0);
-        f.payload = enc.result();
-        ba.dispatch(f);
+        mpack_writer_t writer;
+        mpack_writer_init(&writer, reinterpret_cast<char*>(buf.data()), buf.size());
+        if (payload.encode(&writer)) {
+            size_t used = mpack_writer_buffer_used(&writer);
+            rpc::Frame f = {};
+            f.header = {rpc::PROTOCOL_VERSION, (uint16_t)used, (uint16_t)id, 1};
+            f.nonce.fill(0);
+            f.tag.fill(0);
+            f.payload = etl::span<const uint8_t>(buf.data(), used);
+            ba.dispatch(f);
+        }
     };
 
     trigger(rpc::CommandId::CMD_SET_BAUDRATE, rpc::payload::SetBaudratePacket{57600});

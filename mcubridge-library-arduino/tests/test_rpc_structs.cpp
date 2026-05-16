@@ -15,20 +15,24 @@ void tearDown(void) {}
 template <typename T>
 void test_roundtrip(const T& p) {
     uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-    msgpack::Encoder enc(buffer, rpc::MAX_PAYLOAD_SIZE);
-    TEST_ASSERT(p.encode(enc));
+    mpack_writer_t writer;
+    mpack_writer_init(&writer, reinterpret_cast<char*>(buffer), rpc::MAX_PAYLOAD_SIZE);
+    TEST_ASSERT(p.encode(&writer));
+    size_t used = mpack_writer_buffer_used(&writer);
     
     T p2 = {};
-    msgpack::Decoder dec(buffer, enc.size());
-    TEST_ASSERT(p2.decode(dec));
+    mpack_reader_t reader;
+    mpack_reader_init_data(&reader, reinterpret_cast<const char*>(buffer), used);
+    TEST_ASSERT(p2.decode(&reader));
 }
 
 template <typename T>
 void test_chaos_decode() {
     uint8_t buffer[2] = {0x91, 0xFF}; // Array of 1 with junk
     T p = {};
-    msgpack::Decoder dec(buffer, 2);
-    (void)p.decode(dec); // Should fail many checks
+    mpack_reader_t reader;
+    mpack_reader_init_data(&reader, reinterpret_cast<const char*>(buffer), 2);
+    (void)p.decode(&reader); // Should fail many checks
 }
 
 void test_all_structs_roundtrip() {

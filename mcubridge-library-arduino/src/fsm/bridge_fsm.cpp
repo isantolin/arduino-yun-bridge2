@@ -7,25 +7,21 @@ namespace bridge::fsm {
 
 // --- FSM Implementation ---
 
-static StartupState startup_state;
-static UnsynchronizedState unsynchronized_state;
-static HandshakeState handshake_state;
-static SynchronizedState synchronized_state;
-static AwaitingAckState awaiting_ack_state;
-static FaultState fault_state;
-
-static etl::array<etl::ifsm_state*, 6> state_table = {
-    &startup_state,      &unsynchronized_state, &handshake_state,
-    &synchronized_state, &awaiting_ack_state,   &fault_state};
-
-BridgeFsm::BridgeFsm() : etl::fsm(0) {
-  set_states(state_table.data(), state_table.size());
+BridgeFsm::BridgeFsm()
+    : etl::fsm(static_cast<etl::fsm_state_id_t>(StateId::STARTUP)),
+      _state_table({&_startup_state, &_unsynchronized_state, &_handshake_state,
+                    &_synchronized_state, &_awaiting_ack_state, &_fault_state}) {
+  set_states(_state_table.data(), _state_table.size());
 }
 
 bool BridgeFsm::isSynchronized() const {
   const auto sid = get_state_id();
   return sid == static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED) ||
          sid == static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK);
+}
+
+bool BridgeFsm::isUnsynchronized() const {
+  return get_state_id() == static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
 }
 
 bool BridgeFsm::isAwaitingAck() const {

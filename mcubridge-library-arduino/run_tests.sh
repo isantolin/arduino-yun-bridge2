@@ -100,7 +100,7 @@ for src in "${SOURCES[@]}"; do
     fi
 done
 
-TESTS="test_msgpack test_protocol test_bridge_core test_bridge_components test_fsm_mutual_auth test_integrated test_host_filesystem test_arduino_100_coverage test_coverage_full test_coverage_hardened"
+TESTS="test_protocol test_bridge_core test_bridge_components test_fsm_mutual_auth test_integrated test_host_filesystem test_arduino_100_coverage test_coverage_full test_coverage_hardened"
 
 for t in $TESTS; do
     echo "=== Building $t ==="

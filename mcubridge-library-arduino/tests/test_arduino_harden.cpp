@@ -139,9 +139,12 @@ void test_bridge_linksync_auth_failure() {
     f.header = {rpc::PROTOCOL_VERSION, sizeof(rpc::payload::LinkSync), static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
     
     etl::array<uint8_t, 64> payload_buf;
-    msgpack::Encoder enc(payload_buf.data(), payload_buf.size());
-    sync_msg.encode(enc);
-    f.payload = enc.result();
+    mpack_writer_t writer;
+    mpack_writer_init(&writer, reinterpret_cast<char*>(payload_buf.data()), payload_buf.size());
+    if (sync_msg.encode(&writer)) {
+        f.payload = etl::span<const uint8_t>(payload_buf.data(), mpack_writer_buffer_used(&writer));
+        f.header.payload_length = static_cast<uint16_t>(mpack_writer_buffer_used(&writer));
+    }
     
     ba.dispatch(f);
     
@@ -213,9 +216,12 @@ void test_bridge_nonce_reuse_attack() {
     rpc::Frame f = {};
     f.header = {rpc::PROTOCOL_VERSION, sizeof(rpc::payload::LinkSync), static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
     etl::array<uint8_t, 64> pl_buf;
-    msgpack::Encoder enc(pl_buf.data(), pl_buf.size());
-    sync_msg.encode(enc);
-    f.payload = enc.result();
+    mpack_writer_t writer;
+    mpack_writer_init(&writer, reinterpret_cast<char*>(pl_buf.data()), pl_buf.size());
+    if (sync_msg.encode(&writer)) {
+        f.payload = etl::span<const uint8_t>(pl_buf.data(), mpack_writer_buffer_used(&writer));
+        f.header.payload_length = static_cast<uint16_t>(mpack_writer_buffer_used(&writer));
+    }
     ba.dispatch(f);
     TEST_ASSERT_TRUE(ba.isSynchronized());
 

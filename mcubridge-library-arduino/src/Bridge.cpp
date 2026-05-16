@@ -88,89 +88,90 @@ BridgeClass::BridgeClass(Stream& stream)
   _tasks.push_back(&_serial_task);
   _tasks.push_back(&_timer_task);
 
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)] =
-      &BridgeClass::_handleGetVersion;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY)] =
-      &BridgeClass::_handleGetFreeMemory;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC)] =
-      &BridgeClass::_handleLinkSync;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET)] =
-      &BridgeClass::_handleLinkReset;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES)] =
-      &BridgeClass::_handleGetCapabilities;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE)] =
-      &BridgeClass::_handleSetBaudrateCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER)] =
-      &BridgeClass::_handleEnterBootloaderCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_XOFF)] =
-      &BridgeClass::_handleXoff;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_XON)] =
-      &BridgeClass::_handleXon;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE)] =
-      &BridgeClass::_handleSetPinModeCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE)] =
-      &BridgeClass::_handleDigitalWriteCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE)] =
-      &BridgeClass::_handleAnalogWriteCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)] =
-      &BridgeClass::_handleDigitalReadCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ)] =
-      &BridgeClass::_handleAnalogReadCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)] =
-      &BridgeClass::_handleConsoleWriteCommand;
-  _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_OK)] =
-      &BridgeClass::_handleStatusOk;
-  _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED)] =
-      &BridgeClass::_handleStatusMalformed;
-  _dispatch_table[rpc::to_underlying(rpc::StatusCode::STATUS_ACK)] =
-      &BridgeClass::_handleStatusAck;
+  struct DispatchEntry {
+    uint16_t id;
+    DispatchHandler handler;
+  };
 
+  static constexpr DispatchEntry kEntries[] = {
+      {rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION),
+       &BridgeClass::_handleGetVersion},
+      {rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY),
+       &BridgeClass::_handleGetFreeMemory},
+      {rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC),
+       &BridgeClass::_handleLinkSync},
+      {rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET),
+       &BridgeClass::_handleLinkReset},
+      {rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES),
+       &BridgeClass::_handleGetCapabilities},
+      {rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
+       &BridgeClass::_handleSetBaudrateCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER),
+       &BridgeClass::_handleEnterBootloaderCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_XOFF), &BridgeClass::_handleXoff},
+      {rpc::to_underlying(rpc::CommandId::CMD_XON), &BridgeClass::_handleXon},
+      {rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
+       &BridgeClass::_handleSetPinModeCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE),
+       &BridgeClass::_handleDigitalWriteCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),
+       &BridgeClass::_handleAnalogWriteCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ),
+       &BridgeClass::_handleDigitalReadCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ),
+       &BridgeClass::_handleAnalogReadCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE),
+       &BridgeClass::_handleConsoleWriteCommand},
+      {rpc::to_underlying(rpc::StatusCode::STATUS_OK),
+       &BridgeClass::_handleStatusOk},
+      {rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED),
+       &BridgeClass::_handleStatusMalformed},
+      {rpc::to_underlying(rpc::StatusCode::STATUS_ACK),
+       &BridgeClass::_handleStatusAck},
 #if BRIDGE_ENABLE_DATASTORE
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)] =
-      &BridgeClass::_handleDataStoreGetResponseCommand;
+      {rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP),
+       &BridgeClass::_handleDataStoreGetResponseCommand},
 #endif
-
 #if BRIDGE_ENABLE_MAILBOX
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)] =
-      &BridgeClass::_handleMailboxPushCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP)] =
-      &BridgeClass::_handleMailboxReadResponseCommand;
-  _dispatch_table[rpc::to_underlying(
-      rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)] =
-      &BridgeClass::_handleMailboxAvailableResponseCommand;
+      {rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH),
+       &BridgeClass::_handleMailboxPushCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP),
+       &BridgeClass::_handleMailboxReadResponseCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP),
+       &BridgeClass::_handleMailboxAvailableResponseCommand},
 #endif
-
 #if BRIDGE_ENABLE_FILESYSTEM
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)] =
-      &BridgeClass::_handleFileWriteCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ)] =
-      &BridgeClass::_handleFileReadCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE)] =
-      &BridgeClass::_handleFileRemoveCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP)] =
-      &BridgeClass::_handleFileReadResponseCommand;
+      {rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE),
+       &BridgeClass::_handleFileWriteCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_FILE_READ),
+       &BridgeClass::_handleFileReadCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE),
+       &BridgeClass::_handleFileRemoveCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP),
+       &BridgeClass::_handleFileReadResponseCommand},
 #endif
-
 #if BRIDGE_ENABLE_PROCESS
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL)] =
-      &BridgeClass::_handleProcessKillCommand;
-  _dispatch_table[rpc::to_underlying(
-      rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP)] =
-      &BridgeClass::_handleProcessRunAsyncResponseCommand;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)] =
-      &BridgeClass::_handleProcessPollResponseCommand;
+      {rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL),
+       &BridgeClass::_handleProcessKillCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP),
+       &BridgeClass::_handleProcessRunAsyncResponseCommand},
+      {rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP),
+       &BridgeClass::_handleProcessPollResponseCommand},
 #endif
-
 #if BRIDGE_ENABLE_SPI
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)] =
-      &BridgeClass::_handleSpiBegin;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER)] =
-      &BridgeClass::_handleSpiTransfer;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_END)] =
-      &BridgeClass::_handleSpiEnd;
-  _dispatch_table[rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)] =
-      &BridgeClass::_handleSpiSetConfigCommand;
+      {rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN),
+       &BridgeClass::_handleSpiBegin},
+      {rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER),
+       &BridgeClass::_handleSpiTransfer},
+      {rpc::to_underlying(rpc::CommandId::CMD_SPI_END),
+       &BridgeClass::_handleSpiEnd},
+      {rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG),
+       &BridgeClass::_handleSpiSetConfigCommand},
 #endif
+  };
+
+  etl::for_each(etl::begin(kEntries), etl::end(kEntries),
+                [this](const DispatchEntry& e) { _dispatch_table[e.id] = e.handler; });
 
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR) {

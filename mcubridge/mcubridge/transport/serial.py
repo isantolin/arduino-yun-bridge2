@@ -37,7 +37,7 @@ from mcubridge.config.const import (
     SERIAL_MIN_ACK_TIMEOUT,
 )
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.frame import Frame, HEADER_STRUCT
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
     RESPONSE_ONLY_COMMANDS,
@@ -540,10 +540,9 @@ class SerialTransport:
                 self.state.link_nonce_counter
             )
             self.state.link_nonce_counter = new_counter
-            import struct
 
-            header_bytes = struct.pack(
-                ">BHHH", protocol.PROTOCOL_VERSION, len(pl), int(cmd), seq
+            header_bytes = HEADER_STRUCT.pack(
+                protocol.PROTOCOL_VERSION, len(pl), int(cmd), seq
             )
             encrypted_blob = aead_encrypt(
                 self.state.link_session_key, nonce, pl, header_bytes

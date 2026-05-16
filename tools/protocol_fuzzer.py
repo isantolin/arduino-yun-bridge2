@@ -18,6 +18,8 @@ from mcubridge.protocol import protocol
 # Constants from protocol spec
 PROTOCOL_VERSION: Final[int] = 0x02
 FRAME_DELIMITER: Final[bytes] = b"\x00"
+_HEADER_STRUCT = struct.Struct(">BHHH")
+_CRC_STRUCT = struct.Struct(">I")
 
 logger = structlog.get_logger("fuzzer")
 
@@ -40,10 +42,14 @@ class ProtocolFuzzer:
         self, cmd: int, seq: int, payload: bytes, override_crc: int | None = None
     ) -> bytes:
         # Re-packing header properly based on frame.py: version(8), len(16), cmd(16), seq(16)
-        header = struct.pack(">BHHH", PROTOCOL_VERSION, len(payload), cmd, seq)
+        header = _HEADER_STRUCT.pack(PROTOCOL_VERSION, len(payload), cmd, seq)
         body = header + payload
-        crc = override_crc if override_crc is not None else (crc32(body) & 0xFFFFFFFF)
-        full = body + struct.pack(">I", crc)
+        crc = (
+            override_crc
+            if override_crc is not None
+            else (crc32(body) & protocol.CRC32_MASK)
+        )
+        full = body + _CRC_STRUCT.pack(crc)
         return cobs.encode(full) + FRAME_DELIMITER
 
     async def send_raw(self, data: bytes) -> None:
@@ -79,10 +85,10 @@ class ProtocolFuzzer:
             await self.send_raw(frame)
 
         elif mode == "invalid_version":
-            header = struct.pack(">BHHH", 0xFF, 3, 0x0001, self.seq_id)
+            header = _HEADER_STRUCT.pack(0xFF, 3, 0x0001, self.seq_id)
             body = header + b"VER"
             crc = crc32(body) & protocol.CRC32_MASK
-            frame = cobs.encode(body + struct.pack(">I", crc)) + FRAME_DELIMITER
+            frame = cobs.encode(body + _CRC_STRUCT.pack(crc)) + FRAME_DELIMITER
             await self.send_raw(frame)
 
         elif mode == "malformed_cobs":
@@ -90,7 +96,7 @@ class ProtocolFuzzer:
             await self.send_raw(bad_data + FRAME_DELIMITER)
 
         elif mode == "oversized_payload":
-            header = struct.pack(">BHHH", PROTOCOL_VERSION, 4096, 0x0001, self.seq_id)
+            header = _HEADER_STRUCT.pack(PROTOCOL_VERSION, 4096, 0x0001, self.seq_id)
             await self.send_raw(cobs.encode(header + b"SHORT") + FRAME_DELIMITER)
 
         elif mode == "random_garbage":

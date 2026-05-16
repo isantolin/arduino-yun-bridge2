@@ -22,10 +22,12 @@ from . import protocol
 from .rle import rle_encode, rle_decode, should_compress
 
 _HEADER_FORMAT = protocol.FRAME_HEADER_FORMAT
-_HEADER_SIZE = struct.calcsize(_HEADER_FORMAT)
+HEADER_STRUCT = struct.Struct(_HEADER_FORMAT)
+_HEADER_SIZE = HEADER_STRUCT.size
 _NONCE_SIZE = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE = protocol.AEAD_TAG_SIZE
-_CRC_SIZE = protocol.CRC_SIZE
+CRC_STRUCT = struct.Struct(protocol.FRAME_CRC_FORMAT)
+_CRC_SIZE = CRC_STRUCT.size
 
 
 def _frame_crc(data: bytes | bytearray | memoryview) -> int:
@@ -90,8 +92,7 @@ class Frame(msgspec.Struct, frozen=True):
                 cmd_id |= protocol.CMD_FLAG_COMPRESSED
 
         try:
-            header = struct.pack(
-                _HEADER_FORMAT,
+            header = HEADER_STRUCT.pack(
                 protocol.PROTOCOL_VERSION,
                 len(payload),
                 cmd_id,
@@ -103,7 +104,7 @@ class Frame(msgspec.Struct, frozen=True):
         body = header + self.nonce + payload + self.tag
         crc = _frame_crc(body)
 
-        return body + struct.pack(protocol.FRAME_CRC_FORMAT, crc)
+        return body + CRC_STRUCT.pack(crc)
 
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
@@ -114,15 +115,22 @@ class Frame(msgspec.Struct, frozen=True):
 
         body_len = len(buf) - _CRC_SIZE
         body = buf[:body_len]
-        expected_crc = struct.unpack(protocol.FRAME_CRC_FORMAT, buf[body_len:])[0]
+        try:
+            expected_crc = CRC_STRUCT.unpack(buf[body_len:])[0]
+        except struct.error as e:
+            raise ValueError(f"Malformed CRC field: {e}") from e
+
         actual_crc = _frame_crc(body)
 
         if expected_crc != actual_crc:
             raise ValueError(f"CRC mismatch: expected {expected_crc}, got {actual_crc}")
 
-        version, payload_len, cmd_id, seq_id = struct.unpack(
-            ">BHHH", body[:_HEADER_SIZE]
-        )
+        try:
+            version, payload_len, cmd_id, seq_id = HEADER_STRUCT.unpack(
+                body[:_HEADER_SIZE]
+            )
+        except struct.error as e:
+            raise ValueError(f"Malformed header: {e}") from e
 
         if version != protocol.PROTOCOL_VERSION:
             raise ValueError("Incomplete or malformed frame: invalid version")
@@ -140,7 +148,7 @@ class Frame(msgspec.Struct, frozen=True):
             try:
                 payload = rle_decode(payload)
                 cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
-            except Exception as e:
+            except ValueError as e:
                 raise ValueError(
                     f"Incomplete or malformed frame: RLE decode failed: {e}"
                 ) from e

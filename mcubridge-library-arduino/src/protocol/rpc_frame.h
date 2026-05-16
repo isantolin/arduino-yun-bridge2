@@ -11,16 +11,16 @@
 #include <etl/byte_stream.h>
 #include <etl/crc32.h>
 #include <etl/expected.h>
-#include <etl/span.h>
+#include <etl/crc32.h>
+#include "rpc_protocol.h"
 
 namespace rpc {
 
-inline constexpr size_t AEAD_NONCE_SIZE = 12;
-inline constexpr size_t AEAD_TAG_SIZE = 16;
-inline constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
-inline constexpr size_t FRAME_HEADER_SIZE = 7;
-inline constexpr size_t MIN_FRAME_SIZE =
-    FRAME_HEADER_SIZE + AEAD_NONCE_SIZE + AEAD_TAG_SIZE + CRC_TRAILER_SIZE;
+inline constexpr size_t AEAD_NONCE_SIZE = rpc::RPC_AEAD_NONCE_SIZE;
+inline constexpr size_t AEAD_TAG_SIZE = rpc::RPC_AEAD_TAG_SIZE;
+inline constexpr size_t CRC_TRAILER_SIZE = rpc::RPC_CRC_SIZE;
+inline constexpr size_t FRAME_HEADER_SIZE = rpc::RPC_CRC_COVERED_HEADER_SIZE;
+inline constexpr size_t MIN_FRAME_SIZE = rpc::RPC_MIN_FRAME_SIZE;
 inline constexpr size_t MAX_FRAME_SIZE =
     FRAME_HEADER_SIZE + AEAD_NONCE_SIZE + MAX_PAYLOAD_SIZE + AEAD_TAG_SIZE +
     CRC_TRAILER_SIZE;

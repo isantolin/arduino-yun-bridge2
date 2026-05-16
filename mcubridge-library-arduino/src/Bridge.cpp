@@ -48,9 +48,9 @@ BridgeClass::BridgeClass(Stream& stream)
       _last_command_id(0),
       _tx_sequence_id(0),
       _retry_count(0),
-      _retry_limit(bridge::config::DEFAULT_ACK_RETRY_LIMIT),
-      _ack_timeout_ms(bridge::config::DEFAULT_ACK_TIMEOUT_MS),
-      _response_timeout_ms(bridge::config::DEFAULT_RESPONSE_TIMEOUT_MS),
+      _retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
+      _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
+      _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS),
       _pending_baudrate(0),
       _consecutive_crc_errors(0),
       _last_parse_error(rpc::FrameError::NONE),
@@ -207,7 +207,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
       _timers.register_timer([]() { Bridge._onAckTimeout(); }, _ack_timeout_ms,
                              etl::timer::mode::REPEATING);
   _timer_ids[bridge::scheduler::TIMER_RX_DEDUPE] = _timers.register_timer(
-      []() { Bridge._onRxDedupe(); }, bridge::config::HANDSHAKE_RETRY_DELAY_MS,
+      []() { Bridge._onRxDedupe(); }, bridge::config::RX_DEDUPE_INTERVAL_MS,
       etl::timer::mode::REPEATING);
   _timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE] = _timers.register_timer(
       []() { Bridge._onBaudrateChange(); },
@@ -231,10 +231,10 @@ void BridgeClass::WatchdogTask::task_process_work() {
 void BridgeClass::SerialTask::task_process_work() {
   bridge._packet_serial.update(bridge._stream);
   int avail = bridge._stream.available();
-  if (!xoff_sent && avail > 48) {
+  if (!xoff_sent && avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
     bridge.signalXoff();
     xoff_sent = true;
-  } else if (xoff_sent && avail < 16) {
+  } else if (xoff_sent && avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {
     bridge.signalXon();
     xoff_sent = false;
   }
@@ -269,8 +269,8 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     (void)sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
     return;
   }
-  if (cmd_id < DISPATCH_TABLE_SIZE && _dispatch_table[cmd_id] != nullptr) {
-    (this->*(_dispatch_table[cmd_id]))(ctx);
+  if (cmd_id < rpc::RPC_MAX_COMMAND_ID && _dispatch_table[cmd_id] != nullptr) {
+    (this->*_dispatch_table[cmd_id])(ctx);
   } else {
     onUnknownCommand(ctx);
   }
@@ -457,7 +457,7 @@ void BridgeClass::_handleAck(uint16_t cmd) {
 void BridgeClass::_clearPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
     struct ClearQueue {
-      static void run(etl::queue<BridgeClass::PendingTxFrame, bridge::config::TX_QUEUE_CAPACITY>& q, etl::pool<TxPayloadBuffer, bridge::config::TX_QUEUE_CAPACITY>& pool) {
+      static void run(etl::queue<BridgeClass::PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES>& q, etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>& pool) {
         if (q.empty()) return;
         TxPayloadBuffer* buf = q.front().buffer;
         if (buf) pool.release(buf);
@@ -642,28 +642,28 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   }
   const auto& msg = res.value();
   rpc::payload::LinkSync resp = {};
-  etl::copy_n(msg.nonce.begin(), 16, resp.nonce.begin());
+  etl::copy_n(msg.nonce.begin(), rpc::RPC_HANDSHAKE_NONCE_LENGTH, resp.nonce.begin());
 
   if (!_shared_secret.empty()) {
-    etl::array<uint8_t, 32> handshake_key;
+    etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key;
     rpc::security::hkdf_sha256(
         etl::span<uint8_t>(handshake_key),
         etl::span<const uint8_t>(_shared_secret),
         etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
         etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
-    etl::array<uint8_t, 32> full_tag;
+    etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> full_tag;
     Hmac hmac_engine;
-    wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(), 32);
-    wc_HmacUpdate(&hmac_engine, msg.nonce.data(), 16);
+    wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(), rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH);
+    wc_HmacUpdate(&hmac_engine, msg.nonce.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH);
     wc_HmacFinal(&hmac_engine, full_tag.data());
     if (!rpc::security::timing_safe_equal(
-            etl::span<const uint8_t>(full_tag.data(), 16),
-            etl::span<const uint8_t>(msg.tag.data(), 16))) {
+            etl::span<const uint8_t>(full_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH),
+            etl::span<const uint8_t>(msg.tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH))) {
       _fsm.receive(bridge::fsm::EvHandshakeFailed());
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
     }
-    etl::copy_n(full_tag.begin(), 16, resp.tag.begin());
+    etl::copy_n(full_tag.begin(), rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.tag.begin());
     static constexpr etl::array<uint8_t, 11> info = {
         {'s', 'e', 's', 's', 'i', 'o', 'n', '-', 'k', 'e', 'y'}};
     rpc::security::hkdf_sha256(etl::span<uint8_t>(_session_key),

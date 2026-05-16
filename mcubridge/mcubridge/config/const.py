@@ -30,6 +30,8 @@ from ssl import TLSVersion
 # These values define the default behavior of the Python daemon.
 # They can usually be overridden by UCI configuration or Environment Variables.
 
+from ..protocol import protocol
+
 # -- Serial Port Defaults --
 DEFAULT_SERIAL_PORT: str = "/dev/ttyATH0"
 # Initial wait for serial port availability (reconnect loop)
@@ -49,11 +51,11 @@ DEFAULT_SERIAL_FALLBACK_THRESHOLD: int = 5
 # Backoff strategy for handshake retries
 SERIAL_HANDSHAKE_BACKOFF_BASE: float = 1.0
 SERIAL_HANDSHAKE_BACKOFF_MAX: float = 60.0
-SERIAL_MIN_ACK_TIMEOUT: float = 0.5
+SERIAL_MIN_ACK_TIMEOUT: float = float(protocol.DEFAULT_ACK_TIMEOUT_MS) / 1000.0
 
 # -- MQTT Defaults --
 DEFAULT_MQTT_HOST: str = "127.0.0.1"
-DEFAULT_MQTT_PORT: int = 8883
+DEFAULT_MQTT_PORT: int = protocol.DEFAULT_MQTT_PORT
 DEFAULT_MQTT_CAFILE: str = "/etc/ssl/certs/ca-certificates.crt"
 DEFAULT_MQTT_QUEUE_LIMIT: int = 256
 MQTT_TLS_MIN_VERSION: TLSVersion = TLSVersion.TLSv1_2
@@ -77,8 +79,8 @@ SPOOL_BACKOFF_MAX_SECONDS: float = 60.0
 DEFAULT_FILE_SYSTEM_ROOT: str = "/tmp/yun_files"
 DEFAULT_FILE_WRITE_MAX_BYTES: int = 262144
 DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 8388608
-# Warning threshold for files growing large in RAM (1MB)
-FILE_LARGE_WARNING_BYTES: int = 1048576
+# Warning threshold for files growing large in RAM (Inherited from spec.toml)
+FILE_LARGE_WARNING_BYTES: int = protocol.FILE_LARGE_WARNING_BYTES
 # Paths considered safe (volatile/RAM) for writing to avoid flash wear
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset(
     {"/tmp", "/var/run", "/run", "/dev/shm"}

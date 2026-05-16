@@ -195,6 +195,9 @@ class JinjaGenerator:
 
         c = spec.constants
         constants = [
+            {"name": "RPC_AEAD_NONCE_SIZE", "type": "size_t", "value": c["aead_nonce_size"]},
+            {"name": "RPC_AEAD_TAG_SIZE", "type": "size_t", "value": c["aead_tag_size"]},
+            {"name": "RPC_AEAD_KEY_SIZE", "type": "size_t", "value": c["aead_key_size"]},
             {
                 "name": "PROTOCOL_VERSION",
                 "type": "uint8_t",
@@ -254,6 +257,11 @@ class JinjaGenerator:
                 "value": c["max_pending_tx_frames"],
             },
             {
+                "name": "RPC_MAX_COMMAND_ID",
+                "type": "uint16_t",
+                "value": c["max_command_id"],
+            },
+            {
                 "name": "RPC_INVALID_ID_SENTINEL",
                 "type": "uint16_t",
                 "value": c["invalid_id_sentinel"],
@@ -304,6 +312,17 @@ class JinjaGenerator:
                 "name": "RPC_PROCESS_DEFAULT_EXIT_CODE",
                 "type": "uint8_t",
                 "value": c["process_default_exit_code"],
+            },
+            {"name": "RPC_CRC_SIZE", "type": "size_t", "value": c["crc_size"]},
+            {
+                "name": "RPC_CRC_COVERED_HEADER_SIZE",
+                "type": "size_t",
+                "value": c["crc_covered_header_size"],
+            },
+            {
+                "name": "RPC_MIN_FRAME_SIZE",
+                "type": "size_t",
+                "value": c["min_frame_size"],
             },
             {"name": "RPC_CRC32_MASK", "type": "uint32_t", "value": c["crc32_mask"]},
             {"name": "RPC_CRC_INITIAL", "type": "uint32_t", "value": c["crc_initial"]},
@@ -619,6 +638,7 @@ class JinjaGenerator:
             statuses=spec.statuses,
             commands=spec.commands,
             ack_commands=[c for c in spec.commands if c.requires_ack],
+            status_reasons=spec.status_reasons,
         )
         out_path.write_text(render, encoding="utf-8")
 
@@ -668,6 +688,7 @@ class JinjaGenerator:
             },
             {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
             {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
+            {"name": "DEFAULT_MQTT_PORT", "type": "int", "value": c["default_mqtt_port"]},
             {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
             {
                 "name": "DEFAULT_SAFE_BAUDRATE",
@@ -903,6 +924,11 @@ class JinjaGenerator:
             },
             {"name": "SPI_COMMAND_MIN", "type": "int", "value": c["spi_command_min"]},
             {"name": "SPI_COMMAND_MAX", "type": "int", "value": c["spi_command_max"]},
+            {
+                "name": "FILE_LARGE_WARNING_BYTES",
+                "type": "int",
+                "value": spec.hardware["file_large_warning_bytes"],
+            },
         ]
 
         hs = spec.handshake
@@ -1147,6 +1173,7 @@ class JinjaGenerator:
         constants = [
             {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
             {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
+            {"name": "DEFAULT_MQTT_PORT", "type": "int", "value": c["default_mqtt_port"]},
             {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
             {
                 "name": "MAX_FILEPATH_LENGTH",

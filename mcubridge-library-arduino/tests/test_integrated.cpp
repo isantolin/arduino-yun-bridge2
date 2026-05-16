@@ -19,7 +19,7 @@ namespace {
 void integrated_test_bridge_core() {
   BiStream stream;
   BridgeClass localBridge(stream);
-  localBridge.begin(115200, "test_secret_1234567890123456");
+  localBridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "test_secret_1234567890123456");
   auto accessor = bridge::test::TestAccessor::create(localBridge);
   accessor.onStartupStabilized();
 

@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 import asyncio
 import pytest
 from cobs import cobs
+from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import Command
@@ -194,7 +195,7 @@ async def test_process_packet_fallback_triggers_negotiation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _make_config()
-    config.serial_baud = 115200
+    config.serial_baud = protocol.DEFAULT_BAUDRATE
     config.serial_safe_baud = 57600
     config.serial_fallback_threshold = 2
     state = create_runtime_state(config)

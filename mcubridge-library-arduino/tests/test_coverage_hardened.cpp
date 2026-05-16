@@ -57,7 +57,7 @@ void test_bridge_queue_full_and_retransmit() {
     
     // Fill the TX queue with reliable commands to trigger full condition
     bridge::utils::CounterIterator<uint32_t> fill_begin(0);
-    bridge::utils::CounterIterator<uint32_t> fill_end(bridge::config::TX_QUEUE_CAPACITY);
+    bridge::utils::CounterIterator<uint32_t> fill_end(bridge::config::MAX_PENDING_TX_FRAMES);
     etl::for_each(fill_begin, fill_end, [&ba](uint32_t i) {
         // Use a reliable command (e.g., CMD_CONSOLE_WRITE)
         (void)ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 100 + i, {});

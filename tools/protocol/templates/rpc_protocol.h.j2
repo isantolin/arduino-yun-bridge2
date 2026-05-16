@@ -65,6 +65,12 @@ enum class CommandId : uint16_t {
 {%- endfor %}
 };
 
+namespace status_reason {
+{%- for name, val in status_reasons.items() %}
+inline constexpr char {{ name|upper }}[] = "{{ val }}";
+{%- endfor %}
+}
+
 template <typename E>
 constexpr etl::underlying_type_t<E> to_underlying(E value) {
     return static_cast<etl::underlying_type_t<E>>(value);
@@ -72,16 +78,15 @@ constexpr etl::underlying_type_t<E> to_underlying(E value) {
 
 constexpr bool requires_ack(CommandId command_id) {
 {%- if ack_commands %}
-    constexpr uint16_t MAX_CMD_ID = 256U;
     struct AckBitset {
-        uint32_t bits[MAX_CMD_ID / 32U] = {0};
+        uint32_t bits[RPC_MAX_COMMAND_ID / 32U] = {0};
         constexpr AckBitset() {
             {%- for cmd in ack_commands %}
             bits[static_cast<uint16_t>(CommandId::{{ cmd.name }}) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::{{ cmd.name }}) % 32U));
             {%- endfor %}
         }
         constexpr bool test(uint16_t id) const {
-            if (id >= MAX_CMD_ID) return false;
+            if (id >= RPC_MAX_COMMAND_ID) return false;
             return (bits[id / 32U] & (1UL << (id % 32U))) != 0;
         }
     };

@@ -174,15 +174,15 @@ class BridgeClass {
   uint8_t _consecutive_crc_errors;
   rpc::FrameError _last_parse_error;
 
-  etl::array<uint8_t, 256> _ps_rx_storage;
-  etl::array<uint8_t, 256> _ps_work_buffer;
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_rx_storage;
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_work_buffer;
   PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::NoCRC,
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;
 
   friend class bridge::test::TestAccessor;
-  etl::vector<uint8_t, 32> _shared_secret;
-  etl::array<uint8_t, 32> _session_key;
+  etl::vector<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _shared_secret;
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _session_key;
   uint64_t _tx_nonce_counter;
   uint64_t _rx_nonce_counter;
   bridge::fsm::BridgeFsm _fsm;
@@ -218,15 +218,15 @@ class BridgeClass {
   etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>
       _timer_ids;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _transient_buffer;
-  etl::array<uint8_t, 256> _rx_storage;
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_storage;
   rpc::FrameParser _frame_parser;
   bool _is_post_passed;
   bool _tx_enabled;
 
   etl::vector<BridgeObserver*, bridge::config::MAX_OBSERVERS> _observers;
-  etl::pool<TxPayloadBuffer, bridge::config::TX_QUEUE_CAPACITY>
+  etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>
       _tx_payload_pool;
-  etl::queue<PendingTxFrame, bridge::config::TX_QUEUE_CAPACITY>
+  etl::queue<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES>
       _pending_tx_queue;
 
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
@@ -296,8 +296,7 @@ class BridgeClass {
       void (BridgeClass::*)(const bridge::router::CommandContext&);
 
   // [SIL-2] O(1) Jump Table for mission-critical determinism
-  static constexpr size_t DISPATCH_TABLE_SIZE = 256;
-  etl::array<DispatchHandler, DISPATCH_TABLE_SIZE> _dispatch_table;
+  etl::array<DispatchHandler, rpc::RPC_MAX_COMMAND_ID> _dispatch_table;
 
   template <typename T, typename F>
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {

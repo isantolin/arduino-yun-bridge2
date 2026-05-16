@@ -71,8 +71,8 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
         fallback_called = True
         return {
             "serial_port": "default",
-            "serial_baud": 115200,
-            "serial_safe_baud": 115200,
+            "serial_baud": protocol.DEFAULT_BAUDRATE,
+            "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
             "serial_retry_attempts": 5,
             "serial_retry_timeout": 10.0,
             "serial_response_timeout": 20.0,
@@ -87,4 +87,4 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
 
     assert fallback_called is True
     assert config["serial_port"] == "default"
-    assert config["serial_baud"] == 115200
+    assert config["serial_baud"] == protocol.DEFAULT_BAUDRATE

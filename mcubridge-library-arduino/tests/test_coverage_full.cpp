@@ -272,7 +272,7 @@ void test_bridge_coverage() {
   ba.trigger(EvDummy());
 
   ba.onRxDedupe();
-  ba.setPendingBaudrate(115200);
+  ba.setPendingBaudrate(rpc::RPC_DEFAULT_BAUDRATE);
   ba.onBaudrateChange();
   ba.invokeWatchdog();
   

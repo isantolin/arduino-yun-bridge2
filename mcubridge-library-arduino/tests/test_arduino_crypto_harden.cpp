@@ -27,7 +27,7 @@ void test_bridge_full_crypto_handshake_and_data() {
     auto ba = TestAccessor::create(Bridge);
     
     const char* secret_str = "secure_secret_1234567890123456";
-    Bridge.begin(115200, secret_str);
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret_str);
 
     // 1. Prepare LinkSync request from "MPU"
     rpc::payload::LinkSync sync_req = {};

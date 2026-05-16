@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from mcubridge.protocol import protocol
 from mcubridge.protocol.spec_model import ProtocolSpec
 
 # pyright: reportPrivateUsage=false
@@ -55,7 +56,7 @@ async def test_status_writer_coverage() -> None:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/ttytest",
-        serial_baud=115200,
+        serial_baud=protocol.DEFAULT_BAUDRATE,
         serial_safe_baud=9600,
         mqtt_host="localhost",
         mqtt_port=1883,
@@ -91,7 +92,7 @@ def test_logging_coverage() -> None:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/ttytest",
-        serial_baud=115200,
+        serial_baud=protocol.DEFAULT_BAUDRATE,
         serial_safe_baud=9600,
         mqtt_host="localhost",
         mqtt_port=1883,
@@ -158,7 +159,7 @@ def test_state_context_extra_coverage() -> None:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/ttytest",
-        serial_baud=115200,
+        serial_baud=protocol.DEFAULT_BAUDRATE,
         serial_safe_baud=9600,
         mqtt_host="localhost",
         mqtt_port=1883,

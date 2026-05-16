@@ -16,8 +16,8 @@ from typing import Final
 from mcubridge.protocol import protocol
 
 # Constants from protocol spec
-PROTOCOL_VERSION: Final[int] = 0x02
-FRAME_DELIMITER: Final[bytes] = b"\x00"
+PROTOCOL_VERSION: Final[int] = protocol.PROTOCOL_VERSION
+FRAME_DELIMITER: Final[bytes] = protocol.FRAME_DELIMITER
 _HEADER_STRUCT = struct.Struct(">BHHH")
 _CRC_STRUCT = struct.Struct(">I")
 
@@ -153,7 +153,7 @@ class ProtocolFuzzer:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", default="/dev/ttyUSB0")
-    parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--baud", type=int, default=protocol.DEFAULT_BAUDRATE)
     parser.add_argument("--count", type=int, default=1000)
     args = parser.parse_args()
 

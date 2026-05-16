@@ -65,7 +65,7 @@ void test_bridge_tx_queue_full_force() {
     
     // Fill the queue
     bridge::utils::CounterIterator<int> fill_begin(0);
-    bridge::utils::CounterIterator<int> fill_end(bridge::config::TX_QUEUE_CAPACITY);
+    bridge::utils::CounterIterator<int> fill_end(bridge::config::MAX_PENDING_TX_FRAMES);
     etl::for_each(fill_begin, fill_end, [](int i) {
         bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, static_cast<uint16_t>(i), {});
         TEST_ASSERT_TRUE(ok);
@@ -91,7 +91,7 @@ void test_bridge_packet_received_edge_cases() {
     f.nonce.fill(0);
     f.tag.fill(0);
     f.payload = {};
-    f.crc = 0xDEADC0DE; 
+    f.crc = rpc::RPC_BOOTLOADER_MAGIC; 
     
     etl::array<uint8_t, 256> buf;
     size_t len = rpc::FrameParser::serialize(f, buf);
@@ -118,7 +118,7 @@ void test_bridge_ack_orphans() {
 
 void test_bridge_begin_idempotency() {
     BiStream stream;
-    Bridge.begin(115200);
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     Bridge.begin(9600); 
     TEST_ASSERT_TRUE(true);
 }
@@ -129,7 +129,7 @@ void test_bridge_linksync_auth_failure() {
     auto ba = TestAccessor::create(Bridge);
     
     const char* secret = "secure_secret_1234567890123456";
-    Bridge.begin(115200, secret);
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
     rpc::payload::LinkSync sync_msg = {};
     sync_msg.nonce.fill(0xAA);
@@ -185,7 +185,7 @@ void test_bridge_security_pre_sync_rejection() {
     auto ba = TestAccessor::create(Bridge);
     
     const char* secret = "secure_secret_1234567890123456";
-    Bridge.begin(115200, secret);
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
     
     // Try to send a restricted command before sync
     rpc::Frame f = {};
@@ -203,7 +203,7 @@ void test_bridge_nonce_reuse_attack() {
     auto ba = TestAccessor::create(Bridge);
     
     const char* secret = "secure_secret_1234567890123456";
-    Bridge.begin(115200, secret);
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
     
     // 1. Sync properly
     rpc::payload::LinkSync sync_msg = {};

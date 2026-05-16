@@ -37,8 +37,8 @@ void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
 bool aead_encrypt(etl::span<uint8_t> out, etl::span<uint8_t> tag,
                   etl::span<const uint8_t> in, etl::span<const uint8_t> key,
                   etl::span<const uint8_t> nonce, etl::span<const uint8_t> ad) {
-  if (out.size() < in.size() || tag.size() < 16 || key.size() < 32 ||
-      nonce.size() < 12)
+  if (out.size() < in.size() || tag.size() < rpc::RPC_AEAD_TAG_SIZE || key.size() < rpc::RPC_AEAD_KEY_SIZE ||
+      nonce.size() < rpc::RPC_AEAD_NONCE_SIZE)
     return false;
 
   return wc_ChaCha20Poly1305_Encrypt(key.data(), nonce.data(), ad.data(),
@@ -50,8 +50,8 @@ bool aead_encrypt(etl::span<uint8_t> out, etl::span<uint8_t> tag,
 bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
                   etl::span<const uint8_t> tag, etl::span<const uint8_t> key,
                   etl::span<const uint8_t> nonce, etl::span<const uint8_t> ad) {
-  if (out.size() < in.size() || tag.size() < 16 || key.size() < 32 ||
-      nonce.size() < 12)
+  if (out.size() < in.size() || tag.size() < rpc::RPC_AEAD_TAG_SIZE || key.size() < rpc::RPC_AEAD_KEY_SIZE ||
+      nonce.size() < rpc::RPC_AEAD_NONCE_SIZE)
     return false;
 
   return wc_ChaCha20Poly1305_Decrypt(key.data(), nonce.data(), ad.data(),

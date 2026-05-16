@@ -69,7 +69,7 @@ void test_bridge_dispatch_security_denial() {
     auto ba = TestAccessor::create(Bridge);
     
     // Configure secret to enable security checks
-    Bridge.begin(115200, "secure_secret_1234567890123456");
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "secure_secret_1234567890123456");
     
     // MPU is NOT synchronized yet.
     // Try to send a restricted command

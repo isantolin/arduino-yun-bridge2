@@ -22,6 +22,7 @@ ETL_PATH="${ROOT_DIR}/.dummy_libs/Embedded_Template_Library"
 WOLFSSL_PATH="${ROOT_DIR}/.dummy_libs/wolfSSL"
 PACKETSERIAL_PATH="${ROOT_DIR}/.dummy_libs/PacketSerial"
 MPACK_PATH="${ROOT_DIR}/.dummy_libs/mpack"
+AJSON_PATH="${ROOT_DIR}/.dummy_libs/ArduinoJson"
 
 # Clean old coverage data
 find "${BUILD_DIR}" -name "*.gcda" -delete
@@ -82,6 +83,7 @@ BASE_FLAGS=(
     "-I${WOLFSSL_PATH}"
     "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
     "-I${MPACK_PATH}/src"
+    "-I${AJSON_PATH}/src"
     "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"
 )
 
@@ -96,6 +98,7 @@ TP_FLAGS=(
     "-I${WOLFSSL_PATH}"
     "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
     "-I${MPACK_PATH}/src"
+    "-I${AJSON_PATH}/src"
 )
 
 OBJECTS=()

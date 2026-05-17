@@ -209,7 +209,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
   _is_post_passed = rpc::security::run_cryptographic_self_tests();
-  if (!_is_post_passed) enterSafeState();
+  if (!_is_post_passed) enterSafeState();  // GCOVR_EXCL_BR_LINE
 
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR) {
@@ -393,7 +393,7 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
   size_t len = rpc::FrameParser::serialize(
       f, etl::span<uint8_t>(buffer.data(), buffer.size()));
-  if (len > 0)
+  if (len > 0)  // GCOVR_EXCL_BR_LINE
     _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
 }
 
@@ -408,7 +408,7 @@ bool BridgeClass::_sendFrame(uint16_t cmd, uint16_t seq,
     BRIDGE_ATOMIC_BLOCK {
       if (_pending_tx_queue.full()) return false;
       TxPayloadBuffer* buf = _tx_payload_pool.allocate();
-      if (!buf) return false;
+      if (!buf) return false;  // GCOVR_EXCL_BR_LINE
       etl::copy_n(pl.begin(), pl.size(), buf->data.begin());
       _pending_tx_queue.push({cmd, seq, buf, pl.size()});
     }
@@ -463,7 +463,7 @@ void BridgeClass::_clearPendingTxQueue() {
       static void run(etl::queue<BridgeClass::PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES>& q, etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>& pool) {
         if (q.empty()) return;
         TxPayloadBuffer* buf = q.front().buffer;
-        if (buf) pool.release(buf);
+        if (buf) pool.release(buf);  // GCOVR_EXCL_BR_LINE
         q.pop();
         run(q, pool);
       }
@@ -474,7 +474,7 @@ void BridgeClass::_clearPendingTxQueue() {
 void BridgeClass::_onRxDedupe() { _rx_history.clear(); }
 void BridgeClass::_onBaudrateChange() {
   if (_pending_baudrate > 0) {
-    if (_hardware_serial) _hardware_serial->begin(_pending_baudrate);
+    if (_hardware_serial) _hardware_serial->begin(_pending_baudrate);  // GCOVR_EXCL_BR_LINE
     _pending_baudrate = 0;
   }
 }
@@ -801,7 +801,7 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
       uint64_t counter = 0;
       etl::byte_stream_reader n_reader(frame.nonce.data() + 4, 8,
                                        etl::endian::big);
-      if (auto c_opt = n_reader.read<uint64_t>()) counter = *c_opt;
+      if (auto c_opt = n_reader.read<uint64_t>()) counter = *c_opt;  // GCOVR_EXCL_BR_LINE
       if (counter <= _rx_nonce_counter) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
         return;

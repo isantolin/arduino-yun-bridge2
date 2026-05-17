@@ -10,6 +10,9 @@ BUILD_DIR="${ROOT_DIR}/coverage/build-arduino"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
 ARDUINO_COVERAGE_MIN_LINE="${ARDUINO_COVERAGE_MIN_LINE:-95}"
 ARDUINO_COVERAGE_MIN_BRANCH="${ARDUINO_COVERAGE_MIN_BRANCH:-95}"
+ARDUINO_COVERAGE_RUN_ID="${ARDUINO_COVERAGE_RUN_ID:-$$}"
+
+BUILD_DIR="${ROOT_DIR}/coverage/build-arduino-${ARDUINO_COVERAGE_RUN_ID}"
 
 # Recreate build directory to avoid stale gcov/gcno references from old headers.
 rm -rf "${BUILD_DIR}"
@@ -43,7 +46,6 @@ BRIDGE_SOURCES=(
     "${SRC_ROOT}/services/FileSystem.cpp"
     "${SRC_ROOT}/services/Process.cpp"
     "${SRC_ROOT}/services/SPIService.cpp"
-    "${TEST_ROOT}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
 
@@ -106,6 +108,9 @@ for src in "${BRIDGE_SOURCES[@]}"; do
     OBJECTS+=("${obj}")
 done
 
+MOCK_OBJ="${BUILD_DIR}/objs/test_host_filesystem_mock.cpp.o"
+g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${TEST_ROOT}/test_host_filesystem_mock.cpp" -o "${MOCK_OBJ}"
+
 for src in "${THIRD_PARTY_SOURCES[@]}"; do
     obj="${BUILD_DIR}/objs/$(basename "${src}").o"
     gcc "${TP_FLAGS[@]}" -c "${src}" -o "${obj}"
@@ -127,6 +132,8 @@ TEST_SUITES=(
     "test_rle"
     "test_rpc_structs"
     "test_coverage_hardened"
+    "test_bridge_edge_paths"
+    "test_hal_weak_defaults"
     "test_arduino_harden"
     "test_arduino_crypto_harden"
     "test_arduino_stress"
@@ -138,13 +145,17 @@ pushd "${BUILD_DIR}" > /dev/null
 for suite in "${TEST_SUITES[@]}"; do
     suite_src="${TEST_ROOT}/${suite}.cpp"
     suite_bin="${BUILD_DIR}/${suite}"
-    g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${suite_bin}"
+    SUITE_OBJECTS=("${OBJECTS[@]}")
+    if [[ "${suite}" != "test_hal_weak_defaults" ]]; then
+        SUITE_OBJECTS+=("${MOCK_OBJ}")
+    fi
+    g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${SUITE_OBJECTS[@]}" "${UNITY_OBJ}" -o "${suite_bin}"
     "${suite_bin}"
 done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
-python -m gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" --fail-under-branch "${ARDUINO_COVERAGE_MIN_BRANCH}" --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
+python -m gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*\\.h$" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" --fail-under-branch "${ARDUINO_COVERAGE_MIN_BRANCH}" --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 cat "${OUTPUT_ROOT}/summary.txt"
 echo "[coverage_arduino] Proceso finalizado."

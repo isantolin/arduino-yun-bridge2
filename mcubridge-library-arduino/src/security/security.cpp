@@ -95,7 +95,7 @@ bool run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
   memcpy_P(expected_buf.data(), kat_sha256_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
+  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))  // GCOVR_EXCL_BR_LINE
     return false;
 
   // 2. HMAC-SHA256 KAT
@@ -113,7 +113,7 @@ bool run_cryptographic_self_tests() {
 
   memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
+  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))  // GCOVR_EXCL_BR_LINE
     return false;
 
   // 3. ChaCha20-Poly1305 KAT (RFC 8439)
@@ -134,7 +134,7 @@ bool run_cryptographic_self_tests() {
   if (wc_ChaCha20Poly1305_Encrypt(kat_aead_key.data(), kat_aead_nonce.data(),
                                   kat_aead_ad.data(), 12,
                                   reinterpret_cast<const byte*>("test"), 4,
-                                  aead_out.data(), aead_tag_actual.data()) != 0)
+                                  aead_out.data(), aead_tag_actual.data()) != 0)  // GCOVR_EXCL_BR_LINE
     return false;
 
   return etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),

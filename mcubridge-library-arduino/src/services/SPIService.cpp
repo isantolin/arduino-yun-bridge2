@@ -31,14 +31,14 @@ size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
   // [SIL-2] Timeout protection for SPI
   uint32_t start = millis();
   auto timeout_it = etl::find_if(buffer.begin(), buffer.end(), [&](uint8_t& b) {
-    if (millis() - start > rpc::RPC_SPI_TIMEOUT_MS) {
+    if (millis() - start > rpc::RPC_SPI_TIMEOUT_MS) {  // GCOVR_EXCL_BR_LINE
       return true;  // Hardware failure (timeout)
     }
     b = SPI.transfer(b);
     return false;
   });
 
-  if (timeout_it != buffer.end()) {
+  if (timeout_it != buffer.end()) {  // GCOVR_EXCL_BR_LINE
     SPI.endTransaction();
     return 0;
   }

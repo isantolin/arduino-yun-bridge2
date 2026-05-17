@@ -21,6 +21,7 @@ import time
 from typing import TYPE_CHECKING, Any, cast, Callable
 
 import msgspec
+import cryptography.exceptions
 from cobs import cobs
 import serial
 import serial_asyncio_fast
@@ -293,7 +294,13 @@ class SerialTransport:
                         payload + frame.tag,
                         frame.header_bytes,
                     )
-                except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as e:
+                except (
+                    asyncio.CancelledError,
+                    OSError,
+                    ValueError,
+                    RuntimeError,
+                    cryptography.exceptions.InvalidTag,
+                ) as e:
                     raise ValueError(f"AEAD Authentication Failed: {e}") from e
 
             # Correlate with flow control

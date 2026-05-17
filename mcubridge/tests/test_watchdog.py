@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import structlog.testing
-
+from unittest.mock import MagicMock, patch
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import RuntimeState, create_runtime_state
@@ -60,19 +59,20 @@ def test_watchdog_kick_handles_write_errors(runtime_state: RuntimeState) -> None
         raise OSError("boom")
 
     keepalive = WatchdogKeepalive(state=runtime_state, write=broken_writer)
-    with structlog.testing.capture_logs() as captured:
+    with patch("mcubridge.watchdog.logger") as mock_logger:
         keepalive.kick()
 
     assert runtime_state.watchdog_beats == 0
     assert runtime_state.last_watchdog_beat == 0
-    assert any("Failed to emit watchdog trigger" in log["event"] for log in captured)
+    assert mock_logger.warning.called
+    assert "Failed to emit watchdog trigger" in mock_logger.warning.call_args[0][0]
 
 
 def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
     runtime_state.watchdog_enabled = True
     runtime_state.watchdog_interval = 0.05
 
-    with structlog.testing.capture_logs() as captured:
+    with patch("mcubridge.watchdog.logger") as mock_logger:
 
         async def _runner() -> None:
             keepalive = WatchdogKeepalive(
@@ -86,4 +86,5 @@ def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
                 await task
 
         asyncio.run(_runner())
-    assert any("keepalive cancelled" in str(log.get("event", "")) for log in captured)
+    
+    assert any("keepalive cancelled" in str(args[0]) for name, args, kwargs in mock_logger.info.mock_calls)

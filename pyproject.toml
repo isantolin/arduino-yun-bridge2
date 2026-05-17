@@ -28,7 +28,6 @@ package-dir = {"" = "mcubridge"}
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra --timeout=10 --timeout_method=thread"
-asyncio_mode = "auto"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["mcubridge/tests", "mcubridge-client-examples/client_tests"]

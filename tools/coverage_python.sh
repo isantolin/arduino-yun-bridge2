@@ -28,6 +28,11 @@ ENABLE_HTML=1
 ENABLE_JSON=0
 PYTHON_COVERAGE_MIN=${PYTHON_COVERAGE_MIN:-95}
 
+PYTHON_BIN="${PYTHON_EXE:-python}"
+echo "[coverage_python] Debug: Python path: $(which $PYTHON_BIN || echo 'not found') ($PYTHON_BIN)"
+echo "[coverage_python] Debug: Python version: $($PYTHON_BIN --version)"
+$PYTHON_BIN -m pip list | grep pytest
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --output-root)
@@ -56,9 +61,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! command -v pytest >/dev/null 2>&1; then
+if ! $PYTHON_BIN -m pytest --version >/dev/null 2>&1; then
   # Avoid relying on a globally-installed `pytest` entrypoint.
-  if ! python -c "import pytest" >/dev/null 2>&1; then
+  if ! $PYTHON_BIN -c "import pytest" >/dev/null 2>&1; then
     echo "[coverage_python] pytest no está instalado en el entorno actual." >&2
     exit 1
   fi
@@ -67,7 +72,7 @@ fi
 mkdir -p "$COVERAGE_ROOT"
 export COVERAGE_FILE="$COVERAGE_ROOT/.coverage"
 
-if ! python -c "import pytest_cov" >/dev/null 2>&1; then
+if ! $PYTHON_BIN -c "import pytest_cov" >/dev/null 2>&1; then
   echo "[coverage_python] Instala pytest-cov (pip install pytest-cov) antes de ejecutar este script." >&2
   exit 1
 fi
@@ -79,9 +84,9 @@ else
   PYTEST_ARGS=("${DEFAULT_TARGETS[@]}")
 fi
 
-python -m pytest \
+$PYTHON_BIN -m pytest \
   -v \
-  -n 5 \
+  -p pytest_asyncio \
   -o log_cli=false \
   --timeout=60 \
   --timeout-method=thread \
@@ -94,7 +99,7 @@ python -m pytest \
   "${PYTEST_ARGS[@]}"
 
 if [[ "$ENABLE_JSON" -eq 1 ]]; then
-  python -m coverage json \
+  $PYTHON_BIN -m coverage json \
     --include "$ROOT_DIR/mcubridge/mcubridge/*" \
     -o "$COVERAGE_ROOT/coverage.json" >/dev/null
 fi

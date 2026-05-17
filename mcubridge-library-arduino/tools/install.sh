@@ -48,9 +48,24 @@ download_zip() {
     if [ -f "$dest" ]; then return 0; fi
     echo "[INFO] Downloading $name..."
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$url" -o "$dest"
+        local attempt
+        for attempt in 1 2 3; do
+            if curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 20 --max-time 180 "$url" -o "$dest"; then
+                return 0
+            fi
+            echo "[WARN] curl download failed for $name (attempt $attempt/3)." >&2
+            sleep 1
+        done
+        for attempt in 1 2; do
+            if curl --http1.1 -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 "$url" -o "$dest"; then
+                return 0
+            fi
+            echo "[WARN] curl HTTP/1.1 fallback failed for $name (attempt $attempt/2)." >&2
+            sleep 1
+        done
+        return 1
     elif command -v wget >/dev/null 2>&1; then
-        wget -qO "$dest" "$url"
+        wget --tries=5 --waitretry=2 --timeout=20 -qO "$dest" "$url"
     else
         echo "[ERROR] 'curl' or 'wget' is required." >&2
         return 1

@@ -65,8 +65,8 @@ BridgeClass::BridgeClass(Stream& stream)
       _rx_nonce_counter(0),
       _fsm(),
       _watchdog_task(),
-      _serial_task(*this),
-      _timer_task(*this),
+      _serial_task(),
+      _timer_task(),
       _tasks(),
       _scheduler_policy(),
       _timers(),
@@ -80,14 +80,12 @@ BridgeClass::BridgeClass(Stream& stream)
       _pending_tx_queue(),
       _rx_history() {
   bridge::hal::forceSafeState();
-  _shared_secret.clear();
-  _rx_storage.fill(0);
-  _dispatch_table.fill(nullptr);
+}
 
-  _tasks.push_back(&_watchdog_task);
-  _tasks.push_back(&_serial_task);
-  _tasks.push_back(&_timer_task);
+#include <wolfssl/wolfcrypt/settings.h>
+#include <wolfssl/wolfcrypt/types.h>
 
+void BridgeClass::_initializeRuntime() {
   struct DispatchEntry {
     uint16_t id;
     DispatchHandler handler;
@@ -170,20 +168,33 @@ BridgeClass::BridgeClass(Stream& stream)
 #endif
   };
 
+  _dispatch_table.fill(nullptr);
   etl::for_each(etl::begin(kEntries), etl::end(kEntries),
-                [this](const DispatchEntry& e) { _dispatch_table[e.id] = e.handler; });
+                [this](const DispatchEntry& e) {
+                  _dispatch_table[e.id] = e.handler;
+                });
+
+  _tasks.clear();
+  _serial_task.bind(*this);
+  _timer_task.bind(*this);
+  _tasks.push_back(&_watchdog_task);
+  _tasks.push_back(&_serial_task);
+  _tasks.push_back(&_timer_task);
+
+  _rx_storage.fill(0);
+  _ps_rx_storage.fill(0);
+  _ps_work_buffer.fill(0);
 
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR) {
-    _hardware_serial = static_cast<HardwareSerial*>(&stream);
+    _hardware_serial = static_cast<HardwareSerial*>(&_stream);
+  } else {
+    _hardware_serial = nullptr;
   }
-  bridge::hal::forceSafeState();
 }
 
-#include <wolfssl/wolfcrypt/settings.h>
-#include <wolfssl/wolfcrypt/types.h>
-
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
+  _initializeRuntime();
   wolfCrypt_Init();
   _shared_secret.clear();
   if (secret != nullptr) {
@@ -233,23 +244,25 @@ void BridgeClass::WatchdogTask::task_process_work() {
 }
 
 void BridgeClass::SerialTask::task_process_work() {
-  bridge._packet_serial.update(bridge._stream);
-  int avail = bridge._stream.available();
+  if (bridge == nullptr) return;
+  bridge->_packet_serial.update(bridge->_stream);
+  const int avail = bridge->_stream.available();
   if (!xoff_sent && avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
-    bridge.signalXoff();
+    bridge->signalXoff();
     xoff_sent = true;
   } else if (xoff_sent && avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {
-    bridge.signalXon();
+    bridge->signalXon();
     xoff_sent = false;
   }
 }
 
 void BridgeClass::TimerTask::task_process_work() {
-  uint32_t now = millis();
+  if (bridge == nullptr) return;
+  const uint32_t now = millis();
   if (last_tick_ms == 0) last_tick_ms = now;
-  uint32_t elapsed = now - last_tick_ms;
+  const uint32_t elapsed = now - last_tick_ms;
   if (elapsed > 0) {
-    bridge._timers.tick(elapsed);
+    bridge->_timers.tick(elapsed);
     last_tick_ms = now;
   }
 }

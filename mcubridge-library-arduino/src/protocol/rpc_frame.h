@@ -8,6 +8,7 @@
 #undef min
 #undef max
 #include <etl/algorithm.h>
+#include <etl/array.h>
 #include <etl/byte_stream.h>
 #include <etl/crc32.h>
 #include <etl/expected.h>
@@ -65,6 +66,12 @@ inline void serialize_header(const FrameHeader& h, etl::span<uint8_t> buffer) {
   writer.write<uint16_t>(h.sequence_id);
 }
 
+inline uint32_t compute(etl::span<const uint8_t> data) {
+  etl::crc32 crc;
+  crc.add(data.begin(), data.end());
+  return crc.value();
+}
+
 inline uint32_t compute(const Frame& f) {
   etl::crc32 crc;
   etl::array<uint8_t, FRAME_HEADER_SIZE> header_buf;
@@ -112,8 +119,8 @@ class FrameParser {
     etl::byte_stream_reader reader(buffer.data(), buffer.size(),
                                    etl::endian::big);
     const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
-    etl::crc32 crc_calc;
-    crc_calc.add(buffer.begin(), buffer.begin() + crc_offset);
+    const uint32_t crc_calc =
+        checksum::compute(buffer.subspan(0, crc_offset));
 
     Frame result = {};
     const auto v_opt = reader.read<uint8_t>();
@@ -152,17 +159,17 @@ class FrameParser {
     const auto crc_opt = reader.read<uint32_t>();
 
 #if BRIDGE_HOST_TEST
-    if (!crc_opt || *crc_opt != crc_calc.value()) {
+    if (!crc_opt || *crc_opt != crc_calc) {
       fprintf(stderr,
               "[PARSE] CRC MISMATCH! Size: %zu, Calc: %08X, Recv: %08X\n",
-              buffer.size(), (unsigned int)crc_calc.value(),
+              buffer.size(), (unsigned int)crc_calc,
               (unsigned int)(crc_opt ? *crc_opt : 0));
     }
 #endif
 
-    if (!crc_opt || *crc_opt != crc_calc.value())
+    if (!crc_opt || *crc_opt != crc_calc)
       return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
-    result.crc = crc_calc.value();
+    result.crc = crc_calc;
     return result;
   }
 };

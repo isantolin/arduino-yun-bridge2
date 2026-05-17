@@ -167,6 +167,7 @@ class BridgeClass {
                     etl::span<const uint8_t> payload);
   bool _sendFrame(uint16_t command_id, uint16_t sequence_id,
                  etl::span<const uint8_t> payload);
+  void _initializeRuntime();
 
   // STRICT ORDER FOR CONSTRUCTOR
   Stream& _stream;
@@ -203,19 +204,25 @@ class BridgeClass {
   } _watchdog_task;
 
   struct SerialTask : public etl::task {
-    BridgeClass& bridge;
+    BridgeClass* bridge;
     bool xoff_sent;
-    explicit SerialTask(BridgeClass& b)
-        : etl::task(1), bridge(b), xoff_sent(false) {}
+    SerialTask() : etl::task(1), bridge(nullptr), xoff_sent(false) {}
+    void bind(BridgeClass& owner) {
+      bridge = &owner;
+      xoff_sent = false;
+    }
     uint32_t task_request_work() const override { return 1; }
     void task_process_work() override;
   } _serial_task;
 
   struct TimerTask : public etl::task {
-    BridgeClass& bridge;
+    BridgeClass* bridge;
     uint32_t last_tick_ms;
-    explicit TimerTask(BridgeClass& b)
-        : etl::task(2), bridge(b), last_tick_ms(0) {}
+    TimerTask() : etl::task(2), bridge(nullptr), last_tick_ms(0) {}
+    void bind(BridgeClass& owner) {
+      bridge = &owner;
+      last_tick_ms = 0;
+    }
     uint32_t task_request_work() const override { return 1; }
     void task_process_work() override;
   } _timer_task;

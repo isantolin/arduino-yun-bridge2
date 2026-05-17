@@ -61,8 +61,10 @@ define Package/$(PKG_NAME)
 endef
 
 define Package/$(PKG_NAME)/description
- Consolidated Python 3.13 daemon and core scripts for the Arduino MCU Bridge v2.
- Targeting OpenWrt 25.12.3 (APK based) with modern asynchronous I/O and SIL-2 safety.
+ Python 3.13 daemon and core scripts for Arduino MCU Bridge v2 on OpenWrt.
+endef
+
+define Package/$(PKG_NAME)/config
 endef
 
 define Build/Compile

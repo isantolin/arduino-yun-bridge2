@@ -38,6 +38,13 @@ define Package/$(PKG_NAME)
 	DEPENDS:=+luci-base +luci-compat +luci-lua-runtime +uhttpd-mod-lua +mcubridge +mosquitto-client +lua +luaposix
 endef
 
+define Package/$(PKG_NAME)/description
+ Web UI and CGI integration for McuBridge services on OpenWrt.
+endef
+
+define Package/$(PKG_NAME)/config
+endef
+
 
 
 define Package/$(PKG_NAME)/install

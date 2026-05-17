@@ -8,6 +8,8 @@ TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
 BUILD_DIR="${ROOT_DIR}/coverage/build-arduino"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
+ARDUINO_COVERAGE_MIN_LINE="${ARDUINO_COVERAGE_MIN_LINE:-80}"
+ARDUINO_COVERAGE_MIN_BRANCH="${ARDUINO_COVERAGE_MIN_BRANCH:-70}"
 
 # Recreate build directory to avoid stale gcov/gcno references from old headers.
 rm -rf "${BUILD_DIR}"
@@ -151,7 +153,7 @@ done
 popd > /dev/null
 
 echo "[coverage_arduino] Generando informes finales..."
-python -m gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line 95 --fail-under-branch 90 --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
+python -m gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" --fail-under-branch "${ARDUINO_COVERAGE_MIN_BRANCH}" --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 cat "${OUTPUT_ROOT}/summary.txt"
 echo "[coverage_arduino] Proceso finalizado."

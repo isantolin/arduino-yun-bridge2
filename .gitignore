@@ -35,6 +35,7 @@ venv/
 .tmp_tests/
 sample-build/
 final-audit/
+arduino-build/
 
 # Generated type stubs (dynamic)
 typings/diskcache/

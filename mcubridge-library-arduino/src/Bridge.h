@@ -312,8 +312,9 @@ class BridgeClass {
   using DispatchHandler =
       void (BridgeClass::*)(const bridge::router::CommandContext&);
 
-  // [SIL-2] O(1) Jump Table for mission-critical determinism
-  etl::array<DispatchHandler, rpc::RPC_MAX_COMMAND_ID> _dispatch_table;
+  // [SIL-2] Shared O(1) jump table (kept out of Bridge instance RAM).
+  static const etl::array<DispatchHandler, rpc::RPC_MAX_COMMAND_ID>&
+  _dispatchTable();
 
   template <typename T, typename F>
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {

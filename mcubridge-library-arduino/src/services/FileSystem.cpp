@@ -1,10 +1,20 @@
 #include "services/FileSystem.h"
 #include "Bridge.h"
 
+#if BRIDGE_ENABLE_FILESYSTEM && defined(BRIDGE_HOST_TEST)
+#include <cstdio>
+#endif
+
 #if BRIDGE_ENABLE_FILESYSTEM
 
 namespace {
 constexpr size_t kReadChunkSize = rpc::MAX_PAYLOAD_SIZE - 3U;
+
+#if defined(BRIDGE_HOST_TEST)
+#define BRIDGE_FS_DEBUG(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define BRIDGE_FS_DEBUG(...) ((void)0)
+#endif
 
 void send_read_response(etl::span<const uint8_t> content) {
   (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0,
@@ -42,7 +52,8 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
-  fprintf(stderr, "[DEBUG] FS: Reading file: %.*s\\n", (int)msg.path.size(), msg.path.data());
+  BRIDGE_FS_DEBUG("[DEBUG] FS: Reading file: %.*s\\n", (int)msg.path.size(),
+                  msg.path.data());
   size_t offset = 0;
   // [SIL-2] Reverting to local stack buffer to prevent memory collision.
   // Bridge.borrowTransientBuffer() cannot be used here because send_read_response
@@ -58,18 +69,20 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
       CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
       [&](uint32_t chunk_idx) {
         if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
-          fprintf(stderr, "[DEBUG] FS: Read TIMEOUT at offset %zu\\n", offset);
+          BRIDGE_FS_DEBUG("[DEBUG] FS: Read TIMEOUT at offset %zu\\n", offset);
           return true;
         }
 
         auto res = bridge::hal::readFileChunk(
             path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
         if (!res) {
-          fprintf(stderr, "[DEBUG] FS: Read FAILED at offset %zu\\n", offset);
+          BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\\n", offset);
           (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
           return true;
         }
-        fprintf(stderr, "[DEBUG] FS: Sending chunk %u (%zu bytes, has_more=%d)\\n", (unsigned int)chunk_idx, res->bytes_read, res->has_more);
+        BRIDGE_FS_DEBUG(
+            "[DEBUG] FS: Sending chunk %u (%zu bytes, has_more=%d)\\n",
+            (unsigned int)chunk_idx, res->bytes_read, res->has_more);
         send_read_response(
             etl::span<const uint8_t>(buffer.data(), res->bytes_read));
         if (!res->has_more) {

@@ -1,50 +1,54 @@
-"""Tests for watchdog keepalive behaviour."""
+"""Watchdog tests with strict typing."""
 
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 from unittest.mock import patch
+
 import pytest
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.state.context import RuntimeState, create_runtime_state
+
 from mcubridge.watchdog import WatchdogKeepalive
+
+if TYPE_CHECKING:
+    from mcubridge.config.settings import RuntimeConfig
+    from mcubridge.state.context import RuntimeState
 
 
 def test_watchdog_keepalive_emits_pulses(
     runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
 ) -> None:
+    """Verify watchdog emits pulses at the configured interval."""
     runtime_config.watchdog_enabled = True
     runtime_config.watchdog_interval = 0.05
-    state = create_runtime_state(runtime_config)
-    try:
-        pulses: list[bytes] = []
+    pulses: list[bytes] = []
 
-        def capture(data: bytes) -> None:
-            pulses.append(data)
+    def capture(data: bytes) -> None:
+        pulses.append(data)
 
-        async def _runner() -> None:
-            keepalive = WatchdogKeepalive(
-                interval=runtime_config.watchdog_interval,
-                state=state,
-                write=capture,
-            )
+    async def _runner() -> None:
+        keepalive = WatchdogKeepalive(
+            interval=runtime_config.watchdog_interval,
+            state=runtime_state,
+            write=capture,
+        )
 
-            task = asyncio.create_task(keepalive.run())
-            await asyncio.sleep(0.12)
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+        task = asyncio.create_task(keepalive.run())
+        await asyncio.sleep(0.12)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
-        asyncio.run(_runner())
+    asyncio.run(_runner())
 
-        assert len(pulses) >= 1
-        assert state.watchdog_beats == len(pulses)
-        assert state.last_watchdog_beat > 0
-    finally:
-        state.cleanup()
+    assert len(pulses) >= 1
+    assert runtime_state.watchdog_beats == len(pulses)
+    assert runtime_state.last_watchdog_beat > 0
 
 
 def test_watchdog_interval_updates(runtime_state: RuntimeState) -> None:
+    """Verify interval updates and clamping."""
     keepalive = WatchdogKeepalive(state=runtime_state)
     keepalive.interval = 3.5
     assert keepalive.interval == 3.5
@@ -69,6 +73,7 @@ def test_watchdog_kick_handles_write_errors(runtime_state: RuntimeState) -> None
 
 
 def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
+    """Verify cancellation is logged."""
     runtime_state.watchdog_enabled = True
     runtime_state.watchdog_interval = 0.05
 
@@ -88,6 +93,6 @@ def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
         asyncio.run(_runner())
 
     assert any(
-        "keepalive cancelled" in str(args[0])
-        for name, args, kwargs in mock_logger.info.mock_calls
+        "keepalive cancelled" in str(call.args[0])
+        for call in mock_logger.info.mock_calls
     )

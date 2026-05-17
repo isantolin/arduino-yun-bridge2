@@ -22,12 +22,12 @@ include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/../feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-cobs
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=Consistent Overhead Byte Stuffing (COBS)
-  URL:=https://github.com/cmcqueen/cobs-python
-  DEPENDS:=+python3
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=Consistent Overhead Byte Stuffing (COBS)
+	URL:=https://github.com/cmcqueen/cobs-python
+	DEPENDS:=+python3
 endef
 
 define Package/python3-cobs/description

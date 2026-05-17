@@ -25,13 +25,13 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-paho-mqtt
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=MQTT Python client library (v2.x Custom)
-  URL:=http://eclipse.org/paho
-  PKG_ARCH:=all
-  DEPENDS:=+python3-light +python3-uuid +python3-logging +python3-openssl
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=MQTT Python client library (v2.x Custom)
+	URL:=http://eclipse.org/paho
+	PKG_ARCH:=all
+	DEPENDS:=+python3-light +python3-uuid +python3-logging +python3-openssl
 endef
 
 # Aseguramos que el entorno de Python sepa que necesitamos hatchling

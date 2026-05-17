@@ -18,12 +18,12 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-diskcache
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=Disk and file backed cache library
-  URL:=https://github.com/grantjenks/python-diskcache
-  DEPENDS:=+python3
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=Disk and file backed cache library
+	URL:=https://github.com/grantjenks/python-diskcache
+	DEPENDS:=+python3
 endef
 
 define Package/python3-diskcache/description

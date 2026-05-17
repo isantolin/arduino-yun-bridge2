@@ -14,12 +14,12 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-msgspec
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=High-performance JSON/MessagePack library
-  URL:=https://github.com/jcrist/msgspec
-  DEPENDS:=+python3
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=High-performance JSON/MessagePack library
+	URL:=https://github.com/jcrist/msgspec
+	DEPENDS:=+python3
 endef
 
 define Package/python3-msgspec/description

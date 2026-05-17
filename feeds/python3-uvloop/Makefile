@@ -21,12 +21,12 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-uvloop
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=Ultra fast asyncio event loop (v0.22.1)
-  URL:=https://github.com/MagicStack/uvloop
-  DEPENDS:=+python3 +libuv
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=Ultra fast asyncio event loop (v0.22.1)
+	URL:=https://github.com/MagicStack/uvloop
+	DEPENDS:=+python3 +libuv
 endef
 
 define Package/python3-uvloop/description

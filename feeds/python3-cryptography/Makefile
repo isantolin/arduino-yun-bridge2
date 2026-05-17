@@ -37,11 +37,11 @@ define Build/Configure
 endef
 
 define Package/python3-cryptography
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=Python cryptography library
-  DEPENDS:=+python3 +libopenssl +python3-cffi
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=Python cryptography library
+	DEPENDS:=+python3 +libopenssl +python3-cffi
 endef
 
 define Package/python3-cryptography/description

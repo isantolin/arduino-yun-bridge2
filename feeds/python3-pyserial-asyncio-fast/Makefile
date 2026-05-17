@@ -21,12 +21,12 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-pyserial-asyncio-fast
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=Fast asyncio transport for pyserial
-  URL:=https://github.com/vxgmichel/pyserial-asyncio-fast
-  DEPENDS:=+python3-light +python3-pyserial
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=Fast asyncio transport for pyserial
+	URL:=https://github.com/vxgmichel/pyserial-asyncio-fast
+	DEPENDS:=+python3-light +python3-pyserial
 endef
 
 define Package/python3-pyserial-asyncio-fast/description

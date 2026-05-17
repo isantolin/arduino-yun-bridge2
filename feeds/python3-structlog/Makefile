@@ -24,12 +24,12 @@ define Build/Prepare
 endef
 
 define Package/python3-structlog
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=Structured logging for Python
-  URL:=https://github.com/hynek/structlog
-  DEPENDS:=+python3-light
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=Structured logging for Python
+	URL:=https://github.com/hynek/structlog
+	DEPENDS:=+python3-light
 endef
 
 define Package/python3-structlog/description

@@ -17,13 +17,13 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-aiomqtt
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=Idiomatic asyncio MQTT client (v2.5.1)
-  URL:=https://github.com/empicano/aiomqtt
-  PKG_ARCH:=all
-  DEPENDS:=+python3-light +python3-paho-mqtt
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=Idiomatic asyncio MQTT client (v2.5.1)
+	URL:=https://github.com/empicano/aiomqtt
+	PKG_ARCH:=all
+	DEPENDS:=+python3-light +python3-paho-mqtt
 endef
 
 define Package/python3-aiomqtt/description

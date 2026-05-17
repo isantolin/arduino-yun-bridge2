@@ -19,14 +19,14 @@ include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/$(PYPI_NAME)-$(PKG_VERSION)
 
 define Package/python3-prometheus-client
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=Prometheus instrumentation library for Python
-  URL:=https://github.com/prometheus/client_python
-  PKG_ARCH:=all
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=Prometheus instrumentation library for Python
+	URL:=https://github.com/prometheus/client_python
+	PKG_ARCH:=all
   # [OPTIMIZATION] Eliminado +python3-twisted
-  DEPENDS:=+python3-light
+	DEPENDS:=+python3-light
 endef
 
 define Package/python3-prometheus-client/description

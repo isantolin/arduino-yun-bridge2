@@ -19,12 +19,12 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-tenacity
-  SECTION:=lang
-  CATEGORY:=Languages
-  SUBMENU:=Python
-  TITLE:=Retry library for Python
-  URL:=https://github.com/jd/tenacity
-  DEPENDS:=+python3-light
+	SECTION:=lang
+	CATEGORY:=Languages
+	SUBMENU:=Python
+	TITLE:=Retry library for Python
+	URL:=https://github.com/jd/tenacity
+	DEPENDS:=+python3-light
 endef
 
 define Package/python3-tenacity/description

@@ -11,9 +11,7 @@ from mcubridge.services.handshake import SerialHandshakeFatal
 
 @pytest.mark.asyncio
 async def test_daemon_supervise_fatal_exception() -> None:
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
-    )
+    config = RuntimeConfig(serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True)
     daemon = BridgeDaemon(config)
     try:
         # Task that raises fatal exception
@@ -30,9 +28,7 @@ async def test_daemon_supervise_fatal_exception() -> None:
 
 @pytest.mark.asyncio
 async def test_daemon_supervise_restarts() -> None:
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
-    )
+    config = RuntimeConfig(serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True)
     daemon = BridgeDaemon(config)
     try:
         state = {"call_count": 0}
@@ -55,9 +51,7 @@ async def test_daemon_supervise_restarts() -> None:
 
 @pytest.mark.asyncio
 async def test_daemon_supervise_cancelled() -> None:
-    config = RuntimeConfig(
-        serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True
-    )
+    config = RuntimeConfig(serial_shared_secret=b"secret_1234", allow_non_tmp_paths=True)
     daemon = BridgeDaemon(config)
     try:
 

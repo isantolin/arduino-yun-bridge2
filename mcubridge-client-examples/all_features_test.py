@@ -85,9 +85,7 @@ def main(host: str = "127.0.0.1", port: int = 1883, user: str = "", password: st
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Unified e2e feature test for mcubridge."
-    )
+    parser = argparse.ArgumentParser(description="Unified e2e feature test for mcubridge.")
     parser.add_argument("--host", default="127.0.0.1", help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=1883, help="MQTT Broker Port")
     parser.add_argument("--user", default="", help="MQTT Username")

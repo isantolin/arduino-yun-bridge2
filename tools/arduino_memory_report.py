@@ -91,12 +91,8 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        description="Parse Arduino compilation logs and generate a memory usage report."
-    )
-    parser.add_argument(
-        "log_dir", type=Path, help="Directory containing build log files."
-    )
+    parser = argparse.ArgumentParser(description="Parse Arduino compilation logs and generate a memory usage report.")
+    parser.add_argument("log_dir", type=Path, help="Directory containing build log files.")
     parser.add_argument(
         "--github-step-summary",
         type=Path,

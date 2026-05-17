@@ -118,12 +118,8 @@ def _read_arduino_metrics(path: Path) -> CoverageMetrics | None:
         if line_percent is None:
             line_percent = _safe_percent(lines_covered, lines_total)
 
-        branches_total = int(
-            branch_counts.get("found") or branch_counts.get("total") or 0
-        )
-        branches_covered = int(
-            branch_counts.get("hit") or branch_counts.get("covered") or 0
-        )
+        branches_total = int(branch_counts.get("found") or branch_counts.get("total") or 0)
+        branches_covered = int(branch_counts.get("hit") or branch_counts.get("covered") or 0)
         branch_percent: float | None = percent.get("branches")
         if branch_percent is None:
             branch_percent = _safe_percent(branches_covered, branches_total)
@@ -187,11 +183,7 @@ def _render_rich_table(rows: list[CoverageMetrics]) -> None:
     table.add_column("Branch %", justify="right")
 
     for row in rows:
-        line_color = (
-            "green"
-            if (row.line_percent or 0) >= 90
-            else "yellow" if (row.line_percent or 0) >= 70 else "red"
-        )
+        line_color = "green" if (row.line_percent or 0) >= 90 else "yellow" if (row.line_percent or 0) >= 70 else "red"
         table.add_row(
             row.suite,
             row.lines_display,
@@ -208,9 +200,7 @@ def _render_markdown(rows: list[CoverageMetrics]) -> str:
     separator = "| --- | --- | --- | --- | --- |"
     body: list[str] = []
     for row in rows:
-        line = (
-            "| {suite} | {lines} | {line_pct} | {branches} | {branch_pct} |"
-        ).format(
+        line = ("| {suite} | {lines} | {line_pct} | {branches} | {branch_pct} |").format(
             suite=row.suite,
             lines=row.lines_display,
             line_pct=CoverageMetrics.format_percent(row.line_percent),
@@ -218,9 +208,7 @@ def _render_markdown(rows: list[CoverageMetrics]) -> str:
             branch_pct=CoverageMetrics.format_percent(row.branch_percent),
         )
         body.append(line)
-    artifact_list = "\n".join(
-        f"- `{row.suite}` artifacts: {row.artifact_hint}" for row in rows
-    )
+    artifact_list = "\n".join(f"- `{row.suite}` artifacts: {row.artifact_hint}" for row in rows)
     return "\n".join([header, separator, *body, "", artifact_list])
 
 
@@ -245,9 +233,7 @@ def _append_optional(path: str | None, content: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        description="Aggregate Python and Arduino coverage results into a single summary."
-    )
+    parser = argparse.ArgumentParser(description="Aggregate Python and Arduino coverage results into a single summary.")
     parser.add_argument(
         "--python-xml",
         type=Path,

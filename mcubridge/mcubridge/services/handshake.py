@@ -47,9 +47,7 @@ from typing import Protocol
 
 
 class SendFrameCallable(Protocol):
-    async def __call__(
-        self, command_id: int, payload: bytes, seq_id: int | None = None
-    ) -> bool: ...
+    async def __call__(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool: ...
 
 
 EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
@@ -187,9 +185,7 @@ class SerialHandshakeManager:
 
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
-        self._state.link_expected_tag = self.calculate_handshake_tag(
-            self._config.serial_shared_secret, nonce
-        )
+        self._state.link_expected_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
 
         reset_ok = await self._send_frame(
             Command.CMD_LINK_RESET.value,
@@ -240,10 +236,7 @@ class SerialHandshakeManager:
             return False
 
         # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
-        if (
-            self.fsm_state != self.STATE_SYNCHRONIZED
-            and self.fsm_state != self.STATE_FAULT
-        ):
+        if self.fsm_state != self.STATE_SYNCHRONIZED and self.fsm_state != self.STATE_FAULT:
             self._set_fsm_state(self.STATE_SYNCHRONIZED)
 
         return self.fsm_state == self.STATE_SYNCHRONIZED
@@ -297,16 +290,13 @@ class SerialHandshakeManager:
             return False
 
         expected_tag = self._state.link_expected_tag
-        recalculated_tag = self.calculate_handshake_tag(
-            self._config.serial_shared_secret, nonce
-        )
+        recalculated_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
 
         nonce_mismatch = not bytes_eq(nonce, expected)
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.AEAD_TAG_SIZE
         tag_mismatch = (
-            not bytes_eq(tag_bytes, recalculated_tag)
-            and self._config.serial_shared_secret != b"DEBUG_INSECURE"
+            not bytes_eq(tag_bytes, recalculated_tag) and self._config.serial_shared_secret != b"DEBUG_INSECURE"
         )
 
         if nonce_mismatch:
@@ -339,9 +329,7 @@ class SerialHandshakeManager:
 
         # [SIL-2] Ensure session key is derived on successful sync
         if self._config.serial_shared_secret:
-            self._state.link_session_key = self.calculate_session_key(
-                self._config.serial_shared_secret, nonce
-            )
+            self._state.link_session_key = self.calculate_session_key(self._config.serial_shared_secret, nonce)
         payload = nonce
 
         # FSM Transition to SYNCHRONIZED
@@ -360,9 +348,7 @@ class SerialHandshakeManager:
     async def _fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
         cmd_id = Command.CMD_GET_CAPABILITIES.value
-        self._logger.debug(
-            "Starting capabilities discovery using Command ID 0x%02X", cmd_id
-        )
+        self._logger.debug("Starting capabilities discovery using Command ID 0x%02X", cmd_id)
 
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(5),
@@ -384,9 +370,7 @@ class SerialHandshakeManager:
 
             try:
                 timeout = max(5.0, self._timing.response_timeout_seconds)
-                payload = await asyncio.wait_for(
-                    self._capabilities_future, timeout=timeout
-                )
+                payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
                 self._parse_capabilities(payload)
                 return True
             except asyncio.TimeoutError:
@@ -436,17 +420,13 @@ class SerialHandshakeManager:
         self._state.handshake_failure_streak += 1
         self._state.last_handshake_error = reason
         self._state.last_handshake_unix = time.time()
-        self._state.handshake_last_duration = (
-            self._state.handshake_duration_since_start()
-        )
+        self._state.handshake_last_duration = self._state.handshake_duration_since_start()
         self._state.mark_transport_connected()
 
         is_fatal = self._should_mark_failure_fatal(reason)
         fatal_detail = detail
         if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
-            fatal_detail = detail or (
-                f"failure_streak_exceeded_{self._fatal_threshold}"
-            )
+            fatal_detail = detail or (f"failure_streak_exceeded_{self._fatal_threshold}")
         if is_fatal:
             # [SIL-2] Direct metrics recording (No Wrapper)
             self._state.handshake_fatal_count += 1
@@ -489,9 +469,7 @@ class SerialHandshakeManager:
             "Verify mcubridge.general.serial_shared_secret (configured via UCI/LuCI) "
             "matches the BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
         )
-        raise SerialHandshakeFatal(
-            f"MCU rejected the serial shared secret (reason={reason}). {hint}"
-        )
+        raise SerialHandshakeFatal(f"MCU rejected the serial shared secret (reason={reason}). {hint}")
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
         timeout = max(0.5, self._timing.response_timeout_seconds)
@@ -548,9 +526,7 @@ class SerialHandshakeManager:
             payload |= extra
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
         message = QueuedPublish(
-            topic_name=topic_path(
-                self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"
-            ),
+            topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
             payload=msgspec.msgpack.encode(payload),
             content_type="application/msgpack",
             user_properties=(("bridge-event", "handshake"),),
@@ -563,9 +539,7 @@ class SerialHandshakeManager:
         self._state.handshake_backoff_until = 0.0
         self._state.last_handshake_error = None
         self._state.last_handshake_unix = time.time()
-        self._state.handshake_last_duration = (
-            self._state.handshake_duration_since_start()
-        )
+        self._state.handshake_last_duration = self._state.handshake_duration_since_start()
         self._state.mark_synchronized()
         self._state.handshake_successes += 1
         self._state.metrics.handshake_successes.inc()

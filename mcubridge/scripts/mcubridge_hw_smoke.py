@@ -49,14 +49,8 @@ class SmokeTester:
                     async with asyncio.timeout(timeout):
                         async for msg in client.messages:
                             payload_raw: Any = msg.payload
-                            payload_str = (
-                                payload_raw.decode()
-                                if isinstance(payload_raw, bytes)
-                                else str(payload_raw)
-                            )
-                            logger.info(
-                                "Connectivity verified", mcu_version=payload_str
-                            )
+                            payload_str = payload_raw.decode() if isinstance(payload_raw, bytes) else str(payload_raw)
+                            logger.info("Connectivity verified", mcu_version=payload_str)
                             self.results["connectivity"] = True
                             break
                 except asyncio.TimeoutError:
@@ -83,13 +77,9 @@ class SmokeTester:
 
 def main() -> None:
     """Execute a suite of hardware diagnostic tests via MQTT."""
-    parser = argparse.ArgumentParser(
-        description="Diagnostic smoke test for MCU hardware."
-    )
+    parser = argparse.ArgumentParser(description="Diagnostic smoke test for MCU hardware.")
     parser.add_argument("--pin", type=int, default=13, help="Pin to toggle during test")
-    parser.add_argument(
-        "--timeout", type=float, default=5.0, help="Timeout for responses"
-    )
+    parser.add_argument("--timeout", type=float, default=5.0, help="Timeout for responses")
     args = parser.parse_args()
 
     tester = SmokeTester()

@@ -40,9 +40,7 @@ async def run_test(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Minimal connectivity smoke test for the bridge client."
-    )
+    parser = argparse.ArgumentParser(description="Minimal connectivity smoke test for the bridge client.")
     parser.add_argument("--host", default=None, help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")

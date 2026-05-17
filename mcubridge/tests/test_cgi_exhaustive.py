@@ -28,9 +28,7 @@ application = getattr(pin_rest_cgi, "application")
 
 @pytest.fixture
 def cgi_env() -> Callable[..., dict[str, Any]]:
-    def _make_env(
-        path: str = "/pin/13", method: str = "POST", body: bytes | None = None
-    ) -> dict[str, Any]:
+    def _make_env(path: str = "/pin/13", method: str = "POST", body: bytes | None = None) -> dict[str, Any]:
         env: dict[str, Any] = {
             "PATH_INFO": path,
             "REQUEST_METHOD": method,

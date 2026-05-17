@@ -76,9 +76,7 @@ async def test_supervisor_fatal_exception(daemon_setup: BridgeDaemon) -> None:
         raise SerialHandshakeFatal("MCU Rejected Secret")
 
     with pytest.raises(SerialHandshakeFatal):
-        await daemon._supervise(
-            "critical-task", fatal_factory, fatal_exceptions=(SerialHandshakeFatal,)
-        )
+        await daemon._supervise("critical-task", fatal_factory, fatal_exceptions=(SerialHandshakeFatal,))
 
 
 def test_app_cli_overrides() -> None:

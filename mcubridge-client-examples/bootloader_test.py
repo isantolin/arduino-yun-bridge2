@@ -5,9 +5,7 @@ import time
 
 
 def trigger_bootloader():
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     log = logging.getLogger("bootloader_sim")
 
     topic = "br/system/bootloader"

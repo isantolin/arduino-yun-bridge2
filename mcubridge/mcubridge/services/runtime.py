@@ -173,18 +173,14 @@ class BridgeService:
             if s != Status.ACK:
                 self.mcu_registry[s.value] = make_handler(s)
 
-    def register_serial_sender(
-        self, sender: Callable[[int, bytes], Awaitable[bool]]
-    ) -> None:
+    def register_serial_sender(self, sender: Callable[[int, bytes], Awaitable[bool]]) -> None:
         """Register the serial transport's send function."""
         self._serial_sender = sender
 
     def set_mqtt_client(self, client: aiomqtt.Client | None) -> None:
         self._mqtt_client = client
 
-    async def enqueue_mqtt(
-        self, message: QueuedPublish, *, reply_context: Message | None = None
-    ) -> None:
+    async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
         if not self._mqtt_client:
             self.state.mqtt_dropped_messages += 1
             self.state.metrics.mqtt_messages_dropped.inc()
@@ -193,13 +189,9 @@ class BridgeService:
         overrides = {}
         if reply_context is not None:
             props = reply_context.properties
-            target_topic = (
-                getattr(props, "ResponseTopic", None) if props else None
-            ) or message.topic_name
+            target_topic = (getattr(props, "ResponseTopic", None) if props else None) or message.topic_name
             overrides["topic_name"] = target_topic
-            if reply_correlation := (
-                getattr(props, "CorrelationData", None) if props else None
-            ):
+            if reply_correlation := (getattr(props, "CorrelationData", None) if props else None):
                 overrides["correlation_data"] = reply_correlation
             overrides["user_properties"] = message.user_properties + (
                 ("bridge-request-topic", str(reply_context.topic)),
@@ -230,9 +222,7 @@ class BridgeService:
             self.state.metrics.mqtt_messages_published.inc()
         except (aiomqtt.MqttError, OSError, RuntimeError) as exc:
             logger.warning("MQTT direct publish failure: %s", exc)
-            self.state.mqtt_drop_counts[msg.topic_name] = (
-                self.state.mqtt_drop_counts.get(msg.topic_name, 0) + 1
-            )
+            self.state.mqtt_drop_counts[msg.topic_name] = self.state.mqtt_drop_counts.get(msg.topic_name, 0) + 1
             self.state.mqtt_dropped_messages += 1
             self.state.metrics.mqtt_messages_dropped.inc()
 
@@ -274,11 +264,7 @@ class BridgeService:
     # --- MCU Frame Dispatch ---
 
     async def handle_mcu_frame(self, cmd_id: int, seq_id: int, payload: bytes) -> None:
-        if not (
-            self.state.is_synchronized
-            or cmd_id in _STATUS_VALUES
-            or cmd_id in _PRE_SYNC_ALLOWED_COMMANDS
-        ):
+        if not (self.state.is_synchronized or cmd_id in _STATUS_VALUES or cmd_id in _PRE_SYNC_ALLOWED_COMMANDS):
             logger.warning("Security: Rejecting pre-sync MCU frame 0x%02X", cmd_id)
             return
 
@@ -302,9 +288,7 @@ class BridgeService:
     async def _handle_mcu_capabilities_resp(self, seq_id: int, payload: bytes) -> bool:
         return await self.handshake.handle_capabilities_resp(seq_id, payload)
 
-    async def _handle_mcu_status(
-        self, seq_id: int, status: Status, payload: bytes
-    ) -> None:
+    async def _handle_mcu_status(self, seq_id: int, status: Status, payload: bytes) -> None:
         desc = status.description
         text = payload.decode("utf-8", errors="ignore") if payload else ""
         if status not in {Status.OK, Status.ACK}:
@@ -381,9 +365,7 @@ class BridgeService:
             res_payload = msgspec.convert(val, bytes)
             return await self.serial.send(
                 Command.CMD_DATASTORE_GET_RESP.value,
-                msgspec.msgpack.encode(
-                    DatastoreGetResponsePacket(value=msgspec.Raw(res_payload[:255]))
-                ),
+                msgspec.msgpack.encode(DatastoreGetResponsePacket(value=msgspec.Raw(res_payload[:255]))),
             )
         return False
 
@@ -417,9 +399,7 @@ class BridgeService:
     async def _handle_mcu_mailbox_available(self, seq_id: int, _: bytes) -> bool:
         return await self.serial.send(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
-            msgspec.msgpack.encode(
-                MailboxAvailableResponsePacket(count=len(self.state.mailbox_queue))
-            ),
+            msgspec.msgpack.encode(MailboxAvailableResponsePacket(count=len(self.state.mailbox_queue))),
         )
 
     async def _handle_mcu_mailbox_read(self, seq_id: int, _: bytes) -> bool:
@@ -432,9 +412,7 @@ class BridgeService:
     async def _handle_mcu_mailbox_processed(self, seq_id: int, payload: bytes) -> bool:
         await self.enqueue_mqtt(
             QueuedPublish(
-                topic_path(
-                    self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.PROCESSED
-                ),
+                topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.PROCESSED),
                 payload,
             )
         )
@@ -465,9 +443,7 @@ class BridgeService:
                     for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
                         await self.serial.send(
                             Command.CMD_FILE_READ_RESP.value,
-                            msgspec.msgpack.encode(
-                                FileReadResponsePacket(content=bytes(chunk))
-                            ),
+                            msgspec.msgpack.encode(FileReadResponsePacket(content=bytes(chunk))),
                         )
                 return
         await self.serial.send(Status.ERROR.value, b"Read failed")
@@ -492,9 +468,7 @@ class BridgeService:
                 self._pending_mcu_read.chunks.append(p.content)
                 return True
             if not self._pending_mcu_read.future.done():
-                self._pending_mcu_read.future.set_result(
-                    b"".join(self._pending_mcu_read.chunks)
-                )
+                self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
             return True
         except (
             msgspec.DecodeError,
@@ -544,18 +518,12 @@ class BridgeService:
             await self._stop_process(pid)
 
     async def _handle_mcu_pin_digital_read(self, seq_id: int, payload: bytes) -> bool:
-        return await self.serial.send(
-            Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available"
-        )
+        return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available")
 
     async def _handle_mcu_pin_analog_read(self, seq_id: int, payload: bytes) -> bool:
-        return await self.serial.send(
-            Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available"
-        )
+        return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available")
 
-    async def _handle_mcu_pin_digital_read_resp(
-        self, seq_id: int, payload: bytes
-    ) -> None:
+    async def _handle_mcu_pin_digital_read_resp(self, seq_id: int, payload: bytes) -> None:
         await self._handle_pin_resp(
             payload,
             Topic.DIGITAL,
@@ -563,9 +531,7 @@ class BridgeService:
             self.state.pending_digital_reads,
         )
 
-    async def _handle_mcu_pin_analog_read_resp(
-        self, seq_id: int, payload: bytes
-    ) -> None:
+    async def _handle_mcu_pin_analog_read_resp(self, seq_id: int, payload: bytes) -> None:
         await self._handle_pin_resp(
             payload,
             Topic.ANALOG,
@@ -578,9 +544,7 @@ class BridgeService:
             p = msgspec.msgpack.decode(payload, type=SpiTransferResponsePacket)
             await self.enqueue_mqtt(
                 QueuedPublish(
-                    topic_path(
-                        self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"
-                    ),
+                    topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"),
                     p.data,
                 )
             )
@@ -600,11 +564,7 @@ class BridgeService:
             action = self._deduce_action(route)
             if action and not (
                 self.state.topic_authorization.allows(
-                    (
-                        route.topic.value
-                        if isinstance(route.topic, Topic)
-                        else route.topic
-                    ),
+                    (route.topic.value if isinstance(route.topic, Topic) else route.topic),
                     action,
                 )
                 if self.state.topic_authorization
@@ -665,16 +625,10 @@ class BridgeService:
                 if not is_req and inbound.payload:
                     return
 
-                res_payload = msgspec.convert(
-                    val.encode() if isinstance(val, str) else val, bytes
-                )
-                await self._publish_datastore_value(
-                    key, res_payload, reply_context=inbound
-                )
+                res_payload = msgspec.convert(val.encode() if isinstance(val, str) else val, bytes)
+                await self._publish_datastore_value(key, res_payload, reply_context=inbound)
             elif is_req:
-                await self._publish_datastore_value(
-                    key, b"", reply_context=inbound, error="datastore-miss"
-                )
+                await self._publish_datastore_value(key, b"", reply_context=inbound, error="datastore-miss")
 
     async def _handle_mqtt_mailbox(self, route: TopicRoute, inbound: Message) -> None:
         pl = msgspec.convert(inbound.payload, bytes)
@@ -803,9 +757,7 @@ class BridgeService:
                     ),
                     reply_context=inbound,
                 )
-        elif (
-            action in (ShellAction.POLL, ShellAction.KILL) and len(route.segments) == 2
-        ):
+        elif action in (ShellAction.POLL, ShellAction.KILL) and len(route.segments) == 2:
             pid = int(route.segments[1])
             if action == ShellAction.POLL:
                 batch = await self._poll_process(pid)
@@ -837,17 +789,11 @@ class BridgeService:
                     # Simplified raw decoding
                     raw = msgspec.json.decode(inbound.payload)
                     p = msgspec.convert(raw, SpiConfigPacket)
-                    await self.serial.send(
-                        Command.CMD_SPI_SET_CONFIG.value, msgspec.msgpack.encode(p)
-                    )
+                    await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, msgspec.msgpack.encode(p))
             case SpiAction.TRANSFER:
                 if inbound.payload:
-                    payload = msgspec.msgpack.encode(
-                        SpiTransferPacket(data=bytes(inbound.payload))
-                    )
-                    res = await self.serial.send_and_wait_payload(
-                        Command.CMD_SPI_TRANSFER.value, payload
-                    )
+                    payload = msgspec.msgpack.encode(SpiTransferPacket(data=bytes(inbound.payload)))
+                    res = await self.serial.send_and_wait_payload(Command.CMD_SPI_TRANSFER.value, payload)
                     if res:
                         p = msgspec.msgpack.decode(res, type=SpiTransferResponsePacket)
                         await self.enqueue_mqtt(
@@ -878,29 +824,17 @@ class BridgeService:
                         msgspec.msgpack.encode(PinModePacket(pin=pin, mode=int(pl))),
                     )
                 elif route.segments[1] == PinAction.READ:
-                    cmd = (
-                        Command.CMD_DIGITAL_READ
-                        if route.topic == Topic.DIGITAL
-                        else Command.CMD_ANALOG_READ
-                    )
+                    cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
                     queue = (
                         self.state.pending_digital_reads
                         if cmd == Command.CMD_DIGITAL_READ
                         else self.state.pending_analog_reads
                     )
                     if len(queue) < self.state.pending_pin_request_limit:
-                        queue.append(
-                            structures.PendingPinRequest(pin=pin, reply_context=inbound)
-                        )
-                        await self.serial.send(
-                            cmd.value, msgspec.msgpack.encode(PinReadPacket(pin=pin))
-                        )
+                        queue.append(structures.PendingPinRequest(pin=pin, reply_context=inbound))
+                        await self.serial.send(cmd.value, msgspec.msgpack.encode(PinReadPacket(pin=pin)))
             case 1:
-                cmd = (
-                    Command.CMD_DIGITAL_WRITE
-                    if route.topic == Topic.DIGITAL
-                    else Command.CMD_ANALOG_WRITE
-                )
+                cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
                 val = int(pl) if pl.isdigit() else 0
                 await self.serial.send(
                     cmd.value,
@@ -914,18 +848,12 @@ class BridgeService:
             case SystemAction.BOOTLOADER:
                 await self.serial.send(
                     Command.CMD_ENTER_BOOTLOADER.value,
-                    msgspec.msgpack.encode(
-                        EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)
-                    ),
+                    msgspec.msgpack.encode(EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC)),
                 )
             case SystemAction.FREE_MEMORY if "get" in route.segments:
-                pl = await self.serial.send_and_wait_payload(
-                    Command.CMD_GET_FREE_MEMORY.value, b""
-                )
+                pl = await self.serial.send_and_wait_payload(Command.CMD_GET_FREE_MEMORY.value, b"")
                 if pl:
-                    val = str(
-                        msgspec.msgpack.decode(pl, type=FreeMemoryResponsePacket).value
-                    ).encode()
+                    val = str(msgspec.msgpack.decode(pl, type=FreeMemoryResponsePacket).value).encode()
                     await self.enqueue_mqtt(
                         QueuedPublish(
                             topic_path(
@@ -976,9 +904,7 @@ class BridgeService:
             return True
         return False
 
-    async def _publish_version(
-        self, v: tuple[int, int, int], ctx: Message | None
-    ) -> None:
+    async def _publish_version(self, v: tuple[int, int, int], ctx: Message | None) -> None:
         pl = f"{v[0]}.{v[1]}.{v[2]}".encode()
         tp = topic_path(
             self.state.mqtt_topic_prefix,
@@ -986,9 +912,7 @@ class BridgeService:
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
-        await self.enqueue_mqtt(
-            QueuedPublish(tp, pl, message_expiry_interval=MQTT_EXPIRY_DATASTORE)
-        )
+        await self.enqueue_mqtt(QueuedPublish(tp, pl, message_expiry_interval=MQTT_EXPIRY_DATASTORE))
         if ctx:
             await self.enqueue_mqtt(
                 QueuedPublish(tp, pl, message_expiry_interval=MQTT_EXPIRY_DATASTORE),
@@ -1058,9 +982,7 @@ class BridgeService:
             io_lock = self.state.process_io_locks.get(pid)
             ec = self.state.process_exit_codes.get(pid, 0)
             if not h or not io_lock:
-                return ProcessOutputBatch(
-                    Status.ERROR.value, 1, b"", b"", True, False, False
-                )
+                return ProcessOutputBatch(Status.ERROR.value, 1, b"", b"", True, False, False)
 
             async with io_lock:
 
@@ -1068,9 +990,7 @@ class BridgeService:
                     if not s or s.at_eof():
                         return b"", False
                     try:
-                        c = await asyncio.wait_for(
-                            s.read(protocol.MAX_PAYLOAD_SIZE - 32), 0.01
-                        )
+                        c = await asyncio.wait_for(s.read(protocol.MAX_PAYLOAD_SIZE - 32), 0.01)
                         return c, not s.at_eof()
                     except asyncio.TimeoutError:
                         return b"", True
@@ -1079,11 +999,7 @@ class BridgeService:
                 e, te = await _rd(h.stderr)
                 fin = h.returncode is not None
                 b = ProcessOutputBatch(Status.OK.value, ec, o, e, fin, to, te)
-                if (
-                    fin
-                    and (h.stdout is None or h.stdout.at_eof())
-                    and (h.stderr is None or h.stderr.at_eof())
-                ):
+                if fin and (h.stdout is None or h.stdout.at_eof()) and (h.stderr is None or h.stderr.at_eof()):
                     self._finalize_process(pid)
                 return b
 
@@ -1132,18 +1048,14 @@ class BridgeService:
                     ),
                     str(v).encode(),
                     message_expiry_interval=MQTT_EXPIRY_PIN,
-                    user_properties=(
-                        ("bridge-pin", str(req.pin) if req else "unknown"),
-                    ),
+                    user_properties=(("bridge-pin", str(req.pin) if req else "unknown"),),
                 ),
                 reply_context=req.reply_context if req else None,
             )
 
     async def _handle_mqtt_file_mcu_read(self, ctx: Message, target: str) -> None:
         async with self._mcu_read_lock:
-            self._pending_mcu_read = _PendingMcuRead(
-                target, asyncio.get_running_loop().create_future()
-            )
+            self._pending_mcu_read = _PendingMcuRead(target, asyncio.get_running_loop().create_future())
             payload = msgspec.msgpack.encode(FileReadPacket(path=target[4:]))
             logger.debug("MCU Read Payload: %s (len: %d)", payload.hex(), len(payload))
             if await self.serial.send(
@@ -1183,35 +1095,21 @@ class BridgeService:
 
     def _parse_pin(self, s: str) -> int:
         s = s.upper()
-        return (
-            int(s[1:])
-            if s.startswith("A") and s[1:].isdigit()
-            else (int(s) if s.isdigit() else -1)
-        )
+        return int(s[1:]) if s.startswith("A") and s[1:].isdigit() else (int(s) if s.isdigit() else -1)
 
     def _deduce_action(self, r: TopicRoute) -> str | None:
         if r.topic == Topic.SYSTEM:
             return None
         if r.topic in (Topic.DIGITAL, Topic.ANALOG):
-            return (
-                "write"
-                if len(r.segments) == 1
-                else (r.segments[1].lower() if len(r.segments) > 1 else None)
-            )
-        return (
-            "in"
-            if r.topic == Topic.CONSOLE and r.identifier == "in"
-            else (r.identifier or None)
-        )
+            return "write" if len(r.segments) == 1 else (r.segments[1].lower() if len(r.segments) > 1 else None)
+        return "in" if r.topic == Topic.CONSOLE and r.identifier == "in" else (r.identifier or None)
 
     async def _reject_mqtt(self, ctx: Message, tp: Topic | str, act: str) -> None:
         val = tp.value if isinstance(tp, Topic) else tp
         await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                msgspec.msgpack.encode(
-                    {"status": "forbidden", "topic": val, "action": act}
-                ),
+                msgspec.msgpack.encode({"status": "forbidden", "topic": val, "action": act}),
                 content_type="application/msgpack",
                 user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
             ),
@@ -1231,11 +1129,7 @@ class BridgeService:
             DatastoreAction.GET,
             *filter(None, key.split("/")),
         )
-        props = (
-            (("bridge-datastore-key", key), ("bridge-error", error))
-            if error
-            else (("bridge-datastore-key", key),)
-        )
+        props = (("bridge-datastore-key", key), ("bridge-error", error)) if error else (("bridge-datastore-key", key),)
         pub = QueuedPublish(
             tp,
             val,

@@ -117,9 +117,7 @@ def force_gc_cleanup():
     # Access the policy's thread-local directly to avoid triggering the
     # DeprecationWarning that filterwarnings=["error"] would promote to fatal.
     with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", category=DeprecationWarning, message=".*get_event_loop_policy.*"
-        )
+        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*get_event_loop_policy.*")
         policy = asyncio.get_event_loop_policy()
     loop = getattr(getattr(policy, "_local", None), "_loop", None)
     if loop is not None and not loop.is_closed():
@@ -129,9 +127,7 @@ def force_gc_cleanup():
     # The diskcache ResourceWarning was fixed at the source (RuntimeState.__del__
     # + cleanup() resets mailbox queues to plain deques), so no suppression needed.
     with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", category=pytest.PytestUnraisableExceptionWarning
-        )
+        warnings.filterwarnings("ignore", category=pytest.PytestUnraisableExceptionWarning)
         gc.collect()
 
 
@@ -239,9 +235,7 @@ def runtime_config() -> RuntimeConfig:
     import time
 
     # [TEST FIX] Ensure each test worker has its own unique FS root to avoid SQLite locking
-    unique_root = os.path.join(
-        TMP_TESTS_DIR, f"mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
-    )
+    unique_root = os.path.join(TMP_TESTS_DIR, f"mcubridge-test-fs-{os.getpid()}-{time.time_ns()}")
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_BAUDRATE,
@@ -269,9 +263,7 @@ def runtime_config() -> RuntimeConfig:
         serial_response_timeout=0.1,
         serial_retry_attempts=1,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
-        mqtt_spool_dir=os.path.join(
-            TMP_TESTS_DIR, f"mcubridge-test-spool-{os.getpid()}"
-        ),
+        mqtt_spool_dir=os.path.join(TMP_TESTS_DIR, f"mcubridge-test-spool-{os.getpid()}"),
         allow_non_tmp_paths=True,
     )
 

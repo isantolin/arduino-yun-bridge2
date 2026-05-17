@@ -29,14 +29,10 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
 
             payload = state.build_metrics_snapshot()
             payload["process_stats"] = child_stats
-            payload["supervisors"] = {
-                n: s.as_snapshot() for n, s in state.supervisor_stats.items()
-            }
+            payload["supervisors"] = {n: s.as_snapshot() for n, s in state.supervisor_stats.items()}
             payload["heartbeat_unix"] = time.time()
 
-            write_task = asyncio.create_task(
-                asyncio.to_thread(_write_status_file, payload)
-            )
+            write_task = asyncio.create_task(asyncio.to_thread(_write_status_file, payload))
             try:
                 await asyncio.shield(write_task)
             except asyncio.CancelledError:

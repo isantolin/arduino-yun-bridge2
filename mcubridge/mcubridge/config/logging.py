@@ -12,9 +12,7 @@ import structlog
 from .settings import RuntimeConfig
 
 
-def hexdump_processor(
-    _: Any, __: str, event_dict: structlog.types.EventDict
-) -> structlog.types.EventDict:
+def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) -> structlog.types.EventDict:
     """Format binary fields as standardized hex strings [DE AD BE EF]."""
     for key, value in event_dict.items():
         if isinstance(value, (bytes, bytearray, memoryview)):
@@ -32,9 +30,7 @@ def configure_logging(config: RuntimeConfig) -> None:
     # Check for syslog sockets
     syslog_socket = Path("/dev/log")
     syslog_fallback = Path("/var/run/log")
-    use_syslog = not force_stream and (
-        syslog_socket.exists() or syslog_fallback.exists()
-    )
+    use_syslog = not force_stream and (syslog_socket.exists() or syslog_fallback.exists())
 
     # [SIL-2] Native processors for high-performance zero-wrapper logging
     processors: list[Any] = [
@@ -50,11 +46,7 @@ def configure_logging(config: RuntimeConfig) -> None:
     structlog.configure(
         processors=[
             *processors,
-            (
-                structlog.processors.JSONRenderer()
-                if use_syslog
-                else structlog.dev.ConsoleRenderer()
-            ),
+            (structlog.processors.JSONRenderer() if use_syslog else structlog.dev.ConsoleRenderer()),
         ],
         logger_factory=structlog.PrintLoggerFactory(),
         wrapper_class=structlog.make_filtering_bound_logger(level),

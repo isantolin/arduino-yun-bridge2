@@ -46,12 +46,14 @@ _CAP_BITS = {
     "sd": 0x00001000,
 }
 
+
 def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
     val = 0
     for k, v in feat_dict.items():
         if v and k in _CAP_BITS:
             val |= _CAP_BITS[k]
     return val
+
 
 def _int_to_capabilities(val: int) -> dict[str, bool]:
     return {k: bool(val & bit) for k, bit in _CAP_BITS.items()}
@@ -1017,4 +1019,3 @@ class ProcessStats(msgspec.Struct):
     name: str
     cpu_percent: Annotated[float, msgspec.Meta(ge=0.0)]
     memory_rss_bytes: Annotated[int, msgspec.Meta(ge=0)]
-

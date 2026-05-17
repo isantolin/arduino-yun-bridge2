@@ -44,11 +44,7 @@ async def _stream_poll_updates(
         if stderr_chunk:
             logger.info("[PID %d] STDERR: %s", pid, stderr_chunk)
 
-        if (
-            finished
-            and not poll_payload.get("stdout_truncated")
-            and not poll_payload.get("stderr_truncated")
-        ):
+        if finished and not poll_payload.get("stdout_truncated") and not poll_payload.get("stderr_truncated"):
             if not stdout_chunk and not stderr_chunk:
                 logger.info(
                     "Process %d completed with exit code %s",
@@ -57,9 +53,7 @@ async def _stream_poll_updates(
                 )
             else:
                 logger.info(
-                    (
-                        "Process %d completed with exit code %s (final chunk logged above)"
-                    ),
+                    ("Process %d completed with exit code %s (final chunk logged above)"),
                     pid,
                     exit_code,
                 )
@@ -81,9 +75,7 @@ async def run_test(
         command_to_run: list[str] = [
             "sh",
             "-c",
-            (
-                "for i in $(seq 1 4); do echo \"tick:$i\"; sleep 0.5; done; >&2 echo 'process complete'"
-            ),
+            ("for i in $(seq 1 4); do echo \"tick:$i\"; sleep 0.5; done; >&2 echo 'process complete'"),
         ]
 
         logging.info("Launching async command: %s", " ".join(command_to_run))
@@ -105,9 +97,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run an async shell command and stream its output via MQTT polls."
-    )
+    parser = argparse.ArgumentParser(description="Run an async shell command and stream its output via MQTT polls.")
     parser.add_argument("--host", default=None, help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")

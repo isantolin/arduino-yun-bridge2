@@ -167,14 +167,10 @@ def test_state_context_extra_coverage() -> None:
     state = create_runtime_state(config)
     # Correct method name
     state.mark_supervisor_healthy("test")
-    state.apply_handshake_stats(
-        {"attempts": 1, "successes": 1, "last_unix": time.time()}
-    )
+    state.apply_handshake_stats({"attempts": 1, "successes": 1, "last_unix": time.time()})
     # Use public API if available or suppress if necessary
     # For coverage tests, private access is sometimes tolerated but we can cast to Any
     # to satisfy the type checker for now while maintaining the test's intent.
     state_any: Any = state
-    state_any._apply_spool_observation(
-        {"corrupt_dropped": 1, "dropped_due_to_limit": 1}
-    )
+    state_any._apply_spool_observation({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
     assert state.handshake_duration_since_start() >= 0

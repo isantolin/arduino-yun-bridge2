@@ -36,6 +36,7 @@ venv/
 sample-build/
 final-audit/
 arduino-build/
+openwrt-sdk-25.12.3-malta-be_gcc-14.3.0_musl.Linux-x86_64/
 
 # Generated type stubs (dynamic)
 typings/diskcache/

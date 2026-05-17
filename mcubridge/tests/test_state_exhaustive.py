@@ -14,9 +14,7 @@ def test_state_metrics_exhaustive() -> None:
     state.mark_supervisor_healthy("task")
     state.record_supervisor_failure("task", 1.0, RuntimeError("fail"))
 
-    state.apply_handshake_stats(
-        {"attempts": 5, "successes": 2, "last_unix": time.time()}
-    )
+    state.apply_handshake_stats({"attempts": 5, "successes": 2, "last_unix": time.time()})
     assert state.handshake_attempts == 5
 
     state._apply_spool_observation({"corrupt_dropped": 1, "dropped_due_to_limit": 1})

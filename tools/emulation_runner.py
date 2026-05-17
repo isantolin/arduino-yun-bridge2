@@ -82,9 +82,7 @@ def _start_worker_thread(target: Any, name: str, *args: Any) -> threading.Thread
     return thread
 
 
-def _mcu_stderr_worker(
-    mcu_proc: subprocess.Popen[bytes], state: EmulationState
-) -> None:
+def _mcu_stderr_worker(mcu_proc: subprocess.Popen[bytes], state: EmulationState) -> None:
     if mcu_proc.stderr:
         for line in iter(mcu_proc.stderr.readline, b""):
             if not line:
@@ -128,9 +126,7 @@ def run_emulation(
         try:
             shutil.rmtree(emulator_fs_root)
         except OSError as exc:
-            logger.error(
-                "Failed to clean emulator FS root %s: %s", emulator_fs_root, exc
-            )
+            logger.error("Failed to clean emulator FS root %s: %s", emulator_fs_root, exc)
     emulator_fs_root.mkdir(parents=True, exist_ok=True)
 
     logger.info("Starting Unified MCU Emulator via socat EXEC...")
@@ -223,9 +219,7 @@ def run_emulation(
 
                 try:
                     # Run with captured output but echoing to parent stdout/stderr
-                    subprocess.run(
-                        [sys.executable, script], env=daemon_env, check=True, timeout=60
-                    )
+                    subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
                     logger.info("Script %s PASSED.", script)
                 except (
                     subprocess.CalledProcessError,
@@ -271,9 +265,7 @@ def run_emulation(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Hardware Emulation Runner")
-    parser.add_argument(
-        "--firmware", type=Path, required=True, help="Path to MCU firmware binary"
-    )
+    parser.add_argument("--firmware", type=Path, required=True, help="Path to MCU firmware binary")
     parser.add_argument(
         "--package-root",
         type=Path,

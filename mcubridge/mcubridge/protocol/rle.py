@@ -54,9 +54,7 @@ def rle_encode(obj: bytes | bytearray | memoryview) -> bytes:
 
         if byte_val == protocol.RLE_ESCAPE_BYTE:
             # Escape literal 0xFF as [0xFF, 0xFF, 0xFF]
-            marker = bytes(
-                [protocol.RLE_ESCAPE_BYTE, protocol.RLE_SINGLE_ESCAPE_MARKER, byte_val]
-            )
+            marker = bytes([protocol.RLE_ESCAPE_BYTE, protocol.RLE_SINGLE_ESCAPE_MARKER, byte_val])
             res.extend(marker * run_len)
         elif run_len >= protocol.RLE_MIN_RUN_LENGTH:
             # Handle chunks. Max count_m2 is 254 to avoid SINGLE_ESCAPE_MARKER (255).
@@ -79,10 +77,7 @@ def should_compress(payload: bytes | bytearray | memoryview) -> bool:
     """Check if a payload should be RLE compressed."""
     if len(payload) < protocol.RLE_MIN_COMPRESS_INPUT_SIZE:
         return False
-    return any(
-        sum(1 for _ in group) >= protocol.RLE_MIN_RUN_LENGTH
-        for _, group in itertools.groupby(payload)
-    )
+    return any(sum(1 for _ in group) >= protocol.RLE_MIN_RUN_LENGTH for _, group in itertools.groupby(payload))
 
 
 __all__ = ["rle_encode", "rle_decode", "should_compress"]

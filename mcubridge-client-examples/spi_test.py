@@ -8,9 +8,7 @@ import logging
 
 from mcubridge_client import Bridge
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -64,9 +62,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Test script for SPI service and Auto-Baudrate fallback."
-    )
+    parser = argparse.ArgumentParser(description="Test script for SPI service and Auto-Baudrate fallback.")
     parser.add_argument("--host", default="127.0.0.1", help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=1883, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")

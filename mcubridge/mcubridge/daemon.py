@@ -133,13 +133,10 @@ class BridgeDaemon:
             return _is_retryable(exc) if exc else False
 
         retryer = tenacity.AsyncRetrying(
-            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
-            + tenacity.wait_random(0, 2),
+            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
             retry=_retry_predicate,
             before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-            after=lambda rs: self.state.metrics.retries.labels(
-                component="mqtt_connect"
-            ).inc(),
+            after=lambda rs: self.state.metrics.retries.labels(component="mqtt_connect").inc(),
             reraise=True,
         )
 
@@ -191,13 +188,10 @@ class BridgeDaemon:
             self.service.set_mqtt_client(client)
             try:
                 topics = [
-                    (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
-                    for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
+                    (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q)) for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
                 ]
                 await client.subscribe(topics)
-                await client.publish(
-                    will_topic, b'{"status": "online"}', qos=1, retain=True
-                )
+                await client.publish(will_topic, b'{"status": "online"}', qos=1, retain=True)
 
                 async for message in client.messages:
                     if message.topic:
@@ -208,9 +202,7 @@ class BridgeDaemon:
                                 "Error processing MQTT message",
                                 topic=str(message.topic),
                                 error=str(e),
-                                payload_hex=(
-                                    message.payload.hex() if message.payload else None
-                                ),
+                                payload_hex=(message.payload.hex() if message.payload else None),
                             )
             finally:
                 self.service.set_mqtt_client(None)
@@ -243,9 +235,7 @@ class BridgeDaemon:
                     tg.create_task(
                         self._supervise(
                             "status-writer",
-                            lambda: status_writer(
-                                self.state, self.config.status_interval
-                            ),
+                            lambda: status_writer(self.state, self.config.status_interval),
                         )
                     )
                     tg.create_task(
@@ -260,30 +250,21 @@ class BridgeDaemon:
                     )
 
                     # 4. Optional Features
-                    if (
-                        self.config.bridge_summary_interval > 0.0
-                        or self.config.bridge_handshake_interval > 0.0
-                    ):
+                    if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
                         tg.create_task(
                             self._supervise(
                                 "bridge-snapshots",
                                 lambda: publish_bridge_snapshots(
                                     self.state,
                                     self.service.enqueue_mqtt,
-                                    summary_interval=float(
-                                        self.config.bridge_summary_interval
-                                    ),
-                                    handshake_interval=float(
-                                        self.config.bridge_handshake_interval
-                                    ),
+                                    summary_interval=float(self.config.bridge_summary_interval),
+                                    handshake_interval=float(self.config.bridge_handshake_interval),
                                 ),
                             )
                         )
 
                     if self.config.watchdog_enabled:
-                        self.watchdog = WatchdogKeepalive(
-                            interval=self.config.watchdog_interval, state=self.state
-                        )
+                        self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
                         tg.create_task(self._supervise("watchdog", self.watchdog.run))
 
                     if self.config.metrics_enabled:
@@ -292,9 +273,7 @@ class BridgeDaemon:
                             self.config.metrics_host,
                             self.config.metrics_port,
                         )
-                        tg.create_task(
-                            self._supervise("prometheus-exporter", self.exporter.run)
-                        )
+                        tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
@@ -333,10 +312,7 @@ class BridgeDaemon:
             if isinstance(exc, (*fatal_exceptions, asyncio.CancelledError)):
                 return False
             # Check for consecutive max backoff hits
-            if (
-                rs.idle_for >= max_backoff
-                and rs.attempt_number >= max_consecutive_max_backoff
-            ):
+            if rs.idle_for >= max_backoff and rs.attempt_number >= max_consecutive_max_backoff:
                 logger.critical(
                     "CIRCUIT BREAKER: Task '%s' tripped after repeated failures at max backoff.",
                     name,
@@ -345,11 +321,7 @@ class BridgeDaemon:
             return True
 
         retryer = tenacity.AsyncRetrying(
-            stop=(
-                tenacity.stop_after_attempt(max_restarts + 1)
-                if max_restarts is not None
-                else tenacity.stop_never
-            ),
+            stop=(tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never),
             wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
             retry=_circuit_breaker,
             before_sleep=lambda rs: self.state.record_supervisor_failure(
@@ -372,14 +344,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         add_help=True,
     )
     parser.add_argument("--serial-port", default=None, help="Serial port to use")
-    parser.add_argument(
-        "--serial-baud", type=int, default=None, help="Serial baud rate"
-    )
+    parser.add_argument("--serial-baud", type=int, default=None, help="Serial baud rate")
     parser.add_argument("--mqtt-host", default=None, help="MQTT host")
     parser.add_argument("--mqtt-port", type=int, default=None, help="MQTT port")
-    parser.add_argument(
-        "--mqtt-tls", type=int, default=None, help="Use TLS for MQTT (0 or 1)"
-    )
+    parser.add_argument("--mqtt-tls", type=int, default=None, help="Use TLS for MQTT (0 or 1)")
     parser.add_argument(
         "--serial-shared-secret",
         "--serial-shared_secret",
@@ -398,9 +366,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=False,
         help="Enable non-interactive mode",
     )
-    parser.add_argument(
-        "--debug", action="store_true", default=False, help="Enable debug logging"
-    )
+    parser.add_argument("--debug", action="store_true", default=False, help="Enable debug logging")
     return parser
 
 
@@ -420,9 +386,7 @@ def app(argv: list[str] | None = None) -> None:
             "serial_shared_secret": args.serial_shared_secret,
             "non_interactive": args.non_interactive or None,
             "debug": args.debug or None,
-            "allowed_commands": (
-                (_ac.split(",") if _ac != "*" else "*") if _ac else None
-            ),
+            "allowed_commands": ((_ac.split(",") if _ac != "*" else "*") if _ac else None),
         }.items()
         if v is not None
     }
@@ -483,9 +447,7 @@ def main(overrides: dict[str, Any]) -> None:
         msgspec.MsgspecError,
         tenacity.RetryError,
     ) as exc:
-        logger.critical(
-            "Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError)
-        )
+        logger.critical("Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError))
         sys.exit(1)
     except BaseException as exc:
         # [SIL-2] Catch-all for unhandled system-level errors

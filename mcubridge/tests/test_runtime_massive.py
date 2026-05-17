@@ -192,12 +192,8 @@ async def test_runtime_mqtt_brute_force(
     service, state, _ = service_setup
     state.mark_synchronized()
 
-    msg = Message(
-        topic="br/test", payload=b"{}", qos=0, retain=False, mid=1, properties=None
-    )
-    route = TopicRoute(
-        raw="br/test", prefix="br", topic=Topic.SYSTEM, segments=("get", "version")
-    )
+    msg = Message(topic="br/test", payload=b"{}", qos=0, retain=False, mid=1, properties=None)
+    route = TopicRoute(raw="br/test", prefix="br", topic=Topic.SYSTEM, segments=("get", "version"))
 
     mqtt_handlers = [
         (service._handle_mqtt_console, msg),
@@ -298,9 +294,7 @@ async def test_runtime_mcu_special_logic(
 
     async with service._storage_lock:
         asyncio.create_task(
-            service._handle_mcu_file_write(
-                1, msgspec.msgpack.encode(FileWritePacket(path="t", data=b""))
-            )
+            service._handle_mcu_file_write(1, msgspec.msgpack.encode(FileWritePacket(path="t", data=b"")))
         )
         await asyncio.sleep(0.01)
 

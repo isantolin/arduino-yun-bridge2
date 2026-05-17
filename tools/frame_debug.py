@@ -164,9 +164,7 @@ def _iter_counts(count: int) -> Iterable[int]:
 
 
 def main_cmd(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        description="Inspect and optionally send MCU Bridge RPC frames."
-    )
+    parser = argparse.ArgumentParser(description="Inspect and optionally send MCU Bridge RPC frames.")
     parser.add_argument(
         "--command",
         "-c",
@@ -180,24 +178,16 @@ def main_cmd(argv: list[str] | None = None) -> None:
         help="Payload in hex format",
     )
     parser.add_argument("--port", default=None, help="Serial port device path")
-    parser.add_argument(
-        "--baud", type=int, default=DEFAULT_BAUDRATE, help="Serial baud rate"
-    )
-    parser.add_argument(
-        "--interval", type=float, default=5.0, help="Interval between frames in seconds"
-    )
-    parser.add_argument(
-        "--count", type=int, default=1, help="Number of frames to send (0 for infinite)"
-    )
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUDRATE, help="Serial baud rate")
+    parser.add_argument("--interval", type=float, default=5.0, help="Interval between frames in seconds")
+    parser.add_argument("--count", type=int, default=1, help="Number of frames to send (0 for infinite)")
     parser.add_argument(
         "--read-response",
         action="store_true",
         default=False,
         help="Wait for and print the next frame received",
     )
-    parser.add_argument(
-        "--read-timeout", type=float, default=2.0, help="Timeout for reading responses"
-    )
+    parser.add_argument("--read-timeout", type=float, default=2.0, help="Timeout for reading responses")
     args = parser.parse_args(argv)
     command: str = args.command
     payload: str | None = args.payload

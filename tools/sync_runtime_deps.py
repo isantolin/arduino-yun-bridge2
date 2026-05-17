@@ -68,20 +68,14 @@ def load_manifest() -> list[_DepEntry]:
 def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:
     # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci)
     specs = {dep["pip"] for dep in deps if dep.get("pip")}
-    filtered = {
-        s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)
-    }
+    filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
     return sorted(filtered)
 
 
 def collect_openwrt_packages(deps: Sequence[_DepEntry]) -> list[str]:
     # Mantiene todo EXCEPTO los paquetes exclusivos de construcción (jinja2, etc)
     # Esto asegura que el APK sea ultra-lean.
-    return [
-        dep["openwrt"]
-        for dep in deps
-        if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES
-    ]
+    return [dep["openwrt"] for dep in deps if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES]
 
 
 def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
@@ -163,9 +157,7 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
 def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
-        raise ManifestError(
-            "Makefile is missing dependency markers; cannot inject dependencies"
-        )
+        raise ManifestError("Makefile is missing dependency markers; cannot inject dependencies")
     tokens = [f"{pkg}" for pkg in collect_openwrt_packages(deps)]
     if tokens:
         block_lines = ["\tDEPENDS+= \\"]
@@ -266,9 +258,7 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate derived dependency files from the runtime manifest."
-    )
+    parser = argparse.ArgumentParser(description="Generate derived dependency files from the runtime manifest.")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -312,9 +302,7 @@ def main(argv: list[str] | None = None) -> None:
     updated_feeds = update_feeds(deps, dry_run=check)
 
     fail = False
-    if check and (
-        updated_requirements or updated_makefile or updated_pyproject or updated_feeds
-    ):
+    if check and (updated_requirements or updated_makefile or updated_pyproject or updated_feeds):
         fail = True
 
     if check_latest:

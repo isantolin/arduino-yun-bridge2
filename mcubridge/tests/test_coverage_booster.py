@@ -51,9 +51,7 @@ def mock_state(mock_config: RuntimeConfig) -> Generator[RuntimeState, None, None
 
 
 @pytest.mark.asyncio
-async def test_daemon_mqtt_run_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_daemon_mqtt_run_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover _mqtt_run and _connect_mqtt_session in BridgeDaemon."""
     daemon = BridgeDaemon(mock_config)
     daemon.state = mock_state
@@ -85,9 +83,7 @@ async def test_daemon_mqtt_run_coverage(
 
 
 @pytest.mark.asyncio
-async def test_runtime_enqueue_mqtt_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_enqueue_mqtt_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover enqueue_mqtt with reply_context and errors."""
     serial = MagicMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -118,9 +114,7 @@ async def test_runtime_enqueue_mqtt_coverage(
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_edge_cases(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_serial_transport_edge_cases(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover missing branches in SerialTransport."""
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
@@ -140,17 +134,13 @@ async def test_serial_transport_edge_cases(
     assert pending.completion.is_set()
     assert cast(Any, transport)._current is None
 
-    with patch(
-        "serial_asyncio_fast.open_serial_connection", side_effect=OSError("link down")
-    ):
+    with patch("serial_asyncio_fast.open_serial_connection", side_effect=OSError("link down")):
         with pytest.raises(OSError):
             await cast(Any, transport)._connect_and_run()
 
 
 @pytest.mark.asyncio
-async def test_daemon_supervise_restart_logic_v2(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_daemon_supervise_restart_logic_v2(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """More coverage for _supervise with better waiting."""
     daemon = BridgeDaemon(mock_config)
     daemon.state = mock_state
@@ -165,9 +155,7 @@ async def test_daemon_supervise_restart_logic_v2(
         await asyncio.sleep(10)
 
     sup_task = asyncio.create_task(
-        cast(Any, daemon)._supervise(
-            "test", failing_task, min_backoff=0.001, max_backoff=0.001
-        )
+        cast(Any, daemon)._supervise("test", failing_task, min_backoff=0.001, max_backoff=0.001)
     )
 
     # Wait for up to 2 seconds for the count to reach 3
@@ -183,9 +171,7 @@ async def test_daemon_supervise_restart_logic_v2(
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_negotiation_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_serial_transport_negotiation_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover baudrate negotiation in SerialTransport."""
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
@@ -219,9 +205,7 @@ async def test_serial_transport_negotiation_coverage(
 
 
 @pytest.mark.asyncio
-async def test_runtime_mqtt_handlers_extra(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_mqtt_handlers_extra(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover more MQTT handlers in BridgeService."""
     serial = MagicMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -245,9 +229,7 @@ async def test_runtime_mqtt_handlers_extra(
 
 
 @pytest.mark.asyncio
-async def test_runtime_mcu_handlers_coverage_final(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_mcu_handlers_coverage_final(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover remaining MCU handlers in BridgeService."""
     serial = MagicMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -269,14 +251,10 @@ async def test_runtime_mcu_handlers_coverage_final(
 
     mock_state.datastore_cache.get.return_value = b"val1"
 
-    with patch(
-        "msgspec.msgpack.decode", return_value=structures.DatastoreGetPacket(key="key1")
-    ):
+    with patch("msgspec.msgpack.decode", return_value=structures.DatastoreGetPacket(key="key1")):
         await cast(Any, service)._handle_mcu_datastore_get(1, b"")
 
-    with patch(
-        "mcubridge.services.runtime.BridgeService._get_safe_path", return_value=None
-    ):
+    with patch("mcubridge.services.runtime.BridgeService._get_safe_path", return_value=None):
         await cast(Any, service)._handle_mcu_file_write(1, b"")
         await cast(Any, service)._handle_mcu_file_read(1, b"")
         await cast(Any, service)._handle_mcu_file_remove(1, b"")
@@ -299,9 +277,7 @@ async def test_runtime_mcu_handlers_coverage_final(
 
 
 @pytest.mark.asyncio
-async def test_serial_process_packet_coverage_final(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_serial_process_packet_coverage_final(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover AEAD decryption failure and malformed packets."""
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
@@ -312,18 +288,14 @@ async def test_serial_process_packet_coverage_final(
 
     from cobs import cobs
 
-    frame = Frame(
-        command_id=0x50, sequence_id=1, payload=b"data", nonce=b"N" * 12, tag=b"T" * 16
-    )
+    frame = Frame(command_id=0x50, sequence_id=1, payload=b"data", nonce=b"N" * 12, tag=b"T" * 16)
     encoded = cobs.encode(frame.build())
 
     await cast(Any, transport)._async_process_packet(encoded)
 
 
 @pytest.mark.asyncio
-async def test_runtime_file_mcu_write_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_file_mcu_write_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover _handle_mqtt_file_mcu_write with mcu/ prefix."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -350,9 +322,7 @@ async def test_runtime_file_mcu_write_coverage(
 
 
 @pytest.mark.asyncio
-async def test_runtime_sh_run_async_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_sh_run_async_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover _handle_mqtt_shell run_async."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -399,9 +369,7 @@ async def test_frame_unpacking_coverage() -> None:
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_read_loop_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_serial_transport_read_loop_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover _read_loop errors."""
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
@@ -419,9 +387,7 @@ async def test_serial_transport_read_loop_coverage(
 
 
 @pytest.mark.asyncio
-async def test_runtime_mcu_version_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_mcu_version_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover _handle_mcu_version_request and _publish_version."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -429,9 +395,7 @@ async def test_runtime_mcu_version_coverage(
     # Mock response from serial
     from mcubridge.protocol.structures import VersionResponsePacket
 
-    serial.send_and_wait_payload.return_value = msgspec.msgpack.encode(
-        VersionResponsePacket(major=1, minor=2, patch=3)
-    )
+    serial.send_and_wait_payload.return_value = msgspec.msgpack.encode(VersionResponsePacket(major=1, minor=2, patch=3))
 
     msg = MagicMock()
     msg.topic = MagicMock()
@@ -450,9 +414,7 @@ async def test_runtime_mcu_version_coverage(
 
 
 @pytest.mark.asyncio
-async def test_handshake_manager_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_handshake_manager_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover handshake logic branches."""
     from mcubridge.services.handshake import (
         SerialHandshakeManager,
@@ -485,9 +447,7 @@ async def test_handshake_manager_coverage(
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_write_errors(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_serial_transport_write_errors(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover write error branches in SerialTransport."""
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
@@ -501,9 +461,7 @@ async def test_serial_transport_write_errors(
 
 
 @pytest.mark.asyncio
-async def test_runtime_mcu_status_reasons(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_mcu_status_reasons(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover MCU status reports with various reasons."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -530,9 +488,7 @@ async def test_handshake_timing_edge_cases(mock_config: RuntimeConfig) -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_service_direct_handlers_v2(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_service_direct_handlers_v2(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover handlers in BridgeService directly."""
     # Use AsyncMock for SerialTransport to support awaiting .reset()
     mock_serial = AsyncMock(spec=SerialTransport)
@@ -553,9 +509,7 @@ async def test_runtime_service_direct_handlers_v2(
 
 
 @pytest.mark.asyncio
-async def test_state_snapshots_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_state_snapshots_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover state snapshot generation."""
     # Ensure some data exists
     mock_state.mcu_version = (1, 2, 3)
@@ -597,9 +551,7 @@ async def test_runtime_datastore_mailbox_handlers_coverage(
 
 
 @pytest.mark.asyncio
-async def test_runtime_spi_pin_handlers_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_spi_pin_handlers_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover SPI and Pin handlers."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -632,9 +584,7 @@ async def test_runtime_spi_pin_handlers_coverage(
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_retry_logic_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_serial_transport_retry_logic_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover retry logic in _send_tracked."""
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
@@ -652,9 +602,7 @@ async def test_serial_transport_retry_logic_coverage(
 
 
 @pytest.mark.asyncio
-async def test_runtime_mqtt_shell_poll_kill(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_mqtt_shell_poll_kill(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover ShellAction.POLL and KILL."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -676,9 +624,7 @@ async def test_runtime_mqtt_shell_poll_kill(
 
 
 @pytest.mark.asyncio
-async def test_runtime_mqtt_system_flavors(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_mqtt_system_flavors(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover System flavors."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -706,9 +652,7 @@ async def test_runtime_mqtt_system_flavors(
 
 
 @pytest.mark.asyncio
-async def test_runtime_mcu_pin_analog_read_coverage(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_runtime_mcu_pin_analog_read_coverage(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover _handle_mcu_pin_analog_read_resp."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
@@ -728,9 +672,7 @@ async def test_runtime_mcu_pin_analog_read_coverage(
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_tx_allowed_wait(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_serial_transport_tx_allowed_wait(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover _send_raw waiting for serial_tx_allowed."""
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
@@ -755,9 +697,7 @@ async def test_serial_transport_tx_allowed_wait(
 
 
 @pytest.mark.asyncio
-async def test_metrics_exhaustive_touch_v3(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_metrics_exhaustive_touch_v3(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Touch all metrics to ensure coverage in metrics.py."""
     metrics = mock_state.metrics
     metrics.serial_frames_sent.inc()
@@ -776,9 +716,7 @@ async def test_metrics_exhaustive_touch_v3(
 
 
 @pytest.mark.asyncio
-async def test_metrics_exporter_handler(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_metrics_exporter_handler(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover PrometheusExporter._handle_client."""
     from mcubridge.metrics import PrometheusExporter
 
@@ -827,9 +765,7 @@ async def test_policy_edge_cases() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handshake_auth_failure_detail_v19(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_handshake_auth_failure_detail_v19(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover handle_handshake_failure fatal logic."""
     from mcubridge.services.handshake import (
         SerialHandshakeManager,
@@ -880,11 +816,12 @@ async def test_security_aead_failure_coverage_v7() -> None:
     """Cover aead_decrypt failure path."""
     from mcubridge.security.security import aead_decrypt
 
+    import cryptography.exceptions
     # AEAD decryption failure catch-all
     try:
         res = aead_decrypt(b"A" * 32, b"N" * 12, b"bad_data", b"tag")
         assert res is None
-    except Exception:
+    except cryptography.exceptions.InvalidTag:
         pass
 
 
@@ -906,9 +843,7 @@ async def test_daemon_settings_v5() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mcu_reset_v3(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_mcu_reset_v3(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover unknown MCU command flow on synchronized link."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)

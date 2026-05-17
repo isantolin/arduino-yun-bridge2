@@ -89,7 +89,7 @@ def load_manifest(path: Path) -> list[Target]:
 
     try:
         manifest = msgspec.toml.decode(path.read_bytes(), type=Manifest)
-    except Exception as e:
+    except (OSError, msgspec.DecodeError, msgspec.ValidationError) as e:
         print(f"Error parsing manifest {path}: {e}")
         return []
 
@@ -112,19 +112,11 @@ def load_manifest(path: Path) -> list[Target]:
             continue
 
         user = entry.user if entry.user is not None else manifest.defaults.user
-        ssh_args = (
-            _coerce_list(entry.ssh) if entry.ssh is not None else list(default_ssh)
-        )
+        ssh_args = _coerce_list(entry.ssh) if entry.ssh is not None else list(default_ssh)
         tags = default_tags | _coerce_tags(entry.tags)
-        extra_args = (
-            _coerce_list(entry.extra_args) if entry.extra_args is not None else []
-        )
-        timeout_val = (
-            entry.timeout if entry.timeout is not None else manifest.defaults.timeout
-        )
-        retries = (
-            entry.retries if entry.retries is not None else manifest.defaults.retries
-        )
+        extra_args = _coerce_list(entry.extra_args) if entry.extra_args is not None else []
+        timeout_val = entry.timeout if entry.timeout is not None else manifest.defaults.timeout
+        retries = entry.retries if entry.retries is not None else manifest.defaults.retries
         env = {str(k): str(v) for k, v in entry.env.items()}
 
         parsed.append(

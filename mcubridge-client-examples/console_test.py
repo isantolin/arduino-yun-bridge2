@@ -35,9 +35,7 @@ async def run_test(
         listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 
         # [CI] Automatic Echo Test if not in a TTY or forced via env
-        is_interactive = (
-            sys.stdin.isatty() and os.environ.get("MCUBRIDGE_NON_INTERACTIVE") != "1"
-        )
+        is_interactive = sys.stdin.isatty() and os.environ.get("MCUBRIDGE_NON_INTERACTIVE") != "1"
 
         if not is_interactive:
             logging.info("Non-interactive mode. Running Echo Test (ping/pong)...")
@@ -50,9 +48,7 @@ async def run_test(
                 await asyncio.sleep(0.5)
             logging.info("Echo Test phase completed.")
         else:
-            logging.info(
-                "Enter text to send to the Arduino console. Type 'exit' to quit."
-            )
+            logging.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
             while True:
                 try:
                     # Run blocking input in a separate thread
@@ -81,9 +77,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Interactive console helper for the Arduino bridge."
-    )
+    parser = argparse.ArgumentParser(description="Interactive console helper for the Arduino bridge.")
     parser.add_argument("--host", default=None, help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")

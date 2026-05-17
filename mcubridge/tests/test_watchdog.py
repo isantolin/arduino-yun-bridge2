@@ -92,7 +92,4 @@ def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
 
         asyncio.run(_runner())
 
-    assert any(
-        "keepalive cancelled" in str(call.args[0])
-        for call in mock_logger.info.mock_calls
-    )
+    assert any("keepalive cancelled" in str(call.args[0]) for call in mock_logger.info.mock_calls)

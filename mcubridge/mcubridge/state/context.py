@@ -119,9 +119,7 @@ class RuntimeState(msgspec.Struct):
         default_factory=lambda: cast(asyncio.Queue[QueuedPublish], asyncio.Queue())
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    mqtt_drop_counts: dict[str, int] = msgspec.field(
-        default_factory=lambda: cast(dict[str, int], {})
-    )
+    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
     allow_non_tmp_paths: bool = False
     datastore_cache: diskcache.Cache | None = None
 
@@ -149,12 +147,8 @@ class RuntimeState(msgspec.Struct):
     running_processes: dict[int, asyncio.subprocess.Process] = msgspec.field(
         default_factory=lambda: cast(dict[int, asyncio.subprocess.Process], {})
     )
-    process_io_locks: dict[int, asyncio.Lock] = msgspec.field(
-        default_factory=lambda: cast(dict[int, asyncio.Lock], {})
-    )
-    process_exit_codes: dict[int, int] = msgspec.field(
-        default_factory=lambda: cast(dict[int, int], {})
-    )
+    process_io_locks: dict[int, asyncio.Lock] = msgspec.field(default_factory=lambda: cast(dict[int, asyncio.Lock], {}))
+    process_exit_codes: dict[int, int] = msgspec.field(default_factory=lambda: cast(dict[int, int], {}))
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
@@ -173,14 +167,10 @@ class RuntimeState(msgspec.Struct):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: cast(
-            collections.deque[PendingPinRequest], collections.deque()
-        ),
+        default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque()),
     )
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: cast(
-            collections.deque[PendingPinRequest], collections.deque()
-        ),
+        default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque()),
     )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
@@ -215,9 +205,7 @@ class RuntimeState(msgspec.Struct):
     handshake_fatal_unix: float = 0.0
     handshake_last_started: float = 0.0
     serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
-    serial_throughput_stats: SerialThroughputStats = msgspec.field(
-        default_factory=SerialThroughputStats
-    )
+    serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -228,9 +216,7 @@ class RuntimeState(msgspec.Struct):
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counts: dict[str, int] = msgspec.field(
-        default_factory=lambda: cast(dict[str, int], {})
-    )
+    mcu_status_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
     supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
         default_factory=lambda: cast(dict[str, SupervisorStats], {})
     )
@@ -260,9 +246,7 @@ class RuntimeState(msgspec.Struct):
         """Return the current allowed command list from policy."""
         return self.allowed_policy.entries
 
-    def record_supervisor_failure(
-        self, name: str, backoff: float, exc: BaseException | None
-    ) -> None:
+    def record_supervisor_failure(self, name: str, backoff: float, exc: BaseException | None) -> None:
         """Record an internal service task failure."""
         stats = self.supervisor_stats.setdefault(name, SupervisorStats())
         stats.restarts += 1
@@ -302,20 +286,14 @@ class RuntimeState(msgspec.Struct):
         cfg_dict = msgspec.structs.asdict(config)
 
         # Declarative renames for semantic mapping
-        cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop(
-            "mqtt_topic", self.mqtt_topic_prefix
-        )
-        cfg_dict["process_output_limit"] = cfg_dict.pop(
-            "process_max_output_bytes", self.process_output_limit
-        )
+        cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop("mqtt_topic", self.mqtt_topic_prefix)
+        cfg_dict["process_output_limit"] = cfg_dict.pop("process_max_output_bytes", self.process_output_limit)
 
         # [SIL-2] Complex Policy Mapping
         if "allowed_commands" in cfg_dict:
             from ..protocol.structures import AllowedCommandPolicy
 
-            cfg_dict["allowed_policy"] = AllowedCommandPolicy(
-                entries=cfg_dict.pop("allowed_commands")
-            )
+            cfg_dict["allowed_policy"] = AllowedCommandPolicy(entries=cfg_dict.pop("allowed_commands"))
 
         # [SIL-2] Unified conversion and assignment
         # Note: We filter out None to prevent overwriting initialized defaults.
@@ -330,9 +308,7 @@ class RuntimeState(msgspec.Struct):
                     setattr(self, k, v)
 
         # Re-initialize transient queues
-        self.console_to_mcu_queue = collections.deque[bytes](
-            maxlen=self.mailbox_queue_limit
-        )
+        self.console_to_mcu_queue = collections.deque[bytes](maxlen=self.mailbox_queue_limit)
 
         def _create_spool(
             subdir: str,
@@ -366,9 +342,7 @@ class RuntimeState(msgspec.Struct):
             )
 
         self.mailbox_queue, self._mailbox_queue_cache = _create_spool("mailbox_out")
-        self.mailbox_incoming_queue, self._mailbox_incoming_queue_cache = _create_spool(
-            "mailbox_in"
-        )
+        self.mailbox_incoming_queue, self._mailbox_incoming_queue_cache = _create_spool("mailbox_in")
 
         # [SIL-2] Initialize datastore with diskcache for ACID persistence
         ds_dir = None
@@ -378,9 +352,7 @@ class RuntimeState(msgspec.Struct):
         if ds_dir:
             try:
                 ds_dir.mkdir(parents=True, exist_ok=True)
-                self.datastore_cache = diskcache.Cache(
-                    str(ds_dir), size_limit=1024 * 1024
-                )
+                self.datastore_cache = diskcache.Cache(str(ds_dir), size_limit=1024 * 1024)
             except (OSError, RuntimeError) as e:
                 logger.warning("Could not initialize datastore diskcache: %s", e)
 
@@ -509,21 +481,13 @@ class RuntimeState(msgspec.Struct):
         """Update internal state from spool statistics."""
         # [SIL-2] Static assignment to avoid reflection overhead and string manipulation
         if "corrupt_dropped" in observation:
-            self.mqtt_spool_corrupt_dropped = msgspec.convert(
-                observation["corrupt_dropped"], int
-            )
+            self.mqtt_spool_corrupt_dropped = msgspec.convert(observation["corrupt_dropped"], int)
         if "dropped_due_to_limit" in observation:
-            self.mqtt_spool_dropped_limit = msgspec.convert(
-                observation["dropped_due_to_limit"], int
-            )
+            self.mqtt_spool_dropped_limit = msgspec.convert(observation["dropped_due_to_limit"], int)
         if "trim_events" in observation:
-            self.mqtt_spool_trim_events = msgspec.convert(
-                observation["trim_events"], int
-            )
+            self.mqtt_spool_trim_events = msgspec.convert(observation["trim_events"], int)
         if "last_trim_unix" in observation:
-            self.mqtt_spool_last_trim_unix = msgspec.convert(
-                observation["last_trim_unix"], float
-            )
+            self.mqtt_spool_last_trim_unix = msgspec.convert(observation["last_trim_unix"], float)
 
     def build_metrics_snapshot(self) -> dict[str, Any]:
         # [SIL-2] Return rich objects where possible to preserve attribute-based API
@@ -578,11 +542,7 @@ class RuntimeState(msgspec.Struct):
             serial_pipeline=self.build_serial_pipeline_snapshot(),
             serial_flow=self.serial_flow_stats.as_snapshot(),
             mcu_version=McuVersion(*self.mcu_version) if self.mcu_version else None,
-            capabilities=(
-                msgspec.structs.asdict(self.mcu_capabilities)
-                if self.mcu_capabilities
-                else None
-            ),
+            capabilities=(msgspec.structs.asdict(self.mcu_capabilities) if self.mcu_capabilities else None),
         )
 
     def handshake_duration_since_start(self) -> float:
@@ -645,9 +605,7 @@ class RuntimeState(msgspec.Struct):
             self.process_exit_codes.clear()
 
 
-def create_runtime_state(
-    config: RuntimeConfig | dict[str, Any], initialize_spool: bool = False
-) -> RuntimeState:
+def create_runtime_state(config: RuntimeConfig | dict[str, Any], initialize_spool: bool = False) -> RuntimeState:
     from ..config.settings import RuntimeConfig
 
     cfg = msgspec.convert(config, RuntimeConfig) if isinstance(config, dict) else config

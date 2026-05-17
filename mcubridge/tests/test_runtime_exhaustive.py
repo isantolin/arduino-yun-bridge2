@@ -53,9 +53,7 @@ async def test_runtime_mcu_lifecycle_exhaustive(service_setup: Any) -> None:
         state.mark_synchronized()
 
     with patch.object(service.handshake, "synchronize", side_effect=mock_sync):
-        serial.send_and_wait_payload.return_value = msgspec.msgpack.encode(
-            {"major": 1, "minor": 0, "patch": 0}
-        )
+        serial.send_and_wait_payload.return_value = msgspec.msgpack.encode({"major": 1, "minor": 0, "patch": 0})
         await service.on_serial_connected()
         assert serial.send_and_wait_payload.called
 
@@ -82,12 +80,8 @@ async def test_mcu_handlers_exhaustive(service_setup: Any) -> None:
     state.mailbox_queue.append(b"msg")
     await service._handle_mcu_mailbox_read(4, b"")
 
-    state.pending_digital_reads.append(
-        PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]())
-    )
-    await service._handle_mcu_pin_digital_read_resp(
-        5, msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
-    )
+    state.pending_digital_reads.append(PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]()))
+    await service._handle_mcu_pin_digital_read_resp(5, msgspec.msgpack.encode(DigitalReadResponsePacket(value=1)))
 
 
 @pytest.mark.asyncio
@@ -123,9 +117,7 @@ async def test_mqtt_handlers_exhaustive(service_setup: Any) -> None:
 
     msg = Message(
         topic="br/spi/config",
-        payload=msgspec.json.encode(
-            {"frequency": 1000, "bit_order": 0, "data_mode": 0}
-        ),
+        payload=msgspec.json.encode({"frequency": 1000, "bit_order": 0, "data_mode": 0}),
         qos=0,
         retain=False,
         mid=1,

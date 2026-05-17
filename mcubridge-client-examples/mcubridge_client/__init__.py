@@ -50,27 +50,12 @@ __all__ = [
 logger = logging.getLogger(__name__)
 _UCI_GENERAL = read_uci_general()
 
-MQTT_HOST = os.environ.get("MCUBRIDGE_MQTT_HOST") or _UCI_GENERAL.get(
-    "mqtt_host", DEFAULT_MQTT_HOST
-)
-MQTT_PORT = int(
-    os.environ.get("MCUBRIDGE_MQTT_PORT")
-    or _UCI_GENERAL.get("mqtt_port", str(DEFAULT_MQTT_PORT))
-)
-MQTT_TOPIC_PREFIX = os.environ.get("MCUBRIDGE_MQTT_TOPIC") or _UCI_GENERAL.get(
-    "mqtt_topic", DEFAULT_MQTT_TOPIC
-)
-MQTT_USER = (
-    os.environ.get("MCUBRIDGE_MQTT_USER") or _UCI_GENERAL.get("mqtt_user") or None
-)
-MQTT_PASS = (
-    os.environ.get("MCUBRIDGE_MQTT_PASS") or _UCI_GENERAL.get("mqtt_pass") or None
-)
-MQTT_TLS_INSECURE = (
-    os.environ.get("MCUBRIDGE_MQTT_TLS_INSECURE")
-    or _UCI_GENERAL.get("mqtt_tls_insecure")
-    or "0"
-)
+MQTT_HOST = os.environ.get("MCUBRIDGE_MQTT_HOST") or _UCI_GENERAL.get("mqtt_host", DEFAULT_MQTT_HOST)
+MQTT_PORT = int(os.environ.get("MCUBRIDGE_MQTT_PORT") or _UCI_GENERAL.get("mqtt_port", str(DEFAULT_MQTT_PORT)))
+MQTT_TOPIC_PREFIX = os.environ.get("MCUBRIDGE_MQTT_TOPIC") or _UCI_GENERAL.get("mqtt_topic", DEFAULT_MQTT_TOPIC)
+MQTT_USER = os.environ.get("MCUBRIDGE_MQTT_USER") or _UCI_GENERAL.get("mqtt_user") or None
+MQTT_PASS = os.environ.get("MCUBRIDGE_MQTT_PASS") or _UCI_GENERAL.get("mqtt_pass") or None
+MQTT_TLS_INSECURE = os.environ.get("MCUBRIDGE_MQTT_TLS_INSECURE") or _UCI_GENERAL.get("mqtt_tls_insecure") or "0"
 
 
 class ShellPollResponse(TypedDict, total=False):
@@ -92,11 +77,7 @@ def _default_tls_context() -> ssl.SSLContext | None:
         if not cafile and Path("/etc/ssl/certs/ca-certificates.crt").exists():
             cafile = "/etc/ssl/certs/ca-certificates.crt"
 
-        ctx = (
-            ssl.create_default_context(cafile=cafile)
-            if cafile
-            else ssl.create_default_context()
-        )
+        ctx = ssl.create_default_context(cafile=cafile) if cafile else ssl.create_default_context()
         if str(MQTT_TLS_INSECURE).strip() in {"1", "true", "yes", "on"}:
             ctx.check_hostname = False
         return ctx
@@ -172,15 +153,11 @@ class Bridge:
             async for message in self._client.messages:
                 props = message.properties
                 correlation = getattr(props, "CorrelationData", None) if props else None
-                if correlation and (
-                    queue := self._correlation_routes.pop(correlation, None)
-                ):
+                if correlation and (queue := self._correlation_routes.pop(correlation, None)):
                     queue.put_nowait(message)
 
                 elif Topic.matches(self._console_topic, message.topic.value):
-                    self._console_queue.put_nowait(
-                        bytes(message.payload) if message.payload else b""
-                    )
+                    self._console_queue.put_nowait(bytes(message.payload) if message.payload else b"")
                 else:
                     logger.debug("Orphaned or broadcast message on %s", message.topic)
         except MqttError:
@@ -202,9 +179,7 @@ class Bridge:
         queue: asyncio.Queue[Message] = asyncio.Queue(maxsize=1)
         self._correlation_routes[correlation] = queue
 
-        resp_topics = (
-            [resp_topic] if isinstance(resp_topic, str) else list(resp_topic or [])
-        )
+        resp_topics = [resp_topic] if isinstance(resp_topic, str) else list(resp_topic or [])
         for t in resp_topics:
             await self._client.subscribe(t)
 
@@ -215,9 +190,7 @@ class Bridge:
                 response_topic=self._reply_topic,
                 correlation_data=correlation,
             )
-            await self._client.publish(
-                msg.topic_name, msg.payload, properties=build_mqtt_properties(msg)
-            )
+            await self._client.publish(msg.topic_name, msg.payload, properties=build_mqtt_properties(msg))
             delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
             return msgspec.convert(delivered.payload, bytes)
         finally:
@@ -307,9 +280,7 @@ class Bridge:
             qos=1,
         )
 
-    async def run_shell_command_async(
-        self, parts: list[str], timeout: float = 15
-    ) -> int:
+    async def run_shell_command_async(self, parts: list[str], timeout: float = 15) -> int:
         res = await self._publish_and_wait(
             Topic.build(Topic.SHELL, "run_async"),
             shlex.join(parts),
@@ -318,9 +289,7 @@ class Bridge:
         )
         return int(res.decode())
 
-    async def poll_shell_process(
-        self, pid: int, timeout: float = 15
-    ) -> ShellPollResponse:
+    async def poll_shell_process(self, pid: int, timeout: float = 15) -> ShellPollResponse:
         res = await self._publish_and_wait(
             Topic.build(Topic.SHELL, "poll", pid),
             b"",
@@ -339,9 +308,7 @@ class Bridge:
             raise ConnectionError("Not connected")
         await self._client.publish(Topic.build(Topic.SPI, "end"), b"")
 
-    async def spi_config(
-        self, frequency: int = 4000000, bit_order: int = 1, data_mode: int = 0
-    ) -> None:
+    async def spi_config(self, frequency: int = 4000000, bit_order: int = 1, data_mode: int = 0) -> None:
         if not self._client:
             raise ConnectionError("Not connected")
         config = {
@@ -349,9 +316,7 @@ class Bridge:
             "bit_order": bit_order,
             "data_mode": data_mode,
         }
-        await self._client.publish(
-            Topic.build(Topic.SPI, "config"), msgspec.json.encode(config)
-        )
+        await self._client.publish(Topic.build(Topic.SPI, "config"), msgspec.json.encode(config))
 
     async def spi_transfer(self, data: bytes, timeout: float = 15) -> bytes:
         return await self._publish_and_wait(
@@ -364,26 +329,20 @@ class Bridge:
     async def file_write(self, filename: str, content: str | bytes) -> None:
         if not self._client:
             raise ConnectionError("Not connected")
-        await self._client.publish(
-            Topic.build(Topic.FILE, "write", filename.lstrip("/")), content
-        )
+        await self._client.publish(Topic.build(Topic.FILE, "write", filename.lstrip("/")), content)
 
     async def file_read(self, filename: str, timeout: float = 15) -> bytes:
         return await self._publish_and_wait(
             Topic.build(Topic.FILE, "read", filename.lstrip("/")),
             b"",
-            resp_topic=Topic.build(
-                Topic.FILE, "read", "response", filename.lstrip("/")
-            ),
+            resp_topic=Topic.build(Topic.FILE, "read", "response", filename.lstrip("/")),
             timeout=timeout,
         )
 
     async def file_remove(self, filename: str) -> None:
         if not self._client:
             raise ConnectionError("Not connected")
-        await self._client.publish(
-            Topic.build(Topic.FILE, "remove", filename.lstrip("/")), b""
-        )
+        await self._client.publish(Topic.build(Topic.FILE, "remove", filename.lstrip("/")), b"")
 
     async def mailbox_write(self, message: str | bytes) -> None:
         if not self._client:
@@ -407,8 +366,6 @@ class Bridge:
         mode: SpiMode | int = SpiMode.MODE0,
     ) -> SpiDevice:
         """Create a high-level SPI device interface."""
-        order = (
-            bit_order if isinstance(bit_order, SpiBitOrder) else SpiBitOrder(bit_order)
-        )
+        order = bit_order if isinstance(bit_order, SpiBitOrder) else SpiBitOrder(bit_order)
         s_mode = mode if isinstance(mode, SpiMode) else SpiMode(mode)
         return SpiDevice(self, frequency, order, s_mode)

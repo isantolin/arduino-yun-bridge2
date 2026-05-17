@@ -74,6 +74,20 @@ exclude = [
 reportMissingImports = true
 reportMissingTypeStubs = true
 
+[tool.black]
+target-version = ['py313']
+line-length = 120
+exclude = '''
+/(
+    \.git
+  | \.tox
+  | \.venv
+  | \.venv_debug
+  | typings
+  | openwrt-sdk.*
+)/
+'''
+
 [tool.ruff]
 target-version = "py313"
 line-length = 120

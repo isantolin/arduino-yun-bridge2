@@ -19,9 +19,7 @@ from typing import Any, cast
 def _is_openwrt() -> bool:
     if os.environ.get("MCUBRIDGE_FORCE_UCI") == "1":
         return True
-    return (
-        Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
-    )
+    return Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
 
 
 def read_uci_general() -> dict[str, str]:
@@ -33,9 +31,7 @@ def read_uci_general() -> dict[str, str]:
         return {}
 
     module = importlib.import_module("mcubridge.config.common")
-    get_uci_config = cast(
-        Callable[[], dict[str, Any]] | None, getattr(module, "get_uci_config", None)
-    )
+    get_uci_config = cast(Callable[[], dict[str, Any]] | None, getattr(module, "get_uci_config", None))
     if not callable(get_uci_config):
         return {}
 

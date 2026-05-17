@@ -29,34 +29,22 @@ def update_uci_secret(new_secret: str) -> None:
 def restart_service() -> None:
     """Restart the mcubridge service to apply new credentials."""
     try:
-        subprocess.run(
-            ["/etc/init.d/mcubridge", "restart"], check=True, capture_output=True
-        )
+        subprocess.run(["/etc/init.d/mcubridge", "restart"], check=True, capture_output=True)
         logger.info("Bridge service restarted successfully")
     except subprocess.CalledProcessError as e:
-        logger.warning(
-            "Service restart failed", stderr=e.stderr.decode(), exit_code=e.returncode
-        )
+        logger.warning("Service restart failed", stderr=e.stderr.decode(), exit_code=e.returncode)
 
 
 def main() -> None:
     """Generate and apply a new shared secret for the MCU Bridge."""
     parser = argparse.ArgumentParser(description="Rotate MCU Bridge shared secret.")
-    parser.add_argument(
-        "--length", type=int, default=32, help="Length of the random secret in bytes"
-    )
-    parser.add_argument(
-        "--force", "-f", action="store_true", help="Force rotation without confirmation"
-    )
-    parser.add_argument(
-        "--no-restart", action="store_true", help="Skip service restart"
-    )
+    parser.add_argument("--length", type=int, default=32, help="Length of the random secret in bytes")
+    parser.add_argument("--force", "-f", action="store_true", help="Force rotation without confirmation")
+    parser.add_argument("--no-restart", action="store_true", help="Skip service restart")
     args = parser.parse_args()
 
     if not args.force:
-        sys.stdout.write(
-            "This will rotate the shared secret and may drop MCU connections. Continue? [y/N] "
-        )
+        sys.stdout.write("This will rotate the shared secret and may drop MCU connections. Continue? [y/N] ")
         sys.stdout.flush()
         ans = sys.stdin.readline()
         if ans.lower().strip() not in ("y", "yes"):

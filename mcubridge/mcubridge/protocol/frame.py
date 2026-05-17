@@ -61,9 +61,7 @@ class Frame(msgspec.Struct, frozen=True):
     @property
     def raw_command_id(self) -> int:
         """Get the raw 15-bit command ID without the compression flag."""
-        return (
-            int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
-        )
+        return int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
 
     def build(self) -> bytes:
         """Delegates frame building to the declarative schema."""
@@ -71,9 +69,7 @@ class Frame(msgspec.Struct, frozen=True):
         payload = self.payload
 
         if len(payload) > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(
-                f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}"
-            )
+            raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
 
         if (
             payload
@@ -126,9 +122,7 @@ class Frame(msgspec.Struct, frozen=True):
             raise ValueError(f"CRC mismatch: expected {expected_crc}, got {actual_crc}")
 
         try:
-            version, payload_len, cmd_id, seq_id = HEADER_STRUCT.unpack(
-                body[:_HEADER_SIZE]
-            )
+            version, payload_len, cmd_id, seq_id = HEADER_STRUCT.unpack(body[:_HEADER_SIZE])
         except struct.error as e:
             raise ValueError(f"Malformed header: {e}") from e
 
@@ -139,9 +133,7 @@ class Frame(msgspec.Struct, frozen=True):
             raise ValueError("Incomplete or malformed frame: invalid length")
 
         nonce = bytes(body[_HEADER_SIZE : _HEADER_SIZE + _NONCE_SIZE])
-        payload = bytes(
-            body[_HEADER_SIZE + _NONCE_SIZE : _HEADER_SIZE + _NONCE_SIZE + payload_len]
-        )
+        payload = bytes(body[_HEADER_SIZE + _NONCE_SIZE : _HEADER_SIZE + _NONCE_SIZE + payload_len])
         tag = bytes(body[_HEADER_SIZE + _NONCE_SIZE + payload_len : body_len])
 
         if cmd_id & protocol.CMD_FLAG_COMPRESSED:
@@ -149,9 +141,7 @@ class Frame(msgspec.Struct, frozen=True):
                 payload = rle_decode(payload)
                 cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
             except ValueError as e:
-                raise ValueError(
-                    f"Incomplete or malformed frame: RLE decode failed: {e}"
-                ) from e
+                raise ValueError(f"Incomplete or malformed frame: RLE decode failed: {e}") from e
 
         return cls(
             command_id=cmd_id,

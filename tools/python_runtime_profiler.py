@@ -46,9 +46,7 @@ def measure_object_symbols() -> list[tuple[str, int, int]]:
     results: list[tuple[str, int, int]] = []
     for stat in top_stats[:10]:
         frame = stat.traceback[0]
-        results.append(
-            (f"{Path(frame.filename).name}:{frame.lineno}", stat.size, stat.count)
-        )
+        results.append((f"{Path(frame.filename).name}:{frame.lineno}", stat.size, stat.count))
     return results
 
 

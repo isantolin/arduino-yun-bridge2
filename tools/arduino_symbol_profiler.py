@@ -80,9 +80,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Profile Arduino ELF symbols.")
     parser.add_argument("build_dir", type=Path, help="Directory containing .elf files.")
     parser.add_argument("--github-step-summary", type=Path, default=None)
-    parser.add_argument(
-        "--output", type=Path, default=None, help="Save report to a file."
-    )
+    parser.add_argument("--output", type=Path, default=None, help="Save report to a file.")
 
     args = parser.parse_args(argv)
     build_dir: Path = args.build_dir

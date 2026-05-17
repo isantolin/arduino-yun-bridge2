@@ -68,9 +68,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Send a mailbox message and read back any MCU-forwarded responses."
-    )
+    parser = argparse.ArgumentParser(description="Send a mailbox message and read back any MCU-forwarded responses.")
     parser.add_argument("--host", default=None, help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")
@@ -81,9 +79,7 @@ if __name__ == "__main__":
         default=False,
         help="Disable TLS certificate verification",
     )
-    parser.add_argument(
-        "--max-polls", type=int, default=1, help="Max poll cycles (0 = unlimited)"
-    )
+    parser.add_argument("--max-polls", type=int, default=1, help="Max poll cycles (0 = unlimited)")
     _args = parser.parse_args()
     main(
         _args.host,

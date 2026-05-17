@@ -38,17 +38,11 @@ class ProtocolFuzzer:
         )
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
-    def _build_raw_frame(
-        self, cmd: int, seq: int, payload: bytes, override_crc: int | None = None
-    ) -> bytes:
+    def _build_raw_frame(self, cmd: int, seq: int, payload: bytes, override_crc: int | None = None) -> bytes:
         # Re-packing header properly based on frame.py: version(8), len(16), cmd(16), seq(16)
         header = _HEADER_STRUCT.pack(PROTOCOL_VERSION, len(payload), cmd, seq)
         body = header + payload
-        crc = (
-            override_crc
-            if override_crc is not None
-            else (crc32(body) & protocol.CRC32_MASK)
-        )
+        crc = override_crc if override_crc is not None else (crc32(body) & protocol.CRC32_MASK)
         full = body + _CRC_STRUCT.pack(crc)
         return cobs.encode(full) + FRAME_DELIMITER
 
@@ -79,9 +73,7 @@ class ProtocolFuzzer:
             await self.send_raw(frame)
 
         elif mode == "invalid_crc":
-            frame = self._build_raw_frame(
-                0x0001, self.seq_id, b"bad_crc", override_crc=0xDEADBEEF
-            )
+            frame = self._build_raw_frame(0x0001, self.seq_id, b"bad_crc", override_crc=0xDEADBEEF)
             await self.send_raw(frame)
 
         elif mode == "invalid_version":
@@ -100,9 +92,7 @@ class ProtocolFuzzer:
             await self.send_raw(cobs.encode(header + b"SHORT") + FRAME_DELIMITER)
 
         elif mode == "random_garbage":
-            garbage = bytes(
-                [random.getrandbits(8) for _ in range(random.randint(1, 32))]
-            )
+            garbage = bytes([random.getrandbits(8) for _ in range(random.randint(1, 32))])
             await self.send_raw(garbage + FRAME_DELIMITER)
 
         elif mode == "unknown_command":
@@ -125,9 +115,7 @@ class ProtocolFuzzer:
 
                 try:
                     if self.reader:
-                        await asyncio.wait_for(
-                            self.reader.readuntil(FRAME_DELIMITER), timeout=0.05
-                        )
+                        await asyncio.wait_for(self.reader.readuntil(FRAME_DELIMITER), timeout=0.05)
                         latencies.append(asyncio.get_event_loop().time() - start_time)
                         success_count += 1
                 except (asyncio.TimeoutError, asyncio.IncompleteReadError):

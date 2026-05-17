@@ -77,9 +77,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Exercise datastore interactions using the bridge client."
-    )
+    parser = argparse.ArgumentParser(description="Exercise datastore interactions using the bridge client.")
     parser.add_argument("--host", default=None, help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")

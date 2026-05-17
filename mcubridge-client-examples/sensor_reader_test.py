@@ -79,19 +79,13 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Poll sensor values via the async bridge client."
-    )
+    parser = argparse.ArgumentParser(description="Poll sensor values via the async bridge client.")
     parser.add_argument("--host", default=None, help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")
     parser.add_argument("--password", default=None, help="MQTT Password")
-    parser.add_argument(
-        "--pin", default="d13", help="Pin to read (e.g., 'd13' or 'a0')."
-    )
-    parser.add_argument(
-        "--interval", type=float, default=2.0, help="Read interval in seconds."
-    )
+    parser.add_argument("--pin", default="d13", help="Pin to read (e.g., 'd13' or 'a0').")
+    parser.add_argument("--interval", type=float, default=2.0, help="Read interval in seconds.")
     parser.add_argument(
         "--tls-insecure",
         action="store_true",

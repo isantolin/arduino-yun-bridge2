@@ -59,9 +59,7 @@ def _build_metrics_message(
                 ("file_storage_limit_rejections", "quota-blocked"),
                 ("file_write_limit_rejections", "write-limit"),
             )
-            if (val := snapshot.get(key)) is not None
-            and isinstance(val, (int, float))
-            and val > 0
+            if (val := snapshot.get(key)) is not None and isinstance(val, (int, float)) and val > 0
         ),
         None,
     )
@@ -106,11 +104,7 @@ async def _emit_bridge_snapshot(
     flavor: str,
 ) -> None:
     try:
-        snapshot = (
-            state.build_handshake_snapshot()
-            if flavor == "handshake"
-            else state.build_bridge_snapshot()
-        )
+        snapshot = state.build_handshake_snapshot() if flavor == "handshake" else state.build_bridge_snapshot()
         await enqueue(
             _build_bridge_snapshot_message(
                 state,
@@ -176,16 +170,8 @@ async def publish_bridge_snapshots(
 ) -> None:
     """Periodically publish bridge summary and handshake snapshots."""
 
-    summary_seconds = (
-        max(1, math.ceil(max(min_interval, summary_interval)))
-        if summary_interval > 0
-        else None
-    )
-    handshake_seconds = (
-        max(1, math.ceil(max(min_interval, handshake_interval)))
-        if handshake_interval > 0
-        else None
-    )
+    summary_seconds = max(1, math.ceil(max(min_interval, summary_interval))) if summary_interval > 0 else None
+    handshake_seconds = max(1, math.ceil(max(min_interval, handshake_interval))) if handshake_interval > 0 else None
 
     if summary_seconds is None and handshake_seconds is None:
         logger.info("Bridge snapshot loops disabled; awaiting cancellation.")
@@ -243,25 +229,13 @@ class RuntimeStateCollector(Collector):
             "Current number of items in internal asynchronous queues",
             labels=["queue"],
         )
-        q_depths.add_metric(
-            ["mqtt_publish"], float(self._state.mqtt_publish_queue.qsize())
-        )
-        q_depths.add_metric(
-            ["console_tx"], float(len(self._state.console_to_mcu_queue))
-        )
+        q_depths.add_metric(["mqtt_publish"], float(self._state.mqtt_publish_queue.qsize()))
+        q_depths.add_metric(["console_tx"], float(len(self._state.console_to_mcu_queue)))
         q_depths.add_metric(["mailbox_tx"], float(len(self._state.mailbox_queue)))
-        q_depths.add_metric(
-            ["mailbox_rx"], float(len(self._state.mailbox_incoming_queue))
-        )
-        q_depths.add_metric(
-            ["pending_digital_read"], float(len(self._state.pending_digital_reads))
-        )
-        q_depths.add_metric(
-            ["pending_analog_read"], float(len(self._state.pending_analog_reads))
-        )
-        q_depths.add_metric(
-            ["running_process"], float(len(self._state.running_processes))
-        )
+        q_depths.add_metric(["mailbox_rx"], float(len(self._state.mailbox_incoming_queue)))
+        q_depths.add_metric(["pending_digital_read"], float(len(self._state.pending_digital_reads)))
+        q_depths.add_metric(["pending_analog_read"], float(len(self._state.pending_analog_reads)))
+        q_depths.add_metric(["running_process"], float(len(self._state.running_processes)))
         yield q_depths
 
         # 2. System Status (Gauges)
@@ -292,9 +266,7 @@ class RuntimeStateCollector(Collector):
         list(
             map(
                 lambda item: health.add_metric([item[0]], float(item[1])),
-                filter(
-                    lambda item: isinstance(item[1], (int, float)), sys_metrics.items()
-                ),
+                filter(lambda item: isinstance(item[1], (int, float)), sys_metrics.items()),
             )
         )
         yield health
@@ -308,9 +280,7 @@ class RuntimeStateCollector(Collector):
         # [SIL-2] Iterative reduction
         list(
             map(
-                lambda item: super_health.add_metric(
-                    [item[0]], float(item[1].restarts)
-                ),
+                lambda item: super_health.add_metric([item[0]], float(item[1].restarts)),
                 self._state.supervisor_stats.items(),
             )
         )
@@ -389,9 +359,7 @@ class PrometheusExporter:
     ) -> None:
         phrases = {200: "OK", 400: "Bad Request", 404: "Not Found"}
 
-        def _respond(
-            status: int, body: bytes, *, content_type: str = "text/plain; charset=utf-8"
-        ) -> None:
+        def _respond(status: int, body: bytes, *, content_type: str = "text/plain; charset=utf-8") -> None:
             status_line = f"HTTP/1.1 {status} {phrases.get(status, 'Error')}\r\n"
             headers = f"Content-Type: {content_type}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n"
             writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
@@ -417,9 +385,7 @@ class PrometheusExporter:
         except (OSError, ValueError, IndexError) as e:
             logger.warning("Prometheus client request error: %s", e)
         except (TypeError, AttributeError, RuntimeError) as e:
-            logger.critical(
-                "Unexpected error in Prometheus handler: %s", e, exc_info=True
-            )
+            logger.critical("Unexpected error in Prometheus handler: %s", e, exc_info=True)
         finally:
             try:
                 writer.close()

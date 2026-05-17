@@ -30,9 +30,7 @@ sys.modules["uci"] = MagicMock()
 def service_setup(
     tmp_path: Path,
 ) -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
-    config = RuntimeConfig(
-        mqtt_topic="br", serial_port="/dev/test", file_system_root=str(tmp_path)
-    )
+    config = RuntimeConfig(mqtt_topic="br", serial_port="/dev/test", file_system_root=str(tmp_path))
     state = create_runtime_state(config)
     serial = AsyncMock(spec=SerialTransport)
     mqtt = AsyncMock()
@@ -56,9 +54,7 @@ async def test_surgical_runtime_exhaustive(
     )
 
     # Digital Read response
-    state.pending_digital_reads.append(
-        PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]())
-    )
+    state.pending_digital_reads.append(PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]()))
     await service.handle_mcu_frame(
         Command.CMD_DIGITAL_READ_RESP.value,
         1,
@@ -66,9 +62,7 @@ async def test_surgical_runtime_exhaustive(
     )
 
     # Analog Read response
-    state.pending_analog_reads.append(
-        PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]())
-    )
+    state.pending_analog_reads.append(PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]()))
     await service.handle_mcu_frame(
         Command.CMD_ANALOG_READ_RESP.value,
         1,
@@ -102,9 +96,7 @@ async def test_surgical_runtime_edge_cases(
         with pytest.raises(Exception, match="fail"):
             await service.on_serial_connected()
     # handle_mqtt_message with invalid topic
-    msg = Message(
-        topic="invalid", payload=b"", qos=0, retain=False, mid=1, properties=None
-    )
+    msg = Message(topic="invalid", payload=b"", qos=0, retain=False, mid=1, properties=None)
     await service.handle_mqtt_message(msg)
 
 
@@ -126,6 +118,4 @@ def test_surgical_scripts_coverage() -> None:
         with patch("subprocess.run") as mock_run:
             rotate.main()
             # Verify it tried to restart the service
-            assert any(
-                "/etc/init.d/mcubridge" in str(call) for call in mock_run.call_args_list
-            )
+            assert any("/etc/init.d/mcubridge" in str(call) for call in mock_run.call_args_list)

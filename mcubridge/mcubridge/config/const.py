@@ -82,9 +82,7 @@ DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 8388608
 # Warning threshold for files growing large in RAM (Inherited from spec.toml)
 FILE_LARGE_WARNING_BYTES: int = protocol.FILE_LARGE_WARNING_BYTES
 # Paths considered safe (volatile/RAM) for writing to avoid flash wear
-VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset(
-    {"/tmp", "/var/run", "/run", "/dev/shm"}
-)
+VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
 SYSTEMD_PRIVATE_PREFIX: str = "systemd-private-"
 
 # -- Component Limits --

@@ -36,10 +36,7 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
     topic_segs = tuple(filter(None, topic_name.split("/")))
 
     # Validation: must contain prefix + at least one service segment
-    if (
-        len(topic_segs) <= len(prefix_segs)
-        or topic_segs[: len(prefix_segs)] != prefix_segs
-    ):
+    if len(topic_segs) <= len(prefix_segs) or topic_segs[: len(prefix_segs)] != prefix_segs:
         return None
 
     try:

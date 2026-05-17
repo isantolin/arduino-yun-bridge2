@@ -77,17 +77,13 @@ def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
     return True, current
 
 
-def aead_encrypt(
-    key: bytes, nonce: bytes, data: bytes, ad: bytes | None = None
-) -> bytes:
+def aead_encrypt(key: bytes, nonce: bytes, data: bytes, ad: bytes | None = None) -> bytes:
     """[SIL-2] Encrypt and authenticate data using ChaCha20-Poly1305."""
     aead = ChaCha20Poly1305(key)
     return aead.encrypt(nonce, data, ad)
 
 
-def aead_decrypt(
-    key: bytes, nonce: bytes, ciphertext_with_tag: bytes, ad: bytes | None = None
-) -> bytes:
+def aead_decrypt(key: bytes, nonce: bytes, ciphertext_with_tag: bytes, ad: bytes | None = None) -> bytes:
     """[SIL-2] Decrypt and verify data using ChaCha20-Poly1305."""
     aead = ChaCha20Poly1305(key)
     return aead.decrypt(nonce, ciphertext_with_tag, ad)
@@ -96,9 +92,7 @@ def aead_decrypt(
 def verify_crypto_integrity() -> bool:
     """Perform Known Answer Tests (KAT) for cryptographic primitives."""
     # 1. SHA256 KAT
-    if hashlib.sha256(b"abc").hexdigest() != (
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    ):
+    if hashlib.sha256(b"abc").hexdigest() != ("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"):
         return False
 
     # 2. ChaCha20-Poly1305 KAT

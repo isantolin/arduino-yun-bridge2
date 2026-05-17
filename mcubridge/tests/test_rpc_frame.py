@@ -46,9 +46,7 @@ def test_build_rejects_large_payload() -> None:
     payload = b"a" * (protocol.MAX_PAYLOAD_SIZE + 1)
 
     with pytest.raises(ValueError):
-        Frame(
-            command_id=protocol.Command.CMD_SET_PIN_MODE, sequence_id=0, payload=payload
-        ).build()
+        Frame(command_id=protocol.Command.CMD_SET_PIN_MODE, sequence_id=0, payload=payload).build()
 
 
 def test_build_rejects_invalid_command_id() -> None:
@@ -65,9 +63,7 @@ def test_parse_rejects_short_frame() -> None:
 
 def test_parse_detects_crc_mismatch() -> None:
     payload = b"valid"
-    raw = Frame(
-        command_id=protocol.Command.CMD_CONSOLE_WRITE, sequence_id=0, payload=payload
-    ).build()
+    raw = Frame(command_id=protocol.Command.CMD_CONSOLE_WRITE, sequence_id=0, payload=payload).build()
     corrupted = raw[:-1] + bytes([raw[-1] ^ protocol.UINT8_MASK])
 
     with pytest.raises(ValueError):

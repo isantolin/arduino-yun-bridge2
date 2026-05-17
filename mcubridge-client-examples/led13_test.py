@@ -48,9 +48,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Test generic pin control using the async McuBridge client."
-    )
+    parser = argparse.ArgumentParser(description="Test generic pin control using the async McuBridge client.")
     parser.add_argument("pin", type=int, nargs="?", default=13, help="Pin number")
     parser.add_argument("--host", default=None, help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")

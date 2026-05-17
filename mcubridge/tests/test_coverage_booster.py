@@ -909,18 +909,15 @@ async def test_daemon_settings_v5() -> None:
 async def test_mcu_reset_v3(
     mock_config: RuntimeConfig, mock_state: RuntimeState
 ) -> None:
-    """Cover MCU reset flow."""
+    """Cover unknown MCU command flow on synchronized link."""
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(mock_config, mock_state, serial)
+    mock_state.mark_synchronized()
 
-    # RESET frame from MCU
-    await service.handle_mcu_frame(
-        0x04, 1, b""
-    )  # Use raw command ID for RESET if Status doesn't have it
-    # We check if mcu_status_counts was incremented in metrics
-    # Status(48..56). 0x04 is not in Status, so it should hit the "Unhandled MCU command" path
-    # and increment unknown_command_count.
+    # Unknown command from MCU on synchronized link should be accounted and NACKed.
+    await service.handle_mcu_frame(0xEE, 1, b"")
     assert cast(Any, mock_state.metrics.unknown_command_count)._value.get() > 0
+    serial.send.assert_awaited_once_with(Status.NOT_IMPLEMENTED.value, b"")
 
 
 @pytest.mark.asyncio

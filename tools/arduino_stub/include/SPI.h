@@ -1,6 +1,8 @@
 #ifndef SPI_STUB_H
 #define SPI_STUB_H
 
+#include "BridgeFaultInjection.h"
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -22,7 +24,13 @@ public:
     void end() {}
     void beginTransaction(SPISettings settings) { (void)settings; }
     void endTransaction() {}
-    uint8_t transfer(uint8_t data) { return data; }
+    uint8_t transfer(uint8_t data) {
+        if (bridge::test::fault::consume(
+                bridge::test::fault::FaultPoint::SPI_TIMEOUT)) {
+            bridge::test::fault::advance_clock_ms(1000U);
+        }
+        return data;
+    }
 };
 
 extern SPIClass SPI;

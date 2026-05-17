@@ -2,6 +2,7 @@
 #include <etl/exception.h>
 #include <unity.h>
 
+#include "BridgeFaultInjection.h"
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
@@ -22,7 +23,7 @@ Stream* g_arduino_stream_delegate = nullptr;
 
 using bridge::test::TestAccessor;
 
-void setUp() {}
+void setUp() { bridge::test::fault::reset(); }
 void tearDown() {}
 
 namespace {
@@ -351,6 +352,20 @@ void test_security_invalid_size_guards() {
       etl::span<uint8_t>(out), etl::span<uint8_t>(tag),
       etl::span<const uint8_t>(in), etl::span<const uint8_t>(key),
       etl::span<const uint8_t>(short_nonce), etl::span<const uint8_t>()));
+
+  etl::array<uint8_t, 2> in2 = {0x01, 0x02};
+  TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
+      etl::span<uint8_t>(out), etl::span<const uint8_t>(in2),
+      etl::span<const uint8_t>(tag), etl::span<const uint8_t>(key),
+      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>()));
+  TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
+      etl::span<uint8_t>(out), etl::span<const uint8_t>(in),
+      etl::span<const uint8_t>(short_tag), etl::span<const uint8_t>(key),
+      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>()));
+  TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
+      etl::span<uint8_t>(out), etl::span<const uint8_t>(in),
+      etl::span<const uint8_t>(tag), etl::span<const uint8_t>(key),
+      etl::span<const uint8_t>(short_nonce), etl::span<const uint8_t>()));
 }
 
 void test_observer_and_task_runtime_edges() {
@@ -551,22 +566,134 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
     size_t wire_len = rpc::FrameParser::serialize(
         encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
     ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
-    ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+  }
+}
+
+void test_fault_injection_harness_paths() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  bridge::test::fault::set_clock_ms(0U);
+  SPIService.begin();
+  etl::array<uint8_t, 2> spi_buf = {0x10, 0x20};
+  bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
+  TEST_ASSERT_EQUAL_UINT32(
+      0,
+      static_cast<uint32_t>(SPIService.transfer(etl::span<uint8_t>(spi_buf))));
+  SPIService.end();
+
+  etl::array<uint8_t, 80> file_data;
+  file_data.fill(0x5A);
+  FileSystem._onWrite(rpc::payload::FileWrite{
+      etl::span<const char>("fi-timeout.bin", 14),
+      etl::span<const uint8_t>(file_data.data(), file_data.size())});
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
+  FileSystem._onRead(
+      rpc::payload::FileRead{etl::span<const char>("fi-timeout.bin", 14)});
+
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
+  TEST_ASSERT_FALSE(rpc::security::run_cryptographic_self_tests());
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::KAT_HMAC_MISMATCH);
+  TEST_ASSERT_FALSE(rpc::security::run_cryptographic_self_tests());
+  bridge::test::fault::enable(bridge::test::fault::FaultPoint::KAT_AEAD_FAIL);
+  TEST_ASSERT_FALSE(rpc::security::run_cryptographic_self_tests());
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "top-secret");
+
+  bridge::test::fault::reset();
+  reset_bridge_core(Bridge, stream);
+  auto ba2 = TestAccessor::create(Bridge);
+  ba2.setSynchronized();
+  ba2.exhaustTxPayloadPool();
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::BRIDGE_POOL_ALLOC_FAIL);
+  TEST_ASSERT_FALSE(
+      Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 77, {}));
+
+  stream.tx_buf.clear();
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::BRIDGE_SERIALIZE_ZERO);
+  Bridge.signalXoff();
+  TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(stream.tx_buf.len));
+
+  ba2.enqueueNullPendingFrame(
+      rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 78, 0);
+  ba2.clearPendingTxQueue();
+
+  ba2.setHardwareSerial(&Serial);
+  ba2.setPendingBaudrate(115200U);
+  ba2.onBaudrateChange();
+
+  // Branch coverage for requires_ack (default path and flags)
+  TEST_ASSERT_FALSE(rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) | rpc::RPC_CMD_FLAG_COMPRESSED));
+  TEST_ASSERT_TRUE(rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)));
+
+  class FlowStream : public Stream {
+   public:
+    int avail = 0;
+    int available() override { return avail; }
+    int read() override { return -1; }
+    int peek() override { return -1; }
+    size_t write(uint8_t) override { return 1; }
+    size_t write(const uint8_t*, size_t s) override { return s; }
+    void flush() override {}
+  } flow;
+  reset_bridge_core(Bridge, flow);
+  auto ba_flow = TestAccessor::create(Bridge);
+  ba_flow.setSerialTaskXoffSent(true);
+  flow.avail = bridge::config::FLOW_CONTROL_XON_THRESHOLD - 1;
+  ba_flow.invokeSerialTask();
+
+  BiStream secure_stream;
+  reset_bridge_core(Bridge, secure_stream);
+  auto bs = TestAccessor::create(Bridge);
+  rpc::payload::LinkSync sync = {};
+  sync.nonce.fill(0x44);
+  bs.computeHandshakeTag(sync.nonce.data(), sync.nonce.size(), sync.tag.data());
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> tmp_buf;
+  auto linksync = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 950, sync, tmp_buf);
+  bs.dispatch(linksync);
+  TEST_ASSERT_TRUE(bs.isSynchronized());
+  bs.handleAck(bs.getLastCommandId());
+  secure_stream.tx_buf.clear();
+  etl::array<uint8_t, 2> payload = {0x41, 0x42};
+  TEST_ASSERT_TRUE(Bridge.send(
+      rpc::CommandId::CMD_CONSOLE_WRITE, 951,
+      rpc::payload::ConsoleWrite{
+          etl::span<const uint8_t>(payload.data(), payload.size())}));
+  size_t cursor = 0;
+  rpc::Frame encrypted = {};
+  if (extract_encrypted_frame(secure_stream.tx_buf, cursor, encrypted, 4)) {
+    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
+    const size_t wire_len = rpc::FrameParser::serialize(
+        encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
+    bridge::test::fault::enable(
+        bridge::test::fault::FaultPoint::BRIDGE_NONCE_READ_FAIL);
+    bs.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
   }
 
-  rpc::Frame compressed_empty = {};
-  compressed_empty.header = {
-      rpc::PROTOCOL_VERSION, 0,
+  rpc::Frame bad_compressed = {};
+  etl::array<uint8_t, 2> bad_pl = {rle::ESCAPE_BYTE, 0x01};
+  bad_compressed.header = {
+      rpc::PROTOCOL_VERSION, static_cast<uint16_t>(bad_pl.size()),
       static_cast<uint16_t>(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
                             rpc::RPC_CMD_FLAG_COMPRESSED),
-      902};
-  compressed_empty.nonce.fill(0);
-  compressed_empty.tag.fill(0);
-  compressed_empty.payload = {};
-  compressed_empty.crc = rpc::checksum::compute(compressed_empty);
-  const size_t wire_len = rpc::FrameParser::serialize(
-      compressed_empty, etl::span<uint8_t>(wire.data(), wire.size()));
-  ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+      952};
+  bad_compressed.payload = etl::span<const uint8_t>(bad_pl.data(), bad_pl.size());
+  bad_compressed.nonce.fill(0);
+  bad_compressed.tag.fill(0);
+  bad_compressed.crc = rpc::checksum::compute(bad_compressed);
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> bad_wire;
+  const size_t bad_len = rpc::FrameParser::serialize(
+      bad_compressed, etl::span<uint8_t>(bad_wire.data(), bad_wire.size()));
+  bs.invokePacketReceived(etl::span<const uint8_t>(bad_wire.data(), bad_len));
 }
 
 }  // namespace
@@ -583,5 +710,6 @@ int main() {
   RUN_TEST(test_service_capacity_and_send_fail_edges);
   RUN_TEST(test_filesystem_spi_fsm_and_rle_edges);
   RUN_TEST(test_encrypted_rx_nonce_and_compressed_empty_paths);
+  RUN_TEST(test_fault_injection_harness_paths);
   return UNITY_END();
 }

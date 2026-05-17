@@ -57,7 +57,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
       CounterIterator<uint16_t>(0U),
       CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
       [&](uint32_t chunk_idx) {
-        if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {  // GCOVR_EXCL_BR_LINE
+        if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
           fprintf(stderr, "[DEBUG] FS: Read TIMEOUT at offset %zu\\n", offset);
           return true;
         }

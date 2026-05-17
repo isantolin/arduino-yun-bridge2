@@ -105,9 +105,18 @@ class TestAccessor {
   void invokeWatchdog() { _bridge._watchdog_task.task_process_work(); }
   void invokeSerialTask() { _bridge._serial_task.task_process_work(); }
   void invokeTimerTask() { _bridge._timer_task.task_process_work(); }
+  void setSerialTaskXoffSent(bool value) { _bridge._serial_task.xoff_sent = value; }
   void setSerialTaskBridgeNull() { _bridge._serial_task.bridge = nullptr; }
   void setTimerTaskBridgeNull() { _bridge._timer_task.bridge = nullptr; }
   void setTimerLastTick(uint32_t tick) { _bridge._timer_task.last_tick_ms = tick; }
+  void setHardwareSerial(HardwareSerial* serial) { _bridge._hardware_serial = serial; }
+  void clearPendingTxQueue() { _bridge._clearPendingTxQueue(); }
+  void exhaustTxPayloadPool() {
+    exhaustTxPayloadPoolRecursive();
+  }
+  void enqueueNullPendingFrame(uint16_t command_id, uint16_t sequence_id, size_t length) {
+    _bridge._pending_tx_queue.push({command_id, sequence_id, nullptr, length});
+  }
   void clearSynchronized() { _fsm.receive(bridge::fsm::EvReset()); }
   void onBootloaderDelay() { _bridge._onBootloaderDelay(); }
   void applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
@@ -128,6 +137,12 @@ class TestAccessor {
  private:
   BridgeClass& _bridge;
   bridge::fsm::BridgeFsm& _fsm;
+
+  void exhaustTxPayloadPoolRecursive() {
+    auto* slot = _bridge._tx_payload_pool.allocate();
+    if (slot == nullptr) return;
+    exhaustTxPayloadPoolRecursive();
+  }
 };
 
 }  // namespace bridge::test

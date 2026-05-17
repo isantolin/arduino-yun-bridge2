@@ -79,6 +79,7 @@ SOURCES=(
     "${SRC_DIR}/services/FileSystem.cpp"
     "${SRC_DIR}/services/Process.cpp"
     "${SRC_DIR}/services/SPIService.cpp"
+    "${ROOT_DIR}/tools/arduino_stub/BridgeFaultInjection.cpp"
     "${TEST_DIR}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
@@ -102,6 +103,8 @@ BASE_FLAGS=(
     -Werror
     -Wno-unused-parameter
     -DBRIDGE_HOST_TEST=1
+    -DBRIDGE_FAULT_INJECTION=1
+    -DARDUINO_STUB_CUSTOM_MILLIS=1
     -DWOLFSSL_USER_SETTINGS
     -DETL_NO_STL
     -DUNITY_INCLUDE_DOUBLE

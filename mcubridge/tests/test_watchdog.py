@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import RuntimeState, create_runtime_state
@@ -86,5 +86,8 @@ def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
                 await task
 
         asyncio.run(_runner())
-    
-    assert any("keepalive cancelled" in str(args[0]) for name, args, kwargs in mock_logger.info.mock_calls)
+
+    assert any(
+        "keepalive cancelled" in str(args[0])
+        for name, args, kwargs in mock_logger.info.mock_calls
+    )

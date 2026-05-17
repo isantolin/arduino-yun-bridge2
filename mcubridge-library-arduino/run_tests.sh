@@ -50,6 +50,7 @@ SOURCES=(
     "src/services/FileSystem.cpp"
     "src/services/Process.cpp"
     "src/services/SPIService.cpp"
+    "../tools/arduino_stub/BridgeFaultInjection.cpp"
     "../tools/arduino_stub/ArduinoStubs.cpp"
     "tests/test_host_filesystem_mock.cpp"
     "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"

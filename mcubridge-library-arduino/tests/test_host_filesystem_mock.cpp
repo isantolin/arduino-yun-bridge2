@@ -1,4 +1,6 @@
 #include "hal/hal.h"
+#include "config/bridge_config.h"
+#include "BridgeFaultInjection.h"
 #include "protocol/rpc_protocol.h"
 #include <etl/string.h>
 #include <errno.h>
@@ -71,6 +73,11 @@ etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path, size_t
   bool failed = ferror(file) != 0; fclose(file);
   if (failed) return etl::unexpected<HalError>(HalError::IO_ERROR);
   result.has_more = (offset + result.bytes_read) < file_size;
+  if (bridge::test::fault::consume(
+          bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT)) {
+    bridge::test::fault::advance_clock_ms(bridge::config::SERIAL_TIMEOUT_MS + 1U);
+    result.has_more = true;
+  }
   return result;
 }
 

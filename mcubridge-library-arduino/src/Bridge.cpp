@@ -5,6 +5,9 @@
 #include <etl/iterator.h>
 
 #include "hal/ArchTraits.h"
+#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
+#include "BridgeFaultInjection.h"
+#endif
 #include "hal/progmem_compat.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
@@ -209,7 +212,13 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
   _is_post_passed = rpc::security::run_cryptographic_self_tests();
-  if (!_is_post_passed) enterSafeState();  // GCOVR_EXCL_BR_LINE
+#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
+  if (bridge::test::fault::consume(
+          bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL)) {
+    _is_post_passed = false;
+  }
+#endif
+  if (!_is_post_passed) enterSafeState();
 
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR) {
@@ -250,7 +259,7 @@ void BridgeClass::SerialTask::task_process_work() {
   if (!xoff_sent && avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
     bridge->signalXoff();
     xoff_sent = true;
-  } else if (xoff_sent && avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {
+  } else if (xoff_sent && avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {  // GCOVR_EXCL_BR_LINE
     bridge->signalXon();
     xoff_sent = false;
   }
@@ -287,7 +296,7 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
     return;
   }
   if (cmd_id < rpc::RPC_MAX_COMMAND_ID && _dispatch_table[cmd_id] != nullptr) {
-    (this->*_dispatch_table[cmd_id])(ctx);
+    (this->*_dispatch_table[cmd_id])(ctx);  // GCOVR_EXCL_BR_LINE
   } else {
     onUnknownCommand(ctx);
   }
@@ -393,7 +402,13 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
   size_t len = rpc::FrameParser::serialize(
       f, etl::span<uint8_t>(buffer.data(), buffer.size()));
-  if (len > 0)  // GCOVR_EXCL_BR_LINE
+#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
+  if (bridge::test::fault::consume(
+          bridge::test::fault::FaultPoint::BRIDGE_SERIALIZE_ZERO)) {
+    len = 0;
+  }
+#endif
+  if (len > 0)
     _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
 }
 
@@ -408,7 +423,14 @@ bool BridgeClass::_sendFrame(uint16_t cmd, uint16_t seq,
     BRIDGE_ATOMIC_BLOCK {
       if (_pending_tx_queue.full()) return false;
       TxPayloadBuffer* buf = _tx_payload_pool.allocate();
-      if (!buf) return false;  // GCOVR_EXCL_BR_LINE
+#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
+      if (bridge::test::fault::consume(
+              bridge::test::fault::FaultPoint::BRIDGE_POOL_ALLOC_FAIL)) {
+        if (buf) _tx_payload_pool.release(buf);  // GCOVR_EXCL_BR_LINE
+        buf = nullptr;
+      }
+#endif
+      if (!buf) return false;
       etl::copy_n(pl.begin(), pl.size(), buf->data.begin());
       _pending_tx_queue.push({cmd, seq, buf, pl.size()});
     }
@@ -463,7 +485,7 @@ void BridgeClass::_clearPendingTxQueue() {
       static void run(etl::queue<BridgeClass::PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES>& q, etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>& pool) {
         if (q.empty()) return;
         TxPayloadBuffer* buf = q.front().buffer;
-        if (buf) pool.release(buf);  // GCOVR_EXCL_BR_LINE
+        if (buf) pool.release(buf);
         q.pop();
         run(q, pool);
       }
@@ -474,7 +496,7 @@ void BridgeClass::_clearPendingTxQueue() {
 void BridgeClass::_onRxDedupe() { _rx_history.clear(); }
 void BridgeClass::_onBaudrateChange() {
   if (_pending_baudrate > 0) {
-    if (_hardware_serial) _hardware_serial->begin(_pending_baudrate);  // GCOVR_EXCL_BR_LINE
+    if (_hardware_serial) _hardware_serial->begin(_pending_baudrate);
     _pending_baudrate = 0;
   }
 }
@@ -801,7 +823,15 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
       uint64_t counter = 0;
       etl::byte_stream_reader n_reader(frame.nonce.data() + 4, 8,
                                        etl::endian::big);
-      if (auto c_opt = n_reader.read<uint64_t>()) counter = *c_opt;  // GCOVR_EXCL_BR_LINE
+#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
+      const bool force_nonce_fail = bridge::test::fault::consume(
+          bridge::test::fault::FaultPoint::BRIDGE_NONCE_READ_FAIL);
+#else
+      constexpr bool force_nonce_fail = false;
+#endif
+      if (!force_nonce_fail) {
+        if (auto c_opt = n_reader.read<uint64_t>()) counter = *c_opt;
+      }
       if (counter <= _rx_nonce_counter) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
         return;

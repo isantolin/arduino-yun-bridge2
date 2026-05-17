@@ -46,6 +46,7 @@ BRIDGE_SOURCES=(
     "${SRC_ROOT}/services/FileSystem.cpp"
     "${SRC_ROOT}/services/Process.cpp"
     "${SRC_ROOT}/services/SPIService.cpp"
+    "${ROOT_DIR}/tools/arduino_stub/BridgeFaultInjection.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
 )
 
@@ -70,7 +71,8 @@ BASE_FLAGS=(
     "-O0" "-g" "-fprofile-arcs" "-ftest-coverage" "-fPIC"
     "-Wall" "-Wextra" "-Werror"
     "-DARDUINO=100" "-DBRIDGE_HOST_TEST=1" "-DWOLFSSL_USER_SETTINGS"
-    "-DETL_NO_STL" "-DBRIDGE_DEBUG_IO=1"
+    "-DETL_NO_STL" "-DBRIDGE_DEBUG_IO=1" "-DBRIDGE_FAULT_INJECTION=1"
+    "-DARDUINO_STUB_CUSTOM_MILLIS=1"
     "-DBRIDGE_ENABLE_CONSOLE=1" "-DBRIDGE_ENABLE_DATASTORE=1"
     "-DBRIDGE_ENABLE_MAILBOX=1" "-DBRIDGE_ENABLE_FILESYSTEM=1"
     "-DBRIDGE_ENABLE_PROCESS=1" "-DBRIDGE_ENABLE_SPI=1"

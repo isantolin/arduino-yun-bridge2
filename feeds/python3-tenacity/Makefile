@@ -28,9 +28,9 @@ define Package/python3-tenacity
 endef
 
 define Package/python3-tenacity/description
-	Tenacity is an Apache 2.0 licensed general-purpose retrying library,
-	written in Python, to simplify the task of adding retry behavior to
-	just about anything.
+ Tenacity is an Apache 2.0 licensed general-purpose retrying library,
+ written in Python, to simplify the task of adding retry behavior to
+ just about anything.
 endef
 
 $(eval $(call Py3Package,python3-tenacity))

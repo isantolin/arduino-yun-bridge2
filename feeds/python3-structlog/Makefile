@@ -33,9 +33,9 @@ define Package/python3-structlog
 endef
 
 define Package/python3-structlog/description
-	structlog makes logging in Python faster, less painful, and more powerful
-	by adding structure to your log entries. It can output structured JSON for
-	production and human-readable colored output for development.
+ structlog makes logging in Python faster, less painful, and more powerful
+ by adding structure to your log entries. It can output structured JSON for
+ production and human-readable colored output for development.
 endef
 
 $(eval $(call Py3Package,python3-structlog))

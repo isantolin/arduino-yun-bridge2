@@ -27,7 +27,7 @@ define Package/python3-diskcache
 endef
 
 define Package/python3-diskcache/description
-	Disk Cache -- Disk and file backed persistent cache.
+ Disk Cache -- Disk and file backed persistent cache.
 endef
 
 $(eval $(call Py3Package,python3-diskcache))

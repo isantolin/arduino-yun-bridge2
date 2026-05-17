@@ -23,8 +23,8 @@ define Package/python3-msgspec
 endef
 
 define Package/python3-msgspec/description
-	A fast and efficient JSON/MessagePack library with validation and schema support.
-	Optimized for resource-constrained environments.
+ A fast and efficient JSON/MessagePack library with validation and schema support.
+ Optimized for resource-constrained environments.
 endef
 
 $(eval $(call Py3Package,python3-msgspec))

@@ -27,8 +27,8 @@ define Package/python3-aiomqtt
 endef
 
 define Package/python3-aiomqtt/description
-	The idiomatic asyncio MQTT client (formerly asyncio-mqtt).
-	Targeting Paho MQTT v2.x compatibility.
+ The idiomatic asyncio MQTT client (formerly asyncio-mqtt).
+ Targeting Paho MQTT v2.x compatibility.
 endef
 
 $(eval $(call Py3Package,python3-aiomqtt))

@@ -30,7 +30,7 @@ define Package/python3-pyserial-asyncio-fast
 endef
 
 define Package/python3-pyserial-asyncio-fast/description
-  A fast asyncio transport for pyserial.
+	A fast asyncio transport for pyserial.
 endef
 
 $(eval $(call Py3Package,python3-pyserial-asyncio-fast))

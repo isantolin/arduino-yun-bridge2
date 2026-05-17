@@ -30,7 +30,7 @@ define Package/python3-prometheus-client
 endef
 
 define Package/python3-prometheus-client/description
-  The official Python client for Prometheus.
+	The official Python client for Prometheus.
 endef
 
 $(eval $(call Py3Package,python3-prometheus-client))

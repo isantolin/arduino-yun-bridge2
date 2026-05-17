@@ -45,7 +45,7 @@ define Package/python3-cryptography
 endef
 
 define Package/python3-cryptography/description
- Cryptographic primitives for Python (Rust backend)
+	Cryptographic primitives for Python (Rust backend)
 endef
 
 $(eval $(call Py3Package,python3-cryptography))

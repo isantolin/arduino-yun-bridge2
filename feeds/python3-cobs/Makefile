@@ -31,7 +31,7 @@ define Package/python3-cobs
 endef
 
 define Package/python3-cobs/description
-  Consistent Overhead Byte Stuffing (COBS) encoding and decoding.
+	Consistent Overhead Byte Stuffing (COBS) encoding and decoding.
 endef
 
 $(eval $(call Py3Package,python3-cobs))

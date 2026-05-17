@@ -38,9 +38,9 @@ endef
 PYTHON3_PKG_BUILD_DEPENDS:=python3-hatchling
 
 define Package/python3-paho-mqtt/description
-  This code provides a client class which enable applications to connect to an
-  MQTT broker to publish messages.
-  Supports MQTT v5.0 and Callback API v2.
+	This code provides a client class which enable applications to connect to an
+	MQTT broker to publish messages.
+	Supports MQTT v5.0 and Callback API v2.
 endef
 
 $(eval $(call Py3Package,python3-paho-mqtt))

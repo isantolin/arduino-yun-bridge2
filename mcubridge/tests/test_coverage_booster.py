@@ -261,7 +261,7 @@ async def test_runtime_mcu_handlers_coverage_final(
     await cast(Any, service)._handle_mcu_status(2, Status.ACK, b"")
 
     # [SIL-2] Close real cache before mocking to avoid ResourceWarning
-    if mock_state.datastore_cache:
+    if mock_state.datastore_cache is not None:
         cast(Any, mock_state.datastore_cache).close()
 
     mock_state.datastore_cache = MagicMock()

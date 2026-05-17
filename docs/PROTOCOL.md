@@ -41,7 +41,7 @@ La **fuente de verdad machine-readable** del protocolo vive en `tools/protocol/s
 Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan con **MsgPack** (formato array) dentro del frame RPC.
 
 - **Python (daemon):** usa `msgspec` para codificar/decodificar payloads vía las clases `Packet` generadas en `structures.py`.
-- **C++ (MCU):** usa un codec header-only (`msgpack_codec.h`, estático, sin heap) para codificar/decodificar payloads. Los tipos se exponen como `rpc::payload::*` structs nativos con métodos `encode()`/`decode()`.
+- **C++ (MCU):** usa las APIs MsgPack de ArduinoJson (`serializeMsgPack`/`deserializeMsgPack`) para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc::payload::*` structs nativos con métodos `encode()`/`decode()`.
 
 El generador produce automáticamente `Payload::parse<T>(const rpc::Frame&)` que usa `msgpack::Decoder` internamente, garantizando robustez SIL-2.
 
@@ -417,7 +417,7 @@ CRC32 (4 bytes, Big Endian) sobre Header + Nonce + Payload + Tag. Polinomio IEEE
 | **Criptografía AEAD** | Cifrado y Autenticación | **wolfCrypt** (ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
 | **COBS** | Framing / Escaping | **Externa**: `PacketSerial2`. | **Externa**: `cobs` (paquete PyPI). |
 | **CRC32** | Integridad adicional | **Interna**: `etl::crc32` (ETL SIL-2 certified). | **Interna**: `binascii.crc32` (IEEE 802.3 standard). |
-| **Payload Serialization** | Codificación de payloads | **MsgPack** (`mpack`, estático, sin heap). | **MsgPack** (`msgspec`, clases `Packet` en `structures.py`). |
+| **Payload Serialization** | Codificación de payloads | **MsgPack** (ArduinoJson `serializeMsgPack`/`deserializeMsgPack`, sin heap dinámico en runtime). | **MsgPack** (`msgspec`, clases `Packet` en `structures.py`). |
 | **Endianness** | Byte Order | `etl::endian::big`. | `struct.pack('>...')` (Big Endian). |
 
 ## 4. Códigos de estado (`Status`)
@@ -948,4 +948,3 @@ t: McuBridgeConfigFallback
   annotations:
     summary: "Comandos no reconocidos detectados (protocol drift)"
 ```
-

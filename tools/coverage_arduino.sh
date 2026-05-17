@@ -24,7 +24,6 @@ mkdir -p "${ROOT_DIR}/.dummy_libs"
 ETL_PATH="${ROOT_DIR}/.dummy_libs/Embedded_Template_Library"
 WOLFSSL_PATH="${ROOT_DIR}/.dummy_libs/wolfSSL"
 PACKETSERIAL_PATH="${ROOT_DIR}/.dummy_libs/PacketSerial"
-MPACK_PATH="${ROOT_DIR}/.dummy_libs/mpack"
 AJSON_PATH="${ROOT_DIR}/.dummy_libs/ArduinoJson"
 
 # Clean old coverage data
@@ -51,12 +50,6 @@ BRIDGE_SOURCES=(
 # Third-party sources compiled WITHOUT coverage instrumentation to prevent
 # vendor header line counts from bleeding into coverage reports.
 THIRD_PARTY_SOURCES=(
-    "${MPACK_PATH}/src/mpack-common.c"
-    "${MPACK_PATH}/src/mpack-writer.c"
-    "${MPACK_PATH}/src/mpack-reader.c"
-    "${MPACK_PATH}/src/mpack-expect.c"
-    "${MPACK_PATH}/src/mpack-node.c"
-    "${MPACK_PATH}/src/mpack-platform.c"
     "${WOLFSSL_PATH}/wolfcrypt/src/sha256.c"
     "${WOLFSSL_PATH}/wolfcrypt/src/hmac.c"
     "${WOLFSSL_PATH}/wolfcrypt/src/hash.c"
@@ -85,7 +78,6 @@ BASE_FLAGS=(
     "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}"
     "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
-    "-I${MPACK_PATH}/src"
     "-I${AJSON_PATH}/src"
     "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"
 )
@@ -100,7 +92,6 @@ TP_FLAGS=(
     "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}"
     "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
-    "-I${MPACK_PATH}/src"
     "-I${AJSON_PATH}/src"
 )
 

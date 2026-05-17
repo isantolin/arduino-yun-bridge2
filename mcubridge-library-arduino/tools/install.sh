@@ -102,48 +102,6 @@ install_dependency() {
     # Copy ALL contents of extracted_root to target_base/$name
     cp -a "$extracted_root/." "$target_base/$name/"
     
-    # Flatten only headers for Arduino compatibility (#include <mpack.h>)
-    # Do NOT copy .c sources: arduino-cli would compile both root and src/mpack/, causing duplicate symbols.
-    if [ "$name" == "mpack" ]; then
-        echo "[INFO] Flattening mpack library for Arduino compatibility..."
-        mkdir -p "$target_base/$name/src"
-        # Move all .h and .c files from src/mpack/ to src/
-        find "$target_base/$name/src/mpack/" -maxdepth 1 -name "*.h" -exec cp -a {} "$target_base/$name/src/" \;
-        find "$target_base/$name/src/mpack/" -maxdepth 1 -name "*.c" -exec cp -a {} "$target_base/$name/src/" \;
-        # Remove the now redundant subdirectory to avoid duplicate symbols during recursive compilation
-        rm -rf "$target_base/$name/src/mpack"
-
-        # [HOT-PATCH] Fix MPack C++ overloads for AVR (missing double support)
-        echo "[INFO] Patching MPack for AVR C++ compatibility..."
-        local f="$target_base/$name/src/mpack-writer.h"
-        if [ -f "$f" ]; then
-            python3 -c "
-import sys
-path = '$f'
-with open(path, 'r') as f:
-    content = f.read()
-f_old = 'MPACK_INLINE void mpack_write(mpack_writer_t* writer, float value) {\n    mpack_write_float(writer, value);\n}'
-f_new = '#if MPACK_FLOAT\n' + f_old + '\n#endif'
-if f_old in content and '#if MPACK_FLOAT' not in content:
-    content = content.replace(f_old, f_new)
-d_old = 'MPACK_INLINE void mpack_write(mpack_writer_t* writer, double value) {\n    mpack_write_double(writer, value);\n}'
-d_new = '#if MPACK_DOUBLE\n' + d_old + '\n#endif'
-if d_old in content and '#if MPACK_DOUBLE' not in content:
-    content = content.replace(d_old, d_new)
-fkv_old = 'MPACK_INLINE void mpack_write_kv(mpack_writer_t* writer, const char *key, float value) {\n    mpack_write_cstr(writer, key);\n    mpack_write_float(writer, value);\n}'
-fkv_new = '#if MPACK_FLOAT\n' + fkv_old + '\n#endif'
-if fkv_old in content and '#if MPACK_FLOAT' not in content:
-    content = content.replace(fkv_old, fkv_new)
-dkv_old = 'MPACK_INLINE void mpack_write_kv(mpack_writer_t* writer, const char *key, double value) {\n    mpack_write_cstr(writer, key);\n    mpack_write_double(writer, value);\n}'
-dkv_new = '#if MPACK_DOUBLE\n' + dkv_old + '\n#endif'
-if dkv_old in content and '#if MPACK_DOUBLE' not in content:
-    content = content.replace(dkv_old, dkv_new)
-with open(path, 'w') as f:
-    f.write(content)
-"
-        fi
-    fi
-    
     echo "[OK] $name installed."
     rm -rf "$tmp_dir"
 }
@@ -160,25 +118,7 @@ else
     install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.47.1" "include/etl/algorithm.h" "" "$LIB_DIR"
     install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.9.1-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
     install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "PacketSerial.h" "" "$LIB_DIR"
-    install_dependency "mpack" "https://github.com/ludocode/mpack/archive/refs/heads/develop.zip" "src/mpack/mpack.h" "" "$LIB_DIR"
     install_dependency "ArduinoJson" "https://codeload.github.com/bblanchon/ArduinoJson/zip/refs/tags/v7.4.3" "ArduinoJson.h" "" "$LIB_DIR"
-    
-    # Ensure mpack has a library.properties for arduino-cli recognition
-    if [ ! -f "$LIB_DIR/mpack/library.properties" ]; then
-        echo "[INFO] Creating library.properties for mpack..."
-        cat > "$LIB_DIR/mpack/library.properties" <<EOF
-name=mpack
-version=1.1.0
-author=Nicholas Fraser
-maintainer=Nicholas Fraser
-sentence=A high-performance MessagePack encoder/decoder.
-paragraph=MPack is a high-performance encoder and decoder for the MessagePack serialization format.
-category=Data Storage
-url=https://github.com/ludocode/mpack
-architectures=*
-includes=mpack.h
-EOF
-    fi
 fi
 
 # Unity test framework (host tests only)

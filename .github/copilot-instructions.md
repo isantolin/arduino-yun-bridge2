@@ -18,7 +18,7 @@
 
 ## Protocol, Config, and Secrets
 - Edit `tools/protocol/spec.toml` (enums/constants) and `tools/protocol/mcubridge.proto` (payload schemas) then run `python3 tools/protocol/generate.py` to refresh both Python (`mcubridge/protocol/protocol.py`, `structures.py`) and C++ (`rpc_protocol.h`, `rpc_structs.h`). Commit all generated artifacts together.
-- Payload serialization uses **MsgPack** (array format): `msgspec` on Python, a minimal header-only codec (`msgpack_codec.h`, static, no heap) on MCU. The `rpc_structs.h` file defines `rpc::payload::*` structs with `encode()`/`decode()` methods and provides `Payload::parse<T>()` / `sendPbFrame<T>()` for type-safe encode/decode.
+- Payload serialization uses **MsgPack** (array format): `msgspec` on Python and ArduinoJson MsgPack APIs (`serializeMsgPack` / `deserializeMsgPack`) on MCU. The `rpc_structs.h` file defines `rpc::payload::*` structs with `encode()`/`decode()` methods and provides `Payload::parse<T>()` for type-safe decode.
 - Runtime defaults live in `mcubridge/mcubridge/config/const.py`; adjust values there and expose overrides via UCI (`mcubridge.general.*`).
 - Rotate serial + MQTT credentials with `tools/rotate_credentials.sh --host <yun>` or `/usr/bin/mcubridge-rotate-credentials` so sketches can embed `#define BRIDGE_SERIAL_SHARED_SECRET "..."`.
 - Update topic ACLs (`mqtt_allow_*`, `allowed_commands`) in both policy code (`mcubridge/policy.py`) and LuCI defaults whenever permissions change.

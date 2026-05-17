@@ -78,7 +78,7 @@ void loop() {
 
 - The library targets AVR-based Arduino MCU boards. Ensure the Arduino AVR core is installed.
 - The shared protocol headers are kept aligned with the Python daemon under `mcubridge/mcubridge/protocol`.
-- All payload serialization uses **MsgPack** (array format) via a minimal header-only codec (`msgpack_codec.h`, static, no heap). The `sendPbFrame<T>()` template in `Bridge.h` encodes MsgPack messages and sends them as RPC frames. Payload decoding uses `Payload::parse<T>()` with struct-level `decode()` methods.
+- All payload serialization uses **MsgPack** (array format) via ArduinoJson (`serializeMsgPack` / `deserializeMsgPack`) and generated `rpc::payload::*` structs with `encode()`/`decode()` methods. Payload decoding uses `Payload::parse<T>()`.
 - MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via MQTT (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`).
 
 ## Contributing

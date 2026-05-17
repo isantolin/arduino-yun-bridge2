@@ -8,8 +8,8 @@ TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
 BUILD_DIR="${ROOT_DIR}/coverage/build-arduino"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
-ARDUINO_COVERAGE_MIN_LINE="${ARDUINO_COVERAGE_MIN_LINE:-80}"
-ARDUINO_COVERAGE_MIN_BRANCH="${ARDUINO_COVERAGE_MIN_BRANCH:-70}"
+ARDUINO_COVERAGE_MIN_LINE="${ARDUINO_COVERAGE_MIN_LINE:-95}"
+ARDUINO_COVERAGE_MIN_BRANCH="${ARDUINO_COVERAGE_MIN_BRANCH:-95}"
 
 # Recreate build directory to avoid stale gcov/gcno references from old headers.
 rm -rf "${BUILD_DIR}"

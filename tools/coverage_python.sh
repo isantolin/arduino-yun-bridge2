@@ -19,14 +19,14 @@ Any remaining arguments are passed to pytest. If no pytest args are supplied,
 the default targets are mcubridge/tests and mcubridge-client-examples/client_tests.
 
 Environment:
-  PYTHON_COVERAGE_MIN  Minimum total coverage percentage (default: 80)
+  PYTHON_COVERAGE_MIN  Minimum total coverage percentage (default: 95)
 EOF
 }
 
 COVERAGE_ROOT="$DEFAULT_COVERAGE_ROOT"
 ENABLE_HTML=1
 ENABLE_JSON=0
-PYTHON_COVERAGE_MIN=${PYTHON_COVERAGE_MIN:-80}
+PYTHON_COVERAGE_MIN=${PYTHON_COVERAGE_MIN:-95}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

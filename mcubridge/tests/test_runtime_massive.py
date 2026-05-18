@@ -238,10 +238,10 @@ async def test_runtime_process_cleanup_robustness(
         mock_exec.return_value = mock_proc
 
         # Spawn multiple
-        pids = []
+        pids: list[int] = []
         for _ in range(3):
-            pid = await svc._run_process("ls")
-            if pid:
+            pid = cast(int, await svc._run_process("ls"))
+            if pid > 0:
                 pids.append(pid)
 
         assert len(pids) > 0

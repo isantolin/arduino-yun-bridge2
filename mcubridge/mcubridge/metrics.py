@@ -289,7 +289,7 @@ class PrometheusExporter:
     """Expose RuntimeState snapshots via the official Prometheus HTTP server."""
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
-        from prometheus_client import ProcessCollector, make_wsgi_app
+        from prometheus_client import CONTENT_TYPE_LATEST, ProcessCollector, generate_latest
         from wsgiref.simple_server import make_server
 
         self._state = state
@@ -305,9 +305,13 @@ class PrometheusExporter:
         # Register the dynamic state collector
         self._registry.register(self._collector)
 
-        # [Library-First] make_wsgi_app provides the callable expected by make_server.
-        # This is the standard way to expose Prometheus metrics over WSGI.
-        app: WSGIApplication = cast(WSGIApplication, make_wsgi_app(self._registry))
+        # [Library-First] Use direct registry rendering with native prometheus APIs.
+        def _app(environ: dict[str, Any], start_response: Callable[..., Any]) -> list[bytes]:
+            payload = generate_latest(self._registry)
+            start_response("200 OK", [("Content-Type", CONTENT_TYPE_LATEST)])
+            return [payload]
+
+        app: WSGIApplication = cast(WSGIApplication, _app)
 
         self._server = make_server(
             self._host,

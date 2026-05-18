@@ -280,6 +280,7 @@ async def test_runtime_mcu_handlers_coverage_final(mock_config: RuntimeConfig, m
 async def test_serial_process_packet_coverage_final(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover AEAD decryption failure and malformed packets."""
     from unittest.mock import MagicMock, AsyncMock
+
     service = MagicMock()
     service.handle_mcu_frame = AsyncMock()
     transport = SerialTransport(mock_config, mock_state, service)

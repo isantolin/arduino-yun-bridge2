@@ -279,10 +279,7 @@ class BridgeDaemon:
             log.info("Daemon shutdown initiated (Cancelled).")
         except* Exception as exc_group:
             # [SIL-2] Iterative reduction for exception logging
-            [
-                log.critical("Fatal task error: %s", e, exc_info=e)
-                for e in exc_group.exceptions
-            ]
+            [log.critical("Fatal task error: %s", e, exc_info=e) for e in exc_group.exceptions]
             raise
         finally:
             self.state.cleanup()

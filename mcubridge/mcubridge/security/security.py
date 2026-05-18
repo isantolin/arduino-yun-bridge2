@@ -29,7 +29,7 @@ NONCE_TOTAL_BYTES: Final[int] = AEAD_NONCE_SIZE
 AEAD_TAG_SIZE: Final[int] = protocol.AEAD_TAG_SIZE
 NONCE_RANDOM_BYTES: Final[int] = 4  # Derived
 NONCE_COUNTER_BYTES: Final[int] = 8  # Derived
-_NONCE_STRUCT = struct.Struct(protocol.NONCE_COUNTER_FORMAT)
+_FULL_NONCE_STRUCT = struct.Struct(">4sQ")
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
@@ -50,8 +50,7 @@ def secure_zero_bytes_copy(data: bytes) -> bytes:
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     """Generate a 12-byte AEAD nonce with monotonic counter."""
     new_counter = (counter + 1) & protocol.NONCE_COUNTER_MASK
-    random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
-    nonce = random_part + _NONCE_STRUCT.pack(new_counter)
+    nonce = _FULL_NONCE_STRUCT.pack(secrets.token_bytes(NONCE_RANDOM_BYTES), new_counter)
     return nonce, new_counter
 
 
@@ -60,7 +59,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
     if len(nonce) != AEAD_NONCE_SIZE:
         raise ValueError(f"Nonce must be {AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
     try:
-        return _NONCE_STRUCT.unpack(nonce[NONCE_RANDOM_BYTES:])[0]
+        return _FULL_NONCE_STRUCT.unpack(nonce)[1]
     except struct.error as e:
         raise ValueError(f"Malformed nonce format: {e}") from e
 

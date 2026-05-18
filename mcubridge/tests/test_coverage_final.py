@@ -21,10 +21,9 @@ from mcubridge.security.security import (
     generate_nonce_with_counter,
     extract_nonce_counter,
     validate_nonce_counter,
-    aead_encrypt,
-    aead_decrypt,
     verify_crypto_integrity,
 )
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 
 def test_protocol_spec_load(tmp_path: Path) -> None:
@@ -147,8 +146,9 @@ def test_security_primitives_coverage() -> None:
     key = b"A" * 32
     data = b"hello"
     ad = b"header"
-    ct = aead_encrypt(key, nonce, data, ad)
-    pt = aead_decrypt(key, nonce, ct, ad)
+    cipher = ChaCha20Poly1305(key)
+    ct = cipher.encrypt(nonce, data, ad)
+    pt = cipher.decrypt(nonce, ct, ad)
     assert pt == data
 
     # verify_crypto_integrity

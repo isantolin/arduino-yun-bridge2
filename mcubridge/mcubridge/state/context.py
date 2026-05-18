@@ -190,6 +190,7 @@ class RuntimeState(msgspec.Struct):
     link_sync_event: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     link_expected_tag: bytes | None = None
     link_session_key: bytes | None = None
+    link_aead_cipher: Any | None = None
     link_nonce_length: int = 0
     link_nonce_counter: int = 0
     link_last_nonce_counter: int = 0
@@ -264,7 +265,7 @@ class RuntimeState(msgspec.Struct):
             exc,
         )
 
-    def configure(self, config: RuntimeConfig) -> None:
+    def configure(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
 
         # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
@@ -279,33 +280,6 @@ class RuntimeState(msgspec.Struct):
         if self._mailbox_incoming_queue_cache is not None:
             cast(Any, self._mailbox_incoming_queue_cache).close()
             self._mailbox_incoming_queue_cache = None
-
-        # [SIL-2] Atomic field sync via msgspec.convert
-        # This replaces manual iteration/renaming with native C-backed coercion.
-        # We leverage msgspec.structs.asdict() and re-insert into self.
-        cfg_dict = msgspec.structs.asdict(config)
-
-        # Declarative renames for semantic mapping
-        cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop("mqtt_topic", self.mqtt_topic_prefix)
-        cfg_dict["process_output_limit"] = cfg_dict.pop("process_max_output_bytes", self.process_output_limit)
-
-        # [SIL-2] Complex Policy Mapping
-        if "allowed_commands" in cfg_dict:
-            from ..protocol.structures import AllowedCommandPolicy
-
-            cfg_dict["allowed_policy"] = AllowedCommandPolicy(entries=cfg_dict.pop("allowed_commands"))
-
-        # [SIL-2] Unified conversion and assignment
-        # Note: We filter out None to prevent overwriting initialized defaults.
-        # We also filter for actual state fields to ensure structural integrity.
-        state_fields = {f.name for f in msgspec.structs.fields(self)}
-        for k, v in cfg_dict.items():
-            if v is not None and k in state_fields:
-                try:
-                    # Native coercion if types differ slightly
-                    setattr(self, k, msgspec.convert(v, type(getattr(self, k))))  # type: ignore
-                except (msgspec.MsgspecError, ValueError, TypeError):
-                    setattr(self, k, v)
 
         # Re-initialize transient queues
         self.console_to_mcu_queue = collections.deque[bytes](maxlen=self.mailbox_queue_limit)
@@ -610,12 +584,18 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any], initialize_spoo
 
     cfg = msgspec.convert(config, RuntimeConfig) if isinstance(config, dict) else config
 
-    state = RuntimeState(
-        serial_tx_allowed=asyncio.Event(),
-        process_lock=asyncio.Lock(),
-        link_sync_event=asyncio.Event(),
-    )
+    cfg_dict = {k: v for k, v in msgspec.structs.asdict(cfg).items() if v is not None}
+    if "mqtt_topic" in cfg_dict:
+        cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop("mqtt_topic")
+    if "process_max_output_bytes" in cfg_dict:
+        cfg_dict["process_output_limit"] = cfg_dict.pop("process_max_output_bytes")
+    if "allowed_commands" in cfg_dict and cfg_dict["allowed_commands"] is not None:
+        from ..protocol.structures import AllowedCommandPolicy
+
+        cfg_dict["allowed_policy"] = AllowedCommandPolicy(entries=cfg_dict.pop("allowed_commands"))
+
+    state = msgspec.convert(cfg_dict, RuntimeState, strict=False)
     state.serial_tx_allowed.set()
-    state.configure(cfg)
+    state.configure()
 
     return state

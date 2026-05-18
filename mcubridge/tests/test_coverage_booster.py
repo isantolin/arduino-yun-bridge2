@@ -279,7 +279,9 @@ async def test_runtime_mcu_handlers_coverage_final(mock_config: RuntimeConfig, m
 @pytest.mark.asyncio
 async def test_serial_process_packet_coverage_final(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     """Cover AEAD decryption failure and malformed packets."""
+    from unittest.mock import MagicMock, AsyncMock
     service = MagicMock()
+    service.handle_mcu_frame = AsyncMock()
     transport = SerialTransport(mock_config, mock_state, service)
     transport.loop = asyncio.get_running_loop()
 
@@ -814,12 +816,13 @@ async def test_structures_exhaustive_v10() -> None:
 @pytest.mark.asyncio
 async def test_security_aead_failure_coverage_v7() -> None:
     """Cover aead_decrypt failure path."""
-    from mcubridge.security.security import aead_decrypt
-
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
     import cryptography.exceptions
+
+    aead = ChaCha20Poly1305(b"A" * 32)
     # AEAD decryption failure catch-all
     try:
-        res = aead_decrypt(b"A" * 32, b"N" * 12, b"bad_data", b"tag")
+        res = aead.decrypt(b"N" * 12, b"bad_data" + b"tag", None)
         assert res is None
     except cryptography.exceptions.InvalidTag:
         pass

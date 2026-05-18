@@ -19,10 +19,9 @@ def test_create_runtime_state_initializes_queues(runtime_config: RuntimeConfig) 
 
 
 def test_configure_updates_derived_values(runtime_config: RuntimeConfig) -> None:
+    runtime_config.mqtt_topic = "custom/prefix"
     state = create_runtime_state(runtime_config)
     try:
-        runtime_config.mqtt_topic = "custom/prefix"
-        state.configure(runtime_config)
         assert state.mqtt_topic_prefix == "custom/prefix"
     finally:
         state.cleanup()

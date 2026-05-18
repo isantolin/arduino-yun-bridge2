@@ -16,6 +16,8 @@ import itertools
 
 from . import protocol
 
+RLE_MAX_CHUNK_COUNT = 254
+
 
 def rle_decode(obj: bytes | bytearray | memoryview) -> bytes:
     """Decompress RLE data natively using iterators (SIL-2)."""
@@ -57,10 +59,10 @@ def rle_encode(obj: bytes | bytearray | memoryview) -> bytes:
             marker = bytes([protocol.RLE_ESCAPE_BYTE, protocol.RLE_SINGLE_ESCAPE_MARKER, byte_val])
             res.extend(marker * run_len)
         elif run_len >= protocol.RLE_MIN_RUN_LENGTH:
-            # Handle chunks. Max count_m2 is 254 to avoid SINGLE_ESCAPE_MARKER (255).
-            # Max chunk size is 254 + OFFSET = 256.
+            # Handle chunks. Max count_m2 is RLE_MAX_CHUNK_COUNT to avoid SINGLE_ESCAPE_MARKER (255).
+            # Max chunk size is RLE_MAX_CHUNK_COUNT + OFFSET.
             while run_len >= protocol.RLE_MIN_RUN_LENGTH:
-                chunk = min(run_len, 254 + protocol.RLE_OFFSET)
+                chunk = min(run_len, RLE_MAX_CHUNK_COUNT + protocol.RLE_OFFSET)
                 res.append(protocol.RLE_ESCAPE_BYTE)
                 res.append(chunk - protocol.RLE_OFFSET)
                 res.append(byte_val)

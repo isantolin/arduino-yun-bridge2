@@ -52,8 +52,6 @@ from mcubridge.protocol.structures import (
     PipelineEvent,
 )
 from mcubridge.security.security import (
-    aead_decrypt,
-    aead_encrypt,
     generate_nonce_with_counter,
 )
 from mcubridge.services.handshake import SerialHandshakeFatal
@@ -259,11 +257,10 @@ class SerialTransport:
                 or protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
             )
 
-            if self.state.is_synchronized and self.state.link_session_key and not is_excluded:
+            if self.state.is_synchronized and self.state.link_aead_cipher and not is_excluded:
                 try:
                     # [SIL-2] Zero-Wrapper AEAD: Use preserved raw header bytes directly as AD
-                    payload = aead_decrypt(
-                        self.state.link_session_key,
+                    payload = self.state.link_aead_cipher.decrypt(
                         frame.nonce,
                         payload + frame.tag,
                         frame.header_bytes,
@@ -503,12 +500,12 @@ class SerialTransport:
             or protocol.SYSTEM_COMMAND_MIN <= command_id <= protocol.SYSTEM_COMMAND_MAX
         )
 
-        if self.state.is_synchronized and self.state.link_session_key and not is_excluded:
+        if self.state.is_synchronized and self.state.link_aead_cipher and not is_excluded:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter
 
             header_bytes = HEADER_STRUCT.pack(protocol.PROTOCOL_VERSION, len(payload), int(command_id), seq_id)
-            encrypted_blob = aead_encrypt(self.state.link_session_key, nonce, payload, header_bytes)
+            encrypted_blob = self.state.link_aead_cipher.encrypt(nonce, payload, header_bytes)
             frame = Frame(
                 command_id=command_id,
                 sequence_id=seq_id,

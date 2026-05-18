@@ -51,6 +51,7 @@ from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
+    SUPERVISOR_MAX_CONSECUTIVE_MAX_BACKOFF,
 )
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import (
@@ -301,9 +302,8 @@ class BridgeDaemon:
         max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
     ) -> None:
         """Lightweight supervisor with Circuit Breaker logic (SIL 2)."""
-        # [SIL-2] Circuit Breaker: Stop after 10 consecutive failures at max backoff
+        # [SIL-2] Circuit Breaker: Stop after consecutive failures at max backoff
         # to prevent infinite CPU thrashing on persistent hardware failure.
-        max_consecutive_max_backoff = 10
 
         def _circuit_breaker(rs: tenacity.RetryCallState) -> bool:
             if not rs.outcome or not rs.outcome.failed:
@@ -312,7 +312,7 @@ class BridgeDaemon:
             if isinstance(exc, (*fatal_exceptions, asyncio.CancelledError)):
                 return False
             # Check for consecutive max backoff hits
-            if rs.idle_for >= max_backoff and rs.attempt_number >= max_consecutive_max_backoff:
+            if rs.idle_for >= max_backoff and rs.attempt_number >= SUPERVISOR_MAX_CONSECUTIVE_MAX_BACKOFF:
                 logger.critical(
                     "CIRCUIT BREAKER: Task '%s' tripped after repeated failures at max backoff.",
                     name,

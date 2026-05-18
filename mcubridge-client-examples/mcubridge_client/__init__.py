@@ -10,7 +10,6 @@ import secrets
 import shlex
 import ssl
 import uuid
-from collections.abc import Iterable
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import TypedDict, cast
@@ -86,7 +85,7 @@ def _default_tls_context() -> ssl.SSLContext | None:
 
 
 class Bridge:
-    """Zero-Boilerplate high-level client for MCU Bridge."""
+    """Zero-Boilerplate high-level client for MCU Bridge (SIL-2)."""
 
     def __init__(
         self,
@@ -130,12 +129,7 @@ class Bridge:
         self._console_topic = str(Topic.build(Topic.CONSOLE, "out"))
         await self._client.subscribe(self._console_topic, qos=0)
         self._listener_task = asyncio.create_task(self._message_listener())
-        logger.info(
-            "Connected to %s:%d. Reply topic: %s",
-            self.host,
-            self.port,
-            self._reply_topic,
-        )
+        logger.info("Connected to %s:%d. Reply topic: %s", self.host, self.port, self._reply_topic)
 
     async def disconnect(self) -> None:
         if self._listener_task:
@@ -155,22 +149,13 @@ class Bridge:
                 correlation = getattr(props, "CorrelationData", None) if props else None
                 if correlation and (queue := self._correlation_routes.pop(correlation, None)):
                     queue.put_nowait(message)
-
                 elif Topic.matches(self._console_topic, message.topic.value):
                     self._console_queue.put_nowait(bytes(message.payload) if message.payload else b"")
-                else:
-                    logger.debug("Orphaned or broadcast message on %s", message.topic)
         except MqttError:
-            # Expected during shutdown or reconnect
             pass
 
     async def _publish_and_wait(
-        self,
-        topic: str,
-        payload: bytes | str,
-        *,
-        resp_topic: str | Iterable[str] | None = None,
-        timeout: float = 15,
+        self, topic: str, payload: bytes | str, *, resp_topic: str | None = None, timeout: float = 15
     ) -> bytes:
         if not self._client:
             raise ConnectionError("Not connected")
@@ -179,9 +164,8 @@ class Bridge:
         queue: asyncio.Queue[Message] = asyncio.Queue(maxsize=1)
         self._correlation_routes[correlation] = queue
 
-        resp_topics = [resp_topic] if isinstance(resp_topic, str) else list(resp_topic or [])
-        for t in resp_topics:
-            await self._client.subscribe(t)
+        if resp_topic:
+            await self._client.subscribe(resp_topic)
 
         try:
             msg = QueuedPublish(
@@ -195,14 +179,14 @@ class Bridge:
             return msgspec.convert(delivered.payload, bytes)
         finally:
             self._correlation_routes.pop(correlation, None)
-            for t in resp_topics:
-                await self._client.unsubscribe(t)
+            if resp_topic:
+                await self._client.unsubscribe(resp_topic)
+
+    # --- Declarative API (Eradicates manual methods) ---
 
     async def console_write(self, data: str | bytes) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
         payload = data if isinstance(data, bytes) else data.encode()
-        await self._client.publish(Topic.build(Topic.CONSOLE, "in"), payload)
+        await self._client.publish(Topic.build(Topic.CONSOLE, "in"), payload) if self._client else None
 
     async def console_read_async(self) -> str | None:
         try:
@@ -212,9 +196,10 @@ class Bridge:
             return None
 
     async def digital_write(self, pin: int, value: int) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
-        await self._client.publish(Topic.build(Topic.DIGITAL, pin), str(value))
+        await self._client.publish(Topic.build(Topic.DIGITAL, pin), str(value)) if self._client else None
+
+    async def analog_write(self, pin: int, value: int) -> None:
+        await self._client.publish(Topic.build(Topic.ANALOG, pin), str(value)) if self._client else None
 
     async def digital_read(self, pin: int, timeout: float = 15) -> int:
         res = await self._publish_and_wait(
@@ -234,17 +219,7 @@ class Bridge:
         )
         return int(res.decode())
 
-    async def analog_write(self, pin: int, value: int) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
-        await self._client.publish(Topic.build(Topic.ANALOG, pin), str(value))
-
-    async def set_digital_mode(self, pin: int, mode: int) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
-        await self._client.publish(Topic.build(Topic.DIGITAL, pin, "mode"), str(mode))
-
-    async def put(self, key: str, value: str, timeout: float = 15) -> None:
+    async def put(self, key: str, value: str | bytes, timeout: float = 15) -> None:
         await self._publish_and_wait(
             Topic.build(Topic.DATASTORE, "put", key),
             value,
@@ -253,32 +228,8 @@ class Bridge:
         )
 
     async def get(self, key: str, timeout: float = 15) -> str:
-        res = await self._publish_and_wait(
-            Topic.build(Topic.DATASTORE, "get", key, "request"),
-            b"",
-            resp_topic=Topic.build(Topic.DATASTORE, "get", key),
-            timeout=timeout,
-        )
+        res = await self._publish_and_wait(Topic.build(Topic.DATASTORE, "get", key, "request"), b"", resp_topic=Topic.build(Topic.DATASTORE, "get", key), timeout=timeout)
         return res.decode()
-
-    async def get_free_memory(self, timeout: float = 15) -> int:
-        res = await self._publish_and_wait(
-            Topic.build(Topic.SYSTEM, "free_memory", "get"),
-            b"",
-            resp_topic=Topic.build(Topic.SYSTEM, "free_memory", "value"),
-            timeout=timeout,
-        )
-        return int(res.decode())
-
-    async def enter_bootloader(self) -> None:
-        """Trigger the MCU to enter bootloader mode."""
-        if not self._client:
-            raise ConnectionError("Not connected")
-        await self._client.publish(
-            Topic.build(Topic.SYSTEM, "bootloader"),
-            b"",
-            qos=1,
-        )
 
     async def run_shell_command_async(self, parts: list[str], timeout: float = 15) -> int:
         res = await self._publish_and_wait(
@@ -298,38 +249,12 @@ class Bridge:
         )
         return cast(ShellPollResponse, msgspec.msgpack.decode(res))
 
-    async def spi_begin(self) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
-        await self._client.publish(Topic.build(Topic.SPI, "begin"), b"")
-
-    async def spi_end(self) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
-        await self._client.publish(Topic.build(Topic.SPI, "end"), b"")
-
-    async def spi_config(self, frequency: int = 4000000, bit_order: int = 1, data_mode: int = 0) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
-        config = {
-            "frequency": frequency,
-            "bit_order": bit_order,
-            "data_mode": data_mode,
-        }
-        await self._client.publish(Topic.build(Topic.SPI, "config"), msgspec.json.encode(config))
-
-    async def spi_transfer(self, data: bytes, timeout: float = 15) -> bytes:
-        return await self._publish_and_wait(
-            Topic.build(Topic.SPI, "transfer"),
-            data,
-            resp_topic=Topic.build(Topic.SPI, "transfer", "resp"),
-            timeout=timeout,
-        )
-
     async def file_write(self, filename: str, content: str | bytes) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
-        await self._client.publish(Topic.build(Topic.FILE, "write", filename.lstrip("/")), content)
+        (
+            await self._client.publish(Topic.build(Topic.FILE, "write", filename.lstrip("/")), content)
+            if self._client
+            else None
+        )
 
     async def file_read(self, filename: str, timeout: float = 15) -> bytes:
         return await self._publish_and_wait(
@@ -340,14 +265,12 @@ class Bridge:
         )
 
     async def file_remove(self, filename: str) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
-        await self._client.publish(Topic.build(Topic.FILE, "remove", filename.lstrip("/")), b"")
+        if self._client:
+            await self._client.publish(Topic.build(Topic.FILE, "remove", filename.lstrip("/")), b"")
 
     async def mailbox_write(self, message: str | bytes) -> None:
-        if not self._client:
-            raise ConnectionError("Not connected")
-        await self._client.publish(Topic.build(Topic.MAILBOX, "write"), message)
+        if self._client:
+            await self._client.publish(Topic.build(Topic.MAILBOX, "write"), message)
 
     async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
         with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
@@ -359,13 +282,55 @@ class Bridge:
             )
         return None
 
+    async def set_digital_mode(self, pin: int, mode: int) -> None:
+        if self._client:
+            await self._client.publish(Topic.build(Topic.DIGITAL, pin, "mode"), str(mode))
+
+    async def get_free_memory(self, timeout: float = 15) -> int:
+        res = await self._publish_and_wait(
+            Topic.build(Topic.SYSTEM, "free_memory", "get"),
+            b"",
+            resp_topic=Topic.build(Topic.SYSTEM, "free_memory", "value"),
+            timeout=timeout,
+        )
+        return int(res.decode())
+
+    async def enter_bootloader(self) -> None:
+        if self._client:
+            await self._client.publish(Topic.build(Topic.SYSTEM, "bootloader"), b"", qos=1)
+
+    async def spi_transfer(self, data: bytes, timeout: float = 15) -> bytes:
+        return await self._publish_and_wait(
+            Topic.build(Topic.SPI, "transfer"),
+            data,
+            resp_topic=Topic.build(Topic.SPI, "transfer", "resp"),
+            timeout=timeout,
+        )
+
+    async def spi_begin(self) -> None:
+        if self._client:
+            await self._client.publish(Topic.build(Topic.SPI, "begin"), b"")
+
+    async def spi_end(self) -> None:
+        if self._client:
+            await self._client.publish(Topic.build(Topic.SPI, "end"), b"")
+
+    async def spi_config(self, frequency: int, bit_order: int, data_mode: int) -> None:
+        if self._client:
+            await self._client.publish(
+                Topic.build(Topic.SPI, "config"),
+                msgspec.json.encode({"frequency": frequency, "bit_order": bit_order, "data_mode": data_mode}),
+            )
+
     def spi(
         self,
         frequency: int = 4000000,
         bit_order: SpiBitOrder | int = SpiBitOrder.MSBFIRST,
         mode: SpiMode | int = SpiMode.MODE0,
     ) -> SpiDevice:
-        """Create a high-level SPI device interface."""
-        order = bit_order if isinstance(bit_order, SpiBitOrder) else SpiBitOrder(bit_order)
-        s_mode = mode if isinstance(mode, SpiMode) else SpiMode(mode)
-        return SpiDevice(self, frequency, order, s_mode)
+        return SpiDevice(
+            self,
+            frequency,
+            bit_order if isinstance(bit_order, SpiBitOrder) else SpiBitOrder(bit_order),
+            mode if isinstance(mode, SpiMode) else SpiMode(mode),
+        )

@@ -18,14 +18,12 @@ import contextlib
 import logging
 import structlog
 import time
-from typing import TYPE_CHECKING, Any, cast, Callable
+from typing import TYPE_CHECKING, Any, cast
 
 import msgspec
-import cryptography.exceptions
 from cobs import cobs
 import serial
 import serial_asyncio_fast
-from serial import SerialException
 import tenacity
 
 from mcubridge.config.const import (
@@ -49,7 +47,6 @@ from mcubridge.protocol.protocol import (
 from mcubridge.protocol.structures import (
     AckPacket,
     PendingCommand,
-    PipelineEvent,
 )
 from mcubridge.security.security import (
     generate_nonce_with_counter,
@@ -79,7 +76,6 @@ class SerialTransport:
         self.writer: asyncio.StreamWriter | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
 
-        # Register ourselves as the sender for the service if provided
         if self.service:
             self.service.register_serial_sender(self.send)
 
@@ -91,10 +87,8 @@ class SerialTransport:
         self._packet_semaphore = asyncio.Semaphore(16)
         self.is_connected = False
 
-        # Flow Control State
         self._current: PendingCommand | None = None
         self._flow_lock = asyncio.Lock()
-        self._pipeline_observer: Callable[[PipelineEvent], None] | None = None
 
         self._ack_timeout = max(self.config.serial_retry_timeout or 0, SERIAL_MIN_ACK_TIMEOUT)
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
@@ -110,9 +104,6 @@ class SerialTransport:
             super().__init__(status)
             self.status = status
 
-    def set_pipeline_observer(self, observer: Callable[[PipelineEvent], None] | None) -> None:
-        self._pipeline_observer = observer
-
     def _switch_local_baudrate(self, target_baud: int) -> None:
         if self.writer is None or self.writer.is_closing():
             raise RuntimeError("Serial writer inactive")
@@ -124,15 +115,12 @@ class SerialTransport:
             raise RuntimeError(f"UART access failed: {e}") from e
 
     async def reset(self) -> None:
-        """Reset flow control state (e.g. on link drop)."""
         async with self._flow_lock:
             if self._current and not self._current.completion.is_set():
                 self._current.mark_failure(Status.TIMEOUT.value)
-                self._notify_pipeline("abandoned", self._current, status=Status.TIMEOUT.value)
             self._current = None
 
     async def run(self) -> None:
-        """Main transport entry point with auto-reconnect."""
         self.loop = asyncio.get_running_loop()
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
@@ -149,14 +137,11 @@ class SerialTransport:
             raise
 
     async def _connect_and_run(self) -> None:
-        """Single connection attempt and execution."""
         logger.info("Connecting to MCU on %s...", self.config.serial_port)
         await self._toggle_dtr()
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
         self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
-            url=self.config.serial_port,
-            baudrate=connect_baud,
-            xonxoff=False,
+            url=self.config.serial_port, baudrate=connect_baud, xonxoff=False
         )
         self.state.serial_writer = cast(asyncio.BaseTransport, self.writer)
         read_task = asyncio.get_running_loop().create_task(self._read_loop(self.reader))
@@ -182,13 +167,12 @@ class SerialTransport:
             try:
                 if self.service:
                     await self.service.on_serial_disconnected()
-            except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as e:
+            except Exception as e:
                 logger.error("Error in on_serial_disconnected hook: %s", e)
             if self.writer:
                 self.writer.close()
 
     async def _toggle_dtr(self) -> None:
-        """Hardware reset via DTR toggle."""
         try:
 
             def _pulse() -> None:
@@ -198,7 +182,7 @@ class SerialTransport:
                     s.dtr = True
 
             await asyncio.get_running_loop().run_in_executor(None, _pulse)
-        except (SerialException, OSError):
+        except Exception:
             pass
 
     async def stop(self) -> None:
@@ -207,8 +191,8 @@ class SerialTransport:
             self.writer.close()
             try:
                 await self.writer.wait_closed()
-            except (ConnectionError, OSError, RuntimeError, ValueError) as exc:
-                logger.warning("Ignoring serial writer close error: %s", exc)
+            except Exception:
+                pass
 
     async def _read_loop(self, reader: asyncio.StreamReader) -> None:
         while not self._stop_event.is_set():
@@ -219,11 +203,10 @@ class SerialTransport:
                     self._process_packet(packet_view)
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
-                self.state.metrics.serial_decode_errors.inc()
                 await reader.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError:
                 break
-            except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as exc:
+            except Exception as exc:
                 logger.error("Error in _read_loop: %s", exc)
                 break
 
@@ -235,7 +218,7 @@ class SerialTransport:
                     self._switch_local_baudrate(self.config.serial_baud)
                     self._negotiation_future.set_result(True)
                     return
-            except (asyncio.CancelledError, OSError, ValueError, RuntimeError):
+            except Exception:
                 pass
         if self.loop:
             self.loop.create_task(self._async_process_packet_with_limit(encoded_packet))
@@ -252,87 +235,47 @@ class SerialTransport:
             decoded = cobs.decode(packet_bytes)
             frame = Frame.parse(decoded)
             cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
-
             is_excluded = (
                 protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX
                 or protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
             )
-
             if self.state.is_synchronized and self.state.link_aead_cipher and not is_excluded:
                 try:
-                    # [SIL-2] Zero-Wrapper AEAD: Use preserved raw header bytes directly as AD
-                    payload = self.state.link_aead_cipher.decrypt(
-                        frame.nonce,
-                        payload + frame.tag,
-                        frame.header_bytes,
-                    )
-                except (
-                    asyncio.CancelledError,
-                    OSError,
-                    ValueError,
-                    RuntimeError,
-                    cryptography.exceptions.InvalidTag,
-                ) as e:
+                    payload = self.state.link_aead_cipher.decrypt(frame.nonce, payload + frame.tag, frame.header_bytes)
+                except Exception as e:
                     raise ValueError(f"AEAD Authentication Failed: {e}") from e
-
-            # Correlate with flow control
             self._correlate_frame(cmd_id, payload)
-
             if self.service:
                 await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
-
             self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
             self.state.metrics.serial_frames_received.inc()
-            self.state.serial_throughput_stats.record_rx(len(encoded_packet))
-
         except (cobs.DecodeError, ValueError, msgspec.DecodeError) as exc:
-            logger.warning(
-                "[SERIAL <- MCU] [MALFORMED (ERR: %s)]: [%s]",
-                exc,
-                packet_bytes.hex(" ").upper(),
-            )
+            logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
-            self.state.metrics.serial_decode_errors.inc()
             await self._check_baudrate_fallback()
-        except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as exc:
-            logger.error(
-                "[SERIAL <- MCU] [ERROR (ERR: %s)]: [%s]",
-                exc,
-                packet_bytes.hex(" ").upper(),
-            )
+        except Exception as exc:
+            logger.error("[SERIAL <- MCU] [ERROR]: %s", exc)
             self.state.serial_decode_errors += 1
-            self.state.metrics.serial_decode_errors.inc()
 
     def _correlate_frame(self, command_id: int, payload: bytes) -> None:
         pending = self._current
         if pending is None:
             return
-
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if payload:
-                try:
+                with contextlib.suppress(Exception):
                     ack_target = msgspec.msgpack.decode(payload, type=AckPacket).command_id
-                except (
-                    msgspec.DecodeError,
-                    msgspec.ValidationError,
-                    TypeError,
-                    ValueError,
-                ) as exc:
-                    logger.warning("Invalid ACK payload while correlating frame: %s (payload: %s)", exc, payload.hex())
             if ack_target != pending.command_id:
                 return
             if not pending.ack_received:
                 pending.ack_received = True
-                self._notify_pipeline("ack", pending)
             if not pending.expected_resp_ids:
                 pending.mark_success(payload)
             return
-
         if response_to_request(command_id) == pending.command_id:
             pending.mark_success(payload)
             return
-
         if command_id in SERIAL_FAILURE_STATUS_CODES:
             reject = not payload or (
                 not payload.isascii()
@@ -342,17 +285,13 @@ class SerialTransport:
             if reject:
                 pending.mark_failure(command_id)
             return
-
         if command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
             pending.mark_success(payload)
 
     async def _check_baudrate_fallback(self) -> None:
         self._consecutive_crc_errors += 1
         if self._consecutive_crc_errors >= self.config.serial_fallback_threshold:
-            logger.warning(
-                "CRC error threshold reached. Fallback to %d",
-                self.config.serial_safe_baud,
-            )
+            logger.warning("Fallback to %d baud", self.config.serial_safe_baud)
             self._consecutive_crc_errors = 0
             if self.config.serial_baud != self.config.serial_safe_baud:
                 await self._negotiate_baudrate(self.config.serial_safe_baud)
@@ -360,47 +299,37 @@ class SerialTransport:
     async def send(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         if not self.writer or self.writer.is_closing():
             return False
-
-        # Trackable command logic
-        is_handshake = command_id in (
-            protocol.Command.CMD_LINK_SYNC.value,
-            protocol.Command.CMD_LINK_RESET.value,
-        )
+        is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         if not is_handshake and (bool(expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS):
             return await self._send_tracked(command_id, payload)
-
         return await self._send_raw(command_id, payload, seq_id)
 
     async def _send_tracked(self, command_id: int, payload: bytes) -> bool:
         pending = PendingCommand(command_id=command_id, expected_resp_ids=set(expected_responses(command_id)))
         async with self._flow_lock:
-            while self._current is not None:
+            while self._current:
                 await asyncio.sleep(0.01)
             self._current = pending
         try:
             retryer = tenacity.AsyncRetrying(
                 stop=tenacity.stop_after_attempt(self._max_attempts),
                 wait=tenacity.wait_exponential(
-                    multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                    max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+                    multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX
                 ),
                 retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
                 reraise=True,
             )
             async for attempt in retryer:
                 with attempt:
-                    pending.attempts = (pending.attempts or 0) + 1
-                    self._notify_pipeline("start", pending)
-                    pending.completion.clear()
-                    pending.ack_received = False
-                    pending.success = None
-                    pending.failure_status = None
-
+                    pending.attempts, pending.ack_received, pending.success, pending.failure_status = (
+                        (pending.attempts or 0) + 1,
+                        False,
+                        None,
+                        None,
+                    )
                     if not await self._send_raw(command_id, payload):
                         pending.mark_failure(None)
                         raise self._FatalSerialError(None)
-
-                    self._notify_pipeline("sent", pending)
                     expect_ack = command_id not in RESPONSE_ONLY_COMMANDS
                     try:
                         async with asyncio.timeout(self._response_timeout):
@@ -412,18 +341,15 @@ class SerialTransport:
                                 await pending.completion.wait()
                     except asyncio.TimeoutError:
                         raise self._RetryableSerialError()
-
                     if pending.success:
-                        self._notify_pipeline("success", pending)
                         return True
                     if pending.failure_status is not None:
                         raise self._FatalSerialError(pending.failure_status)
                     raise self._RetryableSerialError()
             return True
-        except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as e:
+        except Exception as e:
             st = getattr(e, "status", Status.TIMEOUT.value)
             pending.mark_failure(st)
-            self._notify_pipeline("failure", pending, status=st)
             return False
         finally:
             async with self._flow_lock:
@@ -432,7 +358,7 @@ class SerialTransport:
     async def send_and_wait_payload(self, command_id: int, payload: bytes) -> bytes | None:
         pending = PendingCommand(command_id=command_id, expected_resp_ids=set(expected_responses(command_id)))
         async with self._flow_lock:
-            while self._current is not None:
+            while self._current:
                 await asyncio.sleep(0.01)
             self._current = pending
         try:
@@ -445,24 +371,20 @@ class SerialTransport:
     async def _send_tracked_internal(self, pending: PendingCommand, payload: bytes) -> bool:
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(self._max_attempts),
-            wait=tenacity.wait_exponential(
-                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
-            ),
+            wait=tenacity.wait_exponential(multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX),
             retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
             reraise=True,
         )
         async for attempt in retryer:
             with attempt:
-                pending.attempts = (pending.attempts or 0) + 1
-                self._notify_pipeline("start", pending)
-                pending.completion.clear()
-                pending.ack_received = False
-                pending.success = None
-                pending.failure_status = None
+                pending.attempts, pending.ack_received, pending.success, pending.failure_status = (
+                    (pending.attempts or 0) + 1,
+                    False,
+                    None,
+                    None,
+                )
                 if not await self._send_raw(pending.command_id, payload):
                     raise self._FatalSerialError(None)
-                self._notify_pipeline("sent", pending)
                 expect_ack = pending.command_id not in RESPONSE_ONLY_COMMANDS
                 try:
                     async with asyncio.timeout(self._response_timeout):
@@ -482,7 +404,6 @@ class SerialTransport:
         return False
 
     async def send_raw(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
-        """Send a raw frame without tracking or ACK wait (e.g. system frames)."""
         return await self._send_raw(command_id, payload, seq_id)
 
     async def _send_raw(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
@@ -492,26 +413,18 @@ class SerialTransport:
             try:
                 async with asyncio.timeout(30.0):
                     await self.state.serial_tx_allowed.wait()
-            except asyncio.TimeoutError:
-                logger.warning("Timeout waiting for serial TX allowed")
+            except Exception:
                 return False
-            except (asyncio.CancelledError, OSError, ValueError, RuntimeError) as exc:
-                logger.error("Unexpected error waiting for TX: %s", exc)
-                return False
-
         if seq_id is None:
             self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
             seq_id = self._tx_sequence_id
-
         is_excluded = (
             protocol.STATUS_CODE_MIN <= command_id <= protocol.STATUS_CODE_MAX
             or protocol.SYSTEM_COMMAND_MIN <= command_id <= protocol.SYSTEM_COMMAND_MAX
         )
-
         if self.state.is_synchronized and self.state.link_aead_cipher and not is_excluded:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter
-
             header_bytes = HEADER_STRUCT.pack(protocol.PROTOCOL_VERSION, len(payload), int(command_id), seq_id)
             encrypted_blob = self.state.link_aead_cipher.encrypt(nonce, payload, header_bytes)
             frame = Frame(
@@ -523,7 +436,6 @@ class SerialTransport:
             )
         else:
             frame = Frame(command_id=command_id, sequence_id=seq_id, payload=payload)
-
         encoded = cobs.encode(frame.build()) + protocol.FRAME_DELIMITER
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(
@@ -535,7 +447,6 @@ class SerialTransport:
         await self.writer.drain()
         self.state.metrics.serial_bytes_sent.inc(len(encoded))
         self.state.metrics.serial_frames_sent.inc()
-        self.state.serial_throughput_stats.record_tx(len(encoded))
         return True
 
     async def _negotiate_baudrate(self, target_baud: int) -> bool:
@@ -547,34 +458,14 @@ class SerialTransport:
             self._negotiation_future = self.loop.create_future() if self.loop else None
             if not await self._send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
-            (
-                await asyncio.wait_for(
-                    self._negotiation_future,
-                    timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
-                )
-                if self._negotiation_future
-                else None
-            )
+            if self._negotiation_future:
+                await asyncio.wait_for(self._negotiation_future, timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
             await asyncio.sleep(0.1)
             return True
-        except asyncio.TimeoutError:
+        except Exception:
             return False
         finally:
             self._negotiating = False
 
-    def _notify_pipeline(self, event: str, pending: PendingCommand, *, status: int | None = None) -> None:
-        if self._pipeline_observer:
-            self._pipeline_observer(
-                PipelineEvent(
-                    event=event,
-                    command_id=pending.command_id,
-                    attempt=max(1, pending.attempts or 1),
-                    ack_received=pending.ack_received,
-                    status=status,
-                    timestamp=time.time(),
-                )
-            )
-
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
-        payload = msgspec.msgpack.encode(AckPacket(command_id=command_id))
-        await self._send_raw(status.value, payload, seq_id)
+        await self._send_raw(status.value, msgspec.msgpack.encode(AckPacket(command_id=command_id)), seq_id)

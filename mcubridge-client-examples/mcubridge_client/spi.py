@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import TracebackType
 from typing import TYPE_CHECKING, Sequence, Union, cast
 
 from .definitions import SpiBitOrder, SpiMode
@@ -38,12 +37,7 @@ class SpiDevice:
         await self.begin()
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
+    async def __aexit__(self, *args: object) -> None:
         """Exit context: end SPI session."""
         await self.end()
 

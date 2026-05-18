@@ -53,7 +53,7 @@ async def test_runtime_mcu_lifecycle_exhaustive(service_setup: Any) -> None:
         state.mark_synchronized()
 
     with patch.object(service.handshake, "synchronize", side_effect=mock_sync):
-        serial.send_and_wait_payload.return_value = msgspec.msgpack.encode({"major": 1, "minor": 0, "patch": 0})
+        serial.send_and_wait_payload.return_value = msgspec.msgpack.encode([1, 0, 0])
         await service.on_serial_connected()
         assert serial.send_and_wait_payload.called
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import math
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import (
@@ -209,6 +210,9 @@ async def publish_bridge_snapshots(
             tg.create_task(_handshake_loop())
 
 
+import weakref
+
+
 class RuntimeStateCollector(Collector):
     """[SIL-2] Dynamic collector for Prometheus dimensional metrics.
 
@@ -217,10 +221,14 @@ class RuntimeStateCollector(Collector):
     """
 
     def __init__(self, state: RuntimeState) -> None:
-        self._state = state
+        self._state_ref = weakref.ref(state)
 
     def collect(self) -> Iterable[Metric]:
         """Collect dimensional metrics from the current daemon state."""
+        state = self._state_ref()
+        if state is None:
+            return
+
         from prometheus_client.core import GaugeMetricFamily
 
         # 1. Queue Depths (Dimensional)
@@ -229,13 +237,13 @@ class RuntimeStateCollector(Collector):
             "Current number of items in internal asynchronous queues",
             labels=["queue"],
         )
-        q_depths.add_metric(["mqtt_publish"], float(self._state.mqtt_publish_queue.qsize()))
-        q_depths.add_metric(["console_tx"], float(len(self._state.console_to_mcu_queue)))
-        q_depths.add_metric(["mailbox_tx"], float(len(self._state.mailbox_queue)))
-        q_depths.add_metric(["mailbox_rx"], float(len(self._state.mailbox_incoming_queue)))
-        q_depths.add_metric(["pending_digital_read"], float(len(self._state.pending_digital_reads)))
-        q_depths.add_metric(["pending_analog_read"], float(len(self._state.pending_analog_reads)))
-        q_depths.add_metric(["running_process"], float(len(self._state.running_processes)))
+        q_depths.add_metric(["mqtt_publish"], float(state.mqtt_publish_queue.qsize()))
+        q_depths.add_metric(["console_tx"], float(len(state.console_to_mcu_queue)))
+        q_depths.add_metric(["mailbox_tx"], float(len(state.mailbox_queue)))
+        q_depths.add_metric(["mailbox_rx"], float(len(state.mailbox_incoming_queue)))
+        q_depths.add_metric(["pending_digital_read"], float(len(state.pending_digital_reads)))
+        q_depths.add_metric(["pending_analog_read"], float(len(state.pending_analog_reads)))
+        q_depths.add_metric(["running_process"], float(len(state.running_processes)))
         yield q_depths
 
         # 2. System Status (Gauges)
@@ -243,14 +251,14 @@ class RuntimeStateCollector(Collector):
             "mcubridge_file_storage_bytes_used",
             "Current filesystem usage in bytes (volatile storage)",
         )
-        fs_usage.add_metric([], float(self._state.file_storage_bytes_used))
+        fs_usage.add_metric([], float(state.file_storage_bytes_used))
         yield fs_usage
 
         link_sync = GaugeMetricFamily(
             "mcubridge_link_synchronized",
             "Binary status of serial link synchronization (1=sync, 0=unsync)",
         )
-        link_sync.add_metric([], 1.0 if self._state.is_synchronized else 0.0)
+        link_sync.add_metric([], 1.0 if state.is_synchronized else 0.0)
         yield link_sync
 
         # 3. System Health (Dimensional)
@@ -263,12 +271,7 @@ class RuntimeStateCollector(Collector):
         )
         sys_metrics = collect_system_metrics()
         # [SIL-2] Iterative reduction: filter and add metrics without raw for-loops
-        list(
-            map(
-                lambda item: health.add_metric([item[0]], float(item[1])),
-                filter(lambda item: isinstance(item[1], (int, float)), sys_metrics.items()),
-            )
-        )
+        [health.add_metric([k], float(v)) for k, v in sys_metrics.items() if isinstance(v, (int, float))]
         yield health
 
         # 4. Supervisor Health (Dimensional)
@@ -278,121 +281,76 @@ class RuntimeStateCollector(Collector):
             labels=["worker"],
         )
         # [SIL-2] Iterative reduction
-        list(
-            map(
-                lambda item: super_health.add_metric([item[0]], float(item[1].restarts)),
-                self._state.supervisor_stats.items(),
-            )
-        )
+        [super_health.add_metric([k], float(v.restarts)) for k, v in state.supervisor_stats.items()]
         yield super_health
 
 
 class PrometheusExporter:
-    """Expose RuntimeState snapshots via the Prometheus text format."""
+    """Expose RuntimeState snapshots via the official Prometheus HTTP server."""
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
-        from prometheus_client import ProcessCollector
+        from prometheus_client import ProcessCollector, make_wsgi_app
+        from prometheus_client.exposition import make_server
 
         self._state = state
-        # Defensive normalization for tests/injected configs.
-        self._host = host if host else "127.0.0.1"
+        self._host = host if host else "0.0.0.0"
         self._port = port
-        self._server: asyncio.AbstractServer | None = None
-        self._resolved_port: int | None = None
         self._registry = state.metrics.registry
+        self._server: Any = None
+        self._collector = RuntimeStateCollector(state)
 
         # [SIL-2 / Library-First] Use native ProcessCollector to get CPU/RAM/FDs for free
         ProcessCollector(registry=self._registry)
 
         # Register the dynamic state collector
-        self._registry.register(RuntimeStateCollector(state))
+        self._registry.register(self._collector)
+
+        # Create the official threading server but don't start yet.
+        # This binds the socket immediately, allowing port 0 resolution.
+        # [Library-First] make_wsgi_app provides the callable expected by make_server.
+        self._server = make_server(
+            self._host,
+            self._port,
+            make_wsgi_app(self._registry),
+        )
 
     @property
     def port(self) -> int:
-        return self._resolved_port or self._port
-
-    async def start(self) -> None:
-        if self._server is not None:
-            return
-        self._server = await asyncio.start_server(
-            self._handle_client,
-            host=self._host,
-            port=self._port,
-        )
-        sockets = self._server.sockets or []
-        if sockets:
-            sockname = sockets[0].getsockname()
-            if isinstance(sockname, tuple):
-                typed_sockname = cast(tuple[object, ...], sockname)
-                if len(typed_sockname) >= 2:
-                    port_candidate = typed_sockname[1]
-                    if isinstance(port_candidate, int):
-                        self._resolved_port = port_candidate
-        logger.info(
-            "Prometheus exporter listening",
-            host=self._host,
-            port=self.port,
-        )
-
-    async def stop(self) -> None:
-        if self._server is None:
-            return
-        self._server.close()
-        await self._server.wait_closed()
-        self._server = None
-        logger.info("Prometheus exporter stopped")
+        """Return the actually bound port (useful for port 0)."""
+        if self._server:
+            return int(self._server.server_address[1])
+        return self._port
 
     async def run(self) -> None:
-        await self.start()
-        assert self._server is not None
-        try:
-            await self._server.serve_forever()
-        except asyncio.CancelledError:
-            raise
-        finally:
-            await self.stop()
-
-    async def _handle_client(
-        self,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ) -> None:
-        phrases = {200: "OK", 400: "Bad Request", 404: "Not Found"}
-
-        def _respond(status: int, body: bytes, *, content_type: str = "text/plain; charset=utf-8") -> None:
-            status_line = f"HTTP/1.1 {status} {phrases.get(status, 'Error')}\r\n"
-            headers = f"Content-Type: {content_type}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n"
-            writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
+        """Start the Prometheus HTTP server and keep it running."""
+        log = logger.bind(host=self._host, port=self.port)
+        log.info("Prometheus exporter starting (official make_server)")
 
         try:
-            request_data = await reader.readuntil(b"\r\n\r\n")
-            request_line = request_data.split(b"\r\n", 1)[0]
-            parts = request_line.decode("ascii", errors="ignore").split()
-            if len(parts) < 2:
-                _respond(400, b"")
-                await writer.drain()
-                return
-            method, path = parts[0], parts[1]
-            if method != "GET" or path not in {"/metrics", "/"}:
-                _respond(404, b"")
-                await writer.drain()
-                return
-            payload = generate_latest(self._registry)
-            _respond(200, payload, content_type=CONTENT_TYPE_LATEST)
-            await writer.drain()
+            # We use an executor to run the blocking serve_forever()
+            # while maintaining the asyncio task alive for signal handling.
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._server.serve_forever)
         except asyncio.CancelledError:
+            log.info("Prometheus exporter shutdown requested.")
             raise
-        except (OSError, ValueError, IndexError) as e:
-            logger.warning("Prometheus client request error: %s", e)
-        except (TypeError, AttributeError, RuntimeError) as e:
-            logger.critical("Unexpected error in Prometheus handler: %s", e, exc_info=True)
         finally:
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except (OSError, ValueError, RuntimeError):
-                # [SIL-2] Connection close errors are non-fatal during cleanup.
-                logger.debug("Error closing metrics client connection", exc_info=True)
+            # Unregister the collector to break circular reference
+            if self._server:
+                with contextlib.suppress(KeyError):
+                    self._registry.unregister(self._collector)
+
+            # Shutdown stops the serve_forever loop
+            if self._server:
+                self._server.shutdown()
+                # server_close releases the socket (avoids ResourceWarning)
+                self._server.server_close()
+
+            # Help GC by clearing references
+            self._state = None  # type: ignore
+            self._collector = None  # type: ignore
+            self._server = None
+            log.info("Prometheus exporter stopped")
 
 
 def _build_bridge_snapshot_message(

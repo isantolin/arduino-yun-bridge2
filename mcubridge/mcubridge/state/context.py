@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
+import gc
 import sqlite3
 import time
 from collections.abc import Mapping
@@ -81,7 +82,7 @@ def collect_system_metrics() -> dict[str, Any]:
     return {}
 
 
-class RuntimeState(msgspec.Struct):
+class RuntimeState(msgspec.Struct, weakref=True):
     """Aggregated mutable state shared across the daemon layers."""
 
     metrics: DaemonMetrics = msgspec.field(default_factory=DaemonMetrics)
@@ -531,40 +532,27 @@ class RuntimeState(msgspec.Struct):
     def cleanup(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
 
-        # [SIL-2] Close persistent queues and replace with plain deques so the
-        # diskcache.Deque (which holds a reference to the sqlite3-backed Cache)
-        # is released immediately.  Without this, the Cache cannot be GC'd until
-        # the Deque is also collected, causing ResourceWarning on unclosed sqlite3
-        # connections.
-        # NOTE: Use "is not None" — diskcache.Cache.__bool__ returns False for
-        # empty caches, so "if cache:" would skip close() on empty queues.
+        # [SIL-2] Thorough Resource Cleanup to prevent ResourceWarnings
         if self.datastore_cache is not None:
             with _sup:
-                cast(Any, self.datastore_cache).close()
+                self.datastore_cache.close()
             self.datastore_cache = None
 
         if self._mailbox_queue_cache is not None:
             with _sup:
-                cast(Any, self._mailbox_queue_cache).close()
+                self._mailbox_queue_cache.close()
             self._mailbox_queue_cache = None
-            self.mailbox_queue = cast(Any, collections.deque())
+            # Drop the deque that might hold references to the cache
+            self.mailbox_queue = collections.deque()
 
         if self._mailbox_incoming_queue_cache is not None:
             with _sup:
-                cast(Any, self._mailbox_incoming_queue_cache).close()
+                self._mailbox_incoming_queue_cache.close()
             self._mailbox_incoming_queue_cache = None
-            self.mailbox_incoming_queue = cast(Any, collections.deque())
+            self.mailbox_incoming_queue = collections.deque()
 
         with _sup:
-            # Drain the MQTT queue instead of nullifying
-            while not self.mqtt_publish_queue.empty():
-                try:
-                    self.mqtt_publish_queue.get_nowait()
-                except (asyncio.QueueEmpty, ValueError, RuntimeError):
-                    break
-
-        # [SIL-2] Terminate all running processes to release pipes/sockets
-        with _sup:
+            # [SIL-2] Terminate all running processes to release pipes/sockets
             if self.running_processes:
                 for handle in list(self.running_processes.values()):
                     if handle:
@@ -572,11 +560,12 @@ class RuntimeState(msgspec.Struct):
                             handle.terminate()
 
         with _sup:
-            self.serial_tx_allowed.clear()
-            self.link_sync_event.clear()
+            # Clear other complex objects
             self.running_processes.clear()
             self.process_io_locks.clear()
             self.process_exit_codes.clear()
+            self.serial_tx_allowed.clear()
+            self.link_sync_event.clear()
 
 
 def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:

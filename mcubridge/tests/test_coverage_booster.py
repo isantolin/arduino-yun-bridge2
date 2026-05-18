@@ -719,22 +719,21 @@ async def test_metrics_exhaustive_touch_v3(mock_config: RuntimeConfig, mock_stat
 
 
 @pytest.mark.asyncio
-async def test_metrics_exporter_handler(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
-    """Cover PrometheusExporter._handle_client."""
+async def test_metrics_exporter_lifecycle(mock_state: RuntimeState) -> None:
+    """Cover PrometheusExporter run and stop lifecycle."""
     from mcubridge.metrics import PrometheusExporter
 
     exporter = PrometheusExporter(mock_state, "127.0.0.1", 0)
 
-    mock_reader = AsyncMock(spec=asyncio.StreamReader)
-    mock_reader.readuntil.return_value = b"GET /metrics HTTP/1.1\r\n\r\n"
+    # Use a real task to test cancellation and shutdown
+    task = asyncio.create_task(exporter.run())
+    await asyncio.sleep(0.1)  # Allow it to start
+    assert not task.done()
 
-    mock_writer = MagicMock(spec=asyncio.StreamWriter)
-    mock_writer.write = MagicMock()
-    mock_writer.drain = AsyncMock()
-    mock_writer.wait_closed = AsyncMock()
-
-    await cast(Any, exporter)._handle_client(mock_reader, mock_writer)
-    assert mock_writer.write.called
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+    assert task.done()
 
 
 @pytest.mark.asyncio

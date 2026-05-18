@@ -18,7 +18,7 @@ from mcubridge.config.settings import RuntimeConfig, load_runtime_config
 from mcubridge.daemon import BridgeDaemon, app
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.frame import Frame
-from mcubridge.protocol.protocol import Status
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
@@ -251,16 +251,23 @@ async def test_runtime_mcu_handlers_coverage_final(mock_config: RuntimeConfig, m
 
     mock_state.datastore_cache.get.return_value = b"val1"
 
-    with patch("msgspec.msgpack.decode", return_value=structures.DatastoreGetPacket(key="key1")):
-        await cast(Any, service)._handle_mcu_datastore_get(1, b"")
+    await service.mcu_registry[Command.CMD_DATASTORE_GET.value](
+        1, msgspec.msgpack.encode(structures.DatastoreGetPacket(key="key1"))
+    )
 
     with patch("mcubridge.services.runtime.BridgeService._get_safe_path", return_value=None):
-        await cast(Any, service)._handle_mcu_file_write(1, b"")
-        await cast(Any, service)._handle_mcu_file_read(1, b"")
-        await cast(Any, service)._handle_mcu_file_remove(1, b"")
+        await service.mcu_registry[Command.CMD_FILE_WRITE.value](
+            1, msgspec.msgpack.encode(structures.FileWritePacket(path="x", data=b""))
+        )
+        await service.mcu_registry[Command.CMD_FILE_READ.value](
+            1, msgspec.msgpack.encode(structures.FileReadPacket(path="x"))
+        )
+        await service.mcu_registry[Command.CMD_FILE_REMOVE.value](
+            1, msgspec.msgpack.encode(structures.FileRemovePacket(path="x"))
+        )
 
     # Mailbox push malformed
-    await cast(Any, service)._handle_mcu_mailbox_push(1, b"\xff\xff")
+    await service.mcu_registry[Command.CMD_MAILBOX_PUSH.value](1, b"\xff\xff")
 
     # Mailbox read
     msg = MagicMock()
@@ -670,7 +677,7 @@ async def test_runtime_mcu_pin_analog_read_coverage(mock_config: RuntimeConfig, 
     from mcubridge.protocol.structures import AnalogReadResponsePacket
 
     payload = msgspec.msgpack.encode(AnalogReadResponsePacket(value=512))
-    await cast(Any, service)._handle_mcu_pin_analog_read_resp(1, payload)
+    await service.mcu_registry[Command.CMD_ANALOG_READ_RESP.value](1, payload)
     assert mock_mqtt.publish.called
 
 

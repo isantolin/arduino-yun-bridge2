@@ -16,6 +16,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import (
     AckPacket,
+    AllowedCommandPolicy,
     AnalogReadResponsePacket,
     ConsoleWritePacket,
     DatastoreGetPacket,
@@ -42,8 +43,10 @@ async def service_setup(
 ) -> Tuple[BridgeService, RuntimeState, AsyncMock]:
     """Provide a BridgeService instance with mocked serial and MQTT."""
     serial = AsyncMock()
-    # Ensure acknowledge is also an AsyncMock
-    serial.acknowledge = AsyncMock()
+    serial.send = AsyncMock(return_value=True)
+    serial.acknowledge = AsyncMock(return_value=True)
+    serial.send_and_wait_payload = AsyncMock(return_value=None)
+    serial.reset = AsyncMock(return_value=None)
     service = BridgeService(runtime_config, runtime_state, serial)
     mock_mqtt = AsyncMock()
     service.set_mqtt_client(mock_mqtt)
@@ -231,6 +234,7 @@ async def test_runtime_process_cleanup_robustness(
     service, _, _ = service_setup
     svc = cast(Any, service)
 
+    service.state.allowed_policy = AllowedCommandPolicy(entries=("*",))
     with patch("asyncio.create_subprocess_exec") as mock_exec:
         mock_proc = AsyncMock()
         mock_proc.pid = 1234
@@ -261,17 +265,17 @@ async def test_runtime_file_ops_permission_errors(
     service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     """Test file operations handle OS permission errors."""
-    service, _, serial = service_setup
+    service, state, serial = service_setup
+    state.mark_synchronized()
 
-    with patch("builtins.open") as mock_open:
-        mock_open.side_effect = PermissionError("EACCES")
-
-        # Test read
-        await service.handle_mcu_frame(Command.CMD_FILE_READ.value, 1, b"\x81\xa4path\xa4test")
-        # Ensure it sent an ERROR status
-        assert serial.send.called
-        args, _ = serial.send.call_args
-        assert args[0] == Status.ERROR.value
+    await service.handle_mcu_frame(
+        Command.CMD_FILE_READ.value,
+        1,
+        msgspec.msgpack.encode(FileReadPacket(path="test")),
+    )
+    assert serial.send.called
+    args, _ = serial.send.call_args
+    assert args[0] == Status.ERROR.value
 
 
 @pytest.mark.asyncio

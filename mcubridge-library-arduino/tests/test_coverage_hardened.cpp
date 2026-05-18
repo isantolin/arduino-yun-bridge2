@@ -31,6 +31,16 @@ namespace {
 void poll_handler(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                   etl::span<const uint8_t>) {}
 void async_handler(int32_t) {}
+int32_t captured_pid = 0;
+void capture_async_handler(int32_t pid) { captured_pid = pid; }
+void capture_poll_handler(rpc::StatusCode status, uint16_t exit_code,
+                          etl::span<const uint8_t>, etl::span<const uint8_t>) {
+  (void)status;
+  (void)exit_code;
+}
+void datastore_get_handler(etl::string_view, etl::span<const uint8_t>) {}
+uint16_t mailbox_available = 0;
+void mailbox_available_handler(uint16_t count) { mailbox_available = count; }
 void dummy_cmd_handler(const rpc::Frame&) {}
 void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
@@ -149,9 +159,96 @@ void test_process_poll_and_kill() {
   TEST_ASSERT(true);
 }
 
+void test_process_branch_error_paths() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  Process.reset();
+
+  // Fill run queue (size=1) and trigger full-queue error callback path.
+  captured_pid = 0;
+  Process.runAsync("ls", {},
+                   etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  Process.runAsync("pwd", {},
+                   etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  TEST_ASSERT_EQUAL(-1, captured_pid);
+  TEST_ASSERT_EQUAL(1, Process._pending_run_async.size());
+  Process._onRunAsyncResponse(rpc::payload::ProcessRunAsyncResponse{42});
+  TEST_ASSERT_EQUAL(42, captured_pid);
+
+  // Valid send with invalid callback should not enqueue a pending run.
+  Process.reset();
+  Process.runAsync("ls", {}, ProcessClass::ProcessRunHandler{});
+  TEST_ASSERT_EQUAL(0, Process._pending_run_async.size());
+
+  // Force append_token failure via oversized arg, and hit lambda early return.
+  etl::array<char, rpc::MAX_PAYLOAD_SIZE + 1> long_arg_storage = {};
+  long_arg_storage.fill('a');
+  const etl::string_view oversized_arg(long_arg_storage.data(),
+                                       rpc::MAX_PAYLOAD_SIZE);
+  etl::array<etl::string_view, 2> overflow_args = {oversized_arg,
+                                                   etl::string_view("y")};
+  Process.runAsync(
+      "x", etl::span<const etl::string_view>(overflow_args.data(), 2),
+      etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  TEST_ASSERT_EQUAL(-1, captured_pid);
+  ProcessClass::ProcessRunHandler invalid_run_handler;
+  invalid_run_handler.clear();
+  Process.runAsync("x", etl::span<const etl::string_view>(overflow_args.data(), 2),
+                   invalid_run_handler);
+
+  // Force prepend-space capacity failure (write_pos + 1 >= buffer_size).
+  etl::array<char, rpc::MAX_PAYLOAD_SIZE> near_full_cmd = {};
+  near_full_cmd.fill('c');
+  etl::array<etl::string_view, 1> single_arg = {etl::string_view("z")};
+  Process.runAsync(
+      etl::string_view(near_full_cmd.data(), rpc::MAX_PAYLOAD_SIZE - 1U),
+      etl::span<const etl::string_view>(single_arg.data(), 1),
+      etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  TEST_ASSERT_EQUAL(-1, captured_pid);
+
+  // Force send failure path via safe state (TX disabled for non-system cmds).
+  Bridge.enterSafeState();
+  Process.runAsync("ls", {},
+                   etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  TEST_ASSERT_EQUAL(-1, captured_pid);
+  reset_bridge_core(Bridge, stream);
+  auto ba_recovered = TestAccessor::create(Bridge);
+  ba_recovered.setSynchronized();
+
+  // Poll queue full path (size=1), then invalid-handler path.
+  Process.reset();
+  Process.poll(10, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
+  Process.poll(11, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
+
+  Process.reset();
+  Process.poll(12, ProcessClass::ProcessPollHandler{});
+  TEST_ASSERT_EQUAL(0, Process._pending_polls.size());
+
+  // Force send failure in poll path.
+  ba_recovered.clearSynchronized();
+  Process.poll(13, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  ba_recovered.setSynchronized();
+
+  // Exercise invalid pending handlers in response dispatch.
+  ProcessClass::ProcessRunHandler invalid_pending_run;
+  invalid_pending_run.clear();
+  Process._pending_run_async.push({invalid_pending_run});
+  Process._onRunAsyncResponse(rpc::payload::ProcessRunAsyncResponse{777});
+  ProcessClass::ProcessPollHandler invalid_pending_poll;
+  invalid_pending_poll.clear();
+  Process._pending_polls.push({1, invalid_pending_poll});
+  Process._onPollResponse(rpc::payload::ProcessPollResponse{});
+}
+
 void test_mailbox_and_datastore_variants() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   etl::array<uint8_t, 4> mb_data1 = {1, 2, 3, 4};
   Mailbox.push(mb_data1);
@@ -162,12 +259,26 @@ void test_mailbox_and_datastore_variants() {
   etl::array<uint8_t, 2> mb_data3 = {0xCC, 0xDD};
   Mailbox._onIncomingData(rpc::payload::MailboxReadResponse{mb_data3});
   Mailbox._onAvailableResponse({});
+  Mailbox.onAvailable(
+      MailboxClass::AvailableHandler::create<mailbox_available_handler>());
+  Mailbox._onAvailableResponse(rpc::payload::MailboxAvailableResponse{7});
+  TEST_ASSERT_EQUAL(7, mailbox_available);
 
   // Coverage for observer notification
   Mailbox.notification(MsgBridgeSynchronized());
   Mailbox.notification(MsgBridgeLost());
 
+  DataStore._pending_gets.clear();
+  DataStore.get("alpha",
+                DataStoreClass::GetHandler::create<datastore_get_handler>());
+  DataStore.get("beta",
+                DataStoreClass::GetHandler::create<datastore_get_handler>());
   DataStore._onResponse({});
+  DataStore._pending_gets.clear();
+  DataStoreClass::GetHandler invalid_get_handler;
+  invalid_get_handler.clear();
+  DataStore.get("gamma", invalid_get_handler);
+  DataStore._onResponse(rpc::payload::DatastoreGetResponse{});
 
   TEST_ASSERT(true);
 }
@@ -306,6 +417,7 @@ int main() {
   RUN_TEST(test_filesystem_read_edge_cases);
   RUN_TEST(test_spi_timeout_and_error_paths);
   RUN_TEST(test_process_poll_and_kill);
+  RUN_TEST(test_process_branch_error_paths);
   RUN_TEST(test_mailbox_and_datastore_variants);
   RUN_TEST(test_bridge_fsm_resets);
   RUN_TEST(test_checksum_direct_library_path);

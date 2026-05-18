@@ -12,6 +12,7 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import (
+    Command,
     Topic,
 )
 from mcubridge.protocol.structures import (
@@ -78,10 +79,12 @@ async def test_mcu_handlers_exhaustive(service_setup: Any) -> None:
             pass
 
     state.mailbox_queue.append(b"msg")
-    await service._handle_mcu_mailbox_read(4, b"")
+    await service.mcu_registry[Command.CMD_MAILBOX_READ.value](4, b"")
 
-    state.pending_digital_reads.append(PendingPinRequest(pin=1, reply_context=asyncio.Future[Any]()))
-    await service._handle_mcu_pin_digital_read_resp(5, msgspec.msgpack.encode(DigitalReadResponsePacket(value=1)))
+    state.pending_digital_reads.append(PendingPinRequest(pin=1, reply_context=None))
+    await service.mcu_registry[Command.CMD_DIGITAL_READ_RESP.value](
+        5, msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
+    )
 
 
 @pytest.mark.asyncio

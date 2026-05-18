@@ -9,7 +9,9 @@ import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import (
     Any,
+    cast,
 )
+from wsgiref.types import WSGIApplication
 
 import msgspec
 from prometheus_client.core import Metric
@@ -236,18 +238,8 @@ class RuntimeStateCollector(Collector):
         q_depths.add_metric(["mqtt_publish"], float(state.mqtt_publish_queue.qsize()))
         q_depths.add_metric(["console_tx"], float(len(state.console_to_mcu_queue)))
 
-        # [SIL-2] Use diskcache context managers to ensure thread-local connections are closed.
-        if state._mailbox_queue_cache is not None:
-            with state._mailbox_queue_cache:
-                q_depths.add_metric(["mailbox_tx"], float(len(state.mailbox_queue)))
-        else:
-            q_depths.add_metric(["mailbox_tx"], float(len(state.mailbox_queue)))
-
-        if state._mailbox_incoming_queue_cache is not None:
-            with state._mailbox_incoming_queue_cache:
-                q_depths.add_metric(["mailbox_rx"], float(len(state.mailbox_incoming_queue)))
-        else:
-            q_depths.add_metric(["mailbox_rx"], float(len(state.mailbox_incoming_queue)))
+        q_depths.add_metric(["mailbox_tx"], float(state.mailbox_queue_depth()))
+        q_depths.add_metric(["mailbox_rx"], float(state.mailbox_incoming_queue_depth()))
 
         q_depths.add_metric(["pending_digital_read"], float(len(state.pending_digital_reads)))
         q_depths.add_metric(["pending_analog_read"], float(len(state.pending_analog_reads)))
@@ -315,7 +307,7 @@ class PrometheusExporter:
 
         # [Library-First] make_wsgi_app provides the callable expected by make_server.
         # This is the standard way to expose Prometheus metrics over WSGI.
-        app = make_wsgi_app(self._registry)
+        app: WSGIApplication = cast(WSGIApplication, make_wsgi_app(self._registry))
 
         self._server = make_server(
             self._host,

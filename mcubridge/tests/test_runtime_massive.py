@@ -13,7 +13,7 @@ import pytest_asyncio
 from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Status
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import (
     AckPacket,
     AnalogReadResponsePacket,
@@ -58,102 +58,103 @@ async def test_runtime_brute_force_handlers(
     service, state, serial = service_setup
     state.mark_synchronized()
 
-    handlers = [
-        (service._handle_mcu_xon, 1, b""),
-        (service._handle_mcu_xoff, 1, b""),
-        (service._handle_mcu_ack, 1, msgspec.msgpack.encode(AckPacket(command_id=1))),
+    handlers: list[tuple[int, int, bytes]] = [
+        (Command.CMD_XON.value, 1, b""),
+        (Command.CMD_XOFF.value, 1, b""),
+        (Status.ACK.value, 1, msgspec.msgpack.encode(AckPacket(command_id=1))),
         (
-            service._handle_mcu_console_write,
+            Command.CMD_CONSOLE_WRITE.value,
             1,
             msgspec.msgpack.encode(ConsoleWritePacket(data=b"test")),
         ),
         (
-            service._handle_mcu_datastore_put,
+            Command.CMD_DATASTORE_PUT.value,
             1,
             msgspec.msgpack.encode(DatastorePutPacket(key="k", value=b"v")),
         ),
         (
-            service._handle_mcu_datastore_get,
+            Command.CMD_DATASTORE_GET.value,
             1,
             msgspec.msgpack.encode(DatastoreGetPacket(key="k")),
         ),
         (
-            service._handle_mcu_mailbox_push,
+            Command.CMD_MAILBOX_PUSH.value,
             1,
             msgspec.msgpack.encode(MailboxPushPacket(data=b"m")),
         ),
-        (service._handle_mcu_mailbox_read, 1, b""),
-        (service._handle_mcu_mailbox_available, 1, b""),
+        (Command.CMD_MAILBOX_READ.value, 1, b""),
+        (Command.CMD_MAILBOX_AVAILABLE.value, 1, b""),
         (
-            service._handle_mcu_mailbox_processed,
+            Command.CMD_MAILBOX_PROCESSED.value,
             1,
             b"processed_payload",
         ),
         (
-            service._handle_mcu_file_write,
+            Command.CMD_FILE_WRITE.value,
             1,
             msgspec.msgpack.encode(FileWritePacket(path="f", data=b"")),
         ),
         (
-            service._handle_mcu_file_read,
+            Command.CMD_FILE_READ.value,
             1,
             msgspec.msgpack.encode(FileReadPacket(path="f")),
         ),
         (
-            service._handle_mcu_file_remove,
+            Command.CMD_FILE_REMOVE.value,
             1,
             msgspec.msgpack.encode(FileRemovePacket(path="f")),
         ),
         (
-            service._handle_mcu_file_read_resp,
+            Command.CMD_FILE_READ_RESP.value,
             1,
             msgspec.msgpack.encode(FileReadResponsePacket(content=b"abc")),
         ),
         (
-            service._handle_mcu_process_run,
+            Command.CMD_PROCESS_RUN_ASYNC.value,
             1,
             msgspec.msgpack.encode(ProcessRunAsyncPacket(command="ls")),
         ),
         (
-            service._handle_mcu_process_poll,
+            Command.CMD_PROCESS_POLL.value,
             1,
             msgspec.msgpack.encode(ProcessPollPacket(pid=1)),
         ),
         (
-            service._handle_mcu_process_kill,
+            Command.CMD_PROCESS_KILL.value,
             1,
             msgspec.msgpack.encode(ProcessKillPacket(pid=1)),
         ),
         (
-            service._handle_mcu_pin_digital_read,
+            Command.CMD_DIGITAL_READ.value,
             1,
             msgspec.msgpack.encode(PinReadPacket(pin=1)),
         ),
         (
-            service._handle_mcu_pin_analog_read,
+            Command.CMD_ANALOG_READ.value,
             1,
             msgspec.msgpack.encode(PinReadPacket(pin=1)),
         ),
         (
-            service._handle_mcu_pin_digital_read_resp,
+            Command.CMD_DIGITAL_READ_RESP.value,
             1,
             msgspec.msgpack.encode(DigitalReadResponsePacket(value=1)),
         ),
         (
-            service._handle_mcu_pin_analog_read_resp,
+            Command.CMD_ANALOG_READ_RESP.value,
             1,
             msgspec.msgpack.encode(AnalogReadResponsePacket(value=1)),
         ),
         (
-            service._handle_mcu_spi_resp,
+            Command.CMD_SPI_TRANSFER_RESP.value,
             1,
             msgspec.msgpack.encode(SpiTransferResponsePacket(data=b"r")),
         ),
     ]
 
-    for handler, seq, payload in handlers:
+    for cmd_id, seq, payload in handlers:
         serial.send.reset_mock()
         service.enqueue_mqtt = AsyncMock()
+        handler = service.mcu_registry[cmd_id]
 
         # Test valid payload
         with patch("asyncio.create_subprocess_exec") as mock_exec:
@@ -227,7 +228,8 @@ async def test_runtime_process_cleanup_robustness(
     service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     """Test process management handles corner cases like rapid spawn/kill."""
-    service, state, _ = service_setup
+    service, _, _ = service_setup
+    svc = cast(Any, service)
 
     with patch("asyncio.create_subprocess_exec") as mock_exec:
         mock_proc = AsyncMock()
@@ -238,7 +240,7 @@ async def test_runtime_process_cleanup_robustness(
         # Spawn multiple
         pids = []
         for _ in range(3):
-            pid = await cast(Any, service)._run_process("ls")
+            pid = await svc._run_process("ls")
             if pid:
                 pids.append(pid)
 
@@ -246,12 +248,12 @@ async def test_runtime_process_cleanup_robustness(
 
         # Kill all
         for pid in pids:
-            await cast(Any, service)._stop_process(pid)
+            await svc._stop_process(pid)
 
         # Finalize multiple times
         for pid in pids:
-            cast(Any, service)._finalize_process(pid)
-            cast(Any, service)._finalize_process(pid)
+            svc._finalize_process(pid)
+            svc._finalize_process(pid)
 
 
 @pytest.mark.asyncio
@@ -265,7 +267,7 @@ async def test_runtime_file_ops_permission_errors(
         mock_open.side_effect = PermissionError("EACCES")
 
         # Test read
-        await service._handle_mcu_file_read(1, b"\x81\xa4path\xa4test")
+        await service.handle_mcu_frame(Command.CMD_FILE_READ.value, 1, b"\x81\xa4path\xa4test")
         # Ensure it sent an ERROR status
         assert serial.send.called
         args, _ = serial.send.call_args
@@ -278,16 +280,15 @@ async def test_runtime_mcu_special_logic(
 ) -> None:
     """Test asynchronous race conditions and state locks in runtime service."""
     service, state, _ = service_setup
+    svc = cast(Any, service)
     state.mark_synchronized()
 
     state.console_to_mcu_queue.append(b"pending")
-    await service._flush_console_queue()
+    await svc._flush_console_queue()
 
-    async with service._storage_lock:
+    async with svc._storage_lock:
         # This task will block until we release the lock
-        task = asyncio.create_task(
-            service._handle_mcu_file_write(1, msgspec.msgpack.encode(FileWritePacket(path="t", data=b"")))
-        )
+        task = asyncio.create_task(svc._on_mcu_file_write(FileWritePacket(path="t", data=b"")))
         await asyncio.sleep(0.01)
         assert not task.done()
 

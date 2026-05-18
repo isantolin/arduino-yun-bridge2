@@ -266,6 +266,22 @@ class RuntimeState(msgspec.Struct, weakref=True):
             exc,
         )
 
+    def mailbox_queue_depth(self) -> int:
+        """Return mailbox outgoing queue depth with diskcache context when available."""
+        cache = self._mailbox_queue_cache
+        if cache is not None:
+            with cast(Any, cache):
+                return int(len(self.mailbox_queue))
+        return int(len(self.mailbox_queue))
+
+    def mailbox_incoming_queue_depth(self) -> int:
+        """Return mailbox incoming queue depth with diskcache context when available."""
+        cache = self._mailbox_incoming_queue_cache
+        if cache is not None:
+            with cast(Any, cache):
+                return int(len(self.mailbox_incoming_queue))
+        return int(len(self.mailbox_incoming_queue))
+
     def configure(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
 
@@ -541,17 +557,17 @@ class RuntimeState(msgspec.Struct, weakref=True):
         # 2. Explicitly close and nullify persistent caches.
         if self.datastore_cache is not None:
             with _sup:
-                self.datastore_cache.close()
+                cast(Any, self.datastore_cache).close()
             self.datastore_cache = None
 
         if self._mailbox_queue_cache is not None:
             with _sup:
-                self._mailbox_queue_cache.close()
+                cast(Any, self._mailbox_queue_cache).close()
             self._mailbox_queue_cache = None
 
         if self._mailbox_incoming_queue_cache is not None:
             with _sup:
-                self._mailbox_incoming_queue_cache.close()
+                cast(Any, self._mailbox_incoming_queue_cache).close()
             self._mailbox_incoming_queue_cache = None
 
         # 3. Drain and reset the MQTT queue.

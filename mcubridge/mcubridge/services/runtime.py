@@ -689,6 +689,8 @@ class BridgeService:
                             ),
                             reply_context=inbound,
                         )
+            case _:
+                return
 
     async def _handle_mqtt_pin(self, route: TopicRoute, inbound: Message) -> None:
         pin = self._parse_pin(route.segments[0])
@@ -752,6 +754,8 @@ class BridgeService:
                     ),
                     reply_context=inbound,
                 )
+            case _:
+                return
 
     # --- Low-level Helpers ---
 

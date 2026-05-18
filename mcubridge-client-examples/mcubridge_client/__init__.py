@@ -228,7 +228,12 @@ class Bridge:
         )
 
     async def get(self, key: str, timeout: float = 15) -> str:
-        res = await self._publish_and_wait(Topic.build(Topic.DATASTORE, "get", key, "request"), b"", resp_topic=Topic.build(Topic.DATASTORE, "get", key), timeout=timeout)
+        res = await self._publish_and_wait(
+            Topic.build(Topic.DATASTORE, "get", key, "request"),
+            b"",
+            resp_topic=Topic.build(Topic.DATASTORE, "get", key),
+            timeout=timeout,
+        )
         return res.decode()
 
     async def run_shell_command_async(self, parts: list[str], timeout: float = 15) -> int:

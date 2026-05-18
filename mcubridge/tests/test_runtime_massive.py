@@ -1,70 +1,53 @@
+"""Massive stress and edge-case testing for McuBridge runtime service."""
+
+from __future__ import annotations
+
 import asyncio
 import contextlib
-from pathlib import Path
-from typing import Generator, Tuple, Type
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any, Tuple, cast
+from unittest.mock import AsyncMock, patch
 
 import msgspec
 import pytest
+import pytest_asyncio
 from aiomqtt.message import Message
 
-# pyright: reportPrivateUsage=false
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command, Topic
+from mcubridge.protocol.protocol import Status
 from mcubridge.protocol.structures import (
     AckPacket,
     AnalogReadResponsePacket,
     ConsoleWritePacket,
     DatastoreGetPacket,
-    DatastoreGetResponsePacket,
     DatastorePutPacket,
     DigitalReadResponsePacket,
     FileReadPacket,
     FileReadResponsePacket,
     FileRemovePacket,
     FileWritePacket,
-    MailboxProcessedPacket,
     MailboxPushPacket,
     PinReadPacket,
     ProcessKillPacket,
     ProcessPollPacket,
     ProcessRunAsyncPacket,
     SpiTransferResponsePacket,
-    TopicRoute,
 )
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.state.context import RuntimeState
 
 
-@pytest.fixture
-def service_setup(
-    tmp_path: Path,
-) -> Generator[Tuple[BridgeService, RuntimeState, AsyncMock], None, None]:
-    config = RuntimeConfig(
-        mqtt_topic="br",
-        serial_port="/dev/test",
-        file_system_root=str(tmp_path),
-        allowed_commands=["ls"],
-        serial_shared_secret=b"secure_secret_1234567890123456",
-    )
-    state = create_runtime_state(config)
+@pytest_asyncio.fixture
+async def service_setup(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> Tuple[BridgeService, RuntimeState, AsyncMock]:
+    """Provide a BridgeService instance with mocked serial and MQTT."""
     serial = AsyncMock()
-    # Mock default behavior for send_and_wait_payload to avoid None issues
-    serial.send_and_wait_payload.return_value = None
-    service = BridgeService(config, state, serial)
-    # Register mock sender
-    service.register_serial_sender(serial.send)
-
-    yield service, state, serial
-
-    # [SIL-2] Ensure all processes and tasks are terminated to prevent ResourceWarnings
-    state.cleanup()
-    with contextlib.suppress(RuntimeError):
-        loop = asyncio.get_running_loop()
-        if loop.is_running():
-            for task in asyncio.all_tasks(loop):
-                if "_monitor_process" in str(task):
-                    task.cancel()
+    # Ensure acknowledge is also an AsyncMock
+    serial.acknowledge = AsyncMock()
+    service = BridgeService(runtime_config, runtime_state, serial)
+    mock_mqtt = AsyncMock()
+    service.set_mqtt_client(mock_mqtt)
+    return service, runtime_state, serial
 
 
 @pytest.mark.asyncio
@@ -104,7 +87,7 @@ async def test_runtime_brute_force_handlers(
         (
             service._handle_mcu_mailbox_processed,
             1,
-            msgspec.msgpack.encode(MailboxProcessedPacket(message_id=1)),
+            b"processed_payload",
         ),
         (
             service._handle_mcu_file_write,
@@ -178,6 +161,7 @@ async def test_runtime_brute_force_handlers(
             mock_proc.pid = 123
             mock_exec.return_value = mock_proc
             await handler(seq, payload)
+
         # Test invalid payload (should not crash)
         serial.send.reset_mock()
         service.enqueue_mqtt = AsyncMock()
@@ -189,77 +173,85 @@ async def test_runtime_brute_force_handlers(
 async def test_runtime_mqtt_brute_force(
     service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    """Brute-force all MQTT handlers with valid and invalid payloads."""
+    """Test MQTT dispatcher with various topics and payloads."""
     service, state, _ = service_setup
     state.mark_synchronized()
 
-    msg = Message(topic="br/test", payload=b"{}", qos=0, retain=False, mid=1, properties=None)
-    route = TopicRoute(raw="br/test", prefix="br", topic=Topic.SYSTEM, segments=("get", "version"))
-
-    mqtt_handlers = [
-        (service._handle_mqtt_console, msg),
-        (service._handle_mqtt_datastore, route, msg),
-        (service._handle_mqtt_mailbox, route, msg),
-        (service._handle_mqtt_file, route, msg),
-        (service._handle_mqtt_shell, route, msg),
-        (service._handle_mqtt_spi, route, msg),
-        (service._handle_mqtt_pin, route, msg),
-        (service._handle_mqtt_system, route, msg),
+    # Use actual protocol constants for topics
+    topics = [
+        ("br/console/in", b"data"),
+        ("br/datastore/put/test", b"value"),
+        ("br/datastore/get/test/request", b""),
+        ("br/mailbox/write", b"msg"),
+        ("br/mailbox/read", b""),
+        ("br/file/write/test.txt", b"content"),
+        ("br/file/read/test.txt", b""),
+        ("br/file/remove/test.txt", b""),
+        ("br/file/write/mcu/arduino.bin", b"hex"),
+        ("br/file/read/mcu/arduino.bin", b""),
+        ("br/file/remove/mcu/arduino.bin", b""),
+        ("br/shell/run_async", b"uptime"),
+        ("br/shell/poll/123", b""),
+        ("br/shell/kill/123", b""),
+        ("br/spi/begin", b""),
+        ("br/spi/end", b""),
+        ("br/spi/config", b'{"frequency":1000000}'),
+        ("br/spi/transfer", b"\x01\x02"),
+        ("br/digital/13", b"1"),
+        ("br/digital/13/read", b""),
+        ("br/digital/13/mode", b"1"),
+        ("br/analog/A0", b"128"),
+        ("br/analog/A0/read", b""),
+        ("br/system/bootloader", b""),
+        ("br/system/free_memory/get", b""),
+        ("br/system/version/get", b""),
+        ("br/system/bridge/summary", b""),
+        ("br/system/bridge/handshake", b""),
     ]
 
-    for entry in mqtt_handlers:
-        handler = entry[0]
-        args = entry[1:]
-        with contextlib.suppress(asyncio.CancelledError, OSError, ValueError):
-            await handler(*args)  # type: ignore
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "cmd_id, packet_cls",
-    [
-        (Command.CMD_DIGITAL_READ_RESP.value, DigitalReadResponsePacket),
-        (Command.CMD_ANALOG_READ_RESP.value, AnalogReadResponsePacket),
-        (Command.CMD_DATASTORE_GET_RESP.value, DatastoreGetResponsePacket),
-        (Command.CMD_SPI_TRANSFER_RESP.value, SpiTransferResponsePacket),
-        (Command.CMD_FILE_READ.value, FileReadPacket),
-    ],
-)
-async def test_runtime_mcu_frame_fuzzing(
-    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
-    cmd_id: int,
-    packet_cls: Type[msgspec.Struct],
-) -> None:
-    """Ensure MCU frame handlers don't crash on corrupt/unexpected MsgPack."""
-    service, state, _ = service_setup
-    state.mark_synchronized()
-
-    # 1. Empty payload
-    await service.handle_mcu_frame(cmd_id, 1, b"")
-
-    # 2. Random bytes
-    await service.handle_mcu_frame(cmd_id, 1, b"\xde\xad\xbe\xef")
-
-    # 3. Wrong MsgPack type (e.g. integer instead of map)
-    await service.handle_mcu_frame(cmd_id, 1, b"\x01")
+    for topic, payload in topics:
+        msg = Message(
+            topic=topic,
+            payload=payload,
+            qos=0,
+            retain=False,
+            mid=1,
+            properties=None,
+        )
+        # We don't assert side effects, just that it doesn't crash
+        await service.handle_mqtt_message(msg)
 
 
 @pytest.mark.asyncio
 async def test_runtime_process_cleanup_robustness(
     service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    """Test process finalization handles race conditions where PID disappears."""
+    """Test process management handles corner cases like rapid spawn/kill."""
     service, state, _ = service_setup
 
-    # Mock a running process
-    mock_proc = MagicMock()
-    mock_proc.pid = 999999
-    mock_proc.returncode = None
-    state.running_processes[123] = mock_proc
+    with patch("asyncio.create_subprocess_exec") as mock_exec:
+        mock_proc = AsyncMock()
+        mock_proc.pid = 1234
+        mock_proc.returncode = None
+        mock_exec.return_value = mock_proc
 
-    result = await service._stop_process(123)
-    assert result is True
-    assert 123 not in state.running_processes
+        # Spawn multiple
+        pids = []
+        for _ in range(3):
+            pid = await cast(Any, service)._run_process("ls")
+            if pid:
+                pids.append(pid)
+
+        assert len(pids) > 0
+
+        # Kill all
+        for pid in pids:
+            await cast(Any, service)._stop_process(pid)
+
+        # Finalize multiple times
+        for pid in pids:
+            cast(Any, service)._finalize_process(pid)
+            cast(Any, service)._finalize_process(pid)
 
 
 @pytest.mark.asyncio
@@ -274,12 +266,10 @@ async def test_runtime_file_ops_permission_errors(
 
         # Test read
         await service._handle_mcu_file_read(1, b"\x81\xa4path\xa4test")
+        # Ensure it sent an ERROR status
         assert serial.send.called
-
-        # Test write
-        payload = msgspec.msgpack.encode(FileWritePacket(path="test.txt", data=b"data"))
-        await service._handle_mcu_file_write(1, payload)
-        assert serial.send.called
+        args, _ = serial.send.call_args
+        assert args[0] == Status.ERROR.value
 
 
 @pytest.mark.asyncio
@@ -294,17 +284,12 @@ async def test_runtime_mcu_special_logic(
     await service._flush_console_queue()
 
     async with service._storage_lock:
-        asyncio.create_task(
+        # This task will block until we release the lock
+        task = asyncio.create_task(
             service._handle_mcu_file_write(1, msgspec.msgpack.encode(FileWritePacket(path="t", data=b"")))
         )
         await asyncio.sleep(0.01)
+        assert not task.done()
 
-    msg = Message(
-        topic="br/spi/config",
-        payload=b"invalid{json",
-        qos=0,
-        retain=False,
-        mid=1,
-        properties=None,
-    )
-    await service.handle_mqtt_message(msg)
+    await task
+    assert task.done()

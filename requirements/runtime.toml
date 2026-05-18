@@ -2,7 +2,7 @@
 
 [[dependency]]
 name = "python3"
-openwrt = "python3 (>= 3.13)"
+openwrt = "python3"
 pip = ""
 rationale = "Base interpreter shipped on the target image"
 

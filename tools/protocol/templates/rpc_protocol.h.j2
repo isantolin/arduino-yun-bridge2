@@ -83,7 +83,7 @@ constexpr etl::underlying_type_t<E> to_underlying(E value) {
 constexpr bool requires_ack(CommandId command_id) {
 {%- if ack_commands %}
     struct AckBitset {
-        uint32_t bits[RPC_MAX_COMMAND_ID / 32U] = {0};
+        etl::array<uint32_t, RPC_MAX_COMMAND_ID / 32U> bits{};
         constexpr AckBitset() {
             {%- for cmd in ack_commands %}
             bits[static_cast<uint16_t>(CommandId::{{ cmd.name }}) / 32U] |= (1UL << (static_cast<uint16_t>(CommandId::{{ cmd.name }}) % 32U));

@@ -29,9 +29,8 @@ def _dec_hook(type_type: Any, obj: Any) -> Any:
     types = getattr(type_type, "__args__", (type_type,))
     if bytes in types and isinstance(obj, str):
         return obj.strip().encode("utf-8")
-    if tuple in types or getattr(type_type, "__origin__", type_type) is tuple:
-        if isinstance(obj, str):
-            return tuple(obj.split())
+    if (tuple in types or getattr(type_type, "__origin__", type_type) is tuple) and isinstance(obj, str):
+        return tuple(obj.split())
     if str in types and isinstance(obj, str):
         val = obj.strip()
         return str(Path(val).expanduser().resolve()) if ("~" in val or "/" in val) and "\n" not in val else val or None

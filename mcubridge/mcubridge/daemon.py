@@ -213,79 +213,76 @@ class BridgeDaemon:
         log = structlog.get_logger("mcubridge.daemon")
 
         try:
-            async with self.service:
-                async with asyncio.TaskGroup() as tg:
-                    # 1. Serial Link (Critical)
-                    tg.create_task(
-                        self._supervise(
-                            "serial-link",
-                            self.serial_transport.run,
-                            (SerialHandshakeFatal,),
-                        )
+            async with self.service, asyncio.TaskGroup() as tg:
+                # 1. Serial Link (Critical)
+                tg.create_task(
+                    self._supervise(
+                        "serial-link",
+                        self.serial_transport.run,
+                        (SerialHandshakeFatal,),
                     )
+                )
 
-                    # 2. MQTT Link
-                    tg.create_task(
-                        self._supervise(
-                            "mqtt-link",
-                            self._mqtt_run,
-                        )
+                # 2. MQTT Link
+                tg.create_task(
+                    self._supervise(
+                        "mqtt-link",
+                        self._mqtt_run,
                     )
+                )
 
-                    # 3. Status & Metrics (Periodic)
-                    tg.create_task(
-                        self._supervise(
-                            "status-writer",
-                            lambda: status_writer(self.state, self.config.status_interval),
-                        )
+                # 3. Status & Metrics (Periodic)
+                tg.create_task(
+                    self._supervise(
+                        "status-writer",
+                        lambda: status_writer(self.state, self.config.status_interval),
                     )
+                )
+                tg.create_task(
+                    self._supervise(
+                        "metrics-publisher",
+                        lambda: publish_metrics(
+                            self.state,
+                            self.service.enqueue_mqtt,
+                            float(self.config.status_interval),
+                        ),
+                    )
+                )
+
+                # 4. Optional Features
+                if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
                     tg.create_task(
                         self._supervise(
-                            "metrics-publisher",
-                            lambda: publish_metrics(
+                            "bridge-snapshots",
+                            lambda: publish_bridge_snapshots(
                                 self.state,
                                 self.service.enqueue_mqtt,
-                                float(self.config.status_interval),
+                                summary_interval=float(self.config.bridge_summary_interval),
+                                handshake_interval=float(self.config.bridge_handshake_interval),
                             ),
                         )
                     )
 
-                    # 4. Optional Features
-                    if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
-                        tg.create_task(
-                            self._supervise(
-                                "bridge-snapshots",
-                                lambda: publish_bridge_snapshots(
-                                    self.state,
-                                    self.service.enqueue_mqtt,
-                                    summary_interval=float(self.config.bridge_summary_interval),
-                                    handshake_interval=float(self.config.bridge_handshake_interval),
-                                ),
-                            )
-                        )
+                if self.config.watchdog_enabled:
+                    self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
+                    tg.create_task(self._supervise("watchdog", self.watchdog.run))
 
-                    if self.config.watchdog_enabled:
-                        self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
-                        tg.create_task(self._supervise("watchdog", self.watchdog.run))
-
-                    if self.config.metrics_enabled:
-                        self.exporter = PrometheusExporter(
-                            self.state,
-                            self.config.metrics_host,
-                            self.config.metrics_port,
-                        )
-                        tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
+                if self.config.metrics_enabled:
+                    self.exporter = PrometheusExporter(
+                        self.state,
+                        self.config.metrics_host,
+                        self.config.metrics_port,
+                    )
+                    tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
         except* Exception as exc_group:
             # [SIL-2] Iterative reduction for exception logging
-            list(
-                map(
-                    lambda e: log.critical("Fatal task error: %s", e, exc_info=e),
-                    exc_group.exceptions,
-                )
-            )
+            [
+                log.critical("Fatal task error: %s", e, exc_info=e)
+                for e in exc_group.exceptions
+            ]
             raise
         finally:
             self.state.cleanup()
@@ -451,7 +448,7 @@ def main(overrides: dict[str, Any]) -> None:
         sys.exit(1)
     except BaseException as exc:
         # [SIL-2] Catch-all for unhandled system-level errors
-        logger.critical("Unhandled system error: %s", exc, exc_info=True)
+        logger.critical("Unhandled system error: %s", exc, exc_info=exc)
         sys.exit(1)
     finally:
         if daemon is not None:

@@ -579,7 +579,7 @@ class RuntimeState(msgspec.Struct):
             self.process_exit_codes.clear()
 
 
-def create_runtime_state(config: RuntimeConfig | dict[str, Any], initialize_spool: bool = False) -> RuntimeState:
+def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:
     from ..config.settings import RuntimeConfig
 
     cfg = msgspec.convert(config, RuntimeConfig) if isinstance(config, dict) else config

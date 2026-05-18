@@ -162,9 +162,8 @@ class SerialTransport:
         read_task = asyncio.get_running_loop().create_task(self._read_loop(self.reader))
         self.is_connected = True
         try:
-            if self.config.serial_baud != connect_baud:
-                if not await self._negotiate_baudrate(self.config.serial_baud):
-                    raise ConnectionError("Baudrate negotiation failed")
+            if self.config.serial_baud != connect_baud and not await self._negotiate_baudrate(self.config.serial_baud):
+                raise ConnectionError("Baudrate negotiation failed")
             if self.service:
                 await self.service.on_serial_connected()
             stop_task = asyncio.get_running_loop().create_task(self._stop_event.wait())
@@ -206,8 +205,10 @@ class SerialTransport:
         self._stop_event.set()
         if self.writer:
             self.writer.close()
-            with contextlib.suppress(Exception):
+            try:
                 await self.writer.wait_closed()
+            except (ConnectionError, OSError, RuntimeError, ValueError) as exc:
+                logger.warning("Ignoring serial writer close error: %s", exc)
 
     async def _read_loop(self, reader: asyncio.StreamReader) -> None:
         while not self._stop_event.is_set():
@@ -310,8 +311,15 @@ class SerialTransport:
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if payload:
-                with contextlib.suppress(Exception):
+                try:
                     ack_target = msgspec.msgpack.decode(payload, type=AckPacket).command_id
+                except (
+                    msgspec.DecodeError,
+                    msgspec.ValidationError,
+                    TypeError,
+                    ValueError,
+                ) as exc:
+                    logger.warning("Invalid ACK payload while correlating frame: %s (payload: %s)", exc, payload.hex())
             if ack_target != pending.command_id:
                 return
             if not pending.ack_received:

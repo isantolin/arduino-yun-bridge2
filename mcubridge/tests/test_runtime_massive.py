@@ -174,9 +174,10 @@ async def test_runtime_brute_force_handlers(
 
         # Test valid payload
         with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_exec.return_value = AsyncMock()
+            mock_proc = AsyncMock()
+            mock_proc.pid = 123
+            mock_exec.return_value = mock_proc
             await handler(seq, payload)
-
         # Test invalid payload (should not crash)
         serial.send.reset_mock()
         service.enqueue_mqtt = AsyncMock()

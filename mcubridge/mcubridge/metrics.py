@@ -400,11 +400,9 @@ def _build_bridge_snapshot_message(
     flavor: str,
     snapshot: Any,
 ) -> QueuedPublish:
-    segments: Sequence[str]
-    if flavor == "handshake":
-        segments = ("bridge", "handshake", "value")
-    else:
-        segments = ("bridge", "summary", "value")
+    segments: Sequence[str] = (
+        ("bridge", "handshake", "value") if flavor == "handshake" else ("bridge", "summary", "value")
+    )
     topic = topic_path(
         state.mqtt_topic_prefix,
         Topic.SYSTEM,

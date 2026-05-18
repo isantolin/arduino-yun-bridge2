@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from logging.handlers import SysLogHandler
 import os
 from pathlib import Path
 from typing import Any, cast
@@ -22,17 +23,18 @@ def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) ->
 
 
 def configure_logging(config: RuntimeConfig) -> None:
-    """Configure logging using structlog native processors and zero standard library overhead."""
+    """Configure structured logging with syslog-first transport and hex-safe payload rendering."""
 
     level = logging.DEBUG if getattr(config, "debug", False) else logging.INFO
     force_stream = bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
 
-    # Check for syslog sockets
-    syslog_socket = Path("/dev/log")
-    syslog_fallback = Path("/var/run/log")
-    use_syslog = not force_stream and (syslog_socket.exists() or syslog_fallback.exists())
+    syslog_address: str | None = None
+    if not force_stream:
+        if Path("/dev/log").exists():
+            syslog_address = "/dev/log"
+        elif Path("/var/run/log").exists():
+            syslog_address = "/var/run/log"
 
-    # [SIL-2] Native processors for high-performance zero-wrapper logging
     processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
@@ -42,21 +44,31 @@ def configure_logging(config: RuntimeConfig) -> None:
         hexdump_processor,
     ]
 
-    # Configure native structlog
     structlog.configure(
         processors=[
             *processors,
-            (structlog.processors.JSONRenderer() if use_syslog else structlog.dev.ConsoleRenderer()),
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.make_filtering_bound_logger(level),
         cache_logger_on_first_use=True,
     )
 
-    # Minimal stdlib configuration to capture logs from third-party libraries (aiomqtt, etc.)
-    # without wrapping our own loggers.
-    logging.basicConfig(
-        format="%(message)s",
-        level=level,
-        handlers=[logging.StreamHandler()],
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processor=structlog.processors.JSONRenderer(),
+        foreign_pre_chain=processors,
     )
+
+    handler: logging.Handler
+    if syslog_address:
+        handler = SysLogHandler(address=syslog_address, facility=SysLogHandler.LOG_DAEMON)
+    else:
+        handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    for old_handler in root_logger.handlers:
+        old_handler.close()
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(level)

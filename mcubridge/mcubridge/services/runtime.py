@@ -314,8 +314,16 @@ class BridgeService:
 
     async def _handle_mcu_ack(self, seq_id: int, payload: bytes) -> None:
         if len(payload) >= 2:
-            with contextlib.suppress(Exception):
+            try:
                 ack_target = msgspec.msgpack.decode(payload, type=AckPacket).command_id
+            except (
+                msgspec.DecodeError,
+                msgspec.ValidationError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                logger.warning("Invalid ACK payload: %s (payload: %s)", exc, payload.hex())
+            else:
                 logger.debug("MCU > ACK for 0x%02X", ack_target)
 
     async def _handle_mcu_xoff(self, seq_id: int, _: bytes) -> None:
@@ -328,46 +336,69 @@ class BridgeService:
         await self._flush_console_queue()
 
     async def _handle_mcu_console_write(self, seq_id: int, payload: bytes) -> None:
-        with contextlib.suppress(Exception):
+        try:
             p = msgspec.msgpack.decode(payload, type=ConsoleWritePacket)
-            if p.data:
-                await self.enqueue_mqtt(
-                    QueuedPublish(
-                        topic_path(
-                            self.state.mqtt_topic_prefix,
-                            Topic.CONSOLE,
-                            ConsoleAction.OUT,
-                        ),
-                        p.data,
-                        message_expiry_interval=MQTT_EXPIRY_CONSOLE,
-                    )
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode console write payload: %s (payload: %s)", exc, payload.hex())
+            return
+        if p.data:
+            await self.enqueue_mqtt(
+                QueuedPublish(
+                    topic_path(
+                        self.state.mqtt_topic_prefix,
+                        Topic.CONSOLE,
+                        ConsoleAction.OUT,
+                    ),
+                    p.data,
+                    message_expiry_interval=MQTT_EXPIRY_CONSOLE,
                 )
+            )
 
     async def _handle_mcu_datastore_put(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(Exception):
+        try:
             p = msgspec.msgpack.decode(payload, type=DatastorePutPacket)
-            if self.state.datastore_cache is not None:
-                self.state.datastore_cache[p.key] = bytes(p.value)
-            await self._publish_datastore_value(p.key, bytes(p.value))
-            return True
-        return False
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode datastore put payload: %s (payload: %s)", exc, payload.hex())
+            return False
+        if self.state.datastore_cache is not None:
+            self.state.datastore_cache[p.key] = bytes(p.value)
+        await self._publish_datastore_value(p.key, bytes(p.value))
+        return True
 
     async def _handle_mcu_datastore_get(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(Exception):
+        try:
             key = msgspec.msgpack.decode(payload, type=DatastoreGetPacket).key
-            # Use explicit cast to tell Pyright that get() returns bytes | str | None
-            cache = cast(Any, self.state.datastore_cache)
-            val = cache.get(key, b"") if cache else b""
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode datastore get payload: %s (payload: %s)", exc, payload.hex())
+            return False
 
-            if isinstance(val, str):
-                val = val.encode()
+        # Use explicit cast to tell Pyright that get() returns bytes | str | None
+        cache = cast(Any, self.state.datastore_cache)
+        val = cache.get(key, b"") if cache else b""
 
-            res_payload = msgspec.convert(val, bytes)
-            return await self.serial.send(
-                Command.CMD_DATASTORE_GET_RESP.value,
-                msgspec.msgpack.encode(DatastoreGetResponsePacket(value=msgspec.Raw(res_payload[:255]))),
-            )
-        return False
+        if isinstance(val, str):
+            val = val.encode()
+
+        res_payload = msgspec.convert(val, bytes)
+        return await self.serial.send(
+            Command.CMD_DATASTORE_GET_RESP.value,
+            msgspec.msgpack.encode(DatastoreGetResponsePacket(value=msgspec.Raw(res_payload[:255]))),
+        )
 
     async def _handle_mcu_mailbox_push(self, seq_id: int, payload: bytes) -> bool:
         try:
@@ -419,43 +450,70 @@ class BridgeService:
         return True
 
     async def _handle_mcu_file_write(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(Exception):
+        try:
             p = msgspec.msgpack.decode(payload, type=FileWritePacket)
-            path = self._get_safe_path(p.path)
-            if path and await self._write_with_quota(path, p.data):
-                await self.serial.send(Status.OK.value, b"")
-                return True
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode file write payload: %s (payload: %s)", exc, payload.hex())
+            await self.serial.send(Status.ERROR.value, b"Write failed")
+            return False
+        path = self._get_safe_path(p.path)
+        if path and await self._write_with_quota(path, p.data):
+            await self.serial.send(Status.OK.value, b"")
+            return True
         await self.serial.send(Status.ERROR.value, b"Write failed")
         return False
 
     async def _handle_mcu_file_read(self, seq_id: int, payload: bytes) -> None:
-        with contextlib.suppress(Exception):
+        try:
             p = msgspec.msgpack.decode(payload, type=FileReadPacket)
-            path = self._get_safe_path(p.path)
-            if path and path.is_file():
-                data = await asyncio.to_thread(path.read_bytes)
-                if not data:
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode file read payload: %s (payload: %s)", exc, payload.hex())
+            await self.serial.send(Status.ERROR.value, b"Read failed")
+            return
+        path = self._get_safe_path(p.path)
+        if path and path.is_file():
+            data = await asyncio.to_thread(path.read_bytes)
+            if not data:
+                await self.serial.send(
+                    Command.CMD_FILE_READ_RESP.value,
+                    msgspec.msgpack.encode(FileReadResponsePacket(content=b"")),
+                )
+            else:
+                for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
                     await self.serial.send(
                         Command.CMD_FILE_READ_RESP.value,
-                        msgspec.msgpack.encode(FileReadResponsePacket(content=b"")),
+                        msgspec.msgpack.encode(FileReadResponsePacket(content=bytes(chunk))),
                     )
-                else:
-                    for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                        await self.serial.send(
-                            Command.CMD_FILE_READ_RESP.value,
-                            msgspec.msgpack.encode(FileReadResponsePacket(content=bytes(chunk))),
-                        )
-                return
+            return
         await self.serial.send(Status.ERROR.value, b"Read failed")
 
     async def _handle_mcu_file_remove(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(Exception):
+        try:
             p = msgspec.msgpack.decode(payload, type=FileRemovePacket)
-            path = self._get_safe_path(p.path)
-            if path and path.exists():
-                await asyncio.to_thread(path.unlink)
-                await self.serial.send(Status.OK.value, b"")
-                return True
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode file remove payload: %s (payload: %s)", exc, payload.hex())
+            await self.serial.send(Status.ERROR.value, b"Remove failed")
+            return False
+        path = self._get_safe_path(p.path)
+        if path and path.exists():
+            await asyncio.to_thread(path.unlink)
+            await self.serial.send(Status.OK.value, b"")
+            return True
         await self.serial.send(Status.ERROR.value, b"Remove failed")
         return False
 
@@ -484,38 +542,65 @@ class BridgeService:
             return False
 
     async def _handle_mcu_process_run(self, seq_id: int, payload: bytes) -> None:
-        with contextlib.suppress(Exception):
+        try:
             p = msgspec.msgpack.decode(payload, type=ProcessRunAsyncPacket)
-            if p.command and self.state.allowed_policy.is_allowed(p.command):
-                pid = await self._run_process(p.command)
-                if pid:
-                    await self.serial.send(
-                        Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
-                        msgspec.msgpack.encode(ProcessRunAsyncResponsePacket(pid=pid)),
-                    )
-                    return
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode process run payload: %s (payload: %s)", exc, payload.hex())
+            await self.serial.send(Status.ERROR.value, b"Exec failed")
+            return
+        if p.command and self.state.allowed_policy.is_allowed(p.command):
+            pid = await self._run_process(p.command)
+            if pid:
+                await self.serial.send(
+                    Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
+                    msgspec.msgpack.encode(ProcessRunAsyncResponsePacket(pid=pid)),
+                )
+                return
         await self.serial.send(Status.ERROR.value, b"Exec failed")
 
     async def _handle_mcu_process_poll(self, seq_id: int, payload: bytes) -> None:
-        with contextlib.suppress(Exception):
+        try:
             pid = msgspec.msgpack.decode(payload, type=ProcessPollPacket).pid
-            batch = await self._poll_process(pid)
-            await self.serial.send(
-                Command.CMD_PROCESS_POLL_RESP.value,
-                msgspec.msgpack.encode(
-                    ProcessPollResponsePacket(
-                        status=batch.status_byte,
-                        exit_code=batch.exit_code,
-                        stdout_data=batch.stdout_chunk,
-                        stderr_data=batch.stderr_chunk,
-                    )
-                ),
-            )
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode process poll payload: %s (payload: %s)", exc, payload.hex())
+            await self.serial.send(Status.ERROR.value, b"Poll failed")
+            return
+        batch = await self._poll_process(pid)
+        await self.serial.send(
+            Command.CMD_PROCESS_POLL_RESP.value,
+            msgspec.msgpack.encode(
+                ProcessPollResponsePacket(
+                    status=batch.status_byte,
+                    exit_code=batch.exit_code,
+                    stdout_data=batch.stdout_chunk,
+                    stderr_data=batch.stderr_chunk,
+                )
+            ),
+        )
 
     async def _handle_mcu_process_kill(self, seq_id: int, payload: bytes) -> None:
-        with contextlib.suppress(Exception):
+        try:
             pid = msgspec.msgpack.decode(payload, type=ProcessKillPacket).pid
-            await self._stop_process(pid)
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode process kill payload: %s (payload: %s)", exc, payload.hex())
+            await self.serial.send(Status.ERROR.value, b"Kill failed")
+            return
+        await self._stop_process(pid)
 
     async def _handle_mcu_pin_digital_read(self, seq_id: int, payload: bytes) -> bool:
         return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available")
@@ -540,16 +625,23 @@ class BridgeService:
         )
 
     async def _handle_mcu_spi_resp(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(Exception):
+        try:
             p = msgspec.msgpack.decode(payload, type=SpiTransferResponsePacket)
-            await self.enqueue_mqtt(
-                QueuedPublish(
-                    topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"),
-                    p.data,
-                )
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode SPI response payload: %s (payload: %s)", exc, payload.hex())
+            return False
+        await self.enqueue_mqtt(
+            QueuedPublish(
+                topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"),
+                p.data,
             )
-            return True
-        return False
+        )
+        return True
 
     # --- MQTT Dispatch ---
 
@@ -785,11 +877,22 @@ class BridgeService:
             case SpiAction.END:
                 await self.serial.send(Command.CMD_SPI_END.value, b"")
             case SpiAction.CONFIG:
-                with contextlib.suppress(Exception):
-                    # Simplified raw decoding
+                try:
                     raw = msgspec.json.decode(inbound.payload)
                     p = msgspec.convert(raw, SpiConfigPacket)
-                    await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, msgspec.msgpack.encode(p))
+                except (
+                    msgspec.DecodeError,
+                    msgspec.ValidationError,
+                    TypeError,
+                    ValueError,
+                ) as exc:
+                    logger.error(
+                        "Failed to decode SPI config payload: %s (payload: %s)",
+                        exc,
+                        inbound.payload.hex(),
+                    )
+                    return
+                await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, msgspec.msgpack.encode(p))
             case SpiAction.TRANSFER:
                 if inbound.payload:
                     payload = msgspec.msgpack.encode(SpiTransferPacket(data=bytes(inbound.payload)))
@@ -1035,23 +1138,31 @@ class BridgeService:
         cls: Any,
         q: collections.deque[structures.PendingPinRequest],
     ) -> None:
-        with contextlib.suppress(Exception):
+        try:
             v = msgspec.msgpack.decode(pl, type=cls).value
-            req = q.popleft() if q else None
-            await self.enqueue_mqtt(
-                QueuedPublish(
-                    topic_path(
-                        self.state.mqtt_topic_prefix,
-                        tp,
-                        str(req.pin) if req else "unknown",
-                        "value",
-                    ),
-                    str(v).encode(),
-                    message_expiry_interval=MQTT_EXPIRY_PIN,
-                    user_properties=(("bridge-pin", str(req.pin) if req else "unknown"),),
+        except (
+            msgspec.DecodeError,
+            msgspec.ValidationError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.error("Failed to decode pin response payload: %s (payload: %s)", exc, pl.hex())
+            return
+        req = q.popleft() if q else None
+        await self.enqueue_mqtt(
+            QueuedPublish(
+                topic_path(
+                    self.state.mqtt_topic_prefix,
+                    tp,
+                    str(req.pin) if req else "unknown",
+                    "value",
                 ),
-                reply_context=req.reply_context if req else None,
-            )
+                str(v).encode(),
+                message_expiry_interval=MQTT_EXPIRY_PIN,
+                user_properties=(("bridge-pin", str(req.pin) if req else "unknown"),),
+            ),
+            reply_context=req.reply_context if req else None,
+        )
 
     async def _handle_mqtt_file_mcu_read(self, ctx: Message, target: str) -> None:
         async with self._mcu_read_lock:

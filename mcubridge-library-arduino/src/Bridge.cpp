@@ -32,15 +32,11 @@ void BridgeClass::registerObserver(BridgeObserver& observer) {
 }
 
 void BridgeClass::notify_observers(const MsgBridgeSynchronized& msg) {
-  etl::for_each(
-      _observers.begin(), _observers.end(),
-      [&msg](BridgeObserver* observer) { observer->notification(msg); });
+  _notifyObservers(msg);
 }
 
 void BridgeClass::notify_observers(const MsgBridgeLost& msg) {
-  etl::for_each(
-      _observers.begin(), _observers.end(),
-      [&msg](BridgeObserver* observer) { observer->notification(msg); });
+  _notifyObservers(msg);
 }
 
 BridgeClass::BridgeClass(Stream& stream)

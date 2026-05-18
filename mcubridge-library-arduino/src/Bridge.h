@@ -136,14 +136,12 @@ class BridgeClass {
 
   void _dispatchCommand(const rpc::Frame& frame);
   static void _onBootloaderDelay();
-  void _onStartupStabilized();
   void _onAckTimeout();
   void _onRxDedupe();
   void _onBaudrateChange();
   void _retransmitLastFrame();
   bool _isSecurityCheckPassed(uint16_t command_id) const;
   void _onPacketReceived(etl::span<const uint8_t> packet);
-  static void packetHandlerCallback(etl::span<const uint8_t> p);
 
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
@@ -261,7 +259,6 @@ class BridgeClass {
   void _handleAnalogReadCommand(const bridge::router::CommandContext& ctx);
   void _handleConsoleWriteCommand(const bridge::router::CommandContext& ctx);
 #if BRIDGE_ENABLE_DATASTORE
-  void _handleDataStorePutCommand(const bridge::router::CommandContext& ctx);
   void _handleDataStoreGetResponseCommand(
       const bridge::router::CommandContext& ctx);
 #endif
@@ -361,7 +358,14 @@ class BridgeClass {
   void _clearPendingTxQueue();
   void _flushPendingTxQueue();
   void _handleAck(uint16_t command_id);
-  void _handleMalformed(uint16_t command_id);
+
+  template <typename TMessage>
+  void _notifyObservers(const TMessage& msg) {
+    etl::for_each(_observers.begin(), _observers.end(),
+                  [&msg](BridgeObserver* observer) {
+                    if (observer != nullptr) observer->notification(msg);
+                  });
+  }
 };
 
 extern BridgeClass Bridge;

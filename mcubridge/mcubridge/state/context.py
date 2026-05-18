@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
+import gc
 import sqlite3
 import time
 from collections.abc import Mapping
@@ -577,7 +578,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
             self.pending_analog_reads.clear()
 
         # 6. Final GC hint to ensure SQLite connections are truly closed.
-        import gc
 
         gc.collect()
 

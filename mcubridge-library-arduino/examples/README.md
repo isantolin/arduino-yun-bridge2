@@ -8,18 +8,12 @@ The sketches under `mcubridge-library-arduino/examples/` act as smoke tests for 
 - Uses `Bridge.onDigitalReadResponse`, `Bridge.onMailboxMessage`, and `Bridge.onStatus` to react to asynchronous events without busy loops.
 - Handy to confirm that the Python daemon and the MCU share the same serial secret before layering more services.
 
-## FrameDebug
-
-- Build with `-DBRIDGE_DEBUG_FRAMES=1` (defined in `Bridge.h`) to emit TX counters.
-- Sends `CMD_GET_FREE_MEMORY` every few seconds and prints frame stats (COBS/RAW lengths, CRC32, shortfalls) over Serial.
-- Ideal for debugging MCU<->Linux synchronization issues and for tuning the daemon `serial_retry_*` knobs.
-
 ## Quick build and upload
 
 Compile and upload any example via `arduino-cli`:
 
 ```sh
-# Replace <SketchDir> with BridgeControl or FrameDebug
+# Replace <SketchDir> with BridgeControl
 arduino-cli compile --fqbn arduino:avr:mcu mcubridge-library-arduino/examples/<SketchDir>
 arduino-cli upload --fqbn arduino:avr:mcu --port /dev/ttyACM0 \
   mcubridge-library-arduino/examples/<SketchDir>
@@ -35,6 +29,6 @@ Tips:
 
 1. Flash `BridgeControl.ino` and restart the daemon (`/etc/init.d/mcubridge restart`).
 2. From Linux run `mcubridge-client-examples/mailbox_read_test.py` to send `ON`/`OFF` messages and verify the LED reacts.
-3. Switch to `FrameDebug.ino` when you need to inspect timings or CRC32 values on the serial link; keep the serial console open for a few minutes to gather meaningful stats.
+3. When you need frame-level diagnostics, use `tools/frame_debug.py` from Linux to inspect COBS/CRC behavior without relying on sketch-only debug APIs.
 
 These steps keep the examples aligned with the modern stack (TLS enabled by default, strong handshake, and MQTT v5 topics) described in [PROTOCOL.md](../../../docs/PROTOCOL.md).

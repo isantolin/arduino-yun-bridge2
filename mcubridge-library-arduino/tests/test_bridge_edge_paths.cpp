@@ -2,8 +2,8 @@
 #include <etl/exception.h>
 #include <unity.h>
 
-#include "BridgeFaultInjection.h"
 #include "Bridge.h"
+#include "BridgeFaultInjection.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "fsm/CounterIterator.h"
@@ -37,7 +37,7 @@ struct CountingObserver final : public BridgeObserver {
 
 void on_fs_read(etl::span<const uint8_t>) {}
 void on_datastore_get(etl::string_view, etl::span<const uint8_t>) {}
-void on_process_poll(rpc::StatusCode, uint8_t, etl::span<const uint8_t>,
+void on_process_poll(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                      etl::span<const uint8_t>) {}
 
 bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
@@ -47,11 +47,10 @@ bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
   if (!extract_next_valid_frame(tx, cursor, candidate)) return false;
   const uint16_t raw_cmd =
       candidate.header.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
-  const bool is_excluded =
-      (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
-       raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
-      (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-       raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
+  const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
+                            raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
+                           (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
+                            raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
   if (!is_excluded) {
     out = candidate;
     return true;
@@ -375,7 +374,8 @@ void test_observer_and_task_runtime_edges() {
   CountingObserver observer;
   bridge::utils::CounterIterator<size_t> it(0);
   bridge::utils::CounterIterator<size_t> end(bridge::config::MAX_OBSERVERS + 2);
-  etl::for_each(it, end, [&observer](size_t) { Bridge.registerObserver(observer); });
+  etl::for_each(it, end,
+                [&observer](size_t) { Bridge.registerObserver(observer); });
   Bridge.notify_observers(MsgBridgeSynchronized());
   Bridge.notify_observers(MsgBridgeLost());
   TEST_ASSERT_EQUAL_INT(bridge::config::MAX_OBSERVERS, observer.synced);
@@ -425,17 +425,17 @@ void test_timer_link_and_bootloader_edges() {
   ba.dispatch(linkreset);
   ba.applyTimingConfig(rpc::payload::HandshakeConfig{0, 0, 0});
 
-  auto baud_zero = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE), 702,
-      rpc::payload::SetBaudratePacket{0}, buf);
+  auto baud_zero =
+      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
+                         702, rpc::payload::SetBaudratePacket{0}, buf);
   ba.dispatch(baud_zero);
-  auto baud_new = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE), 703,
-      rpc::payload::SetBaudratePacket{115200}, buf);
+  auto baud_new =
+      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
+                         703, rpc::payload::SetBaudratePacket{115200}, buf);
   ba.dispatch(baud_new);
-  auto baud_dup = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE), 704,
-      rpc::payload::SetBaudratePacket{115200}, buf);
+  auto baud_dup =
+      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
+                         704, rpc::payload::SetBaudratePacket{115200}, buf);
   ba.dispatch(baud_dup);
 
   auto boot_bad = make_payload_frame(
@@ -454,13 +454,13 @@ void test_service_capacity_and_send_fail_edges() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> frame_buf;
-  auto pin_mode_ok = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE), 780,
-      rpc::payload::PinMode{13, 1}, frame_buf);
+  auto pin_mode_ok =
+      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
+                         780, rpc::payload::PinMode{13, 1}, frame_buf);
   ba.dispatch(pin_mode_ok);
-  auto analog_write_ok = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE), 781,
-      rpc::payload::AnalogWrite{13, 127}, frame_buf);
+  auto analog_write_ok =
+      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),
+                         781, rpc::payload::AnalogWrite{13, 127}, frame_buf);
   ba.dispatch(analog_write_ok);
 
   Console.begin();
@@ -485,10 +485,12 @@ void test_service_capacity_and_send_fail_edges() {
   Bridge.enterSafeState();
   FileSystem.read("blocked.bin",
                   FileSystemClass::FileSystemReadHandler::create<on_fs_read>());
-  DataStore.get("key",
-                etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::
-                    create<on_datastore_get>());
-  Process.poll(123, ProcessClass::ProcessPollHandler::create<on_process_poll>());
+  DataStore.get(
+      "key",
+      etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
+          on_datastore_get>());
+  Process.poll(123,
+               ProcessClass::ProcessPollHandler::create<on_process_poll>());
 }
 
 void test_filesystem_spi_fsm_and_rle_edges() {
@@ -510,8 +512,8 @@ void test_filesystem_spi_fsm_and_rle_edges() {
       rpc::payload::FileRead{etl::span<const char>("large.bin", 9)});
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
-  auto spi_begin = make_empty_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN), 800);
+  auto spi_begin =
+      make_empty_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN), 800);
   ba.dispatch(spi_begin);
   etl::array<uint8_t, 3> spi_payload = {0xA1, 0xB2, 0xC3};
   auto spi_transfer = make_payload_frame(
@@ -554,10 +556,10 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
   stream.tx_buf.clear();
 
   etl::array<uint8_t, 2> payload = {0x55, 0x66};
-  TEST_ASSERT_TRUE(Bridge.send(
-      rpc::CommandId::CMD_CONSOLE_WRITE, 901,
-      rpc::payload::ConsoleWrite{
-          etl::span<const uint8_t>(payload.data(), payload.size())}));
+  TEST_ASSERT_TRUE(
+      Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 901,
+                  rpc::payload::ConsoleWrite{etl::span<const uint8_t>(
+                      payload.data(), payload.size())}));
 
   size_t cursor = 0;
   rpc::Frame encrypted = {};
@@ -631,8 +633,11 @@ void test_fault_injection_harness_paths() {
   ba2.onBaudrateChange();
 
   // Branch coverage for requires_ack (default path and flags)
-  TEST_ASSERT_FALSE(rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) | rpc::RPC_CMD_FLAG_COMPRESSED));
-  TEST_ASSERT_TRUE(rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)));
+  TEST_ASSERT_FALSE(
+      rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
+                        rpc::RPC_CMD_FLAG_COMPRESSED));
+  TEST_ASSERT_TRUE(
+      rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)));
 
   class FlowStream : public Stream {
    public:
@@ -664,10 +669,10 @@ void test_fault_injection_harness_paths() {
   bs.handleAck(bs.getLastCommandId());
   secure_stream.tx_buf.clear();
   etl::array<uint8_t, 2> payload = {0x41, 0x42};
-  TEST_ASSERT_TRUE(Bridge.send(
-      rpc::CommandId::CMD_CONSOLE_WRITE, 951,
-      rpc::payload::ConsoleWrite{
-          etl::span<const uint8_t>(payload.data(), payload.size())}));
+  TEST_ASSERT_TRUE(
+      Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 951,
+                  rpc::payload::ConsoleWrite{etl::span<const uint8_t>(
+                      payload.data(), payload.size())}));
   size_t cursor = 0;
   rpc::Frame encrypted = {};
   if (extract_encrypted_frame(secure_stream.tx_buf, cursor, encrypted, 4)) {
@@ -683,10 +688,12 @@ void test_fault_injection_harness_paths() {
   etl::array<uint8_t, 2> bad_pl = {rle::ESCAPE_BYTE, 0x01};
   bad_compressed.header = {
       rpc::PROTOCOL_VERSION, static_cast<uint16_t>(bad_pl.size()),
-      static_cast<uint16_t>(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
-                            rpc::RPC_CMD_FLAG_COMPRESSED),
+      static_cast<uint16_t>(
+          rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
+          rpc::RPC_CMD_FLAG_COMPRESSED),
       952};
-  bad_compressed.payload = etl::span<const uint8_t>(bad_pl.data(), bad_pl.size());
+  bad_compressed.payload =
+      etl::span<const uint8_t>(bad_pl.data(), bad_pl.size());
   bad_compressed.nonce.fill(0);
   bad_compressed.tag.fill(0);
   bad_compressed.crc = rpc::checksum::compute(bad_compressed);

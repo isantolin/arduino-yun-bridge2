@@ -4,33 +4,48 @@
 #include "config/bridge_config.h"
 #undef min
 #undef max
-#include <etl/queue.h>
 #include <etl/delegate.h>
-#include <etl/string_view.h>
+#include <etl/queue.h>
 #include <etl/span.h>
+#include <etl/string_view.h>
+
 #include "protocol/BridgeEvents.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
 class ProcessClass : public BridgeObserver {
  public:
-  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, etl::span<const uint8_t>, etl::span<const uint8_t>)>;
+  using ProcessRunHandler = etl::delegate<void(int32_t)>;
+  using ProcessPollHandler =
+      etl::delegate<void(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
+                         etl::span<const uint8_t>)>;
 
   ProcessClass();
-  static void runAsync(etl::string_view cmd, etl::span<const etl::string_view> args, etl::delegate<void(int32_t)> handler);
+  static void runAsync(etl::string_view cmd,
+                       etl::span<const etl::string_view> args,
+                       ProcessRunHandler handler);
   void poll(int32_t pid, ProcessPollHandler handler);
   static void kill(int32_t pid);
 
-  static void _kill(const rpc::payload::ProcessKill& msg);
-  static void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);
-  static void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
+  void _kill(const rpc::payload::ProcessKill& msg);
+  void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);
+  void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
   void reset();
 
   void notification(MsgBridgeSynchronized) override { /* ready */ }
   void notification(MsgBridgeLost) override { reset(); }
 
-  struct PendingPoll { int32_t pid; };
-  etl::queue<PendingPoll, bridge::config::MAX_PENDING_PROCESS_POLLS> _pending_polls;
+  struct PendingRunAsync {
+    ProcessRunHandler handler;
+  };
+  struct PendingPoll {
+    int32_t pid;
+    ProcessPollHandler handler;
+  };
+  etl::queue<PendingRunAsync, bridge::config::MAX_PENDING_PROCESS_POLLS>
+      _pending_run_async;
+  etl::queue<PendingPoll, bridge::config::MAX_PENDING_PROCESS_POLLS>
+      _pending_polls;
 };
 
 extern ProcessClass Process;

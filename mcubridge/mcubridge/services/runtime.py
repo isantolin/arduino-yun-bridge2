@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
-import gc
 import itertools
 import shlex
 from collections.abc import Coroutine, Callable, Awaitable
@@ -124,36 +123,56 @@ class BridgeService:
         self._process_slots = asyncio.Semaphore(int(state.process_max_concurrent))
 
         # [SIL-2] O(1) MCU Dispatch Registry
-        self.mcu_registry: dict[int, McuHandler] = {
-            Command.CMD_XOFF.value: self._handle_mcu_xoff,
-            Command.CMD_XON.value: self._handle_mcu_xon,
-            Command.CMD_CONSOLE_WRITE.value: self._handle_mcu_console_write,
-            Command.CMD_DATASTORE_PUT.value: self._handle_mcu_datastore_put,
-            Command.CMD_DATASTORE_GET.value: self._handle_mcu_datastore_get,
-            Command.CMD_MAILBOX_PUSH.value: self._handle_mcu_mailbox_push,
-            Command.CMD_MAILBOX_AVAILABLE.value: self._handle_mcu_mailbox_available,
-            Command.CMD_MAILBOX_READ.value: self._handle_mcu_mailbox_read,
-            Command.CMD_MAILBOX_PROCESSED.value: self._handle_mcu_mailbox_processed,
-            Command.CMD_FILE_WRITE.value: self._handle_mcu_file_write,
-            Command.CMD_FILE_READ.value: self._handle_mcu_file_read,
-            Command.CMD_FILE_REMOVE.value: self._handle_mcu_file_remove,
-            Command.CMD_FILE_READ_RESP.value: self._handle_mcu_file_read_resp,
-            Command.CMD_PROCESS_RUN_ASYNC.value: self._handle_mcu_process_run,
-            Command.CMD_PROCESS_POLL.value: self._handle_mcu_process_poll,
-            Command.CMD_PROCESS_KILL.value: self._handle_mcu_process_kill,
-            Command.CMD_DIGITAL_READ.value: self._handle_mcu_pin_digital_read,
-            Command.CMD_ANALOG_READ.value: self._handle_mcu_pin_analog_read,
-            Command.CMD_DIGITAL_READ_RESP.value: self._handle_mcu_pin_digital_read_resp,
-            Command.CMD_ANALOG_READ_RESP.value: self._handle_mcu_pin_analog_read_resp,
-            Command.CMD_SPI_TRANSFER_RESP.value: self._handle_mcu_spi_resp,
+        self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry()
+        for s in Status:
+            if s != Status.ACK:
+                self.mcu_registry[s.value] = self._make_status_handler(s)
+
+    def _setup_mcu_registry(self) -> dict[int, McuHandler]:
+        return {
+            Command.CMD_XOFF.value: lambda _, __: self._handle_mcu_xoff(),
+            Command.CMD_XON.value: lambda _, __: self._handle_mcu_xon(),
+            Command.CMD_CONSOLE_WRITE.value: self._gen_handler(ConsoleWritePacket, self._on_mcu_console_write),
+            Command.CMD_DATASTORE_PUT.value: self._gen_handler(DatastorePutPacket, self._on_mcu_datastore_put),
+            Command.CMD_DATASTORE_GET.value: self._gen_handler(DatastoreGetPacket, self._on_mcu_datastore_get),
+            Command.CMD_MAILBOX_PUSH.value: self._gen_handler(MailboxPushPacket, self._on_mcu_mailbox_push),
+            Command.CMD_MAILBOX_AVAILABLE.value: lambda seq, _: self._on_mcu_mailbox_available(seq),
+            Command.CMD_MAILBOX_READ.value: lambda seq, _: self._on_mcu_mailbox_read(seq),
+            Command.CMD_MAILBOX_PROCESSED.value: lambda _, p: self._on_mcu_mailbox_processed(p),
+            Command.CMD_FILE_WRITE.value: self._gen_handler(FileWritePacket, self._on_mcu_file_write),
+            Command.CMD_FILE_READ.value: self._gen_handler(FileReadPacket, self._on_mcu_file_read),
+            Command.CMD_FILE_REMOVE.value: self._gen_handler(FileRemovePacket, self._on_mcu_file_remove),
+            Command.CMD_FILE_READ_RESP.value: self._gen_handler(FileReadResponsePacket, self._on_mcu_file_read_resp),
+            Command.CMD_PROCESS_RUN_ASYNC.value: self._gen_handler(ProcessRunAsyncPacket, self._on_mcu_process_run),
+            Command.CMD_PROCESS_POLL.value: self._gen_handler(ProcessPollPacket, self._on_mcu_process_poll),
+            Command.CMD_PROCESS_KILL.value: self._gen_handler(ProcessKillPacket, self._on_mcu_process_kill),
+            Command.CMD_DIGITAL_READ.value: lambda _, __: self._handle_mcu_pin_digital_read(),
+            Command.CMD_ANALOG_READ.value: lambda _, __: self._handle_mcu_pin_analog_read(),
+            Command.CMD_DIGITAL_READ_RESP.value: self._gen_handler(DigitalReadResponsePacket, lambda p: self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)),
+            Command.CMD_ANALOG_READ_RESP.value: self._gen_handler(AnalogReadResponsePacket, lambda p: self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)),
+            Command.CMD_SPI_TRANSFER_RESP.value: self._gen_handler(SpiTransferResponsePacket, self._on_mcu_spi_resp),
             Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
             Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
             Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
-            Status.ACK.value: self._handle_mcu_ack,
+            Status.ACK.value: self._on_mcu_ack,
         }
-        for s in Status:
-            if s != Status.ACK:
-                self.mcu_registry[s.value] = lambda seq, p, s_code=s: self._handle_mcu_status(seq, s_code, p)
+
+    def _gen_handler(self, packet_type: type[Any], callback: Callable[[Any], Awaitable[Any]]) -> McuHandler:
+        async def _handler(seq: int, payload: bytes) -> bool | None:
+            try:
+                p = msgspec.msgpack.decode(payload, type=packet_type)
+                res = await callback(p)
+                return True if res is None else res
+            except (msgspec.MsgspecError, TypeError, ValueError) as exc:
+                logger.error("MCU Payload decode error: %s", exc)
+                return False
+        return _handler
+
+    def _make_status_handler(self, status: Status) -> McuHandler:
+        async def _handler(seq: int, payload: bytes) -> bool | None:
+            await self._handle_mcu_status(seq, status, payload)
+            return True
+        return _handler
 
     # --- External Interface ---
 
@@ -166,6 +185,7 @@ class BridgeService:
     async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
         if not self._mqtt_client:
             self.state.mqtt_dropped_messages += 1; self.state.metrics.mqtt_messages_dropped.inc(); return
+
         overrides = {}
         if reply_context is not None:
             props = reply_context.properties
@@ -174,6 +194,7 @@ class BridgeService:
             if reply_correlation := (getattr(props, "CorrelationData", None) if props else None):
                 overrides["correlation_data"] = reply_correlation
             overrides["user_properties"] = message.user_properties + (("bridge-request-topic", str(reply_context.topic)),)
+
         msg = msgspec.structs.replace(message, **overrides) if overrides else message
         props = Properties(PacketTypes.PUBLISH)
         if msg.content_type: props.ContentType = msg.content_type
@@ -182,6 +203,7 @@ class BridgeService:
         if msg.response_topic: props.ResponseTopic = msg.response_topic
         if msg.correlation_data: props.CorrelationData = msg.correlation_data
         props.UserProperty = list(msg.user_properties)
+
         try:
             await self._mqtt_client.publish(msg.topic_name, msg.payload, qos=int(msg.qos), retain=msg.retain, properties=props)
             self.state.metrics.mqtt_messages_published.inc()
@@ -236,131 +258,87 @@ class BridgeService:
 
     # --- Business Logic Implementation ---
 
-    async def _set_mcu_paused(self, paused: bool) -> None:
-        self.state.mcu_is_paused = paused; self.state.serial_tx_allowed.set() if not paused else self.state.serial_tx_allowed.clear()
-        if not paused: await self._flush_console_queue()
+    async def _handle_mcu_xon(self) -> None:
+        self.state.mcu_is_paused = False; self.state.serial_tx_allowed.set(); await self._flush_console_queue()
 
-    async def _handle_mcu_xon(self, seq_id: int, payload: bytes) -> None: await self._set_mcu_paused(False)
-    async def _handle_mcu_xoff(self, seq_id: int, payload: bytes) -> None: await self._set_mcu_paused(True)
+    async def _handle_mcu_xoff(self) -> None:
+        self.state.mcu_is_paused = True; self.state.serial_tx_allowed.clear()
 
-    async def _handle_mcu_console_write(self, seq_id: int, payload: bytes) -> None:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=ConsoleWritePacket)
-            if p.data: await self.enqueue_mqtt(QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.CONSOLE, ConsoleAction.OUT), p.data, message_expiry_interval=MQTT_EXPIRY_CONSOLE))
+    async def _on_mcu_console_write(self, p: ConsoleWritePacket) -> None:
+        if p.data: await self.enqueue_mqtt(QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.CONSOLE, ConsoleAction.OUT), p.data, message_expiry_interval=MQTT_EXPIRY_CONSOLE))
 
-    async def _handle_mcu_datastore_put(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=DatastorePutPacket)
-            if self.state.datastore_cache is not None: self.state.datastore_cache[p.key] = bytes(p.value)
-            await self._publish_datastore_value(p.key, bytes(p.value)); return True
-        return False
+    async def _on_mcu_datastore_put(self, p: DatastorePutPacket) -> bool:
+        if self.state.datastore_cache is not None: self.state.datastore_cache[p.key] = bytes(p.value)
+        await self._publish_datastore_value(p.key, bytes(p.value)); return True
 
-    async def _handle_mcu_datastore_get(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=DatastoreGetPacket)
-            cache = cast(Any, self.state.datastore_cache); val = msgspec.convert(cache.get(p.key, b"") if cache else b"", bytes)
-            return await self.serial.send(Command.CMD_DATASTORE_GET_RESP.value, msgspec.msgpack.encode(DatastoreGetResponsePacket(value=msgspec.Raw(val[:255]))))
-        return False
+    async def _on_mcu_datastore_get(self, p: DatastoreGetPacket) -> bool:
+        cache = cast(Any, self.state.datastore_cache); val = msgspec.convert(cache.get(p.key, b"") if cache else b"", bytes)
+        return await self.serial.send(Command.CMD_DATASTORE_GET_RESP.value, msgspec.msgpack.encode(DatastoreGetResponsePacket(value=msgspec.Raw(val[:255]))))
 
-    async def _handle_mcu_mailbox_push(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=MailboxPushPacket)
-            self.state.mailbox_incoming_queue.append(bytes(p.data))
-            await self.enqueue_mqtt(QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.INCOMING), bytes(p.data))); return True
-        return False
+    async def _on_mcu_mailbox_push(self, p: MailboxPushPacket) -> bool:
+        self.state.mailbox_incoming_queue.append(bytes(p.data))
+        await self.enqueue_mqtt(QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.INCOMING), bytes(p.data))); return True
 
-    async def _handle_mcu_mailbox_available(self, seq_id: int, payload: bytes) -> bool:
+    async def _on_mcu_mailbox_available(self, seq: int) -> bool:
         return await self.serial.send(Command.CMD_MAILBOX_AVAILABLE_RESP.value, msgspec.msgpack.encode(MailboxAvailableResponsePacket(count=len(self.state.mailbox_queue))))
 
-    async def _handle_mcu_mailbox_read(self, seq_id: int, payload: bytes) -> bool:
+    async def _on_mcu_mailbox_read(self, seq: int) -> bool:
         return await self.serial.send(Command.CMD_MAILBOX_READ_RESP.value, msgspec.msgpack.encode(MailboxReadResponsePacket(content=self.state.mailbox_queue.popleft() if self.state.mailbox_queue else b"")))
 
-    async def _handle_mcu_mailbox_processed(self, seq_id: int, payload: bytes) -> None:
+    async def _on_mcu_mailbox_processed(self, payload: bytes) -> None:
         await self.enqueue_mqtt(QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.PROCESSED), payload))
 
-    async def _handle_mcu_file_write(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=FileWritePacket)
-            path = self._get_safe_path(p.path)
-            if path and await self._write_with_quota(path, p.data): return await self.serial.send(Status.OK.value, b"")
+    async def _on_mcu_file_write(self, p: FileWritePacket) -> bool:
+        path = self._get_safe_path(p.path)
+        if path and await self._write_with_quota(path, p.data): return await self.serial.send(Status.OK.value, b"")
         return await self.serial.send(Status.ERROR.value, b"Write failed")
 
-    async def _handle_mcu_file_read(self, seq_id: int, payload: bytes) -> None:
-        try:
-            p = msgspec.msgpack.decode(payload, type=FileReadPacket)
-            path = self._get_safe_path(p.path)
-            if path and path.is_file():
-                data = await asyncio.to_thread(path.read_bytes)
-                if not data: await self.serial.send(Command.CMD_FILE_READ_RESP.value, msgspec.msgpack.encode(FileReadResponsePacket(content=b"")))
-                else:
-                    for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                        await self.serial.send(Command.CMD_FILE_READ_RESP.value, msgspec.msgpack.encode(FileReadResponsePacket(content=bytes(chunk))))
-                return
-        except Exception: pass
+    async def _on_mcu_file_read(self, p: FileReadPacket) -> None:
+        path = self._get_safe_path(p.path)
+        if path and path.is_file():
+            data = await asyncio.to_thread(path.read_bytes)
+            if not data: await self.serial.send(Command.CMD_FILE_READ_RESP.value, msgspec.msgpack.encode(FileReadResponsePacket(content=b"")))
+            else:
+                for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
+                    await self.serial.send(Command.CMD_FILE_READ_RESP.value, msgspec.msgpack.encode(FileReadResponsePacket(content=bytes(chunk))))
+            return
         await self.serial.send(Status.ERROR.value, b"Read failed")
 
-    async def _handle_mcu_file_remove(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(Exception):
-            p = msgspec.msgpack.decode(payload, type=FileRemovePacket)
-            path = self._get_safe_path(p.path)
-            if path and path.exists():
-                await asyncio.to_thread(path.unlink); return await self.serial.send(Status.OK.value, b"")
+    async def _on_mcu_file_remove(self, p: FileRemovePacket) -> bool:
+        path = self._get_safe_path(p.path)
+        if path and path.exists():
+            await asyncio.to_thread(path.unlink); return await self.serial.send(Status.OK.value, b"")
         return await self.serial.send(Status.ERROR.value, b"Remove failed")
 
-    async def _handle_mcu_file_read_resp(self, seq_id: int, payload: bytes) -> bool:
+    async def _on_mcu_file_read_resp(self, p: FileReadResponsePacket) -> bool:
         if not self._pending_mcu_read: return False
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=FileReadResponsePacket)
-            if p.content: self._pending_mcu_read.chunks.append(p.content)
-            elif not self._pending_mcu_read.future.done(): self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
-            return True
-        return False
+        if p.content: self._pending_mcu_read.chunks.append(p.content)
+        elif not self._pending_mcu_read.future.done(): self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
+        return True
 
-    async def _handle_mcu_process_run(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=ProcessRunAsyncPacket)
-            if p.command and self.state.allowed_policy.is_allowed(p.command):
-                pid = await self._run_process(p.command)
-                if pid: return await self.serial.send(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, msgspec.msgpack.encode(ProcessRunAsyncResponsePacket(pid=pid)))
+    async def _on_mcu_process_run(self, p: ProcessRunAsyncPacket) -> bool:
+        if p.command and self.state.allowed_policy.is_allowed(p.command):
+            pid = await self._run_process(p.command)
+            if pid: return await self.serial.send(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, msgspec.msgpack.encode(ProcessRunAsyncResponsePacket(pid=pid)))
         await self.serial.send(Status.ERROR.value, b"Exec failed"); return False
 
-    async def _handle_mcu_process_poll(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=ProcessPollPacket)
-            batch = await self._poll_process(p.pid)
-            return await self.serial.send(Command.CMD_PROCESS_POLL_RESP.value, msgspec.msgpack.encode(ProcessPollResponsePacket(status=batch.status_byte, exit_code=batch.exit_code, stdout_data=batch.stdout_chunk, stderr_data=batch.stderr_chunk)))
-        await self.serial.send(Status.ERROR.value, b"Poll failed"); return False
+    async def _on_mcu_process_poll(self, p: ProcessPollPacket) -> bool:
+        batch = await self._poll_process(p.pid)
+        return await self.serial.send(Command.CMD_PROCESS_POLL_RESP.value, msgspec.msgpack.encode(ProcessPollResponsePacket(status=batch.status_byte, exit_code=batch.exit_code, stdout_data=batch.stdout_chunk, stderr_data=batch.stderr_chunk)))
 
-    async def _handle_mcu_process_kill(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=ProcessKillPacket)
-            return await self._stop_process(p.pid)
-        return False
+    async def _on_mcu_process_kill(self, p: ProcessKillPacket) -> None: await self._stop_process(p.pid)
 
-    async def _handle_mcu_pin_digital_read(self, seq_id: int, payload: bytes) -> bool: return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available")
-    async def _handle_mcu_pin_analog_read(self, seq_id: int, payload: bytes) -> bool: return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available")
+    async def _handle_mcu_pin_digital_read(self) -> bool: return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available")
+    async def _handle_mcu_pin_analog_read(self) -> bool: return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available")
 
-    async def _handle_mcu_pin_digital_read_resp(self, seq_id: int, payload: bytes) -> None:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=DigitalReadResponsePacket)
-            await self._handle_mcu_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
-
-    async def _handle_mcu_pin_analog_read_resp(self, seq_id: int, payload: bytes) -> None:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=AnalogReadResponsePacket)
-            await self._handle_mcu_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
-
-    async def _handle_mcu_pin_resp(self, p: Any, tp: Topic, q: collections.deque[structures.PendingPinRequest]) -> None:
+    async def _on_pin_resp(self, p: Any, tp: Topic, q: collections.deque[structures.PendingPinRequest]) -> None:
         req = q.popleft() if q else None
         await self.enqueue_mqtt(QueuedPublish(topic_path(self.state.mqtt_topic_prefix, tp, str(req.pin) if req else "unknown", "value"), str(p.value).encode(), message_expiry_interval=MQTT_EXPIRY_PIN, user_properties=(("bridge-pin", str(req.pin) if req else "unknown"),)), reply_context=req.reply_context if req else None)
 
-    async def _handle_mcu_spi_resp(self, seq_id: int, payload: bytes) -> bool:
-        with contextlib.suppress(msgspec.MsgspecError):
-            p = msgspec.msgpack.decode(payload, type=SpiTransferResponsePacket)
-            await self.enqueue_mqtt(QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"), p.data)); return True
-        return False
+    async def _on_mcu_spi_resp(self, p: SpiTransferResponsePacket) -> None:
+        await self.enqueue_mqtt(QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"), p.data))
 
-    async def _handle_mcu_ack(self, seq_id: int, payload: bytes) -> None:
+    async def _on_mcu_ack(self, seq: int, payload: bytes) -> None:
         with contextlib.suppress(msgspec.MsgspecError):
             p = msgspec.msgpack.decode(payload, type=AckPacket); logger.debug("MCU > ACK for 0x%02X", p.command_id)
 
@@ -478,7 +456,6 @@ class BridgeService:
                 flavor = route.segments[1] if len(route.segments) > 1 else "summary"
                 snap = self.state.build_handshake_snapshot() if flavor == "handshake" else self.state.build_bridge_snapshot()
                 await self.enqueue_mqtt(QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", flavor, "value"), msgspec.msgpack.encode(snap), content_type="application/msgpack"), reply_context=inbound)
-            case _: pass
 
     # --- Low-level Helpers ---
 

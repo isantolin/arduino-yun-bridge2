@@ -5,14 +5,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import math
+import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import (
     Any,
-    cast,
 )
 
 import msgspec
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
 import structlog
@@ -210,9 +209,6 @@ async def publish_bridge_snapshots(
             tg.create_task(_handshake_loop())
 
 
-import weakref
-
-
 class RuntimeStateCollector(Collector):
     """[SIL-2] Dynamic collector for Prometheus dimensional metrics.
 
@@ -239,8 +235,20 @@ class RuntimeStateCollector(Collector):
         )
         q_depths.add_metric(["mqtt_publish"], float(state.mqtt_publish_queue.qsize()))
         q_depths.add_metric(["console_tx"], float(len(state.console_to_mcu_queue)))
-        q_depths.add_metric(["mailbox_tx"], float(len(state.mailbox_queue)))
-        q_depths.add_metric(["mailbox_rx"], float(len(state.mailbox_incoming_queue)))
+
+        # [SIL-2] Use diskcache context managers to ensure thread-local connections are closed.
+        if state._mailbox_queue_cache is not None:
+            with state._mailbox_queue_cache:
+                q_depths.add_metric(["mailbox_tx"], float(len(state.mailbox_queue)))
+        else:
+            q_depths.add_metric(["mailbox_tx"], float(len(state.mailbox_queue)))
+
+        if state._mailbox_incoming_queue_cache is not None:
+            with state._mailbox_incoming_queue_cache:
+                q_depths.add_metric(["mailbox_rx"], float(len(state.mailbox_incoming_queue)))
+        else:
+            q_depths.add_metric(["mailbox_rx"], float(len(state.mailbox_incoming_queue)))
+
         q_depths.add_metric(["pending_digital_read"], float(len(state.pending_digital_reads)))
         q_depths.add_metric(["pending_analog_read"], float(len(state.pending_analog_reads)))
         q_depths.add_metric(["running_process"], float(len(state.running_processes)))
@@ -290,7 +298,7 @@ class PrometheusExporter:
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
         from prometheus_client import ProcessCollector, make_wsgi_app
-        from prometheus_client.exposition import make_server
+        from wsgiref.simple_server import make_server
 
         self._state = state
         self._host = host if host else "0.0.0.0"
@@ -305,19 +313,21 @@ class PrometheusExporter:
         # Register the dynamic state collector
         self._registry.register(self._collector)
 
-        # Create the official threading server but don't start yet.
-        # This binds the socket immediately, allowing port 0 resolution.
         # [Library-First] make_wsgi_app provides the callable expected by make_server.
+        # This is the standard way to expose Prometheus metrics over WSGI.
+        app = make_wsgi_app(self._registry)
+
         self._server = make_server(
             self._host,
             self._port,
-            make_wsgi_app(self._registry),
+            app,
         )
 
     @property
     def port(self) -> int:
         """Return the actually bound port (useful for port 0)."""
         if self._server:
+            # server_address is (host, port)
             return int(self._server.server_address[1])
         return self._port
 
@@ -336,7 +346,7 @@ class PrometheusExporter:
             raise
         finally:
             # Unregister the collector to break circular reference
-            if self._server:
+            if self._server and self._collector:
                 with contextlib.suppress(KeyError):
                     self._registry.unregister(self._collector)
 

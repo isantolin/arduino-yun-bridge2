@@ -4,7 +4,6 @@ import asyncio
 import pytest
 from mcubridge.metrics import PrometheusExporter
 from mcubridge.state.context import SupervisorStats
-from prometheus_client import CONTENT_TYPE_LATEST
 
 
 @pytest.mark.asyncio

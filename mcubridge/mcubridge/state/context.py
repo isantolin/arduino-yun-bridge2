@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
-import gc
 import sqlite3
 import time
 from collections.abc import Mapping
@@ -532,7 +531,13 @@ class RuntimeState(msgspec.Struct, weakref=True):
     def cleanup(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
 
-        # [SIL-2] Thorough Resource Cleanup to prevent ResourceWarnings
+        # [SIL-2] Aggressive Resource Eradication to prevent ResourceWarnings.
+        # 1. Nullify high-level wrappers first to drop references to the underlying caches.
+        self.mailbox_queue = collections.deque()
+        self.mailbox_incoming_queue = collections.deque()
+        self.console_to_mcu_queue = collections.deque()
+
+        # 2. Explicitly close and nullify persistent caches.
         if self.datastore_cache is not None:
             with _sup:
                 self.datastore_cache.close()
@@ -542,30 +547,39 @@ class RuntimeState(msgspec.Struct, weakref=True):
             with _sup:
                 self._mailbox_queue_cache.close()
             self._mailbox_queue_cache = None
-            # Drop the deque that might hold references to the cache
-            self.mailbox_queue = collections.deque()
 
         if self._mailbox_incoming_queue_cache is not None:
             with _sup:
                 self._mailbox_incoming_queue_cache.close()
             self._mailbox_incoming_queue_cache = None
-            self.mailbox_incoming_queue = collections.deque()
 
-        with _sup:
-            # [SIL-2] Terminate all running processes to release pipes/sockets
-            if self.running_processes:
-                for handle in list(self.running_processes.values()):
-                    if handle:
-                        with contextlib.suppress(OSError, ProcessLookupError):
-                            handle.terminate()
+        # 3. Drain and reset the MQTT queue.
+        while not self.mqtt_publish_queue.empty():
+            with _sup:
+                self.mqtt_publish_queue.get_nowait()
+        self.mqtt_publish_queue = asyncio.Queue()
 
-        with _sup:
-            # Clear other complex objects
+        # 4. Terminate all running processes to release pipes/sockets.
+        if self.running_processes:
+            for handle in list(self.running_processes.values()):
+                if handle:
+                    with contextlib.suppress(OSError, ProcessLookupError):
+                        handle.terminate()
             self.running_processes.clear()
+
+        # 5. Clear other complex objects and state indicators.
+        with _sup:
             self.process_io_locks.clear()
             self.process_exit_codes.clear()
             self.serial_tx_allowed.clear()
             self.link_sync_event.clear()
+            self.pending_digital_reads.clear()
+            self.pending_analog_reads.clear()
+
+        # 6. Final GC hint to ensure SQLite connections are truly closed.
+        import gc
+
+        gc.collect()
 
 
 def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:

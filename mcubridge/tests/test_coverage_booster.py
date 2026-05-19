@@ -795,7 +795,7 @@ async def test_handshake_auth_failure_detail_v19(mock_config: RuntimeConfig, moc
     # Use a direct call and catch ANY exception to ensure coverage
     try:
         await mgr.handle_handshake_failure("some_reason", detail="force_fatal")
-    except Exception:
+    except SerialHandshakeFatal:
         pass
 
 

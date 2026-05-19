@@ -117,19 +117,19 @@ class RuntimeState(msgspec.Struct, weakref=True):
             self.link_sync_event.set()
 
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=lambda: cast(asyncio.Queue[QueuedPublish], asyncio.Queue())
+        default_factory=asyncio.Queue
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
+    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=dict)
     allow_non_tmp_paths: bool = False
     datastore_cache: diskcache.Cache | None = None
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
     mailbox_queue: Any = msgspec.field(
-        default_factory=lambda: cast(Any, collections.deque()),
+        default_factory=collections.deque,
     )
     mailbox_incoming_queue: Any = msgspec.field(
-        default_factory=lambda: cast(Any, collections.deque()),
+        default_factory=collections.deque,
     )
 
     _mailbox_queue_cache: diskcache.Cache | None = None
@@ -138,18 +138,16 @@ class RuntimeState(msgspec.Struct, weakref=True):
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     console_to_mcu_queue: Any = msgspec.field(
-        default_factory=lambda: cast(Any, collections.deque()),
+        default_factory=collections.deque,
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
 
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
-    running_processes: dict[int, asyncio.subprocess.Process] = msgspec.field(
-        default_factory=lambda: cast(dict[int, asyncio.subprocess.Process], {})
+    running_processes: dict[int, Any] = msgspec.field(
+        default_factory=dict
     )
-    process_io_locks: dict[int, asyncio.Lock] = msgspec.field(default_factory=lambda: cast(dict[int, asyncio.Lock], {}))
-    process_exit_codes: dict[int, int] = msgspec.field(default_factory=lambda: cast(dict[int, int], {}))
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(
@@ -168,10 +166,10 @@ class RuntimeState(msgspec.Struct, weakref=True):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque()),
+        default_factory=collections.deque,
     )
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque()),
+        default_factory=collections.deque,
     )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
@@ -218,9 +216,9 @@ class RuntimeState(msgspec.Struct, weakref=True):
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
+    mcu_status_counts: dict[str, int] = msgspec.field(default_factory=dict)
     supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
-        default_factory=lambda: cast(dict[str, SupervisorStats], {})
+        default_factory=dict
     )
     supervisor_failures: int = 0
     last_supervisor_error: str | None = None
@@ -578,16 +576,14 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
         # 4. Terminate all running processes to release pipes/sockets.
         if self.running_processes:
-            for handle in list(self.running_processes.values()):
-                if handle:
+            for ctx in list(self.running_processes.values()):
+                if ctx and ctx.handle:
                     with contextlib.suppress(OSError, ProcessLookupError):
-                        handle.terminate()
+                        ctx.handle.terminate()
             self.running_processes.clear()
 
         # 5. Clear other complex objects and state indicators.
         with _sup:
-            self.process_io_locks.clear()
-            self.process_exit_codes.clear()
             self.serial_tx_allowed.clear()
             self.link_sync_event.clear()
             self.pending_digital_reads.clear()

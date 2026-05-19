@@ -101,6 +101,14 @@ class _PendingMcuRead:
     chunks: list[bytes] = field(default_factory=cast(Callable[[], list[bytes]], list))
 
 
+class ProcessContext:
+    __slots__ = ("handle", "io_lock", "exit_code")
+    def __init__(self, handle: asyncio.subprocess.Process) -> None:
+        self.handle = handle
+        self.io_lock = asyncio.Lock()
+        self.exit_code = 0
+
+
 class BridgeService:
     """Consolidated Service Façade Eradicating Component Wrappers. [SIL-2]"""
 
@@ -146,9 +154,9 @@ class BridgeService:
             Command.CMD_FILE_READ_RESP.value: self._gen_handler(FileReadResponsePacket, self._on_mcu_file_read_resp),
             Command.CMD_PROCESS_RUN_ASYNC.value: self._gen_handler(ProcessRunAsyncPacket, self._on_mcu_process_run),
             Command.CMD_PROCESS_POLL.value: self._gen_handler(ProcessPollPacket, self._on_mcu_process_poll),
-            Command.CMD_PROCESS_KILL.value: self._gen_handler(ProcessKillPacket, self._on_mcu_process_kill),
-            Command.CMD_DIGITAL_READ.value: lambda _, __: self._handle_mcu_pin_digital_read(),
-            Command.CMD_ANALOG_READ.value: lambda _, __: self._handle_mcu_pin_analog_read(),
+            Command.CMD_PROCESS_KILL.value: self._gen_handler(ProcessKillPacket, lambda p: self._stop_process(p.pid)),
+            Command.CMD_DIGITAL_READ.value: lambda _, __: self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available"),
+            Command.CMD_ANALOG_READ.value: lambda _, __: self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available"),
             Command.CMD_DIGITAL_READ_RESP.value: self._gen_handler(
                 DigitalReadResponsePacket,
                 lambda p: self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads),
@@ -200,34 +208,36 @@ class BridgeService:
             self.state.metrics.mqtt_messages_dropped.inc()
             return
 
-        overrides = {}
-        if reply_context is not None:
-            props = reply_context.properties
-            target_topic = (getattr(props, "ResponseTopic", None) if props else None) or message.topic_name
-            overrides["topic_name"] = target_topic
-            if reply_correlation := (getattr(props, "CorrelationData", None) if props else None):
-                overrides["correlation_data"] = reply_correlation
-            overrides["user_properties"] = message.user_properties + (
-                ("bridge-request-topic", str(reply_context.topic)),
-            )
-
-        msg = msgspec.structs.replace(message, **overrides) if overrides else message
+        topic = message.topic_name
         props = Properties(PacketTypes.PUBLISH)
-        if msg.content_type:
-            props.ContentType = msg.content_type
-        if msg.payload_format_indicator is not None:
-            props.PayloadFormatIndicator = msg.payload_format_indicator
-        if msg.message_expiry_interval:
-            props.MessageExpiryInterval = msg.message_expiry_interval
-        if msg.response_topic:
-            props.ResponseTopic = msg.response_topic
-        if msg.correlation_data:
-            props.CorrelationData = msg.correlation_data
-        props.UserProperty = list(msg.user_properties)
+        
+        if reply_context is not None and reply_context.properties:
+            r_props = reply_context.properties
+            if rt := getattr(r_props, "ResponseTopic", None):
+                topic = rt
+            if cd := getattr(r_props, "CorrelationData", None):
+                props.CorrelationData = cd
+            
+            user_props = list(message.user_properties) + [("bridge-request-topic", str(reply_context.topic))]
+            if user_props:
+                props.UserProperty = user_props
+        elif message.user_properties:
+            props.UserProperty = list(message.user_properties)
+            
+        if message.content_type:
+            props.ContentType = message.content_type
+        if message.payload_format_indicator is not None:
+            props.PayloadFormatIndicator = message.payload_format_indicator
+        if message.message_expiry_interval:
+            props.MessageExpiryInterval = message.message_expiry_interval
+        if message.response_topic:
+            props.ResponseTopic = message.response_topic
+        if message.correlation_data and not getattr(props, "CorrelationData", None):
+            props.CorrelationData = message.correlation_data
 
         try:
             await self._mqtt_client.publish(
-                msg.topic_name, msg.payload, qos=int(msg.qos), retain=msg.retain, properties=props
+                topic, message.payload, qos=int(message.qos), retain=message.retain, properties=props
             )
             self.state.metrics.mqtt_messages_published.inc()
         except (aiomqtt.MqttError, OSError, RuntimeError) as exc:
@@ -439,15 +449,6 @@ class BridgeService:
                 )
             ),
         )
-
-    async def _on_mcu_process_kill(self, p: ProcessKillPacket) -> None:
-        await self._stop_process(p.pid)
-
-    async def _handle_mcu_pin_digital_read(self) -> bool:
-        return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available")
-
-    async def _handle_mcu_pin_analog_read(self) -> bool:
-        return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available")
 
     async def _on_pin_resp(self, p: Any, tp: Topic, q: collections.deque[structures.PendingPinRequest]) -> None:
         req = q.popleft() if q else None
@@ -827,11 +828,7 @@ class BridgeService:
             )
             pid = p.pid & 0xFFFF
             async with self.state.process_lock:
-                (
-                    self.state.running_processes[pid],
-                    self.state.process_io_locks[pid],
-                    self.state.process_exit_codes[pid],
-                ) = (p, asyncio.Lock(), 0)
+                self.state.running_processes[pid] = ProcessContext(p)
             asyncio.create_task(self._monitor_process(pid))
             return pid
         except OSError:
@@ -841,32 +838,28 @@ class BridgeService:
     async def _monitor_process(self, pid: int) -> None:
         try:
             async with self.state.process_lock:
-                h = self.state.running_processes.get(pid)
-            if h:
+                ctx = self.state.running_processes.get(pid)
+            if ctx:
                 try:
-                    self.state.process_exit_codes[pid] = await asyncio.wait_for(
-                        h.wait(), float(self.state.process_timeout)
+                    ctx.exit_code = await asyncio.wait_for(
+                        ctx.handle.wait(), float(self.state.process_timeout)
                     )
                 except asyncio.TimeoutError:
                     import os
                     import signal
 
                     with contextlib.suppress(OSError):
-                        os.killpg(h.pid, signal.SIGKILL)
-                    self.state.process_exit_codes[pid] = -1
+                        os.killpg(ctx.handle.pid, signal.SIGKILL)
+                    ctx.exit_code = -1
         finally:
             self._finalize_process(pid)
 
     async def _poll_process(self, pid: int) -> ProcessOutputBatch:
         async with self.state.process_lock:
-            h, io_lock, ec = (
-                self.state.running_processes.get(pid),
-                self.state.process_io_locks.get(pid),
-                self.state.process_exit_codes.get(pid, 0),
-            )
-            if not h or not io_lock:
+            ctx = self.state.running_processes.get(pid)
+            if not ctx:
                 return ProcessOutputBatch(Status.ERROR.value, 1, b"", b"", True, False, False)
-            async with io_lock:
+            async with ctx.io_lock:
 
                 async def _rd(s: asyncio.StreamReader | None) -> tuple[bytes, bool]:
                     if not s or s.at_eof():
@@ -876,26 +869,26 @@ class BridgeService:
                     except asyncio.TimeoutError:
                         return b"", True
 
-                o, to = await _rd(h.stdout)
-                e, te = await _rd(h.stderr)
-                fin = h.returncode is not None
-                if fin and (h.stdout is None or h.stdout.at_eof()) and (h.stderr is None or h.stderr.at_eof()):
+                o, to = await _rd(ctx.handle.stdout)
+                e, te = await _rd(ctx.handle.stderr)
+                fin = ctx.handle.returncode is not None
+                if fin and (ctx.handle.stdout is None or ctx.handle.stdout.at_eof()) and (ctx.handle.stderr is None or ctx.handle.stderr.at_eof()):
                     self._finalize_process(pid)
-                return ProcessOutputBatch(Status.OK.value, ec, o, e, fin, to, te)
+                return ProcessOutputBatch(Status.OK.value, ctx.exit_code, o, e, fin, to, te)
 
     async def _stop_process(self, pid: int) -> bool:
         async with self.state.process_lock:
-            h = self.state.running_processes.get(pid)
-        if not h:
+            ctx = self.state.running_processes.get(pid)
+        if not ctx:
             return False
         try:
             import os
             import signal
 
-            os.killpg(h.pid, signal.SIGTERM)
+            os.killpg(ctx.handle.pid, signal.SIGTERM)
             await asyncio.sleep(0.5)
-            if h.returncode is None:
-                os.killpg(h.pid, signal.SIGKILL)
+            if ctx.handle.returncode is None:
+                os.killpg(ctx.handle.pid, signal.SIGKILL)
         except (OSError, ProcessLookupError) as exc:
             logger.warning("Process termination failed", pid=pid, error=str(exc))
         self._finalize_process(pid)
@@ -903,7 +896,6 @@ class BridgeService:
 
     def _finalize_process(self, pid: int) -> None:
         if self.state.running_processes.pop(pid, None):
-            self.state.process_io_locks.pop(pid, None)
             self._process_slots.release()
 
     def _get_safe_path(self, p_str: str) -> Path | None:

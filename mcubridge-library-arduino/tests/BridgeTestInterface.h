@@ -115,7 +115,7 @@ class TestAccessor {
     exhaustTxPayloadPoolRecursive();
   }
   void enqueueNullPendingFrame(uint16_t command_id, uint16_t sequence_id, size_t length) {
-    _bridge._pending_tx_queue.push({command_id, sequence_id, nullptr, length});
+    _bridge._pending_tx_queue.push_back({command_id, sequence_id, nullptr, length});
   }
   void clearSynchronized() { _fsm.receive(bridge::fsm::EvReset()); }
   void onBootloaderDelay() { _bridge._onBootloaderDelay(); }

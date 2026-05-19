@@ -2,6 +2,7 @@
 
 #include <etl/algorithm.h>
 #include <etl/array.h>
+#include <etl/string.h>
 
 #include "Bridge.h"
 
@@ -11,20 +12,6 @@ namespace {
 
 constexpr size_t kProcessCommandBufferSize = rpc::MAX_PAYLOAD_SIZE;
 constexpr int32_t kProcessInvalidPid = -1;
-
-bool append_token(etl::array<char, kProcessCommandBufferSize>& command_buffer,
-                  size_t& write_pos, etl::string_view token,
-                  bool prepend_space) {
-  const size_t required_space = prepend_space ? 1U : 0U;
-  if (write_pos + required_space >= command_buffer.size()) return false;
-  if (prepend_space) command_buffer[write_pos++] = ' ';
-
-  const size_t available = command_buffer.size() - write_pos - 1U;
-  if (token.size() > available) return false;
-  etl::copy_n(token.begin(), token.size(), command_buffer.begin() + write_pos);
-  write_pos += token.size();
-  return true;
-}
 
 }  // namespace
 
@@ -41,13 +28,24 @@ void ProcessClass::runAsync(etl::string_view cmd,
     return;
   }
 
-  etl::array<char, kProcessCommandBufferSize> command_buffer = {};
-  size_t write_pos = 0;
-  bool ok = append_token(command_buffer, write_pos, cmd, false);
+  etl::string<kProcessCommandBufferSize> command_buffer;
+  bool ok = true;
+  if (cmd.size() <= command_buffer.available()) {
+    command_buffer.append(cmd.begin(), cmd.end());
+  } else {
+    ok = false;
+  }
+
   etl::for_each(args.begin(), args.end(), [&](etl::string_view arg) {
     if (!ok) return;
-    ok = append_token(command_buffer, write_pos, arg, true);
+    if (1 + arg.size() <= command_buffer.available()) {
+      command_buffer.append(" ");
+      command_buffer.append(arg.begin(), arg.end());
+    } else {
+      ok = false;
+    }
   });
+
   if (!ok) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -55,12 +53,11 @@ void ProcessClass::runAsync(etl::string_view cmd,
     if (handler.is_valid()) handler(kProcessInvalidPid);
     return;
   }
-  command_buffer[write_pos] = rpc::RPC_NULL_TERMINATOR;
 
   const bool send_ok =
       Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0,
                   rpc::payload::ProcessRunAsync{
-                      etl::span<const char>(command_buffer.data(), write_pos)});
+                      etl::span<const char>(command_buffer.data(), command_buffer.size())});
   if (!send_ok) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,

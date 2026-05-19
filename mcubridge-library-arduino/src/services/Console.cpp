@@ -39,11 +39,15 @@ size_t ConsoleClass::write(uint8_t c) {
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (buffer == nullptr || size == 0) return 0;
-  etl::span<const uint8_t> data(buffer, size);
   size_t written = 0;
-  etl::for_each(data.begin(), data.end(), [this, &written](uint8_t b) {
-    written += write(b);
-  });
+  while (written < size) {
+    size_t chunk = etl::min(size - written, _tx_buffer.available());
+    if (chunk > 0) {
+      _tx_buffer.insert(_tx_buffer.end(), buffer + written, buffer + written + chunk);
+      written += chunk;
+    }
+    if (_tx_buffer.full()) process();
+  }
   return written;
 }
 

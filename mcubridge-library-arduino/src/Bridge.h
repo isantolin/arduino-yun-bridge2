@@ -24,6 +24,7 @@ namespace bridge::test { class TestAccessor; }
 #include <etl/array.h>
 #include <etl/callback_timer.h>
 #include <etl/delegate.h>
+#include <etl/deque.h>
 #include <etl/expected.h>
 #include <etl/flat_map.h>
 #include <etl/fsm.h>
@@ -253,7 +254,7 @@ class BridgeClass {
   etl::vector<BridgeObserver*, bridge::config::MAX_OBSERVERS> _observers;
   etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>
       _tx_payload_pool;
-  etl::queue<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES>
+  etl::deque<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES>
       _pending_tx_queue;
 
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;

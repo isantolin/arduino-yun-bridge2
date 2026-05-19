@@ -115,6 +115,19 @@ class BridgeClass {
                                etl::span<const uint8_t> p = {});
 
   template <typename T>
+  [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
+    JsonDocument doc;
+    if (packet.encode(doc.to<JsonVariant>())) {
+      size_t used = serializeMsgPack(
+          doc, reinterpret_cast<char*>(_transient_buffer.data()),
+          rpc::MAX_PAYLOAD_SIZE);
+      return sendFrame(s, seq,
+                       etl::span<const uint8_t>(_transient_buffer.data(), used));
+    }
+    return false;
+  }
+
+  template <typename T>
   [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
     JsonDocument doc;
     if (packet.encode(doc.to<JsonVariant>())) {
@@ -322,7 +335,8 @@ class BridgeClass {
   template <typename T, typename F>
   void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
     if (ctx.is_duplicate) {
-      (void)sendFrame(rpc::StatusCode::STATUS_ACK, ctx.sequence_id);
+      (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id,
+                 rpc::payload::AckPacket{ctx.raw_command});
       return;
     }
     JsonDocument doc;
@@ -330,7 +344,8 @@ class BridgeClass {
     if (res) {
       handler(res.value());
       if (ctx.requires_ack)
-        (void)sendFrame(rpc::StatusCode::STATUS_ACK, ctx.sequence_id);
+        (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id,
+                   rpc::payload::AckPacket{ctx.raw_command});
     } else
       emitStatus(rpc::StatusCode::STATUS_ERROR);
   }

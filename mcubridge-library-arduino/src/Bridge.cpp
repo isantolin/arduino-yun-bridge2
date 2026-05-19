@@ -634,7 +634,10 @@ void BridgeClass::_handleStatusMalformed(
   (void)ctx;
   enterSafeState();
 }
-void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) { _handleAck(ctx.raw_command); }
+void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
+  _withPayload<rpc::payload::AckPacket>(
+      ctx, [this](const auto& ack) { _handleAck(ack.command_id); });
+}
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this, &ctx]() {
@@ -762,12 +765,14 @@ void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
   (void)ctx;
   SPIService.begin();
-  (void)sendFrame(rpc::StatusCode::STATUS_ACK, ctx.sequence_id);
+  (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id,
+             rpc::payload::AckPacket{ctx.raw_command});
 }
 void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
   (void)ctx;
   SPIService.end();
-  (void)sendFrame(rpc::StatusCode::STATUS_ACK, ctx.sequence_id);
+  (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id,
+             rpc::payload::AckPacket{ctx.raw_command});
 }
 void BridgeClass::_handleSpiTransfer(
     const bridge::router::CommandContext& ctx) {

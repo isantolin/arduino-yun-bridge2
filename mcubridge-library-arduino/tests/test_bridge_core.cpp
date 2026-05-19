@@ -170,6 +170,83 @@ void test_bridge_ack_malformed_timeout_paths() {
   Bridge.process();
 }
 
+void test_bridge_status_ack_uses_payload_command_id() {
+  BiStream stream;
+  reset_bridge(stream);
+  auto ba = TestAccessor::create(Bridge);
+  ba.onStartupStabilized();
+  ba.setSynchronized();
+
+  etl::array<uint8_t, 1> payload = {'X'};
+  TEST_ASSERT_TRUE(Bridge.sendFrame(
+      rpc::CommandId::CMD_CONSOLE_WRITE, 77,
+      etl::span<const uint8_t>(payload.data(), payload.size())));
+  TEST_ASSERT_TRUE(ba.isAwaitingAck());
+
+  rpc::Frame malformed_ack = {};
+  malformed_ack.header = {rpc::PROTOCOL_VERSION, 1,
+                          rpc::to_underlying(rpc::StatusCode::STATUS_ACK), 77};
+  static const etl::array<uint8_t, 1> malformed_payload = {0xC1};
+  malformed_ack.nonce.fill(0);
+  malformed_ack.tag.fill(0);
+  malformed_ack.payload =
+      etl::span<const uint8_t>(malformed_payload.data(), malformed_payload.size());
+  ba.dispatch(malformed_ack);
+  TEST_ASSERT_TRUE(ba.isAwaitingAck());
+
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> ack_payload;
+  rpc::Frame ack = {};
+  ack.header = {rpc::PROTOCOL_VERSION, 0,
+                rpc::to_underlying(rpc::StatusCode::STATUS_ACK), 77};
+  ack.nonce.fill(0);
+  ack.tag.fill(0);
+  ack.payload = etl::span<const uint8_t>(ack_payload.data(), ack_payload.size());
+  bridge::test::set_pb_payload(
+      ack, rpc::payload::AckPacket{
+               rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)});
+  ba.dispatch(ack);
+
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
+}
+
+void test_bridge_status_ack_emits_original_command_id() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  stream.tx_buf.clear();
+
+  TEST_ASSERT_TRUE(Bridge.send(
+      rpc::StatusCode::STATUS_ACK, 42,
+      rpc::payload::AckPacket{
+          rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)}));
+  TEST_ASSERT_TRUE(stream.tx_buf.len > 0);
+
+  const size_t encoded_len =
+      stream.tx_buf.data[stream.tx_buf.len - 1] == rpc::RPC_FRAME_DELIMITER
+          ? stream.tx_buf.len - 1
+          : stream.tx_buf.len;
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> decoded = {};
+  const size_t decoded_len =
+      TestCOBS::decode(stream.tx_buf.data.data(), encoded_len, decoded.data());
+  TEST_ASSERT_TRUE(decoded_len >= rpc::MIN_FRAME_SIZE);
+
+  rpc::FrameParser parser;
+  auto parsed_frame =
+      parser.parse(etl::span<const uint8_t>(decoded.data(), decoded_len));
+  TEST_ASSERT_TRUE(parsed_frame.has_value());
+  const rpc::Frame& ack = parsed_frame.value();
+  TEST_ASSERT_EQUAL_UINT16(rpc::to_underlying(rpc::StatusCode::STATUS_ACK),
+                           ack.header.command_id);
+  TEST_ASSERT_EQUAL_UINT16(42, ack.header.sequence_id);
+
+  JsonDocument doc;
+  auto parsed = rpc::Payload::parse<rpc::payload::AckPacket>(ack, doc);
+  TEST_ASSERT_TRUE(parsed.has_value());
+  TEST_ASSERT_EQUAL_UINT16(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE),
+                           parsed.value().command_id);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_begin);
@@ -179,5 +256,7 @@ int main() {
   RUN_TEST(test_bridge_flow_control);
   RUN_TEST(test_bridge_dedup_console_write_retry);
   RUN_TEST(test_bridge_ack_malformed_timeout_paths);
+  RUN_TEST(test_bridge_status_ack_uses_payload_command_id);
+  RUN_TEST(test_bridge_status_ack_emits_original_command_id);
   return UNITY_END();
 }

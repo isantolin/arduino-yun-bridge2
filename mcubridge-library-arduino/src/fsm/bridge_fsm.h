@@ -157,7 +157,10 @@ class FaultState
  public:
   // [SIL-2] Force hardware safe state on every entry to FAULT — regardless of
   // which event caused the transition (ACK timeout, handshake failure, etc.).
-  void on_enter_state() override { bridge::hal::forceSafeState(); }
+  etl::fsm_state_id_t on_enter_state() override {
+    bridge::hal::forceSafeState();
+    return No_State_Change;
+  }
 
   [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);

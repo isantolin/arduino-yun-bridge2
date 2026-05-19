@@ -1,15 +1,13 @@
 from typing import Any
 import asyncio
 
-import warnings
 import pytest
 from mcubridge.metrics import PrometheusExporter
 from mcubridge.state.context import SupervisorStats
 
+
 @pytest.mark.asyncio
 async def test_prometheus_exporter_serves_metrics(runtime_state: Any):
-    warnings.simplefilter("ignore", ResourceWarning)
-    warnings.simplefilter("ignore", pytest.PytestUnraisableExceptionWarning)
     runtime_state.file_storage_quota_bytes = 4096
     runtime_state.file_storage_bytes_used = 1024
     runtime_state.supervisor_stats = {

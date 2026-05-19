@@ -532,9 +532,12 @@ class RuntimeState(msgspec.Struct, weakref=True):
         if hasattr(self.mailbox_queue, 'cache'):
             with _sup:
                 cast(Any, self.mailbox_queue).cache.close()
+                self.mailbox_queue.cache = None
+
         if hasattr(self.mailbox_incoming_queue, 'cache'):
             with _sup:
                 cast(Any, self.mailbox_incoming_queue).cache.close()
+                self.mailbox_incoming_queue.cache = None
 
         self.mailbox_queue = collections.deque()
         self.mailbox_incoming_queue = collections.deque()

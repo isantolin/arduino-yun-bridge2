@@ -205,16 +205,8 @@ uint8_t getArchId() { return CURRENT_ARCH; }
   }
 
   Traits::reset();
-
-  // Spin until WDT fires (intentional [[noreturn]] halt).
-  // Includes memory fence to ensure clean transition.
-  struct Halt {
-    [[noreturn]] static void run() {
-      bridge::hal::memory_fence();
-      run();
-    }
-  };
-  Halt::run();
+  bridge::hal::memory_fence();
+  __builtin_trap();
 }
 
 }  // namespace bridge::hal

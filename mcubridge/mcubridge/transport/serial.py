@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import msgspec
 from cobs import cobs
+from cryptography.exceptions import InvalidTag
 import serial
 import serial_asyncio_fast
 import tenacity
@@ -167,8 +168,8 @@ class SerialTransport:
             try:
                 if self.service:
                     await self.service.on_serial_disconnected()
-            except Exception as e:
-                logger.error("Error in on_serial_disconnected hook: %s", e)
+            except (OSError, RuntimeError, ValueError, asyncio.TimeoutError, msgspec.MsgspecError) as exc:
+                logger.error("Error in on_serial_disconnected hook: %s", exc)
             if self.writer:
                 self.writer.close()
 
@@ -182,8 +183,8 @@ class SerialTransport:
                     s.dtr = True
 
             await asyncio.get_running_loop().run_in_executor(None, _pulse)
-        except Exception:
-            pass
+        except (serial.SerialException, OSError, ValueError) as exc:
+            logger.warning("Unable to toggle DTR on %s: %s", self.config.serial_port, exc)
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -191,8 +192,8 @@ class SerialTransport:
             self.writer.close()
             try:
                 await self.writer.wait_closed()
-            except Exception:
-                pass
+            except (ConnectionError, RuntimeError, OSError, AttributeError) as exc:
+                logger.warning("Serial writer close failed: %s", exc)
 
     async def _read_loop(self, reader: asyncio.StreamReader) -> None:
         while not self._stop_event.is_set():
@@ -206,7 +207,7 @@ class SerialTransport:
                 await reader.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError:
                 break
-            except Exception as exc:
+            except (OSError, RuntimeError, ValueError) as exc:
                 logger.error("Error in _read_loop: %s", exc)
                 break
 
@@ -218,8 +219,8 @@ class SerialTransport:
                     self._switch_local_baudrate(self.config.serial_baud)
                     self._negotiation_future.set_result(True)
                     return
-            except Exception:
-                pass
+            except (cobs.DecodeError, ValueError, msgspec.DecodeError, msgspec.ValidationError) as exc:
+                logger.debug("Ignoring non-baud negotiation frame during UART switch: %s", exc)
         if self.loop:
             self.loop.create_task(self._async_process_packet_with_limit(encoded_packet))
 
@@ -242,18 +243,18 @@ class SerialTransport:
             if self.state.is_synchronized and self.state.link_aead_cipher and not is_excluded:
                 try:
                     payload = self.state.link_aead_cipher.decrypt(frame.nonce, payload + frame.tag, frame.header_bytes)
-                except Exception as e:
-                    raise ValueError(f"AEAD Authentication Failed: {e}") from e
+                except InvalidTag as exc:
+                    raise ValueError("AEAD authentication failed") from exc
             self._correlate_frame(cmd_id, payload)
             if self.service:
                 await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
             self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
             self.state.metrics.serial_frames_received.inc()
-        except (cobs.DecodeError, ValueError, msgspec.DecodeError) as exc:
+        except (cobs.DecodeError, ValueError, msgspec.DecodeError, msgspec.ValidationError) as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
             await self._check_baudrate_fallback()
-        except Exception as exc:
+        except (OSError, RuntimeError, TypeError) as exc:
             logger.error("[SERIAL <- MCU] [ERROR]: %s", exc)
             self.state.serial_decode_errors += 1
 
@@ -264,7 +265,7 @@ class SerialTransport:
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if payload:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(msgspec.DecodeError, msgspec.ValidationError, TypeError, ValueError):
                     ack_target = msgspec.msgpack.decode(payload, type=AckPacket).command_id
             if ack_target != pending.command_id:
                 return
@@ -347,9 +348,11 @@ class SerialTransport:
                         raise self._FatalSerialError(pending.failure_status)
                     raise self._RetryableSerialError()
             return True
-        except Exception as e:
-            st = getattr(e, "status", Status.TIMEOUT.value)
-            pending.mark_failure(st)
+        except self._FatalSerialError as exc:
+            pending.mark_failure(exc.status)
+            return False
+        except self._RetryableSerialError:
+            pending.mark_failure(Status.TIMEOUT.value)
             return False
         finally:
             async with self._flow_lock:
@@ -364,6 +367,12 @@ class SerialTransport:
         try:
             ok = await self._send_tracked_internal(pending, payload)
             return pending.response_payload if ok else None
+        except self._FatalSerialError as exc:
+            pending.mark_failure(exc.status)
+            return None
+        except self._RetryableSerialError:
+            pending.mark_failure(Status.TIMEOUT.value)
+            return None
         finally:
             async with self._flow_lock:
                 self._current = None
@@ -413,7 +422,8 @@ class SerialTransport:
             try:
                 async with asyncio.timeout(30.0):
                     await self.state.serial_tx_allowed.wait()
-            except Exception:
+            except asyncio.TimeoutError:
+                logger.warning("Timed out waiting for serial TX window")
                 return False
         if seq_id is None:
             self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
@@ -443,8 +453,12 @@ class SerialTransport:
                 command_id,
                 encoded.hex(" ").upper(),
             )
-        self.writer.write(encoded)
-        await self.writer.drain()
+        try:
+            self.writer.write(encoded)
+            await self.writer.drain()
+        except (OSError, RuntimeError, AttributeError) as exc:
+            logger.error("Serial frame write failed: %s", exc)
+            return False
         self.state.metrics.serial_bytes_sent.inc(len(encoded))
         self.state.metrics.serial_frames_sent.inc()
         return True
@@ -462,7 +476,8 @@ class SerialTransport:
                 await asyncio.wait_for(self._negotiation_future, timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
             await asyncio.sleep(0.1)
             return True
-        except Exception:
+        except (asyncio.TimeoutError, RuntimeError, OSError, ValueError) as exc:
+            logger.warning("Baudrate negotiation failed for %d baud: %s", target_baud, exc)
             return False
         finally:
             self._negotiating = False

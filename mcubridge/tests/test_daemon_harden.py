@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, cast
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -80,35 +80,18 @@ async def test_supervisor_fatal_exception(daemon_setup: BridgeDaemon) -> None:
 
 
 def test_app_cli_overrides() -> None:
-    """Test CLI entry point with various overrides."""
+    """CLI no longer accepts operational overrides; UCI is authoritative."""
     with patch("mcubridge.daemon.main") as mock_main:
-        app(
-            [
-                "--serial-port",
-                "/dev/ttyUSB0",
-                "--mqtt-host",
-                "10.0.0.1",
-                "--mqtt-tls",
-                "1",
-                "--allowed-commands",
-                "ls,df",
-                "--debug",
-            ]
-        )
-
-        overrides = cast(dict[str, Any], mock_main.call_args[0][0])
-        assert overrides["serial_port"] == "/dev/ttyUSB0"
-        assert overrides["mqtt_host"] == "10.0.0.1"
-        assert overrides["mqtt_tls"] is True
-        assert overrides["allowed_commands"] == ["ls", "df"]
-        assert overrides["debug"] is True
+        with pytest.raises(SystemExit):
+            app(["--serial-port", "/dev/ttyUSB0"])
+        mock_main.assert_not_called()
 
 
 def test_main_crypto_post_failure() -> None:
     """Verify daemon exits if FIPS POST fails."""
     with patch("mcubridge.daemon.verify_crypto_integrity", return_value=False):
         with pytest.raises(SystemExit) as exc:
-            main({})
+            main()
         assert exc.value.code == 1
 
 
@@ -116,11 +99,13 @@ def test_main_insecure_secret_warning() -> None:
     """Verify MQTT is disabled if default secret is used."""
     from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET
 
+    insecure_config = RuntimeConfig(serial_shared_secret=DEFAULT_SERIAL_SHARED_SECRET)
     with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
-        with patch("mcubridge.daemon.BridgeDaemon") as mock_daemon_cls:
-            with patch("asyncio.Runner"):
-                main({"serial_shared_secret": DEFAULT_SERIAL_SHARED_SECRET})
+        with patch("mcubridge.daemon.load_runtime_config", return_value=insecure_config):
+            with patch("mcubridge.daemon.BridgeDaemon") as mock_daemon_cls:
+                with patch("asyncio.Runner"):
+                    main()
 
-                # Check that config passed to BridgeDaemon has mqtt_enabled=False
-                config = cast(RuntimeConfig, mock_daemon_cls.call_args[0][0])
-                assert config.mqtt_enabled is False
+                    # Check that config passed to BridgeDaemon has mqtt_enabled=False
+                    config = cast(RuntimeConfig, mock_daemon_cls.call_args[0][0])
+                    assert config.mqtt_enabled is False

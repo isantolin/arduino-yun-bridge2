@@ -151,7 +151,7 @@ class BridgeDaemon:
         except (ConnectionError, OSError, asyncio.TimeoutError) as exc:
             logger.critical("MQTT transport fatal error: %s", exc)
             raise
-        except BaseExceptionGroup as eg:
+        except ExceptionGroup as eg:
             for exc in eg.exceptions:
                 logger.critical("MQTT transport fatal error: %s", exc)
             raise
@@ -277,7 +277,17 @@ class BridgeDaemon:
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
-        except* Exception as exc_group:
+        except* (
+            OSError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            asyncio.TimeoutError,
+            msgspec.MsgspecError,
+            aiomqtt.MqttError,
+            tenacity.RetryError,
+            SerialHandshakeFatal,
+        ) as exc_group:
             # [SIL-2] Iterative reduction for exception logging
             [log.critical("Fatal task error: %s", e, exc_info=e) for e in exc_group.exceptions]
             raise
@@ -334,63 +344,21 @@ class BridgeDaemon:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mcubridge",
-        description="Main entry point for the MCU Bridge daemon. Arduino MCU Bridge Daemon v2",
+        description="Main entry point for the MCU Bridge daemon. Runtime configuration is loaded from UCI.",
         add_help=True,
     )
-    parser.add_argument("--serial-port", default=None, help="Serial port to use")
-    parser.add_argument("--serial-baud", type=int, default=None, help="Serial baud rate")
-    parser.add_argument("--mqtt-host", default=None, help="MQTT host")
-    parser.add_argument("--mqtt-port", type=int, default=None, help="MQTT port")
-    parser.add_argument("--mqtt-tls", type=int, default=None, help="Use TLS for MQTT (0 or 1)")
-    parser.add_argument(
-        "--serial-shared-secret",
-        "--serial-shared_secret",
-        dest="serial_shared_secret",
-        default=None,
-        help="Shared secret for serial link",
-    )
-    parser.add_argument(
-        "--allowed-commands",
-        default=None,
-        help="Comma-separated list of allowed shell commands",
-    )
-    parser.add_argument(
-        "--non-interactive",
-        action="store_true",
-        default=False,
-        help="Enable non-interactive mode",
-    )
-    parser.add_argument("--debug", action="store_true", default=False, help="Enable debug logging")
     return parser
 
 
 def app(argv: list[str] | None = None) -> None:
     """CLI entry point for the MCU Bridge daemon."""
-    args = _build_arg_parser().parse_args(argv)
-
-    _ac = args.allowed_commands
-    overrides: dict[str, Any] = {
-        k: v
-        for k, v in {
-            "serial_port": args.serial_port,
-            "serial_baud": args.serial_baud,
-            "mqtt_host": args.mqtt_host,
-            "mqtt_port": args.mqtt_port,
-            "mqtt_tls": bool(args.mqtt_tls) if args.mqtt_tls is not None else None,
-            "serial_shared_secret": args.serial_shared_secret,
-            "non_interactive": args.non_interactive or None,
-            "debug": args.debug or None,
-            "allowed_commands": ((_ac.split(",") if _ac != "*" else "*") if _ac else None),
-        }.items()
-        if v is not None
-    }
-
-    main(overrides)
+    _build_arg_parser().parse_args(argv)
+    main()
 
 
-def main(overrides: dict[str, Any]) -> None:
-    """Run the MCU Bridge daemon with the given configuration overrides."""
-    config = load_runtime_config(overrides)
+def main() -> None:
+    """Run the MCU Bridge daemon using the UCI-backed runtime configuration."""
+    config = load_runtime_config()
     configure_logging(config)
 
     # [MIL-SPEC] FIPS 140-3 Power-On Self-Tests (POST)
@@ -439,13 +407,32 @@ def main(overrides: dict[str, Any]) -> None:
         TypeError,
         asyncio.TimeoutError,
         msgspec.MsgspecError,
+        aiomqtt.MqttError,
+        SerialHandshakeFatal,
         tenacity.RetryError,
     ) as exc:
         logger.critical("Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError))
         sys.exit(1)
-    except BaseException as exc:
-        # [SIL-2] Catch-all for unhandled system-level errors
-        logger.critical("Unhandled system error: %s", exc, exc_info=exc)
+    except ExceptionGroup as exc_group:
+        handled, unhandled = exc_group.split(
+            (
+                OSError,
+                RuntimeError,
+                ValueError,
+                TypeError,
+                asyncio.TimeoutError,
+                msgspec.MsgspecError,
+                aiomqtt.MqttError,
+                SerialHandshakeFatal,
+                tenacity.RetryError,
+            )
+        )
+        if handled is None:
+            raise
+        for exc in handled.exceptions:
+            logger.critical("Fatal grouped error: %s", exc, exc_info=exc)
+        if unhandled is not None:
+            raise unhandled
         sys.exit(1)
     finally:
         if daemon is not None:

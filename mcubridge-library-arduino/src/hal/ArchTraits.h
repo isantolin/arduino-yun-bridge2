@@ -45,11 +45,15 @@ struct ArchTraits {
       wdt_enable(WDTO_15MS);
       static etl::array<volatile uint8_t, 1> s = {0};
       etl::for_each(s.begin(), s.end(), [](volatile uint8_t&) {});
-      reset();
+      asm volatile("" ::: "memory");
+      ::delay(20);
+      __builtin_trap();
 #endif
     } else if constexpr (Id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
       ESP.restart();
+      ::delay(20);
+      __builtin_trap();
 #endif
     }
   }

@@ -156,6 +156,10 @@ class BridgeService:
             Command.CMD_ANALOG_READ_RESP.value: self._gen_handler(
                 AnalogReadResponsePacket, lambda p: self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
             ),
+            Command.CMD_GET_VERSION_RESP.value: self._gen_handler(VersionResponsePacket, self._on_mcu_version_resp),
+            Command.CMD_GET_FREE_MEMORY_RESP.value: self._gen_handler(
+                FreeMemoryResponsePacket, self._on_mcu_free_memory_resp
+            ),
             Command.CMD_SPI_TRANSFER_RESP.value: self._gen_handler(SpiTransferResponsePacket, self._on_mcu_spi_resp),
             Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
             Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
@@ -462,6 +466,13 @@ class BridgeService:
             QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"), p.data)
         )
 
+    async def _on_mcu_version_resp(self, p: VersionResponsePacket) -> None:
+        self.state.mcu_version = (p.major, p.minor, p.patch)
+        logger.debug("MCU > VERSION RESP: %d.%d.%d", p.major, p.minor, p.patch)
+
+    async def _on_mcu_free_memory_resp(self, p: FreeMemoryResponsePacket) -> None:
+        logger.debug("MCU > FREE MEMORY RESP: %d", p.value)
+
     async def _on_mcu_ack(self, seq: int, payload: bytes) -> None:
         with contextlib.suppress(msgspec.MsgspecError):
             p = msgspec.msgpack.decode(payload, type=AckPacket)
@@ -577,29 +588,52 @@ class BridgeService:
                 await asyncio.to_thread(path.unlink)
 
     async def _handle_mqtt_file_mcu_read(self, ctx: Message, target: str) -> None:
+        response_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.FILE,
+            FileAction.READ,
+            protocol.MQTT_SUFFIX_RESPONSE,
+            target,
+        )
         async with self._mcu_read_lock:
             self._pending_mcu_read = _PendingMcuRead(target, asyncio.get_running_loop().create_future())
-            if await self.serial.send(
-                Command.CMD_FILE_READ.value, msgspec.msgpack.encode(FileReadPacket(path=target[4:]))
+            if not await self.serial.send(
+                Command.CMD_FILE_READ.value,
+                msgspec.msgpack.encode(FileReadPacket(path=target[4:])),
             ):
-                try:
-                    res = await asyncio.wait_for(self._pending_mcu_read.future, 30.0)
-                    await self.enqueue_mqtt(
-                        QueuedPublish(
-                            topic_path(
-                                self.state.mqtt_topic_prefix,
-                                Topic.FILE,
-                                FileAction.READ,
-                                protocol.MQTT_SUFFIX_RESPONSE,
-                                target,
-                            ),
-                            res,
-                        ),
-                        reply_context=ctx,
-                    )
-                except asyncio.TimeoutError:
-                    pass
-            self._pending_mcu_read = None
+                logger.warning("MCU file read dispatch failed", target=target)
+                await self.enqueue_mqtt(
+                    QueuedPublish(
+                        response_topic,
+                        b"error:mcu_file_read_dispatch_failed",
+                        user_properties=(("bridge-error", "mcu-file-read-dispatch-failed"),),
+                    ),
+                    reply_context=ctx,
+                )
+                self._pending_mcu_read = None
+                return
+            try:
+                timeout_seconds = max(0.1, self.state.serial_response_timeout_ms / 1000.0)
+                res = await asyncio.wait_for(self._pending_mcu_read.future, timeout_seconds)
+                await self.enqueue_mqtt(
+                    QueuedPublish(
+                        response_topic,
+                        res,
+                    ),
+                    reply_context=ctx,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Timed out waiting for MCU file read response", target=target)
+                await self.enqueue_mqtt(
+                    QueuedPublish(
+                        response_topic,
+                        b"error:mcu_file_read_timeout",
+                        user_properties=(("bridge-error", "mcu-file-read-timeout"),),
+                    ),
+                    reply_context=ctx,
+                )
+            finally:
+                self._pending_mcu_read = None
 
     async def _handle_mqtt_shell(self, route: TopicRoute, inbound: Message) -> None:
         act = route.segments[0] if route.segments else None
@@ -612,31 +646,23 @@ class BridgeService:
                     else pl.decode().strip()
                 )
                 pid = await self._run_process(cmd)
-                await self.enqueue_mqtt(
-                    QueuedPublish(
-                        topic_path(
-                            self.state.mqtt_topic_prefix,
-                            Topic.SHELL,
-                            ShellAction.RUN_ASYNC,
-                            protocol.MQTT_SUFFIX_RESPONSE,
-                        ),
-                        str(pid).encode() if pid else b"error:internal",
+            except (msgspec.DecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
+                logger.warning("MQTT shell run_async rejected", error=str(exc))
+                payload = f"error:{exc}".encode()
+            else:
+                payload = str(pid).encode() if pid else b"error:internal"
+            await self.enqueue_mqtt(
+                QueuedPublish(
+                    topic_path(
+                        self.state.mqtt_topic_prefix,
+                        Topic.SHELL,
+                        ShellAction.RUN_ASYNC,
+                        protocol.MQTT_SUFFIX_RESPONSE,
                     ),
-                    reply_context=inbound,
-                )
-            except Exception as exc:
-                await self.enqueue_mqtt(
-                    QueuedPublish(
-                        topic_path(
-                            self.state.mqtt_topic_prefix,
-                            Topic.SHELL,
-                            ShellAction.RUN_ASYNC,
-                            protocol.MQTT_SUFFIX_RESPONSE,
-                        ),
-                        f"error:{exc}".encode(),
-                    ),
-                    reply_context=inbound,
-                )
+                    payload,
+                ),
+                reply_context=inbound,
+            )
         elif act in (ShellAction.POLL, ShellAction.KILL) and len(route.segments) == 2:
             pid = int(route.segments[1])
             if act == ShellAction.POLL:
@@ -668,7 +694,7 @@ class BridgeService:
                 try:
                     p = msgspec.json.decode(inbound.payload, type=SpiConfigPacket)
                     await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, msgspec.msgpack.encode(p))
-                except Exception as exc:
+                except (msgspec.DecodeError, msgspec.ValidationError, TypeError, ValueError) as exc:
                     logger.error("SPI config error: %s", exc)
             case SpiAction.TRANSFER:
                 if inbound.payload:
@@ -870,8 +896,8 @@ class BridgeService:
             await asyncio.sleep(0.5)
             if h.returncode is None:
                 os.killpg(h.pid, signal.SIGKILL)
-        except Exception:
-            pass
+        except (OSError, ProcessLookupError) as exc:
+            logger.warning("Process termination failed", pid=pid, error=str(exc))
         self._finalize_process(pid)
         return True
 

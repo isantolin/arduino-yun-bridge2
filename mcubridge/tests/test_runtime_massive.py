@@ -178,8 +178,21 @@ async def test_runtime_mqtt_brute_force(
     service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     """Test MQTT dispatcher with various topics and payloads."""
-    service, state, _ = service_setup
+    service, state, serial = service_setup
     state.mark_synchronized()
+
+    async def send_side_effect(command_id: int, payload: bytes) -> bool:
+        if command_id == Command.CMD_FILE_READ.value:
+
+            async def complete_file_read() -> None:
+                file_read_handler = service.mcu_registry[Command.CMD_FILE_READ_RESP.value]
+                await file_read_handler(1, msgspec.msgpack.encode(FileReadResponsePacket(content=b"abc")))
+                await file_read_handler(1, msgspec.msgpack.encode(FileReadResponsePacket(content=b"")))
+
+            asyncio.get_running_loop().create_task(complete_file_read())
+        return True
+
+    serial.send.side_effect = send_side_effect
 
     # Use actual protocol constants for topics
     topics = [

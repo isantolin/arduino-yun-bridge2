@@ -77,7 +77,7 @@ from ..protocol.structures import (
     VersionResponsePacket,
 )
 from ..protocol.topics import Topic, parse_topic, topic_path
-from ..state.context import RuntimeState
+from ..state.context import ProcessContext, RuntimeState
 
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
@@ -98,15 +98,7 @@ _STATUS_VALUES: Final = {s.value for s in Status}
 class _PendingMcuRead:
     identifier: str
     future: asyncio.Future[bytes]
-    chunks: list[bytes] = field(default_factory=cast(Callable[[], list[bytes]], list))
-
-
-class ProcessContext:
-    __slots__ = ("handle", "io_lock", "exit_code")
-    def __init__(self, handle: asyncio.subprocess.Process) -> None:
-        self.handle = handle
-        self.io_lock = asyncio.Lock()
-        self.exit_code = 0
+    chunks: list[bytes] = field(default_factory=list)
 
 
 class BridgeService:
@@ -155,8 +147,12 @@ class BridgeService:
             Command.CMD_PROCESS_RUN_ASYNC.value: self._gen_handler(ProcessRunAsyncPacket, self._on_mcu_process_run),
             Command.CMD_PROCESS_POLL.value: self._gen_handler(ProcessPollPacket, self._on_mcu_process_poll),
             Command.CMD_PROCESS_KILL.value: self._gen_handler(ProcessKillPacket, lambda p: self._stop_process(p.pid)),
-            Command.CMD_DIGITAL_READ.value: lambda _, __: self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available"),
-            Command.CMD_ANALOG_READ.value: lambda _, __: self.serial.send(Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available"),
+            Command.CMD_DIGITAL_READ.value: lambda _, __: self.serial.send(
+                Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available"
+            ),
+            Command.CMD_ANALOG_READ.value: lambda _, __: self.serial.send(
+                Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available"
+            ),
             Command.CMD_DIGITAL_READ_RESP.value: self._gen_handler(
                 DigitalReadResponsePacket,
                 lambda p: self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads),
@@ -210,20 +206,20 @@ class BridgeService:
 
         topic = message.topic_name
         props = Properties(PacketTypes.PUBLISH)
-        
+
         if reply_context is not None and reply_context.properties:
             r_props = reply_context.properties
             if rt := getattr(r_props, "ResponseTopic", None):
                 topic = rt
             if cd := getattr(r_props, "CorrelationData", None):
                 props.CorrelationData = cd
-            
+
             user_props = list(message.user_properties) + [("bridge-request-topic", str(reply_context.topic))]
             if user_props:
                 props.UserProperty = user_props
         elif message.user_properties:
             props.UserProperty = list(message.user_properties)
-            
+
         if message.content_type:
             props.ContentType = message.content_type
         if message.payload_format_indicator is not None:
@@ -841,9 +837,7 @@ class BridgeService:
                 ctx = self.state.running_processes.get(pid)
             if ctx:
                 try:
-                    ctx.exit_code = await asyncio.wait_for(
-                        ctx.handle.wait(), float(self.state.process_timeout)
-                    )
+                    ctx.exit_code = await asyncio.wait_for(ctx.handle.wait(), float(self.state.process_timeout))
                 except asyncio.TimeoutError:
                     import os
                     import signal
@@ -872,7 +866,11 @@ class BridgeService:
                 o, to = await _rd(ctx.handle.stdout)
                 e, te = await _rd(ctx.handle.stderr)
                 fin = ctx.handle.returncode is not None
-                if fin and (ctx.handle.stdout is None or ctx.handle.stdout.at_eof()) and (ctx.handle.stderr is None or ctx.handle.stderr.at_eof()):
+                if (
+                    fin
+                    and (ctx.handle.stdout is None or ctx.handle.stdout.at_eof())
+                    and (ctx.handle.stderr is None or ctx.handle.stderr.at_eof())
+                ):
                     self._finalize_process(pid)
                 return ProcessOutputBatch(Status.OK.value, ctx.exit_code, o, e, fin, to, te)
 
@@ -905,6 +903,15 @@ class BridgeService:
 
     async def _write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:
+            import shutil
+            try:
+                usage = shutil.disk_usage(self.config.file_system_root)
+                self.state.file_storage_bytes_used = usage.used
+                if usage.free < len(data):
+                    self.state.file_storage_limit_rejections += 1
+                    return False
+            except OSError:
+                pass
             path.parent.mkdir(parents=True, exist_ok=True)
             await asyncio.to_thread(path.write_bytes, data)
             return True

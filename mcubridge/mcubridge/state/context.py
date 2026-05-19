@@ -12,9 +12,6 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast, TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from mcubridge.services.runtime import ProcessContext
-
 import diskcache
 import msgspec
 import structlog
@@ -85,6 +82,15 @@ def collect_system_metrics() -> dict[str, Any]:
     return {}
 
 
+class ProcessContext:
+    __slots__ = ("handle", "io_lock", "exit_code")
+
+    def __init__(self, handle: asyncio.subprocess.Process) -> None:
+        self.handle = handle
+        self.io_lock = asyncio.Lock()
+        self.exit_code = 0
+
+
 class RuntimeState(msgspec.Struct, weakref=True):
     """Aggregated mutable state shared across the daemon layers."""
 
@@ -134,9 +140,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
     mailbox_incoming_queue: collections.deque[bytes] = msgspec.field(
         default_factory=lambda: cast(collections.deque[bytes], collections.deque())
     )
-
-    _mailbox_queue_cache: diskcache.Cache | None = None
-    _mailbox_incoming_queue_cache: diskcache.Cache | None = None
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
@@ -268,23 +271,20 @@ class RuntimeState(msgspec.Struct, weakref=True):
         )
 
     def mailbox_queue_depth(self) -> int:
-        """Return mailbox outgoing queue depth with diskcache context when available."""
-        cache = self._mailbox_queue_cache
-        if cache is not None:
-            with cast(Any, cache):
-                return int(len(self.mailbox_queue))
         return int(len(self.mailbox_queue))
 
     def mailbox_incoming_queue_depth(self) -> int:
-        """Return mailbox incoming queue depth with diskcache context when available."""
-        cache = self._mailbox_incoming_queue_cache
-        if cache is not None:
-            with cast(Any, cache):
-                return int(len(self.mailbox_incoming_queue))
         return int(len(self.mailbox_incoming_queue))
 
     def configure(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
+
+        if hasattr(self.mailbox_queue, 'cache'):
+            with _sup:
+                cast(Any, self.mailbox_queue).cache.close()
+        if hasattr(self.mailbox_incoming_queue, 'cache'):
+            with _sup:
+                cast(Any, self.mailbox_incoming_queue).cache.close()
 
         # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
         if self.datastore_cache is not None:
@@ -292,49 +292,27 @@ class RuntimeState(msgspec.Struct, weakref=True):
                 cast(Any, self.datastore_cache).close()
             self.datastore_cache = None
 
-        if self._mailbox_queue_cache is not None:
-            cast(Any, self._mailbox_queue_cache).close()
-            self._mailbox_queue_cache = None
-        if self._mailbox_incoming_queue_cache is not None:
-            cast(Any, self._mailbox_incoming_queue_cache).close()
-            self._mailbox_incoming_queue_cache = None
-
         # Re-initialize transient queues
         self.console_to_mcu_queue = collections.deque[bytes](maxlen=self.mailbox_queue_limit)
 
         def _create_spool(
             subdir: str,
-        ) -> tuple[Any, diskcache.Cache | None]:
+        ) -> Any:
             directory = None
             if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
                 directory = Path(self.file_system_root) / subdir
 
             if directory:
-                cache = None
                 try:
                     directory.mkdir(parents=True, exist_ok=True)
-                    cache = diskcache.Cache(str(directory))
-                    dc_class: Any = diskcache.Deque
-                    dq: Any = dc_class.fromcache(cache)
-                    return (
-                        dq,
-                        cache,
-                    )
+                    return diskcache.Deque(directory=str(directory))
                 except (OSError, RuntimeError, sqlite3.Error):
-                    if cache is not None:
-                        cast(Any, cache).close()
                     logger.warning("Spool '%s' falling back to RAM", subdir)
 
-            return (
-                cast(
-                    Any,
-                    collections.deque[bytes](maxlen=self.mailbox_queue_limit),
-                ),
-                None,
-            )
+            return cast(Any, collections.deque[bytes](maxlen=self.mailbox_queue_limit))
 
-        self.mailbox_queue, self._mailbox_queue_cache = _create_spool("mailbox_out")
-        self.mailbox_incoming_queue, self._mailbox_incoming_queue_cache = _create_spool("mailbox_in")
+        self.mailbox_queue = _create_spool("mailbox_out")
+        self.mailbox_incoming_queue = _create_spool("mailbox_in")
 
         # [SIL-2] Initialize datastore with diskcache for ACID persistence
         ds_dir = None
@@ -551,6 +529,13 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
         # [SIL-2] Aggressive Resource Eradication to prevent ResourceWarnings.
         # 1. Nullify high-level wrappers first to drop references to the underlying caches.
+        if hasattr(self.mailbox_queue, 'cache'):
+            with _sup:
+                cast(Any, self.mailbox_queue).cache.close()
+        if hasattr(self.mailbox_incoming_queue, 'cache'):
+            with _sup:
+                cast(Any, self.mailbox_incoming_queue).cache.close()
+
         self.mailbox_queue = collections.deque()
         self.mailbox_incoming_queue = collections.deque()
         self.console_to_mcu_queue = collections.deque()
@@ -560,16 +545,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
             with _sup:
                 cast(Any, self.datastore_cache).close()
             self.datastore_cache = None
-
-        if self._mailbox_queue_cache is not None:
-            with _sup:
-                cast(Any, self._mailbox_queue_cache).close()
-            self._mailbox_queue_cache = None
-
-        if self._mailbox_incoming_queue_cache is not None:
-            with _sup:
-                cast(Any, self._mailbox_incoming_queue_cache).close()
-            self._mailbox_incoming_queue_cache = None
 
         # 3. Drain and reset the MQTT queue.
         while not self.mqtt_publish_queue.empty():

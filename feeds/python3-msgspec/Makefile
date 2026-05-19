@@ -5,7 +5,7 @@ PKG_VERSION:=0.21.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=msgspec
-PKG_HASH:=692349e588fde322875f8d3025ac01689fead5901e7fb18d6870a44519d62a29
+PKG_HASH:=2313508e394b0d208f8f56892ca9b2799e2561329de9763b19619595a6c0f72c
 
 PKG_BUILD_DEPENDS:=python-setuptools/host python-build/host python-installer/host python-wheel/host
 

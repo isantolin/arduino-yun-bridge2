@@ -10,7 +10,10 @@ import sqlite3
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Final, TypeVar, cast
+from typing import Any, Final, TypeVar, cast, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mcubridge.services.runtime import ProcessContext
 
 import diskcache
 import msgspec
@@ -117,19 +120,19 @@ class RuntimeState(msgspec.Struct, weakref=True):
             self.link_sync_event.set()
 
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=asyncio.Queue
+        default_factory=lambda: cast(asyncio.Queue[QueuedPublish], asyncio.Queue())
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=dict)
+    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
     allow_non_tmp_paths: bool = False
     datastore_cache: diskcache.Cache | None = None
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
-    mailbox_queue: Any = msgspec.field(
-        default_factory=collections.deque,
+    mailbox_queue: collections.deque[bytes] = msgspec.field(
+        default_factory=lambda: cast(collections.deque[bytes], collections.deque())
     )
-    mailbox_incoming_queue: Any = msgspec.field(
-        default_factory=collections.deque,
+    mailbox_incoming_queue: collections.deque[bytes] = msgspec.field(
+        default_factory=lambda: cast(collections.deque[bytes], collections.deque())
     )
 
     _mailbox_queue_cache: diskcache.Cache | None = None
@@ -137,16 +140,16 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    console_to_mcu_queue: Any = msgspec.field(
-        default_factory=collections.deque,
+    console_to_mcu_queue: collections.deque[bytes] = msgspec.field(
+        default_factory=lambda: cast(collections.deque[bytes], collections.deque())
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
 
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
-    running_processes: dict[int, Any] = msgspec.field(
-        default_factory=dict
+    running_processes: dict[int, "ProcessContext"] = msgspec.field(
+        default_factory=lambda: cast(dict[int, "ProcessContext"], {})
     )
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
     next_pid: int = 1
@@ -166,10 +169,10 @@ class RuntimeState(msgspec.Struct, weakref=True):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
     pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=collections.deque,
+        default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque())
     )
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
-        default_factory=collections.deque,
+        default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque())
     )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
@@ -216,9 +219,9 @@ class RuntimeState(msgspec.Struct, weakref=True):
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counts: dict[str, int] = msgspec.field(default_factory=dict)
+    mcu_status_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
     supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
-        default_factory=dict
+        default_factory=lambda: cast(dict[str, SupervisorStats], {})
     )
     supervisor_failures: int = 0
     last_supervisor_error: str | None = None

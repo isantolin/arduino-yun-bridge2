@@ -21,7 +21,8 @@ from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import create_runtime_state
+from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
 if TYPE_CHECKING:

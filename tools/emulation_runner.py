@@ -31,6 +31,8 @@ except ModuleNotFoundError as exc:
     from mcubridge.protocol import protocol
 
 import argparse
+import json
+import tempfile
 
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
@@ -99,6 +101,36 @@ def _daemon_worker(daemon_proc: subprocess.Popen[str], state: EmulationState) ->
             state.on_line(line, "daemon")
 
 
+def _write_fake_uci_module(base_dir: Path, config: dict[str, str]) -> Path:
+    module_path = base_dir / "uci.py"
+    module_source = (
+        "from __future__ import annotations\n"
+        "from typing import Any\n\n"
+        f"_CONFIG = {json.dumps(config, sort_keys=True)!r}\n\n"
+        "class Uci:\n"
+        "    def __enter__(self) -> 'Uci':\n"
+        "        return self\n\n"
+        "    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:\n"
+        "        return False\n\n"
+        "    def get_all(self, package: str, section: str | None = None) -> dict[str, str]:\n"
+        "        if package != 'mcubridge':\n"
+        "            return {}\n"
+        "        if section not in (None, 'general'):\n"
+        "            return {}\n"
+        "        return dict(__import__('json').loads(_CONFIG))\n\n"
+        "    def get(self, package: str, section: str, option: str) -> str:\n"
+        "        return self.get_all(package, section)[option]\n\n"
+        "    def set(self, package: str, section: str, option: str, value: str) -> None:\n"
+        "        raise RuntimeError('fake UCI is read-only in e2e runner')\n\n"
+        "    def commit(self, package: str) -> None:\n"
+        "        return None\n\n"
+        "class UCI(Uci):\n"
+        "    pass\n"
+    )
+    module_path.write_text(module_source, encoding="utf-8")
+    return module_path
+
+
 def run_emulation(
     firmware_path: Path,
     package_root: Path = Path("."),
@@ -157,86 +189,83 @@ def run_emulation(
 
     # 3. Start Daemon
     p_root = package_root.absolute()
-    daemon_env = {
-        **os.environ,
-        "PYTHONUNBUFFERED": "1",
-        "PYTHONPATH": f"{p_root}:{p_root}/mcubridge:{p_root}/mcubridge-client-examples",
-        "MCUBRIDGE_SERIAL_PORT": SOCAT_PORT0,
-        "MCUBRIDGE_SERIAL_BAUD": str(protocol.DEFAULT_BAUDRATE),
-        "MCUBRIDGE_MQTT_HOST": MQTT_HOST,
-        "MCUBRIDGE_MQTT_PORT": str(MQTT_PORT),
-        "MCUBRIDGE_MQTT_TLS": "0",
-        "MCUBRIDGE_SERIAL_SHARED_SECRET": "DEBUG_INSECURE",
-        "MCUBRIDGE_LOG_LEVEL": "DEBUG",
-        "MCUBRIDGE_LOG_STREAM": "1",
-        "MCUBRIDGE_ALLOWED_COMMANDS": "*",
-        "MCUBRIDGE_NON_INTERACTIVE": "1",
-    }
-
-    logger.info("Starting Daemon...")
-    daemon_proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-u",
-            "-m",
-            "mcubridge.daemon",
-            "--debug",
-            "--serial-port",
-            SOCAT_PORT0,
-            "--serial-baud",
-            str(protocol.DEFAULT_BAUDRATE),
-            "--mqtt-host",
-            MQTT_HOST,
-            "--mqtt-port",
-            str(MQTT_PORT),
-            "--mqtt-tls",
-            "0",
-            "--serial-shared-secret",
-            "DEBUG_INSECURE",
-            "--allowed-commands",
-            "*",
-            "--non-interactive",
-        ],
-        env=daemon_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    _start_worker_thread(_daemon_worker, "daemon-worker", daemon_proc, state)
-
-    # 4. Run Test
     all_success = True
+    daemon_proc: subprocess.Popen[str] | None = None
     try:
-        logger.info("Waiting for stability (15s)...")
-        time.sleep(15)
-        if run_scripts:
-            for script in run_scripts:
-                sys.stdout.write(f"\n{'=' * 80}\n")
-                sys.stdout.write(f"=== RUNNING E2E TEST: {script}\n")
-                sys.stdout.write(f"{'=' * 80}\n\n")
-                sys.stdout.flush()
+        with tempfile.TemporaryDirectory(prefix="mcubridge-e2e-uci-", dir="/tmp") as uci_tmp:
+            uci_dir = Path(uci_tmp)
+            _write_fake_uci_module(
+                uci_dir,
+                {
+                    "serial_port": SOCAT_PORT0,
+                    "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+                    "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
+                    "mqtt_host": MQTT_HOST,
+                    "mqtt_port": str(MQTT_PORT),
+                    "mqtt_tls": "0",
+                    "mqtt_tls_insecure": "1",
+                    "serial_shared_secret": "DEBUG_INSECURE",
+                    "allowed_commands": "*",
+                    "debug": "1",
+                },
+            )
 
-                try:
-                    # Run with captured output but echoing to parent stdout/stderr
-                    subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
-                    logger.info("Script %s PASSED.", script)
-                except (
-                    subprocess.CalledProcessError,
-                    subprocess.TimeoutExpired,
-                ) as exc:
-                    logger.error("Script %s FAILED: %s", script, exc)
-                    all_success = False
-                    break
+            daemon_env = {
+                **os.environ,
+                "PYTHONUNBUFFERED": "1",
+                "PYTHONPATH": f"{uci_dir}:{p_root}:{p_root}/mcubridge:{p_root}/mcubridge-client-examples",
+                "MCUBRIDGE_FORCE_UCI": "1",
+                "MCUBRIDGE_NON_INTERACTIVE": "1",
+            }
 
-                # Small cool-down between scripts to keep logs separated
-                time.sleep(1)
+            logger.info("Starting Daemon...")
+            daemon_proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-u",
+                    "-m",
+                    "mcubridge.daemon",
+                ],
+                env=daemon_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            _start_worker_thread(_daemon_worker, "daemon-worker", daemon_proc, state)
+
+            # 4. Run Test
+            logger.info("Waiting for stability (15s)...")
+            time.sleep(15)
+            if run_scripts:
+                for script in run_scripts:
+                    sys.stdout.write(f"\n{'=' * 80}\n")
+                    sys.stdout.write(f"=== RUNNING E2E TEST: {script}\n")
+                    sys.stdout.write(f"{'=' * 80}\n\n")
+                    sys.stdout.flush()
+
+                    try:
+                        # Run with captured output but echoing to parent stdout/stderr
+                        subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
+                        logger.info("Script %s PASSED.", script)
+                    except (
+                        subprocess.CalledProcessError,
+                        subprocess.TimeoutExpired,
+                    ) as exc:
+                        logger.error("Script %s FAILED: %s", script, exc)
+                        all_success = False
+                        break
+
+                    # Small cool-down between scripts to keep logs separated
+                    time.sleep(1)
     except (OSError, RuntimeError, ValueError) as exc:
         logger.error("Emulation error: %s", exc)
         all_success = False
     finally:
         # Terminate daemon (same process group — plain kill only)
         for p in [daemon_proc]:
+            if p is None:
+                continue
             with contextlib.suppress(Exception):
                 os.kill(p.pid, signal.SIGTERM)
                 p.wait(timeout=2)

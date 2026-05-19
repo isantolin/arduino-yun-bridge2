@@ -27,7 +27,7 @@ class ProcessClass : public BridgeObserver {
   void poll(int32_t pid, ProcessPollHandler handler);
   static void kill(int32_t pid);
 
-  void _kill(const rpc::payload::ProcessKill& msg);
+  void _onKillNotification(const rpc::payload::ProcessKill& msg);
   void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);
   void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
   void reset();

@@ -17,6 +17,7 @@
 #include "services/SPIService.h"
 
 BridgeClass Bridge(Serial);
+BridgeArenaAllocator BridgeClass::_json_arena;
 
 namespace etl {
 void __attribute__((weak)) __attribute__((unused)) handle_error(
@@ -448,7 +449,11 @@ void BridgeClass::_onAckTimeout() {
   if (!_fsm.isAwaitingAck()) return;
   if (++_retry_count >= _retry_limit) {
     _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
+    // [SIL-2] FaultState::on_enter_state() calls hal::forceSafeState() on entry.
+    // Disable TX and drain queue here (BridgeClass resources not accessible from FSM).
     _fsm.receive(bridge::fsm::EvTimeout());
+    _tx_enabled = false;
+    _clearPendingTxQueue();
     return;
   }
   _retransmitLastFrame();
@@ -492,7 +497,8 @@ void BridgeClass::_handleSetBaudrateCommand(
     (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, ctx.sequence_id);
     return;
   }
-  JsonDocument doc;
+  _json_arena.reset();
+  JsonDocument doc(&_json_arena);
   auto res = rpc::Payload::parse<rpc::payload::SetBaudratePacket>(*ctx.frame, doc);
   if (res) {
     _handleSetBaudrate(res.value());
@@ -600,7 +606,7 @@ void BridgeClass::_handleFileReadResponseCommand(
 void BridgeClass::_handleProcessKillCommand(
     const bridge::router::CommandContext& ctx) {
   _withPayloadAck<rpc::payload::ProcessKill>(
-      ctx, [](const auto& m) { Process._kill(m); });
+      ctx, [](const auto& m) { Process._onKillNotification(m); });
 }
 void BridgeClass::_handleProcessRunAsyncResponseCommand(
     const bridge::router::CommandContext& ctx) {
@@ -649,7 +655,8 @@ void BridgeClass::_handleGetFreeMemory(
 }
 
 void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
-  JsonDocument doc;
+  _json_arena.reset();
+  JsonDocument doc(&_json_arena);
   auto res = rpc::Payload::parse<rpc::payload::LinkSync>(*ctx.frame, doc);
   if (!res) {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -769,7 +776,8 @@ void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
 void BridgeClass::_handleSpiTransfer(
     const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this, &ctx]() {
-    JsonDocument doc;
+    _json_arena.reset();
+    JsonDocument doc(&_json_arena);
     auto res = rpc::Payload::parse<rpc::payload::SpiTransfer>(*ctx.frame, doc);
     if (res) {
       size_t len = etl::min(res->data.size(), _rx_storage.size());

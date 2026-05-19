@@ -136,7 +136,11 @@ class BridgeDaemon:
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
             retry=_retry_predicate,
-            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            before_sleep=lambda rs: logger.warning(
+                "MQTT connection retry",
+                attempt=rs.attempt_number,
+                wait=getattr(rs.next_action, "sleep", 0),
+            ),
             after=lambda rs: self.state.metrics.retries.labels(component="mqtt_connect").inc(),
             reraise=True,
         )
@@ -288,8 +292,9 @@ class BridgeDaemon:
             tenacity.RetryError,
             SerialHandshakeFatal,
         ) as exc_group:
-            # [SIL-2] Iterative reduction for exception logging
-            [log.critical("Fatal task error: %s", e, exc_info=e) for e in exc_group.exceptions]
+            # [SIL-2] Explicit loop: side-effect-only list comprehensions are prohibited.
+            for e in exc_group.exceptions:
+                log.critical("Fatal task error: %s", e, exc_info=e)
             raise
         finally:
             self.state.cleanup()

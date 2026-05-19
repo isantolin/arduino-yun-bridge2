@@ -5,12 +5,11 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
-import gc
 import sqlite3
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Final, TypeVar, cast, TYPE_CHECKING
+from typing import Any, Final, TypeVar, cast
 
 import diskcache
 import msgspec
@@ -279,10 +278,10 @@ class RuntimeState(msgspec.Struct, weakref=True):
     def configure(self) -> None:
         _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
 
-        if hasattr(self.mailbox_queue, 'cache'):
+        if hasattr(self.mailbox_queue, "cache"):
             with _sup:
                 cast(Any, self.mailbox_queue).cache.close()
-        if hasattr(self.mailbox_incoming_queue, 'cache'):
+        if hasattr(self.mailbox_incoming_queue, "cache"):
             with _sup:
                 cast(Any, self.mailbox_incoming_queue).cache.close()
 
@@ -529,15 +528,17 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
         # [SIL-2] Aggressive Resource Eradication to prevent ResourceWarnings.
         # 1. Nullify high-level wrappers first to drop references to the underlying caches.
-        if hasattr(self.mailbox_queue, 'cache'):
+        if hasattr(self.mailbox_queue, "cache"):
             with _sup:
-                cast(Any, self.mailbox_queue).cache.close()
-                self.mailbox_queue.cache = None
+                mq: Any = self.mailbox_queue
+                mq.cache.close()
+                mq.cache = None
 
-        if hasattr(self.mailbox_incoming_queue, 'cache'):
+        if hasattr(self.mailbox_incoming_queue, "cache"):
             with _sup:
-                cast(Any, self.mailbox_incoming_queue).cache.close()
-                self.mailbox_incoming_queue.cache = None
+                miq: Any = self.mailbox_incoming_queue
+                miq.cache.close()
+                miq.cache = None
 
         self.mailbox_queue = collections.deque()
         self.mailbox_incoming_queue = collections.deque()
@@ -570,9 +571,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
             self.pending_digital_reads.clear()
             self.pending_analog_reads.clear()
 
-        # 6. Final GC hint to ensure SQLite connections are truly closed.
-
-        gc.collect()
+        # 6. References cleared; sqlite3 connections finalized by the GC at shutdown.
 
 
 def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:

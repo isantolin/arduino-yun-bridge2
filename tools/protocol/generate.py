@@ -1226,6 +1226,18 @@ def update_metadata(version: str):
         sys.stderr.write(f"Updated {lib_prop} to version {version}\n")
 
 
+def _format_python_file(path: Path) -> None:
+    """Post-process a generated Python file with black for canonical formatting."""
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "black", "--quiet", str(path)],
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as e:
+        sys.stderr.write(f"Warning: black formatting failed for {path}: {e}\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
     parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file")
@@ -1266,11 +1278,13 @@ def main() -> None:
     if args.py:
         args.py.parent.mkdir(parents=True, exist_ok=True)
         gen.generate_python(spec, args.py)
+        _format_python_file(args.py)
         sys.stderr.write(f"Generated {args.py}\n")
 
     if args.py_client:
         args.py_client.parent.mkdir(parents=True, exist_ok=True)
         gen.generate_python_client(spec, args.py_client)
+        _format_python_file(args.py_client)
         sys.stderr.write(f"Generated {args.py_client}\n")
 
     # Generate Packet classes from spec.toml messages into structures.py

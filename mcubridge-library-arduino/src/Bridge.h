@@ -83,6 +83,43 @@ struct CommandContext {
 
 #include "ErrorPolicy.h"
 
+// [SIL-2] Zero-Heap ArduinoJson arena: all JSON documents backed by static BSS.
+// Compliant with ArduinoJson v7 Allocator interface; no malloc/free.
+class BridgeArenaAllocator final : public ArduinoJson::Allocator {
+ public:
+  static constexpr size_t kCapacity = bridge::config::JSON_NODE_POOL_SIZE;
+
+  void reset() noexcept { _used = 0U; _last = nullptr; }
+
+  void* allocate(size_t n) override {
+    n = (n + alignof(max_align_t) - 1U) & ~(alignof(max_align_t) - 1U);
+    if (_used + n > kCapacity) return nullptr;
+    void* p = _buf + _used;
+    _last = p;
+    _used += n;
+    return p;
+  }
+
+  void deallocate(void*) override {}
+
+  void* reallocate(void* ptr, size_t new_size) override {
+    new_size = (new_size + alignof(max_align_t) - 1U) & ~(alignof(max_align_t) - 1U);
+    if (ptr == _last) {
+      const size_t last_start = static_cast<uint8_t*>(_last) - _buf;
+      if (last_start + new_size <= kCapacity) {
+        _used = last_start + new_size;
+        return ptr;
+      }
+    }
+    return nullptr;
+  }
+
+ private:
+  alignas(max_align_t) uint8_t _buf[kCapacity]{};
+  size_t _used{0U};
+  void* _last{nullptr};
+};
+
 class BridgeClass {
  public:
   using ErrorPolicy = bridge::SafeStatePolicy;
@@ -117,7 +154,8 @@ class BridgeClass {
 
   template <typename T>
   [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
-    JsonDocument doc;
+    _json_arena.reset();
+    JsonDocument doc(&_json_arena);
     if (packet.encode(doc.to<JsonVariant>())) {
       size_t used = serializeMsgPack(
           doc, reinterpret_cast<char*>(_transient_buffer.data()),
@@ -130,7 +168,8 @@ class BridgeClass {
 
   template <typename T>
   [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
-    JsonDocument doc;
+    _json_arena.reset();
+    JsonDocument doc(&_json_arena);
     if (packet.encode(doc.to<JsonVariant>())) {
       size_t used = serializeMsgPack(
           doc, reinterpret_cast<char*>(_transient_buffer.data()),
@@ -247,6 +286,7 @@ class BridgeClass {
       _timer_ids;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _transient_buffer;
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_storage;
+  static BridgeArenaAllocator _json_arena;
   rpc::FrameParser _frame_parser;
   bool _is_post_passed;
   bool _tx_enabled;
@@ -329,7 +369,8 @@ class BridgeClass {
 
   template <typename T, typename F>
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
-    JsonDocument doc;
+    _json_arena.reset();
+    JsonDocument doc(&_json_arena);
     auto res = rpc::Payload::parse<T>(*ctx.frame, doc);
     if (res) handler(res.value());
   }
@@ -340,7 +381,8 @@ class BridgeClass {
                  rpc::payload::AckPacket{ctx.raw_command});
       return;
     }
-    JsonDocument doc;
+    _json_arena.reset();
+    JsonDocument doc(&_json_arena);
     auto res = rpc::Payload::parse<T>(*ctx.frame, doc);
     if (res) {
       handler(res.value());
@@ -362,7 +404,8 @@ class BridgeClass {
   void _handlePinRead(const bridge::router::CommandContext& ctx, TID resp_id,
                       TValid valid, TRead read) {
     _withResponse(ctx, [this, &ctx, resp_id, valid, read]() {
-      JsonDocument doc;
+      _json_arena.reset();
+      JsonDocument doc(&_json_arena);
       auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame, doc);
       if (res && valid(res->pin)) {
         T resp = {static_cast<decltype(T::value)>(read(res->pin))};

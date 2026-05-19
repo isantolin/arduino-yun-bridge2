@@ -22,17 +22,23 @@ void setup() {
 
   // CRITICAL: Wait for Bridge to be synchronized (Linux handshake complete)
   // This prevents "Rejecting MCU frame before link synchronisation" errors.
-  // We must call Bridge.process() to handle the handshake frames!
-  // Use non-blocking blink to ensure we process serial data as fast as
-  // possible.
-  long lastBlink = 0;
-  bool ledState = false;
-  while (!Bridge.isSynchronized()) {
-    Bridge.process();
-    if (millis() - lastBlink > 100) {
-      lastBlink = millis();
-      ledState = !ledState;
-      digitalWrite(13, ledState ? HIGH : LOW);
+  // [SIL-2] Bounded synchronization: abort to safe state if Linux unreachable.
+  // Non-blocking LED blink continues while waiting for handshake.
+  {
+    long lastBlink = 0;
+    bool ledState = false;
+    const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
+    while (!Bridge.isSynchronized()) {
+      if (static_cast<int32_t>(millis() - sync_deadline) > 0) {
+        Bridge.enterSafeState();
+        break;
+      }
+      Bridge.process();
+      if (millis() - lastBlink > 100) {
+        lastBlink = millis();
+        ledState = !ledState;
+        digitalWrite(13, ledState ? HIGH : LOW);
+      }
     }
   }
 

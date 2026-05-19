@@ -98,7 +98,7 @@ _STATUS_VALUES: Final = {s.value for s in Status}
 class _PendingMcuRead:
     identifier: str
     future: asyncio.Future[bytes]
-    chunks: list[bytes] = field(default_factory=list)
+    chunks: list[bytes] = field(default_factory=list[bytes])
 
 
 class BridgeService:
@@ -904,6 +904,7 @@ class BridgeService:
     async def _write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:
             import shutil
+
             try:
                 usage = shutil.disk_usage(self.config.file_system_root)
                 self.state.file_storage_bytes_used = usage.used

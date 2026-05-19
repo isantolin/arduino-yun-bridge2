@@ -42,10 +42,16 @@ void setup() {
     }
   }));
 
-  // Bloqueo controlado hasta sincronizar SIN LOGS a Serial.
-  while (!Bridge.isSynchronized()) {
-    Bridge.process();
-    // Podemos usar el LED para feedback visual si fuera hardware real
+  // [SIL-2] Bounded synchronization: abort to safe state if Linux unreachable.
+  {
+    const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
+    while (!Bridge.isSynchronized()) {
+      if (static_cast<int32_t>(millis() - sync_deadline) > 0) {
+        Bridge.enterSafeState();
+        break;
+      }
+      Bridge.process();
+    }
   }
 
   // Una vez sincronizado, Console es seguro porque viaja dentro de marcos RPC.

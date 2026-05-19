@@ -95,8 +95,11 @@ void ProcessClass::kill(int32_t pid) {
                     rpc::payload::ProcessKill{static_cast<uint32_t>(pid)});
 }
 
-void ProcessClass::_kill(const rpc::payload::ProcessKill& msg) {
-  kill(static_cast<int32_t>(msg.pid));
+void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill& msg) {
+  // Linux notifies MCU that a process was killed. Clear local queues only —
+  // do NOT re-send CMD_PROCESS_KILL (that would create an echo loop).
+  reset();
+  (void)msg.pid;
 }
 
 void ProcessClass::_onRunAsyncResponse(

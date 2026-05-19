@@ -31,6 +31,12 @@ namespace config {
 static constexpr bool SAFE_START_PINS_ENABLED = true;
 static constexpr bool ENABLE_WATCHDOG = true;
 
+// [SIL-2] Maximum time to wait for Linux handshake before entering safe state.
+static constexpr uint32_t SYNC_TIMEOUT_MS = 30000UL;
+
+// Static arena capacity for ArduinoJson documents — fits all payload types.
+static constexpr size_t JSON_NODE_POOL_SIZE = 384U;
+
 // --- Feature Flags (Manual overrides via build system) ---
 #ifndef BRIDGE_ENABLE_DATASTORE
 #define BRIDGE_ENABLE_DATASTORE 1

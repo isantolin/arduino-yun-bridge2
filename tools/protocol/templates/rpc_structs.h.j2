@@ -9,7 +9,6 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include <string.h>
 #include <etl/string_view.h>
 #include <ArduinoJson.h>
 #include "rpc_protocol.h"
@@ -74,7 +73,7 @@ struct {{ s.name }} {
 {%- elif f.kind == 'str_view' %}
         {
             const char* s = arr[{{ loop.index0 }}].as<const char*>();
-            if (s) {{ f.name }} = {s, strlen(s)};
+            if (s) {{ f.name }} = {s, etl::string_view(s).length()};
             else return false;
         }
 {%- endif %}

@@ -1,5 +1,5 @@
 #include <etl/array.h>
-#include "fsm/CounterIterator.h"
+#include "etl_ext/CounterIterator.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

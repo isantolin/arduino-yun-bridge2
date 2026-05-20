@@ -152,7 +152,7 @@ class BridgeDaemon:
         except asyncio.CancelledError:
             logger.info("MQTT transport stopping.")
             raise
-        except (ConnectionError, OSError, asyncio.TimeoutError) as exc:
+        except (TimeoutError, ConnectionError, OSError) as exc:
             logger.critical("MQTT transport fatal error: %s", exc)
             raise
         except ExceptionGroup as eg:
@@ -282,11 +282,11 @@ class BridgeDaemon:
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
         except* (
+            TimeoutError,
             OSError,
             RuntimeError,
             ValueError,
             TypeError,
-            asyncio.TimeoutError,
             msgspec.MsgspecError,
             aiomqtt.MqttError,
             tenacity.RetryError,
@@ -406,11 +406,11 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user.")
     except (
+        TimeoutError,
         OSError,
         RuntimeError,
         ValueError,
         TypeError,
-        asyncio.TimeoutError,
         msgspec.MsgspecError,
         aiomqtt.MqttError,
         SerialHandshakeFatal,

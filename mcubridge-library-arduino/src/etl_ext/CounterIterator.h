@@ -6,7 +6,7 @@
 #include <etl/iterator.h>
 
 namespace bridge {
-namespace utils {
+namespace etl_ext {
 
 /**
  * @brief Zero-overhead numeric iterator to replace manual for/while loops.
@@ -46,7 +46,7 @@ class CounterIterator {
   T _value;
 };
 
-}  // namespace utils
+}  // namespace etl_ext
 }  // namespace bridge
 
 #endif

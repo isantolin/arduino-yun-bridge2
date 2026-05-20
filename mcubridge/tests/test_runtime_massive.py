@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Any, Tuple, cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import msgspec
@@ -40,7 +40,7 @@ from mcubridge.state.context import RuntimeState
 @pytest_asyncio.fixture
 async def service_setup(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> Tuple[BridgeService, RuntimeState, AsyncMock]:
+) -> tuple[BridgeService, RuntimeState, AsyncMock]:
     """Provide a BridgeService instance with mocked serial and MQTT."""
     serial = AsyncMock()
     serial.send = AsyncMock(return_value=True)
@@ -55,7 +55,7 @@ async def service_setup(
 
 @pytest.mark.asyncio
 async def test_runtime_brute_force_handlers(
-    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     """Brute-force all MCU handlers with valid and invalid payloads."""
     service, state, serial = service_setup
@@ -175,7 +175,7 @@ async def test_runtime_brute_force_handlers(
 
 @pytest.mark.asyncio
 async def test_runtime_mqtt_brute_force(
-    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     """Test MQTT dispatcher with various topics and payloads."""
     service, state, serial = service_setup
@@ -241,7 +241,7 @@ async def test_runtime_mqtt_brute_force(
 
 @pytest.mark.asyncio
 async def test_runtime_process_cleanup_robustness(
-    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     """Test process management handles corner cases like rapid spawn/kill."""
     service, _, _ = service_setup
@@ -275,7 +275,7 @@ async def test_runtime_process_cleanup_robustness(
 
 @pytest.mark.asyncio
 async def test_runtime_file_ops_permission_errors(
-    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     """Test file operations handle OS permission errors."""
     service, state, serial = service_setup
@@ -293,7 +293,7 @@ async def test_runtime_file_ops_permission_errors(
 
 @pytest.mark.asyncio
 async def test_runtime_mcu_special_logic(
-    service_setup: Tuple[BridgeService, RuntimeState, AsyncMock],
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     """Test asynchronous race conditions and state locks in runtime service."""
     service, state, _ = service_setup

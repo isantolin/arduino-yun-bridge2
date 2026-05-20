@@ -26,10 +26,6 @@ void __attribute__((weak)) __attribute__((unused)) handle_error(
 }
 }  // namespace etl
 
-void BridgeClass::registerObserver(BridgeObserver& observer) {
-  if (!_observers.full()) {
-    _observers.push_back(&observer);
-  }
 }
 
 void BridgeClass::notify_observers(const MsgBridgeSynchronized& msg) {
@@ -705,7 +701,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
   _tx_enabled = true;
   (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
-  notify_observers(MsgBridgeSynchronized());
+  _notifyObservers(MsgBridgeSynchronized());
 }
 
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {

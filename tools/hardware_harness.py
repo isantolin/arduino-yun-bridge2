@@ -155,7 +155,7 @@ async def run_command(
             stdout.decode("utf-8", errors="ignore"),
             stderr.decode("utf-8", errors="ignore"),
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         try:
             proc.kill()
         except OSError:

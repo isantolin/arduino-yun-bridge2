@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence, Union, cast
+from typing import TYPE_CHECKING, Union, cast
+from collections.abc import Sequence
 
 from .definitions import SpiBitOrder, SpiMode
 

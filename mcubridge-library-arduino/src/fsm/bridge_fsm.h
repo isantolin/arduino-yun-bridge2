@@ -175,7 +175,6 @@ class BridgeFsm : public etl::fsm {
   BridgeFsm();
 
   bool isSynchronized() const;
-  bool isUnsynchronized() const;
   bool isAwaitingAck() const;
 
  private:

@@ -118,7 +118,7 @@ class ProtocolFuzzer:
                         await asyncio.wait_for(self.reader.readuntil(FRAME_DELIMITER), timeout=0.05)
                         latencies.append(asyncio.get_event_loop().time() - start_time)
                         success_count += 1
-                except (asyncio.TimeoutError, asyncio.IncompleteReadError):
+                except (TimeoutError, asyncio.IncompleteReadError):
                     logger.warning("health_probe_timeout", seq=self.seq_id)
 
             await self.fuzz_iteration()

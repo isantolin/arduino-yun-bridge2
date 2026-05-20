@@ -25,7 +25,7 @@ async def bridge_session(
     user: str | None,
     password: str | None,
     tls_insecure: bool = False,
-) -> AsyncGenerator[Bridge, None]:
+) -> AsyncGenerator[Bridge]:
     """Connect a Bridge and guarantee disconnect on exit."""
     dump_client_env(logging.getLogger(__name__))
     bridge_args = build_bridge_args(host, port, user, password, tls_insecure)

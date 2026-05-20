@@ -63,7 +63,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   const etl::string_view path(msg.path.data(), msg.path.size());
 
   // [SIL-2] Use CounterIterator to avoid large stack-allocated dummy arrays.
-  using bridge::utils::CounterIterator;
+  using bridge::etl_ext::CounterIterator;
   (void)etl::find_if(
       CounterIterator<uint16_t>(0U),
       CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),

@@ -20,10 +20,6 @@ bool BridgeFsm::isSynchronized() const {
          sid == static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK);
 }
 
-bool BridgeFsm::isUnsynchronized() const {
-  return get_state_id() == static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
-}
-
 bool BridgeFsm::isAwaitingAck() const {
   return get_state_id() ==
          static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK);

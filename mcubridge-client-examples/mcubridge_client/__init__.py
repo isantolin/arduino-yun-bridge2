@@ -192,7 +192,7 @@ class Bridge:
         try:
             payload = await asyncio.wait_for(self._console_queue.get(), timeout=0.1)
             return payload.decode("utf-8", errors="replace")
-        except (asyncio.TimeoutError, TimeoutError):
+        except TimeoutError:
             return None
 
     async def digital_write(self, pin: int, value: int) -> None:

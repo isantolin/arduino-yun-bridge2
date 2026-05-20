@@ -57,7 +57,7 @@ class TestAccessor;
 #include <etl/vector.h>
 
 #include "config/bridge_config.h"
-#include "fsm/CounterIterator.h"
+#include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
 #include "protocol/BridgeEvents.h"
 #include "protocol/rle.h"
@@ -147,11 +147,6 @@ class BridgeClass {
  public:
   using ErrorPolicy = bridge::SafeStatePolicy;
   explicit BridgeClass(Stream& stream);
-
-  void registerObserver(BridgeObserver& observer);
-
-  void notify_observers(const MsgBridgeSynchronized& msg);
-  void notify_observers(const MsgBridgeLost& msg);
 
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();

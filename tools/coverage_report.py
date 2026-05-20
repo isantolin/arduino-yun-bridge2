@@ -200,13 +200,7 @@ def _render_markdown(rows: list[CoverageMetrics]) -> str:
     separator = "| --- | --- | --- | --- | --- |"
     body: list[str] = []
     for row in rows:
-        line = ("| {suite} | {lines} | {line_pct} | {branches} | {branch_pct} |").format(
-            suite=row.suite,
-            lines=row.lines_display,
-            line_pct=CoverageMetrics.format_percent(row.line_percent),
-            branches=row.branches_display,
-            branch_pct=CoverageMetrics.format_percent(row.branch_percent),
-        )
+        line = f"| {row.suite} | {row.lines_display} | {CoverageMetrics.format_percent(row.line_percent)} | {row.branches_display} | {CoverageMetrics.format_percent(row.branch_percent)} |"
         body.append(line)
     artifact_list = "\n".join(f"- `{row.suite}` artifacts: {row.artifact_hint}" for row in rows)
     return "\n".join([header, separator, *body, "", artifact_list])

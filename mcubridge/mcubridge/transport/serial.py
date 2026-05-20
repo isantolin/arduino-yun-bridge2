@@ -168,7 +168,7 @@ class SerialTransport:
             try:
                 if self.service:
                     await self.service.on_serial_disconnected()
-            except (OSError, RuntimeError, ValueError, asyncio.TimeoutError, msgspec.MsgspecError) as exc:
+            except (TimeoutError, OSError, RuntimeError, ValueError, msgspec.MsgspecError) as exc:
                 logger.error("Error in on_serial_disconnected hook: %s", exc)
             if self.writer:
                 self.writer.close()
@@ -340,7 +340,7 @@ class SerialTransport:
                                     return True
                             if not pending.success:
                                 await pending.completion.wait()
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         raise self._RetryableSerialError()
                     if pending.success:
                         return True
@@ -403,7 +403,7 @@ class SerialTransport:
                                 return True
                         if not pending.success:
                             await pending.completion.wait()
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     raise self._RetryableSerialError()
                 if pending.success:
                     return True
@@ -422,7 +422,7 @@ class SerialTransport:
             try:
                 async with asyncio.timeout(30.0):
                     await self.state.serial_tx_allowed.wait()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Timed out waiting for serial TX window")
                 return False
         if seq_id is None:
@@ -476,7 +476,7 @@ class SerialTransport:
                 await asyncio.wait_for(self._negotiation_future, timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
             await asyncio.sleep(0.1)
             return True
-        except (asyncio.TimeoutError, RuntimeError, OSError, ValueError) as exc:
+        except (TimeoutError, RuntimeError, OSError, ValueError) as exc:
             logger.warning("Baudrate negotiation failed for %d baud: %s", target_baud, exc)
             return False
         finally:

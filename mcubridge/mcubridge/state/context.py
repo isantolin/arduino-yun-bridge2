@@ -150,7 +150,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
-    running_processes: dict[int, "ProcessContext"] = msgspec.field(
+    running_processes: dict[int, ProcessContext] = msgspec.field(
         default_factory=lambda: cast(dict[int, "ProcessContext"], {})
     )
     process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
@@ -176,18 +176,17 @@ class RuntimeState(msgspec.Struct, weakref=True):
     pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
         default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque())
     )
-    mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
     pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
     mailbox_queue_bytes: int = 0
     mailbox_dropped_messages: int = 0
     mailbox_truncated_messages: int = 0
-    mailbox_outgoing_overflow_events: int = 0
+
     mailbox_incoming_queue_bytes: int = 0
     mailbox_incoming_dropped_messages: int = 0
     mailbox_incoming_truncated_messages: int = 0
-    mailbox_incoming_overflow_events: int = 0
+
     mcu_version: tuple[int, int, int] | None = None
     mcu_capabilities: McuCapabilities | None = None
     link_handshake_nonce: bytes | None = None

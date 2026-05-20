@@ -5,7 +5,7 @@
 #include "BridgeTestInterface.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
-#include "fsm/CounterIterator.h"
+#include "etl_ext/CounterIterator.h"
 #include "test_support.h"
 
 // Services
@@ -37,31 +37,18 @@ namespace etl {
 namespace {
 
 using bridge::test::TestAccessor;
-using bridge::utils::CounterIterator;
-
-class CoverageObserver : public BridgeObserver {
-public:
-    bool sync_called = false;
-    bool lost_called = false;
-    void notification(MsgBridgeSynchronized) override { sync_called = true; }
-    void notification(MsgBridgeLost) override { lost_called = true; }
-};
+using bridge::etl_ext::CounterIterator;
 
 void test_bridge_basic_lifecycle() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  
-  CoverageObserver obs;
-  Bridge.registerObserver(obs);
-  
+
   ba.setSynchronized();
   TEST_ASSERT(Bridge.isSynchronized());
-  
-  Bridge.enterSafeState();
-  TEST_ASSERT(obs.lost_called);
-}
 
+  Bridge.enterSafeState();
+}
 void test_bridge_brute_force_commands() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);

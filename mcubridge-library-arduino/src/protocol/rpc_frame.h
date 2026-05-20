@@ -47,11 +47,6 @@ struct Frame {
 
 enum class FrameError { NONE = 0, CRC_MISMATCH, MALFORMED, OVERFLOW, AUTH_FAIL };
 
-template <typename... Args>
-inline constexpr bool is_any_of(uint16_t id, Args... args) {
-  return ((id == static_cast<uint16_t>(args)) || ...);
-}
-
 [[maybe_unused]] inline constexpr bool is_compressed(uint16_t id) {
   return (id & RPC_CMD_FLAG_COMPRESSED) != 0;
 }

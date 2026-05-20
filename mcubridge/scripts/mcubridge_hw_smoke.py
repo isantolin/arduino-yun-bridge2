@@ -53,7 +53,7 @@ class SmokeTester:
                             logger.info("Connectivity verified", mcu_version=payload_str)
                             self.results["connectivity"] = True
                             break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.error("Timeout waiting for version response")
                     self.results["connectivity"] = False
 

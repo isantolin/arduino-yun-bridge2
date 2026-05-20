@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Tuple
+from typing import Any
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
@@ -24,7 +24,7 @@ from mcubridge.protocol.structures import (
 @pytest.fixture
 def service_setup(
     tmp_path: Path,
-) -> Tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
+) -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/test",

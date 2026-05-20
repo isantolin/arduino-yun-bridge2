@@ -309,6 +309,22 @@ class PrometheusExporter:
         def _app(environ: dict[str, Any], start_response: Callable[..., Any]) -> list[bytes]:
             payload = generate_latest(self._registry)
             start_response("200 OK", [("Content-Type", CONTENT_TYPE_LATEST)])
+
+            # [SIL-2] Root-cause fix: diskcache creates thread-local sqlite3 connections
+            # when read from this WSGI thread. Close them to prevent ResourceWarnings
+            # when the diskcache object is destroyed.
+            with contextlib.suppress(Exception):
+                if hasattr(self._state.mailbox_queue, "cache"):
+                    cache: Any = self._state.mailbox_queue.cache
+                    if hasattr(cache._local, "con"):
+                        cache._local.con.close()
+                        del cache._local.con
+                if hasattr(self._state.mailbox_incoming_queue, "cache"):
+                    cache: Any = self._state.mailbox_incoming_queue.cache
+                    if hasattr(cache._local, "con"):
+                        cache._local.con.close()
+                        del cache._local.con
+
             return [payload]
 
         app: WSGIApplication = cast(WSGIApplication, _app)

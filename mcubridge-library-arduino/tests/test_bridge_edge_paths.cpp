@@ -6,7 +6,7 @@
 #include "BridgeFaultInjection.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
-#include "fsm/CounterIterator.h"
+#include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
 #include "protocol/rle.h"
 #include "services/Console.h"

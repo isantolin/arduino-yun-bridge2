@@ -4,7 +4,7 @@
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
-#include "fsm/CounterIterator.h"
+#include "etl_ext/CounterIterator.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"

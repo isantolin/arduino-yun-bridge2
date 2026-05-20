@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
-from typing import Any, Coroutine
+from typing import Any
+from collections.abc import Coroutine
 import importlib.util
 from pathlib import Path
 import sys

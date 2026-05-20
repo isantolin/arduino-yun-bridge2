@@ -53,7 +53,12 @@ void MailboxClass::_onIncomingData(
 void MailboxClass::_onAvailableResponse(
     const rpc::payload::MailboxAvailableResponse& msg) {
   _available_count = msg.count;
-  if (_available_handler.is_valid()) _available_handler(_available_count);
+}
+
+MailboxClass Mailbox;
+
+#endif
+(_available_count);
 }
 
 MailboxClass Mailbox;

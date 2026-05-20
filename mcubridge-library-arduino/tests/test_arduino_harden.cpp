@@ -1,5 +1,5 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE
-#include "fsm/CounterIterator.h"
+#include "etl_ext/CounterIterator.h"
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"

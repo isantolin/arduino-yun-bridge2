@@ -103,7 +103,7 @@ class Frame(msgspec.Struct, frozen=True):
         return body + CRC_STRUCT.pack(crc)
 
     @classmethod
-    def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> "Frame":
+    def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> Frame:
         """Delegates frame parsing to the declarative schema."""
         buf = memoryview(raw_frame_buffer)
         if len(buf) < _HEADER_SIZE + _NONCE_SIZE + _TAG_SIZE + _CRC_SIZE:

@@ -44,7 +44,7 @@ def mock_config() -> RuntimeConfig:
 
 
 @pytest.fixture
-def mock_state(mock_config: RuntimeConfig) -> Generator[RuntimeState, None, None]:
+def mock_state(mock_config: RuntimeConfig) -> Generator[RuntimeState]:
     """Provide a runtime state for testing."""
     state = create_runtime_state(mock_config)
     yield state
@@ -79,7 +79,7 @@ async def test_daemon_mqtt_run_coverage(mock_config: RuntimeConfig, mock_state: 
     with patch("aiomqtt.Client", return_value=mock_client):
         try:
             await asyncio.wait_for(cast(Any, daemon)._mqtt_run(), timeout=0.2)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
+        except (TimeoutError, asyncio.CancelledError):
             pass
 
 

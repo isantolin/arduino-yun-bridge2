@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Tuple
+from typing import Any
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
@@ -14,7 +14,7 @@ from mcubridge.protocol.frame import Frame
 
 
 @pytest.fixture
-def transport_setup() -> Tuple[RuntimeConfig, RuntimeState]:
+def transport_setup() -> tuple[RuntimeConfig, RuntimeState]:
     config = RuntimeConfig(mqtt_topic="br", serial_port="/dev/test")
     state = create_runtime_state(config)
     return config, state
@@ -44,7 +44,7 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
 
     try:
         await asyncio.wait_for(transport._read_loop(mock_reader), 0.1)
-    except (asyncio.TimeoutError, Exception):
+    except (TimeoutError, Exception):
         pass
 
     transport._tx_sequence_id = 0xFFFE
@@ -67,7 +67,7 @@ async def test_serial_transport_negotiation_failure_final_v3(
     async def _mock_wait(fut: Any, timeout: Any) -> Any:
         if fut and not fut.done():
             pass
-        raise asyncio.TimeoutError()
+        raise TimeoutError()
 
     with patch("asyncio.wait_for", _mock_wait):
         res = await transport._negotiate_baudrate(9600)

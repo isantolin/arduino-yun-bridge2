@@ -619,7 +619,7 @@ class BridgeService:
                     ),
                     reply_context=ctx,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Timed out waiting for MCU file read response", target=target)
                 await self.enqueue_mqtt(
                     QueuedPublish(
@@ -838,7 +838,7 @@ class BridgeService:
             if ctx:
                 try:
                     ctx.exit_code = await asyncio.wait_for(ctx.handle.wait(), float(self.state.process_timeout))
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     import os
                     import signal
 
@@ -860,7 +860,7 @@ class BridgeService:
                         return b"", False
                     try:
                         return await asyncio.wait_for(s.read(protocol.MAX_PAYLOAD_SIZE - 32), 0.01), not s.at_eof()
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         return b"", True
 
                 o, to = await _rd(ctx.handle.stdout)

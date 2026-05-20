@@ -369,14 +369,14 @@ class SerialHandshakeManager:
             ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
             if not ok:
                 self._capabilities_future = None
-                raise asyncio.TimeoutError("Send failed")
+                raise TimeoutError("Send failed")
 
             try:
                 timeout = max(5.0, self._timing.response_timeout_seconds)
                 payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
                 self._parse_capabilities(payload)
                 return True
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 raise
             finally:
                 self._capabilities_future = None
@@ -481,7 +481,7 @@ class SerialHandshakeManager:
                 if not self._state.is_synchronized:
                     await self._state.link_sync_event.wait()
                 return self._state.is_synchronized
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False
 
     def clear_handshake_expectations(self) -> None:

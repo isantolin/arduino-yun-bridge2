@@ -351,20 +351,23 @@ echo "[STEP 5/6] Installing project .apk packages..."
 project_apk_globs=$(uci_get_general installer_project_apk_globs)
 [ -z "$project_apk_globs" ] && project_apk_globs="$PROJECT_APK_PATTERNS"
 project_apk_installed=0
+apks_to_install=""
 for glob in $project_apk_globs; do
-    # [FIX] Use hyphen to match exact package versions
     for apk in bin/$glob; do
         [ -e "$apk" ] || continue
-        pkg_name=$(basename "$apk")
-        echo "[INFO] Installing $pkg_name from ./bin"
-        # [FIX] Removed --force-reinstall
-        if ! apk add $LOCAL_APK_INSTALL_FLAGS "./$apk"; then
-            echo "[ERROR] Failed to add $pkg_name from ./bin." >&2
-            exit 1
-        fi
-        project_apk_installed=1
+        apks_to_install="$apks_to_install ./$apk"
     done
 done
+
+if [ -n "$apks_to_install" ]; then
+    echo "[INFO] Installing prebuilt APK packages:$apks_to_install"
+    # [FIX] Install all local packages in a single apk add command to resolve dependencies cleanly
+    if ! apk add $LOCAL_APK_INSTALL_FLAGS $apks_to_install; then
+        echo "[ERROR] Failed to add project APKs." >&2
+        exit 1
+    fi
+    project_apk_installed=1
+fi
 
 if [ "$project_apk_installed" -eq 0 ]; then
     echo "[WARN] No project .apk files found in bin/. 'mcubridge' package was NOT installed."

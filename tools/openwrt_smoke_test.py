@@ -204,7 +204,7 @@ def phase_expand(child: Any) -> None:
     )
 
     # [SIL-2] Strong Network Fix: DNS + Time + Force IPv4 for wget
-    send_and_wait(child, "echo 'nameserver 8.8.8.8' > /etc/resolv.conf", timeout=5)
+    # Avoid overwriting nameserver 8.8.8.8 in QEMU SLIRP as it breaks DNS forwarding via gateway (10.0.2.3)
     send_and_wait(child, "date -s '2026-01-01 12:00:00'", timeout=5)
     send_and_wait(child, "echo 'alias wget=\"wget -4\"' >> /etc/profile", timeout=5)
     send_and_wait(child, "ping -c 2 8.8.8.8 || true", timeout=15)
@@ -250,7 +250,7 @@ def phase_install(child: Any) -> None:
     )
 
     # [SIL-2] Strong Network Fix: DNS + Time + Force IPv4 for wget
-    send_and_wait(child, "echo 'nameserver 8.8.8.8' > /etc/resolv.conf", timeout=5)
+    # Avoid overwriting nameserver 8.8.8.8 in QEMU SLIRP as it breaks DNS forwarding via gateway (10.0.2.3)
     send_and_wait(child, "date -s '2026-01-01 12:00:00'", timeout=5)
     send_and_wait(child, "echo 'alias wget=\"wget -4\"' >> /etc/profile", timeout=5)
     send_and_wait(child, "ping -c 2 8.8.8.8 || true", timeout=15)
